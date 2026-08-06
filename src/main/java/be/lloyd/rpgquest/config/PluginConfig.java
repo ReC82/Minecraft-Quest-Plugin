@@ -6,6 +6,7 @@ public record PluginConfig(
         String databaseFile,
         ResourcePackConfig resourcePack,
         DialogueConfig dialogue,
-        JournalConfig journal
+        JournalConfig journal,
+        AdminFlattenConfig adminFlatten
 ) {
 }

@@ -31,8 +31,8 @@ priorité des sources).
 | 8 | Armes et outils personnalisés | DONE |
 | 9 | Ressources personnalisées et récolte | DONE |
 | 10 | Recettes, resource pack et intégration | DONE |
-| 11 | Serveur local intégré au workspace | TODO |
-| 12 | Outil admin d'aplatissement | TODO |
+| 11 | Serveur local intégré au workspace | DONE |
+| 12 | Outil admin d'aplatissement | DONE |
 | 13 | Village central et safe zone | TODO |
 | 14 | Économie et marchands PNJ | TODO |
 | 15 | Marché entre joueurs | TODO |
@@ -47,22 +47,29 @@ priorité des sources).
 
 ## Étape en cours
 
-### Étape 11 — Serveur local intégré au workspace
+### Étape 13 — Village central et safe zone
 
-Branche attendue : `feature/11-local-server`
+Branche attendue : `feature/13-safe-zone`
 
-Objectif : compiler et lancer Paper directement depuis le workspace sans
-copier manuellement le JAR (`xyz.jpenilla.run-paper`, déjà présent depuis
-l'étape 1). Voir cahier des charges complet reçu en session (mode nuit,
-2026-08-07) pour le détail des tâches/tests/commit attendu.
+Registre YAML de zones cuboïdes, zone `central_village`, blocage par
+défaut (PvP, destruction, pose, explosions, feu, lave, pistons traversant
+la frontière, spawn hostile naturel), autorisations configurables (portes,
+boutons, leviers, PNJ, conteneurs publics, commandes admin),
+`/rpgadmin zone create|delete|list|info|wand`. Voir cahier des charges
+complet reçu en session (mode nuit, 2026-08-07) pour le détail complet.
 
 ### Dernière observation (session mode nuit, 2026-08-07)
 
-Étapes 1 à 10 confirmées `DONE` par audit Git/build/tests. Cahier des
-charges détaillé reçu pour les étapes 11 à 23 (voir historique de
-conversation — non dupliqué ici pour éviter deux sources concurrentes,
-conformément à la règle « Git, code et tests priment sur ROADMAP »).
-Démarrage à l'étape 11, dans l'ordre, une branche par étape.
+Étapes 1 à 12 confirmées `DONE` (build vert, tests verts, docs à jour,
+commit par étape). Cahier des charges détaillé reçu pour les étapes 11 à 23
+(voir historique de conversation — non dupliqué ici pour éviter deux
+sources concurrentes, conformément à la règle « Git, code et tests priment
+sur ROADMAP »). Progression dans l'ordre, une branche par étape.
+
+Note pour l'étape 13 : `/rpgadmin flatten` (étape 12) a un placeholder
+« mondes interdits » en attendant le vrai registre de zones — une fois le
+registre de zones livré, envisager de le recroiser avec `FlattenService`
+(voir `docs/ARCHITECTURE.md`, section `admin`, limite documentée).
 
 ## Journal de session
 

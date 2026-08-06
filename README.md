@@ -88,6 +88,11 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
     le bloc visé (ne touche pas au bloc physique).
 -   `/resourcenode inspect` (`rpgquest.admin`) — affiche le type et l'état
     (actif / épuisé, temps de respawn restant) du nœud sur le bloc visé.
+-   `/rpgadmin flatten <rayon> [hauteur]` (`rpgquest.admin.world`) — aperçu
+    d'aplatissement de terrain centré sur le joueur.
+-   `/rpgadmin flatten confirm|cancel|undo` (`rpgquest.admin.world`) —
+    exécute, annule, ou défait le dernier aplatissement. Voir
+    [docs/ADMIN_FLATTEN.md](docs/ADMIN_FLATTEN.md).
 
 ### Permissions
 
@@ -96,6 +101,7 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 | `rpgquest.quest` | tous | `/quest list\|accept\|progress\|abandon`, `/quests` |
 | `rpgquest.item` | tous | `/customitem inspect` |
 | `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect` |
+| `rpgquest.admin.world` | op | `/rpgadmin flatten` (aplatissement de terrain) |
 
 ## Quêtes
 

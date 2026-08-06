@@ -28,6 +28,9 @@ commands:
   resourcenode:
     description: Nœuds de ressource récoltables (administration).
     usage: /<command> <create <typeId>|remove|inspect>
+  rpgadmin:
+    description: Commandes d'administration du monde (aplatissement, zones, portails...).
+    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo
 
 permissions:
   rpgquest.admin:
@@ -39,3 +42,6 @@ permissions:
   rpgquest.item:
     description: Accès aux commandes d'objets personnalisés joueur (/customitem inspect).
     default: true
+  rpgquest.admin.world:
+    description: Accès aux commandes d'administration du monde (/rpgadmin), dont l'aplatissement de terrain.
+    default: op

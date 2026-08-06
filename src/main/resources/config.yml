@@ -41,3 +41,17 @@ journal:
   # via /quests. Purement cosmétique : la mettre à false ne désactive ni le
   # suivi lui-même (persisté) ni le journal, seulement la bossbar.
   tracker-enabled: true
+
+admin:
+  flatten:
+    # /rpgadmin flatten <rayon> [hauteur] — voir docs/ADMIN_FLATTEN.md.
+    max-radius: 48
+    default-shape: SQUARE          # SQUARE | CIRCLE
+    top-layer-material: GRASS_BLOCK
+    sub-layer-material: DIRT
+    sub-layer-depth: 3
+    clear-above-height: 10
+    confirmation-timeout-seconds: 30
+    blocks-per-tick: 4000
+    # Aucune zone interdite par défaut ; noms de mondes exacts.
+    forbidden-worlds: []

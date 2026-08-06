@@ -1,6 +1,8 @@
 package be.lloyd.rpgquest.bootstrap;
 
 import be.lloyd.rpgquest.RPGQuestPlugin;
+import be.lloyd.rpgquest.admin.FlattenService;
+import be.lloyd.rpgquest.admin.RpgAdminCommand;
 import be.lloyd.rpgquest.command.CustomItemCommand;
 import be.lloyd.rpgquest.command.DialogueCommand;
 import be.lloyd.rpgquest.command.QuestCommand;
@@ -58,6 +60,7 @@ public final class RPGQuestBootstrap {
     private final YamlCustomItemRegistry customItemRegistry;
     private final ResourceNodeRegistry resourceNodeRegistry;
     private final YamlCraftingRegistry craftingRegistry;
+    private final FlattenService flattenService;
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
@@ -81,11 +84,13 @@ public final class RPGQuestBootstrap {
                 plugin.getDataFolder().toPath().resolve("resource-nodes"), plugin.getSLF4JLogger());
         this.craftingRegistry = new YamlCraftingRegistry(
                 plugin.getDataFolder().toPath().resolve("recipes"), customItemRegistry, plugin.getSLF4JLogger());
+        this.flattenService = new FlattenService(plugin, configService, plugin.getSLF4JLogger());
     }
 
     public void start() {
         registry.start(configService);
         registry.start(databaseService);
+        registry.start(flattenService);
 
         PlayerProfileRepository profileRepository = new PlayerProfileRepository(databaseService.databaseManager());
         playerProfileService = new PlayerProfileService(profileRepository);
@@ -193,6 +198,10 @@ public final class RPGQuestBootstrap {
         return craftingRegistry;
     }
 
+    public FlattenService flattenService() {
+        return flattenService;
+    }
+
     public ResourceNodeService resourceNodeService() {
         return resourceNodeService;
     }
@@ -237,6 +246,13 @@ public final class RPGQuestBootstrap {
         if (resourcenode != null) {
             resourcenode.setExecutor(resourceNodeCommand);
             resourcenode.setTabCompleter(resourceNodeCommand);
+        }
+
+        RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(flattenService);
+        var rpgadmin = plugin.getCommand("rpgadmin");
+        if (rpgadmin != null) {
+            rpgadmin.setExecutor(rpgAdminCommand);
+            rpgadmin.setTabCompleter(rpgAdminCommand);
         }
     }
 }

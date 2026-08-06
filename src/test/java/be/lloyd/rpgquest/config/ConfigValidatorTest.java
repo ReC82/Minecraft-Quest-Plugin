@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.StringReader;
+import java.util.List;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.junit.jupiter.api.Test;
@@ -147,6 +148,111 @@ class ConfigValidatorTest {
                 """.formatted(VALID_SHA1)));
 
         assertTrue(config.resourcePack().required());
+    }
+
+    @Test
+    void adminFlattenDefaultsApplyWhenSectionIsAbsent() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load(""));
+
+        AdminFlattenConfig flatten = config.adminFlatten();
+        assertEquals(48, flatten.maxRadius());
+        assertEquals(FlattenShape.SQUARE, flatten.defaultShape());
+        assertEquals(org.bukkit.Material.GRASS_BLOCK, flatten.topLayerMaterial());
+        assertEquals(org.bukkit.Material.DIRT, flatten.subLayerMaterial());
+        assertEquals(3, flatten.subLayerDepth());
+        assertEquals(10, flatten.clearAboveHeight());
+        assertEquals(30, flatten.confirmationTimeoutSeconds());
+        assertEquals(4000, flatten.blocksPerTick());
+        assertTrue(flatten.forbiddenWorlds().isEmpty());
+    }
+
+    @Test
+    void acceptsFullyCustomAdminFlattenConfig() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                admin:
+                  flatten:
+                    max-radius: 16
+                    default-shape: circle
+                    top-layer-material: stone
+                    sub-layer-material: cobblestone
+                    sub-layer-depth: 2
+                    clear-above-height: 5
+                    confirmation-timeout-seconds: 15
+                    blocks-per-tick: 500
+                    forbidden-worlds: ["world_the_end"]
+                """));
+
+        AdminFlattenConfig flatten = config.adminFlatten();
+        assertEquals(16, flatten.maxRadius());
+        assertEquals(FlattenShape.CIRCLE, flatten.defaultShape());
+        assertEquals(org.bukkit.Material.STONE, flatten.topLayerMaterial());
+        assertEquals(org.bukkit.Material.COBBLESTONE, flatten.subLayerMaterial());
+        assertEquals(2, flatten.subLayerDepth());
+        assertEquals(5, flatten.clearAboveHeight());
+        assertEquals(15, flatten.confirmationTimeoutSeconds());
+        assertEquals(500, flatten.blocksPerTick());
+        assertEquals(List.of("world_the_end"), flatten.forbiddenWorlds());
+    }
+
+    @Test
+    void rejectsNonPositiveAdminFlattenMaxRadius() {
+        ConfigurationSection section = load("""
+                admin:
+                  flatten:
+                    max-radius: 0
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("max-radius"));
+    }
+
+    @Test
+    void rejectsUnknownAdminFlattenShape() {
+        ConfigurationSection section = load("""
+                admin:
+                  flatten:
+                    default-shape: triangle
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("default-shape"));
+    }
+
+    @Test
+    void rejectsNonBlockAdminFlattenMaterial() {
+        ConfigurationSection section = load("""
+                admin:
+                  flatten:
+                    top-layer-material: diamond
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("top-layer-material"));
+    }
+
+    @Test
+    void rejectsNegativeAdminFlattenSubLayerDepth() {
+        ConfigurationSection section = load("""
+                admin:
+                  flatten:
+                    sub-layer-depth: -1
+                """);
+
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+    }
+
+    @Test
+    void rejectsNonPositiveAdminFlattenBlocksPerTick() {
+        ConfigurationSection section = load("""
+                admin:
+                  flatten:
+                    blocks-per-tick: 0
+                """);
+
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
     }
 
     private ConfigurationSection load(String yaml) {

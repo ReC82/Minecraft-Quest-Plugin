@@ -232,6 +232,41 @@
     (déjà couvert + étendu pour `required`), cycle métier complet
     simulable
 
+## Serveur local intégré au workspace (fait)
+
+-   [x] `runServer` (déjà présent depuis l'étape 1) confirmé sur la même
+    version que `paper-api` (1.21.11)
+-   [x] `.gitignore` : `run/` déjà ignoré dans son intégralité (mondes,
+    logs, `data.db` locale, EULA, fichiers temporaires)
+-   [x] `.vscode/tasks.json` (committé) : tâches « Gradle: clean build »,
+    « Gradle: test », « Gradle: runServer »
+-   [x] `docs/LOCAL_SERVER.md` : premier lancement, EULA, cycle dev,
+    persistance, pourquoi jamais `/reload` (vanilla)
+-   [x] Vérifié réellement dans cet environnement : démarrage complet sans
+    stack trace, tous les services RPGQuest actifs, ressources embarquées
+    chargées sur un vrai serveur Paper (voir `docs/LOCAL_SERVER.md`)
+
+## Outil admin d'aplatissement de terrain (fait)
+
+-   [x] `/rpgadmin flatten <rayon> [hauteur]|confirm|cancel|undo`
+    (`rpgquest.admin.world`, joueur uniquement — jamais la console)
+-   [x] `AdminFlattenConfig` (`config.yml` → `admin.flatten`) : rayon max,
+    forme par défaut (carré/cercle), matériaux de surface/sous-couche,
+    profondeur de sous-couche, hauteur de nettoyage au-dessus, délai
+    d'expiration de confirmation, blocs par tick, mondes interdits
+-   [x] `FlattenService` : aperçu pur (aucune écriture) avec estimation de
+    colonnes/blocs, confirmation à expiration, traitement par lots via
+    tâche répétée (jamais tout d'un coup, jamais de gel), un bloc déjà
+    correct n'est jamais réécrit, annulation unique (`undo`) enregistrant
+    l'état d'origine de chaque bloc réellement modifié
+-   [x] Tests : rayon valide/invalide/hors limite, hauteur hors limites du
+    monde, estimation carré vs cercle, aperçu expiré, opération déjà
+    active, annulation (aperçu en attente et opération en cours),
+    traitement multi-tick vérifié, undo disponible/indisponible/refusé
+    pendant une opération, configuration invalide (rayon, forme,
+    matériau non-bloc, valeurs négatives)
+-   [x] `docs/ADMIN_FLATTEN.md`
+
 ## MVP
 
 -   [x] Architecture

@@ -4,6 +4,7 @@
 
     be.lloyd.rpgquest
     ├── RPGQuestPlugin       (point d'entrée, délègue tout à bootstrap)
+    ├── admin                (/rpgadmin : aplatissement de terrain, futurs zones/portails/mobs)
     ├── bootstrap            (cycle de vie : PluginService, registre, orchestration)
     ├── command
     ├── config               (chargement + validation de config.yml)
@@ -967,6 +968,76 @@ démarré (`MockBukkit.load(RPGQuestPlugin.class)`) plutôt que des
 définitions synthétiques, pour exercer les quêtes/objets/recettes tels
 qu'embarqués dans le jar.
 
+## `admin` (commandes d'administration du monde)
+
+-   **`/rpgadmin` — dispatcher racine, pensé pour grandir** —
+    `RpgAdminCommand` route aujourd'hui uniquement vers `flatten`
+    (aplatissement de terrain), mais est structuré pour recevoir d'autres
+    branches (`zone`, `portal`, `mob`...) à mesure que les étapes
+    correspondantes sont livrées, sans dupliquer la vérification de
+    permission/joueur déjà centralisée en tête de `onCommand`. Toujours
+    `rpgquest.admin.world` (permission dédiée, distincte de
+    `rpgquest.admin`) et toujours un joueur (jamais la console : la
+    syntaxe ne porte aucune coordonnée explicite, centrer l'opération sur
+    « la position de la console » n'a pas de sens).
+-   **`FlattenService` — aperçu, confirmation à expiration, traitement par
+    lots, annulation unique** — même discipline « état runtime séparé de
+    la config » que les autres services (`ResourceNodeService`,
+    `EquipmentBehaviorService`) : `AdminFlattenConfig` (nouveau champ de
+    `PluginConfig`, validé par `ConfigValidator`) porte les valeurs
+    ajustables, `FlattenService` porte l'état par joueur (aperçu en
+    attente, opération active, dernière annulation possible). `clock` est
+    injectable (comme `CooldownManager`/`ResourceNodeService`), ce qui
+    rend l'expiration de la confirmation testable sans dépendre du temps
+    réel ni de `Thread.sleep`.
+    -   **Aperçu pur, aucune écriture** — `preview()` calcule la liste des
+        colonnes réellement concernées par la forme (carré ou cercle,
+        géométrie simple `dx²+dz² ≤ r²` pour le cercle) et une estimation
+        majorante du nombre de blocs, sans jamais toucher un `Block`. Cette
+        même liste de colonnes est réutilisée telle quelle par `confirm()`
+        (calculée une seule fois, pas recalculée à l'exécution).
+    -   **Traitement par lots via `runTaskTimer`, jamais tout d'un coup** —
+        `processTick` consomme un budget de blocs (`blocks-per-tick`) par
+        tick et s'arrête dès qu'il est épuisé, reprenant au tick suivant
+        exactement là où il s'était arrêté (`columnIndex` sauvegardé dans
+        l'opération active). C'est ce qui répond à « jamais de gel du
+        serveur sur une grande zone », contrairement à une boucle
+        synchrone qui traiterait toute la zone d'un coup dans le même tick.
+    -   **Un bloc déjà correct n'est jamais réécrit** (`setBlockIfChanged`
+        compare `Block#getType()` avant d'écrire) : économise à la fois le
+        budget par tick et la taille de l'enregistrement d'annulation.
+    -   **Annulation unique, pas une pile** — chaque opération (terminée
+        normalement ou interrompue par `cancel`) construit son propre
+        `UndoRecord` (position + `BlockData` d'origine de chaque bloc
+        réellement modifié) ; un nouvel aplatissement écrase
+        l'enregistrement précédent pour ce joueur. `undo()` restaure dans
+        l'ordre inverse d'écriture (les positions étant toutes distinctes,
+        l'ordre n'a pas d'effet pratique ici, mais le principe reste
+        « dérouler à l'envers »).
+    -   **`cancel()` sur une opération active** ne défait rien : il arrête
+        simplement la tâche répétée et finalise l'enregistrement
+        d'annulation avec ce qui a déjà été appliqué — `undo` reste le
+        seul moyen de revenir en arrière, cohérent avec « annulation » et
+        « undo » comme deux actions distinctes de la mission.
+    -   **`setType(material, false)`** — le second paramètre (`false`,
+        pas de mise à jour physique) évite les cascades de recalcul
+        (sable qui tombe, redstone qui se propage, etc.) lors d'un
+        remplacement en masse, qui seraient à la fois lentes et
+        potentiellement destructrices dans une zone qui vient tout juste
+        d'être nettoyée.
+-   **« Zones interdites » — placeholder assumé, pas encore le vrai
+    registre** — `admin.flatten.forbidden-worlds` (liste de noms de
+    mondes) est la seule protection disponible à cette étape : le
+    registre de zones cuboïdes (village central / safe zone) n'existe pas
+    encore (prévu étape 13). Une fois disponible, `FlattenService` devra
+    être recroisé avec ce registre pour refuser un aplatissement dont la
+    zone chevauche une zone protégée — noté ici plutôt qu'anticipé
+    prématurément sur une API qui n'existe pas encore.
+-   **`rpgadmin.flatten` est enregistré tôt dans `RPGQuestBootstrap`**
+    (juste après `databaseService`) — ne dépend que de `configService`
+    (déjà démarré) et n'a besoin d'aucun autre service, contrairement à la
+    plupart des autres commandes qui attendent leurs moteurs respectifs.
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -1303,3 +1374,16 @@ Fabrication → Remise → Récompense
     le type de clic (voir section `crafting`), la couverture logique reste
     valable pour ces cas ; le rendu réel (grille de craft, livre de
     recettes) reste à valider par un testeur humain.
+-   **`/rpgadmin flatten` : « zones interdites » limitées à une liste de
+    mondes** — voir section `admin` : le vrai recroisement avec un
+    registre de zones protégées reste à faire une fois l'étape 13 livrée.
+-   **`/rpgadmin flatten` : test manuel en jeu limité par l'environnement**
+    — aucun client Minecraft réel disponible ici. Compensé par
+    `FlattenServiceTest`, qui vérifie directement sur un vrai monde
+    MockBukkit (blocs `Block#getType()` réels, pas une simulation) le
+    calcul d'aperçu, le traitement par lots sur plusieurs ticks
+    (`ServerMock#getScheduler().performTicks`), et le contenu exact des
+    blocs après exécution/annulation. Le ressenti en jeu (terrain vallonné,
+    arbres, eau, cavités, absence de gel perceptible sur une grande zone,
+    reconnexion pendant une opération) reste à valider par un testeur
+    humain — voir `docs/ADMIN_FLATTEN.md`.

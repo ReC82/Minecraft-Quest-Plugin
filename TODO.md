@@ -8,6 +8,18 @@
 -   [x] Classe principale `RPGQuestPlugin` + `plugin.yml`
 -   [x] Commandes `/rpgquest version` et `/rpgquest help`
 
+## Architecture modulaire (fait)
+
+-   [x] `PluginService` (start/stop) + `PluginServiceRegistry` (ordre
+    garanti au démarrage, LIFO à l'arrêt, rollback si un service échoue)
+-   [x] `config.yml` (`debug`, `locale`, `database.file`, `resource-pack`)
+    validé au démarrage avec des messages d'erreur lisibles
+-   [x] `/rpgquest reload` (`rpgquest.admin`) : recharge sans recréer les
+    services ni perdre de données ; config précédente conservée si invalide
+-   [x] Interfaces des futurs moteurs : `QuestEngine`, `DialogueEngine`,
+    `CustomItemRegistry`, `QuestJournalUi` (toutes `PluginService`, non
+    implémentées)
+
 ## Persistance (fait)
 
 -   [x] `DatabaseManager` SQLite asynchrone (`plugins/RPGQuest/data.db`)
@@ -19,7 +31,7 @@
 
 ## MVP
 
--   [ ] Architecture
+-   [x] Architecture
 -   [x] SQLite
 -   [ ] Moteur de quêtes
 -   [ ] Dialogues

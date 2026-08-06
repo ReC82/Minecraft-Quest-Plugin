@@ -1,6 +1,9 @@
 package be.lloyd.rpgquest.command;
 
 import be.lloyd.rpgquest.RPGQuestPlugin;
+import be.lloyd.rpgquest.bootstrap.RPGQuestBootstrap;
+import be.lloyd.rpgquest.config.ConfigValidationException;
+import be.lloyd.rpgquest.config.PluginConfig;
 import be.lloyd.rpgquest.database.PlayerProfile;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -19,15 +22,18 @@ import org.jetbrains.annotations.Nullable;
 
 public final class RPGQuestCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SUBCOMMANDS = List.of("version", "help", "profile");
+    private static final List<String> SUBCOMMANDS = List.of("version", "help", "profile", "reload");
+    private static final String RELOAD_PERMISSION = "rpgquest.admin";
     private static final MiniMessage MM = MiniMessage.miniMessage();
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private final RPGQuestPlugin plugin;
+    private final RPGQuestBootstrap bootstrap;
 
-    public RPGQuestCommand(RPGQuestPlugin plugin) {
+    public RPGQuestCommand(RPGQuestPlugin plugin, RPGQuestBootstrap bootstrap) {
         this.plugin = plugin;
+        this.bootstrap = bootstrap;
     }
 
     @Override
@@ -36,11 +42,10 @@ public final class RPGQuestCommand implements CommandExecutor, TabCompleter {
         String sub = args.length > 0 ? args[0] : "help";
 
         switch (sub.toLowerCase()) {
-            case "version" -> sender.sendMessage(MM.deserialize(
-                    "<gold>RPGQuest</gold> <gray>v<version></gray>",
-                    Placeholder.unparsed("version", plugin.getPluginMeta().getVersion())));
+            case "version" -> handleVersion(sender);
             case "help" -> sendHelp(sender);
             case "profile" -> handleProfile(sender, args);
+            case "reload" -> handleReload(sender);
             default -> {
                 sender.sendMessage(MM.deserialize(
                         "<red>Commande inconnue :</red> <white><sub></white>",
@@ -52,11 +57,46 @@ public final class RPGQuestCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
+    private void handleVersion(CommandSender sender) {
+        sender.sendMessage(MM.deserialize(
+                "<gold>RPGQuest</gold> <gray>v<version></gray>",
+                Placeholder.unparsed("version", plugin.getPluginMeta().getVersion())));
+
+        PluginConfig config = bootstrap.configService().current();
+        if (config.debug()) {
+            sender.sendMessage(MM.deserialize(
+                    "<dark_gray>[debug] locale=<locale> database.file=<file> resource-pack.enabled=<rp></dark_gray>",
+                    Placeholder.unparsed("locale", config.locale()),
+                    Placeholder.unparsed("file", config.databaseFile()),
+                    Placeholder.unparsed("rp", String.valueOf(config.resourcePack().enabled()))));
+        }
+    }
+
     private void sendHelp(CommandSender sender) {
         sender.sendMessage(MM.deserialize("<gold><bold>RPGQuest</bold></gold> <gray>- aide</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgquest version</yellow> <gray>- affiche la version du plugin</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgquest profile [joueur]</yellow> <gray>- affiche un profil joueur</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgquest reload</yellow> <gray>- recharge la configuration (rpgquest.admin)</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgquest help</yellow> <gray>- affiche ce message</gray>"));
+    }
+
+    private void handleReload(CommandSender sender) {
+        if (!sender.hasPermission(RELOAD_PERMISSION)) {
+            sender.sendMessage(MM.deserialize(
+                    "<red>Permission manquante :</red> <white><permission></white>",
+                    Placeholder.unparsed("permission", RELOAD_PERMISSION)));
+            return;
+        }
+
+        try {
+            bootstrap.configService().reload();
+            sender.sendMessage(MM.deserialize("<green>Configuration RPGQuest rechargée.</green>"));
+        } catch (ConfigValidationException e) {
+            sender.sendMessage(MM.deserialize(
+                    "<red>Rechargement refusé :</red> <white><reason></white>",
+                    Placeholder.unparsed("reason", e.getMessage())));
+            plugin.getSLF4JLogger().warn("Rechargement de configuration refusé : {}", e.getMessage());
+        }
     }
 
     private void handleProfile(CommandSender sender, String[] args) {
@@ -86,7 +126,7 @@ public final class RPGQuestCommand implements CommandExecutor, TabCompleter {
     }
 
     private void sendProfile(CommandSender sender, UUID uuid, String fallbackName) {
-        plugin.getPlayerProfileService().getOrLoad(uuid).whenComplete((profileOpt, error) ->
+        bootstrap.playerProfileService().getOrLoad(uuid).whenComplete((profileOpt, error) ->
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
                     if (error != null) {
                         sender.sendMessage(MM.deserialize("<red>Erreur lors de la lecture du profil.</red>"));

@@ -1,8 +1,18 @@
 package be.lloyd.rpgquest;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import be.lloyd.rpgquest.bootstrap.RPGQuestBootstrap;
+import be.lloyd.rpgquest.config.ConfigValidationException;
+import be.lloyd.rpgquest.config.PluginConfig;
+import be.lloyd.rpgquest.player.PlayerProfileService;
+import java.io.File;
+import java.nio.file.Files;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,5 +45,42 @@ class RPGQuestPluginTest {
     void rpgquestCommandIsRegistered() {
         assertNotNull(server.getPluginManager().getPlugin("RPGQuest"));
         assertNotNull(plugin.getCommand("rpgquest"));
+    }
+
+    @Test
+    void reloadAppliesNewValidConfigWithoutRecreatingServices() throws Exception {
+        RPGQuestBootstrap bootstrap = plugin.bootstrap();
+        PlayerProfileService profileServiceBefore = bootstrap.playerProfileService();
+        assertFalse(bootstrap.configService().current().debug());
+
+        writeConfig("""
+                debug: true
+                locale: fr
+                database:
+                  file: data.db
+                """);
+
+        bootstrap.configService().reload();
+
+        assertTrue(bootstrap.configService().current().debug());
+        assertSame(profileServiceBefore, bootstrap.playerProfileService(),
+                "le rechargement ne doit pas recréer les services");
+    }
+
+    @Test
+    void reloadRejectsInvalidConfigAndKeepsPreviousOneActive() throws Exception {
+        RPGQuestBootstrap bootstrap = plugin.bootstrap();
+        PluginConfig before = bootstrap.configService().current();
+
+        writeConfig("locale: not-a-real-language\n");
+
+        assertThrows(ConfigValidationException.class, () -> bootstrap.configService().reload());
+        assertEquals(before, bootstrap.configService().current(),
+                "la configuration précédente doit rester active après un rechargement refusé");
+    }
+
+    private void writeConfig(String yaml) throws Exception {
+        File configFile = new File(plugin.getDataFolder(), "config.yml");
+        Files.writeString(configFile.toPath(), yaml);
     }
 }

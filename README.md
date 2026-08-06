@@ -35,10 +35,22 @@ Au premier lancement, il faut accepter l'EULA Mojang dans `run/eula.txt`
 
 ## Commandes
 
--   `/rpgquest version` — affiche la version du plugin.
+-   `/rpgquest version` — affiche la version du plugin (et un résumé de la
+    configuration si `debug: true`).
 -   `/rpgquest help` — affiche l'aide.
 -   `/rpgquest profile [joueur]` — affiche le profil (UUID, dernier pseudo,
     dates de création/mise à jour) du joueur donné, ou le sien si omis.
+-   `/rpgquest reload` (`rpgquest.admin`) — recharge `config.yml` sans
+    recréer les services ni perdre de données. En cas de configuration
+    invalide, un message explicite est affiché et l'ancienne configuration
+    reste active.
+
+## Configuration
+
+`plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
+(code ISO 639-1), `database.file` et `resource-pack` (désactivé par défaut,
+requis `url`/`sha1` uniquement si `enabled: true`). Validée au démarrage et
+à chaque `/rpgquest reload` ; voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Persistance
 

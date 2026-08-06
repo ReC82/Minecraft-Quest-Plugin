@@ -1,0 +1,20 @@
+# Configuration de RPGQuest.
+# Valeurs invalides : le plugin refuse de démarrer (ou de recharger via
+# /rpgquest reload) avec un message expliquant précisément le problème.
+
+debug: false
+
+# Code de langue ISO 639-1 (ex. fr, en).
+locale: fr
+
+database:
+  # Nom du fichier SQLite, créé dans le dossier de données du plugin
+  # (plugins/RPGQuest/<database.file>). Doit être un simple nom de fichier.
+  file: data.db
+
+resource-pack:
+  # Le plugin démarre normalement même si le resource pack est désactivé
+  # ou inaccessible.
+  enabled: false
+  url: ""
+  sha1: ""

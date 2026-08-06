@@ -3,21 +3,79 @@
 ## Arborescence des packages (prévue)
 
     be.lloyd.rpgquest
-    ├── RPGQuestPlugin       (point d'entrée)
-    ├── bootstrap
+    ├── RPGQuestPlugin       (point d'entrée, délègue tout à bootstrap)
+    ├── bootstrap            (cycle de vie : PluginService, registre, orchestration)
     ├── command
-    ├── config
+    ├── config               (chargement + validation de config.yml)
     ├── database
-    ├── dialogue
-    ├── item
+    ├── dialogue             (interface du futur moteur, non implémenté)
+    ├── item                 (interface du futur registre d'objets, non implémenté)
     ├── player
-    ├── quest
+    ├── quest                (interface du futur moteur, non implémenté)
     ├── resource
-    ├── ui
-    └── util
+    ├── ui                   (interface de la future UI, non implémenté)
+    └── util                 (vide pour l'instant : utilitaires génériques uniquement)
 
-`RPGQuestPlugin`, `command`, `database` et `player` existent à ce stade.
-Les autres packages seront créés au fur et à mesure des étapes du TODO.
+Tous les packages listés existent désormais. `resource` reste à créer (pas
+encore requis) ; `quest`, `dialogue`, `item` et `ui` ne contiennent qu'une
+interface marqueur `extends PluginService`, sans implémentation.
+
+### `bootstrap` (cycle de vie du plugin)
+
+-   `PluginService` — contrat minimal `start()`/`stop()` (+ `name()` par
+    défaut) commun à tous les services et aux futurs moteurs.
+-   `PluginServiceRegistry` — pas de séparation entre « enregistrement » et
+    « démarrage » : `start(PluginService)` démarre le service immédiatement
+    et le retient. Cela élimine toute ambiguïté sur l'ordre : l'ordre de
+    démarrage *est* l'ordre d'appel du code (garanti par l'exécution séquentielle
+    Java), aucune liste à maintenir séparément. `stopAll()` arrête les
+    services réellement démarrés dans l'ordre inverse (LIFO) et continue
+    même si l'un d'eux échoue à s'arrêter (log de l'erreur, pas d'arrêt
+    prématuré des autres). Si un `start()` échoue, tous les services déjà
+    démarrés sont arrêtés (rollback) avant que l'exception ne soit propagée
+    — jamais de plugin à moitié initialisé.
+-   `RPGQuestBootstrap` — construit et orchestre les services dans
+    l'ordre où ils sont réellement nécessaires : `ConfigService` (les autres
+    en dépendent) → `DatabaseService` (a besoin de `config.database.file`,
+    lu à l'intérieur de son propre `start()`, jamais avant) →
+    `PlayerListenerService`. `RPGQuestPlugin.onEnable()` se contente de créer
+    un `RPGQuestBootstrap` et d'appeler `start()`/`stop()` ; toute la logique
+    de câblage vit dans `bootstrap`.
+
+### `config` (validation, indépendant de JavaPlugin pour la partie validation)
+
+-   `ConfigValidator` — fonction statique pure `validate(ConfigurationSection)
+    -> PluginConfig`, qui ne dépend que du type Bukkit `ConfigurationSection`
+    (pas de `JavaPlugin`) : testable en JUnit pur via
+    `YamlConfiguration.loadConfiguration(...)`, sans MockBukkit. Chaque champ
+    invalide lève une `ConfigValidationException` avec un message précis
+    (valeur trouvée, règle violée).
+-   `PluginConfig` / `ResourcePackConfig` — records immuables portant le
+    résultat validé (`debug`, `locale`, `databaseFile`, `resourcePack`).
+-   `ConfigService` (implémente `PluginService`) — couche Paper : appelle
+    `saveDefaultConfig()`/`getConfig()`/`reloadConfig()` puis délègue à
+    `ConfigValidator`. Détient l'unique état mutable de cette classe :
+    `current` (le `PluginConfig` actif). C'est une mutation **justifiée** et
+    non un singleton global — `ConfigService` est une instance normale créée
+    par `RPGQuestBootstrap` (une par instance de plugin, jamais `static`), et
+    cette mutabilité est le mécanisme même du rechargement à chaud demandé.
+    -   `start()` : échec de validation → `IllegalStateException` (non
+        vérifiée) qui remonte à travers `PluginServiceRegistry` (rollback
+        des autres services) jusqu'à `RPGQuestPlugin.onEnable()`, qui logue
+        un message clair et appelle `disablePlugin` — pas de crash opaque
+        même si `config.yml` est invalide dès le premier démarrage.
+    -   `reload()` : échec de validation → `ConfigValidationException`
+        (vérifiée) propagée telle quelle à l'appelant ; `current` n'est
+        **jamais** réassigné avant la validation complète, donc la
+        configuration précédente reste active telle quelle en cas de refus.
+        `/rpgquest reload` (commande, permission `rpgquest.admin`) attrape
+        cette exception et affiche le message tel quel au joueur/à la
+        console, sans toucher aux services ni aux données existantes.
+    -   Le rechargement lit un petit fichier YAML de façon synchrone, sur
+        déclenchement explicite d'un administrateur — comme
+        `plugin.reloadConfig()` partout dans l'écosystème Bukkit. Ce n'est
+        pas une exception à la règle « aucune requête disque sur le thread
+        principal », qui vise spécifiquement SQLite (voir plus bas).
 
 ### `database` (indépendant de Bukkit/Paper)
 
@@ -51,6 +109,12 @@ Les autres packages seront créés au fur et à mesure des étapes du TODO.
     `onDisable()`, quand plus aucune requête de gameplay ne peut être
     déclenchée. Ce n'est pas une exception à la règle « aucun accès disque
     sur le thread principal », qui vise le fonctionnement normal du serveur.
+-   `DatabaseService` (implémente `PluginService`) — adapte `DatabaseManager`
+    au cycle de vie du plugin. Ne construit le `DatabaseManager` qu'à
+    l'intérieur de `start()` (jamais dans le constructeur), pour lire
+    `configService.current().databaseFile()` uniquement une fois
+    `ConfigService` réellement démarré — c'est cette dépendance concrète qui
+    justifie l'ordre de démarrage imposé par `RPGQuestBootstrap`.
 
 ### `player` (dépendant de Bukkit/Paper)
 
@@ -64,6 +128,13 @@ Les autres packages seront créés au fur et à mesure des étapes du TODO.
     systématiquement renvoyés sur le thread principal via
     `Bukkit.getScheduler().runTask(...)`, jamais exécutés depuis le thread
     base de données.
+-   `PlayerListenerService` (implémente `PluginService`) — enregistre le
+    listener dans `start()` et l'appelle `HandlerList.unregisterAll(...)`
+    dans `stop()`. Générique sur `Listener` (pas seulement
+    `PlayerConnectionListener`), réutilisable pour de futurs listeners.
+    `/rpgquest reload` ne touche que `ConfigService` : ce service n'est
+    jamais redémarré par un rechargement, donc le listener n'est jamais
+    recréé, conformément à la consigne.
 -   `/rpgquest profile [joueur]` — résolution du pseudo hors-ligne
     (`Server#getOfflinePlayer(String)`, dépréciée car potentiellement
     bloquante) déportée sur `runTaskAsynchronously` ; la réponse est
@@ -108,13 +179,32 @@ Fabrication → Remise → Récompense
     library ... sqlite-jdbc-3.53.2.1.jar`). Il n'est ajouté en dépendance
     Gradle (`testImplementation`) que pour exécuter les tests JUnit hors
     serveur.
+-   **`locale` (ISO 639-1)** validé via `Locale.getISOLanguages()` (liste
+    JDK faisant autorité, pas de liste inventée). Le champ est stocké et
+    exposé par `PluginConfig` mais **pas encore utilisé** ailleurs dans le
+    code — aucun système d'i18n n'existe à ce stade ; câblage prévu pour une
+    étape ultérieure.
+-   **`debug`** est le seul champ de configuration réellement branché à un
+    comportement observable pour l'instant : quand `true`, `/rpgquest
+    version` affiche une ligne supplémentaire résumant la configuration
+    active. Choisi précisément pour rendre le scénario de test manuel
+    (« modifier debug, reload, vérifier l'application ») vérifiable sans
+    dépendre d'une fonctionnalité de jeu qui n'existe pas encore.
 
 ## Limites connues
 
 -   Aucune fonctionnalité de jeu (quêtes, dialogues, objets) n'est encore
-    implémentée : le socle actuel couvre le squelette du plugin, les
-    commandes `/rpgquest version|help|profile` et la persistance des profils
+    implémentée : `QuestEngine`, `DialogueEngine`, `CustomItemRegistry` et
+    `QuestJournalUi` ne sont que des interfaces marqueurs `extends
+    PluginService`, sans aucune classe qui les implémente. Le socle actuel
+    couvre le squelette du plugin, l'architecture modulaire (services,
+    configuration validée, reload), les commandes
+    `/rpgquest version|help|profile|reload` et la persistance des profils
     joueurs.
+-   `locale` et `resource-pack` sont validés et stockés dans `PluginConfig`
+    mais ne pilotent encore aucun comportement réel (pas d'i18n, pas d'envoi
+    de resource pack aux joueurs) — prévu pour des étapes ultérieures
+    dédiées.
 -   `player_variables` a un repository (`get`/`set`) mais n'est exploité par
     aucune commande pour l'instant ; `quest_progress` n'a même pas de
     repository, seulement sa table.

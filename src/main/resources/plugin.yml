@@ -12,4 +12,9 @@ libraries:
 commands:
   rpgquest:
     description: Commande principale de RPGQuest.
-    usage: /<command> <version|help|profile [joueur]>
+    usage: /<command> <version|help|profile [joueur]|reload>
+
+permissions:
+  rpgquest.admin:
+    description: Accès aux commandes d'administration de RPGQuest (ex. /rpgquest reload).
+    default: op

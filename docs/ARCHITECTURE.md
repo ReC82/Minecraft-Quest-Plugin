@@ -18,14 +18,14 @@
     │   ├── model            (modèles immuables : quête, étapes, objectifs, récompenses)
     │   └── progress         (état runtime mutable, index, listeners, commandes)
     ├── resource
-    ├── ui                   (interface de la future UI, non implémenté)
+    ├── ui                   (journal de quêtes : menu paginé, vue détail, suivi)
     └── util                 (vide pour l'instant : utilitaires génériques uniquement)
 
 Tous les packages listés existent désormais. `resource` reste à créer (pas
-encore requis) ; `item` et `ui` ne contiennent toujours qu'une interface
-marqueur `extends PluginService`, sans implémentation. `quest` et
-`dialogue` couvrent maintenant chacun le chargement des définitions **et**
-leur exécution en jeu (voir ci-dessous).
+encore requis) ; `item` ne contient toujours qu'une interface marqueur
+`extends PluginService`, sans implémentation. `quest`, `dialogue` et
+désormais `ui` couvrent chacun le chargement/l'affichage **et** l'exécution
+en jeu (voir ci-dessous).
 
 ### `bootstrap` (cycle de vie du plugin)
 
@@ -425,6 +425,119 @@ leur exécution en jeu (voir ci-dessous).
     pour sélectionner un choix (`ClickEvent.callback` est un mécanisme
     entièrement serveur, pas de round-trip commande).
 
+### `ui` (journal de quêtes)
+
+-   **Disposition du menu liste** — inventaire de 54 slots : une seule
+    ligne de « chrome » (slots 0-8 : trois onglets, précédent/indicateur de
+    page/suivant, fermer) suivie de **45 slots de contenu** (slots 9-53).
+    `JournalPagination.PAGE_SIZE = 45` correspond exactement à cette
+    surface — ce n'est pas un hasard : c'est ce qui rend triviale la
+    correspondance entre « nombre de quêtes » et « nombre de pages »
+    (45 quêtes = 1 page pile, 46 = 2 pages), directement vérifiable par des
+    tests purs (`JournalPaginationTest`, aucune dépendance Bukkit).
+-   **`JournalPagination`** — arithmétique de pagination isolée dans une
+    classe sans aucun type Bukkit (`pageCount`, `clampPage`, `pageOf`),
+    testée en JUnit pur. `QuestJournalService` ne fait que l'appeler ; toute
+    la logique « combien de pages, quelle page demandée est valide » est
+    donc vérifiable sans MockBukkit, comme `ConfigValidator`/`QuestDefinitionParser`.
+-   **Trois onglets** — Actives (`ACTIVE`/`READY_TO_TURN_IN`), Disponibles
+    (`NOT_STARTED`/`ABANDONED`), Terminées (`COMPLETED`). Une quête
+    répétable déjà terminée n'est **pas** re-listée dans « Disponibles » :
+    limitation assumée (voir Limites connues), `/quest accept` reste le
+    chemin pour la relancer.
+-   **`JournalSession`** — état en mémoire (comme les sessions de
+    dialogue, jamais persisté) de ce qu'un joueur regarde actuellement
+    (onglet, page, **liste figée des quêtes affichées sur cette page**).
+    Un clic sur un slot de contenu est résolu contre cette liste figée, pas
+    recalculé à la volée : un `/quest admin reload` qui change l'ensemble
+    de quêtes entre le rendu et le clic ne peut donc jamais faire cliquer
+    un joueur sur « la mauvaise quête ».
+-   **Vue détail séparée** — clic gauche sur une icône de la liste ouvre un
+    second inventaire (27 slots) dédié à une seule quête (icône, retour,
+    suivre/ne plus suivre, fermer). Clic droit sur la liste **ne change pas
+    de vue** : il bascule le suivi directement (`toggleTracking`) et
+    re-rend la liste sur place, cohérent avec la mission (clic gauche =
+    détails, clic droit = suivre).
+-   **`JournalInventoryHolder`** — marqueur (`InventoryHolder`) posé sur
+    chaque inventaire créé par le journal. C'est sur ce type, lu via
+    `event.getView().getTopInventory().getHolder()`, que
+    `QuestJournalListener` reconnaît « cet événement concerne un menu du
+    plugin », **indépendamment du côté cliqué** (haut ou bas de l'écran).
+-   **Protection anti-vol/duplication** — `QuestJournalListener.onInventoryClick`
+    annule (`setCancelled(true)`) **tout** `InventoryClickEvent` dès que le
+    holder de l'inventaire du haut est un `JournalInventoryHolder`, avant
+    même de regarder le type de clic. Un shift-clic, un double-clic (qui
+    collecte normalement des objets similaires dans les deux inventaires),
+    une touche numérique (échange avec la barre d'accès rapide) ou un clic
+    simple sont donc tous bloqués par la même unique ligne de code — pas
+    un `switch` sur chaque `ClickType` à maintenir. `InventoryDragEvent`
+    suit la même logique mais seulement si le glisser touche réellement
+    une case du haut (`rawSlot < taille de l'inventaire du haut`) : un
+    glisser entièrement dans l'inventaire du joueur n'est pas bloqué.
+-   **`QuestJournalListener`** délègue tout à `QuestJournalService` (même
+    organisation que `DialogueNpcInteractListener` → `DialogueSessionEngine`) :
+    le listener ne connaît que la traduction événement Bukkit → appel de
+    méthode, toute la logique de menu (navigation, détails, suivi) vit
+    dans le service, testable en l'invoquant directement sans passer par
+    le bus d'événements.
+-   **Icône configurable par quête** — nouveau champ optionnel `icon:`
+    dans le YAML de quête (`QuestDefinitionParser`), résolu comme un
+    `Material` (mêmes règles de tolérance que les objectifs `BREAK_BLOCK`/
+    `COLLECT_ITEM`) ; absent, il vaut `BOOK` par défaut. `QuestDefinition`
+    valide lui-même qu'un icône est toujours présent (jamais nul), comme
+    ses autres invariants.
+-   **Lore construit dynamiquement** — description, catégorie, état,
+    étape courante avec la progression de chaque objectif (réutilise
+    `QuestProgressEngine.activeStepView` pour les quêtes actives ; pour
+    les autres états, un `QuestStepProgressView` de secours est calculé
+    localement à partir de la première étape de la définition, sans
+    requête base), récompenses, et prérequis (dont le nom est résolu via
+    `questEngine.find`, avec repli sur l'id brut si la quête référencée a
+    disparu).
+-   **`QuestObjective.requiredAmount`/`describe`** — promus en méthodes
+    statiques de l'interface scellée (avant : logique privée dupliquée
+    dans `QuestProgressEngine`), réutilisées à la fois par
+    `QuestProgressEngine` et par `QuestJournalService` : un seul `switch`
+    exhaustif par comportement, plus de duplication entre les deux
+    packages.
+-   **Suivi (« quête suivie ») — persistant, indépendant de l'état** —
+    stocké via la table `player_variables` déjà existante (clé réservée
+    `__tracked_quest__`, valeur = id de quête ou chaîne vide), pas de
+    nouvelle table/migration. Suivre une quête **n'exige pas** qu'elle
+    soit déjà active : un joueur peut suivre une quête encore dans l'onglet
+    « Disponibles » pour la retrouver facilement plus tard. Le suivi n'est
+    effacé automatiquement que dans un seul cas : la quête suivie a
+    disparu d'un `/quest admin reload` (elle n'existe plus, rien à
+    afficher). Ni la remise, ni l'abandon, ni le simple fait de ne pas
+    encore avoir accepté la quête ne l'effacent — seule une action
+    explicite du joueur (re-clic droit) le fait.
+-   **`TrackedQuestDisplay`** — bossbar Adventure (`BossBar.bossBar(...)`,
+    pas de scoreboard/équipe legacy) montrant le nom de la quête suivie,
+    l'étape courante et une barre de progression (somme des compteurs
+    d'objectifs de l'étape / somme des montants requis). N'affiche rien
+    tant que la quête suivie n'est pas `ACTIVE` (rien à montrer), mais ne
+    touche jamais au suivi lui-même dans ce cas (voir point précédent).
+    Contrôlée par `config.yml` → `journal.tracker-enabled` (`true` par
+    défaut) : purement cosmétique, la désactiver n'affecte pas la
+    persistance du suivi.
+-   **Rafraîchissement piloté par les événements, jamais par sondage** —
+    `QuestProgressEngine.onProgressChanged(Consumer<UUID>)` (nouveau hook,
+    minimal : une liste de callbacks notifiée à chaque mutation réelle de
+    progression — acceptation, incrément d'objectif, changement d'étape,
+    remise, abandon) est le seul mécanisme qui déclenche un nouveau rendu.
+    `QuestJournalService.start()` s'y abonne une fois ; à chaque
+    notification, si le joueur concerné a un menu ouvert et/ou une quête
+    suivie, le contenu est reconstruit **à cet instant précis** — aucun
+    `runTaskTimer`, aucune tâche périodique, nulle part.
+-   **Nettoyage** — à la déconnexion (`PlayerQuitEvent`) : session de menu
+    et bossbar du joueur supprimées (le suivi persisté en base, lui, n'est
+    pas touché). À la désactivation du plugin (`QuestJournalService.stop()`) :
+    tous les inventaires de journal encore ouverts sont fermés
+    (`player.closeInventory()`) et toutes les bossbars actives sont
+    masquées avant que le service ne s'arrête.
+-   **`/quests`** (`rpgquest.quest`, même permission que les commandes
+    `/quest` joueur) — ouvre toujours sur l'onglet Actives, première page.
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -500,12 +613,20 @@ Fabrication → Remise → Récompense
     active. Choisi précisément pour rendre le scénario de test manuel
     (« modifier debug, reload, vérifier l'application ») vérifiable sans
     dépendre d'une fonctionnalité de jeu qui n'existe pas encore.
+-   **`config.yml` → `journal`** (nouveau) : `tracker-enabled` (`true` par
+    défaut), seul réglage du journal — tout le reste (disposition du menu,
+    onglets, pagination) n'est pas configurable, une YAML dédiée aurait été
+    disproportionnée pour un menu dont la mission fixe déjà la structure.
+    Même comportement de compatibilité que `dialogue` : une section absente
+    vaut « valeurs par défaut », pas une erreur — vérifié via `runServer`
+    avec l'ancien `config.yml` du dépôt de test (généré avant même la
+    section `dialogue`), qui démarre toujours sans modification.
 
 ## Limites connues
 
--   `CustomItemRegistry` et `QuestJournalUi` restent des interfaces
-    marqueurs `extends PluginService`, sans aucune classe qui les
-    implémente.
+-   `CustomItemRegistry` reste une interface marqueur `extends
+    PluginService`, sans aucune classe qui l'implémente. `QuestJournalUi`
+    est désormais implémentée par `QuestJournalService` (voir section `ui`).
 -   Pas de commande `/dialogue admin reload` — non demandée par cette
     étape, les dialogues sont chargés une seule fois au démarrage. À
     ajouter si des dialogues doivent être modifiés sans redémarrer le
@@ -555,3 +676,23 @@ Fabrication → Remise → Récompense
     `quest_objective_progress`, `PRAGMA user_version = 2`). Le scénario de
     jeu complet (accepter, progresser, remettre, reconnexion en cours de
     quête, avec un vrai client) reste à valider par un testeur humain.
+-   **Onglet « Disponibles » et quêtes répétables déjà terminées** : une
+    quête `repeatable: true` déjà `COMPLETED` n'apparaît que dans l'onglet
+    « Terminées », pas dans « Disponibles », même si `/quest accept`
+    l'accepterait à nouveau sans problème. Limitation assumée par manque de
+    temps plutôt qu'un choix délibéré ; contournement : `/quest accept`
+    reste utilisable directement, avec ou sans passer par le menu.
+-   **Test manuel du journal limité par l'environnement** : comme pour les
+    étapes précédentes, aucun client Minecraft réel n'est disponible ici,
+    donc la disposition visuelle réelle du menu (icônes, lore, bossbar) n'a
+    pas pu être observée dans un client. Vérifié à la place : démarrage
+    propre du service (`QuestJournalService` dans l'ordre attendu des
+    services), et surtout — contrairement aux étapes précédentes — la
+    logique de clic/drag elle-même **est** couverte par des tests
+    automatisés qui construisent de vrais `InventoryClickEvent`/
+    `InventoryDragEvent` Bukkit et vérifient leur annulation
+    (`QuestJournalServiceTest`), ce qui teste le comportement réel de
+    protection anti-vol/duplication sans nécessiter de client. Le rendu
+    visuel exact (positionnement, couleurs, lisibilité du lore en jeu,
+    inventaire plein, latence réseau) reste à valider par un testeur
+    humain.

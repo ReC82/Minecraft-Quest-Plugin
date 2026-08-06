@@ -3,6 +3,7 @@ package be.lloyd.rpgquest.bootstrap;
 import be.lloyd.rpgquest.RPGQuestPlugin;
 import be.lloyd.rpgquest.command.DialogueCommand;
 import be.lloyd.rpgquest.command.QuestCommand;
+import be.lloyd.rpgquest.command.QuestsCommand;
 import be.lloyd.rpgquest.command.RPGQuestCommand;
 import be.lloyd.rpgquest.config.ConfigService;
 import be.lloyd.rpgquest.config.RendererKind;
@@ -21,6 +22,7 @@ import be.lloyd.rpgquest.player.PlayerProfileService;
 import be.lloyd.rpgquest.quest.QuestMessagesService;
 import be.lloyd.rpgquest.quest.YamlQuestEngine;
 import be.lloyd.rpgquest.quest.progress.QuestProgressEngine;
+import be.lloyd.rpgquest.ui.QuestJournalService;
 
 /**
  * Construit les services du plugin et orchestre leur démarrage/arrêt dans un
@@ -45,6 +47,7 @@ public final class RPGQuestBootstrap {
     private QuestProgressEngine questProgressEngine;
     private YamlDialogueEngine dialogueEngine;
     private DialogueSessionEngine dialogueSessionEngine;
+    private QuestJournalService questJournalService;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -86,6 +89,11 @@ public final class RPGQuestBootstrap {
         dialogueSessionEngine.setRenderer(createRenderer(dialogueSessionEngine));
         registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));
 
+        questJournalService = new QuestJournalService(
+                plugin, questEngine, questProgressEngine, variableRepository, configService.current().journal());
+        registry.start(questJournalService);
+        registry.start(new PlayerListenerService(plugin, questJournalService.listener()));
+
         registerCommands();
     }
 
@@ -123,6 +131,10 @@ public final class RPGQuestBootstrap {
         return dialogueSessionEngine;
     }
 
+    public QuestJournalService questJournalService() {
+        return questJournalService;
+    }
+
     private void registerCommands() {
         RPGQuestCommand rpgquestCommand = new RPGQuestCommand(plugin, this);
         var rpgquest = plugin.getCommand("rpgquest");
@@ -143,6 +155,12 @@ public final class RPGQuestBootstrap {
         if (dialogue != null) {
             dialogue.setExecutor(dialogueCommand);
             dialogue.setTabCompleter(dialogueCommand);
+        }
+
+        QuestsCommand questsCommand = new QuestsCommand(questJournalService);
+        var quests = plugin.getCommand("quests");
+        if (quests != null) {
+            quests.setExecutor(questsCommand);
         }
     }
 }

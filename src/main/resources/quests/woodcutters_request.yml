@@ -2,6 +2,7 @@ id: rpgquest:woodcutters_request
 title: "<gold>La requête du bûcheron</gold>"
 description: "<gray>Récolte du bois et rapporte-le au bûcheron du village.</gray>"
 category: gathering
+icon: OAK_LOG
 repeatable: true
 
 prerequisites:

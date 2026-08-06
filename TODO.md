@@ -80,6 +80,32 @@
     une entité nommée
 -   [x] Dialogue d'exemple du garde (propose/refuse/explique la récompense)
 
+## Journal de quêtes (fait)
+
+-   [x] `/quests` : inventaire paginé (54 slots, 1 ligne de chrome + 45 slots
+    de contenu) avec onglets **Actives**/**Disponibles**/**Terminées**
+-   [x] Icône configurable par quête (`icon:` dans le YAML, `BOOK` par
+    défaut) ; lore MiniMessage : description, catégorie, état, étape et
+    progression des objectifs, récompenses, prérequis (avec le nom des
+    quêtes référencées)
+-   [x] Clic gauche : ouvre une vue détail dédiée (icône, bouton retour,
+    bouton suivre/ne plus suivre, bouton fermer)
+-   [x] Clic droit : suit/ne suit plus la quête directement depuis la liste
+    (étoile dans le titre de l'icône)
+-   [x] Boutons précédent/suivant (liste), retour (détail), fermer (les deux)
+-   [x] **Aucun** déplacement, vol ou duplication possible : tout clic ou
+    drag touchant un inventaire du journal est annulé, quel que soit le
+    type (gauche, droit, shift, double clic, touche numérique, drag)
+-   [x] Bossbar Adventure optionnelle (`config.yml` → `journal.tracker-enabled`)
+    pour la quête suivie, avec progression en direct
+-   [x] Suivi persistant (stocké via `player_variables`, survit à une
+    reconnexion) — indépendant du fait que la quête soit déjà acceptée
+-   [x] Affichage rafraîchi uniquement en réaction à un changement réel de
+    progression (`QuestProgressEngine.onProgressChanged`) : aucune tâche
+    répétitive, aucun sondage
+-   [x] Nettoyage à la déconnexion (session + bossbar) et à la désactivation
+    du plugin (fermeture des inventaires ouverts, bossbars masquées)
+
 ## Persistance (fait)
 
 -   [x] `DatabaseManager` SQLite asynchrone (`plugins/RPGQuest/data.db`)

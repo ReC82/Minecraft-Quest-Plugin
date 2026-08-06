@@ -28,7 +28,8 @@ public final class ConfigValidator {
         String databaseFile = validateDatabaseFile(section);
         ResourcePackConfig resourcePack = validateResourcePack(section);
         DialogueConfig dialogue = validateDialogue(section);
-        return new PluginConfig(debug, locale, databaseFile, resourcePack, dialogue);
+        JournalConfig journal = validateJournal(section);
+        return new PluginConfig(debug, locale, databaseFile, resourcePack, dialogue, journal);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -126,5 +127,11 @@ public final class ConfigValidator {
         }
 
         return new DialogueConfig(renderer, allowedCommands);
+    }
+
+    private static JournalConfig validateJournal(ConfigurationSection section) {
+        ConfigurationSection journal = section.getConfigurationSection("journal");
+        boolean trackerEnabled = journal == null || journal.getBoolean("tracker-enabled", true);
+        return new JournalConfig(trackerEnabled);
     }
 }

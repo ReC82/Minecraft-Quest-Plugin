@@ -5,6 +5,7 @@ public record PluginConfig(
         String locale,
         String databaseFile,
         ResourcePackConfig resourcePack,
-        DialogueConfig dialogue
+        DialogueConfig dialogue,
+        JournalConfig journal
 ) {
 }

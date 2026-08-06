@@ -2,6 +2,7 @@ id: rpgquest:first_steps
 title: "<gold>Premiers pas</gold>"
 description: "<gray>Apprends les bases en éliminant quelques araignées.</gray>"
 category: tutorial
+icon: IRON_SWORD
 repeatable: false
 
 steps:

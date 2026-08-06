@@ -60,6 +60,8 @@ Au premier lancement, il faut accepter l'EULA Mojang dans `run/eula.txt`
     dialogue pour un joueur en ligne (administration/tests). En jeu, un
     dialogue s'ouvre aussi en cliquant sur une entité vivante dont le nom
     personnalisé correspond à un id de dialogue chargé.
+-   `/quests` (`rpgquest.quest`) — ouvre le journal de quêtes (menu
+    paginé : actives, disponibles, terminées).
 
 ## Quêtes
 
@@ -88,13 +90,26 @@ simplement la session, comme un inventaire vanilla. Voir
 validation (dont la détection de boucles entre dialogues) et le choix du
 renderer.
 
+## Journal de quêtes
+
+`/quests` ouvre un inventaire paginé (onglets actives/disponibles/
+terminées, icône configurable par quête via `icon:` dans le YAML). Clic
+gauche sur une quête : vue détail (description, étape, progression,
+récompenses, prérequis). Clic droit : suit/ne suit plus la quête — le
+suivi est persistant (survit à une reconnexion) et affiche en option une
+bossbar de progression pour la quête suivie. Aucun objet du menu ne peut
+être déplacé, volé ou dupliqué. Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+pour le détail (disposition, protection anti-vol, rafraîchissement
+événementiel).
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
 (code ISO 639-1), `database.file`, `resource-pack` (désactivé par défaut,
-requis `url`/`sha1` uniquement si `enabled: true`) et `dialogue` (`renderer`
+requis `url`/`sha1` uniquement si `enabled: true`), `dialogue` (`renderer`
 — `chat` par défaut ou `paper-dialog` — et `allowed-commands`, la liste
-blanche pour l'action `RUN_SAFE_COMMAND`). Validée au démarrage et à chaque
+blanche pour l'action `RUN_SAFE_COMMAND`) et `journal` (`tracker-enabled`,
+la bossbar optionnelle de la quête suivie). Validée au démarrage et à chaque
 `/rpgquest reload` ; voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Persistance

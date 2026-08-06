@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import be.lloyd.rpgquest.quest.model.KillEntityObjective;
 import be.lloyd.rpgquest.quest.model.QuestDefinition;
 import java.io.StringReader;
+import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.EntityType;
@@ -45,6 +46,7 @@ class QuestDefinitionParserTest {
         assertEquals("rpgquest:first_steps", quest.id().toString());
         assertEquals("<gold>Premiers pas</gold>", quest.title().base());
         assertEquals("tutorial", quest.category());
+        assertEquals(Material.BOOK, quest.icon(), "icône par défaut quand « icon » est absent");
         assertFalse(quest.repeatable());
         assertEquals(1, quest.steps().size());
         assertEquals("kill_spiders", quest.steps().get(0).id());
@@ -142,6 +144,42 @@ class QuestDefinitionParserTest {
 
         assertFalse(result.isSuccess());
         assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("matériau inconnu")));
+    }
+
+    @Test
+    void explicitIconIsParsed() {
+        QuestDefinitionParser.ParseResult result = parser.parse("with-icon.yml", load("""
+                id: rpgquest:base
+                title: "Titre"
+                description: "Description"
+                category: test
+                icon: IRON_SWORD
+                steps:
+                  - id: step_one
+                    objectives:
+                      - type: BREAK_BLOCK
+                        material: STONE
+                        amount: 1
+                """));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        assertEquals(Material.IRON_SWORD, result.quest().icon());
+    }
+
+    @Test
+    void unknownIconIsRejected() {
+        QuestDefinitionParser.ParseResult result = parser.parse("bad-icon.yml", load(minimalQuestWithSteps("""
+                icon: NOT_A_REAL_MATERIAL
+                steps:
+                  - id: step_one
+                    objectives:
+                      - type: BREAK_BLOCK
+                        material: STONE
+                        amount: 1
+                """)));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("icon")));
     }
 
     private String minimalQuestWithSteps(String stepsYaml) {

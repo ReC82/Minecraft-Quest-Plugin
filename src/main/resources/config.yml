@@ -31,3 +31,9 @@ dialogue:
   allowed-commands:
     - "give"
     - "xp"
+
+journal:
+  # Affiche une bossbar de suivi (titre + progression) pour la quête suivie
+  # via /quests. Purement cosmétique : la mettre à false ne désactive ni le
+  # suivi lui-même (persisté) ni le journal, seulement la bossbar.
+  tracker-enabled: true

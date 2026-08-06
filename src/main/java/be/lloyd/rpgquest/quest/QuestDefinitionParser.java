@@ -50,6 +50,7 @@ final class QuestDefinitionParser {
         LocalizedText title = parseLocalizedText(section, "title", errors);
         LocalizedText description = parseLocalizedText(section, "description", errors);
         String category = parseCategory(section, errors);
+        Material icon = parseIcon(section, errors);
         boolean repeatable = parseRepeatable(section, errors);
         List<NamespacedKey> prerequisites = parsePrerequisites(section, id, errors);
         List<QuestStep> steps = parseSteps(section, errors);
@@ -62,7 +63,7 @@ final class QuestDefinitionParser {
 
         try {
             QuestDefinition quest = new QuestDefinition(
-                    id, title, description, category, repeatable, prerequisites, steps, rewards, variables);
+                    id, title, description, category, icon, repeatable, prerequisites, steps, rewards, variables);
             return ParseResult.success(quest);
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new QuestLoadIssue(fileName, e.getMessage())));
@@ -130,6 +131,21 @@ final class QuestDefinitionParser {
             return null;
         }
         return category;
+    }
+
+    private static final Material DEFAULT_ICON = Material.BOOK;
+
+    private Material parseIcon(ConfigurationSection section, List<String> errors) {
+        if (!section.isSet("icon")) {
+            return DEFAULT_ICON;
+        }
+        String raw = section.getString("icon");
+        Material material = raw == null ? null : Material.matchMaterial(raw);
+        if (material == null) {
+            errors.add("« icon » : matériau inconnu « " + raw + " ».");
+            return DEFAULT_ICON;
+        }
+        return material;
     }
 
     private boolean parseRepeatable(ConfigurationSection section, List<String> errors) {

@@ -19,6 +19,9 @@ commands:
   dialogue:
     description: Ouvre un dialogue pour un joueur (administration).
     usage: /<command> open <joueur> <dialogueId>
+  quests:
+    description: Ouvre le journal de quêtes (menu paginé).
+    usage: /<command>
 
 permissions:
   rpgquest.admin:

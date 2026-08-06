@@ -8,22 +8,16 @@ import be.lloyd.rpgquest.database.QuestProgressRepository;
 import be.lloyd.rpgquest.quest.QuestLoadReport;
 import be.lloyd.rpgquest.quest.QuestMessagesService;
 import be.lloyd.rpgquest.quest.YamlQuestEngine;
-import be.lloyd.rpgquest.quest.model.BreakBlockObjective;
-import be.lloyd.rpgquest.quest.model.CollectItemObjective;
 import be.lloyd.rpgquest.quest.model.CommandReward;
-import be.lloyd.rpgquest.quest.model.CraftItemObjective;
 import be.lloyd.rpgquest.quest.model.ExperienceReward;
 import be.lloyd.rpgquest.quest.model.ItemReward;
-import be.lloyd.rpgquest.quest.model.KillEntityObjective;
 import be.lloyd.rpgquest.quest.model.ObjectiveType;
-import be.lloyd.rpgquest.quest.model.PlaceBlockObjective;
 import be.lloyd.rpgquest.quest.model.QuestDefinition;
 import be.lloyd.rpgquest.quest.model.QuestObjective;
 import be.lloyd.rpgquest.quest.model.QuestReward;
 import be.lloyd.rpgquest.quest.model.QuestState;
 import be.lloyd.rpgquest.quest.model.QuestStep;
 import be.lloyd.rpgquest.quest.model.ReachLocationObjective;
-import be.lloyd.rpgquest.quest.model.TalkToNpcObjective;
 import be.lloyd.rpgquest.quest.model.VariableReward;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -34,6 +28,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -67,6 +63,7 @@ public final class QuestProgressEngine implements PluginService {
 
     private final Map<UUID, Map<NamespacedKey, ActiveQuestProgress>> activeByPlayer = new ConcurrentHashMap<>();
     private final Map<ObjectiveType, Listener> registeredListeners = new EnumMap<>(ObjectiveType.class);
+    private final List<Consumer<UUID>> progressListeners = new CopyOnWriteArrayList<>();
     private volatile QuestObjectiveIndex index = new QuestObjectiveIndex(List.of());
 
     public QuestProgressEngine(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressRepository repository,
@@ -93,6 +90,23 @@ public final class QuestProgressEngine implements PluginService {
     /** Écouteur de connexion/déconnexion à enregistrer sans condition, contrairement aux listeners d'objectifs. */
     public Listener connectionListener() {
         return new QuestProgressConnectionListener(this);
+    }
+
+    /**
+     * Notifié après toute mutation de la progression d'un joueur (acceptation,
+     * incrément d'objectif, changement d'étape, remise, abandon). Utilisé par
+     * le journal de quêtes ({@code ui}) pour rafraîchir un menu ouvert ou la
+     * bossbar de suivi sans tâche répétitive — l'affichage ne se met à jour
+     * qu'en réaction à un changement réel, jamais par sondage périodique.
+     */
+    public void onProgressChanged(Consumer<UUID> listener) {
+        progressListeners.add(listener);
+    }
+
+    private void notifyChanged(UUID playerId) {
+        for (Consumer<UUID> listener : progressListeners) {
+            listener.accept(playerId);
+        }
     }
 
     /** Recharge les définitions de quêtes puis reconstruit index et listeners en conséquence. */
@@ -194,7 +208,7 @@ public final class QuestProgressEngine implements PluginService {
             return CompletableFuture.completedFuture(AcceptOutcome.alreadyActive());
         }
 
-        return repository.find(playerId, questId).thenCompose(existing -> {
+        CompletableFuture<AcceptOutcome> future = repository.find(playerId, questId).thenCompose(existing -> {
             QuestState currentState = existing.map(QuestProgressRecord::state).orElse(QuestState.NOT_STARTED);
             if (currentState == QuestState.ACTIVE || currentState == QuestState.READY_TO_TURN_IN) {
                 return CompletableFuture.completedFuture(AcceptOutcome.alreadyActive());
@@ -216,6 +230,8 @@ public final class QuestProgressEngine implements PluginService {
                         .thenApply(v -> AcceptOutcome.accepted());
             });
         });
+        future.whenComplete((outcome, error) -> notifyChanged(playerId));
+        return future;
     }
 
     private CompletableFuture<List<NamespacedKey>> checkPrerequisites(UUID playerId, QuestDefinition quest) {
@@ -250,6 +266,7 @@ public final class QuestProgressEngine implements PluginService {
             logger.error("Impossible de persister l'abandon de {} pour {}", questId, playerId, error);
             return null;
         });
+        notifyChanged(playerId);
         return AbandonOutcome.ABANDONED;
     }
 
@@ -453,6 +470,7 @@ public final class QuestProgressEngine implements PluginService {
                 questEngine.find(ref.questId()).ifPresent(quest -> checkStepCompletion(player, quest, progress));
             }
         }
+        notifyChanged(playerId);
     }
 
     private void checkStepCompletion(Player player, QuestDefinition quest, ActiveQuestProgress progress) {
@@ -475,6 +493,7 @@ public final class QuestProgressEngine implements PluginService {
             player.sendMessage(messagesService.current().format("quest.step-completed",
                     Placeholder.unparsed("quest", quest.title().base()),
                     Placeholder.unparsed("step", nextStepId)));
+            notifyChanged(playerId);
         } else {
             turnIn(player, quest, progress);
         }
@@ -502,6 +521,7 @@ public final class QuestProgressEngine implements PluginService {
         grantRewards(player, quest);
         player.sendMessage(messagesService.current().format(
                 "quest.completed", Placeholder.unparsed("quest", quest.title().base())));
+        notifyChanged(playerId);
     }
 
     private void grantRewards(Player player, QuestDefinition quest) {
@@ -528,26 +548,10 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     private int requiredAmount(QuestObjective objective) {
-        return switch (objective) {
-            case BreakBlockObjective o -> o.amount();
-            case PlaceBlockObjective o -> o.amount();
-            case KillEntityObjective o -> o.amount();
-            case CollectItemObjective o -> o.amount();
-            case CraftItemObjective o -> o.amount();
-            case TalkToNpcObjective o -> 1;
-            case ReachLocationObjective o -> 1;
-        };
+        return QuestObjective.requiredAmount(objective);
     }
 
     private String describeObjective(QuestObjective objective) {
-        return switch (objective) {
-            case BreakBlockObjective o -> "Casser " + o.material();
-            case PlaceBlockObjective o -> "Placer " + o.material();
-            case KillEntityObjective o -> "Tuer " + o.entity();
-            case CollectItemObjective o -> "Collecter " + o.material();
-            case CraftItemObjective o -> "Fabriquer " + o.material();
-            case TalkToNpcObjective o -> "Parler à " + o.npcId();
-            case ReachLocationObjective o -> "Se rendre dans " + o.world();
-        };
+        return QuestObjective.describe(objective);
     }
 }

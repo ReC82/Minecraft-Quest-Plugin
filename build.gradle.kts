@@ -30,6 +30,11 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.110.0")
+
+    // Le driver JDBC n'est pas empaqueté : il est déclaré dans plugin.yml
+    // (libraries:) et résolu à l'exécution par le LibraryLoader de Paper.
+    // Il n'est utilisé ici que pour exécuter les tests JUnit en JVM nue.
+    testImplementation("org.xerial:sqlite-jdbc:3.53.2.1")
 }
 
 tasks {

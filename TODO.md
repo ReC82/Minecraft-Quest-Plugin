@@ -8,10 +8,19 @@
 -   [x] Classe principale `RPGQuestPlugin` + `plugin.yml`
 -   [x] Commandes `/rpgquest version` et `/rpgquest help`
 
+## Persistance (fait)
+
+-   [x] `DatabaseManager` SQLite asynchrone (`plugins/RPGQuest/data.db`)
+-   [x] Migration de schéma versionnée (`PRAGMA user_version`), idempotente
+-   [x] Tables `player_profiles`, `player_variables`
+-   [x] Table `quest_progress` préparée (non exploitée)
+-   [x] Cache de profils limité aux joueurs connectés, invalidé à la déconnexion
+-   [x] Commande `/rpgquest profile [joueur]`
+
 ## MVP
 
 -   [ ] Architecture
--   [ ] SQLite
+-   [x] SQLite
 -   [ ] Moteur de quêtes
 -   [ ] Dialogues
 -   [ ] Journal de quêtes

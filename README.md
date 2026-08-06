@@ -37,6 +37,14 @@ Au premier lancement, il faut accepter l'EULA Mojang dans `run/eula.txt`
 
 -   `/rpgquest version` — affiche la version du plugin.
 -   `/rpgquest help` — affiche l'aide.
+-   `/rpgquest profile [joueur]` — affiche le profil (UUID, dernier pseudo,
+    dates de création/mise à jour) du joueur donné, ou le sien si omis.
+
+## Persistance
+
+Les données joueurs sont stockées dans `plugins/RPGQuest/data.db` (SQLite),
+créée et migrée automatiquement au démarrage. Toutes les opérations SQL sont
+asynchrones (thread dédié) ; voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Structure du projet
 

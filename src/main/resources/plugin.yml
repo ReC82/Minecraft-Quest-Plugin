@@ -6,7 +6,10 @@ author: Lloyd
 description: Plugin RPG pour Paper piloté par des quêtes YAML.
 folia-supported: false
 
+libraries:
+  - org.xerial:sqlite-jdbc:3.53.2.1
+
 commands:
   rpgquest:
     description: Commande principale de RPGQuest.
-    usage: /<command> <version|help>
+    usage: /<command> <version|help|profile [joueur]>

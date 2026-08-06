@@ -37,6 +37,10 @@ import be.lloyd.rpgquest.resource.ResourceNodeService;
 import be.lloyd.rpgquest.quest.YamlQuestEngine;
 import be.lloyd.rpgquest.quest.progress.QuestProgressEngine;
 import be.lloyd.rpgquest.ui.QuestJournalService;
+import be.lloyd.rpgquest.zone.ZoneProtectionListener;
+import be.lloyd.rpgquest.zone.ZoneRegistry;
+import be.lloyd.rpgquest.zone.ZoneSelectionService;
+import be.lloyd.rpgquest.zone.ZoneWandListener;
 
 /**
  * Construit les services du plugin et orchestre leur démarrage/arrêt dans un
@@ -61,6 +65,8 @@ public final class RPGQuestBootstrap {
     private final ResourceNodeRegistry resourceNodeRegistry;
     private final YamlCraftingRegistry craftingRegistry;
     private final FlattenService flattenService;
+    private final ZoneRegistry zoneRegistry;
+    private final ZoneSelectionService zoneSelectionService;
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
@@ -85,12 +91,18 @@ public final class RPGQuestBootstrap {
         this.craftingRegistry = new YamlCraftingRegistry(
                 plugin.getDataFolder().toPath().resolve("recipes"), customItemRegistry, plugin.getSLF4JLogger());
         this.flattenService = new FlattenService(plugin, configService, plugin.getSLF4JLogger());
+        this.zoneRegistry = new ZoneRegistry(
+                plugin.getDataFolder().toPath().resolve("zones"), plugin.getSLF4JLogger());
+        this.zoneSelectionService = new ZoneSelectionService();
     }
 
     public void start() {
         registry.start(configService);
         registry.start(databaseService);
         registry.start(flattenService);
+        registry.start(zoneRegistry);
+        registry.start(new PlayerListenerService(plugin, new ZoneProtectionListener(zoneRegistry)));
+        registry.start(new PlayerListenerService(plugin, new ZoneWandListener(zoneSelectionService)));
 
         PlayerProfileRepository profileRepository = new PlayerProfileRepository(databaseService.databaseManager());
         playerProfileService = new PlayerProfileService(profileRepository);
@@ -202,6 +214,14 @@ public final class RPGQuestBootstrap {
         return flattenService;
     }
 
+    public ZoneRegistry zoneRegistry() {
+        return zoneRegistry;
+    }
+
+    public ZoneSelectionService zoneSelectionService() {
+        return zoneSelectionService;
+    }
+
     public ResourceNodeService resourceNodeService() {
         return resourceNodeService;
     }
@@ -248,7 +268,7 @@ public final class RPGQuestBootstrap {
             resourcenode.setTabCompleter(resourceNodeCommand);
         }
 
-        RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(flattenService);
+        RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(flattenService, zoneRegistry, zoneSelectionService);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

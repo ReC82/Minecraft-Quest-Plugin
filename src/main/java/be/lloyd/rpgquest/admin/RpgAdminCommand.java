@@ -1,9 +1,14 @@
 package be.lloyd.rpgquest.admin;
 
+import be.lloyd.rpgquest.zone.ZoneRegistry;
+import be.lloyd.rpgquest.zone.ZoneSelectionService;
+import be.lloyd.rpgquest.zone.model.ZoneDefinition;
+import be.lloyd.rpgquest.zone.model.ZoneFlags;
 import java.util.List;
 import java.util.Locale;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+import org.bukkit.Location;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -14,24 +19,30 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * {@code /rpgadmin} — commande d'administration racine, point d'entrée pour
- * les futurs sous-systèmes d'administration du monde (aplatissement à cette
- * étape ; zones, portails, mobs spéciaux dans des étapes ultérieures,
- * ajoutés comme d'autres branches de {@link #onCommand}). Toutes les
- * sous-commandes exigent {@code rpgquest.admin.world} et un joueur en jeu
- * (jamais la console, qui n'a pas de position à centrer) — {@code /rpgadmin
- * flatten} ne prend d'ailleurs aucune coordonnée explicite dans sa syntaxe.
+ * les sous-systèmes d'administration du monde : aplatissement de terrain et
+ * zones protégées à cette étape, portails/mobs spéciaux dans des étapes
+ * ultérieures, ajoutés comme d'autres branches de {@link #onCommand}).
+ * Toutes les sous-commandes exigent {@code rpgquest.admin.world} et un
+ * joueur en jeu (jamais la console, qui n'a pas de position à centrer) —
+ * ni {@code flatten} ni {@code zone} ne prennent de coordonnée explicite
+ * dans leur syntaxe (la sélection de zone passe par l'outil {@code wand}).
  */
 public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
     private static final String PERMISSION = "rpgquest.admin.world";
-    private static final List<String> TOP_LEVEL_SUBCOMMANDS = List.of("flatten");
+    private static final List<String> TOP_LEVEL_SUBCOMMANDS = List.of("flatten", "zone");
     private static final List<String> FLATTEN_SUBCOMMANDS = List.of("confirm", "cancel", "undo");
+    private static final List<String> ZONE_SUBCOMMANDS = List.of("create", "delete", "list", "info", "wand");
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
     private final FlattenService flattenService;
+    private final ZoneRegistry zoneRegistry;
+    private final ZoneSelectionService zoneSelectionService;
 
-    public RpgAdminCommand(FlattenService flattenService) {
+    public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService) {
         this.flattenService = flattenService;
+        this.zoneRegistry = zoneRegistry;
+        this.zoneSelectionService = zoneSelectionService;
     }
 
     @Override
@@ -54,10 +65,149 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
         if (args[0].equalsIgnoreCase("flatten")) {
             handleFlatten(player, args);
+        } else if (args[0].equalsIgnoreCase("zone")) {
+            handleZone(player, args);
         } else {
             sendUsage(player);
         }
         return true;
+    }
+
+    private void handleZone(Player player, String[] args) {
+        if (args.length < 2) {
+            sendZoneUsage(player);
+            return;
+        }
+
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "wand" -> handleZoneWand(player);
+            case "create" -> handleZoneCreate(player, args);
+            case "delete" -> handleZoneDelete(player, args);
+            case "list" -> handleZoneList(player);
+            case "info" -> handleZoneInfo(player, args);
+            default -> sendZoneUsage(player);
+        }
+    }
+
+    private void handleZoneWand(Player player) {
+        player.getInventory().addItem(zoneSelectionService.createWandItem());
+        player.sendMessage(MM.deserialize(
+                "<green>Outil de sélection reçu.</green> <gray>Clic gauche = position 1, clic droit = position 2.</gray>"));
+    }
+
+    private void handleZoneCreate(Player player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(MM.deserialize("<yellow>/rpgadmin zone create <id></yellow>"));
+            return;
+        }
+        String id = args[2].toLowerCase(Locale.ROOT);
+
+        var pos1 = zoneSelectionService.pos1(player.getUniqueId());
+        var pos2 = zoneSelectionService.pos2(player.getUniqueId());
+        if (pos1.isEmpty() || pos2.isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<red>Sélectionnez d'abord deux positions avec</red> <yellow>/rpgadmin zone wand</yellow>."));
+            return;
+        }
+        Location a = pos1.get();
+        Location b = pos2.get();
+        if (a.getWorld() == null || !a.getWorld().equals(b.getWorld())) {
+            player.sendMessage(MM.deserialize("<red>Les deux positions doivent être dans le même monde.</red>"));
+            return;
+        }
+
+        ZoneDefinition zone;
+        try {
+            zone = new ZoneDefinition(id, a.getWorld().getName(),
+                    Math.min(a.getBlockX(), b.getBlockX()), Math.min(a.getBlockY(), b.getBlockY()), Math.min(a.getBlockZ(), b.getBlockZ()),
+                    Math.max(a.getBlockX(), b.getBlockX()), Math.max(a.getBlockY(), b.getBlockY()), Math.max(a.getBlockZ(), b.getBlockZ()),
+                    ZoneFlags.defaults());
+        } catch (IllegalArgumentException e) {
+            player.sendMessage(MM.deserialize(
+                    "<red>Id de zone invalide :</red> <white><reason></white>", Placeholder.unparsed("reason", String.valueOf(e.getMessage()))));
+            return;
+        }
+
+        switch (zoneRegistry.create(zone)) {
+            case CREATED -> {
+                zoneSelectionService.clear(player.getUniqueId());
+                player.sendMessage(MM.deserialize("<green>Zone créée :</green> <white><id></white>", Placeholder.unparsed("id", id)));
+            }
+            case DUPLICATE_ID -> player.sendMessage(MM.deserialize(
+                    "<red>Une zone porte déjà l'id</red> <white><id></white>.", Placeholder.unparsed("id", id)));
+            case OVERLAPS -> player.sendMessage(MM.deserialize(
+                    "<red>Cette zone chevauche une zone existante dans ce monde.</red>"));
+            case IO_ERROR -> player.sendMessage(MM.deserialize(
+                    "<red>Erreur d'écriture : voir la console.</red>"));
+        }
+    }
+
+    private void handleZoneDelete(Player player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(MM.deserialize("<yellow>/rpgadmin zone delete <id></yellow>"));
+            return;
+        }
+        String id = args[2].toLowerCase(Locale.ROOT);
+        if (zoneRegistry.delete(id)) {
+            player.sendMessage(MM.deserialize("<green>Zone supprimée :</green> <white><id></white>", Placeholder.unparsed("id", id)));
+        } else {
+            player.sendMessage(MM.deserialize("<red>Zone inconnue :</red> <white><id></white>", Placeholder.unparsed("id", id)));
+        }
+    }
+
+    private void handleZoneList(Player player) {
+        var zones = zoneRegistry.zones();
+        if (zones.isEmpty()) {
+            player.sendMessage(MM.deserialize("<gray>Aucune zone chargée.</gray>"));
+            return;
+        }
+        player.sendMessage(MM.deserialize(
+                "<gold><count></gold> <gray>zone(s) :</gray>", Placeholder.unparsed("count", String.valueOf(zones.size()))));
+        for (ZoneDefinition zone : zones) {
+            player.sendMessage(MM.deserialize(
+                    "<yellow>- <id></yellow> <gray>(<world>)</gray>",
+                    Placeholder.unparsed("id", zone.id()), Placeholder.unparsed("world", zone.world())));
+        }
+    }
+
+    private void handleZoneInfo(Player player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(MM.deserialize("<yellow>/rpgadmin zone info <id></yellow>"));
+            return;
+        }
+        var zoneOpt = zoneRegistry.find(args[2].toLowerCase(Locale.ROOT));
+        if (zoneOpt.isEmpty()) {
+            player.sendMessage(MM.deserialize("<red>Zone inconnue.</red>"));
+            return;
+        }
+        ZoneDefinition zone = zoneOpt.get();
+        player.sendMessage(MM.deserialize("<gold>=== <id> ===</gold>", Placeholder.unparsed("id", zone.id())));
+        player.sendMessage(MM.deserialize(
+                "<white>Monde :</white> <gray><world></gray>", Placeholder.unparsed("world", zone.world())));
+        player.sendMessage(MM.deserialize(
+                "<white>Bornes :</white> <gray>(<minx>, <miny>, <minz>) → (<maxx>, <maxy>, <maxz>)</gray>",
+                Placeholder.unparsed("minx", String.valueOf(zone.minX())), Placeholder.unparsed("miny", String.valueOf(zone.minY())),
+                Placeholder.unparsed("minz", String.valueOf(zone.minZ())), Placeholder.unparsed("maxx", String.valueOf(zone.maxX())),
+                Placeholder.unparsed("maxy", String.valueOf(zone.maxY())), Placeholder.unparsed("maxz", String.valueOf(zone.maxZ()))));
+        ZoneFlags f = zone.flags();
+        player.sendMessage(MM.deserialize(
+                "<white>Flags :</white> <gray>pvp=<pvp> break=<brk> place=<plc> explosions=<exp> feu=<fire> lave=<lava> pistons=<pst> spawn=<spw> "
+                        + "portes=<drs> boutons=<btn> leviers=<lvr> pnj=<npc> conteneurs=<cnt></gray>",
+                Placeholder.unparsed("pvp", String.valueOf(f.allowPvp())), Placeholder.unparsed("brk", String.valueOf(f.allowBlockBreak())),
+                Placeholder.unparsed("plc", String.valueOf(f.allowBlockPlace())), Placeholder.unparsed("exp", String.valueOf(f.allowExplosions())),
+                Placeholder.unparsed("fire", String.valueOf(f.allowFire())), Placeholder.unparsed("lava", String.valueOf(f.allowLava())),
+                Placeholder.unparsed("pst", String.valueOf(f.allowPistonsAcrossBorder())), Placeholder.unparsed("spw", String.valueOf(f.allowHostileSpawn())),
+                Placeholder.unparsed("drs", String.valueOf(f.allowDoors())), Placeholder.unparsed("btn", String.valueOf(f.allowButtons())),
+                Placeholder.unparsed("lvr", String.valueOf(f.allowLevers())), Placeholder.unparsed("npc", String.valueOf(f.allowNpcInteract())),
+                Placeholder.unparsed("cnt", String.valueOf(f.allowPublicContainers()))));
+    }
+
+    private void sendZoneUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin zone wand</yellow> <gray>- outil de sélection (clic gauche/droit)</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin zone create <id></yellow> <gray>- crée une zone depuis la sélection</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin zone delete <id></yellow> <gray>- supprime une zone</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin zone list</yellow> <gray>- liste les zones</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin zone info <id></yellow> <gray>- détail d'une zone</gray>"));
     }
 
     private void handleFlatten(Player player, String[] args) {
@@ -166,6 +316,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
     private void sendUsage(CommandSender sender) {
         sendFlattenUsage(sender);
+        sendZoneUsage(sender);
     }
 
     private void sendFlattenUsage(CommandSender sender) {
@@ -184,6 +335,14 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("flatten")) {
             return FLATTEN_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("zone")) {
+            return ZONE_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("zone")
+                && (args[1].equalsIgnoreCase("delete") || args[1].equalsIgnoreCase("info"))) {
+            return zoneRegistry.zones().stream().map(ZoneDefinition::id)
+                    .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         return List.of();
     }

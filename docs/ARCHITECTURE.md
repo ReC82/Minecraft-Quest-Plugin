@@ -25,7 +25,9 @@
     ├── resource             (types de nœuds YAML + positions récoltables persistées)
     │   └── model            (modèles immuables : type de nœud, drops pondérés)
     ├── ui                   (journal de quêtes : menu paginé, vue détail, suivi)
-    └── util                 (vide pour l'instant : utilitaires génériques uniquement)
+    ├── util                 (vide pour l'instant : utilitaires génériques uniquement)
+    └── zone                 (zones protégées : registre YAML, protection d'événements, sélection)
+        └── model            (modèles immuables : zone, permissions)
 
 Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
 `item` et désormais `resource` couvrent chacun le chargement/l'affichage
@@ -1038,6 +1040,104 @@ qu'embarqués dans le jar.
     (déjà démarré) et n'a besoin d'aucun autre service, contrairement à la
     plupart des autres commandes qui attendent leurs moteurs respectifs.
 
+## `zone` (zones protégées)
+
+-   **Zones créées à l'exécution, mais persistées en YAML** — contrairement
+    aux autres registres YAML du projet (quêtes, dialogues, objets, types
+    de nœuds, recettes — tous hand-authored), une zone est créée en jeu via
+    `/rpgadmin zone create` (coordonnées venant de l'outil de sélection, pas
+    d'édition manuelle). `ZoneRegistry.create()` écrit directement un
+    fichier YAML dans `plugins/RPGQuest/zones/` puis recharge — le fichier
+    reste la seule source de vérité, jamais un état mémoire divergent.
+    `ZoneDefinition` reste « correct par construction » comme les autres
+    modèles (bornes normalisées, id validé par expression régulière).
+-   **`ZoneLoader` rejette aussi les chevauchements, pas seulement les id
+    dupliqués** — extension du patron à deux phases de `QuestLoader`/
+    `ResourceNodeLoader` : après le rejet des id dupliqués, une
+    passe supplémentaire rejette toute zone dont le cuboïde chevauche une
+    zone déjà retenue **dans le même monde** (`ZoneDefinition#overlaps`,
+    test AABB standard) — deux zones dans des mondes différents peuvent
+    occuper les mêmes coordonnées sans conflit.
+-   **Index par monde, vérification bon marché à chaque événement** —
+    `ZoneRegistry.zonesInWorld` est construit une seule fois par
+    `reload()` (`Map<String, List<ZoneDefinition>>`), jamais recalculé par
+    événement. `ZoneProtectionListener` ne balaie donc jamais que les
+    quelques zones du monde concerné (généralement une poignée), jamais
+    toutes les zones de tous les mondes — c'est ce qui répond à « aucune
+    boucle de scan coûteuse », le nombre de zones total n'ayant aucun
+    impact sur le coût d'un événement dans un monde qui n'en a aucune.
+-   **`ZoneFlags` — deux groupes aux défauts opposés, décision documentée**
+    — les six permissions listées « bloquées par défaut » par la mission
+    (pvp, casse, pose, explosions, feu, lave, pistons traversant la
+    frontière, spawn hostile — sept en réalité, l'énoncé en groupe deux)
+    valent toutes `false` sur `ZoneFlags.defaults()` ; les cinq permissions
+    « autorisées par config » (portes, boutons, leviers, PNJ, conteneurs
+    publics) valent `true` par défaut **sauf** les conteneurs publics
+    (`false`) — un village doit rester utilisable dès sa création (portes,
+    boutons, dialogues PNJ) sans configuration supplémentaire, alors que
+    l'accès à un conteneur partagé est un risque de vol qui justifie un
+    opt-in explicite. Voir `docs/SAFE_ZONE.md` pour le détail complet.
+-   **`ZoneProtectionListener` — un seul point de vérification par
+    catégorie d'événement**, chacun suivant le même patron
+    (`zoneAt(location)` puis test du flag concerné) :
+    -   **PvP et dégâts d'explosion regroupés sur `EntityDamageEvent`**
+        (pas `EntityDamageByEntityEvent` séparément) : Bukkit délivre une
+        instance de la sous-classe à un gestionnaire enregistré sur la
+        classe mère, donc un seul `@EventHandler` couvre les deux cas
+        (`instanceof EntityDamageByEntityEvent` pour le PvP direct **et**
+        les projectiles — `Projectile#getShooter()` — ; la cause
+        `ENTITY_EXPLOSION`/`BLOCK_EXPLOSION` pour les dégâts d'explosion,
+        qui ne passent pas forcément par un dommageur direct).
+    -   **`EntityExplodeEvent`/`BlockExplodeEvent` : `blockList().clear()`,
+        pas `setCancelled(true)`** — laisse l'entité (creeper, TNT...) se
+        consumer normalement (son cycle de vie, le son, les particules ne
+        sont pas de la destruction de terrain), seule la destruction de
+        blocs est empêchée. Cohérent avec `explosions` comme protection du
+        terrain plutôt qu'une interdiction totale de l'explosion elle-même.
+    -   **Pistons traversant la frontière** — compare la zone du bloc
+        piston à la zone de destination de chaque bloc déplacé
+        (`BlockPistonExtendEvent#getBlocks()` décalés d'une case dans la
+        direction du piston pour l'extension ; positions actuelles pour la
+        rétraction) : si l'un des deux camps (zone du piston ou zone de
+        destination) refuse explicitement les pistons traversant sa
+        frontière et que les deux camps diffèrent, l'événement est annulé.
+    -   **Portes/boutons/leviers/conteneurs via un seul `PlayerInteractEvent`**
+        à priorité `LOW` (avant le traitement `NORMAL` par défaut des
+        autres listeners du plugin — notamment `DialogueNpcInteractListener`/
+        `QuestNpcInteractListener` pour la corrélation avec `npc-interact`,
+        bien qu'ici la classification porte sur le **bloc** cliqué) :
+        classification par suffixe de nom de matériau
+        (`_DOOR`/`_TRAPDOOR`/`_FENCE_GATE`, `_BUTTON`) ou par interface
+        (`block.getState() instanceof Container`, qui couvre coffres,
+        tonneaux, fourneaux, distributeurs... sans liste de matériaux
+        codée en dur à maintenir).
+    -   **Bypass vérifié sur l'acteur direct, jamais la victime** — un
+        administrateur (`rpgquest.admin.world`) peut casser/poser/interagir
+        librement dans une zone, mais son statut n'exempte personne
+        d'autre de la protection (attaquer un administrateur en PvP reste
+        bloqué si l'administrateur est la victime et n'a pas lui-même la
+        permission... en pratique un administrateur l'a presque toujours,
+        limite acceptée).
+    -   **Affichage entrée/sortie sans sondage** — `PlayerMoveEvent` (priorité
+        `MONITOR`, en observation uniquement) filtré aux changements de
+        **bloc** de position (pas chaque micro-mouvement) ; une map en
+        mémoire (joueur → id de zone courante, jamais persistée) détecte la
+        transition et n'envoie une actionbar qu'à ce moment précis — aucune
+        tâche répétitive nulle part.
+-   **`ZoneSelectionService`/`ZoneWandListener`** — même conception que les
+    sessions de dialogue/journal : état de sélection **en mémoire
+    uniquement**, aucune raison de survivre à une reconnexion. L'outil
+    (hache en bois) est reconnu **exclusivement** par son
+    PersistentDataContainer (`rpgquest:zone_wand`), jamais par son nom
+    affiché — même garantie anti-contrefaçon que les objets personnalisés
+    de l'étape 7.
+-   **Pas de rechargement à chaud d'une zone éditée à la main** — modifier
+    directement un fichier de zone existant sur disque n'est repris qu'au
+    prochain redémarrage (pas de commande `/rpgadmin zone reload` à cette
+    étape) ; `create`/`delete` recharge déjà automatiquement, ce qui
+    couvre le flux d'usage principal (création/suppression via l'outil de
+    sélection).
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -1387,3 +1487,15 @@ Fabrication → Remise → Récompense
     arbres, eau, cavités, absence de gel perceptible sur une grande zone,
     reconnexion pendant une opération) reste à valider par un testeur
     humain — voir `docs/ADMIN_FLATTEN.md`.
+-   **Zones protégées : pas de rechargement à chaud d'un fichier édité à
+    la main** — voir section `zone` : seuls `create`/`delete` rechargent
+    automatiquement.
+-   **Zones protégées : test manuel en jeu limité par l'environnement** —
+    aucun client Minecraft réel disponible ici. Compensé par
+    `ZoneProtectionListenerTest`, qui construit de vrais événements Bukkit
+    (`BlockBreakEvent`, `BlockPlaceEvent`, `EntityDamageByEntityEvent`,
+    `EntityExplodeEvent`) sur un monde MockBukkit et vérifie leur
+    annulation exacte. Le ressenti en jeu (PvP réel, projectiles, creeper,
+    TNT, lit, cristal d'End, feu, lave, piston traversant une frontière,
+    redstone, mort/reconnexion dans une zone, spawn hostile observé) reste
+    à valider par un testeur humain — voir `docs/SAFE_ZONE.md`.

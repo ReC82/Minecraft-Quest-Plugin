@@ -33,7 +33,7 @@ priorité des sources).
 | 10 | Recettes, resource pack et intégration | DONE |
 | 11 | Serveur local intégré au workspace | DONE |
 | 12 | Outil admin d'aplatissement | DONE |
-| 13 | Village central et safe zone | TODO |
+| 13 | Village central et safe zone | DONE |
 | 14 | Économie et marchands PNJ | TODO |
 | 15 | Marché entre joueurs | TODO |
 | 16 | Portails et téléportation | TODO |
@@ -47,29 +47,32 @@ priorité des sources).
 
 ## Étape en cours
 
-### Étape 13 — Village central et safe zone
+### Étape 14 — Économie et marchands PNJ
 
-Branche attendue : `feature/13-safe-zone`
+Branche attendue : `feature/14-economy-merchants`
 
-Registre YAML de zones cuboïdes, zone `central_village`, blocage par
-défaut (PvP, destruction, pose, explosions, feu, lave, pistons traversant
-la frontière, spawn hostile naturel), autorisations configurables (portes,
-boutons, leviers, PNJ, conteneurs publics, commandes admin),
-`/rpgadmin zone create|delete|list|info|wand`. Voir cahier des charges
+Monnaie principale SQLite + table `transactions` (id, joueur, type,
+montant, contexte, timestamp), service économique indépendant de Paper,
+opérations débit/crédit atomiques, `/money`/`/money pay <joueur> <montant>`,
+marchands PNJ (vendre/acheter vanilla et custom, prix, quantité,
+permission, quête, niveau, UI sécurisée) reliés aux dialogues existants,
+anti-duplication (montant négatif, dépassement, double-clic), interface
+Vault optionnelle préparée, `docs/ECONOMY.md`. Voir cahier des charges
 complet reçu en session (mode nuit, 2026-08-07) pour le détail complet.
 
 ### Dernière observation (session mode nuit, 2026-08-07)
 
-Étapes 1 à 12 confirmées `DONE` (build vert, tests verts, docs à jour,
+Étapes 1 à 13 confirmées `DONE` (build vert, 282 tests verts, docs à jour,
 commit par étape). Cahier des charges détaillé reçu pour les étapes 11 à 23
 (voir historique de conversation — non dupliqué ici pour éviter deux
 sources concurrentes, conformément à la règle « Git, code et tests priment
 sur ROADMAP »). Progression dans l'ordre, une branche par étape.
 
-Note pour l'étape 13 : `/rpgadmin flatten` (étape 12) a un placeholder
-« mondes interdits » en attendant le vrai registre de zones — une fois le
-registre de zones livré, envisager de le recroiser avec `FlattenService`
-(voir `docs/ARCHITECTURE.md`, section `admin`, limite documentée).
+Note pour l'étape 14 : les marchands PNJ doivent se relier au système de
+dialogues existant (`dialogue.session.DialogueSessionEngine`) plutôt que
+créer un système d'interaction PNJ parallèle — voir `docs/ARCHITECTURE.md`,
+section `dialogue`, pour la convention déjà établie (nom personnalisé
+d'entité = identification).
 
 ## Journal de session
 

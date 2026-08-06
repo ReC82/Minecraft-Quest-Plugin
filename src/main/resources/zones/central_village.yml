@@ -1,0 +1,19 @@
+id: central_village
+world: world
+min: {x: -48, y: -64, z: -48}
+max: {x: 48, y: 319, z: 48}
+
+flags:
+  pvp: false
+  block-break: false
+  block-place: false
+  explosions: false
+  fire: false
+  lava: false
+  pistons-across-border: false
+  hostile-spawn: false
+  doors: true
+  buttons: true
+  levers: true
+  npc-interact: true
+  public-containers: false

@@ -93,6 +93,9 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 -   `/rpgadmin flatten confirm|cancel|undo` (`rpgquest.admin.world`) —
     exécute, annule, ou défait le dernier aplatissement. Voir
     [docs/ADMIN_FLATTEN.md](docs/ADMIN_FLATTEN.md).
+-   `/rpgadmin zone wand|create|delete|list|info` (`rpgquest.admin.world`)
+    — crée/gère des zones protégées (village central, safe zone...). Voir
+    [docs/SAFE_ZONE.md](docs/SAFE_ZONE.md).
 
 ### Permissions
 
@@ -101,7 +104,7 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 | `rpgquest.quest` | tous | `/quest list\|accept\|progress\|abandon`, `/quests` |
 | `rpgquest.item` | tous | `/customitem inspect` |
 | `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect` |
-| `rpgquest.admin.world` | op | `/rpgadmin flatten` (aplatissement de terrain) |
+| `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées) |
 
 ## Quêtes
 
@@ -203,6 +206,15 @@ PersistentDataContainer, doublée d'un contrôle à chaque préparation de
 fabrication — clic simple, shift-clic ou recette automatique déclenchent
 tous la même vérification). Voir [RECIPE_FORMAT.md](RECIPE_FORMAT.md) pour
 le format complet.
+
+## Zones protégées
+
+`/rpgadmin zone` gère des zones cuboïdes protégées (PvP, casse/pose,
+explosions, feu, lave, pistons traversant la frontière et spawn hostile
+bloqués par défaut ; portes/boutons/leviers/PNJ autorisés par défaut,
+conteneurs publics bloqués). Un exemple (`central_village`) est généré
+automatiquement. Voir [docs/SAFE_ZONE.md](docs/SAFE_ZONE.md) pour le détail
+complet et la liste des permissions configurables.
 
 ## Configuration
 

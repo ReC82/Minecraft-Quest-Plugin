@@ -267,6 +267,33 @@
     matériau non-bloc, valeurs négatives)
 -   [x] `docs/ADMIN_FLATTEN.md`
 
+## Village central et safe zone (fait)
+
+-   [x] `zone.model` : `ZoneDefinition` (cuboïde, correct par construction)
+    + `ZoneFlags` (7 permissions bloquées par défaut, 5 autorisées par
+    défaut dont conteneurs publics bloqué — décision documentée)
+-   [x] `ZoneDefinitionParser`/`ZoneLoader` (deux phases + rejet des
+    chevauchements entre fichiers, même monde uniquement)
+-   [x] `ZoneRegistry` (`PluginService`) : charge/persiste
+    `plugins/RPGQuest/zones/*.yml`, `create()`/`delete()` écrivent
+    directement sur disque puis rechargent, index par monde pour une
+    vérification bon marché par événement
+-   [x] `/rpgadmin zone wand|create|delete|list|info`
+    (`rpgquest.admin.world`) — sélection par outil PDC (jamais par nom)
+-   [x] `ZoneProtectionListener` : PvP (mêlée + projectiles), casse/pose de
+    bloc, explosions (destruction de blocs seulement, pas l'événement
+    entier), feu, lave, pistons traversant la frontière, spawn hostile
+    naturel, portes/boutons/leviers/conteneurs, bypass admin sur l'acteur
+    direct, affichage entrée/sortie sans sondage (`PlayerMoveEvent` filtré
+    aux changements de bloc)
+-   [x] Zone d'exemple `central_village` générée automatiquement
+-   [x] Tests : intérieur/extérieur/frontière, zone invalide, chevauchement
+    (fichiers et créations successives), pas de chevauchement inter-monde,
+    id dupliqué, rechargement, persistance réelle sur disque, protection
+    bloc/PvP/explosion à l'intérieur/extérieur, bypass, événement déjà
+    annulé laissé intact, aucune exception sur un monde sans zone
+-   [x] `docs/SAFE_ZONE.md`
+
 ## MVP
 
 -   [x] Architecture

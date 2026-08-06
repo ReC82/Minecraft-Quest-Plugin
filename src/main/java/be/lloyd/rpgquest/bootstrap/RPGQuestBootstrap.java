@@ -1,13 +1,20 @@
 package be.lloyd.rpgquest.bootstrap;
 
 import be.lloyd.rpgquest.RPGQuestPlugin;
+import be.lloyd.rpgquest.command.DialogueCommand;
 import be.lloyd.rpgquest.command.QuestCommand;
 import be.lloyd.rpgquest.command.RPGQuestCommand;
 import be.lloyd.rpgquest.config.ConfigService;
+import be.lloyd.rpgquest.config.RendererKind;
 import be.lloyd.rpgquest.database.DatabaseService;
 import be.lloyd.rpgquest.database.PlayerProfileRepository;
 import be.lloyd.rpgquest.database.PlayerVariableRepository;
 import be.lloyd.rpgquest.database.QuestProgressRepository;
+import be.lloyd.rpgquest.dialogue.YamlDialogueEngine;
+import be.lloyd.rpgquest.dialogue.render.ChatDialogueRenderer;
+import be.lloyd.rpgquest.dialogue.render.DialogueRenderer;
+import be.lloyd.rpgquest.dialogue.render.PaperDialogRenderer;
+import be.lloyd.rpgquest.dialogue.session.DialogueSessionEngine;
 import be.lloyd.rpgquest.player.PlayerConnectionListener;
 import be.lloyd.rpgquest.player.PlayerListenerService;
 import be.lloyd.rpgquest.player.PlayerProfileService;
@@ -20,8 +27,11 @@ import be.lloyd.rpgquest.quest.progress.QuestProgressEngine;
  * ordre garanti : configuration d'abord (les autres services en dépendent),
  * puis base de données, puis les listeners qui exploitent les deux, puis le
  * moteur de définitions de quêtes, puis les messages, puis le moteur de
- * progression (qui a besoin des quêtes déjà chargées pour construire son
- * index dès son propre démarrage).
+ * progression, puis les dialogues (qui référencent les quêtes/variables déjà
+ * prêtes). {@code YamlDialogueEngine} n'est construit qu'à l'intérieur de
+ * {@link #start()} (jamais dans le constructeur du bootstrap) car il a
+ * besoin de la liste blanche de commandes de {@code config.yml}, disponible
+ * seulement une fois {@code ConfigService} réellement démarré.
  */
 public final class RPGQuestBootstrap {
 
@@ -33,6 +43,8 @@ public final class RPGQuestBootstrap {
     private final QuestMessagesService questMessagesService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
+    private YamlDialogueEngine dialogueEngine;
+    private DialogueSessionEngine dialogueSessionEngine;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -64,7 +76,23 @@ public final class RPGQuestBootstrap {
         registry.start(questProgressEngine);
         registry.start(new PlayerListenerService(plugin, questProgressEngine.connectionListener()));
 
+        dialogueEngine = new YamlDialogueEngine(
+                plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
+                configService.current().dialogue().allowedCommands());
+        registry.start(dialogueEngine);
+
+        dialogueSessionEngine = new DialogueSessionEngine(plugin, dialogueEngine, questProgressEngine, variableRepository);
+        registry.start(dialogueSessionEngine);
+        dialogueSessionEngine.setRenderer(createRenderer(dialogueSessionEngine));
+        registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));
+
         registerCommands();
+    }
+
+    private DialogueRenderer createRenderer(DialogueSessionEngine handler) {
+        return configService.current().dialogue().renderer() == RendererKind.PAPER_DIALOG
+                ? new PaperDialogRenderer(handler)
+                : new ChatDialogueRenderer(handler);
     }
 
     public void stop() {
@@ -87,6 +115,14 @@ public final class RPGQuestBootstrap {
         return questProgressEngine;
     }
 
+    public YamlDialogueEngine dialogueEngine() {
+        return dialogueEngine;
+    }
+
+    public DialogueSessionEngine dialogueSessionEngine() {
+        return dialogueSessionEngine;
+    }
+
     private void registerCommands() {
         RPGQuestCommand rpgquestCommand = new RPGQuestCommand(plugin, this);
         var rpgquest = plugin.getCommand("rpgquest");
@@ -100,6 +136,13 @@ public final class RPGQuestBootstrap {
         if (quest != null) {
             quest.setExecutor(questCommand);
             quest.setTabCompleter(questCommand);
+        }
+
+        DialogueCommand dialogueCommand = new DialogueCommand(dialogueSessionEngine);
+        var dialogue = plugin.getCommand("dialogue");
+        if (dialogue != null) {
+            dialogue.setExecutor(dialogueCommand);
+            dialogue.setTabCompleter(dialogueCommand);
         }
     }
 }

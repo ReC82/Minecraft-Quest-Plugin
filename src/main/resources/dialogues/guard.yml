@@ -1,0 +1,44 @@
+id: rpgquest:guard
+start: greeting
+
+nodes:
+  greeting:
+    speaker: "Garde"
+    text: "<white>Bienvenue voyageur. Le village a besoin d'aide.</white>"
+    choices:
+      - text: "J'accepte la quête"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:first_steps
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:first_steps
+        next: accepted
+      - text: "Parle-moi de la récompense"
+        next: reward_info
+      - text: "Non merci"
+        next: refused
+
+  accepted:
+    speaker: "Garde"
+    text: "<green>Bien ! Reviens me voir une fois prêt.</green>"
+    choices:
+      - text: "D'accord"
+        actions:
+          - type: CLOSE
+
+  reward_info:
+    speaker: "Garde"
+    text: "<gray>Tu recevras de l'expérience et une épée en fer en récompense.</gray>"
+    choices:
+      - text: "Retour"
+        next: greeting
+
+  refused:
+    speaker: "Garde"
+    text: "<gray>Comme tu voudras. Reviens me voir si tu changes d'avis.</gray>"
+    choices:
+      - text: "D'accord"
+        actions:
+          - type: CLOSE

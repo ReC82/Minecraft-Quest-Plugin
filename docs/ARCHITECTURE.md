@@ -8,7 +8,10 @@
     ├── command
     ├── config               (chargement + validation de config.yml)
     ├── database
-    ├── dialogue             (interface du futur moteur, non implémenté)
+    ├── dialogue             (définitions YAML + moteur de session, relié aux quêtes)
+    │   ├── model           (modèles immuables : dialogue, nœuds, choix, conditions, actions)
+    │   ├── render          (DialogueRenderer : ChatDialogueRenderer, PaperDialogRenderer)
+    │   └── session         (état runtime mutable, sessions en mémoire, listeners)
     ├── item                 (interface du futur registre d'objets, non implémenté)
     ├── player
     ├── quest                (définitions YAML + progression des joueurs)
@@ -19,10 +22,10 @@
     └── util                 (vide pour l'instant : utilitaires génériques uniquement)
 
 Tous les packages listés existent désormais. `resource` reste à créer (pas
-encore requis) ; `dialogue`, `item` et `ui` ne contiennent toujours qu'une
-interface marqueur `extends PluginService`, sans implémentation. `quest`
-couvre maintenant le chargement des définitions **et** leur progression par
-les joueurs (voir ci-dessous).
+encore requis) ; `item` et `ui` ne contiennent toujours qu'une interface
+marqueur `extends PluginService`, sans implémentation. `quest` et
+`dialogue` couvrent maintenant chacun le chargement des définitions **et**
+leur exécution en jeu (voir ci-dessous).
 
 ### `bootstrap` (cycle de vie du plugin)
 
@@ -292,6 +295,136 @@ les joueurs (voir ci-dessous).
     permet à un joueur de reprendre exactement là où il en était après une
     reconnexion en cours d'étape.
 
+### `dialogue` (dialogues à embranchements, reliés aux quêtes)
+
+-   **Modèles (`dialogue.model`)** — records immuables, même discipline que
+    `quest.model` : `DialogueDefinition` (id, nœud de départ, `Map<String,
+    DialogueNode>`), `DialogueNode` (locuteur, texte, ≥ 1 choix — validé par
+    le record lui-même), `DialogueChoice` (texte, conditions, actions,
+    `next` optionnel). Réutilise directement `quest.model.LocalizedText`
+    (texte MiniMessage localisable) et `quest.model.QuestState` (pour
+    `QuestStateCondition`) — pas de duplication de ces concepts.
+    -   `DialogueCondition` / `DialogueAction` sont des **interfaces
+        scellées** (comme `QuestObjective`/`QuestReward`) : un `switch`
+        exhaustif sur les 4 conditions ou les 9 actions est vérifié par le
+        compilateur.
+    -   **Redirection vs fermeture vs ouverture d'un autre dialogue** :
+        après exécution des actions d'un choix, trois issues sont
+        possibles. Si les actions contiennent un `CLOSE` ou un
+        `OPEN_DIALOGUE`, cette issue prend le pas (arrêt anticipé du
+        traitement des actions restantes). Sinon, `next` (s'il est présent)
+        redirige vers un autre nœud du même dialogue. Sans `next` ni action
+        terminale, le dialogue se ferme par défaut — jamais de nœud
+        « bloqué » sans issue possible.
+-   **`DialogueDefinitionParser`** (package-privé, un seul fichier à la
+    fois, accumule toutes les erreurs) — même conception que
+    `QuestDefinitionParser`. Un dialogue = un fichier, donc les références
+    `next` (vers un nœud du **même** dialogue) sont vérifiables directement
+    ici, contrairement aux références `OPEN_DIALOGUE` (vers un **autre**
+    dialogue), qui sont cross-fichier et donc du ressort du loader.
+    `RUN_SAFE_COMMAND` est validé contre la liste blanche
+    (`config.yml` → `dialogue.allowed-commands`) **au chargement**, pas à
+    l'exécution : un fichier de dialogue référençant une commande non
+    autorisée est rejeté avec un message explicite, avant même qu'un joueur
+    ne puisse l'atteindre.
+-   **`DialogueLoader`** — même structure à deux phases que `QuestLoader` :
+    (1) chaque fichier parsé indépendamment, un fichier en erreur n'empêche
+    pas les autres ; (2) validation croisée : id dupliqués entre fichiers
+    (les deux rejetés), références `OPEN_DIALOGUE` vers un dialogue
+    inexistant (rejet en cascade, boucle à point fixe comme les prérequis
+    de quêtes), puis **détection de boucles** par parcours en profondeur
+    (couleurs blanc/gris/noir) sur le graphe `OPEN_DIALOGUE` **entre
+    dialogues** — tous les dialogues impliqués dans un cycle sont rejetés.
+    Important : les redirections `next` **à l'intérieur d'un même
+    dialogue** peuvent boucler librement (un menu « hub » qui revient sur
+    lui-même après une question est un usage normal, pas un bug) — seul le
+    graphe des dialogues qui s'ouvrent les uns les autres est contrôlé.
+-   **Sécurité (`RUN_SAFE_COMMAND`)** — liste blanche portant sur le **nom**
+    de la commande uniquement (premier mot, ex. `give`), vérifiée au
+    chargement contre `config.yml` → `dialogue.allowed-commands`. La seule
+    substitution effectuée à l'exécution est `%player%` (nom du joueur
+    acteur) : ce n'est pas une exception à « aucun texte utilisateur ne
+    doit être concaténé dans une commande console », car un pseudo
+    Minecraft est déjà contraint par Mojang à `[a-zA-Z0-9_]{3,16}` — aucun
+    caractère de contrôle shell/commande n'y est représentable. Aucune
+    autre donnée (variable joueur, texte de choix, saisie libre) n'est
+    jamais interpolée dans une commande : il n'existe d'ailleurs aucune
+    saisie de texte libre joueur dans tout le système de dialogue (choix =
+    sélection dans une liste fermée, jamais du texte tapé).
+-   **`dialogue.render` — `DialogueRenderer` derrière une interface** :
+    -   `PaperDialogRenderer` utilise l'API Dialog native de Paper
+        (`io.papermc.paper.dialog.Dialog`, `DialogType.multiAction`,
+        `DialogAction.customClick`). **Vérifié par inspection du bytecode
+        de `paper-api-1.21.11`** : la classe `Dialog` porte l'annotation
+        `@org.jetbrains.annotations.ApiStatus.Experimental` — donc pas
+        « stable pour la version ciblée » au sens de la mission. Elle
+        reste implémentée (et compile contre l'API réelle, signatures
+        vérifiées une à une par inspection du jar) mais n'est **pas** le
+        choix par défaut.
+    -   `ChatDialogueRenderer` (par défaut, `config.yml` → `dialogue.renderer:
+        chat`) affiche le dialogue en MiniMessage dans le chat, choix sous
+        forme de lignes cliquables via `ClickEvent.callback(...)` — une API
+        Adventure stable et générique (pas liée au système Dialog),
+        fonctionnant avec n'importe quel client. C'est le renderer de
+        secours demandé par la mission.
+    -   Aucune dépendance de `dialogue.render` vers `dialogue.session` :
+        les renderers ne connaissent que la petite interface
+        `DialogueChoiceHandler` (un seul callback), implémentée par
+        `DialogueSessionEngine`. Évite une dépendance circulaire entre
+        packages tout en gardant les renderers totalement interchangeables.
+-   **`dialogue.session.DialogueSessionEngine`** (implémente
+    `PluginService` et `DialogueChoiceHandler`) — orchestre ouverture,
+    évaluation des conditions, sélection des choix, exécution des actions.
+    -   **Sessions en mémoire uniquement, jamais persistées** — choix
+        délibéré, à la différence de `quest.progress` : un dialogue est une
+        interaction courte et volatile (comme un inventaire vanilla, une
+        fermeture de client ferme aussi l'inventaire ouvert). Une
+        déconnexion en cours de dialogue vide simplement la session ; le
+        joueur peut relancer le dialogue depuis le début à la reconnexion.
+    -   **Conditions évaluées de façon asynchrone** : `QUEST_STATE`
+        délègue à `QuestProgressEngine.stateOf(...)` (cache mémoire si la
+        quête est active, sinon requête base), `VARIABLE_EQUALS` à
+        `PlayerVariableRepository.get(...)` — toutes deux asynchrones,
+        jamais de requête disque sur le thread principal. `HAS_ITEM` et
+        `HAS_PERMISSION` sont synchrones (inventaire/permissions déjà en
+        mémoire côté serveur) mais enveloppées dans un
+        `CompletableFuture.completedFuture(...)` pour une évaluation
+        uniforme (`allOf` sur la liste complète des conditions d'un choix).
+        Chaque callback qui touche l'API Bukkit (rendu, exécution
+        d'action) revient explicitement sur le thread principal via
+        `Bukkit.getScheduler().runTask(...)` avant de s'exécuter.
+    -   **Choix revalidés au clic, pas seulement à l'affichage** : la
+        visibilité initiale ne garantit que l'affichage ; `onChoiceSelected`
+        réévalue les conditions du choix cliqué avant d'exécuter quoi que
+        ce soit — une condition qui change entre l'affichage et le clic
+        (ex. quête acceptée entre-temps par une autre voie) est reprise en
+        compte, pas contournable en rejouant un ancien clic.
+    -   **La session elle-même protège contre les clics rejoués/étrangers** :
+        chaque sélection est comparée au (dialogue, nœud) réellement en
+        cours pour ce joueur ; un clic ne correspondant plus à la session
+        actuelle est silencieusement ignoré. Comme chaque joueur ne peut
+        agir que sur *sa propre* session (clé = son UUID), aucune
+        permission dédiée n'est nécessaire pour la sélection d'un choix.
+    -   **`ADVANCE_QUEST`/`TURN_IN_QUEST`** s'appuient sur deux méthodes
+        ajoutées à `QuestProgressEngine` pendant cette étape :
+        `advanceStep(...)` (satisfait manuellement les objectifs de
+        l'étape courante, avance comme si le joueur les avait complétés en
+        jeu) et la réutilisation de `forceComplete(...)` (déjà écrite pour
+        `/quest complete`, dont la javadoc a été élargie : c'est désormais
+        aussi un chemin joueur légitime, pas seulement un outil de test
+        admin).
+-   **PNJ partagé avec les quêtes** — `DialogueNpcInteractListener` (clic
+    sur une entité) réutilise exactement la même convention que
+    `QuestNpcInteractListener` (étape 04) : le nom personnalisé de
+    l'entité identifie ce qu'elle représente. Un même PNJ renommé
+    « guard » peut donc à la fois satisfaire un objectif `TALK_TO_NPC` et
+    ouvrir le dialogue `rpgquest:guard` — cohérence volontaire entre les
+    deux systèmes, toujours sans dépendance à Citizens.
+-   **`/dialogue open <joueur> <dialogueId>`** (`rpgquest.admin`) — seule
+    commande demandée par la mission ; aucune commande n'est nécessaire
+    pour sélectionner un choix (`ClickEvent.callback` est un mécanisme
+    entièrement serveur, pas de round-trip commande).
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -354,6 +487,13 @@ Fabrication → Remise → Récompense
     sûrs) mais aurait rendu toute future migration conditionnelle sur la
     version incorrecte. Détecté par inspection manuelle de la base après
     `runServer`, corrigé, et verrouillé par `SchemaMigratorTest`.
+-   **`config.yml` → `dialogue`** (nouveau) : `renderer` (`chat` par défaut
+    ou `paper-dialog`) et `allowed-commands` (liste blanche pour
+    `RUN_SAFE_COMMAND`). Un `config.yml` déjà existant sur disque (généré
+    par une étape précédente, sans cette section) continue de fonctionner
+    sans modification : la section absente est traitée comme « valeurs par
+    défaut », pas comme une erreur — vérifié en conditions réelles via
+    `runServer` avec l'ancien `config.yml` du dépôt de test.
 -   **`debug`** est le seul champ de configuration réellement branché à un
     comportement observable pour l'instant : quand `true`, `/rpgquest
     version` affiche une ligne supplémentaire résumant la configuration
@@ -363,9 +503,26 @@ Fabrication → Remise → Récompense
 
 ## Limites connues
 
--   `DialogueEngine`, `CustomItemRegistry` et `QuestJournalUi` restent des
-    interfaces marqueurs `extends PluginService`, sans aucune classe qui les
+-   `CustomItemRegistry` et `QuestJournalUi` restent des interfaces
+    marqueurs `extends PluginService`, sans aucune classe qui les
     implémente.
+-   Pas de commande `/dialogue admin reload` — non demandée par cette
+    étape, les dialogues sont chargés une seule fois au démarrage. À
+    ajouter si des dialogues doivent être modifiés sans redémarrer le
+    serveur (mirroir facile de `/quest admin reload`, même mécanisme).
+-   `PaperDialogRenderer` compile contre l'API réelle et son code a été
+    vérifié signature par signature par inspection du jar, mais **n'a pas
+    été exercé par un vrai client** dans cet environnement (aucun client
+    Minecraft disponible ici, comme documenté pour les étapes
+    précédentes) : le renderer par défaut (`ChatDialogueRenderer`, qui a
+    été exercé) est celui recommandé tant que l'API Dialog reste
+    expérimentale et non testée en conditions réelles.
+-   `ADVANCE_QUEST` avance en satisfaisant immédiatement tous les
+    objectifs de l'étape courante — il ne « joue » pas les objectifs un
+    par un ; pour une quête à plusieurs étapes, un seul `ADVANCE_QUEST`
+    depuis un dialogue ne fait passer qu'une étape à la fois (par
+    conception : chaque étape doit rester une décision explicite du
+    scénario, pas un raccourci qui termine toute la quête d'un coup).
 -   `locale` et `resource-pack` sont validés et stockés dans `PluginConfig`
     mais ne pilotent encore aucun comportement réel (pas d'i18n, pas d'envoi
     de resource pack aux joueurs) — prévu pour des étapes ultérieures

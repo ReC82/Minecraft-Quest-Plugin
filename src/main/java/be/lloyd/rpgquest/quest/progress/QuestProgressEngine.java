@@ -254,11 +254,14 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     /**
-     * Bascule administrative (tests) : force la fin d'une quête. Si aucune
-     * progression n'est en mémoire (jamais acceptée, ou déjà remise et donc
-     * évincée du cache), on consulte la base avant de conclure — sans quoi
-     * une quête déjà terminée naturellement serait traitée comme neuve et
-     * sa récompense accordée une seconde fois.
+     * Force la fin d'une quête sans passer par la progression normale des
+     * objectifs — utilisé par la commande admin {@code /quest complete}
+     * (tests) et par l'action de dialogue {@code TURN_IN_QUEST} (usage
+     * joueur légitime, ex. remise à un PNJ). Si aucune progression n'est en
+     * mémoire (jamais acceptée, ou déjà remise et donc évincée du cache),
+     * on consulte la base avant de conclure — sans quoi une quête déjà
+     * terminée naturellement serait traitée comme neuve et sa récompense
+     * accordée une seconde fois.
      */
     public CompletableFuture<CompleteOutcome> forceComplete(Player player, NamespacedKey questId) {
         Optional<QuestDefinition> questOpt = questEngine.find(questId);
@@ -291,6 +294,54 @@ public final class QuestProgressEngine implements PluginService {
             });
             return result;
         });
+    }
+
+    /** État d'une quête pour un joueur : cache si active, sinon base (NOT_STARTED si aucune ligne). */
+    public CompletableFuture<QuestState> stateOf(UUID playerId, NamespacedKey questId) {
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
+        if (playerActive != null) {
+            ActiveQuestProgress cached = playerActive.get(questId);
+            if (cached != null) {
+                return CompletableFuture.completedFuture(cached.state());
+            }
+        }
+        return repository.find(playerId, questId).thenApply(opt -> opt.map(QuestProgressRecord::state).orElse(QuestState.NOT_STARTED));
+    }
+
+    /**
+     * Satisfait manuellement tous les objectifs de l'étape courante (ex.
+     * appelée par une action de dialogue ADVANCE_QUEST) et avance comme si
+     * le joueur les avait complétés en jeu : étape suivante, ou remise si
+     * c'était la dernière. Ne fait rien si la quête n'est pas {@code ACTIVE}
+     * pour ce joueur.
+     *
+     * @return {@code true} si une quête active a bien été avancée
+     */
+    public boolean advanceStep(Player player, NamespacedKey questId) {
+        UUID playerId = player.getUniqueId();
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
+        ActiveQuestProgress progress = playerActive == null ? null : playerActive.get(questId);
+        if (progress == null || progress.state() != QuestState.ACTIVE) {
+            return false;
+        }
+        Optional<QuestDefinition> questOpt = questEngine.find(questId);
+        if (questOpt.isEmpty()) {
+            return false;
+        }
+        QuestDefinition quest = questOpt.get();
+        QuestStep step = quest.steps().get(progress.currentStepIndex());
+        for (int i = 0; i < step.objectives().size(); i++) {
+            int required = requiredAmount(step.objectives().get(i));
+            if (progress.counter(i) < required) {
+                progress.setCounter(i, required);
+                repository.setObjectiveProgress(playerId, questId, step.id(), i, required).exceptionally(error -> {
+                    logger.error("Impossible de persister l'avancement forcé de {} pour {}", questId, playerId, error);
+                    return null;
+                });
+            }
+        }
+        checkStepCompletion(player, quest, progress);
+        return true;
     }
 
     public CompletableFuture<Map<NamespacedKey, QuestState>> allStates(UUID playerId) {

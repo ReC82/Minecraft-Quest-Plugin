@@ -18,3 +18,16 @@ resource-pack:
   enabled: false
   url: ""
   sha1: ""
+
+dialogue:
+  # Renderer utilisé pour afficher les dialogues :
+  #   - chat         : texte cliquable dans le chat, compatible avec tout client (par défaut).
+  #   - paper-dialog : API Dialog native de Paper — marquée expérimentale
+  #                    dans cette version, voir docs/ARCHITECTURE.md.
+  renderer: chat
+  # Liste blanche des commandes autorisées dans l'action RUN_SAFE_COMMAND
+  # d'un dialogue (nom de la commande seul, sans le "/" ni les arguments).
+  # Aucune commande hors de cette liste ne peut être exécutée par un dialogue.
+  allowed-commands:
+    - "give"
+    - "xp"

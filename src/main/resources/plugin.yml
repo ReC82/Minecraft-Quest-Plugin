@@ -16,6 +16,9 @@ commands:
   quest:
     description: Quêtes des joueurs et administration des définitions.
     usage: /<command> <list|accept|progress|abandon|complete|admin>
+  dialogue:
+    description: Ouvre un dialogue pour un joueur (administration).
+    usage: /<command> open <joueur> <dialogueId>
 
 permissions:
   rpgquest.admin:

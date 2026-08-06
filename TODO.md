@@ -17,8 +17,10 @@
 -   [x] `/rpgquest reload` (`rpgquest.admin`) : recharge sans recréer les
     services ni perdre de données ; config précédente conservée si invalide
 -   [x] Interfaces des futurs moteurs : `QuestEngine`, `DialogueEngine`,
-    `CustomItemRegistry`, `QuestJournalUi` (toutes `PluginService`, non
-    implémentées)
+    `CustomItemRegistry`, `QuestJournalUi` (toutes `PluginService`) —
+    `QuestEngine` et `DialogueEngine` sont désormais implémentées
+    (`YamlQuestEngine`, `YamlDialogueEngine`), `CustomItemRegistry` et
+    `QuestJournalUi` restent des interfaces marqueurs
 
 ## Définitions de quêtes (fait)
 
@@ -56,6 +58,28 @@
 -   [x] Permissions distinctes `rpgquest.quest` (joueur) / `rpgquest.admin`
 -   [x] Messages MiniMessage configurables (`messages.yml`)
 
+## Dialogues (fait)
+
+-   [x] Modèles immuables (`DialogueDefinition`, nœuds, choix, conditions,
+    actions) — réutilisent `LocalizedText`/`QuestState` de `quest.model`
+-   [x] 4 types de conditions (QUEST_STATE, HAS_ITEM, HAS_PERMISSION,
+    VARIABLE_EQUALS) et 9 types d'actions (START_QUEST, ADVANCE_QUEST,
+    TURN_IN_QUEST, GIVE_ITEM, TAKE_ITEM, SET_VARIABLE, RUN_SAFE_COMMAND,
+    OPEN_DIALOGUE, CLOSE)
+-   [x] `DialogueLoader` : validation par fichier (dont liste blanche des
+    commandes), un fichier invalide ne bloque pas les autres, doublons
+    d'id et références `OPEN_DIALOGUE` manquantes détectés entre fichiers,
+    **détection de boucles entre dialogues** (les boucles `next` internes à
+    un même dialogue restent autorisées)
+-   [x] `DialogueRenderer` derrière une interface : `ChatDialogueRenderer`
+    (texte cliquable, par défaut) et `PaperDialogRenderer` (API Dialog
+    native de Paper, marquée expérimentale — désactivée par défaut)
+-   [x] `DialogueSessionEngine` : conditions/actions évaluées de façon
+    asynchrone, sessions en mémoire uniquement (pas persistées)
+-   [x] `/dialogue open <joueur> <dialogueId>` (`rpgquest.admin`) + clic sur
+    une entité nommée
+-   [x] Dialogue d'exemple du garde (propose/refuse/explique la récompense)
+
 ## Persistance (fait)
 
 -   [x] `DatabaseManager` SQLite asynchrone (`plugins/RPGQuest/data.db`)
@@ -70,7 +94,7 @@
 -   [x] Architecture
 -   [x] SQLite
 -   [x] Moteur de quêtes (définitions YAML + progression des joueurs)
--   [ ] Dialogues
+-   [x] Dialogues
 -   [ ] Journal de quêtes
 -   [ ] Objets personnalisés
 -   [ ] Armes

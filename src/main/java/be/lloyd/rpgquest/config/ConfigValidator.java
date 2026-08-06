@@ -2,6 +2,8 @@ package be.lloyd.rpgquest.config;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import org.bukkit.configuration.ConfigurationSection;
@@ -25,7 +27,8 @@ public final class ConfigValidator {
         String locale = validateLocale(section);
         String databaseFile = validateDatabaseFile(section);
         ResourcePackConfig resourcePack = validateResourcePack(section);
-        return new PluginConfig(debug, locale, databaseFile, resourcePack);
+        DialogueConfig dialogue = validateDialogue(section);
+        return new PluginConfig(debug, locale, databaseFile, resourcePack, dialogue);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -100,5 +103,28 @@ public final class ConfigValidator {
         }
 
         return new ResourcePackConfig(true, url, sha1.toLowerCase(Locale.ROOT));
+    }
+
+    private static DialogueConfig validateDialogue(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection dialogue = section.getConfigurationSection("dialogue");
+
+        String rawRenderer = dialogue != null ? dialogue.getString("renderer", "chat") : "chat";
+        RendererKind renderer = switch (rawRenderer.toLowerCase(Locale.ROOT)) {
+            case "chat" -> RendererKind.CHAT;
+            case "paper-dialog" -> RendererKind.PAPER_DIALOG;
+            default -> throw new ConfigValidationException(
+                    "« dialogue.renderer » invalide : \"" + rawRenderer + "\" (valides : chat, paper-dialog).");
+        };
+
+        List<String> rawAllowedCommands = dialogue != null ? dialogue.getStringList("allowed-commands") : List.of();
+        List<String> allowedCommands = new ArrayList<>();
+        for (String command : rawAllowedCommands) {
+            if (command == null || command.isBlank()) {
+                throw new ConfigValidationException("« dialogue.allowed-commands » contient une entrée vide.");
+            }
+            allowedCommands.add(command.toLowerCase(Locale.ROOT));
+        }
+
+        return new DialogueConfig(renderer, allowedCommands);
     }
 }

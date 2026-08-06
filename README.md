@@ -56,6 +56,10 @@ Au premier lancement, il faut accepter l'EULA Mojang dans `run/eula.txt`
     chargement des autres.
 -   `/quest admin validate` (`rpgquest.admin`) — même chargement, mais sans
     appliquer le résultat (dry-run) : utile pour vérifier avant de recharger.
+-   `/dialogue open <joueur> <dialogueId>` (`rpgquest.admin`) — ouvre un
+    dialogue pour un joueur en ligne (administration/tests). En jeu, un
+    dialogue s'ouvre aussi en cliquant sur une entité vivante dont le nom
+    personnalisé correspond à un id de dialogue chargé.
 
 ## Quêtes
 
@@ -68,12 +72,30 @@ La progression (acceptation, étapes, compteurs, remise, répétition) est
 persistée par joueur et survit aux reconnexions/redémarrages. Les messages
 envoyés aux joueurs sont personnalisables dans `plugins/RPGQuest/messages.yml`.
 
+## Dialogues
+
+Les définitions de dialogues sont des fichiers YAML dans
+`plugins/RPGQuest/dialogues/` (un exemple — un garde qui propose la
+première quête — généré automatiquement au premier démarrage). Un dialogue
+est un graphe de nœuds (locuteur, texte, choix) reliés par des redirections
+(`next`) ; chaque choix peut avoir des conditions (visibilité) et des
+actions (démarrer/avancer/remettre une quête, donner/retirer un objet,
+mémoriser une variable, exécuter une commande en liste blanche, ouvrir un
+autre dialogue, fermer). Les sessions de dialogue **ne sont pas persistées**
+(en mémoire uniquement) : une déconnexion en cours de dialogue ferme
+simplement la session, comme un inventaire vanilla. Voir
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le format complet, la
+validation (dont la détection de boucles entre dialogues) et le choix du
+renderer.
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
-(code ISO 639-1), `database.file` et `resource-pack` (désactivé par défaut,
-requis `url`/`sha1` uniquement si `enabled: true`). Validée au démarrage et
-à chaque `/rpgquest reload` ; voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+(code ISO 639-1), `database.file`, `resource-pack` (désactivé par défaut,
+requis `url`/`sha1` uniquement si `enabled: true`) et `dialogue` (`renderer`
+— `chat` par défaut ou `paper-dialog` — et `allowed-commands`, la liste
+blanche pour l'action `RUN_SAFE_COMMAND`). Validée au démarrage et à chaque
+`/rpgquest reload` ; voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Persistance
 

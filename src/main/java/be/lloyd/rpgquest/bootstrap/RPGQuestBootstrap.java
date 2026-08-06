@@ -5,6 +5,7 @@ import be.lloyd.rpgquest.command.CustomItemCommand;
 import be.lloyd.rpgquest.command.DialogueCommand;
 import be.lloyd.rpgquest.command.QuestCommand;
 import be.lloyd.rpgquest.command.QuestsCommand;
+import be.lloyd.rpgquest.command.ResourceNodeCommand;
 import be.lloyd.rpgquest.command.RPGQuestCommand;
 import be.lloyd.rpgquest.config.ConfigService;
 import be.lloyd.rpgquest.config.RendererKind;
@@ -12,6 +13,7 @@ import be.lloyd.rpgquest.database.DatabaseService;
 import be.lloyd.rpgquest.database.PlayerProfileRepository;
 import be.lloyd.rpgquest.database.PlayerVariableRepository;
 import be.lloyd.rpgquest.database.QuestProgressRepository;
+import be.lloyd.rpgquest.database.ResourceNodeRepository;
 import be.lloyd.rpgquest.dialogue.YamlDialogueEngine;
 import be.lloyd.rpgquest.dialogue.render.ChatDialogueRenderer;
 import be.lloyd.rpgquest.dialogue.render.DialogueRenderer;
@@ -23,6 +25,9 @@ import be.lloyd.rpgquest.player.PlayerConnectionListener;
 import be.lloyd.rpgquest.player.PlayerListenerService;
 import be.lloyd.rpgquest.player.PlayerProfileService;
 import be.lloyd.rpgquest.quest.QuestMessagesService;
+import be.lloyd.rpgquest.resource.ResourceNodeBreakListener;
+import be.lloyd.rpgquest.resource.ResourceNodeRegistry;
+import be.lloyd.rpgquest.resource.ResourceNodeService;
 import be.lloyd.rpgquest.quest.YamlQuestEngine;
 import be.lloyd.rpgquest.quest.progress.QuestProgressEngine;
 import be.lloyd.rpgquest.ui.QuestJournalService;
@@ -47,12 +52,14 @@ public final class RPGQuestBootstrap {
     private final YamlQuestEngine questEngine;
     private final QuestMessagesService questMessagesService;
     private final YamlCustomItemRegistry customItemRegistry;
+    private final ResourceNodeRegistry resourceNodeRegistry;
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
     private YamlDialogueEngine dialogueEngine;
     private DialogueSessionEngine dialogueSessionEngine;
     private QuestJournalService questJournalService;
+    private ResourceNodeService resourceNodeService;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -65,6 +72,8 @@ public final class RPGQuestBootstrap {
         this.questMessagesService = new QuestMessagesService(plugin);
         this.customItemRegistry = new YamlCustomItemRegistry(
                 plugin.getDataFolder().toPath().resolve("items"), plugin.getSLF4JLogger());
+        this.resourceNodeRegistry = new ResourceNodeRegistry(
+                plugin.getDataFolder().toPath().resolve("resource-nodes"), plugin.getSLF4JLogger());
     }
 
     public void start() {
@@ -79,6 +88,13 @@ public final class RPGQuestBootstrap {
         registry.start(questEngine);
         registry.start(questMessagesService);
         registry.start(customItemRegistry);
+        registry.start(resourceNodeRegistry);
+
+        ResourceNodeRepository resourceNodeRepository = new ResourceNodeRepository(databaseService.databaseManager());
+        resourceNodeService = new ResourceNodeService(
+                plugin, resourceNodeRegistry, resourceNodeRepository, customItemRegistry, plugin.getSLF4JLogger());
+        registry.start(resourceNodeService);
+        registry.start(new PlayerListenerService(plugin, new ResourceNodeBreakListener(resourceNodeService)));
 
         equipmentBehaviorService = new EquipmentBehaviorService(plugin, customItemRegistry, configService);
         registry.start(equipmentBehaviorService);
@@ -157,6 +173,14 @@ public final class RPGQuestBootstrap {
         return equipmentBehaviorService;
     }
 
+    public ResourceNodeRegistry resourceNodeRegistry() {
+        return resourceNodeRegistry;
+    }
+
+    public ResourceNodeService resourceNodeService() {
+        return resourceNodeService;
+    }
+
     private void registerCommands() {
         RPGQuestCommand rpgquestCommand = new RPGQuestCommand(plugin, this);
         var rpgquest = plugin.getCommand("rpgquest");
@@ -190,6 +214,13 @@ public final class RPGQuestBootstrap {
         if (customitem != null) {
             customitem.setExecutor(customItemCommand);
             customitem.setTabCompleter(customItemCommand);
+        }
+
+        ResourceNodeCommand resourceNodeCommand = new ResourceNodeCommand(resourceNodeRegistry, resourceNodeService);
+        var resourcenode = plugin.getCommand("resourcenode");
+        if (resourcenode != null) {
+            resourcenode.setExecutor(resourceNodeCommand);
+            resourcenode.setTabCompleter(resourceNodeCommand);
         }
     }
 }

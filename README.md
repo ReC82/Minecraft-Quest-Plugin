@@ -66,6 +66,12 @@ Au premier lancement, il faut accepter l'EULA Mojang dans `run/eula.txt`
     un objet personnalisé.
 -   `/customitem list` (`rpgquest.admin`) — liste les objets personnalisés chargés.
 -   `/customitem inspect` (`rpgquest.item`) — identifie l'objet tenu en main.
+-   `/resourcenode create <typeId>` (`rpgquest.admin`) — place un nœud de
+    ressource récoltable sur le bloc visé (portée 6 blocs).
+-   `/resourcenode remove` (`rpgquest.admin`) — retire le suivi du nœud sur
+    le bloc visé (ne touche pas au bloc physique).
+-   `/resourcenode inspect` (`rpgquest.admin`) — affiche le type et l'état
+    (actif / épuisé, temps de respawn restant) du nœud sur le bloc visé.
 
 ## Quêtes
 
@@ -133,6 +139,26 @@ contrefait, en main secondaire, ni à un événement déjà annulé par un
 autre plugin. Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le
 détail complet et les garanties de sécurité.
 
+## Ressources personnalisées et récolte
+
+Les **types** de nœuds de ressource (ex. `crystal_ore`) sont des fichiers
+YAML dans `plugins/RPGQuest/resource-nodes/` (un exemple généré
+automatiquement). Un type déclare un bloc vanilla actif et un bloc vanilla
+temporaire affiché une fois épuisé (aucun bloc client personnalisé requis),
+la liste des outils autorisés (vide = n'importe quel outil), un temps de
+respawn et une table de drops pondérée (objets personnalisés et/ou
+matériaux vanilla, un seul tirage par récolte).
+
+Les **positions** de nœuds, elles, sont créées en jeu via
+`/resourcenode create <typeId>` sur le bloc visé et persistées par monde
+(SQLite, survit à un redémarrage). Récolter un nœud actif avec le bon outil
+pose le bloc épuisé, dépose le butin tiré au sort, puis respawn
+automatiquement une fois le délai écoulé — uniquement si le monde existe
+encore et que le chunk est chargé naturellement (aucun chargement forcé de
+chunk). Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le détail
+complet et les garanties anti-exploitation (double cassage simultané,
+mauvais outil, cooldown, monde/chunk absent).
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
@@ -145,9 +171,11 @@ la bossbar optionnelle de la quête suivie). Validée au démarrage et à chaque
 
 ## Persistance
 
-Les données joueurs sont stockées dans `plugins/RPGQuest/data.db` (SQLite),
-créée et migrée automatiquement au démarrage. Toutes les opérations SQL sont
-asynchrones (thread dédié) ; voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Les données joueurs — et depuis l'étape des ressources personnalisées, les
+positions des nœuds de ressource — sont stockées dans
+`plugins/RPGQuest/data.db` (SQLite), créée et migrée automatiquement au
+démarrage. Toutes les opérations SQL sont asynchrones (thread dédié) ; voir
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Structure du projet
 

@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 2;
+    private static final int CURRENT_VERSION = 3;
 
     private SchemaMigrator() {
     }
@@ -28,6 +28,10 @@ public final class SchemaMigrator {
         if (version < 2) {
             applyV2(connection);
             version = 2;
+        }
+        if (version < 3) {
+            applyV3(connection);
+            version = 3;
         }
 
         if (version != startingVersion) {
@@ -95,6 +99,23 @@ public final class SchemaMigrator {
                         progress INTEGER NOT NULL DEFAULT 0,
                         PRIMARY KEY (player_uuid, quest_id, step_id, objective_index),
                         FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV3(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Positions par joueur inutile ici : un nœud appartient au monde, pas à un joueur.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS resource_nodes (
+                        world TEXT NOT NULL,
+                        x INTEGER NOT NULL,
+                        y INTEGER NOT NULL,
+                        z INTEGER NOT NULL,
+                        type_id TEXT NOT NULL,
+                        depleted_at TEXT,
+                        PRIMARY KEY (world, x, y, z)
                     )
                     """);
         }

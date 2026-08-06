@@ -25,6 +25,9 @@ commands:
   customitem:
     description: Registre d'objets personnalisés (armes, outils, ressources).
     usage: /<command> <give <joueur> <id> [quantité]|list|inspect>
+  resourcenode:
+    description: Nœuds de ressource récoltables (administration).
+    usage: /<command> <create <typeId>|remove|inspect>
 
 permissions:
   rpgquest.admin:

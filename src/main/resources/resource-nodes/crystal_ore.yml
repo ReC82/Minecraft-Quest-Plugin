@@ -1,0 +1,25 @@
+id: rpgquest:crystal_ore
+# Bloc vanilla utilisé comme nœud (aucun bloc client custom requis) et bloc
+# temporaire affiché une fois la ressource épuisée, jusqu'au respawn.
+active-material: EMERALD_ORE
+depleted-material: STONE
+
+# Liste vide = n'importe quel outil (ou la main nue) permet de récolter.
+required-tools:
+  - IRON_PICKAXE
+  - DIAMOND_PICKAXE
+  - NETHERITE_PICKAXE
+
+respawn-seconds: 300
+
+# Table de drops pondérée : un seul tirage par récolte (30% cristal raffiné,
+# 70% quartz brut en quantité variable).
+drops:
+  - custom-item: rpgquest:refined_crystal
+    weight: 30
+    min-amount: 1
+    max-amount: 1
+  - material: QUARTZ
+    weight: 70
+    min-amount: 1
+    max-amount: 3

@@ -19,14 +19,14 @@
     ├── quest                (définitions YAML + progression des joueurs)
     │   ├── model            (modèles immuables : quête, étapes, objectifs, récompenses)
     │   └── progress         (état runtime mutable, index, listeners, commandes)
-    ├── resource
+    ├── resource             (types de nœuds YAML + positions récoltables persistées)
+    │   └── model            (modèles immuables : type de nœud, drops pondérés)
     ├── ui                   (journal de quêtes : menu paginé, vue détail, suivi)
     └── util                 (vide pour l'instant : utilitaires génériques uniquement)
 
-Tous les packages listés existent désormais. `resource` reste à créer (pas
-encore requis, prévu pour l'étape du resource pack). `quest`, `dialogue`,
-`ui` et désormais `item` couvrent chacun le chargement/l'affichage **et**
-l'exécution en jeu (voir ci-dessous).
+Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
+`item` et désormais `resource` couvrent chacun le chargement/l'affichage
+**et** l'exécution en jeu (voir ci-dessous).
 
 ### `bootstrap` (cycle de vie du plugin)
 
@@ -750,6 +750,95 @@ l'exécution en jeu (voir ci-dessous).
     (jamais mis en cache), donc activable/désactivable par
     `/rpgquest reload` sans recréer les listeners.
 
+### `resource` (nœuds de ressource récoltables)
+
+-   **Deux notions séparées, comme `item`/`item.behavior`** : un **type** de
+    nœud (`ResourceNodeDefinition`, `resource.model`, YAML dans
+    `plugins/RPGQuest/resource-nodes/`) décrit une recette de récolte
+    (bloc actif/épuisé, outils requis, respawn, drops) ; une **position**
+    (`ResourceNodeService.NodeState`, en mémoire + `resource_nodes` en
+    base) est une instance concrète créée en jeu via `/resourcenode
+    create`. Un même type peut être posé à un nombre arbitraire de
+    positions, exactement comme un `CustomItemDefinition` peut être
+    instancié en un nombre arbitraire d'`ItemStack`.
+-   **Aucun nouveau bloc client** — `active-material`/`depleted-material`
+    sont des blocs vanilla ordinaires (ex. `EMERALD_ORE`/`STONE`) : un nœud
+    « ressource personnalisée » est reconnu uniquement par sa **position**
+    exacte suivie côté serveur, jamais par un identifiant de bloc qui
+    n'existe pas côté client. C'est la même philosophie que les objets
+    personnalisés (identification serveur uniquement, jamais un mécanisme
+    visuel), appliquée aux blocs plutôt qu'aux `ItemStack`.
+-   **`ResourceNodeDefinition`/`ResourceDrop`** — même discipline « correct
+    par construction » que `QuestDefinition`/`CustomItemDefinition` :
+    bloc actif et bloc épuisé doivent être différents (sinon aucun indice
+    visuel de récolte), `respawn-seconds` strictement positif, `drops` non
+    vide. `ResourceDrop` est une interface scellée (`CustomItemDrop` —
+    référence un id résolu via `YamlCustomItemRegistry` au moment de la
+    récolte — ou `VanillaItemDrop` — un `Material` brut), un seul tirage
+    pondéré par récolte (comme une table de loot vanilla classique), pas un
+    jet indépendant par entrée.
+-   **`ResourceNodeDefinitionParser`/`ResourceNodeLoader`** — même
+    conception à deux phases que `QuestLoader`/`ItemLoader` : un fichier
+    parsé indépendamment (accumulation de toutes les erreurs), puis une
+    passe de validation croisée qui rejette les id de type dupliqués entre
+    fichiers (pas de notion de prérequis pour un type de nœud, comme pour
+    un objet).
+-   **`ResourceNodeRegistry`** (`PluginService`) — ne connaît que les
+    *types*, symétrique à `YamlCustomItemRegistry` (génère l'exemple
+    `crystal_ore` embarqué au premier démarrage, jamais s'il existe déjà).
+-   **`ResourceNodeService`** (`PluginService`) — possède l'état runtime
+    des positions : une `ConcurrentHashMap` en mémoire (position → type +
+    échéance de respawn, `null` = actif), peuplée au démarrage depuis
+    `resource_nodes` (chargement asynchrone puis application sur le thread
+    principal, même patron que les autres services). `clock`/le résolveur
+    de monde/le vérificateur de chunk chargé sont injectables (comme le
+    `LongSupplier` de `CooldownManager`), ce qui rend `sweepRespawns(long)`
+    testable de façon déterministe sans dépendre du comportement de
+    monde/chunk simulé par MockBukkit.
+    -   **Récolte (`handleBreak`)** — un `BlockBreakEvent` sur une position
+        suivie est **toujours annulé** (`setCancelled(true)`), y compris en
+        cas de récolte réussie : poser le bloc épuisé à l'intérieur du
+        handler serait sinon immédiatement écrasé par le post-traitement
+        vanilla de l'événement (qui pose `AIR`) si celui-ci n'était pas
+        annulé. Le service prend donc le contrôle total du cassage —
+        remplacement du bloc, dépôt du butin — plutôt que de laisser
+        vanilla agir en parallèle.
+    -   **Anti double-cassage simultané (règle demandée)** — le nœud est
+        marqué épuisé **de façon synchrone**, avant tout dépôt d'objet ou
+        appel asynchrone à la base, exactement le même principe que
+        l'anti double-remise de `QuestProgressEngine` : un second
+        `BlockBreakEvent` sur la même position (même joueur ou un autre)
+        voit déjà l'échéance de cooldown à jour et est annulé sans drop
+        supplémentaire.
+    -   **Bloc physique modifié détecté, jamais deviné** — si le bloc à une
+        position suivie ne correspond ni au matériau actif ni au matériau
+        épuisé attendu (WorldEdit, un joueur qui a construit par-dessus...),
+        `handleBreak` laisse vanilla reprendre la main sur ce cassage
+        plutôt que de continuer sur une hypothèse fausse ; le nœud reste
+        suivi pour autant.
+    -   **Respawn par balayage périodique, jamais de chargement forcé de
+        chunk** — `sweepRespawns` (appelée toutes les 5 s par une tâche
+        Bukkit synchrone, car reposer un bloc exige le thread principal)
+        ne restaure un nœud épuisé dont l'échéance est passée que si son
+        monde existe encore (`Function<String, World>`, `null` = monde
+        supprimé/renommé, respawn différé indéfiniment sans jamais lever
+        d'exception) **et** que son chunk est *déjà* chargé naturellement
+        (`ChunkLoadedChecker`, jamais `Chunk#addPluginChunkTicket` ni
+        équivalent) — un nœud dans un chunk déchargé reste simplement en
+        attente, revérifié au balayage suivant.
+    -   **Redémarrage pendant un cooldown** — les positions et leur
+        `depleted_at` sont rechargées telles quelles depuis
+        `resource_nodes` : un nœud encore en cooldown au moment de l'arrêt
+        du serveur le reste après redémarrage, jusqu'à ce que
+        `sweepRespawns` constate que l'échéance est dépassée (testé
+        directement sans dépendre d'un vrai redémarrage, grâce à l'horloge
+        injectable).
+-   **`/resourcenode create|remove|inspect`** (`rpgquest.admin`, outil
+    d'administration comme `/customitem give|list`) — toutes les
+    sous-commandes résolvent le bloc visé par le joueur via
+    `Player#rayTraceBlocks` (portée 6 blocs), pas de coordonnées à taper à
+    la main.
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -1015,3 +1104,30 @@ Fabrication → Remise → Récompense
     vérifié arithmétiquement (`assertEquals` sur la valeur exacte
     attendue), la comparaison avec une arme vanilla en conditions réelles
     reste à faire par un testeur humain.
+-   **Pas de `/resourcenode reload`** — `ResourceNodeRegistry.reload()`/
+    `.validate()` existent et sont testés directement, mais ne sont pas
+    exposés par une commande (non demandée par cette étape), même
+    limitation déjà documentée pour `/customitem admin reload`.
+-   **Aucun son/particule de cassage vanilla à la récolte d'un nœud** —
+    `handleBreak` annule systématiquement le `BlockBreakEvent` (nécessaire
+    pour poser le bloc épuisé sans que le post-traitement vanilla ne
+    l'écrase, voir section `resource`) ; le joueur voit le bloc changer
+    instantanément plutôt qu'une animation de cassage. Compromis délibéré,
+    cosmétique uniquement.
+-   **La durabilité de l'outil n'est pas consommée par la récolte d'un
+    nœud** — `handleBreak` court-circuite le traitement vanilla habituel
+    (`PlayerItemDamageEvent`) en annulant l'événement ; le système de
+    `durability-cost` d'`item.behavior` reste indépendant et continue de
+    s'appliquer normalement à tout autre cassage de bloc avec un outil
+    personnalisé. Non demandé par cette étape, pourrait être ajouté en
+    appelant manuellement la même logique si nécessaire plus tard.
+-   **Test manuel des nœuds de ressource limité par l'environnement** —
+    aucun client Minecraft réel disponible ici. Compensé par une
+    couverture de test directe construisant de vrais événements Bukkit
+    (`BlockBreakEvent`) sur un monde MockBukkit, avec horloge/résolveur de
+    monde/vérificateur de chunk injectés pour couvrir déterministiquement
+    le respawn, le monde supprimé et le chunk déchargé sans dépendre du
+    comportement réel (non garanti) de MockBukkit sur ces points. Le
+    scénario complet en jeu (poser un nœud, le récolter à plusieurs, sur
+    plusieurs sessions, avec un vrai client) reste à valider par un
+    testeur humain.

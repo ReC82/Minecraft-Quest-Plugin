@@ -164,6 +164,38 @@
 -   [x] Cache de profils limité aux joueurs connectés, invalidé à la déconnexion
 -   [x] Commande `/rpgquest profile [joueur]`
 
+## Ressources personnalisées et récolte (fait)
+
+-   [x] `ResourceNodeDefinition` (`resource.model`) : id namespacé, blocs
+    actif/épuisé vanilla, outils requis (vide = tout outil), temps de
+    respawn, table de drops pondérée (`ResourceDrop` scellé :
+    `CustomItemDrop`/`VanillaItemDrop`) — invariants validés par le record
+    lui-même (blocs distincts, poids/quantités positifs)
+-   [x] `ResourceNodeDefinitionParser`/`ResourceNodeLoader` : même
+    conception à deux phases que `QuestLoader`/`ItemLoader` (un fichier
+    invalide n'empêche pas les autres, id dupliqués rejetés entre fichiers)
+-   [x] `ResourceNodeRegistry` (`PluginService`) : charge les types depuis
+    `plugins/RPGQuest/resource-nodes/`, un exemple (`crystal_ore`, donnant
+    `refined_crystal` ou du quartz brut selon une probabilité configurable)
+    généré automatiquement au premier démarrage
+-   [x] `/resourcenode create|remove|inspect` (`rpgquest.admin`) : agissent
+    sur le bloc visé par le joueur
+-   [x] Persistance des positions par monde (`resource_nodes`, migration
+    V3, SQLite asynchrone, upsert par `(world, x, y, z)`)
+-   [x] `ResourceNodeService` : récolte (vérifie outil requis, dépose un
+    tirage pondéré, remplace le bloc par le bloc épuisé), respawn par
+    balayage périodique **sans jamais charger de chunk de force** (respawn
+    différé tant que le chunk n'est pas naturellement chargé, ou que le
+    monde n'existe plus)
+-   [x] Anti-exploitation : `@EventHandler(ignoreCancelled = true)` +
+    vérification explicite `isCancelled()`, nœud marqué épuisé de façon
+    synchrone avant tout traitement (anti double-cassage simultané), bloc
+    physique modifié manuellement détecté et ignoré plutôt que deviné
+-   [x] Tests : récolte valide, mauvais outil, bon outil, nœud en cooldown,
+    événement annulé, double cassage simultané, chunk déchargé au respawn,
+    monde supprimé au respawn, respawn différé après redémarrage simulé,
+    création sur type inconnu / position déjà occupée, suppression
+
 ## MVP
 
 -   [x] Architecture

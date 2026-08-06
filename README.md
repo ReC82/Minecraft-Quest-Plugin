@@ -44,6 +44,19 @@ Au premier lancement, il faut accepter l'EULA Mojang dans `run/eula.txt`
     recréer les services ni perdre de données. En cas de configuration
     invalide, un message explicite est affiché et l'ancienne configuration
     reste active.
+-   `/quest admin reload` (`rpgquest.admin`) — recharge les définitions de
+    quêtes depuis `plugins/RPGQuest/quests/` et affiche un rapport (nombre
+    chargé, erreurs par fichier). Un fichier invalide n'empêche pas le
+    chargement des autres.
+-   `/quest admin validate` (`rpgquest.admin`) — même chargement, mais sans
+    appliquer le résultat (dry-run) : utile pour vérifier avant de recharger.
+
+## Quêtes
+
+Les définitions de quêtes sont des fichiers YAML dans
+`plugins/RPGQuest/quests/` (deux exemples générés automatiquement au premier
+démarrage). Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le format
+complet et les règles de validation.
 
 ## Configuration
 

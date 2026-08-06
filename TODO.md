@@ -20,6 +20,21 @@
     `CustomItemRegistry`, `QuestJournalUi` (toutes `PluginService`, non
     implémentées)
 
+## Définitions de quêtes (fait)
+
+-   [x] Modèles immuables (`QuestDefinition`, étapes, objectifs, récompenses,
+    textes localisables) avec identifiants namespacés (`NamespacedKey`)
+-   [x] 7 types d'objectifs (BREAK_BLOCK, PLACE_BLOCK, KILL_ENTITY,
+    COLLECT_ITEM, CRAFT_ITEM, TALK_TO_NPC, REACH_LOCATION) et 4 types de
+    récompenses (EXPERIENCE, ITEM, VARIABLE, COMMAND)
+-   [x] `QuestLoader` : validation par fichier (doublons de champs, valeurs
+    négatives, types inconnus, champs obligatoires), un fichier invalide ne
+    bloque pas les autres, doublons d'id et prérequis manquants détectés
+    entre fichiers
+-   [x] `/quest admin reload` et `/quest admin validate` (`rpgquest.admin`)
+-   [x] Deux quêtes d'exemple générées automatiquement (`first_steps`,
+    `woodcutters_request`)
+
 ## Persistance (fait)
 
 -   [x] `DatabaseManager` SQLite asynchrone (`plugins/RPGQuest/data.db`)
@@ -33,7 +48,7 @@
 
 -   [x] Architecture
 -   [x] SQLite
--   [ ] Moteur de quêtes
+-   [x] Moteur de quêtes (définitions YAML ; progression des joueurs à venir)
 -   [ ] Dialogues
 -   [ ] Journal de quêtes
 -   [ ] Objets personnalisés

@@ -11,14 +11,18 @@
     ├── dialogue             (interface du futur moteur, non implémenté)
     ├── item                 (interface du futur registre d'objets, non implémenté)
     ├── player
-    ├── quest                (interface du futur moteur, non implémenté)
+    ├── quest                (définitions YAML implémentées ; progression à venir)
+    │   └── model            (modèles immuables : quête, étapes, objectifs, récompenses)
     ├── resource
     ├── ui                   (interface de la future UI, non implémenté)
     └── util                 (vide pour l'instant : utilitaires génériques uniquement)
 
 Tous les packages listés existent désormais. `resource` reste à créer (pas
-encore requis) ; `quest`, `dialogue`, `item` et `ui` ne contiennent qu'une
-interface marqueur `extends PluginService`, sans implémentation.
+encore requis) ; `dialogue`, `item` et `ui` ne contiennent toujours qu'une
+interface marqueur `extends PluginService`, sans implémentation. `quest`
+contient désormais un chargeur de définitions complet (voir ci-dessous) ;
+seule la **progression** des joueurs (avancement d'étape, octroi réel des
+récompenses) reste à construire.
 
 ### `bootstrap` (cycle de vie du plugin)
 
@@ -140,6 +144,71 @@ interface marqueur `extends PluginService`, sans implémentation.
     bloquante) déportée sur `runTaskAsynchronously` ; la réponse est
     formatée et envoyée uniquement après un retour sur le thread principal.
 
+### `quest` (indépendant de Bukkit/Paper sauf `Material`/`EntityType`/`NamespacedKey`)
+
+-   **Modèles (`quest.model`)** — records immuables. `QuestDefinition`,
+    `QuestStep` copient défensivement leurs listes/maps (`List.copyOf`,
+    `Map.copyOf`) dans leur constructeur canonique compact, et valident leurs
+    propres invariants (ex. une étape sans objectif est rejetée par
+    `QuestStep` lui-même, pas seulement par le parseur) : « correct par
+    construction », pas juste « non modifiable ».
+    -   `QuestObjective` / `QuestReward` sont des **interfaces scellées**
+        (Java 21 `sealed`) avec un type par variante (`BreakBlockObjective`,
+        `KillEntityObjective`, ... / `ExperienceReward`, `ItemReward`, ...) :
+        le compilateur garantit qu'un `switch` sur les 7 types d'objectifs ou
+        les 4 types de récompenses est exhaustif, sans `default` fourre-tout.
+    -   `LocalizedText` porte un texte MiniMessage par code de langue avec
+        une clé `default` obligatoire. La résolution selon la langue active
+        du joueur (`config.yml` → `locale`) n'est **pas** câblée à ce stade :
+        seule la donnée est portée, la même limite déjà documentée pour
+        `locale` dans les décisions techniques.
+    -   Identifiants **namespacés** via `org.bukkit.NamespacedKey` (pas un
+        type maison) : `id: first_steps` est résolu dans le namespace par
+        défaut `rpgquest`, `id: monpack:first_steps` référence un autre
+        namespace. Comme `ConfigurationSection`, c'est un type Bukkit léger,
+        sans dépendance à un serveur vivant — testable en JUnit pur.
+-   **`QuestDefinitionParser`** (package-privé) — valide **un seul fichier**
+    à la fois, uniquement à partir de `ConfigurationSection` : aucune
+    dépendance à `JavaPlugin`, testable sans MockBukkit. Contrairement à
+    `ConfigValidator` (qui lève une exception à la première erreur, un choix
+    délibéré puisqu'il n'y a qu'un seul `config.yml` et qu'un rechargement
+    doit soit pleinement réussir, soit ne rien changer), le parseur de
+    quêtes **accumule toutes les erreurs structurelles** trouvées dans un
+    fichier (champs manquants, types inconnus, nombres négatifs, étape sans
+    objectif, etc.) avant de renvoyer un `ParseResult` en échec — un seul
+    rechargement suffit à voir tous les problèmes d'un fichier donné,
+    plutôt que de les corriger un par un. `Material.matchMaterial(...)` et
+    `EntityType.fromName(...)` (API Paper publique, résolution tolérante des
+    noms) sont utilisés pour valider matériaux/entités sans lister
+    manuellement les valeurs correctes.
+-   **`QuestLoader`** — orchestre le chargement multi-fichiers en deux
+    phases : (1) chaque fichier est parsé indépendamment via
+    `QuestDefinitionParser` — un fichier en erreur est exclu, mais n'empêche
+    jamais le chargement des autres ; (2) une fois tous les fichiers parsés
+    individuellement, une passe de validation croisée rejette les **id
+    dupliqués entre fichiers** (les deux fichiers concernés sont rejetés,
+    impossible de choisir un « gagnant » arbitraire) puis, en boucle à point
+    fixe, les quêtes dont un **prérequis ne résout vers aucune quête
+    effectivement survivante** (gère les rejets en cascade : si B est
+    rejetée, toute quête C qui dépend de B est rejetée à son tour).
+    `loadDirectory(Path)` scanne le dossier réel (fichier YAML syntaxiquement
+    invalide → `InvalidConfigurationException` capturée et transformée en
+    `QuestLoadIssue` lisible, pas de plantage) ; `load(Map<String,
+    ConfigurationSection>)` est l'entrée pure utilisée par les tests.
+-   **`YamlQuestEngine`** (implémente `QuestEngine`, donc `PluginService`) —
+    couche Paper : lit/écrit dans `plugins/RPGQuest/quests/`. Au premier
+    démarrage (`start()`), génère les deux quêtes d'exemple embarquées dans
+    le jar (`getResourceAsStream`, jamais si le fichier cible existe déjà —
+    ne jamais écraser une quête que l'opérateur a modifiée), puis charge le
+    dossier. `reload()` remplace l'ensemble de quêtes actif ; `validate()`
+    fait le même chargement mais **sans** toucher à l'ensemble actif
+    (dry-run explicite demandé par la mission, distinct de `reload`).
+-   **`/quest admin reload|validate`** (`rpgquest.admin`, commande dédiée
+    `/quest`, distincte de `/rpgquest`) — affiche un rapport (nombre chargé,
+    liste des erreurs avec fichier + message). Aucune des deux commandes ne
+    touche aux autres services (base de données, profils) : recharger les
+    quêtes ne recrée ni ne redémarre rien d'autre.
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -193,21 +262,23 @@ Fabrication → Remise → Récompense
 
 ## Limites connues
 
--   Aucune fonctionnalité de jeu (quêtes, dialogues, objets) n'est encore
-    implémentée : `QuestEngine`, `DialogueEngine`, `CustomItemRegistry` et
-    `QuestJournalUi` ne sont que des interfaces marqueurs `extends
-    PluginService`, sans aucune classe qui les implémente. Le socle actuel
-    couvre le squelette du plugin, l'architecture modulaire (services,
-    configuration validée, reload), les commandes
-    `/rpgquest version|help|profile|reload` et la persistance des profils
-    joueurs.
+-   `DialogueEngine`, `CustomItemRegistry` et `QuestJournalUi` restent des
+    interfaces marqueurs `extends PluginService`, sans aucune classe qui les
+    implémente. `QuestEngine` a désormais une implémentation
+    (`YamlQuestEngine`), mais **uniquement pour le chargement des
+    définitions** : aucune progression de joueur n'existe encore (pas de
+    suivi d'étape, pas d'octroi réel de récompense, pas d'exécution des
+    `CommandReward`/`VariableReward`, pas de résolution de `TALK_TO_NPC` ou
+    `REACH_LOCATION` contre un monde/PNJ réel). C'est le socle du moteur, pas
+    le moteur complet — cohérent avec le nom de la mission (« moteur de
+    **définitions** de quêtes »).
 -   `locale` et `resource-pack` sont validés et stockés dans `PluginConfig`
     mais ne pilotent encore aucun comportement réel (pas d'i18n, pas d'envoi
     de resource pack aux joueurs) — prévu pour des étapes ultérieures
     dédiées.
 -   `player_variables` a un repository (`get`/`set`) mais n'est exploité par
-    aucune commande pour l'instant ; `quest_progress` n'a même pas de
-    repository, seulement sa table.
+    aucune commande ni par les récompenses `VariableReward` pour l'instant ;
+    `quest_progress` n'a même pas de repository, seulement sa table.
 -   Sur la console Windows, les caractères accentués des logs (SLF4J) peuvent
     s'afficher incorrectement (`�`) selon la page de code active du terminal.
     Le contenu réel des chaînes est en UTF-8 et n'est pas affecté ; c'est un

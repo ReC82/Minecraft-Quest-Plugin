@@ -13,8 +13,11 @@ commands:
   rpgquest:
     description: Commande principale de RPGQuest.
     usage: /<command> <version|help|profile [joueur]|reload>
+  quest:
+    description: Administration des définitions de quêtes.
+    usage: /<command> admin <reload|validate>
 
 permissions:
   rpgquest.admin:
-    description: Accès aux commandes d'administration de RPGQuest (ex. /rpgquest reload).
+    description: Accès aux commandes d'administration de RPGQuest (ex. /rpgquest reload, /quest admin ...).
     default: op

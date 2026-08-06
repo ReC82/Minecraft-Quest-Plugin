@@ -1,0 +1,31 @@
+id: rpgquest:woodcutters_request
+title: "<gold>La requête du bûcheron</gold>"
+description: "<gray>Récolte du bois et rapporte-le au bûcheron du village.</gray>"
+category: gathering
+repeatable: true
+
+prerequisites:
+  - rpgquest:first_steps
+
+steps:
+  - id: chop_wood
+    objectives:
+      - type: BREAK_BLOCK
+        material: OAK_LOG
+        amount: 20
+  - id: report_to_npc
+    objectives:
+      - type: TALK_TO_NPC
+        npc: woodcutter_bob
+
+rewards:
+  - type: EXPERIENCE
+    amount: 30
+  - type: VARIABLE
+    key: woodcutter_reputation
+    value: "1"
+  - type: COMMAND
+    command: "give %player% oak_planks 16"
+
+variables:
+  wood_collected: "0"

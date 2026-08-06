@@ -1,6 +1,7 @@
 package be.lloyd.rpgquest.bootstrap;
 
 import be.lloyd.rpgquest.RPGQuestPlugin;
+import be.lloyd.rpgquest.command.QuestCommand;
 import be.lloyd.rpgquest.command.RPGQuestCommand;
 import be.lloyd.rpgquest.config.ConfigService;
 import be.lloyd.rpgquest.database.DatabaseService;
@@ -8,11 +9,13 @@ import be.lloyd.rpgquest.database.PlayerProfileRepository;
 import be.lloyd.rpgquest.player.PlayerConnectionListener;
 import be.lloyd.rpgquest.player.PlayerListenerService;
 import be.lloyd.rpgquest.player.PlayerProfileService;
+import be.lloyd.rpgquest.quest.YamlQuestEngine;
 
 /**
  * Construit les services du plugin et orchestre leur démarrage/arrêt dans un
  * ordre garanti : configuration d'abord (les autres services en dépendent),
- * puis base de données, puis les listeners qui exploitent les deux.
+ * puis base de données, puis les listeners qui exploitent les deux, puis le
+ * moteur de quêtes (indépendant des autres, chargé en dernier).
  */
 public final class RPGQuestBootstrap {
 
@@ -20,6 +23,7 @@ public final class RPGQuestBootstrap {
     private final PluginServiceRegistry registry;
     private final ConfigService configService;
     private final DatabaseService databaseService;
+    private final YamlQuestEngine questEngine;
     private PlayerProfileService playerProfileService;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
@@ -28,6 +32,8 @@ public final class RPGQuestBootstrap {
         this.configService = new ConfigService(plugin);
         this.databaseService = new DatabaseService(
                 plugin.getDataFolder().toPath(), configService, plugin.getSLF4JLogger());
+        this.questEngine = new YamlQuestEngine(
+                plugin.getDataFolder().toPath().resolve("quests"), plugin.getSLF4JLogger());
     }
 
     public void start() {
@@ -39,7 +45,9 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(
                 plugin, new PlayerConnectionListener(plugin, playerProfileService)));
 
-        registerCommand();
+        registry.start(questEngine);
+
+        registerCommands();
     }
 
     public void stop() {
@@ -54,12 +62,23 @@ public final class RPGQuestBootstrap {
         return playerProfileService;
     }
 
-    private void registerCommand() {
-        RPGQuestCommand command = new RPGQuestCommand(plugin, this);
+    public YamlQuestEngine questEngine() {
+        return questEngine;
+    }
+
+    private void registerCommands() {
+        RPGQuestCommand rpgquestCommand = new RPGQuestCommand(plugin, this);
         var rpgquest = plugin.getCommand("rpgquest");
         if (rpgquest != null) {
-            rpgquest.setExecutor(command);
-            rpgquest.setTabCompleter(command);
+            rpgquest.setExecutor(rpgquestCommand);
+            rpgquest.setTabCompleter(rpgquestCommand);
+        }
+
+        QuestCommand questCommand = new QuestCommand(questEngine);
+        var quest = plugin.getCommand("quest");
+        if (quest != null) {
+            quest.setExecutor(questCommand);
+            quest.setTabCompleter(questCommand);
         }
     }
 }

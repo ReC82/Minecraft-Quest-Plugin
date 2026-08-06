@@ -1,0 +1,22 @@
+id: rpgquest:first_steps
+title: "<gold>Premiers pas</gold>"
+description: "<gray>Apprends les bases en éliminant quelques araignées.</gray>"
+category: tutorial
+repeatable: false
+
+steps:
+  - id: kill_spiders
+    objectives:
+      - type: KILL_ENTITY
+        entity: SPIDER
+        amount: 10
+
+rewards:
+  - type: EXPERIENCE
+    amount: 50
+  - type: ITEM
+    material: IRON_SWORD
+    amount: 1
+
+variables:
+  tutorial_started: "true"

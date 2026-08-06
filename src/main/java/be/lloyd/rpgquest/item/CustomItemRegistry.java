@@ -3,9 +3,9 @@ package be.lloyd.rpgquest.item;
 import be.lloyd.rpgquest.bootstrap.PluginService;
 
 /**
- * Contrat du futur registre d'objets personnalisés (armes, outils,
- * ressources), identifiés via PersistentDataContainer. Implémentation à
- * venir dans une étape ultérieure.
+ * Contrat du registre d'objets personnalisés (armes, outils, ressources),
+ * identifiés via PersistentDataContainer. Implémenté par
+ * {@link be.lloyd.rpgquest.item.YamlCustomItemRegistry}.
  */
 public interface CustomItemRegistry extends PluginService {
 }

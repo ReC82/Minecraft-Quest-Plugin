@@ -1,0 +1,22 @@
+id: rpgquest:miner_pickaxe
+type: TOOL
+material: DIAMOND_PICKAXE
+name: "<yellow>Pioche du mineur</yellow>"
+lore:
+  - "<gray>Passée de génération en génération de mineurs.</gray>"
+rarity: UNCOMMON
+stackable: false
+max-durability: 2200
+
+enchantments:
+  - type: EFFICIENCY
+    level: 4
+  - type: UNBREAKING
+    level: 3
+
+gameplay-tags:
+  - "starter_tool"
+  - "mining"
+
+crafting:
+  craftable: false

@@ -22,11 +22,17 @@ commands:
   quests:
     description: Ouvre le journal de quêtes (menu paginé).
     usage: /<command>
+  customitem:
+    description: Registre d'objets personnalisés (armes, outils, ressources).
+    usage: /<command> <give <joueur> <id> [quantité]|list|inspect>
 
 permissions:
   rpgquest.admin:
-    description: Accès aux commandes d'administration de RPGQuest (ex. /rpgquest reload, /quest admin, /quest complete).
+    description: Accès aux commandes d'administration de RPGQuest (ex. /rpgquest reload, /quest admin, /quest complete, /customitem give|list).
     default: op
   rpgquest.quest:
     description: Accès aux commandes de quêtes joueur (/quest list|accept|progress|abandon).
+    default: true
+  rpgquest.item:
+    description: Accès aux commandes d'objets personnalisés joueur (/customitem inspect).
     default: true

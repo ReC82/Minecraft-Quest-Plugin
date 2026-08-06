@@ -1,0 +1,18 @@
+id: rpgquest:refined_crystal
+type: QUEST_ITEM
+material: AMETHYST_SHARD
+name: "<light_purple>Cristal raffiné</light_purple>"
+lore:
+  - "<gray>Pulse d'une énergie à peine contenue.</gray>"
+  - "<dark_gray>Un PNJ pourrait s'y intéresser...</dark_gray>"
+rarity: EPIC
+custom-model-data: 2001
+stackable: true
+max-stack-size: 16
+
+gameplay-tags:
+  - "quest_item"
+  - "refined_crystal"
+
+crafting:
+  craftable: false

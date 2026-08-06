@@ -1,0 +1,35 @@
+id: rpgquest:forest_blade
+type: WEAPON
+material: DIAMOND_SWORD
+name: "<green>Lame de la forêt</green>"
+lore:
+  - "<gray>Forgée par les esprits de la forêt.</gray>"
+  - "<dark_gray>Chaque coup murmure entre les feuilles.</dark_gray>"
+rarity: RARE
+stackable: false
+max-durability: 1800
+
+attributes:
+  - attribute: attack_damage
+    amount: 4.0
+    operation: ADD_NUMBER
+    slot: mainhand
+  - attribute: movement_speed
+    amount: 0.05
+    operation: ADD_SCALAR
+    slot: mainhand
+
+enchantments:
+  - type: SHARPNESS
+    level: 3
+  - type: UNBREAKING
+    level: 2
+
+gameplay-tags:
+  - "starter_weapon"
+  - "forest"
+
+special-behavior: "forest_blade_leaf_trail"
+
+crafting:
+  craftable: false

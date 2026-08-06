@@ -1,0 +1,17 @@
+id: rpgquest:spider_fang
+type: RESOURCE
+material: BONE
+name: "<dark_purple>Croc d'araignée</dark_purple>"
+lore:
+  - "<gray>Arraché à une araignée géante.</gray>"
+  - "<gray>Utilisé dans certaines recettes d'alchimie.</gray>"
+rarity: COMMON
+stackable: true
+max-stack-size: 64
+
+gameplay-tags:
+  - "crafting_material"
+  - "drop"
+
+crafting:
+  craftable: false

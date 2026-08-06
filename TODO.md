@@ -106,6 +106,27 @@
 -   [x] Nettoyage à la déconnexion (session + bossbar) et à la désactivation
     du plugin (fermeture des inventaires ouverts, bossbars masquées)
 
+## Objets personnalisés (fait)
+
+-   [x] `CustomItemDefinition` immuable (id namespacé, type, matériau de
+    base, nom + lore MiniMessage, rareté, model data et/ou item model,
+    empilabilité, durabilité, attributs, enchantements, tags de gameplay,
+    comportement spécial, restrictions de fabrication)
+-   [x] 4 types (`WEAPON`, `TOOL`, `RESOURCE`, `QUEST_ITEM`)
+-   [x] `ItemLoader` : validation par fichier, un fichier invalide ne
+    bloque pas les autres, doublons d'id détectés entre fichiers
+-   [x] `YamlCustomItemRegistry` : centralise la création (`create`) et
+    l'identification (`identify`/`isCustomItem`/`resolve`) — l'id est
+    stocké **uniquement** dans le PersistentDataContainer, jamais déduit
+    du nom ou du lore
+-   [x] 4 objets d'exemple générés automatiquement : `forest_blade`
+    (arme), `miner_pickaxe` (outil), `spider_fang` (ressource),
+    `refined_crystal` (objet de quête)
+-   [x] `/customitem give|list` (`rpgquest.admin`) et `/customitem inspect`
+    (`rpgquest.item`, identifie l'objet en main)
+-   [x] Empilement autorisé/interdit réellement appliqué (`ItemMeta#setMaxStackSize`,
+    quantité invalide refusée à la création plutôt que tronquée)
+
 ## Persistance (fait)
 
 -   [x] `DatabaseManager` SQLite asynchrone (`plugins/RPGQuest/data.db`)
@@ -121,11 +142,11 @@
 -   [x] SQLite
 -   [x] Moteur de quêtes (définitions YAML + progression des joueurs)
 -   [x] Dialogues
--   [ ] Journal de quêtes
--   [ ] Objets personnalisés
--   [ ] Armes
--   [ ] Outils
--   [ ] Ressources
+-   [x] Journal de quêtes
+-   [x] Objets personnalisés
+-   [x] Armes
+-   [x] Outils
+-   [x] Ressources
 -   [ ] Craft
 -   [ ] Resource pack
 

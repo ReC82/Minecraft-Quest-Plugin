@@ -1,6 +1,7 @@
 package be.lloyd.rpgquest.bootstrap;
 
 import be.lloyd.rpgquest.RPGQuestPlugin;
+import be.lloyd.rpgquest.command.CustomItemCommand;
 import be.lloyd.rpgquest.command.DialogueCommand;
 import be.lloyd.rpgquest.command.QuestCommand;
 import be.lloyd.rpgquest.command.QuestsCommand;
@@ -16,6 +17,7 @@ import be.lloyd.rpgquest.dialogue.render.ChatDialogueRenderer;
 import be.lloyd.rpgquest.dialogue.render.DialogueRenderer;
 import be.lloyd.rpgquest.dialogue.render.PaperDialogRenderer;
 import be.lloyd.rpgquest.dialogue.session.DialogueSessionEngine;
+import be.lloyd.rpgquest.item.YamlCustomItemRegistry;
 import be.lloyd.rpgquest.player.PlayerConnectionListener;
 import be.lloyd.rpgquest.player.PlayerListenerService;
 import be.lloyd.rpgquest.player.PlayerProfileService;
@@ -43,6 +45,7 @@ public final class RPGQuestBootstrap {
     private final DatabaseService databaseService;
     private final YamlQuestEngine questEngine;
     private final QuestMessagesService questMessagesService;
+    private final YamlCustomItemRegistry customItemRegistry;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
     private YamlDialogueEngine dialogueEngine;
@@ -58,6 +61,8 @@ public final class RPGQuestBootstrap {
         this.questEngine = new YamlQuestEngine(
                 plugin.getDataFolder().toPath().resolve("quests"), plugin.getSLF4JLogger());
         this.questMessagesService = new QuestMessagesService(plugin);
+        this.customItemRegistry = new YamlCustomItemRegistry(
+                plugin.getDataFolder().toPath().resolve("items"), plugin.getSLF4JLogger());
     }
 
     public void start() {
@@ -71,6 +76,7 @@ public final class RPGQuestBootstrap {
 
         registry.start(questEngine);
         registry.start(questMessagesService);
+        registry.start(customItemRegistry);
 
         QuestProgressRepository progressRepository = new QuestProgressRepository(databaseService.databaseManager());
         PlayerVariableRepository variableRepository = new PlayerVariableRepository(databaseService.databaseManager());
@@ -135,6 +141,10 @@ public final class RPGQuestBootstrap {
         return questJournalService;
     }
 
+    public YamlCustomItemRegistry customItemRegistry() {
+        return customItemRegistry;
+    }
+
     private void registerCommands() {
         RPGQuestCommand rpgquestCommand = new RPGQuestCommand(plugin, this);
         var rpgquest = plugin.getCommand("rpgquest");
@@ -161,6 +171,13 @@ public final class RPGQuestBootstrap {
         var quests = plugin.getCommand("quests");
         if (quests != null) {
             quests.setExecutor(questsCommand);
+        }
+
+        CustomItemCommand customItemCommand = new CustomItemCommand(customItemRegistry);
+        var customitem = plugin.getCommand("customitem");
+        if (customitem != null) {
+            customitem.setExecutor(customItemCommand);
+            customitem.setTabCompleter(customItemCommand);
         }
     }
 }

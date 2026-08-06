@@ -62,6 +62,10 @@ Au premier lancement, il faut accepter l'EULA Mojang dans `run/eula.txt`
     personnalisé correspond à un id de dialogue chargé.
 -   `/quests` (`rpgquest.quest`) — ouvre le journal de quêtes (menu
     paginé : actives, disponibles, terminées).
+-   `/customitem give <joueur> <id> [quantité]` (`rpgquest.admin`) — donne
+    un objet personnalisé.
+-   `/customitem list` (`rpgquest.admin`) — liste les objets personnalisés chargés.
+-   `/customitem inspect` (`rpgquest.item`) — identifie l'objet tenu en main.
 
 ## Quêtes
 
@@ -101,6 +105,20 @@ bossbar de progression pour la quête suivie. Aucun objet du menu ne peut
 être déplacé, volé ou dupliqué. Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 pour le détail (disposition, protection anti-vol, rafraîchissement
 événementiel).
+
+## Objets personnalisés
+
+Les définitions d'objets (armes, outils, ressources, objets de quête) sont
+des fichiers YAML dans `plugins/RPGQuest/items/` (quatre exemples générés
+automatiquement : `forest_blade`, `miner_pickaxe`, `spider_fang`,
+`refined_crystal`). Chaque objet définit un matériau vanilla de base, un
+nom/lore MiniMessage, une rareté, une empilabilité et une durabilité
+propres, des attributs et enchantements, des tags de gameplay, et des
+restrictions de fabrication (données, pas encore appliquées — pas de
+recettes personnalisées à ce stade). L'identification est **exclusivement**
+portée par le PersistentDataContainer de l'objet : un objet vanilla
+renommé pour en imiter un n'est jamais reconnu. Voir
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le format complet.
 
 ## Configuration
 

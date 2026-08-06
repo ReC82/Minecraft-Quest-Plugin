@@ -12,7 +12,8 @@
     │   ├── model           (modèles immuables : dialogue, nœuds, choix, conditions, actions)
     │   ├── render          (DialogueRenderer : ChatDialogueRenderer, PaperDialogRenderer)
     │   └── session         (état runtime mutable, sessions en mémoire, listeners)
-    ├── item                 (interface du futur registre d'objets, non implémenté)
+    ├── item                 (définitions YAML d'objets personnalisés + registre)
+    │   └── model            (modèles immuables : type, rareté, attributs, enchantements...)
     ├── player
     ├── quest                (définitions YAML + progression des joueurs)
     │   ├── model            (modèles immuables : quête, étapes, objectifs, récompenses)
@@ -22,10 +23,9 @@
     └── util                 (vide pour l'instant : utilitaires génériques uniquement)
 
 Tous les packages listés existent désormais. `resource` reste à créer (pas
-encore requis) ; `item` ne contient toujours qu'une interface marqueur
-`extends PluginService`, sans implémentation. `quest`, `dialogue` et
-désormais `ui` couvrent chacun le chargement/l'affichage **et** l'exécution
-en jeu (voir ci-dessous).
+encore requis, prévu pour l'étape du resource pack). `quest`, `dialogue`,
+`ui` et désormais `item` couvrent chacun le chargement/l'affichage **et**
+l'exécution en jeu (voir ci-dessous).
 
 ### `bootstrap` (cycle de vie du plugin)
 
@@ -538,6 +538,105 @@ en jeu (voir ci-dessous).
 -   **`/quests`** (`rpgquest.quest`, même permission que les commandes
     `/quest` joueur) — ouvre toujours sur l'onglet Actives, première page.
 
+### `item` (objets personnalisés)
+
+-   **`CustomItemDefinition`** — même discipline « correct par construction »
+    que `QuestDefinition`/`DialogueDefinition`/`CustomItemDefinition` : id
+    namespacé, `CustomItemType` (`WEAPON`/`TOOL`/`RESOURCE`/`QUEST_ITEM`),
+    matériau vanilla de base, nom + lore (chaînes MiniMessage brutes, pas de
+    table de traductions — contrairement à `LocalizedText`, non demandé
+    pour les objets), rareté (`ItemRarity`, porte sa propre couleur
+    MiniMessage), model data **et/ou** item model (les deux mécanismes
+    coexistent, voir plus bas), empilabilité + taille de pile effective,
+    durabilité optionnelle, attributs (`ItemAttributeSpec`), enchantements
+    (`ItemEnchantmentSpec`), tags de gameplay, comportement spécial
+    (identifiant libre, donnée uniquement — voir Limites connues),
+    restrictions de fabrication (`CraftingRestrictions`, donnée uniquement).
+    Invariants rejetés dès le record lui-même (pas seulement le parseur) :
+    taille de pile hors `[1, 99]`, durabilité sur un matériau qui n'en a
+    pas en vanilla, **objet à la fois empilable et doté d'une durabilité**
+    (Minecraft ne fusionne jamais un objet endommagé, quel que soit ce que
+    dirait un composant de taille de pile — combinaison rejetée à la
+    source plutôt que silencieusement ignorée en jeu).
+-   **`ItemDefinitionParser`/`ItemLoader`** — même structure à deux phases
+    que `QuestDefinitionParser`/`QuestLoader` (un fichier à la fois,
+    accumulation de toutes les erreurs ; puis validation croisée qui
+    rejette les id dupliqués entre fichiers). Contrairement au chargeur de
+    quêtes, pas de notion de prérequis entre objets : la validation croisée
+    s'arrête aux doublons.
+    -   **Résolution tolérante contre les registres vanilla** : `material`
+        (`Material.matchMaterial`), `attribute`/`type` d'enchantement
+        (comparés à `Registry.ATTRIBUTE`/au registre d'enchantements via
+        `NamespacedKey.minecraft(nom_en_minuscules)`), `slot`
+        (`EquipmentSlotGroup.getByName`) — même philosophie que
+        `Material.matchMaterial`/`EntityType.fromName` déjà utilisés par le
+        parseur de quêtes : pas de liste de valeurs valides recopiée à la
+        main.
+    -   **`Registry.ENCHANTMENT` est déprécié** dans cette version de
+        l'API (`Registry.ATTRIBUTE` ne l'est pas) : le parseur utilise à la
+        place `RegistryAccess.registryAccess().getRegistry(RegistryKey.ENCHANTMENT)`,
+        le remplacement non déprécié recommandé par Paper — vérifié par
+        compilation avec `-Xlint:deprecation` (aucun avertissement restant).
+-   **Identification — seule source de vérité : le PersistentDataContainer**
+    — chaque objet créé porte son id namespacé sous la clé
+    `rpgquest:custom_item_id` (`PersistentDataType.STRING`).
+    `YamlCustomItemRegistry.identify(ItemStack)` ne lit **que** cette clé ;
+    `isCustomItem`/`resolve` en découlent. Aucune vérification ne compare
+    jamais le nom affiché ou le lore : un objet vanilla renommé pour imiter
+    un objet personnalisé (même nom, même lore) n'est donc jamais reconnu
+    — testé explicitement (`renamedVanillaItemIsNotRecognized`).
+-   **`create(id, amount)` distingue « id inconnu » de « quantité invalide »**
+    seulement au niveau de l'appelant : la méthode elle-même retourne
+    `Optional.empty()` dans les deux cas (id absent du registre, ou
+    `amount` hors de `[1, effectiveMaxStackSize()]`), volontairement — la
+    commande `/customitem give` appelle `find(id)` séparément d'abord pour
+    donner un message d'erreur distinct dans chaque cas.
+-   **Empilabilité réellement appliquée**, pas seulement documentée :
+    `ItemMeta#setMaxStackSize(effectiveMaxStackSize())` est posé sur
+    chaque objet créé (composant Paper 1.20.5+, vérifié présent dans
+    `paper-api-1.21.11` par inspection du jar). Un objet `stackable: false`
+    a donc réellement `getMaxStackSize() == 1` en jeu, et
+    `registry.create(id, 2)` est refusé à la source plutôt que de créer un
+    objet qui mentirait sur sa propre empilabilité.
+-   **Model data ou item model, les deux mécanismes cohabitent** —
+    `custom-model-data` (entier unique, `ItemMeta#setCustomModelData`,
+    **déprécié** par Paper au profit du composant `CustomModelDataComponent`
+    mais toujours fonctionnel et encore utilisé par de nombreux resource
+    packs existants basés sur des prédicats simples) et `item-model`
+    (`NamespacedKey`, `ItemMeta#setItemModel`, non déprécié, mécanisme
+    recommandé actuellement) sont tous deux exposés comme champs
+    optionnels indépendants — c'est la lecture littérale du « model data
+    *ou* item model » de la mission. L'appel dépréciée est explicitement
+    justifié et supprimé (`@SuppressWarnings("deprecation")`) dans
+    `YamlCustomItemRegistry`, même pratique que `PaperDialogRenderer`
+    (`@SuppressWarnings("UnstableApiUsage")`) à l'étape des dialogues.
+-   **Identifiant de modificateur d'attribut dérivé, jamais dans le YAML**
+    — `AttributeModifier` exige une clé unique (`NamespacedKey`, plus
+    l'ancien système par `UUID` aléatoire) ; `YamlCustomItemRegistry` la
+    dérive automatiquement de l'id de l'objet, de la clé de l'attribut et
+    de son index dans la liste (`rpgquest:<item>_<attribut>_<index>`),
+    pour ne pas alourdir la définition d'un champ purement technique que
+    l'auteur du YAML n'a aucune raison de choisir lui-même.
+-   **Niveaux d'enchantement au-delà du maximum vanilla autorisés** —
+    `meta.addEnchant(enchantment, level, true)` (dernier paramètre
+    `ignoreLevelRestriction`) : un plugin RPG a un usage légitime
+    d'enchantements « brisés » (ex. Tranchant X) sur des objets
+    personnalisés, contrairement à un objet vanilla obtenu par enchantement
+    normal en jeu.
+-   **4 objets d'exemple générés automatiquement** (même mécanisme que les
+    quêtes/dialogues d'exemple — jamais écrasés s'ils existent déjà) :
+    `forest_blade` (`WEAPON`, non empilable, durabilité, attributs +
+    enchantements), `miner_pickaxe` (`TOOL`, non empilable, durabilité,
+    enchantements), `spider_fang` (`RESOURCE`, empilable jusqu'à 64),
+    `refined_crystal` (`QUEST_ITEM`, empilable jusqu'à 16, model data) —
+    un exemple par type initial demandé par la mission.
+-   **`/customitem give|list`** (`rpgquest.admin`, outils d'administration
+    comme `/quest complete`/`/dialogue open`) et **`/customitem inspect`**
+    (nouvelle permission `rpgquest.item`, `default: true` — comme
+    `rpgquest.quest`, ouverte à tout joueur puisqu'identifier l'objet
+    qu'on tient en main est une action légitime pour n'importe qui, pas
+    seulement un administrateur).
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -621,12 +720,29 @@ Fabrication → Remise → Récompense
     vaut « valeurs par défaut », pas une erreur — vérifié via `runServer`
     avec l'ancien `config.yml` du dépôt de test (généré avant même la
     section `dialogue`), qui démarre toujours sans modification.
+-   **`ItemDefinitionParserTest`/`YamlCustomItemRegistryTest` ont besoin de
+    MockBukkit**, contrairement à `QuestDefinitionParserTest`/
+    `DialogueDefinitionParserTest` qui restent purs. Découvert en écrivant
+    les tests : `Material`/`EntityType` sont de simples enums résolubles
+    sans serveur, mais `Registry.ATTRIBUTE`/le registre d'enchantements
+    sont des champs statiques peuplés **depuis un serveur Bukkit vivant** —
+    y accéder avant qu'un serveur (mocké ou réel) n'existe échoue avec une
+    `ExceptionInInitializerError` qui, une fois survenue, casse
+    définitivement la classe `Registry` pour le reste de la JVM de test
+    (sémantique standard Java sur l'échec d'initialisation de classe).
+    `ItemDefinitionParserTest` mocke donc systématiquement un serveur
+    (`MockBukkit.mock()`/`unmock()` en `@BeforeEach`/`@AfterEach`), ce qui
+    a aussi pour effet d'amorcer `Registry` correctement pour le reste de
+    la suite quel que soit l'ordre d'exécution des classes de test.
+    Construire un `ItemStack` avec métadonnées (nom, lore, PDC) nécessite
+    de toute façon un `ItemFactory` fourni par le serveur, donc
+    `YamlCustomItemRegistryTest` avait de toute façon besoin de MockBukkit.
 
 ## Limites connues
 
--   `CustomItemRegistry` reste une interface marqueur `extends
-    PluginService`, sans aucune classe qui l'implémente. `QuestJournalUi`
-    est désormais implémentée par `QuestJournalService` (voir section `ui`).
+-   `QuestJournalUi` et `CustomItemRegistry` sont désormais toutes deux
+    implémentées (`QuestJournalService`, `YamlCustomItemRegistry` — voir
+    sections `ui` et `item`).
 -   Pas de commande `/dialogue admin reload` — non demandée par cette
     étape, les dialogues sont chargés une seule fois au démarrage. À
     ajouter si des dialogues doivent être modifiés sans redémarrer le
@@ -696,3 +812,39 @@ Fabrication → Remise → Récompense
     visuel exact (positionnement, couleurs, lisibilité du lore en jeu,
     inventaire plein, latence réseau) reste à valider par un testeur
     humain.
+-   **`special-behavior` : donnée capturée, aucun comportement câblé** — le
+    champ existe, est validé (chaîne libre optionnelle) et exposé (ex.
+    disponible pour une future extension), mais aucun système d'écoute
+    d'événements ne déclenche encore quoi que ce soit à partir de sa
+    valeur (ex. `forest_blade_leaf_trail` sur `forest_blade` ne produit
+    aujourd'hui aucune particule). Choix délibéré de périmètre : la
+    mission de cette étape porte sur le *registre* (définition, création,
+    identification), pas sur un système de comportements de gameplay —
+    câblage prévu pour une étape ultérieure dédiée.
+-   **`crafting` (restrictions de fabrication) : donnée capturée, non
+    appliquée** — `craftable`/`required-permissions` sont validés et
+    consultables (`/customitem inspect`), mais aucune recette personnalisée
+    n'existe encore pour les faire respecter (voir objectif global «
+    recettes personnalisées », étape ultérieure). Un objet marqué
+    `craftable: false` ne peut donc pas *encore* être empêché d'apparaître
+    dans une recette, faute de système de recettes à contraindre.
+-   **Pas de commande `/customitem admin reload`** — non demandée par
+    cette étape (contrairement à `/quest admin reload`/`/dialogue admin
+    reload` — ce dernier n'existe d'ailleurs pas non plus, voir plus haut).
+    `YamlCustomItemRegistry.reload()`/`.validate()` existent et sont
+    testés directement ; les exposer via une commande serait un miroir
+    trivial de `/quest admin reload` si nécessaire plus tard.
+-   **Test manuel des objets personnalisés limité par l'environnement** —
+    aucun client Minecraft réel disponible ici. La mission demande
+    explicitement de « donner, jeter, ramasser, stocker dans un coffre,
+    mourir, reconnecter et redémarrer le serveur » avec un vrai client :
+    non réalisable dans cet environnement. Vérifié à la place : démarrage
+    propre (`YamlCustomItemRegistry` dans l'ordre attendu, « 4 chargé(s),
+    0 erreur(s) » au log), fichiers d'exemple générés strictement
+    identiques aux ressources embarquées dans le jar, et surtout — la
+    persistance à travers un « redémarrage » **est** directement testée
+    (`survivesSerializationRoundTrip`, sérialisation/désérialisation d'un
+    `ItemStack` complet via l'API Bukkit, le même mécanisme que celui
+    utilisé pour écrire un inventaire de joueur sur disque). Le scénario
+    complet en jeu (jeter/ramasser, coffre, mort avec perte/keepInventory,
+    reconnexion avec un vrai client) reste à valider par un testeur humain.

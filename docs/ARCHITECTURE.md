@@ -7,6 +7,8 @@
     ├── bootstrap            (cycle de vie : PluginService, registre, orchestration)
     ├── command
     ├── config               (chargement + validation de config.yml)
+    ├── crafting             (recettes YAML + enregistrement Bukkit + garde anti-substitution)
+    │   └── model            (modèles immuables : recette façonnée/non, ingrédients, résultat)
     ├── database
     ├── dialogue             (définitions YAML + moteur de session, relié aux quêtes)
     │   ├── model           (modèles immuables : dialogue, nœuds, choix, conditions, actions)
@@ -839,6 +841,132 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
     `Player#rayTraceBlocks` (portée 6 blocs), pas de coordonnées à taper à
     la main.
 
+### `crafting` (recettes personnalisées)
+
+-   **`RecipeDefinition`/`RecipeResult`/`RecipeIngredient`** — même
+    discipline « correct par construction » que les autres modèles :
+    interfaces scellées (`ShapedRecipeDefinition`/`ShapelessRecipeDefinition`,
+    `CustomItemResult`/`VanillaResult`, `CustomItemIngredient`/
+    `VanillaIngredient`), invariants validés par les records eux-mêmes
+    (motif 1-3 lignes cohérentes, chaque caractère du motif présent dans
+    `key`, total d'ingrédients `SHAPELESS` ≤ 9 — taille de la grille 3x3).
+    Le parseur (`RecipeDefinitionParser`, même conception à deux phases que
+    les autres) ne connaît aucun registre d'objets : il ne peut donc pas
+    valider qu'un `custom-item:` référencé existe réellement, seulement sa
+    forme syntaxique.
+-   **Résolution et enregistrement (`YamlCraftingRegistry`)** — c'est ici,
+    une fois le registre d'objets disponible, que chaque référence
+    `custom-item:` (ingrédient ou résultat) est résolue via {@code
+    YamlCustomItemRegistry#create} ; un id inconnu (ou une quantité de
+    résultat invalide) rejette **seulement cette recette** avec un message
+    explicite, sans bloquer les autres — même philosophie que le rejet en
+    cascade des quêtes/dialogues. `reload()` désenregistre d'abord toutes
+    les recettes actuellement connues (`Bukkit.removeRecipe`) avant d'en
+    réenregistrer de nouvelles, pour rester idempotent (pas d'exception
+    « clé déjà enregistrée » sur un second appel).
+-   **Ingrédient personnalisé jamais satisfait par un vanilla qui l'imite**
+    — chaque `CustomItemIngredient` devient un `RecipeChoice.ExactChoice`
+    construit à partir de l'`ItemStack` canonique du registre (donc avec
+    son PersistentDataContainer) : c'est la vérification Bukkit native qui
+    empêche déjà la majorité des substituts, avant même qu'un joueur ne
+    puisse valider une fabrication.
+-   **`RecipeCraftGuardListener` — défense en profondeur, pas de suivi
+    positionnel exact** — écoute `PrepareItemCraftEvent` (se déclenche
+    identiquement pour un clic simple, un shift-clic ou une recette
+    automatique du livre de recettes : aucune distinction de code n'est
+    donc nécessaire entre ces cas). Plutôt que de réimplémenter le calcul
+    de décalage d'un motif `SHAPED` dans la grille 3x3 (Bukkit le fait en
+    interne, sans l'exposer), la vérification porte sur l'**ensemble** des
+    identités attendues par la recette matchée (`isValidMatrix`, cœur
+    testable indépendant de l'événement réel) : tout objet de la grille
+    doit être soit un objet personnalisé dont l'id fait partie des
+    ingrédients personnalisés attendus, soit un matériau vanilla qui fait
+    partie des ingrédients vanilla attendus — jamais l'inverse. Un objet
+    personnalisé de la même famille de matériau qu'un ingrédient vanilla
+    attendu (ou l'inverse) est donc rejeté même sans suivi de position.
+-   **Recettes d'exemple** (mêmes conventions que quêtes/dialogues/objets/
+    types de nœuds — jamais écrasées si déjà présentes) : `forest_blade_recipe`
+    (`SHAPED`, 2 `spider_fang` + 1 bâton), `refined_crystal_recipe`
+    (`SHAPELESS`, 4 quartz — voie alternative au nœud `crystal_ore`),
+    `miner_pickaxe_recipe` (`SHAPELESS`, 1 `refined_crystal` + 1 pioche en
+    fer — une amélioration).
+-   **`item.SpiderFangDropListener`** (hors du package `crafting`, mais
+    ajouté pour la même raison) — fait tomber `spider_fang` des araignées
+    tuées par un joueur : sans cette petite addition, `forest_blade_recipe`
+    ne serait atteignable qu'via `/customitem give`, ce qui aurait rendu le
+    parcours RPG complet (voir plus bas) non jouable de bout en bout sans
+    intervention admin. Portée volontairement minimale (un objet, un type
+    de mob, chance de 100 %, pas de table de loot générique) — une vraie
+    table de drops par mob est hors périmètre de cette étape.
+
+## Resource pack (optionnel)
+
+-   **`resource-pack/` à la racine du dépôt** (pas dans `src/main/resources`,
+    puisqu'il n'est pas empaqueté dans le jar du plugin — il est distribué
+    séparément et téléchargé par le client). Contient `pack.mcmeta` et un
+    modèle JSON par objet personnalisé d'exemple (`item-model:` dans son
+    YAML), chacun réutilisant pour l'instant une **texture vanilla
+    existante** comme placeholder temporaire simple (aucune texture propre
+    au projet fournie à ce stade, cohérent avec « textures temporaires
+    originales simples » — remplacer `textures.layer0` par une texture
+    propre plus tard ne demande aucun changement côté plugin).
+-   **Tâches Gradle `buildResourcePack`/`resourcePackSha1`** — zip
+    reproductible (`isPreserveFileTimestamps = false`,
+    `isReproducibleFileOrder = true`, un contenu inchangé produit toujours
+    le même SHA-1) suivi du calcul du hash, écrit dans un fichier `.sha1` à
+    côté du zip. Pas de dépendance externe : `java.security.MessageDigest`
+    du JDK suffit.
+-   **`config.yml` → `resource-pack.required`** (nouveau champ, `false` par
+    défaut) — un refus/échec affiche un message d'avertissement au joueur
+    **uniquement** si `required: true` ; aucune déconnexion automatique
+    dans aucun cas, conformément à la règle « le plugin doit fonctionner
+    sans le resource pack ».
+-   **`player.ResourcePackListener`** — envoie le pack à la connexion
+    (`Player#setResourcePack(UUID, String, byte[], Component, boolean)`,
+    signature vérifiée par inspection du jar `paper-api-1.21.11`) si
+    `resource-pack.enabled`, et réagit à
+    `PlayerResourcePackStatusEvent` (`SUCCESSFULLY_LOADED`,
+    `DECLINED`, `FAILED_DOWNLOAD`, `INVALID_URL`, `FAILED_RELOAD`,
+    `ACCEPTED`, `DOWNLOADED`, `DISCARDED`). Un envoi qui lève une exception
+    (client trop ancien, etc.) est journalisé, jamais fatal à la connexion.
+
+## Parcours RPG complet (dialogue → quête → combat/récolte → fabrication → remise → récompense)
+
+Vertical slice minimal reliant tous les systèmes livrés, construit sur
+l'existant plutôt qu'un nouveau système dédié :
+
+1.  Parler au garde (`dialogues/guard.yml`) → accepter `first_steps` (déjà
+    existante depuis l'étape 3).
+2.  Tuer 10 araignées → remise automatique de `first_steps`
+    (`TALK_TO_NPC`-free : uniquement `KILL_ENTITY`, une seule étape).
+3.  Reparler au garde (nouveau choix, visible seulement une fois
+    `first_steps` `COMPLETED` et `crystal_hunt` `NOT_STARTED`) → accepter
+    `crystal_hunt` (nouvelle quête, prérequis `first_steps`).
+4.  Tuer 5 araignées supplémentaires (`spider_fang` tombe automatiquement,
+    voir `SpiderFangDropListener` ci-dessus) → étape `hunt_spiders`.
+5.  Récolter 2 `refined_crystal` (`COLLECT_ITEM material: AMETHYST_SHARD`,
+    matériau de base de `refined_crystal`) — atteignable soit en récoltant
+    le nœud `crystal_ore` (30 % de chance directe), soit en fabriquant via
+    `refined_crystal_recipe` (4 quartz, obtenus via le même nœud à 70 % de
+    chance) : les deux systèmes se combinent naturellement sans câblage
+    spécifique.
+6.  Fabriquer `forest_blade` via `forest_blade_recipe` → étape `forge_blade`
+    (`CRAFT_ITEM material: DIAMOND_SWORD`, matériau de base de
+    `forest_blade` — **limite connue** : cet objectif ne distingue pas
+    encore un objet personnalisé d'un objet vanilla de même matériau de
+    base, voir « Limites connues » ; une épée en diamant ordinaire validerait
+    aussi cette étape).
+7.  Reparler au garde → dernier objectif (`TALK_TO_NPC npc: guard`) →
+    remise automatique de `crystal_hunt` → récompense `COMMAND`
+    (`customitem give %player% rpgquest:miner_pickaxe 1`, exécutée par la
+    console, donc sans dépendre d'une permission du joueur).
+
+Couvert de bout en bout par `CrystalHuntIntegrationTest`
+(`quest.progress`), qui utilise volontairement le plugin **réellement**
+démarré (`MockBukkit.load(RPGQuestPlugin.class)`) plutôt que des
+définitions synthétiques, pour exercer les quêtes/objets/recettes tels
+qu'embarqués dans le jar.
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -1131,3 +1259,47 @@ Fabrication → Remise → Récompense
     scénario complet en jeu (poser un nœud, le récolter à plusieurs, sur
     plusieurs sessions, avec un vrai client) reste à valider par un
     testeur humain.
+-   **Race condition découverte pendant les tests d'intégration de l'étape
+    10, non corrigée** — `QuestProgressEngine.loadForPlayer` (chargement de
+    la progression au `PlayerJoinEvent`) écrit `activeByPlayer.put(playerId,
+    map)` sans condition, à la fin d'une chaîne entièrement asynchrone. Si
+    un joueur interagit avec le système de quêtes (`accept`, événement de
+    progression) dans la très courte fenêtre entre sa connexion et la fin
+    de ce chargement, ce `put` peut en théorie écraser silencieusement l'état
+    fraîchement modifié en mémoire par autre chose de plus ancien lu en
+    base. En conditions réelles, la latence réseau d'un vrai client rend
+    cette fenêtre infranchissable ; le risque ne s'est manifesté qu'en test
+    automatisé (interaction immédiate, sans latence, avec le joueur simulé
+    juste après `server.addPlayer()` — voir `CrystalHuntIntegrationTest`,
+    qui attend explicitement la fin du chargement avant d'interagir).
+    Risque jugé acceptable et documenté plutôt que corrigé dans cette
+    étape (correctif non trivial — fusion au lieu de remplacement, ou
+    compteur de génération — et hors du périmètre demandé, qui porte sur
+    les étapes 9/10, pas un audit de l'étape 4).
+-   **`CRAFT_ITEM` ne distingue pas un objet personnalisé d'un objet
+    vanilla de même matériau de base** — limitation préexistante depuis
+    l'étape 4 (l'objectif compare uniquement
+    `event.getRecipe().getResult().getType()`), réutilisée telle quelle
+    par la quête `crystal_hunt` (voir « Parcours RPG complet ») : fabriquer
+    une épée en diamant vanilla ordinaire valide donc aussi l'étape
+    « forger une lame », pas seulement `forest_blade`. Même famille de
+    limitation assumée que `TALK_TO_NPC` (identification par un critère
+    grossier plutôt qu'un système dédié) ; corriger cela demanderait de
+    faire porter l'objectif sur un id d'objet personnalisé plutôt qu'un
+    `Material`, un changement de modèle hors du périmètre de cette étape.
+-   **`resource-pack/pack.mcmeta` → `pack_format` non vérifié en
+    conditions réelles** — aucun client Minecraft réel disponible ici (ni
+    la version exacte du client visée, Paper 1.21.11 ne correspondant à
+    aucune version publique connue à la date de cette étape) : la valeur
+    choisie est une estimation raisonnable pour la plage 1.21.x, à
+    ajuster si un client réel la refuse.
+-   **`shift-clic`/recette automatique non testés par un vrai événement
+    Bukkit** — `RecipeCraftGuardListenerTest` vérifie le cœur logique
+    (`isValidMatrix`) directement plutôt que via un `PrepareItemCraftEvent`
+    construit à la main : Bukkit ne fournit aucune API publique pour
+    calculer le décalage réel d'un motif `SHAPED` dans la grille, ce qui
+    aurait rendu un événement construit manuellement non représentatif.
+    Comme `PrepareItemCraftEvent` se déclenche identiquement quel que soit
+    le type de clic (voir section `crafting`), la couverture logique reste
+    valable pour ces cas ; le rendu réel (grille de craft, livre de
+    recettes) reste à valider par un testeur humain.

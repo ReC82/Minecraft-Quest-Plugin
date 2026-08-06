@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     java
     id("xyz.jpenilla.run-paper") version "3.0.2"
@@ -38,6 +40,32 @@ dependencies {
 }
 
 tasks {
+    val buildResourcePack = register<Zip>("buildResourcePack") {
+        group = "rpgquest"
+        description = "Empaquette resource-pack/ en un zip distribuable (build/resource-pack/)."
+        from("resource-pack")
+        archiveFileName.set("RPGQuest-resource-pack.zip")
+        destinationDirectory.set(layout.buildDirectory.dir("resource-pack"))
+        // Horodatage désactivé : un zip reproductible produit toujours le même SHA-1
+        // pour un contenu inchangé, comme attendu par resource-pack.sha1 dans config.yml.
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
+    }
+
+    register("resourcePackSha1") {
+        group = "rpgquest"
+        description = "Calcule le SHA-1 du zip produit par buildResourcePack et l'écrit à côté (.sha1)."
+        dependsOn(buildResourcePack)
+        doLast {
+            val zip = buildResourcePack.get().archiveFile.get().asFile
+            val sha1 = MessageDigest.getInstance("SHA-1")
+                .digest(zip.readBytes())
+                .joinToString("") { byte -> "%02x".format(byte) }
+            zip.resolveSibling(zip.name + ".sha1").writeText(sha1)
+            logger.lifecycle("Resource pack : {} (sha1={})", zip, sha1)
+        }
+    }
+
     test {
         useJUnitPlatform()
     }

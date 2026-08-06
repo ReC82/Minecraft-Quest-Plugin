@@ -1,0 +1,12 @@
+id: rpgquest:refined_crystal_recipe
+type: SHAPELESS
+
+result:
+  custom-item: rpgquest:refined_crystal
+  amount: 1
+
+# Voie de fabrication alternative au nœud de ressource crystal_ore : du
+# quartz brut raffiné en cristal.
+ingredients:
+  - material: QUARTZ
+    amount: 4

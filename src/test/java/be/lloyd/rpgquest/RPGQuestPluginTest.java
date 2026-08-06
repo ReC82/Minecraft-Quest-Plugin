@@ -48,6 +48,14 @@ class RPGQuestPluginTest {
     }
 
     @Test
+    void pluginStartsCleanlyWithNoResourcePackConfigured() {
+        // resource-pack.enabled vaut false par défaut (config.yml embarqué) : le plugin doit démarrer
+        // et fonctionner normalement (apparence vanilla) sans jamais exiger de resource pack.
+        assertFalse(plugin.bootstrap().configService().current().resourcePack().enabled());
+        assertTrue(plugin.isEnabled());
+    }
+
+    @Test
     void reloadAppliesNewValidConfigWithoutRecreatingServices() throws Exception {
         RPGQuestBootstrap bootstrap = plugin.bootstrap();
         PlayerProfileService profileServiceBefore = bootstrap.playerProfileService();

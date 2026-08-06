@@ -7,6 +7,9 @@ lore:
 rarity: UNCOMMON
 stackable: false
 max-durability: 2200
+# Résolu par resource-pack/assets/rpgquest/models/item/miner_pickaxe.json si
+# le resource pack (optionnel) est installé ; apparence vanilla sinon.
+item-model: rpgquest:miner_pickaxe
 
 enchantments:
   - type: EFFICIENCY

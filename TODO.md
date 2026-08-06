@@ -196,6 +196,42 @@
     monde supprimé au respawn, respawn différé après redémarrage simulé,
     création sur type inconnu / position déjà occupée, suppression
 
+## Recettes personnalisées, resource pack et intégration RPG complète (fait)
+
+-   [x] `crafting.model` (`RecipeDefinition` scellé : `ShapedRecipeDefinition`/
+    `ShapelessRecipeDefinition`, `RecipeResult`/`RecipeIngredient` scellés)
+    — invariants validés par les records (motif cohérent, total shapeless
+    ≤ 9)
+-   [x] `RecipeDefinitionParser`/`RecipeLoader` (deux phases, mêmes
+    conventions que les autres chargeurs)
+-   [x] `YamlCraftingRegistry` (`PluginService`) : résout les objets
+    personnalisés référencés via le registre d'objets, enregistre de
+    vraies recettes Bukkit (`Bukkit.addRecipe`), désenregistre proprement
+    au `reload()`
+-   [x] Ingrédients personnalisés vérifiés par PersistentDataContainer
+    (`RecipeChoice.ExactChoice` sur l'objet canonique) + garde en
+    profondeur (`RecipeCraftGuardListener` sur `PrepareItemCraftEvent`,
+    couvre clic simple/shift-clic/recette automatique par construction)
+-   [x] 3 recettes d'exemple : `forest_blade_recipe` (façonnée),
+    `refined_crystal_recipe` (sans forme), `miner_pickaxe_recipe` (sans
+    forme, amélioration)
+-   [x] `resource-pack/` (pack.mcmeta + modèles JSON), tâches Gradle
+    `buildResourcePack`/`resourcePackSha1` (zip reproductible + SHA-1)
+-   [x] `config.yml` → `resource-pack.required` ; `ResourcePackListener`
+    (envoi à la connexion, gestion accepté/refusé/échec/succès, jamais de
+    déconnexion automatique)
+-   [x] Parcours RPG complet jouable de bout en bout : dialogue (garde) →
+    quête `crystal_hunt` → combat (araignées, `spider_fang` via
+    `SpiderFangDropListener`) → récolte (`crystal_ore`) → fabrication
+    (`forest_blade_recipe`) → remise (`TALK_TO_NPC`) → récompense
+    (`miner_pickaxe` via `COMMAND`) — couvert par
+    `CrystalHuntIntegrationTest`, qui exerce le plugin réellement démarré
+-   [x] Tests : validation stricte des ingrédients personnalisés (inconnu
+    → recette rejetée seule), craft normal, recette inconnue, resource
+    pack absent (démarrage propre), configuration resource pack invalide
+    (déjà couvert + étendu pour `required`), cycle métier complet
+    simulable
+
 ## MVP
 
 -   [x] Architecture
@@ -207,8 +243,8 @@
 -   [x] Armes
 -   [x] Outils
 -   [x] Ressources
--   [ ] Craft
--   [ ] Resource pack
+-   [x] Craft
+-   [x] Resource pack
 
 ## Plus tard
 

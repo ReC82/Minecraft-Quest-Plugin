@@ -18,6 +18,20 @@ Plugin RPG pour Paper, sans mod client obligatoire.
 -   Paper 1.21.11
 -   Gradle Wrapper (fourni, aucune installation manuelle requise)
 
+## Installation (serveur de production)
+
+1.  Construire le jar : `gradlew.bat build` / `./gradlew build` — le jar se
+    trouve dans `build/libs/RPGQuest-<version>.jar`.
+2.  Copier ce jar dans le dossier `plugins/` d'un serveur Paper 1.21.11.
+3.  Démarrer le serveur une première fois : `config.yml`, `messages.yml` et
+    les dossiers `quests/`, `dialogues/`, `items/`, `resource-nodes/`,
+    `recipes/` sont générés automatiquement avec leurs exemples.
+4.  Le driver SQLite (`org.xerial:sqlite-jdbc`) est résolu automatiquement
+    au démarrage par le `LibraryLoader` de Paper — aucune installation
+    manuelle de dépendance requise.
+5.  (Optionnel) Configurer un resource pack — voir
+    [RESOURCE_PACK.md](RESOURCE_PACK.md).
+
 ## Développement
 
     gradlew.bat clean build     # Windows
@@ -73,6 +87,14 @@ Au premier lancement, il faut accepter l'EULA Mojang dans `run/eula.txt`
 -   `/resourcenode inspect` (`rpgquest.admin`) — affiche le type et l'état
     (actif / épuisé, temps de respawn restant) du nœud sur le bloc visé.
 
+### Permissions
+
+| Permission | Défaut | Donne accès à |
+|---|---|---|
+| `rpgquest.quest` | tous | `/quest list\|accept\|progress\|abandon`, `/quests` |
+| `rpgquest.item` | tous | `/customitem inspect` |
+| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect` |
+
 ## Quêtes
 
 Les définitions de quêtes sont des fichiers YAML dans
@@ -120,8 +142,9 @@ automatiquement : `forest_blade`, `miner_pickaxe`, `spider_fang`,
 `refined_crystal`). Chaque objet définit un matériau vanilla de base, un
 nom/lore MiniMessage, une rareté, une empilabilité et une durabilité
 propres, des attributs et enchantements, des tags de gameplay, et des
-restrictions de fabrication (données, pas encore appliquées — pas de
-recettes personnalisées à ce stade). L'identification est **exclusivement**
+restrictions de fabrication (`craftable`/`required-permissions`, données
+descriptives — non appliquées lors de la fabrication elle-même ; voir
+[RECIPE_FORMAT.md](RECIPE_FORMAT.md) pour les vraies recettes). L'identification est **exclusivement**
 portée par le PersistentDataContainer de l'objet : un objet vanilla
 renommé pour en imiter un n'est jamais reconnu. Voir
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le format complet.
@@ -155,15 +178,30 @@ Les **positions** de nœuds, elles, sont créées en jeu via
 pose le bloc épuisé, dépose le butin tiré au sort, puis respawn
 automatiquement une fois le délai écoulé — uniquement si le monde existe
 encore et que le chunk est chargé naturellement (aucun chargement forcé de
-chunk). Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le détail
-complet et les garanties anti-exploitation (double cassage simultané,
-mauvais outil, cooldown, monde/chunk absent).
+chunk). Voir [RESOURCE_NODE_FORMAT.md](RESOURCE_NODE_FORMAT.md) pour le format
+complet, et [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le détail
+d'implémentation et les garanties anti-exploitation (double cassage
+simultané, mauvais outil, cooldown, monde/chunk absent).
+
+## Recettes personnalisées
+
+Les définitions de recettes (façonnées ou non) sont des fichiers YAML dans
+`plugins/RPGQuest/recipes/` (trois exemples générés automatiquement :
+`forest_blade_recipe`, `refined_crystal_recipe`, `miner_pickaxe_recipe`).
+Chargées au démarrage, elles s'enregistrent comme de vraies recettes Bukkit
+(visibles dans le livre de recettes vanilla). Un ingrédient personnalisé
+n'est jamais satisfait par un objet vanilla qui l'imite (vérification par
+PersistentDataContainer, doublée d'un contrôle à chaque préparation de
+fabrication — clic simple, shift-clic ou recette automatique déclenchent
+tous la même vérification). Voir [RECIPE_FORMAT.md](RECIPE_FORMAT.md) pour
+le format complet.
 
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
 (code ISO 639-1), `database.file`, `resource-pack` (désactivé par défaut,
-requis `url`/`sha1` uniquement si `enabled: true`), `dialogue` (`renderer`
+requis `url`/`sha1` uniquement si `enabled: true`, voir
+[RESOURCE_PACK.md](RESOURCE_PACK.md)), `dialogue` (`renderer`
 — `chat` par défaut ou `paper-dialog` — et `allowed-commands`, la liste
 blanche pour l'action `RUN_SAFE_COMMAND`) et `journal` (`tracker-enabled`,
 la bossbar optionnelle de la quête suivie). Validée au démarrage et à chaque
@@ -177,6 +215,25 @@ positions des nœuds de ressource — sont stockées dans
 démarrage. Toutes les opérations SQL sont asynchrones (thread dédié) ; voir
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Sauvegarde et restauration
+
+Tout l'état persistant tient dans le dossier `plugins/RPGQuest/` :
+
+-   `data.db` (SQLite) — profils joueurs, progression de quêtes, variables,
+    positions des nœuds de ressource. Le plugin verrouille le fichier tant
+    qu'il est démarré ; sauvegarder à chaud (serveur en marche) reste
+    possible avec les outils de sauvegarde SQLite habituels (ex. `.backup`),
+    ou plus simplement arrêter le serveur avant de copier le fichier.
+-   `config.yml`, `messages.yml`, `quests/`, `dialogues/`, `items/`,
+    `resource-nodes/`, `recipes/` — contenu YAML éditable, à sauvegarder
+    comme n'importe quel fichier de configuration.
+
+Pour restaurer : arrêter le serveur, remplacer le dossier
+`plugins/RPGQuest/` (ou seulement `data.db` pour ne restaurer que la
+progression des joueurs) par la sauvegarde, puis redémarrer. Les migrations
+de schéma (`PRAGMA user_version`) sont idempotentes : une base plus ancienne
+est mise à niveau automatiquement au démarrage.
+
 ## Structure du projet
 
 Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -188,3 +245,11 @@ Voir [PROJECT_RULES.md](PROJECT_RULES.md).
 ## Suivi des tâches
 
 Voir [TODO.md](TODO.md).
+
+## Prochaines étapes
+
+Le MVP (architecture, SQLite, quêtes, dialogues, journal, objets
+personnalisés, armes/outils, ressources, craft, resource pack) est
+complet. Fonctionnalités envisagées ensuite (voir aussi
+[TODO.md](TODO.md)) : PNJ avancés (Citizens ou équivalent, optionnel),
+métiers, donjons, boss, économie, factions.

@@ -1,0 +1,13 @@
+id: rpgquest:miner_pickaxe_recipe
+type: SHAPELESS
+
+result:
+  custom-item: rpgquest:miner_pickaxe
+  amount: 1
+
+# Amélioration d'une pioche en fer avec un cristal raffiné.
+ingredients:
+  - custom-item: rpgquest:refined_crystal
+    amount: 1
+  - material: IRON_PICKAXE
+    amount: 1

@@ -15,6 +15,18 @@ nodes:
           - type: START_QUEST
             quest: rpgquest:first_steps
         next: accepted
+      - text: "J'ai entendu dire que tu avais besoin d'aide pour forger un équipement"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:first_steps
+            state: COMPLETED
+          - type: QUEST_STATE
+            quest: rpgquest:crystal_hunt
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:crystal_hunt
+        next: crystal_hunt_accepted
       - text: "Parle-moi de la récompense"
         next: reward_info
       - text: "Non merci"
@@ -23,6 +35,17 @@ nodes:
   accepted:
     speaker: "Garde"
     text: "<green>Bien ! Reviens me voir une fois prêt.</green>"
+    choices:
+      - text: "D'accord"
+        actions:
+          - type: CLOSE
+
+  crystal_hunt_accepted:
+    speaker: "Garde"
+    text: >
+      <green>Ramène-moi des crocs d'araignée et des cristaux raffinés, et
+      forge une lame digne de ce nom. Reviens me voir une fois la lame
+      forgée.</green>
     choices:
       - text: "D'accord"
         actions:

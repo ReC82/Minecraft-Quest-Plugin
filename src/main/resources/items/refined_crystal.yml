@@ -7,6 +7,10 @@ lore:
   - "<dark_gray>Un PNJ pourrait s'y intéresser...</dark_gray>"
 rarity: EPIC
 custom-model-data: 2001
+# Résolu par resource-pack/assets/rpgquest/models/item/refined_crystal.json si
+# le resource pack (optionnel) est installé (coexiste avec custom-model-data,
+# voir docs/ARCHITECTURE.md) ; apparence vanilla (AMETHYST_SHARD) sinon.
+item-model: rpgquest:refined_crystal
 stackable: true
 max-stack-size: 16
 

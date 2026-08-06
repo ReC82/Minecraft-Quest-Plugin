@@ -126,6 +126,27 @@ class ConfigValidatorTest {
         assertTrue(config.resourcePack().enabled());
         assertEquals("https://example.com/pack.zip", config.resourcePack().url());
         assertEquals(VALID_SHA1, config.resourcePack().sha1());
+        assertFalse(config.resourcePack().required(), "« required » doit valoir false par défaut");
+    }
+
+    @Test
+    void requiredDefaultsToFalseWhenResourcePackSectionIsAbsent() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load(""));
+
+        assertFalse(config.resourcePack().required());
+    }
+
+    @Test
+    void requiredCanBeEnabledAlongsideAValidResourcePack() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                resource-pack:
+                  enabled: true
+                  url: https://example.com/pack.zip
+                  sha1: %s
+                  required: true
+                """.formatted(VALID_SHA1)));
+
+        assertTrue(config.resourcePack().required());
     }
 
     private ConfigurationSection load(String yaml) {

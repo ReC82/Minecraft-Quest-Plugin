@@ -18,6 +18,10 @@ resource-pack:
   enabled: false
   url: ""
   sha1: ""
+  # Si true, un refus/échec de téléchargement affiche un message d'avertissement
+  # au joueur (aucune déconnexion automatique dans tous les cas : le plugin
+  # doit fonctionner sans le resource pack).
+  required: false
 
 dialogue:
   # Renderer utilisé pour afficher les dialogues :

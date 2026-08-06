@@ -18,7 +18,7 @@ import org.slf4j.Logger;
  */
 public final class YamlQuestEngine implements QuestEngine {
 
-    private static final String[] BUNDLED_EXAMPLES = {"first_steps.yml", "woodcutters_request.yml"};
+    private static final String[] BUNDLED_EXAMPLES = {"first_steps.yml", "woodcutters_request.yml", "crystal_hunt.yml"};
 
     private final Path questsDirectory;
     private final Logger logger;

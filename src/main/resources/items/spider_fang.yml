@@ -8,6 +8,9 @@ lore:
 rarity: COMMON
 stackable: true
 max-stack-size: 64
+# Résolu par resource-pack/assets/rpgquest/models/item/spider_fang.json si le
+# resource pack (optionnel) est installé ; apparence vanilla (BONE) sinon.
+item-model: rpgquest:spider_fang
 
 gameplay-tags:
   - "crafting_material"

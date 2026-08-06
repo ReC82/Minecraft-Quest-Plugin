@@ -8,6 +8,10 @@ lore:
 rarity: RARE
 stackable: false
 max-durability: 1800
+# Résolu par resource-pack/assets/rpgquest/models/item/forest_blade.json si le
+# resource pack (optionnel) est installé ; apparence vanilla (DIAMOND_SWORD)
+# sinon.
+item-model: rpgquest:forest_blade
 
 attributes:
   - attribute: attack_damage

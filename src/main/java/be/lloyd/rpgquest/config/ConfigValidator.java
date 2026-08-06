@@ -71,15 +71,16 @@ public final class ConfigValidator {
     private static ResourcePackConfig validateResourcePack(ConfigurationSection section) throws ConfigValidationException {
         ConfigurationSection resourcePack = section.getConfigurationSection("resource-pack");
         if (resourcePack == null) {
-            return new ResourcePackConfig(false, "", "");
+            return new ResourcePackConfig(false, "", "", false);
         }
 
         boolean enabled = resourcePack.getBoolean("enabled", false);
         String url = resourcePack.getString("url", "");
         String sha1 = resourcePack.getString("sha1", "");
+        boolean required = resourcePack.getBoolean("required", false);
 
         if (!enabled) {
-            return new ResourcePackConfig(false, url, sha1);
+            return new ResourcePackConfig(false, url, sha1, required);
         }
 
         if (url.isBlank()) {
@@ -103,7 +104,7 @@ public final class ConfigValidator {
                             + "quand le resource pack est activé.");
         }
 
-        return new ResourcePackConfig(true, url, sha1.toLowerCase(Locale.ROOT));
+        return new ResourcePackConfig(true, url, sha1.toLowerCase(Locale.ROOT), required);
     }
 
     private static DialogueConfig validateDialogue(ConfigurationSection section) throws ConfigValidationException {

@@ -1,0 +1,47 @@
+id: rpgquest:crystal_hunt
+title: "<gold>La chasse aux cristaux</gold>"
+description: "<gray>Le garde a besoin de crocs d'araignée et de cristaux raffinés pour forger un équipement digne de ce nom.</gray>"
+category: crafting
+icon: AMETHYST_SHARD
+repeatable: false
+
+prerequisites:
+  - rpgquest:first_steps
+
+# Parcours complet demandé : dialogue (garde) -> quête -> combat (araignées,
+# donne des crocs via SpiderFangDropListener) -> récolte (nœud crystal_ore ou
+# recette refined_crystal_recipe) -> fabrication (forest_blade_recipe) ->
+# remise (parler au garde) -> récompense (miner_pickaxe).
+steps:
+  - id: hunt_spiders
+    objectives:
+      - type: KILL_ENTITY
+        entity: SPIDER
+        amount: 5
+  - id: gather_crystals
+    objectives:
+      - type: COLLECT_ITEM
+        material: AMETHYST_SHARD
+        amount: 2
+  - id: forge_blade
+    objectives:
+      # Limite connue (voir docs/ARCHITECTURE.md) : CRAFT_ITEM ne distingue
+      # pas encore un objet personnalisé d'un objet vanilla de même matériau
+      # de base — fabriquer une épée en diamant ordinaire valide aussi cette
+      # étape. Assumé, comme TALK_TO_NPC pour l'identification par nom.
+      - type: CRAFT_ITEM
+        material: DIAMOND_SWORD
+        amount: 1
+  - id: report_to_guard
+    objectives:
+      - type: TALK_TO_NPC
+        npc: guard
+
+rewards:
+  - type: EXPERIENCE
+    amount: 100
+  - type: COMMAND
+    command: "customitem give %player% rpgquest:miner_pickaxe 1"
+
+variables:
+  crystal_hunt_started: "true"

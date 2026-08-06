@@ -9,6 +9,8 @@ import be.lloyd.rpgquest.command.ResourceNodeCommand;
 import be.lloyd.rpgquest.command.RPGQuestCommand;
 import be.lloyd.rpgquest.config.ConfigService;
 import be.lloyd.rpgquest.config.RendererKind;
+import be.lloyd.rpgquest.crafting.RecipeCraftGuardListener;
+import be.lloyd.rpgquest.crafting.YamlCraftingRegistry;
 import be.lloyd.rpgquest.database.DatabaseService;
 import be.lloyd.rpgquest.database.PlayerProfileRepository;
 import be.lloyd.rpgquest.database.PlayerVariableRepository;
@@ -19,11 +21,13 @@ import be.lloyd.rpgquest.dialogue.render.ChatDialogueRenderer;
 import be.lloyd.rpgquest.dialogue.render.DialogueRenderer;
 import be.lloyd.rpgquest.dialogue.render.PaperDialogRenderer;
 import be.lloyd.rpgquest.dialogue.session.DialogueSessionEngine;
+import be.lloyd.rpgquest.item.SpiderFangDropListener;
 import be.lloyd.rpgquest.item.YamlCustomItemRegistry;
 import be.lloyd.rpgquest.item.behavior.EquipmentBehaviorService;
 import be.lloyd.rpgquest.player.PlayerConnectionListener;
 import be.lloyd.rpgquest.player.PlayerListenerService;
 import be.lloyd.rpgquest.player.PlayerProfileService;
+import be.lloyd.rpgquest.player.ResourcePackListener;
 import be.lloyd.rpgquest.quest.QuestMessagesService;
 import be.lloyd.rpgquest.resource.ResourceNodeBreakListener;
 import be.lloyd.rpgquest.resource.ResourceNodeRegistry;
@@ -53,6 +57,7 @@ public final class RPGQuestBootstrap {
     private final QuestMessagesService questMessagesService;
     private final YamlCustomItemRegistry customItemRegistry;
     private final ResourceNodeRegistry resourceNodeRegistry;
+    private final YamlCraftingRegistry craftingRegistry;
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
@@ -74,6 +79,8 @@ public final class RPGQuestBootstrap {
                 plugin.getDataFolder().toPath().resolve("items"), plugin.getSLF4JLogger());
         this.resourceNodeRegistry = new ResourceNodeRegistry(
                 plugin.getDataFolder().toPath().resolve("resource-nodes"), plugin.getSLF4JLogger());
+        this.craftingRegistry = new YamlCraftingRegistry(
+                plugin.getDataFolder().toPath().resolve("recipes"), customItemRegistry, plugin.getSLF4JLogger());
     }
 
     public void start() {
@@ -84,10 +91,15 @@ public final class RPGQuestBootstrap {
         playerProfileService = new PlayerProfileService(profileRepository);
         registry.start(new PlayerListenerService(
                 plugin, new PlayerConnectionListener(plugin, playerProfileService)));
+        registry.start(new PlayerListenerService(
+                plugin, new ResourcePackListener(configService, plugin.getSLF4JLogger())));
 
         registry.start(questEngine);
         registry.start(questMessagesService);
         registry.start(customItemRegistry);
+        registry.start(new PlayerListenerService(plugin, new SpiderFangDropListener(customItemRegistry)));
+        registry.start(craftingRegistry);
+        registry.start(new PlayerListenerService(plugin, new RecipeCraftGuardListener(craftingRegistry, customItemRegistry)));
         registry.start(resourceNodeRegistry);
 
         ResourceNodeRepository resourceNodeRepository = new ResourceNodeRepository(databaseService.databaseManager());
@@ -175,6 +187,10 @@ public final class RPGQuestBootstrap {
 
     public ResourceNodeRegistry resourceNodeRegistry() {
         return resourceNodeRegistry;
+    }
+
+    public YamlCraftingRegistry craftingRegistry() {
+        return craftingRegistry;
     }
 
     public ResourceNodeService resourceNodeService() {

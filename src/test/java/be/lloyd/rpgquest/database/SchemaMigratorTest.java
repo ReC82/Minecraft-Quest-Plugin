@@ -1,0 +1,64 @@
+package be.lloyd.rpgquest.database;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class SchemaMigratorTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void migrateSetsUserVersionToCurrentSchemaVersion() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema.db"))) {
+            SchemaMigrator.migrate(connection);
+            assertEquals(2, userVersion(connection));
+        }
+    }
+
+    @Test
+    void migratingTwiceIsIdempotentAndKeepsVersionCurrent() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema2.db"))) {
+            SchemaMigrator.migrate(connection);
+            assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
+            assertEquals(2, userVersion(connection));
+        }
+    }
+
+    @Test
+    void migratingFromAnAlreadyPartiallyMigratedDatabaseStillReachesCurrentVersion() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema3.db"))) {
+            // Simule une base créée avant l'ajout de quest_objective_progress (V1 seulement).
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA user_version = 1");
+                statement.execute("DROP TABLE quest_objective_progress");
+            }
+
+            SchemaMigrator.migrate(connection);
+
+            assertEquals(2, userVersion(connection));
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT name FROM sqlite_master WHERE type='table' AND name='quest_objective_progress'")) {
+                assertTrue(resultSet.next());
+            }
+        }
+    }
+
+    private int userVersion(Connection connection) throws Exception {
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery("PRAGMA user_version")) {
+            return resultSet.next() ? resultSet.getInt(1) : -1;
+        }
+    }
+}

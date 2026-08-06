@@ -12,17 +12,26 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 1;
+    private static final int CURRENT_VERSION = 2;
 
     private SchemaMigrator() {
     }
 
     public static void migrate(Connection connection) throws SQLException {
-        int version = currentVersion(connection);
+        int startingVersion = currentVersion(connection);
+        int version = startingVersion;
 
         if (version < 1) {
             applyV1(connection);
-            setVersion(connection, CURRENT_VERSION);
+            version = 1;
+        }
+        if (version < 2) {
+            applyV2(connection);
+            version = 2;
+        }
+
+        if (version != startingVersion) {
+            setVersion(connection, version);
         }
     }
 
@@ -69,6 +78,22 @@ public final class SchemaMigrator {
                         progress_data TEXT,
                         updated_at TEXT NOT NULL,
                         PRIMARY KEY (player_uuid, quest_id),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV2(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS quest_objective_progress (
+                        player_uuid TEXT NOT NULL,
+                        quest_id TEXT NOT NULL,
+                        step_id TEXT NOT NULL,
+                        objective_index INTEGER NOT NULL,
+                        progress INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (player_uuid, quest_id, step_id, objective_index),
                         FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
                     )
                     """);

@@ -11,8 +11,9 @@
     ├── dialogue             (interface du futur moteur, non implémenté)
     ├── item                 (interface du futur registre d'objets, non implémenté)
     ├── player
-    ├── quest                (définitions YAML implémentées ; progression à venir)
-    │   └── model            (modèles immuables : quête, étapes, objectifs, récompenses)
+    ├── quest                (définitions YAML + progression des joueurs)
+    │   ├── model            (modèles immuables : quête, étapes, objectifs, récompenses)
+    │   └── progress         (état runtime mutable, index, listeners, commandes)
     ├── resource
     ├── ui                   (interface de la future UI, non implémenté)
     └── util                 (vide pour l'instant : utilitaires génériques uniquement)
@@ -20,9 +21,8 @@
 Tous les packages listés existent désormais. `resource` reste à créer (pas
 encore requis) ; `dialogue`, `item` et `ui` ne contiennent toujours qu'une
 interface marqueur `extends PluginService`, sans implémentation. `quest`
-contient désormais un chargeur de définitions complet (voir ci-dessous) ;
-seule la **progression** des joueurs (avancement d'étape, octroi réel des
-récompenses) reste à construire.
+couvre maintenant le chargement des définitions **et** leur progression par
+les joueurs (voir ci-dessous).
 
 ### `bootstrap` (cycle de vie du plugin)
 
@@ -104,9 +104,12 @@ récompenses) reste à construire.
     classes ne dépendent d'aucun type Bukkit/Paper et sont testées en JUnit
     pur, sans MockBukkit.
 -   Tables : `player_profiles(uuid, last_name, created_at, updated_at)`,
-    `player_variables(player_uuid, variable_key, variable_value)` (clé
-    primaire composite, upsert via `ON CONFLICT`), `quest_progress(...)`
-    créée mais sans repository — préparée pour une étape ultérieure.
+    `player_variables(player_uuid, variable_key, variable_value)`,
+    `quest_progress(player_uuid, quest_id, state, progress_data, updated_at)`
+    et `quest_objective_progress(player_uuid, quest_id, step_id,
+    objective_index, progress)` (migration V2) — toutes avec clé primaire
+    composite et upsert via `ON CONFLICT`. `QuestProgressRepository` couvre
+    les deux dernières (voir section `quest.progress`).
 -   **Fermeture** : `DatabaseManager.shutdown()` est volontairement
     bloquant (jusqu'à 5 s) — c'est le seul point du code où l'on attend
     délibérément le thread base de données, et uniquement depuis
@@ -209,6 +212,86 @@ récompenses) reste à construire.
     touche aux autres services (base de données, profils) : recharger les
     quêtes ne recrée ni ne redémarre rien d'autre.
 
+### `quest.progress` (progression des joueurs)
+
+-   **Immuable vs mutable, un choix délibéré** : `quest.model` reste
+    entièrement immuable (définitions figées une fois chargées).
+    `ActiveQuestProgress` (état runtime : étape courante, compteurs, état),
+    lui, est **volontairement mutable** — c'est une donnée qui change à
+    chaque événement de jeu ; la modéliser en immuable obligerait à
+    reconstruire un objet à chaque incrément pour un bénéfice nul. Package-privé,
+    jamais exposé hors de `quest.progress`.
+-   **`QuestObjectiveIndex`** — construit une seule fois par ensemble de
+    quêtes chargé (pas par événement, pas par joueur) : associe chaque
+    critère « grossier » (`Material`, `EntityType`, id de PNJ, nom de monde
+    pour `REACH_LOCATION`) à la liste des `ObjectiveRef` (quête + étape +
+    index d'objectif) qui pourraient correspondre. Un événement de jeu ne
+    consulte donc jamais l'ensemble des quêtes chargées, seulement le petit
+    sous-ensemble indexé pour ce type de critère — c'est ce qui répond à
+    « ne scanne pas toutes les quêtes à chaque événement ».
+-   **Écouteurs conditionnels** — sept petites classes `Listener` (une par
+    type d'objectif : `QuestBlockBreakListener`, `QuestEntityDeathListener`,
+    ...), chacune ne délègue qu'à une seule méthode `handle*` de
+    `QuestProgressEngine`. `QuestProgressEngine.rebuildIndexAndListeners()`
+    n'enregistre (`registerEvents`) que les listeners dont l'index a au
+    moins une entrée, et désenregistre (`HandlerList.unregisterAll`) ceux
+    qui n'en ont plus — recalculé à **chaque** `/quest admin reload`,
+    pas seulement au démarrage. Concrètement : si aucune quête chargée
+    n'utilise `CRAFT_ITEM`, `CraftItemEvent` n'est même pas écouté — c'est
+    le sens de « écoute uniquement les événements nécessaires aux objectifs
+    actifs », particulièrement important pour `PlayerMoveEvent`
+    (`REACH_LOCATION`), l'événement le plus fréquent du jeu.
+    `QuestProgressConnectionListener` (join/quit → charge/vide le cache de
+    progression) reste toujours enregistré, lui, indépendamment des quêtes
+    chargées.
+-   **Anti double-incrément** — avant d'incrémenter, on vérifie que le
+    compteur actuel de cet objectif est strictement inférieur au montant
+    requis ; une fois atteint, tout événement supplémentaire (ex. un 11ᵉ
+    bloc cassé alors que 10 suffisaient) est ignoré pour cet objectif.
+-   **Anti double-remise** — la bascule d'état en mémoire (`ACTIVE` →
+    `READY_TO_TURN_IN` → `COMPLETED`, puis retrait de la quête du cache
+    actif du joueur) est **synchrone**, effectuée avant tout appel
+    asynchrone (persistance, octroi de récompenses). Un second événement
+    arrivant avant même la fin de la persistance voit déjà l'état à jour en
+    mémoire (ou l'entrée absente du cache) et ne redéclenche rien. La voie
+    admin (`/quest complete`, `forceComplete`) applique la même garde
+    en consultant en plus la base si rien n'est en mémoire (une quête
+    remise puis évincée du cache ne doit pas repartir de `ACTIVE` par
+    défaut — bug réel détecté et corrigé pendant cette étape, voir tests).
+-   **Remise automatique** — aucune commande de remise n'existe pour les
+    joueurs (seul `/quest complete`, explicitement outil de test admin,
+    figure dans la liste demandée) : dès que le dernier objectif de la
+    dernière étape est satisfait, la quête passe par `READY_TO_TURN_IN` puis
+    `COMPLETED` dans le même appel, récompenses accordées immédiatement.
+    `READY_TO_TURN_IN` existe et est persisté comme point d'extension pour
+    une future étape (ex. remise conditionnée à un vrai dialogue de PNJ),
+    mais n'est aujourd'hui jamais un état durable observable.
+-   **Répétition contrôlée** — `accept()` consulte l'état persisté (pas
+    seulement le cache mémoire) : `COMPLETED` + `repeatable: false` →
+    refusé ; `COMPLETED` + `repeatable: true`, ou `ABANDONED`, ou absence de
+    ligne → accepté, compteurs repartis de zéro.
+-   **Prérequis appliqués à l'acceptation** — `QuestDefinition.prerequisites()`
+    (déjà validés à l'existence au chargement, voir plus haut) sont
+    désormais vérifiés un par un contre `quest_progress` : tous doivent être
+    `COMPLETED` pour ce joueur, sinon `accept()` échoue en listant lesquels
+    manquent.
+-   **`TALK_TO_NPC` sans système de PNJ dédié** — `QuestNpcInteractListener`
+    écoute `PlayerInteractEntityEvent` et compare le nom personnalisé
+    (`Entity#customName()`, converti en texte brut via
+    `PlainTextComponentSerializer`, aucune dépendance Citizens) de l'entité
+    clic-droitée à l'id configuré dans l'objectif. N'importe quelle entité
+    vivante renommée (à l'enclume, par exemple) peut donc servir de PNJ
+    temporaire — limitation assumée, un vrai système de PNJ est hors
+    périmètre de cette étape.
+-   **Persistance** — `QuestProgressRepository` (`database`, requêtes
+    préparées, `ON CONFLICT` pour les upserts) couvre `quest_progress`
+    (état + étape courante) et la nouvelle table `quest_objective_progress`
+    (migration V2, un compteur par `player_uuid, quest_id, step_id,
+    objective_index`). `loadForPlayer()` recharge à la connexion l'étape et
+    les compteurs de chaque quête `ACTIVE`/`READY_TO_TURN_IN` — c'est ce qui
+    permet à un joueur de reprendre exactement là où il en était après une
+    reconnexion en cours d'étape.
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -253,6 +336,24 @@ Fabrication → Remise → Récompense
     exposé par `PluginConfig` mais **pas encore utilisé** ailleurs dans le
     code — aucun système d'i18n n'existe à ce stade ; câblage prévu pour une
     étape ultérieure.
+-   **`messages.yml`** (nouveau, distinct de `config.yml`) : messages
+    MiniMessage des commandes `/quest`, copié depuis le jar au premier
+    démarrage (jamais écrasé ensuite), rechargé par `/quest admin reload`.
+    Choix d'un fichier séparé plutôt que d'alourdir `config.yml` (qui reste
+    dédié aux réglages, pas au texte) — convention courante dans
+    l'écosystème Bukkit.
+-   **Bug de migration de schéma corrigé pendant cette étape** :
+    l'ajout de la migration V2 (`quest_objective_progress`) a révélé que
+    `SchemaMigrator.migrate()` ne persistait jamais la nouvelle version via
+    `PRAGMA user_version` après une migration réelle (condition de
+    comparaison inversée — comparait la version obtenue *après* migration à
+    `CURRENT_VERSION`, toujours égales par construction, au lieu de la
+    comparer à la version de *départ*). Les tables étaient bien créées mais
+    `user_version` restait bloqué à `1` indéfiniment, ce qui n'aurait rien
+    cassé fonctionnellement ici (les `CREATE TABLE IF NOT EXISTS` restent
+    sûrs) mais aurait rendu toute future migration conditionnelle sur la
+    version incorrecte. Détecté par inspection manuelle de la base après
+    `runServer`, corrigé, et verrouillé par `SchemaMigratorTest`.
 -   **`debug`** est le seul champ de configuration réellement branché à un
     comportement observable pour l'instant : quand `true`, `/rpgquest
     version` affiche une ligne supplémentaire résumant la configuration
@@ -264,29 +365,36 @@ Fabrication → Remise → Récompense
 
 -   `DialogueEngine`, `CustomItemRegistry` et `QuestJournalUi` restent des
     interfaces marqueurs `extends PluginService`, sans aucune classe qui les
-    implémente. `QuestEngine` a désormais une implémentation
-    (`YamlQuestEngine`), mais **uniquement pour le chargement des
-    définitions** : aucune progression de joueur n'existe encore (pas de
-    suivi d'étape, pas d'octroi réel de récompense, pas d'exécution des
-    `CommandReward`/`VariableReward`, pas de résolution de `TALK_TO_NPC` ou
-    `REACH_LOCATION` contre un monde/PNJ réel). C'est le socle du moteur, pas
-    le moteur complet — cohérent avec le nom de la mission (« moteur de
-    **définitions** de quêtes »).
+    implémente.
 -   `locale` et `resource-pack` sont validés et stockés dans `PluginConfig`
     mais ne pilotent encore aucun comportement réel (pas d'i18n, pas d'envoi
     de resource pack aux joueurs) — prévu pour des étapes ultérieures
     dédiées.
--   `player_variables` a un repository (`get`/`set`) mais n'est exploité par
-    aucune commande ni par les récompenses `VariableReward` pour l'instant ;
-    `quest_progress` n'a même pas de repository, seulement sa table.
+-   `TALK_TO_NPC` repose sur le nom personnalisé d'une entité vivante
+    quelconque (voir section `quest.progress`) : aucun système de PNJ dédié
+    n'existe (pas d'invulnérabilité, d'IA figée, de dialogue). `COMMAND` et
+    `VARIABLE` (récompenses) s'exécutent bien à la remise, mais aucune
+    commande ne permet encore de *lire* une `player_variable` en jeu.
+-   Fenêtre de risque théorique, non traitée : si le processus plante entre
+    l'octroi d'une récompense (déjà appliqué au joueur) et la confirmation
+    de l'écriture asynchrone de `state = COMPLETED` en base, un redémarrage
+    pourrait, en théorie, permettre un octroi supplémentaire au prochain
+    déclenchement. Design volontairement simple (pas de transaction
+    distribuée/outbox) ; risque jugé acceptable pour un plugin de ce type,
+    documenté plutôt que traité.
 -   Sur la console Windows, les caractères accentués des logs (SLF4J) peuvent
     s'afficher incorrectement (`�`) selon la page de code active du terminal.
     Le contenu réel des chaînes est en UTF-8 et n'est pas affecté ; c'est un
     problème d'affichage console, pas un bug du plugin.
--   Test manuel limité par l'environnement : aucun client Minecraft réel
-    n'est disponible ici pour simuler une vraie connexion/déconnexion de
-    joueur. Vérifié à la place via la console (`/rpgquest profile`,
-    `/rpgquest profile <nom>` sur un joueur jamais connecté) et inspection
-    directe du fichier `data.db` généré (tables + `PRAGMA user_version`). Le
-    scénario complet « connexion → déconnexion/reconnexion → redémarrage »
-    reste à valider manuellement par un testeur humain avec un client.
+-   **Test manuel limité par l'environnement** : aucun client Minecraft réel
+    n'est disponible ici. La mission de cette étape demande explicitement de
+    « jouer entièrement les deux quêtes d'exemple avec un vrai client » —
+    non réalisable dans cet environnement. Vérifié à la place via la
+    console : démarrage propre, écouteurs enregistrés uniquement pour les
+    types d'objectifs réellement utilisés (`KILL_ENTITY`, `BREAK_BLOCK`,
+    `TALK_TO_NPC` pour les deux exemples), rapport de chargement des
+    quêtes, rejet correct des commandes joueur exécutées depuis la console,
+    et inspection directe de `data.db` (tables `quest_progress`/
+    `quest_objective_progress`, `PRAGMA user_version = 2`). Le scénario de
+    jeu complet (accepter, progresser, remettre, reconnexion en cours de
+    quête, avec un vrai client) reste à valider par un testeur humain.

@@ -44,8 +44,14 @@ Au premier lancement, il faut accepter l'EULA Mojang dans `run/eula.txt`
     recréer les services ni perdre de données. En cas de configuration
     invalide, un message explicite est affiché et l'ancienne configuration
     reste active.
+-   `/quest list` (`rpgquest.quest`) — liste les quêtes disponibles et ton état sur chacune.
+-   `/quest accept <id>` (`rpgquest.quest`) — accepte une quête (vérifie prérequis, répétabilité, doublon).
+-   `/quest progress [id]` (`rpgquest.quest`) — ta progression globale, ou le détail (compteurs) d'une quête active.
+-   `/quest abandon <id>` (`rpgquest.quest`) — abandonne une quête active ; elle peut être ré-acceptée ensuite.
+-   `/quest complete <id>` (`rpgquest.admin`) — force la fin d'une quête (outil de test admin uniquement).
 -   `/quest admin reload` (`rpgquest.admin`) — recharge les définitions de
-    quêtes depuis `plugins/RPGQuest/quests/` et affiche un rapport (nombre
+    quêtes et `messages.yml` depuis le disque, et reconstruit l'index/les
+    écouteurs de progression en conséquence. Affiche un rapport (nombre
     chargé, erreurs par fichier). Un fichier invalide n'empêche pas le
     chargement des autres.
 -   `/quest admin validate` (`rpgquest.admin`) — même chargement, mais sans
@@ -57,6 +63,10 @@ Les définitions de quêtes sont des fichiers YAML dans
 `plugins/RPGQuest/quests/` (deux exemples générés automatiquement au premier
 démarrage). Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le format
 complet et les règles de validation.
+
+La progression (acceptation, étapes, compteurs, remise, répétition) est
+persistée par joueur et survit aux reconnexions/redémarrages. Les messages
+envoyés aux joueurs sont personnalisables dans `plugins/RPGQuest/messages.yml`.
 
 ## Configuration
 

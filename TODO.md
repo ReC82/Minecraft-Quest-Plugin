@@ -35,12 +35,33 @@
 -   [x] Deux quêtes d'exemple générées automatiquement (`first_steps`,
     `woodcutters_request`)
 
+## Progression des quêtes (fait)
+
+-   [x] États `NOT_STARTED` (implicite, absence de ligne), `ACTIVE`,
+    `READY_TO_TURN_IN`, `COMPLETED`, `FAILED` (état modélisé, non déclenché
+    par le gameplay actuel), `ABANDONED`
+-   [x] Acceptation (prérequis, doublon, répétition contrôlée), abandon
+    (ré-acceptable ensuite), progression par événement, remise automatique
+    à la fin de la dernière étape (octroi des récompenses)
+-   [x] Écouteurs Bukkit enregistrés **uniquement** pour les types
+    d'objectifs réellement utilisés par les quêtes chargées (recalculé à
+    chaque `/quest admin reload`)
+-   [x] `QuestObjectiveIndex` : aucune quête non concernée n'est parcourue
+    par événement
+-   [x] Anti double-incrément (compteur plafonné au requis) et anti
+    double-remise (bascule mémoire synchrone avant toute persistance async)
+-   [x] `quest_objective_progress` (migration V2) : étape courante, compteurs
+    et état persistés, rechargés à la reconnexion
+-   [x] Commandes `/quest list|accept|progress|abandon|complete`
+-   [x] Permissions distinctes `rpgquest.quest` (joueur) / `rpgquest.admin`
+-   [x] Messages MiniMessage configurables (`messages.yml`)
+
 ## Persistance (fait)
 
 -   [x] `DatabaseManager` SQLite asynchrone (`plugins/RPGQuest/data.db`)
 -   [x] Migration de schéma versionnée (`PRAGMA user_version`), idempotente
--   [x] Tables `player_profiles`, `player_variables`
--   [x] Table `quest_progress` préparée (non exploitée)
+-   [x] Tables `player_profiles`, `player_variables`, `quest_progress`,
+    `quest_objective_progress`
 -   [x] Cache de profils limité aux joueurs connectés, invalidé à la déconnexion
 -   [x] Commande `/rpgquest profile [joueur]`
 
@@ -48,7 +69,7 @@
 
 -   [x] Architecture
 -   [x] SQLite
--   [x] Moteur de quêtes (définitions YAML ; progression des joueurs à venir)
+-   [x] Moteur de quêtes (définitions YAML + progression des joueurs)
 -   [ ] Dialogues
 -   [ ] Journal de quêtes
 -   [ ] Objets personnalisés

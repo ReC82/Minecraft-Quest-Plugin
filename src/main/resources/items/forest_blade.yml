@@ -31,5 +31,25 @@ gameplay-tags:
 
 special-behavior: "forest_blade_leaf_trail"
 
+# Comportement de combat (feature/08) : dégâts et vitesse d'attaque en bonus
+# additifs (compatibles avec Tranchant, déjà pris en compte par le jeu avant
+# que cet événement ne se déclenche), chance de critique, effet conditionnel
+# à cooldown, particules/message sur coup notable.
+combat:
+  base-damage: 1.5
+  attack-speed-bonus: 0.2
+  critical-chance: 0.2
+  critical-multiplier: 1.5
+  hit-message: "<red>Coup critique !</red> <gray>(<damage> dégâts)</gray>"
+  particle: CRIT
+  particle-count: 10
+  effect:
+    ability-id: "leaf_trail_slow"
+    type: SLOWNESS
+    duration-ticks: 60
+    amplifier: 1
+    chance: 0.25
+    cooldown-seconds: 8
+
 crafting:
   craftable: false

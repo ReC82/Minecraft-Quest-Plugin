@@ -27,7 +27,9 @@ public record CustomItemDefinition(
         List<ItemEnchantmentSpec> enchantments,
         List<String> gameplayTags,
         String specialBehavior,
-        CraftingRestrictions crafting
+        CraftingRestrictions crafting,
+        WeaponBehavior weaponBehavior,
+        ToolBehavior toolBehavior
 ) {
 
     private static final int VANILLA_MAX_STACK_SIZE = 99;

@@ -18,6 +18,7 @@ import be.lloyd.rpgquest.dialogue.render.DialogueRenderer;
 import be.lloyd.rpgquest.dialogue.render.PaperDialogRenderer;
 import be.lloyd.rpgquest.dialogue.session.DialogueSessionEngine;
 import be.lloyd.rpgquest.item.YamlCustomItemRegistry;
+import be.lloyd.rpgquest.item.behavior.EquipmentBehaviorService;
 import be.lloyd.rpgquest.player.PlayerConnectionListener;
 import be.lloyd.rpgquest.player.PlayerListenerService;
 import be.lloyd.rpgquest.player.PlayerProfileService;
@@ -46,6 +47,7 @@ public final class RPGQuestBootstrap {
     private final YamlQuestEngine questEngine;
     private final QuestMessagesService questMessagesService;
     private final YamlCustomItemRegistry customItemRegistry;
+    private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
     private YamlDialogueEngine dialogueEngine;
@@ -77,6 +79,12 @@ public final class RPGQuestBootstrap {
         registry.start(questEngine);
         registry.start(questMessagesService);
         registry.start(customItemRegistry);
+
+        equipmentBehaviorService = new EquipmentBehaviorService(plugin, customItemRegistry, configService);
+        registry.start(equipmentBehaviorService);
+        registry.start(new PlayerListenerService(plugin, equipmentBehaviorService.weaponListener()));
+        registry.start(new PlayerListenerService(plugin, equipmentBehaviorService.toolListener()));
+        registry.start(new PlayerListenerService(plugin, equipmentBehaviorService.cooldownCleanupListener()));
 
         QuestProgressRepository progressRepository = new QuestProgressRepository(databaseService.databaseManager());
         PlayerVariableRepository variableRepository = new PlayerVariableRepository(databaseService.databaseManager());
@@ -143,6 +151,10 @@ public final class RPGQuestBootstrap {
 
     public YamlCustomItemRegistry customItemRegistry() {
         return customItemRegistry;
+    }
+
+    public EquipmentBehaviorService equipmentBehaviorService() {
+        return equipmentBehaviorService;
     }
 
     private void registerCommands() {

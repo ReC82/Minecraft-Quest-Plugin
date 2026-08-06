@@ -15,7 +15,9 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.NamespacedKey;
+import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeModifier;
+import org.bukkit.inventory.EquipmentSlotGroup;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -151,11 +153,34 @@ public final class YamlCustomItemRegistry implements CustomItemRegistry {
             meta.addEnchant(enchantment.enchantment(), enchantment.level(), true);
         }
 
+        applyBehaviorAttributes(definition, meta);
+
         // Seule source de vérité pour l'identification : jamais le nom, jamais le lore.
         meta.getPersistentDataContainer().set(ID_KEY, PersistentDataType.STRING, definition.id().toString());
 
         stack.setItemMeta(meta);
         return Optional.of(stack);
+    }
+
+    /**
+     * {@code combat.attack-speed-bonus}/{@code tool.mining-speed-bonus} sont exposés comme des
+     * commodités de configuration ; ils sont appliqués ici via le mécanisme d'attribut vanilla
+     * existant ({@code ATTACK_SPEED}/{@code MINING_EFFICIENCY}, tous deux réels en 1.21+), plutôt
+     * que réinventé — aucun listener n'est nécessaire pour cette partie du comportement.
+     */
+    private void applyBehaviorAttributes(CustomItemDefinition definition, ItemMeta meta) {
+        if (definition.weaponBehavior() != null && definition.weaponBehavior().attackSpeedBonus() != null) {
+            NamespacedKey modifierId = new NamespacedKey("rpgquest", definition.id().getKey() + "_attack_speed");
+            meta.addAttributeModifier(Attribute.ATTACK_SPEED, new AttributeModifier(
+                    modifierId, definition.weaponBehavior().attackSpeedBonus(),
+                    AttributeModifier.Operation.ADD_NUMBER, EquipmentSlotGroup.MAINHAND));
+        }
+        if (definition.toolBehavior() != null && definition.toolBehavior().miningSpeedBonus() != null) {
+            NamespacedKey modifierId = new NamespacedKey("rpgquest", definition.id().getKey() + "_mining_efficiency");
+            meta.addAttributeModifier(Attribute.MINING_EFFICIENCY, new AttributeModifier(
+                    modifierId, definition.toolBehavior().miningSpeedBonus(),
+                    AttributeModifier.Operation.ADD_NUMBER, EquipmentSlotGroup.MAINHAND));
+        }
     }
 
     private List<Component> buildLore(CustomItemDefinition definition) {

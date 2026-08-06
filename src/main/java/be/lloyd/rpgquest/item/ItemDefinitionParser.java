@@ -1,11 +1,15 @@
 package be.lloyd.rpgquest.item;
 
+import be.lloyd.rpgquest.item.model.ConditionalEffect;
 import be.lloyd.rpgquest.item.model.CraftingRestrictions;
 import be.lloyd.rpgquest.item.model.CustomItemDefinition;
 import be.lloyd.rpgquest.item.model.CustomItemType;
 import be.lloyd.rpgquest.item.model.ItemAttributeSpec;
 import be.lloyd.rpgquest.item.model.ItemEnchantmentSpec;
 import be.lloyd.rpgquest.item.model.ItemRarity;
+import be.lloyd.rpgquest.item.model.ToolBehavior;
+import be.lloyd.rpgquest.item.model.ToolSpecialAbility;
+import be.lloyd.rpgquest.item.model.WeaponBehavior;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -14,12 +18,14 @@ import io.papermc.paper.registry.RegistryAccess;
 import io.papermc.paper.registry.RegistryKey;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.Particle;
 import org.bukkit.Registry;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.EquipmentSlotGroup;
+import org.bukkit.potion.PotionEffectType;
 
 /**
  * Valide et construit une {@link CustomItemDefinition} à partir d'un fichier
@@ -52,6 +58,8 @@ final class ItemDefinitionParser {
         List<String> gameplayTags = parseGameplayTags(section, errors);
         String specialBehavior = parseSpecialBehavior(section);
         CraftingRestrictions crafting = parseCrafting(section, errors);
+        WeaponBehavior weaponBehavior = parseCombat(section, errors);
+        ToolBehavior toolBehavior = parseTool(section, errors);
 
         if (!errors.isEmpty()) {
             return ParseResult.failure(errors.stream().map(message -> new ItemLoadIssue(fileName, message)).toList());
@@ -60,7 +68,7 @@ final class ItemDefinitionParser {
         try {
             CustomItemDefinition item = new CustomItemDefinition(id, type, material, name, lore, rarity,
                     customModelData, itemModel, stackable, maxStackSize, maxDurability,
-                    attributes, enchantments, gameplayTags, specialBehavior, crafting);
+                    attributes, enchantments, gameplayTags, specialBehavior, crafting, weaponBehavior, toolBehavior);
             return ParseResult.success(item);
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new ItemLoadIssue(fileName, e.getMessage())));
@@ -364,6 +372,143 @@ final class ItemDefinitionParser {
             permissions.add(permission);
         }
         return new CraftingRestrictions(craftable, permissions);
+    }
+
+    private WeaponBehavior parseCombat(ConfigurationSection section, List<String> errors) {
+        ConfigurationSection combat = section.getConfigurationSection("combat");
+        if (combat == null) {
+            return null;
+        }
+
+        Double baseDamage = parseOptionalDouble(combat, "base-damage", "combat.base-damage", errors);
+        Double attackSpeedBonus = parseOptionalDouble(combat, "attack-speed-bonus", "combat.attack-speed-bonus", errors);
+        double criticalChance = combat.getDouble("critical-chance", 0.0);
+        double criticalMultiplier = combat.getDouble("critical-multiplier", 1.5);
+        String hitMessage = combat.getString("hit-message");
+        Particle particle = parseParticle(combat, "combat.particle", errors);
+        int particleCount = combat.getInt("particle-count", 1);
+        ConditionalEffect effect = parseConditionalEffect(combat, errors);
+
+        try {
+            return new WeaponBehavior(baseDamage, attackSpeedBonus, criticalChance, criticalMultiplier,
+                    effect, hitMessage, particle, particleCount);
+        } catch (IllegalArgumentException e) {
+            errors.add(e.getMessage());
+            return null;
+        }
+    }
+
+    private ConditionalEffect parseConditionalEffect(ConfigurationSection combat, List<String> errors) {
+        ConfigurationSection effect = combat.getConfigurationSection("effect");
+        if (effect == null) {
+            return null;
+        }
+
+        String abilityId = effect.getString("ability-id", "effect");
+        String rawType = effect.getString("type");
+        if (rawType == null || rawType.isBlank()) {
+            errors.add("effect.type est obligatoire.");
+            return null;
+        }
+        NamespacedKey typeKey = vanillaKey(rawType);
+        PotionEffectType effectType = typeKey == null ? null
+                : RegistryAccess.registryAccess().getRegistry(RegistryKey.MOB_EFFECT).get(typeKey);
+        if (effectType == null) {
+            errors.add("effect.type inconnu « " + rawType + " ».");
+            return null;
+        }
+        int durationTicks = effect.getInt("duration-ticks", 20);
+        int amplifier = effect.getInt("amplifier", 0);
+        double chance = effect.getDouble("chance", 1.0);
+        long cooldownMillis = effect.getLong("cooldown-seconds", 5) * 1000L;
+
+        try {
+            return new ConditionalEffect(abilityId, effectType, durationTicks, amplifier, chance, cooldownMillis);
+        } catch (IllegalArgumentException e) {
+            errors.add(e.getMessage());
+            return null;
+        }
+    }
+
+    private ToolBehavior parseTool(ConfigurationSection section, List<String> errors) {
+        ConfigurationSection tool = section.getConfigurationSection("tool");
+        if (tool == null) {
+            return null;
+        }
+
+        Double miningSpeedBonus = parseOptionalDouble(tool, "mining-speed-bonus", "tool.mining-speed-bonus", errors);
+        List<Material> allowedBlocks = parseAllowedBlocks(tool, errors);
+        int durabilityCost = tool.getInt("durability-cost", 1);
+        double harvestBonusChance = tool.getDouble("harvest-bonus-chance", 0.0);
+        int harvestBonusAmount = tool.getInt("harvest-bonus-amount", 1);
+        ToolSpecialAbility specialAbility = parseSpecialAbility(tool, errors);
+
+        try {
+            return new ToolBehavior(miningSpeedBonus, allowedBlocks, durabilityCost,
+                    harvestBonusChance, harvestBonusAmount, specialAbility);
+        } catch (IllegalArgumentException e) {
+            errors.add(e.getMessage());
+            return null;
+        }
+    }
+
+    private List<Material> parseAllowedBlocks(ConfigurationSection tool, List<String> errors) {
+        if (!tool.isSet("allowed-blocks")) {
+            return List.of();
+        }
+        List<Material> blocks = new ArrayList<>();
+        for (String raw : tool.getStringList("allowed-blocks")) {
+            Material material = raw == null ? null : Material.matchMaterial(raw);
+            if (material == null) {
+                errors.add("tool.allowed-blocks : matériau inconnu « " + raw + " ».");
+                continue;
+            }
+            blocks.add(material);
+        }
+        return blocks;
+    }
+
+    private ToolSpecialAbility parseSpecialAbility(ConfigurationSection tool, List<String> errors) {
+        ConfigurationSection ability = tool.getConfigurationSection("special-ability");
+        if (ability == null) {
+            return null;
+        }
+        String abilityId = ability.getString("ability-id", "special");
+        long cooldownMillis = ability.getLong("cooldown-seconds", 10) * 1000L;
+        String activationMessage = ability.getString("activation-message");
+        Particle particle = parseParticle(ability, "tool.special-ability.particle", errors);
+        int particleCount = ability.getInt("particle-count", 1);
+
+        try {
+            return new ToolSpecialAbility(abilityId, cooldownMillis, activationMessage, particle, particleCount);
+        } catch (IllegalArgumentException e) {
+            errors.add(e.getMessage());
+            return null;
+        }
+    }
+
+    private Particle parseParticle(ConfigurationSection section, String context, List<String> errors) {
+        String raw = section.getString("particle");
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Particle.valueOf(raw.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            errors.add(context + " : particule inconnue « " + raw + " ».");
+            return null;
+        }
+    }
+
+    private Double parseOptionalDouble(ConfigurationSection section, String key, String context, List<String> errors) {
+        if (!section.isSet(key)) {
+            return null;
+        }
+        if (!(section.isDouble(key) || section.isInt(key))) {
+            errors.add("« " + context + " » doit être un nombre.");
+            return null;
+        }
+        return section.getDouble(key);
     }
 
     private ConfigurationSection toSection(Map<?, ?> map) {

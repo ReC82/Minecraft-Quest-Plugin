@@ -127,6 +127,34 @@
 -   [x] Empilement autorisé/interdit réellement appliqué (`ItemMeta#setMaxStackSize`,
     quantité invalide refusée à la création plutôt que tronquée)
 
+## Comportements d'armes et d'outils (fait)
+
+-   [x] Armes (`combat:`) : dégâts et vitesse d'attaque en bonus additifs
+    (compatibles Tranchant/attributs vanilla), chance de critique +
+    multiplicateur, effet conditionnel à cooldown, message/particule
+    configurables
+-   [x] Outils (`tool:`) : bonus de vitesse de minage (attribut
+    `MINING_EFFICIENCY`), blocs autorisés, consommation de durabilité
+    personnalisée, bonus de récolte probabiliste, capacité spéciale à
+    cooldown (clic droit)
+-   [x] `CooldownManager` indexé par (UUID, id de capacité), purgé
+    activement (tâche async 5 min) et à la déconnexion
+-   [x] Toutes les valeurs validées au chargement : pas de NaN/infini, pas
+    de valeurs négatives incohérentes (chance hors `[0,1]`, cooldown/durabilité
+    négatifs, objet empilable + durable en même temps déjà rejeté)
+-   [x] Anti-exploitation : main secondaire jamais consultée, armor stand
+    exclu des cibles, dégâts de projectile jamais traités comme un coup
+    d'arme, identification exclusivement PersistentDataContainer (jamais
+    nom/lore)
+-   [x] `@EventHandler(ignoreCancelled = true)` partout + vérification
+    explicite `isCancelled()` (sauf `PlayerInteractEvent`, dont la méthode
+    est dépréciée) : un événement annulé par un autre plugin n'est jamais traité
+-   [x] Dégâts appliqués une seule fois (`event.setDamage` unique, jamais
+    d'appel `entity.damage()` en plus)
+-   [x] Logs debug activables via `config.yml` → `debug` (déjà existant,
+    réutilisé), lus en direct donc appliqués immédiatement après
+    `/rpgquest reload`
+
 ## Persistance (fait)
 
 -   [x] `DatabaseManager` SQLite asynchrone (`plugins/RPGQuest/data.db`)

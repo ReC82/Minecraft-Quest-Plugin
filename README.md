@@ -120,6 +120,19 @@ portée par le PersistentDataContainer de l'objet : un objet vanilla
 renommé pour en imiter un n'est jamais reconnu. Voir
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le format complet.
 
+### Comportements d'armes et d'outils
+
+Une définition d'arme peut déclarer une section `combat:` (dégâts et
+vitesse d'attaque en bonus, chance de critique, effet conditionnel à
+cooldown, message/particule) ; une définition d'outil peut déclarer une
+section `tool:` (bonus de vitesse de minage, blocs autorisés, coût de
+durabilité personnalisé, bonus de récolte, capacité spéciale au clic
+droit). Les cooldowns sont indexés par joueur et par capacité, jamais
+partagés entre joueurs. Aucun comportement ne s'applique à un objet
+contrefait, en main secondaire, ni à un événement déjà annulé par un
+autre plugin. Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le
+détail complet et les garanties de sécurité.
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`

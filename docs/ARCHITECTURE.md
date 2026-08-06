@@ -13,7 +13,8 @@
     │   ├── render          (DialogueRenderer : ChatDialogueRenderer, PaperDialogRenderer)
     │   └── session         (état runtime mutable, sessions en mémoire, listeners)
     ├── item                 (définitions YAML d'objets personnalisés + registre)
-    │   └── model            (modèles immuables : type, rareté, attributs, enchantements...)
+    │   ├── model            (modèles immuables : type, rareté, attributs, enchantements...)
+    │   └── behavior         (comportements de combat/outil en jeu : cooldowns, listeners)
     ├── player
     ├── quest                (définitions YAML + progression des joueurs)
     │   ├── model            (modèles immuables : quête, étapes, objectifs, récompenses)
@@ -637,6 +638,118 @@ l'exécution en jeu (voir ci-dessous).
     qu'on tient en main est une action légitime pour n'importe qui, pas
     seulement un administrateur).
 
+### `item.behavior` (comportements de combat et d'outil)
+
+-   **Deux nouveaux champs optionnels sur `CustomItemDefinition`** —
+    `weaponBehavior` (`WeaponBehavior`, section YAML `combat:`) et
+    `toolBehavior` (`ToolBehavior`, section YAML `tool:`), tous deux
+    nullable et sans contrainte de type imposée (un `RESOURCE` peut
+    techniquement déclarer un `combat:`, c'est juste de la donnée) — cohérent
+    avec le reste du modèle, qui ne mélange jamais validation structurelle
+    et règles métier de gameplay.
+-   **`base-damage`/`attack-speed-bonus` sont des bonus additifs, jamais un
+    remplacement** — c'est la décision de conception centrale de cette
+    étape, dictée par la règle « compatibilité enchantements » : au moment
+    où `EntityDamageByEntityEvent` se déclenche, le jeu a déjà intégré
+    l'attribut `ATTACK_DAMAGE` et les enchantements (Tranchant, etc.) dans
+    `event.getDamage()`. `WeaponBehaviorListener` calcule donc
+    `(dégât reçu + base-damage) [* critical-multiplier si critique]` et
+    appelle `event.setDamage(...)` **une seule fois** avec ce résultat —
+    remplacer entièrement le dégât aurait annulé silencieusement tout
+    enchantement du joueur, contraire à la mission.
+-   **Critique personnalisé, indépendant du critique vanilla** — un jet
+    aléatoire propre à l'arme (`critical-chance`), pas une détection de
+    saut/chute côté serveur (non fiable/anti-triche côté client de toute
+    façon). `critical-multiplier` s'applique au dégât déjà additionné du
+    bonus, pas seulement au dégât de base — un seul calcul, une seule
+    écriture, conformément à la règle « ne jamais appliquer les dégâts
+    deux fois ».
+-   **`mining-speed-bonus`/`attack-speed-bonus` appliqués comme attributs
+    vanilla, pas via un listener** — `MINING_EFFICIENCY` (outils) et
+    `ATTACK_SPEED` (armes) sont deux attributs réels de l'API Paper
+    1.21.11 (vérifiés dans le jar). `YamlCustomItemRegistry.applyBehaviorAttributes`
+    les pose à la création de l'`ItemStack`, exactement comme les
+    attributs génériques déjà supportés depuis l'étape précédente : c'est
+    le mécanisme natif et correct pour un bonus de vitesse, une action
+    persistante liée à l'objet plutôt qu'à un événement ponctuel — aucun
+    listener n'est nécessaire pour cette partie du comportement.
+-   **`CooldownManager`** — indexé par **(UUID joueur, id de capacité)**,
+    jamais par le seul id de l'objet (règle 4 de la mission), pour
+    permettre à plusieurs objets de partager une capacité ou à un même
+    objet d'en exposer plusieurs. L'horloge est injectable
+    (`LongSupplier`), ce qui rend `CooldownManagerTest` entièrement
+    déterministe sans `Thread.sleep`. Nettoyage actif (règle 5) à trois
+    niveaux : suppression paresseuse d'une entrée expirée dès qu'elle est
+    consultée (`isReady`), suppression de toutes les entrées d'un joueur à
+    sa déconnexion (`clear`, évite d'accumuler des entrées mortes pour des
+    joueurs partis en plein cooldown), et `purgeExpired()` appelée par une
+    tâche asynchrone toutes les 5 minutes (`EquipmentBehaviorService`) —
+    une purge active, pas seulement paresseuse, comme demandé.
+-   **`WeaponBehaviorListener`/`ToolBehaviorListener`** — chaque règle de
+    sécurité de la mission a un garde explicite et commenté dans le code :
+    -   *Événements Paper et annulations (règle 1)* — `@EventHandler(ignoreCancelled
+        = true)` partout, **plus** une vérification explicite
+        `event.isCancelled()` en début de méthode pour les événements dont
+        cette méthode n'est pas dépréciée (`EntityDamageByEntityEvent`,
+        `PlayerItemDamageEvent`, `BlockDropItemEvent`) — la redondance est
+        volontaire : elle rend la règle vraie même en appelant la méthode
+        directement dans un test, pas seulement quand Bukkit filtre avant
+        dispatch. `PlayerInteractEvent#isCancelled()` est dépréciée
+        (sémantique ambiguë bloc/objet) : seul `ignoreCancelled = true`
+        est utilisé pour cet événement, avec un commentaire l'expliquant.
+    -   *Dégâts appliqués une seule fois (règle 2)* — un seul appel à
+        `event.setDamage(...)`, jamais d'appel supplémentaire à
+        `entity.damage(...)`.
+    -   *NaN/infini/négatif (règle 3)* — validé au chargement (records du
+        package `item.model`, ex. `critical-chance` hors `[0,1]` rejeté) et
+        re-vérifié à l'exécution (`sanitizeDamage` : NaN/infini → 0,
+        négatif → 0) avant l'écriture finale, en défense en profondeur
+        contre une combinaison de bonus qui produirait un résultat
+        incohérent (ex. `base-damage` très négatif).
+    -   *Main secondaire (règle 6)* — seul `PlayerInventory#getItemInMainHand()`
+        est jamais consulté pour résoudre l'arme/l'outil en jeu (jamais
+        `getItemInOffHand()`) ; pour la capacité spéciale d'outil,
+        `PlayerInteractEvent#getHand() == EquipmentSlot.HAND` est vérifié
+        explicitement (l'événement se déclenche séparément pour chaque
+        main).
+    -   *Armor stand (règle 6)* — `WeaponBehaviorListener.isValidTarget`
+        rejette explicitement `ArmorStand` (qui, en API Bukkit, est bien
+        une `LivingEntity` — un simple `instanceof LivingEntity` ne
+        suffit pas à l'exclure, il faut le test dédié).
+    -   *Projectile (règle 6)* — `event.getDamager() instanceof Player`
+        exclut structurellement tout dégât de projectile (flèche,
+        trident...) : le damager d'un tel événement est le projectile
+        lui-même, jamais le joueur qui l'a tiré, même indirectement.
+    -   *Faux objet (règle 6)* — `YamlCustomItemRegistry.resolve(...)`
+        (PersistentDataContainer) est l'unique source de vérité, jamais le
+        nom affiché ni le lore — un objet vanilla renommé pour imiter
+        `forest_blade` ne déclenche jamais son comportement.
+-   **Bonus de récolte sans deviner la table de butin** —
+    `ToolBehaviorListener.onBlockDropItem` écoute `BlockDropItemEvent`
+    (après que le jeu a déjà calculé les drops, fortune/silk touch inclus)
+    et duplique les `ItemStack` déjà déposés plutôt que de recalculer une
+    table de loot — plus simple, toujours cohérent avec les enchantements
+    de l'outil.
+-   **Consommation de durabilité par remplacement, pas par addition** —
+    `ToolBehaviorListener.onItemDamage` écoute `PlayerItemDamageEvent`
+    (déclenché par le jeu juste avant sa propre réduction de durabilité)
+    et appelle `event.setDamage(durabilityCost)` pour **remplacer** la
+    valeur vanilla (généralement 1), jamais en plus d'un appel séparé —
+    même principe « une seule écriture » que pour les dégâts d'arme. Ce
+    remplacement n'est pas filtré par `allowed-blocks` (l'événement ne
+    porte pas le contexte du bloc cassé) : seuls le bonus de récolte et la
+    capacité spéciale le sont — limite assumée, documentée plus bas.
+-   **`EquipmentBehaviorService`** (`PluginService`) — construit un seul
+    `CooldownManager` partagé par les deux listeners, démarre la tâche de
+    purge périodique, expose `weaponListener()`/`toolListener()`/
+    `cooldownCleanupListener()` pour un câblage via `PlayerListenerService`
+    (même convention que tous les autres listeners du plugin).
+-   **Logs debug (règle 8)** — pas de nouveau réglage : le flag `debug`
+    existant de `config.yml` (déjà utilisé par `/rpgquest version`) est
+    réutilisé, lu à chaque événement via `configService.current().debug()`
+    (jamais mis en cache), donc activable/désactivable par
+    `/rpgquest reload` sans recréer les listeners.
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -737,6 +850,23 @@ Fabrication → Remise → Récompense
     Construire un `ItemStack` avec métadonnées (nom, lore, PDC) nécessite
     de toute façon un `ItemFactory` fourni par le serveur, donc
     `YamlCustomItemRegistryTest` avait de toute façon besoin de MockBukkit.
+-   **`Registry.ENCHANTMENT` est déprécié, `RegistryAccess.registryAccess().getRegistry(RegistryKey...)`
+    est le remplacement** (déjà utilisé pour les enchantements d'objet à
+    l'étape précédente) — réutilisé ici pour résoudre `PotionEffectType`
+    via `RegistryKey.MOB_EFFECT` dans l'effet conditionnel d'une arme,
+    pour la même raison.
+-   **Constructeurs `EntityDamageByEntityEvent(..., DamageSource, double)`
+    et `PlayerItemDamageEvent(Player, ItemStack, int)` dépréciés « for
+    removal »** dans cette version de l'API (découvert en écrivant les
+    tests, `-Xlint:deprecation`) — le remplacement complet pour
+    `EntityDamageByEntityEvent` exige une `Map<DamageModifier, ...>`
+    interne au moteur vanilla, disproportionné pour un fixture de test ;
+    `@SuppressWarnings("removal")` documenté est utilisé dans
+    `WeaponBehaviorListenerTest`. `PlayerItemDamageEvent` a un remplacement
+    direct et simple (constructeur 4 arguments avec `originalDamage`),
+    utilisé sans suppression. Le code de production, lui, ne présente
+    aucun avertissement de dépréciation (vérifié par compilation complète
+    avec `-Xlint:deprecation`).
 
 ## Limites connues
 
@@ -848,3 +978,40 @@ Fabrication → Remise → Récompense
     utilisé pour écrire un inventaire de joueur sur disque). Le scénario
     complet en jeu (jeter/ramasser, coffre, mort avec perte/keepInventory,
     reconnexion avec un vrai client) reste à valider par un testeur humain.
+-   **`durability-cost` n'est pas limité par `allowed-blocks`** —
+    `PlayerItemDamageEvent` ne porte pas le bloc cassé dans son contexte ;
+    seuls le bonus de récolte (`BlockDropItemEvent`) et la capacité
+    spéciale (clic droit) respectent la liste de blocs autorisés. Un outil
+    avec une liste de blocs restreinte consomme donc toujours sa
+    durabilité personnalisée, même sur un bloc hors liste — limitation
+    assumée et documentée dans la section `item.behavior` plutôt que
+    contournée par une solution fragile (deviner le bloc via la position
+    du joueur au moment de l'événement).
+-   **Message/particule liés au coup « notable » (critique ou effet
+    déclenché), pas à chaque coup** — choix délibéré pour éviter un spam
+    de messages sur une attaque normale ; la mission ne précise pas la
+    fréquence exacte, cette interprétation reste cohérente avec l'esprit
+    « retour visuel sur quelque chose de spécial ».
+-   **`special-behavior` (donnée libre, étape précédente) reste non câblé**
+    — cette étape ajoute des comportements *structurés* et *configurables*
+    (`combat:`/`tool:`), mais le champ `special-behavior` générique
+    continue de n'être qu'une donnée exposée, pas un point d'extension
+    exécuté. Les deux systèmes sont volontairement distincts : `combat:`/
+    `tool:` couvrent les cas concrets demandés par cette mission,
+    `special-behavior` reste réservé à un futur système de plugins de
+    comportement arbitraires si le besoin se précise.
+-   **Test manuel des comportements de combat/outil limité par
+    l'environnement** — aucun client Minecraft réel disponible ici, donc
+    ni comparaison de dégâts avec une arme vanilla en jeu, ni test PvE/PvP
+    réel n'ont pu être menés comme demandé par la mission. Compensé par
+    une couverture de test directe et inhabituellement large pour ce
+    projet : `WeaponBehaviorListenerTest`/`ToolBehaviorListenerTest`
+    construisent de **vrais** événements Bukkit (`EntityDamageByEntityEvent`,
+    `PlayerItemDamageEvent`, `BlockDropItemEvent`, `PlayerInteractEvent`)
+    et vérifient l'effet exact de chaque règle de sécurité (annulation,
+    main secondaire, armor stand, projectile, objet contrefait,
+    cooldown, rechargement de configuration) plutôt que de se contenter
+    d'inspecter la configuration chargée. Le calcul de dégâts lui-même est
+    vérifié arithmétiquement (`assertEquals` sur la valeur exacte
+    attendue), la comparaison avec une arme vanilla en conditions réelles
+    reste à faire par un testeur humain.

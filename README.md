@@ -45,7 +45,9 @@ Plugin RPG pour Paper, sans mod client obligatoire.
 
 `runServer` télécharge Paper 1.21.11 et démarre un serveur local dans `run/`.
 Au premier lancement, il faut accepter l'EULA Mojang dans `run/eula.txt`
-(`eula=true`) — uniquement pour un usage de test local.
+(`eula=true`) — uniquement pour un usage de test local. Voir
+[docs/LOCAL_SERVER.md](docs/LOCAL_SERVER.md) pour le cycle de développement
+complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 
 ## Commandes
 

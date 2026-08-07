@@ -139,7 +139,7 @@ Branche de départ: feature/14-economy-merchants
   dit "continue" sans préciser)
 Étapes terminées: 15
 Branche finale: feature/15-player-market
-Dernier commit: (voir git log — commit de l'étape 15 à suivre)
+Dernier commit: 731a948 feat(economy): add player-to-player market
 Build: vert (./gradlew clean build)
 Tests: 333 tests verts (nouveaux : MarketRepositoryTest, MarketServiceTest ;
   SchemaMigratorTest mis à jour pour la migration V5)

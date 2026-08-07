@@ -188,7 +188,7 @@ Branche de départ: feature/16-portals
   feat(claims): add persistent protected land claims)
 Étapes terminées: 17
 Branche finale: feature/17-land-claims
-Dernier commit: (voir git log — commit de l'étape 17 à suivre)
+Dernier commit: dfbe0e5 feat(claims): add persistent protected land claims
 Build: vert (./gradlew clean build)
 Tests: 411 tests verts (nouveaux : ClaimTest, ClaimRepositoryTest,
   ClaimServiceTest, ClaimProtectionListenerTest, ajouts ConfigValidatorTest

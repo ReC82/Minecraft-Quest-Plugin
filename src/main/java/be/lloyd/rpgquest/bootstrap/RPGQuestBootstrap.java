@@ -42,6 +42,11 @@ import be.lloyd.rpgquest.economy.merchant.YamlMerchantRegistry;
 import be.lloyd.rpgquest.item.SpiderFangDropListener;
 import be.lloyd.rpgquest.item.YamlCustomItemRegistry;
 import be.lloyd.rpgquest.item.behavior.EquipmentBehaviorService;
+import be.lloyd.rpgquest.mob.SpecialMobRegistry;
+import be.lloyd.rpgquest.mob.SpecialMobService;
+import be.lloyd.rpgquest.mob.ability.ExplosiveOnAttackAbilityService;
+import be.lloyd.rpgquest.mob.ability.SplitOnHitAbilityListener;
+import be.lloyd.rpgquest.mob.ability.StrongerExplosionAbilityListener;
 import be.lloyd.rpgquest.player.PlayerConnectionListener;
 import be.lloyd.rpgquest.player.PlayerListenerService;
 import be.lloyd.rpgquest.player.PlayerProfileService;
@@ -90,6 +95,7 @@ public final class RPGQuestBootstrap {
     private final YamlPortalRegistry portalRegistry;
     private final YamlDestinationRegistry destinationRegistry;
     private final ClaimSelectionService claimSelectionService;
+    private final SpecialMobRegistry mobRegistry;
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
@@ -97,6 +103,7 @@ public final class RPGQuestBootstrap {
     private DialogueSessionEngine dialogueSessionEngine;
     private QuestJournalService questJournalService;
     private ResourceNodeService resourceNodeService;
+    private SpecialMobService mobService;
     private EconomyService economyService;
     private MerchantTradeService merchantTradeService;
     private MarketRepository marketRepository;
@@ -130,6 +137,8 @@ public final class RPGQuestBootstrap {
         this.destinationRegistry = new YamlDestinationRegistry(
                 plugin.getDataFolder().toPath().resolve("destinations"), plugin.getSLF4JLogger());
         this.claimSelectionService = new ClaimSelectionService();
+        this.mobRegistry = new SpecialMobRegistry(
+                plugin.getDataFolder().toPath().resolve("mobs"), plugin.getSLF4JLogger());
     }
 
     public void start() {
@@ -160,6 +169,13 @@ public final class RPGQuestBootstrap {
                 plugin, resourceNodeRegistry, resourceNodeRepository, customItemRegistry, plugin.getSLF4JLogger());
         registry.start(resourceNodeService);
         registry.start(new PlayerListenerService(plugin, new ResourceNodeBreakListener(resourceNodeService)));
+
+        registry.start(mobRegistry);
+        mobService = new SpecialMobService(plugin, mobRegistry, zoneRegistry, customItemRegistry, plugin.getSLF4JLogger());
+        registry.start(mobService);
+        registry.start(new PlayerListenerService(plugin, new StrongerExplosionAbilityListener(mobService)));
+        registry.start(new PlayerListenerService(plugin, new SplitOnHitAbilityListener(plugin, mobService)));
+        registry.start(new ExplosiveOnAttackAbilityService(plugin, mobRegistry, mobService));
 
         equipmentBehaviorService = new EquipmentBehaviorService(plugin, customItemRegistry, configService);
         registry.start(equipmentBehaviorService);
@@ -290,6 +306,14 @@ public final class RPGQuestBootstrap {
         return resourceNodeService;
     }
 
+    public SpecialMobRegistry mobRegistry() {
+        return mobRegistry;
+    }
+
+    public SpecialMobService mobService() {
+        return mobService;
+    }
+
     public YamlMerchantRegistry merchantRegistry() {
         return merchantRegistry;
     }
@@ -393,7 +417,8 @@ public final class RPGQuestBootstrap {
         }
 
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(
-                flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry);
+                flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
+                mobRegistry, mobService);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

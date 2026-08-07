@@ -104,6 +104,13 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
     sélection `wand`). Voir [docs/TRAVEL.md](docs/TRAVEL.md).
 -   `/rpgadmin portal setdestination <id> <destinationId>` (`rpgquest.admin.world`)
     — fixe la destination d'un portail à ta position actuelle.
+-   `/rpgadmin mob spawn <id>` (`rpgquest.admin.world`) — invoque une
+    variante de mob spécial à ta position (outil de test, contourne les
+    restrictions de spawn naturel).
+-   `/rpgadmin mob list|inspect <id>|reload|metrics` (`rpgquest.admin.world`)
+    — liste/détaille les variantes chargées, recharge depuis le disque, ou
+    affiche les métriques de spawns/capacités. Voir
+    [SPECIAL_MOB_FORMAT.md](SPECIAL_MOB_FORMAT.md).
 -   `/claim wand` (`rpgquest.claim`) — outil de sélection pour un claim de
     terrain (dédié, distinct de la sélection de zone).
 -   `/claim create <id>` (`rpgquest.claim`) — crée un claim depuis la
@@ -138,7 +145,7 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 | `rpgquest.market` | tous | `/market`, `/market sell\|cancel` |
 | `rpgquest.claim` | tous | `/claim` |
 | `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin` |
-| `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées), `/rpgadmin portal` (portails) |
+| `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées), `/rpgadmin portal` (portails), `/rpgadmin mob` (mobs spéciaux) |
 
 ## Quêtes
 
@@ -303,6 +310,21 @@ pression) est configurable (`/claim flag redstone <true|false>`).
 `/claim delete`/`info` agissent sur le claim où tu te trouves. Aucun
 avantage payant à cette étape. Voir [docs/CLAIMS.md](docs/CLAIMS.md) pour
 le détail complet.
+
+## Mobs spéciaux
+
+Des variantes de mobs entièrement vanilla, pilotées par YAML dans
+`plugins/RPGQuest/mobs/*.yml` (quatre exemples générés automatiquement :
+`red_creeper`, `golden_creeper`, `creeper_pig`, `splitting_zombie`). Un spawn
+naturel qui correspond au type d'entité, aux mondes/biomes/zones autorisés et
+qui n'a pas atteint sa limite de population peut être upgradé en variante
+(attributs, nom MiniMessage, particule/son, capacités, table de drops).
+Identification uniquement par PersistentDataContainer, jamais par le nom
+affiché. Trois capacités : explosion renforcée, cochon explosif agressif
+(balayage périodique, pas de goal d'IA vanilla disponible via l'API), et
+zombie qui se divise à chaque coup non mortel (profondeur et nombre d'enfants
+bornés pour empêcher toute croissance incontrôlée). Voir
+[SPECIAL_MOB_FORMAT.md](SPECIAL_MOB_FORMAT.md) pour le détail complet.
 
 ## Configuration
 

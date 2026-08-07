@@ -1,0 +1,32 @@
+id: rpgquest:splitting_zombie
+entity-type: ZOMBIE
+name: "<dark_purple><bold>Zombie Fissible</bold></dark_purple>"
+
+spawn-chance: 0.02
+worlds: []
+biomes: []
+zones: []
+
+health: 25
+damage: 4
+speed: 1.0
+
+particle: ITEM_SLIME
+sound: ENTITY_ZOMBIE_AMBIENT
+
+# Se divise en zombies enfants à chaque coup non mortel, jusqu'à 2 générations
+# et 2 enfants par coup au maximum (empêche toute croissance incontrôlée,
+# voir SplitOnHitAbility).
+abilities:
+  - type: SPLIT_ON_HIT
+    max-depth: 2
+    max-children-per-hit: 2
+
+drops:
+  - material: ROTTEN_FLESH
+    weight: 100
+    min-amount: 1
+    max-amount: 2
+
+xp-reward: 12
+max-population: 12

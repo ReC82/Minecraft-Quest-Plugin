@@ -1,5 +1,11 @@
 package be.lloyd.rpgquest.admin;
 
+import be.lloyd.rpgquest.mob.SpecialMobLoadIssue;
+import be.lloyd.rpgquest.mob.SpecialMobLoadReport;
+import be.lloyd.rpgquest.mob.SpecialMobRegistry;
+import be.lloyd.rpgquest.mob.SpecialMobService;
+import be.lloyd.rpgquest.mob.model.MobAbility;
+import be.lloyd.rpgquest.mob.model.SpecialMobDefinition;
 import be.lloyd.rpgquest.travel.YamlDestinationRegistry;
 import be.lloyd.rpgquest.travel.YamlPortalRegistry;
 import be.lloyd.rpgquest.travel.model.Destination;
@@ -10,14 +16,18 @@ import be.lloyd.rpgquest.zone.model.ZoneDefinition;
 import be.lloyd.rpgquest.zone.model.ZoneFlags;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -36,10 +46,12 @@ import org.jetbrains.annotations.Nullable;
 public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
     private static final String PERMISSION = "rpgquest.admin.world";
-    private static final List<String> TOP_LEVEL_SUBCOMMANDS = List.of("flatten", "zone", "portal");
+    private static final String DEFAULT_NAMESPACE = "rpgquest";
+    private static final List<String> TOP_LEVEL_SUBCOMMANDS = List.of("flatten", "zone", "portal", "mob");
     private static final List<String> FLATTEN_SUBCOMMANDS = List.of("confirm", "cancel", "undo");
     private static final List<String> ZONE_SUBCOMMANDS = List.of("create", "delete", "list", "info", "wand");
     private static final List<String> PORTAL_SUBCOMMANDS = List.of("create", "delete", "list", "info", "setdestination");
+    private static final List<String> MOB_SUBCOMMANDS = List.of("spawn", "list", "inspect", "reload", "metrics");
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
     private final FlattenService flattenService;
@@ -47,14 +59,19 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final ZoneSelectionService zoneSelectionService;
     private final YamlPortalRegistry portalRegistry;
     private final YamlDestinationRegistry destinationRegistry;
+    private final SpecialMobRegistry mobRegistry;
+    private final SpecialMobService mobService;
 
     public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService,
-                            YamlPortalRegistry portalRegistry, YamlDestinationRegistry destinationRegistry) {
+                            YamlPortalRegistry portalRegistry, YamlDestinationRegistry destinationRegistry,
+                            SpecialMobRegistry mobRegistry, SpecialMobService mobService) {
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
         this.portalRegistry = portalRegistry;
         this.destinationRegistry = destinationRegistry;
+        this.mobRegistry = mobRegistry;
+        this.mobService = mobService;
     }
 
     @Override
@@ -81,6 +98,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handleZone(player, args);
         } else if (args[0].equalsIgnoreCase("portal")) {
             handlePortal(player, args);
+        } else if (args[0].equalsIgnoreCase("mob")) {
+            handleMob(player, args);
         } else {
             sendUsage(player);
         }
@@ -276,6 +295,176 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin portal info <id></yellow> <gray>- détail d'un portail</gray>"));
         sender.sendMessage(MM.deserialize(
                 "<yellow>/rpgadmin portal setdestination <id> <destinationId></yellow> <gray>- fixe la destination à ta position actuelle</gray>"));
+    }
+
+    // ---- Mobs spéciaux --------------------------------------------------------
+
+    private void handleMob(Player player, String[] args) {
+        if (args.length < 2) {
+            sendMobUsage(player);
+            return;
+        }
+
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "spawn" -> handleMobSpawn(player, args);
+            case "list" -> handleMobList(player);
+            case "inspect" -> handleMobInspect(player, args);
+            case "reload" -> handleMobReload(player);
+            case "metrics" -> handleMobMetrics(player);
+            default -> sendMobUsage(player);
+        }
+    }
+
+    /**
+     * Invoque directement à la position du joueur, en contournant les restrictions de spawn naturel
+     * (mondes/biomes/zones, limite de population) : commande d'administration destinée aux tests
+     * manuels (mission : "Faire apparaître chaque variante"), pas au spawn naturel du jeu.
+     */
+    private void handleMobSpawn(Player player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(MM.deserialize("<yellow>/rpgadmin mob spawn <id></yellow>"));
+            return;
+        }
+        NamespacedKey id = resolveMobId(args[2]);
+        Optional<SpecialMobDefinition> defOpt = mobRegistry.find(id);
+        if (defOpt.isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<red>Mob spécial inconnu :</red> <white><id></white>", Placeholder.unparsed("id", id.toString())));
+            return;
+        }
+        SpecialMobDefinition def = defOpt.get();
+
+        Location location = player.getLocation();
+        Entity spawned = location.getWorld().spawnEntity(location, def.entityType());
+        if (!(spawned instanceof LivingEntity living)) {
+            spawned.remove();
+            player.sendMessage(MM.deserialize("<red>Type d'entité non vivant, impossible d'appliquer la variante.</red>"));
+            return;
+        }
+        mobService.apply(living, def);
+        player.sendMessage(MM.deserialize(
+                "<green>Mob spécial invoqué :</green> <white><id></white>", Placeholder.unparsed("id", id.toString())));
+    }
+
+    private void handleMobList(Player player) {
+        List<SpecialMobDefinition> definitions = mobRegistry.definitions();
+        if (definitions.isEmpty()) {
+            player.sendMessage(MM.deserialize("<gray>Aucun mob spécial chargé.</gray>"));
+            return;
+        }
+        player.sendMessage(MM.deserialize(
+                "<gold><count></gold> <gray>mob(s) spécial(aux) chargé(s) :</gray>",
+                Placeholder.unparsed("count", String.valueOf(definitions.size()))));
+        for (SpecialMobDefinition def : definitions) {
+            player.sendMessage(MM.deserialize(
+                    "<yellow>- <id></yellow> <gray>(<entity>, pop. <pop><popmax>)</gray>",
+                    Placeholder.unparsed("id", def.id().toString()),
+                    Placeholder.unparsed("entity", def.entityType().name()),
+                    Placeholder.unparsed("pop", String.valueOf(mobService.populationOf(def.id()))),
+                    Placeholder.unparsed("popmax", def.maxPopulation() == null ? "" : "/" + def.maxPopulation())));
+        }
+    }
+
+    private void handleMobInspect(Player player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(MM.deserialize("<yellow>/rpgadmin mob inspect <id></yellow>"));
+            return;
+        }
+        NamespacedKey id = resolveMobId(args[2]);
+        Optional<SpecialMobDefinition> defOpt = mobRegistry.find(id);
+        if (defOpt.isEmpty()) {
+            player.sendMessage(MM.deserialize("<red>Mob spécial inconnu.</red>"));
+            return;
+        }
+        SpecialMobDefinition def = defOpt.get();
+
+        player.sendMessage(MM.deserialize("<gold>=== <id> ===</gold>", Placeholder.unparsed("id", def.id().toString())));
+        player.sendMessage(MM.deserialize(
+                "<white>Entité :</white> <gray><entity></gray> <white>Nom :</white> <reset><name></reset>",
+                Placeholder.unparsed("entity", def.entityType().name()), Placeholder.parsed("name", def.displayName())));
+        player.sendMessage(MM.deserialize(
+                "<white>Chance de spawn :</white> <gray><chance>%</gray>",
+                Placeholder.unparsed("chance", String.valueOf(def.spawnChance() * 100))));
+        if (!def.allowedWorlds().isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<white>Mondes autorisés :</white> <gray><worlds></gray>",
+                    Placeholder.unparsed("worlds", String.join(", ", def.allowedWorlds()))));
+        }
+        if (!def.allowedBiomes().isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<white>Biomes autorisés :</white> <gray><biomes></gray>",
+                    Placeholder.unparsed("biomes", String.join(", ", def.allowedBiomes()))));
+        }
+        if (!def.allowedZones().isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<white>Zones autorisées :</white> <gray><zones></gray>",
+                    Placeholder.unparsed("zones", String.join(", ", def.allowedZones()))));
+        }
+        player.sendMessage(MM.deserialize(
+                "<white>Vie :</white> <gray><hp></gray> <white>Dégâts :</white> <gray><dmg></gray> "
+                        + "<white>Vitesse :</white> <gray><spd></gray> <white>Armure :</white> <gray><arm></gray>",
+                Placeholder.unparsed("hp", String.valueOf(def.health())), Placeholder.unparsed("dmg", String.valueOf(def.damage())),
+                Placeholder.unparsed("spd", String.valueOf(def.speed())), Placeholder.unparsed("arm", String.valueOf(def.armor()))));
+        if (!def.abilities().isEmpty()) {
+            String abilities = def.abilities().stream().map(MobAbility::type).map(Enum::name)
+                    .reduce((a, b) -> a + ", " + b).orElse("");
+            player.sendMessage(MM.deserialize(
+                    "<white>Capacités :</white> <gray><abilities></gray>", Placeholder.unparsed("abilities", abilities)));
+        }
+        player.sendMessage(MM.deserialize(
+                "<white>Drops :</white> <gray><drops> entrée(s)</gray> <white>XP :</white> <gray><xp></gray>",
+                Placeholder.unparsed("drops", String.valueOf(def.drops().size())),
+                Placeholder.unparsed("xp", def.xpReward() == null ? "aucun" : String.valueOf(def.xpReward()))));
+        player.sendMessage(MM.deserialize(
+                "<white>Population :</white> <gray><pop><popmax></gray>",
+                Placeholder.unparsed("pop", String.valueOf(mobService.populationOf(def.id()))),
+                Placeholder.unparsed("popmax", def.maxPopulation() == null ? " (illimitée)" : "/" + def.maxPopulation())));
+    }
+
+    private void handleMobReload(Player player) {
+        SpecialMobLoadReport report = mobRegistry.reload();
+        player.sendMessage(MM.deserialize(
+                "<gold>Rechargement</gold> <gray>: <loaded> mob(s) chargé(s), <errors> erreur(s).</gray>",
+                Placeholder.unparsed("loaded", String.valueOf(report.loaded().size())),
+                Placeholder.unparsed("errors", String.valueOf(report.issues().size()))));
+        for (SpecialMobLoadIssue issue : report.issues()) {
+            player.sendMessage(MM.deserialize(
+                    "<red>- [<file>]</red> <white><message></white>",
+                    Placeholder.unparsed("file", issue.file()), Placeholder.unparsed("message", issue.message())));
+        }
+    }
+
+    private void handleMobMetrics(Player player) {
+        Map<NamespacedKey, Long> spawnCounts = mobService.spawnMetricsSnapshot();
+        Map<String, Long> abilityCounts = mobService.abilityMetricsSnapshot();
+
+        player.sendMessage(MM.deserialize("<gold>=== Métriques mobs spéciaux ===</gold>"));
+        if (spawnCounts.isEmpty()) {
+            player.sendMessage(MM.deserialize("<gray>Aucun spawn enregistré.</gray>"));
+        } else {
+            spawnCounts.forEach((id, count) -> player.sendMessage(MM.deserialize(
+                    "<yellow>- <id></yellow> <gray>: <count> spawn(s)</gray>",
+                    Placeholder.unparsed("id", id.toString()), Placeholder.unparsed("count", String.valueOf(count)))));
+        }
+        if (!abilityCounts.isEmpty()) {
+            abilityCounts.forEach((ability, count) -> player.sendMessage(MM.deserialize(
+                    "<yellow>- <ability></yellow> <gray>: <count> déclenchement(s)</gray>",
+                    Placeholder.unparsed("ability", ability), Placeholder.unparsed("count", String.valueOf(count)))));
+        }
+    }
+
+    private NamespacedKey resolveMobId(String raw) {
+        String lower = raw.toLowerCase(Locale.ROOT);
+        NamespacedKey id = lower.contains(":") ? NamespacedKey.fromString(lower) : new NamespacedKey(DEFAULT_NAMESPACE, lower);
+        return id == null ? new NamespacedKey(DEFAULT_NAMESPACE, "invalid") : id;
+    }
+
+    private void sendMobUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin mob spawn <id></yellow> <gray>- invoque une variante à ta position</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin mob list</yellow> <gray>- liste les variantes chargées</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin mob inspect <id></yellow> <gray>- détail d'une variante</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin mob reload</yellow> <gray>- recharge les variantes depuis le disque</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin mob metrics</yellow> <gray>- métriques de spawn et de capacités</gray>"));
     }
 
     private void handleZone(Player player, String[] args) {
@@ -523,6 +712,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         sendFlattenUsage(sender);
         sendZoneUsage(sender);
         sendPortalUsage(sender);
+        sendMobUsage(sender);
     }
 
     private void sendFlattenUsage(CommandSender sender) {
@@ -557,6 +747,14 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                 && (args[1].equalsIgnoreCase("delete") || args[1].equalsIgnoreCase("info")
                         || args[1].equalsIgnoreCase("setdestination"))) {
             return portalRegistry.portals().stream().map(PortalDefinition::id)
+                    .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("mob")) {
+            return MOB_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("mob")
+                && (args[1].equalsIgnoreCase("spawn") || args[1].equalsIgnoreCase("inspect"))) {
+            return mobRegistry.definitions().stream().map(SpecialMobDefinition::id).map(NamespacedKey::toString)
                     .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         return List.of();

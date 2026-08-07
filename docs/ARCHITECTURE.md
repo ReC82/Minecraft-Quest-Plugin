@@ -4,7 +4,7 @@
 
     be.lloyd.rpgquest
     ├── RPGQuestPlugin       (point d'entrée, délègue tout à bootstrap)
-    ├── admin                (/rpgadmin : aplatissement de terrain, futurs zones/portails/mobs)
+    ├── admin                (/rpgadmin : aplatissement de terrain, zones, portails, mobs spéciaux)
     ├── bootstrap            (cycle de vie : PluginService, registre, orchestration)
     ├── command
     ├── config               (chargement + validation de config.yml)
@@ -24,6 +24,9 @@
     ├── item                 (définitions YAML d'objets personnalisés + registre)
     │   ├── model            (modèles immuables : type, rareté, attributs, enchantements...)
     │   └── behavior         (comportements de combat/outil en jeu : cooldowns, listeners)
+    ├── mob                  (variantes de mobs vanilla YAML + upgrade au spawn + population)
+    │   ├── model            (modèles immuables : définition de variante, capacités)
+    │   └── ability          (écouteurs/services par capacité : explosion, agressivité, division)
     ├── player
     ├── quest                (définitions YAML + progression des joueurs)
     │   ├── model            (modèles immuables : quête, étapes, objectifs, récompenses)
@@ -1555,6 +1558,85 @@ qu'embarqués dans le jar.
 -   **Bypass (`rpgquest.admin.world`)** — même permission que le bypass des
     zones protégées, décision délibérée pour ne pas multiplier les nœuds de
     permission pour un concept équivalent (« administrateur du monde »).
+
+## `mob` (mobs spéciaux)
+
+-   **Variantes d'entités vanilla, jamais de mob custom via NMS** — une
+    `SpecialMobDefinition` habille un `EntityType` vivant existant
+    (attributs via `Attribute`, nom MiniMessage, particule/son, capacités,
+    table de drops) plutôt que de créer un nouveau type d'entité : seule
+    approche compatible avec l'exigence « API Paper publique uniquement,
+    pas de NMS ».
+-   **`allowedBiomes`/`allowedZones` restent de simples `Set<String>`,
+    jamais résolus en objets au chargement** — même choix que
+    `allowedWorlds` : comparaison par nom de clé (`Biome#getKey().getKey()`)
+    ou par id de zone au moment du spawn seulement. Évite un couplage de
+    `mob` vers `zone` au chargement du fichier (`ZoneRegistry` n'est
+    injecté que dans `SpecialMobService`, jamais dans le parseur/loader) et
+    une dépendance à la forme exacte de l'API `Biome` dans cette version de
+    Paper (`OldEnum` adossé à un registre serveur, comme `Sound`/`Particle`
+    — voir plus bas).
+-   **`SpecialMobDefinition.drops()` réutilise `resource.model.ResourceDrop`
+    tel quel** — même besoin exact que `resource.ResourceNodeDefinition`
+    (un tirage pondéré unique, objet personnalisé ou matériau vanilla) :
+    dupliquer ce type n'aurait apporté aucune valeur, seul le parseur
+    diffère par le contexte (`drops:` d'une variante plutôt que d'un type de
+    nœud).
+-   **Identification exclusivement par PersistentDataContainer, jamais par
+    le nom affiché** — exigence explicite de la mission (point 10) :
+    `SpecialMobService#specialMobId`/`specialMobDefinition` sont l'unique
+    porte d'entrée utilisée par les écouteurs de capacités et par
+    `/rpgadmin mob inspect`. Un joueur qui renomme une entité (nametag) ne
+    casse jamais sa reconnaissance.
+-   **Upgrade au spawn naturel via `CreatureSpawnEvent` en priorité `HIGH`
+    avec `ignoreCancelled = true`** — s'exécute délibérément après
+    `ZoneProtectionListener#onCreatureSpawn` (priorité par défaut) : un
+    spawn déjà annulé par la safe zone n'est jamais vu, donc jamais upgradé,
+    sans que `SpecialMobService` ait besoin de connaître `ZoneFlags`
+    directement pour ce cas précis (mission point 5). L'autorisation
+    « zones autorisées » de la variante elle-même reste une vérification
+    distincte (`allowedZones`, ci-dessus).
+-   **`setRemoveWhenFarAway(false)` posé à chaque application de variante**
+    — la population n'est décomptée qu'à `EntityDeathEvent`, jamais ailleurs
+    ; sans cette ligne, le despawn naturel vanilla par éloignement
+    ferait fuir silencieusement la population suivie (aucun événement
+    Bukkit ne l'accompagne). Combiné au fait qu'aucun listener n'écoute le
+    déchargement de chunk pour décrémenter, cela garantit le test manuel
+    « décharger/recharger un chunk ne doit jamais changer la population
+    suivie » — un `ChunkLoadEvent` ne fait que redécouvrir (jamais
+    recompter) les entités déjà taguées PDC, ce qui couvre aussi le
+    redémarrage du serveur.
+-   **`ExplosiveOnAttackAbilityService` balaye `SpecialMobService#aliveEntityIds`,
+    jamais `World#getLivingEntities()`** — borné à la population réelle des
+    variantes possédant cette capacité plutôt qu'à tous les mobs du monde ;
+    conséquence directe du choix précédent (population toujours à jour, y
+    compris après un redémarrage).
+-   **Pas de goal d'IA « attaque » pour une entité passive (`creeper_pig`)
+    via l'API publique** — décision documentée dans le Javadoc de
+    `ExplosiveOnAttackAbility` : un balayage périodique (1 s, mirroir du
+    patron de `resource.ResourceNodeService#sweepRespawns`) détecte un
+    joueur à portée et déclenche une explosion réelle
+    (`World#createExplosion`), qui émet un `EntityExplodeEvent` normal — les
+    écouteurs de protection de zone/claim s'appliquent donc automatiquement,
+    sans dupliquer cette logique (mission point 6).
+-   **`SplitOnHitAbilityListener` stocke la profondeur de génération en PDC,
+    jamais dans le nom affiché** — combinée à `max-children-per-hit` et à
+    `max-population` (vérifiée avant chaque enfant), ces trois bornes
+    garantissent ensemble qu'aucune chaîne de division n'est infinie
+    (mission point 7, validation explicite « aucune capacité ne crée une
+    croissance incontrôlée d'entités »).
+-   **`Sound`/`Particle` restent résolus par nom d'enum classique
+    (`Sound#valueOf`, marqué « for removal »), pas par `Registry.SOUNDS`** —
+    ce registre s'indexe par clé namespacée en points
+    (`entity.creeper.primed`), pas par le nom d'enum attendu dans le YAML
+    (`ENTITY_CREEPER_PRIMED`) ; conservé tant que Paper ne fournit pas de
+    résolution par nom d'enum sur le registre (`@SuppressWarnings("removal")`
+    documenté sur place, dans `SpecialMobDefinitionParser`).
+-   **Bypass complet pour `/rpgadmin mob spawn`** — contrairement au spawn
+    naturel, la commande d'administration ignore volontairement
+    mondes/biomes/zones/population : c'est un outil de test (mission,
+    test manuel « faire apparaître chaque variante »), pas un second chemin
+    de spawn naturel.
 
 ## Flux principal (cible)
 

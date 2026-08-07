@@ -435,6 +435,34 @@
     frontière
 -   [x] `docs/CLAIMS.md`
 
+## Mobs spéciaux (fait)
+
+-   [x] `mob.model` : `SpecialMobDefinition` (correct par construction,
+    réutilise `resource.model.ResourceDrop` pour la table de drops) +
+    `MobAbility` scellée (`StrongerExplosionAbility`,
+    `ExplosiveOnAttackAbility`, `SplitOnHitAbility`)
+-   [x] `SpecialMobDefinitionParser`/`SpecialMobLoader`/`SpecialMobRegistry`
+    (même patron à deux phases que `ResourceNodeRegistry`) + quatre
+    variantes d'exemple embarquées (`red_creeper`, `golden_creeper`,
+    `creeper_pig`, `splitting_zombie`)
+-   [x] `SpecialMobService` : upgrade au spawn naturel (`CreatureSpawnEvent`
+    priorité HIGH, après les listeners de protection de zone), identification
+    PDC uniquement (jamais le nom affiché), population trackée par
+    définition (décomptée uniquement à la mort — `setRemoveWhenFarAway(false)`
+    empêche tout despawn silencieux), redécouverte au chargement de chunk
+-   [x] Écouteurs de capacités : `StrongerExplosionAbilityListener`
+    (`ExplosionPrimeEvent`), `ExplosiveOnAttackAbilityService` (balayage
+    périodique borné à la population réelle des variantes, pas à
+    `World#getLivingEntities()`), `SplitOnHitAbilityListener` (profondeur en
+    PDC + `max-children-per-hit` + `max-population` : aucune chaîne de
+    division infinie)
+-   [x] `/rpgadmin mob spawn <id>|list|inspect <id>|reload|metrics`
+    (`rpgquest.admin.world`)
+-   [x] Tests : identification PDC, probabilités (générateur injecté), drop
+    unique, profondeur maximale de division, zone interdite, événement
+    annulé, reload, variante non reconnue
+-   [x] `SPECIAL_MOB_FORMAT.md`
+
 ## MVP
 
 -   [x] Architecture
@@ -453,6 +481,7 @@
 -   [x] Marché entre joueurs
 -   [x] Portails et téléportation
 -   [x] Claims de terrain
+-   [x] Mobs spéciaux
 
 ## Plus tard
 -   [ ] PNJ avancés

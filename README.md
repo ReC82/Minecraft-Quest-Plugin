@@ -13,6 +13,7 @@ Plugin RPG pour Paper, sans mod client obligatoire.
 -   Sauvegarde SQLite (asynchrone)
 -   Économie (portefeuille, paiements), marchands PNJ et marché entre joueurs
 -   Portails et téléportation entre le village et les zones d'aventure
+-   Claims de terrain protégés, créés et gérés par les joueurs
 
 ## Prérequis
 
@@ -103,6 +104,14 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
     sélection `wand`). Voir [docs/TRAVEL.md](docs/TRAVEL.md).
 -   `/rpgadmin portal setdestination <id> <destinationId>` (`rpgquest.admin.world`)
     — fixe la destination d'un portail à ta position actuelle.
+-   `/claim wand` (`rpgquest.claim`) — outil de sélection pour un claim de
+    terrain (dédié, distinct de la sélection de zone).
+-   `/claim create <id>` (`rpgquest.claim`) — crée un claim depuis la
+    sélection courante.
+-   `/claim delete|info|trust <joueur>|untrust <joueur>|flag redstone <true|false>`
+    (`rpgquest.claim`) — agissent sur le claim où tu te trouves
+    (`delete`/`flag` réservés au propriétaire).
+-   `/claim list` (`rpgquest.claim`) — liste tes claims.
 -   `/money` (`rpgquest.money`) — affiche ton solde.
 -   `/money pay <joueur> <montant>` (`rpgquest.money`) — envoie des pièces à
     un joueur en ligne (transfert atomique).
@@ -127,6 +136,7 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 | `rpgquest.item` | tous | `/customitem inspect` |
 | `rpgquest.money` | tous | `/money`, `/money pay` |
 | `rpgquest.market` | tous | `/market`, `/market sell\|cancel` |
+| `rpgquest.claim` | tous | `/claim` |
 | `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin` |
 | `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées), `/rpgadmin portal` (portails) |
 
@@ -280,6 +290,20 @@ aucun débit, aucun déplacement, juste un message d'erreur. Le cooldown par
 joueur/portail est persisté et survit à une reconnexion. Voir
 [docs/TRAVEL.md](docs/TRAVEL.md) pour le détail complet.
 
+## Claims de terrain
+
+`/claim wand` puis `/claim create <id>` réclame un terrain cuboïde
+(propriétaire = ton UUID, jamais ton pseudo). Refusé s'il chevauche un
+claim existant, une zone protégée, se trouve trop près d'un portail, ou
+dépasse la taille/le nombre maximal autorisés. Protège blocs, conteneurs,
+animaux, armor stands et pistons traversant la frontière pour tout
+non-membre ; seule la redstone (boutons, leviers, portes, dalles de
+pression) est configurable (`/claim flag redstone <true|false>`).
+`/claim trust`/`untrust <joueur>` gère les membres de confiance,
+`/claim delete`/`info` agissent sur le claim où tu te trouves. Aucun
+avantage payant à cette étape. Voir [docs/CLAIMS.md](docs/CLAIMS.md) pour
+le détail complet.
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
@@ -305,11 +329,11 @@ Tout l'état persistant tient dans le dossier `plugins/RPGQuest/` :
 
 -   `data.db` (SQLite) — profils joueurs, progression de quêtes, variables,
     positions des nœuds de ressource, portefeuilles, transactions, offres
-    du marché entre joueurs (objets en dépôt) et cooldowns de portails. Le
-    plugin verrouille le fichier tant qu'il est démarré ; sauvegarder à
-    chaud (serveur en marche) reste possible avec les outils de sauvegarde
-    SQLite habituels (ex. `.backup`), ou plus simplement arrêter le serveur
-    avant de copier le fichier.
+    du marché entre joueurs (objets en dépôt), cooldowns de portails et
+    claims de terrain (avec leurs membres). Le plugin verrouille le fichier
+    tant qu'il est démarré ; sauvegarder à chaud (serveur en marche) reste
+    possible avec les outils de sauvegarde SQLite habituels (ex. `.backup`),
+    ou plus simplement arrêter le serveur avant de copier le fichier.
 -   `config.yml`, `messages.yml`, `quests/`, `dialogues/`, `items/`,
     `resource-nodes/`, `recipes/`, `merchants/`, `portals/`,
     `destinations/` — contenu YAML éditable, à sauvegarder comme n'importe
@@ -338,7 +362,7 @@ Voir [TODO.md](TODO.md).
 Le MVP (architecture, SQLite, quêtes, dialogues, journal, objets
 personnalisés, armes/outils, ressources, craft, resource pack, zones
 protégées, économie, marchands PNJ, marché entre joueurs, portails et
-téléportation) est complet. Fonctionnalités envisagées ensuite (voir aussi
-[TODO.md](TODO.md)) : claims de terrain, mobs spéciaux vanilla, XP RPG,
+téléportation, claims de terrain) est complet. Fonctionnalités envisagées
+ensuite (voir aussi [TODO.md](TODO.md)) : mobs spéciaux vanilla, XP RPG,
 backpacks, PNJ avancés (Citizens ou équivalent, optionnel), métiers,
 donjons, boss, factions.

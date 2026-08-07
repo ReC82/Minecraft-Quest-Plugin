@@ -8,6 +8,8 @@
     ├── bootstrap            (cycle de vie : PluginService, registre, orchestration)
     ├── command
     ├── config               (chargement + validation de config.yml)
+    ├── claim                (claims de terrain joueurs : persistance SQLite, sélection, protection)
+    │   └── model            (modèles immuables : claim, permissions)
     ├── crafting             (recettes YAML + enregistrement Bukkit + garde anti-substitution)
     │   └── model            (modèles immuables : recette façonnée/non, ingrédients, résultat)
     ├── database
@@ -1474,6 +1476,86 @@ qu'embarqués dans le jar.
     section `admin`), réutilisant l'outil de sélection `wand` déjà existant
     pour délimiter la zone d'activation — aucun nouvel outil nécessaire.
 
+## `claim` (claims de terrain joueurs)
+
+-   **SQLite plutôt que YAML, contrairement à `zone`** — décision
+    d'ingénierie délibérée : une zone protégée est curée par un
+    administrateur, peu nombreuse, modifiée rarement, et bénéficie d'être
+    éditable à la main ; un claim est créé/modifié par **n'importe quel
+    joueur**, potentiellement nombreux, avec une appartenance et une liste
+    de membres qui changent en jeu — le même profil d'usage que les offres
+    de marché (`economy.market`), donc la même solution technique
+    (`database.ClaimRepository`, `claims`/`claim_members`, migration V7).
+-   **`claim.model.Claim` n'a aucune dépendance Bukkit et est réutilisé tel
+    quel par `ClaimRepository`** — pas de type « ligne de base de données »
+    séparé façon `MarketListingRecord` : `Claim` satisfait déjà la
+    contrainte que cette séparation protège d'habitude (testable sans
+    MockBukkit), dupliquer ses huit champs dans un second type n'aurait
+    apporté aucune valeur. Documenté explicitement dans le Javadoc de la
+    classe pour ne pas ressembler à un oubli de convention.
+-   **Propriété et confiance exclusivement par UUID, jamais par pseudo**
+    (exigence explicite de la mission) — `Claim#isTrusted(UUID)` est
+    l'unique porte d'entrée utilisée par `ClaimProtectionListener` ; aucun
+    chemin de code ne compare un nom affiché. `/claim trust <joueur>`
+    résout bien un pseudo au moment de la commande (comme `/money pay`),
+    mais seul l'UUID résolu est stocké.
+-   **Outil de sélection dédié** (`ClaimSelectionService`/`ClaimWandListener`,
+    clé PDC `rpgquest:claim_wand`) — copie volontaire de
+    `zone.ZoneSelectionService`, pas une réutilisation : un joueur qui est
+    aussi administrateur ne doit pas voir sa sélection de claim mélangée à
+    sa sélection de zone protégée (deux services, deux états en mémoire
+    totalement indépendants). Hache en **bois** différente (houe plutôt que
+    hache) pour que les deux outils restent visuellement distincts en jeu.
+-   **Toutes les sous-commandes `/claim` sauf `create` opèrent sur « le
+    claim où tu te trouves », jamais sur un id tapé à la main** — lecture
+    littérale de la mission, qui ne montre un argument que pour
+    `trust`/`untrust <joueur>` (pas pour `delete`/`info`) :
+    `ClaimCommand` résout le claim via `ClaimService#claimAt` sur la
+    position exacte du joueur au moment de la commande, plutôt que
+    d'ajouter un identifiant à chaque syntaxe.
+-   **`ClaimService` porte toute la validation métier, `ClaimRepository`
+    reste pure JDBC** — chevauchement (claim/claim, claim/zone protégée),
+    distance aux portails, taille, nombre maximal : c'est ce qui crée la
+    dépendance délibérée de `claim` vers `zone`/`travel` (documentée ici et
+    dans `docs/CLAIMS.md`), une validation qui touche plusieurs systèmes ne
+    peut pas vivre dans le repository sans lui faire connaître Bukkit.
+-   **Cache en mémoire indexé par monde, rechargé intégralement après
+    chaque mutation** — même patron que `ZoneRegistry#zonesInWorld`/
+    `YamlPortalRegistry#portalsInWorld` pour la lecture (bon marché à
+    chaque événement protégé), mais **pas** le patron « écrire un fichier
+    puis recharger » des registres YAML : après une création/suppression/
+    confiance/permission réussie, `ClaimService` relit l'intégralité de
+    `claims`/`claim_members` depuis la base plutôt que de corriger le cache
+    à la main — plus simple, sans risque de désynchronisation, largement
+    assez rapide pour une fréquence de mutation (créations/suppressions de
+    claims) bien plus faible qu'un `PlayerMoveEvent`.
+-   **Seams pour une politique liée à la progression, sans rien implémenter
+    encore** (mission, point 8) — `effectiveMaxWidth`/`effectiveMaxHeight`/
+    `effectiveMaxClaims` prennent déjà un `Player` en paramètre mais ne
+    retournent que la valeur globale de `config.yml` pour l'instant ; une
+    étape ultérieure (XP RPG) pourra les faire varier sans changer un seul
+    appelant. Même philosophie que l'intégration Vault préparée en étape 14
+    (`economy.EconomyService`).
+-   **`ClaimProtectionListener` — même conception que
+    `ZoneProtectionListener`, deux catégories de protection nouvelles**
+    (animaux, armor stands) qui n'existaient pas pour les zones : `Animals`
+    (interface Bukkit dédiée, couvre vaches/moutons/poules/loups...) pour
+    les dégâts, et `PlayerArmorStandManipulateEvent` (événement Paper dédié
+    à l'échange d'équipement sur un armor stand, plus précis qu'un
+    `PlayerInteractAtEntityEvent` générique) pour la manipulation.
+    Conteneurs et redstone réutilisent la même détection par suffixe de nom
+    de matériau/`instanceof Container` que les zones ; les dalles de
+    pression (déclenchées par `Action.PHYSICAL`, pas un clic droit) sont
+    rattachées au même groupe « redstone » que boutons/leviers/portes.
+-   **Piston et explosions toujours protégés, sans flag** — contrairement
+    aux zones (`allowPistonsAcrossBorder`/`allowExplosions` configurables),
+    la mission ne liste que la redstone comme configurable pour un claim :
+    ces deux protections sont donc fixes, jamais désactivables par le
+    propriétaire.
+-   **Bypass (`rpgquest.admin.world`)** — même permission que le bypass des
+    zones protégées, décision délibérée pour ne pas multiplier les nœuds de
+    permission pour un concept équivalent (« administrateur du monde »).
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -1888,6 +1970,31 @@ Fabrication → Remise → Récompense
     (navigation entre pages avec beaucoup d'offres, deux vrais joueurs
     achetant simultanément la même offre, latence réseau) reste à valider
     par un testeur humain.
+-   **Aucun avantage payant pour les claims à cette étape** — délibéré
+    (mission, point 9) : `effectiveMaxWidth`/`effectiveMaxHeight`/
+    `effectiveMaxClaims` ne dépendent d'aucune monnaie ni d'aucun achat,
+    uniquement d'un seam pour une future politique liée à la progression
+    (XP RPG), voir section `claim`.
+-   **`/claim list` liste uniquement les claims du joueur qui l'exécute** —
+    pas de variante admin listant les claims de tous les joueurs, non
+    demandée par la mission ; mirroir facile d'une future commande
+    `/rpgadmin claim list <joueur>` si le besoin se précise.
+-   **La redstone d'un claim n'a pas la granularité des zones protégées** —
+    pas de distinction entre boutons/leviers/portes/dalles de pression
+    comme le permettent les zones (`allowDoors`/`allowButtons`/
+    `allowLevers` séparés) : la mission ne demande qu'« redstone
+    configurable », traitée comme un seul groupe pour un claim.
+-   **Test manuel des claims limité par l'environnement** — aucun client
+    Minecraft réel disponible ici. Compensé par `ClaimServiceTest` (toutes
+    les conditions de refus à la création, suppression, confiance,
+    protection indépendante du statut en ligne du propriétaire) et
+    `ClaimProtectionListenerTest` (construit de vrais événements Bukkit sur
+    un monde MockBukkit : frontière incluse, membre autorisé/non autorisé,
+    conteneurs, redstone configurable, animaux, armor stands, explosion
+    externe, piston traversant la frontière, monde sans claim). Le
+    ressenti en jeu (deux joueurs voisins, TNT dedans/dehors, piston réel,
+    redémarrage complet) reste à valider par un testeur humain — voir
+    `docs/CLAIMS.md`.
 -   **Pas de rechargement à chaud d'un portail/d'une destination édités à
     la main** — même limitation déjà documentée pour les zones protégées :
     `create`/`delete`/`setdestination` rechargent déjà automatiquement, ce

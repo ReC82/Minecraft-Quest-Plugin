@@ -37,7 +37,7 @@ priorité des sources).
 | 14 | Économie et marchands PNJ | DONE |
 | 15 | Marché entre joueurs | DONE |
 | 16 | Portails et téléportation | DONE |
-| 17 | Claims de terrain | TODO |
+| 17 | Claims de terrain | DONE |
 | 18 | Mobs spéciaux vanilla | TODO |
 | 19 | XP RPG | TODO |
 | 20 | Backpacks | TODO |
@@ -47,46 +47,50 @@ priorité des sources).
 
 ## Étape en cours
 
-### Étape 17 — Claims de terrain
+### Étape 18 — Mobs spéciaux vanilla
 
-Branche attendue : `feature/17-land-claims`
+Branche attendue : `feature/18-special-mobs`
 
-Aucun cahier des charges détaillé retrouvé dans le dépôt pour cette étape.
-Auditer `zone.ZoneRegistry`/`zone.model.ZoneFlags`/`docs/SAFE_ZONE.md`
-avant de commencer : des claims de joueurs sont probablement un cousin des
-zones protégées administrateur (même mécanique de protection cuboïde),
-mais créées/possédées par des joueurs plutôt que par un admin — vérifier
-si `ZoneRegistry` doit être étendu (propriétaire, permissions par joueur)
-ou si un registre séparé est plus approprié avant d'écrire du code.
+Aucun cahier des charges détaillé retrouvé dans le dépôt pour cette étape —
+à clarifier avec l'utilisateur si le seul titre de la table ne suffit pas
+à démarrer sans clarification (les étapes 14/15/17 ont dû être conçues par
+ingénierie faute d'un tel cahier des charges reçu en conversation ; l'étape
+16 a reçu le sien directement dans le chat).
 
-### Dernière observation (2026-08-07, étape 16 reçue en cahier des charges détaillé dans le chat)
+### Dernière observation (2026-08-07, étape 17 reçue en cahier des charges détaillé dans le chat)
 
-Étape 16 (Portails et téléportation) confirmée `DONE` : build vert, 368
-tests verts. Contrairement aux étapes 14/15, un cahier des charges détaillé
-a été reçu directement dans la conversation pour cette étape (portails
-configurables, canalisation, sécurité de destination, cooldown persisté,
-coût optionnel, `/rpgadmin portal create|delete|list|info|setdestination`,
-commit attendu `feat(travel): add safe configurable portals`) — suivi à la
-lettre. Portée réalisée : `travel.model` (`Destination`/`PortalDefinition`,
-corrects par construction), deux registres YAML indépendants
-(`YamlDestinationRegistry`/`YamlPortalRegistry`, même conception à deux
-phases que `ZoneLoader`, rejet des chevauchements de portails),
-`travel.PortalService` (détection d'entrée par `PlayerMoveEvent` filtré,
-canalisation à délai avec annulation mouvement/dégâts/déconnexion — même
-patron que `FlattenService` —, recherche de position sûre bornée, débit
-uniquement après vérification de sécurité, jamais avant), cooldown
-persisté (`portal_cooldowns`, migration V6) chargé en cache mémoire à la
-connexion, `/rpgadmin portal *` (nouvelle branche de `RpgAdminCommand`,
-réutilise l'outil `wand` existant), `docs/TRAVEL.md`. Aucun exemple de
-portail/destination embarqué (décision documentée : coordonnées arbitraires
-risquées sur un monde procédural).
+Étape 17 (Claims de terrain) confirmée `DONE` : build vert, 411 tests
+verts. Cahier des charges détaillé reçu directement dans la conversation
+(modèle de claim persistant, outil de sélection, `/claim
+create|delete|info|trust|untrust|list`, refus chevauchement/safe
+zone/portails/taille/nombre, protections blocs/conteneurs/animaux/armor
+stands/redstone configurable/explosions/pistons, bypass, politique
+d'extension future liée à la progression, aucun avantage payant, commit
+attendu `feat(claims): add persistent protected land claims`) — suivi à la
+lettre. Portée réalisée : `claim.model.Claim` (correct par construction,
+propriétaire par UUID, jamais par pseudo) persisté en SQLite plutôt qu'en
+YAML (`claims`/`claim_members`, migration V7 — décision documentée : profil
+d'usage joueur, comme le marché entre joueurs, contrairement aux zones
+protégées curées par un admin), `ClaimRepository` réutilise `Claim`
+directement (aucune dépendance Bukkit à séparer, contrairement à
+`MarketListingRecord`), outil de sélection dédié (`rpgquest:claim_wand`,
+distinct de celui des zones), `ClaimService` porte toute la validation
+métier (chevauchement claim/zone protégée via `ZoneRegistry`/distance aux
+portails via `YamlPortalRegistry`/taille/nombre, avec des seams
+`effectiveMax*(Player)` préparés pour une future politique de progression),
+`ClaimProtectionListener` (mêmes patrons que `ZoneProtectionListener`, plus
+`Animals`/`PlayerArmorStandManipulateEvent`, nouveaux pour ce projet),
+`/claim *` (toutes les sous-commandes sauf `create`/`list` opèrent sur le
+claim où le joueur se trouve, lecture littérale du cahier des charges),
+`docs/CLAIMS.md`.
 
-Étapes 1 à 16 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
-retrouvé pour les étapes 17 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
-qu'un `README.md` placeholder) ; l'étape 16 a fait exception en le
-recevant directement en conversation. Chaque étape suivante devra être
-précisée par l'utilisateur si le niveau de détail actuel (titre de la
-table ci-dessus) ne suffit pas à démarrer sans clarification.
+Étapes 1 à 17 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
+retrouvé pour les étapes 18 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
+qu'un `README.md` placeholder) ; les étapes 16 et 17 ont fait exception en
+le recevant directement en conversation — pas de garantie que ça se
+reproduise pour les étapes suivantes. Chaque étape devra être précisée par
+l'utilisateur si le niveau de détail actuel (titre de la table ci-dessus)
+ne suffit pas à démarrer sans clarification.
 
 ## Journal de session
 
@@ -171,5 +175,29 @@ Tests manuels en attente: portail vers un chunk réellement déchargé,
 Blocages: aucun
 Première étape à reprendre: 17 (Claims de terrain) — aucun cahier des
   charges détaillé retrouvé dans le dépôt pour les étapes 17 à 23, à
+  clarifier avec l'utilisateur si besoin avant de démarrer
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/16-portals
+Étape de départ: 17 (Claims de terrain), TODO — cahier des charges détaillé
+  reçu en conversation pendant la session (modèle persistant, sélection,
+  commandes, refus à la création, protections, bypass, politique
+  d'extension future, aucun avantage payant, commit attendu
+  feat(claims): add persistent protected land claims)
+Étapes terminées: 17
+Branche finale: feature/17-land-claims
+Dernier commit: (voir git log — commit de l'étape 17 à suivre)
+Build: vert (./gradlew clean build)
+Tests: 411 tests verts (nouveaux : ClaimTest, ClaimRepositoryTest,
+  ClaimServiceTest, ClaimProtectionListenerTest, ajouts ConfigValidatorTest
+  pour la section claims ; SchemaMigratorTest mis à jour pour la migration V7)
+Tests manuels en attente: deux joueurs voisins, coffres/portes/animaux/
+  redstone réels, TNT dedans/dehors, piston traversant la limite en jeu,
+  redémarrage complet du serveur (voir docs/CLAIMS.md)
+Blocages: aucun
+Première étape à reprendre: 18 (Mobs spéciaux vanilla) — aucun cahier des
+  charges détaillé retrouvé dans le dépôt pour les étapes 18 à 23, à
   clarifier avec l'utilisateur si besoin avant de démarrer
 ```

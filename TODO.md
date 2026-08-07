@@ -400,6 +400,41 @@
     annulation par mouvement/dégâts/déconnexion, rechargement du registre
 -   [x] `docs/TRAVEL.md`
 
+## Claims de terrain (fait)
+
+-   [x] `claim.model.Claim` (correct par construction, propriétaire par
+    UUID, membres `Set<UUID>`) + `ClaimFlags` (seule permission
+    réellement configurable : `allowPublicRedstone`)
+-   [x] Persistance SQLite (`claims`/`claim_members`, migration V7) plutôt
+    que YAML — profil d'usage joueur (créé/modifié fréquemment,
+    appartenance mutable), même choix que le marché entre joueurs ;
+    `database.ClaimRepository` réutilise `Claim` directement (aucune
+    dépendance Bukkit à séparer)
+-   [x] Outil de sélection dédié (`ClaimSelectionService`/`ClaimWandListener`,
+    clé PDC `rpgquest:claim_wand`, distinct de l'outil de zone)
+-   [x] `/claim wand|create <id>|delete|info|trust <joueur>|untrust <joueur>|list|flag redstone <true|false>`
+    (`rpgquest.claim`) — toutes les sous-commandes sauf `create`/`list`
+    opèrent sur le claim où le joueur se trouve
+-   [x] Refus à la création : chevauchement avec un autre claim, avec une
+    zone protégée, trop près d'un portail, taille/nombre maximal dépassé
+    (`config.yml` → `claims`) — aucun claim invalide n'est jamais persisté
+-   [x] Seams `effectiveMaxWidth`/`effectiveMaxHeight`/`effectiveMaxClaims`
+    (prennent déjà un `Player`) préparés pour une future politique liée à
+    la progression, sans rien implémenter — aucun avantage payant à cette
+    étape
+-   [x] `ClaimProtectionListener` : blocs, conteneurs, animaux (`Animals`),
+    armor stands (`PlayerArmorStandManipulateEvent`), redstone
+    configurable (boutons/leviers/portes/dalles de pression), explosions,
+    pistons traversant la frontière — protection par UUID (propriétaire/
+    membres), bypass `rpgquest.admin.world` (même permission que les
+    zones protégées)
+-   [x] Tests : chevauchements (claim/zone/portail), taille, nombre
+    maximal, suppression, confiance/retrait, monde absent, protection
+    indépendante du statut en ligne du propriétaire, frontière incluse,
+    membre autorisé/non autorisé, explosion externe, piston traversant la
+    frontière
+-   [x] `docs/CLAIMS.md`
+
 ## MVP
 
 -   [x] Architecture
@@ -417,10 +452,9 @@
 -   [x] Économie et marchands PNJ
 -   [x] Marché entre joueurs
 -   [x] Portails et téléportation
+-   [x] Claims de terrain
 
 ## Plus tard
-
--   [ ] Claims de terrain
 -   [ ] PNJ avancés
 -   [ ] Métiers
 -   [ ] Donjons

@@ -40,6 +40,9 @@ commands:
   market:
     description: Marché entre joueurs — voir docs/ECONOMY.md.
     usage: /<command> [sell <prix>|cancel <id>|admin list]
+  claim:
+    description: Claims de terrain protégés entre joueurs — voir docs/CLAIMS.md.
+    usage: /<command> wand|create <id>|delete|info|trust <joueur>|untrust <joueur>|list|flag redstone <true|false>
 
 permissions:
   rpgquest.admin:
@@ -59,4 +62,7 @@ permissions:
     default: true
   rpgquest.market:
     description: Accès au marché entre joueurs (/market, /market sell|cancel).
+    default: true
+  rpgquest.claim:
+    description: Accès aux claims de terrain (/claim).
     default: true

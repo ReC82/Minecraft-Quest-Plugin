@@ -7,6 +7,7 @@ public record PluginConfig(
         ResourcePackConfig resourcePack,
         DialogueConfig dialogue,
         JournalConfig journal,
-        AdminFlattenConfig adminFlatten
+        AdminFlattenConfig adminFlatten,
+        ClaimConfig claims
 ) {
 }

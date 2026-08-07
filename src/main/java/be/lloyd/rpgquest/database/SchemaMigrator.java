@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 6;
+    private static final int CURRENT_VERSION = 7;
 
     private SchemaMigrator() {
     }
@@ -44,6 +44,10 @@ public final class SchemaMigrator {
         if (version < 6) {
             applyV6(connection);
             version = 6;
+        }
+        if (version < 7) {
+            applyV7(connection);
+            version = 7;
         }
 
         if (version != startingVersion) {
@@ -193,6 +197,39 @@ public final class SchemaMigrator {
                         expires_at TEXT NOT NULL,
                         PRIMARY KEY (player_uuid, portal_id),
                         FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV7(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS claims (
+                        id TEXT PRIMARY KEY,
+                        owner_uuid TEXT NOT NULL,
+                        world TEXT NOT NULL,
+                        min_x INTEGER NOT NULL,
+                        min_y INTEGER NOT NULL,
+                        min_z INTEGER NOT NULL,
+                        max_x INTEGER NOT NULL,
+                        max_y INTEGER NOT NULL,
+                        max_z INTEGER NOT NULL,
+                        allow_public_redstone INTEGER NOT NULL DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (owner_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_claims_owner ON claims (owner_uuid)
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS claim_members (
+                        claim_id TEXT NOT NULL,
+                        member_uuid TEXT NOT NULL,
+                        PRIMARY KEY (claim_id, member_uuid),
+                        FOREIGN KEY (claim_id) REFERENCES claims (id) ON DELETE CASCADE,
+                        FOREIGN KEY (member_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
                     )
                     """);
         }

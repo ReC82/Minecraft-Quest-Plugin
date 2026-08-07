@@ -3,6 +3,11 @@ package be.lloyd.rpgquest.bootstrap;
 import be.lloyd.rpgquest.RPGQuestPlugin;
 import be.lloyd.rpgquest.admin.FlattenService;
 import be.lloyd.rpgquest.admin.RpgAdminCommand;
+import be.lloyd.rpgquest.claim.ClaimProtectionListener;
+import be.lloyd.rpgquest.claim.ClaimSelectionService;
+import be.lloyd.rpgquest.claim.ClaimService;
+import be.lloyd.rpgquest.claim.ClaimWandListener;
+import be.lloyd.rpgquest.command.ClaimCommand;
 import be.lloyd.rpgquest.command.CustomItemCommand;
 import be.lloyd.rpgquest.command.DialogueCommand;
 import be.lloyd.rpgquest.command.MarketCommand;
@@ -19,6 +24,7 @@ import be.lloyd.rpgquest.crafting.YamlCraftingRegistry;
 import be.lloyd.rpgquest.database.DatabaseService;
 import be.lloyd.rpgquest.database.PlayerProfileRepository;
 import be.lloyd.rpgquest.database.PlayerVariableRepository;
+import be.lloyd.rpgquest.database.ClaimRepository;
 import be.lloyd.rpgquest.database.MarketRepository;
 import be.lloyd.rpgquest.database.PortalCooldownRepository;
 import be.lloyd.rpgquest.database.QuestProgressRepository;
@@ -83,6 +89,7 @@ public final class RPGQuestBootstrap {
     private final YamlMerchantRegistry merchantRegistry;
     private final YamlPortalRegistry portalRegistry;
     private final YamlDestinationRegistry destinationRegistry;
+    private final ClaimSelectionService claimSelectionService;
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
@@ -95,6 +102,7 @@ public final class RPGQuestBootstrap {
     private MarketRepository marketRepository;
     private MarketService marketService;
     private PortalService portalService;
+    private ClaimService claimService;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -121,6 +129,7 @@ public final class RPGQuestBootstrap {
                 plugin.getDataFolder().toPath().resolve("portals"), plugin.getSLF4JLogger());
         this.destinationRegistry = new YamlDestinationRegistry(
                 plugin.getDataFolder().toPath().resolve("destinations"), plugin.getSLF4JLogger());
+        this.claimSelectionService = new ClaimSelectionService();
     }
 
     public void start() {
@@ -185,6 +194,12 @@ public final class RPGQuestBootstrap {
                 plugin, portalRegistry, destinationRegistry, economyService, questProgressEngine, portalCooldownRepository);
         registry.start(portalService);
         registry.start(new PlayerListenerService(plugin, portalService.listener()));
+
+        ClaimRepository claimRepository = new ClaimRepository(databaseService.databaseManager());
+        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService);
+        registry.start(claimService);
+        registry.start(new PlayerListenerService(plugin, new ClaimProtectionListener(claimService)));
+        registry.start(new PlayerListenerService(plugin, new ClaimWandListener(claimSelectionService)));
 
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
@@ -303,6 +318,10 @@ public final class RPGQuestBootstrap {
         return portalService;
     }
 
+    public ClaimService claimService() {
+        return claimService;
+    }
+
     private void registerCommands() {
         RPGQuestCommand rpgquestCommand = new RPGQuestCommand(plugin, this);
         var rpgquest = plugin.getCommand("rpgquest");
@@ -364,6 +383,13 @@ public final class RPGQuestBootstrap {
         if (market != null) {
             market.setExecutor(marketCommand);
             market.setTabCompleter(marketCommand);
+        }
+
+        ClaimCommand claimCommand = new ClaimCommand(plugin, claimService, claimSelectionService);
+        var claim = plugin.getCommand("claim");
+        if (claim != null) {
+            claim.setExecutor(claimCommand);
+            claim.setTabCompleter(claimCommand);
         }
 
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(

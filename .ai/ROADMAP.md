@@ -40,73 +40,73 @@ priorité des sources).
 | 17 | Claims de terrain | DONE |
 | 18 | Mobs spéciaux vanilla | DONE |
 | 19 | XP RPG | DONE |
-| 20 | Backpacks | TODO |
+| 20 | Backpacks | DONE |
 | 21 | API et site web read-only | TODO |
 | 22 | Boutique web et livraison sécurisée | TODO |
 | 23 | Prototype de mod client séparé | TODO |
 
 ## Étape en cours
 
-### Étape 20 — Backpacks
+### Étape 21 — API et site web read-only
 
-Branche attendue : `feature/20-backpacks` (à créer). Aucun cahier des
+Branche attendue : `feature/21-web-api` (à créer). Aucun cahier des
 charges détaillé retrouvé dans le dépôt pour cette étape — à clarifier
 avec l'utilisateur si le seul titre de la table ne suffit pas à démarrer
-sans clarification (les étapes 14/15/17/18/19 ont dû être conçues au moins
-en partie par ingénierie faute d'un tel cahier des charges reçu en
-conversation ; les étapes 16/17/18/19 ont reçu le leur directement dans le
-chat).
+sans clarification (les étapes 14/15/17/18/19/20 ont dû être conçues au
+moins en partie par ingénierie faute d'un tel cahier des charges reçu en
+conversation ; les étapes 16/17/18/19/20 ont reçu le leur directement dans
+le chat).
 
-### Dernière observation (2026-08-07, étape 19 reçue en cahier des charges détaillé dans le chat)
+### Dernière observation (2026-08-07, étape 20 reçue en cahier des charges détaillé dans le chat)
 
-Étape 19 (XP RPG) confirmée `DONE` : build vert, 503 tests (9 ignorés —
-pas échoués, limitation MockBukkit pré-existante depuis l'étape 18, voir
+Étape 20 (Backpacks) confirmée `DONE` : build vert, 523 tests (11 ignorés
+— pas échoués, limitation MockBukkit pré-existante depuis l'étape 18, voir
 plus bas). Cahier des charges détaillé reçu directement dans la
-conversation (six pistes dont GLOBAL agrégée, SQLite (niveaux/XP/
-historique), courbe configurable et validée, service générique d'octroi
-avec raison + id d'événement, déduplication, sources interceptées (mort de
-mobs/minage/récolte de cultures mûres/pêche/découverte de zones/quêtes),
-anti-farm (blocs posés/mobs de spawner/mobs de division/répétition
-excessive/cultures non mûres), `/profile`/`/skills`/commandes admin,
-affichage action bar/bossbar configurable, XP vanilla conservée pour les
-enchantements, hooks de déblocage (recette/portail/quête/claim), modèle
-d'équilibrage documenté, commit attendu `feat(progression): add
-multi-skill RPG experience system`) — suivi à la lettre. Portée réalisée :
-`progression.model.ProgressionCurve` (courbe géométrique validée, niveau
-jamais stocké séparément de l'XP totale — toujours recalculé), migration
-SQLite V8 (`player_skills`/`xp_grants`/`player_placed_blocks`),
-`ProgressionRepository` (même conception transactionnelle que
-`WalletRepository` : dédup + mise à jour du total en une seule transaction
-JDBC), `ProgressionService` (octroi dédupliqué et limité en fréquence,
-mirroir GLOBAL automatique, config lue via `Supplier` pour un `/rpgquest
-reload` effectif sans redémarrage de service — même patron que
-`EquipmentBehaviorService`), six écouteurs de sources (combat exclut
-spawner/division via `mob.SpecialMobService#isSplitOffspring`, nouvellement
-exposé publiquement ; minage exclut les blocs posés via
-`PlacedBlockTracker` ; agriculture exige `Ageable` mûr ; pêche ; exploration
-via `PlayerMoveEvent` filtré au changement de bloc ; fin de quête via le
-callback générique `QuestProgressEngine#onProgressChanged`, sans toucher au
-package `quest`), hook `ProgressionService#hasLevel` câblé concrètement
-dans le seam déjà préparé `claim.ClaimService#effectiveMaxClaims` (étape
-17, point 8 — +1 claim tous les 10 niveaux GLOBAL), `/profile`/`/skills`/
-`/skills admin grant|set`, `docs/PROGRESSION.md` (modèle d'équilibrage
-complet : courbe, montants par source et leur justification relative,
-anti-farm, hooks, persistance).
+conversation (inventaire virtuel persistant, tailles Small/Medium/Large
+configurables, niveau lié à l'UUID, objet ou commande d'ouverture,
+permission de secours + commandes admin d'octroi/retrait, stockage sûr et
+versionné, interdictions — backpack dans backpack, objets interdits,
+ouverture simultanée, interaction non autorisée —, sauvegarde atomique à
+la fermeture/déconnexion/arrêt, boîte de récupération si une réduction de
+taille laisse trop d'objets, upgrade conservant tout, interface générique
+`EntitlementService` pour de futurs avantages sans boutique, modèle
+documenté, commit attendu `feat(storage): add secure persistent
+backpacks`) — suivi à la lettre. Portée réalisée : `entitlement.EntitlementService`
+(interface générique à clé/palier libres, aucun type Java générique —
+réutilisable par de futurs avantages sans migration) + `database.EntitlementRepository`
+(implémentation directe, `player_entitlements`), `backpack.model.BackpackSize` +
+`BackpackConfig` (`config.yml` → `backpacks:`), migration SQLite V9
+(`backpacks`/`backpack_overflow`/`backpack_audit`), `backpack.ItemArraySerializer`
+(format binaire maison — aucun précédent, `ItemStack[]` complet
+longueur-préfixé, version distincte du schéma SQL), `BackpackRepository`
+(redimensionnement en une seule transaction JDBC : contenu + surplus
+ensemble, jamais l'un sans l'autre), `BackpackService` (une seule instance
+d'`Inventory` vivante par joueur — garantie par l'exécution séquentielle
+des tâches Bukkit, pas un verrou explicite —, sauvegarde à la fermeture/
+déconnexion/arrêt via le même mécanisme LIFO déjà découvert pour
+`MarketService`/`MerchantTradeService` en étape 19, upgrade/downgrade
+unifiés par un seul algorithme de compactage, anomalie de lecture jamais
+silencieuse — toujours une entrée `backpack_overflow`/`backpack_audit`),
+`BackpackListener` (lecture-écriture protégée, contrairement à la vitrine
+en lecture seule du marché — seuls les vecteurs qui feraient entrer un
+objet interdit sont annulés), `/backpack`, `/backpack recover [numéro]`,
+`/backpack admin grant|revoke`, `docs/BACKPACKS.md`.
 
-Limitation connue (héritée de l'étape 18, pas nouvelle) : 9 tests sont
-marqués **ignorés** (pas échoués) dans `SpecialMobServiceTest`/
-`SplitOnHitAbilityListenerTest`/`PortalServiceTest` — MockBukkit 4.110.0
-(dernière version disponible) lève délibérément `TestAbortedException` via
-`LivingEntityMock#setRemoveWhenFarAway`, non implémenté ; le comportement
-réel n'est testable qu'en jeu.
+Limitation connue (héritée de l'étape 18, pas nouvelle, deux occurrences
+supplémentaires dans les nouveaux tests de cette étape) : 11 tests sont
+marqués **ignorés** (pas échoués) — MockBukkit 4.110.0 (dernière version
+disponible) lève délibérément `TestAbortedException` sur plusieurs
+méthodes non implémentées (`LivingEntityMock#setRemoveWhenFarAway` et
+d'autres rencontrées dans `BackpackListenerTest`/`ItemArraySerializerTest`) ;
+le comportement réel n'est testable qu'en jeu.
 
-Étapes 1 à 19 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
-retrouvé pour les étapes 20 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
-qu'un `README.md` placeholder) ; les étapes 16/17/18/19 ont fait exception
-en le recevant directement en conversation — pas de garantie que ça se
-reproduise pour les étapes suivantes. Chaque étape devra être précisée par
-l'utilisateur si le niveau de détail actuel (titre de la table ci-dessus)
-ne suffit pas à démarrer sans clarification.
+Étapes 1 à 20 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
+retrouvé pour les étapes 21 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
+qu'un `README.md` placeholder) ; les étapes 16/17/18/19/20 ont fait
+exception en le recevant directement en conversation — pas de garantie que
+ça se reproduise pour les étapes suivantes. Chaque étape devra être
+précisée par l'utilisateur si le niveau de détail actuel (titre de la
+table ci-dessus) ne suffit pas à démarrer sans clarification.
 
 ## Journal de session
 
@@ -272,4 +272,33 @@ Blocages: aucun
 Première étape à reprendre: 20 (Backpacks) — aucun cahier des charges
   détaillé retrouvé dans le dépôt pour les étapes 20 à 23, à clarifier avec
   l'utilisateur si besoin avant de démarrer
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/19-rpg-experience
+Étape de départ: 20 (Backpacks), TODO — cahier des charges détaillé reçu en
+  conversation pendant la session (inventaire virtuel persistant, tailles
+  configurables, objet/commande d'ouverture, permission de secours +
+  commandes admin, stockage sûr et versionné, interdictions (imbrication,
+  objets interdits, ouverture simultanée, interaction non autorisée),
+  sauvegarde atomique fermeture/déconnexion/arrêt, boîte de récupération,
+  upgrade sans perte, interface EntitlementService générique, modèle
+  documenté, commit attendu feat(storage): add secure persistent backpacks)
+Étapes terminées: 20
+Branche finale: feature/20-backpacks
+Dernier commit: adf6828 feat(storage): add secure persistent backpacks
+Build: vert (./gradlew clean build)
+Tests: 523 tests (nouveaux : ItemArraySerializerTest, BackpackServiceTest,
+  BackpackListenerTest ; SchemaMigratorTest mis à jour pour la migration V9 ;
+  11 tests ignorés — pas échoués, limitation MockBukkit héritée de l'étape
+  18 + deux occurrences supplémentaires cette étape, voir ci-dessus)
+Tests manuels en attente: ouvrir/remplir/fermer/reconnecter, mourir avec le
+  backpack, changer de monde, forcer l'arrêt avec le backpack ouvert,
+  upgrade puis downgrade, deux clients sur le même compte si possible (voir
+  docs/BACKPACKS.md)
+Blocages: aucun
+Première étape à reprendre: 21 (API et site web read-only) — aucun cahier
+  des charges détaillé retrouvé dans le dépôt pour les étapes 21 à 23, à
+  clarifier avec l'utilisateur si besoin avant de démarrer
 ```

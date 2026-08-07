@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 3;
+    private static final int CURRENT_VERSION = 4;
 
     private SchemaMigrator() {
     }
@@ -32,6 +32,10 @@ public final class SchemaMigrator {
         if (version < 3) {
             applyV3(connection);
             version = 3;
+        }
+        if (version < 4) {
+            applyV4(connection);
+            version = 4;
         }
 
         if (version != startingVersion) {
@@ -116,6 +120,31 @@ public final class SchemaMigrator {
                         type_id TEXT NOT NULL,
                         depleted_at TEXT,
                         PRIMARY KEY (world, x, y, z)
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV4(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS wallets (
+                        player_uuid TEXT PRIMARY KEY,
+                        balance INTEGER NOT NULL DEFAULT 0,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS transactions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        player_uuid TEXT NOT NULL,
+                        type TEXT NOT NULL,
+                        amount INTEGER NOT NULL,
+                        context TEXT,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
                     )
                     """);
         }

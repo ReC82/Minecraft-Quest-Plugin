@@ -31,6 +31,12 @@ commands:
   rpgadmin:
     description: Commandes d'administration du monde (aplatissement, zones, portails...).
     usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo
+  money:
+    description: Portefeuille et paiements entre joueurs.
+    usage: /<command> [pay <joueur> <montant>|admin <give|take|set> <joueur> <montant>]
+  merchant:
+    description: Marchands PNJ (administration) — voir docs/ECONOMY.md.
+    usage: /<command> <reload|validate|list>
 
 permissions:
   rpgquest.admin:
@@ -45,3 +51,6 @@ permissions:
   rpgquest.admin.world:
     description: Accès aux commandes d'administration du monde (/rpgadmin), dont l'aplatissement de terrain.
     default: op
+  rpgquest.money:
+    description: Accès aux commandes joueur d'économie (/money, /money pay).
+    default: true

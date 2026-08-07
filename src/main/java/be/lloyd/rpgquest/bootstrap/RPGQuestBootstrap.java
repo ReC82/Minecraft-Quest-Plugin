@@ -5,6 +5,8 @@ import be.lloyd.rpgquest.admin.FlattenService;
 import be.lloyd.rpgquest.admin.RpgAdminCommand;
 import be.lloyd.rpgquest.command.CustomItemCommand;
 import be.lloyd.rpgquest.command.DialogueCommand;
+import be.lloyd.rpgquest.command.MerchantCommand;
+import be.lloyd.rpgquest.command.MoneyCommand;
 import be.lloyd.rpgquest.command.QuestCommand;
 import be.lloyd.rpgquest.command.QuestsCommand;
 import be.lloyd.rpgquest.command.ResourceNodeCommand;
@@ -18,11 +20,15 @@ import be.lloyd.rpgquest.database.PlayerProfileRepository;
 import be.lloyd.rpgquest.database.PlayerVariableRepository;
 import be.lloyd.rpgquest.database.QuestProgressRepository;
 import be.lloyd.rpgquest.database.ResourceNodeRepository;
+import be.lloyd.rpgquest.database.WalletRepository;
 import be.lloyd.rpgquest.dialogue.YamlDialogueEngine;
 import be.lloyd.rpgquest.dialogue.render.ChatDialogueRenderer;
 import be.lloyd.rpgquest.dialogue.render.DialogueRenderer;
 import be.lloyd.rpgquest.dialogue.render.PaperDialogRenderer;
 import be.lloyd.rpgquest.dialogue.session.DialogueSessionEngine;
+import be.lloyd.rpgquest.economy.EconomyService;
+import be.lloyd.rpgquest.economy.merchant.MerchantTradeService;
+import be.lloyd.rpgquest.economy.merchant.YamlMerchantRegistry;
 import be.lloyd.rpgquest.item.SpiderFangDropListener;
 import be.lloyd.rpgquest.item.YamlCustomItemRegistry;
 import be.lloyd.rpgquest.item.behavior.EquipmentBehaviorService;
@@ -67,6 +73,7 @@ public final class RPGQuestBootstrap {
     private final FlattenService flattenService;
     private final ZoneRegistry zoneRegistry;
     private final ZoneSelectionService zoneSelectionService;
+    private final YamlMerchantRegistry merchantRegistry;
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
@@ -74,6 +81,8 @@ public final class RPGQuestBootstrap {
     private DialogueSessionEngine dialogueSessionEngine;
     private QuestJournalService questJournalService;
     private ResourceNodeService resourceNodeService;
+    private EconomyService economyService;
+    private MerchantTradeService merchantTradeService;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -94,6 +103,8 @@ public final class RPGQuestBootstrap {
         this.zoneRegistry = new ZoneRegistry(
                 plugin.getDataFolder().toPath().resolve("zones"), plugin.getSLF4JLogger());
         this.zoneSelectionService = new ZoneSelectionService();
+        this.merchantRegistry = new YamlMerchantRegistry(
+                plugin.getDataFolder().toPath().resolve("merchants"), plugin.getSLF4JLogger());
     }
 
     public void start() {
@@ -138,12 +149,21 @@ public final class RPGQuestBootstrap {
         registry.start(questProgressEngine);
         registry.start(new PlayerListenerService(plugin, questProgressEngine.connectionListener()));
 
+        WalletRepository walletRepository = new WalletRepository(databaseService.databaseManager());
+        economyService = new EconomyService(walletRepository);
+        registry.start(merchantRegistry);
+        merchantTradeService = new MerchantTradeService(
+                plugin, merchantRegistry, economyService, customItemRegistry, questProgressEngine);
+        registry.start(merchantTradeService);
+        registry.start(new PlayerListenerService(plugin, merchantTradeService.listener()));
+
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
                 configService.current().dialogue().allowedCommands());
         registry.start(dialogueEngine);
 
-        dialogueSessionEngine = new DialogueSessionEngine(plugin, dialogueEngine, questProgressEngine, variableRepository);
+        dialogueSessionEngine = new DialogueSessionEngine(
+                plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService);
         registry.start(dialogueSessionEngine);
         dialogueSessionEngine.setRenderer(createRenderer(dialogueSessionEngine));
         registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));
@@ -226,6 +246,18 @@ public final class RPGQuestBootstrap {
         return resourceNodeService;
     }
 
+    public YamlMerchantRegistry merchantRegistry() {
+        return merchantRegistry;
+    }
+
+    public EconomyService economyService() {
+        return economyService;
+    }
+
+    public MerchantTradeService merchantTradeService() {
+        return merchantTradeService;
+    }
+
     private void registerCommands() {
         RPGQuestCommand rpgquestCommand = new RPGQuestCommand(plugin, this);
         var rpgquest = plugin.getCommand("rpgquest");
@@ -266,6 +298,20 @@ public final class RPGQuestBootstrap {
         if (resourcenode != null) {
             resourcenode.setExecutor(resourceNodeCommand);
             resourcenode.setTabCompleter(resourceNodeCommand);
+        }
+
+        MoneyCommand moneyCommand = new MoneyCommand(plugin, economyService);
+        var money = plugin.getCommand("money");
+        if (money != null) {
+            money.setExecutor(moneyCommand);
+            money.setTabCompleter(moneyCommand);
+        }
+
+        MerchantCommand merchantCommand = new MerchantCommand(merchantRegistry);
+        var merchant = plugin.getCommand("merchant");
+        if (merchant != null) {
+            merchant.setExecutor(merchantCommand);
+            merchant.setTabCompleter(merchantCommand);
         }
 
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(flattenService, zoneRegistry, zoneSelectionService);

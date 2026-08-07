@@ -15,6 +15,7 @@ import be.lloyd.rpgquest.dialogue.model.GiveItemAction;
 import be.lloyd.rpgquest.dialogue.model.HasItemCondition;
 import be.lloyd.rpgquest.dialogue.model.HasPermissionCondition;
 import be.lloyd.rpgquest.dialogue.model.OpenDialogueAction;
+import be.lloyd.rpgquest.dialogue.model.OpenMerchantAction;
 import be.lloyd.rpgquest.dialogue.model.QuestStateCondition;
 import be.lloyd.rpgquest.dialogue.model.RunSafeCommandAction;
 import be.lloyd.rpgquest.dialogue.model.SetVariableAction;
@@ -25,6 +26,7 @@ import be.lloyd.rpgquest.dialogue.model.VariableEqualsCondition;
 import be.lloyd.rpgquest.dialogue.render.DialogueChoiceHandler;
 import be.lloyd.rpgquest.dialogue.render.DialogueRenderer;
 import be.lloyd.rpgquest.dialogue.render.VisibleChoice;
+import be.lloyd.rpgquest.economy.merchant.MerchantTradeService;
 import be.lloyd.rpgquest.quest.progress.QuestProgressEngine;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,17 +60,20 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     private final YamlDialogueEngine dialogueEngine;
     private final QuestProgressEngine questProgressEngine;
     private final PlayerVariableRepository variableRepository;
+    private final MerchantTradeService merchantTradeService;
     private final Logger logger;
 
     private final Map<UUID, DialogueSession> sessions = new ConcurrentHashMap<>();
     private volatile DialogueRenderer renderer;
 
     public DialogueSessionEngine(RPGQuestPlugin plugin, YamlDialogueEngine dialogueEngine,
-                                  QuestProgressEngine questProgressEngine, PlayerVariableRepository variableRepository) {
+                                  QuestProgressEngine questProgressEngine, PlayerVariableRepository variableRepository,
+                                  MerchantTradeService merchantTradeService) {
         this.plugin = plugin;
         this.dialogueEngine = dialogueEngine;
         this.questProgressEngine = questProgressEngine;
         this.variableRepository = variableRepository;
+        this.merchantTradeService = merchantTradeService;
         this.logger = plugin.getSLF4JLogger();
     }
 
@@ -154,6 +159,11 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
                 open(player, open.dialogueId());
                 return;
             }
+            if (action instanceof OpenMerchantAction openMerchant) {
+                closeSession(player);
+                merchantTradeService.openShop(player, openMerchant.merchantId());
+                return;
+            }
             executeAction(player, action);
         }
 
@@ -190,6 +200,9 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             case RunSafeCommandAction a -> runSafeCommand(player, a.command());
             case OpenDialogueAction ignored -> {
                 // Géré par l'appelant (transition, arrêt anticipé) : jamais atteint ici.
+            }
+            case OpenMerchantAction ignored -> {
+                // Géré par l'appelant (fermeture de la session, ouverture de la vitrine) : jamais atteint ici.
             }
             case CloseAction ignored -> {
                 // Géré par l'appelant (transition, arrêt anticipé) : jamais atteint ici.

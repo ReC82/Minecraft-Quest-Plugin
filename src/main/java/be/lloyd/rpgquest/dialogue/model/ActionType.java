@@ -9,5 +9,6 @@ public enum ActionType {
     SET_VARIABLE,
     RUN_SAFE_COMMAND,
     OPEN_DIALOGUE,
+    OPEN_MERCHANT,
     CLOSE
 }

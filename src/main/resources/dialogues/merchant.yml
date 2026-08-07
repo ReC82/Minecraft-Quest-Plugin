@@ -1,0 +1,19 @@
+# Dialogue d'exemple ouvrant le marchand du village (merchants/village_merchant.yml).
+# Un PNJ (entité vivante renommée "merchant") ouvrant ce dialogue via un clic
+# droit propose ensuite d'accéder à la vitrine — voir docs/ECONOMY.md.
+
+id: rpgquest:merchant
+start: greeting
+
+nodes:
+  greeting:
+    speaker: "Marchand"
+    text: "<white>Bienvenue ! Envie de jeter un œil à ma marchandise ?</white>"
+    choices:
+      - text: "Voir la boutique"
+        actions:
+          - type: OPEN_MERCHANT
+            merchant: rpgquest:village_merchant
+      - text: "Non merci"
+        actions:
+          - type: CLOSE

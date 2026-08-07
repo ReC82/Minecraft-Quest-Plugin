@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import be.lloyd.rpgquest.dialogue.model.DialogueDefinition;
 import be.lloyd.rpgquest.dialogue.model.OpenDialogueAction;
+import be.lloyd.rpgquest.dialogue.model.OpenMerchantAction;
 import java.io.StringReader;
 import java.util.Set;
 import org.bukkit.configuration.ConfigurationSection;
@@ -130,6 +131,33 @@ class DialogueDefinitionParserTest {
         var action = result.dialogue().nodes().get("greeting").choices().get(0).actions().get(0);
         assertTrue(action instanceof OpenDialogueAction);
         assertEquals("rpgquest:other", ((OpenDialogueAction) action).dialogueId().toString());
+    }
+
+    @Test
+    void openMerchantActionIsParsed() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("open-merchant.yml", load(minimalDialogueWithChoice("""
+                      - text: "Choix"
+                        actions:
+                          - type: OPEN_MERCHANT
+                            merchant: rpgquest:village_merchant
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        var action = result.dialogue().nodes().get("greeting").choices().get(0).actions().get(0);
+        assertTrue(action instanceof OpenMerchantAction);
+        assertEquals("rpgquest:village_merchant", ((OpenMerchantAction) action).merchantId().toString());
+    }
+
+    @Test
+    void openMerchantActionWithoutMerchantIdIsRejected() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("open-merchant-bad.yml", load(minimalDialogueWithChoice("""
+                      - text: "Choix"
+                        actions:
+                          - type: OPEN_MERCHANT
+                """)));
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("merchant")));
     }
 
     @Test

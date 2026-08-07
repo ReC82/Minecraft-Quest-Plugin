@@ -111,7 +111,7 @@ Branche de départ: feature/13-safe-zone
 Étape de départ: 14 (Économie et marchands PNJ), TODO
 Étapes terminées: 14
 Branche finale: feature/14-economy-merchants
-Dernier commit: (voir git log — commit de l'étape 14 à suivre)
+Dernier commit: 23f604e feat(economy): add player wallet, payments, and NPC merchants
 Build: vert (./gradlew clean build)
 Tests: 320+ tests verts (nouveaux : WalletRepositoryTest,
   MerchantDefinitionParserTest, MerchantLoaderTest, MerchantTradeServiceTest,

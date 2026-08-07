@@ -30,6 +30,7 @@
     ├── mob                  (variantes de mobs vanilla YAML + upgrade au spawn + population)
     │   ├── model            (modèles immuables : définition de variante, capacités)
     │   └── ability          (écouteurs/services par capacité : explosion, agressivité, division)
+    ├── mod                  (détection de compatibilité avec le mod client prototype, protocole)
     ├── player
     ├── progression          (XP RPG multi-compétences, indépendante de l'XP vanilla)
     │   ├── model            (modèles immuables : compétence, courbe de niveaux, résultat d'octroi)
@@ -55,6 +56,13 @@ dépend d'aucun package ci-dessus, ni de Paper, lit uniquement le fichier
 produit par `web` (voir [docs/WEB_API.md](WEB_API.md)) et possède son
 propre sous-package `store` interne pour la boutique (commandes,
 livraisons, prestataire sandbox — voir [docs/STORE.md](STORE.md)).
+
+De même, `client-mod/` (racine du dépôt, projet Gradle Fabric
+**entièrement séparé**, propre wrapper, jamais un sous-module de
+`settings.gradle.kts` racine ni du build de `web-api/`) n'apparaît pas
+dans cette arborescence : c'est un projet totalement indépendant, jamais
+compilé par `gradlew.bat clean build` à la racine, jamais empaqueté dans
+le jar du plugin. Voir [docs/CLIENT_MOD.md](CLIENT_MOD.md).
 
 Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
 `item` et désormais `resource` couvrent chacun le chargement/l'affichage
@@ -1943,6 +1951,57 @@ d'architecture propres à cette étape :
     (documentée dans docs/STORE.md) : l'API Bukkit standard ne permet pas
     de vérifier une permission pour un joueur hors ligne, et un
     remboursement doit rester possible sans que le joueur soit connecté.
+
+## `mod` (compatibilité avec le mod client prototype)
+
+Voir [docs/CLIENT_MOD.md](CLIENT_MOD.md) pour le détail fonctionnel complet
+(protocole, contenu du prototype, installation). Décisions d'architecture
+propres à cette étape :
+
+-   **`client-mod/` n'est même pas un sous-projet Gradle du dépôt** —
+    contrairement à `web-api/` (inclus dans `settings.gradle.kts` racine
+    depuis l'étape 21), `client-mod/` a son propre wrapper et son propre
+    `settings.gradle.kts`, entièrement hors du build racine. C'est la
+    séparation la plus stricte possible : un problème de toolchain Fabric
+    (téléchargement du jar client Minecraft, remapping) ne peut
+    structurellement jamais faire échouer `gradlew.bat clean build` à la
+    racine (mission, validation).
+-   **`HandshakeProtocol` séparé de `ModCompatService`** — même principe
+    que les repositories purs JDBC du reste du projet : l'encodage/décodage
+    (magic, VarInt, UTF-8) est testable en JUnit pur, sans MockBukkit ;
+    `ModCompatService` n'orchestre que le cycle de vie Bukkit (canaux,
+    événements de connexion, minuterie de délai).
+-   **Chaîne de caractères bannie du canal de handshake** — le format
+    VarInt+UTF-8 des chaînes réseau de Minecraft (`PacketCodecs.STRING`)
+    n'a pas d'équivalent dans l'API Bukkit classique (pas de
+    `PacketByteBuf`) ; plutôt que de réimplémenter ce format pour un champ
+    qui n'est de toute façon pas utilisé par la classification
+    `COMPATIBLE`/`WRONG_VERSION`/`NO_MOD`, le canal de handshake se limite
+    à magic+byte des deux côtés. Le format VarInt+UTF-8 est bien
+    implémenté (`HandshakeProtocol#writeVarInt`/`writeMinecraftString`),
+    mais seulement là où une chaîne est réellement nécessaire (canal
+    cosmétique `rpgquest:mob_variant_tag`), et testé par round-trip
+    contre un décodeur indépendant dans `HandshakeProtocolTest`.
+-   **`ModCompatService` ne dépend d'aucun service de jeu** — ni
+    `EconomyService`, ni `EntitlementService`, ni `QuestProgressEngine` ne
+    sont importés dans ce fichier : la garantie « le client ne peut jamais
+    s'auto-déclarer possesseur d'un objet ou avoir terminé une action »
+    (mission point 7) est structurelle, pas seulement disciplinaire — il
+    n'existe littéralement aucun chemin de code pour le faire.
+-   **Paquet invalide traité comme `NO_MOD`, jamais une exception** —
+    `HandshakeProtocol#decodeHelloResponse` retourne `Optional.empty()`
+    sur tout paquet trop court ou illisible ; `ModCompatService` ne
+    distingue pas "paquet invalide" de "pas de mod du tout" au niveau de
+    la politique (les deux sont sans risque avec le repli vanilla par
+    défaut), simplifiant la logique sans rien perdre en sécurité.
+-   **Contenu client-only du prototype (bloc/objet) jamais synchronisé
+    par le serveur** — limite architecturale documentée en détail dans
+    docs/CLIENT_MOD.md : un serveur Paper vanilla-compatible ne peut pas
+    étendre le registre de blocs/objets envoyé aux clients sans NMS,
+    interdit par PROJECT_RULES.md. Le bloc/objet du prototype existe donc
+    uniquement dans l'environnement local du mod (onglet créatif),
+    jamais posé ni donné par le serveur — cohérent avec mission point 6
+    ("le serveur reste responsable... des drops").
 
 ## Flux principal (cible)
 

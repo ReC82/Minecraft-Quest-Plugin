@@ -404,6 +404,20 @@ l'autorité finale pour tout avantage accordé. `/store history [joueur|uuid]`
 détail complet (gestion du remboursement, joueur hors ligne, upgrade,
 produit déjà possédé...).
 
+## Mod client (prototype)
+
+Un prototype de mod client Fabric, **entièrement séparé** du plugin
+(`client-mod/`, projet Gradle indépendant avec son propre wrapper — jamais
+un sous-module du build racine, jamais empaqueté dans le jar Paper).
+Ajoute un vrai bloc/objet de démonstration, un indicateur cosmétique de
+variante de mob et un HUD de statut. Le serveur reste l'autorité pour la
+progression, les drops, l'économie, les droits et les achats ; le mod ne
+peut jamais s'auto-déclarer posséder un objet ou avoir terminé une action.
+Détection de compatibilité par handshake (`client-mod:` dans
+`config.yml`, client vanilla autorisé avec repli par défaut). Voir
+[docs/CLIENT_MOD.md](docs/CLIENT_MOD.md) pour le choix Fabric/NeoForge, le
+protocole complet et l'installation.
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
@@ -413,10 +427,12 @@ requis `url`/`sha1` uniquement si `enabled: true`, voir
 — `chat` par défaut ou `paper-dialog` — et `allowed-commands`, la liste
 blanche pour l'action `RUN_SAFE_COMMAND`), `journal` (`tracker-enabled`,
 la bossbar optionnelle de la quête suivie), `web-export` (export
-périodique pour le [portail web](docs/WEB_API.md), désactivé par défaut) et
+périodique pour le [portail web](docs/WEB_API.md), désactivé par défaut),
 `store` (sondage des livraisons de la [boutique web](docs/STORE.md),
-désactivé par défaut). Validée au démarrage et à chaque `/rpgquest reload` ;
-voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+désactivé par défaut) et `client-mod` (détection du
+[mod client prototype](docs/CLIENT_MOD.md), client vanilla autorisé par
+défaut). Validée au démarrage et à chaque `/rpgquest reload` ; voir
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Persistance
 
@@ -466,8 +482,9 @@ Le MVP (architecture, SQLite, quêtes, dialogues, journal, objets
 personnalisés, armes/outils, ressources, craft, resource pack, zones
 protégées, économie, marchands PNJ, marché entre joueurs, portails et
 téléportation, claims de terrain) est complet, ainsi que mobs spéciaux
-vanilla, XP RPG, backpacks, le portail web read-only et la boutique web
-sandbox. Fonctionnalités envisagées ensuite (voir aussi [TODO.md](TODO.md)) :
-prestataire de paiement réel, connexion joueur sur le portail web, PNJ
-avancés (Citizens ou équivalent, optionnel), métiers, donjons, boss,
-factions.
+vanilla, XP RPG, backpacks, le portail web read-only, la boutique web
+sandbox et le prototype de mod client. Fonctionnalités envisagées ensuite
+(voir aussi [TODO.md](TODO.md)) : prestataire de paiement réel, connexion
+joueur sur le portail web, contenu client réel synchronisé serveur (au-delà
+du prototype), PNJ avancés (Citizens ou équivalent, optionnel), métiers,
+donjons, boss, factions.

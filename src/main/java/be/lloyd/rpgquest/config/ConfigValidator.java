@@ -40,9 +40,10 @@ public final class ConfigValidator {
         BackpackConfig backpacks = validateBackpacks(section);
         WebExportConfig webExport = validateWebExport(section);
         StoreConfig store = validateStore(section);
+        ModCompatConfig clientMod = validateModCompat(section);
         return new PluginConfig(
                 debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression,
-                backpacks, webExport, store);
+                backpacks, webExport, store, clientMod);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -490,5 +491,27 @@ public final class ConfigValidator {
 
     private static StoreConfig defaultStore() {
         return new StoreConfig(false, "http://localhost:8080", 30);
+    }
+
+    private static ModCompatConfig validateModCompat(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection clientMod = section.getConfigurationSection("client-mod");
+        if (clientMod == null) {
+            return defaultModCompat();
+        }
+
+        boolean requireMod = clientMod.getBoolean("require-mod", false);
+
+        int handshakeTimeoutTicks = clientMod.getInt("handshake-timeout-ticks", 60);
+        if (handshakeTimeoutTicks < 1) {
+            throw new ConfigValidationException(
+                    "« client-mod.handshake-timeout-ticks » doit être strictement positif, valeur trouvée : "
+                            + handshakeTimeoutTicks);
+        }
+
+        return new ModCompatConfig(requireMod, handshakeTimeoutTicks);
+    }
+
+    private static ModCompatConfig defaultModCompat() {
+        return new ModCompatConfig(false, 60);
     }
 }

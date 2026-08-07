@@ -58,6 +58,7 @@ import be.lloyd.rpgquest.mob.SpecialMobService;
 import be.lloyd.rpgquest.mob.ability.ExplosiveOnAttackAbilityService;
 import be.lloyd.rpgquest.mob.ability.SplitOnHitAbilityListener;
 import be.lloyd.rpgquest.mob.ability.StrongerExplosionAbilityListener;
+import be.lloyd.rpgquest.mod.ModCompatService;
 import be.lloyd.rpgquest.player.PlayerConnectionListener;
 import be.lloyd.rpgquest.player.PlayerListenerService;
 import be.lloyd.rpgquest.player.PlayerProfileService;
@@ -140,6 +141,7 @@ public final class RPGQuestBootstrap {
     private WebSnapshotWriter webSnapshotWriter;
     private StoreClient storeClient;
     private StoreDeliveryService storeDeliveryService;
+    private ModCompatService modCompatService;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -176,6 +178,8 @@ public final class RPGQuestBootstrap {
     public void start() {
         registry.start(configService);
         registry.start(databaseService);
+        modCompatService = new ModCompatService(plugin, () -> configService.current().clientMod(), plugin.getSLF4JLogger());
+        registry.start(modCompatService);
         registry.start(flattenService);
         registry.start(zoneRegistry);
         registry.start(new PlayerListenerService(plugin, new ZoneProtectionListener(zoneRegistry)));
@@ -445,6 +449,10 @@ public final class RPGQuestBootstrap {
 
     public StoreDeliveryService storeDeliveryService() {
         return storeDeliveryService;
+    }
+
+    public ModCompatService modCompatService() {
+        return modCompatService;
     }
 
     private void registerCommands() {

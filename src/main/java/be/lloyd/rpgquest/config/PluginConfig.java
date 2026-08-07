@@ -12,6 +12,7 @@ public record PluginConfig(
         ProgressionConfig progression,
         BackpackConfig backpacks,
         WebExportConfig webExport,
-        StoreConfig store
+        StoreConfig store,
+        ModCompatConfig clientMod
 ) {
 }

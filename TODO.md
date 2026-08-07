@@ -586,6 +586,36 @@
     reprise après redémarrage, web-api indisponible
 -   [x] `docs/STORE.md`
 
+## Mod client prototype (fait)
+
+-   [x] `client-mod/` : projet Gradle Fabric entièrement séparé, propre
+    wrapper, jamais un sous-module du build racine, jamais empaqueté dans
+    le jar Paper — point 1-2
+-   [x] Fabric choisi après vérification réelle de compatibilité avec
+    `1.21.11` (Fabric et NeoForge tous deux disponibles, comparaison
+    documentée) — point 3
+-   [x] Protocole de handshake `rpgquest:handshake_hello` (magic + version
+    de protocole, jamais de chaîne pour éviter tout désaccord de format) —
+    point 4
+-   [x] Prototype minimal : bloc/objet `crystal_display`, canal cosmétique
+    `rpgquest:mob_variant_tag` (variante de mob, action bar), HUD de
+    statut — point 5
+-   [x] Aucune dépendance vers un service de jeu dans `ModCompatService` :
+    structurellement impossible d'accorder progression/drops/économie/
+    droits/achats depuis le mod — points 6-7
+-   [x] Détection `COMPATIBLE`/`WRONG_VERSION`/`NO_MOD` (délai configurable)
+    — point 8
+-   [x] Politique `client-mod.require-mod` (false par défaut : vanilla
+    autorisé avec repli ; true : mod obligatoire) — point 9
+-   [x] `docs/CLIENT_MOD.md` (installation, mise à jour, compatibilité) —
+    point 10
+-   [x] Tests : client compatible, version incorrecte (avec/sans
+    obligation), client vanilla après délai, paquet réseau invalide,
+    reconnexion, tentative de falsification, diffusion cosmétique
+    conditionnelle
+-   [x] `client-mod/gradlew.bat build` compile et remape contre le vrai
+    jar client Minecraft `1.21.11` (Fabric Loom)
+
 ## MVP
 
 -   [x] Architecture
@@ -609,10 +639,12 @@
 -   [x] Backpacks
 -   [x] Portail web (API read-only + site minimal)
 -   [x] Boutique web (achats sandbox, livraison idempotente)
+-   [x] Mod client prototype (Fabric, séparé)
 
 ## Plus tard
 -   [ ] Prestataire de paiement réel (Stripe/PayPal en mode test)
 -   [ ] Connexion joueur sur le portail web
+-   [ ] Contenu client réel synchronisé serveur (nécessite un serveur Fabric/NeoForge compagnon ou un système de correspondance d'identifiants)
 -   [ ] PNJ avancés
 -   [ ] Métiers
 -   [ ] Donjons

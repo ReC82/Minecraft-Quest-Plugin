@@ -43,21 +43,90 @@ priorité des sources).
 | 20 | Backpacks | DONE |
 | 21 | API et site web read-only | DONE |
 | 22 | Boutique web et livraison sécurisée | DONE |
-| 23 | Prototype de mod client séparé | TODO |
+| 23 | Prototype de mod client séparé | DONE |
 
 ## Étape en cours
 
-### Étape 23 — Prototype de mod client séparé
+Aucune étape suivante n'est encore définie dans la table ci-dessus : les
+étapes 1 à 23 sont toutes `DONE`. Voir TODO.md, section "Plus tard", pour
+les pistes envisagées (prestataire de paiement réel, connexion joueur sur
+le portail web, contenu client réel synchronisé serveur, PNJ avancés,
+métiers, donjons, boss, factions) — aucune n'a de branche ni de cahier des
+charges assignés pour l'instant. Prochaine étape à préciser par
+l'utilisateur avant de démarrer.
 
-Branche attendue : `feature/23-client-mod` (à créer). Aucun cahier des
-charges détaillé retrouvé dans le dépôt pour cette étape — à clarifier
-avec l'utilisateur si le seul titre de la table ne suffit pas à démarrer
-sans clarification (les étapes 14/15/17/18/19/20 ont dû être conçues au
-moins en partie par ingénierie faute d'un tel cahier des charges reçu en
-conversation ; les étapes 16 à 22 ont reçu le leur directement dans le
-chat).
+### Dernière observation (2026-08-07, étape 23 reçue en cahier des charges détaillé dans le chat)
 
-### Dernière observation (2026-08-07, étape 22 reçue en cahier des charges détaillé dans le chat)
+Étape 23 (Prototype de mod client séparé) confirmée `DONE` : build vert
+sur les trois projets Gradle — racine (plugin), `web-api/`, et
+`client-mod/` (Fabric, entièrement indépendant, jamais construit par le
+build racine) —, 558 tests plugin (11 ignorés — pas échoués, limitation
+MockBukkit pré-existante depuis l'étape 18, aucune occurrence
+supplémentaire) + 30 tests `web-api` (0 ignoré) + build Fabric Loom réussi
+pour `client-mod/` (aucun test automatisé côté mod, nécessiterait un
+client Minecraft lancé). Cahier des charges détaillé reçu directement dans
+la conversation (mod jamais intégré au jar Paper, module/dépôt séparé
+clairement identifié, choix Fabric/NeoForge après vérification réelle de
+compatibilité avec la version du serveur documentée, mécanisme de
+vérification de compatibilité plugin ↔ mod, prototype minimal — ressource/
+bloc réel, objet associé, représentation visuelle d'une variante de mob,
+petite indication client —, serveur responsable de la progression/drops/
+économie/droits/achats, client ne pouvant jamais s'auto-déclarer
+possesseur d'un objet ou avoir terminé une action, détection client
+compatible/sans mod/mauvaise version, politique vanilla-autorisé-avec-repli
+ou mod-obligatoire seulement si explicite, documentation installation/mise
+à jour/compatibilité, commit attendu `feat(mod): add isolated client mod
+prototype`) — suivi à la lettre. Branche demandée par l'utilisateur :
+`feature/23-mod-prototype` (et non `feature/23-client-mod` comme anticipé
+dans une observation précédente).
+
+Vérification de compatibilité (mission point 3, effectuée empiriquement via
+les API officielles Fabric/NeoForge plutôt que supposée) : la version du
+serveur (`1.21.11`) est supportée par les deux plateformes (Fabric : Yarn
+`1.21.11+build.6`, Fabric API `0.141.6+1.21.11` ; NeoForge : ligne
+`21.11.x`). Fabric choisi pour un outillage plus léger (Fabric Loom
+`1.17.19`) et un historique de support jour-J plus rapide des nouvelles
+versions — comparaison complète dans docs/CLIENT_MOD.md.
+
+Portée réalisée, `client-mod/` (nouveau projet Gradle Fabric, propre
+wrapper `gradlew(.bat)`/`gradle/wrapper/`, **jamais** inclus dans
+`settings.gradle.kts` racine — séparation plus stricte encore que
+`web-api/`, garantissant mission point 1-2 et la validation "le plugin
+Paper reste compilable et testable indépendamment") : `RpgQuestClientMod`
+(entrypoint client uniquement, `environment: "client"`), `ModContent`
+(bloc/objet réels `crystal_display`, jamais synchronisés par un serveur
+Paper vanilla-compatible — limite documentée), `ModNetworking` (canaux
+`rpgquest:handshake_hello`/`rpgquest:mob_variant_tag` via
+`PayloadTypeRegistry`/`ClientPlayNetworking`, réinitialisation à la
+déconnexion), `ModHud` (indicateur de statut).
+
+Portée réalisée, plugin (`be.lloyd.rpgquest.mod`) : `HandshakeProtocol`
+(encodage/décodage pur, testable sans MockBukkit — magic+byte pour le
+handshake, VarInt+UTF-8 compatible `PacketCodecs.STRING` pour le canal
+cosmétique, jamais l'inverse pour éviter tout désaccord de format),
+`ModCompatService` (canaux Bukkit Messenger, classification
+`COMPATIBLE`/`WRONG_VERSION`/`NO_MOD`, aucune dépendance vers un service
+de jeu — garantie structurelle du point 7), `ModCompatConfig`
+(`config.yml` → `client-mod:`, `require-mod` false par défaut). Tests :
+client compatible, version incorrecte (avec/sans obligation), client
+vanilla après délai, paquet réseau invalide, reconnexion, tentative de
+falsification, diffusion cosmétique conditionnelle, round-trip du format
+VarInt+UTF-8 (y compris caractères Unicode). Documentation :
+`docs/CLIENT_MOD.md` (comparaison Fabric/NeoForge, protocole complet,
+installation/mise à jour/compatibilité, limites assumées).
+
+Limitation connue (héritée de l'étape 18, pas nouvelle, aucune occurrence
+supplémentaire cette étape) : 11 tests plugin restent marqués **ignorés**
+(pas échoués) — MockBukkit 4.110.0 (dernière version disponible) lève
+délibérément `TestAbortedException` sur plusieurs méthodes non
+implémentées. Limites assumées propres à cette étape (documentées dans
+docs/CLIENT_MOD.md) : le bloc/objet du prototype n'est jamais livré par le
+serveur (un serveur Paper vanilla-compatible ne peut pas synchroniser un
+nouvel identifiant de bloc/objet sans NMS) ; la variante de mob s'affiche
+en message d'action bar, pas en rendu 3D ; aucun test automatisé ne peut
+exercer un vrai client Minecraft dans cet environnement.
+
+### Ancienne observation (2026-08-07, étape 22)
 
 Étape 22 (Boutique web et livraison sécurisée) confirmée `DONE` : build
 vert sur les deux modules Gradle (racine + `web-api`), 544 tests plugin
@@ -121,13 +190,12 @@ uniquement), pas d'interface web pour déclencher un remboursement (appel
 direct de l'API), pas de TLS natif (reverse proxy
 attendu en production).
 
-Étapes 1 à 22 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
-retrouvé pour l'étape 23 dans le dépôt (`.ai/PROMPTS/` ne contient qu'un
-`README.md` placeholder) ; les étapes 16 à 22 ont fait exception en le
-recevant directement en conversation — pas de garantie que ça se
-reproduise pour les étapes suivantes. Chaque étape devra être précisée par
-l'utilisateur si le niveau de détail actuel (titre de la table ci-dessus)
-ne suffit pas à démarrer sans clarification.
+Étapes 1 à 23 confirmées `DONE` — la table ci-dessus ne définit aucune
+étape suivante. `.ai/PROMPTS/` ne contient qu'un `README.md` placeholder ;
+les étapes 16 à 23 ont reçu leur cahier des charges détaillé directement en
+conversation — pas de garantie que ça se reproduise pour une future étape.
+Toute nouvelle étape (voir TODO.md, section "Plus tard", pour des pistes)
+devra être précisée par l'utilisateur avant de démarrer.
 
 ## Journal de session
 
@@ -388,4 +456,49 @@ Blocages: aucun
 Première étape à reprendre: 23 (Prototype de mod client séparé) — aucun
   cahier des charges détaillé retrouvé dans le dépôt, à clarifier avec
   l'utilisateur si besoin avant de démarrer
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/22-web-store
+Étape de départ: 23 (Prototype de mod client séparé), TODO — cahier des
+  charges détaillé reçu en conversation pendant la session (mod jamais
+  intégré au jar Paper, module/dépôt séparé clairement identifié, choix
+  Fabric/NeoForge après vérification réelle de compatibilité avec la
+  version du serveur et documentation du choix, mécanisme de vérification
+  de compatibilité plugin ↔ mod, prototype minimal (ressource/bloc réel,
+  objet associé, représentation visuelle d'une variante de mob, petite
+  indication client), serveur responsable de la progression/drops/
+  économie/droits/achats, client ne pouvant jamais s'auto-déclarer
+  possesseur d'un objet ou avoir terminé une action, détection client
+  compatible/sans mod/mauvaise version, politique vanilla-autorisé-avec-
+  repli ou mod-obligatoire seulement si explicite, documentation
+  installation/mise à jour/compatibilité, commit attendu feat(mod): add
+  isolated client mod prototype) — branche demandée par l'utilisateur :
+  feature/23-mod-prototype
+Étapes terminées: 23
+Branche finale: feature/23-mod-prototype
+Dernier commit: dfc3af5 feat(mod): add isolated client mod prototype
+Build: vert sur les trois projets Gradle (racine, web-api, client-mod) ;
+  gradlew.bat clean build à la racine ne construit jamais client-mod/
+  (mission, validation "le plugin Paper reste compilable et testable
+  indépendamment")
+Tests: 558 tests plugin (11 ignorés — pas échoués, limitation MockBukkit
+  héritée de l'étape 18, aucune occurrence supplémentaire) + 30 tests
+  web-api (0 ignoré) ; nouveaux : HandshakeProtocolTest (encodage/décodage
+  pur, round-trip VarInt+UTF-8 Unicode), ModCompatServiceTest (client
+  compatible, version incorrecte avec/sans obligation, client vanilla
+  après délai, paquet réseau invalide, reconnexion, tentative de
+  falsification, diffusion cosmétique conditionnelle) ; côté mod, aucun
+  test automatisé (nécessiterait un client Minecraft lancé), mais
+  client-mod/gradlew.bat build compile et remape avec succès contre le
+  vrai jar client Minecraft 1.21.11 (Fabric Loom)
+Tests manuels en attente: connexion avec client moddé, connexion avec
+  client vanilla, vérification du contenu (bloc/objet, HUD), mauvaise
+  version volontaire, redémarrage et mise à jour du mod (voir
+  docs/CLIENT_MOD.md)
+Blocages: aucun
+Première étape à reprendre: aucune — la table "Étapes" ne définit rien
+  au-delà de 23 ; voir TODO.md "Plus tard" pour des pistes, à préciser par
+  l'utilisateur avant de démarrer
 ```

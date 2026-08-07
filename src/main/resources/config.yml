@@ -126,6 +126,14 @@ store:
   web-api-base-url: "http://localhost:8080"
   poll-interval-seconds: 30
 
+client-mod:
+  # Détection de compatibilité avec le mod client prototype (mission étape
+  # 23, voir docs/CLIENT_MOD.md). false (par défaut) : client vanilla
+  # autorisé avec repli, aucune restriction. true : mod obligatoire (kick
+  # sinon) — à activer uniquement en connaissance de cause.
+  require-mod: false
+  handshake-timeout-ticks: 60
+
 admin:
   flatten:
     # /rpgadmin flatten <rayon> [hauteur] — voir docs/ADMIN_FLATTEN.md.

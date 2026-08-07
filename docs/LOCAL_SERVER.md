@@ -12,6 +12,7 @@ rester synchronisées).
 ```
 gradlew.bat runServer     # Windows
 ./gradlew runServer       # Linux/macOS
+.\launcher.ps1            # Windows, script pratique (voir plus bas)
 ```
 
 (ou tâche VS Code **Gradle: runServer (Paper local, run/)**, voir plus bas.)
@@ -63,6 +64,18 @@ relancer `runServer` pour tester un changement de code. `/rpgquest reload`
 `.gitignore` ignore `run/` dans son intégralité (monde, logs, `data.db`
 locale, `eula.txt`, fichiers temporaires du serveur) : aucun état de test
 local ne peut atterrir accidentellement dans un commit.
+
+## `launcher.ps1`
+
+Script PowerShell pratique à la racine du dépôt (double-cliquable via
+« Exécuter avec PowerShell » dans l'explorateur Windows, ou `.\launcher.ps1`
+en terminal) : vérifie qu'il est bien lancé depuis la racine du dépôt,
+détecte une EULA Mojang non acceptée dans `run/eula.txt` et affiche
+l'instruction à suivre plutôt que de l'accepter à la place de
+l'utilisateur (décision qui doit rester manuelle), puis lance
+`gradlew.bat runServer`. Strictement équivalent à lancer la commande
+Gradle directement — un simple raccourci, aucune logique de démarrage
+propre au plugin.
 
 ## Intégration VS Code
 

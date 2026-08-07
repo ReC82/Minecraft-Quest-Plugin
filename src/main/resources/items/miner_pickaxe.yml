@@ -1,0 +1,48 @@
+id: rpgquest:miner_pickaxe
+type: TOOL
+material: DIAMOND_PICKAXE
+name: "<yellow>Pioche du mineur</yellow>"
+lore:
+  - "<gray>Passée de génération en génération de mineurs.</gray>"
+rarity: UNCOMMON
+stackable: false
+max-durability: 2200
+# Résolu par resource-pack/assets/rpgquest/models/item/miner_pickaxe.json si
+# le resource pack (optionnel) est installé ; apparence vanilla sinon.
+item-model: rpgquest:miner_pickaxe
+
+enchantments:
+  - type: EFFICIENCY
+    level: 4
+  - type: UNBREAKING
+    level: 3
+
+gameplay-tags:
+  - "starter_tool"
+  - "mining"
+
+# Comportement d'outil (feature/08) : bonus de vitesse de minage (attribut
+# vanilla MINING_EFFICIENCY), limité aux minerais, consommation de
+# durabilité réduite sur ces blocs, bonus de récolte occasionnel, capacité
+# spéciale à cooldown déclenchée par clic droit.
+tool:
+  mining-speed-bonus: 2.0
+  allowed-blocks:
+    - IRON_ORE
+    - DEEPSLATE_IRON_ORE
+    - GOLD_ORE
+    - DEEPSLATE_GOLD_ORE
+    - DIAMOND_ORE
+    - DEEPSLATE_DIAMOND_ORE
+  durability-cost: 1
+  harvest-bonus-chance: 0.15
+  harvest-bonus-amount: 1
+  special-ability:
+    ability-id: "miner_rush"
+    cooldown-seconds: 30
+    activation-message: "<aqua>Vous sentez une ruée de minage !</aqua>"
+    particle: CRIT
+    particle-count: 15
+
+crafting:
+  craftable: false

@@ -1,0 +1,24 @@
+# Messages MiniMessage envoyés par les commandes /quest. Personnalisables
+# sans recompiler ; rechargés avec /quest admin reload.
+# Placeholders disponibles selon le message : <quest> <category> <state>
+# <step> <objective> <current> <total> <missing> <permission>
+
+quest:
+  accepted: "<green>Quête acceptée :</green> <white><quest></white>"
+  already-active: "<red>Tu as déjà accepté :</red> <white><quest></white>"
+  not-repeatable: "<red>Quête déjà terminée (non répétable) :</red> <white><quest></white>"
+  prerequisites-missing: "<red>Prérequis manquant(s) pour</red> <white><quest></white><red> :</red> <white><missing></white>"
+  unknown: "<red>Quête inconnue :</red> <white><quest></white>"
+  abandoned: "<yellow>Quête abandonnée :</yellow> <white><quest></white>"
+  nothing-to-abandon: "<red>Aucune quête active à abandonner :</red> <white><quest></white>"
+  step-completed: "<gold>Étape terminée</gold> <gray>(<quest>) :</gray> <white><step></white>"
+  completed: "<gold><bold>Quête terminée !</bold></gold> <white><quest></white>"
+  force-completed: "<gold>Quête forcée à terminée (admin) :</gold> <white><quest></white>"
+  progress-empty: "<gray>Aucune quête en cours.</gray>"
+  progress-line: "<yellow><quest></yellow> <gray>-</gray> <white><state></white>"
+  progress-objective-line: "<gray> - <objective> :</gray> <white><current>/<total></white>"
+  list-header: "<gold><bold>Quêtes</bold></gold>"
+  list-entry: "<white><quest></white> <gray>[<category>] -</gray> <yellow><state></yellow>"
+
+permission:
+  denied: "<red>Permission manquante :</red> <white><permission></white>"

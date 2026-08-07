@@ -1,0 +1,57 @@
+# Configuration de RPGQuest.
+# Valeurs invalides : le plugin refuse de démarrer (ou de recharger via
+# /rpgquest reload) avec un message expliquant précisément le problème.
+
+debug: false
+
+# Code de langue ISO 639-1 (ex. fr, en).
+locale: fr
+
+database:
+  # Nom du fichier SQLite, créé dans le dossier de données du plugin
+  # (plugins/RPGQuest/<database.file>). Doit être un simple nom de fichier.
+  file: data.db
+
+resource-pack:
+  # Le plugin démarre normalement même si le resource pack est désactivé
+  # ou inaccessible.
+  enabled: false
+  url: ""
+  sha1: ""
+  # Si true, un refus/échec de téléchargement affiche un message d'avertissement
+  # au joueur (aucune déconnexion automatique dans tous les cas : le plugin
+  # doit fonctionner sans le resource pack).
+  required: false
+
+dialogue:
+  # Renderer utilisé pour afficher les dialogues :
+  #   - chat         : texte cliquable dans le chat, compatible avec tout client (par défaut).
+  #   - paper-dialog : API Dialog native de Paper — marquée expérimentale
+  #                    dans cette version, voir docs/ARCHITECTURE.md.
+  renderer: chat
+  # Liste blanche des commandes autorisées dans l'action RUN_SAFE_COMMAND
+  # d'un dialogue (nom de la commande seul, sans le "/" ni les arguments).
+  # Aucune commande hors de cette liste ne peut être exécutée par un dialogue.
+  allowed-commands:
+    - "give"
+    - "xp"
+
+journal:
+  # Affiche une bossbar de suivi (titre + progression) pour la quête suivie
+  # via /quests. Purement cosmétique : la mettre à false ne désactive ni le
+  # suivi lui-même (persisté) ni le journal, seulement la bossbar.
+  tracker-enabled: true
+
+admin:
+  flatten:
+    # /rpgadmin flatten <rayon> [hauteur] — voir docs/ADMIN_FLATTEN.md.
+    max-radius: 48
+    default-shape: SQUARE          # SQUARE | CIRCLE
+    top-layer-material: GRASS_BLOCK
+    sub-layer-material: DIRT
+    sub-layer-depth: 3
+    clear-above-height: 10
+    confirmation-timeout-seconds: 30
+    blocks-per-tick: 4000
+    # Aucune zone interdite par défaut ; noms de mondes exacts.
+    forbidden-worlds: []

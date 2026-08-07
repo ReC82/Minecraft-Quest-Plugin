@@ -16,6 +16,7 @@ out/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+!.vscode/tasks.json
 
 # OS / misc
 .DS_Store

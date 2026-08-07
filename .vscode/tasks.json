@@ -1,0 +1,59 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Gradle: clean build",
+            "type": "shell",
+            "command": "./gradlew",
+            "windows": {
+                "command": "gradlew.bat"
+            },
+            "args": ["clean", "build"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gradle"]
+        },
+        {
+            "label": "Gradle: test",
+            "type": "shell",
+            "command": "./gradlew",
+            "windows": {
+                "command": "gradlew.bat"
+            },
+            "args": ["test"],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gradle"]
+        },
+        {
+            "label": "Gradle: runServer (Paper local, run/)",
+            "type": "shell",
+            "command": "./gradlew",
+            "windows": {
+                "command": "gradlew.bat"
+            },
+            "args": ["runServer", "--console=plain"],
+            "isBackground": true,
+            "group": "none",
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^never-matches$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "^> Task :runServer",
+                    "endsPattern": "^Done \\("
+                }
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "detail": "Premier lancement : accepter l'EULA dans run/eula.txt (eula=true) puis relancer. Arrêt : taper 'stop' dans le terminal du serveur, ou Ctrl+C. Voir docs/LOCAL_SERVER.md."
+        }
+    ]
+}

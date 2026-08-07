@@ -1,0 +1,18 @@
+id: rpgquest:forest_blade_recipe
+type: SHAPED
+
+result:
+  custom-item: rpgquest:forest_blade
+  amount: 1
+
+# Deux crocs d'araignée (F) empilés sur un manche en bâton (S).
+pattern:
+  - " F "
+  - " F "
+  - " S "
+
+key:
+  F:
+    custom-item: rpgquest:spider_fang
+  S:
+    material: STICK

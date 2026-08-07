@@ -6,7 +6,42 @@ author: Lloyd
 description: Plugin RPG pour Paper piloté par des quêtes YAML.
 folia-supported: false
 
+libraries:
+  - org.xerial:sqlite-jdbc:3.53.2.1
+
 commands:
   rpgquest:
     description: Commande principale de RPGQuest.
-    usage: /<command> <version|help>
+    usage: /<command> <version|help|profile [joueur]|reload>
+  quest:
+    description: Quêtes des joueurs et administration des définitions.
+    usage: /<command> <list|accept|progress|abandon|complete|admin>
+  dialogue:
+    description: Ouvre un dialogue pour un joueur (administration).
+    usage: /<command> open <joueur> <dialogueId>
+  quests:
+    description: Ouvre le journal de quêtes (menu paginé).
+    usage: /<command>
+  customitem:
+    description: Registre d'objets personnalisés (armes, outils, ressources).
+    usage: /<command> <give <joueur> <id> [quantité]|list|inspect>
+  resourcenode:
+    description: Nœuds de ressource récoltables (administration).
+    usage: /<command> <create <typeId>|remove|inspect>
+  rpgadmin:
+    description: Commandes d'administration du monde (aplatissement, zones, portails...).
+    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo
+
+permissions:
+  rpgquest.admin:
+    description: Accès aux commandes d'administration de RPGQuest (ex. /rpgquest reload, /quest admin, /quest complete, /customitem give|list).
+    default: op
+  rpgquest.quest:
+    description: Accès aux commandes de quêtes joueur (/quest list|accept|progress|abandon).
+    default: true
+  rpgquest.item:
+    description: Accès aux commandes d'objets personnalisés joueur (/customitem inspect).
+    default: true
+  rpgquest.admin.world:
+    description: Accès aux commandes d'administration du monde (/rpgadmin), dont l'aplatissement de terrain.
+    default: op

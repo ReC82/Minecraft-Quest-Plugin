@@ -41,72 +41,84 @@ priorité des sources).
 | 18 | Mobs spéciaux vanilla | DONE |
 | 19 | XP RPG | DONE |
 | 20 | Backpacks | DONE |
-| 21 | API et site web read-only | TODO |
+| 21 | API et site web read-only | DONE |
 | 22 | Boutique web et livraison sécurisée | TODO |
 | 23 | Prototype de mod client séparé | TODO |
 
 ## Étape en cours
 
-### Étape 21 — API et site web read-only
+### Étape 22 — Boutique web et livraison sécurisée
 
-Branche attendue : `feature/21-web-api` (à créer). Aucun cahier des
+Branche attendue : `feature/22-web-shop` (à créer). Aucun cahier des
 charges détaillé retrouvé dans le dépôt pour cette étape — à clarifier
 avec l'utilisateur si le seul titre de la table ne suffit pas à démarrer
 sans clarification (les étapes 14/15/17/18/19/20 ont dû être conçues au
 moins en partie par ingénierie faute d'un tel cahier des charges reçu en
-conversation ; les étapes 16/17/18/19/20 ont reçu le leur directement dans
-le chat).
+conversation ; les étapes 16/17/18/19/20/21 ont reçu le leur directement
+dans le chat).
 
-### Dernière observation (2026-08-07, étape 20 reçue en cahier des charges détaillé dans le chat)
+### Dernière observation (2026-08-07, étape 21 reçue en cahier des charges détaillé dans le chat)
 
-Étape 20 (Backpacks) confirmée `DONE` : build vert, 523 tests (11 ignorés
-— pas échoués, limitation MockBukkit pré-existante depuis l'étape 18, voir
-plus bas). Cahier des charges détaillé reçu directement dans la
-conversation (inventaire virtuel persistant, tailles Small/Medium/Large
-configurables, niveau lié à l'UUID, objet ou commande d'ouverture,
-permission de secours + commandes admin d'octroi/retrait, stockage sûr et
-versionné, interdictions — backpack dans backpack, objets interdits,
-ouverture simultanée, interaction non autorisée —, sauvegarde atomique à
-la fermeture/déconnexion/arrêt, boîte de récupération si une réduction de
-taille laisse trop d'objets, upgrade conservant tout, interface générique
-`EntitlementService` pour de futurs avantages sans boutique, modèle
-documenté, commit attendu `feat(storage): add secure persistent
-backpacks`) — suivi à la lettre. Portée réalisée : `entitlement.EntitlementService`
-(interface générique à clé/palier libres, aucun type Java générique —
-réutilisable par de futurs avantages sans migration) + `database.EntitlementRepository`
-(implémentation directe, `player_entitlements`), `backpack.model.BackpackSize` +
-`BackpackConfig` (`config.yml` → `backpacks:`), migration SQLite V9
-(`backpacks`/`backpack_overflow`/`backpack_audit`), `backpack.ItemArraySerializer`
-(format binaire maison — aucun précédent, `ItemStack[]` complet
-longueur-préfixé, version distincte du schéma SQL), `BackpackRepository`
-(redimensionnement en une seule transaction JDBC : contenu + surplus
-ensemble, jamais l'un sans l'autre), `BackpackService` (une seule instance
-d'`Inventory` vivante par joueur — garantie par l'exécution séquentielle
-des tâches Bukkit, pas un verrou explicite —, sauvegarde à la fermeture/
-déconnexion/arrêt via le même mécanisme LIFO déjà découvert pour
-`MarketService`/`MerchantTradeService` en étape 19, upgrade/downgrade
-unifiés par un seul algorithme de compactage, anomalie de lecture jamais
-silencieuse — toujours une entrée `backpack_overflow`/`backpack_audit`),
-`BackpackListener` (lecture-écriture protégée, contrairement à la vitrine
-en lecture seule du marché — seuls les vecteurs qui feraient entrer un
-objet interdit sont annulés), `/backpack`, `/backpack recover [numéro]`,
-`/backpack admin grant|revoke`, `docs/BACKPACKS.md`.
+Étape 21 (API et site web read-only) confirmée `DONE` : build vert sur les
+deux modules Gradle (racine + `web-api`), 535 tests plugin (11 ignorés —
+pas échoués, limitation MockBukkit pré-existante depuis l'étape 18) + 19
+tests `web-api` (0 ignoré). Cahier des charges détaillé reçu directement
+dans la conversation (module web séparé du gameplay, jamais d'accès direct
+au fichier SQLite, API authentifiée — statut serveur, nombre de joueurs,
+joueurs connectés si autorisé, classements, catalogue public d'objets,
+actualités configurées —, lectures uniquement via snapshots/caches ou
+async, authentification serveur-à-serveur, rate limiting + validation +
+journalisation, aucun secret dans Git, site minimal — accueil, statut,
+classements, wiki/catalogue —, mode dégradé si le serveur Minecraft est
+arrêté, ni paiement ni login joueur ni modification de données à ce stade,
+commit attendu `feat(web): add read-only server API and portal`) — suivi
+à la lettre.
 
-Limitation connue (héritée de l'étape 18, pas nouvelle, deux occurrences
-supplémentaires dans les nouveaux tests de cette étape) : 11 tests sont
-marqués **ignorés** (pas échoués) — MockBukkit 4.110.0 (dernière version
-disponible) lève délibérément `TestAbortedException` sur plusieurs
-méthodes non implémentées (`LivingEntityMock#setRemoveWhenFarAway` et
-d'autres rencontrées dans `BackpackListenerTest`/`ItemArraySerializerTest`) ;
-le comportement réel n'est testable qu'en jeu.
+Portée réalisée, côté plugin (`be.lloyd.rpgquest.web`) : `WebExportConfig`
+(`config.yml` → `web-export:`, désactivé par défaut) + `WebSnapshotWriter`
+(`PluginService`, tick de housekeeping léger sur le thread principal,
+calcul des classements via `ProgressionRepository.topPlayers` — nouvelle
+requête en lecture seule, jamais appelée depuis un chemin de jeu synchrone
+—, écriture disque déportée sur un exécuteur dédié, jamais sur le thread
+principal ni sur celui de la continuation asynchrone), `JsonWriter`
+(sérialiseur maison, écriture seule côté plugin), écriture atomique par
+renommage (`snapshot.json.tmp` → `ATOMIC_MOVE`).
 
-Étapes 1 à 20 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
-retrouvé pour les étapes 21 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
-qu'un `README.md` placeholder) ; les étapes 16/17/18/19/20 ont fait
-exception en le recevant directement en conversation — pas de garantie que
-ça se reproduise pour les étapes suivantes. Chaque étape devra être
-précisée par l'utilisateur si le niveau de détail actuel (titre de la
-table ci-dessus) ne suffit pas à démarrer sans clarification.
+Portée réalisée, module séparé `web-api/` (nouveau projet Gradle,
+`settings.gradle.kts` → `include("web-api")`, aucune dépendance vers Paper,
+aucun accès à `data.db`) : `webapi.json.Json` (codec JSON maison, lecture
+*et* écriture, aucune dépendance externe), `SnapshotStore` (cache en
+mémoire, détection du mode dégradé — snapshot absent ou périmé, jamais une
+erreur), `ServerState` (résolution du mode dégradé centralisée, jamais
+réimplémentée par route), serveur HTTP via `com.sun.net.httpserver` (JDK)
+avec `RequestPipeline` (rate limit par IP, authentification par jeton en
+temps constant `MessageDigest.isEqual`, fail-closed si aucun jeton
+configuré, journalisation sans jamais écrire de secret), routes API
+authentifiées (`/api/status|players|leaderboards|catalog|announcements`)
+et site public non authentifié (`/`, `/status`, `/leaderboards`, `/wiki`,
+échappement HTML systématique), jeton exclusivement via la variable
+d'environnement `RPGQUEST_WEB_API_TOKEN` (jamais dans un fichier versionné
+— `web-api.properties.example` ne contient que des réglages non
+sensibles), `WebApiMain` (point d'entrée, arrêt propre via shutdown hook).
+Documentation : `docs/WEB_API.md` (déploiement local/production complet).
+
+Limitation connue (héritée de l'étape 18, pas nouvelle, aucune occurrence
+supplémentaire cette étape) : 11 tests plugin restent marqués **ignorés**
+(pas échoués) — MockBukkit 4.110.0 (dernière version disponible) lève
+délibérément `TestAbortedException` sur plusieurs méthodes non
+implémentées ; le comportement réel n'est testable qu'en jeu. Limite
+assumée propre à cette étape (documentée dans docs/WEB_API.md) : pas de
+pagination sur le catalogue/wiki, rate limiting en mémoire par processus
+(non partagé entre plusieurs instances), pas de TLS natif (reverse proxy
+attendu en production).
+
+Étapes 1 à 21 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
+retrouvé pour les étapes 22 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
+qu'un `README.md` placeholder) ; les étapes 16 à 21 ont fait exception en
+le recevant directement en conversation — pas de garantie que ça se
+reproduise pour les étapes suivantes. Chaque étape devra être précisée par
+l'utilisateur si le niveau de détail actuel (titre de la table ci-dessus)
+ne suffit pas à démarrer sans clarification.
 
 ## Journal de session
 
@@ -301,4 +313,35 @@ Blocages: aucun
 Première étape à reprendre: 21 (API et site web read-only) — aucun cahier
   des charges détaillé retrouvé dans le dépôt pour les étapes 21 à 23, à
   clarifier avec l'utilisateur si besoin avant de démarrer
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/20-backpacks
+Étape de départ: 21 (API et site web read-only), TODO — cahier des charges
+  détaillé reçu en conversation pendant la session (module web séparé du
+  gameplay, jamais d'accès direct au fichier SQLite, API authentifiée —
+  statut, joueurs, classements, catalogue public, annonces —, lectures via
+  snapshots/caches ou async, authentification serveur-à-serveur, rate
+  limiting + validation + journalisation, aucun secret dans Git, site
+  minimal (accueil/statut/classements/wiki), mode dégradé si le serveur
+  Minecraft est arrêté, ni paiement ni login joueur ni écriture à ce
+  stade, commit attendu feat(web): add read-only server API and portal)
+Étapes terminées: 21
+Branche finale: feature/21-web-api
+Dernier commit: 54a8147 feat(web): add read-only server API and portal
+Build: vert (./gradlew clean build, deux modules : racine + web-api)
+Tests: 535 tests plugin (11 ignorés — pas échoués, limitation MockBukkit
+  héritée de l'étape 18, aucune occurrence supplémentaire cette étape) +
+  19 tests web-api (0 ignoré) ; nouveaux : ProgressionRepositoryTest
+  (topPlayers), WebSnapshotWriterTest, ConfigValidatorTest (web-export),
+  JsonTest, HttpServerBootstrapTest (bout-en-bout, vrai HttpServer + vrai
+  HttpClient)
+Tests manuels en attente: lancer serveur et site localement, consulter les
+  pages, arrêter Minecraft et vérifier le mode dégradé, vérifier qu'aucun
+  secret n'apparaît dans les réponses ou logs (voir docs/WEB_API.md)
+Blocages: aucun
+Première étape à reprendre: 22 (Boutique web et livraison sécurisée) —
+  aucun cahier des charges détaillé retrouvé dans le dépôt pour les étapes
+  22 à 23, à clarifier avec l'utilisateur si besoin avant de démarrer
 ```

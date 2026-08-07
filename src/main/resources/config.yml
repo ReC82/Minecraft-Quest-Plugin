@@ -98,6 +98,25 @@ backpacks:
   fallback-size: SMALL
   open-item-material: BUNDLE
 
+web-export:
+  # Export périodique en lecture seule pour le module web-api séparé (voir
+  # docs/WEB_API.md) : ce dernier n'accède jamais à data.db directement, il
+  # lit uniquement web-export/snapshot.json produit ici. Désactivé par
+  # défaut (aucun fichier écrit tant que enabled reste false).
+  enabled: false
+  # Sous-dossier du dossier de données du plugin (plugins/RPGQuest/<output-dir>/snapshot.json).
+  output-dir: web-export
+  interval-seconds: 30
+  # Inclut la liste nominative des joueurs connectés dans le snapshot, en
+  # plus du simple nombre. false par défaut (vie privée).
+  include-connected-players: false
+  leaderboard-size: 10
+  # Vide = toutes les pistes de progression (voir docs/PROGRESSION.md).
+  leaderboard-skills: []
+  # Actualités/annonces statiques exposées par le portail (mission point 3),
+  # aucune n'est configurée par défaut.
+  announcements: []
+
 admin:
   flatten:
     # /rpgadmin flatten <rayon> [hauteur] — voir docs/ADMIN_FLATTEN.md.

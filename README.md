@@ -374,6 +374,20 @@ de le perdre (downgrade). Premier consommateur concret d'une interface
 `EntitlementService` générique, prête pour de futurs avantages. Voir
 [docs/BACKPACKS.md](docs/BACKPACKS.md) pour le détail complet.
 
+## Portail web
+
+Un module séparé du plugin (`web-api/`, projet Gradle indépendant, aucune
+dépendance vers Paper ni accès direct à `data.db`) expose une API
+authentifiée en lecture seule (statut, joueurs, classements, catalogue,
+annonces) et un site public minimal (accueil, statut, classements, wiki).
+Le plugin exporte périodiquement un instantané JSON
+(`web-export:` dans `config.yml`, désactivé par défaut) que ce module lit
+seul — jamais la base SQLite directement. Mode dégradé automatique si le
+serveur Minecraft est arrêté ou n'a jamais exporté. Ni paiement, ni
+connexion joueur, ni modification de données à cette étape. Voir
+[docs/WEB_API.md](docs/WEB_API.md) pour le détail complet (déploiement,
+authentification, endpoints).
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
@@ -381,9 +395,11 @@ de le perdre (downgrade). Premier consommateur concret d'une interface
 requis `url`/`sha1` uniquement si `enabled: true`, voir
 [RESOURCE_PACK.md](RESOURCE_PACK.md)), `dialogue` (`renderer`
 — `chat` par défaut ou `paper-dialog` — et `allowed-commands`, la liste
-blanche pour l'action `RUN_SAFE_COMMAND`) et `journal` (`tracker-enabled`,
-la bossbar optionnelle de la quête suivie). Validée au démarrage et à chaque
-`/rpgquest reload` ; voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+blanche pour l'action `RUN_SAFE_COMMAND`), `journal` (`tracker-enabled`,
+la bossbar optionnelle de la quête suivie) et `web-export` (export
+périodique pour le [portail web](docs/WEB_API.md), désactivé par défaut).
+Validée au démarrage et à chaque `/rpgquest reload` ; voir
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Persistance
 
@@ -432,7 +448,8 @@ Voir [TODO.md](TODO.md).
 Le MVP (architecture, SQLite, quêtes, dialogues, journal, objets
 personnalisés, armes/outils, ressources, craft, resource pack, zones
 protégées, économie, marchands PNJ, marché entre joueurs, portails et
-téléportation, claims de terrain) est complet. Fonctionnalités envisagées
-ensuite (voir aussi [TODO.md](TODO.md)) : mobs spéciaux vanilla, XP RPG,
-backpacks, PNJ avancés (Citizens ou équivalent, optionnel), métiers,
-donjons, boss, factions.
+téléportation, claims de terrain) est complet, ainsi que mobs spéciaux
+vanilla, XP RPG, backpacks et le portail web read-only. Fonctionnalités
+envisagées ensuite (voir aussi [TODO.md](TODO.md)) : boutique/paiements et
+connexion joueur sur le portail web, PNJ avancés (Citizens ou équivalent,
+optionnel), métiers, donjons, boss, factions.

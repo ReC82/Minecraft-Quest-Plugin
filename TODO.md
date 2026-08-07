@@ -528,6 +528,33 @@
     sans droit
 -   [x] `docs/BACKPACKS.md`
 
+## Portail web (fait)
+
+-   [x] Module Gradle séparé `web-api/` (aucune dépendance vers Paper, aucun
+    accès direct à `data.db` — mission points 1-2)
+-   [x] `config.yml` → `web-export:` (désactivé par défaut) +
+    `web.WebSnapshotWriter` : export périodique et atomique de
+    `snapshot.json` (statut, joueurs, classements, catalogue, annonces),
+    aucune lecture bloquante sur le thread principal (point 4)
+-   [x] `ProgressionRepository.topPlayers` (classement par piste, lecture
+    seule, jamais interrogé depuis un chemin de jeu synchrone)
+-   [x] `webapi.json.Json` : codec JSON maison (lecture + écriture), aucune
+    dépendance externe
+-   [x] `SnapshotStore` : cache en mémoire, détection du mode dégradé
+    (snapshot absent ou périmé — jamais une erreur, point 9)
+-   [x] API authentifiée `/api/status|players|leaderboards|catalog|announcements`
+    (jeton serveur-à-serveur, comparaison en temps constant — point 5) +
+    rate limiting par IP et journalisation sans secret (point 6)
+-   [x] Site public minimal (`/`, `/status`, `/leaderboards`, `/wiki`), sans
+    authentification, sans paiement ni connexion joueur ni écriture (point
+    11)
+-   [x] Jeton exclusivement via la variable d'environnement
+    `RPGQUEST_WEB_API_TOKEN`, jamais dans un fichier versionné (point 7)
+-   [x] Tests : snapshot absent/périmé, jeton manquant/invalide, requête
+    malformée, rate limit, route inconnue, données vides, caractères
+    Unicode, page publique sans authentification
+-   [x] `docs/WEB_API.md`
+
 ## MVP
 
 -   [x] Architecture
@@ -549,8 +576,11 @@
 -   [x] Mobs spéciaux
 -   [x] Progression RPG
 -   [x] Backpacks
+-   [x] Portail web (API read-only + site minimal)
 
 ## Plus tard
+-   [ ] Boutique et paiements sur le portail web
+-   [ ] Connexion joueur sur le portail web
 -   [ ] PNJ avancés
 -   [ ] Métiers
 -   [ ] Donjons

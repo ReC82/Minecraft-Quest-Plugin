@@ -1,12 +1,14 @@
 package be.lloyd.rpgquest.config;
 
 import be.lloyd.rpgquest.backpack.model.BackpackSize;
+import be.lloyd.rpgquest.progression.model.SkillType;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
@@ -36,8 +38,10 @@ public final class ConfigValidator {
         ClaimConfig claims = validateClaims(section);
         ProgressionConfig progression = validateProgression(section);
         BackpackConfig backpacks = validateBackpacks(section);
+        WebExportConfig webExport = validateWebExport(section);
         return new PluginConfig(
-                debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression, backpacks);
+                debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression,
+                backpacks, webExport);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -385,5 +389,69 @@ public final class ConfigValidator {
 
     private static BackpackConfig defaultBackpacks() {
         return new BackpackConfig(1, 3, 6, Set.of(), BackpackSize.SMALL, Material.BUNDLE);
+    }
+
+    private static WebExportConfig validateWebExport(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection web = section.getConfigurationSection("web-export");
+        if (web == null) {
+            return defaultWebExport();
+        }
+
+        boolean enabled = web.getBoolean("enabled", false);
+
+        String outputDirectory = web.getString("output-dir", "web-export");
+        if (outputDirectory.isBlank() || outputDirectory.contains("..")
+                || outputDirectory.contains("/") || outputDirectory.contains("\\")) {
+            throw new ConfigValidationException(
+                    "« web-export.output-dir » doit être un simple nom de dossier (sans séparateur ni \"..\"), "
+                            + "valeur trouvée : " + outputDirectory);
+        }
+
+        int intervalSeconds = web.getInt("interval-seconds", 30);
+        if (intervalSeconds < 5) {
+            throw new ConfigValidationException(
+                    "« web-export.interval-seconds » doit être au moins 5, valeur trouvée : " + intervalSeconds);
+        }
+
+        boolean includeConnectedPlayers = web.getBoolean("include-connected-players", false);
+
+        int leaderboardSize = web.getInt("leaderboard-size", 10);
+        if (leaderboardSize < 1 || leaderboardSize > 100) {
+            throw new ConfigValidationException(
+                    "« web-export.leaderboard-size » doit être compris entre 1 et 100, valeur trouvée : " + leaderboardSize);
+        }
+
+        List<String> rawSkills = web.getStringList("leaderboard-skills");
+        List<SkillType> leaderboardSkills = new ArrayList<>();
+        if (rawSkills.isEmpty()) {
+            leaderboardSkills.addAll(List.of(SkillType.values()));
+        } else {
+            for (String raw : rawSkills) {
+                try {
+                    leaderboardSkills.add(SkillType.valueOf(raw.toUpperCase(Locale.ROOT)));
+                } catch (IllegalArgumentException e) {
+                    throw new ConfigValidationException(
+                            "« web-export.leaderboard-skills » contient une compétence inconnue : \"" + raw + "\".");
+                }
+            }
+        }
+
+        List<WebExportConfig.Announcement> announcements = new ArrayList<>();
+        for (Map<?, ?> raw : web.getMapList("announcements")) {
+            Object title = raw.get("title");
+            if (!(title instanceof String titleText) || titleText.isBlank()) {
+                throw new ConfigValidationException(
+                        "« web-export.announcements » contient une entrée sans « title » valide.");
+            }
+            Object body = raw.get("body");
+            announcements.add(new WebExportConfig.Announcement(titleText, body instanceof String bodyText ? bodyText : ""));
+        }
+
+        return new WebExportConfig(enabled, outputDirectory, intervalSeconds, includeConnectedPlayers,
+                leaderboardSize, List.copyOf(leaderboardSkills), List.copyOf(announcements));
+    }
+
+    private static WebExportConfig defaultWebExport() {
+        return new WebExportConfig(false, "web-export", 30, false, 10, List.of(SkillType.values()), List.of());
     }
 }

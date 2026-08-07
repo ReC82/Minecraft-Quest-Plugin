@@ -10,6 +10,7 @@ public record PluginConfig(
         AdminFlattenConfig adminFlatten,
         ClaimConfig claims,
         ProgressionConfig progression,
-        BackpackConfig backpacks
+        BackpackConfig backpacks,
+        WebExportConfig webExport
 ) {
 }

@@ -43,8 +43,14 @@
     │   └── model            (modèles immuables : destination, portail)
     ├── ui                   (journal de quêtes : menu paginé, vue détail, suivi)
     ├── util                 (vide pour l'instant : utilitaires génériques uniquement)
+    ├── web                  (export périodique en lecture seule pour le module web-api séparé)
     └── zone                 (zones protégées : registre YAML, protection d'événements, sélection)
         └── model            (modèles immuables : zone, permissions)
+
+Le module Gradle séparé `web-api/` (racine du dépôt, projet indépendant —
+voir `settings.gradle.kts`) n'apparaît pas dans cette arborescence : il ne
+dépend d'aucun package ci-dessus, ni de Paper, et lit uniquement le fichier
+produit par `web`. Voir [docs/WEB_API.md](WEB_API.md).
 
 Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
 `item` et désormais `resource` couvrent chacun le chargement/l'affichage
@@ -1809,6 +1815,69 @@ qu'embarqués dans le jar.
     les interpréter) et retourne un backpack vide plutôt que de faire
     échouer l'ouverture (mission, validation « toute anomalie crée une
     entrée de récupération ou d'audit »).
+
+## `web` (export périodique + module `web-api` séparé)
+
+Voir [docs/WEB_API.md](WEB_API.md) pour le détail fonctionnel complet
+(déploiement, authentification, endpoints, mode dégradé). Décisions
+d'architecture propres à cette étape :
+
+-   **Séparation stricte en deux processus/modules, jamais un accès direct
+    à `data.db` depuis le web** (mission étape 21, points 1-2) — `web`
+    (package du plugin) écrit `snapshot.json` ; `web-api` (projet Gradle
+    racine séparé, `settings.gradle.kts` → `include("web-api")`, aucune
+    dépendance vers `io.papermc`) ne lit que ce fichier. Une compromission
+    ou un bug du portail web ne peut donc structurellement jamais toucher
+    la base de données du plugin.
+-   **`WebSnapshotWriter` ne bloque jamais le thread principal** — le tick
+    de housekeeping (5 s, léger) ne fait que lire des compteurs déjà en
+    mémoire (`Bukkit.getOnlinePlayers()`, `YamlCustomItemRegistry#items()`,
+    ce dernier une liste `volatile` déjà immuable) ; le calcul des
+    classements passe par `ProgressionRepository` (asynchrone, comme tout
+    accès SQLite du projet) et l'écriture disque elle-même est déportée
+    sur un exécuteur dédié (`ioExecutor`), jamais sur le thread appelant
+    la continuation asynchrone.
+-   **Écriture atomique par renommage** (`snapshot.json.tmp` puis
+    `Files.move(..., ATOMIC_MOVE)`, repli sur un déplacement non atomique
+    seulement si le système de fichiers ne supporte pas `ATOMIC_MOVE`) —
+    `web-api` ne peut jamais lire un fichier à moitié écrit.
+-   **Aucune dépendance externe obligatoire dans `web-api`** (mission,
+    contrainte technique) : HTTP via `com.sun.net.httpserver` (JDK),
+    JSON via un codec maison (`webapi.json.Json`, lecture *et* écriture —
+    contrairement au `web.JsonWriter` du plugin, qui n'a besoin que
+    d'écrire). Les deux implémentations sont volontairement dupliquées
+    plutôt que partagées via un troisième module Gradle : cela évite tout
+    risque que le jar du plugin embarque, même indirectement, du code du
+    portail web, et inversement.
+-   **Le jeton d'authentification n'est jamais lu depuis un fichier** —
+    `WebApiConfigLoader` le lit exclusivement depuis la variable
+    d'environnement `RPGQUEST_WEB_API_TOKEN` (mission point 7) ;
+    `web-api.properties` (ou son template versionné
+    `web-api.properties.example`) ne contient que des réglages non
+    sensibles (port, chemins, limites). `AuthFilter` est fail-closed : un
+    jeton attendu absent/vide refuse tout, jamais un accès ouvert par
+    défaut.
+-   **Comparaison de jeton en temps constant**
+    (`MessageDigest.isEqual`, JDK) plutôt qu'un `String#equals` classique,
+    pour ne pas faciliter une attaque par mesure de temps sur le jeton
+    serveur-à-serveur.
+-   **Mode dégradé résolu à un seul endroit** (`ServerState#resolve`),
+    jamais réimplémenté par route — snapshot absent (jamais exporté) et
+    snapshot périmé (`SnapshotStore#isStale`, comparé à
+    `snapshot-max-age-seconds`) produisent tous deux le même état
+    `online: false`, toujours une réponse `200` (API) ou une page normale
+    avec bandeau (site), jamais une erreur (mission point 9).
+-   **`RequestPipeline` centralise rate limit, authentification et
+    journalisation pour toutes les routes** — chaque route ne fournit
+    qu'un `ApiHandler` métier ; aucune de ces garanties transverses n'est
+    dupliquée par endpoint. Le site public (`/`, `/status`,
+    `/leaderboards`, `/wiki`) passe par le même pipeline que l'API, avec
+    `requiresAuth=false` uniquement pour ces routes.
+-   **Le catalogue exposé ne contient que des données publiques** —
+    `WebSnapshotWriter#buildCatalog` extrait id/nom (rendu en texte brut
+    via `PlainTextComponentSerializer`, jamais le MiniMessage brut)/rareté
+    depuis `CustomItemDefinition`, jamais les attributs, enchantements ou
+    comportements de combat/outil.
 
 ## Flux principal (cible)
 

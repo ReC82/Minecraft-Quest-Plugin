@@ -6,7 +6,9 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -30,6 +32,11 @@ public final class ProgressionRepository {
             "UPDATE player_skills SET total_xp = ?, updated_at = ? WHERE player_uuid = ? AND skill = ?";
     private static final String INSERT_GRANT =
             "INSERT OR IGNORE INTO xp_grants (player_uuid, skill, event_id, amount, reason, created_at) VALUES (?, ?, ?, ?, ?, ?)";
+    private static final String SELECT_TOP_PLAYERS =
+            "SELECT p.last_name AS name, s.total_xp AS total_xp "
+                    + "FROM player_skills s JOIN player_profiles p ON p.uuid = s.player_uuid "
+                    + "WHERE s.skill = ? AND s.total_xp > 0 "
+                    + "ORDER BY s.total_xp DESC LIMIT ?";
 
     private final DatabaseManager database;
 
@@ -128,6 +135,28 @@ public final class ProgressionRepository {
         }));
     }
 
+    /**
+     * Classement en lecture seule des {@code limit} joueurs avec le plus d'XP totale sur
+     * {@code skill} (nom d'affichage = dernier pseudo connu, ex-aequo à 0 exclus). Utilisé
+     * uniquement par l'export web périodique (mission étape 21, point 4) — jamais interrogé
+     * depuis un chemin de jeu synchrone.
+     */
+    public CompletableFuture<List<LeaderboardRow>> topPlayers(SkillType skill, int limit) {
+        return database.execute(connection -> {
+            List<LeaderboardRow> rows = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement(SELECT_TOP_PLAYERS)) {
+                statement.setString(1, skill.name());
+                statement.setInt(2, limit);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    while (resultSet.next()) {
+                        rows.add(new LeaderboardRow(resultSet.getString("name"), resultSet.getLong("total_xp")));
+                    }
+                }
+            }
+            return rows;
+        });
+    }
+
     @FunctionalInterface
     private interface SqlAction<T> {
         T run() throws SQLException;
@@ -164,6 +193,9 @@ public final class ProgressionRepository {
         } catch (ArithmeticException e) {
             return Long.MAX_VALUE;
         }
+    }
+
+    public record LeaderboardRow(String name, long totalXp) {
     }
 
     public record GrantOutcome(boolean granted, long newTotalXp) {

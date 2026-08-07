@@ -78,6 +78,7 @@ import be.lloyd.rpgquest.travel.PortalService;
 import be.lloyd.rpgquest.travel.YamlDestinationRegistry;
 import be.lloyd.rpgquest.travel.YamlPortalRegistry;
 import be.lloyd.rpgquest.ui.QuestJournalService;
+import be.lloyd.rpgquest.web.WebSnapshotWriter;
 import be.lloyd.rpgquest.zone.ZoneProtectionListener;
 import be.lloyd.rpgquest.zone.ZoneRegistry;
 import be.lloyd.rpgquest.zone.ZoneSelectionService;
@@ -130,6 +131,7 @@ public final class RPGQuestBootstrap {
     private MarketService marketService;
     private PortalService portalService;
     private ClaimService claimService;
+    private WebSnapshotWriter webSnapshotWriter;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -214,6 +216,11 @@ public final class RPGQuestBootstrap {
         progressionService = new ProgressionService(
                 plugin, progressionRepository, () -> configService.current().progression(), plugin.getSLF4JLogger());
         registry.start(progressionService);
+
+        webSnapshotWriter = new WebSnapshotWriter(
+                plugin, plugin.getDataFolder().toPath(), progressionRepository, customItemRegistry,
+                () -> configService.current().webExport(), plugin.getSLF4JLogger());
+        registry.start(webSnapshotWriter);
 
         PlacedBlockRepository placedBlockRepository = new PlacedBlockRepository(databaseService.databaseManager());
         PlacedBlockTracker placedBlockTracker = new PlacedBlockTracker(plugin, placedBlockRepository, plugin.getSLF4JLogger());
@@ -407,6 +414,10 @@ public final class RPGQuestBootstrap {
 
     public ClaimService claimService() {
         return claimService;
+    }
+
+    public WebSnapshotWriter webSnapshotWriter() {
+        return webSnapshotWriter;
     }
 
     private void registerCommands() {

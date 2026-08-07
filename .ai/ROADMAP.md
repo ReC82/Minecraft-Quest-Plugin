@@ -157,7 +157,7 @@ Branche de départ: feature/15-player-market
   attendu feat(travel): add safe configurable portals)
 Étapes terminées: 16
 Branche finale: feature/16-portals
-Dernier commit: (voir git log — commit de l'étape 16 à suivre)
+Dernier commit: 600c74b feat(travel): add safe configurable portals
 Build: vert (./gradlew clean build)
 Tests: 368 tests verts (nouveaux : DestinationTest, PortalDefinitionTest,
   DestinationDefinitionParserTest, PortalDefinitionParserTest,

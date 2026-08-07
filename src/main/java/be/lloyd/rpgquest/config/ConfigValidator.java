@@ -39,9 +39,10 @@ public final class ConfigValidator {
         ProgressionConfig progression = validateProgression(section);
         BackpackConfig backpacks = validateBackpacks(section);
         WebExportConfig webExport = validateWebExport(section);
+        StoreConfig store = validateStore(section);
         return new PluginConfig(
                 debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression,
-                backpacks, webExport);
+                backpacks, webExport, store);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -453,5 +454,41 @@ public final class ConfigValidator {
 
     private static WebExportConfig defaultWebExport() {
         return new WebExportConfig(false, "web-export", 30, false, 10, List.of(SkillType.values()), List.of());
+    }
+
+    private static StoreConfig validateStore(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection store = section.getConfigurationSection("store");
+        if (store == null) {
+            return defaultStore();
+        }
+
+        boolean enabled = store.getBoolean("enabled", false);
+
+        String webApiBaseUrl = store.getString("web-api-base-url", "http://localhost:8080");
+        if (webApiBaseUrl.isBlank()) {
+            throw new ConfigValidationException("« store.web-api-base-url » ne peut pas être vide.");
+        }
+        try {
+            java.net.URI uri = new java.net.URI(webApiBaseUrl);
+            String scheme = uri.getScheme();
+            if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
+                throw new ConfigValidationException(
+                        "« store.web-api-base-url » doit utiliser http ou https, valeur trouvée : " + webApiBaseUrl);
+            }
+        } catch (java.net.URISyntaxException e) {
+            throw new ConfigValidationException("« store.web-api-base-url » n'est pas une URL valide : " + webApiBaseUrl);
+        }
+
+        int pollIntervalSeconds = store.getInt("poll-interval-seconds", 30);
+        if (pollIntervalSeconds < 5) {
+            throw new ConfigValidationException(
+                    "« store.poll-interval-seconds » doit être au moins 5, valeur trouvée : " + pollIntervalSeconds);
+        }
+
+        return new StoreConfig(enabled, webApiBaseUrl, pollIntervalSeconds);
+    }
+
+    private static StoreConfig defaultStore() {
+        return new StoreConfig(false, "http://localhost:8080", 30);
     }
 }

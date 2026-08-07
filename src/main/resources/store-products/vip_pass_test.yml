@@ -1,0 +1,7 @@
+# Pass VIP de test (mission étape 22, point 2) : accorde l'avantage
+# générique "vip" — aucune fonctionnalité VIP concrète n'existe encore
+# (voir docs/STORE.md), cette définition ne fait que brancher la livraison.
+id: vip_pass_test
+grant-type: ENTITLEMENT
+entitlement-key: vip
+entitlement-tier: TEST

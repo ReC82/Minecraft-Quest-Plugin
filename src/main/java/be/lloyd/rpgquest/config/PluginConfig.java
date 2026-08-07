@@ -11,6 +11,7 @@ public record PluginConfig(
         ClaimConfig claims,
         ProgressionConfig progression,
         BackpackConfig backpacks,
-        WebExportConfig webExport
+        WebExportConfig webExport,
+        StoreConfig store
 ) {
 }

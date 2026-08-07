@@ -1,0 +1,3 @@
+id: upgrade_large
+grant-type: BACKPACK_SIZE
+backpack-size: LARGE

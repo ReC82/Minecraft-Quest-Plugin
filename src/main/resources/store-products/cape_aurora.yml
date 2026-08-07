@@ -1,0 +1,6 @@
+# Élément cosmétique de confort (mission point 2) : avantage purement
+# déclaratif, aucun effet en jeu à ce stade (voir docs/STORE.md).
+id: cape_aurora
+grant-type: ENTITLEMENT
+entitlement-key: cosmetic:cape_aurora
+entitlement-tier: OWNED

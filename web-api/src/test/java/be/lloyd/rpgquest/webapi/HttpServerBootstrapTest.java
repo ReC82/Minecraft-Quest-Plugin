@@ -4,6 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import be.lloyd.rpgquest.webapi.json.Json;
+import be.lloyd.rpgquest.webapi.store.ProductCatalog;
+import be.lloyd.rpgquest.webapi.store.SandboxPaymentProvider;
+import be.lloyd.rpgquest.webapi.store.StoreDatabase;
+import be.lloyd.rpgquest.webapi.store.StoreRepository;
+import be.lloyd.rpgquest.webapi.store.StoreService;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -15,6 +20,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +44,7 @@ class HttpServerBootstrapTest {
     private Path snapshotFile;
     private HttpClient client;
     private HttpServerBootstrap bootstrap;
+    private StoreDatabase storeDatabase;
     private int port;
 
     @BeforeEach
@@ -51,14 +58,33 @@ class HttpServerBootstrapTest {
         if (bootstrap != null) {
             bootstrap.stop();
         }
+        if (storeDatabase != null) {
+            storeDatabase.shutdown();
+        }
     }
 
-    private void startServer(long maxAgeSeconds, int rateLimitPerMinute) throws IOException {
-        WebApiConfig config = new WebApiConfig(0, snapshotFile, maxAgeSeconds, TOKEN, rateLimitPerMinute, "RPGQuest Test");
-        SnapshotStore store = new SnapshotStore(snapshotFile, maxAgeSeconds, Logger.getLogger("rpgquest-webapi-test"));
-        bootstrap = new HttpServerBootstrap(config, store);
+    private void startServer(long maxAgeSeconds, int rateLimitPerMinute) throws Exception {
+        int freePort = findFreePort();
+        WebApiConfig config = new WebApiConfig(freePort, snapshotFile, maxAgeSeconds, TOKEN, rateLimitPerMinute, "RPGQuest Test",
+                tempDir.resolve("products.json"), tempDir.resolve("store.db"), TOKEN, "http://127.0.0.1:" + freePort);
+        SnapshotStore snapshotStore = new SnapshotStore(snapshotFile, maxAgeSeconds, Logger.getLogger("rpgquest-webapi-test"));
+
+        storeDatabase = new StoreDatabase(config.storeDatabaseFile());
+        storeDatabase.initialize().get(5, TimeUnit.SECONDS);
+        StoreRepository storeRepository = new StoreRepository(storeDatabase);
+        ProductCatalog catalog = ProductCatalog.load(config.productsFile());
+        SandboxPaymentProvider paymentProvider = new SandboxPaymentProvider(config.publicBaseUrl(), config.webhookSecret());
+        StoreService storeService = new StoreService(catalog, storeRepository, paymentProvider, config.webhookSecret());
+
+        bootstrap = new HttpServerBootstrap(config, snapshotStore, storeService);
         bootstrap.start();
         port = bootstrap.boundPort();
+    }
+
+    private int findFreePort() throws IOException {
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0)) {
+            return socket.getLocalPort();
+        }
     }
 
     private void writeSnapshot(String json) throws IOException {

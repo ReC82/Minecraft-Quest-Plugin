@@ -152,6 +152,8 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
     conservant le contenu existant.
 -   `/backpack admin revoke <joueur>` (`rpgquest.admin`) — retire
     l'avantage explicite. Voir [docs/BACKPACKS.md](docs/BACKPACKS.md).
+-   `/store history [joueur|uuid]` (`rpgquest.admin`) — historique des
+    commandes/livraisons de la boutique web. Voir [docs/STORE.md](docs/STORE.md).
 
 ### Permissions
 
@@ -165,7 +167,7 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 | `rpgquest.progression` | tous | `/profile`, `/skills` |
 | `rpgquest.backpack` | tous | `/backpack`, `/backpack recover` |
 | `rpgquest.backpack.free` | tous | palier SMALL sans avantage explicite (permission de secours) |
-| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin`, `/skills admin`, `/backpack admin` |
+| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin`, `/skills admin`, `/backpack admin`, `/store history` |
 | `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées), `/rpgadmin portal` (portails), `/rpgadmin mob` (mobs spéciaux) |
 
 ## Quêtes
@@ -388,6 +390,20 @@ connexion joueur, ni modification de données à cette étape. Voir
 [docs/WEB_API.md](docs/WEB_API.md) pour le détail complet (déploiement,
 authentification, endpoints).
 
+## Boutique web
+
+Vend des avantages de **confort uniquement** (backpacks, pass VIP de test,
+cosmétiques) via le portail web — jamais d'avantage compétitif (voir
+[docs/STORE.md](docs/STORE.md), politique pay-to-convenience). Paiement en
+mode sandbox (aucune carte bancaire jamais demandée ni stockée) ; les
+commandes/livraisons sont idempotentes (une livraison ne peut jamais être
+appliquée deux fois) et le serveur de jeu — jamais web-api — reste
+l'autorité finale pour tout avantage accordé. `/store history [joueur|uuid]`
+(`rpgquest.admin`) consulte l'historique. Désactivé par défaut
+(`store.enabled: false`). Voir [docs/STORE.md](docs/STORE.md) pour le
+détail complet (gestion du remboursement, joueur hors ligne, upgrade,
+produit déjà possédé...).
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
@@ -396,10 +412,11 @@ requis `url`/`sha1` uniquement si `enabled: true`, voir
 [RESOURCE_PACK.md](RESOURCE_PACK.md)), `dialogue` (`renderer`
 — `chat` par défaut ou `paper-dialog` — et `allowed-commands`, la liste
 blanche pour l'action `RUN_SAFE_COMMAND`), `journal` (`tracker-enabled`,
-la bossbar optionnelle de la quête suivie) et `web-export` (export
-périodique pour le [portail web](docs/WEB_API.md), désactivé par défaut).
-Validée au démarrage et à chaque `/rpgquest reload` ; voir
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+la bossbar optionnelle de la quête suivie), `web-export` (export
+périodique pour le [portail web](docs/WEB_API.md), désactivé par défaut) et
+`store` (sondage des livraisons de la [boutique web](docs/STORE.md),
+désactivé par défaut). Validée au démarrage et à chaque `/rpgquest reload` ;
+voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Persistance
 
@@ -449,7 +466,8 @@ Le MVP (architecture, SQLite, quêtes, dialogues, journal, objets
 personnalisés, armes/outils, ressources, craft, resource pack, zones
 protégées, économie, marchands PNJ, marché entre joueurs, portails et
 téléportation, claims de terrain) est complet, ainsi que mobs spéciaux
-vanilla, XP RPG, backpacks et le portail web read-only. Fonctionnalités
-envisagées ensuite (voir aussi [TODO.md](TODO.md)) : boutique/paiements et
-connexion joueur sur le portail web, PNJ avancés (Citizens ou équivalent,
-optionnel), métiers, donjons, boss, factions.
+vanilla, XP RPG, backpacks, le portail web read-only et la boutique web
+sandbox. Fonctionnalités envisagées ensuite (voir aussi [TODO.md](TODO.md)) :
+prestataire de paiement réel, connexion joueur sur le portail web, PNJ
+avancés (Citizens ou équivalent, optionnel), métiers, donjons, boss,
+factions.

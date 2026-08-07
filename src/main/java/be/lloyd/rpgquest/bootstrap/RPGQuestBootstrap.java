@@ -21,6 +21,7 @@ import be.lloyd.rpgquest.command.QuestsCommand;
 import be.lloyd.rpgquest.command.ResourceNodeCommand;
 import be.lloyd.rpgquest.command.RPGQuestCommand;
 import be.lloyd.rpgquest.command.SkillsCommand;
+import be.lloyd.rpgquest.command.StoreCommand;
 import be.lloyd.rpgquest.config.ConfigService;
 import be.lloyd.rpgquest.config.RendererKind;
 import be.lloyd.rpgquest.crafting.RecipeCraftGuardListener;
@@ -37,6 +38,7 @@ import be.lloyd.rpgquest.database.PortalCooldownRepository;
 import be.lloyd.rpgquest.database.ProgressionRepository;
 import be.lloyd.rpgquest.database.QuestProgressRepository;
 import be.lloyd.rpgquest.database.ResourceNodeRepository;
+import be.lloyd.rpgquest.database.StoreDeliveryRepository;
 import be.lloyd.rpgquest.database.WalletRepository;
 import be.lloyd.rpgquest.dialogue.YamlDialogueEngine;
 import be.lloyd.rpgquest.dialogue.render.ChatDialogueRenderer;
@@ -74,6 +76,9 @@ import be.lloyd.rpgquest.resource.ResourceNodeRegistry;
 import be.lloyd.rpgquest.resource.ResourceNodeService;
 import be.lloyd.rpgquest.quest.YamlQuestEngine;
 import be.lloyd.rpgquest.quest.progress.QuestProgressEngine;
+import be.lloyd.rpgquest.store.StoreClient;
+import be.lloyd.rpgquest.store.StoreDeliveryService;
+import be.lloyd.rpgquest.store.StoreProductRegistry;
 import be.lloyd.rpgquest.travel.PortalService;
 import be.lloyd.rpgquest.travel.YamlDestinationRegistry;
 import be.lloyd.rpgquest.travel.YamlPortalRegistry;
@@ -114,6 +119,7 @@ public final class RPGQuestBootstrap {
     private final YamlDestinationRegistry destinationRegistry;
     private final ClaimSelectionService claimSelectionService;
     private final SpecialMobRegistry mobRegistry;
+    private final StoreProductRegistry storeProductRegistry;
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
@@ -132,6 +138,8 @@ public final class RPGQuestBootstrap {
     private PortalService portalService;
     private ClaimService claimService;
     private WebSnapshotWriter webSnapshotWriter;
+    private StoreClient storeClient;
+    private StoreDeliveryService storeDeliveryService;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -161,6 +169,8 @@ public final class RPGQuestBootstrap {
         this.claimSelectionService = new ClaimSelectionService();
         this.mobRegistry = new SpecialMobRegistry(
                 plugin.getDataFolder().toPath().resolve("mobs"), plugin.getSLF4JLogger());
+        this.storeProductRegistry = new StoreProductRegistry(
+                plugin.getDataFolder().toPath().resolve("store-products"), plugin.getSLF4JLogger());
     }
 
     public void start() {
@@ -247,6 +257,15 @@ public final class RPGQuestBootstrap {
         backpackService = new BackpackService(
                 plugin, backpackRepository, entitlementService, () -> configService.current().backpacks(), plugin.getSLF4JLogger());
         registry.start(backpackService);
+
+        registry.start(storeProductRegistry);
+        StoreDeliveryRepository storeDeliveryRepository = new StoreDeliveryRepository(databaseService.databaseManager());
+        storeClient = new StoreClient(() -> configService.current().store());
+        storeDeliveryService = new StoreDeliveryService(
+                plugin, storeClient, storeProductRegistry, storeDeliveryRepository, profileRepository,
+                entitlementService, backpackService, () -> configService.current().store(),
+                () -> configService.current().backpacks(), plugin.getSLF4JLogger());
+        registry.start(storeDeliveryService);
 
         WalletRepository walletRepository = new WalletRepository(databaseService.databaseManager());
         economyService = new EconomyService(walletRepository);
@@ -420,6 +439,14 @@ public final class RPGQuestBootstrap {
         return webSnapshotWriter;
     }
 
+    public StoreProductRegistry storeProductRegistry() {
+        return storeProductRegistry;
+    }
+
+    public StoreDeliveryService storeDeliveryService() {
+        return storeDeliveryService;
+    }
+
     private void registerCommands() {
         RPGQuestCommand rpgquestCommand = new RPGQuestCommand(plugin, this);
         var rpgquest = plugin.getCommand("rpgquest");
@@ -508,6 +535,13 @@ public final class RPGQuestBootstrap {
         if (backpack != null) {
             backpack.setExecutor(backpackCommand);
             backpack.setTabCompleter(backpackCommand);
+        }
+
+        StoreCommand storeCommand = new StoreCommand(storeClient, plugin.getSLF4JLogger());
+        var store = plugin.getCommand("store");
+        if (store != null) {
+            store.setExecutor(storeCommand);
+            store.setTabCompleter(storeCommand);
         }
 
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(

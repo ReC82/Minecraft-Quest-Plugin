@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 9;
+    private static final int CURRENT_VERSION = 10;
 
     private SchemaMigrator() {
     }
@@ -56,6 +56,10 @@ public final class SchemaMigrator {
         if (version < 9) {
             applyV9(connection);
             version = 9;
+        }
+        if (version < 10) {
+            applyV10(connection);
+            version = 10;
         }
 
         if (version != startingVersion) {
@@ -351,6 +355,23 @@ public final class SchemaMigrator {
                         event_type TEXT NOT NULL,
                         detail TEXT,
                         created_at TEXT NOT NULL
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV10(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Filet de sécurité d'idempotence côté serveur de jeu (mission étape 22, points 7-8) :
+            // web-api acquitte déjà les livraisons de façon idempotente, mais si l'accusé de
+            // réception échoue à repartir après un octroi réussi (crash pile après), le prochain
+            // sondage renverrait la même livraison — cette table empêche un second octroi local.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS store_deliveries_processed (
+                        delivery_id TEXT PRIMARY KEY,
+                        outcome TEXT NOT NULL,
+                        detail TEXT,
+                        processed_at TEXT NOT NULL
                     )
                     """);
         }

@@ -555,6 +555,37 @@
     Unicode, page publique sans authentification
 -   [x] `docs/WEB_API.md`
 
+## Boutique web (fait)
+
+-   [x] Catalogue produit (`web-api/products.json`) séparé de l'avantage
+    technique (`plugins/RPGQuest/store-products/*.yml`) — point 1
+-   [x] Produits initiaux : `small_backpack`, `upgrade_medium`,
+    `upgrade_large`, `vip_pass_test`, `cape_aurora` (cosmétique) — point 2
+-   [x] `store.SandboxPaymentProvider` : simulation auto-hébergée d'un
+    prestataire externe en mode test (webhook signé HMAC-SHA256), aucune
+    donnée de carte bancaire jamais demandée ni stockée — points 3-4, 14
+-   [x] `store.db` (web-api, séparée de `data.db`) : `orders`, `deliveries`,
+    `webhook_events` (dédup par id d'événement) — points 5-6
+-   [x] Idempotence : webhook rejoué et livraison réacquittée ignorés sans
+    erreur (jamais une seconde livraison) — point 7
+-   [x] Sondage périodique des livraisons en attente
+    (`store.StoreDeliveryService`), couvre nativement un redémarrage ou une
+    reprise après crash — point 8
+-   [x] Authentification serveur-à-serveur : jeton porteur (site ↔ serveur
+    de jeu) + signature HMAC (prestataire ↔ web-api) — point 9
+-   [x] Gestion : joueur hors ligne, UUID inconnu (profil auto-créé),
+    produit déjà possédé, upgrade, remboursement, révocation, échec
+    temporaire (jamais acquitté, réessayé au sondage suivant) — point 10
+-   [x] `/store history [joueur|uuid]` (`rpgquest.admin`) — point 11
+-   [x] Journalisation sans donnée sensible (jeton/signature jamais loggés) — point 12
+-   [x] Politique pay-to-convenience documentée, types d'avantage limités
+    par construction (`BACKPACK_SIZE`/`ENTITLEMENT`, jamais un attribut de
+    combat) — point 13
+-   [x] Tests : webhook répété/signature invalide, livraison répétée,
+    produit inconnu, joueur inconnu, upgrade, déjà possédé, remboursement,
+    reprise après redémarrage, web-api indisponible
+-   [x] `docs/STORE.md`
+
 ## MVP
 
 -   [x] Architecture
@@ -577,9 +608,10 @@
 -   [x] Progression RPG
 -   [x] Backpacks
 -   [x] Portail web (API read-only + site minimal)
+-   [x] Boutique web (achats sandbox, livraison idempotente)
 
 ## Plus tard
--   [ ] Boutique et paiements sur le portail web
+-   [ ] Prestataire de paiement réel (Stripe/PayPal en mode test)
 -   [ ] Connexion joueur sur le portail web
 -   [ ] PNJ avancés
 -   [ ] Métiers

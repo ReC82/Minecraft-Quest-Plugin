@@ -1,0 +1,4 @@
+# Produit boutique : id doit correspondre exactement à web-api/products.json.
+id: small_backpack
+grant-type: BACKPACK_SIZE
+backpack-size: SMALL

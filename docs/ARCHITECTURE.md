@@ -39,6 +39,8 @@
     │   └── progress         (état runtime mutable, index, listeners, commandes)
     ├── resource             (types de nœuds YAML + positions récoltables persistées)
     │   └── model            (modèles immuables : type de nœud, drops pondérés)
+    ├── store                (sondage des livraisons de la boutique web, registre produit → avantage)
+    │   └── model            (modèles immuables : type d'octroi, définition de produit)
     ├── travel               (portails et téléportation : destinations, canalisation, sécurité)
     │   └── model            (modèles immuables : destination, portail)
     ├── ui                   (journal de quêtes : menu paginé, vue détail, suivi)
@@ -49,8 +51,10 @@
 
 Le module Gradle séparé `web-api/` (racine du dépôt, projet indépendant —
 voir `settings.gradle.kts`) n'apparaît pas dans cette arborescence : il ne
-dépend d'aucun package ci-dessus, ni de Paper, et lit uniquement le fichier
-produit par `web`. Voir [docs/WEB_API.md](WEB_API.md).
+dépend d'aucun package ci-dessus, ni de Paper, lit uniquement le fichier
+produit par `web` (voir [docs/WEB_API.md](WEB_API.md)) et possède son
+propre sous-package `store` interne pour la boutique (commandes,
+livraisons, prestataire sandbox — voir [docs/STORE.md](STORE.md)).
 
 Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
 `item` et désormais `resource` couvrent chacun le chargement/l'affichage
@@ -1878,6 +1882,67 @@ d'architecture propres à cette étape :
     via `PlainTextComponentSerializer`, jamais le MiniMessage brut)/rareté
     depuis `CustomItemDefinition`, jamais les attributs, enchantements ou
     comportements de combat/outil.
+
+## `store` (boutique web : sondage de livraisons, registre produit → avantage)
+
+Voir [docs/STORE.md](STORE.md) pour le détail fonctionnel complet
+(prestataire sandbox, idempotence, gestion des cas particuliers). Décisions
+d'architecture propres à cette étape :
+
+-   **Catalogue commercial et avantage technique dans deux fichiers jamais
+    partagés** (mission étape 22, point 1) — `web-api/products.json` (nom,
+    prix) ignore totalement ce qu'un produit accorde ; `store.StoreProductDefinition`
+    (plugin, `store-products/*.yml`) ignore totalement son prix. Le seul
+    lien entre les deux est l'identifiant de produit, une simple chaîne.
+-   **Deux types d'octroi seulement, appliqués par construction** —
+    `store.model.StoreGrantType` n'a que `BACKPACK_SIZE`/`ENTITLEMENT` :
+    aucune voie de code ne permet de définir un attribut de combat, une
+    arme ou un bonus de vitesse/dégâts (politique pay-to-convenience,
+    mission point 13) — ce n'est pas qu'une convention documentée, le enum
+    lui-même rend le reste impossible à exprimer.
+-   **`web-api` n'accorde jamais rien directement** — `StoreService` ne
+    fait qu'enqueue des livraisons `GRANT`/`REVOKE` dans `store.db` (base
+    séparée de `data.db`, propre à web-api, même raisonnement qu'à l'étape
+    21) ; seul `store.StoreDeliveryService` (plugin) appelle
+    `EntitlementService`/`BackpackService`. Le serveur de jeu reste
+    l'autorité finale (mission, validation) par construction, pas par
+    discipline.
+-   **Sondage (pull) plutôt que notification (push) du serveur de jeu vers
+    web-api** — `GET /api/store/deliveries/pending` évite d'ouvrir un port
+    entrant sur le serveur Minecraft, et couvre gratuitement le
+    redémarrage normal *et* la reprise après crash (mission point 8) : un
+    simple sondage périodique revoit toujours les livraisons non
+    acquittées, aucune logique de reprise dédiée n'est nécessaire.
+-   **Double filet d'idempotence** — web-api acquitte déjà les livraisons
+    de façon idempotente (`deliveries.status`), mais `store_deliveries_processed`
+    (migration V10, plugin) protège en plus contre le cas où l'octroi
+    local a réussi *avant* que l'accusé de réception ne reparte avec
+    succès (panne réseau juste après un octroi) — sans ce filet, le
+    prochain sondage retraiterait la même livraison.
+-   **"Produit déjà possédé"/upgrade résolus côté serveur de jeu, jamais
+    côté web-api** — web-api n'a aucun accès à l'état d'avantage d'un
+    joueur ; `StoreDeliveryService#applyBackpackGrant`/`applyEntitlementGrant`
+    comparent le palier/tier actuel avant tout octroi, jamais une
+    rétrogradation, jamais un double octroi.
+-   **Prestataire de paiement sandbox auto-hébergé, derrière une interface
+    dédiée** (`store.PaymentProvider`, web-api) — décision documentée en
+    détail dans docs/STORE.md : aucun accès à un vrai prestataire externe
+    dans cet environnement, mais le flux (session hébergée, webhook signé
+    HMAC-SHA256, jamais de confiance dans une simple redirection
+    navigateur) reproduit fidèlement celui d'un vrai fournisseur en mode
+    test, et un futur fournisseur réel n'implique qu'une nouvelle
+    implémentation de cette interface.
+-   **Deux mécanismes d'authentification serveur-à-serveur distincts**
+    (mission point 9) — jeton porteur classique (`RPGQUEST_WEB_API_TOKEN`,
+    déjà établi à l'étape 21) entre le site et le serveur de jeu ;
+    signature HMAC-SHA256 (`RPGQUEST_STORE_WEBHOOK_SECRET`,
+    `store.WebhookSigner`) entre le prestataire et web-api — jamais
+    confondus, un webhook mal signé est rejeté avant même d'être interprété.
+-   **Remboursement d'un backpack : repli sur `fallback-size`, pas un
+    calcul de permission par-joueur** — simplification assumée
+    (documentée dans docs/STORE.md) : l'API Bukkit standard ne permet pas
+    de vérifier une permission pour un joueur hors ligne, et un
+    remboursement doit rester possible sans que le joueur soit connecté.
 
 ## Flux principal (cible)
 

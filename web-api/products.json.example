@@ -1,0 +1,7 @@
+[
+  {"id": "small_backpack", "name": "Small Backpack", "priceCents": 199, "currency": "EUR"},
+  {"id": "upgrade_medium", "name": "Backpack Upgrade: Medium", "priceCents": 299, "currency": "EUR"},
+  {"id": "upgrade_large", "name": "Backpack Upgrade: Large", "priceCents": 499, "currency": "EUR"},
+  {"id": "vip_pass_test", "name": "VIP Pass (test)", "priceCents": 999, "currency": "EUR"},
+  {"id": "cape_aurora", "name": "Aurora Cape (cosmetic)", "priceCents": 149, "currency": "EUR"}
+]

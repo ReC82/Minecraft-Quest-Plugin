@@ -17,12 +17,13 @@ public final class WebApiConfigLoader {
 
     public static final String CONFIG_PATH_ENV = "RPGQUEST_WEB_API_CONFIG";
     public static final String TOKEN_ENV = "RPGQUEST_WEB_API_TOKEN";
+    public static final String WEBHOOK_SECRET_ENV = "RPGQUEST_STORE_WEBHOOK_SECRET";
 
     private WebApiConfigLoader() {
     }
 
     public static WebApiConfig load() throws IOException {
-        return load(resolveConfigPath(), System.getenv(TOKEN_ENV));
+        return load(resolveConfigPath(), System.getenv(TOKEN_ENV), System.getenv(WEBHOOK_SECRET_ENV));
     }
 
     static Path resolveConfigPath() {
@@ -30,7 +31,7 @@ public final class WebApiConfigLoader {
         return Path.of(override != null && !override.isBlank() ? override : "web-api.properties");
     }
 
-    public static WebApiConfig load(Path propertiesFile, String tokenFromEnv) throws IOException {
+    public static WebApiConfig load(Path propertiesFile, String tokenFromEnv, String webhookSecretFromEnv) throws IOException {
         Properties properties = new Properties();
         if (Files.exists(propertiesFile)) {
             try (var in = Files.newInputStream(propertiesFile)) {
@@ -43,8 +44,12 @@ public final class WebApiConfigLoader {
         long snapshotMaxAgeSeconds = parseLong(properties, "snapshot-max-age-seconds", 120L);
         int rateLimitPerMinute = parseInt(properties, "rate-limit-per-minute", 60);
         String siteTitle = properties.getProperty("site-title", "RPGQuest");
+        Path productsFile = Path.of(properties.getProperty("products-file", "products.json"));
+        Path storeDatabaseFile = Path.of(properties.getProperty("store-database-file", "store.db"));
+        String publicBaseUrl = properties.getProperty("public-base-url", "http://localhost:" + port);
 
-        return new WebApiConfig(port, snapshotFile, snapshotMaxAgeSeconds, tokenFromEnv, rateLimitPerMinute, siteTitle);
+        return new WebApiConfig(port, snapshotFile, snapshotMaxAgeSeconds, tokenFromEnv, rateLimitPerMinute, siteTitle,
+                productsFile, storeDatabaseFile, webhookSecretFromEnv, publicBaseUrl);
     }
 
     private static int parseInt(Properties properties, String key, int defaultValue) {

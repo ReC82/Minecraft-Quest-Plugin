@@ -82,6 +82,22 @@ progression:
     fishing-catch-xp: 10
     exploration-zone-xp: 100
 
+backpacks:
+  # Nombre de lignes (9 cases chacune) par palier ; doit rester strictement
+  # croissant. Voir docs/BACKPACKS.md pour le détail complet.
+  small-rows: 1
+  medium-rows: 3
+  large-rows: 6
+  # Matériaux jamais autorisés dans un backpack (ex. coffres à coquillage
+  # pour éviter les contournements de duplication liés aux conteneurs
+  # imbriqués). Vide par défaut : l'item d'ouverture lui-même est toujours
+  # interdit (anti-imbrication), quel que soit ce réglage.
+  forbidden-materials: []
+  # Palier accordé par la permission de secours (rpgquest.backpack.free) à
+  # un joueur sans avantage backpack explicite.
+  fallback-size: SMALL
+  open-item-material: BUNDLE
+
 admin:
   flatten:
     # /rpgadmin flatten <rayon> [hauteur] — voir docs/ADMIN_FLATTEN.md.

@@ -142,6 +142,16 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
     (`rpgquest.admin`) — outil de test : accorde de l'XP (dédupliquée,
     mirroir GLOBAL, affichage) ou fixe l'XP totale directement. Voir
     [docs/PROGRESSION.md](docs/PROGRESSION.md).
+-   `/backpack` (`rpgquest.backpack`) — ouvre ton backpack (aussi possible
+    via l'objet dédié, clic droit).
+-   `/backpack recover [numéro]` (`rpgquest.backpack`) — liste ou réclame
+    les objets en attente de récupération (surplus après une réduction de
+    taille).
+-   `/backpack admin grant <joueur> <taille>` (`rpgquest.admin`) — accorde
+    un palier (SMALL/MEDIUM/LARGE), redimensionne immédiatement en
+    conservant le contenu existant.
+-   `/backpack admin revoke <joueur>` (`rpgquest.admin`) — retire
+    l'avantage explicite. Voir [docs/BACKPACKS.md](docs/BACKPACKS.md).
 
 ### Permissions
 
@@ -153,7 +163,9 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 | `rpgquest.market` | tous | `/market`, `/market sell\|cancel` |
 | `rpgquest.claim` | tous | `/claim` |
 | `rpgquest.progression` | tous | `/profile`, `/skills` |
-| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin`, `/skills admin` |
+| `rpgquest.backpack` | tous | `/backpack`, `/backpack recover` |
+| `rpgquest.backpack.free` | tous | palier SMALL sans avantage explicite (permission de secours) |
+| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin`, `/skills admin`, `/backpack admin` |
 | `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées), `/rpgadmin portal` (portails), `/rpgadmin mob` (mobs spéciaux) |
 
 ## Quêtes
@@ -348,6 +360,19 @@ deux fois. `/profile` et `/skills` affichent la progression du joueur ;
 l'XP vanilla reste intacte pour les enchantements. Voir
 [docs/PROGRESSION.md](docs/PROGRESSION.md) pour le modèle d'équilibrage
 complet.
+
+## Backpacks
+
+Un inventaire virtuel persistant par joueur, en trois paliers configurables
+(Small/Medium/Large), obtenu via un objet dédié ou `/backpack`, sauvegardé
+à la fermeture/déconnexion/arrêt. Anti-abus complet (aucune imbrication de
+backpack, objets explicitement interdits configurables, jamais plus d'une
+instance ouverte à la fois, aucun vecteur de vol par hopper — inventaire
+purement virtuel). Un changement de palier conserve tous les objets
+(upgrade) et bascule le surplus dans une boîte de récupération plutôt que
+de le perdre (downgrade). Premier consommateur concret d'une interface
+`EntitlementService` générique, prête pour de futurs avantages. Voir
+[docs/BACKPACKS.md](docs/BACKPACKS.md) pour le détail complet.
 
 ## Configuration
 

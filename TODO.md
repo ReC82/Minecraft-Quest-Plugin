@@ -493,6 +493,41 @@
     niveaux, reconnexion, migration de schéma
 -   [x] `docs/PROGRESSION.md`
 
+## Backpacks (fait)
+
+-   [x] `entitlement.EntitlementService` (interface générique, mission
+    point 11) + `database.EntitlementRepository` (`player_entitlements`,
+    avantage identifié par une clé libre — le backpack en est le premier
+    consommateur concret, sans boutique)
+-   [x] `backpack.model.BackpackSize` (SMALL/MEDIUM/LARGE) + `BackpackConfig`
+    (`config.yml` → `backpacks:`, lignes par palier configurables,
+    matériaux interdits, palier de secours)
+-   [x] SQLite (migration V9) : `backpacks` (contenu versionné),
+    `backpack_overflow` (boîte de récupération), `backpack_audit`
+    (journal d'anomalies) — `BackpackRepository`, redimensionnement en une
+    seule transaction JDBC (contenu + surplus ensemble, jamais l'un sans
+    l'autre)
+-   [x] `backpack.ItemArraySerializer` : sérialisation maison d'un
+    `ItemStack[]` complet (aucun précédent dans le projet), versionnée
+    indépendamment du schéma SQL
+-   [x] `BackpackService` : une seule instance d'inventaire vivante par
+    joueur (jamais d'ouverture simultanée divergente), sauvegarde à la
+    fermeture/déconnexion/arrêt (LIFO des services, même mécanisme que
+    `MarketService`/`MerchantTradeService`), upgrade/downgrade unifiés
+    (compactage + surplus vers la récupération), objet d'ouverture
+    identifié uniquement par PDC
+-   [x] `BackpackListener` : lecture-écriture protégée (contrairement à la
+    vitrine en lecture seule du marché) — imbrication et objets interdits
+    bloqués sur tous les vecteurs classiques (pose, échange curseur,
+    shift-clic, barre de raccourcis, glisser-déposer), jamais un clic
+    légitime annulé
+-   [x] `/backpack`, `/backpack recover [numéro]`,
+    `/backpack admin grant|revoke`
+-   [x] Tests : création, persistance, upgrade, downgrade, ouvertures
+    simultanées, backpack imbriqué, crash simulé, inventaire plein, accès
+    sans droit
+-   [x] `docs/BACKPACKS.md`
+
 ## MVP
 
 -   [x] Architecture
@@ -513,6 +548,7 @@
 -   [x] Claims de terrain
 -   [x] Mobs spéciaux
 -   [x] Progression RPG
+-   [x] Backpacks
 
 ## Plus tard
 -   [ ] PNJ avancés

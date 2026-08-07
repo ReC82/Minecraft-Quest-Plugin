@@ -49,6 +49,9 @@ commands:
   skills:
     description: Détail de tes compétences RPG et outils d'administration de test — voir docs/PROGRESSION.md.
     usage: /<command> [admin <grant|set> <joueur> <compétence> <montant>]
+  backpack:
+    description: Sacs à dos persistants (Small/Medium/Large) — voir docs/BACKPACKS.md.
+    usage: /<command> [recover [numéro]|admin <grant|revoke> <joueur> [taille]]
 
 permissions:
   rpgquest.admin:
@@ -74,4 +77,10 @@ permissions:
     default: true
   rpgquest.progression:
     description: Accès aux commandes joueur de progression RPG (/profile, /skills).
+    default: true
+  rpgquest.backpack:
+    description: Accès à la commande /backpack (ouverture, récupération) pour un joueur qui a déjà un palier.
+    default: true
+  rpgquest.backpack.free:
+    description: Permission de secours — accorde le palier SMALL sans avantage explicite (voir docs/BACKPACKS.md).
     default: true

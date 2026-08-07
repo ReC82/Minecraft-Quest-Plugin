@@ -5,11 +5,14 @@
     be.lloyd.rpgquest
     ├── RPGQuestPlugin       (point d'entrée, délègue tout à bootstrap)
     ├── admin                (/rpgadmin : aplatissement de terrain, zones, portails, mobs spéciaux)
+    ├── backpack             (inventaire virtuel persistant par joueur, trois paliers)
+    │   └── model            (modèle immuable : palier)
     ├── bootstrap            (cycle de vie : PluginService, registre, orchestration)
     ├── command
     ├── config               (chargement + validation de config.yml)
     ├── claim                (claims de terrain joueurs : persistance SQLite, sélection, protection)
     │   └── model            (modèles immuables : claim, permissions)
+    ├── entitlement          (interface générique d'avantage joueur — mission étape 20, point 11)
     ├── crafting             (recettes YAML + enregistrement Bukkit + garde anti-substitution)
     │   └── model            (modèles immuables : recette façonnée/non, ingrédients, résultat)
     ├── database
@@ -1724,6 +1727,88 @@ qu'embarqués dans le jar.
     recettes n'ont pas encore de champ dédié dans leur format YAML pour le
     consommer, documenté comme extension future dans
     `docs/PROGRESSION.md` plutôt que forcé maintenant.
+
+## `entitlement` (avantage joueur générique)
+
+-   **Une seule interface, une seule implémentation SQL, un seul
+    consommateur pour l'instant** (`backpack`, mission étape 20, point 11
+    — « sans créer encore la boutique ») — `EntitlementService` ne prend
+    volontairement aucun type générique Java (`grant(UUID, String key,
+    String tier, String reason)`, pas `grant(UUID, K key, T tier)`) : le
+    palier est une chaîne libre, jamais couplée à `backpack.model.BackpackSize`
+    ni à un futur enum d'avantage, pour qu'un avantage totalement
+    différent (métier, cosmétique...) réutilise la même table
+    `player_entitlements` sans migration supplémentaire — seule la clé
+    (`entitlement_key`) change.
+-   **`database.EntitlementRepository` implémente directement
+    l'interface**, sans service métier intermédiaire — contrairement à
+    `claim.ClaimService`/`backpack.BackpackService`, un avantage générique
+    n'a aucune règle de validation propre (pas de chevauchement, pas de
+    limite), une simple lecture/écriture clé-valeur suffit.
+
+## `backpack` (inventaire virtuel persistant)
+
+-   **Le palier effectif est résolu via `EntitlementService`, jamais
+    stocké directement sur la ligne `backpacks`** — `BackpackService#effectiveSize`
+    interroge l'avantage `"backpack"` à chaque ouverture ; la permission
+    de secours `rpgquest.backpack.free` (mission point 5) n'intervient
+    qu'en repli, si aucun avantage explicite n'existe. Le contenu
+    (`backpacks.contents`) et le palier ne peuvent donc jamais diverger
+    silencieusement : `BackpackService#open` adapte défensivement le
+    contenu chargé si sa taille ne correspond plus au palier effectif
+    (ex. avantage modifié hors de `applySizeChange`), plutôt que de
+    planter ou tronquer.
+-   **Une seule instance vivante d'`Inventory` par joueur, jamais
+    recréée tant qu'elle existe** (`BackpackService#sessions`) — la garde
+    contre l'« ouverture simultanée » (mission point 7) n'est pas un
+    verrou explicite : elle repose sur le fait que Bukkit exécute les
+    tâches planifiées séquentiellement sur le thread principal, donc deux
+    appels à `open()` qui se chevauchent voient forcément l'un des deux
+    callbacks (celui qui s'exécute en second) trouver la session déjà
+    posée par le premier et la réutiliser au lieu d'en recréer une.
+-   **`BackpackListener` est en lecture-écriture, contrairement à
+    `economy.market.MarketListener`** (vitrine en lecture seule, tout
+    clic annulé sans condition) — un backpack doit rester manipulable
+    normalement ; seuls les mouvements qui feraient entrer un objet
+    interdit (`BackpackService#isForbidden`) sont annulés, sur les
+    vecteurs de clic/glisser-déposer classiques (voir Javadoc de la
+    classe pour la liste exacte et sa limite assumée : l'édition interne
+    d'un bundle légitimement présent dans le backpack n'est pas auditée).
+-   **`backpack.ItemArraySerializer` est un format binaire maison** —
+    aucun précédent dans le projet (`economy.market` ne sérialise qu'un
+    `ItemStack` isolé). Longueur-préfixé par case, réutilise
+    `ItemStack#serializeAsBytes()`/`deserializeBytes()` pour chaque case
+    non vide (même garantie de méta complète que le marché) ;
+    `SCHEMA_VERSION` vit à côté du binaire (colonne `schema_version`,
+    jamais dans le binaire lui-même) pour qu'un futur changement de
+    format puisse migrer les lignes existantes sans d'abord les décoder
+    avec l'ancien format (mission point 6).
+-   **Upgrade et downgrade partagent un seul algorithme de
+    redimensionnement** (`BackpackService#compact`) plutôt que deux
+    chemins de code séparés — les objets non vides sont compactés en
+    début de tableau dans la nouvelle taille ; ce qui ne rentre plus part
+    en surplus. Un agrandissement ne produit jamais de surplus par
+    construction (mission point 10) ; une réduction peut en produire
+    (mission point 9), toujours écrit dans la même transaction JDBC que
+    le nouveau contenu (`database.BackpackRepository#applyResize`) —
+    jamais l'un sans l'autre.
+-   **Sauvegarde à l'arrêt sans mécanisme de flush dédié** — même
+    découverte que pour les vitrines (`economy.market.MarketService`,
+    `economy.merchant.MerchantTradeService`) : `BackpackService#stop`
+    force la fermeture (`Player#closeInventory`) de tout backpack encore
+    ouvert, ce qui déclenche `InventoryCloseEvent` de façon synchrone sur
+    le thread principal *avant* que `stop()` ne rende la main ; la
+    sauvegarde qu'il enclenche est donc déjà en file sur l'exécuteur de
+    base de données avant que `DatabaseService` (démarré avant, donc
+    arrêté après, LIFO) ne ferme la connexion.
+-   **Anomalie de lecture (contenu illisible) : jamais une exception qui
+    remonte, toujours une entrée de récupération** — `BackpackService#safeDeserialize`
+    capture toute `IOException` de désérialisation, journalise une entrée
+    `backpack_audit`, déplace les octets bruts illisibles vers
+    `backpack_overflow` (récupérable manuellement si un futur outil sait
+    les interpréter) et retourne un backpack vide plutôt que de faire
+    échouer l'ouverture (mission, validation « toute anomalie crée une
+    entrée de récupération ou d'audit »).
 
 ## Flux principal (cible)
 

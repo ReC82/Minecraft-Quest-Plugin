@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 8;
+    private static final int CURRENT_VERSION = 9;
 
     private SchemaMigrator() {
     }
@@ -52,6 +52,10 @@ public final class SchemaMigrator {
         if (version < 8) {
             applyV8(connection);
             version = 8;
+        }
+        if (version < 9) {
+            applyV9(connection);
+            version = 9;
         }
 
         if (version != startingVersion) {
@@ -283,6 +287,70 @@ public final class SchemaMigrator {
                         y INTEGER NOT NULL,
                         z INTEGER NOT NULL,
                         PRIMARY KEY (world, x, y, z)
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV9(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Avantage générique (mission étape 20, point 11) : le backpack est le premier
+            // consommateur concret, d'autres avantages futurs réutiliseront cette même table sans
+            // migration supplémentaire (entitlement_key est une simple chaîne libre).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS player_entitlements (
+                        player_uuid TEXT NOT NULL,
+                        entitlement_key TEXT NOT NULL,
+                        tier TEXT NOT NULL,
+                        granted_at TEXT NOT NULL,
+                        reason TEXT,
+                        PRIMARY KEY (player_uuid, entitlement_key),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+
+            // contents : ItemStack[] sérialisé maison (voir backpack.ItemArraySerializer),
+            // schema_version distinct de PRAGMA user_version : permet de migrer le format binaire
+            // sans toucher au schéma SQL (mission point 6, "stocke... de manière sûre et versionnée").
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS backpacks (
+                        player_uuid TEXT PRIMARY KEY,
+                        schema_version INTEGER NOT NULL,
+                        contents BLOB NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+
+            // Boîte de récupération (mission point 9) : objets qui ne rentraient plus après une
+            // réduction de taille, ou tout contenu qu'une anomalie empêche de restaurer directement
+            // (ex. bloc sérialisé illisible) — jamais perdus silencieusement, toujours réclamables.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS backpack_overflow (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        player_uuid TEXT NOT NULL,
+                        schema_version INTEGER NOT NULL,
+                        contents BLOB NOT NULL,
+                        reason TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        claimed_at TEXT,
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_backpack_overflow_player ON backpack_overflow (player_uuid)
+                    """);
+
+            // Journal d'anomalies (mission, validation "toute anomalie crée une entrée de
+            // récupération ou d'audit") : append-only, même esprit que la table transactions de
+            // WalletRepository mais pour des événements structurels plutôt que financiers.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS backpack_audit (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        player_uuid TEXT,
+                        event_type TEXT NOT NULL,
+                        detail TEXT,
+                        created_at TEXT NOT NULL
                     )
                     """);
         }

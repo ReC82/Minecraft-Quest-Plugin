@@ -1,8 +1,10 @@
 package be.lloyd.rpgquest.config;
 
+import be.lloyd.rpgquest.backpack.model.BackpackSize;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -33,7 +35,9 @@ public final class ConfigValidator {
         AdminFlattenConfig adminFlatten = validateAdminFlatten(section);
         ClaimConfig claims = validateClaims(section);
         ProgressionConfig progression = validateProgression(section);
-        return new PluginConfig(debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression);
+        BackpackConfig backpacks = validateBackpacks(section);
+        return new PluginConfig(
+                debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression, backpacks);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -320,5 +324,66 @@ public final class ConfigValidator {
 
     private static ProgressionConfig defaultProgression() {
         return new ProgressionConfig(100L, 1.15, 100, 0.5, 60, DisplayMode.ACTION_BAR, true, 50, 15, 5, 4, 10, 100);
+    }
+
+    private static BackpackConfig validateBackpacks(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection backpacks = section.getConfigurationSection("backpacks");
+        if (backpacks == null) {
+            return defaultBackpacks();
+        }
+
+        int smallRows = rowCount(backpacks, "small-rows", 1);
+        int mediumRows = rowCount(backpacks, "medium-rows", 3);
+        int largeRows = rowCount(backpacks, "large-rows", 6);
+        if (!(smallRows < mediumRows && mediumRows < largeRows)) {
+            throw new ConfigValidationException(
+                    "« backpacks.small-rows » < « medium-rows » < « large-rows » doit être strictement croissant, "
+                            + "valeurs trouvées : " + smallRows + ", " + mediumRows + ", " + largeRows + ".");
+        }
+
+        Set<Material> forbidden = new LinkedHashSet<>();
+        for (String raw : backpacks.getStringList("forbidden-materials")) {
+            if (raw == null || raw.isBlank()) {
+                throw new ConfigValidationException("« backpacks.forbidden-materials » contient une entrée vide.");
+            }
+            Material material = Material.matchMaterial(raw);
+            if (material == null) {
+                throw new ConfigValidationException(
+                        "« backpacks.forbidden-materials » contient un matériau inconnu : \"" + raw + "\".");
+            }
+            forbidden.add(material);
+        }
+
+        String rawFallback = backpacks.getString("fallback-size", "SMALL");
+        BackpackSize fallbackSize;
+        try {
+            fallbackSize = BackpackSize.valueOf(rawFallback.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException(
+                    "« backpacks.fallback-size » invalide : \"" + rawFallback + "\" (valides : SMALL, MEDIUM, LARGE).");
+        }
+
+        String rawOpenItem = backpacks.getString("open-item-material", "BUNDLE");
+        Material openItemMaterial = Material.matchMaterial(rawOpenItem);
+        if (openItemMaterial == null) {
+            throw new ConfigValidationException(
+                    "« backpacks.open-item-material » invalide : \"" + rawOpenItem + "\".");
+        }
+
+        return new BackpackConfig(smallRows, mediumRows, largeRows, Set.copyOf(forbidden), fallbackSize, openItemMaterial);
+    }
+
+    private static int rowCount(ConfigurationSection section, String key, int defaultValue)
+            throws ConfigValidationException {
+        int value = section.getInt(key, defaultValue);
+        if (value < 1 || value > 6) {
+            throw new ConfigValidationException(
+                    "« backpacks." + key + " » doit être compris entre 1 et 6, valeur trouvée : " + value);
+        }
+        return value;
+    }
+
+    private static BackpackConfig defaultBackpacks() {
+        return new BackpackConfig(1, 3, 6, Set.of(), BackpackSize.SMALL, Material.BUNDLE);
     }
 }

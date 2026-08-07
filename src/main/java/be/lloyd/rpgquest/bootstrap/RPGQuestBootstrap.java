@@ -3,10 +3,12 @@ package be.lloyd.rpgquest.bootstrap;
 import be.lloyd.rpgquest.RPGQuestPlugin;
 import be.lloyd.rpgquest.admin.FlattenService;
 import be.lloyd.rpgquest.admin.RpgAdminCommand;
+import be.lloyd.rpgquest.backpack.BackpackService;
 import be.lloyd.rpgquest.claim.ClaimProtectionListener;
 import be.lloyd.rpgquest.claim.ClaimSelectionService;
 import be.lloyd.rpgquest.claim.ClaimService;
 import be.lloyd.rpgquest.claim.ClaimWandListener;
+import be.lloyd.rpgquest.command.BackpackCommand;
 import be.lloyd.rpgquest.command.ClaimCommand;
 import be.lloyd.rpgquest.command.CustomItemCommand;
 import be.lloyd.rpgquest.command.DialogueCommand;
@@ -23,7 +25,9 @@ import be.lloyd.rpgquest.config.ConfigService;
 import be.lloyd.rpgquest.config.RendererKind;
 import be.lloyd.rpgquest.crafting.RecipeCraftGuardListener;
 import be.lloyd.rpgquest.crafting.YamlCraftingRegistry;
+import be.lloyd.rpgquest.database.BackpackRepository;
 import be.lloyd.rpgquest.database.DatabaseService;
+import be.lloyd.rpgquest.database.EntitlementRepository;
 import be.lloyd.rpgquest.database.PlacedBlockRepository;
 import be.lloyd.rpgquest.database.PlayerProfileRepository;
 import be.lloyd.rpgquest.database.PlayerVariableRepository;
@@ -43,6 +47,7 @@ import be.lloyd.rpgquest.economy.EconomyService;
 import be.lloyd.rpgquest.economy.market.MarketService;
 import be.lloyd.rpgquest.economy.merchant.MerchantTradeService;
 import be.lloyd.rpgquest.economy.merchant.YamlMerchantRegistry;
+import be.lloyd.rpgquest.entitlement.EntitlementService;
 import be.lloyd.rpgquest.item.SpiderFangDropListener;
 import be.lloyd.rpgquest.item.YamlCustomItemRegistry;
 import be.lloyd.rpgquest.item.behavior.EquipmentBehaviorService;
@@ -117,6 +122,8 @@ public final class RPGQuestBootstrap {
     private ResourceNodeService resourceNodeService;
     private SpecialMobService mobService;
     private ProgressionService progressionService;
+    private EntitlementService entitlementService;
+    private BackpackService backpackService;
     private EconomyService economyService;
     private MerchantTradeService merchantTradeService;
     private MarketRepository marketRepository;
@@ -226,6 +233,13 @@ public final class RPGQuestBootstrap {
         QuestCompletionXpListener questCompletionXpListener = new QuestCompletionXpListener(
                 progressionService, questProgressEngine, () -> configService.current().progression(), plugin.getSLF4JLogger());
         questProgressEngine.onProgressChanged(questCompletionXpListener::onProgressChanged);
+
+        EntitlementRepository entitlementRepository = new EntitlementRepository(databaseService.databaseManager());
+        entitlementService = entitlementRepository;
+        BackpackRepository backpackRepository = new BackpackRepository(databaseService.databaseManager());
+        backpackService = new BackpackService(
+                plugin, backpackRepository, entitlementService, () -> configService.current().backpacks(), plugin.getSLF4JLogger());
+        registry.start(backpackService);
 
         WalletRepository walletRepository = new WalletRepository(databaseService.databaseManager());
         economyService = new EconomyService(walletRepository);
@@ -355,6 +369,14 @@ public final class RPGQuestBootstrap {
         return progressionService;
     }
 
+    public EntitlementService entitlementService() {
+        return entitlementService;
+    }
+
+    public BackpackService backpackService() {
+        return backpackService;
+    }
+
     public YamlMerchantRegistry merchantRegistry() {
         return merchantRegistry;
     }
@@ -468,6 +490,13 @@ public final class RPGQuestBootstrap {
         if (skills != null) {
             skills.setExecutor(skillsCommand);
             skills.setTabCompleter(skillsCommand);
+        }
+
+        BackpackCommand backpackCommand = new BackpackCommand(backpackService, entitlementService, plugin.getSLF4JLogger());
+        var backpack = plugin.getCommand("backpack");
+        if (backpack != null) {
+            backpack.setExecutor(backpackCommand);
+            backpack.setTabCompleter(backpackCommand);
         }
 
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(

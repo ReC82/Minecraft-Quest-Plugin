@@ -9,6 +9,7 @@ public record PluginConfig(
         JournalConfig journal,
         AdminFlattenConfig adminFlatten,
         ClaimConfig claims,
-        ProgressionConfig progression
+        ProgressionConfig progression,
+        BackpackConfig backpacks
 ) {
 }

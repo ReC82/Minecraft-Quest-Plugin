@@ -15,6 +15,9 @@
     │   ├── model           (modèles immuables : dialogue, nœuds, choix, conditions, actions)
     │   ├── render          (DialogueRenderer : ChatDialogueRenderer, PaperDialogRenderer)
     │   └── session         (état runtime mutable, sessions en mémoire, listeners)
+    ├── economy              (portefeuille joueur, paiements, marchands PNJ)
+    │   └── merchant        (définitions YAML de marchands + vitrine en jeu)
+    │       └── model       (modèles immuables : marchand, offre)
     ├── item                 (définitions YAML d'objets personnalisés + registre)
     │   ├── model            (modèles immuables : type, rareté, attributs, enchantements...)
     │   └── behavior         (comportements de combat/outil en jeu : cooldowns, listeners)
@@ -902,6 +905,163 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
     de mob, chance de 100 %, pas de table de loot générique) — une vraie
     table de drops par mob est hors périmètre de cette étape.
 
+### `economy` (portefeuille et marchands PNJ)
+
+-   **`WalletRepository` (`database`, pure JDBC)** — même discipline que
+    `PlayerVariableRepository` : aucun type Bukkit/Paper. Solde en `long`
+    (entier, jamais de virgule flottante pour de la monnaie), table
+    `wallets` créée paresseusement (`INSERT OR IGNORE`) au premier contact
+    plutôt qu'à la connexion du joueur — un joueur qui n'a jamais touché
+    l'économie n'a simplement pas de ligne, `balance()` répond `0` sans en
+    créer une.
+-   **Débit/crédit/paiement réellement atomiques, pas seulement séquentiels**
+    — chaque opération (`debit`/`credit`/`pay`/`setBalance`) s'exécute comme
+    **une seule** transaction JDBC explicite (`setAutoCommit(false)` puis
+    `commit`/`rollback`) à l'intérieur d'un unique appel à
+    `DatabaseManager#execute`. Deux garanties se cumulent :
+    1.  le thread base de données étant mono-thread et FIFO (voir section
+        `database`), deux requêtes concurrentes sur le même portefeuille
+        (double-clic, deux joueurs qui se paient simultanément) sont de
+        toute façon sérialisées — la seconde relit toujours un solde à jour ;
+    2.  la transaction SQL explicite protège en plus contre un crash du
+        processus *au milieu* d'une opération (ex. solde débité mais ligne
+        de `transactions` jamais écrite) — un cas que la seule sérialisation
+        du thread ne couvre pas.
+    `pay(from, to, amount)` débite et crédite dans **la même** transaction :
+    soit les deux comptes bougent, soit aucun (jamais un virement à moitié
+    appliqué). Testé directement (`WalletRepositoryTest`), y compris deux
+    débits soumis avant que le premier ne se termine
+    (`concurrentDebitsAgainstTheSameWalletNeverOverdraw`).
+-   **Montant invalide rejeté à la source** — `debit`/`credit`/`pay` refusent
+    tout montant `<= 0` (`IllegalArgumentException`, avant même de toucher
+    la base) ; `setBalance` (admin) refuse un montant négatif. Un
+    dépassement de capacité (`Math.addExact`) transforme l'opération en
+    échec propre plutôt qu'un solde qui déborderait silencieusement en
+    négatif.
+-   **`EconomyService` (`economy`, pas de cycle de vie propre)** — couche
+    fine au-dessus de `WalletRepository`, même conception que
+    `PlayerProfileService` : traduit les demandes en appels typés
+    (`TransactionType`, `PayOutcome`) sans exposer les chaînes brutes de la
+    base aux appelants. `pay()` rejette `from == to` et un montant invalide
+    **avant** de toucher la base (`PayOutcome.SAME_PLAYER`/`INVALID_AMOUNT`),
+    ce que `WalletRepository` seul ne pouvait pas distinguer proprement.
+-   **`/money [pay|admin]`** (`rpgquest.money`, `default: true`, comme
+    `rpgquest.quest`) — sans argument, affiche le solde de l'exécutant ;
+    `pay <joueur> <montant>` ne cible que des joueurs **en ligne**
+    (`Server#getPlayerExact`), limitation assumée par simplicité (voir
+    « Limites connues »). `admin give|take|set` (`rpgquest.admin`) est
+    l'unique façon de faire entrer de la monnaie dans l'économie hors
+    marchand — nécessaire puisqu'aucun « solde de départ » n'est accordé à
+    la connexion (encore une simplification assumée).
+-   **`economy.merchant` (marchands PNJ)** — un marchand est un modèle
+    figé (`MerchantDefinition`/`MerchantOffer`, « correct par construction »
+    comme `CustomItemDefinition`/`QuestDefinition`), chargé depuis
+    `plugins/RPGQuest/merchants/*.yml` par `YamlMerchantRegistry` avec
+    exactement le même patron à deux phases que `ItemLoader`/`QuestLoader`
+    (`MerchantDefinitionParser` par fichier, accumulation des erreurs, puis
+    rejet des id dupliqués entre fichiers — pas de notion de prérequis
+    entre marchands). `MerchantOffer` porte une direction
+    (`SELL_TO_PLAYER`/`BUY_FROM_PLAYER`), un objet vanilla **ou** personnalisé
+    (même garde « exactement un des deux » que les ingrédients de
+    `crafting`), une quantité/un prix, et des conditions d'accès cumulatives
+    optionnelles (permission, quête+état — `COMPLETED` par défaut si
+    l'état n'est pas précisé —, niveau). Le **niveau** requis est le niveau
+    d'expérience vanilla (`Player#getLevel()`) : aucun système de niveau RPG
+    dédié n'existe encore (étape 19), décision d'ingénierie délibérée plutôt
+    que d'inventer une notion parallèle qui devrait être migrée plus tard.
+-   **Aucun système d'identification de PNJ parallèle — un marchand ne
+    s'ouvre que depuis un dialogue** — contrairement à `TALK_TO_NPC`
+    (`quest.progress`) et `DialogueNpcInteractListener` (`dialogue.session`),
+    qui identifient tous deux un PNJ par le nom personnalisé d'une entité,
+    `economy.merchant` n'a **aucun** écouteur de clic sur entité : une
+    nouvelle action de dialogue scellée, `OpenMerchantAction`
+    (`ActionType.OPEN_MERCHANT`, champ YAML `merchant:`, même forme que
+    `OPEN_DIALOGUE`/`dialogue:`), est l'unique porte d'entrée. Décision
+    explicitement dictée par la mission de cette étape : un marchand
+    « relié aux dialogues existants » plutôt qu'un troisième mécanisme de
+    reconnaissance de PNJ à maintenir en parallèle des deux premiers — un
+    même PNJ peut donc continuer à satisfaire un objectif `TALK_TO_NPC`
+    *et* ouvrir un dialogue qui propose ensuite sa boutique, sans aucune
+    duplication de convention.
+    -   **`DialogueSessionEngine` traite `OpenMerchantAction` comme
+        `OpenDialogueAction`** (arrêt anticipé de la boucle d'actions) mais
+        **ferme** la session de dialogue plutôt que d'en ouvrir un autre —
+        un joueur qui entre dans une vitrine quitte la conversation, il ne
+        peut pas y revenir en fermant l'inventaire (il faudrait recliquer le
+        PNJ). `MerchantTradeService` est une dépendance directe du
+        constructeur, même conception que sa dépendance à
+        `QuestProgressEngine` (pas d'interface d'abstraction
+        supplémentaire pour une relation à un seul consommateur).
+    -   Un id de marchand référencé par un dialogue mais absent du registre
+        au moment de l'exécution (marchand supprimé, faute de frappe) n'est
+        **pas** validé au chargement du dialogue (contrairement à
+        `OPEN_DIALOGUE`, validé par `DialogueLoader` puisque les deux
+        registres sont dans le même package) — `MerchantTradeService#openShop`
+        envoie un message d'erreur au joueur et n'ouvre rien, jamais
+        d'exception. Découpler les deux registres évite une dépendance
+        `dialogue` → `economy.merchant` au chargement.
+-   **`MerchantTradeService` — vitrine en inventaire, même protection
+    anti-vol que le journal de quêtes** — `MerchantShopInventoryHolder`/
+    `MerchantShopListener` reprennent exactement le patron de
+    `JournalInventoryHolder`/`QuestJournalListener` (tout clic ou drag qui
+    touche la vitrine est annulé, quel que soit son type, avant même
+    d'interpréter le slot cliqué). Taille de l'inventaire calculée à partir
+    du nombre d'offres (3 à 6 lignes, la dernière réservée au chrome) ; un
+    marchand avec plus d'offres que de slots de contenu disponibles voit
+    les offres en trop simplement non affichées (log d'avertissement) —
+    pas de pagination, limitation assumée (voir « Limites connues »).
+    `MerchantSession` (comme `DialogueSession`/`JournalSession`) fige le
+    marchand ouvert : un `/merchant reload` pendant qu'une vitrine est
+    ouverte ne peut jamais faire acheter « la mauvaise offre », il ferme
+    proprement l'inventaire si le marchand a disparu.
+-   **Anti-duplication achat/vente — asymétrique par construction, pas par
+    accident** :
+    -   **Achat (`SELL_TO_PLAYER`, le joueur paie)** — le débit (atomique,
+        voir plus haut) est toujours tenté **avant** de donner l'objet ;
+        l'objet n'est donné que si le débit a réellement réussi. Un débit
+        refusé (fonds insuffisants) ne donne donc jamais rien.
+    -   **Vente (`BUY_FROM_PLAYER`, le joueur reçoit)** — l'ordre est
+        inversé : l'objet est retiré de l'inventaire **de façon synchrone**,
+        sur le même thread que l'événement de clic, avant même de démarrer
+        le crédit asynchrone. Comme le thread principal traite les
+        événements un par un, un second clic pendant que le premier crédit
+        est encore « en vol » revoit un inventaire déjà réduit et échoue
+        naturellement au contrôle de stock (`containsAtLeast`) — aucune
+        duplication d'objet ni de monnaie possible. Si le crédit échoue
+        malgré tout (cas pratiquement impossible hors dépassement de
+        capacité), l'objet déjà retiré est rendu au joueur plutôt que
+        purement perdu.
+    -   Les deux directions réutilisent la même détection d'objet
+        (`YamlCustomItemRegistry#create`/`#identify`) que le reste du
+        projet : un objet personnalisé vendu au marchand est reconnu
+        uniquement par son PersistentDataContainer, jamais son nom/lore —
+        même garantie anti-contrefaçon que `crafting`/`item`.
+-   **Conditions d'offre revérifiées à chaque clic, pas seulement à
+    l'affichage** — même principe que la revalidation des choix de
+    dialogue au clic (`dialogue.session`) : permission/niveau sont
+    vérifiés de façon synchrone, la quête de façon asynchrone
+    (`QuestProgressEngine#stateOf`), avant d'exécuter l'échange. Toutes les
+    offres sont affichées en permanence dans la vitrine (pas de
+    masquage dynamique selon les conditions, contrairement aux choix de
+    dialogue) : un joueur voit toujours ce qu'il pourrait débloquer, un
+    clic sur une offre non satisfaite renvoie simplement un message
+    explicite plutôt que d'être invisible.
+-   **`/merchant reload|validate|list`** (`rpgquest.admin`, même trio que
+    `/quest admin reload|validate`) — entièrement administratif, aucune
+    sous-commande joueur : un marchand n'a pas d'existence en dehors d'un
+    dialogue qui l'ouvre.
+-   **Intégration Vault — préparée, pas câblée** — `EconomyService` expose
+    délibérément une forme « compatible Vault » (solde, débit/crédit avec
+    vérification de fonds, paiement) plutôt qu'une API arbitraire, pour
+    qu'un futur adaptateur implémentant `net.milkbowl.vault.economy.Economy`
+    puisse déléguer directement à ces méthodes. Aucune dépendance Vault
+    n'a été ajoutée à `build.gradle.kts` : au moment de cette étape, Vault
+    n'est ni installé ni nécessaire, et ajouter une dépendance externe
+    (même `compileOnly`) sans un besoin réel irait à l'encontre de la
+    règle « pas de dépendance externe obligatoire lorsqu'une intégration
+    optionnelle suffit ». Voir `docs/ECONOMY.md` pour le plan d'intégration
+    exact si un serveur a besoin de Vault plus tard.
+
 ## Resource pack (optionnel)
 
 -   **`resource-pack/` à la racine du dépôt** (pas dans `src/main/resources`,
@@ -1499,3 +1659,32 @@ Fabrication → Remise → Récompense
     TNT, lit, cristal d'End, feu, lave, piston traversant une frontière,
     redstone, mort/reconnexion dans une zone, spawn hostile observé) reste
     à valider par un testeur humain — voir `docs/SAFE_ZONE.md`.
+-   **`/money pay`/`/money admin` ne ciblent que des joueurs en ligne** —
+    `Server#getPlayerExact` uniquement, contrairement à `/rpgquest profile`
+    qui résout un pseudo hors-ligne. Limitation assumée par simplicité :
+    étendre à un joueur hors-ligne demanderait la même résolution
+    asynchrone (`Server#getOfflinePlayer`) déjà utilisée par `/rpgquest
+    profile`, ajoutable plus tard sans changer `EconomyService`.
+-   **Aucun solde de départ, aucune commande de consultation de
+    l'historique des transactions** — `wallets`/`transactions` existent et
+    sont écrites à chaque opération, mais rien ne lit encore `transactions`
+    en jeu (ni commande, ni UI) : la table sert aujourd'hui de journal
+    d'audit brut, consultable uniquement via une requête SQL directe.
+-   **Vitrine de marchand sans pagination** — au-delà du nombre de slots de
+    contenu disponibles (jusqu'à 45, vitrine à 6 lignes), les offres
+    excédentaires ne sont simplement pas affichées (avertissement au log
+    au chargement). Non demandé par cette étape ; mirroir facile de la
+    pagination déjà existante dans `ui.JournalPagination` si un marchand a
+    un jour besoin de plus de 45 offres.
+-   **Intégration Vault non câblée, seulement préparée** — voir section
+    `economy` : aucune dépendance Vault n'a été ajoutée, `EconomyService`
+    expose une forme compatible pour un futur adaptateur.
+-   **Test manuel de l'économie/des marchands limité par l'environnement**
+    — aucun client Minecraft réel disponible ici. Compensé par
+    `WalletRepositoryTest` (transactions réellement atomiques sur une vraie
+    base SQLite temporaire, y compris un scénario de double-débit
+    concurrent) et `MerchantTradeServiceTest`/`DialogueSessionEngineTest`
+    (achat/vente/permission/niveau/quête, ouverture depuis un vrai choix de
+    dialogue, via de vrais appels MockBukkit). Le ressenti en jeu
+    (ouverture de la vitrine par clic sur un PNJ renommé, lisibilité du
+    lore, latence réseau) reste à valider par un testeur humain.

@@ -10,11 +10,16 @@ import be.lloyd.rpgquest.database.DatabaseManager;
 import be.lloyd.rpgquest.database.PlayerProfileRepository;
 import be.lloyd.rpgquest.database.PlayerVariableRepository;
 import be.lloyd.rpgquest.database.QuestProgressRepository;
+import be.lloyd.rpgquest.database.WalletRepository;
 import be.lloyd.rpgquest.dialogue.YamlDialogueEngine;
 import be.lloyd.rpgquest.dialogue.model.DialogueDefinition;
 import be.lloyd.rpgquest.dialogue.model.DialogueNode;
 import be.lloyd.rpgquest.dialogue.render.DialogueRenderer;
 import be.lloyd.rpgquest.dialogue.render.VisibleChoice;
+import be.lloyd.rpgquest.economy.EconomyService;
+import be.lloyd.rpgquest.economy.merchant.MerchantTradeService;
+import be.lloyd.rpgquest.economy.merchant.YamlMerchantRegistry;
+import be.lloyd.rpgquest.item.YamlCustomItemRegistry;
 import be.lloyd.rpgquest.quest.QuestMessagesService;
 import be.lloyd.rpgquest.quest.YamlQuestEngine;
 import be.lloyd.rpgquest.quest.model.QuestState;
@@ -47,6 +52,7 @@ class DialogueSessionEngineTest {
     private DatabaseManager database;
     private QuestProgressEngine questProgressEngine;
     private DialogueSessionEngine sessionEngine;
+    private MerchantTradeService merchantTradeService;
     private RecordingRenderer renderer;
     private PlayerProfileRepository profileRepository;
 
@@ -104,6 +110,10 @@ class DialogueSessionEngineTest {
                         next: accepted
                       - text: "Refuser"
                         next: refused
+                      - text: "Voir la boutique"
+                        actions:
+                          - type: OPEN_MERCHANT
+                            merchant: rpgquest:village_merchant
                   accepted:
                     speaker: "Garde"
                     text: "Merci !"
@@ -122,7 +132,17 @@ class DialogueSessionEngineTest {
         YamlDialogueEngine dialogueEngine = new YamlDialogueEngine(dialoguesDir, plugin.getSLF4JLogger(), List.of("give", "xp"));
         dialogueEngine.start();
 
-        sessionEngine = new DialogueSessionEngine(plugin, dialogueEngine, questProgressEngine, variableRepository);
+        WalletRepository walletRepository = new WalletRepository(database);
+        EconomyService economyService = new EconomyService(walletRepository);
+        YamlCustomItemRegistry customItemRegistry = new YamlCustomItemRegistry(tempDir.resolve("items"), plugin.getSLF4JLogger());
+        customItemRegistry.start();
+        YamlMerchantRegistry merchantRegistry = new YamlMerchantRegistry(tempDir.resolve("merchants"), plugin.getSLF4JLogger());
+        merchantRegistry.start();
+        merchantTradeService = new MerchantTradeService(
+                plugin, merchantRegistry, economyService, customItemRegistry, questProgressEngine);
+        merchantTradeService.start();
+
+        sessionEngine = new DialogueSessionEngine(plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService);
         sessionEngine.start();
         renderer = new RecordingRenderer();
         sessionEngine.setRenderer(renderer);
@@ -131,6 +151,7 @@ class DialogueSessionEngineTest {
     @AfterEach
     void tearDown() {
         sessionEngine.stop();
+        merchantTradeService.stop();
         questProgressEngine.stop();
         database.shutdown();
         MockBukkit.unmock();
@@ -192,12 +213,40 @@ class DialogueSessionEngineTest {
     }
 
     @Test
+    void openMerchantActionClosesTheDialogueAndOpensTheShop() throws Exception {
+        PlayerMock player = addPlayer();
+        sessionEngine.open(player, DIALOGUE_ID);
+        awaitRendered();
+
+        int shopIndex = renderer.lastVisibleChoices.stream()
+                .filter(c -> c.label().equals("Voir la boutique")).findFirst().orElseThrow().index();
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, DIALOGUE_ID, "greeting", shopIndex);
+
+        // La vitrine (5 offres dans village_merchant.yml) fait 27 slots, distinct de la vue par défaut (artisanat, 5 slots).
+        int expectedShopSize = 27;
+        long deadline = System.currentTimeMillis() + TIMEOUT_SECONDS * 1000;
+        while (currentTopInventorySize(player) != expectedShopSize && System.currentTimeMillis() < deadline) {
+            server.getScheduler().performTicks(1);
+            Thread.sleep(10);
+        }
+
+        assertNull(renderer.lastNode, "le dialogue ne doit pas se re-rendre après l'ouverture d'un marchand");
+        assertEquals(expectedShopSize, currentTopInventorySize(player), "la vitrine du marchand doit être ouverte");
+    }
+
+    @Test
     void openingUnknownDialogueSendsAnErrorMessageWithoutCrashing() throws Exception {
         PlayerMock player = addPlayer();
 
         assertDoesNotThrow(() -> sessionEngine.open(player, new NamespacedKey("rpgquest", "does_not_exist")));
         assertNull(renderer.lastNode, "aucun rendu ne doit être déclenché pour un dialogue introuvable");
         assertTrue(player.nextMessage() != null, "un message d'erreur doit être envoyé au joueur");
+    }
+
+    private int currentTopInventorySize(PlayerMock player) {
+        var view = player.getOpenInventory();
+        return (view == null || view.getTopInventory() == null) ? 0 : view.getTopInventory().getSize();
     }
 
     private PlayerMock addPlayer() throws Exception {

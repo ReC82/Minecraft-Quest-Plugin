@@ -11,6 +11,7 @@ Plugin RPG pour Paper, sans mod client obligatoire.
 -   Recettes personnalisées
 -   Resource pack optionnel envoyé par le serveur
 -   Sauvegarde SQLite (asynchrone)
+-   Économie (portefeuille, paiements) et marchands PNJ
 
 ## Prérequis
 
@@ -96,6 +97,13 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 -   `/rpgadmin zone wand|create|delete|list|info` (`rpgquest.admin.world`)
     — crée/gère des zones protégées (village central, safe zone...). Voir
     [docs/SAFE_ZONE.md](docs/SAFE_ZONE.md).
+-   `/money` (`rpgquest.money`) — affiche ton solde.
+-   `/money pay <joueur> <montant>` (`rpgquest.money`) — envoie des pièces à
+    un joueur en ligne (transfert atomique).
+-   `/money admin give|take|set <joueur> <montant>` (`rpgquest.admin`) —
+    crédite, débite ou fixe le solde d'un joueur.
+-   `/merchant reload|validate|list` (`rpgquest.admin`) — recharge/valide
+    les marchands, ou les liste. Voir [docs/ECONOMY.md](docs/ECONOMY.md).
 
 ### Permissions
 
@@ -103,7 +111,8 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 |---|---|---|
 | `rpgquest.quest` | tous | `/quest list\|accept\|progress\|abandon`, `/quests` |
 | `rpgquest.item` | tous | `/customitem inspect` |
-| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect` |
+| `rpgquest.money` | tous | `/money`, `/money pay` |
+| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant` |
 | `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées) |
 
 ## Quêtes
@@ -126,7 +135,7 @@ est un graphe de nœuds (locuteur, texte, choix) reliés par des redirections
 (`next`) ; chaque choix peut avoir des conditions (visibilité) et des
 actions (démarrer/avancer/remettre une quête, donner/retirer un objet,
 mémoriser une variable, exécuter une commande en liste blanche, ouvrir un
-autre dialogue, fermer). Les sessions de dialogue **ne sont pas persistées**
+autre dialogue, ouvrir la vitrine d'un marchand, fermer). Les sessions de dialogue **ne sont pas persistées**
 (en mémoire uniquement) : une déconnexion en cours de dialogue ferme
 simplement la session, comme un inventaire vanilla. Voir
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le format complet, la
@@ -216,6 +225,23 @@ conteneurs publics bloqués). Un exemple (`central_village`) est généré
 automatiquement. Voir [docs/SAFE_ZONE.md](docs/SAFE_ZONE.md) pour le détail
 complet et la liste des permissions configurables.
 
+## Économie et marchands
+
+Chaque joueur a un portefeuille (solde entier, aucune virgule), persisté en
+SQLite et modifié uniquement via des opérations atomiques (débit, crédit,
+paiement) — jamais de solde négatif, jamais de paiement à moitié appliqué.
+`/money`/`/money pay` sont les commandes joueur ; `/money admin` est la
+seule façon d'introduire de la monnaie hors marchand.
+
+Les marchands PNJ sont des vitrines YAML dans `plugins/RPGQuest/merchants/`
+(un exemple généré automatiquement : `village_merchant`), qui vendent et/ou
+achètent des objets vanilla ou personnalisés, avec des conditions d'accès
+optionnelles (permission, quête, niveau). Un marchand ne s'ouvre **que**
+depuis une action de dialogue (`OPEN_MERCHANT`) — pas de clic direct sur un
+PNJ, pour ne pas dupliquer le mécanisme d'identification déjà utilisé par
+les quêtes/dialogues. Voir [docs/ECONOMY.md](docs/ECONOMY.md) et
+[MERCHANT_FORMAT.md](MERCHANT_FORMAT.md) pour le détail complet.
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
@@ -240,13 +266,14 @@ démarrage. Toutes les opérations SQL sont asynchrones (thread dédié) ; voir
 Tout l'état persistant tient dans le dossier `plugins/RPGQuest/` :
 
 -   `data.db` (SQLite) — profils joueurs, progression de quêtes, variables,
-    positions des nœuds de ressource. Le plugin verrouille le fichier tant
-    qu'il est démarré ; sauvegarder à chaud (serveur en marche) reste
-    possible avec les outils de sauvegarde SQLite habituels (ex. `.backup`),
-    ou plus simplement arrêter le serveur avant de copier le fichier.
+    positions des nœuds de ressource, portefeuilles et transactions. Le
+    plugin verrouille le fichier tant qu'il est démarré ; sauvegarder à
+    chaud (serveur en marche) reste possible avec les outils de sauvegarde
+    SQLite habituels (ex. `.backup`), ou plus simplement arrêter le serveur
+    avant de copier le fichier.
 -   `config.yml`, `messages.yml`, `quests/`, `dialogues/`, `items/`,
-    `resource-nodes/`, `recipes/` — contenu YAML éditable, à sauvegarder
-    comme n'importe quel fichier de configuration.
+    `resource-nodes/`, `recipes/`, `merchants/` — contenu YAML éditable, à
+    sauvegarder comme n'importe quel fichier de configuration.
 
 Pour restaurer : arrêter le serveur, remplacer le dossier
 `plugins/RPGQuest/` (ou seulement `data.db` pour ne restaurer que la
@@ -269,7 +296,8 @@ Voir [TODO.md](TODO.md).
 ## Prochaines étapes
 
 Le MVP (architecture, SQLite, quêtes, dialogues, journal, objets
-personnalisés, armes/outils, ressources, craft, resource pack) est
-complet. Fonctionnalités envisagées ensuite (voir aussi
-[TODO.md](TODO.md)) : PNJ avancés (Citizens ou équivalent, optionnel),
-métiers, donjons, boss, économie, factions.
+personnalisés, armes/outils, ressources, craft, resource pack, zones
+protégées, économie et marchands) est complet. Fonctionnalités envisagées
+ensuite (voir aussi [TODO.md](TODO.md)) : marché entre joueurs, portails et
+téléportation, claims de terrain, PNJ avancés (Citizens ou équivalent,
+optionnel), métiers, donjons, boss, factions.

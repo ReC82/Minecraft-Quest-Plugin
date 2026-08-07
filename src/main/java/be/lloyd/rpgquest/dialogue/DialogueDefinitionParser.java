@@ -13,6 +13,7 @@ import be.lloyd.rpgquest.dialogue.model.GiveItemAction;
 import be.lloyd.rpgquest.dialogue.model.HasItemCondition;
 import be.lloyd.rpgquest.dialogue.model.HasPermissionCondition;
 import be.lloyd.rpgquest.dialogue.model.OpenDialogueAction;
+import be.lloyd.rpgquest.dialogue.model.OpenMerchantAction;
 import be.lloyd.rpgquest.dialogue.model.QuestStateCondition;
 import be.lloyd.rpgquest.dialogue.model.RunSafeCommandAction;
 import be.lloyd.rpgquest.dialogue.model.SetVariableAction;
@@ -318,6 +319,19 @@ final class DialogueDefinitionParser {
                     yield null;
                 }
                 yield new OpenDialogueAction(dialogueId);
+            }
+            case OPEN_MERCHANT -> {
+                String raw = section.getString("merchant");
+                if (raw == null || raw.isBlank()) {
+                    errors.add(context + ": « merchant » est obligatoire.");
+                    yield null;
+                }
+                NamespacedKey merchantId = toNamespacedKey(raw);
+                if (merchantId == null) {
+                    errors.add(context + ": « merchant » invalide : \"" + raw + "\".");
+                    yield null;
+                }
+                yield new OpenMerchantAction(merchantId);
             }
             case CLOSE -> new CloseAction();
         };

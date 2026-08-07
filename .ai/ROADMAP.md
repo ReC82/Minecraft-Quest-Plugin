@@ -34,7 +34,7 @@ priorité des sources).
 | 11 | Serveur local intégré au workspace | DONE |
 | 12 | Outil admin d'aplatissement | DONE |
 | 13 | Village central et safe zone | DONE |
-| 14 | Économie et marchands PNJ | TODO |
+| 14 | Économie et marchands PNJ | DONE |
 | 15 | Marché entre joueurs | TODO |
 | 16 | Portails et téléportation | TODO |
 | 17 | Claims de terrain | TODO |
@@ -47,32 +47,45 @@ priorité des sources).
 
 ## Étape en cours
 
-### Étape 14 — Économie et marchands PNJ
+### Étape 15 — Marché entre joueurs
 
-Branche attendue : `feature/14-economy-merchants`
+Branche attendue : `feature/15-player-market`
 
-Monnaie principale SQLite + table `transactions` (id, joueur, type,
-montant, contexte, timestamp), service économique indépendant de Paper,
-opérations débit/crédit atomiques, `/money`/`/money pay <joueur> <montant>`,
-marchands PNJ (vendre/acheter vanilla et custom, prix, quantité,
-permission, quête, niveau, UI sécurisée) reliés aux dialogues existants,
-anti-duplication (montant négatif, dépassement, double-clic), interface
-Vault optionnelle préparée, `docs/ECONOMY.md`. Voir cahier des charges
-complet reçu en session (mode nuit, 2026-08-07) pour le détail complet.
+Pas encore de cahier des charges détaillé reçu en session pour cette
+étape ; auditer `docs/ECONOMY.md`/`economy.EconomyService` avant de
+commencer (le marché entre joueurs doit très probablement réutiliser
+`EconomyService`/`WalletRepository` plutôt que réinventer un mécanisme de
+paiement séparé).
 
-### Dernière observation (session mode nuit, 2026-08-07)
+### Dernière observation (2026-08-07, reprise directe à l'étape 14)
 
-Étapes 1 à 13 confirmées `DONE` (build vert, 282 tests verts, docs à jour,
-commit par étape). Cahier des charges détaillé reçu pour les étapes 11 à 23
-(voir historique de conversation — non dupliqué ici pour éviter deux
-sources concurrentes, conformément à la règle « Git, code et tests priment
-sur ROADMAP »). Progression dans l'ordre, une branche par étape.
+Étape 14 (Économie et marchands PNJ) confirmée `DONE` : build vert, 320+
+tests verts (dont `WalletRepositoryTest`, `MerchantDefinitionParserTest`,
+`MerchantLoaderTest`, `MerchantTradeServiceTest`, et les ajouts à
+`DialogueDefinitionParserTest`/`DialogueSessionEngineTest` pour l'action
+`OPEN_MERCHANT`), démarrage réel vérifié via `runServer` (portefeuille,
+marchand d'exemple chargé, ordre de service correct). Portée réalisée :
+`database.WalletRepository` (migration V4, `wallets`/`transactions`,
+opérations réellement atomiques), `economy.EconomyService`,
+`/money`/`/money pay`/`/money admin`, `economy.merchant` (modèle YAML,
+chargeur deux phases, `MerchantTradeService` avec vitrine en inventaire et
+anti-duplication achat/vente asymétrique), nouvelle action de dialogue
+`OPEN_MERCHANT` (aucun système d'identification de PNJ parallèle, comme
+demandé), `/merchant reload|validate|list`, `docs/ECONOMY.md`,
+`MERCHANT_FORMAT.md`, section `economy` de `docs/ARCHITECTURE.md`.
+Intégration Vault volontairement **préparée mais non câblée** (voir
+« Limites connues » de `docs/ARCHITECTURE.md` et le plan d'intégration dans
+`docs/ECONOMY.md`) — pas de dépendance externe ajoutée sans besoin réel.
 
-Note pour l'étape 14 : les marchands PNJ doivent se relier au système de
-dialogues existant (`dialogue.session.DialogueSessionEngine`) plutôt que
-créer un système d'interaction PNJ parallèle — voir `docs/ARCHITECTURE.md`,
-section `dialogue`, pour la convention déjà établie (nom personnalisé
-d'entité = identification).
+Étapes 1 à 14 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
+retrouvé pour les étapes 15 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
+qu'un `README.md` placeholder) — une session « mode nuit » antérieure
+(2026-08-07) mentionne l'avoir reçu en conversation, mais celle-ci n'a
+laissé aucun `HANDOFF.md`/fichier de reprise, et le contenu exact n'est
+donc plus disponible pour cette session. La prochaine étape (15, marché
+entre joueurs) devra être précisée par l'utilisateur si le niveau de détail
+actuel (titre de la table ci-dessus) ne suffit pas à démarrer sans
+clarification.
 
 ## Journal de session
 
@@ -90,4 +103,25 @@ Tests:
 Tests manuels en attente:
 Blocages:
 Première étape à reprendre:
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/13-safe-zone
+Étape de départ: 14 (Économie et marchands PNJ), TODO
+Étapes terminées: 14
+Branche finale: feature/14-economy-merchants
+Dernier commit: (voir git log — commit de l'étape 14 à suivre)
+Build: vert (./gradlew clean build)
+Tests: 320+ tests verts (nouveaux : WalletRepositoryTest,
+  MerchantDefinitionParserTest, MerchantLoaderTest, MerchantTradeServiceTest,
+  ajouts DialogueDefinitionParserTest/DialogueSessionEngineTest pour
+  OPEN_MERCHANT ; SchemaMigratorTest mis à jour pour la migration V4)
+Tests manuels en attente: ouverture d'une vitrine par clic sur un PNJ
+  renommé, lisibilité du lore des offres, /money pay entre deux vrais
+  joueurs, latence réseau sur un achat/vente (voir docs/ECONOMY.md)
+Blocages: aucun
+Première étape à reprendre: 15 (Marché entre joueurs) — aucun cahier des
+  charges détaillé retrouvé dans le dépôt pour les étapes 15 à 23, à
+  clarifier avec l'utilisateur si besoin avant de démarrer
 ```

@@ -294,6 +294,45 @@
     annulé laissé intact, aucune exception sur un monde sans zone
 -   [x] `docs/SAFE_ZONE.md`
 
+## Économie et marchands PNJ (fait)
+
+-   [x] `database.WalletRepository` (pure JDBC) : table `wallets`
+    (portefeuille par joueur, créé paresseusement) et `transactions`
+    (journal d'audit) — migration V4
+-   [x] Débit/crédit/paiement/réglage admin réellement atomiques (une seule
+    transaction JDBC par opération, `commit`/`rollback` explicites), montant
+    invalide (≤ 0, ou négatif pour un réglage) rejeté avant la base,
+    dépassement de capacité détecté (`Math.addExact`)
+-   [x] `economy.EconomyService` : couche typée au-dessus du repository
+    (`TransactionType`, `PayOutcome`), forme délibérément compatible avec
+    une future intégration Vault (voir `docs/ECONOMY.md`)
+-   [x] `/money` (solde), `/money pay <joueur> <montant>` (`rpgquest.money`,
+    joueurs en ligne uniquement), `/money admin give|take|set`
+    (`rpgquest.admin`)
+-   [x] `economy.merchant.model` (`MerchantDefinition`/`MerchantOffer`,
+    correct par construction) + `MerchantDefinitionParser`/`MerchantLoader`
+    (deux phases, mêmes conventions que `ItemLoader`) + `YamlMerchantRegistry`
+    (`plugins/RPGQuest/merchants/*.yml`, exemple `village_merchant` généré
+    automatiquement)
+-   [x] Offre : vente **ou** achat, objet vanilla **ou** personnalisé,
+    quantité/prix, conditions cumulatives optionnelles (permission, quête +
+    état, niveau d'expérience vanilla)
+-   [x] Nouvelle action de dialogue `OPEN_MERCHANT` — seule porte d'entrée
+    d'un marchand (pas de clic direct sur un PNJ, pour ne pas dupliquer le
+    mécanisme d'identification déjà utilisé par les quêtes/dialogues) ;
+    ferme la session de dialogue avant d'ouvrir la vitrine
+-   [x] `MerchantTradeService` : vitrine en inventaire (même protection
+    anti-vol/duplication que le journal de quêtes), achat = débit avant
+    remise de l'objet, vente = retrait synchrone de l'objet avant le crédit
+    asynchrone (aucune duplication possible sur double-clic)
+-   [x] `/merchant reload|validate|list` (`rpgquest.admin`)
+-   [x] Tests : transactions atomiques (dont double-débit concurrent),
+    parsing/chargement des marchands, achat/vente (fonds/stock
+    suffisants/insuffisants), permission/niveau/quête non satisfaits,
+    marchand inconnu, action `OPEN_MERCHANT` (parsing + ouverture réelle
+    depuis un choix de dialogue)
+-   [x] `docs/ECONOMY.md`, `MERCHANT_FORMAT.md`
+
 ## MVP
 
 -   [x] Architecture
@@ -307,12 +346,16 @@
 -   [x] Ressources
 -   [x] Craft
 -   [x] Resource pack
+-   [x] Zones protégées
+-   [x] Économie et marchands PNJ
 
 ## Plus tard
 
+-   [ ] Marché entre joueurs
+-   [ ] Portails et téléportation
+-   [ ] Claims de terrain
 -   [ ] PNJ avancés
 -   [ ] Métiers
 -   [ ] Donjons
 -   [ ] Boss
--   [ ] Économie
 -   [ ] Factions

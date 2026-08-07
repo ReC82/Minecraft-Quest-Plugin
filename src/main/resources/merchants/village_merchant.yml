@@ -1,0 +1,36 @@
+# Marchand d'exemple du village central (voir zones/central_village.yml).
+# À relier depuis un dialogue via une action OPEN_MERCHANT :
+#   - type: OPEN_MERCHANT
+#     merchant: rpgquest:village_merchant
+# Voir MERCHANT_FORMAT.md pour le détail du format.
+
+id: rpgquest:village_merchant
+title: "<gold>Marchand du village</gold>"
+
+offers:
+  - direction: SELL_TO_PLAYER
+    material: BREAD
+    quantity: 4
+    price: 3
+
+  - direction: SELL_TO_PLAYER
+    material: TORCH
+    quantity: 8
+    price: 5
+
+  - direction: SELL_TO_PLAYER
+    custom-item: rpgquest:forest_blade
+    quantity: 1
+    price: 250
+    required-quest: rpgquest:first_steps
+    required-quest-state: COMPLETED
+
+  - direction: BUY_FROM_PLAYER
+    custom-item: rpgquest:spider_fang
+    quantity: 4
+    price: 10
+
+  - direction: BUY_FROM_PLAYER
+    material: COBBLESTONE
+    quantity: 64
+    price: 6

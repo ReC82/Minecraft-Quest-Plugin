@@ -38,7 +38,7 @@ priorité des sources).
 | 15 | Marché entre joueurs | DONE |
 | 16 | Portails et téléportation | DONE |
 | 17 | Claims de terrain | DONE |
-| 18 | Mobs spéciaux vanilla | TODO |
+| 18 | Mobs spéciaux vanilla | DONE |
 | 19 | XP RPG | TODO |
 | 20 | Backpacks | TODO |
 | 21 | API et site web read-only | TODO |
@@ -47,46 +47,56 @@ priorité des sources).
 
 ## Étape en cours
 
-### Étape 18 — Mobs spéciaux vanilla
+### Étape 19 — XP RPG
 
-Branche attendue : `feature/18-special-mobs`
+Branche attendue : `feature/19-rpg-xp` (à créer). Aucun cahier des charges
+détaillé retrouvé dans le dépôt pour cette étape — à clarifier avec
+l'utilisateur si le seul titre de la table ne suffit pas à démarrer sans
+clarification (les étapes 14/15/17/18 ont dû être conçues au moins en
+partie par ingénierie faute d'un tel cahier des charges reçu en
+conversation ; les étapes 16/17/18 ont reçu le leur directement dans le
+chat).
 
-Aucun cahier des charges détaillé retrouvé dans le dépôt pour cette étape —
-à clarifier avec l'utilisateur si le seul titre de la table ne suffit pas
-à démarrer sans clarification (les étapes 14/15/17 ont dû être conçues par
-ingénierie faute d'un tel cahier des charges reçu en conversation ; l'étape
-16 a reçu le sien directement dans le chat).
+### Dernière observation (2026-08-07, étape 18 reçue en cahier des charges détaillé dans le chat)
 
-### Dernière observation (2026-08-07, étape 17 reçue en cahier des charges détaillé dans le chat)
-
-Étape 17 (Claims de terrain) confirmée `DONE` : build vert, 411 tests
+Étape 18 (Mobs spéciaux vanilla) confirmée `DONE` : build vert, 475 tests
 verts. Cahier des charges détaillé reçu directement dans la conversation
-(modèle de claim persistant, outil de sélection, `/claim
-create|delete|info|trust|untrust|list`, refus chevauchement/safe
-zone/portails/taille/nombre, protections blocs/conteneurs/animaux/armor
-stands/redstone configurable/explosions/pistons, bypass, politique
-d'extension future liée à la progression, aucun avantage payant, commit
-attendu `feat(claims): add persistent protected land claims`) — suivi à la
-lettre. Portée réalisée : `claim.model.Claim` (correct par construction,
-propriétaire par UUID, jamais par pseudo) persisté en SQLite plutôt qu'en
-YAML (`claims`/`claim_members`, migration V7 — décision documentée : profil
-d'usage joueur, comme le marché entre joueurs, contrairement aux zones
-protégées curées par un admin), `ClaimRepository` réutilise `Claim`
-directement (aucune dépendance Bukkit à séparer, contrairement à
-`MarketListingRecord`), outil de sélection dédié (`rpgquest:claim_wand`,
-distinct de celui des zones), `ClaimService` porte toute la validation
-métier (chevauchement claim/zone protégée via `ZoneRegistry`/distance aux
-portails via `YamlPortalRegistry`/taille/nombre, avec des seams
-`effectiveMax*(Player)` préparés pour une future politique de progression),
-`ClaimProtectionListener` (mêmes patrons que `ZoneProtectionListener`, plus
-`Animals`/`PlayerArmorStandManipulateEvent`, nouveaux pour ce projet),
-`/claim *` (toutes les sous-commandes sauf `create`/`list` opèrent sur le
-claim où le joueur se trouve, lecture littérale du cahier des charges),
-`docs/CLAIMS.md`.
+(registre PDC, définition configurable complète — type d'entité, nom
+MiniMessage, chance de spawn, mondes/biomes/zones autorisés, attributs,
+particule/son, capacités, drops, XP RPG, limite de population —, quatre
+variantes obligatoires `red_creeper`/`golden_creeper`/`creeper_pig`/
+`splitting_zombie`, respect de la safe zone et des claims, respect des
+événements annulés pour les explosions, anti-boucle de duplication,
+`/rpgadmin mob spawn|list|inspect`, métriques debug, identification jamais
+par le nom affiché, commit attendu `feat(mobs): add configurable vanilla
+mob variants`) — suivi à la lettre, `reload`/`metrics` ajoutés en plus des
+trois sous-commandes explicitement demandées (convention déjà établie par
+`/merchant reload|validate|list`/`/resourcenode ... inspect`). Portée
+réalisée : `mob.model.SpecialMobDefinition` (correct par construction,
+réutilise `resource.model.ResourceDrop` tel quel) + `MobAbility` scellée à
+trois variantes (`StrongerExplosionAbility`/`ExplosiveOnAttackAbility`/
+`SplitOnHitAbility`), `SpecialMobDefinitionParser`/`SpecialMobLoader`/
+`SpecialMobRegistry` (même patron à deux phases que `ResourceNodeRegistry`,
+quatre exemples embarqués), `SpecialMobService` (upgrade au spawn naturel
+en priorité `HIGH` après la protection de zone, identification PDC
+exclusive, `setRemoveWhenFarAway(false)` + décompte de population
+uniquement à la mort pour survivre au déchargement de chunk et au
+redémarrage), `ExplosiveOnAttackAbilityService` (balayage périodique borné
+à la population réelle des variantes, pas à tous les mobs du monde — pas de
+goal d'IA « attaque » disponible via l'API publique pour une entité
+passive), `SplitOnHitAbilityListener` (profondeur en PDC + bornes de
+population : aucune division infinie), `/rpgadmin mob *`
+(`rpgquest.admin.world`, même racine que flatten/zone/portal),
+`SPECIAL_MOB_FORMAT.md`. Limitation connue : deux tests
+(`SpecialMobServiceTest`) sont marqués **ignorés** (pas échoués — MockBukkit
+lève délibérément `TestAbortedException` via
+`LivingEntityMock#setRemoveWhenFarAway`, non implémenté dans la dernière
+version disponible 4.110.0) ; le comportement réel n'est testable qu'en jeu
+(voir tests manuels ci-dessous).
 
-Étapes 1 à 17 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
-retrouvé pour les étapes 18 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
-qu'un `README.md` placeholder) ; les étapes 16 et 17 ont fait exception en
+Étapes 1 à 18 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
+retrouvé pour les étapes 19 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
+qu'un `README.md` placeholder) ; les étapes 16/17/18 ont fait exception en
 le recevant directement en conversation — pas de garantie que ça se
 reproduise pour les étapes suivantes. Chaque étape devra être précisée par
 l'utilisateur si le niveau de détail actuel (titre de la table ci-dessus)
@@ -200,4 +210,33 @@ Blocages: aucun
 Première étape à reprendre: 18 (Mobs spéciaux vanilla) — aucun cahier des
   charges détaillé retrouvé dans le dépôt pour les étapes 18 à 23, à
   clarifier avec l'utilisateur si besoin avant de démarrer
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/17-land-claims
+Étape de départ: 18 (Mobs spéciaux vanilla), TODO — cahier des charges
+  détaillé reçu en conversation pendant la session (registre PDC,
+  définition configurable complète, quatre variantes obligatoires, respect
+  safe zone/claims, respect des événements annulés, anti-boucle de
+  duplication, commandes admin, métriques debug, identification jamais par
+  le nom affiché, commit attendu feat(mobs): add configurable vanilla mob
+  variants)
+Étapes terminées: 18
+Branche finale: feature/18-special-mobs
+Dernier commit: 19c60b1 feat(mobs): add configurable vanilla mob variants
+Build: vert (./gradlew clean build)
+Tests: 475 tests (nouveaux : SpecialMobDefinitionParserTest,
+  SpecialMobLoaderTest, SpecialMobServiceTest, SplitOnHitAbilityListenerTest ;
+  2 tests ignorés — pas échoués — dans SpecialMobServiceTest à cause d'une
+  limitation MockBukkit 4.110.0 (setRemoveWhenFarAway non implémenté), voir
+  ci-dessus)
+Tests manuels en attente: faire apparaître chaque variante, tuer le creeper
+  doré plusieurs fois, tester l'explosion en safe zone et en claim, frapper
+  le zombie fissible jusqu'à la limite, décharger/recharger le chunk,
+  redémarrer avec des mobs spéciaux présents (voir SPECIAL_MOB_FORMAT.md)
+Blocages: aucun
+Première étape à reprendre: 19 (XP RPG) — aucun cahier des charges détaillé
+  retrouvé dans le dépôt pour les étapes 19 à 23, à clarifier avec
+  l'utilisateur si besoin avant de démarrer
 ```

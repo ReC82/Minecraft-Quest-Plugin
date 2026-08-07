@@ -43,14 +43,44 @@ journal:
   tracker-enabled: true
 
 claims:
-  # Limites d'un claim de terrain (/claim create). Aucune politique liée à
-  # la progression du joueur pour l'instant (voir docs/CLAIMS.md) : ces
-  # valeurs sont fixes et identiques pour tous les joueurs à cette étape.
+  # Limites d'un claim de terrain (/claim create). max-claims-per-player est
+  # une base : +1 claim tous les 10 niveaux de la piste GLOBAL (voir
+  # docs/PROGRESSION.md) ; max-width/max-height restent fixes pour tous.
   max-width: 64
   max-height: 384
   max-claims-per-player: 3
   # Distance minimale (en blocs) entre un nouveau claim et n'importe quel portail existant.
   portal-buffer-blocks: 16
+
+progression:
+  # Courbe de niveaux (par compétence) : coût du niveau n -> n+1 =
+  # base-xp * growth-factor^(n-1), arrondi. Voir docs/PROGRESSION.md pour le
+  # modèle d'équilibrage complet.
+  base-xp: 100
+  growth-factor: 1.15
+  max-level: 100
+  # Fraction de l'XP d'une compétence spécifique aussi accordée à la piste
+  # globale (0.0 = pas de mirroir, 1.0 = mirroir intégral).
+  global-mirror-ratio: 0.5
+  # Anti-farm (répétition excessive) : au-delà, les octrois supplémentaires
+  # sur une même compétence sont ignorés jusqu'à la minute suivante.
+  max-grants-per-minute: 60
+  display-mode: action_bar       # action_bar | boss_bar | off
+  # L'XP/niveau vanilla (enchantements) reste intacte et indépendante de
+  # cette progression RPG (mission point 10) : ne désactiver que si un autre
+  # système gère déjà l'XP vanilla.
+  keep-vanilla-xp: true
+  # XP RPG (piste globale) accordée une seule fois à la fin de chaque quête,
+  # en plus de la récompense « experience » vanilla éventuelle de la quête.
+  quest-completion-xp: 50
+  sources:
+    # Montant plat par action ; voir docs/PROGRESSION.md pour le modèle
+    # d'équilibrage complet (pourquoi plat, pas par matériau/mob).
+    combat-kill-xp: 15
+    mining-block-xp: 5
+    farming-harvest-xp: 4
+    fishing-catch-xp: 10
+    exploration-zone-xp: 100
 
 admin:
   flatten:

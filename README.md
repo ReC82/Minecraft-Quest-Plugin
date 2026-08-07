@@ -134,6 +134,14 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
     récupère l'objet (aussi possible en cliquant dessus dans la vitrine).
 -   `/market admin list` (`rpgquest.admin`) — liste en lecture seule
     toutes les offres actives (modération).
+-   `/profile` (`rpgquest.progression`) — résumé de tes niveaux RPG (une
+    ligne par piste).
+-   `/skills` (`rpgquest.progression`) — détail de tes compétences (XP dans
+    le niveau courant / XP requise pour le suivant).
+-   `/skills admin grant|set <joueur> <compétence> <montant>`
+    (`rpgquest.admin`) — outil de test : accorde de l'XP (dédupliquée,
+    mirroir GLOBAL, affichage) ou fixe l'XP totale directement. Voir
+    [docs/PROGRESSION.md](docs/PROGRESSION.md).
 
 ### Permissions
 
@@ -144,7 +152,8 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 | `rpgquest.money` | tous | `/money`, `/money pay` |
 | `rpgquest.market` | tous | `/market`, `/market sell\|cancel` |
 | `rpgquest.claim` | tous | `/claim` |
-| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin` |
+| `rpgquest.progression` | tous | `/profile`, `/skills` |
+| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin`, `/skills admin` |
 | `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées), `/rpgadmin portal` (portails), `/rpgadmin mob` (mobs spéciaux) |
 
 ## Quêtes
@@ -325,6 +334,20 @@ affiché. Trois capacités : explosion renforcée, cochon explosif agressif
 zombie qui se divise à chaque coup non mortel (profondeur et nombre d'enfants
 bornés pour empêcher toute croissance incontrôlée). Voir
 [SPECIAL_MOB_FORMAT.md](SPECIAL_MOB_FORMAT.md) pour le détail complet.
+
+## Progression RPG
+
+Six pistes de progression indépendantes de l'XP vanilla (`GLOBAL`,
+`COMBAT`, `MINING`, `FARMING`, `FISHING`, `EXPLORATION`) : niveaux et XP
+suivent une courbe configurable, alimentées par la mort de mobs, le
+minage, la récolte de cultures mûres, la pêche, la découverte de zones et
+la fin de quêtes. Protections anti-farm (blocs posés par un joueur, mobs
+de spawner, descendants de division, cultures non mûres, répétition
+excessive) et déduplication garantissent qu'aucune action ne récompense
+deux fois. `/profile` et `/skills` affichent la progression du joueur ;
+l'XP vanilla reste intacte pour les enchantements. Voir
+[docs/PROGRESSION.md](docs/PROGRESSION.md) pour le modèle d'équilibrage
+complet.
 
 ## Configuration
 

@@ -28,6 +28,9 @@
     │   ├── model            (modèles immuables : définition de variante, capacités)
     │   └── ability          (écouteurs/services par capacité : explosion, agressivité, division)
     ├── player
+    ├── progression          (XP RPG multi-compétences, indépendante de l'XP vanilla)
+    │   ├── model            (modèles immuables : compétence, courbe de niveaux, résultat d'octroi)
+    │   └── listener         (écouteurs par source d'XP : combat, minage, agriculture, pêche, exploration, quêtes)
     ├── quest                (définitions YAML + progression des joueurs)
     │   ├── model            (modèles immuables : quête, étapes, objectifs, récompenses)
     │   └── progress         (état runtime mutable, index, listeners, commandes)
@@ -1637,6 +1640,90 @@ qu'embarqués dans le jar.
     mondes/biomes/zones/population : c'est un outil de test (mission,
     test manuel « faire apparaître chaque variante »), pas un second chemin
     de spawn naturel.
+
+## `progression` (XP RPG multi-compétences)
+
+-   **Le niveau n'est jamais persisté séparément de l'XP totale** —
+    `ProgressionCurve#levelForTotalXp` le recalcule systématiquement depuis
+    `player_skills.total_xp` (SQLite) ou depuis le cache en mémoire ; aucun
+    état stocké ne peut donc diverger entre XP et niveau affiché (mission
+    étape 19, validation « les valeurs ne peuvent ni déborder ni devenir
+    incohérentes »). Même philosophie que `mob.SpecialMobDefinition`
+    (`totalDropWeight()` toujours recalculé, jamais mis en cache).
+-   **Déduplication au niveau de `ProgressionRepository`, une seule
+    transaction JDBC explicite** (`xp_grants` avec clé primaire (joueur,
+    compétence, id d'événement) puis mise à jour du total) — même
+    conception que `WalletRepository#credit`/`ClaimRepository` : soit
+    l'octroi ET la mise à jour du total réussissent tous les deux, soit ni
+    l'un ni l'autre. `INSERT OR IGNORE` sur `xp_grants` retourne 0 ligne
+    affectée pour un id déjà vu, qui court-circuite la mise à jour du
+    total sans jamais la tenter.
+-   **L'id d'événement est choisi différemment selon que l'action est
+    répétable ou « une fois pour toutes »** — pour le combat/minage/
+    agriculture/pêche (répétables), l'id combine position/entité et un
+    compteur monotone (une même position peut légitimement être re-minée
+    après un respawn de nœud de ressource, `resource.ResourceNodeService`)
+    ; pour l'exploration/les quêtes (« une fois par (joueur, zone/quête)
+    pour toujours »), l'id est l'identifiant stable de la zone/quête —
+    c'est la déduplication elle-même, pas un état séparé, qui garantit le
+    « une fois », y compris après un redémarrage.
+-   **`GLOBAL` est un mirroir automatique, jamais un octroi séparé côté
+    appelant** — `ProgressionService#awardXp` accorde toujours en plus
+    `amount × globalMirrorRatio` sur `GLOBAL` avec un id d'événement dérivé
+    (`eventId + "#global"`, dédupliqué indépendamment) : un écouteur de
+    source d'XP n'a jamais besoin d'accorder GLOBAL explicitement.
+-   **Configuration lue via `Supplier<ProgressionConfig>`, jamais une
+    valeur figée au démarrage** — même patron que
+    `item.behavior.EquipmentBehaviorService` (`() -> configService.current().debug()`)
+    : un `/rpgquest reload` change immédiatement la courbe, les montants
+    par source, le mode d'affichage et les seuils anti-farm, sans
+    redémarrer le service.
+-   **Anti-farm blocs posés par un joueur : `PlacedBlockTracker` ne réagit
+    jamais à `BlockBreakEvent` lui-même** — `isPlayerPlaced`/
+    `clearPlacement` sont appelés explicitement par `MiningXpListener`
+    dans l'ordre voulu (lire puis effacer), pour ne jamais dépendre de
+    l'ordre d'exécution entre deux listeners Bukkit distincts sur le même
+    événement (contrairement à un design qui aurait fait effacer le suivi
+    dans le propre `BlockBreakEvent` du tracker).
+-   **Anti-farm mobs de spawner : tag PDC posé à `CreatureSpawnEvent`,
+    lu à `EntityDeathEvent`** — `SpawnReason` n'est disponible qu'au
+    moment du spawn, jamais à la mort ; même contrainte que `mob.
+    SpecialMobService` a dû résoudre pour son upgrade de spawn naturel, la
+    solution est un tag PDC posé une fois au spawn.
+-   **Anti-farm mobs de division : dépendance directe à
+    `mob.SpecialMobService#isSplitOffspring`**, exposée publiquement pour
+    l'occasion (la clé PDC de profondeur, avant étape 19, était possédée
+    localement par `mob.ability.SplitOnHitAbilityListener` — centralisée
+    sur `SpecialMobService` avec les autres clés PDC du package, single
+    source of truth).
+-   **Cultures : `Ageable#getAge() == getMaximumAge()`, pas une liste de
+    matériaux** — couvre toute culture vanilla par construction (blé,
+    carottes, pastèque/citrouille, cacao, baies...) sans table à maintenir ;
+    en contrepartie couvre aussi des blocs `Ageable` non-agricoles
+    (jeunes pousses d'arbre, corail) — simplification assumée, documentée
+    dans `docs/PROGRESSION.md`.
+-   **Découverte de zone : `PlayerMoveEvent` filtré au changement de
+    bloc**, jamais à chaque micro-mouvement — coût amorti, même patron que
+    tout listener de mouvement du projet. Aucune zone n'est exclue par
+    construction (y compris la safe zone centrale) : documenté comme
+    choix délibéré plutôt que comme un cas particulier fragile à
+    maintenir.
+-   **Fin de quête : callback générique `QuestProgressEngine#onProgressChanged`,
+    aucune modification du package `quest`** — ce callback notifie après
+    *tout* changement de progression, pas spécifiquement une fin de
+    quête ; `QuestCompletionXpListener` reparcourt donc l'ensemble des
+    états à chaque appel et laisse la déduplication (id = id de quête)
+    garantir qu'une quête déjà récompensée ne l'est plus jamais, même
+    rappelée plusieurs fois. Évite d'inverser la dépendance
+    quest → progression (le reste du projet dépend de `quest`, jamais
+    l'inverse) et d'étendre `quest.model.QuestReward` pour ce besoin.
+-   **`ProgressionService#hasLevel` est le hook de déblocage générique**
+    (mission point 11), câblé concrètement dans
+    `claim.ClaimService#effectiveMaxClaims` (même seam que `claim` avait
+    préparée en étape 17, point 8, jusqu'ici jamais remplie) ; portails et
+    recettes n'ont pas encore de champ dédié dans leur format YAML pour le
+    consommer, documenté comme extension future dans
+    `docs/PROGRESSION.md` plutôt que forcé maintenant.
 
 ## Flux principal (cible)
 

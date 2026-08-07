@@ -32,7 +32,8 @@ public final class ConfigValidator {
         JournalConfig journal = validateJournal(section);
         AdminFlattenConfig adminFlatten = validateAdminFlatten(section);
         ClaimConfig claims = validateClaims(section);
-        return new PluginConfig(debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims);
+        ProgressionConfig progression = validateProgression(section);
+        return new PluginConfig(debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -247,5 +248,77 @@ public final class ConfigValidator {
 
     private static ClaimConfig defaultClaims() {
         return new ClaimConfig(64, 384, 3, 16);
+    }
+
+    private static ProgressionConfig validateProgression(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection progression = section.getConfigurationSection("progression");
+        if (progression == null) {
+            return defaultProgression();
+        }
+
+        long baseXp = progression.getLong("base-xp", 100L);
+        if (baseXp <= 0) {
+            throw new ConfigValidationException(
+                    "« progression.base-xp » doit être strictement positif, valeur trouvée : " + baseXp);
+        }
+        double growthFactor = progression.getDouble("growth-factor", 1.15);
+        if (growthFactor < 1.0) {
+            throw new ConfigValidationException(
+                    "« progression.growth-factor » doit être supérieur ou égal à 1.0, valeur trouvée : " + growthFactor);
+        }
+        int maxLevel = progression.getInt("max-level", 100);
+        if (maxLevel < 1) {
+            throw new ConfigValidationException(
+                    "« progression.max-level » doit être au moins 1, valeur trouvée : " + maxLevel);
+        }
+        double globalMirrorRatio = progression.getDouble("global-mirror-ratio", 0.5);
+        if (globalMirrorRatio < 0.0 || globalMirrorRatio > 1.0) {
+            throw new ConfigValidationException(
+                    "« progression.global-mirror-ratio » doit être compris entre 0.0 et 1.0, valeur trouvée : "
+                            + globalMirrorRatio);
+        }
+        int maxGrantsPerMinute = progression.getInt("max-grants-per-minute", 60);
+        if (maxGrantsPerMinute <= 0) {
+            throw new ConfigValidationException(
+                    "« progression.max-grants-per-minute » doit être strictement positif, valeur trouvée : "
+                            + maxGrantsPerMinute);
+        }
+
+        String rawDisplayMode = progression.getString("display-mode", "action_bar");
+        DisplayMode displayMode;
+        try {
+            displayMode = DisplayMode.valueOf(rawDisplayMode.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException(
+                    "« progression.display-mode » invalide : \"" + rawDisplayMode
+                            + "\" (valides : action_bar, boss_bar, off).");
+        }
+
+        boolean keepVanillaXp = progression.getBoolean("keep-vanilla-xp", true);
+
+        int questCompletionXp = nonNegativeInt(progression, "quest-completion-xp", 50);
+        int combatKillXp = nonNegativeInt(progression, "sources.combat-kill-xp", 15);
+        int miningBlockXp = nonNegativeInt(progression, "sources.mining-block-xp", 5);
+        int farmingHarvestXp = nonNegativeInt(progression, "sources.farming-harvest-xp", 4);
+        int fishingCatchXp = nonNegativeInt(progression, "sources.fishing-catch-xp", 10);
+        int explorationZoneXp = nonNegativeInt(progression, "sources.exploration-zone-xp", 100);
+
+        return new ProgressionConfig(baseXp, growthFactor, maxLevel, globalMirrorRatio, maxGrantsPerMinute,
+                displayMode, keepVanillaXp, questCompletionXp, combatKillXp, miningBlockXp, farmingHarvestXp,
+                fishingCatchXp, explorationZoneXp);
+    }
+
+    private static int nonNegativeInt(ConfigurationSection section, String key, int defaultValue)
+            throws ConfigValidationException {
+        int value = section.getInt(key, defaultValue);
+        if (value < 0) {
+            throw new ConfigValidationException(
+                    "« progression." + key + " » ne peut pas être négatif, valeur trouvée : " + value);
+        }
+        return value;
+    }
+
+    private static ProgressionConfig defaultProgression() {
+        return new ProgressionConfig(100L, 1.15, 100, 0.5, 60, DisplayMode.ACTION_BAR, true, 50, 15, 5, 4, 10, 100);
     }
 }

@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 7;
+    private static final int CURRENT_VERSION = 8;
 
     private SchemaMigrator() {
     }
@@ -48,6 +48,10 @@ public final class SchemaMigrator {
         if (version < 7) {
             applyV7(connection);
             version = 7;
+        }
+        if (version < 8) {
+            applyV8(connection);
+            version = 8;
         }
 
         if (version != startingVersion) {
@@ -230,6 +234,55 @@ public final class SchemaMigrator {
                         PRIMARY KEY (claim_id, member_uuid),
                         FOREIGN KEY (claim_id) REFERENCES claims (id) ON DELETE CASCADE,
                         FOREIGN KEY (member_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV8(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // total_xp seul : le niveau n'est jamais persisté (toujours recalculé via
+            // ProgressionCurve#levelForTotalXp), aucun risque de divergence niveau/XP.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS player_skills (
+                        player_uuid TEXT NOT NULL,
+                        skill TEXT NOT NULL,
+                        total_xp INTEGER NOT NULL DEFAULT 0,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, skill),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+
+            // Un octroi d'XP est identifié par (joueur, compétence, id d'événement) : la même action
+            // de jeu (mort de mob, bloc miné...) ne peut jamais récompenser deux fois la même
+            // compétence (mission étape 19, point 5).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS xp_grants (
+                        player_uuid TEXT NOT NULL,
+                        skill TEXT NOT NULL,
+                        event_id TEXT NOT NULL,
+                        amount INTEGER NOT NULL,
+                        reason TEXT,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, skill, event_id),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_xp_grants_player ON xp_grants (player_uuid)
+                    """);
+
+            // Anti-farm (mission point 7) : une position posée par un joueur n'accorde jamais d'XP de
+            // minage. Aucune clé étrangère vers player_profiles : un bloc survit à la suppression du
+            // profil de son poseur (le monde reste inchangé).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS player_placed_blocks (
+                        world TEXT NOT NULL,
+                        x INTEGER NOT NULL,
+                        y INTEGER NOT NULL,
+                        z INTEGER NOT NULL,
+                        PRIMARY KEY (world, x, y, z)
                     )
                     """);
         }

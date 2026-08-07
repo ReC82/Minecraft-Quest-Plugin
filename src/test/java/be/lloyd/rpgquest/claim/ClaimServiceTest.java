@@ -10,6 +10,8 @@ import be.lloyd.rpgquest.database.ClaimActionOutcome;
 import be.lloyd.rpgquest.database.ClaimRepository;
 import be.lloyd.rpgquest.database.DatabaseManager;
 import be.lloyd.rpgquest.database.PlayerProfileRepository;
+import be.lloyd.rpgquest.database.ProgressionRepository;
+import be.lloyd.rpgquest.progression.ProgressionService;
 import be.lloyd.rpgquest.travel.YamlPortalRegistry;
 import be.lloyd.rpgquest.travel.model.PortalDefinition;
 import be.lloyd.rpgquest.zone.ZoneRegistry;
@@ -41,6 +43,7 @@ class ClaimServiceTest {
     private ZoneRegistry zoneRegistry;
     private YamlPortalRegistry portalRegistry;
     private ConfigService configService;
+    private ProgressionService progressionService;
     private ClaimService claimService;
 
     @BeforeEach
@@ -59,14 +62,19 @@ class ClaimServiceTest {
         portalRegistry.start();
         configService = new ConfigService(plugin);
         configService.start();
+        ProgressionRepository progressionRepository = new ProgressionRepository(database);
+        progressionService = new ProgressionService(
+                plugin, progressionRepository, () -> configService.current().progression(), plugin.getSLF4JLogger());
+        progressionService.start();
 
-        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService);
+        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService, progressionService);
         claimService.start();
     }
 
     @AfterEach
     void tearDown() {
         claimService.stop();
+        progressionService.stop();
         database.shutdown();
         MockBukkit.unmock();
     }

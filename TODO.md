@@ -463,6 +463,36 @@
     annulé, reload, variante non reconnue
 -   [x] `SPECIAL_MOB_FORMAT.md`
 
+## Progression RPG (fait)
+
+-   [x] `progression.model` : `SkillType` (GLOBAL/COMBAT/MINING/FARMING/
+    FISHING/EXPLORATION), `ProgressionCurve` (courbe géométrique
+    configurable et validée, niveau jamais stocké séparément de l'XP
+    totale), `AwardOutcome`/`XpGrantResult`
+-   [x] `ProgressionConfig` (`config.yml` → `progression:`) : courbe,
+    ratio de mirroir GLOBAL, limite de fréquence anti-farm, mode
+    d'affichage, bascule XP vanilla, montants par source
+-   [x] SQLite (migration V8) : `player_skills`/`xp_grants` (déduplication
+    par (joueur, compétence, id d'événement))/`player_placed_blocks`
+    (anti-farm), `ProgressionRepository`/`PlacedBlockRepository` — même
+    conception transactionnelle que `WalletRepository`
+-   [x] `ProgressionService` : octroi dédupliqué et limité en fréquence,
+    mirroir GLOBAL automatique, cache en mémoire chargé à la connexion,
+    affichage transitoire (action bar/bossbar configurable)
+-   [x] Écouteurs : `CombatXpListener` (mort par un joueur, exclut
+    spawner/division), `MiningXpListener` (exclut blocs posés par un
+    joueur), `FarmingXpListener` (cultures mûres uniquement),
+    `FishingXpListener`, `ExplorationXpListener` (première découverte de
+    zone), `QuestCompletionXpListener` (bonus une fois par quête, en plus
+    de l'éventuelle récompense XP vanilla de la quête)
+-   [x] Hook de déblocage générique (`ProgressionService#hasLevel`),
+    câblé concrètement dans `claim.ClaimService#effectiveMaxClaims`
+-   [x] `/profile`, `/skills`, `/skills admin grant|set`
+-   [x] Tests : calcul de niveau, valeurs maximales, XP négative refusée,
+    événement dupliqué, bloc placé, mob de spawner, montée de plusieurs
+    niveaux, reconnexion, migration de schéma
+-   [x] `docs/PROGRESSION.md`
+
 ## MVP
 
 -   [x] Architecture
@@ -482,6 +512,7 @@
 -   [x] Portails et téléportation
 -   [x] Claims de terrain
 -   [x] Mobs spéciaux
+-   [x] Progression RPG
 
 ## Plus tard
 -   [ ] PNJ avancés

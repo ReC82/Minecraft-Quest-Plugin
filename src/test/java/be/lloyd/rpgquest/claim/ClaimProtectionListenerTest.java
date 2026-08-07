@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import be.lloyd.rpgquest.database.ClaimRepository;
 import be.lloyd.rpgquest.database.DatabaseManager;
 import be.lloyd.rpgquest.database.PlayerProfileRepository;
+import be.lloyd.rpgquest.database.ProgressionRepository;
+import be.lloyd.rpgquest.progression.ProgressionService;
 import be.lloyd.rpgquest.travel.YamlPortalRegistry;
 import be.lloyd.rpgquest.config.ConfigService;
 import be.lloyd.rpgquest.RPGQuestPlugin;
@@ -55,6 +57,7 @@ class ClaimProtectionListenerTest {
     private RPGQuestPlugin plugin;
     private World world;
     private DatabaseManager database;
+    private ProgressionService progressionService;
     private ClaimService claimService;
     private ClaimProtectionListener listener;
     private PlayerMock owner;
@@ -79,8 +82,12 @@ class ClaimProtectionListenerTest {
         portalRegistry.reload();
         ConfigService configService = new ConfigService(plugin);
         configService.start();
+        ProgressionRepository progressionRepository = new ProgressionRepository(database);
+        progressionService = new ProgressionService(
+                plugin, progressionRepository, () -> configService.current().progression(), plugin.getSLF4JLogger());
+        progressionService.start();
 
-        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService);
+        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService, progressionService);
         claimService.start();
         listener = new ClaimProtectionListener(claimService);
 
@@ -98,6 +105,7 @@ class ClaimProtectionListenerTest {
 
     @AfterEach
     void tearDown() {
+        progressionService.stop();
         database.shutdown();
         MockBukkit.unmock();
     }

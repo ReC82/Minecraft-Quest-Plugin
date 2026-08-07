@@ -80,7 +80,7 @@ class SplitOnHitAbilityListenerTest {
         definition = registry.find(SPLIT_ID).orElseThrow();
 
         service = new SpecialMobService(plugin, registry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger());
-        listener = new SplitOnHitAbilityListener(plugin, service);
+        listener = new SplitOnHitAbilityListener(service);
     }
 
     @AfterEach

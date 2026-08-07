@@ -117,6 +117,15 @@ web-export:
   # aucune n'est configurée par défaut.
   announcements: []
 
+store:
+  # Sondage des livraisons de la boutique web (mission étape 22) : le jeton
+  # serveur-à-serveur n'est jamais ici, uniquement dans la variable
+  # d'environnement RPGQUEST_WEB_API_TOKEN (même secret que web-api, voir
+  # docs/WEB_API.md). Désactivé par défaut.
+  enabled: false
+  web-api-base-url: "http://localhost:8080"
+  poll-interval-seconds: 30
+
 admin:
   flatten:
     # /rpgadmin flatten <rayon> [hauteur] — voir docs/ADMIN_FLATTEN.md.

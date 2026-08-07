@@ -52,6 +52,9 @@ commands:
   backpack:
     description: Sacs à dos persistants (Small/Medium/Large) — voir docs/BACKPACKS.md.
     usage: /<command> [recover [numéro]|admin <grant|revoke> <joueur> [taille]]
+  store:
+    description: Historique de la boutique web (administration) — voir docs/STORE.md.
+    usage: /<command> history [joueur|uuid]
 
 permissions:
   rpgquest.admin:

@@ -42,80 +42,89 @@ priorité des sources).
 | 19 | XP RPG | DONE |
 | 20 | Backpacks | DONE |
 | 21 | API et site web read-only | DONE |
-| 22 | Boutique web et livraison sécurisée | TODO |
+| 22 | Boutique web et livraison sécurisée | DONE |
 | 23 | Prototype de mod client séparé | TODO |
 
 ## Étape en cours
 
-### Étape 22 — Boutique web et livraison sécurisée
+### Étape 23 — Prototype de mod client séparé
 
-Branche attendue : `feature/22-web-shop` (à créer). Aucun cahier des
+Branche attendue : `feature/23-client-mod` (à créer). Aucun cahier des
 charges détaillé retrouvé dans le dépôt pour cette étape — à clarifier
 avec l'utilisateur si le seul titre de la table ne suffit pas à démarrer
 sans clarification (les étapes 14/15/17/18/19/20 ont dû être conçues au
 moins en partie par ingénierie faute d'un tel cahier des charges reçu en
-conversation ; les étapes 16/17/18/19/20/21 ont reçu le leur directement
-dans le chat).
+conversation ; les étapes 16 à 22 ont reçu le leur directement dans le
+chat).
 
-### Dernière observation (2026-08-07, étape 21 reçue en cahier des charges détaillé dans le chat)
+### Dernière observation (2026-08-07, étape 22 reçue en cahier des charges détaillé dans le chat)
 
-Étape 21 (API et site web read-only) confirmée `DONE` : build vert sur les
-deux modules Gradle (racine + `web-api`), 535 tests plugin (11 ignorés —
-pas échoués, limitation MockBukkit pré-existante depuis l'étape 18) + 19
-tests `web-api` (0 ignoré). Cahier des charges détaillé reçu directement
-dans la conversation (module web séparé du gameplay, jamais d'accès direct
-au fichier SQLite, API authentifiée — statut serveur, nombre de joueurs,
-joueurs connectés si autorisé, classements, catalogue public d'objets,
-actualités configurées —, lectures uniquement via snapshots/caches ou
-async, authentification serveur-à-serveur, rate limiting + validation +
-journalisation, aucun secret dans Git, site minimal — accueil, statut,
-classements, wiki/catalogue —, mode dégradé si le serveur Minecraft est
-arrêté, ni paiement ni login joueur ni modification de données à ce stade,
-commit attendu `feat(web): add read-only server API and portal`) — suivi
-à la lettre.
+Étape 22 (Boutique web et livraison sécurisée) confirmée `DONE` : build
+vert sur les deux modules Gradle (racine + `web-api`), 544 tests plugin
+(11 ignorés — pas échoués, limitation MockBukkit pré-existante depuis
+l'étape 18, aucune occurrence supplémentaire) + 30 tests `web-api` (0
+ignoré). Cahier des charges détaillé reçu directement dans la conversation
+(catalogue produit séparé des avantages techniques, 5 produits initiaux —
+Small Backpack, upgrades Medium/Large, pass VIP de test, cosmétique —,
+prestataire de paiement externe en mode test, aucune donnée de carte
+bancaire stockée, table de commandes + file de livraisons avec
+identifiants uniques, livraison répétée ignorée sans erreur, récupération
+des livraisons en attente après redémarrage, signature/authentification
+site ↔ serveur, gestion joueur hors ligne/UUID inconnu/produit déjà
+possédé/upgrade/remboursement/révocation/échec temporaire, historique
+admin, logs d'audit sans données sensibles, philosophie
+pay-to-convenience/limites anti-pay-to-win, mode sandbox d'abord, commit
+attendu `feat(store): add secure idempotent web purchases`) — suivi à la
+lettre. Branche demandée par l'utilisateur : `feature/22-web-store` (et non
+`feature/22-web-shop` comme anticipé dans une observation précédente).
 
-Portée réalisée, côté plugin (`be.lloyd.rpgquest.web`) : `WebExportConfig`
-(`config.yml` → `web-export:`, désactivé par défaut) + `WebSnapshotWriter`
-(`PluginService`, tick de housekeeping léger sur le thread principal,
-calcul des classements via `ProgressionRepository.topPlayers` — nouvelle
-requête en lecture seule, jamais appelée depuis un chemin de jeu synchrone
-—, écriture disque déportée sur un exécuteur dédié, jamais sur le thread
-principal ni sur celui de la continuation asynchrone), `JsonWriter`
-(sérialiseur maison, écriture seule côté plugin), écriture atomique par
-renommage (`snapshot.json.tmp` → `ATOMIC_MOVE`).
+Portée réalisée, module `web-api/store` (nouveau, projet déjà séparé du
+plugin depuis l'étape 21) : `store.db` propre à web-api (jamais `data.db`
+— `org.xerial:sqlite-jdbc` ajouté ici en vraie dépendance de runtime,
+exception documentée puisque web-api n'a pas le `LibraryLoader` de Paper),
+`orders`/`deliveries`/`webhook_events` (dédup par id d'événement du
+prestataire), `ProductCatalog` (`products.json`, commercial uniquement),
+`SandboxPaymentProvider` (simulation auto-hébergée d'un vrai prestataire
+en mode test — session hébergée `/store/pay/{id}`, webhook signé
+HMAC-SHA256 vers `/store/webhook`, décision documentée en détail dans
+docs/STORE.md faute d'accès à un vrai prestataire dans cet environnement),
+`StoreService` (checkout, webhook idempotent, remboursement, jamais un
+octroi direct), routes site (`/store`, `/store/pay/*`) et API authentifiée
+(`/api/store/deliveries/pending|{id}/ack`, `/api/store/orders`,
+`/api/store/orders/{id}/refund`).
 
-Portée réalisée, module séparé `web-api/` (nouveau projet Gradle,
-`settings.gradle.kts` → `include("web-api")`, aucune dépendance vers Paper,
-aucun accès à `data.db`) : `webapi.json.Json` (codec JSON maison, lecture
-*et* écriture, aucune dépendance externe), `SnapshotStore` (cache en
-mémoire, détection du mode dégradé — snapshot absent ou périmé, jamais une
-erreur), `ServerState` (résolution du mode dégradé centralisée, jamais
-réimplémentée par route), serveur HTTP via `com.sun.net.httpserver` (JDK)
-avec `RequestPipeline` (rate limit par IP, authentification par jeton en
-temps constant `MessageDigest.isEqual`, fail-closed si aucun jeton
-configuré, journalisation sans jamais écrire de secret), routes API
-authentifiées (`/api/status|players|leaderboards|catalog|announcements`)
-et site public non authentifié (`/`, `/status`, `/leaderboards`, `/wiki`,
-échappement HTML systématique), jeton exclusivement via la variable
-d'environnement `RPGQUEST_WEB_API_TOKEN` (jamais dans un fichier versionné
-— `web-api.properties.example` ne contient que des réglages non
-sensibles), `WebApiMain` (point d'entrée, arrêt propre via shutdown hook).
-Documentation : `docs/WEB_API.md` (déploiement local/production complet).
+Portée réalisée, plugin (`be.lloyd.rpgquest.store`) : `StoreConfig`
+(`config.yml` → `store:`, désactivé par défaut), `StoreProductRegistry`
+(YAML `store-products/*.yml`, cinq exemples, deux types d'octroi
+seulement — `BACKPACK_SIZE`/`ENTITLEMENT`, aucun attribut de combat
+possible par construction), migration SQLite V10
+(`store_deliveries_processed`, filet d'idempotence local), `StoreClient`
+(HTTP asynchrone, même jeton que l'étape 21 via `RPGQUEST_WEB_API_TOKEN`),
+`StoreDeliveryService` (sondage périodique, offline-capable de bout en
+bout via UUID, résolution "déjà possédé"/upgrade côté serveur de jeu
+uniquement, création automatique du profil pour un UUID inconnu, échec
+temporaire jamais acquitté — réessayé au sondage suivant), `/store history
+[joueur|uuid]` (`rpgquest.admin`). Documentation : `docs/STORE.md`
+(prestataire sandbox, idempotence, gestion des cas particuliers,
+déploiement, limites).
 
 Limitation connue (héritée de l'étape 18, pas nouvelle, aucune occurrence
 supplémentaire cette étape) : 11 tests plugin restent marqués **ignorés**
 (pas échoués) — MockBukkit 4.110.0 (dernière version disponible) lève
 délibérément `TestAbortedException` sur plusieurs méthodes non
-implémentées ; le comportement réel n'est testable qu'en jeu. Limite
-assumée propre à cette étape (documentée dans docs/WEB_API.md) : pas de
-pagination sur le catalogue/wiki, rate limiting en mémoire par processus
-(non partagé entre plusieurs instances), pas de TLS natif (reverse proxy
+implémentées ; le comportement réel n'est testable qu'en jeu. Limites
+assumées propres à cette étape (documentées dans docs/STORE.md) : le
+remboursement d'un backpack retombe sur `fallback-size` plutôt qu'un
+calcul de permission par-joueur (impossible hors ligne), le pass VIP et
+les cosmétiques n'ont encore aucun effet de gameplay (plomberie
+uniquement), pas d'interface web pour déclencher un remboursement (appel
+direct de l'API), pas de TLS natif (reverse proxy
 attendu en production).
 
-Étapes 1 à 21 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
-retrouvé pour les étapes 22 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
-qu'un `README.md` placeholder) ; les étapes 16 à 21 ont fait exception en
-le recevant directement en conversation — pas de garantie que ça se
+Étapes 1 à 22 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
+retrouvé pour l'étape 23 dans le dépôt (`.ai/PROMPTS/` ne contient qu'un
+`README.md` placeholder) ; les étapes 16 à 22 ont fait exception en le
+recevant directement en conversation — pas de garantie que ça se
 reproduise pour les étapes suivantes. Chaque étape devra être précisée par
 l'utilisateur si le niveau de détail actuel (titre de la table ci-dessus)
 ne suffit pas à démarrer sans clarification.
@@ -344,4 +353,39 @@ Blocages: aucun
 Première étape à reprendre: 22 (Boutique web et livraison sécurisée) —
   aucun cahier des charges détaillé retrouvé dans le dépôt pour les étapes
   22 à 23, à clarifier avec l'utilisateur si besoin avant de démarrer
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/21-web-api
+Étape de départ: 22 (Boutique web et livraison sécurisée), TODO — cahier
+  des charges détaillé reçu en conversation pendant la session (catalogue
+  produit séparé des avantages techniques, 5 produits initiaux, prestataire
+  de paiement externe en mode test, aucune donnée de carte bancaire
+  stockée, table de commandes + file de livraisons à identifiants uniques,
+  livraison répétée ignorée sans erreur, récupération après redémarrage,
+  signature/authentification site ↔ serveur, gestion joueur hors
+  ligne/UUID inconnu/produit déjà possédé/upgrade/remboursement/
+  révocation/échec temporaire, historique admin, logs d'audit sans donnée
+  sensible, philosophie pay-to-convenience/anti-pay-to-win, mode sandbox
+  d'abord, commit attendu feat(store): add secure idempotent web purchases)
+  — branche demandée par l'utilisateur : feature/22-web-store
+Étapes terminées: 22
+Branche finale: feature/22-web-store
+Dernier commit: 841f0cf feat(store): add secure idempotent web purchases
+Build: vert (./gradlew clean build, deux modules : racine + web-api)
+Tests: 544 tests plugin (11 ignorés — pas échoués, limitation MockBukkit
+  héritée de l'étape 18, aucune occurrence supplémentaire) + 30 tests
+  web-api (0 ignoré) ; nouveaux : StoreDeliveryServiceTest,
+  SchemaMigratorTest (migration V10), StoreHttpTest (bout-en-bout : achat,
+  webhook rejoué/signature invalide, livraison répétée, remboursement,
+  historique, reprise après redémarrage)
+Tests manuels en attente: achat sandbox d'un Small Backpack, serveur
+  arrêté pendant l'achat puis redémarrage et livraison, upgrade vers
+  Medium puis Large, rejouer le webhook, simuler un remboursement (voir
+  docs/STORE.md)
+Blocages: aucun
+Première étape à reprendre: 23 (Prototype de mod client séparé) — aucun
+  cahier des charges détaillé retrouvé dans le dépôt, à clarifier avec
+  l'utilisateur si besoin avant de démarrer
 ```

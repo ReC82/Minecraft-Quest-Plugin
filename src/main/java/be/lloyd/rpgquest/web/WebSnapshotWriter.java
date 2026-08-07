@@ -138,7 +138,7 @@ public final class WebSnapshotWriter implements PluginService {
                 .thenAccept(leaderboards -> {
                     Map<String, Object> snapshot =
                             buildSnapshot(current, playerCount, maxPlayers, playerNames, catalog, leaderboards);
-                    CompletableFuture.runAsync(() -> writeAtomic(current, JsonWriter.write(snapshot)), ioExecutor)
+                    CompletableFuture.runAsync(() -> writeAtomic(current, Json.write(snapshot)), ioExecutor)
                             .whenComplete((ignored, error) -> {
                                 if (error != null) {
                                     logger.warn("Échec de l'écriture du snapshot web.", error);

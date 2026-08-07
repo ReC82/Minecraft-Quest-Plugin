@@ -11,6 +11,9 @@ run/
 # uniquement de RPGQUEST_WEB_API_TOKEN, voir docs/WEB_API.md) ; ignorée par
 # convention comme tout fichier de config personnalisé non versionné.
 web-api/web-api.properties
+web-api/products.json
+web-api/store.db
+web-api/web-export/
 
 # IDE
 .idea/

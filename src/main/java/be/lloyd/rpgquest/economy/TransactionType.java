@@ -6,6 +6,8 @@ public enum TransactionType {
     PAYMENT_RECEIVED,
     MERCHANT_BUY,
     MERCHANT_SELL,
+    MARKET_BUY,
+    MARKET_SELL,
     ADMIN_GRANT,
     ADMIN_TAKE,
     ADMIN_SET

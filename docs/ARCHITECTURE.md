@@ -15,9 +15,10 @@
     │   ├── model           (modèles immuables : dialogue, nœuds, choix, conditions, actions)
     │   ├── render          (DialogueRenderer : ChatDialogueRenderer, PaperDialogRenderer)
     │   └── session         (état runtime mutable, sessions en mémoire, listeners)
-    ├── economy              (portefeuille joueur, paiements, marchands PNJ)
-    │   └── merchant        (définitions YAML de marchands + vitrine en jeu)
-    │       └── model       (modèles immuables : marchand, offre)
+    ├── economy              (portefeuille joueur, paiements, marchands PNJ, marché entre joueurs)
+    │   ├── merchant        (définitions YAML de marchands + vitrine en jeu)
+    │   │   └── model       (modèles immuables : marchand, offre)
+    │   └── market          (marché entre joueurs : offres persistées, vitrine paginée)
     ├── item                 (définitions YAML d'objets personnalisés + registre)
     │   ├── model            (modèles immuables : type, rareté, attributs, enchantements...)
     │   └── behavior         (comportements de combat/outil en jeu : cooldowns, listeners)
@@ -1062,6 +1063,88 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
     optionnelle suffit ». Voir `docs/ECONOMY.md` pour le plan d'intégration
     exact si un serveur a besoin de Vault plus tard.
 
+### `economy.market` (marché entre joueurs)
+
+-   **Aucun modèle YAML, aucun registre** — contrairement à
+    `economy.merchant` (offres figées, définies par un administrateur),
+    une offre de marché est **créée en jeu par un joueur** et vit entièrement
+    en base (`database.MarketRepository`, `market_listings`, migration V5) :
+    pas de fichier, pas de rechargement, pas de notion de « définition ».
+-   **L'objet entier est mis en dépôt, sérialisé tel quel** —
+    `ItemStack#serializeAsBytes()`/`ItemStack#deserializeBytes(byte[])`
+    (API Bukkit vérifiée présente dans `paper-api-1.21.11` par inspection
+    du jar) capturent la totalité de l'`ItemStack` (méta, PersistentDataContainer
+    d'un objet personnalisé compris) dans une colonne `BLOB`. Contrairement
+    à `economy.merchant`, **aucune dépendance à
+    `YamlCustomItemRegistry`** n'est nécessaire : l'objet mis en vente
+    porte déjà toute son identité, il n'a besoin d'être ni recréé ni
+    ré-identifié à la remise.
+-   **`MarketRepository` — trois opérations atomiques distinctes**, même
+    discipline transactionnelle explicite que `WalletRepository`
+    (`setAutoCommit(false)`/`commit`/`rollback` dans un seul appel à
+    `DatabaseManager#execute`) :
+    -   `claim(id, buyer)` — lit puis bascule `ACTIVE → SOLD` **dans la
+        même transaction**, seulement si l'offre était encore active ;
+        retourne l'offre (donc son prix) ou vide. C'est la garde qui
+        garantit qu'une offre ne peut jamais être vendue deux fois, même
+        avec deux clics simultanés sur deux joueurs différents.
+    -   `cancel(id, seller)` — même patron, avec une condition
+        supplémentaire (`seller_uuid = ?`) : seul le vendeur peut annuler
+        sa propre offre, jamais un tiers ni un administrateur (voir
+        limitation ci-dessous).
+    -   `reactivate(id, buyer)` — remet une offre `SOLD` à `ACTIVE`
+        (uniquement si `buyer_uuid` correspond encore, défense en
+        profondeur), utilisée après un débit refusé (voir plus bas).
+-   **Achat en deux temps, ordre imposé par une contrainte que
+    `economy.merchant` n'a pas** — pour un marchand PNJ, le prix vient
+    d'un YAML déjà chargé, donc « débiter puis remettre » suffit. Pour une
+    offre de marché, le prix n'est connu qu'**après** lecture en base :
+    l'ordre est donc nécessairement (1) réserver atomiquement
+    (`claim`, qui ne bouge aucun argent), (2) débiter l'acheteur du prix
+    ainsi découvert, (3) si le débit échoue, `reactivate` plutôt que
+    perdre l'offre. Entre (1) et un `reactivate` éventuel, l'offre est
+    indisponible pour tout le monde pendant quelques millisecondes tout au
+    plus (aucun argent ni objet n'est en jeu durant cette fenêtre) — un
+    compromis délibéré, pas un bug : la réservation doit précéder la
+    connaissance du prix, contrairement à un marchand YAML.
+-   **`MarketService` — vitrine unique, pas d'onglets** — délibérément plus
+    simple que `QuestJournalService` (pas de distinction « mes offres »/
+    « toutes les offres » en onglets séparés) : la vitrine liste **toutes**
+    les offres actives de **tous** les vendeurs, triées par ancienneté ;
+    cliquer sur sa propre offre l'annule (récupère l'objet), cliquer sur
+    celle d'un autre l'achète. Un seul geste (le clic) couvre les deux
+    usages, sans naviguer entre onglets — jugé suffisant pour la mission
+    (« marché entre joueurs »), qui ne demande pas explicitement de vue
+    séparée. `MarketPagination` (dupliquée depuis `ui.JournalPagination`,
+    gardée package-privée dans `ui`, voir plus haut) fournit la même
+    arithmétique de pagination (45 slots de contenu par page) sans
+    dépendance croisée entre packages.
+-   **`MarketSession` fige la liste des offres affichées, pas seulement
+    leurs id** — contrairement à `JournalSession`/`MerchantSession`
+    (qui figent des identifiants, revalidés contre le registre courant au
+    clic), `MarketSession` fige les enregistrements `MarketListingRecord`
+    complets de la page rendue : le prix d'une offre ne pouvant jamais
+    changer après création (pas de fonctionnalité d'édition), le
+    réutiliser tel quel pour lancer l'achat est sûr, et la disponibilité
+    réelle est de toute façon revérifiée par `claim` au moment du clic —
+    aucune fenêtre exploitable.
+-   **Vente : la pile entière tenue en main, jamais une quantité partielle**
+    — pas de sélection de quantité dans `/market sell <prix>` ; un joueur
+    qui veut vendre moins sépare sa pile dans son inventaire au préalable
+    (mécanisme vanilla standard), cohérent avec l'absence de quantité
+    configurable pour une offre de marché (contrairement à
+    `economy.merchant`, où `quantity` fait partie de la définition YAML
+    figée par l'administrateur).
+-   **Vendeur crédité même hors ligne** — `EconomyService#credit` opère
+    par UUID, sans dépendre d'une session Bukkit active : un joueur peut
+    vendre un objet et se déconnecter, il sera payé à la vente sans avoir
+    besoin d'être reconnecté (contrairement à `/money pay`, qui exige un
+    destinataire en ligne).
+-   **`/market admin list`** (`rpgquest.admin`) — lecture seule
+    (modération) : aucune commande d'administration ne peut annuler l'offre
+    d'un joueur hors ligne avec restitution de l'objet, voir
+    « Limites connues ».
+
 ## Resource pack (optionnel)
 
 -   **`resource-pack/` à la racine du dépôt** (pas dans `src/main/resources`,
@@ -1688,3 +1771,27 @@ Fabrication → Remise → Récompense
     dialogue, via de vrais appels MockBukkit). Le ressenti en jeu
     (ouverture de la vitrine par clic sur un PNJ renommé, lisibilité du
     lore, latence réseau) reste à valider par un testeur humain.
+-   **`/market admin` ne peut pas forcer l'annulation d'une offre d'un
+    joueur hors ligne avec restitution de l'objet** — seul le vendeur
+    lui-même, en ligne, peut annuler sa propre offre
+    (`MarketRepository#cancel` vérifie `seller_uuid`). Pas de système de
+    livraison différée (« boîte aux lettres ») pour remettre un objet à un
+    joueur absent au moment où son offre serait annulée par un
+    administrateur — limitation assumée, mirroir facile d'un futur système
+    de backpacks/livraison (étape 20) si le besoin se précise.
+-   **Vitrine du marché sans onglets** — une seule liste, toutes offres de
+    tous les vendeurs confondues (voir section `economy.market`) ; pas de
+    vue « mes offres uniquement » dans l'inventaire (mirroir facile des
+    onglets de `ui.JournalTab` si nécessaire plus tard). `/market cancel
+    <id>` et `/market admin list` restent utilisables sans passer par le
+    menu.
+-   **Test manuel du marché entre joueurs limité par l'environnement** —
+    aucun client Minecraft réel disponible ici. Compensé par
+    `MarketRepositoryTest` (réservation atomique, y compris l'échec d'une
+    seconde réservation concurrente sur la même offre, réactivation après
+    débit refusé, annulation restreinte au vendeur) et `MarketServiceTest`
+    (vente réelle avec retrait de l'objet en main, achat réel fonds
+    suffisants/insuffisants, clic sur sa propre offre). Le ressenti en jeu
+    (navigation entre pages avec beaucoup d'offres, deux vrais joueurs
+    achetant simultanément la même offre, latence réseau) reste à valider
+    par un testeur humain.

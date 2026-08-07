@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 4;
+    private static final int CURRENT_VERSION = 5;
 
     private SchemaMigrator() {
     }
@@ -36,6 +36,10 @@ public final class SchemaMigrator {
         if (version < 4) {
             applyV4(connection);
             version = 4;
+        }
+        if (version < 5) {
+            applyV5(connection);
+            version = 5;
         }
 
         if (version != startingVersion) {
@@ -146,6 +150,29 @@ public final class SchemaMigrator {
                         created_at TEXT NOT NULL,
                         FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
                     )
+                    """);
+        }
+    }
+
+    private static void applyV5(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // item_data : ItemStack#serializeAsBytes(), l'objet complet (méta, PDC d'un objet
+            // personnalisé compris) plutôt qu'une référence recomposée à la remise.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS market_listings (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        seller_uuid TEXT NOT NULL,
+                        item_data BLOB NOT NULL,
+                        price INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        resolved_at TEXT,
+                        buyer_uuid TEXT,
+                        FOREIGN KEY (seller_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_market_listings_status ON market_listings (status)
                     """);
         }
     }

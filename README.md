@@ -11,7 +11,7 @@ Plugin RPG pour Paper, sans mod client obligatoire.
 -   Recettes personnalisées
 -   Resource pack optionnel envoyé par le serveur
 -   Sauvegarde SQLite (asynchrone)
--   Économie (portefeuille, paiements) et marchands PNJ
+-   Économie (portefeuille, paiements), marchands PNJ et marché entre joueurs
 
 ## Prérequis
 
@@ -104,6 +104,14 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
     crédite, débite ou fixe le solde d'un joueur.
 -   `/merchant reload|validate|list` (`rpgquest.admin`) — recharge/valide
     les marchands, ou les liste. Voir [docs/ECONOMY.md](docs/ECONOMY.md).
+-   `/market` (`rpgquest.market`) — ouvre la vitrine du marché entre
+    joueurs (toutes offres actives, paginée).
+-   `/market sell <prix>` (`rpgquest.market`) — met en vente l'objet tenu
+    en main.
+-   `/market cancel <id>` (`rpgquest.market`) — annule une de tes offres et
+    récupère l'objet (aussi possible en cliquant dessus dans la vitrine).
+-   `/market admin list` (`rpgquest.admin`) — liste en lecture seule
+    toutes les offres actives (modération).
 
 ### Permissions
 
@@ -112,7 +120,8 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 | `rpgquest.quest` | tous | `/quest list\|accept\|progress\|abandon`, `/quests` |
 | `rpgquest.item` | tous | `/customitem inspect` |
 | `rpgquest.money` | tous | `/money`, `/money pay` |
-| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant` |
+| `rpgquest.market` | tous | `/market`, `/market sell\|cancel` |
+| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin` |
 | `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées) |
 
 ## Quêtes
@@ -242,6 +251,14 @@ PNJ, pour ne pas dupliquer le mécanisme d'identification déjà utilisé par
 les quêtes/dialogues. Voir [docs/ECONOMY.md](docs/ECONOMY.md) et
 [MERCHANT_FORMAT.md](MERCHANT_FORMAT.md) pour le détail complet.
 
+`/market` ouvre en plus un marché **entre joueurs** : n'importe qui peut
+mettre en vente l'objet tenu en main (`/market sell <prix>`), l'objet
+complet (méta, PDC compris) est mis en dépôt jusqu'à achat ou annulation.
+Cliquer sur l'offre d'un autre joueur l'achète (paiement + objet échangés
+atomiquement, vendeur crédité même hors ligne) ; cliquer sur sa propre
+offre l'annule et restitue l'objet. Voir [docs/ECONOMY.md](docs/ECONOMY.md)
+pour le détail complet (garanties anti-duplication comprises).
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
@@ -266,11 +283,12 @@ démarrage. Toutes les opérations SQL sont asynchrones (thread dédié) ; voir
 Tout l'état persistant tient dans le dossier `plugins/RPGQuest/` :
 
 -   `data.db` (SQLite) — profils joueurs, progression de quêtes, variables,
-    positions des nœuds de ressource, portefeuilles et transactions. Le
-    plugin verrouille le fichier tant qu'il est démarré ; sauvegarder à
-    chaud (serveur en marche) reste possible avec les outils de sauvegarde
-    SQLite habituels (ex. `.backup`), ou plus simplement arrêter le serveur
-    avant de copier le fichier.
+    positions des nœuds de ressource, portefeuilles, transactions et
+    offres du marché entre joueurs (objets en dépôt). Le plugin verrouille
+    le fichier tant qu'il est démarré ; sauvegarder à chaud (serveur en
+    marche) reste possible avec les outils de sauvegarde SQLite habituels
+    (ex. `.backup`), ou plus simplement arrêter le serveur avant de copier
+    le fichier.
 -   `config.yml`, `messages.yml`, `quests/`, `dialogues/`, `items/`,
     `resource-nodes/`, `recipes/`, `merchants/` — contenu YAML éditable, à
     sauvegarder comme n'importe quel fichier de configuration.
@@ -297,7 +315,7 @@ Voir [TODO.md](TODO.md).
 
 Le MVP (architecture, SQLite, quêtes, dialogues, journal, objets
 personnalisés, armes/outils, ressources, craft, resource pack, zones
-protégées, économie et marchands) est complet. Fonctionnalités envisagées
-ensuite (voir aussi [TODO.md](TODO.md)) : marché entre joueurs, portails et
-téléportation, claims de terrain, PNJ avancés (Citizens ou équivalent,
-optionnel), métiers, donjons, boss, factions.
+protégées, économie, marchands PNJ et marché entre joueurs) est complet.
+Fonctionnalités envisagées ensuite (voir aussi [TODO.md](TODO.md)) :
+portails et téléportation, claims de terrain, PNJ avancés (Citizens ou
+équivalent, optionnel), métiers, donjons, boss, factions.

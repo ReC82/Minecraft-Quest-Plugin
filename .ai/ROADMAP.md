@@ -35,7 +35,7 @@ priorité des sources).
 | 12 | Outil admin d'aplatissement | DONE |
 | 13 | Village central et safe zone | DONE |
 | 14 | Économie et marchands PNJ | DONE |
-| 15 | Marché entre joueurs | TODO |
+| 15 | Marché entre joueurs | DONE |
 | 16 | Portails et téléportation | TODO |
 | 17 | Claims de terrain | TODO |
 | 18 | Mobs spéciaux vanilla | TODO |
@@ -47,45 +47,50 @@ priorité des sources).
 
 ## Étape en cours
 
-### Étape 15 — Marché entre joueurs
+### Étape 16 — Portails et téléportation
 
-Branche attendue : `feature/15-player-market`
+Branche attendue : `feature/16-portals`
 
-Pas encore de cahier des charges détaillé reçu en session pour cette
-étape ; auditer `docs/ECONOMY.md`/`economy.EconomyService` avant de
-commencer (le marché entre joueurs doit très probablement réutiliser
-`EconomyService`/`WalletRepository` plutôt que réinventer un mécanisme de
-paiement séparé).
+Aucun cahier des charges détaillé retrouvé dans le dépôt pour cette étape
+(voir « Dernière observation » ci-dessous) — à clarifier avec l'utilisateur
+avant de démarrer si le seul titre de la table ne suffit pas. Auditer
+`zone.ZoneRegistry`/`docs/SAFE_ZONE.md` avant de commencer : des portails
+référencent probablement des positions à l'intérieur ou en dehors de zones
+protégées, cohérence à vérifier avec le registre existant.
 
-### Dernière observation (2026-08-07, reprise directe à l'étape 14)
+### Dernière observation (2026-08-07, étape 15 terminée sans cahier des charges détaillé)
 
-Étape 14 (Économie et marchands PNJ) confirmée `DONE` : build vert, 320+
-tests verts (dont `WalletRepositoryTest`, `MerchantDefinitionParserTest`,
-`MerchantLoaderTest`, `MerchantTradeServiceTest`, et les ajouts à
-`DialogueDefinitionParserTest`/`DialogueSessionEngineTest` pour l'action
-`OPEN_MERCHANT`), démarrage réel vérifié via `runServer` (portefeuille,
-marchand d'exemple chargé, ordre de service correct). Portée réalisée :
-`database.WalletRepository` (migration V4, `wallets`/`transactions`,
-opérations réellement atomiques), `economy.EconomyService`,
-`/money`/`/money pay`/`/money admin`, `economy.merchant` (modèle YAML,
-chargeur deux phases, `MerchantTradeService` avec vitrine en inventaire et
-anti-duplication achat/vente asymétrique), nouvelle action de dialogue
-`OPEN_MERCHANT` (aucun système d'identification de PNJ parallèle, comme
-demandé), `/merchant reload|validate|list`, `docs/ECONOMY.md`,
-`MERCHANT_FORMAT.md`, section `economy` de `docs/ARCHITECTURE.md`.
-Intégration Vault volontairement **préparée mais non câblée** (voir
-« Limites connues » de `docs/ARCHITECTURE.md` et le plan d'intégration dans
-`docs/ECONOMY.md`) — pas de dépendance externe ajoutée sans besoin réel.
+Étape 15 (Marché entre joueurs) confirmée `DONE` : build vert, 333 tests
+verts (dont `MarketRepositoryTest`, `MarketServiceTest`, et
+`SchemaMigratorTest` mis à jour pour la migration V5). Aucun cahier des
+charges n'existant dans le dépôt pour cette étape (voir historique), la
+portée a été conçue par Claude, en cohérence avec l'économie/les
+marchands déjà livrés à l'étape 14 : `database.MarketRepository`
+(`market_listings`, migration V5, objet complet en dépôt via
+`ItemStack#serializeAsBytes()` — aucune dépendance au registre d'objets
+personnalisés), trois opérations atomiques (`claim`/`cancel`/`reactivate`,
+même discipline transactionnelle que `WalletRepository`),
+`economy.market.MarketService` (vitrine paginée unique, sans onglets —
+clic sur l'offre d'un autre joueur = achat, sur la sienne = annulation),
+achat en deux temps (réservation atomique d'abord, débit ensuite,
+réactivation si le débit échoue — ordre imposé par le fait que le prix
+n'est connu qu'après lecture en base, contrairement à un marchand YAML),
+`/market`/`/market sell`/`/market cancel`/`/market admin list`, vendeur
+crédité même hors ligne. Limitation assumée et documentée : pas
+d'annulation admin avec restitution d'objet pour un vendeur hors ligne
+(pas de système de boîte aux lettres — mirroir facile d'un futur système
+de backpacks/livraison, étape 20, si besoin).
 
-Étapes 1 à 14 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
-retrouvé pour les étapes 15 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
+Étapes 1 à 15 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
+retrouvé pour les étapes 16 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
 qu'un `README.md` placeholder) — une session « mode nuit » antérieure
 (2026-08-07) mentionne l'avoir reçu en conversation, mais celle-ci n'a
 laissé aucun `HANDOFF.md`/fichier de reprise, et le contenu exact n'est
-donc plus disponible pour cette session. La prochaine étape (15, marché
-entre joueurs) devra être précisée par l'utilisateur si le niveau de détail
-actuel (titre de la table ci-dessus) ne suffit pas à démarrer sans
-clarification.
+donc plus disponible. Chaque étape suivante devra être précisée par
+l'utilisateur si le niveau de détail actuel (titre de la table ci-dessus)
+ne suffit pas à démarrer sans clarification — ce qui a été le cas pour
+l'étape 15, dont la portée a donc été définie par ingénierie plutôt que
+par un cahier des charges externe.
 
 ## Journal de session
 
@@ -123,5 +128,26 @@ Tests manuels en attente: ouverture d'une vitrine par clic sur un PNJ
 Blocages: aucun
 Première étape à reprendre: 15 (Marché entre joueurs) — aucun cahier des
   charges détaillé retrouvé dans le dépôt pour les étapes 15 à 23, à
+  clarifier avec l'utilisateur si besoin avant de démarrer
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/14-economy-merchants
+Étape de départ: 15 (Marché entre joueurs), TODO, aucun cahier des charges
+  détaillé dans le dépôt — portée définie par ingénierie (utilisateur a
+  dit "continue" sans préciser)
+Étapes terminées: 15
+Branche finale: feature/15-player-market
+Dernier commit: (voir git log — commit de l'étape 15 à suivre)
+Build: vert (./gradlew clean build)
+Tests: 333 tests verts (nouveaux : MarketRepositoryTest, MarketServiceTest ;
+  SchemaMigratorTest mis à jour pour la migration V5)
+Tests manuels en attente: navigation entre pages de /market avec beaucoup
+  d'offres, deux vrais joueurs achetant simultanément la même offre,
+  latence réseau (voir docs/ECONOMY.md)
+Blocages: aucun
+Première étape à reprendre: 16 (Portails et téléportation) — aucun cahier
+  des charges détaillé retrouvé dans le dépôt pour les étapes 16 à 23, à
   clarifier avec l'utilisateur si besoin avant de démarrer
 ```

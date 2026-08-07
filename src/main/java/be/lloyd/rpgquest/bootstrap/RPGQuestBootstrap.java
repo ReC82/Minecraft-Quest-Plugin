@@ -5,6 +5,7 @@ import be.lloyd.rpgquest.admin.FlattenService;
 import be.lloyd.rpgquest.admin.RpgAdminCommand;
 import be.lloyd.rpgquest.command.CustomItemCommand;
 import be.lloyd.rpgquest.command.DialogueCommand;
+import be.lloyd.rpgquest.command.MarketCommand;
 import be.lloyd.rpgquest.command.MerchantCommand;
 import be.lloyd.rpgquest.command.MoneyCommand;
 import be.lloyd.rpgquest.command.QuestCommand;
@@ -18,6 +19,7 @@ import be.lloyd.rpgquest.crafting.YamlCraftingRegistry;
 import be.lloyd.rpgquest.database.DatabaseService;
 import be.lloyd.rpgquest.database.PlayerProfileRepository;
 import be.lloyd.rpgquest.database.PlayerVariableRepository;
+import be.lloyd.rpgquest.database.MarketRepository;
 import be.lloyd.rpgquest.database.QuestProgressRepository;
 import be.lloyd.rpgquest.database.ResourceNodeRepository;
 import be.lloyd.rpgquest.database.WalletRepository;
@@ -27,6 +29,7 @@ import be.lloyd.rpgquest.dialogue.render.DialogueRenderer;
 import be.lloyd.rpgquest.dialogue.render.PaperDialogRenderer;
 import be.lloyd.rpgquest.dialogue.session.DialogueSessionEngine;
 import be.lloyd.rpgquest.economy.EconomyService;
+import be.lloyd.rpgquest.economy.market.MarketService;
 import be.lloyd.rpgquest.economy.merchant.MerchantTradeService;
 import be.lloyd.rpgquest.economy.merchant.YamlMerchantRegistry;
 import be.lloyd.rpgquest.item.SpiderFangDropListener;
@@ -83,6 +86,8 @@ public final class RPGQuestBootstrap {
     private ResourceNodeService resourceNodeService;
     private EconomyService economyService;
     private MerchantTradeService merchantTradeService;
+    private MarketRepository marketRepository;
+    private MarketService marketService;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -156,6 +161,11 @@ public final class RPGQuestBootstrap {
                 plugin, merchantRegistry, economyService, customItemRegistry, questProgressEngine);
         registry.start(merchantTradeService);
         registry.start(new PlayerListenerService(plugin, merchantTradeService.listener()));
+
+        marketRepository = new MarketRepository(databaseService.databaseManager());
+        marketService = new MarketService(plugin, marketRepository, economyService);
+        registry.start(marketService);
+        registry.start(new PlayerListenerService(plugin, marketService.listener()));
 
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
@@ -258,6 +268,10 @@ public final class RPGQuestBootstrap {
         return merchantTradeService;
     }
 
+    public MarketService marketService() {
+        return marketService;
+    }
+
     private void registerCommands() {
         RPGQuestCommand rpgquestCommand = new RPGQuestCommand(plugin, this);
         var rpgquest = plugin.getCommand("rpgquest");
@@ -312,6 +326,13 @@ public final class RPGQuestBootstrap {
         if (merchant != null) {
             merchant.setExecutor(merchantCommand);
             merchant.setTabCompleter(merchantCommand);
+        }
+
+        MarketCommand marketCommand = new MarketCommand(plugin, marketService, marketRepository);
+        var market = plugin.getCommand("market");
+        if (market != null) {
+            market.setExecutor(marketCommand);
+            market.setTabCompleter(marketCommand);
         }
 
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(flattenService, zoneRegistry, zoneSelectionService);

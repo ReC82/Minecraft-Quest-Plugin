@@ -100,6 +100,62 @@ sur ce schéma :
     .getPlugin("Vault") != null` (`softdepend: [Vault]` dans `plugin.yml`),
     pour ne jamais échouer au démarrage si Vault n'est pas installé.
 
+## Marché entre joueurs
+
+`/market` ouvre une vitrine partagée (tous vendeurs confondus, triée par
+ancienneté, paginée comme le journal de quêtes) où n'importe quel joueur
+peut mettre en vente l'objet tenu en main :
+
+-   `/market sell <prix>` — met en vente **la pile entière** actuellement en
+    main (pas de sélection de quantité ; pour vendre moins, séparer la pile
+    dans l'inventaire au préalable comme d'habitude). L'objet est
+    sérialisé **tel quel** (`ItemStack#serializeAsBytes()` — méta, PDC d'un
+    objet personnalisé compris) et mis en dépôt (« escrow ») dans
+    `market_listings` jusqu'à achat ou annulation. Aucune dépendance au
+    registre d'objets personnalisés n'est nécessaire : l'objet sérialisé
+    porte déjà toute son identité.
+-   Cliquer sur l'offre d'**un autre joueur** dans la vitrine l'achète
+    immédiatement (prix fixe, pas de négociation).
+-   Cliquer sur **sa propre** offre l'annule et restitue l'objet — même
+    effet que `/market cancel <id>`.
+-   `/market admin list` (`rpgquest.admin`) — liste en lecture seule
+    toutes les offres actives, pour la modération.
+
+**Le vendeur n'a pas besoin d'être en ligne** pour être payé — contrairement
+à `/money pay`, le crédit du vendeur ne dépend pas d'une session active
+(cohérent avec un marché qui doit continuer à fonctionner pendant
+l'absence du vendeur).
+
+### Anti-duplication (achat en deux temps)
+
+Le prix d'une offre n'étant connu qu'après lecture en base (contrairement à
+un marchand PNJ, dont le prix vient d'un YAML déjà chargé), l'ordre
+« débiter puis remettre » utilisé par les marchands ne suffit pas seul ici.
+L'achat se déroule donc en deux étapes bien séparées :
+
+1.  **Réservation atomique** (`MarketRepository#claim`) — bascule l'offre
+    `ACTIVE → SOLD` uniquement si elle l'était encore au moment de la
+    requête (comparaison et écriture dans la même transaction SQL). Au
+    plus un acheteur peut jamais réserver la même offre, quel que soit le
+    nombre de clics simultanés.
+2.  **Débit de l'acheteur**, tenté seulement après la réservation réussie.
+    S'il échoue (fonds insuffisants), l'offre est **réactivée**
+    (`MarketRepository#reactivate`) plutôt que perdue — elle redevient
+    immédiatement achetable par n'importe qui.
+
+Seul un débit réussi déclenche le crédit du vendeur et la remise de
+l'objet à l'acheteur. Annuler sa propre offre suit la même garde
+(`MarketRepository#cancel`, atomique, vérifie propriétaire + état actif) :
+l'objet n'est restitué que si l'annulation a réellement eu lieu.
+
+### Limitation connue
+
+`/market admin` ne permet pas de forcer l'annulation d'une offre d'un
+joueur hors ligne avec restitution de l'objet (pas de système de « boîte
+aux lettres » différée) — seul le vendeur lui-même (en ligne) peut annuler
+sa propre offre. Mirroir facile d'un futur système de livraison différée
+si nécessaire (voir aussi backpacks, étape 20).
+
 ## Tests
 
 Automatisés :
@@ -116,7 +172,18 @@ Automatisés :
 -   `DialogueDefinitionParserTest`/`DialogueSessionEngineTest` — parsing de
     `OPEN_MERCHANT`, ouverture réelle de la vitrine depuis un choix de
     dialogue (fermeture de la session de dialogue au passage).
+-   `MarketRepositoryTest` — création d'offre, jointure du nom du vendeur,
+    filtrage « mes offres », réservation atomique (dont l'échec d'une
+    seconde réservation sur une offre déjà vendue), réactivation après
+    débit refusé, annulation (par le vendeur, par un tiers refusé, sur une
+    offre déjà vendue refusée).
+-   `MarketServiceTest` — mise en vente (retrait de l'objet en main),
+    achat réel (fonds suffisants et insuffisants — dans ce dernier cas,
+    l'offre redevient active), clic sur sa propre offre (annulation),
+    `/market cancel` par le vendeur et par un tiers.
 
 `PENDING MANUAL VALIDATION` (client Minecraft réel requis) : ouverture
 d'une vitrine par clic sur un PNJ renommé, lisibilité du lore des offres,
-`/money pay` entre deux vrais joueurs, latence réseau sur un achat/vente.
+`/money pay` entre deux vrais joueurs, latence réseau sur un achat/vente,
+navigation entre pages de `/market` avec un grand nombre d'offres, achat
+concurrent réel de la même offre par deux joueurs.

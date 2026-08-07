@@ -37,6 +37,9 @@ commands:
   merchant:
     description: Marchands PNJ (administration) — voir docs/ECONOMY.md.
     usage: /<command> <reload|validate|list>
+  market:
+    description: Marché entre joueurs — voir docs/ECONOMY.md.
+    usage: /<command> [sell <prix>|cancel <id>|admin list]
 
 permissions:
   rpgquest.admin:
@@ -53,4 +56,7 @@ permissions:
     default: op
   rpgquest.money:
     description: Accès aux commandes joueur d'économie (/money, /money pay).
+    default: true
+  rpgquest.market:
+    description: Accès au marché entre joueurs (/market, /market sell|cancel).
     default: true

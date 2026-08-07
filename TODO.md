@@ -333,6 +333,36 @@
     depuis un choix de dialogue)
 -   [x] `docs/ECONOMY.md`, `MERCHANT_FORMAT.md`
 
+## Marché entre joueurs (fait)
+
+-   [x] `database.MarketRepository` (pure JDBC) : table `market_listings`
+    (offre = objet complet en dépôt, sérialisé via
+    `ItemStack#serializeAsBytes()` — méta et PDC d'un objet personnalisé
+    compris, aucune dépendance au registre d'objets) — migration V5
+-   [x] Trois opérations atomiques (une seule transaction JDBC chacune,
+    même discipline que `WalletRepository`) : `claim` (réservation
+    `ACTIVE → SOLD`, jamais deux fois la même offre), `cancel` (annulation
+    restreinte au vendeur), `reactivate` (remise à disposition après un
+    débit refusé)
+-   [x] `economy.market.MarketService` : achat en deux temps imposé par
+    l'absence de prix connu à l'avance (réservation d'abord, débit
+    ensuite, réactivation si le débit échoue) — jamais de double-vente ni
+    d'argent perdu
+-   [x] `/market` (vitrine paginée, toutes offres/tous vendeurs), clic sur
+    l'offre d'un autre joueur = achat, clic sur sa propre offre =
+    annulation + restitution de l'objet
+-   [x] `/market sell <prix>` (vend la pile en main), `/market cancel <id>`
+    (alternative texte), `/market admin list` (`rpgquest.admin`, lecture
+    seule)
+-   [x] Vendeur crédité même hors ligne (aucune dépendance à une session
+    Bukkit active, contrairement à `/money pay`)
+-   [x] Tests : réservation atomique (dont échec d'une seconde réservation
+    concurrente), réactivation, annulation (vendeur/tiers/offre déjà
+    vendue), vente réelle (retrait de l'objet en main), achat réel (fonds
+    suffisants/insuffisants), clic sur sa propre offre
+-   [x] Section « Marché entre joueurs » de `docs/ECONOMY.md`, sous-section
+    `economy.market` de `docs/ARCHITECTURE.md`
+
 ## MVP
 
 -   [x] Architecture
@@ -348,10 +378,10 @@
 -   [x] Resource pack
 -   [x] Zones protégées
 -   [x] Économie et marchands PNJ
+-   [x] Marché entre joueurs
 
 ## Plus tard
 
--   [ ] Marché entre joueurs
 -   [ ] Portails et téléportation
 -   [ ] Claims de terrain
 -   [ ] PNJ avancés

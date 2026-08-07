@@ -21,7 +21,7 @@ class SchemaMigratorTest {
     void migrateSetsUserVersionToCurrentSchemaVersion() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(4, userVersion(connection));
+            assertEquals(7, userVersion(connection));
         }
     }
 
@@ -30,7 +30,7 @@ class SchemaMigratorTest {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema2.db"))) {
             SchemaMigrator.migrate(connection);
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(4, userVersion(connection));
+            assertEquals(7, userVersion(connection));
         }
     }
 
@@ -46,7 +46,7 @@ class SchemaMigratorTest {
 
             SchemaMigrator.migrate(connection);
 
-            assertEquals(4, userVersion(connection));
+            assertEquals(7, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='quest_objective_progress'")) {
@@ -79,6 +79,46 @@ class SchemaMigratorTest {
                     count++;
                 }
                 assertEquals(2, count);
+            }
+        }
+    }
+
+    @Test
+    void migrateCreatesPortalCooldownsTable() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema7.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT name FROM sqlite_master WHERE type='table' AND name='portal_cooldowns'")) {
+                assertTrue(resultSet.next());
+            }
+        }
+    }
+
+    @Test
+    void migrateCreatesClaimsAndClaimMembersTables() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema8.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('claims', 'claim_members')")) {
+                int count = 0;
+                while (resultSet.next()) {
+                    count++;
+                }
+                assertEquals(2, count);
+            }
+        }
+    }
+
+    @Test
+    void migrateCreatesMarketListingsTable() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema6.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT name FROM sqlite_master WHERE type='table' AND name='market_listings'")) {
+                assertTrue(resultSet.next());
             }
         }
     }

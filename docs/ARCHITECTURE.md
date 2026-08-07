@@ -4,10 +4,12 @@
 
     be.lloyd.rpgquest
     ├── RPGQuestPlugin       (point d'entrée, délègue tout à bootstrap)
-    ├── admin                (/rpgadmin : aplatissement de terrain, futurs zones/portails/mobs)
+    ├── admin                (/rpgadmin : aplatissement de terrain, zones, portails, mobs spéciaux)
     ├── bootstrap            (cycle de vie : PluginService, registre, orchestration)
     ├── command
     ├── config               (chargement + validation de config.yml)
+    ├── claim                (claims de terrain joueurs : persistance SQLite, sélection, protection)
+    │   └── model            (modèles immuables : claim, permissions)
     ├── crafting             (recettes YAML + enregistrement Bukkit + garde anti-substitution)
     │   └── model            (modèles immuables : recette façonnée/non, ingrédients, résultat)
     ├── database
@@ -15,18 +17,24 @@
     │   ├── model           (modèles immuables : dialogue, nœuds, choix, conditions, actions)
     │   ├── render          (DialogueRenderer : ChatDialogueRenderer, PaperDialogRenderer)
     │   └── session         (état runtime mutable, sessions en mémoire, listeners)
-    ├── economy              (portefeuille joueur, paiements, marchands PNJ)
-    │   └── merchant        (définitions YAML de marchands + vitrine en jeu)
-    │       └── model       (modèles immuables : marchand, offre)
+    ├── economy              (portefeuille joueur, paiements, marchands PNJ, marché entre joueurs)
+    │   ├── merchant        (définitions YAML de marchands + vitrine en jeu)
+    │   │   └── model       (modèles immuables : marchand, offre)
+    │   └── market          (marché entre joueurs : offres persistées, vitrine paginée)
     ├── item                 (définitions YAML d'objets personnalisés + registre)
     │   ├── model            (modèles immuables : type, rareté, attributs, enchantements...)
     │   └── behavior         (comportements de combat/outil en jeu : cooldowns, listeners)
+    ├── mob                  (variantes de mobs vanilla YAML + upgrade au spawn + population)
+    │   ├── model            (modèles immuables : définition de variante, capacités)
+    │   └── ability          (écouteurs/services par capacité : explosion, agressivité, division)
     ├── player
     ├── quest                (définitions YAML + progression des joueurs)
     │   ├── model            (modèles immuables : quête, étapes, objectifs, récompenses)
     │   └── progress         (état runtime mutable, index, listeners, commandes)
     ├── resource             (types de nœuds YAML + positions récoltables persistées)
     │   └── model            (modèles immuables : type de nœud, drops pondérés)
+    ├── travel               (portails et téléportation : destinations, canalisation, sécurité)
+    │   └── model            (modèles immuables : destination, portail)
     ├── ui                   (journal de quêtes : menu paginé, vue détail, suivi)
     ├── util                 (vide pour l'instant : utilitaires génériques uniquement)
     └── zone                 (zones protégées : registre YAML, protection d'événements, sélection)
@@ -1062,6 +1070,88 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
     optionnelle suffit ». Voir `docs/ECONOMY.md` pour le plan d'intégration
     exact si un serveur a besoin de Vault plus tard.
 
+### `economy.market` (marché entre joueurs)
+
+-   **Aucun modèle YAML, aucun registre** — contrairement à
+    `economy.merchant` (offres figées, définies par un administrateur),
+    une offre de marché est **créée en jeu par un joueur** et vit entièrement
+    en base (`database.MarketRepository`, `market_listings`, migration V5) :
+    pas de fichier, pas de rechargement, pas de notion de « définition ».
+-   **L'objet entier est mis en dépôt, sérialisé tel quel** —
+    `ItemStack#serializeAsBytes()`/`ItemStack#deserializeBytes(byte[])`
+    (API Bukkit vérifiée présente dans `paper-api-1.21.11` par inspection
+    du jar) capturent la totalité de l'`ItemStack` (méta, PersistentDataContainer
+    d'un objet personnalisé compris) dans une colonne `BLOB`. Contrairement
+    à `economy.merchant`, **aucune dépendance à
+    `YamlCustomItemRegistry`** n'est nécessaire : l'objet mis en vente
+    porte déjà toute son identité, il n'a besoin d'être ni recréé ni
+    ré-identifié à la remise.
+-   **`MarketRepository` — trois opérations atomiques distinctes**, même
+    discipline transactionnelle explicite que `WalletRepository`
+    (`setAutoCommit(false)`/`commit`/`rollback` dans un seul appel à
+    `DatabaseManager#execute`) :
+    -   `claim(id, buyer)` — lit puis bascule `ACTIVE → SOLD` **dans la
+        même transaction**, seulement si l'offre était encore active ;
+        retourne l'offre (donc son prix) ou vide. C'est la garde qui
+        garantit qu'une offre ne peut jamais être vendue deux fois, même
+        avec deux clics simultanés sur deux joueurs différents.
+    -   `cancel(id, seller)` — même patron, avec une condition
+        supplémentaire (`seller_uuid = ?`) : seul le vendeur peut annuler
+        sa propre offre, jamais un tiers ni un administrateur (voir
+        limitation ci-dessous).
+    -   `reactivate(id, buyer)` — remet une offre `SOLD` à `ACTIVE`
+        (uniquement si `buyer_uuid` correspond encore, défense en
+        profondeur), utilisée après un débit refusé (voir plus bas).
+-   **Achat en deux temps, ordre imposé par une contrainte que
+    `economy.merchant` n'a pas** — pour un marchand PNJ, le prix vient
+    d'un YAML déjà chargé, donc « débiter puis remettre » suffit. Pour une
+    offre de marché, le prix n'est connu qu'**après** lecture en base :
+    l'ordre est donc nécessairement (1) réserver atomiquement
+    (`claim`, qui ne bouge aucun argent), (2) débiter l'acheteur du prix
+    ainsi découvert, (3) si le débit échoue, `reactivate` plutôt que
+    perdre l'offre. Entre (1) et un `reactivate` éventuel, l'offre est
+    indisponible pour tout le monde pendant quelques millisecondes tout au
+    plus (aucun argent ni objet n'est en jeu durant cette fenêtre) — un
+    compromis délibéré, pas un bug : la réservation doit précéder la
+    connaissance du prix, contrairement à un marchand YAML.
+-   **`MarketService` — vitrine unique, pas d'onglets** — délibérément plus
+    simple que `QuestJournalService` (pas de distinction « mes offres »/
+    « toutes les offres » en onglets séparés) : la vitrine liste **toutes**
+    les offres actives de **tous** les vendeurs, triées par ancienneté ;
+    cliquer sur sa propre offre l'annule (récupère l'objet), cliquer sur
+    celle d'un autre l'achète. Un seul geste (le clic) couvre les deux
+    usages, sans naviguer entre onglets — jugé suffisant pour la mission
+    (« marché entre joueurs »), qui ne demande pas explicitement de vue
+    séparée. `MarketPagination` (dupliquée depuis `ui.JournalPagination`,
+    gardée package-privée dans `ui`, voir plus haut) fournit la même
+    arithmétique de pagination (45 slots de contenu par page) sans
+    dépendance croisée entre packages.
+-   **`MarketSession` fige la liste des offres affichées, pas seulement
+    leurs id** — contrairement à `JournalSession`/`MerchantSession`
+    (qui figent des identifiants, revalidés contre le registre courant au
+    clic), `MarketSession` fige les enregistrements `MarketListingRecord`
+    complets de la page rendue : le prix d'une offre ne pouvant jamais
+    changer après création (pas de fonctionnalité d'édition), le
+    réutiliser tel quel pour lancer l'achat est sûr, et la disponibilité
+    réelle est de toute façon revérifiée par `claim` au moment du clic —
+    aucune fenêtre exploitable.
+-   **Vente : la pile entière tenue en main, jamais une quantité partielle**
+    — pas de sélection de quantité dans `/market sell <prix>` ; un joueur
+    qui veut vendre moins sépare sa pile dans son inventaire au préalable
+    (mécanisme vanilla standard), cohérent avec l'absence de quantité
+    configurable pour une offre de marché (contrairement à
+    `economy.merchant`, où `quantity` fait partie de la définition YAML
+    figée par l'administrateur).
+-   **Vendeur crédité même hors ligne** — `EconomyService#credit` opère
+    par UUID, sans dépendre d'une session Bukkit active : un joueur peut
+    vendre un objet et se déconnecter, il sera payé à la vente sans avoir
+    besoin d'être reconnecté (contrairement à `/money pay`, qui exige un
+    destinataire en ligne).
+-   **`/market admin list`** (`rpgquest.admin`) — lecture seule
+    (modération) : aucune commande d'administration ne peut annuler l'offre
+    d'un joueur hors ligne avec restitution de l'objet, voir
+    « Limites connues ».
+
 ## Resource pack (optionnel)
 
 -   **`resource-pack/` à la racine du dépôt** (pas dans `src/main/resources`,
@@ -1297,6 +1387,256 @@ qu'embarqués dans le jar.
     étape) ; `create`/`delete` recharge déjà automatiquement, ce qui
     couvre le flux d'usage principal (création/suppression via l'outil de
     sélection).
+
+## `travel` (portails et téléportation)
+
+-   **Deux registres YAML indépendants, comme le mission l'a explicitement
+    demandé** — `Destination` (position nommée réutilisable, `travel/`
+    n'ayant aucune notion de PNJ ni de zone) et `PortalDefinition` (zone
+    d'activation cuboïde, même forme que `ZoneDefinition` mais
+    délibérément dupliquée plutôt que réutilisée — un portail n'a ni id à
+    motif imposé par une zone protégée ni `ZoneFlags`) reliée à une
+    destination **par id, résolu paresseusement à l'activation**, jamais
+    validé au chargement — même choix que les offres de marchand
+    référençant un objet personnalisé (`economy.merchant`) : les deux
+    registres restent découplés, pas de dépendance `travel` interne
+    portail → destination au chargement.
+-   **Aucune commande dédiée pour créer une destination « à part » —
+    `/rpgadmin portal setdestination <id> <destinationId>` en tient lieu** :
+    elle capture la position exacte (x, y, z, yaw, pitch) de
+    l'administrateur au moment de l'appel dans `YamlDestinationRegistry`
+    (créée si l'id est nouveau, remplacée si l'id existe déjà — sémantique
+    « set »), puis relie le portail à cet id. Décision d'ingénierie : la
+    mission ne liste que des sous-commandes `portal`, pas de CRUD
+    `destination` séparé ; capturer la position en marchant dessus est de
+    toute façon plus fiable que de faire taper des coordonnées à la main.
+-   **Aucun exemple embarqué** (contrairement à `central_village` pour les
+    zones) — une destination doit être une position réellement sûre sur le
+    monde de l'opérateur ; contrairement à une zone protégée (un simple
+    cuboïde, sûr à n'importe quelles coordonnées), bundler des coordonnées
+    de destination arbitraires serait plus nuisible qu'utile sur un monde
+    généré procéduralement (risque réel d'enterrer un joueur). Documenté
+    dans `docs/TRAVEL.md`.
+-   **`PortalLoader` rejette aussi les chevauchements de zone d'activation**
+    entre portails du même monde (même extension du patron à deux phases
+    que `ZoneLoader` : deux portails activables au même endroit rendraient
+    ambigu « lequel s'active en premier »), mais `DestinationLoader` ne
+    rejette **pas** les positions superposées entre destinations (rien
+    n'empêche deux noms de pointer légitimement au même endroit).
+-   **`travel.PortalService` — canalisation à délai, même patron « tâche
+    répétée + annulation » que `admin.FlattenService`** : une session par
+    joueur (`ChannelingSession`, position de départ figée, compteur de
+    ticks écoulés/total plutôt qu'une horloge murale injectée — la durée
+    d'un portail se mesure en ticks de jeu, pas en temps réel, donc
+    `server.getScheduler().performTicks(n)` suffit à rendre les tests
+    déterministes sans injection d'horloge). Annulée dans trois cas
+    (mouvement au-delà d'une tolérance de 0,6 bloc au carré — comparaison
+    sans `sqrt` —, dégâts, déconnexion), chacun relayé par
+    `PortalListener` vers une seule méthode `cancelChanneling`.
+-   **Détection d'entrée dans un portail — même filtrage que
+    `ZoneProtectionListener`** : `PlayerMoveEvent` n'est traité qu'aux
+    changements réels de position de bloc (jamais chaque micro-mouvement
+    de caméra), et `PortalService.handleMove` ne redéclenche
+    `attemptActivate` que sur une vraie **transition** (nouvel id de
+    portail différent du précédent connu pour ce joueur) — un joueur
+    immobile dans une zone d'activation dont il ne remplit pas les
+    conditions ne voit donc pas son message de refus spammé à chaque tick.
+-   **Vérification des conditions, dans un ordre délibéré** — synchrones
+    d'abord (permission, niveau, cooldown depuis le cache mémoire), puis
+    asynchrones (état de quête via `QuestProgressEngine#stateOf`, solde
+    via `EconomyService#balance`) : échouer vite sur les vérifications bon
+    marché évite une consultation base pour un joueur qui n'a de toute
+    façon pas la permission.
+-   **Aucun débit tant que le succès n'est pas garanti — cœur de la
+    garantie demandée par la mission** : la vérification de fonds
+    suffisants a lieu *avant* la canalisation (évite de faire attendre un
+    joueur pour un échec prévisible), mais le débit réel n'a lieu qu'**après**
+    la résolution de la destination et la vérification de sécurité, juste
+    avant `teleportAsync` — un monde absent, une destination introuvable
+    ou aucune position sûre trouvée n'entraînent donc jamais aucun débit
+    (voir aussi `economy.EconomyService`).
+-   **Recherche de position sûre — balayage vertical borné, jamais un
+    chargement de chunk permanent** — `findSafeLocation` teste d'abord la
+    position enregistrée telle quelle, puis alterne au-dessus/en-dessous
+    jusqu'à 5 blocs ; un bloc dangereux (lave, feu, feu d'âme, magma,
+    cactus) ou l'absence de sol solide sous les pieds rejette la position.
+    `World#getChunkAt` est appelé **une seule fois**, un accès ponctuel qui
+    charge la colonne si besoin (comme n'importe quelle téléportation
+    vanilla vers une zone déchargée) — aucun ticket de chunk n'est jamais
+    posé, donc rien ne reste chargé de force après coup.
+-   **Cooldown persisté, jamais consulté en base depuis un événement aussi
+    fréquent que `PlayerMoveEvent`** — `database.PortalCooldownRepository`
+    (`portal_cooldowns`, migration V6) est lu **une seule fois**, à la
+    connexion (`PlayerJoinEvent`), et mis en cache mémoire
+    (`Map<UUID, Map<String, Instant>>`) ; chaque utilisation réussie d'un
+    portail met à jour le cache **et** écrit en base (asynchrone,
+    tolérant à l'échec — un cooldown non persisté à cause d'une erreur
+    transitoire reste actif en mémoire jusqu'à la prochaine déconnexion,
+    limitation mineure jugée acceptable). C'est ce qui permet au cooldown
+    de survivre à une reconnexion, comme demandé par la mission.
+-   **`/rpgadmin portal create|delete|list|info|setdestination`** — nouvelle
+    branche de `RpgAdminCommand` (déjà pensée pour grandir ainsi, voir
+    section `admin`), réutilisant l'outil de sélection `wand` déjà existant
+    pour délimiter la zone d'activation — aucun nouvel outil nécessaire.
+
+## `claim` (claims de terrain joueurs)
+
+-   **SQLite plutôt que YAML, contrairement à `zone`** — décision
+    d'ingénierie délibérée : une zone protégée est curée par un
+    administrateur, peu nombreuse, modifiée rarement, et bénéficie d'être
+    éditable à la main ; un claim est créé/modifié par **n'importe quel
+    joueur**, potentiellement nombreux, avec une appartenance et une liste
+    de membres qui changent en jeu — le même profil d'usage que les offres
+    de marché (`economy.market`), donc la même solution technique
+    (`database.ClaimRepository`, `claims`/`claim_members`, migration V7).
+-   **`claim.model.Claim` n'a aucune dépendance Bukkit et est réutilisé tel
+    quel par `ClaimRepository`** — pas de type « ligne de base de données »
+    séparé façon `MarketListingRecord` : `Claim` satisfait déjà la
+    contrainte que cette séparation protège d'habitude (testable sans
+    MockBukkit), dupliquer ses huit champs dans un second type n'aurait
+    apporté aucune valeur. Documenté explicitement dans le Javadoc de la
+    classe pour ne pas ressembler à un oubli de convention.
+-   **Propriété et confiance exclusivement par UUID, jamais par pseudo**
+    (exigence explicite de la mission) — `Claim#isTrusted(UUID)` est
+    l'unique porte d'entrée utilisée par `ClaimProtectionListener` ; aucun
+    chemin de code ne compare un nom affiché. `/claim trust <joueur>`
+    résout bien un pseudo au moment de la commande (comme `/money pay`),
+    mais seul l'UUID résolu est stocké.
+-   **Outil de sélection dédié** (`ClaimSelectionService`/`ClaimWandListener`,
+    clé PDC `rpgquest:claim_wand`) — copie volontaire de
+    `zone.ZoneSelectionService`, pas une réutilisation : un joueur qui est
+    aussi administrateur ne doit pas voir sa sélection de claim mélangée à
+    sa sélection de zone protégée (deux services, deux états en mémoire
+    totalement indépendants). Hache en **bois** différente (houe plutôt que
+    hache) pour que les deux outils restent visuellement distincts en jeu.
+-   **Toutes les sous-commandes `/claim` sauf `create` opèrent sur « le
+    claim où tu te trouves », jamais sur un id tapé à la main** — lecture
+    littérale de la mission, qui ne montre un argument que pour
+    `trust`/`untrust <joueur>` (pas pour `delete`/`info`) :
+    `ClaimCommand` résout le claim via `ClaimService#claimAt` sur la
+    position exacte du joueur au moment de la commande, plutôt que
+    d'ajouter un identifiant à chaque syntaxe.
+-   **`ClaimService` porte toute la validation métier, `ClaimRepository`
+    reste pure JDBC** — chevauchement (claim/claim, claim/zone protégée),
+    distance aux portails, taille, nombre maximal : c'est ce qui crée la
+    dépendance délibérée de `claim` vers `zone`/`travel` (documentée ici et
+    dans `docs/CLAIMS.md`), une validation qui touche plusieurs systèmes ne
+    peut pas vivre dans le repository sans lui faire connaître Bukkit.
+-   **Cache en mémoire indexé par monde, rechargé intégralement après
+    chaque mutation** — même patron que `ZoneRegistry#zonesInWorld`/
+    `YamlPortalRegistry#portalsInWorld` pour la lecture (bon marché à
+    chaque événement protégé), mais **pas** le patron « écrire un fichier
+    puis recharger » des registres YAML : après une création/suppression/
+    confiance/permission réussie, `ClaimService` relit l'intégralité de
+    `claims`/`claim_members` depuis la base plutôt que de corriger le cache
+    à la main — plus simple, sans risque de désynchronisation, largement
+    assez rapide pour une fréquence de mutation (créations/suppressions de
+    claims) bien plus faible qu'un `PlayerMoveEvent`.
+-   **Seams pour une politique liée à la progression, sans rien implémenter
+    encore** (mission, point 8) — `effectiveMaxWidth`/`effectiveMaxHeight`/
+    `effectiveMaxClaims` prennent déjà un `Player` en paramètre mais ne
+    retournent que la valeur globale de `config.yml` pour l'instant ; une
+    étape ultérieure (XP RPG) pourra les faire varier sans changer un seul
+    appelant. Même philosophie que l'intégration Vault préparée en étape 14
+    (`economy.EconomyService`).
+-   **`ClaimProtectionListener` — même conception que
+    `ZoneProtectionListener`, deux catégories de protection nouvelles**
+    (animaux, armor stands) qui n'existaient pas pour les zones : `Animals`
+    (interface Bukkit dédiée, couvre vaches/moutons/poules/loups...) pour
+    les dégâts, et `PlayerArmorStandManipulateEvent` (événement Paper dédié
+    à l'échange d'équipement sur un armor stand, plus précis qu'un
+    `PlayerInteractAtEntityEvent` générique) pour la manipulation.
+    Conteneurs et redstone réutilisent la même détection par suffixe de nom
+    de matériau/`instanceof Container` que les zones ; les dalles de
+    pression (déclenchées par `Action.PHYSICAL`, pas un clic droit) sont
+    rattachées au même groupe « redstone » que boutons/leviers/portes.
+-   **Piston et explosions toujours protégés, sans flag** — contrairement
+    aux zones (`allowPistonsAcrossBorder`/`allowExplosions` configurables),
+    la mission ne liste que la redstone comme configurable pour un claim :
+    ces deux protections sont donc fixes, jamais désactivables par le
+    propriétaire.
+-   **Bypass (`rpgquest.admin.world`)** — même permission que le bypass des
+    zones protégées, décision délibérée pour ne pas multiplier les nœuds de
+    permission pour un concept équivalent (« administrateur du monde »).
+
+## `mob` (mobs spéciaux)
+
+-   **Variantes d'entités vanilla, jamais de mob custom via NMS** — une
+    `SpecialMobDefinition` habille un `EntityType` vivant existant
+    (attributs via `Attribute`, nom MiniMessage, particule/son, capacités,
+    table de drops) plutôt que de créer un nouveau type d'entité : seule
+    approche compatible avec l'exigence « API Paper publique uniquement,
+    pas de NMS ».
+-   **`allowedBiomes`/`allowedZones` restent de simples `Set<String>`,
+    jamais résolus en objets au chargement** — même choix que
+    `allowedWorlds` : comparaison par nom de clé (`Biome#getKey().getKey()`)
+    ou par id de zone au moment du spawn seulement. Évite un couplage de
+    `mob` vers `zone` au chargement du fichier (`ZoneRegistry` n'est
+    injecté que dans `SpecialMobService`, jamais dans le parseur/loader) et
+    une dépendance à la forme exacte de l'API `Biome` dans cette version de
+    Paper (`OldEnum` adossé à un registre serveur, comme `Sound`/`Particle`
+    — voir plus bas).
+-   **`SpecialMobDefinition.drops()` réutilise `resource.model.ResourceDrop`
+    tel quel** — même besoin exact que `resource.ResourceNodeDefinition`
+    (un tirage pondéré unique, objet personnalisé ou matériau vanilla) :
+    dupliquer ce type n'aurait apporté aucune valeur, seul le parseur
+    diffère par le contexte (`drops:` d'une variante plutôt que d'un type de
+    nœud).
+-   **Identification exclusivement par PersistentDataContainer, jamais par
+    le nom affiché** — exigence explicite de la mission (point 10) :
+    `SpecialMobService#specialMobId`/`specialMobDefinition` sont l'unique
+    porte d'entrée utilisée par les écouteurs de capacités et par
+    `/rpgadmin mob inspect`. Un joueur qui renomme une entité (nametag) ne
+    casse jamais sa reconnaissance.
+-   **Upgrade au spawn naturel via `CreatureSpawnEvent` en priorité `HIGH`
+    avec `ignoreCancelled = true`** — s'exécute délibérément après
+    `ZoneProtectionListener#onCreatureSpawn` (priorité par défaut) : un
+    spawn déjà annulé par la safe zone n'est jamais vu, donc jamais upgradé,
+    sans que `SpecialMobService` ait besoin de connaître `ZoneFlags`
+    directement pour ce cas précis (mission point 5). L'autorisation
+    « zones autorisées » de la variante elle-même reste une vérification
+    distincte (`allowedZones`, ci-dessus).
+-   **`setRemoveWhenFarAway(false)` posé à chaque application de variante**
+    — la population n'est décomptée qu'à `EntityDeathEvent`, jamais ailleurs
+    ; sans cette ligne, le despawn naturel vanilla par éloignement
+    ferait fuir silencieusement la population suivie (aucun événement
+    Bukkit ne l'accompagne). Combiné au fait qu'aucun listener n'écoute le
+    déchargement de chunk pour décrémenter, cela garantit le test manuel
+    « décharger/recharger un chunk ne doit jamais changer la population
+    suivie » — un `ChunkLoadEvent` ne fait que redécouvrir (jamais
+    recompter) les entités déjà taguées PDC, ce qui couvre aussi le
+    redémarrage du serveur.
+-   **`ExplosiveOnAttackAbilityService` balaye `SpecialMobService#aliveEntityIds`,
+    jamais `World#getLivingEntities()`** — borné à la population réelle des
+    variantes possédant cette capacité plutôt qu'à tous les mobs du monde ;
+    conséquence directe du choix précédent (population toujours à jour, y
+    compris après un redémarrage).
+-   **Pas de goal d'IA « attaque » pour une entité passive (`creeper_pig`)
+    via l'API publique** — décision documentée dans le Javadoc de
+    `ExplosiveOnAttackAbility` : un balayage périodique (1 s, mirroir du
+    patron de `resource.ResourceNodeService#sweepRespawns`) détecte un
+    joueur à portée et déclenche une explosion réelle
+    (`World#createExplosion`), qui émet un `EntityExplodeEvent` normal — les
+    écouteurs de protection de zone/claim s'appliquent donc automatiquement,
+    sans dupliquer cette logique (mission point 6).
+-   **`SplitOnHitAbilityListener` stocke la profondeur de génération en PDC,
+    jamais dans le nom affiché** — combinée à `max-children-per-hit` et à
+    `max-population` (vérifiée avant chaque enfant), ces trois bornes
+    garantissent ensemble qu'aucune chaîne de division n'est infinie
+    (mission point 7, validation explicite « aucune capacité ne crée une
+    croissance incontrôlée d'entités »).
+-   **`Sound`/`Particle` restent résolus par nom d'enum classique
+    (`Sound#valueOf`, marqué « for removal »), pas par `Registry.SOUNDS`** —
+    ce registre s'indexe par clé namespacée en points
+    (`entity.creeper.primed`), pas par le nom d'enum attendu dans le YAML
+    (`ENTITY_CREEPER_PRIMED`) ; conservé tant que Paper ne fournit pas de
+    résolution par nom d'enum sur le registre (`@SuppressWarnings("removal")`
+    documenté sur place, dans `SpecialMobDefinitionParser`).
+-   **Bypass complet pour `/rpgadmin mob spawn`** — contrairement au spawn
+    naturel, la commande d'administration ignore volontairement
+    mondes/biomes/zones/population : c'est un outil de test (mission,
+    test manuel « faire apparaître chaque variante »), pas un second chemin
+    de spawn naturel.
 
 ## Flux principal (cible)
 
@@ -1688,3 +2028,75 @@ Fabrication → Remise → Récompense
     dialogue, via de vrais appels MockBukkit). Le ressenti en jeu
     (ouverture de la vitrine par clic sur un PNJ renommé, lisibilité du
     lore, latence réseau) reste à valider par un testeur humain.
+-   **`/market admin` ne peut pas forcer l'annulation d'une offre d'un
+    joueur hors ligne avec restitution de l'objet** — seul le vendeur
+    lui-même, en ligne, peut annuler sa propre offre
+    (`MarketRepository#cancel` vérifie `seller_uuid`). Pas de système de
+    livraison différée (« boîte aux lettres ») pour remettre un objet à un
+    joueur absent au moment où son offre serait annulée par un
+    administrateur — limitation assumée, mirroir facile d'un futur système
+    de backpacks/livraison (étape 20) si le besoin se précise.
+-   **Vitrine du marché sans onglets** — une seule liste, toutes offres de
+    tous les vendeurs confondues (voir section `economy.market`) ; pas de
+    vue « mes offres uniquement » dans l'inventaire (mirroir facile des
+    onglets de `ui.JournalTab` si nécessaire plus tard). `/market cancel
+    <id>` et `/market admin list` restent utilisables sans passer par le
+    menu.
+-   **Test manuel du marché entre joueurs limité par l'environnement** —
+    aucun client Minecraft réel disponible ici. Compensé par
+    `MarketRepositoryTest` (réservation atomique, y compris l'échec d'une
+    seconde réservation concurrente sur la même offre, réactivation après
+    débit refusé, annulation restreinte au vendeur) et `MarketServiceTest`
+    (vente réelle avec retrait de l'objet en main, achat réel fonds
+    suffisants/insuffisants, clic sur sa propre offre). Le ressenti en jeu
+    (navigation entre pages avec beaucoup d'offres, deux vrais joueurs
+    achetant simultanément la même offre, latence réseau) reste à valider
+    par un testeur humain.
+-   **Aucun avantage payant pour les claims à cette étape** — délibéré
+    (mission, point 9) : `effectiveMaxWidth`/`effectiveMaxHeight`/
+    `effectiveMaxClaims` ne dépendent d'aucune monnaie ni d'aucun achat,
+    uniquement d'un seam pour une future politique liée à la progression
+    (XP RPG), voir section `claim`.
+-   **`/claim list` liste uniquement les claims du joueur qui l'exécute** —
+    pas de variante admin listant les claims de tous les joueurs, non
+    demandée par la mission ; mirroir facile d'une future commande
+    `/rpgadmin claim list <joueur>` si le besoin se précise.
+-   **La redstone d'un claim n'a pas la granularité des zones protégées** —
+    pas de distinction entre boutons/leviers/portes/dalles de pression
+    comme le permettent les zones (`allowDoors`/`allowButtons`/
+    `allowLevers` séparés) : la mission ne demande qu'« redstone
+    configurable », traitée comme un seul groupe pour un claim.
+-   **Test manuel des claims limité par l'environnement** — aucun client
+    Minecraft réel disponible ici. Compensé par `ClaimServiceTest` (toutes
+    les conditions de refus à la création, suppression, confiance,
+    protection indépendante du statut en ligne du propriétaire) et
+    `ClaimProtectionListenerTest` (construit de vrais événements Bukkit sur
+    un monde MockBukkit : frontière incluse, membre autorisé/non autorisé,
+    conteneurs, redstone configurable, animaux, armor stands, explosion
+    externe, piston traversant la frontière, monde sans claim). Le
+    ressenti en jeu (deux joueurs voisins, TNT dedans/dehors, piston réel,
+    redémarrage complet) reste à valider par un testeur humain — voir
+    `docs/CLAIMS.md`.
+-   **Pas de rechargement à chaud d'un portail/d'une destination édités à
+    la main** — même limitation déjà documentée pour les zones protégées :
+    `create`/`delete`/`setdestination` rechargent déjà automatiquement, ce
+    qui couvre le flux d'usage principal.
+-   **Aucune commande `destination create` séparée** — voir section
+    `travel` : `/rpgadmin portal setdestination` capture la position de
+    l'administrateur et tient lieu de création/mise à jour de destination,
+    seule sous-commande demandée par la mission pour ce besoin.
+-   **Aucun exemple de portail/destination embarqué** — décision
+    délibérée, voir section `travel` (bundler des coordonnées arbitraires
+    sur un monde généré procéduralement serait plus nuisible qu'utile).
+-   **Test manuel des portails limité par l'environnement** — aucun client
+    Minecraft réel disponible ici. Compensé par `PortalServiceTest`, qui
+    construit un vrai monde MockBukkit (blocs réels) et vérifie chaque
+    garantie de sécurité demandée directement (conditions non remplies,
+    cooldown, coût débité uniquement au succès, monde de destination
+    absent, destination dangereuse, annulation par mouvement/dégâts/
+    déconnexion via de vrais appels), y compris que `teleportAsync` déplace
+    réellement le joueur simulé. Le ressenti en jeu (portail vers un chunk
+    réellement déchargé, reconnexion en pleine canalisation, latence
+    réseau, téléportation avec un inventaire chargé et une quête active,
+    test depuis/vers une safe zone réelle) reste à valider par un testeur
+    humain — voir `docs/TRAVEL.md`.

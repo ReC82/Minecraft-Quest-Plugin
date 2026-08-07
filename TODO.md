@@ -333,6 +333,136 @@
     depuis un choix de dialogue)
 -   [x] `docs/ECONOMY.md`, `MERCHANT_FORMAT.md`
 
+## Marché entre joueurs (fait)
+
+-   [x] `database.MarketRepository` (pure JDBC) : table `market_listings`
+    (offre = objet complet en dépôt, sérialisé via
+    `ItemStack#serializeAsBytes()` — méta et PDC d'un objet personnalisé
+    compris, aucune dépendance au registre d'objets) — migration V5
+-   [x] Trois opérations atomiques (une seule transaction JDBC chacune,
+    même discipline que `WalletRepository`) : `claim` (réservation
+    `ACTIVE → SOLD`, jamais deux fois la même offre), `cancel` (annulation
+    restreinte au vendeur), `reactivate` (remise à disposition après un
+    débit refusé)
+-   [x] `economy.market.MarketService` : achat en deux temps imposé par
+    l'absence de prix connu à l'avance (réservation d'abord, débit
+    ensuite, réactivation si le débit échoue) — jamais de double-vente ni
+    d'argent perdu
+-   [x] `/market` (vitrine paginée, toutes offres/tous vendeurs), clic sur
+    l'offre d'un autre joueur = achat, clic sur sa propre offre =
+    annulation + restitution de l'objet
+-   [x] `/market sell <prix>` (vend la pile en main), `/market cancel <id>`
+    (alternative texte), `/market admin list` (`rpgquest.admin`, lecture
+    seule)
+-   [x] Vendeur crédité même hors ligne (aucune dépendance à une session
+    Bukkit active, contrairement à `/money pay`)
+-   [x] Tests : réservation atomique (dont échec d'une seconde réservation
+    concurrente), réactivation, annulation (vendeur/tiers/offre déjà
+    vendue), vente réelle (retrait de l'objet en main), achat réel (fonds
+    suffisants/insuffisants), clic sur sa propre offre
+-   [x] Section « Marché entre joueurs » de `docs/ECONOMY.md`, sous-section
+    `economy.market` de `docs/ARCHITECTURE.md`
+
+## Portails et téléportation (fait)
+
+-   [x] `travel.model` : `Destination` (position nommée réutilisable) et
+    `PortalDefinition` (zone d'activation cuboïde + destination par id +
+    conditions), correctes par construction
+-   [x] Deux registres YAML indépendants (`DestinationLoader`/
+    `YamlDestinationRegistry`, `PortalLoader`/`YamlPortalRegistry`) — même
+    conception à deux phases que `ZoneLoader` ; `PortalLoader` rejette en
+    plus les portails dont la zone d'activation se chevauche (même monde)
+-   [x] `/rpgadmin portal create|delete|list|info` (réutilise l'outil de
+    sélection `wand` déjà existant) et `setdestination <id> <destinationId>`
+    (capture la position exacte de l'administrateur, crée ou met à jour la
+    destination, puis relie le portail)
+-   [x] `travel.PortalService` : détection d'entrée dans une zone
+    d'activation (même filtrage `PlayerMoveEvent` que les zones protégées),
+    canalisation à délai (actionbar de progression, même patron « tâche
+    répétée + annulation » que `FlattenService`), annulée sur mouvement
+    au-delà d'une tolérance, dégâts, ou déconnexion
+-   [x] Conditions d'accès cumulatives optionnelles : permission, quête +
+    état, niveau d'expérience vanilla, coût en pièces (`economy.EconomyService`)
+-   [x] Sécurité de destination : monde absent détecté proprement, chunk
+    chargé à la demande (jamais de force permanente), recherche de
+    position sûre (aucun bloc solide aux pieds/tête, sol solide sous les
+    pieds, aucun bloc dangereux) — aucun joueur ne peut être téléporté
+    dans le vide, la lave ou un bloc solide
+-   [x] Aucun débit tant que le succès n'est pas garanti : le coût n'est
+    débité qu'après résolution et vérification de sécurité de la
+    destination, juste avant la téléportation elle-même
+-   [x] Cooldown par joueur/portail persisté (`portal_cooldowns`, migration
+    V6), chargé en mémoire à la connexion (jamais de requête base depuis
+    `PlayerMoveEvent`) — survit à une reconnexion
+-   [x] Tests : conditions non remplies (permission/niveau/quête),
+    cooldown, coût (fonds insuffisants/suffisants, débit uniquement au
+    succès), monde de destination absent, destination dangereuse,
+    annulation par mouvement/dégâts/déconnexion, rechargement du registre
+-   [x] `docs/TRAVEL.md`
+
+## Claims de terrain (fait)
+
+-   [x] `claim.model.Claim` (correct par construction, propriétaire par
+    UUID, membres `Set<UUID>`) + `ClaimFlags` (seule permission
+    réellement configurable : `allowPublicRedstone`)
+-   [x] Persistance SQLite (`claims`/`claim_members`, migration V7) plutôt
+    que YAML — profil d'usage joueur (créé/modifié fréquemment,
+    appartenance mutable), même choix que le marché entre joueurs ;
+    `database.ClaimRepository` réutilise `Claim` directement (aucune
+    dépendance Bukkit à séparer)
+-   [x] Outil de sélection dédié (`ClaimSelectionService`/`ClaimWandListener`,
+    clé PDC `rpgquest:claim_wand`, distinct de l'outil de zone)
+-   [x] `/claim wand|create <id>|delete|info|trust <joueur>|untrust <joueur>|list|flag redstone <true|false>`
+    (`rpgquest.claim`) — toutes les sous-commandes sauf `create`/`list`
+    opèrent sur le claim où le joueur se trouve
+-   [x] Refus à la création : chevauchement avec un autre claim, avec une
+    zone protégée, trop près d'un portail, taille/nombre maximal dépassé
+    (`config.yml` → `claims`) — aucun claim invalide n'est jamais persisté
+-   [x] Seams `effectiveMaxWidth`/`effectiveMaxHeight`/`effectiveMaxClaims`
+    (prennent déjà un `Player`) préparés pour une future politique liée à
+    la progression, sans rien implémenter — aucun avantage payant à cette
+    étape
+-   [x] `ClaimProtectionListener` : blocs, conteneurs, animaux (`Animals`),
+    armor stands (`PlayerArmorStandManipulateEvent`), redstone
+    configurable (boutons/leviers/portes/dalles de pression), explosions,
+    pistons traversant la frontière — protection par UUID (propriétaire/
+    membres), bypass `rpgquest.admin.world` (même permission que les
+    zones protégées)
+-   [x] Tests : chevauchements (claim/zone/portail), taille, nombre
+    maximal, suppression, confiance/retrait, monde absent, protection
+    indépendante du statut en ligne du propriétaire, frontière incluse,
+    membre autorisé/non autorisé, explosion externe, piston traversant la
+    frontière
+-   [x] `docs/CLAIMS.md`
+
+## Mobs spéciaux (fait)
+
+-   [x] `mob.model` : `SpecialMobDefinition` (correct par construction,
+    réutilise `resource.model.ResourceDrop` pour la table de drops) +
+    `MobAbility` scellée (`StrongerExplosionAbility`,
+    `ExplosiveOnAttackAbility`, `SplitOnHitAbility`)
+-   [x] `SpecialMobDefinitionParser`/`SpecialMobLoader`/`SpecialMobRegistry`
+    (même patron à deux phases que `ResourceNodeRegistry`) + quatre
+    variantes d'exemple embarquées (`red_creeper`, `golden_creeper`,
+    `creeper_pig`, `splitting_zombie`)
+-   [x] `SpecialMobService` : upgrade au spawn naturel (`CreatureSpawnEvent`
+    priorité HIGH, après les listeners de protection de zone), identification
+    PDC uniquement (jamais le nom affiché), population trackée par
+    définition (décomptée uniquement à la mort — `setRemoveWhenFarAway(false)`
+    empêche tout despawn silencieux), redécouverte au chargement de chunk
+-   [x] Écouteurs de capacités : `StrongerExplosionAbilityListener`
+    (`ExplosionPrimeEvent`), `ExplosiveOnAttackAbilityService` (balayage
+    périodique borné à la population réelle des variantes, pas à
+    `World#getLivingEntities()`), `SplitOnHitAbilityListener` (profondeur en
+    PDC + `max-children-per-hit` + `max-population` : aucune chaîne de
+    division infinie)
+-   [x] `/rpgadmin mob spawn <id>|list|inspect <id>|reload|metrics`
+    (`rpgquest.admin.world`)
+-   [x] Tests : identification PDC, probabilités (générateur injecté), drop
+    unique, profondeur maximale de division, zone interdite, événement
+    annulé, reload, variante non reconnue
+-   [x] `SPECIAL_MOB_FORMAT.md`
+
 ## MVP
 
 -   [x] Architecture
@@ -348,12 +478,12 @@
 -   [x] Resource pack
 -   [x] Zones protégées
 -   [x] Économie et marchands PNJ
+-   [x] Marché entre joueurs
+-   [x] Portails et téléportation
+-   [x] Claims de terrain
+-   [x] Mobs spéciaux
 
 ## Plus tard
-
--   [ ] Marché entre joueurs
--   [ ] Portails et téléportation
--   [ ] Claims de terrain
 -   [ ] PNJ avancés
 -   [ ] Métiers
 -   [ ] Donjons

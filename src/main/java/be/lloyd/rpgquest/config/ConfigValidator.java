@@ -31,7 +31,8 @@ public final class ConfigValidator {
         DialogueConfig dialogue = validateDialogue(section);
         JournalConfig journal = validateJournal(section);
         AdminFlattenConfig adminFlatten = validateAdminFlatten(section);
-        return new PluginConfig(debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten);
+        ClaimConfig claims = validateClaims(section);
+        return new PluginConfig(debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -212,5 +213,39 @@ public final class ConfigValidator {
 
     private static AdminFlattenConfig defaultAdminFlatten() {
         return new AdminFlattenConfig(48, FlattenShape.SQUARE, Material.GRASS_BLOCK, Material.DIRT, 3, 10, 30, 4000, List.of());
+    }
+
+    private static ClaimConfig validateClaims(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection claims = section.getConfigurationSection("claims");
+        if (claims == null) {
+            return defaultClaims();
+        }
+
+        int maxWidth = claims.getInt("max-width", 64);
+        if (maxWidth <= 0) {
+            throw new ConfigValidationException(
+                    "« claims.max-width » doit être strictement positif, valeur trouvée : " + maxWidth);
+        }
+        int maxHeight = claims.getInt("max-height", 384);
+        if (maxHeight <= 0) {
+            throw new ConfigValidationException(
+                    "« claims.max-height » doit être strictement positif, valeur trouvée : " + maxHeight);
+        }
+        int maxClaimsPerPlayer = claims.getInt("max-claims-per-player", 3);
+        if (maxClaimsPerPlayer < 0) {
+            throw new ConfigValidationException(
+                    "« claims.max-claims-per-player » ne peut pas être négatif, valeur trouvée : " + maxClaimsPerPlayer);
+        }
+        int portalBufferBlocks = claims.getInt("portal-buffer-blocks", 16);
+        if (portalBufferBlocks < 0) {
+            throw new ConfigValidationException(
+                    "« claims.portal-buffer-blocks » ne peut pas être négatif, valeur trouvée : " + portalBufferBlocks);
+        }
+
+        return new ClaimConfig(maxWidth, maxHeight, maxClaimsPerPlayer, portalBufferBlocks);
+    }
+
+    private static ClaimConfig defaultClaims() {
+        return new ClaimConfig(64, 384, 3, 16);
     }
 }

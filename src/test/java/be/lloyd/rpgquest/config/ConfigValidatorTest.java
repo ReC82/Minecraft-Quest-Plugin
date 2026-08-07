@@ -255,6 +255,56 @@ class ConfigValidatorTest {
         assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
     }
 
+    @Test
+    void claimsDefaultsApplyWhenSectionIsAbsent() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load(""));
+
+        ClaimConfig claims = config.claims();
+        assertEquals(64, claims.maxWidth());
+        assertEquals(384, claims.maxHeight());
+        assertEquals(3, claims.maxClaimsPerPlayer());
+        assertEquals(16, claims.portalBufferBlocks());
+    }
+
+    @Test
+    void acceptsFullyCustomClaimsConfig() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                claims:
+                  max-width: 32
+                  max-height: 128
+                  max-claims-per-player: 5
+                  portal-buffer-blocks: 8
+                """));
+
+        ClaimConfig claims = config.claims();
+        assertEquals(32, claims.maxWidth());
+        assertEquals(128, claims.maxHeight());
+        assertEquals(5, claims.maxClaimsPerPlayer());
+        assertEquals(8, claims.portalBufferBlocks());
+    }
+
+    @Test
+    void rejectsNonPositiveClaimsMaxWidth() {
+        ConfigurationSection section = load("""
+                claims:
+                  max-width: 0
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("max-width"));
+    }
+
+    @Test
+    void rejectsNegativeClaimsMaxClaimsPerPlayer() {
+        ConfigurationSection section = load("""
+                claims:
+                  max-claims-per-player: -1
+                """);
+
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+    }
+
     private ConfigurationSection load(String yaml) {
         return YamlConfiguration.loadConfiguration(new StringReader(yaml));
     }

@@ -1,0 +1,33 @@
+id: rpgquest:golden_creeper
+entity-type: CREEPER
+name: "<gold><bold>Creeper Doré</bold></gold>"
+
+# Variante rare : 0,5% de chance de remplacer un spawn de creeper normal.
+spawn-chance: 0.005
+worlds: []
+biomes: []
+zones: []
+
+health: 40
+damage: 6
+speed: 1.0
+
+particle: TOTEM_OF_UNDYING
+sound: ENTITY_PLAYER_LEVELUP
+
+drops:
+  - material: GOLDEN_APPLE
+    weight: 40
+    min-amount: 1
+    max-amount: 1
+  - material: GOLD_INGOT
+    weight: 40
+    min-amount: 2
+    max-amount: 5
+  - material: GUNPOWDER
+    weight: 20
+    min-amount: 1
+    max-amount: 2
+
+xp-reward: 50
+max-population: 2

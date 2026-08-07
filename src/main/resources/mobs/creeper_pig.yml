@@ -1,0 +1,36 @@
+id: rpgquest:creeper_pig
+entity-type: PIG
+name: "<dark_green><bold>Cochon Creeper</bold></dark_green>"
+
+spawn-chance: 0.015
+worlds: []
+biomes: []
+zones: []
+
+health: 20
+speed: 1.1
+
+particle: SMOKE
+sound: ENTITY_CREEPER_PRIMED
+
+# Cochon normalement passif, rendu agressif : détecte les joueurs proches et
+# déclenche une explosion (respecte les événements annulés comme n'importe
+# quelle explosion vanilla — voir ExplosiveOnAttackAbility).
+abilities:
+  - type: EXPLOSIVE_ON_ATTACK
+    power: 3.0
+    set-fire: false
+    trigger-range-blocks: 3.0
+
+drops:
+  - material: PORKCHOP
+    weight: 70
+    min-amount: 1
+    max-amount: 2
+  - material: GUNPOWDER
+    weight: 30
+    min-amount: 1
+    max-amount: 2
+
+xp-reward: 15
+max-population: 6

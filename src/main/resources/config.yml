@@ -42,6 +42,16 @@ journal:
   # suivi lui-même (persisté) ni le journal, seulement la bossbar.
   tracker-enabled: true
 
+claims:
+  # Limites d'un claim de terrain (/claim create). Aucune politique liée à
+  # la progression du joueur pour l'instant (voir docs/CLAIMS.md) : ces
+  # valeurs sont fixes et identiques pour tous les joueurs à cette étape.
+  max-width: 64
+  max-height: 384
+  max-claims-per-player: 3
+  # Distance minimale (en blocs) entre un nouveau claim et n'importe quel portail existant.
+  portal-buffer-blocks: 16
+
 admin:
   flatten:
     # /rpgadmin flatten <rayon> [hauteur] — voir docs/ADMIN_FLATTEN.md.

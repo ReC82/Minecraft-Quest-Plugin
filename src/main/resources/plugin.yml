@@ -30,13 +30,19 @@ commands:
     usage: /<command> <create <typeId>|remove|inspect>
   rpgadmin:
     description: Commandes d'administration du monde (aplatissement, zones, portails...).
-    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo
+    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo|zone ...|portal create|delete|list|info|setdestination
   money:
     description: Portefeuille et paiements entre joueurs.
     usage: /<command> [pay <joueur> <montant>|admin <give|take|set> <joueur> <montant>]
   merchant:
     description: Marchands PNJ (administration) — voir docs/ECONOMY.md.
     usage: /<command> <reload|validate|list>
+  market:
+    description: Marché entre joueurs — voir docs/ECONOMY.md.
+    usage: /<command> [sell <prix>|cancel <id>|admin list]
+  claim:
+    description: Claims de terrain protégés entre joueurs — voir docs/CLAIMS.md.
+    usage: /<command> wand|create <id>|delete|info|trust <joueur>|untrust <joueur>|list|flag redstone <true|false>
 
 permissions:
   rpgquest.admin:
@@ -53,4 +59,10 @@ permissions:
     default: op
   rpgquest.money:
     description: Accès aux commandes joueur d'économie (/money, /money pay).
+    default: true
+  rpgquest.market:
+    description: Accès au marché entre joueurs (/market, /market sell|cancel).
+    default: true
+  rpgquest.claim:
+    description: Accès aux claims de terrain (/claim).
     default: true

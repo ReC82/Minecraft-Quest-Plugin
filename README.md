@@ -11,7 +11,9 @@ Plugin RPG pour Paper, sans mod client obligatoire.
 -   Recettes personnalisées
 -   Resource pack optionnel envoyé par le serveur
 -   Sauvegarde SQLite (asynchrone)
--   Économie (portefeuille, paiements) et marchands PNJ
+-   Économie (portefeuille, paiements), marchands PNJ et marché entre joueurs
+-   Portails et téléportation entre le village et les zones d'aventure
+-   Claims de terrain protégés, créés et gérés par les joueurs
 
 ## Prérequis
 
@@ -97,6 +99,26 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 -   `/rpgadmin zone wand|create|delete|list|info` (`rpgquest.admin.world`)
     — crée/gère des zones protégées (village central, safe zone...). Voir
     [docs/SAFE_ZONE.md](docs/SAFE_ZONE.md).
+-   `/rpgadmin portal create|delete|list|info <id>` (`rpgquest.admin.world`)
+    — crée/gère des portails (zone d'activation depuis le même outil de
+    sélection `wand`). Voir [docs/TRAVEL.md](docs/TRAVEL.md).
+-   `/rpgadmin portal setdestination <id> <destinationId>` (`rpgquest.admin.world`)
+    — fixe la destination d'un portail à ta position actuelle.
+-   `/rpgadmin mob spawn <id>` (`rpgquest.admin.world`) — invoque une
+    variante de mob spécial à ta position (outil de test, contourne les
+    restrictions de spawn naturel).
+-   `/rpgadmin mob list|inspect <id>|reload|metrics` (`rpgquest.admin.world`)
+    — liste/détaille les variantes chargées, recharge depuis le disque, ou
+    affiche les métriques de spawns/capacités. Voir
+    [SPECIAL_MOB_FORMAT.md](SPECIAL_MOB_FORMAT.md).
+-   `/claim wand` (`rpgquest.claim`) — outil de sélection pour un claim de
+    terrain (dédié, distinct de la sélection de zone).
+-   `/claim create <id>` (`rpgquest.claim`) — crée un claim depuis la
+    sélection courante.
+-   `/claim delete|info|trust <joueur>|untrust <joueur>|flag redstone <true|false>`
+    (`rpgquest.claim`) — agissent sur le claim où tu te trouves
+    (`delete`/`flag` réservés au propriétaire).
+-   `/claim list` (`rpgquest.claim`) — liste tes claims.
 -   `/money` (`rpgquest.money`) — affiche ton solde.
 -   `/money pay <joueur> <montant>` (`rpgquest.money`) — envoie des pièces à
     un joueur en ligne (transfert atomique).
@@ -104,6 +126,14 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
     crédite, débite ou fixe le solde d'un joueur.
 -   `/merchant reload|validate|list` (`rpgquest.admin`) — recharge/valide
     les marchands, ou les liste. Voir [docs/ECONOMY.md](docs/ECONOMY.md).
+-   `/market` (`rpgquest.market`) — ouvre la vitrine du marché entre
+    joueurs (toutes offres actives, paginée).
+-   `/market sell <prix>` (`rpgquest.market`) — met en vente l'objet tenu
+    en main.
+-   `/market cancel <id>` (`rpgquest.market`) — annule une de tes offres et
+    récupère l'objet (aussi possible en cliquant dessus dans la vitrine).
+-   `/market admin list` (`rpgquest.admin`) — liste en lecture seule
+    toutes les offres actives (modération).
 
 ### Permissions
 
@@ -112,8 +142,10 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 | `rpgquest.quest` | tous | `/quest list\|accept\|progress\|abandon`, `/quests` |
 | `rpgquest.item` | tous | `/customitem inspect` |
 | `rpgquest.money` | tous | `/money`, `/money pay` |
-| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant` |
-| `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées) |
+| `rpgquest.market` | tous | `/market`, `/market sell\|cancel` |
+| `rpgquest.claim` | tous | `/claim` |
+| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin` |
+| `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées), `/rpgadmin portal` (portails), `/rpgadmin mob` (mobs spéciaux) |
 
 ## Quêtes
 
@@ -242,6 +274,58 @@ PNJ, pour ne pas dupliquer le mécanisme d'identification déjà utilisé par
 les quêtes/dialogues. Voir [docs/ECONOMY.md](docs/ECONOMY.md) et
 [MERCHANT_FORMAT.md](MERCHANT_FORMAT.md) pour le détail complet.
 
+`/market` ouvre en plus un marché **entre joueurs** : n'importe qui peut
+mettre en vente l'objet tenu en main (`/market sell <prix>`), l'objet
+complet (méta, PDC compris) est mis en dépôt jusqu'à achat ou annulation.
+Cliquer sur l'offre d'un autre joueur l'achète (paiement + objet échangés
+atomiquement, vendeur crédité même hors ligne) ; cliquer sur sa propre
+offre l'annule et restitue l'objet. Voir [docs/ECONOMY.md](docs/ECONOMY.md)
+pour le détail complet (garanties anti-duplication comprises).
+
+## Portails et téléportation
+
+`/rpgadmin portal create <id>` crée un portail (zone d'activation cuboïde,
+depuis la même sélection `wand` que les zones protégées) ; `/rpgadmin
+portal setdestination <id> <destinationId>` fixe sa destination à la
+position exacte de l'administrateur. Un portail peut exiger permission,
+quête, niveau et/ou un coût en pièces (débité uniquement si la
+téléportation réussit). Entrer dans sa zone démarre une canalisation à
+délai (actionbar de progression), annulée si le joueur bouge, subit des
+dégâts ou se déconnecte. À la fin, la destination est vérifiée sûre (jamais
+le vide, la lave ou un bloc solide) avant toute téléportation — sinon,
+aucun débit, aucun déplacement, juste un message d'erreur. Le cooldown par
+joueur/portail est persisté et survit à une reconnexion. Voir
+[docs/TRAVEL.md](docs/TRAVEL.md) pour le détail complet.
+
+## Claims de terrain
+
+`/claim wand` puis `/claim create <id>` réclame un terrain cuboïde
+(propriétaire = ton UUID, jamais ton pseudo). Refusé s'il chevauche un
+claim existant, une zone protégée, se trouve trop près d'un portail, ou
+dépasse la taille/le nombre maximal autorisés. Protège blocs, conteneurs,
+animaux, armor stands et pistons traversant la frontière pour tout
+non-membre ; seule la redstone (boutons, leviers, portes, dalles de
+pression) est configurable (`/claim flag redstone <true|false>`).
+`/claim trust`/`untrust <joueur>` gère les membres de confiance,
+`/claim delete`/`info` agissent sur le claim où tu te trouves. Aucun
+avantage payant à cette étape. Voir [docs/CLAIMS.md](docs/CLAIMS.md) pour
+le détail complet.
+
+## Mobs spéciaux
+
+Des variantes de mobs entièrement vanilla, pilotées par YAML dans
+`plugins/RPGQuest/mobs/*.yml` (quatre exemples générés automatiquement :
+`red_creeper`, `golden_creeper`, `creeper_pig`, `splitting_zombie`). Un spawn
+naturel qui correspond au type d'entité, aux mondes/biomes/zones autorisés et
+qui n'a pas atteint sa limite de population peut être upgradé en variante
+(attributs, nom MiniMessage, particule/son, capacités, table de drops).
+Identification uniquement par PersistentDataContainer, jamais par le nom
+affiché. Trois capacités : explosion renforcée, cochon explosif agressif
+(balayage périodique, pas de goal d'IA vanilla disponible via l'API), et
+zombie qui se divise à chaque coup non mortel (profondeur et nombre d'enfants
+bornés pour empêcher toute croissance incontrôlée). Voir
+[SPECIAL_MOB_FORMAT.md](SPECIAL_MOB_FORMAT.md) pour le détail complet.
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
@@ -266,14 +350,16 @@ démarrage. Toutes les opérations SQL sont asynchrones (thread dédié) ; voir
 Tout l'état persistant tient dans le dossier `plugins/RPGQuest/` :
 
 -   `data.db` (SQLite) — profils joueurs, progression de quêtes, variables,
-    positions des nœuds de ressource, portefeuilles et transactions. Le
-    plugin verrouille le fichier tant qu'il est démarré ; sauvegarder à
-    chaud (serveur en marche) reste possible avec les outils de sauvegarde
-    SQLite habituels (ex. `.backup`), ou plus simplement arrêter le serveur
-    avant de copier le fichier.
+    positions des nœuds de ressource, portefeuilles, transactions, offres
+    du marché entre joueurs (objets en dépôt), cooldowns de portails et
+    claims de terrain (avec leurs membres). Le plugin verrouille le fichier
+    tant qu'il est démarré ; sauvegarder à chaud (serveur en marche) reste
+    possible avec les outils de sauvegarde SQLite habituels (ex. `.backup`),
+    ou plus simplement arrêter le serveur avant de copier le fichier.
 -   `config.yml`, `messages.yml`, `quests/`, `dialogues/`, `items/`,
-    `resource-nodes/`, `recipes/`, `merchants/` — contenu YAML éditable, à
-    sauvegarder comme n'importe quel fichier de configuration.
+    `resource-nodes/`, `recipes/`, `merchants/`, `portals/`,
+    `destinations/` — contenu YAML éditable, à sauvegarder comme n'importe
+    quel fichier de configuration.
 
 Pour restaurer : arrêter le serveur, remplacer le dossier
 `plugins/RPGQuest/` (ou seulement `data.db` pour ne restaurer que la
@@ -297,7 +383,8 @@ Voir [TODO.md](TODO.md).
 
 Le MVP (architecture, SQLite, quêtes, dialogues, journal, objets
 personnalisés, armes/outils, ressources, craft, resource pack, zones
-protégées, économie et marchands) est complet. Fonctionnalités envisagées
-ensuite (voir aussi [TODO.md](TODO.md)) : marché entre joueurs, portails et
-téléportation, claims de terrain, PNJ avancés (Citizens ou équivalent,
-optionnel), métiers, donjons, boss, factions.
+protégées, économie, marchands PNJ, marché entre joueurs, portails et
+téléportation, claims de terrain) est complet. Fonctionnalités envisagées
+ensuite (voir aussi [TODO.md](TODO.md)) : mobs spéciaux vanilla, XP RPG,
+backpacks, PNJ avancés (Citizens ou équivalent, optionnel), métiers,
+donjons, boss, factions.

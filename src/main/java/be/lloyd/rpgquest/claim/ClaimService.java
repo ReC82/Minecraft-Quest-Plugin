@@ -1,0 +1,242 @@
+package be.lloyd.rpgquest.claim;
+
+import be.lloyd.rpgquest.RPGQuestPlugin;
+import be.lloyd.rpgquest.bootstrap.PluginService;
+import be.lloyd.rpgquest.claim.model.Claim;
+import be.lloyd.rpgquest.claim.model.ClaimFlags;
+import be.lloyd.rpgquest.config.ClaimConfig;
+import be.lloyd.rpgquest.config.ConfigService;
+import be.lloyd.rpgquest.database.ClaimActionOutcome;
+import be.lloyd.rpgquest.database.ClaimRepository;
+import be.lloyd.rpgquest.travel.YamlPortalRegistry;
+import be.lloyd.rpgquest.travel.model.PortalDefinition;
+import be.lloyd.rpgquest.zone.ZoneRegistry;
+import be.lloyd.rpgquest.zone.model.ZoneDefinition;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import org.bukkit.Location;
+import org.bukkit.entity.Player;
+import org.slf4j.Logger;
+
+/**
+ * Charge tous les claims en mémoire au démarrage (comme {@code
+ * ResourceNodeService}, chargement asynchrone puis application sur le
+ * thread principal) et les indexe par monde ({@link #claimsInWorld}) pour
+ * que la vérification de claim à chaque événement protégé reste bon
+ * marché — même patron que {@code ZoneRegistry#zonesInWorld}/{@code
+ * YamlPortalRegistry#portalsInWorld}. Toute mutation réussie (création,
+ * suppression, confiance, permission) recharge intégralement depuis la
+ * base plutôt que de corriger le cache en mémoire à la main — plus simple
+ * et sans risque de désynchronisation, les claims ne changeant pas à une
+ * fréquence justifiant une optimisation plus fine.
+ *
+ * <p>Toute la validation métier (chevauchement, taille, nombre, distance
+ * aux portails, safe zone) vit ici plutôt que dans {@code ClaimRepository}
+ * (pure JDBC) — c'est ce qui crée la dépendance de {@code claim} vers
+ * {@code zone}/{@code travel}, délibérée et documentée dans {@code
+ * docs/CLAIMS.md}.</p>
+ */
+public final class ClaimService implements PluginService {
+
+    private final RPGQuestPlugin plugin;
+    private final ClaimRepository claimRepository;
+    private final ZoneRegistry zoneRegistry;
+    private final YamlPortalRegistry portalRegistry;
+    private final ConfigService configService;
+    private final Logger logger;
+
+    private volatile List<Claim> claims = List.of();
+    private volatile Map<String, List<Claim>> byWorld = Map.of();
+
+    public ClaimService(RPGQuestPlugin plugin, ClaimRepository claimRepository, ZoneRegistry zoneRegistry,
+                         YamlPortalRegistry portalRegistry, ConfigService configService) {
+        this.plugin = plugin;
+        this.claimRepository = claimRepository;
+        this.zoneRegistry = zoneRegistry;
+        this.portalRegistry = portalRegistry;
+        this.configService = configService;
+        this.logger = plugin.getSLF4JLogger();
+    }
+
+    @Override
+    public void start() {
+        claimRepository.allClaims().thenAccept(list -> runOnMainThread(() -> applyLoaded(list)))
+                .exceptionally(error -> {
+                    logger.error("Impossible de charger les claims depuis la base.", error);
+                    return null;
+                });
+    }
+
+    @Override
+    public void stop() {
+        claims = List.of();
+        byWorld = Map.of();
+    }
+
+    public List<Claim> claims() {
+        return claims;
+    }
+
+    public List<Claim> claimsInWorld(String world) {
+        return byWorld.getOrDefault(world, List.of());
+    }
+
+    public List<Claim> claimsOwnedBy(UUID owner) {
+        return claims.stream().filter(claim -> claim.owner().equals(owner)).toList();
+    }
+
+    public Optional<Claim> find(String id) {
+        return claims.stream().filter(claim -> claim.id().equals(id)).findFirst();
+    }
+
+    /** Le premier claim (dans l'ordre chargé) dont le cuboïde contient cette position, s'il y en a un. */
+    public Optional<Claim> claimAt(String world, int x, int y, int z) {
+        for (Claim claim : claimsInWorld(world)) {
+            if (claim.contains(world, x, y, z)) {
+                return Optional.of(claim);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Seams pour une future politique liée à la progression du joueur
+     * (mission étape 17, point 8) — retournent aujourd'hui uniquement la
+     * valeur globale de {@code config.yml}, identique pour tous les
+     * joueurs ; une étape ultérieure pourra les faire varier selon le
+     * niveau/la progression sans changer les appelants. Voir docs/CLAIMS.md.
+     */
+    public int effectiveMaxWidth(Player player) {
+        return configService.current().claims().maxWidth();
+    }
+
+    public int effectiveMaxHeight(Player player) {
+        return configService.current().claims().maxHeight();
+    }
+
+    public int effectiveMaxClaims(Player player) {
+        return configService.current().claims().maxClaimsPerPlayer();
+    }
+
+    public enum CreateOutcome {
+        CREATED, INVALID_ID, DIFFERENT_WORLDS, DUPLICATE_ID, TOO_LARGE, TOO_MANY_CLAIMS,
+        OVERLAPS_CLAIM, OVERLAPS_PROTECTED_ZONE, TOO_CLOSE_TO_PORTAL
+    }
+
+    public CompletableFuture<CreateOutcome> create(Player owner, String id, Location pos1, Location pos2) {
+        if (pos1.getWorld() == null || pos2.getWorld() == null || !pos1.getWorld().equals(pos2.getWorld())) {
+            return CompletableFuture.completedFuture(CreateOutcome.DIFFERENT_WORLDS);
+        }
+        String world = pos1.getWorld().getName();
+        int minX = Math.min(pos1.getBlockX(), pos2.getBlockX());
+        int minY = Math.min(pos1.getBlockY(), pos2.getBlockY());
+        int minZ = Math.min(pos1.getBlockZ(), pos2.getBlockZ());
+        int maxX = Math.max(pos1.getBlockX(), pos2.getBlockX());
+        int maxY = Math.max(pos1.getBlockY(), pos2.getBlockY());
+        int maxZ = Math.max(pos1.getBlockZ(), pos2.getBlockZ());
+
+        Claim candidate;
+        try {
+            candidate = new Claim(id, owner.getUniqueId(), world, minX, minY, minZ, maxX, maxY, maxZ,
+                    Set.of(), ClaimFlags.defaults());
+        } catch (IllegalArgumentException e) {
+            return CompletableFuture.completedFuture(CreateOutcome.INVALID_ID);
+        }
+
+        if (find(id).isPresent()) {
+            return CompletableFuture.completedFuture(CreateOutcome.DUPLICATE_ID);
+        }
+        if (candidate.width() > effectiveMaxWidth(owner) || candidate.depth() > effectiveMaxWidth(owner)
+                || candidate.height() > effectiveMaxHeight(owner)) {
+            return CompletableFuture.completedFuture(CreateOutcome.TOO_LARGE);
+        }
+        if (claimsOwnedBy(owner.getUniqueId()).size() >= effectiveMaxClaims(owner)) {
+            return CompletableFuture.completedFuture(CreateOutcome.TOO_MANY_CLAIMS);
+        }
+        for (Claim existing : claimsInWorld(world)) {
+            if (candidate.overlaps(existing)) {
+                return CompletableFuture.completedFuture(CreateOutcome.OVERLAPS_CLAIM);
+            }
+        }
+        for (ZoneDefinition zone : zoneRegistry.zonesInWorld(world)) {
+            if (overlapsBounds(world, minX, minY, minZ, maxX, maxY, maxZ,
+                    zone.world(), zone.minX(), zone.minY(), zone.minZ(), zone.maxX(), zone.maxY(), zone.maxZ())) {
+                return CompletableFuture.completedFuture(CreateOutcome.OVERLAPS_PROTECTED_ZONE);
+            }
+        }
+        int buffer = configService.current().claims().portalBufferBlocks();
+        for (PortalDefinition portal : portalRegistry.portalsInWorld(world)) {
+            if (overlapsBounds(world, minX - buffer, minY - buffer, minZ - buffer, maxX + buffer, maxY + buffer, maxZ + buffer,
+                    portal.world(), portal.minX(), portal.minY(), portal.minZ(), portal.maxX(), portal.maxY(), portal.maxZ())) {
+                return CompletableFuture.completedFuture(CreateOutcome.TOO_CLOSE_TO_PORTAL);
+            }
+        }
+
+        return claimRepository.create(candidate).thenCompose(success -> {
+            if (!success) {
+                return CompletableFuture.completedFuture(CreateOutcome.DUPLICATE_ID);
+            }
+            return claimRepository.allClaims().thenApply(list -> {
+                runOnMainThread(() -> applyLoaded(list));
+                return CreateOutcome.CREATED;
+            });
+        });
+    }
+
+    public CompletableFuture<ClaimActionOutcome> delete(UUID requester, String id) {
+        return refreshIfSuccess(claimRepository.delete(id, requester));
+    }
+
+    public CompletableFuture<ClaimActionOutcome> trust(UUID requester, String id, UUID member) {
+        return refreshIfSuccess(claimRepository.addMember(id, requester, member));
+    }
+
+    public CompletableFuture<ClaimActionOutcome> untrust(UUID requester, String id, UUID member) {
+        return refreshIfSuccess(claimRepository.removeMember(id, requester, member));
+    }
+
+    public CompletableFuture<ClaimActionOutcome> setAllowPublicRedstone(UUID requester, String id, boolean value) {
+        return refreshIfSuccess(claimRepository.setAllowPublicRedstone(id, requester, value));
+    }
+
+    private CompletableFuture<ClaimActionOutcome> refreshIfSuccess(CompletableFuture<ClaimActionOutcome> action) {
+        return action.thenCompose(outcome -> {
+            if (outcome != ClaimActionOutcome.SUCCESS) {
+                return CompletableFuture.completedFuture(outcome);
+            }
+            return claimRepository.allClaims().thenApply(list -> {
+                runOnMainThread(() -> applyLoaded(list));
+                return outcome;
+            });
+        });
+    }
+
+    private void applyLoaded(List<Claim> loaded) {
+        this.claims = List.copyOf(loaded);
+        Map<String, List<Claim>> index = new HashMap<>();
+        for (Claim claim : loaded) {
+            index.computeIfAbsent(claim.world(), w -> new ArrayList<>()).add(claim);
+        }
+        this.byWorld = Map.copyOf(index);
+    }
+
+    private static boolean overlapsBounds(String worldA, int aMinX, int aMinY, int aMinZ, int aMaxX, int aMaxY, int aMaxZ,
+                                           String worldB, int bMinX, int bMinY, int bMinZ, int bMaxX, int bMaxY, int bMaxZ) {
+        if (!worldA.equals(worldB)) {
+            return false;
+        }
+        return aMinX <= bMaxX && aMaxX >= bMinX
+                && aMinY <= bMaxY && aMaxY >= bMinY
+                && aMinZ <= bMaxZ && aMaxZ >= bMinZ;
+    }
+
+    private void runOnMainThread(Runnable task) {
+        plugin.getServer().getScheduler().runTask(plugin, task);
+    }
+}

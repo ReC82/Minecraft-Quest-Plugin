@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 4;
+    private static final int CURRENT_VERSION = 7;
 
     private SchemaMigrator() {
     }
@@ -36,6 +36,18 @@ public final class SchemaMigrator {
         if (version < 4) {
             applyV4(connection);
             version = 4;
+        }
+        if (version < 5) {
+            applyV5(connection);
+            version = 5;
+        }
+        if (version < 6) {
+            applyV6(connection);
+            version = 6;
+        }
+        if (version < 7) {
+            applyV7(connection);
+            version = 7;
         }
 
         if (version != startingVersion) {
@@ -145,6 +157,79 @@ public final class SchemaMigrator {
                         context TEXT,
                         created_at TEXT NOT NULL,
                         FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV5(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // item_data : ItemStack#serializeAsBytes(), l'objet complet (méta, PDC d'un objet
+            // personnalisé compris) plutôt qu'une référence recomposée à la remise.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS market_listings (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        seller_uuid TEXT NOT NULL,
+                        item_data BLOB NOT NULL,
+                        price INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        resolved_at TEXT,
+                        buyer_uuid TEXT,
+                        FOREIGN KEY (seller_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_market_listings_status ON market_listings (status)
+                    """);
+        }
+    }
+
+    private static void applyV6(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Un cooldown de portail doit survivre à une reconnexion (mission étape 16) : persisté ici,
+            // rechargé en mémoire à la connexion par travel.PortalService (jamais consulté en base
+            // depuis PlayerMoveEvent, trop fréquent pour une requête asynchrone par événement).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS portal_cooldowns (
+                        player_uuid TEXT NOT NULL,
+                        portal_id TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, portal_id),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV7(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS claims (
+                        id TEXT PRIMARY KEY,
+                        owner_uuid TEXT NOT NULL,
+                        world TEXT NOT NULL,
+                        min_x INTEGER NOT NULL,
+                        min_y INTEGER NOT NULL,
+                        min_z INTEGER NOT NULL,
+                        max_x INTEGER NOT NULL,
+                        max_y INTEGER NOT NULL,
+                        max_z INTEGER NOT NULL,
+                        allow_public_redstone INTEGER NOT NULL DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (owner_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_claims_owner ON claims (owner_uuid)
+                    """);
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS claim_members (
+                        claim_id TEXT NOT NULL,
+                        member_uuid TEXT NOT NULL,
+                        PRIMARY KEY (claim_id, member_uuid),
+                        FOREIGN KEY (claim_id) REFERENCES claims (id) ON DELETE CASCADE,
+                        FOREIGN KEY (member_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
                     )
                     """);
         }

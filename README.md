@@ -12,6 +12,7 @@ Plugin RPG pour Paper, sans mod client obligatoire.
 -   Resource pack optionnel envoyé par le serveur
 -   Sauvegarde SQLite (asynchrone)
 -   Économie (portefeuille, paiements), marchands PNJ et marché entre joueurs
+-   Portails et téléportation entre le village et les zones d'aventure
 
 ## Prérequis
 
@@ -97,6 +98,11 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 -   `/rpgadmin zone wand|create|delete|list|info` (`rpgquest.admin.world`)
     — crée/gère des zones protégées (village central, safe zone...). Voir
     [docs/SAFE_ZONE.md](docs/SAFE_ZONE.md).
+-   `/rpgadmin portal create|delete|list|info <id>` (`rpgquest.admin.world`)
+    — crée/gère des portails (zone d'activation depuis le même outil de
+    sélection `wand`). Voir [docs/TRAVEL.md](docs/TRAVEL.md).
+-   `/rpgadmin portal setdestination <id> <destinationId>` (`rpgquest.admin.world`)
+    — fixe la destination d'un portail à ta position actuelle.
 -   `/money` (`rpgquest.money`) — affiche ton solde.
 -   `/money pay <joueur> <montant>` (`rpgquest.money`) — envoie des pièces à
     un joueur en ligne (transfert atomique).
@@ -122,7 +128,7 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 | `rpgquest.money` | tous | `/money`, `/money pay` |
 | `rpgquest.market` | tous | `/market`, `/market sell\|cancel` |
 | `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin` |
-| `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées) |
+| `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées), `/rpgadmin portal` (portails) |
 
 ## Quêtes
 
@@ -259,6 +265,21 @@ atomiquement, vendeur crédité même hors ligne) ; cliquer sur sa propre
 offre l'annule et restitue l'objet. Voir [docs/ECONOMY.md](docs/ECONOMY.md)
 pour le détail complet (garanties anti-duplication comprises).
 
+## Portails et téléportation
+
+`/rpgadmin portal create <id>` crée un portail (zone d'activation cuboïde,
+depuis la même sélection `wand` que les zones protégées) ; `/rpgadmin
+portal setdestination <id> <destinationId>` fixe sa destination à la
+position exacte de l'administrateur. Un portail peut exiger permission,
+quête, niveau et/ou un coût en pièces (débité uniquement si la
+téléportation réussit). Entrer dans sa zone démarre une canalisation à
+délai (actionbar de progression), annulée si le joueur bouge, subit des
+dégâts ou se déconnecte. À la fin, la destination est vérifiée sûre (jamais
+le vide, la lave ou un bloc solide) avant toute téléportation — sinon,
+aucun débit, aucun déplacement, juste un message d'erreur. Le cooldown par
+joueur/portail est persisté et survit à une reconnexion. Voir
+[docs/TRAVEL.md](docs/TRAVEL.md) pour le détail complet.
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
@@ -283,15 +304,16 @@ démarrage. Toutes les opérations SQL sont asynchrones (thread dédié) ; voir
 Tout l'état persistant tient dans le dossier `plugins/RPGQuest/` :
 
 -   `data.db` (SQLite) — profils joueurs, progression de quêtes, variables,
-    positions des nœuds de ressource, portefeuilles, transactions et
-    offres du marché entre joueurs (objets en dépôt). Le plugin verrouille
-    le fichier tant qu'il est démarré ; sauvegarder à chaud (serveur en
-    marche) reste possible avec les outils de sauvegarde SQLite habituels
-    (ex. `.backup`), ou plus simplement arrêter le serveur avant de copier
-    le fichier.
+    positions des nœuds de ressource, portefeuilles, transactions, offres
+    du marché entre joueurs (objets en dépôt) et cooldowns de portails. Le
+    plugin verrouille le fichier tant qu'il est démarré ; sauvegarder à
+    chaud (serveur en marche) reste possible avec les outils de sauvegarde
+    SQLite habituels (ex. `.backup`), ou plus simplement arrêter le serveur
+    avant de copier le fichier.
 -   `config.yml`, `messages.yml`, `quests/`, `dialogues/`, `items/`,
-    `resource-nodes/`, `recipes/`, `merchants/` — contenu YAML éditable, à
-    sauvegarder comme n'importe quel fichier de configuration.
+    `resource-nodes/`, `recipes/`, `merchants/`, `portals/`,
+    `destinations/` — contenu YAML éditable, à sauvegarder comme n'importe
+    quel fichier de configuration.
 
 Pour restaurer : arrêter le serveur, remplacer le dossier
 `plugins/RPGQuest/` (ou seulement `data.db` pour ne restaurer que la
@@ -315,7 +337,8 @@ Voir [TODO.md](TODO.md).
 
 Le MVP (architecture, SQLite, quêtes, dialogues, journal, objets
 personnalisés, armes/outils, ressources, craft, resource pack, zones
-protégées, économie, marchands PNJ et marché entre joueurs) est complet.
-Fonctionnalités envisagées ensuite (voir aussi [TODO.md](TODO.md)) :
-portails et téléportation, claims de terrain, PNJ avancés (Citizens ou
-équivalent, optionnel), métiers, donjons, boss, factions.
+protégées, économie, marchands PNJ, marché entre joueurs, portails et
+téléportation) est complet. Fonctionnalités envisagées ensuite (voir aussi
+[TODO.md](TODO.md)) : claims de terrain, mobs spéciaux vanilla, XP RPG,
+backpacks, PNJ avancés (Citizens ou équivalent, optionnel), métiers,
+donjons, boss, factions.

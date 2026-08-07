@@ -28,6 +28,8 @@
     │   └── progress         (état runtime mutable, index, listeners, commandes)
     ├── resource             (types de nœuds YAML + positions récoltables persistées)
     │   └── model            (modèles immuables : type de nœud, drops pondérés)
+    ├── travel               (portails et téléportation : destinations, canalisation, sécurité)
+    │   └── model            (modèles immuables : destination, portail)
     ├── ui                   (journal de quêtes : menu paginé, vue détail, suivi)
     ├── util                 (vide pour l'instant : utilitaires génériques uniquement)
     └── zone                 (zones protégées : registre YAML, protection d'événements, sélection)
@@ -1381,6 +1383,97 @@ qu'embarqués dans le jar.
     couvre le flux d'usage principal (création/suppression via l'outil de
     sélection).
 
+## `travel` (portails et téléportation)
+
+-   **Deux registres YAML indépendants, comme le mission l'a explicitement
+    demandé** — `Destination` (position nommée réutilisable, `travel/`
+    n'ayant aucune notion de PNJ ni de zone) et `PortalDefinition` (zone
+    d'activation cuboïde, même forme que `ZoneDefinition` mais
+    délibérément dupliquée plutôt que réutilisée — un portail n'a ni id à
+    motif imposé par une zone protégée ni `ZoneFlags`) reliée à une
+    destination **par id, résolu paresseusement à l'activation**, jamais
+    validé au chargement — même choix que les offres de marchand
+    référençant un objet personnalisé (`economy.merchant`) : les deux
+    registres restent découplés, pas de dépendance `travel` interne
+    portail → destination au chargement.
+-   **Aucune commande dédiée pour créer une destination « à part » —
+    `/rpgadmin portal setdestination <id> <destinationId>` en tient lieu** :
+    elle capture la position exacte (x, y, z, yaw, pitch) de
+    l'administrateur au moment de l'appel dans `YamlDestinationRegistry`
+    (créée si l'id est nouveau, remplacée si l'id existe déjà — sémantique
+    « set »), puis relie le portail à cet id. Décision d'ingénierie : la
+    mission ne liste que des sous-commandes `portal`, pas de CRUD
+    `destination` séparé ; capturer la position en marchant dessus est de
+    toute façon plus fiable que de faire taper des coordonnées à la main.
+-   **Aucun exemple embarqué** (contrairement à `central_village` pour les
+    zones) — une destination doit être une position réellement sûre sur le
+    monde de l'opérateur ; contrairement à une zone protégée (un simple
+    cuboïde, sûr à n'importe quelles coordonnées), bundler des coordonnées
+    de destination arbitraires serait plus nuisible qu'utile sur un monde
+    généré procéduralement (risque réel d'enterrer un joueur). Documenté
+    dans `docs/TRAVEL.md`.
+-   **`PortalLoader` rejette aussi les chevauchements de zone d'activation**
+    entre portails du même monde (même extension du patron à deux phases
+    que `ZoneLoader` : deux portails activables au même endroit rendraient
+    ambigu « lequel s'active en premier »), mais `DestinationLoader` ne
+    rejette **pas** les positions superposées entre destinations (rien
+    n'empêche deux noms de pointer légitimement au même endroit).
+-   **`travel.PortalService` — canalisation à délai, même patron « tâche
+    répétée + annulation » que `admin.FlattenService`** : une session par
+    joueur (`ChannelingSession`, position de départ figée, compteur de
+    ticks écoulés/total plutôt qu'une horloge murale injectée — la durée
+    d'un portail se mesure en ticks de jeu, pas en temps réel, donc
+    `server.getScheduler().performTicks(n)` suffit à rendre les tests
+    déterministes sans injection d'horloge). Annulée dans trois cas
+    (mouvement au-delà d'une tolérance de 0,6 bloc au carré — comparaison
+    sans `sqrt` —, dégâts, déconnexion), chacun relayé par
+    `PortalListener` vers une seule méthode `cancelChanneling`.
+-   **Détection d'entrée dans un portail — même filtrage que
+    `ZoneProtectionListener`** : `PlayerMoveEvent` n'est traité qu'aux
+    changements réels de position de bloc (jamais chaque micro-mouvement
+    de caméra), et `PortalService.handleMove` ne redéclenche
+    `attemptActivate` que sur une vraie **transition** (nouvel id de
+    portail différent du précédent connu pour ce joueur) — un joueur
+    immobile dans une zone d'activation dont il ne remplit pas les
+    conditions ne voit donc pas son message de refus spammé à chaque tick.
+-   **Vérification des conditions, dans un ordre délibéré** — synchrones
+    d'abord (permission, niveau, cooldown depuis le cache mémoire), puis
+    asynchrones (état de quête via `QuestProgressEngine#stateOf`, solde
+    via `EconomyService#balance`) : échouer vite sur les vérifications bon
+    marché évite une consultation base pour un joueur qui n'a de toute
+    façon pas la permission.
+-   **Aucun débit tant que le succès n'est pas garanti — cœur de la
+    garantie demandée par la mission** : la vérification de fonds
+    suffisants a lieu *avant* la canalisation (évite de faire attendre un
+    joueur pour un échec prévisible), mais le débit réel n'a lieu qu'**après**
+    la résolution de la destination et la vérification de sécurité, juste
+    avant `teleportAsync` — un monde absent, une destination introuvable
+    ou aucune position sûre trouvée n'entraînent donc jamais aucun débit
+    (voir aussi `economy.EconomyService`).
+-   **Recherche de position sûre — balayage vertical borné, jamais un
+    chargement de chunk permanent** — `findSafeLocation` teste d'abord la
+    position enregistrée telle quelle, puis alterne au-dessus/en-dessous
+    jusqu'à 5 blocs ; un bloc dangereux (lave, feu, feu d'âme, magma,
+    cactus) ou l'absence de sol solide sous les pieds rejette la position.
+    `World#getChunkAt` est appelé **une seule fois**, un accès ponctuel qui
+    charge la colonne si besoin (comme n'importe quelle téléportation
+    vanilla vers une zone déchargée) — aucun ticket de chunk n'est jamais
+    posé, donc rien ne reste chargé de force après coup.
+-   **Cooldown persisté, jamais consulté en base depuis un événement aussi
+    fréquent que `PlayerMoveEvent`** — `database.PortalCooldownRepository`
+    (`portal_cooldowns`, migration V6) est lu **une seule fois**, à la
+    connexion (`PlayerJoinEvent`), et mis en cache mémoire
+    (`Map<UUID, Map<String, Instant>>`) ; chaque utilisation réussie d'un
+    portail met à jour le cache **et** écrit en base (asynchrone,
+    tolérant à l'échec — un cooldown non persisté à cause d'une erreur
+    transitoire reste actif en mémoire jusqu'à la prochaine déconnexion,
+    limitation mineure jugée acceptable). C'est ce qui permet au cooldown
+    de survivre à une reconnexion, comme demandé par la mission.
+-   **`/rpgadmin portal create|delete|list|info|setdestination`** — nouvelle
+    branche de `RpgAdminCommand` (déjà pensée pour grandir ainsi, voir
+    section `admin`), réutilisant l'outil de sélection `wand` déjà existant
+    pour délimiter la zone d'activation — aucun nouvel outil nécessaire.
+
 ## Flux principal (cible)
 
 Dialogue → Acceptation de quête → Progression → Récolte / Combat →
@@ -1795,3 +1888,26 @@ Fabrication → Remise → Récompense
     (navigation entre pages avec beaucoup d'offres, deux vrais joueurs
     achetant simultanément la même offre, latence réseau) reste à valider
     par un testeur humain.
+-   **Pas de rechargement à chaud d'un portail/d'une destination édités à
+    la main** — même limitation déjà documentée pour les zones protégées :
+    `create`/`delete`/`setdestination` rechargent déjà automatiquement, ce
+    qui couvre le flux d'usage principal.
+-   **Aucune commande `destination create` séparée** — voir section
+    `travel` : `/rpgadmin portal setdestination` capture la position de
+    l'administrateur et tient lieu de création/mise à jour de destination,
+    seule sous-commande demandée par la mission pour ce besoin.
+-   **Aucun exemple de portail/destination embarqué** — décision
+    délibérée, voir section `travel` (bundler des coordonnées arbitraires
+    sur un monde généré procéduralement serait plus nuisible qu'utile).
+-   **Test manuel des portails limité par l'environnement** — aucun client
+    Minecraft réel disponible ici. Compensé par `PortalServiceTest`, qui
+    construit un vrai monde MockBukkit (blocs réels) et vérifie chaque
+    garantie de sécurité demandée directement (conditions non remplies,
+    cooldown, coût débité uniquement au succès, monde de destination
+    absent, destination dangereuse, annulation par mouvement/dégâts/
+    déconnexion via de vrais appels), y compris que `teleportAsync` déplace
+    réellement le joueur simulé. Le ressenti en jeu (portail vers un chunk
+    réellement déchargé, reconnexion en pleine canalisation, latence
+    réseau, téléportation avec un inventaire chargé et une quête active,
+    test depuis/vers une safe zone réelle) reste à valider par un testeur
+    humain — voir `docs/TRAVEL.md`.

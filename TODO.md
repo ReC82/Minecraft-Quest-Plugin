@@ -363,6 +363,43 @@
 -   [x] Section « Marché entre joueurs » de `docs/ECONOMY.md`, sous-section
     `economy.market` de `docs/ARCHITECTURE.md`
 
+## Portails et téléportation (fait)
+
+-   [x] `travel.model` : `Destination` (position nommée réutilisable) et
+    `PortalDefinition` (zone d'activation cuboïde + destination par id +
+    conditions), correctes par construction
+-   [x] Deux registres YAML indépendants (`DestinationLoader`/
+    `YamlDestinationRegistry`, `PortalLoader`/`YamlPortalRegistry`) — même
+    conception à deux phases que `ZoneLoader` ; `PortalLoader` rejette en
+    plus les portails dont la zone d'activation se chevauche (même monde)
+-   [x] `/rpgadmin portal create|delete|list|info` (réutilise l'outil de
+    sélection `wand` déjà existant) et `setdestination <id> <destinationId>`
+    (capture la position exacte de l'administrateur, crée ou met à jour la
+    destination, puis relie le portail)
+-   [x] `travel.PortalService` : détection d'entrée dans une zone
+    d'activation (même filtrage `PlayerMoveEvent` que les zones protégées),
+    canalisation à délai (actionbar de progression, même patron « tâche
+    répétée + annulation » que `FlattenService`), annulée sur mouvement
+    au-delà d'une tolérance, dégâts, ou déconnexion
+-   [x] Conditions d'accès cumulatives optionnelles : permission, quête +
+    état, niveau d'expérience vanilla, coût en pièces (`economy.EconomyService`)
+-   [x] Sécurité de destination : monde absent détecté proprement, chunk
+    chargé à la demande (jamais de force permanente), recherche de
+    position sûre (aucun bloc solide aux pieds/tête, sol solide sous les
+    pieds, aucun bloc dangereux) — aucun joueur ne peut être téléporté
+    dans le vide, la lave ou un bloc solide
+-   [x] Aucun débit tant que le succès n'est pas garanti : le coût n'est
+    débité qu'après résolution et vérification de sécurité de la
+    destination, juste avant la téléportation elle-même
+-   [x] Cooldown par joueur/portail persisté (`portal_cooldowns`, migration
+    V6), chargé en mémoire à la connexion (jamais de requête base depuis
+    `PlayerMoveEvent`) — survit à une reconnexion
+-   [x] Tests : conditions non remplies (permission/niveau/quête),
+    cooldown, coût (fonds insuffisants/suffisants, débit uniquement au
+    succès), monde de destination absent, destination dangereuse,
+    annulation par mouvement/dégâts/déconnexion, rechargement du registre
+-   [x] `docs/TRAVEL.md`
+
 ## MVP
 
 -   [x] Architecture
@@ -379,10 +416,10 @@
 -   [x] Zones protégées
 -   [x] Économie et marchands PNJ
 -   [x] Marché entre joueurs
+-   [x] Portails et téléportation
 
 ## Plus tard
 
--   [ ] Portails et téléportation
 -   [ ] Claims de terrain
 -   [ ] PNJ avancés
 -   [ ] Métiers

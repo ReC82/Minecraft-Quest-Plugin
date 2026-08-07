@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 5;
+    private static final int CURRENT_VERSION = 6;
 
     private SchemaMigrator() {
     }
@@ -40,6 +40,10 @@ public final class SchemaMigrator {
         if (version < 5) {
             applyV5(connection);
             version = 5;
+        }
+        if (version < 6) {
+            applyV6(connection);
+            version = 6;
         }
 
         if (version != startingVersion) {
@@ -173,6 +177,23 @@ public final class SchemaMigrator {
                     """);
             statement.execute("""
                     CREATE INDEX IF NOT EXISTS idx_market_listings_status ON market_listings (status)
+                    """);
+        }
+    }
+
+    private static void applyV6(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Un cooldown de portail doit survivre à une reconnexion (mission étape 16) : persisté ici,
+            // rechargé en mémoire à la connexion par travel.PortalService (jamais consulté en base
+            // depuis PlayerMoveEvent, trop fréquent pour une requête asynchrone par événement).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS portal_cooldowns (
+                        player_uuid TEXT NOT NULL,
+                        portal_id TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, portal_id),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
                     """);
         }
     }

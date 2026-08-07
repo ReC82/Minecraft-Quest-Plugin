@@ -20,6 +20,7 @@ import be.lloyd.rpgquest.database.DatabaseService;
 import be.lloyd.rpgquest.database.PlayerProfileRepository;
 import be.lloyd.rpgquest.database.PlayerVariableRepository;
 import be.lloyd.rpgquest.database.MarketRepository;
+import be.lloyd.rpgquest.database.PortalCooldownRepository;
 import be.lloyd.rpgquest.database.QuestProgressRepository;
 import be.lloyd.rpgquest.database.ResourceNodeRepository;
 import be.lloyd.rpgquest.database.WalletRepository;
@@ -45,6 +46,9 @@ import be.lloyd.rpgquest.resource.ResourceNodeRegistry;
 import be.lloyd.rpgquest.resource.ResourceNodeService;
 import be.lloyd.rpgquest.quest.YamlQuestEngine;
 import be.lloyd.rpgquest.quest.progress.QuestProgressEngine;
+import be.lloyd.rpgquest.travel.PortalService;
+import be.lloyd.rpgquest.travel.YamlDestinationRegistry;
+import be.lloyd.rpgquest.travel.YamlPortalRegistry;
 import be.lloyd.rpgquest.ui.QuestJournalService;
 import be.lloyd.rpgquest.zone.ZoneProtectionListener;
 import be.lloyd.rpgquest.zone.ZoneRegistry;
@@ -77,6 +81,8 @@ public final class RPGQuestBootstrap {
     private final ZoneRegistry zoneRegistry;
     private final ZoneSelectionService zoneSelectionService;
     private final YamlMerchantRegistry merchantRegistry;
+    private final YamlPortalRegistry portalRegistry;
+    private final YamlDestinationRegistry destinationRegistry;
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
@@ -88,6 +94,7 @@ public final class RPGQuestBootstrap {
     private MerchantTradeService merchantTradeService;
     private MarketRepository marketRepository;
     private MarketService marketService;
+    private PortalService portalService;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -110,6 +117,10 @@ public final class RPGQuestBootstrap {
         this.zoneSelectionService = new ZoneSelectionService();
         this.merchantRegistry = new YamlMerchantRegistry(
                 plugin.getDataFolder().toPath().resolve("merchants"), plugin.getSLF4JLogger());
+        this.portalRegistry = new YamlPortalRegistry(
+                plugin.getDataFolder().toPath().resolve("portals"), plugin.getSLF4JLogger());
+        this.destinationRegistry = new YamlDestinationRegistry(
+                plugin.getDataFolder().toPath().resolve("destinations"), plugin.getSLF4JLogger());
     }
 
     public void start() {
@@ -166,6 +177,14 @@ public final class RPGQuestBootstrap {
         marketService = new MarketService(plugin, marketRepository, economyService);
         registry.start(marketService);
         registry.start(new PlayerListenerService(plugin, marketService.listener()));
+
+        registry.start(portalRegistry);
+        registry.start(destinationRegistry);
+        PortalCooldownRepository portalCooldownRepository = new PortalCooldownRepository(databaseService.databaseManager());
+        portalService = new PortalService(
+                plugin, portalRegistry, destinationRegistry, economyService, questProgressEngine, portalCooldownRepository);
+        registry.start(portalService);
+        registry.start(new PlayerListenerService(plugin, portalService.listener()));
 
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
@@ -272,6 +291,18 @@ public final class RPGQuestBootstrap {
         return marketService;
     }
 
+    public YamlPortalRegistry portalRegistry() {
+        return portalRegistry;
+    }
+
+    public YamlDestinationRegistry destinationRegistry() {
+        return destinationRegistry;
+    }
+
+    public PortalService portalService() {
+        return portalService;
+    }
+
     private void registerCommands() {
         RPGQuestCommand rpgquestCommand = new RPGQuestCommand(plugin, this);
         var rpgquest = plugin.getCommand("rpgquest");
@@ -335,7 +366,8 @@ public final class RPGQuestBootstrap {
             market.setTabCompleter(marketCommand);
         }
 
-        RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(flattenService, zoneRegistry, zoneSelectionService);
+        RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(
+                flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

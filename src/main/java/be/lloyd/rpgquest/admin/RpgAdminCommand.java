@@ -1,11 +1,16 @@
 package be.lloyd.rpgquest.admin;
 
+import be.lloyd.rpgquest.travel.YamlDestinationRegistry;
+import be.lloyd.rpgquest.travel.YamlPortalRegistry;
+import be.lloyd.rpgquest.travel.model.Destination;
+import be.lloyd.rpgquest.travel.model.PortalDefinition;
 import be.lloyd.rpgquest.zone.ZoneRegistry;
 import be.lloyd.rpgquest.zone.ZoneSelectionService;
 import be.lloyd.rpgquest.zone.model.ZoneDefinition;
 import be.lloyd.rpgquest.zone.model.ZoneFlags;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Location;
@@ -19,30 +24,37 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * {@code /rpgadmin} — commande d'administration racine, point d'entrée pour
- * les sous-systèmes d'administration du monde : aplatissement de terrain et
- * zones protégées à cette étape, portails/mobs spéciaux dans des étapes
- * ultérieures, ajoutés comme d'autres branches de {@link #onCommand}).
+ * les sous-systèmes d'administration du monde : aplatissement de terrain,
+ * zones protégées et portails à cette étape, mobs spéciaux dans une étape
+ * ultérieure, ajoutés comme d'autres branches de {@link #onCommand}).
  * Toutes les sous-commandes exigent {@code rpgquest.admin.world} et un
  * joueur en jeu (jamais la console, qui n'a pas de position à centrer) —
- * ni {@code flatten} ni {@code zone} ne prennent de coordonnée explicite
- * dans leur syntaxe (la sélection de zone passe par l'outil {@code wand}).
+ * aucune sous-commande ne prend de coordonnée explicite dans sa syntaxe :
+ * {@code zone}/{@code portal} réutilisent tous deux l'outil de sélection
+ * {@code wand} pour leur cuboïde (protection ou zone d'activation).
  */
 public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
     private static final String PERMISSION = "rpgquest.admin.world";
-    private static final List<String> TOP_LEVEL_SUBCOMMANDS = List.of("flatten", "zone");
+    private static final List<String> TOP_LEVEL_SUBCOMMANDS = List.of("flatten", "zone", "portal");
     private static final List<String> FLATTEN_SUBCOMMANDS = List.of("confirm", "cancel", "undo");
     private static final List<String> ZONE_SUBCOMMANDS = List.of("create", "delete", "list", "info", "wand");
+    private static final List<String> PORTAL_SUBCOMMANDS = List.of("create", "delete", "list", "info", "setdestination");
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
     private final FlattenService flattenService;
     private final ZoneRegistry zoneRegistry;
     private final ZoneSelectionService zoneSelectionService;
+    private final YamlPortalRegistry portalRegistry;
+    private final YamlDestinationRegistry destinationRegistry;
 
-    public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService) {
+    public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService,
+                            YamlPortalRegistry portalRegistry, YamlDestinationRegistry destinationRegistry) {
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
+        this.portalRegistry = portalRegistry;
+        this.destinationRegistry = destinationRegistry;
     }
 
     @Override
@@ -67,10 +79,203 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handleFlatten(player, args);
         } else if (args[0].equalsIgnoreCase("zone")) {
             handleZone(player, args);
+        } else if (args[0].equalsIgnoreCase("portal")) {
+            handlePortal(player, args);
         } else {
             sendUsage(player);
         }
         return true;
+    }
+
+    // ---- Portails -----------------------------------------------------------
+
+    private void handlePortal(Player player, String[] args) {
+        if (args.length < 2) {
+            sendPortalUsage(player);
+            return;
+        }
+
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "create" -> handlePortalCreate(player, args);
+            case "delete" -> handlePortalDelete(player, args);
+            case "list" -> handlePortalList(player);
+            case "info" -> handlePortalInfo(player, args);
+            case "setdestination" -> handlePortalSetDestination(player, args);
+            default -> sendPortalUsage(player);
+        }
+    }
+
+    private void handlePortalCreate(Player player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(MM.deserialize("<yellow>/rpgadmin portal create <id></yellow>"));
+            return;
+        }
+        String id = args[2].toLowerCase(Locale.ROOT);
+
+        var pos1 = zoneSelectionService.pos1(player.getUniqueId());
+        var pos2 = zoneSelectionService.pos2(player.getUniqueId());
+        if (pos1.isEmpty() || pos2.isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<red>Sélectionnez d'abord deux positions avec</red> <yellow>/rpgadmin zone wand</yellow>."));
+            return;
+        }
+        Location a = pos1.get();
+        Location b = pos2.get();
+        if (a.getWorld() == null || !a.getWorld().equals(b.getWorld())) {
+            player.sendMessage(MM.deserialize("<red>Les deux positions doivent être dans le même monde.</red>"));
+            return;
+        }
+
+        PortalDefinition portal;
+        try {
+            portal = new PortalDefinition(id, a.getWorld().getName(),
+                    Math.min(a.getBlockX(), b.getBlockX()), Math.min(a.getBlockY(), b.getBlockY()), Math.min(a.getBlockZ(), b.getBlockZ()),
+                    Math.max(a.getBlockX(), b.getBlockX()), Math.max(a.getBlockY(), b.getBlockY()), Math.max(a.getBlockZ(), b.getBlockZ()),
+                    null, YamlPortalRegistry.DEFAULT_CHANNEL_SECONDS, YamlPortalRegistry.DEFAULT_COOLDOWN_SECONDS,
+                    null, null, null, null, null);
+        } catch (IllegalArgumentException e) {
+            player.sendMessage(MM.deserialize(
+                    "<red>Id de portail invalide :</red> <white><reason></white>", Placeholder.unparsed("reason", String.valueOf(e.getMessage()))));
+            return;
+        }
+
+        switch (portalRegistry.create(portal)) {
+            case CREATED -> {
+                zoneSelectionService.clear(player.getUniqueId());
+                player.sendMessage(MM.deserialize(
+                        "<green>Portail créé :</green> <white><id></white> <gray>— configure sa destination avec</gray> "
+                                + "<yellow>/rpgadmin portal setdestination <id> <destinationId></yellow>",
+                        Placeholder.unparsed("id", id)));
+            }
+            case DUPLICATE_ID -> player.sendMessage(MM.deserialize(
+                    "<red>Un portail porte déjà l'id</red> <white><id></white>.", Placeholder.unparsed("id", id)));
+            case OVERLAPS -> player.sendMessage(MM.deserialize(
+                    "<red>Cette zone d'activation chevauche un portail existant dans ce monde.</red>"));
+            case IO_ERROR -> player.sendMessage(MM.deserialize(
+                    "<red>Erreur d'écriture : voir la console.</red>"));
+        }
+    }
+
+    private void handlePortalDelete(Player player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(MM.deserialize("<yellow>/rpgadmin portal delete <id></yellow>"));
+            return;
+        }
+        String id = args[2].toLowerCase(Locale.ROOT);
+        if (portalRegistry.delete(id)) {
+            player.sendMessage(MM.deserialize("<green>Portail supprimé :</green> <white><id></white>", Placeholder.unparsed("id", id)));
+        } else {
+            player.sendMessage(MM.deserialize("<red>Portail inconnu :</red> <white><id></white>", Placeholder.unparsed("id", id)));
+        }
+    }
+
+    private void handlePortalList(Player player) {
+        var portals = portalRegistry.portals();
+        if (portals.isEmpty()) {
+            player.sendMessage(MM.deserialize("<gray>Aucun portail chargé.</gray>"));
+            return;
+        }
+        player.sendMessage(MM.deserialize(
+                "<gold><count></gold> <gray>portail(s) :</gray>", Placeholder.unparsed("count", String.valueOf(portals.size()))));
+        for (PortalDefinition portal : portals) {
+            player.sendMessage(MM.deserialize(
+                    "<yellow>- <id></yellow> <gray>(<world>, destination :</gray> <white><dest></white><gray>)</gray>",
+                    Placeholder.unparsed("id", portal.id()), Placeholder.unparsed("world", portal.world()),
+                    Placeholder.unparsed("dest", portal.destinationId() == null ? "aucune" : portal.destinationId())));
+        }
+    }
+
+    private void handlePortalInfo(Player player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(MM.deserialize("<yellow>/rpgadmin portal info <id></yellow>"));
+            return;
+        }
+        Optional<PortalDefinition> portalOpt = portalRegistry.find(args[2].toLowerCase(Locale.ROOT));
+        if (portalOpt.isEmpty()) {
+            player.sendMessage(MM.deserialize("<red>Portail inconnu.</red>"));
+            return;
+        }
+        PortalDefinition portal = portalOpt.get();
+        player.sendMessage(MM.deserialize("<gold>=== <id> ===</gold>", Placeholder.unparsed("id", portal.id())));
+        player.sendMessage(MM.deserialize(
+                "<white>Monde :</white> <gray><world></gray>", Placeholder.unparsed("world", portal.world())));
+        player.sendMessage(MM.deserialize(
+                "<white>Bornes :</white> <gray>(<minx>, <miny>, <minz>) → (<maxx>, <maxy>, <maxz>)</gray>",
+                Placeholder.unparsed("minx", String.valueOf(portal.minX())), Placeholder.unparsed("miny", String.valueOf(portal.minY())),
+                Placeholder.unparsed("minz", String.valueOf(portal.minZ())), Placeholder.unparsed("maxx", String.valueOf(portal.maxX())),
+                Placeholder.unparsed("maxy", String.valueOf(portal.maxY())), Placeholder.unparsed("maxz", String.valueOf(portal.maxZ()))));
+        player.sendMessage(MM.deserialize(
+                "<white>Destination :</white> <gray><dest></gray>",
+                Placeholder.unparsed("dest", portal.destinationId() == null ? "aucune (non configurée)" : portal.destinationId())));
+        player.sendMessage(MM.deserialize(
+                "<white>Canalisation :</white> <gray><ch>s</gray> <white>Cooldown :</white> <gray><cd>s</gray>",
+                Placeholder.unparsed("ch", String.valueOf(portal.channelSeconds())), Placeholder.unparsed("cd", String.valueOf(portal.cooldownSeconds()))));
+        if (portal.requiredPermission() != null) {
+            player.sendMessage(MM.deserialize(
+                    "<white>Permission requise :</white> <gray><perm></gray>", Placeholder.unparsed("perm", portal.requiredPermission())));
+        }
+        if (portal.requiredQuestId() != null) {
+            player.sendMessage(MM.deserialize(
+                    "<white>Quête requise :</white> <gray><quest> (<state>)</gray>",
+                    Placeholder.unparsed("quest", portal.requiredQuestId().toString()), Placeholder.unparsed("state", portal.requiredQuestState().name())));
+        }
+        if (portal.requiredLevel() != null) {
+            player.sendMessage(MM.deserialize(
+                    "<white>Niveau requis :</white> <gray><lvl></gray>", Placeholder.unparsed("lvl", String.valueOf(portal.requiredLevel()))));
+        }
+        if (portal.cost() != null) {
+            player.sendMessage(MM.deserialize(
+                    "<white>Coût :</white> <gold><cost></gold>", Placeholder.unparsed("cost", String.valueOf(portal.cost()))));
+        }
+    }
+
+    private void handlePortalSetDestination(Player player, String[] args) {
+        if (args.length < 4) {
+            player.sendMessage(MM.deserialize("<yellow>/rpgadmin portal setdestination <id> <destinationId></yellow>"));
+            return;
+        }
+        String portalId = args[2].toLowerCase(Locale.ROOT);
+        String destinationId = args[3].toLowerCase(Locale.ROOT);
+
+        if (portalRegistry.find(portalId).isEmpty()) {
+            player.sendMessage(MM.deserialize("<red>Portail inconnu :</red> <white><id></white>", Placeholder.unparsed("id", portalId)));
+            return;
+        }
+
+        Location here = player.getLocation();
+        Destination destination;
+        try {
+            destination = new Destination(destinationId, here.getWorld().getName(),
+                    here.getX(), here.getY(), here.getZ(), here.getYaw(), here.getPitch());
+        } catch (IllegalArgumentException e) {
+            player.sendMessage(MM.deserialize(
+                    "<red>Id de destination invalide :</red> <white><reason></white>", Placeholder.unparsed("reason", String.valueOf(e.getMessage()))));
+            return;
+        }
+
+        if (!destinationRegistry.createOrUpdate(destination)) {
+            player.sendMessage(MM.deserialize("<red>Erreur d'écriture de la destination : voir la console.</red>"));
+            return;
+        }
+
+        switch (portalRegistry.setDestination(portalId, destinationId)) {
+            case UPDATED -> player.sendMessage(MM.deserialize(
+                    "<green>Destination</green> <white><dest></white> <green>fixée à ta position actuelle et reliée au portail</green> <white><id></white>",
+                    Placeholder.unparsed("dest", destinationId), Placeholder.unparsed("id", portalId)));
+            case PORTAL_NOT_FOUND -> player.sendMessage(MM.deserialize(
+                    "<red>Portail inconnu :</red> <white><id></white>", Placeholder.unparsed("id", portalId)));
+            case IO_ERROR -> player.sendMessage(MM.deserialize(
+                    "<red>Erreur d'écriture du portail : voir la console.</red>"));
+        }
+    }
+
+    private void sendPortalUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin portal create <id></yellow> <gray>- crée un portail depuis la sélection</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin portal delete <id></yellow> <gray>- supprime un portail</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin portal list</yellow> <gray>- liste les portails</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin portal info <id></yellow> <gray>- détail d'un portail</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin portal setdestination <id> <destinationId></yellow> <gray>- fixe la destination à ta position actuelle</gray>"));
     }
 
     private void handleZone(Player player, String[] args) {
@@ -317,6 +522,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private void sendUsage(CommandSender sender) {
         sendFlattenUsage(sender);
         sendZoneUsage(sender);
+        sendPortalUsage(sender);
     }
 
     private void sendFlattenUsage(CommandSender sender) {
@@ -342,6 +548,15 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         if (args.length == 3 && args[0].equalsIgnoreCase("zone")
                 && (args[1].equalsIgnoreCase("delete") || args[1].equalsIgnoreCase("info"))) {
             return zoneRegistry.zones().stream().map(ZoneDefinition::id)
+                    .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("portal")) {
+            return PORTAL_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("portal")
+                && (args[1].equalsIgnoreCase("delete") || args[1].equalsIgnoreCase("info")
+                        || args[1].equalsIgnoreCase("setdestination"))) {
+            return portalRegistry.portals().stream().map(PortalDefinition::id)
                     .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         return List.of();

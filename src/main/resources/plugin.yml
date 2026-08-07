@@ -30,7 +30,7 @@ commands:
     usage: /<command> <create <typeId>|remove|inspect>
   rpgadmin:
     description: Commandes d'administration du monde (aplatissement, zones, portails...).
-    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo
+    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo|zone ...|portal create|delete|list|info|setdestination
   money:
     description: Portefeuille et paiements entre joueurs.
     usage: /<command> [pay <joueur> <montant>|admin <give|take|set> <joueur> <montant>]

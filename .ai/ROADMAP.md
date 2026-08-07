@@ -36,7 +36,7 @@ priorité des sources).
 | 13 | Village central et safe zone | DONE |
 | 14 | Économie et marchands PNJ | DONE |
 | 15 | Marché entre joueurs | DONE |
-| 16 | Portails et téléportation | TODO |
+| 16 | Portails et téléportation | DONE |
 | 17 | Claims de terrain | TODO |
 | 18 | Mobs spéciaux vanilla | TODO |
 | 19 | XP RPG | TODO |
@@ -47,50 +47,46 @@ priorité des sources).
 
 ## Étape en cours
 
-### Étape 16 — Portails et téléportation
+### Étape 17 — Claims de terrain
 
-Branche attendue : `feature/16-portals`
+Branche attendue : `feature/17-land-claims`
 
-Aucun cahier des charges détaillé retrouvé dans le dépôt pour cette étape
-(voir « Dernière observation » ci-dessous) — à clarifier avec l'utilisateur
-avant de démarrer si le seul titre de la table ne suffit pas. Auditer
-`zone.ZoneRegistry`/`docs/SAFE_ZONE.md` avant de commencer : des portails
-référencent probablement des positions à l'intérieur ou en dehors de zones
-protégées, cohérence à vérifier avec le registre existant.
+Aucun cahier des charges détaillé retrouvé dans le dépôt pour cette étape.
+Auditer `zone.ZoneRegistry`/`zone.model.ZoneFlags`/`docs/SAFE_ZONE.md`
+avant de commencer : des claims de joueurs sont probablement un cousin des
+zones protégées administrateur (même mécanique de protection cuboïde),
+mais créées/possédées par des joueurs plutôt que par un admin — vérifier
+si `ZoneRegistry` doit être étendu (propriétaire, permissions par joueur)
+ou si un registre séparé est plus approprié avant d'écrire du code.
 
-### Dernière observation (2026-08-07, étape 15 terminée sans cahier des charges détaillé)
+### Dernière observation (2026-08-07, étape 16 reçue en cahier des charges détaillé dans le chat)
 
-Étape 15 (Marché entre joueurs) confirmée `DONE` : build vert, 333 tests
-verts (dont `MarketRepositoryTest`, `MarketServiceTest`, et
-`SchemaMigratorTest` mis à jour pour la migration V5). Aucun cahier des
-charges n'existant dans le dépôt pour cette étape (voir historique), la
-portée a été conçue par Claude, en cohérence avec l'économie/les
-marchands déjà livrés à l'étape 14 : `database.MarketRepository`
-(`market_listings`, migration V5, objet complet en dépôt via
-`ItemStack#serializeAsBytes()` — aucune dépendance au registre d'objets
-personnalisés), trois opérations atomiques (`claim`/`cancel`/`reactivate`,
-même discipline transactionnelle que `WalletRepository`),
-`economy.market.MarketService` (vitrine paginée unique, sans onglets —
-clic sur l'offre d'un autre joueur = achat, sur la sienne = annulation),
-achat en deux temps (réservation atomique d'abord, débit ensuite,
-réactivation si le débit échoue — ordre imposé par le fait que le prix
-n'est connu qu'après lecture en base, contrairement à un marchand YAML),
-`/market`/`/market sell`/`/market cancel`/`/market admin list`, vendeur
-crédité même hors ligne. Limitation assumée et documentée : pas
-d'annulation admin avec restitution d'objet pour un vendeur hors ligne
-(pas de système de boîte aux lettres — mirroir facile d'un futur système
-de backpacks/livraison, étape 20, si besoin).
+Étape 16 (Portails et téléportation) confirmée `DONE` : build vert, 368
+tests verts. Contrairement aux étapes 14/15, un cahier des charges détaillé
+a été reçu directement dans la conversation pour cette étape (portails
+configurables, canalisation, sécurité de destination, cooldown persisté,
+coût optionnel, `/rpgadmin portal create|delete|list|info|setdestination`,
+commit attendu `feat(travel): add safe configurable portals`) — suivi à la
+lettre. Portée réalisée : `travel.model` (`Destination`/`PortalDefinition`,
+corrects par construction), deux registres YAML indépendants
+(`YamlDestinationRegistry`/`YamlPortalRegistry`, même conception à deux
+phases que `ZoneLoader`, rejet des chevauchements de portails),
+`travel.PortalService` (détection d'entrée par `PlayerMoveEvent` filtré,
+canalisation à délai avec annulation mouvement/dégâts/déconnexion — même
+patron que `FlattenService` —, recherche de position sûre bornée, débit
+uniquement après vérification de sécurité, jamais avant), cooldown
+persisté (`portal_cooldowns`, migration V6) chargé en cache mémoire à la
+connexion, `/rpgadmin portal *` (nouvelle branche de `RpgAdminCommand`,
+réutilise l'outil `wand` existant), `docs/TRAVEL.md`. Aucun exemple de
+portail/destination embarqué (décision documentée : coordonnées arbitraires
+risquées sur un monde procédural).
 
-Étapes 1 à 15 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
-retrouvé pour les étapes 16 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
-qu'un `README.md` placeholder) — une session « mode nuit » antérieure
-(2026-08-07) mentionne l'avoir reçu en conversation, mais celle-ci n'a
-laissé aucun `HANDOFF.md`/fichier de reprise, et le contenu exact n'est
-donc plus disponible. Chaque étape suivante devra être précisée par
-l'utilisateur si le niveau de détail actuel (titre de la table ci-dessus)
-ne suffit pas à démarrer sans clarification — ce qui a été le cas pour
-l'étape 15, dont la portée a donc été définie par ingénierie plutôt que
-par un cahier des charges externe.
+Étapes 1 à 16 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
+retrouvé pour les étapes 17 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
+qu'un `README.md` placeholder) ; l'étape 16 a fait exception en le
+recevant directement en conversation. Chaque étape suivante devra être
+précisée par l'utilisateur si le niveau de détail actuel (titre de la
+table ci-dessus) ne suffit pas à démarrer sans clarification.
 
 ## Journal de session
 
@@ -149,5 +145,31 @@ Tests manuels en attente: navigation entre pages de /market avec beaucoup
 Blocages: aucun
 Première étape à reprendre: 16 (Portails et téléportation) — aucun cahier
   des charges détaillé retrouvé dans le dépôt pour les étapes 16 à 23, à
+  clarifier avec l'utilisateur si besoin avant de démarrer
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/15-player-market
+Étape de départ: 16 (Portails et téléportation), TODO — cahier des charges
+  détaillé reçu en conversation pendant la session (canalisation, sécurité
+  de destination, cooldown persisté, coût, commandes admin, commit
+  attendu feat(travel): add safe configurable portals)
+Étapes terminées: 16
+Branche finale: feature/16-portals
+Dernier commit: (voir git log — commit de l'étape 16 à suivre)
+Build: vert (./gradlew clean build)
+Tests: 368 tests verts (nouveaux : DestinationTest, PortalDefinitionTest,
+  DestinationDefinitionParserTest, PortalDefinitionParserTest,
+  DestinationLoaderTest, PortalLoaderTest, YamlDestinationRegistryTest,
+  YamlPortalRegistryTest, PortalServiceTest ; SchemaMigratorTest mis à
+  jour pour la migration V6)
+Tests manuels en attente: portail vers un chunk réellement déchargé,
+  déconnexion en pleine canalisation, reconnexion et persistance du
+  cooldown, téléportation avec inventaire chargé et quête active, test
+  depuis/vers une safe zone réelle (voir docs/TRAVEL.md)
+Blocages: aucun
+Première étape à reprendre: 17 (Claims de terrain) — aucun cahier des
+  charges détaillé retrouvé dans le dépôt pour les étapes 17 à 23, à
   clarifier avec l'utilisateur si besoin avant de démarrer
 ```

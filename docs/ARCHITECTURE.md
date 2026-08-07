@@ -2,7 +2,7 @@
 
 ## Arborescence des packages (prévue)
 
-    be.lloyd.rpgquest
+    com.lodygames.rpgquest
     ├── RPGQuestPlugin       (point d'entrée, délègue tout à bootstrap)
     ├── admin                (/rpgadmin : aplatissement de terrain, zones, portails, mobs spéciaux)
     ├── backpack             (inventaire virtuel persistant par joueur, trois paliers)

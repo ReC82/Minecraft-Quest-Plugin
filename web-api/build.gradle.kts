@@ -3,7 +3,7 @@ plugins {
     application
 }
 
-group = "be.lloyd.rpgquest"
+group = "com.lodygames.rpgquest"
 version = "0.1.0-SNAPSHOT"
 description = "RPGQuest web-api - portail web read-only, séparé du plugin Paper"
 
@@ -38,7 +38,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("be.lloyd.rpgquest.webapi.WebApiMain")
+    mainClass.set("com.lodygames.rpgquest.webapi.WebApiMain")
 }
 
 tasks {

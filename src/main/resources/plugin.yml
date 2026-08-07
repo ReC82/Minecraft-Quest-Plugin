@@ -1,8 +1,8 @@
 name: RPGQuest
 version: ${version}
-main: be.lloyd.rpgquest.RPGQuestPlugin
+main: com.lodygames.rpgquest.RPGQuestPlugin
 api-version: '1.21'
-author: Lloyd
+author: LodyGames
 description: Plugin RPG pour Paper piloté par des quêtes YAML.
 folia-supported: false
 

@@ -4,13 +4,13 @@
   "version": "${version}",
   "name": "RPGQuest Client Mod (prototype)",
   "description": "Contenu client optionnel pour le serveur RPGQuest : bloc/objet de démonstration, indicateurs cosmétiques de variantes de mob, statut de compatibilité. Aucune logique de jeu critique ; le serveur Paper reste l'autorité pour la progression, les drops, l'économie, les droits et les achats. Voir docs/CLIENT_MOD.md.",
-  "authors": ["Lloyd"],
+  "authors": ["LodyGames"],
   "contact": {},
   "license": "MIT",
   "environment": "client",
   "entrypoints": {
     "client": [
-      "be.lloyd.rpgquest.mod.client.RpgQuestClientMod"
+      "com.lodygames.rpgquest.mod.client.RpgQuestClientMod"
     ]
   },
   "mixins": [],

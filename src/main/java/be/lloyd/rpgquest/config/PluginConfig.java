@@ -8,6 +8,9 @@ public record PluginConfig(
         DialogueConfig dialogue,
         JournalConfig journal,
         AdminFlattenConfig adminFlatten,
-        ClaimConfig claims
+        ClaimConfig claims,
+        ProgressionConfig progression,
+        BackpackConfig backpacks,
+        WebExportConfig webExport
 ) {
 }

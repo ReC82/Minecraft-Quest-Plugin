@@ -60,6 +60,7 @@ import org.slf4j.Logger;
 public final class SpecialMobService implements PluginService, Listener {
 
     public static final String PDC_KEY_NAME = "special-mob-id";
+    public static final String SPLIT_DEPTH_KEY_NAME = "special-mob-split-depth";
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
@@ -70,6 +71,7 @@ public final class SpecialMobService implements PluginService, Listener {
     private final Logger logger;
     private final RandomGenerator random;
     private final NamespacedKey pdcKey;
+    private final NamespacedKey splitDepthKey;
 
     private final Map<NamespacedKey, Set<UUID>> population = new ConcurrentHashMap<>();
     private final Map<NamespacedKey, LongAdder> spawnCounts = new ConcurrentHashMap<>();
@@ -89,6 +91,7 @@ public final class SpecialMobService implements PluginService, Listener {
         this.logger = logger;
         this.random = random;
         this.pdcKey = new NamespacedKey(plugin, PDC_KEY_NAME);
+        this.splitDepthKey = new NamespacedKey(plugin, SPLIT_DEPTH_KEY_NAME);
     }
 
     @Override
@@ -106,11 +109,21 @@ public final class SpecialMobService implements PluginService, Listener {
         return pdcKey;
     }
 
+    public NamespacedKey splitDepthKey() {
+        return splitDepthKey;
+    }
+
     // ---- Identification PDC ----------------------------------------------------------------
 
     public Optional<NamespacedKey> specialMobId(Entity entity) {
         String raw = entity.getPersistentDataContainer().get(pdcKey, PersistentDataType.STRING);
         return raw == null ? Optional.empty() : Optional.ofNullable(NamespacedKey.fromString(raw));
+    }
+
+    /** Vrai si {@code entity} est née d'une division ({@link be.lloyd.rpgquest.mob.model.SplitOnHitAbility}), jamais un spawn racine. */
+    public boolean isSplitOffspring(Entity entity) {
+        Integer depth = entity.getPersistentDataContainer().get(splitDepthKey, PersistentDataType.INTEGER);
+        return depth != null && depth > 0;
     }
 
     public Optional<SpecialMobDefinition> specialMobDefinition(Entity entity) {

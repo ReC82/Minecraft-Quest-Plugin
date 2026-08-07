@@ -7,6 +7,11 @@ build/
 # run-paper test server
 run/
 
+# Config locale du portail web-api (jamais de secret dedans : le jeton vient
+# uniquement de RPGQUEST_WEB_API_TOKEN, voir docs/WEB_API.md) ; ignorée par
+# convention comme tout fichier de config personnalisé non versionné.
+web-api/web-api.properties
+
 # IDE
 .idea/
 *.iml

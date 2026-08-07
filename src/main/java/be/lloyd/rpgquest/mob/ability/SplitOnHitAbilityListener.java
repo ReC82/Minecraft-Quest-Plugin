@@ -13,28 +13,28 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.plugin.Plugin;
 
 /**
  * Fait apparaître des enfants à chaque coup non mortel reçu par une entité
  * portant {@link SplitOnHitAbility}. La profondeur de génération est stockée
- * en PDC (clé {@link #DEPTH_KEY_NAME}, jamais dans le nom affiché — mission
- * point 10) : un enfant né à la profondeur maximale ne peut plus se diviser,
- * et {@code maxChildrenPerHit} borne le nombre d'enfants créés par coup, ce
- * qui garantit ensemble qu'aucune chaîne de divisions n'est infinie (mission
+ * en PDC (clé {@link SpecialMobService#splitDepthKey()}, jamais dans le nom
+ * affiché — mission point 10 ; exposée publiquement pour que d'autres
+ * systèmes, ex. la progression RPG de l'étape 19, puissent détecter un
+ * descendant de division via {@link SpecialMobService#isSplitOffspring}) :
+ * un enfant né à la profondeur maximale ne peut plus se diviser, et {@code
+ * maxChildrenPerHit} borne le nombre d'enfants créés par coup, ce qui
+ * garantit ensemble qu'aucune chaîne de divisions n'est infinie (mission
  * point 7). Le nombre d'enfants est en plus borné par {@code max-population}
  * de la définition, si présent.
  */
 public final class SplitOnHitAbilityListener implements Listener {
 
-    static final String DEPTH_KEY_NAME = "special-mob-split-depth";
-
     private final SpecialMobService service;
     private final NamespacedKey depthKey;
 
-    public SplitOnHitAbilityListener(Plugin plugin, SpecialMobService service) {
+    public SplitOnHitAbilityListener(SpecialMobService service) {
         this.service = service;
-        this.depthKey = new NamespacedKey(plugin, DEPTH_KEY_NAME);
+        this.depthKey = service.splitDepthKey();
     }
 
     @EventHandler(ignoreCancelled = true)

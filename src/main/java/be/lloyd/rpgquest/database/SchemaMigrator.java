@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 7;
+    private static final int CURRENT_VERSION = 9;
 
     private SchemaMigrator() {
     }
@@ -48,6 +48,14 @@ public final class SchemaMigrator {
         if (version < 7) {
             applyV7(connection);
             version = 7;
+        }
+        if (version < 8) {
+            applyV8(connection);
+            version = 8;
+        }
+        if (version < 9) {
+            applyV9(connection);
+            version = 9;
         }
 
         if (version != startingVersion) {
@@ -230,6 +238,119 @@ public final class SchemaMigrator {
                         PRIMARY KEY (claim_id, member_uuid),
                         FOREIGN KEY (claim_id) REFERENCES claims (id) ON DELETE CASCADE,
                         FOREIGN KEY (member_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV8(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // total_xp seul : le niveau n'est jamais persisté (toujours recalculé via
+            // ProgressionCurve#levelForTotalXp), aucun risque de divergence niveau/XP.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS player_skills (
+                        player_uuid TEXT NOT NULL,
+                        skill TEXT NOT NULL,
+                        total_xp INTEGER NOT NULL DEFAULT 0,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, skill),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+
+            // Un octroi d'XP est identifié par (joueur, compétence, id d'événement) : la même action
+            // de jeu (mort de mob, bloc miné...) ne peut jamais récompenser deux fois la même
+            // compétence (mission étape 19, point 5).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS xp_grants (
+                        player_uuid TEXT NOT NULL,
+                        skill TEXT NOT NULL,
+                        event_id TEXT NOT NULL,
+                        amount INTEGER NOT NULL,
+                        reason TEXT,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, skill, event_id),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_xp_grants_player ON xp_grants (player_uuid)
+                    """);
+
+            // Anti-farm (mission point 7) : une position posée par un joueur n'accorde jamais d'XP de
+            // minage. Aucune clé étrangère vers player_profiles : un bloc survit à la suppression du
+            // profil de son poseur (le monde reste inchangé).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS player_placed_blocks (
+                        world TEXT NOT NULL,
+                        x INTEGER NOT NULL,
+                        y INTEGER NOT NULL,
+                        z INTEGER NOT NULL,
+                        PRIMARY KEY (world, x, y, z)
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV9(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Avantage générique (mission étape 20, point 11) : le backpack est le premier
+            // consommateur concret, d'autres avantages futurs réutiliseront cette même table sans
+            // migration supplémentaire (entitlement_key est une simple chaîne libre).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS player_entitlements (
+                        player_uuid TEXT NOT NULL,
+                        entitlement_key TEXT NOT NULL,
+                        tier TEXT NOT NULL,
+                        granted_at TEXT NOT NULL,
+                        reason TEXT,
+                        PRIMARY KEY (player_uuid, entitlement_key),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+
+            // contents : ItemStack[] sérialisé maison (voir backpack.ItemArraySerializer),
+            // schema_version distinct de PRAGMA user_version : permet de migrer le format binaire
+            // sans toucher au schéma SQL (mission point 6, "stocke... de manière sûre et versionnée").
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS backpacks (
+                        player_uuid TEXT PRIMARY KEY,
+                        schema_version INTEGER NOT NULL,
+                        contents BLOB NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+
+            // Boîte de récupération (mission point 9) : objets qui ne rentraient plus après une
+            // réduction de taille, ou tout contenu qu'une anomalie empêche de restaurer directement
+            // (ex. bloc sérialisé illisible) — jamais perdus silencieusement, toujours réclamables.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS backpack_overflow (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        player_uuid TEXT NOT NULL,
+                        schema_version INTEGER NOT NULL,
+                        contents BLOB NOT NULL,
+                        reason TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        claimed_at TEXT,
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+            statement.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_backpack_overflow_player ON backpack_overflow (player_uuid)
+                    """);
+
+            // Journal d'anomalies (mission, validation "toute anomalie crée une entrée de
+            // récupération ou d'audit") : append-only, même esprit que la table transactions de
+            // WalletRepository mais pour des événements structurels plutôt que financiers.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS backpack_audit (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        player_uuid TEXT,
+                        event_type TEXT NOT NULL,
+                        detail TEXT,
+                        created_at TEXT NOT NULL
                     )
                     """);
         }

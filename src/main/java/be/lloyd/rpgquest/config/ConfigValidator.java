@@ -1,10 +1,14 @@
 package be.lloyd.rpgquest.config;
 
+import be.lloyd.rpgquest.backpack.model.BackpackSize;
+import be.lloyd.rpgquest.progression.model.SkillType;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
@@ -32,7 +36,12 @@ public final class ConfigValidator {
         JournalConfig journal = validateJournal(section);
         AdminFlattenConfig adminFlatten = validateAdminFlatten(section);
         ClaimConfig claims = validateClaims(section);
-        return new PluginConfig(debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims);
+        ProgressionConfig progression = validateProgression(section);
+        BackpackConfig backpacks = validateBackpacks(section);
+        WebExportConfig webExport = validateWebExport(section);
+        return new PluginConfig(
+                debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression,
+                backpacks, webExport);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -247,5 +256,202 @@ public final class ConfigValidator {
 
     private static ClaimConfig defaultClaims() {
         return new ClaimConfig(64, 384, 3, 16);
+    }
+
+    private static ProgressionConfig validateProgression(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection progression = section.getConfigurationSection("progression");
+        if (progression == null) {
+            return defaultProgression();
+        }
+
+        long baseXp = progression.getLong("base-xp", 100L);
+        if (baseXp <= 0) {
+            throw new ConfigValidationException(
+                    "« progression.base-xp » doit être strictement positif, valeur trouvée : " + baseXp);
+        }
+        double growthFactor = progression.getDouble("growth-factor", 1.15);
+        if (growthFactor < 1.0) {
+            throw new ConfigValidationException(
+                    "« progression.growth-factor » doit être supérieur ou égal à 1.0, valeur trouvée : " + growthFactor);
+        }
+        int maxLevel = progression.getInt("max-level", 100);
+        if (maxLevel < 1) {
+            throw new ConfigValidationException(
+                    "« progression.max-level » doit être au moins 1, valeur trouvée : " + maxLevel);
+        }
+        double globalMirrorRatio = progression.getDouble("global-mirror-ratio", 0.5);
+        if (globalMirrorRatio < 0.0 || globalMirrorRatio > 1.0) {
+            throw new ConfigValidationException(
+                    "« progression.global-mirror-ratio » doit être compris entre 0.0 et 1.0, valeur trouvée : "
+                            + globalMirrorRatio);
+        }
+        int maxGrantsPerMinute = progression.getInt("max-grants-per-minute", 60);
+        if (maxGrantsPerMinute <= 0) {
+            throw new ConfigValidationException(
+                    "« progression.max-grants-per-minute » doit être strictement positif, valeur trouvée : "
+                            + maxGrantsPerMinute);
+        }
+
+        String rawDisplayMode = progression.getString("display-mode", "action_bar");
+        DisplayMode displayMode;
+        try {
+            displayMode = DisplayMode.valueOf(rawDisplayMode.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException(
+                    "« progression.display-mode » invalide : \"" + rawDisplayMode
+                            + "\" (valides : action_bar, boss_bar, off).");
+        }
+
+        boolean keepVanillaXp = progression.getBoolean("keep-vanilla-xp", true);
+
+        int questCompletionXp = nonNegativeInt(progression, "quest-completion-xp", 50);
+        int combatKillXp = nonNegativeInt(progression, "sources.combat-kill-xp", 15);
+        int miningBlockXp = nonNegativeInt(progression, "sources.mining-block-xp", 5);
+        int farmingHarvestXp = nonNegativeInt(progression, "sources.farming-harvest-xp", 4);
+        int fishingCatchXp = nonNegativeInt(progression, "sources.fishing-catch-xp", 10);
+        int explorationZoneXp = nonNegativeInt(progression, "sources.exploration-zone-xp", 100);
+
+        return new ProgressionConfig(baseXp, growthFactor, maxLevel, globalMirrorRatio, maxGrantsPerMinute,
+                displayMode, keepVanillaXp, questCompletionXp, combatKillXp, miningBlockXp, farmingHarvestXp,
+                fishingCatchXp, explorationZoneXp);
+    }
+
+    private static int nonNegativeInt(ConfigurationSection section, String key, int defaultValue)
+            throws ConfigValidationException {
+        int value = section.getInt(key, defaultValue);
+        if (value < 0) {
+            throw new ConfigValidationException(
+                    "« progression." + key + " » ne peut pas être négatif, valeur trouvée : " + value);
+        }
+        return value;
+    }
+
+    private static ProgressionConfig defaultProgression() {
+        return new ProgressionConfig(100L, 1.15, 100, 0.5, 60, DisplayMode.ACTION_BAR, true, 50, 15, 5, 4, 10, 100);
+    }
+
+    private static BackpackConfig validateBackpacks(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection backpacks = section.getConfigurationSection("backpacks");
+        if (backpacks == null) {
+            return defaultBackpacks();
+        }
+
+        int smallRows = rowCount(backpacks, "small-rows", 1);
+        int mediumRows = rowCount(backpacks, "medium-rows", 3);
+        int largeRows = rowCount(backpacks, "large-rows", 6);
+        if (!(smallRows < mediumRows && mediumRows < largeRows)) {
+            throw new ConfigValidationException(
+                    "« backpacks.small-rows » < « medium-rows » < « large-rows » doit être strictement croissant, "
+                            + "valeurs trouvées : " + smallRows + ", " + mediumRows + ", " + largeRows + ".");
+        }
+
+        Set<Material> forbidden = new LinkedHashSet<>();
+        for (String raw : backpacks.getStringList("forbidden-materials")) {
+            if (raw == null || raw.isBlank()) {
+                throw new ConfigValidationException("« backpacks.forbidden-materials » contient une entrée vide.");
+            }
+            Material material = Material.matchMaterial(raw);
+            if (material == null) {
+                throw new ConfigValidationException(
+                        "« backpacks.forbidden-materials » contient un matériau inconnu : \"" + raw + "\".");
+            }
+            forbidden.add(material);
+        }
+
+        String rawFallback = backpacks.getString("fallback-size", "SMALL");
+        BackpackSize fallbackSize;
+        try {
+            fallbackSize = BackpackSize.valueOf(rawFallback.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException(
+                    "« backpacks.fallback-size » invalide : \"" + rawFallback + "\" (valides : SMALL, MEDIUM, LARGE).");
+        }
+
+        String rawOpenItem = backpacks.getString("open-item-material", "BUNDLE");
+        Material openItemMaterial = Material.matchMaterial(rawOpenItem);
+        if (openItemMaterial == null) {
+            throw new ConfigValidationException(
+                    "« backpacks.open-item-material » invalide : \"" + rawOpenItem + "\".");
+        }
+
+        return new BackpackConfig(smallRows, mediumRows, largeRows, Set.copyOf(forbidden), fallbackSize, openItemMaterial);
+    }
+
+    private static int rowCount(ConfigurationSection section, String key, int defaultValue)
+            throws ConfigValidationException {
+        int value = section.getInt(key, defaultValue);
+        if (value < 1 || value > 6) {
+            throw new ConfigValidationException(
+                    "« backpacks." + key + " » doit être compris entre 1 et 6, valeur trouvée : " + value);
+        }
+        return value;
+    }
+
+    private static BackpackConfig defaultBackpacks() {
+        return new BackpackConfig(1, 3, 6, Set.of(), BackpackSize.SMALL, Material.BUNDLE);
+    }
+
+    private static WebExportConfig validateWebExport(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection web = section.getConfigurationSection("web-export");
+        if (web == null) {
+            return defaultWebExport();
+        }
+
+        boolean enabled = web.getBoolean("enabled", false);
+
+        String outputDirectory = web.getString("output-dir", "web-export");
+        if (outputDirectory.isBlank() || outputDirectory.contains("..")
+                || outputDirectory.contains("/") || outputDirectory.contains("\\")) {
+            throw new ConfigValidationException(
+                    "« web-export.output-dir » doit être un simple nom de dossier (sans séparateur ni \"..\"), "
+                            + "valeur trouvée : " + outputDirectory);
+        }
+
+        int intervalSeconds = web.getInt("interval-seconds", 30);
+        if (intervalSeconds < 5) {
+            throw new ConfigValidationException(
+                    "« web-export.interval-seconds » doit être au moins 5, valeur trouvée : " + intervalSeconds);
+        }
+
+        boolean includeConnectedPlayers = web.getBoolean("include-connected-players", false);
+
+        int leaderboardSize = web.getInt("leaderboard-size", 10);
+        if (leaderboardSize < 1 || leaderboardSize > 100) {
+            throw new ConfigValidationException(
+                    "« web-export.leaderboard-size » doit être compris entre 1 et 100, valeur trouvée : " + leaderboardSize);
+        }
+
+        List<String> rawSkills = web.getStringList("leaderboard-skills");
+        List<SkillType> leaderboardSkills = new ArrayList<>();
+        if (rawSkills.isEmpty()) {
+            leaderboardSkills.addAll(List.of(SkillType.values()));
+        } else {
+            for (String raw : rawSkills) {
+                try {
+                    leaderboardSkills.add(SkillType.valueOf(raw.toUpperCase(Locale.ROOT)));
+                } catch (IllegalArgumentException e) {
+                    throw new ConfigValidationException(
+                            "« web-export.leaderboard-skills » contient une compétence inconnue : \"" + raw + "\".");
+                }
+            }
+        }
+
+        List<WebExportConfig.Announcement> announcements = new ArrayList<>();
+        for (Map<?, ?> raw : web.getMapList("announcements")) {
+            Object title = raw.get("title");
+            if (!(title instanceof String titleText) || titleText.isBlank()) {
+                throw new ConfigValidationException(
+                        "« web-export.announcements » contient une entrée sans « title » valide.");
+            }
+            Object body = raw.get("body");
+            announcements.add(new WebExportConfig.Announcement(titleText, body instanceof String bodyText ? bodyText : ""));
+        }
+
+        return new WebExportConfig(enabled, outputDirectory, intervalSeconds, includeConnectedPlayers,
+                leaderboardSize, List.copyOf(leaderboardSkills), List.copyOf(announcements));
+    }
+
+    private static WebExportConfig defaultWebExport() {
+        return new WebExportConfig(false, "web-export", 30, false, 10, List.of(SkillType.values()), List.of());
     }
 }

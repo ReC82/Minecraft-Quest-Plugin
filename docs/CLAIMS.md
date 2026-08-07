@@ -85,15 +85,18 @@ les autres protections sont fixes, conformément à la mission.
 exempte l'acteur direct d'une action de la protection d'un claim — jamais
 la victime.
 
-## Politique d'extension future liée à la progression
+## Politique liée à la progression
 
 `ClaimService#effectiveMaxWidth`/`effectiveMaxHeight`/`effectiveMaxClaims`
-prennent déjà un `Player` en paramètre mais ne retournent aujourd'hui que la
-valeur globale de `config.yml` (identique pour tous les joueurs) — un seam
-volontaire : une étape ultérieure (XP RPG, étape 19) pourra faire varier
-ces limites selon le niveau/la progression du joueur sans changer un seul
-appelant. Aucun avantage payant n'est prévu pour cette étape (mission,
-point 9) : ces limites ne dépendent d'aucune monnaie ni d'aucun achat.
+prennent un `Player` en paramètre — seam préparée en étape 17, remplie
+depuis l'étape 19 (XP RPG) : `effectiveMaxClaims` accorde désormais +1
+claim tous les 10 niveaux de la piste `GLOBAL`
+(`progression.ProgressionService#hasLevel`/`level`), en plus de la limite
+globale de `config.yml`. Largeur/hauteur restent aujourd'hui uniquement la
+valeur de `config.yml`, identique pour tous les joueurs — voir
+[docs/PROGRESSION.md](PROGRESSION.md) pour le détail. Aucun avantage payant
+n'est prévu (mission étape 17, point 9) : ces limites ne dépendent d'aucune
+monnaie ni d'aucun achat, uniquement du niveau RPG.
 
 ## Performance
 

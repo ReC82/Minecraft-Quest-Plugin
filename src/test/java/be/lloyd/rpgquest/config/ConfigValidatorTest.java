@@ -305,6 +305,86 @@ class ConfigValidatorTest {
         assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
     }
 
+    @Test
+    void webExportDefaultsToDisabledWithAllSkills() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load(""));
+
+        WebExportConfig webExport = config.webExport();
+        assertFalse(webExport.enabled());
+        assertEquals("web-export", webExport.outputDirectory());
+        assertEquals(30, webExport.intervalSeconds());
+        assertFalse(webExport.includeConnectedPlayers());
+        assertEquals(10, webExport.leaderboardSize());
+        assertEquals(be.lloyd.rpgquest.progression.model.SkillType.values().length, webExport.leaderboardSkills().size());
+        assertTrue(webExport.announcements().isEmpty());
+    }
+
+    @Test
+    void acceptsFullyCustomWebExportConfig() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                web-export:
+                  enabled: true
+                  output-dir: portal-export
+                  interval-seconds: 60
+                  include-connected-players: true
+                  leaderboard-size: 5
+                  leaderboard-skills:
+                    - combat
+                    - mining
+                  announcements:
+                    - title: "Maintenance"
+                      body: "Serveur en pause dimanche."
+                """));
+
+        WebExportConfig webExport = config.webExport();
+        assertTrue(webExport.enabled());
+        assertEquals("portal-export", webExport.outputDirectory());
+        assertEquals(60, webExport.intervalSeconds());
+        assertTrue(webExport.includeConnectedPlayers());
+        assertEquals(5, webExport.leaderboardSize());
+        assertEquals(List.of(
+                be.lloyd.rpgquest.progression.model.SkillType.COMBAT,
+                be.lloyd.rpgquest.progression.model.SkillType.MINING), webExport.leaderboardSkills());
+        assertEquals(1, webExport.announcements().size());
+        assertEquals("Maintenance", webExport.announcements().get(0).title());
+    }
+
+    @Test
+    void rejectsUnknownWebExportLeaderboardSkill() {
+        ConfigurationSection section = load("""
+                web-export:
+                  leaderboard-skills:
+                    - not-a-skill
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("leaderboard-skills"));
+    }
+
+    @Test
+    void rejectsWebExportAnnouncementWithoutTitle() {
+        ConfigurationSection section = load("""
+                web-export:
+                  announcements:
+                    - body: "Sans titre."
+                """);
+
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+    }
+
+    @Test
+    void rejectsTooShortWebExportInterval() {
+        ConfigurationSection section = load("""
+                web-export:
+                  interval-seconds: 1
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("interval-seconds"));
+    }
+
     private ConfigurationSection load(String yaml) {
         return YamlConfiguration.loadConfiguration(new StringReader(yaml));
     }

@@ -39,64 +39,82 @@ priorité des sources).
 | 16 | Portails et téléportation | DONE |
 | 17 | Claims de terrain | DONE |
 | 18 | Mobs spéciaux vanilla | DONE |
-| 19 | XP RPG | TODO |
-| 20 | Backpacks | TODO |
-| 21 | API et site web read-only | TODO |
+| 19 | XP RPG | DONE |
+| 20 | Backpacks | DONE |
+| 21 | API et site web read-only | DONE |
 | 22 | Boutique web et livraison sécurisée | TODO |
 | 23 | Prototype de mod client séparé | TODO |
 
 ## Étape en cours
 
-### Étape 19 — XP RPG
+### Étape 22 — Boutique web et livraison sécurisée
 
-Branche attendue : `feature/19-rpg-xp` (à créer). Aucun cahier des charges
-détaillé retrouvé dans le dépôt pour cette étape — à clarifier avec
-l'utilisateur si le seul titre de la table ne suffit pas à démarrer sans
-clarification (les étapes 14/15/17/18 ont dû être conçues au moins en
-partie par ingénierie faute d'un tel cahier des charges reçu en
-conversation ; les étapes 16/17/18 ont reçu le leur directement dans le
-chat).
+Branche attendue : `feature/22-web-shop` (à créer). Aucun cahier des
+charges détaillé retrouvé dans le dépôt pour cette étape — à clarifier
+avec l'utilisateur si le seul titre de la table ne suffit pas à démarrer
+sans clarification (les étapes 14/15/17/18/19/20 ont dû être conçues au
+moins en partie par ingénierie faute d'un tel cahier des charges reçu en
+conversation ; les étapes 16/17/18/19/20/21 ont reçu le leur directement
+dans le chat).
 
-### Dernière observation (2026-08-07, étape 18 reçue en cahier des charges détaillé dans le chat)
+### Dernière observation (2026-08-07, étape 21 reçue en cahier des charges détaillé dans le chat)
 
-Étape 18 (Mobs spéciaux vanilla) confirmée `DONE` : build vert, 475 tests
-verts. Cahier des charges détaillé reçu directement dans la conversation
-(registre PDC, définition configurable complète — type d'entité, nom
-MiniMessage, chance de spawn, mondes/biomes/zones autorisés, attributs,
-particule/son, capacités, drops, XP RPG, limite de population —, quatre
-variantes obligatoires `red_creeper`/`golden_creeper`/`creeper_pig`/
-`splitting_zombie`, respect de la safe zone et des claims, respect des
-événements annulés pour les explosions, anti-boucle de duplication,
-`/rpgadmin mob spawn|list|inspect`, métriques debug, identification jamais
-par le nom affiché, commit attendu `feat(mobs): add configurable vanilla
-mob variants`) — suivi à la lettre, `reload`/`metrics` ajoutés en plus des
-trois sous-commandes explicitement demandées (convention déjà établie par
-`/merchant reload|validate|list`/`/resourcenode ... inspect`). Portée
-réalisée : `mob.model.SpecialMobDefinition` (correct par construction,
-réutilise `resource.model.ResourceDrop` tel quel) + `MobAbility` scellée à
-trois variantes (`StrongerExplosionAbility`/`ExplosiveOnAttackAbility`/
-`SplitOnHitAbility`), `SpecialMobDefinitionParser`/`SpecialMobLoader`/
-`SpecialMobRegistry` (même patron à deux phases que `ResourceNodeRegistry`,
-quatre exemples embarqués), `SpecialMobService` (upgrade au spawn naturel
-en priorité `HIGH` après la protection de zone, identification PDC
-exclusive, `setRemoveWhenFarAway(false)` + décompte de population
-uniquement à la mort pour survivre au déchargement de chunk et au
-redémarrage), `ExplosiveOnAttackAbilityService` (balayage périodique borné
-à la population réelle des variantes, pas à tous les mobs du monde — pas de
-goal d'IA « attaque » disponible via l'API publique pour une entité
-passive), `SplitOnHitAbilityListener` (profondeur en PDC + bornes de
-population : aucune division infinie), `/rpgadmin mob *`
-(`rpgquest.admin.world`, même racine que flatten/zone/portal),
-`SPECIAL_MOB_FORMAT.md`. Limitation connue : deux tests
-(`SpecialMobServiceTest`) sont marqués **ignorés** (pas échoués — MockBukkit
-lève délibérément `TestAbortedException` via
-`LivingEntityMock#setRemoveWhenFarAway`, non implémenté dans la dernière
-version disponible 4.110.0) ; le comportement réel n'est testable qu'en jeu
-(voir tests manuels ci-dessous).
+Étape 21 (API et site web read-only) confirmée `DONE` : build vert sur les
+deux modules Gradle (racine + `web-api`), 535 tests plugin (11 ignorés —
+pas échoués, limitation MockBukkit pré-existante depuis l'étape 18) + 19
+tests `web-api` (0 ignoré). Cahier des charges détaillé reçu directement
+dans la conversation (module web séparé du gameplay, jamais d'accès direct
+au fichier SQLite, API authentifiée — statut serveur, nombre de joueurs,
+joueurs connectés si autorisé, classements, catalogue public d'objets,
+actualités configurées —, lectures uniquement via snapshots/caches ou
+async, authentification serveur-à-serveur, rate limiting + validation +
+journalisation, aucun secret dans Git, site minimal — accueil, statut,
+classements, wiki/catalogue —, mode dégradé si le serveur Minecraft est
+arrêté, ni paiement ni login joueur ni modification de données à ce stade,
+commit attendu `feat(web): add read-only server API and portal`) — suivi
+à la lettre.
 
-Étapes 1 à 18 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
-retrouvé pour les étapes 19 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
-qu'un `README.md` placeholder) ; les étapes 16/17/18 ont fait exception en
+Portée réalisée, côté plugin (`be.lloyd.rpgquest.web`) : `WebExportConfig`
+(`config.yml` → `web-export:`, désactivé par défaut) + `WebSnapshotWriter`
+(`PluginService`, tick de housekeeping léger sur le thread principal,
+calcul des classements via `ProgressionRepository.topPlayers` — nouvelle
+requête en lecture seule, jamais appelée depuis un chemin de jeu synchrone
+—, écriture disque déportée sur un exécuteur dédié, jamais sur le thread
+principal ni sur celui de la continuation asynchrone), `JsonWriter`
+(sérialiseur maison, écriture seule côté plugin), écriture atomique par
+renommage (`snapshot.json.tmp` → `ATOMIC_MOVE`).
+
+Portée réalisée, module séparé `web-api/` (nouveau projet Gradle,
+`settings.gradle.kts` → `include("web-api")`, aucune dépendance vers Paper,
+aucun accès à `data.db`) : `webapi.json.Json` (codec JSON maison, lecture
+*et* écriture, aucune dépendance externe), `SnapshotStore` (cache en
+mémoire, détection du mode dégradé — snapshot absent ou périmé, jamais une
+erreur), `ServerState` (résolution du mode dégradé centralisée, jamais
+réimplémentée par route), serveur HTTP via `com.sun.net.httpserver` (JDK)
+avec `RequestPipeline` (rate limit par IP, authentification par jeton en
+temps constant `MessageDigest.isEqual`, fail-closed si aucun jeton
+configuré, journalisation sans jamais écrire de secret), routes API
+authentifiées (`/api/status|players|leaderboards|catalog|announcements`)
+et site public non authentifié (`/`, `/status`, `/leaderboards`, `/wiki`,
+échappement HTML systématique), jeton exclusivement via la variable
+d'environnement `RPGQUEST_WEB_API_TOKEN` (jamais dans un fichier versionné
+— `web-api.properties.example` ne contient que des réglages non
+sensibles), `WebApiMain` (point d'entrée, arrêt propre via shutdown hook).
+Documentation : `docs/WEB_API.md` (déploiement local/production complet).
+
+Limitation connue (héritée de l'étape 18, pas nouvelle, aucune occurrence
+supplémentaire cette étape) : 11 tests plugin restent marqués **ignorés**
+(pas échoués) — MockBukkit 4.110.0 (dernière version disponible) lève
+délibérément `TestAbortedException` sur plusieurs méthodes non
+implémentées ; le comportement réel n'est testable qu'en jeu. Limite
+assumée propre à cette étape (documentée dans docs/WEB_API.md) : pas de
+pagination sur le catalogue/wiki, rate limiting en mémoire par processus
+(non partagé entre plusieurs instances), pas de TLS natif (reverse proxy
+attendu en production).
+
+Étapes 1 à 21 confirmées `DONE`. Aucun cahier des charges détaillé n'a été
+retrouvé pour les étapes 22 à 23 dans le dépôt (`.ai/PROMPTS/` ne contient
+qu'un `README.md` placeholder) ; les étapes 16 à 21 ont fait exception en
 le recevant directement en conversation — pas de garantie que ça se
 reproduise pour les étapes suivantes. Chaque étape devra être précisée par
 l'utilisateur si le niveau de détail actuel (titre de la table ci-dessus)
@@ -239,4 +257,91 @@ Blocages: aucun
 Première étape à reprendre: 19 (XP RPG) — aucun cahier des charges détaillé
   retrouvé dans le dépôt pour les étapes 19 à 23, à clarifier avec
   l'utilisateur si besoin avant de démarrer
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/18-special-mobs
+Étape de départ: 19 (XP RPG), TODO — cahier des charges détaillé reçu en
+  conversation pendant la session (six pistes dont GLOBAL, SQLite, courbe
+  configurable et validée, service générique d'octroi avec id d'événement,
+  déduplication, sources interceptées, anti-farm, commandes, affichage,
+  XP vanilla conservée, hooks de déblocage, modèle d'équilibrage documenté,
+  commit attendu feat(progression): add multi-skill RPG experience system)
+Étapes terminées: 19
+Branche finale: feature/19-rpg-experience
+Dernier commit: 7260d11 feat(progression): add multi-skill RPG experience system
+Build: vert (./gradlew clean build)
+Tests: 503 tests (nouveaux : ProgressionCurveTest, ProgressionServiceTest,
+  CombatXpListenerTest, MiningXpListenerTest ; SchemaMigratorTest mis à
+  jour pour la migration V8 ; 9 tests ignorés — pas échoués, limitation
+  MockBukkit héritée de l'étape 18, voir ci-dessus)
+Tests manuels en attente: combat normal et mob spécial, miner un bloc
+  naturel puis un bloc posé, récolter une culture mûre/non mûre, pêcher,
+  terminer une quête, redémarrer et vérifier les niveaux (voir
+  docs/PROGRESSION.md)
+Blocages: aucun
+Première étape à reprendre: 20 (Backpacks) — aucun cahier des charges
+  détaillé retrouvé dans le dépôt pour les étapes 20 à 23, à clarifier avec
+  l'utilisateur si besoin avant de démarrer
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/19-rpg-experience
+Étape de départ: 20 (Backpacks), TODO — cahier des charges détaillé reçu en
+  conversation pendant la session (inventaire virtuel persistant, tailles
+  configurables, objet/commande d'ouverture, permission de secours +
+  commandes admin, stockage sûr et versionné, interdictions (imbrication,
+  objets interdits, ouverture simultanée, interaction non autorisée),
+  sauvegarde atomique fermeture/déconnexion/arrêt, boîte de récupération,
+  upgrade sans perte, interface EntitlementService générique, modèle
+  documenté, commit attendu feat(storage): add secure persistent backpacks)
+Étapes terminées: 20
+Branche finale: feature/20-backpacks
+Dernier commit: adf6828 feat(storage): add secure persistent backpacks
+Build: vert (./gradlew clean build)
+Tests: 523 tests (nouveaux : ItemArraySerializerTest, BackpackServiceTest,
+  BackpackListenerTest ; SchemaMigratorTest mis à jour pour la migration V9 ;
+  11 tests ignorés — pas échoués, limitation MockBukkit héritée de l'étape
+  18 + deux occurrences supplémentaires cette étape, voir ci-dessus)
+Tests manuels en attente: ouvrir/remplir/fermer/reconnecter, mourir avec le
+  backpack, changer de monde, forcer l'arrêt avec le backpack ouvert,
+  upgrade puis downgrade, deux clients sur le même compte si possible (voir
+  docs/BACKPACKS.md)
+Blocages: aucun
+Première étape à reprendre: 21 (API et site web read-only) — aucun cahier
+  des charges détaillé retrouvé dans le dépôt pour les étapes 21 à 23, à
+  clarifier avec l'utilisateur si besoin avant de démarrer
+```
+
+```text
+Date: 2026-08-07
+Branche de départ: feature/20-backpacks
+Étape de départ: 21 (API et site web read-only), TODO — cahier des charges
+  détaillé reçu en conversation pendant la session (module web séparé du
+  gameplay, jamais d'accès direct au fichier SQLite, API authentifiée —
+  statut, joueurs, classements, catalogue public, annonces —, lectures via
+  snapshots/caches ou async, authentification serveur-à-serveur, rate
+  limiting + validation + journalisation, aucun secret dans Git, site
+  minimal (accueil/statut/classements/wiki), mode dégradé si le serveur
+  Minecraft est arrêté, ni paiement ni login joueur ni écriture à ce
+  stade, commit attendu feat(web): add read-only server API and portal)
+Étapes terminées: 21
+Branche finale: feature/21-web-api
+Dernier commit: 54a8147 feat(web): add read-only server API and portal
+Build: vert (./gradlew clean build, deux modules : racine + web-api)
+Tests: 535 tests plugin (11 ignorés — pas échoués, limitation MockBukkit
+  héritée de l'étape 18, aucune occurrence supplémentaire cette étape) +
+  19 tests web-api (0 ignoré) ; nouveaux : ProgressionRepositoryTest
+  (topPlayers), WebSnapshotWriterTest, ConfigValidatorTest (web-export),
+  JsonTest, HttpServerBootstrapTest (bout-en-bout, vrai HttpServer + vrai
+  HttpClient)
+Tests manuels en attente: lancer serveur et site localement, consulter les
+  pages, arrêter Minecraft et vérifier le mode dégradé, vérifier qu'aucun
+  secret n'apparaît dans les réponses ou logs (voir docs/WEB_API.md)
+Blocages: aucun
+Première étape à reprendre: 22 (Boutique web et livraison sécurisée) —
+  aucun cahier des charges détaillé retrouvé dans le dépôt pour les étapes
+  22 à 23, à clarifier avec l'utilisateur si besoin avant de démarrer
 ```

@@ -8,6 +8,8 @@ import be.lloyd.rpgquest.config.ClaimConfig;
 import be.lloyd.rpgquest.config.ConfigService;
 import be.lloyd.rpgquest.database.ClaimActionOutcome;
 import be.lloyd.rpgquest.database.ClaimRepository;
+import be.lloyd.rpgquest.progression.ProgressionService;
+import be.lloyd.rpgquest.progression.model.SkillType;
 import be.lloyd.rpgquest.travel.YamlPortalRegistry;
 import be.lloyd.rpgquest.travel.model.PortalDefinition;
 import be.lloyd.rpgquest.zone.ZoneRegistry;
@@ -44,23 +46,27 @@ import org.slf4j.Logger;
  */
 public final class ClaimService implements PluginService {
 
+    private static final int BONUS_CLAIM_LEVEL_INTERVAL = 10;
+
     private final RPGQuestPlugin plugin;
     private final ClaimRepository claimRepository;
     private final ZoneRegistry zoneRegistry;
     private final YamlPortalRegistry portalRegistry;
     private final ConfigService configService;
+    private final ProgressionService progressionService;
     private final Logger logger;
 
     private volatile List<Claim> claims = List.of();
     private volatile Map<String, List<Claim>> byWorld = Map.of();
 
     public ClaimService(RPGQuestPlugin plugin, ClaimRepository claimRepository, ZoneRegistry zoneRegistry,
-                         YamlPortalRegistry portalRegistry, ConfigService configService) {
+                         YamlPortalRegistry portalRegistry, ConfigService configService, ProgressionService progressionService) {
         this.plugin = plugin;
         this.claimRepository = claimRepository;
         this.zoneRegistry = zoneRegistry;
         this.portalRegistry = portalRegistry;
         this.configService = configService;
+        this.progressionService = progressionService;
         this.logger = plugin.getSLF4JLogger();
     }
 
@@ -106,11 +112,14 @@ public final class ClaimService implements PluginService {
     }
 
     /**
-     * Seams pour une future politique liée à la progression du joueur
-     * (mission étape 17, point 8) — retournent aujourd'hui uniquement la
-     * valeur globale de {@code config.yml}, identique pour tous les
-     * joueurs ; une étape ultérieure pourra les faire varier selon le
-     * niveau/la progression sans changer les appelants. Voir docs/CLAIMS.md.
+     * Seams pour une politique liée à la progression du joueur (mission
+     * étape 17, point 8), effectivement branchées sur {@link
+     * ProgressionService} depuis l'étape 19 (mission point 11, « hooks de
+     * déblocage : ... claim »). Largeur/hauteur restent aujourd'hui
+     * uniquement la valeur de {@code config.yml}, identique pour tous les
+     * joueurs — étendre la surface au-delà d'une simple limite de nombre
+     * change la géométrie de claims déjà posés, hors de portée d'un hook de
+     * démonstration. Voir docs/CLAIMS.md et docs/PROGRESSION.md.
      */
     public int effectiveMaxWidth(Player player) {
         return configService.current().claims().maxWidth();
@@ -120,8 +129,12 @@ public final class ClaimService implements PluginService {
         return configService.current().claims().maxHeight();
     }
 
+    /** +1 claim tous les {@value #BONUS_CLAIM_LEVEL_INTERVAL} niveaux de la piste {@code GLOBAL}. */
     public int effectiveMaxClaims(Player player) {
-        return configService.current().claims().maxClaimsPerPlayer();
+        int base = configService.current().claims().maxClaimsPerPlayer();
+        int globalLevel = progressionService.level(player.getUniqueId(), SkillType.GLOBAL);
+        int bonus = globalLevel / BONUS_CLAIM_LEVEL_INTERVAL;
+        return base + bonus;
     }
 
     public enum CreateOutcome {

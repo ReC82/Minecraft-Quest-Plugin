@@ -3,30 +3,38 @@ package be.lloyd.rpgquest.bootstrap;
 import be.lloyd.rpgquest.RPGQuestPlugin;
 import be.lloyd.rpgquest.admin.FlattenService;
 import be.lloyd.rpgquest.admin.RpgAdminCommand;
+import be.lloyd.rpgquest.backpack.BackpackService;
 import be.lloyd.rpgquest.claim.ClaimProtectionListener;
 import be.lloyd.rpgquest.claim.ClaimSelectionService;
 import be.lloyd.rpgquest.claim.ClaimService;
 import be.lloyd.rpgquest.claim.ClaimWandListener;
+import be.lloyd.rpgquest.command.BackpackCommand;
 import be.lloyd.rpgquest.command.ClaimCommand;
 import be.lloyd.rpgquest.command.CustomItemCommand;
 import be.lloyd.rpgquest.command.DialogueCommand;
 import be.lloyd.rpgquest.command.MarketCommand;
 import be.lloyd.rpgquest.command.MerchantCommand;
 import be.lloyd.rpgquest.command.MoneyCommand;
+import be.lloyd.rpgquest.command.ProfileCommand;
 import be.lloyd.rpgquest.command.QuestCommand;
 import be.lloyd.rpgquest.command.QuestsCommand;
 import be.lloyd.rpgquest.command.ResourceNodeCommand;
 import be.lloyd.rpgquest.command.RPGQuestCommand;
+import be.lloyd.rpgquest.command.SkillsCommand;
 import be.lloyd.rpgquest.config.ConfigService;
 import be.lloyd.rpgquest.config.RendererKind;
 import be.lloyd.rpgquest.crafting.RecipeCraftGuardListener;
 import be.lloyd.rpgquest.crafting.YamlCraftingRegistry;
+import be.lloyd.rpgquest.database.BackpackRepository;
 import be.lloyd.rpgquest.database.DatabaseService;
+import be.lloyd.rpgquest.database.EntitlementRepository;
+import be.lloyd.rpgquest.database.PlacedBlockRepository;
 import be.lloyd.rpgquest.database.PlayerProfileRepository;
 import be.lloyd.rpgquest.database.PlayerVariableRepository;
 import be.lloyd.rpgquest.database.ClaimRepository;
 import be.lloyd.rpgquest.database.MarketRepository;
 import be.lloyd.rpgquest.database.PortalCooldownRepository;
+import be.lloyd.rpgquest.database.ProgressionRepository;
 import be.lloyd.rpgquest.database.QuestProgressRepository;
 import be.lloyd.rpgquest.database.ResourceNodeRepository;
 import be.lloyd.rpgquest.database.WalletRepository;
@@ -39,6 +47,7 @@ import be.lloyd.rpgquest.economy.EconomyService;
 import be.lloyd.rpgquest.economy.market.MarketService;
 import be.lloyd.rpgquest.economy.merchant.MerchantTradeService;
 import be.lloyd.rpgquest.economy.merchant.YamlMerchantRegistry;
+import be.lloyd.rpgquest.entitlement.EntitlementService;
 import be.lloyd.rpgquest.item.SpiderFangDropListener;
 import be.lloyd.rpgquest.item.YamlCustomItemRegistry;
 import be.lloyd.rpgquest.item.behavior.EquipmentBehaviorService;
@@ -51,6 +60,14 @@ import be.lloyd.rpgquest.player.PlayerConnectionListener;
 import be.lloyd.rpgquest.player.PlayerListenerService;
 import be.lloyd.rpgquest.player.PlayerProfileService;
 import be.lloyd.rpgquest.player.ResourcePackListener;
+import be.lloyd.rpgquest.progression.PlacedBlockTracker;
+import be.lloyd.rpgquest.progression.ProgressionService;
+import be.lloyd.rpgquest.progression.listener.CombatXpListener;
+import be.lloyd.rpgquest.progression.listener.ExplorationXpListener;
+import be.lloyd.rpgquest.progression.listener.FarmingXpListener;
+import be.lloyd.rpgquest.progression.listener.FishingXpListener;
+import be.lloyd.rpgquest.progression.listener.MiningXpListener;
+import be.lloyd.rpgquest.progression.listener.QuestCompletionXpListener;
 import be.lloyd.rpgquest.quest.QuestMessagesService;
 import be.lloyd.rpgquest.resource.ResourceNodeBreakListener;
 import be.lloyd.rpgquest.resource.ResourceNodeRegistry;
@@ -61,6 +78,7 @@ import be.lloyd.rpgquest.travel.PortalService;
 import be.lloyd.rpgquest.travel.YamlDestinationRegistry;
 import be.lloyd.rpgquest.travel.YamlPortalRegistry;
 import be.lloyd.rpgquest.ui.QuestJournalService;
+import be.lloyd.rpgquest.web.WebSnapshotWriter;
 import be.lloyd.rpgquest.zone.ZoneProtectionListener;
 import be.lloyd.rpgquest.zone.ZoneRegistry;
 import be.lloyd.rpgquest.zone.ZoneSelectionService;
@@ -104,12 +122,16 @@ public final class RPGQuestBootstrap {
     private QuestJournalService questJournalService;
     private ResourceNodeService resourceNodeService;
     private SpecialMobService mobService;
+    private ProgressionService progressionService;
+    private EntitlementService entitlementService;
+    private BackpackService backpackService;
     private EconomyService economyService;
     private MerchantTradeService merchantTradeService;
     private MarketRepository marketRepository;
     private MarketService marketService;
     private PortalService portalService;
     private ClaimService claimService;
+    private WebSnapshotWriter webSnapshotWriter;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -174,7 +196,7 @@ public final class RPGQuestBootstrap {
         mobService = new SpecialMobService(plugin, mobRegistry, zoneRegistry, customItemRegistry, plugin.getSLF4JLogger());
         registry.start(mobService);
         registry.start(new PlayerListenerService(plugin, new StrongerExplosionAbilityListener(mobService)));
-        registry.start(new PlayerListenerService(plugin, new SplitOnHitAbilityListener(plugin, mobService)));
+        registry.start(new PlayerListenerService(plugin, new SplitOnHitAbilityListener(mobService)));
         registry.start(new ExplosiveOnAttackAbilityService(plugin, mobRegistry, mobService));
 
         equipmentBehaviorService = new EquipmentBehaviorService(plugin, customItemRegistry, configService);
@@ -189,6 +211,42 @@ public final class RPGQuestBootstrap {
                 plugin, questEngine, progressRepository, variableRepository, questMessagesService);
         registry.start(questProgressEngine);
         registry.start(new PlayerListenerService(plugin, questProgressEngine.connectionListener()));
+
+        ProgressionRepository progressionRepository = new ProgressionRepository(databaseService.databaseManager());
+        progressionService = new ProgressionService(
+                plugin, progressionRepository, () -> configService.current().progression(), plugin.getSLF4JLogger());
+        registry.start(progressionService);
+
+        webSnapshotWriter = new WebSnapshotWriter(
+                plugin, plugin.getDataFolder().toPath(), progressionRepository, customItemRegistry,
+                () -> configService.current().webExport(), plugin.getSLF4JLogger());
+        registry.start(webSnapshotWriter);
+
+        PlacedBlockRepository placedBlockRepository = new PlacedBlockRepository(databaseService.databaseManager());
+        PlacedBlockTracker placedBlockTracker = new PlacedBlockTracker(plugin, placedBlockRepository, plugin.getSLF4JLogger());
+        registry.start(placedBlockTracker);
+
+        registry.start(new PlayerListenerService(plugin, new CombatXpListener(
+                plugin, progressionService, mobService, () -> configService.current().progression())));
+        registry.start(new PlayerListenerService(plugin, new MiningXpListener(
+                progressionService, placedBlockTracker, () -> configService.current().progression())));
+        registry.start(new PlayerListenerService(plugin, new FarmingXpListener(
+                progressionService, () -> configService.current().progression())));
+        registry.start(new PlayerListenerService(plugin, new FishingXpListener(
+                progressionService, () -> configService.current().progression())));
+        registry.start(new PlayerListenerService(plugin, new ExplorationXpListener(
+                progressionService, zoneRegistry, () -> configService.current().progression())));
+
+        QuestCompletionXpListener questCompletionXpListener = new QuestCompletionXpListener(
+                progressionService, questProgressEngine, () -> configService.current().progression(), plugin.getSLF4JLogger());
+        questProgressEngine.onProgressChanged(questCompletionXpListener::onProgressChanged);
+
+        EntitlementRepository entitlementRepository = new EntitlementRepository(databaseService.databaseManager());
+        entitlementService = entitlementRepository;
+        BackpackRepository backpackRepository = new BackpackRepository(databaseService.databaseManager());
+        backpackService = new BackpackService(
+                plugin, backpackRepository, entitlementService, () -> configService.current().backpacks(), plugin.getSLF4JLogger());
+        registry.start(backpackService);
 
         WalletRepository walletRepository = new WalletRepository(databaseService.databaseManager());
         economyService = new EconomyService(walletRepository);
@@ -212,7 +270,7 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, portalService.listener()));
 
         ClaimRepository claimRepository = new ClaimRepository(databaseService.databaseManager());
-        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService);
+        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService, progressionService);
         registry.start(claimService);
         registry.start(new PlayerListenerService(plugin, new ClaimProtectionListener(claimService)));
         registry.start(new PlayerListenerService(plugin, new ClaimWandListener(claimSelectionService)));
@@ -314,6 +372,18 @@ public final class RPGQuestBootstrap {
         return mobService;
     }
 
+    public ProgressionService progressionService() {
+        return progressionService;
+    }
+
+    public EntitlementService entitlementService() {
+        return entitlementService;
+    }
+
+    public BackpackService backpackService() {
+        return backpackService;
+    }
+
     public YamlMerchantRegistry merchantRegistry() {
         return merchantRegistry;
     }
@@ -344,6 +414,10 @@ public final class RPGQuestBootstrap {
 
     public ClaimService claimService() {
         return claimService;
+    }
+
+    public WebSnapshotWriter webSnapshotWriter() {
+        return webSnapshotWriter;
     }
 
     private void registerCommands() {
@@ -414,6 +488,26 @@ public final class RPGQuestBootstrap {
         if (claim != null) {
             claim.setExecutor(claimCommand);
             claim.setTabCompleter(claimCommand);
+        }
+
+        ProfileCommand profileCommand = new ProfileCommand(progressionService);
+        var profile = plugin.getCommand("profile");
+        if (profile != null) {
+            profile.setExecutor(profileCommand);
+        }
+
+        SkillsCommand skillsCommand = new SkillsCommand(progressionService);
+        var skills = plugin.getCommand("skills");
+        if (skills != null) {
+            skills.setExecutor(skillsCommand);
+            skills.setTabCompleter(skillsCommand);
+        }
+
+        BackpackCommand backpackCommand = new BackpackCommand(backpackService, entitlementService, plugin.getSLF4JLogger());
+        var backpack = plugin.getCommand("backpack");
+        if (backpack != null) {
+            backpack.setExecutor(backpackCommand);
+            backpack.setTabCompleter(backpackCommand);
         }
 
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(

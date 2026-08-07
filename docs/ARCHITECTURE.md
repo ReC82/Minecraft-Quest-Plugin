@@ -5,11 +5,14 @@
     be.lloyd.rpgquest
     ├── RPGQuestPlugin       (point d'entrée, délègue tout à bootstrap)
     ├── admin                (/rpgadmin : aplatissement de terrain, zones, portails, mobs spéciaux)
+    ├── backpack             (inventaire virtuel persistant par joueur, trois paliers)
+    │   └── model            (modèle immuable : palier)
     ├── bootstrap            (cycle de vie : PluginService, registre, orchestration)
     ├── command
     ├── config               (chargement + validation de config.yml)
     ├── claim                (claims de terrain joueurs : persistance SQLite, sélection, protection)
     │   └── model            (modèles immuables : claim, permissions)
+    ├── entitlement          (interface générique d'avantage joueur — mission étape 20, point 11)
     ├── crafting             (recettes YAML + enregistrement Bukkit + garde anti-substitution)
     │   └── model            (modèles immuables : recette façonnée/non, ingrédients, résultat)
     ├── database
@@ -28,6 +31,9 @@
     │   ├── model            (modèles immuables : définition de variante, capacités)
     │   └── ability          (écouteurs/services par capacité : explosion, agressivité, division)
     ├── player
+    ├── progression          (XP RPG multi-compétences, indépendante de l'XP vanilla)
+    │   ├── model            (modèles immuables : compétence, courbe de niveaux, résultat d'octroi)
+    │   └── listener         (écouteurs par source d'XP : combat, minage, agriculture, pêche, exploration, quêtes)
     ├── quest                (définitions YAML + progression des joueurs)
     │   ├── model            (modèles immuables : quête, étapes, objectifs, récompenses)
     │   └── progress         (état runtime mutable, index, listeners, commandes)
@@ -37,8 +43,14 @@
     │   └── model            (modèles immuables : destination, portail)
     ├── ui                   (journal de quêtes : menu paginé, vue détail, suivi)
     ├── util                 (vide pour l'instant : utilitaires génériques uniquement)
+    ├── web                  (export périodique en lecture seule pour le module web-api séparé)
     └── zone                 (zones protégées : registre YAML, protection d'événements, sélection)
         └── model            (modèles immuables : zone, permissions)
+
+Le module Gradle séparé `web-api/` (racine du dépôt, projet indépendant —
+voir `settings.gradle.kts`) n'apparaît pas dans cette arborescence : il ne
+dépend d'aucun package ci-dessus, ni de Paper, et lit uniquement le fichier
+produit par `web`. Voir [docs/WEB_API.md](WEB_API.md).
 
 Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
 `item` et désormais `resource` couvrent chacun le chargement/l'affichage
@@ -1637,6 +1649,235 @@ qu'embarqués dans le jar.
     mondes/biomes/zones/population : c'est un outil de test (mission,
     test manuel « faire apparaître chaque variante »), pas un second chemin
     de spawn naturel.
+
+## `progression` (XP RPG multi-compétences)
+
+-   **Le niveau n'est jamais persisté séparément de l'XP totale** —
+    `ProgressionCurve#levelForTotalXp` le recalcule systématiquement depuis
+    `player_skills.total_xp` (SQLite) ou depuis le cache en mémoire ; aucun
+    état stocké ne peut donc diverger entre XP et niveau affiché (mission
+    étape 19, validation « les valeurs ne peuvent ni déborder ni devenir
+    incohérentes »). Même philosophie que `mob.SpecialMobDefinition`
+    (`totalDropWeight()` toujours recalculé, jamais mis en cache).
+-   **Déduplication au niveau de `ProgressionRepository`, une seule
+    transaction JDBC explicite** (`xp_grants` avec clé primaire (joueur,
+    compétence, id d'événement) puis mise à jour du total) — même
+    conception que `WalletRepository#credit`/`ClaimRepository` : soit
+    l'octroi ET la mise à jour du total réussissent tous les deux, soit ni
+    l'un ni l'autre. `INSERT OR IGNORE` sur `xp_grants` retourne 0 ligne
+    affectée pour un id déjà vu, qui court-circuite la mise à jour du
+    total sans jamais la tenter.
+-   **L'id d'événement est choisi différemment selon que l'action est
+    répétable ou « une fois pour toutes »** — pour le combat/minage/
+    agriculture/pêche (répétables), l'id combine position/entité et un
+    compteur monotone (une même position peut légitimement être re-minée
+    après un respawn de nœud de ressource, `resource.ResourceNodeService`)
+    ; pour l'exploration/les quêtes (« une fois par (joueur, zone/quête)
+    pour toujours »), l'id est l'identifiant stable de la zone/quête —
+    c'est la déduplication elle-même, pas un état séparé, qui garantit le
+    « une fois », y compris après un redémarrage.
+-   **`GLOBAL` est un mirroir automatique, jamais un octroi séparé côté
+    appelant** — `ProgressionService#awardXp` accorde toujours en plus
+    `amount × globalMirrorRatio` sur `GLOBAL` avec un id d'événement dérivé
+    (`eventId + "#global"`, dédupliqué indépendamment) : un écouteur de
+    source d'XP n'a jamais besoin d'accorder GLOBAL explicitement.
+-   **Configuration lue via `Supplier<ProgressionConfig>`, jamais une
+    valeur figée au démarrage** — même patron que
+    `item.behavior.EquipmentBehaviorService` (`() -> configService.current().debug()`)
+    : un `/rpgquest reload` change immédiatement la courbe, les montants
+    par source, le mode d'affichage et les seuils anti-farm, sans
+    redémarrer le service.
+-   **Anti-farm blocs posés par un joueur : `PlacedBlockTracker` ne réagit
+    jamais à `BlockBreakEvent` lui-même** — `isPlayerPlaced`/
+    `clearPlacement` sont appelés explicitement par `MiningXpListener`
+    dans l'ordre voulu (lire puis effacer), pour ne jamais dépendre de
+    l'ordre d'exécution entre deux listeners Bukkit distincts sur le même
+    événement (contrairement à un design qui aurait fait effacer le suivi
+    dans le propre `BlockBreakEvent` du tracker).
+-   **Anti-farm mobs de spawner : tag PDC posé à `CreatureSpawnEvent`,
+    lu à `EntityDeathEvent`** — `SpawnReason` n'est disponible qu'au
+    moment du spawn, jamais à la mort ; même contrainte que `mob.
+    SpecialMobService` a dû résoudre pour son upgrade de spawn naturel, la
+    solution est un tag PDC posé une fois au spawn.
+-   **Anti-farm mobs de division : dépendance directe à
+    `mob.SpecialMobService#isSplitOffspring`**, exposée publiquement pour
+    l'occasion (la clé PDC de profondeur, avant étape 19, était possédée
+    localement par `mob.ability.SplitOnHitAbilityListener` — centralisée
+    sur `SpecialMobService` avec les autres clés PDC du package, single
+    source of truth).
+-   **Cultures : `Ageable#getAge() == getMaximumAge()`, pas une liste de
+    matériaux** — couvre toute culture vanilla par construction (blé,
+    carottes, pastèque/citrouille, cacao, baies...) sans table à maintenir ;
+    en contrepartie couvre aussi des blocs `Ageable` non-agricoles
+    (jeunes pousses d'arbre, corail) — simplification assumée, documentée
+    dans `docs/PROGRESSION.md`.
+-   **Découverte de zone : `PlayerMoveEvent` filtré au changement de
+    bloc**, jamais à chaque micro-mouvement — coût amorti, même patron que
+    tout listener de mouvement du projet. Aucune zone n'est exclue par
+    construction (y compris la safe zone centrale) : documenté comme
+    choix délibéré plutôt que comme un cas particulier fragile à
+    maintenir.
+-   **Fin de quête : callback générique `QuestProgressEngine#onProgressChanged`,
+    aucune modification du package `quest`** — ce callback notifie après
+    *tout* changement de progression, pas spécifiquement une fin de
+    quête ; `QuestCompletionXpListener` reparcourt donc l'ensemble des
+    états à chaque appel et laisse la déduplication (id = id de quête)
+    garantir qu'une quête déjà récompensée ne l'est plus jamais, même
+    rappelée plusieurs fois. Évite d'inverser la dépendance
+    quest → progression (le reste du projet dépend de `quest`, jamais
+    l'inverse) et d'étendre `quest.model.QuestReward` pour ce besoin.
+-   **`ProgressionService#hasLevel` est le hook de déblocage générique**
+    (mission point 11), câblé concrètement dans
+    `claim.ClaimService#effectiveMaxClaims` (même seam que `claim` avait
+    préparée en étape 17, point 8, jusqu'ici jamais remplie) ; portails et
+    recettes n'ont pas encore de champ dédié dans leur format YAML pour le
+    consommer, documenté comme extension future dans
+    `docs/PROGRESSION.md` plutôt que forcé maintenant.
+
+## `entitlement` (avantage joueur générique)
+
+-   **Une seule interface, une seule implémentation SQL, un seul
+    consommateur pour l'instant** (`backpack`, mission étape 20, point 11
+    — « sans créer encore la boutique ») — `EntitlementService` ne prend
+    volontairement aucun type générique Java (`grant(UUID, String key,
+    String tier, String reason)`, pas `grant(UUID, K key, T tier)`) : le
+    palier est une chaîne libre, jamais couplée à `backpack.model.BackpackSize`
+    ni à un futur enum d'avantage, pour qu'un avantage totalement
+    différent (métier, cosmétique...) réutilise la même table
+    `player_entitlements` sans migration supplémentaire — seule la clé
+    (`entitlement_key`) change.
+-   **`database.EntitlementRepository` implémente directement
+    l'interface**, sans service métier intermédiaire — contrairement à
+    `claim.ClaimService`/`backpack.BackpackService`, un avantage générique
+    n'a aucune règle de validation propre (pas de chevauchement, pas de
+    limite), une simple lecture/écriture clé-valeur suffit.
+
+## `backpack` (inventaire virtuel persistant)
+
+-   **Le palier effectif est résolu via `EntitlementService`, jamais
+    stocké directement sur la ligne `backpacks`** — `BackpackService#effectiveSize`
+    interroge l'avantage `"backpack"` à chaque ouverture ; la permission
+    de secours `rpgquest.backpack.free` (mission point 5) n'intervient
+    qu'en repli, si aucun avantage explicite n'existe. Le contenu
+    (`backpacks.contents`) et le palier ne peuvent donc jamais diverger
+    silencieusement : `BackpackService#open` adapte défensivement le
+    contenu chargé si sa taille ne correspond plus au palier effectif
+    (ex. avantage modifié hors de `applySizeChange`), plutôt que de
+    planter ou tronquer.
+-   **Une seule instance vivante d'`Inventory` par joueur, jamais
+    recréée tant qu'elle existe** (`BackpackService#sessions`) — la garde
+    contre l'« ouverture simultanée » (mission point 7) n'est pas un
+    verrou explicite : elle repose sur le fait que Bukkit exécute les
+    tâches planifiées séquentiellement sur le thread principal, donc deux
+    appels à `open()` qui se chevauchent voient forcément l'un des deux
+    callbacks (celui qui s'exécute en second) trouver la session déjà
+    posée par le premier et la réutiliser au lieu d'en recréer une.
+-   **`BackpackListener` est en lecture-écriture, contrairement à
+    `economy.market.MarketListener`** (vitrine en lecture seule, tout
+    clic annulé sans condition) — un backpack doit rester manipulable
+    normalement ; seuls les mouvements qui feraient entrer un objet
+    interdit (`BackpackService#isForbidden`) sont annulés, sur les
+    vecteurs de clic/glisser-déposer classiques (voir Javadoc de la
+    classe pour la liste exacte et sa limite assumée : l'édition interne
+    d'un bundle légitimement présent dans le backpack n'est pas auditée).
+-   **`backpack.ItemArraySerializer` est un format binaire maison** —
+    aucun précédent dans le projet (`economy.market` ne sérialise qu'un
+    `ItemStack` isolé). Longueur-préfixé par case, réutilise
+    `ItemStack#serializeAsBytes()`/`deserializeBytes()` pour chaque case
+    non vide (même garantie de méta complète que le marché) ;
+    `SCHEMA_VERSION` vit à côté du binaire (colonne `schema_version`,
+    jamais dans le binaire lui-même) pour qu'un futur changement de
+    format puisse migrer les lignes existantes sans d'abord les décoder
+    avec l'ancien format (mission point 6).
+-   **Upgrade et downgrade partagent un seul algorithme de
+    redimensionnement** (`BackpackService#compact`) plutôt que deux
+    chemins de code séparés — les objets non vides sont compactés en
+    début de tableau dans la nouvelle taille ; ce qui ne rentre plus part
+    en surplus. Un agrandissement ne produit jamais de surplus par
+    construction (mission point 10) ; une réduction peut en produire
+    (mission point 9), toujours écrit dans la même transaction JDBC que
+    le nouveau contenu (`database.BackpackRepository#applyResize`) —
+    jamais l'un sans l'autre.
+-   **Sauvegarde à l'arrêt sans mécanisme de flush dédié** — même
+    découverte que pour les vitrines (`economy.market.MarketService`,
+    `economy.merchant.MerchantTradeService`) : `BackpackService#stop`
+    force la fermeture (`Player#closeInventory`) de tout backpack encore
+    ouvert, ce qui déclenche `InventoryCloseEvent` de façon synchrone sur
+    le thread principal *avant* que `stop()` ne rende la main ; la
+    sauvegarde qu'il enclenche est donc déjà en file sur l'exécuteur de
+    base de données avant que `DatabaseService` (démarré avant, donc
+    arrêté après, LIFO) ne ferme la connexion.
+-   **Anomalie de lecture (contenu illisible) : jamais une exception qui
+    remonte, toujours une entrée de récupération** — `BackpackService#safeDeserialize`
+    capture toute `IOException` de désérialisation, journalise une entrée
+    `backpack_audit`, déplace les octets bruts illisibles vers
+    `backpack_overflow` (récupérable manuellement si un futur outil sait
+    les interpréter) et retourne un backpack vide plutôt que de faire
+    échouer l'ouverture (mission, validation « toute anomalie crée une
+    entrée de récupération ou d'audit »).
+
+## `web` (export périodique + module `web-api` séparé)
+
+Voir [docs/WEB_API.md](WEB_API.md) pour le détail fonctionnel complet
+(déploiement, authentification, endpoints, mode dégradé). Décisions
+d'architecture propres à cette étape :
+
+-   **Séparation stricte en deux processus/modules, jamais un accès direct
+    à `data.db` depuis le web** (mission étape 21, points 1-2) — `web`
+    (package du plugin) écrit `snapshot.json` ; `web-api` (projet Gradle
+    racine séparé, `settings.gradle.kts` → `include("web-api")`, aucune
+    dépendance vers `io.papermc`) ne lit que ce fichier. Une compromission
+    ou un bug du portail web ne peut donc structurellement jamais toucher
+    la base de données du plugin.
+-   **`WebSnapshotWriter` ne bloque jamais le thread principal** — le tick
+    de housekeeping (5 s, léger) ne fait que lire des compteurs déjà en
+    mémoire (`Bukkit.getOnlinePlayers()`, `YamlCustomItemRegistry#items()`,
+    ce dernier une liste `volatile` déjà immuable) ; le calcul des
+    classements passe par `ProgressionRepository` (asynchrone, comme tout
+    accès SQLite du projet) et l'écriture disque elle-même est déportée
+    sur un exécuteur dédié (`ioExecutor`), jamais sur le thread appelant
+    la continuation asynchrone.
+-   **Écriture atomique par renommage** (`snapshot.json.tmp` puis
+    `Files.move(..., ATOMIC_MOVE)`, repli sur un déplacement non atomique
+    seulement si le système de fichiers ne supporte pas `ATOMIC_MOVE`) —
+    `web-api` ne peut jamais lire un fichier à moitié écrit.
+-   **Aucune dépendance externe obligatoire dans `web-api`** (mission,
+    contrainte technique) : HTTP via `com.sun.net.httpserver` (JDK),
+    JSON via un codec maison (`webapi.json.Json`, lecture *et* écriture —
+    contrairement au `web.JsonWriter` du plugin, qui n'a besoin que
+    d'écrire). Les deux implémentations sont volontairement dupliquées
+    plutôt que partagées via un troisième module Gradle : cela évite tout
+    risque que le jar du plugin embarque, même indirectement, du code du
+    portail web, et inversement.
+-   **Le jeton d'authentification n'est jamais lu depuis un fichier** —
+    `WebApiConfigLoader` le lit exclusivement depuis la variable
+    d'environnement `RPGQUEST_WEB_API_TOKEN` (mission point 7) ;
+    `web-api.properties` (ou son template versionné
+    `web-api.properties.example`) ne contient que des réglages non
+    sensibles (port, chemins, limites). `AuthFilter` est fail-closed : un
+    jeton attendu absent/vide refuse tout, jamais un accès ouvert par
+    défaut.
+-   **Comparaison de jeton en temps constant**
+    (`MessageDigest.isEqual`, JDK) plutôt qu'un `String#equals` classique,
+    pour ne pas faciliter une attaque par mesure de temps sur le jeton
+    serveur-à-serveur.
+-   **Mode dégradé résolu à un seul endroit** (`ServerState#resolve`),
+    jamais réimplémenté par route — snapshot absent (jamais exporté) et
+    snapshot périmé (`SnapshotStore#isStale`, comparé à
+    `snapshot-max-age-seconds`) produisent tous deux le même état
+    `online: false`, toujours une réponse `200` (API) ou une page normale
+    avec bandeau (site), jamais une erreur (mission point 9).
+-   **`RequestPipeline` centralise rate limit, authentification et
+    journalisation pour toutes les routes** — chaque route ne fournit
+    qu'un `ApiHandler` métier ; aucune de ces garanties transverses n'est
+    dupliquée par endpoint. Le site public (`/`, `/status`,
+    `/leaderboards`, `/wiki`) passe par le même pipeline que l'API, avec
+    `requiresAuth=false` uniquement pour ces routes.
+-   **Le catalogue exposé ne contient que des données publiques** —
+    `WebSnapshotWriter#buildCatalog` extrait id/nom (rendu en texte brut
+    via `PlainTextComponentSerializer`, jamais le MiniMessage brut)/rareté
+    depuis `CustomItemDefinition`, jamais les attributs, enchantements ou
+    comportements de combat/outil.
 
 ## Flux principal (cible)
 

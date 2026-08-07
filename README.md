@@ -134,6 +134,24 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
     récupère l'objet (aussi possible en cliquant dessus dans la vitrine).
 -   `/market admin list` (`rpgquest.admin`) — liste en lecture seule
     toutes les offres actives (modération).
+-   `/profile` (`rpgquest.progression`) — résumé de tes niveaux RPG (une
+    ligne par piste).
+-   `/skills` (`rpgquest.progression`) — détail de tes compétences (XP dans
+    le niveau courant / XP requise pour le suivant).
+-   `/skills admin grant|set <joueur> <compétence> <montant>`
+    (`rpgquest.admin`) — outil de test : accorde de l'XP (dédupliquée,
+    mirroir GLOBAL, affichage) ou fixe l'XP totale directement. Voir
+    [docs/PROGRESSION.md](docs/PROGRESSION.md).
+-   `/backpack` (`rpgquest.backpack`) — ouvre ton backpack (aussi possible
+    via l'objet dédié, clic droit).
+-   `/backpack recover [numéro]` (`rpgquest.backpack`) — liste ou réclame
+    les objets en attente de récupération (surplus après une réduction de
+    taille).
+-   `/backpack admin grant <joueur> <taille>` (`rpgquest.admin`) — accorde
+    un palier (SMALL/MEDIUM/LARGE), redimensionne immédiatement en
+    conservant le contenu existant.
+-   `/backpack admin revoke <joueur>` (`rpgquest.admin`) — retire
+    l'avantage explicite. Voir [docs/BACKPACKS.md](docs/BACKPACKS.md).
 
 ### Permissions
 
@@ -144,7 +162,10 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
 | `rpgquest.money` | tous | `/money`, `/money pay` |
 | `rpgquest.market` | tous | `/market`, `/market sell\|cancel` |
 | `rpgquest.claim` | tous | `/claim` |
-| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin` |
+| `rpgquest.progression` | tous | `/profile`, `/skills` |
+| `rpgquest.backpack` | tous | `/backpack`, `/backpack recover` |
+| `rpgquest.backpack.free` | tous | palier SMALL sans avantage explicite (permission de secours) |
+| `rpgquest.admin` | op | `/rpgquest reload`, `/quest admin`, `/quest complete`, `/dialogue open`, `/customitem give\|list`, `/resourcenode create\|remove\|inspect`, `/money admin`, `/merchant`, `/market admin`, `/skills admin`, `/backpack admin` |
 | `rpgquest.admin.world` | op | `/rpgadmin flatten` (terrain), `/rpgadmin zone` (zones protégées), `/rpgadmin portal` (portails), `/rpgadmin mob` (mobs spéciaux) |
 
 ## Quêtes
@@ -326,6 +347,47 @@ zombie qui se divise à chaque coup non mortel (profondeur et nombre d'enfants
 bornés pour empêcher toute croissance incontrôlée). Voir
 [SPECIAL_MOB_FORMAT.md](SPECIAL_MOB_FORMAT.md) pour le détail complet.
 
+## Progression RPG
+
+Six pistes de progression indépendantes de l'XP vanilla (`GLOBAL`,
+`COMBAT`, `MINING`, `FARMING`, `FISHING`, `EXPLORATION`) : niveaux et XP
+suivent une courbe configurable, alimentées par la mort de mobs, le
+minage, la récolte de cultures mûres, la pêche, la découverte de zones et
+la fin de quêtes. Protections anti-farm (blocs posés par un joueur, mobs
+de spawner, descendants de division, cultures non mûres, répétition
+excessive) et déduplication garantissent qu'aucune action ne récompense
+deux fois. `/profile` et `/skills` affichent la progression du joueur ;
+l'XP vanilla reste intacte pour les enchantements. Voir
+[docs/PROGRESSION.md](docs/PROGRESSION.md) pour le modèle d'équilibrage
+complet.
+
+## Backpacks
+
+Un inventaire virtuel persistant par joueur, en trois paliers configurables
+(Small/Medium/Large), obtenu via un objet dédié ou `/backpack`, sauvegardé
+à la fermeture/déconnexion/arrêt. Anti-abus complet (aucune imbrication de
+backpack, objets explicitement interdits configurables, jamais plus d'une
+instance ouverte à la fois, aucun vecteur de vol par hopper — inventaire
+purement virtuel). Un changement de palier conserve tous les objets
+(upgrade) et bascule le surplus dans une boîte de récupération plutôt que
+de le perdre (downgrade). Premier consommateur concret d'une interface
+`EntitlementService` générique, prête pour de futurs avantages. Voir
+[docs/BACKPACKS.md](docs/BACKPACKS.md) pour le détail complet.
+
+## Portail web
+
+Un module séparé du plugin (`web-api/`, projet Gradle indépendant, aucune
+dépendance vers Paper ni accès direct à `data.db`) expose une API
+authentifiée en lecture seule (statut, joueurs, classements, catalogue,
+annonces) et un site public minimal (accueil, statut, classements, wiki).
+Le plugin exporte périodiquement un instantané JSON
+(`web-export:` dans `config.yml`, désactivé par défaut) que ce module lit
+seul — jamais la base SQLite directement. Mode dégradé automatique si le
+serveur Minecraft est arrêté ou n'a jamais exporté. Ni paiement, ni
+connexion joueur, ni modification de données à cette étape. Voir
+[docs/WEB_API.md](docs/WEB_API.md) pour le détail complet (déploiement,
+authentification, endpoints).
+
 ## Configuration
 
 `plugins/RPGQuest/config.yml` (généré automatiquement) : `debug`, `locale`
@@ -333,9 +395,11 @@ bornés pour empêcher toute croissance incontrôlée). Voir
 requis `url`/`sha1` uniquement si `enabled: true`, voir
 [RESOURCE_PACK.md](RESOURCE_PACK.md)), `dialogue` (`renderer`
 — `chat` par défaut ou `paper-dialog` — et `allowed-commands`, la liste
-blanche pour l'action `RUN_SAFE_COMMAND`) et `journal` (`tracker-enabled`,
-la bossbar optionnelle de la quête suivie). Validée au démarrage et à chaque
-`/rpgquest reload` ; voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+blanche pour l'action `RUN_SAFE_COMMAND`), `journal` (`tracker-enabled`,
+la bossbar optionnelle de la quête suivie) et `web-export` (export
+périodique pour le [portail web](docs/WEB_API.md), désactivé par défaut).
+Validée au démarrage et à chaque `/rpgquest reload` ; voir
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Persistance
 
@@ -384,7 +448,8 @@ Voir [TODO.md](TODO.md).
 Le MVP (architecture, SQLite, quêtes, dialogues, journal, objets
 personnalisés, armes/outils, ressources, craft, resource pack, zones
 protégées, économie, marchands PNJ, marché entre joueurs, portails et
-téléportation, claims de terrain) est complet. Fonctionnalités envisagées
-ensuite (voir aussi [TODO.md](TODO.md)) : mobs spéciaux vanilla, XP RPG,
-backpacks, PNJ avancés (Citizens ou équivalent, optionnel), métiers,
-donjons, boss, factions.
+téléportation, claims de terrain) est complet, ainsi que mobs spéciaux
+vanilla, XP RPG, backpacks et le portail web read-only. Fonctionnalités
+envisagées ensuite (voir aussi [TODO.md](TODO.md)) : boutique/paiements et
+connexion joueur sur le portail web, PNJ avancés (Citizens ou équivalent,
+optionnel), métiers, donjons, boss, factions.

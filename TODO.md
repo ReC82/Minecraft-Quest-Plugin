@@ -463,6 +463,98 @@
     annulé, reload, variante non reconnue
 -   [x] `SPECIAL_MOB_FORMAT.md`
 
+## Progression RPG (fait)
+
+-   [x] `progression.model` : `SkillType` (GLOBAL/COMBAT/MINING/FARMING/
+    FISHING/EXPLORATION), `ProgressionCurve` (courbe géométrique
+    configurable et validée, niveau jamais stocké séparément de l'XP
+    totale), `AwardOutcome`/`XpGrantResult`
+-   [x] `ProgressionConfig` (`config.yml` → `progression:`) : courbe,
+    ratio de mirroir GLOBAL, limite de fréquence anti-farm, mode
+    d'affichage, bascule XP vanilla, montants par source
+-   [x] SQLite (migration V8) : `player_skills`/`xp_grants` (déduplication
+    par (joueur, compétence, id d'événement))/`player_placed_blocks`
+    (anti-farm), `ProgressionRepository`/`PlacedBlockRepository` — même
+    conception transactionnelle que `WalletRepository`
+-   [x] `ProgressionService` : octroi dédupliqué et limité en fréquence,
+    mirroir GLOBAL automatique, cache en mémoire chargé à la connexion,
+    affichage transitoire (action bar/bossbar configurable)
+-   [x] Écouteurs : `CombatXpListener` (mort par un joueur, exclut
+    spawner/division), `MiningXpListener` (exclut blocs posés par un
+    joueur), `FarmingXpListener` (cultures mûres uniquement),
+    `FishingXpListener`, `ExplorationXpListener` (première découverte de
+    zone), `QuestCompletionXpListener` (bonus une fois par quête, en plus
+    de l'éventuelle récompense XP vanilla de la quête)
+-   [x] Hook de déblocage générique (`ProgressionService#hasLevel`),
+    câblé concrètement dans `claim.ClaimService#effectiveMaxClaims`
+-   [x] `/profile`, `/skills`, `/skills admin grant|set`
+-   [x] Tests : calcul de niveau, valeurs maximales, XP négative refusée,
+    événement dupliqué, bloc placé, mob de spawner, montée de plusieurs
+    niveaux, reconnexion, migration de schéma
+-   [x] `docs/PROGRESSION.md`
+
+## Backpacks (fait)
+
+-   [x] `entitlement.EntitlementService` (interface générique, mission
+    point 11) + `database.EntitlementRepository` (`player_entitlements`,
+    avantage identifié par une clé libre — le backpack en est le premier
+    consommateur concret, sans boutique)
+-   [x] `backpack.model.BackpackSize` (SMALL/MEDIUM/LARGE) + `BackpackConfig`
+    (`config.yml` → `backpacks:`, lignes par palier configurables,
+    matériaux interdits, palier de secours)
+-   [x] SQLite (migration V9) : `backpacks` (contenu versionné),
+    `backpack_overflow` (boîte de récupération), `backpack_audit`
+    (journal d'anomalies) — `BackpackRepository`, redimensionnement en une
+    seule transaction JDBC (contenu + surplus ensemble, jamais l'un sans
+    l'autre)
+-   [x] `backpack.ItemArraySerializer` : sérialisation maison d'un
+    `ItemStack[]` complet (aucun précédent dans le projet), versionnée
+    indépendamment du schéma SQL
+-   [x] `BackpackService` : une seule instance d'inventaire vivante par
+    joueur (jamais d'ouverture simultanée divergente), sauvegarde à la
+    fermeture/déconnexion/arrêt (LIFO des services, même mécanisme que
+    `MarketService`/`MerchantTradeService`), upgrade/downgrade unifiés
+    (compactage + surplus vers la récupération), objet d'ouverture
+    identifié uniquement par PDC
+-   [x] `BackpackListener` : lecture-écriture protégée (contrairement à la
+    vitrine en lecture seule du marché) — imbrication et objets interdits
+    bloqués sur tous les vecteurs classiques (pose, échange curseur,
+    shift-clic, barre de raccourcis, glisser-déposer), jamais un clic
+    légitime annulé
+-   [x] `/backpack`, `/backpack recover [numéro]`,
+    `/backpack admin grant|revoke`
+-   [x] Tests : création, persistance, upgrade, downgrade, ouvertures
+    simultanées, backpack imbriqué, crash simulé, inventaire plein, accès
+    sans droit
+-   [x] `docs/BACKPACKS.md`
+
+## Portail web (fait)
+
+-   [x] Module Gradle séparé `web-api/` (aucune dépendance vers Paper, aucun
+    accès direct à `data.db` — mission points 1-2)
+-   [x] `config.yml` → `web-export:` (désactivé par défaut) +
+    `web.WebSnapshotWriter` : export périodique et atomique de
+    `snapshot.json` (statut, joueurs, classements, catalogue, annonces),
+    aucune lecture bloquante sur le thread principal (point 4)
+-   [x] `ProgressionRepository.topPlayers` (classement par piste, lecture
+    seule, jamais interrogé depuis un chemin de jeu synchrone)
+-   [x] `webapi.json.Json` : codec JSON maison (lecture + écriture), aucune
+    dépendance externe
+-   [x] `SnapshotStore` : cache en mémoire, détection du mode dégradé
+    (snapshot absent ou périmé — jamais une erreur, point 9)
+-   [x] API authentifiée `/api/status|players|leaderboards|catalog|announcements`
+    (jeton serveur-à-serveur, comparaison en temps constant — point 5) +
+    rate limiting par IP et journalisation sans secret (point 6)
+-   [x] Site public minimal (`/`, `/status`, `/leaderboards`, `/wiki`), sans
+    authentification, sans paiement ni connexion joueur ni écriture (point
+    11)
+-   [x] Jeton exclusivement via la variable d'environnement
+    `RPGQUEST_WEB_API_TOKEN`, jamais dans un fichier versionné (point 7)
+-   [x] Tests : snapshot absent/périmé, jeton manquant/invalide, requête
+    malformée, rate limit, route inconnue, données vides, caractères
+    Unicode, page publique sans authentification
+-   [x] `docs/WEB_API.md`
+
 ## MVP
 
 -   [x] Architecture
@@ -482,8 +574,13 @@
 -   [x] Portails et téléportation
 -   [x] Claims de terrain
 -   [x] Mobs spéciaux
+-   [x] Progression RPG
+-   [x] Backpacks
+-   [x] Portail web (API read-only + site minimal)
 
 ## Plus tard
+-   [ ] Boutique et paiements sur le portail web
+-   [ ] Connexion joueur sur le portail web
 -   [ ] PNJ avancés
 -   [ ] Métiers
 -   [ ] Donjons

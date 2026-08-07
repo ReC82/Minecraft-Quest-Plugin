@@ -1,0 +1,19 @@
+# Copie ce fichier en "web-api.properties" (à côté du jar, ou chemin fixé
+# par la variable d'environnement RPGQUEST_WEB_API_CONFIG) pour le
+# personnaliser. Aucun secret ici : le jeton d'authentification vient
+# EXCLUSIVEMENT de la variable d'environnement RPGQUEST_WEB_API_TOKEN, voir
+# docs/WEB_API.md.
+
+port=8080
+
+# Chemin vers le snapshot.json produit par le plugin (web-export.output-dir
+# dans config.yml), relatif au répertoire de travail du processus web-api.
+snapshot-file=web-export/snapshot.json
+
+# Au-delà de cet âge, le snapshot est considéré périmé (mode dégradé) :
+# doit rester supérieur à web-export.interval-seconds côté plugin.
+snapshot-max-age-seconds=120
+
+rate-limit-per-minute=60
+
+site-title=RPGQuest

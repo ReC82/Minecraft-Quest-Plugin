@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 10;
+    private static final int CURRENT_VERSION = 11;
 
     private SchemaMigrator() {
     }
@@ -60,6 +60,10 @@ public final class SchemaMigrator {
         if (version < 10) {
             applyV10(connection);
             version = 10;
+        }
+        if (version < 11) {
+            applyV11(connection);
+            version = 11;
         }
 
         if (version != startingVersion) {
@@ -372,6 +376,22 @@ public final class SchemaMigrator {
                         outcome TEXT NOT NULL,
                         detail TEXT,
                         processed_at TEXT NOT NULL
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV11(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Allocateur d'identifiants de PNJ (voir com.lodygames.rpgquest.npc.NpcIdentityService) :
+            // une ligne par identifiant "npc_<n>" auto-généré, jamais réutilisé (id AUTOINCREMENT).
+            // Sert uniquement de secours quand un administrateur ne fournit pas d'id explicite à
+            // /rpgadmin npc tag ; l'identité elle-même vit dans le PersistentDataContainer de
+            // l'entité, jamais dans cette table (pas de lien entité <-> ligne à maintenir ici).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS npc_ids (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        created_at TEXT NOT NULL
                     )
                     """);
         }

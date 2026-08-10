@@ -27,6 +27,7 @@ import com.lodygames.rpgquest.dialogue.render.DialogueChoiceHandler;
 import com.lodygames.rpgquest.dialogue.render.DialogueRenderer;
 import com.lodygames.rpgquest.dialogue.render.VisibleChoice;
 import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
+import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.util.ArrayList;
 import java.util.List;
@@ -61,6 +62,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     private final QuestProgressEngine questProgressEngine;
     private final PlayerVariableRepository variableRepository;
     private final MerchantTradeService merchantTradeService;
+    private final NpcIdentityService npcIdentityService;
     private final Logger logger;
 
     private final Map<UUID, DialogueSession> sessions = new ConcurrentHashMap<>();
@@ -68,12 +70,13 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
 
     public DialogueSessionEngine(RPGQuestPlugin plugin, YamlDialogueEngine dialogueEngine,
                                   QuestProgressEngine questProgressEngine, PlayerVariableRepository variableRepository,
-                                  MerchantTradeService merchantTradeService) {
+                                  MerchantTradeService merchantTradeService, NpcIdentityService npcIdentityService) {
         this.plugin = plugin;
         this.dialogueEngine = dialogueEngine;
         this.questProgressEngine = questProgressEngine;
         this.variableRepository = variableRepository;
         this.merchantTradeService = merchantTradeService;
+        this.npcIdentityService = npcIdentityService;
         this.logger = plugin.getSLF4JLogger();
     }
 
@@ -98,7 +101,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
 
     /** Écouteur de clic sur PNJ (entité nommée) à enregistrer sans condition, comme la connexion des quêtes. */
     public Listener npcInteractListener() {
-        return new DialogueNpcInteractListener(this, dialogueEngine);
+        return new DialogueNpcInteractListener(this, dialogueEngine, npcIdentityService);
     }
 
     public void open(Player player, NamespacedKey dialogueId) {

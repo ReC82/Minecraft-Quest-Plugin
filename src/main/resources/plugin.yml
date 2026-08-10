@@ -29,8 +29,8 @@ commands:
     description: Nœuds de ressource récoltables (administration).
     usage: /<command> <create <typeId>|remove|inspect>
   rpgadmin:
-    description: Commandes d'administration du monde (aplatissement, zones, portails...).
-    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo|zone ...|portal create|delete|list|info|setdestination
+    description: Commandes d'administration du monde (aplatissement, zones, portails, PNJ...).
+    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo|zone ...|portal create|delete|list|info|setdestination|npc tag [id]|untag|info
   money:
     description: Portefeuille et paiements entre joueurs.
     usage: /<command> [pay <joueur> <montant>|admin <give|take|set> <joueur> <montant>]

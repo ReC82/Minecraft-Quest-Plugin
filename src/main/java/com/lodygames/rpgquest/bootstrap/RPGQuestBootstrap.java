@@ -29,6 +29,7 @@ import com.lodygames.rpgquest.crafting.YamlCraftingRegistry;
 import com.lodygames.rpgquest.database.BackpackRepository;
 import com.lodygames.rpgquest.database.DatabaseService;
 import com.lodygames.rpgquest.database.EntitlementRepository;
+import com.lodygames.rpgquest.database.NpcIdRepository;
 import com.lodygames.rpgquest.database.PlacedBlockRepository;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
@@ -59,6 +60,7 @@ import com.lodygames.rpgquest.mob.ability.ExplosiveOnAttackAbilityService;
 import com.lodygames.rpgquest.mob.ability.SplitOnHitAbilityListener;
 import com.lodygames.rpgquest.mob.ability.StrongerExplosionAbilityListener;
 import com.lodygames.rpgquest.mod.ModCompatService;
+import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.player.PlayerConnectionListener;
 import com.lodygames.rpgquest.player.PlayerListenerService;
 import com.lodygames.rpgquest.player.PlayerProfileService;
@@ -142,6 +144,7 @@ public final class RPGQuestBootstrap {
     private StoreClient storeClient;
     private StoreDeliveryService storeDeliveryService;
     private ModCompatService modCompatService;
+    private NpcIdentityService npcIdentityService;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -178,6 +181,7 @@ public final class RPGQuestBootstrap {
     public void start() {
         registry.start(configService);
         registry.start(databaseService);
+        npcIdentityService = new NpcIdentityService(plugin, new NpcIdRepository(databaseService.databaseManager()));
         modCompatService = new ModCompatService(plugin, () -> configService.current().clientMod(), plugin.getSLF4JLogger());
         registry.start(modCompatService);
         registry.start(flattenService);
@@ -222,7 +226,7 @@ public final class RPGQuestBootstrap {
         QuestProgressRepository progressRepository = new QuestProgressRepository(databaseService.databaseManager());
         PlayerVariableRepository variableRepository = new PlayerVariableRepository(databaseService.databaseManager());
         questProgressEngine = new QuestProgressEngine(
-                plugin, questEngine, progressRepository, variableRepository, questMessagesService);
+                plugin, questEngine, progressRepository, variableRepository, questMessagesService, npcIdentityService);
         registry.start(questProgressEngine);
         registry.start(new PlayerListenerService(plugin, questProgressEngine.connectionListener()));
 
@@ -304,7 +308,7 @@ public final class RPGQuestBootstrap {
         registry.start(dialogueEngine);
 
         dialogueSessionEngine = new DialogueSessionEngine(
-                plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService);
+                plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService, npcIdentityService);
         registry.start(dialogueSessionEngine);
         dialogueSessionEngine.setRenderer(createRenderer(dialogueSessionEngine));
         registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));
@@ -554,7 +558,7 @@ public final class RPGQuestBootstrap {
 
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(
                 flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
-                mobRegistry, mobService);
+                mobRegistry, mobService, npcIdentityService);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

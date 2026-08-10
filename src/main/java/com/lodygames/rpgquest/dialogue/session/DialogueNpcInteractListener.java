@@ -1,8 +1,8 @@
 package com.lodygames.rpgquest.dialogue.session;
 
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import com.lodygames.rpgquest.npc.NpcIdentityService;
+import java.util.Optional;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -10,11 +10,17 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 
 /**
- * Aucun système de PNJ dédié n'existe (comme pour {@code TALK_TO_NPC} des
- * quêtes, voir docs/ARCHITECTURE.md) : cliquer sur n'importe quelle entité
- * vivante dont le nom personnalisé correspond à un id de dialogue chargé
- * ouvre ce dialogue — même convention de nommage que les objectifs
- * {@code TALK_TO_NPC}, pour qu'un même PNJ renommé serve les deux usages.
+ * Un « PNJ » est une entité vivante marquée par {@link NpcIdentityService}
+ * (même identifiant stable que pour {@code TALK_TO_NPC}, voir
+ * {@code com.lodygames.rpgquest.quest.progress.QuestNpcInteractListener}) :
+ * cliquer sur une entité marquée ouvre le dialogue dont l'id correspond à son
+ * identifiant stable (namespace par défaut {@code rpgquest}). Contrairement à
+ * l'ancienne implémentation, cette clé n'est **jamais** construite à partir
+ * d'un texte choisi librement pour l'affichage — {@link NpcIdentityService}
+ * garantit que l'identifiant est déjà un fragment valide de
+ * {@link NamespacedKey}, ce qui élimine l'{@code IllegalArgumentException}
+ * historique (« Non [a-z0-9_-./] character in key ») déclenchée par un nom
+ * personnalisé contenant une majuscule ou une espace.
  */
 final class DialogueNpcInteractListener implements Listener {
 
@@ -22,21 +28,23 @@ final class DialogueNpcInteractListener implements Listener {
 
     private final DialogueSessionEngine sessionEngine;
     private final YamlDialogueEngine dialogueEngine;
+    private final NpcIdentityService npcIdentityService;
 
-    DialogueNpcInteractListener(DialogueSessionEngine sessionEngine, YamlDialogueEngine dialogueEngine) {
+    DialogueNpcInteractListener(DialogueSessionEngine sessionEngine, YamlDialogueEngine dialogueEngine,
+                                 NpcIdentityService npcIdentityService) {
         this.sessionEngine = sessionEngine;
         this.dialogueEngine = dialogueEngine;
+        this.npcIdentityService = npcIdentityService;
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onInteract(PlayerInteractEntityEvent event) {
-        Component customName = event.getRightClicked().customName();
-        if (customName == null) {
+        Optional<String> npcId = npcIdentityService.currentId(event.getRightClicked());
+        if (npcId.isEmpty()) {
             return;
         }
-        String raw = PlainTextComponentSerializer.plainText().serialize(customName);
-        NamespacedKey dialogueId = raw.contains(":") ? NamespacedKey.fromString(raw) : new NamespacedKey(DEFAULT_NAMESPACE, raw);
-        if (dialogueId == null || dialogueEngine.find(dialogueId).isEmpty()) {
+        NamespacedKey dialogueId = new NamespacedKey(DEFAULT_NAMESPACE, npcId.get());
+        if (dialogueEngine.find(dialogueId).isEmpty()) {
             return;
         }
         Player player = event.getPlayer();

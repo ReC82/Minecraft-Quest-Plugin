@@ -6,9 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.DatabaseManager;
+import com.lodygames.rpgquest.database.NpcIdRepository;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.QuestProgressRepository;
+import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.QuestState;
@@ -64,8 +66,9 @@ class QuestProgressEngineTest {
         PlayerVariableRepository variableRepository = new PlayerVariableRepository(database);
         QuestMessagesService messagesService = new QuestMessagesService(plugin);
         messagesService.start();
+        NpcIdentityService npcIdentityService = new NpcIdentityService(plugin, new NpcIdRepository(database));
 
-        engine = new QuestProgressEngine(plugin, questEngine, progressRepository, variableRepository, messagesService);
+        engine = new QuestProgressEngine(plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService);
         engine.start();
     }
 

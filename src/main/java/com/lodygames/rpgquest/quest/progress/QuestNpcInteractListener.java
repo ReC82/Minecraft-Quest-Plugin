@@ -1,32 +1,34 @@
 package com.lodygames.rpgquest.quest.progress;
 
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import com.lodygames.rpgquest.npc.NpcIdentityService;
+import java.util.Optional;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 
 /**
- * Aucun système de PNJ dédié n'existe encore (voir docs/ARCHITECTURE.md) :
- * un « PNJ » est ici simplement une entité vivante dont le nom personnalisé
- * (renommé à l'enclume, ou via {@code /data merge entity ... CustomName})
- * correspond à l'identifiant configuré dans l'objectif {@code TALK_TO_NPC}.
+ * Un « PNJ » est une entité vivante marquée par {@link NpcIdentityService}
+ * (identifiant stable, indépendant du nom personnalisé affiché — voir
+ * docs/ARCHITECTURE.md) via {@code /rpgadmin npc tag}. Le nom affiché reste
+ * purement cosmétique : le renommer à l'enclume ne casse jamais le lien avec
+ * l'objectif {@code TALK_TO_NPC}.
  */
 final class QuestNpcInteractListener implements Listener {
 
     private final QuestProgressEngine engine;
+    private final NpcIdentityService npcIdentityService;
 
-    QuestNpcInteractListener(QuestProgressEngine engine) {
+    QuestNpcInteractListener(QuestProgressEngine engine, NpcIdentityService npcIdentityService) {
         this.engine = engine;
+        this.npcIdentityService = npcIdentityService;
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onInteract(PlayerInteractEntityEvent event) {
-        Component customName = event.getRightClicked().customName();
-        if (customName == null) {
+        Optional<String> npcId = npcIdentityService.currentId(event.getRightClicked());
+        if (npcId.isEmpty()) {
             return;
         }
-        String npcId = PlainTextComponentSerializer.plainText().serialize(customName);
-        engine.handleTalkToNpc(event.getPlayer(), npcId);
+        engine.handleTalkToNpc(event.getPlayer(), npcId.get());
     }
 }

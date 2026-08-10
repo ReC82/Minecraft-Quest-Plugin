@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.QuestProgressRecord;
 import com.lodygames.rpgquest.database.QuestProgressRepository;
+import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.QuestLoadReport;
 import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
@@ -59,6 +60,7 @@ public final class QuestProgressEngine implements PluginService {
     private final QuestProgressRepository repository;
     private final PlayerVariableRepository variableRepository;
     private final QuestMessagesService messagesService;
+    private final NpcIdentityService npcIdentityService;
     private final Logger logger;
 
     private final Map<UUID, Map<NamespacedKey, ActiveQuestProgress>> activeByPlayer = new ConcurrentHashMap<>();
@@ -67,12 +69,14 @@ public final class QuestProgressEngine implements PluginService {
     private volatile QuestObjectiveIndex index = new QuestObjectiveIndex(List.of());
 
     public QuestProgressEngine(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressRepository repository,
-                                PlayerVariableRepository variableRepository, QuestMessagesService messagesService) {
+                                PlayerVariableRepository variableRepository, QuestMessagesService messagesService,
+                                NpcIdentityService npcIdentityService) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.repository = repository;
         this.variableRepository = variableRepository;
         this.messagesService = messagesService;
+        this.npcIdentityService = npcIdentityService;
         this.logger = plugin.getSLF4JLogger();
     }
 
@@ -140,7 +144,7 @@ public final class QuestProgressEngine implements PluginService {
             case KILL_ENTITY -> new QuestEntityDeathListener(this);
             case COLLECT_ITEM -> new QuestItemPickupListener(this);
             case CRAFT_ITEM -> new QuestCraftItemListener(this);
-            case TALK_TO_NPC -> new QuestNpcInteractListener(this);
+            case TALK_TO_NPC -> new QuestNpcInteractListener(this, npcIdentityService);
             case REACH_LOCATION -> new QuestLocationListener(this);
         };
     }

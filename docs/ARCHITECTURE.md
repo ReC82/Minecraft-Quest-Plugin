@@ -31,6 +31,7 @@
     │   ├── model            (modèles immuables : définition de variante, capacités)
     │   └── ability          (écouteurs/services par capacité : explosion, agressivité, division)
     ├── mod                  (détection de compatibilité avec le mod client prototype, protocole)
+    ├── npc                  (identité stable d'un PNJ, indépendante de son nom affiché)
     ├── player
     ├── progression          (XP RPG multi-compétences, indépendante de l'XP vanilla)
     │   ├── model            (modèles immuables : compétence, courbe de niveaux, résultat d'octroi)
@@ -319,14 +320,19 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
     désormais vérifiés un par un contre `quest_progress` : tous doivent être
     `COMPLETED` pour ce joueur, sinon `accept()` échoue en listant lesquels
     manquent.
--   **`TALK_TO_NPC` sans système de PNJ dédié** — `QuestNpcInteractListener`
-    écoute `PlayerInteractEntityEvent` et compare le nom personnalisé
-    (`Entity#customName()`, converti en texte brut via
-    `PlainTextComponentSerializer`, aucune dépendance Citizens) de l'entité
-    clic-droitée à l'id configuré dans l'objectif. N'importe quelle entité
-    vivante renommée (à l'enclume, par exemple) peut donc servir de PNJ
-    temporaire — limitation assumée, un vrai système de PNJ est hors
-    périmètre de cette étape.
+-   **`TALK_TO_NPC` sans système de PNJ dédié, identité découplée du nom
+    affiché** — `QuestNpcInteractListener` écoute `PlayerInteractEntityEvent`
+    et compare l'identifiant stable de l'entité clic-droitée (voir package
+    `npc`, ci-dessous) à l'id configuré dans l'objectif. N'importe quelle
+    entité vivante marquée par `/rpgadmin npc tag` peut donc servir de PNJ
+    temporaire — toujours aucune dépendance à Citizens, un vrai système de
+    PNJ reste hors périmètre. Avant l'introduction de `npc.NpcIdentityService`,
+    cette comparaison portait directement sur `Entity#customName()` (texte
+    brut via `PlainTextComponentSerializer`) : ce couplage a été supprimé
+    parce que `DialogueNpcInteractListener` (voir plus bas) construisait une
+    `NamespacedKey` directement à partir de ce nom affiché, qui peut contenir
+    n'importe quel caractère — une entité renommée avec une majuscule ou une
+    espace (ex. « Guide ») levait `IllegalArgumentException` au clic droit.
 -   **Persistance** — `QuestProgressRepository` (`database`, requêtes
     préparées, `ON CONFLICT` pour les upserts) couvre `quest_progress`
     (état + étape courante) et la nouvelle table `quest_objective_progress`
@@ -455,12 +461,14 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
         aussi un chemin joueur légitime, pas seulement un outil de test
         admin).
 -   **PNJ partagé avec les quêtes** — `DialogueNpcInteractListener` (clic
-    sur une entité) réutilise exactement la même convention que
-    `QuestNpcInteractListener` (étape 04) : le nom personnalisé de
-    l'entité identifie ce qu'elle représente. Un même PNJ renommé
-    « guard » peut donc à la fois satisfaire un objectif `TALK_TO_NPC` et
-    ouvrir le dialogue `rpgquest:guard` — cohérence volontaire entre les
-    deux systèmes, toujours sans dépendance à Citizens.
+    sur une entité) réutilise exactement la même identité stable que
+    `QuestNpcInteractListener` (voir package `npc`, ci-dessous) : l'entité
+    marquée `guard` via `/rpgadmin npc tag guard` peut donc à la fois
+    satisfaire un objectif `TALK_TO_NPC npc: guard` et ouvrir le dialogue
+    `rpgquest:guard` — cohérence volontaire entre les deux systèmes, toujours
+    sans dépendance à Citizens. Le nom personnalisé affiché au-dessus de
+    l'entité (ex. « Garde du village ») reste purement cosmétique et peut
+    être changé librement sans jamais toucher à cette identité.
 -   **`/dialogue open <joueur> <dialogueId>`** (`rpgquest.admin`) — seule
     commande demandée par la mission ; aucune commande n'est nécessaire
     pour sélectionner un choix (`ClickEvent.callback` est un mécanisme
@@ -1212,8 +1220,10 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
 Vertical slice minimal reliant tous les systèmes livrés, construit sur
 l'existant plutôt qu'un nouveau système dédié :
 
-1.  Parler au garde (`dialogues/guard.yml`) → accepter `first_steps` (déjà
-    existante depuis l'étape 3).
+1.  Marquer l'entité qui joue le rôle du garde avec
+    `/rpgadmin npc tag guard` (identité stable, indépendante de son nom
+    affiché — voir package `npc`), puis lui parler (`dialogues/guard.yml`)
+    → accepter `first_steps` (déjà existante depuis l'étape 3).
 2.  Tuer 10 araignées → remise automatique de `first_steps`
     (`TALK_TO_NPC`-free : uniquement `KILL_ENTITY`, une seule étape).
 3.  Reparler au garde (nouveau choix, visible seulement une fois
@@ -2147,11 +2157,13 @@ Fabrication → Remise → Récompense
     mais ne pilotent encore aucun comportement réel (pas d'i18n, pas d'envoi
     de resource pack aux joueurs) — prévu pour des étapes ultérieures
     dédiées.
--   `TALK_TO_NPC` repose sur le nom personnalisé d'une entité vivante
-    quelconque (voir section `quest.progress`) : aucun système de PNJ dédié
-    n'existe (pas d'invulnérabilité, d'IA figée, de dialogue). `COMMAND` et
-    `VARIABLE` (récompenses) s'exécutent bien à la remise, mais aucune
-    commande ne permet encore de *lire* une `player_variable` en jeu.
+-   `TALK_TO_NPC` repose sur une entité vivante quelconque marquée par
+    `npc.NpcIdentityService` (voir section `quest.progress` et package `npc`,
+    identité indépendante du nom affiché depuis le refactor décrit plus bas) :
+    aucun système de PNJ dédié n'existe (pas d'invulnérabilité, d'IA figée, de
+    dialogue). `COMMAND` et `VARIABLE` (récompenses) s'exécutent bien à la
+    remise, mais aucune commande ne permet encore de *lire* une
+    `player_variable` en jeu.
 -   Fenêtre de risque théorique, non traitée : si le processus plante entre
     l'octroi d'une récompense (déjà appliqué au joueur) et la confirmation
     de l'écriture asynchrone de `state = COMPLETED` en base, un redémarrage

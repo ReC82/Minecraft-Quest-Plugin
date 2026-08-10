@@ -5,12 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.DatabaseManager;
+import com.lodygames.rpgquest.database.NpcIdRepository;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.QuestProgressRepository;
 import com.lodygames.rpgquest.database.WalletRepository;
 import com.lodygames.rpgquest.economy.EconomyService;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
@@ -81,7 +83,9 @@ class MerchantTradeServiceTest {
         PlayerVariableRepository variableRepository = new PlayerVariableRepository(database);
         QuestMessagesService messagesService = new QuestMessagesService(plugin);
         messagesService.start();
-        questProgressEngine = new QuestProgressEngine(plugin, questEngine, progressRepository, variableRepository, messagesService);
+        NpcIdentityService npcIdentityService = new NpcIdentityService(plugin, new NpcIdRepository(database));
+        questProgressEngine = new QuestProgressEngine(
+                plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService);
         questProgressEngine.start();
 
         Path merchantsDir = tempDir.resolve("merchants");

@@ -1,10 +1,11 @@
 package com.lodygames.rpgquest.quest.model;
 
 /**
- * L'identifiant du PNJ est une simple chaîne libre : aucun système de PNJ
- * n'existe encore (voir le package {@code npc} prévu pour une étape
- * ultérieure). La résolution réelle (Citizens ou solution interne) est hors
- * périmètre de cette étape.
+ * {@code npcId} est l'identifiant stable attribué à une entité par
+ * {@code com.lodygames.rpgquest.npc.NpcIdentityService} (via
+ * {@code /rpgadmin npc tag <id>}), jamais le nom personnalisé affiché de
+ * l'entité — celui-ci reste purement cosmétique et peut être renommé
+ * librement sans casser cet objectif.
  */
 public record TalkToNpcObjective(String npcId) implements QuestObjective {
 

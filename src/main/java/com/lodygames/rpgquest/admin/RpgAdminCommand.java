@@ -6,6 +6,7 @@ import com.lodygames.rpgquest.mob.SpecialMobRegistry;
 import com.lodygames.rpgquest.mob.SpecialMobService;
 import com.lodygames.rpgquest.mob.model.MobAbility;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
+import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
 import com.lodygames.rpgquest.travel.model.Destination;
@@ -29,6 +30,7 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.util.RayTraceResult;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -47,11 +49,13 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
     private static final String PERMISSION = "rpgquest.admin.world";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
-    private static final List<String> TOP_LEVEL_SUBCOMMANDS = List.of("flatten", "zone", "portal", "mob");
+    private static final List<String> TOP_LEVEL_SUBCOMMANDS = List.of("flatten", "zone", "portal", "mob", "npc");
     private static final List<String> FLATTEN_SUBCOMMANDS = List.of("confirm", "cancel", "undo");
     private static final List<String> ZONE_SUBCOMMANDS = List.of("create", "delete", "list", "info", "wand");
     private static final List<String> PORTAL_SUBCOMMANDS = List.of("create", "delete", "list", "info", "setdestination");
     private static final List<String> MOB_SUBCOMMANDS = List.of("spawn", "list", "inspect", "reload", "metrics");
+    private static final List<String> NPC_SUBCOMMANDS = List.of("tag", "untag", "info");
+    private static final double NPC_REACH = 6.0;
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
     private final FlattenService flattenService;
@@ -61,10 +65,11 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final YamlDestinationRegistry destinationRegistry;
     private final SpecialMobRegistry mobRegistry;
     private final SpecialMobService mobService;
+    private final NpcIdentityService npcIdentityService;
 
     public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService,
                             YamlPortalRegistry portalRegistry, YamlDestinationRegistry destinationRegistry,
-                            SpecialMobRegistry mobRegistry, SpecialMobService mobService) {
+                            SpecialMobRegistry mobRegistry, SpecialMobService mobService, NpcIdentityService npcIdentityService) {
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
@@ -72,6 +77,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         this.destinationRegistry = destinationRegistry;
         this.mobRegistry = mobRegistry;
         this.mobService = mobService;
+        this.npcIdentityService = npcIdentityService;
     }
 
     @Override
@@ -100,6 +106,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handlePortal(player, args);
         } else if (args[0].equalsIgnoreCase("mob")) {
             handleMob(player, args);
+        } else if (args[0].equalsIgnoreCase("npc")) {
+            handleNpc(player, args);
         } else {
             sendUsage(player);
         }
@@ -467,6 +475,110 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin mob metrics</yellow> <gray>- métriques de spawn et de capacités</gray>"));
     }
 
+    // ---- PNJ (identité stable, indépendante du nom affiché) -------------------
+
+    private void handleNpc(Player player, String[] args) {
+        if (args.length < 2) {
+            sendNpcUsage(player);
+            return;
+        }
+
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "tag" -> handleNpcTag(player, args);
+            case "untag" -> handleNpcUntag(player);
+            case "info" -> handleNpcInfo(player);
+            default -> sendNpcUsage(player);
+        }
+    }
+
+    /**
+     * Marque l'entité visée d'un identifiant stable, indépendant de son nom personnalisé (cosmétique).
+     * {@code args[2]} (optionnel) est l'id explicite souhaité, validé avant toute écriture — jamais
+     * dérivé du nom affiché de l'entité (c'est cette dérivation, côté dialogue, qui provoquait
+     * autrefois une IllegalArgumentException au clic sur une entité renommée avec une majuscule).
+     * Sans id explicite, un identifiant {@code npc_<n>} est généré automatiquement.
+     */
+    private void handleNpcTag(Player player, String[] args) {
+        Entity target = targetEntity(player);
+        if (target == null) {
+            sendNoEntityTarget(player);
+            return;
+        }
+        Optional<String> existing = npcIdentityService.currentId(target);
+        if (existing.isPresent()) {
+            player.sendMessage(MM.deserialize(
+                    "<yellow>Cette entité est déjà identifiée :</yellow> <white><id></white> "
+                            + "<gray>(utilisez d'abord</gray> <yellow>/rpgadmin npc untag</yellow> <gray>pour la ré-identifier).</gray>",
+                    Placeholder.unparsed("id", existing.get())));
+            return;
+        }
+
+        String requestedId = null;
+        if (args.length >= 3) {
+            requestedId = args[2].toLowerCase(Locale.ROOT);
+            if (!NpcIdentityService.isValidId(requestedId)) {
+                player.sendMessage(MM.deserialize(
+                        "<red>Identifiant invalide :</red> <white><id></white> "
+                                + "<gray>(minuscules, chiffres, ., _, - uniquement).</gray>",
+                        Placeholder.unparsed("id", requestedId)));
+                return;
+            }
+        }
+
+        npcIdentityService.tag(target, requestedId).thenAccept(result -> player.sendMessage(MM.deserialize(
+                        "<green>Entité identifiée :</green> <white><id></white>",
+                        Placeholder.unparsed("id", result.npcId()))))
+                .exceptionally(error -> {
+                    player.sendMessage(MM.deserialize("<red>Échec de l'identification (voir la console).</red>"));
+                    return null;
+                });
+    }
+
+    private void handleNpcUntag(Player player) {
+        Entity target = targetEntity(player);
+        if (target == null) {
+            sendNoEntityTarget(player);
+            return;
+        }
+        if (npcIdentityService.untag(target)) {
+            player.sendMessage(MM.deserialize("<green>Identifiant retiré.</green>"));
+        } else {
+            player.sendMessage(MM.deserialize("<gray>Cette entité n'est pas identifiée.</gray>"));
+        }
+    }
+
+    private void handleNpcInfo(Player player) {
+        Entity target = targetEntity(player);
+        if (target == null) {
+            sendNoEntityTarget(player);
+            return;
+        }
+        Optional<String> id = npcIdentityService.currentId(target);
+        if (id.isEmpty()) {
+            player.sendMessage(MM.deserialize("<gray>Cette entité n'est pas identifiée.</gray>"));
+            return;
+        }
+        player.sendMessage(MM.deserialize(
+                "<white>Identifiant :</white> <gray><id></gray>", Placeholder.unparsed("id", id.get())));
+    }
+
+    private @Nullable Entity targetEntity(Player player) {
+        RayTraceResult result = player.getWorld().rayTraceEntities(
+                player.getEyeLocation(), player.getEyeLocation().getDirection(), NPC_REACH, entity -> entity != player);
+        return result == null ? null : result.getHitEntity();
+    }
+
+    private void sendNoEntityTarget(Player player) {
+        player.sendMessage(MM.deserialize("<red>Aucune entité visée à portée.</red>"));
+    }
+
+    private void sendNpcUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin npc tag [id]</yellow> <gray>- identifie l'entité visée (id auto-généré si omis)</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc untag</yellow> <gray>- retire l'identifiant de l'entité visée</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin npc info</yellow> <gray>- affiche l'identifiant de l'entité visée</gray>"));
+    }
+
     private void handleZone(Player player, String[] args) {
         if (args.length < 2) {
             sendZoneUsage(player);
@@ -713,6 +825,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         sendZoneUsage(sender);
         sendPortalUsage(sender);
         sendMobUsage(sender);
+        sendNpcUsage(sender);
     }
 
     private void sendFlattenUsage(CommandSender sender) {
@@ -756,6 +869,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                 && (args[1].equalsIgnoreCase("spawn") || args[1].equalsIgnoreCase("inspect"))) {
             return mobRegistry.definitions().stream().map(SpecialMobDefinition::id).map(NamespacedKey::toString)
                     .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("npc")) {
+            return NPC_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
         }
         return List.of();
     }

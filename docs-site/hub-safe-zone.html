@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="fr" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Village central : spawn &amp; zone protégée — RPGQuest</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/styles.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg">
+  <div class="container">
+    <a class="navbar-brand" href="index.html">RPGQuest</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="nav">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link" href="index.html">Accueil</a></li>
+        <li class="nav-item"><a class="nav-link" href="npc.html">PNJ</a></li>
+        <li class="nav-item"><a class="nav-link" href="dialogues.html">Dialogues</a></li>
+        <li class="nav-item"><a class="nav-link" href="quests.html">Quêtes</a></li>
+        <li class="nav-item"><a class="nav-link" href="admin-testing.html">Outils admin de test</a></li>
+        <li class="nav-item"><a class="nav-link active" href="hub-safe-zone.html">Spawn du village</a></li>
+        <li class="nav-item"><a class="nav-link" href="worlds.html">Mondes</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main class="container py-5">
+  <h1>Village central : spawn &amp; zone protégée</h1>
+  <p class="text-body-secondary">
+    Implémentation spawn : <code>spawn.SpawnService</code>, <code>spawn.SpawnPoint</code>,
+    <code>spawn.SpawnPlayerListener</code>. Implémentation zone protégée :
+    <code>zone.ZoneRegistry</code> (persistance), <code>zone.ZoneSelectionService</code> +
+    <code>zone.ZoneWandListener</code> (sélection), <code>zone.ZoneProtectionListener</code>
+    (application des protections), <code>zone.model.ZoneFlags</code> (permissions d'une zone).
+    Commandes : <code>admin.RpgAdminCommand</code> (sous-commandes <code>spawn</code> et
+    <code>zone</code>). Référence exhaustive (rationale, tests automatisés détaillés) :
+    <code>docs/SAFE_ZONE.md</code>.
+  </p>
+
+  <div class="rpgq-card p-3 mb-4">
+    <p class="text-body-secondary mb-0 small">
+      Aucune coordonnée n'est codée en dur dans le plugin, ni pour le spawn ni pour la zone : tout
+      vient d'une sélection en jeu (outil de sélection pour la zone, position exacte de
+      l'administrateur pour le spawn), écrite dans <code>plugins/RPGQuest/</code>.
+    </p>
+  </div>
+
+  <h2 class="h3 mt-5">Spawn</h2>
+
+  <section class="my-5">
+    <h2 class="h4">Définir le spawn — <code>/rpgadmin spawn set</code></h2>
+    <p class="text-body-secondary">Permission <code>rpgquest.admin.world</code> (même permission que <code>/rpgadmin flatten|zone|portal|npc</code>).</p>
+    <ul class="text-body-secondary">
+      <li>Capture la position <strong>exacte</strong> où se trouve l'administrateur au moment de la commande : monde, x, y, z, et orientation (yaw/pitch).</li>
+      <li>Place-toi précisément à l'endroit voulu sur la place publique du village avant de taper la commande — il n'y a pas d'outil de sélection à distance, contrairement à <code>/rpgadmin zone wand</code>.</li>
+      <li>Remplace immédiatement l'ancien spawn s'il en existait déjà un (sémantique « set », pas « ajouter »).</li>
+      <li>Écrit immédiatement sur disque (<code>plugins/RPGQuest/spawn.yml</code>) — pas besoin de <code>/rpgquest reload</code> ni de redémarrage pour que le nouveau spawn s'applique.</li>
+    </ul>
+    <pre class="rpgq-code"><code>/rpgadmin spawn set</code></pre>
+    <p class="text-body-secondary">Réponse attendue : <code>Spawn du village défini : (world x, y, z, yaw=...)</code>.</p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Revenir au spawn — <code>/rpgadmin spawn tp</code></h2>
+    <p class="text-body-secondary">Même permission. Téléporte immédiatement l'administrateur au spawn actuellement configuré.</p>
+    <pre class="rpgq-code"><code>/rpgadmin spawn tp</code></pre>
+    <p class="text-body-secondary">
+      Si aucun spawn n'a encore été défini : <code>Aucun spawn défini. Utilisez d'abord /rpgadmin spawn set</code> —
+      aucune téléportation n'a lieu.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Comportement automatique</h2>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Situation</th><th>Comportement</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Nouveau joueur (jamais connecté à ce serveur)</td>
+          <td>Apparaît directement au spawn du village configuré, dès sa toute première connexion — aucun détour ni téléportation visible après coup.</td>
+        </tr>
+        <tr>
+          <td>Réapparition après la mort</td>
+          <td>Toujours redirigée vers le spawn du village configuré, <strong>même si le joueur avait un lit ou une ancre de réapparition posée ailleurs</strong> — le village reste le point de réapparition unique et prévisible.</td>
+        </tr>
+        <tr>
+          <td>Reconnexion normale (joueur déjà venu)</td>
+          <td>Jamais affectée — le joueur reste exactement là où il s'est déconnecté, comme en vanilla.</td>
+        </tr>
+        <tr>
+          <td>Aucun spawn configuré</td>
+          <td>Comportement vanilla intact pour les trois cas ci-dessus (spawn du monde, lit/ancre).</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Persistance après redémarrage</h2>
+    <p class="text-body-secondary">
+      Le spawn est écrit dans <code>plugins/RPGQuest/spawn.yml</code> (monde, x, y, z, yaw, pitch)
+      dès <code>/rpgadmin spawn set</code>, et rechargé au démarrage du plugin. Un redémarrage
+      complet du serveur ne perd donc jamais le spawn configuré — vérifiable avec
+      <code>/rpgadmin spawn tp</code> après un redémarrage : la position doit être identique à
+      celle définie avant l'arrêt.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Checklist manuelle (spawn)</h2>
+    <ol class="text-body-secondary">
+      <li>Se placer exactement à l'endroit voulu sur la place publique du village, puis <code>/rpgadmin spawn set</code> — vérifier le message de confirmation (monde/coordonnées).</li>
+      <li><code>/rpgadmin spawn tp</code> depuis un autre endroit du monde — doit ramener exactement à la position définie.</li>
+      <li>Connecter un compte qui n'a <strong>jamais</strong> rejoint ce serveur — doit apparaître directement au spawn du village.</li>
+      <li>En jeu, se laisser mourir (ou <code>/kill</code> sur soi-même avec les droits nécessaires) — la réapparition doit se faire au spawn du village, même en ayant dormi dans un lit ailleurs auparavant.</li>
+      <li>Se déconnecter puis se reconnecter avec un compte déjà venu, après s'être déplacé loin du village — la position à la reconnexion doit être celle de la déconnexion, jamais le spawn du village.</li>
+      <li>Redémarrer complètement le serveur, puis <code>/rpgadmin spawn tp</code> — la position doit être strictement identique à celle définie avant l'arrêt (persistance).</li>
+    </ol>
+  </section>
+
+  <hr class="my-5">
+
+  <h2 class="h3 mt-5">Zone protégée (safe zone)</h2>
+  <p class="text-body-secondary">
+    Une zone protégée nommée <code>central_village</code> existe déjà par défaut (générée
+    automatiquement au premier démarrage, bornée à ±48 blocs en X/Z autour de l'origine du monde
+    <code>world</code>) — mais ses bornes sont un exemple générique, pas la vraie place publique de
+    votre village. Cette section explique comment la redéfinir sur la position réelle.
+  </p>
+
+  <section class="my-5">
+    <h2 class="h4">1. Sélectionner la zone — <code>/rpgadmin zone wand</code></h2>
+    <p class="text-body-secondary">Permission <code>rpgquest.admin.world</code>. Réutilise l'outil de sélection déjà existant (le même que pour les portails).</p>
+    <pre class="rpgq-code"><code>/rpgadmin zone wand</code></pre>
+    <ul class="text-body-secondary">
+      <li>Donne une hache en bois marquée (reconnue par un tag persistant, jamais par son nom affiché).</li>
+      <li><strong>Clic gauche</strong> sur un bloc de la place publique = position 1 (un coin).</li>
+      <li><strong>Clic droit</strong> sur un bloc = position 2 (le coin opposé).</li>
+      <li>Les deux positions doivent être dans le même monde ; la hauteur (Y) des deux clics définit les bornes verticales — visez large en Y (ex. bedrock jusqu'en haut du monde) pour que la zone couvre toute la hauteur de la place, pas seulement le sol.</li>
+    </ul>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">2. Enregistrer la zone — <code>/rpgadmin zone create central_village</code></h2>
+    <p class="text-body-secondary">
+      Une zone <code>central_village</code> existe déjà (l'exemple généré automatiquement) —
+      <code>/rpgadmin zone create</code> refuse un id déjà pris (<code>DUPLICATE_ID</code>). Pour la
+      redéfinir sur la vraie place publique, supprimez d'abord l'exemple, sélectionnez, puis recréez :
+    </p>
+    <pre class="rpgq-code"><code>/rpgadmin zone delete central_village
+/rpgadmin zone wand
+&lt;clic gauche puis clic droit sur les deux coins de la place publique&gt;
+/rpgadmin zone create central_village</code></pre>
+    <p class="text-body-secondary">
+      La zone créée reçoit toujours les protections par défaut (voir tableau ci-dessous) — toutes
+      les protections de sécurité sont actives immédiatement, sans configuration supplémentaire.
+      Rejetée (<code>OVERLAPS</code>) si elle chevauche une autre zone déjà enregistrée dans le même
+      monde.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">3. Modifier ou supprimer</h2>
+    <ul class="text-body-secondary">
+      <li><strong>Supprimer :</strong> <code>/rpgadmin zone delete central_village</code> — retire le fichier et recharge immédiatement, aucun redémarrage requis.</li>
+      <li><strong>Redéfinir les bornes :</strong> pas de commande « resize » — supprimez puis recréez avec une nouvelle sélection (voir étape 2).</li>
+      <li>
+        <strong>Changer une protection (un flag) :</strong> aucune commande en jeu pour l'instant — éditez
+        directement <code>plugins/RPGQuest/zones/central_village.yml</code>, puis
+        <strong>supprimez et recréez la zone</strong> (ou redémarrez le serveur) pour appliquer le
+        changement. <code>/rpgadmin zone</code> ne recharge jamais automatiquement un fichier modifié
+        à la main.
+      </li>
+      <li><code>/rpgadmin zone info central_village</code> — affiche les bornes exactes et l'état de chaque protection, pratique pour vérifier un fichier modifié à la main avant de redémarrer.</li>
+      <li><code>/rpgadmin zone list</code> — liste toutes les zones chargées (utile s'il en existe plusieurs).</li>
+    </ul>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Protections réellement appliquées</h2>
+    <p class="text-body-secondary">Une zone fraîchement créée (via <code>/rpgadmin zone create</code>, comme l'exemple <code>central_village</code>) a exactement ces valeurs :</p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Flag YAML</th><th>Défaut (zone neuve)</th><th>Protection</th></tr></thead>
+      <tbody>
+        <tr><td><code>pvp</code></td><td>bloqué</td><td>Aucun dégât joueur-contre-joueur (mêlée et projectiles).</td></tr>
+        <tr><td><code>block-break</code></td><td>bloqué</td><td>Casse de bloc interdite pour un joueur normal.</td></tr>
+        <tr><td><code>block-place</code></td><td>bloqué</td><td>Pose de bloc interdite pour un joueur normal.</td></tr>
+        <tr><td><code>explosions</code></td><td>bloqué</td><td>Aucune destruction de bloc <strong>et</strong> aucun dégât aux joueurs par une explosion (creeper, TNT, cristal d'End...).</td></tr>
+        <tr><td><code>hostile-spawn</code></td><td>bloqué</td><td>Aucun monstre hostile ne spawn naturellement dans la zone (spawns invoqués via commande non concernés).</td></tr>
+        <tr><td><code>hostile-damage</code></td><td>bloqué <em>(nouveau)</em></td><td>Un mob hostile déjà présent (venu d'ailleurs, ou invoqué) ne peut infliger aucun dégât à un joueur dans la zone — mêlée et projectiles (flèche de squelette...).</td></tr>
+        <tr><td><code>environmental-damage</code></td><td>bloqué <em>(nouveau)</em></td><td>Chute, noyade, suffocation, lave, feu, faim, gel, contact (cactus...), vide, foudre, bloc qui tombe, camp de feu, écrasement (« cramming »), collision en vol — voir la liste exacte dans le code (<code>ZoneProtectionListener#ENVIRONMENTAL_CAUSES</code>).</td></tr>
+        <tr><td><code>npc-damage</code></td><td>bloqué <em>(nouveau)</em></td><td>Un PNJ Citizens présent dans la zone ne peut subir aucun dégât.</td></tr>
+        <tr><td><code>fire</code></td><td>bloqué</td><td>Propagation/allumage du feu bloqués.</td></tr>
+        <tr><td><code>lava</code></td><td>bloqué</td><td>Pose de lave au seau bloquée.</td></tr>
+        <tr><td><code>pistons-across-border</code></td><td>bloqué</td><td>Un piston ne peut pas pousser/tirer un bloc à travers la frontière de la zone.</td></tr>
+        <tr><td><code>doors</code> / <code>buttons</code> / <code>levers</code></td><td>autorisé</td><td>Un village doit rester utilisable (portes, boutons, leviers).</td></tr>
+        <tr><td><code>npc-interact</code></td><td>autorisé</td><td>Parler à un PNJ (dialogue) reste toujours possible.</td></tr>
+        <tr><td><code>public-containers</code></td><td>bloqué</td><td>Coffres/tonneaux/fourneaux non ouvrables — risque de vol dans une zone partagée.</td></tr>
+      </tbody>
+    </table>
+    <p class="text-body-secondary small">
+      <strong>Mort accidentelle :</strong> avec <code>pvp</code>, <code>explosions</code>,
+      <code>hostile-spawn</code>, <code>hostile-damage</code> et <code>environmental-damage</code>
+      tous bloqués (réglages par défaut d'une zone neuve), un joueur normal ne peut plus mourir
+      dans la zone par aucun moyen courant — seule une action volontaire hors zone, ou une
+      commande admin explicite, peut encore le tuer.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Permissions et bypass admin</h2>
+    <ul class="text-body-secondary">
+      <li><code>rpgquest.admin.world</code> (défaut : <code>op</code>) — mêmes commandes que <code>/rpgadmin flatten</code>/<code>portal</code>/<code>npc</code>, et bypass des protections de construction/interaction/PvP/dégâts PNJ.</li>
+      <li>Le bypass n'exempte que <strong>l'acteur direct</strong> d'une action (le joueur qui casse/pose un bloc, l'attaquant PvP, l'attaquant d'un PNJ) — jamais la victime : un administrateur peut construire librement, mais n'exempte personne d'autre de la protection.</li>
+      <li><strong>Exception délibérée :</strong> les dégâts environnementaux (chute, noyade, faim...) n'ont pas d'« acteur » distinct de la victime — ils sont donc bloqués pour <strong>tout le monde</strong>, administrateurs compris. Rien ne justifierait qu'un admin prenne des dégâts de chute dans le village alors que personne d'autre n'en prend.</li>
+    </ul>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Persistance après redémarrage</h2>
+    <p class="text-body-secondary">
+      Chaque zone est un fichier YAML dans <code>plugins/RPGQuest/zones/</code> (un fichier par
+      id, ex. <code>central_village.yml</code>), écrit immédiatement par
+      <code>/rpgadmin zone create</code> et rechargé au démarrage du plugin (<code>ZoneRegistry#start</code>).
+      Un redémarrage complet du serveur ne perd donc jamais une zone créée — vérifiable avec
+      <code>/rpgadmin zone info central_village</code> après redémarrage : bornes et protections
+      doivent être identiques à avant l'arrêt.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Limite : cycle jour/nuit</h2>
+    <p class="text-body-secondary">
+      <strong>Minecraft/Paper ne permet pas une heure différente pour une seule région d'un même
+      monde.</strong> L'horloge d'un monde (<code>World#setTime</code>) est une valeur globale par
+      monde : la figer affecterait <em>tous</em> les joueurs de ce monde, partout, pas seulement
+      la place du village (fermes de récolte qui ne poussent plus la nuit, absence de spawn de
+      monstres ailleurs alors qu'il le faudrait, etc.) — inacceptable pour résoudre un simple
+      confort visuel local.
+    </p>
+    <p class="text-body-secondary">
+      <strong>Solution retenue :</strong> temps <em>client</em> figé par joueur
+      (<code>Player#setPlayerTime</code>, API Bukkit stable, non expérimentale), appliqué
+      uniquement pendant qu'un joueur se trouve physiquement dans une zone avec le flag
+      <code>force-day</code> actif (<code>central_village</code> l'a par défaut) — midi fixe
+      (aucune ombre de lever/coucher), rétabli automatiquement (<code>resetPlayerTime</code>) dès
+      que le joueur quitte la zone. Purement cosmétique côté client : n'affecte ni l'horloge réelle
+      du monde, ni le spawn de monstres ailleurs (déjà gouverné indépendamment par
+      <code>hostile-spawn</code>), ni la pousse des cultures.
+    </p>
+    <p class="text-body-secondary small">
+      Limite résiduelle assumée : comme l'affichage « Vous entrez dans... »/« Vous quittez... »
+      déjà existant, la mise à jour ne se déclenche que sur un vrai déplacement (ou la connexion) —
+      un joueur téléporté directement dans la zone sans bouger ensuite peut voir l'heure se
+      corriger avec un tick de retard.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Checklist manuelle (zone protégée)</h2>
+    <ol class="text-body-secondary">
+      <li><code>/rpgadmin zone delete central_village</code>, puis <code>/rpgadmin zone wand</code> et sélectionner les deux coins réels de la place publique, puis <code>/rpgadmin zone create central_village</code>.</li>
+      <li><code>/rpgadmin zone info central_village</code> — vérifier les bornes et que tous les flags de sécurité affichent <code>false</code> (bloqué) sauf <code>doors</code>/<code>buttons</code>/<code>levers</code>/<code>npc-interact</code>.</li>
+      <li><strong>PvP :</strong> deux joueurs normaux dans la zone, l'un attaque l'autre — aucun dégât.</li>
+      <li><strong>Casse/pose :</strong> un joueur normal tente de casser puis de poser un bloc — les deux sont refusés.</li>
+      <li><strong>Bypass admin :</strong> un joueur op/avec <code>rpgquest.admin.world</code> casse et pose librement dans la zone.</li>
+      <li><strong>Mobs hostiles :</strong> attendre la nuit près de la zone — aucun monstre hostile n'apparaît naturellement à l'intérieur ; un monstre amené de l'extérieur (ex. attiré) ne peut pas toucher un joueur normal dans la zone.</li>
+      <li><strong>Explosions :</strong> faire détoner un creeper/TNT dans la zone — aucun bloc détruit, aucun joueur blessé.</li>
+      <li><strong>Dégâts environnementaux :</strong> se laisser tomber de haut, ou entrer dans de la lave/de l'eau profonde à l'intérieur de la zone — aucun dégât.</li>
+      <li><strong>PNJ Citizens :</strong> si Citizens est installé, placer un PNJ dans la zone puis tenter de l'attaquer avec un joueur normal — aucun dégât (nécessite une vérification manuelle en jeu ; non couvert par les tests automatisés, Citizens n'étant pas chargeable dans l'environnement de test — voir la section Tests de <code>docs/SAFE_ZONE.md</code>).</li>
+      <li><strong>Jour figé :</strong> passer la nuit du serveur en jeu (<code>/time set night</code> en dehors de tout impact sur la zone), entrer dans la zone — le ciel doit apparaître en plein jour pour le joueur qui y entre, puis redevenir nuit normalement en quittant la zone ; un autre joueur resté hors de la zone doit continuer à voir la vraie nuit pendant ce temps.</li>
+      <li>Redémarrer le serveur puis <code>/rpgadmin zone info central_village</code> — bornes et flags strictement identiques à avant l'arrêt (persistance).</li>
+    </ol>
+  </section>
+
+</main>
+
+<footer class="text-center">
+  <div class="container">RPGQuest — documentation générée pour ce dépôt, à jour du code actuel.</div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

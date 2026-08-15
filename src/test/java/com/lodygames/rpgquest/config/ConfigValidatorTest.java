@@ -41,6 +41,45 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void dialogueRendererDefaultsToPaperDialogWhenSectionIsMissing() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load(""));
+
+        assertEquals(RendererKind.PAPER_DIALOG, config.dialogue().renderer());
+    }
+
+    @Test
+    void dialogueRendererDefaultsToPaperDialogWhenKeyIsMissing() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                dialogue:
+                  allowed-commands: []
+                """));
+
+        assertEquals(RendererKind.PAPER_DIALOG, config.dialogue().renderer());
+    }
+
+    @Test
+    void dialogueRendererAcceptsExplicitChat() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                dialogue:
+                  renderer: chat
+                """));
+
+        assertEquals(RendererKind.CHAT, config.dialogue().renderer());
+    }
+
+    @Test
+    void rejectsUnknownDialogueRenderer() {
+        ConfigurationSection section = load("""
+                dialogue:
+                  renderer: not-a-renderer
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("dialogue.renderer"));
+    }
+
+    @Test
     void rejectsNonBooleanDebug() {
         ConfigurationSection section = load("debug: \"yes-please\"\n");
 
@@ -383,6 +422,86 @@ class ConfigValidatorTest {
         ConfigValidationException exception =
                 assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
         assertTrue(exception.getMessage().contains("interval-seconds"));
+    }
+
+    @Test
+    void randomSafeArrivalDefaultsWhenSectionIsMissing() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load(""));
+
+        assertEquals(500, config.randomSafeArrival().minRadius());
+        assertEquals(5000, config.randomSafeArrival().maxRadius());
+        assertEquals(20, config.randomSafeArrival().maxAttempts());
+    }
+
+    @Test
+    void randomSafeArrivalAcceptsCustomValues() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                travel:
+                  random-safe-arrival:
+                    min-radius: 100
+                    max-radius: 2000
+                    max-attempts: 5
+                """));
+
+        assertEquals(100, config.randomSafeArrival().minRadius());
+        assertEquals(2000, config.randomSafeArrival().maxRadius());
+        assertEquals(5, config.randomSafeArrival().maxAttempts());
+    }
+
+    @Test
+    void rejectsRandomSafeArrivalMaxRadiusBelowMinRadius() {
+        ConfigurationSection section = load("""
+                travel:
+                  random-safe-arrival:
+                    min-radius: 1000
+                    max-radius: 500
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("max-radius"));
+    }
+
+    @Test
+    void rejectsRandomSafeArrivalMaxAttemptsBelowOne() {
+        ConfigurationSection section = load("""
+                travel:
+                  random-safe-arrival:
+                    max-attempts: 0
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("max-attempts"));
+    }
+
+    @Test
+    void hubDefaultsToWorldHubWhenSectionIsMissing() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load(""));
+
+        assertEquals("world_hub", config.hub().world());
+    }
+
+    @Test
+    void hubAcceptsACustomWorldName() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                hub:
+                  world: my_custom_hub
+                """));
+
+        assertEquals("my_custom_hub", config.hub().world());
+    }
+
+    @Test
+    void rejectsBlankHubWorld() {
+        ConfigurationSection section = load("""
+                hub:
+                  world: ""
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("hub.world"));
     }
 
     private ConfigurationSection load(String yaml) {

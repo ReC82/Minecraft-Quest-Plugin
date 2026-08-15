@@ -70,6 +70,43 @@ class ChatDialogueRendererTest {
         assertTrue(choiceTwo.contains("Refuser"), choiceTwo);
     }
 
+    @Test
+    void miniMessageTagsInSpeakerTextAndChoicesAreActuallyRenderedNotShownRaw() {
+        // Régression : speaker/text/choix étaient auparavant substitués via Placeholder.unparsed(),
+        // qui traite les balises MiniMessage comme du texte brut, affichant littéralement
+        // "<white>...</white>" au joueur au lieu d'interpréter la couleur.
+        PlayerMock player = server.addPlayer();
+        ChatDialogueRenderer renderer = new ChatDialogueRenderer((p, dialogueId, nodeId, choiceIndex) -> { });
+
+        Map<String, DialogueNode> nodes = new LinkedHashMap<>();
+        nodes.put("greeting", new DialogueNode(
+                "greeting", "<red>Guide</red>",
+                com.lodygames.rpgquest.quest.model.LocalizedText.of(
+                        "<white>Bienvenue au village !</white> <gray>Va donc voir notre libraire.</gray>"),
+                List.of(new com.lodygames.rpgquest.dialogue.model.DialogueChoice(
+                        com.lodygames.rpgquest.quest.model.LocalizedText.of("<italic>Très bien, j'y vais.</italic>"),
+                        List.of(), List.of(), null))));
+        DialogueDefinition dialogue = new DialogueDefinition(new NamespacedKey("rpgquest", "guide"), "greeting", nodes);
+        DialogueNode node = dialogue.startNode();
+
+        renderer.render(player, dialogue, node, List.of(new VisibleChoice(0, "<italic>Très bien, j'y vais.</italic>")));
+
+        String speakerLine = player.nextMessage();
+        assertNotNull(speakerLine);
+        assertTrue(speakerLine.contains("Guide"), speakerLine);
+        assertTrue(!speakerLine.contains("<red>") && !speakerLine.contains("</red>"), speakerLine);
+
+        String textLine = player.nextMessage();
+        assertNotNull(textLine);
+        assertTrue(textLine.contains("Bienvenue au village !"), textLine);
+        assertTrue(!textLine.contains("<white>") && !textLine.contains("<gray>"), textLine);
+
+        String choiceLine = player.nextMessage();
+        assertNotNull(choiceLine);
+        assertTrue(choiceLine.contains("j'y vais"), choiceLine);
+        assertTrue(!choiceLine.contains("<italic>") && !choiceLine.contains("</italic>"), choiceLine);
+    }
+
     private DialogueDefinition simpleDialogue() {
         Map<String, DialogueNode> nodes = new LinkedHashMap<>();
         nodes.put("greeting", new DialogueNode(

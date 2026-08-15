@@ -20,6 +20,7 @@ import com.lodygames.rpgquest.quest.model.QuestState;
 import com.lodygames.rpgquest.quest.model.QuestStep;
 import com.lodygames.rpgquest.quest.model.ReachLocationObjective;
 import com.lodygames.rpgquest.quest.model.VariableReward;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -31,7 +32,9 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.EntityType;
@@ -55,6 +58,15 @@ import org.slf4j.Logger;
  */
 public final class QuestProgressEngine implements PluginService {
 
+    /**
+     * Durées d'un Title de notification de quête (démarrage/fin) : bref et sobre — jamais le
+     * chat, voir {@link #showQuestStarted}/{@link #showQuestCompleted}/{@link
+     * #showObjectiveProgress} et {@code messages.yml} pour le contenu (entièrement
+     * personnalisable, jamais une quête codée en dur ici).
+     */
+    private static final Title.Times FEEDBACK_TITLE_TIMES =
+            Title.Times.times(Duration.ofMillis(250), Duration.ofMillis(2500), Duration.ofMillis(500));
+
     private final RPGQuestPlugin plugin;
     private final YamlQuestEngine questEngine;
     private final QuestProgressRepository repository;
@@ -64,7 +76,7 @@ public final class QuestProgressEngine implements PluginService {
     private final Logger logger;
 
     private final Map<UUID, Map<NamespacedKey, ActiveQuestProgress>> activeByPlayer = new ConcurrentHashMap<>();
-    private final Map<ObjectiveType, Listener> registeredListeners = new EnumMap<>(ObjectiveType.class);
+    private final Map<ObjectiveType, List<Listener>> registeredListeners = new EnumMap<>(ObjectiveType.class);
     private final List<Consumer<UUID>> progressListeners = new CopyOnWriteArrayList<>();
     private volatile QuestObjectiveIndex index = new QuestObjectiveIndex(List.of());
 
@@ -87,7 +99,7 @@ public final class QuestProgressEngine implements PluginService {
 
     @Override
     public void stop() {
-        registeredListeners.values().forEach(HandlerList::unregisterAll);
+        registeredListeners.values().forEach(listeners -> listeners.forEach(HandlerList::unregisterAll));
         registeredListeners.clear();
     }
 
@@ -128,17 +140,23 @@ public final class QuestProgressEngine implements PluginService {
             boolean needed = !newIndex.isEmpty(type);
             boolean registered = registeredListeners.containsKey(type);
             if (needed && !registered) {
-                Listener listener = createListener(type);
-                plugin.getServer().getPluginManager().registerEvents(listener, plugin);
-                registeredListeners.put(type, listener);
+                List<Listener> listeners = createListeners(type);
+                listeners.forEach(listener -> plugin.getServer().getPluginManager().registerEvents(listener, plugin));
+                registeredListeners.put(type, listeners);
             } else if (!needed && registered) {
-                HandlerList.unregisterAll(registeredListeners.remove(type));
+                registeredListeners.remove(type).forEach(HandlerList::unregisterAll);
             }
         }
     }
 
-    private Listener createListener(ObjectiveType type) {
-        return switch (type) {
+    /**
+     * {@code TALK_TO_NPC} enregistre en plus {@link QuestCitizensNpcInteractListener} quand Citizens
+     * est actif : Citizens ne propage pas toujours {@code PlayerInteractEntityEvent} pour ses propres
+     * entités, donc {@link QuestNpcInteractListener} (vanilla) ne suffit pas à lui seul dans ce cas.
+     * Les deux écouteurs ne se chevauchent jamais sur une même entité (voir leurs gardes respectives).
+     */
+    private List<Listener> createListeners(ObjectiveType type) {
+        Listener primary = switch (type) {
             case BREAK_BLOCK -> new QuestBlockBreakListener(this);
             case PLACE_BLOCK -> new QuestBlockPlaceListener(this);
             case KILL_ENTITY -> new QuestEntityDeathListener(this);
@@ -147,6 +165,10 @@ public final class QuestProgressEngine implements PluginService {
             case TALK_TO_NPC -> new QuestNpcInteractListener(this, npcIdentityService);
             case REACH_LOCATION -> new QuestLocationListener(this);
         };
+        if (type == ObjectiveType.TALK_TO_NPC && npcIdentityService.citizensAvailable()) {
+            return List.of(primary, new QuestCitizensNpcInteractListener(this, npcIdentityService));
+        }
+        return List.of(primary);
     }
 
     // ---- Cycle de vie joueur -------------------------------------------------
@@ -234,7 +256,12 @@ public final class QuestProgressEngine implements PluginService {
                         .thenApply(v -> AcceptOutcome.accepted());
             });
         });
-        future.whenComplete((outcome, error) -> notifyChanged(playerId));
+        future.whenComplete((outcome, error) -> {
+            notifyChanged(playerId);
+            if (error == null && outcome.result() == AcceptOutcome.Result.ACCEPTED) {
+                runOnMainThread(() -> showQuestStarted(player, quest));
+            }
+        });
         return future;
     }
 
@@ -317,6 +344,33 @@ public final class QuestProgressEngine implements PluginService {
         });
     }
 
+    /**
+     * Outil d'administration pour les tests ({@code /quest admin reset}) : supprime totalement
+     * l'état persisté et les compteurs d'objectifs de {@code questId} pour {@code playerId}, et
+     * retire toute progression en mémoire. La ligne disparaît plutôt que d'être remise à
+     * {@code NOT_STARTED} : {@link #accept} la traite ensuite comme jamais commencée, y compris
+     * pour une quête {@code repeatable: false} déjà {@code COMPLETED} (le blocage de
+     * {@link #accept} ne porte que sur une ligne {@code COMPLETED} existante). Ne touche ni à
+     * l'inventaire, ni à l'économie, ni aux autres quêtes du joueur.
+     */
+    public CompletableFuture<Void> resetQuest(UUID playerId, NamespacedKey questId) {
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
+        if (playerActive != null) {
+            playerActive.remove(questId);
+        }
+        CompletableFuture<Void> future = repository.deleteQuest(playerId, questId);
+        future.whenComplete((v, error) -> notifyChanged(playerId));
+        return future;
+    }
+
+    /** Équivalent de {@link #resetQuest} pour toutes les quêtes de {@code playerId} en une fois. */
+    public CompletableFuture<Void> resetAllQuests(UUID playerId) {
+        activeByPlayer.remove(playerId);
+        CompletableFuture<Void> future = repository.deleteAllForPlayer(playerId);
+        future.whenComplete((v, error) -> notifyChanged(playerId));
+        return future;
+    }
+
     /** État d'une quête pour un joueur : cache si active, sinon base (NOT_STARTED si aucune ligne). */
     public CompletableFuture<QuestState> stateOf(UUID playerId, NamespacedKey questId) {
         Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
@@ -359,6 +413,7 @@ public final class QuestProgressEngine implements PluginService {
                     logger.error("Impossible de persister l'avancement forcé de {} pour {}", questId, playerId, error);
                     return null;
                 });
+                showObjectiveProgress(player, step.objectives().get(i), required, required);
             }
         }
         checkStepCompletion(player, quest, progress);
@@ -469,6 +524,7 @@ public final class QuestProgressEngine implements PluginService {
                         logger.error("Impossible de persister la progression de {} pour {}", ref.questId(), playerId, error);
                         return null;
                     });
+            showObjectiveProgress(player, ref.objective(), updated, required);
 
             if (updated >= required) {
                 questEngine.find(ref.questId()).ifPresent(quest -> checkStepCompletion(player, quest, progress));
@@ -494,9 +550,9 @@ public final class QuestProgressEngine implements PluginService {
                 logger.error("Impossible de persister l'avancement d'étape pour {} ({})", quest.id(), playerId, error);
                 return null;
             });
-            player.sendMessage(messagesService.current().format("quest.step-completed",
-                    Placeholder.unparsed("quest", quest.title().base()),
-                    Placeholder.unparsed("step", nextStepId)));
+            // Pas de notification dédiée ici : le passage à l'étape suivante suit toujours la
+            // complétion du dernier objectif de l'étape précédente, déjà signalée à l'instant par
+            // showObjectiveProgress (ActionBar) — un second message ferait doublon.
             notifyChanged(playerId);
         } else {
             turnIn(player, quest, progress);
@@ -523,9 +579,47 @@ public final class QuestProgressEngine implements PluginService {
         });
 
         grantRewards(player, quest);
-        player.sendMessage(messagesService.current().format(
-                "quest.completed", Placeholder.unparsed("quest", quest.title().base())));
+        showQuestCompleted(player, quest);
         notifyChanged(playerId);
+    }
+
+    // ---- Notifications sobres (Title/ActionBar Adventure, jamais le chat) ----------------------
+    //
+    // Trois événements, trois canaux distincts, choisis pour ne jamais spammer le chat (voir
+    // messages.yml pour le contenu, jamais une quête codée en dur ici) :
+    //  - démarrage/fin de quête (rares, méritent l'attention) : Title/Subtitle plein écran, bref ;
+    //  - progression d'un objectif (fréquente, peut arriver plusieurs fois par seconde en combat) :
+    //    ActionBar, qui se remplace en place plutôt que d'empiler des lignes.
+
+    private void showQuestStarted(Player player, QuestDefinition quest) {
+        if (!player.isOnline()) {
+            return;
+        }
+        Component title = messagesService.current().format("quest.started-title");
+        Component subtitle = messagesService.current().format(
+                "quest.started-subtitle", Placeholder.parsed("quest", quest.title().base()));
+        player.showTitle(Title.title(title, subtitle, FEEDBACK_TITLE_TIMES));
+    }
+
+    private void showQuestCompleted(Player player, QuestDefinition quest) {
+        if (!player.isOnline()) {
+            return;
+        }
+        Component title = messagesService.current().format("quest.completed-title");
+        Component subtitle = messagesService.current().format(
+                "quest.completed-subtitle", Placeholder.parsed("quest", quest.title().base()));
+        player.showTitle(Title.title(title, subtitle, FEEDBACK_TITLE_TIMES));
+    }
+
+    private void showObjectiveProgress(Player player, QuestObjective objective, int current, int total) {
+        if (!player.isOnline()) {
+            return;
+        }
+        Component message = messagesService.current().format("quest.objective-progress",
+                Placeholder.unparsed("objective", describeObjective(objective)),
+                Placeholder.unparsed("current", String.valueOf(current)),
+                Placeholder.unparsed("total", String.valueOf(total)));
+        player.sendActionBar(message);
     }
 
     private void grantRewards(Player player, QuestDefinition quest) {
@@ -557,5 +651,9 @@ public final class QuestProgressEngine implements PluginService {
 
     private String describeObjective(QuestObjective objective) {
         return QuestObjective.describe(objective);
+    }
+
+    private void runOnMainThread(Runnable task) {
+        plugin.getServer().getScheduler().runTask(plugin, task);
     }
 }

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Outils admin de test — RPGQuest</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/styles.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg">
+  <div class="container">
+    <a class="navbar-brand" href="index.html">RPGQuest</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="nav">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link" href="index.html">Accueil</a></li>
+        <li class="nav-item"><a class="nav-link" href="npc.html">PNJ</a></li>
+        <li class="nav-item"><a class="nav-link" href="dialogues.html">Dialogues</a></li>
+        <li class="nav-item"><a class="nav-link" href="quests.html">Quêtes</a></li>
+        <li class="nav-item"><a class="nav-link active" href="admin-testing.html">Outils admin de test</a></li>
+        <li class="nav-item"><a class="nav-link" href="hub-safe-zone.html">Spawn du village</a></li>
+        <li class="nav-item"><a class="nav-link" href="worlds.html">Mondes</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main class="container py-5">
+  <h1>Outils admin de test</h1>
+  <p class="text-body-secondary">
+    Implémentation : <code>command.QuestCommand</code> (sous-commande <code>admin</code>),
+    <code>quest.YamlQuestEngine#reload</code> / <code>#validate</code>,
+    <code>quest.progress.QuestProgressEngine#resetQuest</code> / <code>#resetAllQuests</code>,
+    <code>database.QuestProgressRepository#deleteQuest</code> / <code>#deleteAllForPlayer</code>.
+    Cette page couvre le rechargement des définitions, la <strong>consultation</strong> et la
+    <strong>réinitialisation</strong> de la progression de quêtes d'un joueur — voir
+    <a href="quests.html">Quêtes</a> pour le format des quêtes elles-mêmes.
+  </p>
+
+  <div class="rpgq-card p-3 mb-4">
+    <p class="text-body-secondary mb-0 small">
+      Correction récente : les messages de confirmation de <code>/quest admin reset</code>
+      (et les autres messages de quête — acceptation, abandon, complétion, journal graphique)
+      affichaient parfois les balises MiniMessage du titre de la quête littéralement
+      (ex. <code>Quête &lt;gold&gt;Premiers pas&lt;/gold&gt; réinitialisée</code> au lieu d'un titre
+      coloré). Corrigé : le titre s'affiche désormais toujours formaté normalement.
+    </p>
+  </div>
+
+  <section class="my-5">
+    <h2 class="h4">Recharger les définitions — <code>/quest admin reload</code></h2>
+    <p class="text-body-secondary">Permission <code>rpgquest.admin</code>.</p>
+    <ul class="text-body-secondary">
+      <li>Relit tous les fichiers de <code>plugins/RPGQuest/quests/*.yml</code> depuis le disque et remplace l'ensemble de quêtes actif — à chaud, sans redémarrage.</li>
+      <li>Recharge aussi <code>messages.yml</code> dans la même commande (les deux sont rechargés ensemble, jamais séparément).</li>
+      <li>Reconstruit les écouteurs d'objectifs (<code>BREAK_BLOCK</code>, <code>KILL_ENTITY</code>...) en fonction des types réellement utilisés par les quêtes rechargées.</li>
+      <li>N'affecte <strong>jamais</strong> les dialogues (<code>plugins/RPGQuest/dialogues/*.yml</code>) — aucune commande ne les recharge à chaud, voir <a href="dialogues.html">Dialogues</a> ; un dialogue modifié exige un redémarrage complet du serveur.</li>
+      <li>La progression déjà en cours des joueurs n'est jamais perdue par un reload (elle vit dans la base de données, pas dans les définitions).</li>
+    </ul>
+    <pre class="rpgq-code"><code>/quest admin reload</code></pre>
+    <p class="text-body-secondary">
+      Réponse : <code>Rechargement : &lt;N&gt; quête(s) chargée(s), &lt;N&gt; erreur(s).</code>, suivie
+      d'une ligne par erreur (fichier + message) s'il y en a.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Valider sans appliquer — <code>/quest admin validate</code></h2>
+    <p class="text-body-secondary">Permission <code>rpgquest.admin</code>.</p>
+    <ul class="text-body-secondary">
+      <li>Relit et valide les mêmes fichiers YAML que <code>reload</code>, avec le même rapport d'erreurs — mais en <strong>dry-run</strong> : l'ensemble de quêtes actif n'est jamais remplacé.</li>
+      <li>Utile pour vérifier qu'un nouveau fichier de quête est syntaxiquement correct <strong>avant</strong> de l'appliquer avec <code>reload</code>, sans risquer de casser les quêtes déjà actives sur le serveur en production.</li>
+      <li>Ne touche ni <code>messages.yml</code>, ni les écouteurs d'objectifs, ni rien d'autre — uniquement un rapport.</li>
+    </ul>
+    <pre class="rpgq-code"><code>/quest admin validate</code></pre>
+    <p class="text-body-secondary">Même format de réponse que <code>reload</code> (compte de quêtes + erreurs), sans jamais rien appliquer.</p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Consulter l'état d'un joueur</h2>
+    <p class="text-body-secondary">Trois commandes en lecture seule, aucune n'altère la progression.</p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Commande</th><th>Permission</th><th>Effet</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>/quest list</code></td>
+          <td><code>rpgquest.quest</code></td>
+          <td>Liste <em>toutes</em> les quêtes connues (y compris <code>NOT_STARTED</code>) et leur état pour soi-même.</td>
+        </tr>
+        <tr>
+          <td><code>/quest progress [id]</code></td>
+          <td><code>rpgquest.quest</code></td>
+          <td>
+            Sans argument : uniquement les quêtes déjà commencées (état ≠ <code>NOT_STARTED</code>).
+            Avec un id : détail objectif par objectif (<code>current/total</code>) de l'étape en cours ;
+            vide si la quête n'est pas active en mémoire.
+          </td>
+        </tr>
+        <tr>
+          <td><code>/quests</code></td>
+          <td>—</td>
+          <td>Journal graphique (menu paginé) — même information que <code>/quest list</code>, présentation en inventaire.</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="text-body-secondary small">
+      Ces trois commandes s'exécutent toujours pour <strong>le joueur qui tape la commande</strong> —
+      il n'existe pas de variante « admin » en lecture pour consulter un autre joueur ; connectez-vous
+      en tant que ce joueur (ou demandez-lui) pour vérifier le résultat d'un reset.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Réinitialiser une quête — <code>/quest admin reset &lt;joueur&gt; &lt;id&gt;</code></h2>
+    <p class="text-body-secondary">Permission <code>rpgquest.admin</code>. Cible un joueur <strong>en ligne</strong> uniquement (comme <code>/skills admin</code>, <code>/backpack admin</code>...).</p>
+    <ul class="text-body-secondary">
+      <li>Supprime totalement la ligne d'état persisté (<code>quest_progress</code>) de cette quête pour ce joueur — pas de remise à <code>NOT_STARTED</code>, la ligne disparaît.</li>
+      <li>Supprime tous ses compteurs d'objectifs persistés (<code>quest_objective_progress</code>) pour cette quête.</li>
+      <li>Retire aussi la progression en mémoire si la quête était active — un événement de jeu juste après le reset ne la fait pas repartir d'où elle en était.</li>
+      <li>Permet de recommencer la quête, <strong>même si <code>repeatable: false</code></strong> : le blocage de <code>/quest accept</code> ne porte que sur une ligne <code>COMPLETED</code> existante, qui n'existe plus après le reset.</li>
+      <li>Ne touche <strong>ni à l'inventaire</strong>, ni à l'économie (portefeuille, transactions), ni à aucune autre quête du joueur.</li>
+    </ul>
+    <pre class="rpgq-code"><code># Exemple exact : réinitialiser rpgquest:premiers_pas pour LoDyMcFly
+/quest admin reset LoDyMcFly premiers_pas
+# équivalent explicite (avec namespace) :
+/quest admin reset LoDyMcFly rpgquest:premiers_pas</code></pre>
+    <p class="text-body-secondary">
+      Réponse attendue à l'admin : <code>Quête Premiers pas réinitialisée pour LoDyMcFly</code>.
+      LoDyMcFly reçoit aussi un message l'informant du reset. Vérifiez ensuite avec
+      <code>/quest list</code> (sur le compte LoDyMcFly) que <code>rpgquest:premiers_pas</code> est
+      repassée à <code>NOT_STARTED</code>, puis <code>/quest accept premiers_pas</code> pour confirmer
+      qu'elle redevient acceptable.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Réinitialiser toutes les quêtes — <code>/quest admin reset &lt;joueur&gt; all</code></h2>
+    <p class="text-body-secondary">Même permission, même contrainte (joueur en ligne).</p>
+    <ul class="text-body-secondary">
+      <li>Remet <strong>toutes</strong> les quêtes du joueur à <code>NOT_STARTED</code> (suppression de toutes ses lignes <code>quest_progress</code>) en une seule opération.</li>
+      <li>Supprime tous ses compteurs d'objectifs, pour toutes les quêtes.</li>
+      <li>Vide aussi tout le cache mémoire de progression du joueur.</li>
+      <li>Ne touche à <strong>aucune autre donnée joueur</strong> : profil, variables, inventaire, économie, backpacks, claims, compétences RPG (progression/XP) — uniquement les tables <code>quest_progress</code> et <code>quest_objective_progress</code>.</li>
+    </ul>
+    <pre class="rpgq-code"><code># Exemple exact : tout réinitialiser pour LoDyMcFly
+/quest admin reset LoDyMcFly all</code></pre>
+    <p class="text-body-secondary">
+      Réponse attendue à l'admin : <code>Toutes les quêtes de LoDyMcFly ont été réinitialisées.</code>
+      Vérifiez avec <code>/quest list</code> (LoDyMcFly) que toutes les quêtes affichent
+      <code>NOT_STARTED</code>.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Permissions</h2>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Permission</th><th>Défaut</th><th>Couvre</th></tr></thead>
+      <tbody>
+        <tr><td><code>rpgquest.quest</code></td><td>true (tous)</td><td><code>/quest list</code>, <code>/quest progress</code>, <code>/quest accept</code>, <code>/quest abandon</code></td></tr>
+        <tr><td><code>rpgquest.admin</code></td><td>op</td><td><code>/quest admin reload|validate|reset</code>, <code>/quest complete</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Checklist manuelle (exemple LoDyMcFly / premiers_pas)</h2>
+    <ol class="text-body-secondary">
+      <li><code>/quest admin validate</code> — vérifier <code>0 erreur(s)</code> sur les quêtes livrées avec le plugin.</li>
+      <li>Modifier légèrement un champ d'une quête existante (ex. <code>title</code>), puis <code>/quest admin reload</code> — vérifier que le changement apparaît immédiatement dans <code>/quest list</code>, sans redémarrage.</li>
+      <li>LoDyMcFly connecté, exécute <code>/quest list</code> — noter l'état actuel de <code>rpgquest:premiers_pas</code>.</li>
+      <li>Si elle n'est pas active : <code>/quest accept premiers_pas</code> (un Title « Quête commencée » doit apparaître), puis parler au Guide pour progresser d'un cran.</li>
+      <li><code>/quest progress premiers_pas</code> (LoDyMcFly) — vérifier que l'objectif en cours affiche un compteur &gt; 0.</li>
+      <li>Depuis un compte admin : <code>/quest admin reset LoDyMcFly premiers_pas</code> — vérifier le message de confirmation des deux côtés.</li>
+      <li><code>/quest list</code> (LoDyMcFly) — <code>rpgquest:premiers_pas</code> doit être revenue à <code>NOT_STARTED</code>.</li>
+      <li><code>/quest progress premiers_pas</code> (LoDyMcFly) — doit maintenant être vide (plus aucune progression active).</li>
+      <li><code>/quest accept premiers_pas</code> (LoDyMcFly) — doit réussir même si la quête était <code>COMPLETED</code> et non-répétable avant le reset.</li>
+      <li>Vérifier que l'inventaire, le solde (<code>/money</code>) et les autres quêtes de LoDyMcFly n'ont pas bougé pendant toute l'opération.</li>
+      <li>Optionnel — tout réinitialiser d'un coup : <code>/quest admin reset LoDyMcFly all</code>, puis <code>/quest list</code> (LoDyMcFly) pour confirmer que toutes les quêtes sont à <code>NOT_STARTED</code>.</li>
+    </ol>
+  </section>
+
+</main>
+
+<footer class="text-center">
+  <div class="container">RPGQuest — documentation générée pour ce dépôt, à jour du code actuel.</div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

@@ -43,6 +43,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Listener;
 import org.bukkit.inventory.ItemStack;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 /**
@@ -102,6 +103,17 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     /** Écouteur de clic sur PNJ (entité nommée) à enregistrer sans condition, comme la connexion des quêtes. */
     public Listener npcInteractListener() {
         return new DialogueNpcInteractListener(this, dialogueEngine, npcIdentityService);
+    }
+
+    /**
+     * Équivalent Citizens de {@link #npcInteractListener()} — {@code null} si Citizens n'est pas
+     * installé/actif (voir {@link NpcIdentityService#citizensAvailable()}), auquel cas seul
+     * {@link #npcInteractListener()} doit être enregistré.
+     */
+    public @Nullable Listener citizensNpcInteractListener() {
+        return npcIdentityService.citizensAvailable()
+                ? new DialogueCitizensNpcInteractListener(this, dialogueEngine, npcIdentityService)
+                : null;
     }
 
     public void open(Player player, NamespacedKey dialogueId) {

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.zone.model.ZoneDefinition;
+import com.lodygames.rpgquest.zone.model.ZoneFlags;
 import java.io.StringReader;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -73,6 +74,45 @@ class ZoneDefinitionParserTest {
         assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
         assertFalse(result.zone().flags().allowPvp(), "faux par défaut");
         assertTrue(result.zone().flags().allowDoors(), "vrai par défaut");
+    }
+
+    @Test
+    void newSafetyFlagsDefaultToProtectedAndForceDayDefaultsToFalse() {
+        ZoneDefinitionParser.ParseResult result = parser.parse("valid.yml", load("""
+                id: no_flags
+                world: world
+                min: {x: 0, y: 0, z: 0}
+                max: {x: 1, y: 1, z: 1}
+                """));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        ZoneFlags flags = result.zone().flags();
+        assertFalse(flags.allowHostileDamage());
+        assertFalse(flags.allowEnvironmentalDamage());
+        assertFalse(flags.allowNpcDamage());
+        assertFalse(flags.forceDay());
+    }
+
+    @Test
+    void newSafetyFlagsParseExplicitValues() {
+        ZoneDefinitionParser.ParseResult result = parser.parse("valid.yml", load("""
+                id: central_village
+                world: world
+                min: {x: -10, y: 0, z: -10}
+                max: {x: 10, y: 255, z: 10}
+                flags:
+                  hostile-damage: true
+                  environmental-damage: true
+                  npc-damage: true
+                  force-day: true
+                """));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        ZoneFlags flags = result.zone().flags();
+        assertTrue(flags.allowHostileDamage());
+        assertTrue(flags.allowEnvironmentalDamage());
+        assertTrue(flags.allowNpcDamage());
+        assertTrue(flags.forceDay());
     }
 
     private ConfigurationSection load(String yaml) {

@@ -452,12 +452,12 @@ public final class QuestJournalService implements QuestJournalUi {
         };
         String colorEnd = color.replace("<", "</");
         String star = tracked ? " <gold>★</gold>" : "";
-        return MM.deserialize(color + "<name>" + colorEnd + star, Placeholder.unparsed("name", quest.title().base()));
+        return MM.deserialize(color + "<name>" + colorEnd + star, Placeholder.parsed("name", quest.title().base()));
     }
 
     private List<Component> buildLore(UUID playerId, QuestDefinition quest, QuestState state, boolean tracked) {
         List<Component> lore = new ArrayList<>();
-        lore.add(MM.deserialize("<gray><description></gray>", Placeholder.unparsed("description", quest.description().base())));
+        lore.add(MM.deserialize("<gray><description></gray>", Placeholder.parsed("description", quest.description().base())));
         lore.add(Component.empty());
         lore.add(MM.deserialize("<white>Catégorie :</white> <gray><category></gray>",
                 Placeholder.unparsed("category", quest.category())));
@@ -486,7 +486,7 @@ public final class QuestJournalService implements QuestJournalUi {
             lore.add(MM.deserialize("<white>Prérequis :</white>"));
             for (NamespacedKey prereqId : quest.prerequisites()) {
                 String name = questEngine.find(prereqId).map(q -> q.title().base()).orElse(prereqId.toString());
-                lore.add(MM.deserialize("<gray>- <name></gray>", Placeholder.unparsed("name", name)));
+                lore.add(MM.deserialize("<gray>- <name></gray>", Placeholder.parsed("name", name)));
             }
         }
 

@@ -29,6 +29,7 @@ import com.lodygames.rpgquest.crafting.YamlCraftingRegistry;
 import com.lodygames.rpgquest.database.BackpackRepository;
 import com.lodygames.rpgquest.database.DatabaseService;
 import com.lodygames.rpgquest.database.EntitlementRepository;
+import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.database.NpcIdRepository;
 import com.lodygames.rpgquest.database.PlacedBlockRepository;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
@@ -44,6 +45,7 @@ import com.lodygames.rpgquest.database.WalletRepository;
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
 import com.lodygames.rpgquest.dialogue.render.ChatDialogueRenderer;
 import com.lodygames.rpgquest.dialogue.render.DialogueRenderer;
+import com.lodygames.rpgquest.dialogue.render.FallbackDialogueRenderer;
 import com.lodygames.rpgquest.dialogue.render.PaperDialogRenderer;
 import com.lodygames.rpgquest.dialogue.session.DialogueSessionEngine;
 import com.lodygames.rpgquest.economy.EconomyService;
@@ -51,6 +53,8 @@ import com.lodygames.rpgquest.economy.market.MarketService;
 import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
 import com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry;
 import com.lodygames.rpgquest.entitlement.EntitlementService;
+import com.lodygames.rpgquest.hub.HubWorldProtectionListener;
+import com.lodygames.rpgquest.hub.HubWorldRulesService;
 import com.lodygames.rpgquest.item.SpiderFangDropListener;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.behavior.EquipmentBehaviorService;
@@ -77,16 +81,20 @@ import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.resource.ResourceNodeBreakListener;
 import com.lodygames.rpgquest.resource.ResourceNodeRegistry;
 import com.lodygames.rpgquest.resource.ResourceNodeService;
+import com.lodygames.rpgquest.spawn.SpawnService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.store.StoreClient;
 import com.lodygames.rpgquest.store.StoreDeliveryService;
 import com.lodygames.rpgquest.store.StoreProductRegistry;
 import com.lodygames.rpgquest.travel.PortalService;
+import com.lodygames.rpgquest.travel.WorldPortalRegistry;
+import com.lodygames.rpgquest.travel.WorldPortalTeleportListener;
 import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
 import com.lodygames.rpgquest.ui.QuestJournalService;
 import com.lodygames.rpgquest.web.WebSnapshotWriter;
+import com.lodygames.rpgquest.world.WorldService;
 import com.lodygames.rpgquest.zone.ZoneProtectionListener;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.zone.ZoneSelectionService;
@@ -120,6 +128,7 @@ public final class RPGQuestBootstrap {
     private final YamlMerchantRegistry merchantRegistry;
     private final YamlPortalRegistry portalRegistry;
     private final YamlDestinationRegistry destinationRegistry;
+    private final WorldPortalRegistry worldPortalRegistry;
     private final ClaimSelectionService claimSelectionService;
     private final SpecialMobRegistry mobRegistry;
     private final StoreProductRegistry storeProductRegistry;
@@ -145,6 +154,8 @@ public final class RPGQuestBootstrap {
     private StoreDeliveryService storeDeliveryService;
     private ModCompatService modCompatService;
     private NpcIdentityService npcIdentityService;
+    private final SpawnService spawnService;
+    private final WorldService worldService;
 
     public RPGQuestBootstrap(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -171,22 +182,29 @@ public final class RPGQuestBootstrap {
                 plugin.getDataFolder().toPath().resolve("portals"), plugin.getSLF4JLogger());
         this.destinationRegistry = new YamlDestinationRegistry(
                 plugin.getDataFolder().toPath().resolve("destinations"), plugin.getSLF4JLogger());
+        this.worldPortalRegistry = new WorldPortalRegistry(
+                plugin.getDataFolder().toPath().resolve("world-portals"), plugin.getSLF4JLogger());
         this.claimSelectionService = new ClaimSelectionService();
         this.mobRegistry = new SpecialMobRegistry(
                 plugin.getDataFolder().toPath().resolve("mobs"), plugin.getSLF4JLogger());
         this.storeProductRegistry = new StoreProductRegistry(
                 plugin.getDataFolder().toPath().resolve("store-products"), plugin.getSLF4JLogger());
+        this.spawnService = new SpawnService(
+                plugin, plugin.getDataFolder().toPath().resolve("spawn.yml"), plugin.getSLF4JLogger());
+        this.worldService = new WorldService(
+                plugin, plugin.getDataFolder().toPath().resolve("worlds.yml"), plugin.getSLF4JLogger());
     }
 
     public void start() {
         registry.start(configService);
         registry.start(databaseService);
-        npcIdentityService = new NpcIdentityService(plugin, new NpcIdRepository(databaseService.databaseManager()));
+        npcIdentityService = new NpcIdentityService(plugin, new NpcIdRepository(databaseService.databaseManager()),
+                new NpcBindingRepository(databaseService.databaseManager()));
         modCompatService = new ModCompatService(plugin, () -> configService.current().clientMod(), plugin.getSLF4JLogger());
         registry.start(modCompatService);
         registry.start(flattenService);
         registry.start(zoneRegistry);
-        registry.start(new PlayerListenerService(plugin, new ZoneProtectionListener(zoneRegistry)));
+        registry.start(new PlayerListenerService(plugin, new ZoneProtectionListener(zoneRegistry, npcIdentityService)));
         registry.start(new PlayerListenerService(plugin, new ZoneWandListener(zoneSelectionService)));
 
         PlayerProfileRepository profileRepository = new PlayerProfileRepository(databaseService.databaseManager());
@@ -195,6 +213,16 @@ public final class RPGQuestBootstrap {
                 plugin, new PlayerConnectionListener(plugin, playerProfileService)));
         registry.start(new PlayerListenerService(
                 plugin, new ResourcePackListener(configService, plugin.getSLF4JLogger())));
+
+        registry.start(spawnService);
+        registry.start(new PlayerListenerService(plugin, spawnService.listener()));
+        registry.start(worldService);
+
+        HubWorldRulesService hubWorldRulesService = new HubWorldRulesService(
+                worldService, () -> configService.current().hub(), plugin.getSLF4JLogger());
+        registry.start(hubWorldRulesService);
+        registry.start(new PlayerListenerService(plugin, hubWorldRulesService.listener()));
+        registry.start(new PlayerListenerService(plugin, new HubWorldProtectionListener(() -> configService.current().hub())));
 
         registry.start(questEngine);
         registry.start(questMessagesService);
@@ -296,6 +324,11 @@ public final class RPGQuestBootstrap {
         registry.start(portalService);
         registry.start(new PlayerListenerService(plugin, portalService.listener()));
 
+        registry.start(worldPortalRegistry);
+        registry.start(new PlayerListenerService(plugin,
+                new WorldPortalTeleportListener(worldPortalRegistry, worldService,
+                        () -> configService.current().randomSafeArrival(), plugin.getSLF4JLogger())));
+
         ClaimRepository claimRepository = new ClaimRepository(databaseService.databaseManager());
         claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService, progressionService);
         registry.start(claimService);
@@ -312,6 +345,10 @@ public final class RPGQuestBootstrap {
         registry.start(dialogueSessionEngine);
         dialogueSessionEngine.setRenderer(createRenderer(dialogueSessionEngine));
         registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));
+        var citizensDialogueListener = dialogueSessionEngine.citizensNpcInteractListener();
+        if (citizensDialogueListener != null) {
+            registry.start(new PlayerListenerService(plugin, citizensDialogueListener));
+        }
 
         questJournalService = new QuestJournalService(
                 plugin, questEngine, questProgressEngine, variableRepository, configService.current().journal());
@@ -322,9 +359,11 @@ public final class RPGQuestBootstrap {
     }
 
     private DialogueRenderer createRenderer(DialogueSessionEngine handler) {
-        return configService.current().dialogue().renderer() == RendererKind.PAPER_DIALOG
-                ? new PaperDialogRenderer(handler)
-                : new ChatDialogueRenderer(handler);
+        ChatDialogueRenderer chat = new ChatDialogueRenderer(handler);
+        if (configService.current().dialogue().renderer() == RendererKind.PAPER_DIALOG) {
+            return new FallbackDialogueRenderer(new PaperDialogRenderer(handler), chat, plugin.getSLF4JLogger());
+        }
+        return chat;
     }
 
     public void stop() {
@@ -435,6 +474,10 @@ public final class RPGQuestBootstrap {
         return destinationRegistry;
     }
 
+    public WorldPortalRegistry worldPortalRegistry() {
+        return worldPortalRegistry;
+    }
+
     public PortalService portalService() {
         return portalService;
     }
@@ -457,6 +500,14 @@ public final class RPGQuestBootstrap {
 
     public ModCompatService modCompatService() {
         return modCompatService;
+    }
+
+    public SpawnService spawnService() {
+        return spawnService;
+    }
+
+    public WorldService worldService() {
+        return worldService;
     }
 
     private void registerCommands() {
@@ -558,7 +609,7 @@ public final class RPGQuestBootstrap {
 
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(
                 flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
-                mobRegistry, mobService, npcIdentityService);
+                mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

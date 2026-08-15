@@ -96,4 +96,53 @@ class QuestProgressRepositoryTest {
     void schemaIsCreatedOnTemporaryDatabase() {
         assertTrue(Files.exists(tempDir.resolve("data.db")));
     }
+
+    @Test
+    void deleteQuestRemovesStateAndObjectivesButNotOtherQuests() throws Exception {
+        NamespacedKey other = new NamespacedKey("rpgquest", "other_quest");
+        repository.upsertState(playerUuid, QUEST_ID, QuestState.COMPLETED, null)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.setObjectiveProgress(playerUuid, QUEST_ID, "step_one", 0, 3)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.upsertState(playerUuid, other, QuestState.ACTIVE, "step_one")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.setObjectiveProgress(playerUuid, other, "step_one", 0, 1)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        repository.deleteQuest(playerUuid, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertTrue(repository.find(playerUuid, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+        assertTrue(repository.findObjectiveProgress(playerUuid, QUEST_ID, "step_one")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+
+        var otherRecord = repository.find(playerUuid, other).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertTrue(otherRecord.isPresent(), "les autres quêtes du joueur ne doivent pas être affectées");
+        Map<Integer, Integer> otherProgress = repository.findObjectiveProgress(playerUuid, other, "step_one")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(1, otherProgress.get(0));
+    }
+
+    @Test
+    void deleteAllForPlayerRemovesEveryQuestAndObjective() throws Exception {
+        NamespacedKey second = new NamespacedKey("rpgquest", "second_quest");
+        repository.upsertState(playerUuid, QUEST_ID, QuestState.ACTIVE, "step_one")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.setObjectiveProgress(playerUuid, QUEST_ID, "step_one", 0, 2)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.upsertState(playerUuid, second, QuestState.COMPLETED, null)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        repository.deleteAllForPlayer(playerUuid).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertTrue(repository.findAll(playerUuid).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+        assertTrue(repository.findObjectiveProgress(playerUuid, QUEST_ID, "step_one")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+    }
+
+    @Test
+    void deleteQuestOnUntrackedQuestIsANoOp() throws Exception {
+        repository.deleteQuest(playerUuid, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertTrue(repository.find(playerUuid, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+    }
 }

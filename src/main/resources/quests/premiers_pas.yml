@@ -1,0 +1,16 @@
+id: rpgquest:premiers_pas
+title: "<gold>Premiers pas</gold>"
+description: "<gray>Va faire connaissance avec le Libraire.</gray>"
+category: intro
+icon: BOOK
+repeatable: true
+
+steps:
+  - id: parler_au_libraire
+    objectives:
+      - type: TALK_TO_NPC
+        npc: libraire
+
+rewards:
+  - type: EXPERIENCE
+    amount: 20

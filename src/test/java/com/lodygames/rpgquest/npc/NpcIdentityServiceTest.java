@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.DatabaseManager;
+import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.database.NpcIdRepository;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
@@ -47,7 +48,7 @@ class NpcIdentityServiceTest {
 
         database = new DatabaseManager(tempDir.resolve("test.db"));
         database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        service = new NpcIdentityService(plugin, new NpcIdRepository(database));
+        service = new NpcIdentityService(plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
     }
 
     @AfterEach
@@ -103,9 +104,9 @@ class NpcIdentityServiceTest {
         LivingEntity entity = spawnZombie();
         service.tag(entity, "guard").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        assertTrue(service.untag(entity));
+        assertTrue(service.untag(entity).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
         assertTrue(service.currentId(entity).isEmpty());
-        assertFalse(service.untag(entity));
+        assertFalse(service.untag(entity).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
 
         NpcIdentityService.TagResult retag = service.tag(entity, "merchant").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertEquals("merchant", retag.npcId());
@@ -121,6 +122,16 @@ class NpcIdentityServiceTest {
         entity.customName(Component.text("Guide du village"));
 
         assertEquals("guard", service.currentId(entity).orElseThrow());
+    }
+
+    @Test
+    void citizensIsUnavailableWhenThePluginIsNotInstalled() {
+        // Non-régression : sans Citizens installé (cas de cet environnement de test), le service doit
+        // se comporter exactement comme avant son introduction — jamais tenter de charger un type
+        // Citizens, jamais classer une entité vanilla comme PNJ Citizens.
+        assertFalse(service.citizensAvailable());
+        assertFalse(service.isCitizensNpc(spawnZombie()));
+        assertTrue(service.citizensNumericId(spawnZombie()).isEmpty());
     }
 
     @Test

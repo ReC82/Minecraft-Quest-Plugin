@@ -2,10 +2,12 @@ package com.lodygames.rpgquest.quest.progress;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.DatabaseManager;
+import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.database.NpcIdRepository;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
@@ -18,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.EntityType;
 import org.junit.jupiter.api.AfterEach;
@@ -66,7 +69,8 @@ class QuestProgressEngineTest {
         PlayerVariableRepository variableRepository = new PlayerVariableRepository(database);
         QuestMessagesService messagesService = new QuestMessagesService(plugin);
         messagesService.start();
-        NpcIdentityService npcIdentityService = new NpcIdentityService(plugin, new NpcIdRepository(database));
+        NpcIdentityService npcIdentityService = new NpcIdentityService(
+                plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
 
         engine = new QuestProgressEngine(plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService);
         engine.start();
@@ -205,6 +209,76 @@ class QuestProgressEngineTest {
     }
 
     @Test
+    void objectiveProgressIsShownViaActionBarNotChat() throws Exception {
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS); // amount=2
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE); // 1/2
+
+        String actionBar = PlainTextComponentSerializer.plainText().serialize(player.nextActionBar());
+        assertTrue(actionBar.contains("1/2"), () -> "actionbar attendu avec 1/2, obtenu : " + actionBar);
+        assertTrue(actionBar.contains("Tuer ZOMBIE"), () -> "la description de l'objectif doit apparaître : " + actionBar);
+        assertNull(player.nextMessage(), "aucun message de progression d'objectif ne doit apparaître dans le chat");
+    }
+
+    @Test
+    void objectiveProgressActionBarUpdatesOnEachIncrement() throws Exception {
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS); // amount=2
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE); // 1/2
+        player.nextActionBar();
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE); // 2/2 : complète l'objectif (et la quête)
+        String actionBar = PlainTextComponentSerializer.plainText().serialize(player.nextActionBar());
+        assertTrue(actionBar.contains("2/2"), () -> "actionbar attendu avec 2/2, obtenu : " + actionBar);
+    }
+
+    @Test
+    void irrelevantEventNeverTriggersAnActionBar() throws Exception {
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        engine.handleKillEntity(player, EntityType.SKELETON); // la quête attend ZOMBIE
+
+        assertNull(player.nextActionBar(), "aucune progression réelle : aucune actionbar ne doit être envoyée");
+    }
+
+    @Test
+    void advanceStepShowsObjectiveProgressForEachForciblyCompletedObjective() throws Exception {
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS); // amount=2
+
+        boolean advanced = engine.advanceStep(player, KILL_QUEST);
+
+        assertTrue(advanced);
+        String actionBar = PlainTextComponentSerializer.plainText().serialize(player.nextActionBar());
+        assertTrue(actionBar.contains("2/2"), () -> "avancement forcé : doit refléter le compteur final, obtenu : " + actionBar);
+    }
+
+    @Test
+    void acceptingAQuestNeverSendsAChatMessage() throws Exception {
+        PlayerMock player = addPlayer();
+
+        AcceptOutcome outcome = engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(AcceptOutcome.Result.ACCEPTED, outcome.result());
+        assertNull(player.nextMessage(), "le démarrage d'une quête doit passer par un Title, jamais le chat");
+    }
+
+    @Test
+    void completingAQuestNeverSendsAChatMessage() throws Exception {
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        player.nextActionBar();
+        engine.handleKillEntity(player, EntityType.ZOMBIE); // complète la quête
+
+        assertNull(player.nextMessage(), "la fin d'une quête doit passer par un Title, jamais le chat");
+    }
+
+    @Test
     void acceptRejectsWhenPrerequisiteNotCompleted() throws Exception {
         writeKillQuest(KILL_QUEST_TWO, "with_prereq.yml", 1, false, KILL_QUEST.toString());
         engine.reloadQuestDefinitions();
@@ -214,6 +288,70 @@ class QuestProgressEngineTest {
 
         assertEquals(AcceptOutcome.Result.MISSING_PREREQUISITES, outcome.result());
         assertEquals(List.of(KILL_QUEST), outcome.missingPrerequisites());
+    }
+
+    @Test
+    void resetQuestAllowsRestartEvenWhenNotRepeatable() throws Exception {
+        writeKillQuest(KILL_QUEST_TWO, "not_repeatable_reset.yml", 1, false, null);
+        engine.reloadQuestDefinitions();
+
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.handleKillEntity(player, EntityType.ZOMBIE); // complète et remet la quête
+
+        var completed = progressRepository.find(player.getUniqueId(), KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(QuestState.COMPLETED, completed.orElseThrow().state());
+
+        engine.resetQuest(player.getUniqueId(), KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertTrue(progressRepository.find(player.getUniqueId(), KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty(),
+                "l'état persisté doit avoir disparu, pas juste être remis à NOT_STARTED");
+        assertTrue(progressRepository.findObjectiveProgress(player.getUniqueId(), KILL_QUEST_TWO, "kill_step")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+
+        AcceptOutcome reaccept = engine.accept(player, KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(AcceptOutcome.Result.ACCEPTED, reaccept.result(),
+                "repeatable=false ne doit plus bloquer l'acceptation après un reset admin");
+    }
+
+    @Test
+    void resetQuestClearsInMemoryCacheAndDoesNotTouchOtherQuests() throws Exception {
+        writeKillQuest(KILL_QUEST_TWO, "kill_quest_two_reset.yml", 1, false, null);
+        engine.reloadQuestDefinitions();
+
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.accept(player, KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.handleKillEntity(player, EntityType.ZOMBIE); // 1/2 sur KILL_QUEST, complète KILL_QUEST_TWO (besoin de 1)
+
+        engine.resetQuest(player.getUniqueId(), KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertTrue(progressRepository.find(player.getUniqueId(), KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+        assertEquals(QuestState.COMPLETED, progressRepository.find(player.getUniqueId(), KILL_QUEST_TWO)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow().state(),
+                "resetQuest ne doit affecter que la quête ciblée");
+
+        // La progression en mémoire de KILL_QUEST doit aussi avoir disparu : un kill supplémentaire ne la fait pas avancer.
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        assertTrue(progressRepository.find(player.getUniqueId(), KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+    }
+
+    @Test
+    void resetAllQuestsClearsEveryQuestForPlayer() throws Exception {
+        writeKillQuest(KILL_QUEST_TWO, "kill_quest_two_reset_all.yml", 1, false, null);
+        engine.reloadQuestDefinitions();
+
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.accept(player, KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        engine.resetAllQuests(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertTrue(progressRepository.findAll(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+
+        AcceptOutcome reaccept = engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(AcceptOutcome.Result.ACCEPTED, reaccept.result());
     }
 
     /** Ajoute un joueur MockBukkit et crée son profil dans la base de test (requis par la FK de quest_progress). */

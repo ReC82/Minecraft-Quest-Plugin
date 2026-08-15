@@ -12,6 +12,12 @@ import org.bukkit.event.player.PlayerInteractEntityEvent;
  * docs/ARCHITECTURE.md) via {@code /rpgadmin npc tag}. Le nom affiché reste
  * purement cosmétique : le renommer à l'enclume ne casse jamais le lien avec
  * l'objectif {@code TALK_TO_NPC}.
+ *
+ * <p>Ne traite jamais un PNJ Citizens (voir {@link QuestCitizensNpcInteractListener})
+ * : Citizens ne fait pas toujours propager {@code PlayerInteractEntityEvent}
+ * de façon fiable pour ses propres entités, donc ce n'est pas une source
+ * fiable pour elles — les deux écouteurs ne doivent jamais se chevaucher sur
+ * la même entité.</p>
  */
 final class QuestNpcInteractListener implements Listener {
 
@@ -25,6 +31,9 @@ final class QuestNpcInteractListener implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onInteract(PlayerInteractEntityEvent event) {
+        if (npcIdentityService.isCitizensNpc(event.getRightClicked())) {
+            return;
+        }
         Optional<String> npcId = npcIdentityService.currentId(event.getRightClicked());
         if (npcId.isEmpty()) {
             return;

@@ -1,24 +1,33 @@
-# Messages MiniMessage envoyés par les commandes /quest. Personnalisables
-# sans recompiler ; rechargés avec /quest admin reload.
+# Messages MiniMessage envoyés par les commandes /quest et les notifications
+# de progression. Personnalisables sans recompiler ; rechargés avec
+# /quest admin reload.
 # Placeholders disponibles selon le message : <quest> <category> <state>
-# <step> <objective> <current> <total> <missing> <permission>
+# <objective> <current> <total> <missing> <permission>
+#
+# started-title/started-subtitle et completed-title/completed-subtitle sont
+# affichés via un Title Adventure (jamais le chat) au démarrage/à la fin
+# d'une quête ; objective-progress via l'ActionBar à chaque progression d'un
+# objectif (qu'elle le complète ou non). Volontairement hors du chat pour ne
+# pas le spammer — voir docs-site/quests.html.
 
 quest:
-  accepted: "<green>Quête acceptée :</green> <white><quest></white>"
   already-active: "<red>Tu as déjà accepté :</red> <white><quest></white>"
   not-repeatable: "<red>Quête déjà terminée (non répétable) :</red> <white><quest></white>"
   prerequisites-missing: "<red>Prérequis manquant(s) pour</red> <white><quest></white><red> :</red> <white><missing></white>"
   unknown: "<red>Quête inconnue :</red> <white><quest></white>"
   abandoned: "<yellow>Quête abandonnée :</yellow> <white><quest></white>"
   nothing-to-abandon: "<red>Aucune quête active à abandonner :</red> <white><quest></white>"
-  step-completed: "<gold>Étape terminée</gold> <gray>(<quest>) :</gray> <white><step></white>"
-  completed: "<gold><bold>Quête terminée !</bold></gold> <white><quest></white>"
   force-completed: "<gold>Quête forcée à terminée (admin) :</gold> <white><quest></white>"
   progress-empty: "<gray>Aucune quête en cours.</gray>"
   progress-line: "<yellow><quest></yellow> <gray>-</gray> <white><state></white>"
   progress-objective-line: "<gray> - <objective> :</gray> <white><current>/<total></white>"
   list-header: "<gold><bold>Quêtes</bold></gold>"
   list-entry: "<white><quest></white> <gray>[<category>] -</gray> <yellow><state></yellow>"
+  started-title: "<green><bold>Quête commencée</bold></green>"
+  started-subtitle: "<white><quest></white>"
+  objective-progress: "<yellow><objective></yellow> <gray><current>/<total></gray>"
+  completed-title: "<gold><bold>Quête terminée</bold></gold>"
+  completed-subtitle: "<white><quest></white>"
 
 permission:
   denied: "<red>Permission manquante :</red> <white><permission></white>"

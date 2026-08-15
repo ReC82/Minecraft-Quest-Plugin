@@ -123,6 +123,8 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
                         "<red>Cette sélection chevauche une zone protégée (village/safe zone).</red>"));
                 case TOO_CLOSE_TO_PORTAL -> player.sendMessage(MM.deserialize(
                         "<red>Cette sélection est trop proche d'un portail.</red>"));
+                case FORBIDDEN_WORLD -> player.sendMessage(MM.deserialize(
+                        "<red>Les claims sont interdits dans le monde Hub.</red>"));
             }
         })).exceptionally(error -> {
             plugin.getSLF4JLogger().error("Échec de /claim create pour {}", player.getUniqueId(), error);

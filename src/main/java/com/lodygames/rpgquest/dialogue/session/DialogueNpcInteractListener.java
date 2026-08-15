@@ -21,6 +21,10 @@ import org.bukkit.event.player.PlayerInteractEntityEvent;
  * {@link NamespacedKey}, ce qui élimine l'{@code IllegalArgumentException}
  * historique (« Non [a-z0-9_-./] character in key ») déclenchée par un nom
  * personnalisé contenant une majuscule ou une espace.
+ *
+ * <p>Ne traite jamais un PNJ Citizens (voir {@link DialogueCitizensNpcInteractListener})
+ * : Citizens ne fait pas toujours propager {@code PlayerInteractEntityEvent}
+ * de façon fiable pour ses propres entités.</p>
  */
 final class DialogueNpcInteractListener implements Listener {
 
@@ -39,6 +43,9 @@ final class DialogueNpcInteractListener implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onInteract(PlayerInteractEntityEvent event) {
+        if (npcIdentityService.isCitizensNpc(event.getRightClicked())) {
+            return;
+        }
         Optional<String> npcId = npcIdentityService.currentId(event.getRightClicked());
         if (npcId.isEmpty()) {
             return;

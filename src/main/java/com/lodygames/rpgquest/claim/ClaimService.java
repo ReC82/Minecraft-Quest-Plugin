@@ -139,7 +139,7 @@ public final class ClaimService implements PluginService {
 
     public enum CreateOutcome {
         CREATED, INVALID_ID, DIFFERENT_WORLDS, DUPLICATE_ID, TOO_LARGE, TOO_MANY_CLAIMS,
-        OVERLAPS_CLAIM, OVERLAPS_PROTECTED_ZONE, TOO_CLOSE_TO_PORTAL
+        OVERLAPS_CLAIM, OVERLAPS_PROTECTED_ZONE, TOO_CLOSE_TO_PORTAL, FORBIDDEN_WORLD
     }
 
     public CompletableFuture<CreateOutcome> create(Player owner, String id, Location pos1, Location pos2) {
@@ -147,6 +147,9 @@ public final class ClaimService implements PluginService {
             return CompletableFuture.completedFuture(CreateOutcome.DIFFERENT_WORLDS);
         }
         String world = pos1.getWorld().getName();
+        if (world.equals(configService.current().hub().world())) {
+            return CompletableFuture.completedFuture(CreateOutcome.FORBIDDEN_WORLD);
+        }
         int minX = Math.min(pos1.getBlockX(), pos2.getBlockX());
         int minY = Math.min(pos1.getBlockY(), pos2.getBlockY());
         int minZ = Math.min(pos1.getBlockZ(), pos2.getBlockZ());

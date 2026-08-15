@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 11;
+    private static final int CURRENT_VERSION = 12;
 
     private SchemaMigrator() {
     }
@@ -64,6 +64,10 @@ public final class SchemaMigrator {
         if (version < 11) {
             applyV11(connection);
             version = 11;
+        }
+        if (version < 12) {
+            applyV12(connection);
+            version = 12;
         }
 
         if (version != startingVersion) {
@@ -391,6 +395,25 @@ public final class SchemaMigrator {
             statement.execute("""
                     CREATE TABLE IF NOT EXISTS npc_ids (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        created_at TEXT NOT NULL
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV12(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Liaison persistante PNJ Citizens <-> identifiant logique RPGQuest (voir
+            // com.lodygames.rpgquest.npc.NpcIdentityService / NpcBindingRepository). Nécessaire car
+            // Citizens recrée une nouvelle entité Bukkit éphémère à chaque (re)spawn — un
+            // PersistentDataContainer posé sur cette entité ne survit donc jamais à un redémarrage.
+            // citizens_uuid = NPC#getUniqueId(), garanti stable par Citizens lui-même (contrairement
+            // à NPC#getId(), documenté par Citizens comme non garanti unique entre sessions).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS npc_citizens_bindings (
+                        citizens_uuid TEXT PRIMARY KEY,
+                        citizens_numeric_id INTEGER NOT NULL,
+                        npc_id TEXT NOT NULL,
                         created_at TEXT NOT NULL
                     )
                     """);

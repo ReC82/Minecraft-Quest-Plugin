@@ -37,6 +37,14 @@ public final class QuestProgressRepository {
             INSERT INTO quest_objective_progress (player_uuid, quest_id, step_id, objective_index, progress) VALUES (?, ?, ?, ?, ?)
             ON CONFLICT (player_uuid, quest_id, step_id, objective_index) DO UPDATE SET progress = excluded.progress
             """;
+    private static final String DELETE_STATE =
+            "DELETE FROM quest_progress WHERE player_uuid = ? AND quest_id = ?";
+    private static final String DELETE_OBJECTIVE_PROGRESS =
+            "DELETE FROM quest_objective_progress WHERE player_uuid = ? AND quest_id = ?";
+    private static final String DELETE_ALL_STATE =
+            "DELETE FROM quest_progress WHERE player_uuid = ?";
+    private static final String DELETE_ALL_OBJECTIVE_PROGRESS =
+            "DELETE FROM quest_objective_progress WHERE player_uuid = ?";
 
     private final DatabaseManager database;
 
@@ -111,6 +119,44 @@ public final class QuestProgressRepository {
                 statement.setString(3, stepId);
                 statement.setInt(4, objectiveIndex);
                 statement.setInt(5, progress);
+                statement.executeUpdate();
+            }
+            return null;
+        });
+    }
+
+    /**
+     * Supprime intégralement l'état et les compteurs d'objectifs d'une quête pour un joueur (pas de
+     * remise à zéro : la ligne disparaît, ce qui équivaut à {@code NOT_STARTED} — voir
+     * {@link com.lodygames.rpgquest.quest.progress.QuestProgressEngine#resetQuest}). Les autres
+     * quêtes du joueur ne sont jamais affectées ({@code quest_id} fait partie du filtre des deux
+     * requêtes).
+     */
+    public CompletableFuture<Void> deleteQuest(UUID playerUuid, NamespacedKey questId) {
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(DELETE_STATE)) {
+                statement.setString(1, playerUuid.toString());
+                statement.setString(2, questId.toString());
+                statement.executeUpdate();
+            }
+            try (PreparedStatement statement = connection.prepareStatement(DELETE_OBJECTIVE_PROGRESS)) {
+                statement.setString(1, playerUuid.toString());
+                statement.setString(2, questId.toString());
+                statement.executeUpdate();
+            }
+            return null;
+        });
+    }
+
+    /** Équivalent de {@link #deleteQuest} pour toutes les quêtes d'un joueur en une fois. */
+    public CompletableFuture<Void> deleteAllForPlayer(UUID playerUuid) {
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(DELETE_ALL_STATE)) {
+                statement.setString(1, playerUuid.toString());
+                statement.executeUpdate();
+            }
+            try (PreparedStatement statement = connection.prepareStatement(DELETE_ALL_OBJECTIVE_PROGRESS)) {
+                statement.setString(1, playerUuid.toString());
                 statement.executeUpdate();
             }
             return null;

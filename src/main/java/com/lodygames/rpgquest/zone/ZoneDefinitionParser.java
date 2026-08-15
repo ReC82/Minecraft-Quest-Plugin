@@ -71,11 +71,15 @@ final class ZoneDefinitionParser {
                 flags.getBoolean("lava", defaults.allowLava()),
                 flags.getBoolean("pistons-across-border", defaults.allowPistonsAcrossBorder()),
                 flags.getBoolean("hostile-spawn", defaults.allowHostileSpawn()),
+                flags.getBoolean("hostile-damage", defaults.allowHostileDamage()),
+                flags.getBoolean("environmental-damage", defaults.allowEnvironmentalDamage()),
+                flags.getBoolean("npc-damage", defaults.allowNpcDamage()),
                 flags.getBoolean("doors", defaults.allowDoors()),
                 flags.getBoolean("buttons", defaults.allowButtons()),
                 flags.getBoolean("levers", defaults.allowLevers()),
                 flags.getBoolean("npc-interact", defaults.allowNpcInteract()),
-                flags.getBoolean("public-containers", defaults.allowPublicContainers()));
+                flags.getBoolean("public-containers", defaults.allowPublicContainers()),
+                flags.getBoolean("force-day", defaults.forceDay()));
     }
 
     record ParseResult(ZoneDefinition zone, List<ZoneLoadIssue> issues) {

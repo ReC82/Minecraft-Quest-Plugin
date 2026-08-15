@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dialogues — RPGQuest</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/styles.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg">
+  <div class="container">
+    <a class="navbar-brand" href="index.html">RPGQuest</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="nav">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link" href="index.html">Accueil</a></li>
+        <li class="nav-item"><a class="nav-link" href="npc.html">PNJ</a></li>
+        <li class="nav-item"><a class="nav-link active" href="dialogues.html">Dialogues</a></li>
+        <li class="nav-item"><a class="nav-link" href="quests.html">Quêtes</a></li>
+        <li class="nav-item"><a class="nav-link" href="admin-testing.html">Outils admin de test</a></li>
+        <li class="nav-item"><a class="nav-link" href="hub-safe-zone.html">Spawn du village</a></li>
+        <li class="nav-item"><a class="nav-link" href="worlds.html">Mondes</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main class="container py-5">
+  <h1>Dialogues</h1>
+  <p class="text-body-secondary">
+    Implémentation : <code>dialogue.DialogueDefinitionParser</code> (validation),
+    <code>dialogue.session.DialogueSessionEngine</code> (exécution),
+    <code>dialogue.render.*</code> (affichage). Un fichier par dialogue, dans
+    <code>plugins/RPGQuest/dialogues/*.yml</code>.
+  </p>
+
+  <section class="my-5">
+    <h2 class="h4">Comment fonctionne un dialogue</h2>
+    <p>
+      Un dialogue est un graphe de <strong>nœuds</strong> (<code>nodes</code>). Chaque nœud a un
+      locuteur (<code>speaker</code>), un texte (<code>text</code>), et une liste de
+      <strong>choix</strong> (<code>choices</code>). L'ouverture d'un dialogue affiche toujours le
+      nœud désigné par <code>start</code>.
+    </p>
+    <p>
+      Un choix cliqué exécute ses <code>actions</code> dans l'ordre, puis :
+    </p>
+    <ul>
+      <li>si les actions contiennent <code>CLOSE</code> ou <code>OPEN_DIALOGUE</code>, cette
+        transition prend le pas sur tout le reste ;</li>
+      <li>sinon, si le choix a un champ <code>next</code>, ce nœud (du <strong>même</strong>
+        dialogue) est affiché ensuite ;</li>
+      <li>sinon, le dialogue se ferme — jamais de nœud « bloqué » sans issue.</li>
+    </ul>
+    <p>
+      Un même dialogue peut boucler sur lui-même via <code>next</code> (menu « hub ») ; c'est un
+      usage normal, pas une erreur.
+    </p>
+
+    <pre class="rpgq-code"><code>id: rpgquest:guide
+start: greeting
+
+nodes:
+  greeting:
+    speaker: "Guide"
+    text: "Bienvenue au village !"
+    choices:
+      - text: "Très bien, j'y vais."
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:premiers_pas
+      - text: "Non merci."
+        actions:
+          - type: CLOSE</code></pre>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Comment fonctionnent les choix</h2>
+    <p>
+      Chaque choix peut porter des <strong>conditions</strong> (visibilité) et des
+      <strong>actions</strong> (effet au clic). Un choix sans <code>conditions</code> est toujours
+      visible. Les conditions sont réévaluées <strong>au clic</strong>, pas seulement à
+      l'affichage — un choix affiché puis devenu invalide entre-temps (ex. quête acceptée par un
+      autre biais) est silencieusement ignoré au clic.
+    </p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Condition</th><th>Champs</th><th>Effet</th></tr></thead>
+      <tbody>
+        <tr><td><code>QUEST_STATE</code></td><td><code>quest</code>, <code>state</code></td>
+          <td>Vrai si la quête du joueur est dans l'état donné
+            (<code>NOT_STARTED</code>/<code>ACTIVE</code>/<code>READY_TO_TURN_IN</code>/<code>COMPLETED</code>/<code>FAILED</code>/<code>ABANDONED</code>).</td></tr>
+        <tr><td><code>HAS_ITEM</code></td><td><code>material</code>, <code>amount</code></td>
+          <td>Vrai si l'inventaire contient au moins <code>amount</code> de <code>material</code>.</td></tr>
+        <tr><td><code>HAS_PERMISSION</code></td><td><code>permission</code></td>
+          <td>Vrai si le joueur a cette permission Bukkit.</td></tr>
+        <tr><td><code>VARIABLE_EQUALS</code></td><td><code>key</code>, <code>value</code></td>
+          <td>Vrai si la variable joueur <code>key</code> vaut <code>value</code>.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Actions disponibles</h2>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Action</th><th>Champs</th><th>Effet</th></tr></thead>
+      <tbody>
+        <tr><td><code>START_QUEST</code></td><td><code>quest</code></td><td>Accepte la quête pour le joueur (équivalent <code>/quest accept</code>).</td></tr>
+        <tr><td><code>ADVANCE_QUEST</code></td><td><code>quest</code></td><td>Satisfait immédiatement tous les objectifs de l'étape courante.</td></tr>
+        <tr><td><code>TURN_IN_QUEST</code></td><td><code>quest</code></td><td>Force la remise/complétion de la quête (récompenses accordées).</td></tr>
+        <tr><td><code>GIVE_ITEM</code></td><td><code>material</code>, <code>amount</code></td><td>Donne l'objet au joueur.</td></tr>
+        <tr><td><code>TAKE_ITEM</code></td><td><code>material</code>, <code>amount</code></td><td>Retire l'objet de l'inventaire.</td></tr>
+        <tr><td><code>SET_VARIABLE</code></td><td><code>key</code>, <code>value</code></td><td>Écrit une variable joueur persistante.</td></tr>
+        <tr><td><code>RUN_SAFE_COMMAND</code></td><td><code>command</code></td><td>Exécute une commande console — nom de commande vérifié au <strong>chargement</strong> contre <code>config.yml</code> → <code>dialogue.allowed-commands</code>.</td></tr>
+        <tr><td><code>OPEN_DIALOGUE</code></td><td><code>dialogue</code></td><td>Ferme le nœud courant et ouvre un autre dialogue.</td></tr>
+        <tr><td><code>OPEN_MERCHANT</code></td><td><code>merchant</code></td><td>Ferme le dialogue et ouvre la vitrine du marchand désigné.</td></tr>
+        <tr><td><code>CLOSE</code></td><td>—</td><td>Ferme le dialogue immédiatement.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Renderer utilisé</h2>
+    <p>
+      Contrôlé par <code>config.yml</code> → <code>dialogue.renderer</code>. Deux renderers
+      existent, tous deux dans <code>dialogue.render</code> :
+    </p>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="rpgq-card p-3 h-100">
+          <h3 class="h6"><span class="badge text-bg-warning badge-status">Par défaut</span> <code>paper-dialog</code></h3>
+          <p class="text-body-secondary small mb-1">
+            <code>PaperDialogRenderer</code> — vraie fenêtre native Paper avec de vrais boutons
+            cliquables (<code>io.papermc.paper.dialog.Dialog</code>). Repose sur une API marquée
+            <code>@ApiStatus.Experimental</code> par Paper lui-même (le contrat pourrait changer
+            dans une future version de Paper), mais réelle et fonctionnelle contre la version
+            exacte de Paper ciblée par ce projet.
+          </p>
+          <p class="text-body-secondary small mb-0">
+            En cas d'exception à l'exécution, <code>FallbackDialogueRenderer</code> bascule
+            automatiquement sur le chat pour ce dialogue — le joueur voit toujours quelque chose.
+          </p>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="rpgq-card p-3 h-100">
+          <h3 class="h6"><span class="badge text-bg-secondary badge-status">Alternative</span> <code>chat</code></h3>
+          <p class="text-body-secondary small mb-1">
+            <code>ChatDialogueRenderer</code> — texte MiniMessage dans le chat, choix sous forme de
+            lignes numérotées cliquables (<code>ClickEvent.callback</code>, une API Adventure
+            stable). Fonctionne avec n'importe quel client, aucune API instable.
+          </p>
+          <p class="text-body-secondary small mb-0">
+            À choisir explicitement (<code>dialogue.renderer: chat</code>) si vous préférez éviter
+            toute dépendance à une API expérimentale.
+          </p>
+        </div>
+      </div>
+    </div>
+    <p class="text-body-secondary mt-3 mb-0">
+      Dans les deux cas, <code>speaker</code>/<code>text</code>/le libellé des choix sont du
+      MiniMessage réellement interprété (couleurs, mise en forme) — jamais affiché sous forme de
+      balises brutes au joueur.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Comment tester un dialogue</h2>
+    <ol>
+      <li>Placez le fichier dans <code>plugins/RPGQuest/dialogues/&lt;id&gt;.yml</code> (en
+        développement local : <code>run/plugins/RPGQuest/dialogues/</code>).</li>
+      <li>Redémarrez le serveur complètement (<code>stop</code> puis relancer) — les dialogues ne
+        se rechargent <strong>jamais</strong> à chaud, aucune commande ne l'expose.</li>
+      <li>Deux façons de l'ouvrir en jeu :</li>
+    </ol>
+    <pre class="rpgq-code"><code># À distance, sans PNJ (admin, test)
+/dialogue open &lt;joueur&gt; &lt;dialogueId&gt;
+
+# Via un PNJ identifié (voir la page PNJ) — clic droit dessus, si un
+# dialogue dont l'id (sans namespace) correspond exactement à l'id du PNJ existe</code></pre>
+  </section>
+
+</main>
+
+<footer class="text-center">
+  <div class="container">RPGQuest — documentation générée pour ce dépôt, à jour du code actuel.</div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

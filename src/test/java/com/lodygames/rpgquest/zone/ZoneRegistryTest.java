@@ -33,6 +33,43 @@ class ZoneRegistryTest {
     }
 
     @Test
+    void bundledCentralVillageHasFullSafetyProtectionAndForcedDaylight() {
+        registry.start();
+
+        ZoneFlags flags = registry.find("central_village").orElseThrow().flags();
+        assertFalse(flags.allowPvp());
+        assertFalse(flags.allowBlockBreak());
+        assertFalse(flags.allowBlockPlace());
+        assertFalse(flags.allowExplosions());
+        assertFalse(flags.allowHostileSpawn());
+        assertFalse(flags.allowHostileDamage(), "dégâts de mob hostile doivent être bloqués par défaut dans le hub");
+        assertFalse(flags.allowEnvironmentalDamage(), "dégâts environnementaux doivent être bloqués par défaut dans le hub");
+        assertFalse(flags.allowNpcDamage(), "PNJ Citizens du hub doivent être protégés par défaut");
+        assertTrue(flags.forceDay(), "le hub doit visuellement rester de jour");
+    }
+
+    @Test
+    void newSafetyFlagsRoundTripThroughPersistence() {
+        registry.start();
+        ZoneFlags customFlags = new ZoneFlags(
+                false, false, false, false, false, false, false, false,
+                true, true, true,
+                true, true, true, true, false,
+                true);
+        ZoneDefinition zone = new ZoneDefinition("custom", "world", 200, 0, 200, 220, 255, 220, customFlags);
+
+        assertEquals(ZoneRegistry.CreateOutcome.CREATED, registry.create(zone));
+
+        ZoneRegistry second = new ZoneRegistry(tempDir.resolve("zones"), NOPLogger.NOP_LOGGER);
+        second.reload();
+        ZoneFlags reloaded = second.find("custom").orElseThrow().flags();
+        assertTrue(reloaded.allowHostileDamage());
+        assertTrue(reloaded.allowEnvironmentalDamage());
+        assertTrue(reloaded.allowNpcDamage());
+        assertTrue(reloaded.forceDay());
+    }
+
+    @Test
     void createPersistsAZoneFileAndReloadsIt() {
         registry.start();
         ZoneDefinition zone = new ZoneDefinition("shop", "world", 200, 0, 200, 220, 255, 220, ZoneFlags.defaults());

@@ -13,6 +13,8 @@ public record PluginConfig(
         BackpackConfig backpacks,
         WebExportConfig webExport,
         StoreConfig store,
-        ModCompatConfig clientMod
+        ModCompatConfig clientMod,
+        RandomSafeArrivalConfig randomSafeArrival,
+        HubConfig hub
 ) {
 }

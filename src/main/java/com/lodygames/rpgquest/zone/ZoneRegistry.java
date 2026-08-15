@@ -131,11 +131,15 @@ public final class ZoneRegistry implements PluginService {
             yaml.set("flags.lava", flags.allowLava());
             yaml.set("flags.pistons-across-border", flags.allowPistonsAcrossBorder());
             yaml.set("flags.hostile-spawn", flags.allowHostileSpawn());
+            yaml.set("flags.hostile-damage", flags.allowHostileDamage());
+            yaml.set("flags.environmental-damage", flags.allowEnvironmentalDamage());
+            yaml.set("flags.npc-damage", flags.allowNpcDamage());
             yaml.set("flags.doors", flags.allowDoors());
             yaml.set("flags.buttons", flags.allowButtons());
             yaml.set("flags.levers", flags.allowLevers());
             yaml.set("flags.npc-interact", flags.allowNpcInteract());
             yaml.set("flags.public-containers", flags.allowPublicContainers());
+            yaml.set("flags.force-day", flags.forceDay());
             yaml.save(target.toFile());
         } catch (IOException e) {
             logger.error("Impossible d'écrire la zone {} dans {}.", zone.id(), target, e);

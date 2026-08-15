@@ -41,9 +41,11 @@ public final class ConfigValidator {
         WebExportConfig webExport = validateWebExport(section);
         StoreConfig store = validateStore(section);
         ModCompatConfig clientMod = validateModCompat(section);
+        RandomSafeArrivalConfig randomSafeArrival = validateRandomSafeArrival(section);
+        HubConfig hub = validateHub(section);
         return new PluginConfig(
                 debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression,
-                backpacks, webExport, store, clientMod);
+                backpacks, webExport, store, clientMod, randomSafeArrival, hub);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -124,7 +126,7 @@ public final class ConfigValidator {
     private static DialogueConfig validateDialogue(ConfigurationSection section) throws ConfigValidationException {
         ConfigurationSection dialogue = section.getConfigurationSection("dialogue");
 
-        String rawRenderer = dialogue != null ? dialogue.getString("renderer", "chat") : "chat";
+        String rawRenderer = dialogue != null ? dialogue.getString("renderer", "paper-dialog") : "paper-dialog";
         RendererKind renderer = switch (rawRenderer.toLowerCase(Locale.ROOT)) {
             case "chat" -> RendererKind.CHAT;
             case "paper-dialog" -> RendererKind.PAPER_DIALOG;
@@ -513,5 +515,44 @@ public final class ConfigValidator {
 
     private static ModCompatConfig defaultModCompat() {
         return new ModCompatConfig(false, 60);
+    }
+
+    private static RandomSafeArrivalConfig validateRandomSafeArrival(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection travel = section.getConfigurationSection("travel.random-safe-arrival");
+        if (travel == null) {
+            return defaultRandomSafeArrival();
+        }
+
+        int minRadius = travel.getInt("min-radius", 500);
+        if (minRadius < 0) {
+            throw new ConfigValidationException(
+                    "« travel.random-safe-arrival.min-radius » ne peut pas être négatif, valeur trouvée : " + minRadius);
+        }
+        int maxRadius = travel.getInt("max-radius", 5000);
+        if (maxRadius < minRadius) {
+            throw new ConfigValidationException(
+                    "« travel.random-safe-arrival.max-radius » doit être supérieur ou égal à min-radius, valeurs trouvées : "
+                            + maxRadius + " < " + minRadius);
+        }
+        int maxAttempts = travel.getInt("max-attempts", 20);
+        if (maxAttempts < 1) {
+            throw new ConfigValidationException(
+                    "« travel.random-safe-arrival.max-attempts » doit être au moins 1, valeur trouvée : " + maxAttempts);
+        }
+
+        return new RandomSafeArrivalConfig(minRadius, maxRadius, maxAttempts);
+    }
+
+    private static RandomSafeArrivalConfig defaultRandomSafeArrival() {
+        return new RandomSafeArrivalConfig(500, 5000, 20);
+    }
+
+    private static HubConfig validateHub(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection hub = section.getConfigurationSection("hub");
+        String world = hub != null ? hub.getString("world", "world_hub") : "world_hub";
+        if (world.isBlank()) {
+            throw new ConfigValidationException("« hub.world » ne peut pas être vide.");
+        }
+        return new HubConfig(world);
     }
 }

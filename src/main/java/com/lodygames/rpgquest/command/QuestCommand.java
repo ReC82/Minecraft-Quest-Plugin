@@ -14,6 +14,7 @@ import com.lodygames.rpgquest.quest.progress.CompleteOutcome;
 import com.lodygames.rpgquest.quest.progress.ObjectiveProgressView;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.quest.progress.QuestStepProgressView;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,7 +37,7 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
             List.of("list", "accept", "progress", "abandon", "complete", "admin");
-    private static final List<String> ADMIN_SUBCOMMANDS = List.of("reload", "validate");
+    private static final List<String> ADMIN_SUBCOMMANDS = List.of("reload", "validate", "reset");
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
     private final RPGQuestPlugin plugin;
@@ -89,7 +90,7 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
                     for (Map.Entry<NamespacedKey, QuestState> entry : states.entrySet()) {
                         questEngine.find(entry.getKey()).ifPresent(quest -> sender.sendMessage(messages().format(
                                 "quest.list-entry",
-                                Placeholder.unparsed("quest", quest.title().base()),
+                                Placeholder.parsed("quest", quest.title().base()),
                                 Placeholder.unparsed("category", quest.category()),
                                 Placeholder.unparsed("state", entry.getValue().name()))));
                     }
@@ -120,18 +121,19 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
     private void sendAcceptResult(Player player, NamespacedKey questId, AcceptOutcome outcome) {
         String questName = questName(questId);
         switch (outcome.result()) {
-            case ACCEPTED -> player.sendMessage(messages().format(
-                    "quest.accepted", Placeholder.unparsed("quest", questName)));
+            // ACCEPTED : rien ici — QuestProgressEngine.accept() affiche déjà un Title sobre
+            // (« Quête commencée »), jamais de doublon dans le chat.
+            case ACCEPTED -> { }
             case UNKNOWN_QUEST -> player.sendMessage(messages().format(
-                    "quest.unknown", Placeholder.unparsed("quest", questName)));
+                    "quest.unknown", Placeholder.parsed("quest", questName)));
             case ALREADY_ACTIVE -> player.sendMessage(messages().format(
-                    "quest.already-active", Placeholder.unparsed("quest", questName)));
+                    "quest.already-active", Placeholder.parsed("quest", questName)));
             case NOT_REPEATABLE -> player.sendMessage(messages().format(
-                    "quest.not-repeatable", Placeholder.unparsed("quest", questName)));
+                    "quest.not-repeatable", Placeholder.parsed("quest", questName)));
             case MISSING_PREREQUISITES -> player.sendMessage(messages().format(
                     "quest.prerequisites-missing",
-                    Placeholder.unparsed("quest", questName),
-                    Placeholder.unparsed("missing", outcome.missingPrerequisites().stream()
+                    Placeholder.parsed("quest", questName),
+                    Placeholder.parsed("missing", outcome.missingPrerequisites().stream()
                             .map(this::questName).collect(Collectors.joining(", ")))));
         }
     }
@@ -156,9 +158,9 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
         AbandonOutcome outcome = progressEngine.abandon(player, questId);
         String questName = questName(questId);
         if (outcome == AbandonOutcome.ABANDONED) {
-            player.sendMessage(messages().format("quest.abandoned", Placeholder.unparsed("quest", questName)));
+            player.sendMessage(messages().format("quest.abandoned", Placeholder.parsed("quest", questName)));
         } else {
-            player.sendMessage(messages().format("quest.nothing-to-abandon", Placeholder.unparsed("quest", questName)));
+            player.sendMessage(messages().format("quest.nothing-to-abandon", Placeholder.parsed("quest", questName)));
         }
     }
 
@@ -200,7 +202,7 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
             }
             for (Map.Entry<NamespacedKey, QuestState> entry : active) {
                 player.sendMessage(messages().format("quest.progress-line",
-                        Placeholder.unparsed("quest", questName(entry.getKey())),
+                        Placeholder.parsed("quest", questName(entry.getKey())),
                         Placeholder.unparsed("state", entry.getValue().name())));
             }
         }));
@@ -229,11 +231,11 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
             String questName = questName(questId);
             switch (outcome) {
                 case COMPLETED -> player.sendMessage(messages().format(
-                        "quest.force-completed", Placeholder.unparsed("quest", questName)));
+                        "quest.force-completed", Placeholder.parsed("quest", questName)));
                 case ALREADY_COMPLETED -> player.sendMessage(messages().format(
-                        "quest.not-repeatable", Placeholder.unparsed("quest", questName)));
+                        "quest.not-repeatable", Placeholder.parsed("quest", questName)));
                 case UNKNOWN_QUEST -> player.sendMessage(messages().format(
-                        "quest.unknown", Placeholder.unparsed("quest", questName)));
+                        "quest.unknown", Placeholder.parsed("quest", questName)));
             }
         }));
     }
@@ -246,8 +248,67 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
         switch (args[1].toLowerCase()) {
             case "reload" -> handleAdminReload(sender);
             case "validate" -> handleAdminValidate(sender);
+            case "reset" -> handleAdminReset(sender, args);
             default -> sendUsage(sender);
         }
+    }
+
+    /**
+     * {@code /quest admin reset <joueur> <id|all>} : outil de test, supprime l'état persisté et les
+     * compteurs d'objectifs (voir {@link QuestProgressEngine#resetQuest}/{@code resetAllQuests}) —
+     * jamais l'inventaire ni l'économie. Cible en ligne uniquement, comme les autres commandes
+     * admin agissant sur un autre joueur ({@code /skills admin}, {@code /backpack admin}...).
+     */
+    private void handleAdminReset(CommandSender sender, String[] args) {
+        if (!hasPermission(sender, ADMIN_PERMISSION)) {
+            return;
+        }
+        if (args.length < 4) {
+            sender.sendMessage(MM.deserialize("<yellow>/quest admin reset <joueur> <id|all></yellow>"));
+            return;
+        }
+        Player target = resolveOnlineTarget(sender, args[2]);
+        if (target == null) {
+            return;
+        }
+
+        if (args[3].equalsIgnoreCase("all")) {
+            progressEngine.resetAllQuests(target.getUniqueId()).thenRun(() -> runOnMainThread(() -> {
+                sender.sendMessage(MM.deserialize(
+                        "<green>Toutes les quêtes de</green> <white><player></white> <green>ont été réinitialisées.</green>",
+                        Placeholder.unparsed("player", target.getName())));
+                target.sendMessage(MM.deserialize("<yellow>Un administrateur a réinitialisé toutes tes quêtes.</yellow>"));
+            }));
+            return;
+        }
+
+        NamespacedKey questId = resolveOrWarn(sender, args[3]);
+        if (questId == null) {
+            return;
+        }
+        if (questEngine.find(questId).isEmpty()) {
+            sender.sendMessage(messages().format("quest.unknown", Placeholder.unparsed("quest", questId.toString())));
+            return;
+        }
+
+        progressEngine.resetQuest(target.getUniqueId(), questId).thenRun(() -> runOnMainThread(() -> {
+            String questName = questName(questId);
+            sender.sendMessage(MM.deserialize(
+                    "<green>Quête</green> <white><quest></white> <green>réinitialisée pour</green> <white><player></white>",
+                    Placeholder.parsed("quest", questName), Placeholder.unparsed("player", target.getName())));
+            target.sendMessage(MM.deserialize(
+                    "<yellow>Un administrateur a réinitialisé ta quête</yellow> <white><quest></white>",
+                    Placeholder.parsed("quest", questName)));
+        }));
+    }
+
+    private @Nullable Player resolveOnlineTarget(CommandSender sender, String name) {
+        Player target = sender.getServer().getPlayerExact(name);
+        if (target == null) {
+            sender.sendMessage(MM.deserialize(
+                    "<red>Joueur introuvable ou hors-ligne :</red> <white><name></white>", Placeholder.unparsed("name", name)));
+        }
+        return target;
     }
 
     private void handleAdminReload(CommandSender sender) {
@@ -314,6 +375,8 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(MM.deserialize("<yellow>/quest complete <id></yellow> <gray>- force la fin (rpgquest.admin, test)</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/quest admin reload</yellow> <gray>- recharge quêtes+messages (rpgquest.admin)</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/quest admin validate</yellow> <gray>- valide sans appliquer (rpgquest.admin)</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/quest admin reset <joueur> <id|all></yellow> <gray>- réinitialise une/toutes ses quêtes (rpgquest.admin)</gray>"));
     }
 
     private QuestMessages messages() {
@@ -343,6 +406,20 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
                         .filter(id -> id.startsWith(prefix))
                         .toList();
             }
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("reset")) {
+            String prefix = args[2].toLowerCase();
+            return plugin.getServer().getOnlinePlayers().stream()
+                    .map(Player::getName)
+                    .filter(name -> name.toLowerCase().startsWith(prefix))
+                    .toList();
+        }
+        if (args.length == 4 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("reset")) {
+            String prefix = args[3].toLowerCase();
+            List<String> options = new ArrayList<>();
+            options.add("all");
+            questEngine.quests().stream().map(QuestDefinition::id).map(NamespacedKey::toString).forEach(options::add);
+            return options.stream().filter(id -> id.toLowerCase().startsWith(prefix)).toList();
         }
         return List.of();
     }

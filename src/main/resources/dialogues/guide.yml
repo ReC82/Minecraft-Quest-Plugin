@@ -1,0 +1,20 @@
+id: rpgquest:guide
+start: greeting
+
+nodes:
+  greeting:
+    speaker: "Guide"
+    text: "<white>Bienvenue au village !</white> <gray>Va donc voir notre libraire, il pourra t'aider.</gray>"
+    choices:
+      - text: "Très bien, j'y vais."
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:premiers_pas
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:premiers_pas
+
+      - text: "Non merci."
+        actions:
+          - type: CLOSE

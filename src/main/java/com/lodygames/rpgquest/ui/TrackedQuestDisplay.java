@@ -35,7 +35,7 @@ final class TrackedQuestDisplay {
             return;
         }
         Component title = MM.deserialize("<gold><quest></gold> <gray>— <step></gray></gray>",
-                Placeholder.unparsed("quest", quest.title().base()),
+                Placeholder.parsed("quest", quest.title().base()),
                 Placeholder.unparsed("step", stepView.stepId()));
         float progress = progressOf(stepView);
 

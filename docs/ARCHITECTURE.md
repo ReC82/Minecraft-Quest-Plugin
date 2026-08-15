@@ -31,7 +31,7 @@
     │   ├── model            (modèles immuables : définition de variante, capacités)
     │   └── ability          (écouteurs/services par capacité : explosion, agressivité, division)
     ├── mod                  (détection de compatibilité avec le mod client prototype, protocole)
-    ├── npc                  (identité stable d'un PNJ, indépendante de son nom affiché)
+    ├── npc                  (identité stable d'un PNJ, indépendante de son nom affiché ; PNJ Citizens pris en charge en priorité, mapping persisté en base — voir docs/NPC_DIALOGUES_QUESTS_GUIDE.md)
     ├── player
     ├── progression          (XP RPG multi-compétences, indépendante de l'XP vanilla)
     │   ├── model            (modèles immuables : compétence, courbe de niveaux, résultat d'octroi)
@@ -1361,6 +1361,37 @@ qu'embarqués dans le jar.
     boutons, dialogues PNJ) sans configuration supplémentaire, alors que
     l'accès à un conteneur partagé est un risque de vol qui justifie un
     opt-in explicite. Voir `docs/SAFE_ZONE.md` pour le détail complet.
+-   **Village central : trois protections « sécurité du joueur » ajoutées
+    au groupe « bloqué par défaut »** (`hostile-damage`, `environmental-damage`,
+    `npc-damage`) — la mission « village central / safe zone » exige
+    explicitement des dégâts de mob hostile, des dégâts environnementaux
+    (chute, noyade, faim...) et une protection des PNJ Citizens, aucun des
+    trois n'étant couvert par les flags existants (`pvp` ne couvre qu'un
+    attaquant `Player`, `explosions` que la cause explosion). Ajoutés en
+    fin de liste de champs du record `ZoneFlags` (pas insérés au milieu)
+    pour ne casser aucun appel positionnel existant ; absence dans un
+    fichier YAML déjà écrit (ancienne zone) => `ZoneDefinitionParser`
+    retombe sur `ZoneFlags.defaults()`, donc `false` (protégé) — une zone
+    créée avant cette mission devient protégée sans action de
+    l'administrateur, jamais l'inverse. Dégâts environnementaux **jamais
+    exemptés pour un bypass admin** (contrairement à casse/pose/PvP/PNJ) :
+    il n'y a pas d'« acteur » distinct de la victime pour une chute ou une
+    noyade, donc rien à exempter côté acteur — un admin qui voudrait
+    prendre des dégâts délibérément le ferait hors zone.
+-   **`forceDay` — pas une protection, un réglage cosmétique séparé** —
+    Minecraft/Paper n'offre aucune heure différente pour une seule région
+    d'un même monde (`World#setTime` est global par monde) ; figer
+    l'horloge du monde entier pour un confort visuel local casserait la
+    pousse des cultures et le spawn de monstres partout ailleurs. Solution
+    retenue : `Player#setPlayerTime`/`resetPlayerTime` (API Bukkit stable,
+    pas expérimentale), appliqué uniquement pendant qu'un joueur est
+    physiquement dans une zone `force-day: true`, jamais l'horloge du
+    monde — réutilise le même suivi de zone que l'affichage d'entrée/
+    sortie (`PlayerMoveEvent` filtré), plus `PlayerJoinEvent` pour l'état
+    initial d'un joueur qui apparaît déjà dans la zone (ex. spawn du
+    village). `false` par défaut sur `ZoneFlags.defaults()` (une zone
+    neuve ne change jamais le rendu du ciel sans opt-in explicite) ;
+    activé explicitement sur l'exemple embarqué `central_village.yml`.
 -   **`ZoneProtectionListener` — un seul point de vérification par
     catégorie d'événement**, chacun suivant le même patron
     (`zoneAt(location)` puis test du flag concerné) :
@@ -2063,6 +2094,32 @@ Fabrication → Remise → Récompense
     Choix d'un fichier séparé plutôt que d'alourdir `config.yml` (qui reste
     dédié aux réglages, pas au texte) — convention courante dans
     l'écosystème Bukkit.
+-   **Notifications de quête sobres — Title/ActionBar, jamais le chat**
+    (`QuestProgressEngine#showQuestStarted`/`#showQuestCompleted`/
+    `#showObjectiveProgress`) — trois événements fréquents (démarrage, fin,
+    et surtout progression d'objectif, qui peut arriver plusieurs fois par
+    seconde en combat) envoyaient auparavant un message de chat, un canal
+    persistant mal adapté à une notification transitoire et vite noyé sous
+    d'autres messages. Canal choisi par fréquence/importance : démarrage et
+    fin de quête (rares, un seul par quête) via un `Title` Adventure plein
+    écran bref (`FEEDBACK_TITLE_TIMES` : 250 ms/2,5 s/500 ms) ; progression
+    d'objectif (potentiellement très fréquente) via l'`ActionBar`, qui se
+    remplace en place plutôt que d'empiler des lignes — même canal que
+    `ProgressionService#display` pour l'XP, qui résout exactement le même
+    problème de fréquence. Le texte reste entièrement piloté par
+    `messages.yml` (`quest.started-title`/`started-subtitle`,
+    `quest.objective-progress`, `quest.completed-title`/`completed-subtitle`)
+    — jamais une quête codée en dur, le placeholder `<quest>` reçoit
+    toujours `quest.title().base()` au moment de l'appel. `QuestCommand`
+    n'envoie plus de message pour `AcceptOutcome.Result.ACCEPTED` (branche
+    vide dans le switch) : le `Title` de `QuestProgressEngine.accept()`
+    suffit, quel que soit le point d'entrée (`/quest accept` ou l'action de
+    dialogue `START_QUEST`) — un message en plus aurait été un doublon.
+    Le message `quest.step-completed` (transition vers une étape
+    intermédiaire, pas la dernière) a été retiré sans remplacement : cette
+    transition suit toujours la complétion du dernier objectif de l'étape
+    précédente, déjà signalée à l'instant par l'`ActionBar` de progression —
+    un second message aurait fait doublon.
 -   **Bug de migration de schéma corrigé pendant cette étape** :
     l'ajout de la migration V2 (`quest_objective_progress`) a révélé que
     `SchemaMigrator.migrate()` ne persistait jamais la nouvelle version via

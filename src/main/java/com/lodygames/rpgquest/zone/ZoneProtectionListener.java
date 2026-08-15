@@ -1,9 +1,11 @@
 package com.lodygames.rpgquest.zone;
 
+import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.zone.model.ZoneDefinition;
 import com.lodygames.rpgquest.zone.model.ZoneFlags;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.text.minimessage.MiniMessage;
@@ -31,9 +33,11 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Applique les permissions d'une {@link ZoneDefinition} à chaque événement
@@ -45,29 +49,70 @@ import org.bukkit.inventory.EquipmentSlot;
  *
  * <p>Bypass ({@code rpgquest.admin.world}, la même permission que {@code
  * /rpgadmin flatten}) : vérifié sur l'acteur direct de chaque action
- * (joueur qui casse/pose/interagit, ou dégâts PvP), jamais sur la victime —
- * un administrateur peut agir librement dans la zone, mais n'exempte
- * personne d'autre de sa protection.</p>
+ * (joueur qui casse/pose/interagit, ou dégâts PvP/NPC), jamais sur la
+ * victime — un administrateur peut agir librement dans la zone, mais
+ * n'exempte personne d'autre de sa protection. Les dégâts environnementaux
+ * (chute, noyade, faim...) n'ont pas d'« acteur » distinct de la victime :
+ * ils s'appliquent donc à tout le monde, admin compris — rien ne justifierait
+ * qu'un administrateur prenne des dégâts de chute dans le village alors que
+ * personne d'autre n'en prend.</p>
  */
 public final class ZoneProtectionListener implements Listener {
 
     private static final String BYPASS_PERMISSION = "rpgquest.admin.world";
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
+    /** Midi (temps client figé) pour {@code forceDay} — pleine lumière, aucune ombre de lever/coucher. */
+    private static final long NOON_TICKS = 6000L;
+
+    /**
+     * Causes de dégâts considérées « accidentelles/environnementales » (voir {@code
+     * ZoneFlags#allowEnvironmentalDamage}) — délibérément exclues : tout ce qui est déjà couvert par
+     * {@code pvp}/{@code allowHostileDamage}/{@code allowExplosions} (ENTITY_ATTACK, PROJECTILE,
+     * ENTITY_EXPLOSION...), et les causes trop exotiques pour une place de village (DRAGON_BREATH,
+     * SONIC_BOOM, WORLD_BORDER).
+     */
+    private static final Set<EntityDamageEvent.DamageCause> ENVIRONMENTAL_CAUSES = Set.of(
+            EntityDamageEvent.DamageCause.FALL,
+            EntityDamageEvent.DamageCause.DROWNING,
+            EntityDamageEvent.DamageCause.SUFFOCATION,
+            EntityDamageEvent.DamageCause.LAVA,
+            EntityDamageEvent.DamageCause.FIRE,
+            EntityDamageEvent.DamageCause.FIRE_TICK,
+            EntityDamageEvent.DamageCause.HOT_FLOOR,
+            EntityDamageEvent.DamageCause.STARVATION,
+            EntityDamageEvent.DamageCause.FREEZE,
+            EntityDamageEvent.DamageCause.CONTACT,
+            EntityDamageEvent.DamageCause.VOID,
+            EntityDamageEvent.DamageCause.LIGHTNING,
+            EntityDamageEvent.DamageCause.FALLING_BLOCK,
+            EntityDamageEvent.DamageCause.CAMPFIRE,
+            EntityDamageEvent.DamageCause.CRAMMING,
+            EntityDamageEvent.DamageCause.FLY_INTO_WALL);
+
     private final ZoneRegistry registry;
+    private final NpcIdentityService npcIdentityService;
     private final Map<UUID, String> currentZoneByPlayer = new ConcurrentHashMap<>();
 
-    public ZoneProtectionListener(ZoneRegistry registry) {
+    public ZoneProtectionListener(ZoneRegistry registry, NpcIdentityService npcIdentityService) {
         this.registry = registry;
+        this.npcIdentityService = npcIdentityService;
     }
 
-    // ---- PvP et dégâts d'explosion ----------------------------------------------------------
+    // ---- Dégâts (PvP, mobs hostiles, environnement, explosions, PNJ) -------------------------
 
     @EventHandler(ignoreCancelled = true)
     public void onEntityDamage(EntityDamageEvent event) {
-        if (!(event.getEntity() instanceof Player victim)) {
+        if (event.getEntity() instanceof Player victim) {
+            handlePlayerDamage(event, victim);
             return;
         }
+        if (npcIdentityService.isCitizensNpc(event.getEntity())) {
+            handleNpcDamage(event);
+        }
+    }
+
+    private void handlePlayerDamage(EntityDamageEvent event, Player victim) {
         Optional<ZoneDefinition> zoneOpt = zoneAt(victim.getLocation());
         if (zoneOpt.isEmpty()) {
             return;
@@ -76,7 +121,13 @@ public final class ZoneProtectionListener implements Listener {
 
         if (event instanceof EntityDamageByEntityEvent byEntity) {
             Player attacker = pvpAttacker(byEntity);
-            if (attacker != null && !flags.allowPvp() && !isBypassing(attacker)) {
+            if (attacker != null) {
+                if (!flags.allowPvp() && !isBypassing(attacker)) {
+                    event.setCancelled(true);
+                }
+                return; // dégâts PvP déjà tranchés : jamais aussi comptés comme hostiles/environnementaux.
+            }
+            if (isHostileAttacker(byEntity) && !flags.allowHostileDamage()) {
                 event.setCancelled(true);
                 return;
             }
@@ -85,9 +136,31 @@ public final class ZoneProtectionListener implements Listener {
         EntityDamageEvent.DamageCause cause = event.getCause();
         boolean explosionCause = cause == EntityDamageEvent.DamageCause.ENTITY_EXPLOSION
                 || cause == EntityDamageEvent.DamageCause.BLOCK_EXPLOSION;
-        if (explosionCause && !flags.allowExplosions()) {
+        if (explosionCause) {
+            if (!flags.allowExplosions()) {
+                event.setCancelled(true);
+            }
+            return;
+        }
+
+        if (!flags.allowEnvironmentalDamage() && ENVIRONMENTAL_CAUSES.contains(cause)) {
             event.setCancelled(true);
         }
+    }
+
+    /** PNJ Citizens : protégé de tout dégât dans une zone qui l'interdit, sauf acteur direct exempté. */
+    private void handleNpcDamage(EntityDamageEvent event) {
+        Optional<ZoneDefinition> zoneOpt = zoneAt(event.getEntity().getLocation());
+        if (zoneOpt.isEmpty() || zoneOpt.get().flags().allowNpcDamage()) {
+            return;
+        }
+        if (event instanceof EntityDamageByEntityEvent byEntity) {
+            Player attacker = pvpAttacker(byEntity);
+            if (attacker != null && isBypassing(attacker)) {
+                return;
+            }
+        }
+        event.setCancelled(true);
     }
 
     private Player pvpAttacker(EntityDamageByEntityEvent event) {
@@ -99,6 +172,14 @@ public final class ZoneProtectionListener implements Listener {
             return shooter;
         }
         return null;
+    }
+
+    private boolean isHostileAttacker(EntityDamageByEntityEvent event) {
+        Entity damager = event.getDamager();
+        if (damager instanceof Monster) {
+            return true;
+        }
+        return damager instanceof Projectile projectile && projectile.getShooter() instanceof Monster;
     }
 
     // ---- Blocs -------------------------------------------------------------------------------
@@ -233,7 +314,15 @@ public final class ZoneProtectionListener implements Listener {
         }
     }
 
-    // ---- Affichage entrée/sortie ---------------------------------------------------------------
+    // ---- Affichage entrée/sortie + jour figé (forceDay) ------------------------------------------
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        Optional<ZoneDefinition> zoneOpt = zoneAt(player.getLocation());
+        zoneOpt.ifPresent(zone -> currentZoneByPlayer.put(player.getUniqueId(), zone.id()));
+        applyDayOverride(player, zoneOpt.orElse(null));
+    }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onMove(PlayerMoveEvent event) {
@@ -245,7 +334,8 @@ public final class ZoneProtectionListener implements Listener {
         }
 
         Player player = event.getPlayer();
-        String newZoneId = zoneAt(to).map(ZoneDefinition::id).orElse(null);
+        Optional<ZoneDefinition> newZoneOpt = zoneAt(to);
+        String newZoneId = newZoneOpt.map(ZoneDefinition::id).orElse(null);
         String previousZoneId = currentZoneByPlayer.get(player.getUniqueId());
         if (java.util.Objects.equals(newZoneId, previousZoneId)) {
             return;
@@ -259,6 +349,27 @@ public final class ZoneProtectionListener implements Listener {
             currentZoneByPlayer.remove(player.getUniqueId());
             player.sendActionBar(MM.deserialize(
                     "<yellow>Vous quittez :</yellow> <white><zone></white>", Placeholder.unparsed("zone", previousZoneId)));
+        }
+        applyDayOverride(player, newZoneOpt.orElse(null));
+    }
+
+    /**
+     * Jour figé côté client uniquement ({@code Player#setPlayerTime}), jamais {@code
+     * World#setTime} : Minecraft/Paper n'offre aucun mécanisme d'heure différente pour une seule
+     * région d'un même monde — l'horloge du monde ({@code World#setTime}) est globale et affecte
+     * tous les joueurs de ce monde, où qu'ils soient. Figer l'heure du monde entier casserait le
+     * cycle jour/nuit partout uniquement pour un confort visuel local au village — inacceptable
+     * (fermes de récolte au jour, spawn de monstres la nuit ailleurs, etc.). Le temps par joueur
+     * est en revanche une fonctionnalité Bukkit stable (pas expérimentale) et purement cosmétique
+     * (aucun effet sur la simulation du monde, le spawn de mobs restant governé par {@code
+     * allowHostileSpawn}) — solution propre, compatible avec l'architecture existante (même
+     * mécanisme de suivi de zone que l'affichage d'entrée/sortie ci-dessus).
+     */
+    private void applyDayOverride(Player player, @Nullable ZoneDefinition zone) {
+        if (zone != null && zone.flags().forceDay()) {
+            player.setPlayerTime(NOON_TICKS, false);
+        } else {
+            player.resetPlayerTime();
         }
     }
 

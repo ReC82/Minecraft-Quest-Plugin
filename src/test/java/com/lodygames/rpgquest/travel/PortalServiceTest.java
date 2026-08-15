@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.DatabaseManager;
+import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.database.NpcIdRepository;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
@@ -89,7 +90,8 @@ class PortalServiceTest {
         PlayerVariableRepository variableRepository = new PlayerVariableRepository(database);
         QuestMessagesService messagesService = new QuestMessagesService(plugin);
         messagesService.start();
-        NpcIdentityService npcIdentityService = new NpcIdentityService(plugin, new NpcIdRepository(database));
+        NpcIdentityService npcIdentityService = new NpcIdentityService(
+                plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
         questProgressEngine = new QuestProgressEngine(
                 plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService);
         questProgressEngine.start();

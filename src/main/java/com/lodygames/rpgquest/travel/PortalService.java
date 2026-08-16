@@ -190,10 +190,21 @@ public final class PortalService implements PluginService {
                 return;
             }
             if (portal.cost() == null) {
-                runOnMainThread(() -> startChanneling(player, portal));
+                runOnMainThread(() -> {
+                    // Gap async corrigé : le joueur a pu se déconnecter pendant la vérification de
+                    // quête (thread async) ci-dessus — abandon propre plutôt que de canaliser un
+                    // joueur hors ligne.
+                    if (!player.isOnline()) {
+                        return;
+                    }
+                    startChanneling(player, portal);
+                });
                 return;
             }
             economyService.balance(player.getUniqueId()).thenAccept(balance -> runOnMainThread(() -> {
+                if (!player.isOnline()) {
+                    return; // même correctif : déconnecté pendant la lecture du solde (thread async).
+                }
                 if (balance < portal.cost()) {
                     player.sendMessage(MM.deserialize(
                             "<red>Fonds insuffisants pour utiliser ce portail</red> <gray>(<cost> requis).</gray>",
@@ -217,8 +228,19 @@ public final class PortalService implements PluginService {
             return; // défensif : déjà filtré par handleMove, ne devrait jamais arriver.
         }
         long totalTicks = portal.channelSeconds() * 20L;
-        ChannelingSession session = new ChannelingSession(playerId, portal, player.getLocation().clone(), totalTicks);
+        Location start = player.getLocation();
+        ChannelingSession session = new ChannelingSession(playerId, portal, start.clone(), totalTicks);
         channeling.put(playerId, session);
+
+        // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée — montre
+        // le point de départ exact d'une canalisation qui aboutira à une téléportation ~channelSeconds
+        // plus tard (reason=channel_start, pas encore une téléportation, juste son déclenchement).
+        logger.info("[TP-TRACE] player={} uuid={} source=PortalService portal={} "
+                        + "from={}:{},{},{} to=? reason=channel_start channelSeconds={} at={}",
+                player.getName(), playerId, portal.id(),
+                start.getWorld() != null ? start.getWorld().getName() : "?",
+                start.getBlockX(), start.getBlockY(), start.getBlockZ(),
+                portal.channelSeconds(), System.currentTimeMillis());
 
         if (totalTicks <= 0) {
             completeChanneling(session);
@@ -319,6 +341,12 @@ public final class PortalService implements PluginService {
         }
         economyService.debit(player.getUniqueId(), portal.cost(), TransactionType.PORTAL_USE, portal.id())
                 .thenAccept(success -> runOnMainThread(() -> {
+                    // Gap async corrigé : le joueur a pu se déconnecter pendant le débit (thread
+                    // async) — abandon propre plutôt que d'appeler teleportAsync sur un Player
+                    // périmé/hors ligne.
+                    if (!player.isOnline()) {
+                        return;
+                    }
                     if (!success) {
                         player.sendMessage(MM.deserialize("<red>Fonds insuffisants.</red>"));
                         return;
@@ -333,6 +361,16 @@ public final class PortalService implements PluginService {
     }
 
     private void finishTeleport(Player player, PortalDefinition portal, Location safeLocation) {
+        Location source = player.getLocation();
+        // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée.
+        logger.info("[TP-TRACE] player={} uuid={} source=PortalService portal={} "
+                        + "from={}:{},{},{} to={}:{},{},{} reason=channel_complete at={}",
+                player.getName(), player.getUniqueId(), portal.id(),
+                source.getWorld() != null ? source.getWorld().getName() : "?",
+                source.getBlockX(), source.getBlockY(), source.getBlockZ(),
+                safeLocation.getWorld() != null ? safeLocation.getWorld().getName() : "?",
+                safeLocation.getBlockX(), safeLocation.getBlockY(), safeLocation.getBlockZ(),
+                System.currentTimeMillis());
         player.teleportAsync(safeLocation);
         player.sendMessage(MM.deserialize("<green>Téléportation réussie.</green>"));
 

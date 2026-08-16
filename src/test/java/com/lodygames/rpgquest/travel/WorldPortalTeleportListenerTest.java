@@ -13,7 +13,9 @@ import com.lodygames.rpgquest.world.WorldService;
 import java.nio.file.Path;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,7 +58,7 @@ class WorldPortalTeleportListenerTest {
         registry.create(new WorldPortalDefinition("hub_to_wild", "world", -5, 60, -5, 5, 70, 5, "wild", true));
 
         randomSafeArrivalConfig = new RandomSafeArrivalConfig(500, 5000, 20);
-        listener = new WorldPortalTeleportListener(registry, worldService, () -> randomSafeArrivalConfig, plugin.getSLF4JLogger());
+        listener = new WorldPortalTeleportListener(plugin, registry, worldService, () -> randomSafeArrivalConfig, plugin.getSLF4JLogger());
     }
 
     @AfterEach
@@ -200,5 +202,77 @@ class WorldPortalTeleportListenerTest {
         listener.onMove(new PlayerMoveEvent(player, firstInside, stillInside));
 
         assertNull(player.nextMessage(), "même portail que le mouvement précédent : aucune nouvelle tentative");
+    }
+
+    // ---- Répit d'arrivée (bug constaté en test réel : rebond automatique 1-2 s après l'arrivée) ---
+    //
+    // Reproduit le cas "un joueur bug, un autre non" : les deux joueurs se retrouvent exactement à
+    // la même position, à l'intérieur de la même zone d'activation. Seul celui qui vient d'être
+    // placé là par une connexion ou une téléportation externe (le symptôme réel : reconnexion,
+    // /tp d'un administrateur, ou atterrissage d'un autre portail) a un répit ; un joueur qui s'y
+    // rend par ses propres pas (aucun join/teleport récent, comme dans tous les tests ci-dessus)
+    // continue de déclencher le portail normalement — le répit ne désactive jamais l'usage voulu.
+
+    @Test
+    void aPlayerWhoJustReconnectedIsNotBouncedImmediatelyEvenIfHeLandsInsideAnActivationZone() throws Exception {
+        PlayerMock player = server.addPlayer();
+        listener.onJoin(new PlayerJoinEvent(player, (net.kyori.adventure.text.Component) null));
+
+        Location from = new Location(hub, 1000.5, 64, 1000.5);
+        Location to = new Location(hub, 0.5, 65, 0.5); // à l'intérieur des bornes de hub_to_wild
+        listener.onMove(new PlayerMoveEvent(player, from, to));
+
+        assertEquals(hub, player.getWorld(), "répit de connexion actif : pas de rebond automatique");
+        assertNull(player.nextMessage());
+    }
+
+    @Test
+    void aPlayerJustTeleportedByAnAdminIsNotBouncedImmediatelyEvenIfHeLandsInsideAnActivationZone() throws Exception {
+        PlayerMock player = server.addPlayer();
+        Location elsewhereInHub = new Location(hub, 1000.5, 64, 1000.5);
+        Location to = new Location(hub, 0.5, 65, 0.5); // ex. /tp <joueur> <autreJoueur> qui atterrit dans la zone
+        listener.onTeleport(new PlayerTeleportEvent(player, elsewhereInHub, to));
+
+        listener.onMove(new PlayerMoveEvent(player, elsewhereInHub, to));
+
+        assertEquals(hub, player.getWorld(), "répit de téléportation externe actif : pas de rebond automatique");
+        assertNull(player.nextMessage());
+    }
+
+    @Test
+    void aPlayerWithNoRecentJoinOrTeleportIsUnaffectedByTheOtherPlayersGraceAndStillTeleportsNormally() throws Exception {
+        // Contrôle direct du cas "un joueur bug, un autre non" : même zone, même position exacte,
+        // mais ce second joueur n'a ni rejoint ni été téléporté récemment (comme les tests
+        // ci-dessus) — le portail doit continuer à fonctionner normalement pour lui.
+        PlayerMock buggedPlayer = server.addPlayer();
+        listener.onJoin(new PlayerJoinEvent(buggedPlayer, (net.kyori.adventure.text.Component) null));
+        PlayerMock healthyPlayer = server.addPlayer();
+
+        Location from = new Location(hub, 1000.5, 64, 1000.5);
+        Location to = new Location(hub, 0.5, 65, 0.5);
+
+        listener.onMove(new PlayerMoveEvent(buggedPlayer, from, to));
+        listener.onMove(new PlayerMoveEvent(healthyPlayer, from, to));
+
+        assertEquals(hub, buggedPlayer.getWorld(), "vient de rejoindre : protégé par le répit");
+        assertEquals(wild, healthyPlayer.getWorld(), "aucun répit actif : le portail se déclenche normalement");
+    }
+
+    @Test
+    void theGracePeriodExpiresAndThePortalEventuallyTriggersIfThePlayerIsStillInsideTheZone() throws Exception {
+        PlayerMock player = server.addPlayer();
+        listener.onJoin(new PlayerJoinEvent(player, (net.kyori.adventure.text.Component) null));
+
+        Location from = new Location(hub, 1000.5, 64, 1000.5);
+        Location firstInside = new Location(hub, 0.5, 65, 0.5);
+        listener.onMove(new PlayerMoveEvent(player, from, firstInside));
+        assertEquals(hub, player.getWorld(), "encore dans le répit : pas de téléportation");
+
+        server.getScheduler().performTicks(41); // laisse le répit (40 ticks) expirer.
+
+        Location stillInside = new Location(hub, 1.5, 65, 0.5); // bloc différent, toujours dans les bornes
+        listener.onMove(new PlayerMoveEvent(player, firstInside, stillInside));
+
+        assertEquals(wild, player.getWorld(), "répit expiré, toujours dans la zone : le portail reste fonctionnel");
     }
 }

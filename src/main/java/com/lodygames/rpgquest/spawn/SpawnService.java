@@ -131,11 +131,35 @@ public final class SpawnService implements PluginService {
      */
     @SuppressWarnings("removal")
     void handleFirstJoin(PlayerSpawnLocationEvent event) {
-        resolve().ifPresent(event::setSpawnLocation);
+        resolve().ifPresent(target -> {
+            // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée.
+            Location defaultSpawn = event.getSpawnLocation();
+            logger.info("[TP-TRACE] player={} uuid={} source=SpawnService portal=none "
+                            + "from={}:{},{},{} to={}:{},{},{} reason=first_join_spawn at={}",
+                    event.getPlayer().getName(), event.getPlayer().getUniqueId(),
+                    defaultSpawn.getWorld() != null ? defaultSpawn.getWorld().getName() : "?",
+                    defaultSpawn.getBlockX(), defaultSpawn.getBlockY(), defaultSpawn.getBlockZ(),
+                    target.getWorld() != null ? target.getWorld().getName() : "?",
+                    target.getBlockX(), target.getBlockY(), target.getBlockZ(),
+                    System.currentTimeMillis());
+            event.setSpawnLocation(target);
+        });
     }
 
     /** Réapparition après la mort : toujours redirigée vers le spawn configuré, lit/ancre inclus. */
     void handleRespawn(PlayerRespawnEvent event) {
-        resolve().ifPresent(event::setRespawnLocation);
+        resolve().ifPresent(target -> {
+            // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée.
+            Location defaultRespawn = event.getRespawnLocation();
+            logger.info("[TP-TRACE] player={} uuid={} source=SpawnService portal=none "
+                            + "from={}:{},{},{} to={}:{},{},{} reason=respawn_redirect at={}",
+                    event.getPlayer().getName(), event.getPlayer().getUniqueId(),
+                    defaultRespawn.getWorld() != null ? defaultRespawn.getWorld().getName() : "?",
+                    defaultRespawn.getBlockX(), defaultRespawn.getBlockY(), defaultRespawn.getBlockZ(),
+                    target.getWorld() != null ? target.getWorld().getName() : "?",
+                    target.getBlockX(), target.getBlockY(), target.getBlockZ(),
+                    System.currentTimeMillis());
+            event.setRespawnLocation(target);
+        });
     }
 }

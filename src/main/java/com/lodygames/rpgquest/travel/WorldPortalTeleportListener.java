@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.travel;
 
+import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.config.RandomSafeArrivalConfig;
 import com.lodygames.rpgquest.travel.model.DestinationStrategy;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
@@ -7,6 +8,7 @@ import com.lodygames.rpgquest.world.WorldService;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
@@ -15,9 +17,12 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.slf4j.Logger;
 
 /**
@@ -32,20 +37,38 @@ import org.slf4j.Logger;
  * extérieur → intérieur (ou d'un portail vers un autre), jamais tant qu'il reste dans le même
  * portail à chaque micro-mouvement, et jamais une seconde fois de suite si la téléportation a
  * échoué sans qu'il ait bougé entre-temps.</p>
+ *
+ * <p><strong>Répit d'arrivée</strong> (bug constaté en test réel) : cette anti-boucle ne protège
+ * que contre le <em>même</em> portail répété ; elle ne protège pas un joueur qui vient d'être
+ * placé quelque part par autre chose qu'un pas volontaire (connexion, {@code /tp} d'un
+ * administrateur, ou l'atterrissage d'un <em>autre</em> portail) et dont la position se trouve
+ * être à l'intérieur d'une zone d'activation — dans ce cas, le tout premier {@code
+ * PlayerMoveEvent} de règlement (chute, micro-mouvement client) déclenchait une téléportation
+ * silencieuse et immédiate, avec l'illusion d'un état persistant par joueur puisque ça se
+ * reproduit à chaque connexion tant qu'il revient à cette position. {@link #arrivalGrace} accorde
+ * {@value #ARRIVAL_GRACE_TICKS} ticks d'immunité après {@link PlayerJoinEvent}/{@link
+ * PlayerTeleportEvent} (donc après une connexion, un {@code /tp} externe, ou l'atterrissage d'un
+ * autre portail) avant qu'un portail simple puisse se déclencher automatiquement — le temps
+ * qu'un joueur (ou un administrateur) remarque et s'écarte d'une zone mal placée, sans désactiver
+ * l'usage volontaire du portail au-delà de ce court répit.</p>
  */
 public final class WorldPortalTeleportListener implements Listener {
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
+    private static final long ARRIVAL_GRACE_TICKS = 40L; // 2 s.
 
+    private final RPGQuestPlugin plugin;
     private final WorldPortalRegistry registry;
     private final WorldService worldService;
     private final Supplier<RandomSafeArrivalConfig> randomSafeArrivalConfig;
     private final Logger logger;
 
     private final Map<UUID, String> currentPortalByPlayer = new ConcurrentHashMap<>();
+    private final Set<UUID> arrivalGrace = ConcurrentHashMap.newKeySet();
 
-    public WorldPortalTeleportListener(WorldPortalRegistry registry, WorldService worldService,
+    public WorldPortalTeleportListener(RPGQuestPlugin plugin, WorldPortalRegistry registry, WorldService worldService,
                                         Supplier<RandomSafeArrivalConfig> randomSafeArrivalConfig, Logger logger) {
+        this.plugin = plugin;
         this.registry = registry;
         this.worldService = worldService;
         this.randomSafeArrivalConfig = randomSafeArrivalConfig;
@@ -67,6 +90,9 @@ public final class WorldPortalTeleportListener implements Listener {
 
         Player player = event.getPlayer();
         UUID playerId = player.getUniqueId();
+        if (arrivalGrace.contains(playerId)) {
+            return; // vient d'arriver (connexion/téléportation) : voir le répit documenté ci-dessus.
+        }
         Optional<WorldPortalDefinition> portalOpt = registry.portalAt(world.getName(), to.getBlockX(), to.getBlockY(), to.getBlockZ())
                 .filter(WorldPortalDefinition::enabled);
         String newPortalId = portalOpt.map(WorldPortalDefinition::id).orElse(null);
@@ -82,9 +108,26 @@ public final class WorldPortalTeleportListener implements Listener {
         teleport(player, portalOpt.get());
     }
 
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onJoin(PlayerJoinEvent event) {
+        grantArrivalGrace(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTeleport(PlayerTeleportEvent event) {
+        grantArrivalGrace(event.getPlayer().getUniqueId());
+    }
+
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        currentPortalByPlayer.remove(event.getPlayer().getUniqueId());
+        UUID playerId = event.getPlayer().getUniqueId();
+        currentPortalByPlayer.remove(playerId);
+        arrivalGrace.remove(playerId);
+    }
+
+    private void grantArrivalGrace(UUID playerId) {
+        arrivalGrace.add(playerId);
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> arrivalGrace.remove(playerId), ARRIVAL_GRACE_TICKS);
     }
 
     private void teleport(Player player, WorldPortalDefinition portal) {
@@ -96,9 +139,19 @@ public final class WorldPortalTeleportListener implements Listener {
             return;
         }
         World world = destination.get();
+        Location source = player.getLocation();
         Location target = portal.destinationStrategy() == DestinationStrategy.RANDOM_SAFE
                 ? resolveRandomSafeLocation(portal, world)
                 : world.getSpawnLocation();
+
+        // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée.
+        logger.info("[TP-TRACE] player={} uuid={} source=WorldPortalTeleportListener portal={} "
+                        + "from={}:{},{},{} to={}:{},{},{} reason=worldportal_enter at={}",
+                player.getName(), player.getUniqueId(), portal.id(),
+                source.getWorld() != null ? source.getWorld().getName() : "?",
+                source.getBlockX(), source.getBlockY(), source.getBlockZ(),
+                world.getName(), target.getBlockX(), target.getBlockY(), target.getBlockZ(),
+                System.currentTimeMillis());
 
         // teleport() synchrone plutôt que teleportAsync() : ce portail simple vise en priorité la
         // robustesse et la testabilité (voir travel.WorldPortalTeleportListenerTest) — contrairement

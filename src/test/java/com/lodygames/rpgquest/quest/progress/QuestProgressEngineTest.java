@@ -267,7 +267,10 @@ class QuestProgressEngineTest {
     }
 
     @Test
-    void completingAQuestNeverSendsAChatMessage() throws Exception {
+    void completingAQuestSendsAChatSummaryOfRewardsActuallyGranted() throws Exception {
+        // writeKillQuest() donne une seule récompense : 10 XP (voir la méthode utilitaire en bas de
+        // fichier). Le résumé chat doit refléter exactement ça, jamais une récompense inventée
+        // (monnaie, objet...) que cette quête ne donne pas.
         PlayerMock player = addPlayer();
         engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
@@ -275,7 +278,74 @@ class QuestProgressEngineTest {
         player.nextActionBar();
         engine.handleKillEntity(player, EntityType.ZOMBIE); // complète la quête
 
-        assertNull(player.nextMessage(), "la fin d'une quête doit passer par un Title, jamais le chat");
+        String header = player.nextMessage();
+        assertTrue(header.contains("Titre"), () -> "le résumé doit citer le nom de la quête terminée : " + header);
+
+        String rewardLine = player.nextMessage();
+        assertTrue(rewardLine.contains("10 XP"), () -> "doit afficher l'XP réellement accordée : " + rewardLine);
+
+        assertNull(player.nextMessage(), "aucune ligne supplémentaire : cette quête ne donne ni objet ni récompense spéciale");
+    }
+
+    @Test
+    void rewardSummaryListsAnItemAndACommandRewardWithoutInventingDetails() throws Exception {
+        NamespacedKey questId = new NamespacedKey("rpgquest", "mixed_rewards");
+        Files.writeString(questsDir.resolve("mixed_rewards.yml"), """
+                id: rpgquest:mixed_rewards
+                title: "Titre Mixte"
+                description: "Description"
+                category: test
+                steps:
+                  - id: kill_step
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 1
+                rewards:
+                  - type: ITEM
+                    material: IRON_INGOT
+                    amount: 3
+                  - type: COMMAND
+                    command: "help"
+                """);
+        engine.reloadQuestDefinitions();
+        PlayerMock player = addPlayer();
+        engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        player.nextMessage(); // en-tête du résumé
+        String itemLine = player.nextMessage();
+        assertTrue(itemLine.contains("3x IRON_INGOT"), () -> "doit afficher l'objet réellement donné : " + itemLine);
+        String specialLine = player.nextMessage();
+        assertTrue(specialLine.toLowerCase(java.util.Locale.ROOT).contains("spéciale"),
+                () -> "une récompense COMMAND ne peut pas être décrite précisément (commande arbitraire) : " + specialLine);
+        assertNull(player.nextMessage());
+    }
+
+    @Test
+    void questWithNoRewardsSendsNoChatSummary() throws Exception {
+        NamespacedKey questId = new NamespacedKey("rpgquest", "no_rewards");
+        Files.writeString(questsDir.resolve("no_rewards.yml"), """
+                id: rpgquest:no_rewards
+                title: "Sans récompense"
+                description: "Description"
+                category: test
+                steps:
+                  - id: kill_step
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 1
+                """);
+        engine.reloadQuestDefinitions();
+        PlayerMock player = addPlayer();
+        engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        assertNull(player.nextMessage(),
+                "une quête sans récompense ne doit jamais afficher de résumé (pas de récompense fictive)");
     }
 
     @Test
@@ -337,6 +407,48 @@ class QuestProgressEngineTest {
     }
 
     @Test
+    void objectiveEventBeforeAcceptingTheQuestIsIgnored() throws Exception {
+        PlayerMock player = addPlayer();
+
+        // Aucun accept() : l'index connaît l'objectif (le fichier de quête est chargé), mais le joueur
+        // n'a aucune progression en mémoire. L'événement ne doit ni lever d'exception ni créer d'état.
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        assertTrue(progressRepository.findAll(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty(),
+                "aucune progression ne doit être créée par un événement reçu avant l'acceptation");
+    }
+
+    @Test
+    void objectiveOnALaterStepIsIgnoredUntilItsOwnStepIsActive() throws Exception {
+        writeTwoStepKillQuest(KILL_QUEST_TWO, "two_step_kill_quest.yml");
+        engine.reloadQuestDefinitions();
+
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        // L'étape courante attend un ZOMBIE ; SKELETON appartient à l'étape suivante (pas encore active).
+        engine.handleKillEntity(player, EntityType.SKELETON);
+        assertEquals(QuestState.ACTIVE, activeState(player, KILL_QUEST_TWO));
+        assertEquals("step_one",
+                progressRepository.find(player.getUniqueId(), KILL_QUEST_TWO)
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow().currentStepId(),
+                "un événement de la 2e étape ne doit pas faire progresser la quête tant que la 1re étape n'est pas finie");
+
+        // Compléter la 1re étape doit maintenant faire passer la quête à la 2e étape, sans la terminer.
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        assertEquals(QuestState.ACTIVE, activeState(player, KILL_QUEST_TWO));
+        assertEquals("step_two",
+                progressRepository.find(player.getUniqueId(), KILL_QUEST_TWO)
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow().currentStepId());
+
+        // Le SKELETON compte maintenant que l'étape 2 est active.
+        engine.handleKillEntity(player, EntityType.SKELETON);
+        assertEquals(QuestState.COMPLETED,
+                progressRepository.find(player.getUniqueId(), KILL_QUEST_TWO)
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow().state());
+    }
+
+    @Test
     void resetAllQuestsClearsEveryQuestForPlayer() throws Exception {
         writeKillQuest(KILL_QUEST_TWO, "kill_quest_two_reset_all.yml", 1, false, null);
         engine.reloadQuestDefinitions();
@@ -390,5 +502,32 @@ class QuestProgressEngineTest {
                     amount: 10
                 """.formatted(amount));
         Files.writeString(questsDir.resolve(fileName), yaml.toString());
+    }
+
+    /** Quête à 2 étapes (step_one : 1 ZOMBIE, step_two : 1 SKELETON) pour tester la garde d'étape active. */
+    private void writeTwoStepKillQuest(NamespacedKey id, String fileName) throws Exception {
+        String yaml = """
+                id: %s
+                title: "Titre"
+                description: "Description"
+                category: test
+                repeatable: false
+                steps:
+                  - id: step_one
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 1
+                  - id: step_two
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: SKELETON
+                        amount: 1
+
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 10
+                """.formatted(id);
+        Files.writeString(questsDir.resolve(fileName), yaml);
     }
 }

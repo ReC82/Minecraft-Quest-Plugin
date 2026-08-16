@@ -374,7 +374,7 @@ public final class QuestJournalService implements QuestJournalUi {
             return;
         }
         if (slot == CLOSE_SLOT) {
-            player.closeInventory();
+            closeNextTick(player);
             return;
         }
 
@@ -397,7 +397,7 @@ public final class QuestJournalService implements QuestJournalUi {
             return;
         }
         if (slot == DETAIL_CLOSE_SLOT) {
-            player.closeInventory();
+            closeNextTick(player);
             return;
         }
         if (slot == DETAIL_TRACK_SLOT) {
@@ -540,6 +540,17 @@ public final class QuestJournalService implements QuestJournalUi {
 
     private void runOnMainThread(Runnable task) {
         plugin.getServer().getScheduler().runTask(plugin, task);
+    }
+
+    /**
+     * Fermer l'inventaire directement depuis le clic sur « Fermer » ne fonctionne pas de façon fiable :
+     * on est encore à l'intérieur du traitement de {@code InventoryClickEvent} (juste annulé), et le
+     * paquet de resynchronisation que le serveur envoie ensuite pour ce clic annulé peut arriver après
+     * le paquet de fermeture et faire réapparaître le menu côté client. Reporter la fermeture au tick
+     * suivant garantit qu'aucun paquet lié au clic n'est plus en vol quand elle a lieu.
+     */
+    private void closeNextTick(Player player) {
+        runOnMainThread(player::closeInventory);
     }
 
     private static int[] buildContentSlots() {

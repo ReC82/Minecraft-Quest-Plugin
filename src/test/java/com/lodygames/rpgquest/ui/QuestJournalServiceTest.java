@@ -32,6 +32,7 @@ import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
@@ -157,6 +158,41 @@ class QuestJournalServiceTest {
     }
 
     @Test
+    void closeButtonInTheListViewDefersClosingToTheNextTick() throws Exception {
+        writeAvailableQuests(1);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        openAvailable(player);
+
+        service.handleListClick(player, service.sessionOf(player), QuestJournalService.CLOSE_SLOT, false);
+
+        // Fermer dans le même tick que le clic (encore à l'intérieur du traitement de
+        // InventoryClickEvent) est la cause connue du bouton « Fermer » qui ne ferme pas réellement la
+        // fenêtre côté client : la fermeture doit être différée au tick suivant.
+        assertTrue(isJournalStillOpen(player), "le clic ne doit pas fermer la fenêtre immédiatement");
+
+        server.getScheduler().performTicks(1);
+        assertFalse(isJournalStillOpen(player), "la fenêtre doit être fermée au tick suivant le clic");
+    }
+
+    @Test
+    void closeButtonInTheDetailViewDefersClosingToTheNextTick() throws Exception {
+        writeAvailableQuests(1);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        openAvailable(player);
+        service.handleListClick(player, service.sessionOf(player), QuestJournalService.CONTENT_SLOTS[0], false);
+        waitUntil(() -> service.sessionOf(player) != null && service.sessionOf(player).isDetail());
+
+        service.handleDetailClick(player, service.sessionOf(player), QuestJournalService.DETAIL_CLOSE_SLOT);
+
+        assertTrue(isJournalStillOpen(player), "le clic ne doit pas fermer la fenêtre immédiatement");
+
+        server.getScheduler().performTicks(1);
+        assertFalse(isJournalStillOpen(player), "la fenêtre doit être fermée au tick suivant le clic");
+    }
+
+    @Test
     void rightClickTogglesTracking() throws Exception {
         writeAvailableQuests(1);
         questEngine.reload();
@@ -267,6 +303,17 @@ class QuestJournalServiceTest {
                 QuestJournalService.CONTENT_SLOTS[0], click, action);
         listener.onInventoryClick(event);
         assertTrue(event.isCancelled(), () -> click + "/" + action + " doit être annulé");
+    }
+
+    /**
+     * Après {@link PlayerMock#closeInventory()}, MockBukkit remplace la vue par un stub dont
+     * {@code getTopInventory()} renvoie {@code null} (malgré son annotation {@code @NotNull}) plutôt
+     * que de renvoyer l'inventaire du joueur — il faut donc se garder du {@code null}, pas seulement
+     * de la vue elle-même.
+     */
+    private boolean isJournalStillOpen(PlayerMock player) {
+        Inventory top = player.getOpenInventory().getTopInventory();
+        return top != null && top.getHolder() instanceof JournalInventoryHolder;
     }
 
     private void openAvailable(PlayerMock player) throws InterruptedException {

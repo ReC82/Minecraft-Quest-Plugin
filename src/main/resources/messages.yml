@@ -2,13 +2,22 @@
 # de progression. Personnalisables sans recompiler ; rechargés avec
 # /quest admin reload.
 # Placeholders disponibles selon le message : <quest> <category> <state>
-# <objective> <current> <total> <missing> <permission>
+# <objective> <current> <total> <missing> <permission> <amount> <item>
 #
 # started-title/started-subtitle et completed-title/completed-subtitle sont
 # affichés via un Title Adventure (jamais le chat) au démarrage/à la fin
 # d'une quête ; objective-progress via l'ActionBar à chaque progression d'un
 # objectif (qu'elle le complète ou non). Volontairement hors du chat pour ne
 # pas le spammer — voir docs-site/quests.html.
+#
+# reward-summary-header/reward-line-* sont l'exception : envoyés dans le chat,
+# une seule fois à la remise (jamais à l'acceptation ni en cours de route), et
+# seulement pour les récompenses réellement accordées par CETTE quête (une
+# quête sans récompense ITEM n'affiche jamais reward-line-item). reward-line-
+# special couvre les récompenses COMMAND (ex. objet personnalisé donné via
+# /customitem give) : le contenu exact d'une commande arbitraire n'est pas
+# inspectable, donc ce message reste volontairement générique plutôt que
+# d'inventer un nom d'objet.
 
 quest:
   already-active: "<red>Tu as déjà accepté :</red> <white><quest></white>"
@@ -28,6 +37,10 @@ quest:
   objective-progress: "<yellow><objective></yellow> <gray><current>/<total></gray>"
   completed-title: "<gold><bold>Quête terminée</bold></gold>"
   completed-subtitle: "<white><quest></white>"
+  reward-summary-header: "<gold><bold>Quête terminée :</bold></gold> <white><quest></white> <gray>— récompenses :</gray>"
+  reward-line-experience: "<yellow> + <amount> XP</yellow>"
+  reward-line-item: "<yellow> + <amount>x <item></yellow>"
+  reward-line-special: "<yellow> + Récompense spéciale</yellow>"
 
 permission:
   denied: "<red>Permission manquante :</red> <white><permission></white>"

@@ -578,8 +578,8 @@ public final class QuestProgressEngine implements PluginService {
             return null;
         });
 
-        grantRewards(player, quest);
-        showQuestCompleted(player, quest);
+        List<Component> rewardLines = grantRewards(player, quest);
+        showQuestCompleted(player, quest, rewardLines);
         notifyChanged(playerId);
     }
 
@@ -601,7 +601,14 @@ public final class QuestProgressEngine implements PluginService {
         player.showTitle(Title.title(title, subtitle, FEEDBACK_TITLE_TIMES));
     }
 
-    private void showQuestCompleted(Player player, QuestDefinition quest) {
+    /**
+     * Title/Subtitle bref (voir {@link #showQuestStarted}) pour l'annonce, puis un résumé dans le
+     * chat des récompenses réellement accordées par {@code quest} — {@code rewardLines} vient de
+     * {@link #grantRewards}, jamais d'une liste de récompenses fictives ou seulement prévues (celles-là
+     * restent dans le journal, {@code QuestJournalService}). Rien n'est envoyé dans le chat si la
+     * quête ne donne aucune récompense.
+     */
+    private void showQuestCompleted(Player player, QuestDefinition quest, List<Component> rewardLines) {
         if (!player.isOnline()) {
             return;
         }
@@ -609,6 +616,13 @@ public final class QuestProgressEngine implements PluginService {
         Component subtitle = messagesService.current().format(
                 "quest.completed-subtitle", Placeholder.parsed("quest", quest.title().base()));
         player.showTitle(Title.title(title, subtitle, FEEDBACK_TITLE_TIMES));
+
+        if (rewardLines.isEmpty()) {
+            return;
+        }
+        player.sendMessage(messagesService.current().format(
+                "quest.reward-summary-header", Placeholder.parsed("quest", quest.title().base())));
+        rewardLines.forEach(player::sendMessage);
     }
 
     private void showObjectiveProgress(Player player, QuestObjective objective, int current, int total) {
@@ -622,14 +636,28 @@ public final class QuestProgressEngine implements PluginService {
         player.sendActionBar(message);
     }
 
-    private void grantRewards(Player player, QuestDefinition quest) {
+    /**
+     * Applique chaque récompense de {@code quest} et retourne, dans le même ordre, un message décrivant
+     * ce qui a été réellement accordé (pour {@link #showQuestCompleted}). {@code VariableReward} n'a
+     * pas de ligne : c'est un état interne du plugin (ex. un drapeau consulté par une condition de
+     * dialogue), jamais quelque chose que le joueur reçoit visiblement.
+     */
+    private List<Component> grantRewards(Player player, QuestDefinition quest) {
+        List<Component> lines = new ArrayList<>();
         for (QuestReward reward : quest.rewards()) {
             switch (reward) {
-                case ExperienceReward r -> player.giveExp(r.amount());
+                case ExperienceReward r -> {
+                    player.giveExp(r.amount());
+                    lines.add(messagesService.current().format("quest.reward-line-experience",
+                            Placeholder.unparsed("amount", String.valueOf(r.amount()))));
+                }
                 case ItemReward r -> {
                     ItemStack stack = new ItemStack(r.material(), r.amount());
                     player.getInventory().addItem(stack).values()
                             .forEach(leftover -> player.getWorld().dropItemNaturally(player.getLocation(), leftover));
+                    lines.add(messagesService.current().format("quest.reward-line-item",
+                            Placeholder.unparsed("amount", String.valueOf(r.amount())),
+                            Placeholder.unparsed("item", r.material().toString())));
                 }
                 case VariableReward r -> variableRepository.set(player.getUniqueId(), r.key(), r.value())
                         .exceptionally(error -> {
@@ -640,9 +668,11 @@ public final class QuestProgressEngine implements PluginService {
                 case CommandReward r -> {
                     String command = r.command().replace("%player%", player.getName());
                     plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), command);
+                    lines.add(messagesService.current().format("quest.reward-line-special"));
                 }
             }
         }
+        return lines;
     }
 
     private int requiredAmount(QuestObjective objective) {

@@ -15,6 +15,6 @@ nodes:
           - type: START_QUEST
             quest: rpgquest:premiers_pas
 
-      - text: "Non merci."
+      - text: "D'accord !"
         actions:
           - type: CLOSE

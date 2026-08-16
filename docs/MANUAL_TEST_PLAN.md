@@ -198,14 +198,19 @@ Deux joueurs (ou deux comptes) sont nécessaires pour certains tests
     (Actives/Disponibles/Terminées) ; clic gauche sur une quête (vue détail,
     27 slots) ; clic droit sur une quête dans la liste (bascule le suivi) ;
     tenter un shift-clic/double-clic/glisser sur un slot du menu ; tenter de
-    déposer un objet dans le menu.
+    déposer un objet dans le menu ; cliquer sur le bouton « Fermer » (barrière,
+    dernier slot) depuis la liste **et** depuis la vue détail.
 -   **Résultat attendu :** 3 onglets peuplés correctement selon l'état.
     Clic gauche → vue détail (icône, description, étape courante avec
     progression, récompenses, prérequis, boutons retour/suivre/fermer).
     Clic droit → active/désactive le suivi sans changer de vue. Toute
     tentative de vol/dépôt/échange dans le menu est bloquée
     (`event.setCancelled(true)`), aucun objet ne quitte ni n'entre dans le
-    menu.
+    menu. Le bouton « Fermer » ferme réellement l'inventaire côté client (bug
+    corrigé : la fermeture était auparavant appelée pendant le traitement du
+    clic lui-même, ce qui pouvait laisser la fenêtre visuellement ouverte —
+    elle est maintenant différée d'un tick serveur,
+    `QuestJournalService#closeNextTick`).
 -   **Résultat console :** aucune exception sur navigation rapide (page
     suivante/précédente, changement d'onglet en rafale).
 -   **Données/persistance à contrôler :** le suivi (`__tracked_quest__`
@@ -222,7 +227,87 @@ Deux joueurs (ou deux comptes) sont nécessaires pour certains tests
 -   **Cas sans permission :** retirer `rpgquest.quest` → `/quests` répond
     `Permission manquante : rpgquest.quest`.
 -   **Couverture automatisée :** `JournalPaginationTest`,
-    `QuestJournalServiceTest`.
+    `QuestJournalServiceTest` (dont
+    `closeButtonInTheListViewDefersClosingToTheNextTick` et
+    `closeButtonInTheDetailViewDefersClosingToTheNextTick` pour le bug
+    corrigé ci-dessus).
+
+### TC-014 — Feedback de récompenses à la remise
+
+-   **Fonctionnalité testée :** `QuestProgressEngine#turnIn`/`#grantRewards`/
+    `#showQuestCompleted`, clés `quest.reward-summary-header`/
+    `reward-line-experience`/`reward-line-item`/`reward-line-special` de
+    `messages.yml`.
+-   **Préconditions :** aucune (utiliser `first_steps` ou `crystal_hunt`).
+-   **Actions en jeu :** terminer `first_steps` (donne 50 XP + 1
+    `IRON_SWORD`).
+-   **Résultat attendu :** en plus du Title « Quête terminée » habituel, un
+    message apparaît **dans le chat**, une seule fois : une ligne d'en-tête
+    citant le nom de la quête, puis une ligne par récompense réellement
+    accordée (`+ 50 XP`, `+ 1x IRON_SWORD`). Aucune récompense qui n'est pas
+    réellement dans `first_steps.yml` ne doit apparaître. Pour
+    `crystal_hunt` (récompense `COMMAND` donnant `rpgquest:miner_pickaxe`),
+    la ligne correspondante affiche un texte générique (« Récompense
+    spéciale ») plutôt qu'un nom d'objet, faute de pouvoir inspecter le
+    contenu d'une commande arbitraire.
+-   **Cas sans récompense :** forcer la complétion d'une quête sans
+    `rewards` (`/quest complete <id>` sur une quête de test créée sans
+    section `rewards`) → aucun message n'apparaît dans le chat (pas de
+    résumé vide, pas de récompense inventée).
+-   **Couverture automatisée :**
+    `QuestProgressEngineTest#completingAQuestSendsAChatSummaryOfRewardsActuallyGranted`,
+    `#rewardSummaryListsAnItemAndACommandRewardWithoutInventingDetails`,
+    `#questWithNoRewardsSendsNoChatSummary`.
+
+### Pack de quêtes de test manuel — un objectif de chaque type
+
+Sept quêtes minimalistes, une par type d'`ObjectiveType` implémenté,
+destinées **uniquement** au test manuel sur un serveur réel (y compris
+VeryGames) — jamais à la production. Fichiers dans
+`docs/manual-tests/quests/` (racine du dépôt, **jamais copiés
+automatiquement** : `YamlQuestEngine#BUNDLED_EXAMPLES` ne les référence
+pas, donc ils n'apparaissent jamais sur un serveur tant qu'on ne les colle
+pas soi-même) :
+
+| Fichier | Id | Type testé | Objectif |
+|---|---|---|---|
+| `test_break_block.yml` | `rpgquest:test_break_block` | `BREAK_BLOCK` | Casser 3 `DIRT`. |
+| `test_place_block.yml` | `rpgquest:test_place_block` | `PLACE_BLOCK` | Poser 3 `DIRT`. |
+| `test_kill_entity.yml` | `rpgquest:test_kill_entity` | `KILL_ENTITY` | Tuer 2 `ZOMBIE` (`/summon zombie` en créatif si besoin). |
+| `test_collect_item.yml` | `rpgquest:test_collect_item` | `COLLECT_ITEM` | Ramasser 5 `STICK` au sol (les jeter puis marcher dessus — un pickup au sol est **obligatoire**, `/give` ne compte pas). |
+| `test_craft_item.yml` | `rpgquest:test_craft_item` | `CRAFT_ITEM` | Fabriquer 1 `STICK` (grille 2×2 de l'inventaire, aucun établi requis). |
+| `test_talk_to_npc.yml` | `rpgquest:test_talk_to_npc` | `TALK_TO_NPC` | Taguer une entité avec `/rpgadmin npc tag test_dummy` puis clic droit dessus. |
+| `test_reach_location.yml` | `rpgquest:test_reach_location` | `REACH_LOCATION` | S'approcher à moins de 20 blocs de `world 0,64,0` (ajuster `x`/`y`/`z` dans le fichier avec ses propres coordonnées `F3` si le spawn réel est ailleurs). |
+
+Toutes `repeatable: true` (rejouables sans `/quest admin reset`), avec une
+récompense symbolique de 5 XP chacune (permet aussi de vérifier au passage
+le résumé de récompenses de TC-014).
+
+**Procédure d'activation (test manuel uniquement, à retirer ensuite) :**
+
+1.  Copier les 7 fichiers de `docs/manual-tests/quests/` vers
+    `plugins/RPGQuest/quests/` sur le serveur de test.
+2.  `/quest admin reload` (ou redémarrer) → le rapport doit annoncer 7
+    quêtes de plus chargées, 0 erreur.
+3.  Pour chaque type : `/quest accept rpgquest:test_<type>`, réaliser
+    l'action décrite ci-dessus, vérifier `/quest progress
+    rpgquest:test_<type>` puis la remise automatique (Title + résumé chat,
+    voir TC-014). Pour `test_talk_to_npc`, taguer l'entité **avant**
+    d'accepter ou après, peu importe — seul l'ordre clic-après-tag compte.
+4.  Une fois les 7 types validés, **supprimer les 7 fichiers** de
+    `plugins/RPGQuest/quests/` puis `/quest admin reload` à nouveau (le
+    rapport doit annoncer leur disparition, 0 erreur) — ces quêtes ne
+    doivent **jamais** rester dans une installation VeryGames de
+    production entre deux sessions de test.
+5.  Optionnel : `/quest admin reset <joueur> all` (ou juste les 7 ids) pour
+    nettoyer la progression de test avant de retirer les fichiers, si le
+    même compte sert aussi à des tests de production.
+
+-   **Couverture automatisée :** `ManualTestQuestPackTest` (le pack reste
+    chargeable sans erreur, un id `test_*` par quête, les 7 types
+    d'`ObjectiveType` sont couverts exactement une fois — échoue si le
+    format de quête ou la liste des types change sans que ce pack soit mis
+    à jour en conséquence).
 
 ---
 
@@ -540,8 +625,11 @@ Deux joueurs (ou deux comptes) sont nécessaires pour certains tests
     <id>`, `/rpgadmin zone list`, `/rpgadmin zone info <id>`, `/rpgadmin
     zone delete <id>`.
 -   **Actions en jeu :** `/rpgadmin zone wand`, clic gauche (position 1) /
-    clic droit (position 2) avec la hache reçue sur deux coins, `/rpgadmin
-    zone create test_zone`.
+    clic droit (position 2) avec l'outil reçu (tige de blaze) sur deux
+    coins, `/rpgadmin zone create test_zone`. Si WorldEdit est installé,
+    vérifier que ses propres messages de sélection (« Première/Seconde
+    position définie ») n'apparaissent **pas** pendant cette manipulation —
+    signe que les deux wands sont bien indépendantes.
 -   **Résultat attendu :** `Zone créée : test_zone` ; `/rpgadmin zone info
     test_zone` affiche les bornes et les flags par défaut (`pvp=false
     break=false place=false explosions=false feu=false lave=false

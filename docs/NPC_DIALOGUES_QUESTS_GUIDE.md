@@ -134,7 +134,7 @@ nodes:
           - type: START_QUEST
             quest: rpgquest:premiers_pas
         next: null             # optionnel ; absent ici -> le dialogue se ferme après les actions
-      - text: "Non merci."
+      - text: "D'accord !"
         actions:
           - type: CLOSE
 ```
@@ -254,7 +254,7 @@ nodes:
         actions:
           - type: START_QUEST
             quest: rpgquest:premiers_pas
-      - text: "Non merci."
+      - text: "D'accord !"
         actions:
           - type: CLOSE
 ```
@@ -497,7 +497,7 @@ nodes:
         actions:
           - type: START_QUEST
             quest: rpgquest:premiers_pas
-      - text: "Non merci."
+      - text: "D'accord !"
         actions:
           - type: CLOSE
 ```

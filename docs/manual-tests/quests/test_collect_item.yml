@@ -1,0 +1,24 @@
+# QUÊTE DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md, section
+# « Pack de quêtes de test manuel » pour la procédure d'activation/retrait.
+#
+# COLLECT_ITEM se déclenche sur EntityPickupItemEvent : il faut ramasser les
+# objets au sol (les jeter puis marcher dessus), pas les recevoir autrement
+# (/give, coffre, craft) — voir docs/RPGQUEST_BIBLE.md section 3.
+id: rpgquest:test_collect_item
+title: "<red>[TEST] Collecter des bâtons</red>"
+description: "<gray>Quête de test manuel — objectif COLLECT_ITEM. Ramasse 5 bâtons au sol (jette-les puis marche dessus).</gray>"
+category: test
+icon: STICK
+repeatable: true
+
+steps:
+  - id: collect_sticks
+    objectives:
+      - type: COLLECT_ITEM
+        material: STICK
+        amount: 5
+
+rewards:
+  - type: EXPERIENCE
+    amount: 5

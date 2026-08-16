@@ -1,0 +1,24 @@
+# QUÊTE DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md, section
+# « Pack de quêtes de test manuel » pour la procédure d'activation/retrait.
+#
+# « npc » est un id logique RPGQuest (posé via /rpgadmin npc tag), jamais le
+# nom affiché de l'entité — voir docs/RPGQUEST_BIBLE.md section 3/5. Avant de
+# tester : viser une entité vivante quelconque (villageois, zombie...) et
+# taper `/rpgadmin npc tag test_dummy`, puis clic droit dessus.
+id: rpgquest:test_talk_to_npc
+title: "<red>[TEST] Parler à un PNJ</red>"
+description: "<gray>Quête de test manuel — objectif TALK_TO_NPC. Tague une entité avec /rpgadmin npc tag test_dummy puis clique droit dessus.</gray>"
+category: test
+icon: VILLAGER_SPAWN_EGG
+repeatable: true
+
+steps:
+  - id: talk_to_dummy
+    objectives:
+      - type: TALK_TO_NPC
+        npc: test_dummy
+
+rewards:
+  - type: EXPERIENCE
+    amount: 5

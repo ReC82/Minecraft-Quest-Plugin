@@ -1,0 +1,23 @@
+# QUÊTE DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md, section
+# « Pack de quêtes de test manuel » pour la procédure d'activation/retrait.
+#
+# CRAFT_ITEM se déclenche sur CraftItemEvent, y compris la grille 2x2 de
+# l'inventaire (pas besoin d'établi) — voir docs/RPGQUEST_BIBLE.md section 3.
+id: rpgquest:test_craft_item
+title: "<red>[TEST] Fabriquer un bâton</red>"
+description: "<gray>Quête de test manuel — objectif CRAFT_ITEM. Fabrique un bâton (2 planches, grille 2x2 de l'inventaire, aucun établi requis).</gray>"
+category: test
+icon: STICK
+repeatable: true
+
+steps:
+  - id: craft_stick
+    objectives:
+      - type: CRAFT_ITEM
+        material: STICK
+        amount: 1
+
+rewards:
+  - type: EXPERIENCE
+    amount: 5

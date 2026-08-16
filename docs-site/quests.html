@@ -99,8 +99,9 @@ rewards:                    # optionnel
     <h2 class="h4">Notifications de progression</h2>
     <p class="text-body-secondary">
       Implémentation : <code>quest.progress.QuestProgressEngine#showQuestStarted</code> /
-      <code>#showObjectiveProgress</code> / <code>#showQuestCompleted</code>. Trois événements,
-      trois canaux — <strong>jamais le chat</strong>, pour ne pas le spammer :
+      <code>#showObjectiveProgress</code> / <code>#showQuestCompleted</code>. Démarrage, progression
+      et fin restent hors du chat pour ne pas le spammer ; la fin d'une quête envoie <strong>en plus</strong>
+      un court résumé dans le chat listant ce qui a été réellement reçu :
     </p>
     <table class="table table-sm align-middle">
       <thead><tr><th>Événement</th><th>Canal</th><th>Contenu (exemple)</th></tr></thead>
@@ -108,17 +109,26 @@ rewards:                    # optionnel
         <tr><td>Quête démarrée</td><td>Title/Subtitle plein écran, bref (~3 s)</td><td>« Quête commencée » / « Premiers pas »</td></tr>
         <tr><td>Objectif qui progresse</td><td>ActionBar (se remplace en place)</td><td>« Parler à libraire  1/1 »</td></tr>
         <tr><td>Quête terminée</td><td>Title/Subtitle plein écran, bref (~3 s)</td><td>« Quête terminée » / « Premiers pas »</td></tr>
+        <tr><td>Récompenses de la remise</td><td>Chat, une fois, seulement si la quête donne quelque chose</td><td>« Quête terminée : Premiers pas — récompenses : »<br>« + 20 XP »</td></tr>
       </tbody>
     </table>
     <p class="text-body-secondary small">
-      Le texte de ces trois notifications est entièrement personnalisable dans
+      Le texte de ces notifications est entièrement personnalisable dans
       <code>messages.yml</code> (<code>quest.started-title</code>/<code>started-subtitle</code>,
-      <code>quest.objective-progress</code>, <code>quest.completed-title</code>/<code>completed-subtitle</code>),
+      <code>quest.objective-progress</code>, <code>quest.completed-title</code>/<code>completed-subtitle</code>,
+      <code>quest.reward-summary-header</code>/<code>reward-line-experience</code>/<code>reward-line-item</code>/<code>reward-line-special</code>),
       rechargé par <code>/quest admin reload</code> — jamais un titre de quête codé en dur : le nom
       affiché vient toujours du <code>title:</code> de la quête concernée. L'ActionBar se déclenche à
       <strong>chaque</strong> incrément d'objectif, qu'il complète l'objectif ou non (ex. 1/2 puis 2/2
       pour tuer deux zombies) — y compris quand l'action de dialogue <code>ADVANCE_QUEST</code> force
-      la complétion (voir <a href="dialogues.html">Dialogues</a>).
+      la complétion (voir <a href="dialogues.html">Dialogues</a>). Le résumé chat n'affiche que les
+      récompenses <strong>réellement accordées</strong> par cette quête précise (une <code>ITEM</code>
+      affiche l'objet et la quantité donnés, une <code>EXPERIENCE</code> l'XP donnée ; une récompense
+      <code>COMMAND</code> — ex. objet spécial livré via <code>/customitem give</code> — affiche une
+      ligne générique « Récompense spéciale » car le contenu d'une commande arbitraire n'est pas
+      inspectable ; une <code>VARIABLE</code> n'affiche rien, c'est un état interne du plugin, pas
+      quelque chose que le joueur reçoit). Le journal de quêtes (<code>/quests</code>) continue, lui,
+      d'afficher les récompenses <em>prévues</em> pour n'importe quelle quête, même non commencée.
     </p>
   </section>
 

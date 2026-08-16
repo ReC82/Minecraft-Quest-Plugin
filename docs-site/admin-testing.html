@@ -183,6 +183,43 @@
     </ol>
   </section>
 
+  <section class="my-5">
+    <h2 class="h4">Autres outils admin (aperçu)</h2>
+    <p class="text-body-secondary">
+      Cette page ne couvre que l'administration des <strong>quêtes</strong>. Les autres
+      sous-commandes admin de RPGQuest (racine <code>/rpgadmin</code>, permission
+      <code>rpgquest.admin.world</code>, joueur en jeu uniquement) n'ont pas encore de page dédiée —
+      aperçu ci-dessous, détail complet dans <code>docs/RPGQUEST_BIBLE.md</code> (section 2).
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Sous-commande</th><th>Effet</th><th>Détail</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>/rpgadmin flatten &lt;rayon&gt; [hauteur]|confirm|cancel|undo</code></td>
+            <td>Aplatissement de terrain autour du joueur (aperçu → confirmation, annulable).</td>
+            <td><code>docs/ADMIN_FLATTEN.md</code></td>
+          </tr>
+          <tr>
+            <td><code>/rpgadmin portal create|delete|list|info|setdestination</code></td>
+            <td>Portails « riches » village ↔ zones d'aventure (canalisation, coût, conditions).</td>
+            <td><code>docs/TRAVEL.md</code></td>
+          </tr>
+          <tr>
+            <td><code>/rpgadmin mob spawn|list|inspect|reload|metrics</code></td>
+            <td>Mobs spéciaux vanilla pilotés par YAML (variantes, capacités).</td>
+            <td><code>SPECIAL_MOB_FORMAT.md</code></td>
+          </tr>
+          <tr>
+            <td><code>/rpgadmin worldportal create|info|list|enable|disable|delete</code></td>
+            <td>Portails simples entre mondes (sans canalisation, stratégie <code>WORLD_SPAWN</code>/<code>RANDOM_SAFE</code>).</td>
+            <td><a href="worlds.html">Mondes</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
 </main>
 
 <footer class="text-center">

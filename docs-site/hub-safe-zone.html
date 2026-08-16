@@ -50,6 +50,42 @@
     </p>
   </div>
 
+  <h2 class="h3 mt-5">Monde Hub (<code>world_hub</code>) — règles globales</h2>
+  <p class="text-body-secondary">
+    Implémentation : <code>hub.HubWorldRulesService</code> (application des règles) +
+    <code>hub.HubWorldProtectionListener</code> (protections). Distinct de la zone protégée
+    <code>central_village</code> plus bas : ces règles s'appliquent à <strong>tout le monde
+    <code>world_hub</code></strong> (nom lu depuis <code>hub.world</code> dans
+    <code>config.yml</code>, <code>world_hub</code> par défaut), pas seulement à une zone cuboïde
+    précise. Réappliquées automatiquement au démarrage du plugin et à chaque (re)chargement tardif
+    du monde (ex. par Multiverse-Core après RPGQuest) — jamais via une commande
+    <code>/gamerule</code> manuelle.
+  </p>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Règle</th><th>Comportement</th></tr></thead>
+      <tbody>
+        <tr><td>Jour</td><td>Permanent — heure figée à midi (<code>ADVANCE_TIME</code> désactivé).</td></tr>
+        <tr><td>Météo</td><td>Permanente — pas de pluie/orage (<code>ADVANCE_WEATHER</code> désactivé).</td></tr>
+        <tr><td>Dégâts joueurs</td><td><strong>Toujours annulés</strong>, quelle que soit la cause (PvP, mob, chute, explosion, environnement) — aucune exception, même pour un administrateur.</td></tr>
+        <tr><td>PvP</td><td>Bloqué (conséquence directe de l'annulation totale des dégâts ci-dessus).</td></tr>
+        <tr><td>Casse / pose de bloc</td><td>Bloquées pour tout le monde, <strong>sauf</strong> bypass admin (<code>rpgquest.admin.world</code>).</td></tr>
+        <tr><td>Explosions</td><td>Aucune destruction de bloc (<code>blockList()</code> vidée), qu'il s'agisse d'une explosion d'entité (creeper, TNT) ou de bloc.</td></tr>
+        <tr><td>Mobs hostiles</td><td>Aucun spawn naturel (<code>CreatureSpawnEvent</code> de raison <code>NATURAL</code> annulé pour tout <code>Monster</code>).</td></tr>
+        <tr><td>Claims</td><td>Interdits — <code>ClaimService</code> refuse toute création dans le monde exact de <code>hub.world</code>.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="text-body-secondary small">
+    Log attendu au démarrage/chargement : <code>Règles du monde Hub appliquées : world_hub (jour et
+    météo permanents).</code> — son absence signale que <code>world_hub</code> n'a pas été détecté
+    (nom de monde incorrect au transfert, ou <code>hub.world</code> mal configuré). Voir
+    <code>docs/deployment/VERYGAMES.md</code> pour la procédure d'import
+    (<code>/mv import world_hub normal</code>) et la checklist finale complète.
+  </p>
+
+  <hr class="my-5">
+
   <h2 class="h3 mt-5">Spawn</h2>
 
   <section class="my-5">

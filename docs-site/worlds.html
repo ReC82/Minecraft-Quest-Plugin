@@ -32,22 +32,37 @@
 <main class="container py-5">
   <h1>Mondes</h1>
   <p class="text-body-secondary">
-    RPGQuest fournit désormais une <strong>gestion minimale des mondes supplémentaires</strong> :
-    <code>world.WorldService</code> (API Bukkit/Paper <code>WorldCreator</code>, aucune dépendance
-    externe — toujours pas de Multiverse-Core) et trois sous-commandes
-    <code>/rpgadmin world create|tp|list</code>. Le reste du code RPGQuest (<code>zone</code>,
-    <code>travel</code>, <code>spawn</code>, <code>mob</code>...) continue de seulement
-    <strong>référencer</strong> un monde déjà chargé par son nom
-    (<code>Bukkit#getWorld(String)</code>) — <code>WorldService</code> est le seul endroit du projet
-    qui en crée un.
+    RPGQuest fournit une <strong>gestion minimale des mondes supplémentaires</strong> propres à
+    RPGQuest : <code>world.WorldService</code> (API Bukkit/Paper <code>WorldCreator</code>, aucune
+    dépendance externe) et trois sous-commandes <code>/rpgadmin world create|tp|list</code>. Le
+    reste du code RPGQuest (<code>zone</code>, <code>travel</code>, <code>spawn</code>,
+    <code>mob</code>...) continue de seulement <strong>référencer</strong> un monde déjà chargé par
+    son nom (<code>Bukkit#getWorld(String)</code>) — <code>WorldService</code> est le seul endroit
+    du projet qui en crée un.
   </p>
 
   <div class="rpgq-card p-3 mb-4">
     <p class="text-body-secondary mb-0 small">
-      <strong>Périmètre volontairement minimal :</strong> environnement toujours
-      <code>NORMAL</code>, seed toujours aléatoire, aucune configuration YAML par monde. Pas encore
-      de portail, pas de règles spécifiques à un monde, pas de reset automatisé — voir « Prochaine
-      étape » plus bas.
+      <strong>Distinct du monde Hub (<code>world_hub</code>) :</strong> le Hub n'est pas créé par
+      <code>/rpgadmin world create</code> — c'est un monde déjà présent sur disque, déclaré à
+      <strong>Multiverse-Core</strong> (<code>/mv import world_hub normal</code>, installé et
+      utilisé en production VeryGames) puis régi automatiquement par
+      <code>hub.HubWorldRulesService</code> (jour/météo permanents, dégâts/PvP/casse-pose/claims
+      bloqués). RPGQuest ne dépend techniquement d'aucun plugin externe pour démarrer
+      (<code>plugin.yml</code> → <code>softdepend: [Citizens]</code> uniquement) : Multiverse-Core
+      reste un outil d'exploitation, jamais une dépendance de code. Détail complet des règles Hub :
+      <a href="hub-safe-zone.html">Spawn du village</a> ; procédure d'installation :
+      <code>docs/deployment/VERYGAMES.md</code>.
+    </p>
+  </div>
+
+  <div class="rpgq-card p-3 mb-4">
+    <p class="text-body-secondary mb-0 small">
+      <strong>Périmètre volontairement minimal (mondes créés par <code>/rpgadmin world</code>) :</strong>
+      environnement toujours <code>NORMAL</code>, seed toujours aléatoire, aucune configuration YAML
+      par monde, pas de règles spécifiques à un monde, pas de reset automatisé — voir « Prochaine
+      étape » plus bas. Le portail simple entre mondes (<code>/rpgadmin worldportal</code>) existe
+      déjà, voir plus bas.
     </p>
   </div>
 
@@ -63,6 +78,14 @@
         Toujours environnement <code>NORMAL</code>, seed aléatoire. Son nom est mémorisé dans
         <code>plugins/RPGQuest/worlds.yml</code> pour être rechargé automatiquement à chaque
         démarrage du plugin.</li>
+      <li><strong>Monde Hub (<code>world_hub</code>)</strong> — le monde social/sûr du serveur
+        (village, spawn), <strong>distinct</strong> des mondes ci-dessus : dossier déjà présent sur
+        disque, déclaré à Multiverse-Core (<code>/mv import</code>) plutôt que créé par
+        <code>/rpgadmin world create</code>, puis régi automatiquement par
+        <code>hub.HubWorldRulesService</code> (jour et météo figés, dégâts/PvP/casse-pose/claims
+        bloqués — détail sur <a href="hub-safe-zone.html">Spawn du village</a>). Le nom exact est lu
+        depuis <code>hub.world</code> dans <code>config.yml</code> (<code>world_hub</code> par
+        défaut).</li>
       <li><strong>Spawn RPGQuest du village</strong> (<code>/rpgadmin spawn set|tp</code>, voir
         <a href="hub-safe-zone.html">Spawn du village</a>) — une position unique (monde + x/y/z)
         stockée dans <code>plugins/RPGQuest/spawn.yml</code>, indépendante du spawn vanilla du monde
@@ -78,11 +101,43 @@
   </section>
 
   <section class="my-5">
+    <h2 class="h4">Spawn Minecraft vs Multiverse vs RPGQuest</h2>
+    <p class="text-body-secondary">
+      Trois spawns coexistent sur ce serveur — un seul régit réellement le gameplay :
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Spawn</th><th>Défini par</th><th>Référence gameplay ?</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Spawn Minecraft/Paper (<code>World#getSpawnLocation()</code>)</td>
+            <td>Génération du monde ou <code>/setworldspawn</code> vanilla</td>
+            <td>Non — repli de <code>DestinationStrategy.WORLD_SPAWN</code> et cible de
+              <code>/rpgadmin world tp</code></td>
+          </tr>
+          <tr>
+            <td>Spawn Multiverse (<code>/mv setspawn</code>)</td>
+            <td>Commande Multiverse-Core</td>
+            <td><strong>Non</strong> — jamais utilisé par RPGQuest</td>
+          </tr>
+          <tr>
+            <td>Spawn RPGQuest (village)</td>
+            <td><code>/rpgadmin spawn set</code></td>
+            <td><strong>Oui</strong> — seule source de vérité pour l'arrivée/la réapparition, voir
+              <a href="hub-safe-zone.html">Spawn du village</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="my-5">
     <h2 class="h4">Créer et gérer un monde</h2>
     <p class="text-body-secondary">
-      Procédure pas-à-pas, basée uniquement sur ce qui est réellement disponible avec cette
-      installation : les trois commandes <code>/rpgadmin world create|tp|list</code> (toujours
-      aucun plugin de gestion de mondes comme Multiverse-Core).
+      Procédure pas-à-pas pour un monde supplémentaire géré par RPGQuest, basée uniquement sur les
+      trois commandes <code>/rpgadmin world create|tp|list</code> (<code>world.WorldService</code>,
+      sans dépendance à Multiverse-Core) — ne concerne pas le monde Hub, géré différemment (voir
+      ci-dessus).
     </p>
     <ol class="text-body-secondary">
       <li>
@@ -185,13 +240,14 @@ level-type=minecraft:normal
 /rpgadmin worldportal disable <id>               # désactive un portail simple (config conservée)
 /rpgadmin worldportal delete <id>                # supprime définitivement un portail simple</code></pre>
     <p class="text-body-secondary small">
-      Aucune commande Multiverse n'est documentée ici : ce plugin n'est toujours pas installé sur ce
-      serveur (aucune trace dans <code>build.gradle.kts</code> ni <code>plugin.yml</code>) — les
-      trois commandes <code>/rpgadmin world ...</code> ci-dessus sont entièrement RPGQuest
-      (<code>world.WorldService</code>), pas Multiverse. Aucune commande vanilla/Paper native de
-      création ou de téléportation inter-monde n'est documentée ici : ce besoin est désormais couvert
-      par <code>/rpgadmin world</code> plutôt que par une commande vanilla (qui n'existe toujours
-      pas pour un monde Bukkit personnalisé).
+      Les trois commandes <code>/rpgadmin world ...</code> ci-dessus sont entièrement RPGQuest
+      (<code>world.WorldService</code>), jamais Multiverse — RPGQuest n'a aucune dépendance de code
+      vers Multiverse-Core (<code>plugin.yml</code> ne déclare que
+      <code>softdepend: [Citizens]</code>). Multiverse-Core <strong>est</strong> installé et utilisé
+      en production VeryGames, mais uniquement pour déclarer/lister le monde Hub
+      (<code>/mv import world_hub normal</code>, <code>/mv list</code> — voir
+      <code>docs/deployment/VERYGAMES.md</code>), jamais pour un monde créé via
+      <code>/rpgadmin world create</code>.
     </p>
   </section>
 

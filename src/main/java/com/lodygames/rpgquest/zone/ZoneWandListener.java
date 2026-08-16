@@ -5,6 +5,7 @@ import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -16,6 +17,13 @@ import org.bukkit.inventory.EquipmentSlot;
  * systématiquement l'événement (empêche de casser/poser un bloc avec
  * l'outil) et ignore la main secondaire, comme les capacités d'objets
  * personnalisés de l'étape 8.
+ *
+ * <p>{@code ignoreCancelled = false} et priorité {@link EventPriority#HIGHEST} sont volontaires :
+ * l'outil doit rester utilisable même si un autre plugin (protection de zone type WorldGuard, etc.)
+ * annule l'interaction avant nous. Ce n'est pas un risque de conflit puisque {@link
+ * ZoneSelectionService#isWand} n'identifie l'objet que par PDC, jamais par son type — voir le
+ * commentaire sur {@link ZoneSelectionService#createWandItem()} pour le cas WorldEdit qui a motivé
+ * ce choix.</p>
  */
 public final class ZoneWandListener implements Listener {
 
@@ -27,7 +35,7 @@ public final class ZoneWandListener implements Listener {
         this.selectionService = selectionService;
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onInteract(PlayerInteractEvent event) {
         if (event.getHand() != EquipmentSlot.HAND) {
             return;

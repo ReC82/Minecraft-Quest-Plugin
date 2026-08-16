@@ -8,9 +8,11 @@ sélection).
 
 ## Commandes (toutes `rpgquest.admin.world`)
 
--   `/rpgadmin zone wand` — donne l'outil de sélection (hache en bois
-    marquée par PersistentDataContainer, jamais reconnue par son nom).
-    Clic gauche sur un bloc = position 1, clic droit = position 2.
+-   `/rpgadmin zone wand` — donne l'outil de sélection (tige de blaze
+    marquée par PersistentDataContainer, jamais reconnue par son nom ni son
+    matériau — délibérément pas une hache en bois, l'item de wand par
+    défaut de WorldEdit). Clic gauche sur un bloc = position 1, clic droit
+    = position 2.
 -   `/rpgadmin zone create <id>` — crée une zone cuboïde à partir de la
     sélection courante (les deux positions doivent être dans le même
     monde). Rejetée si l'id existe déjà ou si la zone chevauche une zone

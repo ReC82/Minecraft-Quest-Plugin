@@ -60,9 +60,16 @@ public final class ZoneSelectionService {
         selections.remove(playerId);
     }
 
-    /** Construit un exemplaire de l'outil de sélection (hache en bois marquée par PDC, jamais par nom/lore). */
+    /**
+     * Construit un exemplaire de l'outil de sélection (tige de blaze marquée par PDC, jamais par
+     * nom/lore). Volontairement pas une hache en bois : c'est l'item de wand par défaut de WorldEdit
+     * (config {@code wand-item}, WorldEdit reconnaît n'importe quelle hache en bois par son type
+     * d'objet, pas par PDC), donc les deux plugins se disputaient le même clic — WorldEdit posait sa
+     * propre sélection et annulait l'événement avant que RPGQuest ne voie le clic. Un matériau que
+     * WorldEdit n'associe à aucune wand par défaut rend les deux outils réellement indépendants.
+     */
     public ItemStack createWandItem() {
-        ItemStack stack = new ItemStack(Material.WOODEN_AXE);
+        ItemStack stack = new ItemStack(Material.BLAZE_ROD);
         ItemMeta meta = stack.getItemMeta();
         meta.displayName(MiniMessage.miniMessage().deserialize("<gold>Outil de sélection de zone</gold>"));
         meta.getPersistentDataContainer().set(WAND_KEY, PersistentDataType.BYTE, (byte) 1);

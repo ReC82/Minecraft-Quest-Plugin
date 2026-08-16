@@ -10,6 +10,8 @@ import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.spawn.SpawnPoint;
 import com.lodygames.rpgquest.spawn.SpawnService;
+import com.lodygames.rpgquest.story.StoryService;
+import com.lodygames.rpgquest.story.model.StoryDefinition;
 import com.lodygames.rpgquest.travel.WorldPortalRegistry;
 import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
@@ -22,14 +24,18 @@ import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.zone.ZoneSelectionService;
 import com.lodygames.rpgquest.zone.model.ZoneDefinition;
 import com.lodygames.rpgquest.zone.model.ZoneFlags;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.function.BiConsumer;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -58,7 +64,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String PERMISSION = "rpgquest.admin.world";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal");
+            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "story");
     private static final List<String> FLATTEN_SUBCOMMANDS = List.of("confirm", "cancel", "undo");
     private static final List<String> ZONE_SUBCOMMANDS = List.of("create", "delete", "list", "info", "wand");
     private static final List<String> PORTAL_SUBCOMMANDS = List.of("create", "delete", "list", "info", "setdestination");
@@ -67,6 +73,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final List<String> SPAWN_SUBCOMMANDS = List.of("set", "tp");
     private static final List<String> WORLD_SUBCOMMANDS = List.of("create", "tp", "list");
     private static final List<String> WORLD_PORTAL_SUBCOMMANDS = List.of("create", "info", "list", "enable", "disable", "delete");
+    private static final List<String> STORY_SUBCOMMANDS = List.of("info", "start", "reset");
     private static final double NPC_REACH = 6.0;
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
@@ -81,13 +88,14 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final SpawnService spawnService;
     private final WorldService worldService;
     private final WorldPortalRegistry worldPortalRegistry;
+    private final StoryService storyService;
     private final RPGQuestPlugin plugin;
 
     public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService,
                             YamlPortalRegistry portalRegistry, YamlDestinationRegistry destinationRegistry,
                             SpecialMobRegistry mobRegistry, SpecialMobService mobService, NpcIdentityService npcIdentityService,
                             SpawnService spawnService, WorldService worldService, WorldPortalRegistry worldPortalRegistry,
-                            RPGQuestPlugin plugin) {
+                            StoryService storyService, RPGQuestPlugin plugin) {
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
@@ -99,6 +107,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         this.spawnService = spawnService;
         this.worldService = worldService;
         this.worldPortalRegistry = worldPortalRegistry;
+        this.storyService = storyService;
         this.plugin = plugin;
     }
 
@@ -108,6 +117,13 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         if (!sender.hasPermission(PERMISSION)) {
             sender.sendMessage(MM.deserialize(
                     "<red>Permission manquante :</red> <white><permission></white>", Placeholder.unparsed("permission", PERMISSION)));
+            return true;
+        }
+        // "story" cible un joueur passé en argument (pas la position de l'exécutant, contrairement à
+        // toutes les autres sous-commandes) : utilisable depuis la console, seul cas à échapper à la
+        // contrainte "joueur en jeu" ci-dessous.
+        if (args.length > 0 && args[0].equalsIgnoreCase("story")) {
+            handleStory(sender, args);
             return true;
         }
         if (!(sender instanceof Player player)) {
@@ -665,7 +681,18 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                     "<red>Aucun spawn défini. Utilisez d'abord</red> <yellow>/rpgadmin spawn set</yellow>."));
             return;
         }
-        player.teleportAsync(location.get());
+        // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée.
+        Location adminSpawnSource = player.getLocation();
+        Location adminSpawnTarget = location.get();
+        plugin.getSLF4JLogger().info("[TP-TRACE] player={} uuid={} source=RpgAdminCommand portal=none "
+                        + "from={}:{},{},{} to={}:{},{},{} reason=admin_spawn_tp at={}",
+                player.getName(), player.getUniqueId(),
+                adminSpawnSource.getWorld() != null ? adminSpawnSource.getWorld().getName() : "?",
+                adminSpawnSource.getBlockX(), adminSpawnSource.getBlockY(), adminSpawnSource.getBlockZ(),
+                adminSpawnTarget.getWorld() != null ? adminSpawnTarget.getWorld().getName() : "?",
+                adminSpawnTarget.getBlockX(), adminSpawnTarget.getBlockY(), adminSpawnTarget.getBlockZ(),
+                System.currentTimeMillis());
+        player.teleportAsync(adminSpawnTarget);
         player.sendMessage(MM.deserialize("<green>Téléporté au spawn du village.</green>"));
     }
 
@@ -728,7 +755,18 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                     Placeholder.unparsed("name", name)));
             return;
         }
-        player.teleportAsync(world.get().getSpawnLocation());
+        // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée.
+        Location worldTpSource = player.getLocation();
+        Location worldTpTarget = world.get().getSpawnLocation();
+        plugin.getSLF4JLogger().info("[TP-TRACE] player={} uuid={} source=RpgAdminCommand portal=none "
+                        + "from={}:{},{},{} to={}:{},{},{} reason=admin_world_tp at={}",
+                player.getName(), player.getUniqueId(),
+                worldTpSource.getWorld() != null ? worldTpSource.getWorld().getName() : "?",
+                worldTpSource.getBlockX(), worldTpSource.getBlockY(), worldTpSource.getBlockZ(),
+                worldTpTarget.getWorld() != null ? worldTpTarget.getWorld().getName() : "?",
+                worldTpTarget.getBlockX(), worldTpTarget.getBlockY(), worldTpTarget.getBlockZ(),
+                System.currentTimeMillis());
+        player.teleportAsync(worldTpTarget);
         player.sendMessage(MM.deserialize(
                 "<green>Téléporté au spawn du monde</green> <white><name></white>.", Placeholder.unparsed("name", name)));
     }
@@ -940,6 +978,125 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin worldportal enable <id></yellow> <gray>- réactive un portail simple</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin worldportal disable <id></yellow> <gray>- désactive un portail simple (le déclenchement est bloqué, la config est conservée)</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin worldportal delete <id></yellow> <gray>- supprime définitivement un portail simple</gray>"));
+    }
+
+    // ---- Story (conteneur logique de quêtes existantes, indépendant du moteur de quête) ----------
+    //
+    // Seule branche de /rpgadmin utilisable par la console : "story" cible un joueur passé en
+    // argument, jamais la position de l'exécutant (voir onCommand). Aucune sous-commande "create" :
+    // les stories se chargent depuis plugins/RPGQuest/stories/ (voir story.StoryRegistry), pas
+    // créées en jeu comme les zones/portails.
+
+    private void handleStory(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sendStoryUsage(sender);
+            return;
+        }
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "info" -> handleStoryInfo(sender, args);
+            case "start" -> handleStoryStart(sender, args);
+            case "reset" -> handleStoryReset(sender, args);
+            default -> sendStoryUsage(sender);
+        }
+    }
+
+    private void handleStoryInfo(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin story info <joueur></yellow>"));
+            return;
+        }
+        resolveTargetPlayer(sender, args[2], (uuid, name) ->
+                storyService.info(uuid).thenAccept(infos -> runOnMainThread(() -> {
+                    if (infos.isEmpty()) {
+                        sender.sendMessage(MM.deserialize("<gray>Aucune story chargée.</gray>"));
+                        return;
+                    }
+                    sender.sendMessage(MM.deserialize(
+                            "<gold>=== Stories de <name> ===</gold>", Placeholder.unparsed("name", name)));
+                    for (StoryService.StoryInfo info : infos) {
+                        sender.sendMessage(MM.deserialize(
+                                "<yellow>- <id></yellow> <gray>(<title>) :</gray> <white><state></white>",
+                                Placeholder.unparsed("id", info.story().id()),
+                                Placeholder.unparsed("title", info.story().name().base()),
+                                Placeholder.unparsed("state", info.state().name())));
+                    }
+                })));
+    }
+
+    private void handleStoryStart(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin story start <joueur> <storyId></yellow>"));
+            return;
+        }
+        String storyId = args[3].toLowerCase(Locale.ROOT);
+        resolveTargetPlayer(sender, args[2], (uuid, name) ->
+                storyService.start(uuid, name, storyId).thenAccept(outcome -> runOnMainThread(() -> {
+                    switch (outcome) {
+                        case STARTED -> sender.sendMessage(MM.deserialize(
+                                "<green>Story démarrée :</green> <white><id></white> <gray>pour</gray> <white><name></white>",
+                                Placeholder.unparsed("id", storyId), Placeholder.unparsed("name", name)));
+                        case ALREADY_ACTIVE -> sender.sendMessage(MM.deserialize(
+                                "<yellow>Story déjà active pour <name> :</yellow> <white><id></white>",
+                                Placeholder.unparsed("name", name), Placeholder.unparsed("id", storyId)));
+                        case ALREADY_COMPLETED -> sender.sendMessage(MM.deserialize(
+                                "<yellow>Story déjà terminée pour <name> :</yellow> <white><id></white> "
+                                        + "<gray>(</gray><yellow>/rpgadmin story reset</yellow><gray> pour recommencer).</gray>",
+                                Placeholder.unparsed("name", name), Placeholder.unparsed("id", storyId)));
+                        case UNKNOWN_STORY -> sender.sendMessage(MM.deserialize(
+                                "<red>Story inconnue :</red> <white><id></white>", Placeholder.unparsed("id", storyId)));
+                    }
+                })));
+    }
+
+    private void handleStoryReset(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin story reset <joueur> <storyId|all></yellow>"));
+            return;
+        }
+        String target = args[3].toLowerCase(Locale.ROOT);
+        resolveTargetPlayer(sender, args[2], (uuid, name) ->
+                storyService.reset(uuid, target).thenAccept(outcome -> runOnMainThread(() -> {
+                    switch (outcome) {
+                        case RESET_ALL -> sender.sendMessage(MM.deserialize(
+                                "<green>Toute la progression Story de <name> a été réinitialisée.</green>",
+                                Placeholder.unparsed("name", name)));
+                        case RESET_ONE -> sender.sendMessage(MM.deserialize(
+                                "<green>Story réinitialisée :</green> <white><id></white> <gray>pour</gray> <white><name></white>",
+                                Placeholder.unparsed("id", target), Placeholder.unparsed("name", name)));
+                        case UNKNOWN_STORY -> sender.sendMessage(MM.deserialize(
+                                "<red>Story inconnue :</red> <white><id></white>", Placeholder.unparsed("id", target)));
+                    }
+                })));
+    }
+
+    private void sendStoryUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin story info <joueur></yellow> <gray>- état de toutes les stories pour ce joueur</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin story start <joueur> <storyId></yellow> <gray>- démarre une story</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin story reset <joueur> <storyId|all></yellow> <gray>- réinitialise une (ou toutes) story(ies)</gray>"));
+    }
+
+    /**
+     * Résout {@code rawName} (en ligne d'abord, sinon hors-ligne de façon asynchrone — jamais
+     * bloquant sur le thread principal) puis exécute {@code action} avec son UUID et son nom
+     * résolu, sur le thread principal dans les deux cas. Même patron que {@code
+     * RPGQuestCommand#handleProfile} : {@code story} doit pouvoir cibler un joueur hors ligne
+     * (outil admin/debug, pas une action en jeu).
+     */
+    private void resolveTargetPlayer(CommandSender sender, String rawName, BiConsumer<UUID, String> action) {
+        Player online = plugin.getServer().getPlayerExact(rawName);
+        if (online != null) {
+            action.accept(online.getUniqueId(), online.getName());
+            return;
+        }
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            @SuppressWarnings("deprecation")
+            OfflinePlayer offline = plugin.getServer().getOfflinePlayer(rawName);
+            String resolvedName = offline.getName() != null ? offline.getName() : rawName;
+            plugin.getServer().getScheduler().runTask(plugin, () -> action.accept(offline.getUniqueId(), resolvedName));
+        });
     }
 
     private void handleZone(Player player, String[] args) {
@@ -1198,6 +1355,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         sendSpawnUsage(sender);
         sendWorldUsage(sender);
         sendWorldPortalUsage(sender);
+        sendStoryUsage(sender);
     }
 
     private void sendFlattenUsage(CommandSender sender) {
@@ -1263,6 +1421,22 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                         || args[1].equalsIgnoreCase("disable") || args[1].equalsIgnoreCase("delete"))) {
             return worldPortalRegistry.portals().stream().map(WorldPortalDefinition::id)
                     .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("story")) {
+            return STORY_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("story")) {
+            return plugin.getServer().getOnlinePlayers().stream().map(Player::getName)
+                    .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 4 && args[0].equalsIgnoreCase("story")
+                && (args[1].equalsIgnoreCase("start") || args[1].equalsIgnoreCase("reset"))) {
+            List<String> ids = new ArrayList<>(
+                    storyService.stories().stream().map(StoryDefinition::id).toList());
+            if (args[1].equalsIgnoreCase("reset")) {
+                ids.add("all");
+            }
+            return ids.stream().filter(id -> id.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
         }
         return List.of();
     }

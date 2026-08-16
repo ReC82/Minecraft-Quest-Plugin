@@ -41,6 +41,7 @@ import com.lodygames.rpgquest.database.ProgressionRepository;
 import com.lodygames.rpgquest.database.QuestProgressRepository;
 import com.lodygames.rpgquest.database.ResourceNodeRepository;
 import com.lodygames.rpgquest.database.StoreDeliveryRepository;
+import com.lodygames.rpgquest.database.StoryProgressRepository;
 import com.lodygames.rpgquest.database.WalletRepository;
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
 import com.lodygames.rpgquest.dialogue.render.ChatDialogueRenderer;
@@ -87,6 +88,8 @@ import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.store.StoreClient;
 import com.lodygames.rpgquest.store.StoreDeliveryService;
 import com.lodygames.rpgquest.store.StoreProductRegistry;
+import com.lodygames.rpgquest.story.StoryRegistry;
+import com.lodygames.rpgquest.story.StoryService;
 import com.lodygames.rpgquest.travel.PortalService;
 import com.lodygames.rpgquest.travel.WorldPortalRegistry;
 import com.lodygames.rpgquest.travel.WorldPortalTeleportListener;
@@ -129,6 +132,7 @@ public final class RPGQuestBootstrap {
     private final YamlPortalRegistry portalRegistry;
     private final YamlDestinationRegistry destinationRegistry;
     private final WorldPortalRegistry worldPortalRegistry;
+    private final StoryRegistry storyRegistry;
     private final ClaimSelectionService claimSelectionService;
     private final SpecialMobRegistry mobRegistry;
     private final StoreProductRegistry storeProductRegistry;
@@ -154,6 +158,7 @@ public final class RPGQuestBootstrap {
     private StoreDeliveryService storeDeliveryService;
     private ModCompatService modCompatService;
     private NpcIdentityService npcIdentityService;
+    private StoryService storyService;
     private final SpawnService spawnService;
     private final WorldService worldService;
 
@@ -184,6 +189,8 @@ public final class RPGQuestBootstrap {
                 plugin.getDataFolder().toPath().resolve("destinations"), plugin.getSLF4JLogger());
         this.worldPortalRegistry = new WorldPortalRegistry(
                 plugin.getDataFolder().toPath().resolve("world-portals"), plugin.getSLF4JLogger());
+        this.storyRegistry = new StoryRegistry(
+                plugin.getDataFolder().toPath().resolve("stories"), plugin.getSLF4JLogger());
         this.claimSelectionService = new ClaimSelectionService();
         this.mobRegistry = new SpecialMobRegistry(
                 plugin.getDataFolder().toPath().resolve("mobs"), plugin.getSLF4JLogger());
@@ -326,8 +333,13 @@ public final class RPGQuestBootstrap {
 
         registry.start(worldPortalRegistry);
         registry.start(new PlayerListenerService(plugin,
-                new WorldPortalTeleportListener(worldPortalRegistry, worldService,
+                new WorldPortalTeleportListener(plugin, worldPortalRegistry, worldService,
                         () -> configService.current().randomSafeArrival(), plugin.getSLF4JLogger())));
+
+        registry.start(storyRegistry);
+        StoryProgressRepository storyProgressRepository = new StoryProgressRepository(databaseService.databaseManager());
+        storyService = new StoryService(storyRegistry, storyProgressRepository, profileRepository, plugin.getSLF4JLogger());
+        registry.start(storyService);
 
         ClaimRepository claimRepository = new ClaimRepository(databaseService.databaseManager());
         claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService, progressionService);
@@ -609,7 +621,8 @@ public final class RPGQuestBootstrap {
 
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(
                 flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
-                mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry, plugin);
+                mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
+                storyService, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

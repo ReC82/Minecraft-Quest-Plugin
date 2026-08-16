@@ -1442,10 +1442,18 @@ qu'embarqués dans le jar.
 -   **`ZoneSelectionService`/`ZoneWandListener`** — même conception que les
     sessions de dialogue/journal : état de sélection **en mémoire
     uniquement**, aucune raison de survivre à une reconnexion. L'outil
-    (hache en bois) est reconnu **exclusivement** par son
+    (tige de blaze) est reconnu **exclusivement** par son
     PersistentDataContainer (`rpgquest:zone_wand`), jamais par son nom
     affiché — même garantie anti-contrefaçon que les objets personnalisés
-    de l'étape 7.
+    de l'étape 7. Le matériau n'est volontairement **pas** une hache en
+    bois : bug constaté en test réel sur VeryGames (WorldEdit 7.4.1) —
+    WorldEdit reconnaît sa propre wand par défaut (`wand-item` dans sa
+    config) par **type d'objet**, pas par PDC, donc n'importe quelle hache
+    en bois déclenchait aussi sa sélection à lui et annulait parfois
+    l'événement avant que RPGQuest ne le voie. `ZoneWandListener` écoute en
+    plus avec `ignoreCancelled = false` (priorité `HIGHEST`) pour rester
+    utilisable même si un autre plugin annule l'interaction en premier —
+    sans risque de collision puisque la reconnaissance reste par PDC.
 -   **Pas de rechargement à chaud d'une zone éditée à la main** — modifier
     directement un fichier de zone existant sur disque n'est repris qu'au
     prochain redémarrage (pas de commande `/rpgadmin zone reload` à cette
@@ -1572,8 +1580,9 @@ qu'embarqués dans le jar.
     `zone.ZoneSelectionService`, pas une réutilisation : un joueur qui est
     aussi administrateur ne doit pas voir sa sélection de claim mélangée à
     sa sélection de zone protégée (deux services, deux états en mémoire
-    totalement indépendants). Hache en **bois** différente (houe plutôt que
-    hache) pour que les deux outils restent visuellement distincts en jeu.
+    totalement indépendants). Matériau différent (houe en bois plutôt que
+    tige de blaze) pour que les deux outils restent visuellement distincts
+    en jeu.
 -   **Toutes les sous-commandes `/claim` sauf `create` opèrent sur « le
     claim où tu te trouves », jamais sur un id tapé à la main** — lecture
     littérale de la mission, qui ne montre un argument que pour
@@ -2534,3 +2543,57 @@ Fabrication → Remise → Récompense
     réseau, téléportation avec un inventaire chargé et une quête active,
     test depuis/vers une safe zone réelle) reste à valider par un testeur
     humain — voir `docs/TRAVEL.md`.
+
+## `story` (moteur de Storyline)
+
+-   **Indépendance délibérée du moteur de quête, lecture comme écriture** —
+    `story.StoryDefinition`/`story.StoryService` ne référencent jamais
+    `quest.progress.QuestProgressEngine` ni `quest.YamlQuestEngine` :
+    `questIds` d'une Story n'est jamais résolu contre les quêtes
+    réellement chargées, ni au chargement (`StoryDefinitionParser`) ni à
+    l'exécution. Une conséquence directe : une Story peut référencer un id
+    de quête inexistant sans erreur, et rien ne fait automatiquement
+    avancer une Story quand une de ses quêtes est terminée — c'est
+    volontairement hors périmètre de cette étape (voir `docs/storylines.md`,
+    section « Extensibilité prévue »), pas un oubli.
+-   **`StoryService` sans cache mémoire, contrairement à
+    `QuestProgressEngine`** — chaque commande admin lit/écrit directement
+    `database.StoryProgressRepository` (SQLite). Choix délibéré : cet
+    outil n'est pas un chemin chaud consulté à chaque événement de jeu
+    (contrairement au moteur de quête, consulté à chaque
+    `PlayerMoveEvent`/casse de bloc/etc.), donc pas besoin de la complexité
+    d'un cache par joueur chargé à la connexion.
+-   **`NOT_STARTED` jamais persisté** — même convention que
+    `quest.model.QuestState` : l'absence de ligne dans `story_progress`
+    pour un couple joueur+story en tient lieu, `ACTIVE`/`COMPLETED` sont
+    les seuls états réellement écrits.
+-   **`/rpgadmin story` est la seule branche de `/rpgadmin` utilisable
+    depuis la console** — elle cible un joueur passé en argument, jamais
+    la position de l'exécutant (contrairement à `zone`/`portal`/`flatten`
+    qui centrent tous sur l'exécutant), donc aucune raison d'exiger un
+    joueur en jeu. `RpgAdminCommand#onCommand` intercepte "story" avant la
+    vérification `instanceof Player`, seule exception dans tout le
+    fichier.
+-   **Reset ciblé, jamais un `DELETE` sans clause `story_id`** — voir
+    mission storyline point 8 : `StoryProgressRepository#deleteStory`
+    filtre toujours sur `(player_uuid, story_id)`, `deleteAllForPlayer`
+    reste scopé à `story_progress` uniquement (jamais `quest_progress`, un
+    portefeuille, ou un inventaire).
+-   **`reset` sur un id de Story inconnu est refusé** (sauf le mot-clé
+    réservé `all`) — évite une suppression silencieuse causée par une
+    faute de frappe d'administrateur, cohérent avec la validation déjà
+    faite par `start`.
+-   **Aucune commande `story create`/`delete`** — contrairement à
+    `zone`/`portal`/`worldportal`, les Stories ne se créent qu'en éditant
+    les fichiers YAML de `plugins/RPGQuest/stories/` puis en redémarrant ;
+    décision délibérée pour rester minimal à cette étape (mission :
+    « moteur de Storyline minimal »), pas un oubli d'API.
+-   **Test manuel limité par l'environnement** — aucun client Minecraft
+    réel disponible ici. Compensé par `StoryDefinitionParserTest`/
+    `StoryLoaderTest`/`StoryRegistryTest` (chargement YAML, id dupliqués,
+    exemple embarqué jamais réécrit), `StoryProgressRepositoryTest` (JDBC
+    pur, isolation entre joueurs et entre stories) et `StoryServiceTest`
+    (toutes les combinaisons d'issues de `start`/`reset`, création du
+    profil d'un joueur hors ligne). Le ressenti en jeu des commandes admin
+    (tab-complete, messages MiniMessage, cible hors ligne réelle) reste à
+    valider par un testeur humain — voir `docs/storylines.md`.

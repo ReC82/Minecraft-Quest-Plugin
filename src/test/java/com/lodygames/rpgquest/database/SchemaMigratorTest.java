@@ -21,7 +21,7 @@ class SchemaMigratorTest {
     void migrateSetsUserVersionToCurrentSchemaVersion() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(12, userVersion(connection));
+            assertEquals(13, userVersion(connection));
         }
     }
 
@@ -30,7 +30,7 @@ class SchemaMigratorTest {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema2.db"))) {
             SchemaMigrator.migrate(connection);
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(12, userVersion(connection));
+            assertEquals(13, userVersion(connection));
         }
     }
 
@@ -46,7 +46,7 @@ class SchemaMigratorTest {
 
             SchemaMigrator.migrate(connection);
 
-            assertEquals(12, userVersion(connection));
+            assertEquals(13, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='quest_objective_progress'")) {
@@ -188,6 +188,18 @@ class SchemaMigratorTest {
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='npc_citizens_bindings'")) {
+                assertTrue(resultSet.next());
+            }
+        }
+    }
+
+    @Test
+    void migrateCreatesStoryProgressTable() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema14.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT name FROM sqlite_master WHERE type='table' AND name='story_progress'")) {
                 assertTrue(resultSet.next());
             }
         }

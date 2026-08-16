@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 12;
+    private static final int CURRENT_VERSION = 13;
 
     private SchemaMigrator() {
     }
@@ -68,6 +68,10 @@ public final class SchemaMigrator {
         if (version < 12) {
             applyV12(connection);
             version = 12;
+        }
+        if (version < 13) {
+            applyV13(connection);
+            version = 13;
         }
 
         if (version != startingVersion) {
@@ -415,6 +419,25 @@ public final class SchemaMigrator {
                         citizens_numeric_id INTEGER NOT NULL,
                         npc_id TEXT NOT NULL,
                         created_at TEXT NOT NULL
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV13(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Progression Story (voir com.lodygames.rpgquest.story.StoryService) : un conteneur
+            // logique de quest_progress existantes, jamais couplé à ces lignes — état minimal
+            // NOT_STARTED (absence de ligne)/ACTIVE/COMPLETED par joueur+story, même convention que
+            // quest_progress (mission storyline étape 1).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS story_progress (
+                        player_uuid TEXT NOT NULL,
+                        story_id TEXT NOT NULL,
+                        state TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, story_id),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
                     )
                     """);
         }

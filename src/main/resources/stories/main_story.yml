@@ -1,0 +1,9 @@
+# Story d'exemple, générée automatiquement au premier démarrage si absente (voir
+# story.StoryRegistry). Un conteneur logique ordonné de quêtes existantes — modifiable/supprimable
+# librement, ne relance jamais rien tout seul (voir docs/storylines.md).
+id: main_story
+name: "Histoire principale"
+quests:
+  - rpgquest:premiers_pas
+  - rpgquest:first_steps
+  - rpgquest:crystal_hunt

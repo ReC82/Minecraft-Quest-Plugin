@@ -316,8 +316,18 @@ Champs : `id`/`start`/`nodes` obligatoires ; `nodes.<id>.speaker`/`text`/
 **Conditions** (`choices[].conditions[].type`) : `QUEST_STATE` (`quest`,
 `state` parmi `NOT_STARTED|ACTIVE|READY_TO_TURN_IN|COMPLETED|FAILED|ABANDONED`),
 `HAS_ITEM` (`material`, `amount`), `HAS_PERMISSION` (`permission`),
-`VARIABLE_EQUALS` (`key`, `value`). Revérifiées au clic, pas seulement à
-l'affichage.
+`VARIABLE_EQUALS` (`key`, `value`), `NO_MAIN_CLAIM` (aucun paramètre — vrai
+si le joueur ne possède encore aucun claim, source de vérité directement
+`claim.ClaimService#claimsOwnedBy`, voir [docs/CLAIMS.md](CLAIMS.md)),
+`HAS_MAIN_CLAIM` (aucun paramètre — strict opposé de `NO_MAIN_CLAIM`, même
+source de vérité via `ClaimService#mainClaimOf`, utilisé par Jo pour « Me
+rendre sur ma propriété »), `LACKS_CUSTOM_ITEM` (`item` — id namespacé,
+identifié par PDC via `item.YamlCustomItemRegistry#identify`, jamais par
+matériau seul contrairement à `HAS_ITEM` — vrai si le joueur ne possède
+aucun exemplaire ; utilisé par Jo pour ne jamais permettre de farmer
+l'Acte réutilisé comme visualiseur ou la Pierre de retour, voir
+[docs/CLAIMS.md](CLAIMS.md)).
+Revérifiées au clic, pas seulement à l'affichage.
 
 **Actions** (`choices[].actions[].type`) : `START_QUEST`, `ADVANCE_QUEST`,
 `TURN_IN_QUEST` (champ `quest`) ; `GIVE_ITEM`/`TAKE_ITEM` (`material`,
@@ -464,19 +474,23 @@ Détail complet (sécurité de destination, canalisation, coût) : [docs/TRAVEL.
 À savoir : un portail sans destination configurée ne fait rien (message affiché, aucune canalisation). Sécurité de destination : avant toute téléportation, le monde doit exister, une position sûre est recherchée (balayage vertical ±5 blocs, aucun bloc dangereux/solide) — sinon aucune téléportation, aucun débit. Le coût n'est débité **qu'après** résolution réussie de la destination.
 
 ### `/rpgadmin worldportal` — commandes
-Page docs-site : `worlds.html` (mais voir la note d'obsolescence en section 19).
+Page docs-site : `worlds.html` (mais voir la note d'obsolescence en section 19). Détail complet des outils de diagnostic (`here`/`debug`) et de l'instrumentation `TP-TRACE` : [docs/TRAVEL.md](TRAVEL.md).
 
 | Commande | Effet | Persistance |
 |---|---|---|
 | `/rpgadmin worldportal create <id> <destinationWorld> [world_spawn\|random_safe]` | Crée un portail simple depuis la sélection `zone wand` ; stratégie `world_spawn` par défaut si omise. | oui |
-| `/rpgadmin worldportal info <id>` | Monde source, bornes, destination, actif/inactif, stratégie. | non |
+| `/rpgadmin worldportal info <id>` | Monde source, bornes, destination, actif/inactif, stratégie, largeur × hauteur × profondeur, centre, répit d'arrivée (global). | non |
 | `/rpgadmin worldportal list` | Liste les portails simples. | non |
 | `/rpgadmin worldportal enable <id>` / `disable <id>` | Active/désactive le déclenchement (la configuration est conservée, désactivé = aucun effet à l'entrée). | oui |
 | `/rpgadmin worldportal delete <id>` | Supprime définitivement (fichier + mémoire). | oui |
+| `/rpgadmin worldportal here` | **Diagnostic** : liste TOUS les portails simples dont la zone contient la position actuelle (contrairement au jeu, qui n'en consulte qu'un seul) — révèle les chevauchements invisibles. | non |
+| `/rpgadmin worldportal debug show\|hide <id>` / `showall` / `hideall` | **Diagnostic** : affiche/masque le contour d'un (ou tous les) portail(s) simple(s) par particules + étiquette flottante (jamais de bloc modifié). | non (purement visuel) |
 
 Stratégies de destination (`travel.model.DestinationStrategy`, vérifié dans le code) :
 -   **`WORLD_SPAWN`** — `World#getSpawnLocation()` du monde destination, résolue à chaque activation.
 -   **`RANDOM_SAFE`** — position aléatoire sûre autour du spawn du monde destination (`travel.RandomSafeLocationFinder`), repli automatique sur `WORLD_SPAWN` si aucune position sûre trouvée. Réglages (`config.yml` → `travel.random-safe-arrival`, vérifiés dans `RandomSafeArrivalConfig`/`config.yml`) : `min-radius: 500`, `max-radius: 5000`, `max-attempts: 20` (distance autour du **spawn du monde**, pas du portail).
+
+**Investigation en cours (bug de téléportation automatique dans le Hub)** : `WorldPortalTeleportListener` applique un répit d'arrivée global de 40 ticks (2 s) après connexion/téléportation externe avant qu'un portail simple ne puisse se déclencher automatiquement. Ce répit **retarde** un déclenchement plutôt que de le supprimer si la zone couvre réellement le point d'arrivée — voir [docs/TRAVEL.md](TRAVEL.md) pour l'analyse complète et les outils de diagnostic (`here`/`debug`/logs `TP-TRACE`) ajoutés pour confirmer la cause exacte sur le serveur réel avant tout correctif définitif.
 
 ---
 
@@ -1050,14 +1064,15 @@ Toute nouvelle commande, modification de syntaxe, nouveau fichier de configurati
 
 Détail complet : [docs/storylines.md](storylines.md).
 
-Un conteneur logique **ordonné** de quêtes existantes (`story.model.StoryDefinition`), avec sa propre progression par joueur (`NOT_STARTED`/`ACTIVE`/`COMPLETED`, table `story_progress`) — **délibérément indépendant** du moteur de quête : aucune référence croisée entre `story.StoryService` et `quest.progress.QuestProgressEngine`, une quête terminée ne fait pas encore avancer une Story automatiquement (prévu comme extension future, pas câblé à cette étape).
+Un conteneur logique **ordonné** de quêtes existantes (`story.model.StoryDefinition`), avec sa propre progression par joueur (`NOT_STARTED`/`ACTIVE`/`COMPLETED` + `current_index`, table `story_progress`). Depuis cette étape, connectée au moteur de quête : une Story `ACTIVE` avance **automatiquement** — sa quête courante démarre toute seule, une complétion la fait avancer vers la suivante (démarrée à son tour), la dernière complétion passe la Story à `COMPLETED` — sans aucune commande joueur ni interaction PNJ entre deux quêtes. Branché sur `QuestProgressEngine#onProgressChanged` (`story.StoryService#onQuestProgressChanged`, même patron que `progression.listener.QuestCompletionXpListener`), idempotent (garde par comparaison d'index en mémoire, aucune récompense distribuée par la Story elle-même), et auto-guérit après un redémarrage/une reconnexion (`StoryService#loadForPlayer` rattrape une quête déjà terminée ou jamais acceptée).
 
 Définitions chargées depuis `plugins/RPGQuest/stories/` (un exemple `main_story.yml` généré au premier démarrage). Aucune commande `/rpgadmin story create`/`delete` — seulement :
 
 | Commande | Effet | Persistance |
 |---|---|---|
-| `/rpgadmin story info <joueur>` | Liste toutes les Stories connues et leur état pour ce joueur. | non |
-| `/rpgadmin story start <joueur> <storyId>` | Démarre une Story (`ACTIVE`). Refusé si id inconnu, déjà active, ou déjà terminée. | oui |
-| `/rpgadmin story reset <joueur> <storyId\|all>` | Supprime la progression d'une Story (ou de toutes), reset ciblé — jamais l'inventaire, l'économie, ni les autres Stories/quêtes. | oui (suppression) |
+| `/rpgadmin story info <joueur>` | Liste toutes les Stories connues, leur état, et — si `ACTIVE` — la quête courante (id + position `n/total`). | non |
+| `/rpgadmin story start <joueur> <storyId>` | Démarre une Story (`ACTIVE`) et sa première quête. Refusé si id inconnu, déjà active, ou déjà terminée. | oui |
+| `/rpgadmin story reset <joueur> <storyId\|all>` | Supprime la progression d'une Story (ou de toutes), reset ciblé — jamais l'inventaire, l'économie, ni les quêtes (`quest_progress` non touché). | oui (suppression) |
+| `/rpgadmin story resetwithquests <joueur> <storyId>` | Comme `reset`, **et** réinitialise (via `QuestProgressEngine#resetQuest`) chacune des quêtes que cette Story référence — jamais les autres quêtes du joueur, jamais un `... all`. Outil ciblé pour rejouer un scénario de test. | oui (suppression) |
 
-À savoir : **seule branche de `/rpgadmin` utilisable depuis la console** (cible un joueur passé en argument, jamais la position de l'exécutant) ; le joueur ciblé peut être hors ligne (résolution asynchrone, profil créé au besoin). Ces commandes sont strictement admin/debug — l'UX finale prévue pour les Storylines ne repose sur aucune commande joueur.
+À savoir : **seule branche de `/rpgadmin` utilisable depuis la console** (cible un joueur passé en argument, jamais la position de l'exécutant) ; le joueur ciblé peut être hors ligne pour ces quatre sous-commandes (résolution asynchrone, profil créé au besoin par `start`) — seul le déclenchement effectif de la première quête attend une connexion réelle. Ces commandes restent strictement admin/debug — l'UX finale ne repose sur aucune commande joueur. Feedback joueur envoyé dans le **chat** (`messages.yml` → `story:`, jamais Title/Subtitle comme les quêtes, pour éviter une course d'affichage avec le Title « Quête commencée » que `QuestProgressEngine#accept` affiche déjà à chaque démarrage de quête).

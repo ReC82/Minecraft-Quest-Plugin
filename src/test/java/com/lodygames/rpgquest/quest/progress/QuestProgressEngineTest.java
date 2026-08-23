@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.quest.progress;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -21,8 +22,12 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.entity.EntityType;
+import org.bukkit.event.block.BlockBreakEvent;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +41,7 @@ class QuestProgressEngineTest {
     private static final long TIMEOUT_SECONDS = 5;
     private static final NamespacedKey KILL_QUEST = new NamespacedKey("rpgquest", "kill_quest");
     private static final NamespacedKey KILL_QUEST_TWO = new NamespacedKey("rpgquest", "kill_quest_two");
+    private static final NamespacedKey BREAK_QUEST = new NamespacedKey("rpgquest", "break_quest");
 
     @TempDir
     Path tempDir;
@@ -135,6 +141,99 @@ class QuestProgressEngineTest {
         var stateTwo = progressRepository.find(player.getUniqueId(), KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertEquals(QuestState.COMPLETED, stateOne.orElseThrow().state());
         assertEquals(QuestState.COMPLETED, stateTwo.orElseThrow().state());
+    }
+
+    /**
+     * Reproduit exactement le scénario signalé sur VeryGames (Story de test, quête BREAK_BLOCK cassée
+     * dans le monde {@code wild}) : {@code BREAK_BLOCK} est documenté comme global — aucun champ
+     * {@code world} sur l'objectif, doit compter dans n'importe quel monde (voir
+     * {@code docs/RPGQUEST_BIBLE.md}, section 3). Contrairement aux autres tests de ce fichier, qui
+     * appellent {@code engine.handleBreakBlock(...)} directement, celui-ci passe par un vrai {@link
+     * BlockBreakEvent} construit sur un second monde nommé {@code wild} (jamais le monde par défaut
+     * du serveur de test) et par le vrai {@link QuestBlockBreakListener} enregistré par {@code
+     * engine.start()} — exercice fidèle du chemin réellement emprunté en jeu, pas seulement de la
+     * logique interne de {@code QuestProgressEngine}.
+     */
+    @Test
+    void breakBlockObjectiveProgressesFromABlockBreakEventFiredInAnyNamedWorldIncludingWild() throws Exception {
+        writeBreakBlockQuest(BREAK_QUEST, "break_quest.yml", Material.DIRT, 3);
+        engine.reloadQuestDefinitions();
+
+        World wild = server.addSimpleWorld("wild");
+        PlayerMock player = addPlayer();
+        engine.accept(player, BREAK_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(QuestState.ACTIVE, activeState(player, BREAK_QUEST));
+
+        breakDirtInWild(player, wild);
+        assertEquals(QuestState.ACTIVE, activeState(player, BREAK_QUEST), "1/3 : toujours active, pas encore terminée");
+
+        breakDirtInWild(player, wild);
+        breakDirtInWild(player, wild);
+
+        var record = progressRepository.find(player.getUniqueId(), BREAK_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertTrue(record.isPresent());
+        assertEquals(QuestState.COMPLETED, record.get().state(), "3/3 dans wild doit terminer la quête, exactement comme dans n'importe quel monde");
+    }
+
+    private void breakDirtInWild(PlayerMock player, World wild) {
+        Block block = wild.getBlockAt(0, 64, 0);
+        block.setType(Material.DIRT);
+        BlockBreakEvent event = new BlockBreakEvent(block, player);
+        server.getPluginManager().callEvent(event);
+    }
+
+    /**
+     * TODO(debug bug BREAK_BLOCK wild) : couvre l'instrumentation temporaire {@code
+     * QuestProgressEngine#traceBreakBlockChain}/{@code QuestTraceLogger} — strictement le risque
+     * qu'elle introduit (une lecture supplémentaire de {@code activeByPlayer} avant chaque cassage,
+     * mélangeant potentiellement plusieurs types d'objectifs) sans jamais muter d'état. Reprend le
+     * scénario déjà couvert ci-dessus (BREAK_BLOCK progresse normalement) en y ajoutant une seconde
+     * quête active d'un type différent (KILL_ENTITY) pour vérifier que le passage en revue des
+     * quêtes actives par l'instrumentation ne plante jamais sur un objectif non-BREAK_BLOCK et
+     * n'altère en rien la progression réelle.
+     */
+    @Test
+    void traceInstrumentationNeverAltersProgressionWithMixedActiveObjectiveTypes() throws Exception {
+        writeBreakBlockQuest(BREAK_QUEST, "break_quest.yml", Material.DIRT, 3);
+        engine.reloadQuestDefinitions();
+
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS); // quête active non-BREAK_BLOCK, en parallèle
+        engine.accept(player, BREAK_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertDoesNotThrow(() -> {
+            engine.handleBreakBlock(player, Material.DIRT);
+            engine.handleBreakBlock(player, Material.DIRT);
+            engine.handleBreakBlock(player, Material.DIRT);
+        });
+
+        var breakRecord = progressRepository.find(player.getUniqueId(), BREAK_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(QuestState.COMPLETED, breakRecord.orElseThrow().state(),
+                "l'instrumentation ne doit jamais empêcher/retarder la progression réelle");
+        assertEquals(QuestState.ACTIVE, activeState(player, KILL_QUEST),
+                "la quête KILL_ENTITY en parallèle ne doit jamais être affectée par le passage en revue fait pour BREAK_BLOCK");
+    }
+
+    /**
+     * TODO(debug bug BREAK_BLOCK wild) : couvre la branche « candidats vides » de {@code
+     * traceBreakBlockChain} (le joueur a une quête BREAK_BLOCK active, mais casse un matériau qui ne
+     * correspond à aucun objectif chargé) — doit rester un no-op silencieux, jamais une exception,
+     * jamais une fausse progression.
+     */
+    @Test
+    void traceInstrumentationDoesNotThrowWhenTheBrokenMaterialMatchesNoLoadedObjective() throws Exception {
+        writeBreakBlockQuest(BREAK_QUEST, "break_quest.yml", Material.DIRT, 3);
+        engine.reloadQuestDefinitions();
+
+        PlayerMock player = addPlayer();
+        engine.accept(player, BREAK_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertDoesNotThrow(() -> engine.handleBreakBlock(player, Material.STONE)); // aucune quête n'attend STONE
+
+        assertEquals(QuestState.ACTIVE, activeState(player, BREAK_QUEST));
+        var counters = progressRepository.findObjectiveProgress(player.getUniqueId(), BREAK_QUEST, "break_step")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertTrue(counters.getOrDefault(0, 0) == 0, "casser un matériau non chargé ne doit jamais faire progresser un objectif BREAK_BLOCK existant");
     }
 
     @Test
@@ -502,6 +601,28 @@ class QuestProgressEngineTest {
                     amount: 10
                 """.formatted(amount));
         Files.writeString(questsDir.resolve(fileName), yaml.toString());
+    }
+
+    private void writeBreakBlockQuest(NamespacedKey id, String fileName, Material material, int amount) throws Exception {
+        String yaml = """
+                id: %s
+                title: "Titre"
+                description: "Description"
+                category: test
+                repeatable: true
+
+                steps:
+                  - id: break_step
+                    objectives:
+                      - type: BREAK_BLOCK
+                        material: %s
+                        amount: %d
+
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 5
+                """.formatted(id, material, amount);
+        Files.writeString(questsDir.resolve(fileName), yaml);
     }
 
     /** Quête à 2 étapes (step_one : 1 ZOMBIE, step_two : 1 SKELETON) pour tester la garde d'étape active. */

@@ -96,6 +96,9 @@ class CrystalHuntIntegrationTest {
         assertEquals(QuestState.COMPLETED, stateOf(player, CRYSTAL_HUNT));
         assertEquals(itemsBefore + 1, countItems(player, MINER_PICKAXE),
                 "la récompense COMMAND doit donner exactement un miner_pickaxe");
+        assertTrue(plugin.bootstrap().claimService().hasClaimTierOne(player.getUniqueId())
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS),
+                "crystal_hunt (dernière quête de main_story) doit débloquer CLAIM_TIER_1 (mission « premier claim 5×5 »)");
     }
 
     private QuestState stateOf(PlayerMock player, NamespacedKey questId) throws Exception {

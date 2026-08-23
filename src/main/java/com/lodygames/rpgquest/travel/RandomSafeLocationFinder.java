@@ -76,7 +76,29 @@ public final class RandomSafeLocationFinder {
         return Optional.empty();
     }
 
-    private boolean isSafeStandingSpot(World world, int x, int groundY, int z) {
+    /**
+     * Variante sans tirage aléatoire ni notion de rayon : sécurité d'une colonne (x, z) déjà connue
+     * (le centre d'un claim, par exemple — voir {@code claim.ClaimTeleportService}), plutôt qu'une
+     * zone d'arrivée aléatoire autour d'un centre. Mêmes règles de sécurité que {@link #find} (sol
+     * solide non dangereux, deux blocs d'air pour les pieds/la tête). Static : aucune dépendance à
+     * {@code minRadius}/{@code maxRadius}/{@code maxAttempts}/{@code random}, inutile ici.
+     */
+    public static Optional<Location> findAtColumn(World world, int x, int z) {
+        Location candidate = new Location(world, x + 0.5, 64, z + 0.5);
+        if (!world.getWorldBorder().isInside(candidate)) {
+            return Optional.empty();
+        }
+        world.getChunkAt(x >> 4, z >> 4);
+        int groundY = world.getHighestBlockYAt(x, z);
+        if (groundY <= world.getMinHeight()) {
+            return Optional.empty(); // colonne vide (vide, ou hors monde généré) : jamais une arrivée valide.
+        }
+        return isSafeStandingSpot(world, x, groundY, z)
+                ? Optional.of(new Location(world, x + 0.5, groundY + 1, z + 0.5))
+                : Optional.empty();
+    }
+
+    private static boolean isSafeStandingSpot(World world, int x, int groundY, int z) {
         if (groundY + 2 >= world.getMaxHeight()) {
             return false;
         }
@@ -93,7 +115,7 @@ public final class RandomSafeLocationFinder {
         return !feet.getType().isSolid() && !head.getType().isSolid(); // assez de place pour le joueur.
     }
 
-    private boolean isDangerous(Material type) {
+    private static boolean isDangerous(Material type) {
         return type == Material.LAVA
                 || type == Material.FIRE
                 || type == Material.SOUL_FIRE

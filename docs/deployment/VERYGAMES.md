@@ -371,11 +371,27 @@ d'autre plugin n'est touché**.
     quêtes, `data.db`...) : ils persistent tels quels, RPGQuest ne
     régénère jamais un fichier déjà présent (voir
     [docs/LOCAL_SERVER.md](../LOCAL_SERVER.md)).
+
+    **Exception volontaire depuis la mission « cohérence du config.yml »** :
+    `config.yml` (s'il existe déjà) est **complété** au premier démarrage sur le nouveau JAR — les
+    clés apparues depuis (ex. `dialogue`, `claims`, `progression`...) sont ajoutées avec leurs
+    valeurs par défaut actuelles, jamais une valeur déjà présente n'est modifiée, et une sauvegarde
+    `config.yml.bak` est créée automatiquement avant toute écriture réelle (voir
+    `config.ConfigFileCompleter`, section « Configuration » de
+    [docs/CLAIMS.md](../CLAIMS.md) pour le détail). Un redémarrage sur un `config.yml` déjà complet
+    n'écrit jamais rien (idempotent).
 5.  Redémarrer.
 6.  Vérifier `/rpgquest version` (nouvelle version affichée), l'absence
     d'exception au démarrage, et que `world_hub`/les PNJ/les quêtes sont
     toujours intacts (sous-ensemble pertinent de la
     [checklist finale](#checklist-finale)).
+
+**Cas particulier — étape de diagnostic WorldPortal** (outils `/rpgadmin worldportal here`/`debug`,
+logs `[TP-TRACE]`, voir [docs/TRAVEL.md](../TRAVEL.md)) : ce scénario 2 s'applique tel quel, sans
+aucune étape supplémentaire — `data.db`, `world_hub`, les autres mondes, `Citizens/saves.yml` et
+tout autre fichier runtime existant ne doivent **jamais** être remplacés pour cette mise à jour.
+La table de progression story déjà présente en base et les YAML de portails simples ne sont pas
+touchés par cette étape (aucune nouvelle migration de schéma).
 
 ---
 

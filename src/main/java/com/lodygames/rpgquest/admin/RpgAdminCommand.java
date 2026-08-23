@@ -12,7 +12,10 @@ import com.lodygames.rpgquest.spawn.SpawnPoint;
 import com.lodygames.rpgquest.spawn.SpawnService;
 import com.lodygames.rpgquest.story.StoryService;
 import com.lodygames.rpgquest.story.model.StoryDefinition;
+import com.lodygames.rpgquest.story.model.StoryState;
+import com.lodygames.rpgquest.travel.WorldPortalDebugService;
 import com.lodygames.rpgquest.travel.WorldPortalRegistry;
+import com.lodygames.rpgquest.travel.WorldPortalTeleportListener;
 import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
 import com.lodygames.rpgquest.travel.model.Destination;
@@ -72,8 +75,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final List<String> NPC_SUBCOMMANDS = List.of("tag", "untag", "info");
     private static final List<String> SPAWN_SUBCOMMANDS = List.of("set", "tp");
     private static final List<String> WORLD_SUBCOMMANDS = List.of("create", "tp", "list");
-    private static final List<String> WORLD_PORTAL_SUBCOMMANDS = List.of("create", "info", "list", "enable", "disable", "delete");
-    private static final List<String> STORY_SUBCOMMANDS = List.of("info", "start", "reset");
+    private static final List<String> WORLD_PORTAL_SUBCOMMANDS =
+            List.of("create", "info", "list", "enable", "disable", "delete", "debug", "here");
+    private static final List<String> WORLD_PORTAL_DEBUG_SUBCOMMANDS = List.of("show", "hide", "showall", "hideall");
+    private static final List<String> STORY_SUBCOMMANDS = List.of("info", "start", "reset", "resetwithquests");
     private static final double NPC_REACH = 6.0;
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
@@ -88,6 +93,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final SpawnService spawnService;
     private final WorldService worldService;
     private final WorldPortalRegistry worldPortalRegistry;
+    private final WorldPortalDebugService worldPortalDebugService;
     private final StoryService storyService;
     private final RPGQuestPlugin plugin;
 
@@ -95,6 +101,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             YamlPortalRegistry portalRegistry, YamlDestinationRegistry destinationRegistry,
                             SpecialMobRegistry mobRegistry, SpecialMobService mobService, NpcIdentityService npcIdentityService,
                             SpawnService spawnService, WorldService worldService, WorldPortalRegistry worldPortalRegistry,
+                            WorldPortalDebugService worldPortalDebugService,
                             StoryService storyService, RPGQuestPlugin plugin) {
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
@@ -107,6 +114,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         this.spawnService = spawnService;
         this.worldService = worldService;
         this.worldPortalRegistry = worldPortalRegistry;
+        this.worldPortalDebugService = worldPortalDebugService;
         this.storyService = storyService;
         this.plugin = plugin;
     }
@@ -681,18 +689,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                     "<red>Aucun spawn défini. Utilisez d'abord</red> <yellow>/rpgadmin spawn set</yellow>."));
             return;
         }
-        // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée.
-        Location adminSpawnSource = player.getLocation();
-        Location adminSpawnTarget = location.get();
-        plugin.getSLF4JLogger().info("[TP-TRACE] player={} uuid={} source=RpgAdminCommand portal=none "
-                        + "from={}:{},{},{} to={}:{},{},{} reason=admin_spawn_tp at={}",
-                player.getName(), player.getUniqueId(),
-                adminSpawnSource.getWorld() != null ? adminSpawnSource.getWorld().getName() : "?",
-                adminSpawnSource.getBlockX(), adminSpawnSource.getBlockY(), adminSpawnSource.getBlockZ(),
-                adminSpawnTarget.getWorld() != null ? adminSpawnTarget.getWorld().getName() : "?",
-                adminSpawnTarget.getBlockX(), adminSpawnTarget.getBlockY(), adminSpawnTarget.getBlockZ(),
-                System.currentTimeMillis());
-        player.teleportAsync(adminSpawnTarget);
+        // Plus de log TP-TRACE ad hoc ici : teleportAsync() déclenche PlayerTeleportEvent, capté
+        // génériquement par WorldPortalTeleportListener#onTeleport (event=external_teleport) —
+        // superflu et incohérent de dupliquer un log spécifique à cette seule commande.
+        player.teleportAsync(location.get());
         player.sendMessage(MM.deserialize("<green>Téléporté au spawn du village.</green>"));
     }
 
@@ -755,18 +755,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                     Placeholder.unparsed("name", name)));
             return;
         }
-        // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée.
-        Location worldTpSource = player.getLocation();
-        Location worldTpTarget = world.get().getSpawnLocation();
-        plugin.getSLF4JLogger().info("[TP-TRACE] player={} uuid={} source=RpgAdminCommand portal=none "
-                        + "from={}:{},{},{} to={}:{},{},{} reason=admin_world_tp at={}",
-                player.getName(), player.getUniqueId(),
-                worldTpSource.getWorld() != null ? worldTpSource.getWorld().getName() : "?",
-                worldTpSource.getBlockX(), worldTpSource.getBlockY(), worldTpSource.getBlockZ(),
-                worldTpTarget.getWorld() != null ? worldTpTarget.getWorld().getName() : "?",
-                worldTpTarget.getBlockX(), worldTpTarget.getBlockY(), worldTpTarget.getBlockZ(),
-                System.currentTimeMillis());
-        player.teleportAsync(worldTpTarget);
+        // Plus de log TP-TRACE ad hoc ici : teleportAsync() déclenche PlayerTeleportEvent, capté
+        // génériquement par WorldPortalTeleportListener#onTeleport (event=external_teleport) —
+        // superflu et incohérent de dupliquer un log spécifique à cette seule commande.
+        player.teleportAsync(world.get().getSpawnLocation());
         player.sendMessage(MM.deserialize(
                 "<green>Téléporté au spawn du monde</green> <white><name></white>.", Placeholder.unparsed("name", name)));
     }
@@ -810,8 +802,112 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             case "enable" -> handleWorldPortalSetEnabled(player, args, true);
             case "disable" -> handleWorldPortalSetEnabled(player, args, false);
             case "delete" -> handleWorldPortalDelete(player, args);
+            case "here" -> handleWorldPortalHere(player);
+            case "debug" -> handleWorldPortalDebug(player, args);
             default -> sendWorldPortalUsage(player);
         }
+    }
+
+    /**
+     * TODO(debug bug TP hub) : outil de diagnostic — liste TOUS les portails simples dont la zone
+     * d'activation contient la position actuelle du joueur (contrairement à ce que le jeu utilise
+     * réellement, {@code WorldPortalRegistry#portalAt}, qui ne renvoie que le premier trouvé). Une
+     * zone superposée invisible à {@code /rpgadmin worldportal info} devient donc visible ici — voir
+     * le Javadoc de {@code WorldPortalRegistry} pour l'anomalie que cet outil rend observable.
+     */
+    private void handleWorldPortalHere(Player player) {
+        Location loc = player.getLocation();
+        World world = loc.getWorld();
+        if (world == null) {
+            return;
+        }
+        var matches = worldPortalRegistry.portalsContaining(world.getName(), loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
+        if (matches.isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<gray>Aucun portail simple à la position actuelle</gray> <white>(<world> <x>, <y>, <z>)</white><gray>.</gray>",
+                    Placeholder.unparsed("world", world.getName()), Placeholder.unparsed("x", String.valueOf(loc.getBlockX())),
+                    Placeholder.unparsed("y", String.valueOf(loc.getBlockY())), Placeholder.unparsed("z", String.valueOf(loc.getBlockZ()))));
+            return;
+        }
+        player.sendMessage(MM.deserialize(
+                "<gold>Portails simples à la position actuelle</gold> <white>(<world> <x>, <y>, <z>)</white> <gray>:</gray>",
+                Placeholder.unparsed("world", world.getName()), Placeholder.unparsed("x", String.valueOf(loc.getBlockX())),
+                Placeholder.unparsed("y", String.valueOf(loc.getBlockY())), Placeholder.unparsed("z", String.valueOf(loc.getBlockZ()))));
+        for (WorldPortalDefinition portal : matches) {
+            player.sendMessage(MM.deserialize(
+                    "<yellow>- <id></yellow> <gray>bornes : (<minx>,<miny>,<minz>) → (<maxx>,<maxy>,<maxz>)</gray>"
+                            + " <white>inside=true</white><disabled>",
+                    Placeholder.unparsed("id", portal.id()),
+                    Placeholder.unparsed("minx", String.valueOf(portal.minX())), Placeholder.unparsed("miny", String.valueOf(portal.minY())),
+                    Placeholder.unparsed("minz", String.valueOf(portal.minZ())), Placeholder.unparsed("maxx", String.valueOf(portal.maxX())),
+                    Placeholder.unparsed("maxy", String.valueOf(portal.maxY())), Placeholder.unparsed("maxz", String.valueOf(portal.maxZ())),
+                    Placeholder.unparsed("disabled", portal.enabled() ? "" : " <red>(désactivé)</red>")));
+        }
+        if (matches.size() > 1) {
+            player.sendMessage(MM.deserialize(
+                    "<red><bold><count> portails superposés à cette position — voir le premier de la liste</bold> "
+                            + "<gray>(ordre alphabétique des fichiers)</gray> <bold>: c'est celui qui s'active réellement en jeu.</bold></red>",
+                    Placeholder.unparsed("count", String.valueOf(matches.size()))));
+        }
+    }
+
+    private void handleWorldPortalDebug(Player player, String[] args) {
+        if (args.length < 3) {
+            sendWorldPortalDebugUsage(player);
+            return;
+        }
+        switch (args[2].toLowerCase(Locale.ROOT)) {
+            case "show" -> {
+                if (args.length < 4) {
+                    player.sendMessage(MM.deserialize("<yellow>/rpgadmin worldportal debug show <id></yellow>"));
+                    return;
+                }
+                String id = args[3].toLowerCase(Locale.ROOT);
+                switch (worldPortalDebugService.show(id)) {
+                    case SHOWN -> player.sendMessage(MM.deserialize(
+                            "<green>Zone affichée (particules) :</green> <white><id></white>", Placeholder.unparsed("id", id)));
+                    case ALREADY_VISIBLE -> player.sendMessage(MM.deserialize(
+                            "<yellow>Déjà affichée :</yellow> <white><id></white>", Placeholder.unparsed("id", id)));
+                    case UNKNOWN_PORTAL -> player.sendMessage(MM.deserialize(
+                            "<red>Portail simple inconnu :</red> <white><id></white>", Placeholder.unparsed("id", id)));
+                }
+            }
+            case "hide" -> {
+                if (args.length < 4) {
+                    player.sendMessage(MM.deserialize("<yellow>/rpgadmin worldportal debug hide <id></yellow>"));
+                    return;
+                }
+                String id = args[3].toLowerCase(Locale.ROOT);
+                switch (worldPortalDebugService.hide(id)) {
+                    case HIDDEN -> player.sendMessage(MM.deserialize(
+                            "<green>Zone masquée :</green> <white><id></white>", Placeholder.unparsed("id", id)));
+                    case NOT_VISIBLE -> player.sendMessage(MM.deserialize(
+                            "<gray>Cette zone n'était pas affichée :</gray> <white><id></white>", Placeholder.unparsed("id", id)));
+                }
+            }
+            case "showall" -> {
+                int shown = worldPortalDebugService.showAll();
+                player.sendMessage(MM.deserialize(
+                        "<green><count> zone(s) affichée(s).</green>", Placeholder.unparsed("count", String.valueOf(shown))));
+            }
+            case "hideall" -> {
+                int hidden = worldPortalDebugService.hideAll();
+                player.sendMessage(MM.deserialize(
+                        "<green><count> zone(s) masquée(s).</green>", Placeholder.unparsed("count", String.valueOf(hidden))));
+            }
+            default -> sendWorldPortalDebugUsage(player);
+        }
+    }
+
+    private void sendWorldPortalDebugUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin worldportal debug show <id></yellow> <gray>- affiche le contour (particules) d'un portail</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin worldportal debug hide <id></yellow> <gray>- masque le contour d'un portail</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin worldportal debug showall</yellow> <gray>- affiche tous les portails simples chargés</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin worldportal debug hideall</yellow> <gray>- masque tous les portails simples affichés</gray>"));
     }
 
     /**
@@ -898,20 +994,43 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             return;
         }
         WorldPortalDefinition portal = portalOpt.get();
+        int width = portal.maxX() - portal.minX() + 1;
+        int height = portal.maxY() - portal.minY() + 1;
+        int depth = portal.maxZ() - portal.minZ() + 1;
+        double centerX = (portal.minX() + portal.maxX() + 1) / 2.0;
+        double centerY = (portal.minY() + portal.maxY() + 1) / 2.0;
+        double centerZ = (portal.minZ() + portal.maxZ() + 1) / 2.0;
+
         player.sendMessage(MM.deserialize("<gold>=== <id> ===</gold>", Placeholder.unparsed("id", portal.id())));
+        player.sendMessage(MM.deserialize(
+                "<white>Actif :</white> <gray><enabled></gray>", Placeholder.unparsed("enabled", String.valueOf(portal.enabled()))));
         player.sendMessage(MM.deserialize(
                 "<white>Monde source :</white> <gray><world></gray>", Placeholder.unparsed("world", portal.world())));
         player.sendMessage(MM.deserialize(
-                "<white>Bornes :</white> <gray>(<minx>, <miny>, <minz>) → (<maxx>, <maxy>, <maxz>)</gray>",
-                Placeholder.unparsed("minx", String.valueOf(portal.minX())), Placeholder.unparsed("miny", String.valueOf(portal.minY())),
-                Placeholder.unparsed("minz", String.valueOf(portal.minZ())), Placeholder.unparsed("maxx", String.valueOf(portal.maxX())),
-                Placeholder.unparsed("maxy", String.valueOf(portal.maxY())), Placeholder.unparsed("maxz", String.valueOf(portal.maxZ()))));
+                "<white>Monde destination :</white> <gray><dst></gray>", Placeholder.unparsed("dst", portal.destinationWorld())));
         player.sendMessage(MM.deserialize(
-                "<white>Destination :</white> <gray><dst></gray> <white>Actif :</white> <gray><enabled></gray>",
-                Placeholder.unparsed("dst", portal.destinationWorld()), Placeholder.unparsed("enabled", String.valueOf(portal.enabled()))));
-        player.sendMessage(MM.deserialize(
-                "<white>Stratégie d'arrivée :</white> <gray><strategy></gray>",
+                "<white>Mode de destination :</white> <gray><strategy></gray>",
                 Placeholder.unparsed("strategy", portal.destinationStrategy().name())));
+        player.sendMessage(MM.deserialize(
+                "<white>Bornes X :</white> <gray><minx> → <maxx></gray> <white>Y :</white> <gray><miny> → <maxy></gray> "
+                        + "<white>Z :</white> <gray><minz> → <maxz></gray>",
+                Placeholder.unparsed("minx", String.valueOf(portal.minX())), Placeholder.unparsed("maxx", String.valueOf(portal.maxX())),
+                Placeholder.unparsed("miny", String.valueOf(portal.minY())), Placeholder.unparsed("maxy", String.valueOf(portal.maxY())),
+                Placeholder.unparsed("minz", String.valueOf(portal.minZ())), Placeholder.unparsed("maxz", String.valueOf(portal.maxZ()))));
+        player.sendMessage(MM.deserialize(
+                "<white>Largeur × hauteur × profondeur :</white> <gray><w> × <h> × <d> blocs</gray>",
+                Placeholder.unparsed("w", String.valueOf(width)), Placeholder.unparsed("h", String.valueOf(height)),
+                Placeholder.unparsed("d", String.valueOf(depth))));
+        player.sendMessage(MM.deserialize(
+                "<white>Centre :</white> <gray>(<cx>, <cy>, <cz>)</gray>",
+                Placeholder.unparsed("cx", String.format(Locale.ROOT, "%.1f", centerX)),
+                Placeholder.unparsed("cy", String.format(Locale.ROOT, "%.1f", centerY)),
+                Placeholder.unparsed("cz", String.format(Locale.ROOT, "%.1f", centerZ))));
+        player.sendMessage(MM.deserialize(
+                "<white>Répit d'arrivée :</white> <gray><ticks> ticks (~<seconds>s) — global, s'applique à tous les portails simples, "
+                        + "pas seulement celui-ci</gray>",
+                Placeholder.unparsed("ticks", String.valueOf(WorldPortalTeleportListener.arrivalGraceTicks())),
+                Placeholder.unparsed("seconds", String.valueOf(WorldPortalTeleportListener.arrivalGraceTicks() / 20))));
     }
 
     private void handleWorldPortalList(Player player) {
@@ -978,6 +1097,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin worldportal enable <id></yellow> <gray>- réactive un portail simple</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin worldportal disable <id></yellow> <gray>- désactive un portail simple (le déclenchement est bloqué, la config est conservée)</gray>"));
         sender.sendMessage(MM.deserialize("<yellow>/rpgadmin worldportal delete <id></yellow> <gray>- supprime définitivement un portail simple</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin worldportal here</yellow> <gray>- liste TOUS les portails simples à ta position actuelle (diagnostic)</gray>"));
+        sendWorldPortalDebugUsage(sender);
     }
 
     // ---- Story (conteneur logique de quêtes existantes, indépendant du moteur de quête) ----------
@@ -996,6 +1118,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             case "info" -> handleStoryInfo(sender, args);
             case "start" -> handleStoryStart(sender, args);
             case "reset" -> handleStoryReset(sender, args);
+            case "resetwithquests" -> handleStoryResetWithQuests(sender, args);
             default -> sendStoryUsage(sender);
         }
     }
@@ -1014,8 +1137,15 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                     sender.sendMessage(MM.deserialize(
                             "<gold>=== Stories de <name> ===</gold>", Placeholder.unparsed("name", name)));
                     for (StoryService.StoryInfo info : infos) {
+                        // Quête courante affichée uniquement si ACTIVE : NOT_STARTED n'a pas encore de
+                        // position significative, COMPLETED a dépassé la fin de la liste (currentIndex
+                        // == questIds().size(), jamais un index valide à afficher comme "quête courante").
+                        String questSuffix = info.state() != StoryState.ACTIVE
+                                ? ""
+                                : " <gray>— quête courante :</gray> <white>" + info.story().questIds().get(info.currentIndex())
+                                        + "</white> <gray>(" + (info.currentIndex() + 1) + "/" + info.story().questIds().size() + ")</gray>";
                         sender.sendMessage(MM.deserialize(
-                                "<yellow>- <id></yellow> <gray>(<title>) :</gray> <white><state></white>",
+                                "<yellow>- <id></yellow> <gray>(<title>) :</gray> <white><state></white>" + questSuffix,
                                 Placeholder.unparsed("id", info.story().id()),
                                 Placeholder.unparsed("title", info.story().name().base()),
                                 Placeholder.unparsed("state", info.state().name())));
@@ -1069,13 +1199,38 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                 })));
     }
 
+    /**
+     * Outil ADMIN/DEBUG ciblé (mission point 5) : contrairement à {@code reset}, remet AUSSI les
+     * quêtes de cette story dans un état rejouable — jamais {@code reset ... all}, jamais les autres
+     * quêtes du joueur. Voir {@link StoryService#resetWithQuests}.
+     */
+    private void handleStoryResetWithQuests(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin story resetwithquests <joueur> <storyId></yellow>"));
+            return;
+        }
+        String storyId = args[3].toLowerCase(Locale.ROOT);
+        resolveTargetPlayer(sender, args[2], (uuid, name) ->
+                storyService.resetWithQuests(uuid, storyId).thenAccept(outcome -> runOnMainThread(() -> {
+                    switch (outcome) {
+                        case RESET -> sender.sendMessage(MM.deserialize(
+                                "<green>Story ET ses quêtes réinitialisées :</green> <white><id></white> <gray>pour</gray> <white><name></white>",
+                                Placeholder.unparsed("id", storyId), Placeholder.unparsed("name", name)));
+                        case UNKNOWN_STORY -> sender.sendMessage(MM.deserialize(
+                                "<red>Story inconnue :</red> <white><id></white>", Placeholder.unparsed("id", storyId)));
+                    }
+                })));
+    }
+
     private void sendStoryUsage(CommandSender sender) {
         sender.sendMessage(MM.deserialize(
                 "<yellow>/rpgadmin story info <joueur></yellow> <gray>- état de toutes les stories pour ce joueur</gray>"));
         sender.sendMessage(MM.deserialize(
                 "<yellow>/rpgadmin story start <joueur> <storyId></yellow> <gray>- démarre une story</gray>"));
         sender.sendMessage(MM.deserialize(
-                "<yellow>/rpgadmin story reset <joueur> <storyId|all></yellow> <gray>- réinitialise une (ou toutes) story(ies)</gray>"));
+                "<yellow>/rpgadmin story reset <joueur> <storyId|all></yellow> <gray>- réinitialise une (ou toutes) story(ies), jamais ses quêtes</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin story resetwithquests <joueur> <storyId></yellow> <gray>- réinitialise UNE story ET ses quêtes associées (jamais les autres quêtes du joueur)</gray>"));
     }
 
     /**
@@ -1422,6 +1577,14 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             return worldPortalRegistry.portals().stream().map(WorldPortalDefinition::id)
                     .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
+        if (args.length == 3 && args[0].equalsIgnoreCase("worldportal") && args[1].equalsIgnoreCase("debug")) {
+            return WORLD_PORTAL_DEBUG_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 4 && args[0].equalsIgnoreCase("worldportal") && args[1].equalsIgnoreCase("debug")
+                && (args[2].equalsIgnoreCase("show") || args[2].equalsIgnoreCase("hide"))) {
+            return worldPortalRegistry.portals().stream().map(WorldPortalDefinition::id)
+                    .filter(id -> id.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
+        }
         if (args.length == 2 && args[0].equalsIgnoreCase("story")) {
             return STORY_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
         }
@@ -1430,7 +1593,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                     .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 4 && args[0].equalsIgnoreCase("story")
-                && (args[1].equalsIgnoreCase("start") || args[1].equalsIgnoreCase("reset"))) {
+                && (args[1].equalsIgnoreCase("start") || args[1].equalsIgnoreCase("reset")
+                        || args[1].equalsIgnoreCase("resetwithquests"))) {
             List<String> ids = new ArrayList<>(
                     storyService.stories().stream().map(StoryDefinition::id).toList());
             if (args[1].equalsIgnoreCase("reset")) {

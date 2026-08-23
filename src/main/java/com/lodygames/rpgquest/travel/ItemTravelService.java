@@ -1,0 +1,203 @@
+package com.lodygames.rpgquest.travel;
+
+import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.bootstrap.PluginService;
+import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.travel.model.ItemTravelDefinition;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
+import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
+import org.bukkit.World;
+import org.bukkit.entity.Player;
+import org.bukkit.event.Listener;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.scheduler.BukkitTask;
+import org.slf4j.Logger;
+
+/**
+ * Moteur générique de voyage par objet (mission « mécanique RPG générique de voyage par objet ») :
+ * clic droit avec un objet enregistré ({@link #register}) démarre une canalisation (annulée sur
+ * mouvement/dégâts/déconnexion — même patron que {@code PortalService}, sans en partager le code :
+ * déclencheur différent — entrée en zone côté portails, clic sur objet ici — et aucune notion de
+ * coût/cooldown/prérequis de quête à ce stade), puis téléporte vers la destination résolue au
+ * moment de la complétion. <strong>Ne consomme jamais l'objet</strong> — la persistance/non-
+ * consommation d'une pierre de voyage est une propriété de l'objet lui-même (ou de l'appelant), pas
+ * de ce moteur.
+ *
+ * <p>Ajouter une future pierre/destination : un seul appel à {@link #register}, aucun changement de
+ * ce moteur (mission « réutilisable plus tard sans réécrire tout le système »).</p>
+ */
+public final class ItemTravelService implements PluginService {
+
+    private static final MiniMessage MM = MiniMessage.miniMessage();
+    private static final double MOVEMENT_TOLERANCE_SQUARED = 0.36;
+
+    private final RPGQuestPlugin plugin;
+    private final YamlCustomItemRegistry customItemRegistry;
+    private final Logger logger;
+
+    private final Map<NamespacedKey, ItemTravelDefinition> definitions = new ConcurrentHashMap<>();
+    private final Map<UUID, ChannelSession> channeling = new ConcurrentHashMap<>();
+
+    public ItemTravelService(RPGQuestPlugin plugin, YamlCustomItemRegistry customItemRegistry, Logger logger) {
+        this.plugin = plugin;
+        this.customItemRegistry = customItemRegistry;
+        this.logger = logger;
+    }
+
+    public void register(ItemTravelDefinition definition) {
+        definitions.put(definition.itemId(), definition);
+    }
+
+    @Override
+    public void start() {
+        // Rien à démarrer : les définitions sont enregistrées par le bootstrap avant/après start(), sans ordre imposé.
+    }
+
+    @Override
+    public void stop() {
+        for (ChannelSession session : channeling.values()) {
+            if (session.task != null) {
+                session.task.cancel();
+            }
+        }
+        channeling.clear();
+    }
+
+    public Listener listener() {
+        return new ItemTravelListener(this);
+    }
+
+    boolean isChanneling(UUID playerId) {
+        return channeling.containsKey(playerId);
+    }
+
+    void handleInteract(Player player, ItemStack item) {
+        UUID playerId = player.getUniqueId();
+        if (isChanneling(playerId)) {
+            return;
+        }
+        Optional<NamespacedKey> itemId = customItemRegistry.identify(item);
+        if (itemId.isEmpty()) {
+            return;
+        }
+        ItemTravelDefinition definition = definitions.get(itemId.get());
+        if (definition == null) {
+            return;
+        }
+        startChanneling(player, definition);
+    }
+
+    void handleDamage(Player player) {
+        cancelChanneling(player.getUniqueId(), "<red>Voyage annulé : tu as subi des dégâts.</red>");
+    }
+
+    void handleQuit(Player player) {
+        ChannelSession session = channeling.remove(player.getUniqueId());
+        if (session != null && session.task != null) {
+            session.task.cancel();
+        }
+    }
+
+    private void startChanneling(Player player, ItemTravelDefinition definition) {
+        UUID playerId = player.getUniqueId();
+        long totalTicks = definition.channelSeconds() * 20L;
+        ChannelSession session = new ChannelSession(playerId, definition, player.getLocation().clone(), totalTicks);
+        channeling.put(playerId, session);
+        session.task = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> tick(session), 1L, 1L);
+        reportProgress(session);
+    }
+
+    private void tick(ChannelSession session) {
+        Player player = plugin.getServer().getPlayer(session.playerId);
+        if (player == null || !player.isOnline()) {
+            channeling.remove(session.playerId);
+            if (session.task != null) {
+                session.task.cancel();
+            }
+            return;
+        }
+
+        Location current = player.getLocation();
+        World startWorld = session.startLocation.getWorld();
+        if (startWorld == null || !startWorld.equals(current.getWorld())
+                || current.distanceSquared(session.startLocation) > MOVEMENT_TOLERANCE_SQUARED) {
+            cancelChanneling(session.playerId, "<red>Voyage annulé : tu as bougé.</red>");
+            return;
+        }
+
+        session.elapsedTicks++;
+        if (session.elapsedTicks >= session.totalTicks) {
+            complete(session);
+            return;
+        }
+        reportProgress(session);
+    }
+
+    private void reportProgress(ChannelSession session) {
+        Player player = plugin.getServer().getPlayer(session.playerId);
+        if (player == null) {
+            return;
+        }
+        int percent = session.totalTicks <= 0 ? 100 : (int) (100L * session.elapsedTicks / session.totalTicks);
+        player.sendActionBar(MM.deserialize(
+                "<yellow>Voyage :</yellow> <white><percent>%</white>", Placeholder.unparsed("percent", String.valueOf(percent))));
+        player.getWorld().spawnParticle(org.bukkit.Particle.PORTAL, player.getLocation().add(0, 1, 0), 6, 0.3, 0.5, 0.3, 0.01);
+    }
+
+    void cancelChanneling(UUID playerId, String message) {
+        ChannelSession session = channeling.remove(playerId);
+        if (session == null) {
+            return;
+        }
+        if (session.task != null) {
+            session.task.cancel();
+        }
+        Player player = plugin.getServer().getPlayer(playerId);
+        if (message != null && player != null) {
+            player.sendMessage(MM.deserialize(message));
+        }
+    }
+
+    private void complete(ChannelSession session) {
+        channeling.remove(session.playerId);
+        if (session.task != null) {
+            session.task.cancel();
+        }
+        Player player = plugin.getServer().getPlayer(session.playerId);
+        if (player == null || !player.isOnline()) {
+            return;
+        }
+
+        Optional<Location> destination = session.definition.destination().get();
+        if (destination.isEmpty()) {
+            player.sendMessage(MM.deserialize("<red>Destination indisponible, contacte un administrateur.</red>"));
+            logger.warn("Destination indisponible pour un voyage par objet ({}), joueur {}.",
+                    session.definition.itemId(), session.playerId);
+            return;
+        }
+        player.teleportAsync(destination.get());
+        player.sendMessage(MM.deserialize("<green>Voyage réussi.</green>"));
+    }
+
+    private static final class ChannelSession {
+        private final UUID playerId;
+        private final ItemTravelDefinition definition;
+        private final Location startLocation;
+        private final long totalTicks;
+        private long elapsedTicks;
+        private BukkitTask task;
+
+        private ChannelSession(UUID playerId, ItemTravelDefinition definition, Location startLocation, long totalTicks) {
+            this.playerId = playerId;
+            this.definition = definition;
+            this.startLocation = startLocation;
+            this.totalTicks = totalTicks;
+        }
+    }
+}

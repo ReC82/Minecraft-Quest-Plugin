@@ -57,7 +57,7 @@ class YamlCustomItemRegistryTest {
     @Test
     void startGeneratesTheFourBundledExamplesWithoutErrors() {
         assertEquals(0, registry.lastReport().issues().size(), () -> "issues: " + registry.lastReport().issues());
-        assertEquals(4, registry.items().size());
+        assertEquals(6, registry.items().size());
         assertTrue(registry.find(FOREST_BLADE).isPresent());
         assertTrue(registry.find(MINER_PICKAXE).isPresent());
         assertTrue(registry.find(SPIDER_FANG).isPresent());

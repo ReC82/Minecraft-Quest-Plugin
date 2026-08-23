@@ -11,7 +11,10 @@ import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
+import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
+import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
+import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
@@ -240,6 +243,21 @@ final class DialogueDefinitionParser {
                     yield null;
                 }
                 yield new VariableEqualsCondition(key, value == null ? "" : value);
+            }
+            case NO_MAIN_CLAIM -> new NoMainClaimCondition();
+            case HAS_MAIN_CLAIM -> new HasMainClaimCondition();
+            case LACKS_CUSTOM_ITEM -> {
+                String raw = section.getString("item");
+                if (raw == null || raw.isBlank()) {
+                    errors.add(context + ": « item » est obligatoire.");
+                    yield null;
+                }
+                NamespacedKey itemId = toNamespacedKey(raw);
+                if (itemId == null) {
+                    errors.add(context + ": « item » invalide : \"" + raw + "\".");
+                    yield null;
+                }
+                yield new LacksCustomItemCondition(itemId);
             }
         };
     }

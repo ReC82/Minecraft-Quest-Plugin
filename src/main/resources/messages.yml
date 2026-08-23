@@ -44,3 +44,14 @@ quest:
 
 permission:
   denied: "<red>Permission manquante :</red> <white><permission></white>"
+
+# Feedback Story (story.StoryService) : envoyé dans le CHAT, jamais en Title/Subtitle comme les
+# messages de quête ci-dessus — QuestProgressEngine affiche déjà son propre Title "Quête commencée"
+# à chaque démarrage de quête (Story ou non), un second Title juste avant/après créerait une course
+# d'affichage (le second écrase toujours le premier). Le chat n'entre jamais en conflit et garde un
+# historique consultable du fil de la story. Placeholders : <story> (nom de la story), <quest> (titre
+# de la quête).
+story:
+  started: "<green><bold>Nouvelle aventure :</bold></green> <white><story></white>"
+  next-objective: "<green>Nouvel objectif :</green> <white><quest></white>"
+  completed: "<gold><bold>Aventure terminée :</bold></gold> <white><story></white>"

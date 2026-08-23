@@ -32,8 +32,10 @@ public final class ClaimRepository {
     private static final String SELECT_EXISTS = "SELECT 1 FROM claims WHERE id = ?";
     private static final String INSERT_CLAIM = """
             INSERT INTO claims (id, owner_uuid, world, min_x, min_y, min_z, max_x, max_y, max_z,
+                                 reserved_min_x, reserved_min_y, reserved_min_z,
+                                 reserved_max_x, reserved_max_y, reserved_max_z,
                                  allow_public_redstone, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
     private static final String INSERT_MEMBER = "INSERT INTO claim_members (claim_id, member_uuid) VALUES (?, ?)";
     private static final String SELECT_OWNER = "SELECT owner_uuid FROM claims WHERE id = ?";
@@ -72,6 +74,8 @@ public final class ClaimRepository {
                             resultSet.getString("world"),
                             resultSet.getInt("min_x"), resultSet.getInt("min_y"), resultSet.getInt("min_z"),
                             resultSet.getInt("max_x"), resultSet.getInt("max_y"), resultSet.getInt("max_z"),
+                            resultSet.getInt("reserved_min_x"), resultSet.getInt("reserved_min_y"), resultSet.getInt("reserved_min_z"),
+                            resultSet.getInt("reserved_max_x"), resultSet.getInt("reserved_max_y"), resultSet.getInt("reserved_max_z"),
                             membersByClaim.getOrDefault(id, Set.of()),
                             new ClaimFlags(resultSet.getBoolean("allow_public_redstone"))));
                 }
@@ -101,8 +105,14 @@ public final class ClaimRepository {
                 insert.setInt(7, claim.maxX());
                 insert.setInt(8, claim.maxY());
                 insert.setInt(9, claim.maxZ());
-                insert.setBoolean(10, claim.flags().allowPublicRedstone());
-                insert.setString(11, Instant.now().toString());
+                insert.setInt(10, claim.reservedMinX());
+                insert.setInt(11, claim.reservedMinY());
+                insert.setInt(12, claim.reservedMinZ());
+                insert.setInt(13, claim.reservedMaxX());
+                insert.setInt(14, claim.reservedMaxY());
+                insert.setInt(15, claim.reservedMaxZ());
+                insert.setBoolean(16, claim.flags().allowPublicRedstone());
+                insert.setString(17, Instant.now().toString());
                 insert.executeUpdate();
             }
             for (UUID member : claim.members()) {

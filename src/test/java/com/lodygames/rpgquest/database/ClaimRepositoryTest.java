@@ -159,6 +159,43 @@ class ClaimRepositoryTest {
         assertTrue(claims.allClaims().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).get(0).members().isEmpty());
     }
 
+    /**
+     * Persistance de la réservation (mission « premier claim 5×5 + réservation 100×100 ») : un
+     * claim rechargé depuis la base doit retrouver exactement ses bornes de réservation, pas
+     * seulement son cuboïde actif — couvre « persistance après reconnect/restart » pour ce champ.
+     */
+    @Test
+    void createPersistsTheReservationBoundsDistinctFromTheActiveBounds() throws Exception {
+        UUID owner = createPlayer("Steve");
+        Claim withReservation = new Claim("main_home", owner, "claims",
+                -2, 0, -2, 2, 255, 2,
+                -50, 0, -50, 50, 255, 50,
+                Set.of(), ClaimFlags.defaults());
+
+        assertTrue(claims.create(withReservation).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+        Claim loaded = claims.allClaims().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).get(0);
+        assertEquals(-2, loaded.minX());
+        assertEquals(2, loaded.maxX());
+        assertEquals(-50, loaded.reservedMinX());
+        assertEquals(50, loaded.reservedMaxX());
+        assertEquals(-50, loaded.reservedMinZ());
+        assertEquals(50, loaded.reservedMaxZ());
+    }
+
+    /** Un claim créé sans modèle de réservation explicite (baguette) persiste réservation = actif. */
+    @Test
+    void createWithoutExplicitReservationPersistsReservationEqualToActiveBounds() throws Exception {
+        UUID owner = createPlayer("Steve");
+        claims.create(claim("home", owner, Set.of())).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        Claim loaded = claims.allClaims().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).get(0);
+        assertEquals(loaded.minX(), loaded.reservedMinX());
+        assertEquals(loaded.maxX(), loaded.reservedMaxX());
+        assertEquals(loaded.minZ(), loaded.reservedMinZ());
+        assertEquals(loaded.maxZ(), loaded.reservedMaxZ());
+    }
+
     private UUID createPlayer(String name) throws Exception {
         UUID uuid = UUID.randomUUID();
         profiles.findOrCreate(uuid, name).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);

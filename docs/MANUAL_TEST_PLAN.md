@@ -1334,6 +1334,113 @@ le résumé de récompenses de TC-014).
     portée d'un test JUnit serveur) ; limite documentée dans
     `docs/CLIENT_MOD.md`.
 
+### TC-190 — Diagnostic WorldPortal (`/rpgadmin worldportal here`/`debug`, logs `TP-TRACE`)
+
+-   **Fonctionnalité testée :** `WorldPortalRegistry#portalsContaining`,
+    `WorldPortalDebugService`, `WorldPortalDebugGeometry`,
+    instrumentation `[TP-TRACE]` — voir `docs/TRAVEL.md` pour le détail
+    complet (contexte : ces outils ont servi à diagnostiquer le bug de
+    téléportation automatique `hub_to_claims`, depuis résolu — une zone mal
+    sélectionnée, voir `docs/current_state.md` — mais restent des outils de
+    diagnostic permanents, pas une instrumentation à retirer).
+-   **Préconditions :** au moins un portail simple chargé (ex.
+    `hub_to_wild`, voir `docs-site/worlds.html`).
+-   **Actions en jeu :**
+    -   Se tenir dans la zone d'activation d'un portail simple, taper
+        `/rpgadmin worldportal here`.
+    -   Se tenir hors de toute zone, taper `/rpgadmin worldportal here`.
+    -   `/rpgadmin worldportal debug show <id>` sur un portail existant,
+        puis un id inconnu.
+    -   `/rpgadmin worldportal debug showall`, attendre ~1 s,
+        `/rpgadmin worldportal debug hideall`.
+    -   `/rpgadmin worldportal info <id>` — vérifier la présence des
+        nouveaux champs (largeur/hauteur/profondeur, centre, répit
+        d'arrivée).
+    -   Reproduire (si possible) le scénario du bug signalé (connexion ou
+        `/tp` vers le Hub, joueur immobile) et relever les lignes
+        `[TP-TRACE]` du joueur concerné dans les logs serveur.
+-   **Résultat attendu :** `here` liste bien le(s) portail(s) présent(s)
+    (avec `inside=true`) ou le message « aucun portail » selon le cas ;
+    `debug show`/`showall` fait apparaître des particules colorées le
+    long du contour de la (des) zone(s) plus une étiquette flottante avec
+    l'id, sans qu'aucun bloc du monde ne soit modifié ; `hideall` fait
+    disparaître particules et étiquettes ; `debug show` sur un id inconnu
+    répond « Portail simple inconnu » sans planter ; les logs
+    `[TP-TRACE]` apparaissent au format documenté, uniquement sur les
+    transitions réelles (jamais un déluge à chaque tick pour un joueur
+    immobile).
+-   **Couverture automatisée :** `WorldPortalRegistryTest` (dont les deux
+    tests documentant l'absence de validation croisée entre fichiers),
+    `WorldPortalDebugGeometryTest`, `WorldPortalDebugServiceTest`,
+    `TpTraceLoggerTest`, `WorldPortalTeleportListenerTest` (répit
+    d'arrivée et son expiration).
+
+### TC-200 — Storyline : progression automatique de bout en bout
+
+-   **Fonctionnalité testée :** `story.StoryService` (démarrage/avancement/
+    fin automatiques), `story_progress.current_index`,
+    `/rpgadmin story info|start|reset|resetwithquests` — voir
+    `docs/storylines.md` pour le détail complet.
+-   **Préconditions (fixture de test, jamais en production permanente)** :
+    1.  Copier `docs/manual-tests/quests/test_break_block.yml`,
+        `test_place_block.yml` et `test_collect_item.yml` dans
+        `plugins/RPGQuest/quests/`.
+    2.  Copier `docs/manual-tests/stories/story_test.yml` dans
+        `plugins/RPGQuest/stories/`.
+    3.  `/rpgquest reload` (ou redémarrer) pour charger les deux.
+-   **Actions ADMIN puis JOUEUR (aucune commande joueur entre les étapes) :**
+    1.  `/rpgadmin story info <joueur>` → `story_test : NOT_STARTED`.
+    2.  `/rpgadmin story start <joueur> story_test`.
+    3.  **[JOUEUR]** Casser 3 blocs de terre (objectif `test_break_block`,
+        déjà actif automatiquement — vérifier via `/quest progress` ou
+        l'ActionBar).
+    4.  **[JOUEUR]** Sans taper aucune commande : poser 3 blocs de terre
+        (objectif `test_place_block`) → doit être devenu actif tout seul.
+    5.  **[JOUEUR]** Sans taper aucune commande : jeter puis ramasser 5
+        bâtons au sol (objectif `test_collect_item`) → doit être devenu
+        actif tout seul.
+    6.  `/rpgadmin story info <joueur>` → `story_test : COMPLETED`.
+-   **Résultat attendu :**
+    -   Après l'étape 2, message chat « Nouvelle aventure :
+        \[TEST\] Histoire de test » puis Title « Quête commencée » /
+        « [TEST] Casser des blocs ».
+    -   Après chaque quête terminée (étapes 3 à 5), message chat
+        « Nouvel objectif : *titre de la quête suivante* » **avant** que
+        le Title « Quête commencée » de cette même quête apparaisse — la
+        quête suivante devient active sans qu'aucune commande ni
+        interaction PNJ ne soit nécessaire entre deux étapes.
+    -   Après l'étape 5 (dernière quête), message chat « Aventure
+        terminée : [TEST] Histoire de test » au lieu d'un « Nouvel
+        objectif ».
+    -   À aucun moment une même quête ne démarre deux fois, ni une
+        récompense (5 XP par quête) n'est distribuée deux fois.
+-   **Test de reprise (redémarrage/reconnexion) :** interrompre le test au
+    milieu (ex. juste après l'étape 4, `test_place_block` en cours),
+    déconnecter le joueur, redémarrer le serveur, reconnecter → la quête en
+    cours doit toujours apparaître active (`/quest progress`), et terminer
+    la story normalement en jouant la suite.
+-   **Test de reset ciblé (mission point 5) :**
+    -   `/rpgadmin story resetwithquests <joueur> story_test` →
+        `story_test` redevient `NOT_STARTED`, les 3 quêtes de test
+        redeviennent `NOT_STARTED` (`/quest progress` ne les liste plus).
+    -   Vérifier qu'une autre quête en cours du joueur (ex. `first_steps`
+        si testée en parallèle) **n'est pas affectée**.
+    -   `/rpgadmin story start <joueur> story_test` relance proprement
+        depuis le début (les 3 quêtes de test étant `repeatable: true`,
+        aucun blocage « quête déjà terminée »).
+-   **Nettoyage après test :** retirer les 4 fichiers copiés en
+    précondition de `plugins/RPGQuest/quests/`/`plugins/RPGQuest/stories/`,
+    puis `/rpgquest reload` (jamais nécessaire de vider `data.db`).
+-   **Couverture automatisée :** `StoryServiceTest` (démarrage, première
+    quête auto-acceptée, avancement automatique, chaîne complète jusqu'à
+    `COMPLETED`, absence de double avancement, reprise après déconnexion/
+    redémarrage y compris quête déjà terminée hors ligne, `reset`,
+    `resetWithQuests` avec preuve qu'une quête hors story n'est jamais
+    touchée, deux Stories indépendantes pour le même joueur, quête utilisée
+    hors de toute Story active), `StoryProgressRepositoryTest`,
+    `SchemaMigratorTest` (migration V14 et sa préservation des données
+    existantes).
+
 ---
 
 ## Table de recette
@@ -1383,3 +1490,5 @@ le résumé de récompenses de TC-014).
 | TC-181 | Mod client : handshake compatible | | | |
 | TC-182 | Mod client : vanilla et mauvaise version | | | |
 | TC-183 | Mod client : contenu (bloc/objet) | | | |
+| TC-190 | Diagnostic WorldPortal (`here`/`debug`, TP-TRACE) | | | |
+| TC-200 | Storyline : progression automatique de bout en bout | | | |

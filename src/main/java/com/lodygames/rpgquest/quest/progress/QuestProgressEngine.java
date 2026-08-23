@@ -9,6 +9,7 @@ import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.QuestLoadReport;
 import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
+import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
@@ -458,7 +459,9 @@ public final class QuestProgressEngine implements PluginService {
     // ---- Événements de jeu (appelés par les listeners du même package) ---
 
     void handleBreakBlock(Player player, Material material) {
-        handleCandidates(player, index.breakBlock(material));
+        List<ObjectiveRef> candidates = index.breakBlock(material);
+        traceBreakBlockChain(player, material, candidates);
+        handleCandidates(player, candidates);
     }
 
     void handlePlaceBlock(Player player, Material material) {
@@ -493,6 +496,83 @@ public final class QuestProgressEngine implements PluginService {
         double dy = location.y() - y;
         double dz = location.z() - z;
         return (dx * dx + dy * dy + dz * dz) <= (location.radius() * location.radius());
+    }
+
+    /**
+     * TODO(debug bug BREAK_BLOCK wild) : instrumentation temporaire, à retirer une fois la cause
+     * confirmée (voir {@code docs/claude-reports/} pour l'investigation). Reconstitue, en lecture
+     * seule et <strong>sans jamais muter aucun état</strong>, exactement ce que {@link
+     * #handleCandidates} s'apprête à faire pour {@code BREAK_BLOCK} — pour savoir précisément où la
+     * chaîne réelle s'arrête sur le serveur (index sans candidat ? quête pas active ? mauvaise
+     * étape ? déjà au plafond ? incrément appliqué mais rien ne se passe après ?), sans devoir
+     * deviner depuis un environnement de développement qui ne reproduit pas le bug. N'affecte jamais
+     * {@code handleCandidates}, appelé séparément juste après avec les mêmes {@code candidates}.
+     *
+     * <p>Journalise uniquement si {@code player} a au moins une quête {@code ACTIVE} dont l'étape
+     * courante contient un objectif {@code BREAK_BLOCK} (n'importe quel matériau) — jamais à chaque
+     * cassage de bloc par n'importe quel joueur, pour ne jamais spammer les logs.</p>
+     */
+    private void traceBreakBlockChain(Player player, Material material, List<ObjectiveRef> candidates) {
+        UUID playerId = player.getUniqueId();
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
+        if (playerActive == null || playerActive.isEmpty()) {
+            return;
+        }
+
+        List<String> activeBreakBlockQuests = new ArrayList<>();
+        for (var entry : playerActive.entrySet()) {
+            ActiveQuestProgress progress = entry.getValue();
+            if (progress.state() != QuestState.ACTIVE) {
+                continue;
+            }
+            questEngine.find(entry.getKey()).ifPresent(quest -> {
+                QuestStep step = quest.steps().get(progress.currentStepIndex());
+                boolean hasBreakBlockHere = step.objectives().stream().anyMatch(o -> o instanceof BreakBlockObjective);
+                if (hasBreakBlockHere) {
+                    activeBreakBlockQuests.add(entry.getKey() + ":" + step.id());
+                }
+            });
+        }
+        if (activeBreakBlockQuests.isEmpty()) {
+            return; // le gate demandé : ce joueur n'a aucune quête BREAK_BLOCK active en ce moment.
+        }
+
+        List<String> candidateDescriptions = candidates.stream()
+                .map(ref -> ref.questId() + ":" + ref.stepId() + ":obj" + ref.objectiveIndex())
+                .toList();
+
+        List<String> evaluations = new ArrayList<>();
+        boolean anyProgressed = false;
+        for (ObjectiveRef ref : candidates) {
+            String label = ref.questId() + ":" + ref.stepId() + ":obj" + ref.objectiveIndex();
+            ActiveQuestProgress progress = playerActive.get(ref.questId());
+            if (progress == null) {
+                evaluations.add(label + "=SKIP(quest_not_in_active_cache)");
+                continue;
+            }
+            if (progress.state() != QuestState.ACTIVE) {
+                evaluations.add(label + "=SKIP(quest_state_" + progress.state() + ")");
+                continue;
+            }
+            if (progress.currentStepIndex() != ref.stepIndex()) {
+                evaluations.add(label + "=SKIP(step_mismatch_current_index_" + progress.currentStepIndex() + ")");
+                continue;
+            }
+            int required = requiredAmount(ref.objective());
+            int before = progress.counter(ref.objectiveIndex());
+            if (before >= required) {
+                evaluations.add(label + "=SKIP(already_at_cap_" + before + "/" + required + ")");
+                continue;
+            }
+            evaluations.add(label + "=WILL_INCREMENT(" + before + "/" + required + "->" + (before + 1) + "/" + required + ")");
+            anyProgressed = true;
+        }
+
+        String outcome = candidates.isEmpty() ? "no_candidates_from_index"
+                : anyProgressed ? "progressed" : "no_active_match";
+        QuestTraceLogger.logBreakBlock(logger, player.getName(), playerId,
+                player.getWorld() != null ? player.getWorld().getName() : "?", material.name(),
+                activeBreakBlockQuests, candidateDescriptions, evaluations, outcome);
     }
 
     private void handleCandidates(Player player, List<ObjectiveRef> candidates) {

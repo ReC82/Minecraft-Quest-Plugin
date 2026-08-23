@@ -151,6 +151,47 @@ class RandomSafeLocationFinderTest {
         assertTrue(finder.find(world, center).isEmpty(), "hors de la bordure du monde : jamais accepté, même sur un sol sûr");
     }
 
+    // ---- findAtColumn (colonne fixe, sans tirage aléatoire — voir claim.ClaimTeleportService) ------
+
+    @Test
+    void findAtColumnAcceptsASafeColumn() {
+        setGround(5, 64, 7, Material.STONE);
+
+        Optional<Location> found = RandomSafeLocationFinder.findAtColumn(world, 5, 7);
+
+        assertTrue(found.isPresent());
+        assertEquals(5, found.get().getBlockX());
+        assertEquals(7, found.get().getBlockZ());
+        assertEquals(65, found.get().getBlockY(), "le joueur doit apparaître un bloc au-dessus du sol");
+    }
+
+    @Test
+    void findAtColumnRejectsLava() {
+        setGround(5, 64, 7, Material.LAVA);
+
+        assertTrue(RandomSafeLocationFinder.findAtColumn(world, 5, 7).isEmpty());
+    }
+
+    @Test
+    void findAtColumnRejectsAnEmptyColumn() {
+        // MockBukkit génère un monde superflat minimal (herbe par défaut, voir le test ci-dessous) :
+        // colonne rendue explicitement vide (air) jusqu'au-dessus de ce sol par défaut.
+        for (int y = world.getMinHeight(); y <= 70; y++) {
+            world.getBlockAt(999, y, 999).setType(Material.AIR);
+        }
+
+        assertTrue(RandomSafeLocationFinder.findAtColumn(world, 999, 999).isEmpty());
+    }
+
+    @Test
+    void findAtColumnRejectsOutsideTheWorldBorder() {
+        world.getWorldBorder().setCenter(center);
+        world.getWorldBorder().setSize(10);
+        setGround(500, 64, 0, Material.STONE);
+
+        assertTrue(RandomSafeLocationFinder.findAtColumn(world, 500, 0).isEmpty());
+    }
+
     /** Retourne une séquence fixe de valeurs à chaque appel de {@code nextDouble()} (0.0 au-delà de la séquence). */
     private static final class FixedDoubleRandom extends Random {
         private final Deque<Double> values;

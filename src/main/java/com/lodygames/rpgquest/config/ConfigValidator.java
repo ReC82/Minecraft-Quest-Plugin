@@ -254,12 +254,17 @@ public final class ConfigValidator {
             throw new ConfigValidationException(
                     "« claims.portal-buffer-blocks » ne peut pas être négatif, valeur trouvée : " + portalBufferBlocks);
         }
+        String world = claims.getString("world", "claims");
+        if (world == null || world.isBlank()) {
+            throw new ConfigValidationException("« claims.world » ne peut pas être vide.");
+        }
+        boolean blockNetherTravel = claims.getBoolean("block-nether-travel", true);
 
-        return new ClaimConfig(maxWidth, maxHeight, maxClaimsPerPlayer, portalBufferBlocks);
+        return new ClaimConfig(maxWidth, maxHeight, maxClaimsPerPlayer, portalBufferBlocks, world, blockNetherTravel);
     }
 
     private static ClaimConfig defaultClaims() {
-        return new ClaimConfig(64, 384, 3, 16);
+        return new ClaimConfig(64, 384, 3, 16, "claims", true);
     }
 
     private static ProgressionConfig validateProgression(ConfigurationSection section) throws ConfigValidationException {

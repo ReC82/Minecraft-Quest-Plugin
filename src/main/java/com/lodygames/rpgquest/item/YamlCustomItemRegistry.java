@@ -41,7 +41,8 @@ import org.slf4j.Logger;
 public final class YamlCustomItemRegistry implements CustomItemRegistry {
 
     private static final String[] BUNDLED_EXAMPLES = {
-            "forest_blade.yml", "miner_pickaxe.yml", "spider_fang.yml", "refined_crystal.yml"
+            "forest_blade.yml", "miner_pickaxe.yml", "spider_fang.yml", "refined_crystal.yml", "acte_propriete.yml",
+            "pierre_retour.yml"
     };
 
     /** Clé PDC portant l'id namespacé de l'objet, sous forme de chaîne (ex. {@code "rpgquest:forest_blade"}). */

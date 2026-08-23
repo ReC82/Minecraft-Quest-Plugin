@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.lodygames.rpgquest.database.ClaimRepository;
 import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
+import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.ProgressionRepository;
 import com.lodygames.rpgquest.progression.ProgressionService;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
@@ -87,7 +88,9 @@ class ClaimProtectionListenerTest {
                 plugin, progressionRepository, () -> configService.current().progression(), plugin.getSLF4JLogger());
         progressionService.start();
 
-        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService, progressionService);
+        PlayerVariableRepository variableRepository = new PlayerVariableRepository(database);
+        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService,
+                progressionService, variableRepository);
         claimService.start();
         listener = new ClaimProtectionListener(claimService);
 
@@ -95,6 +98,8 @@ class ClaimProtectionListenerTest {
         member = addPlayer();
         stranger = addPlayer();
 
+        variableRepository.set(owner.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, ClaimService.CLAIM_TIER_1_VALUE)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         // Claim couvrant -10..10 sur x/z dans "world", "member" en confiance.
         claimService.create(owner, "home", new Location(world, -10, 0, -10), new Location(world, 10, 255, 10))
                 .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);

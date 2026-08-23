@@ -39,6 +39,8 @@ dialogue:
   allowed-commands:
     - "give"
     - "xp"
+    - "customitem"
+    - "claim"
 
 journal:
   # Affiche une bossbar de suivi (titre + progression) pour la quête suivie
@@ -55,6 +57,16 @@ claims:
   max-claims-per-player: 3
   # Distance minimale (en blocs) entre un nouveau claim et n'importe quel portail existant.
   portal-buffer-blocks: 16
+  # Nom exact du monde dédié au premier claim via l'Acte de propriété (voir
+  # claim.DeedClaimListener / claim.ClaimsWorldRulesListener) : clic droit avec l'Acte hors de ce
+  # monde est refusé proprement. N'affecte pas /claim create à la baguette (utilisable dans
+  # n'importe quel monde autre que le Hub). PvP et tout dégât joueur y sont désactivés (zone
+  # résidentielle totalement safe) ; jour/nuit et météo restent normaux (contrairement au Hub).
+  world: claims
+  # Tant que le rôle futur du Nether n'est pas décidé, un portail Nether activé depuis ce monde est
+  # refusé (message au joueur, aucun impact sur le Nether lui-même ni sur les autres mondes/portails
+  # RPGQuest). Simple bascule pour réautoriser plus tard.
+  block-nether-travel: true
 
 progression:
   # Courbe de niveaux (par compétence) : coût du niveau n -> n+1 =

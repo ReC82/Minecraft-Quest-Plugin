@@ -29,6 +29,19 @@ import org.slf4j.Logger;
  *
  * <p>{@link #portalsInWorld(String)} est indexé (une passe par {@link #reload()}) pour que {@code
  * WorldPortalTeleportListener} reste bon marché à chaque {@code PlayerMoveEvent}.</p>
+ *
+ * <p><strong>Anomalie constatée (investigation « bug TP hub »), non corrigée ici</strong> :
+ * contrairement à {@code zone.ZoneLoader}/{@code travel.PortalLoader}, {@link #reload()} ne fait
+ * <em>aucune</em> validation croisée entre fichiers — ni id dupliqué, ni chevauchement de zone
+ * d'activation. Seul {@link #create(WorldPortalDefinition)} (donc uniquement le chemin {@code
+ * /rpgadmin worldportal create}) vérifie les chevauchements au moment de la création ; un fichier
+ * ajouté ou édité à la main dans {@code plugins/RPGQuest/world-portals/} (chemin explicitement
+ * supporté, {@link #reload()} le relit sans réserve) peut donc introduire silencieusement une
+ * seconde zone superposée à une zone existante, ou un id dupliqué (auquel cas {@link #find} ne
+ * renvoie jamais que la première occurrence rencontrée) — sans qu'aucune erreur ne soit journalisée.
+ * {@link #portalAt} ne renvoie lui aussi que la première zone trouvée par ordre de fichier, jamais
+ * un avertissement de chevauchement. Voir {@link #portalsContaining} pour l'outil de diagnostic qui
+ * rend ce cas visible en jeu ({@code /rpgadmin worldportal here}).</p>
  */
 public final class WorldPortalRegistry implements PluginService {
 
@@ -135,6 +148,20 @@ public final class WorldPortalRegistry implements PluginService {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * TOUS les portails (activés ou non, dans l'ordre chargé) dont la zone d'activation contient
+     * cette position — contrairement à {@link #portalAt}, qui ne renvoie que le premier trouvé et
+     * est le seul consulté par {@code WorldPortalTeleportListener} en jeu. Outil de diagnostic
+     * (voir {@code /rpgadmin worldportal here}) : {@link #reload()} ne rejette ni les id dupliqués
+     * ni les chevauchements entre fichiers (contrairement à {@code zone.ZoneLoader}/{@code
+     * travel.PortalLoader}, voir le Javadoc de la classe) — deux zones peuvent donc légitimement se
+     * superposer sans qu'aucune erreur ne soit jamais journalisée ; cette méthode est la seule façon
+     * de le voir depuis le jeu.
+     */
+    public List<WorldPortalDefinition> portalsContaining(String world, int x, int y, int z) {
+        return portalsInWorld(world).stream().filter(p -> p.contains(world, x, y, z)).toList();
     }
 
     public enum CreateOutcome {

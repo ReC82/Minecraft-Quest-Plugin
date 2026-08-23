@@ -4,10 +4,16 @@ import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.admin.FlattenService;
 import com.lodygames.rpgquest.admin.RpgAdminCommand;
 import com.lodygames.rpgquest.backpack.BackpackService;
+import com.lodygames.rpgquest.claim.ClaimBorderEntryListener;
+import com.lodygames.rpgquest.claim.ClaimBorderRenderer;
+import com.lodygames.rpgquest.claim.ClaimNetherTravelListener;
 import com.lodygames.rpgquest.claim.ClaimProtectionListener;
 import com.lodygames.rpgquest.claim.ClaimSelectionService;
 import com.lodygames.rpgquest.claim.ClaimService;
+import com.lodygames.rpgquest.claim.ClaimTeleportService;
 import com.lodygames.rpgquest.claim.ClaimWandListener;
+import com.lodygames.rpgquest.claim.ClaimsWorldRulesListener;
+import com.lodygames.rpgquest.claim.DeedClaimListener;
 import com.lodygames.rpgquest.command.BackpackCommand;
 import com.lodygames.rpgquest.command.ClaimCommand;
 import com.lodygames.rpgquest.command.CustomItemCommand;
@@ -90,11 +96,14 @@ import com.lodygames.rpgquest.store.StoreDeliveryService;
 import com.lodygames.rpgquest.store.StoreProductRegistry;
 import com.lodygames.rpgquest.story.StoryRegistry;
 import com.lodygames.rpgquest.story.StoryService;
+import com.lodygames.rpgquest.travel.ItemTravelService;
 import com.lodygames.rpgquest.travel.PortalService;
 import com.lodygames.rpgquest.travel.WorldPortalRegistry;
+import com.lodygames.rpgquest.travel.WorldPortalDebugService;
 import com.lodygames.rpgquest.travel.WorldPortalTeleportListener;
 import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
+import com.lodygames.rpgquest.travel.model.ItemTravelDefinition;
 import com.lodygames.rpgquest.ui.QuestJournalService;
 import com.lodygames.rpgquest.web.WebSnapshotWriter;
 import com.lodygames.rpgquest.world.WorldService;
@@ -102,6 +111,7 @@ import com.lodygames.rpgquest.zone.ZoneProtectionListener;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.zone.ZoneSelectionService;
 import com.lodygames.rpgquest.zone.ZoneWandListener;
+import org.bukkit.NamespacedKey;
 
 /**
  * Construit les services du plugin et orchestre leur démarrage/arrêt dans un
@@ -132,6 +142,7 @@ public final class RPGQuestBootstrap {
     private final YamlPortalRegistry portalRegistry;
     private final YamlDestinationRegistry destinationRegistry;
     private final WorldPortalRegistry worldPortalRegistry;
+    private WorldPortalDebugService worldPortalDebugService;
     private final StoryRegistry storyRegistry;
     private final ClaimSelectionService claimSelectionService;
     private final SpecialMobRegistry mobRegistry;
@@ -153,6 +164,8 @@ public final class RPGQuestBootstrap {
     private MarketService marketService;
     private PortalService portalService;
     private ClaimService claimService;
+    private ClaimTeleportService claimTeleportService;
+    private ItemTravelService itemTravelService;
     private WebSnapshotWriter webSnapshotWriter;
     private StoreClient storeClient;
     private StoreDeliveryService storeDeliveryService;
@@ -335,17 +348,47 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin,
                 new WorldPortalTeleportListener(plugin, worldPortalRegistry, worldService,
                         () -> configService.current().randomSafeArrival(), plugin.getSLF4JLogger())));
+        worldPortalDebugService = new WorldPortalDebugService(plugin, worldPortalRegistry, plugin.getSLF4JLogger());
+        registry.start(worldPortalDebugService);
 
         registry.start(storyRegistry);
         StoryProgressRepository storyProgressRepository = new StoryProgressRepository(databaseService.databaseManager());
-        storyService = new StoryService(storyRegistry, storyProgressRepository, profileRepository, plugin.getSLF4JLogger());
+        storyService = new StoryService(plugin, storyRegistry, storyProgressRepository, profileRepository,
+                questProgressEngine, questEngine, questMessagesService, plugin.getSLF4JLogger());
         registry.start(storyService);
+        registry.start(new PlayerListenerService(plugin, storyService.connectionListener()));
+        // Branche la progression automatique de Story sur toute mutation de progression de quête —
+        // même patron que QuestCompletionXpListener, mais directement une référence de méthode : pas
+        // besoin d'une classe de listener séparée, StoryService a déjà tout l'état nécessaire.
+        questProgressEngine.onProgressChanged(storyService::onQuestProgressChanged);
 
         ClaimRepository claimRepository = new ClaimRepository(databaseService.databaseManager());
-        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService, progressionService);
+        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService,
+                progressionService, variableRepository);
         registry.start(claimService);
+        claimTeleportService = new ClaimTeleportService(plugin, claimService);
         registry.start(new PlayerListenerService(plugin, new ClaimProtectionListener(claimService)));
         registry.start(new PlayerListenerService(plugin, new ClaimWandListener(claimSelectionService)));
+        ClaimsWorldRulesListener claimsWorldRulesListener =
+                new ClaimsWorldRulesListener(plugin, claimService, () -> configService.current().claims());
+        registry.start(new PlayerListenerService(plugin, claimsWorldRulesListener));
+        // Le monde des claims est généralement déjà chargé à ce stade (les mondes se chargent avant
+        // les plugins) : WorldLoadEvent ne se déclenchera donc jamais pour lui — purge explicite unique.
+        claimsWorldRulesListener.purgeAlreadyLoadedWorld();
+        registry.start(new PlayerListenerService(plugin,
+                new ClaimNetherTravelListener(() -> configService.current().claims())));
+
+        ClaimBorderRenderer claimBorderRenderer = new ClaimBorderRenderer(plugin);
+        registry.start(claimBorderRenderer);
+        registry.start(new PlayerListenerService(plugin, new ClaimBorderEntryListener(claimService, claimBorderRenderer)));
+        registry.start(new PlayerListenerService(plugin,
+                new DeedClaimListener(plugin, claimService, customItemRegistry, claimBorderRenderer, () -> configService.current().claims())));
+
+        itemTravelService = new ItemTravelService(plugin, customItemRegistry, plugin.getSLF4JLogger());
+        registry.start(itemTravelService);
+        registry.start(new PlayerListenerService(plugin, itemTravelService.listener()));
+        itemTravelService.register(new ItemTravelDefinition(
+                new NamespacedKey("rpgquest", "pierre_retour"), 3, spawnService::resolve));
 
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
@@ -353,7 +396,8 @@ public final class RPGQuestBootstrap {
         registry.start(dialogueEngine);
 
         dialogueSessionEngine = new DialogueSessionEngine(
-                plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService, npcIdentityService);
+                plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService, npcIdentityService,
+                claimService, customItemRegistry);
         registry.start(dialogueSessionEngine);
         dialogueSessionEngine.setRenderer(createRenderer(dialogueSessionEngine));
         registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));
@@ -396,6 +440,10 @@ public final class RPGQuestBootstrap {
 
     public QuestProgressEngine questProgressEngine() {
         return questProgressEngine;
+    }
+
+    public StoryService storyService() {
+        return storyService;
     }
 
     public YamlDialogueEngine dialogueEngine() {
@@ -585,7 +633,7 @@ public final class RPGQuestBootstrap {
             market.setTabCompleter(marketCommand);
         }
 
-        ClaimCommand claimCommand = new ClaimCommand(plugin, claimService, claimSelectionService);
+        ClaimCommand claimCommand = new ClaimCommand(plugin, claimService, claimSelectionService, claimTeleportService);
         var claim = plugin.getCommand("claim");
         if (claim != null) {
             claim.setExecutor(claimCommand);
@@ -622,7 +670,7 @@ public final class RPGQuestBootstrap {
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(
                 flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
-                storyService, plugin);
+                worldPortalDebugService, storyService, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

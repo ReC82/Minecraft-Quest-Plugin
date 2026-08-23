@@ -42,6 +42,13 @@ rewards:
     amount: 100
   - type: COMMAND
     command: "customitem give %player% rpgquest:miner_pickaxe 1"
+  # Débloque le droit de créer un premier claim (5x5, voir claim.ClaimService#CLAIM_TIER_1_KEY) —
+  # crystal_hunt est la dernière quête de main_story.yml, donc terminer l'histoire principale
+  # débloque ce droit (mission « premier claim 5×5 débloqué par une Story »). État interne, jamais
+  # affiché comme récompense (voir QuestProgressEngine#grantRewards).
+  - type: VARIABLE
+    key: CLAIM_TIER_1
+    value: "true"
 
 variables:
   crystal_hunt_started: "true"

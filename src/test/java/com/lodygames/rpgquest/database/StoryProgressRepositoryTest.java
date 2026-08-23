@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.database;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.database.StoryProgressRepository.StoryProgressRecord;
 import com.lodygames.rpgquest.story.model.StoryState;
 import java.nio.file.Path;
 import java.util.Map;
@@ -48,32 +49,41 @@ class StoryProgressRepositoryTest {
     }
 
     @Test
-    void upsertsAndReadsState() throws Exception {
-        repository.upsertState(playerUuid, STORY_ID, StoryState.ACTIVE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    void upsertsAndReadsStateAndCurrentIndex() throws Exception {
+        repository.upsertProgress(playerUuid, STORY_ID, StoryState.ACTIVE, 0).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        assertEquals(StoryState.ACTIVE, repository.find(playerUuid, STORY_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow());
+        StoryProgressRecord record = repository.find(playerUuid, STORY_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow();
+        assertEquals(StoryState.ACTIVE, record.state());
+        assertEquals(0, record.currentIndex());
 
-        repository.upsertState(playerUuid, STORY_ID, StoryState.COMPLETED).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.upsertProgress(playerUuid, STORY_ID, StoryState.ACTIVE, 1).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        StoryProgressRecord updated = repository.find(playerUuid, STORY_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow();
+        assertEquals(1, updated.currentIndex(), "un upsert doit remplacer l'index, pas l'accumuler");
 
-        assertEquals(StoryState.COMPLETED, repository.find(playerUuid, STORY_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow());
+        repository.upsertProgress(playerUuid, STORY_ID, StoryState.COMPLETED, 3).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        StoryProgressRecord completed = repository.find(playerUuid, STORY_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow();
+        assertEquals(StoryState.COMPLETED, completed.state());
+        assertEquals(3, completed.currentIndex());
     }
 
     @Test
     void findAllReturnsEveryStoryForPlayer() throws Exception {
-        repository.upsertState(playerUuid, STORY_ID, StoryState.ACTIVE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        repository.upsertState(playerUuid, "side_story", StoryState.COMPLETED).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.upsertProgress(playerUuid, STORY_ID, StoryState.ACTIVE, 1).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.upsertProgress(playerUuid, "side_story", StoryState.COMPLETED, 2).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        Map<String, StoryState> all = repository.findAll(playerUuid).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        Map<String, StoryProgressRecord> all = repository.findAll(playerUuid).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         assertEquals(2, all.size());
-        assertEquals(StoryState.ACTIVE, all.get(STORY_ID));
-        assertEquals(StoryState.COMPLETED, all.get("side_story"));
+        assertEquals(StoryState.ACTIVE, all.get(STORY_ID).state());
+        assertEquals(1, all.get(STORY_ID).currentIndex());
+        assertEquals(StoryState.COMPLETED, all.get("side_story").state());
+        assertEquals(2, all.get("side_story").currentIndex());
     }
 
     @Test
     void deleteStoryRemovesOnlyThatStoryForThePlayer() throws Exception {
-        repository.upsertState(playerUuid, STORY_ID, StoryState.ACTIVE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        repository.upsertState(playerUuid, "side_story", StoryState.ACTIVE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.upsertProgress(playerUuid, STORY_ID, StoryState.ACTIVE, 0).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.upsertProgress(playerUuid, "side_story", StoryState.ACTIVE, 0).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         repository.deleteStory(playerUuid, STORY_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
@@ -84,8 +94,8 @@ class StoryProgressRepositoryTest {
 
     @Test
     void deleteAllForPlayerRemovesEveryStory() throws Exception {
-        repository.upsertState(playerUuid, STORY_ID, StoryState.ACTIVE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        repository.upsertState(playerUuid, "side_story", StoryState.COMPLETED).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.upsertProgress(playerUuid, STORY_ID, StoryState.ACTIVE, 0).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.upsertProgress(playerUuid, "side_story", StoryState.COMPLETED, 2).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         repository.deleteAllForPlayer(playerUuid).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
@@ -103,8 +113,8 @@ class StoryProgressRepositoryTest {
     void aSecondPlayersProgressIsNeverAffectedByAnotherPlayersReset() throws Exception {
         UUID other = UUID.randomUUID();
         new PlayerProfileRepository(database).findOrCreate(other, "Alex").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        repository.upsertState(playerUuid, STORY_ID, StoryState.ACTIVE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        repository.upsertState(other, STORY_ID, StoryState.ACTIVE).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.upsertProgress(playerUuid, STORY_ID, StoryState.ACTIVE, 0).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.upsertProgress(other, STORY_ID, StoryState.ACTIVE, 0).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         repository.deleteAllForPlayer(playerUuid).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 

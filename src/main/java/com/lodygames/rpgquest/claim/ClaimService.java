@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.config.ClaimConfig;
 import com.lodygames.rpgquest.config.ConfigService;
 import com.lodygames.rpgquest.database.ClaimActionOutcome;
 import com.lodygames.rpgquest.database.ClaimRepository;
+import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.progression.ProgressionService;
 import com.lodygames.rpgquest.progression.model.SkillType;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
@@ -48,25 +49,39 @@ public final class ClaimService implements PluginService {
 
     private static final int BONUS_CLAIM_LEVEL_INTERVAL = 10;
 
+    /**
+     * Variable joueur (voir {@code quest.model.VariableReward}/{@code
+     * dialogue.model.VariableEqualsCondition}) débloquant le droit de créer un <strong>premier</strong>
+     * claim (mission « premier claim 5×5 débloqué par une Story ») — jamais vérifiée pour un 2e/3e
+     * claim, seulement quand {@link #claimsOwnedBy} est encore vide au moment de l'appel. Valeur
+     * attendue : la chaîne exacte {@link #CLAIM_TIER_1_VALUE}, jamais un booléen SQLite (voir {@code
+     * PlayerVariableRepository}, colonne texte).
+     */
+    public static final String CLAIM_TIER_1_KEY = "CLAIM_TIER_1";
+    public static final String CLAIM_TIER_1_VALUE = "true";
+
     private final RPGQuestPlugin plugin;
     private final ClaimRepository claimRepository;
     private final ZoneRegistry zoneRegistry;
     private final YamlPortalRegistry portalRegistry;
     private final ConfigService configService;
     private final ProgressionService progressionService;
+    private final PlayerVariableRepository variableRepository;
     private final Logger logger;
 
     private volatile List<Claim> claims = List.of();
     private volatile Map<String, List<Claim>> byWorld = Map.of();
 
     public ClaimService(RPGQuestPlugin plugin, ClaimRepository claimRepository, ZoneRegistry zoneRegistry,
-                         YamlPortalRegistry portalRegistry, ConfigService configService, ProgressionService progressionService) {
+                         YamlPortalRegistry portalRegistry, ConfigService configService, ProgressionService progressionService,
+                         PlayerVariableRepository variableRepository) {
         this.plugin = plugin;
         this.claimRepository = claimRepository;
         this.zoneRegistry = zoneRegistry;
         this.portalRegistry = portalRegistry;
         this.configService = configService;
         this.progressionService = progressionService;
+        this.variableRepository = variableRepository;
         this.logger = plugin.getSLF4JLogger();
     }
 
@@ -95,6 +110,19 @@ public final class ClaimService implements PluginService {
 
     public List<Claim> claimsOwnedBy(UUID owner) {
         return claims.stream().filter(claim -> claim.owner().equals(owner)).toList();
+    }
+
+    /**
+     * Le claim "principal" actuel de {@code owner} (mission « Jo : retourner à son claim ») —
+     * unique point d'accroche pour une future sélection multi-claims : aujourd'hui résolu simplement
+     * comme le premier (et unique) claim possédé, car un joueur ne peut obtenir un claim principal
+     * que par ce chemin (voir {@code DeedClaimListener}, id toujours {@code "main_" + owner}).
+     * Lorsque plusieurs claims deviendront possibles, seule cette méthode devra changer (ex.
+     * variable joueur "claim principal désigné") — {@code ClaimTeleportService} et les appelants ne
+     * dépendent jamais de l'id ni du nombre de claims directement.
+     */
+    public Optional<Claim> mainClaimOf(UUID owner) {
+        return claimsOwnedBy(owner).stream().findFirst();
     }
 
     public Optional<Claim> find(String id) {
@@ -139,27 +167,52 @@ public final class ClaimService implements PluginService {
 
     public enum CreateOutcome {
         CREATED, INVALID_ID, DIFFERENT_WORLDS, DUPLICATE_ID, TOO_LARGE, TOO_MANY_CLAIMS,
-        OVERLAPS_CLAIM, OVERLAPS_PROTECTED_ZONE, TOO_CLOSE_TO_PORTAL, FORBIDDEN_WORLD
+        OVERLAPS_CLAIM, OVERLAPS_RESERVATION, OVERLAPS_PROTECTED_ZONE, TOO_CLOSE_TO_PORTAL, FORBIDDEN_WORLD,
+        MISSING_PREREQUISITE
     }
 
+    /** Équivalent de {@link #create(Player, String, Location, Location, Location, Location)} sans réservation supplémentaire (réservation = cuboïde actif — voir {@link Claim#Claim(String, UUID, String, int, int, int, int, int, int, Set, ClaimFlags)}). */
     public CompletableFuture<CreateOutcome> create(Player owner, String id, Location pos1, Location pos2) {
-        if (pos1.getWorld() == null || pos2.getWorld() == null || !pos1.getWorld().equals(pos2.getWorld())) {
+        return create(owner, id, pos1, pos2, pos1, pos2);
+    }
+
+    /**
+     * {@code reservedPos1}/{@code reservedPos2} doivent englober {@code activePos1}/{@code
+     * activePos2} (jamais l'inverse) — voir {@link Claim} pour la validation exacte. Le prérequis
+     * {@link #CLAIM_TIER_1_KEY} n'est vérifié que pour le <strong>premier</strong> claim d'un joueur
+     * ({@link #claimsOwnedBy} encore vide au moment de l'appel) : un joueur qui possède déjà un claim
+     * a déjà prouvé son droit, un 2e/3e claim (jusqu'à {@link #effectiveMaxClaims}) n'est jamais
+     * bloqué par ce prérequis.
+     */
+    public CompletableFuture<CreateOutcome> create(Player owner, String id, Location activePos1, Location activePos2,
+                                                    Location reservedPos1, Location reservedPos2) {
+        if (activePos1.getWorld() == null || activePos2.getWorld() == null
+                || !activePos1.getWorld().equals(activePos2.getWorld())
+                || reservedPos1.getWorld() == null || reservedPos2.getWorld() == null
+                || !reservedPos1.getWorld().equals(activePos1.getWorld()) || !reservedPos2.getWorld().equals(activePos1.getWorld())) {
             return CompletableFuture.completedFuture(CreateOutcome.DIFFERENT_WORLDS);
         }
-        String world = pos1.getWorld().getName();
+        String world = activePos1.getWorld().getName();
         if (world.equals(configService.current().hub().world())) {
             return CompletableFuture.completedFuture(CreateOutcome.FORBIDDEN_WORLD);
         }
-        int minX = Math.min(pos1.getBlockX(), pos2.getBlockX());
-        int minY = Math.min(pos1.getBlockY(), pos2.getBlockY());
-        int minZ = Math.min(pos1.getBlockZ(), pos2.getBlockZ());
-        int maxX = Math.max(pos1.getBlockX(), pos2.getBlockX());
-        int maxY = Math.max(pos1.getBlockY(), pos2.getBlockY());
-        int maxZ = Math.max(pos1.getBlockZ(), pos2.getBlockZ());
+        int minX = Math.min(activePos1.getBlockX(), activePos2.getBlockX());
+        int minY = Math.min(activePos1.getBlockY(), activePos2.getBlockY());
+        int minZ = Math.min(activePos1.getBlockZ(), activePos2.getBlockZ());
+        int maxX = Math.max(activePos1.getBlockX(), activePos2.getBlockX());
+        int maxY = Math.max(activePos1.getBlockY(), activePos2.getBlockY());
+        int maxZ = Math.max(activePos1.getBlockZ(), activePos2.getBlockZ());
+        int reservedMinX = Math.min(reservedPos1.getBlockX(), reservedPos2.getBlockX());
+        int reservedMinY = Math.min(reservedPos1.getBlockY(), reservedPos2.getBlockY());
+        int reservedMinZ = Math.min(reservedPos1.getBlockZ(), reservedPos2.getBlockZ());
+        int reservedMaxX = Math.max(reservedPos1.getBlockX(), reservedPos2.getBlockX());
+        int reservedMaxY = Math.max(reservedPos1.getBlockY(), reservedPos2.getBlockY());
+        int reservedMaxZ = Math.max(reservedPos1.getBlockZ(), reservedPos2.getBlockZ());
 
         Claim candidate;
         try {
             candidate = new Claim(id, owner.getUniqueId(), world, minX, minY, minZ, maxX, maxY, maxZ,
+                    reservedMinX, reservedMinY, reservedMinZ, reservedMaxX, reservedMaxY, reservedMaxZ,
                     Set.of(), ClaimFlags.defaults());
         } catch (IllegalArgumentException e) {
             return CompletableFuture.completedFuture(CreateOutcome.INVALID_ID);
@@ -179,6 +232,9 @@ public final class ClaimService implements PluginService {
             if (candidate.overlaps(existing)) {
                 return CompletableFuture.completedFuture(CreateOutcome.OVERLAPS_CLAIM);
             }
+            if (candidate.overlapsReservation(existing)) {
+                return CompletableFuture.completedFuture(CreateOutcome.OVERLAPS_RESERVATION);
+            }
         }
         for (ZoneDefinition zone : zoneRegistry.zonesInWorld(world)) {
             if (overlapsBounds(world, minX, minY, minZ, maxX, maxY, maxZ,
@@ -194,15 +250,49 @@ public final class ClaimService implements PluginService {
             }
         }
 
-        return claimRepository.create(candidate).thenCompose(success -> {
-            if (!success) {
-                return CompletableFuture.completedFuture(CreateOutcome.DUPLICATE_ID);
+        boolean isFirstClaim = claimsOwnedBy(owner.getUniqueId()).isEmpty();
+        CompletableFuture<Boolean> prerequisiteCheck = isFirstClaim
+                ? hasClaimTierOne(owner.getUniqueId())
+                : CompletableFuture.completedFuture(true);
+
+        return prerequisiteCheck.thenCompose(hasPrerequisite -> {
+            if (!hasPrerequisite) {
+                return CompletableFuture.completedFuture(CreateOutcome.MISSING_PREREQUISITE);
             }
-            return claimRepository.allClaims().thenApply(list -> {
-                runOnMainThread(() -> applyLoaded(list));
-                return CreateOutcome.CREATED;
+            return claimRepository.create(candidate).thenCompose(success -> {
+                if (!success) {
+                    return CompletableFuture.completedFuture(CreateOutcome.DUPLICATE_ID);
+                }
+                return claimRepository.allClaims().thenApply(list -> {
+                    runOnMainThread(() -> applyLoaded(list));
+                    return CreateOutcome.CREATED;
+                });
             });
         });
+    }
+
+    /** {@code true} si {@code playerId} possède la variable {@link #CLAIM_TIER_1_KEY} = {@link #CLAIM_TIER_1_VALUE}. */
+    public CompletableFuture<Boolean> hasClaimTierOne(UUID playerId) {
+        return variableRepository.get(playerId, CLAIM_TIER_1_KEY)
+                .thenApply(opt -> opt.map(CLAIM_TIER_1_VALUE::equals).orElse(false));
+    }
+
+    /**
+     * Outil ADMIN/DEBUG ciblé (mission « reset pour retester le scénario ») : supprime tous les
+     * claims de {@code target} et remet {@link #CLAIM_TIER_1_KEY} à {@code "false"} — permet de
+     * rejouer Story → CLAIM_TIER_1 → Acte de propriété → claim depuis zéro. Ne touche à aucune autre
+     * quête, variable, claim ou joueur (voir {@code command.ClaimCommand#handleAdminResetTierOne}).
+     */
+    public CompletableFuture<Void> resetTierOneClaimForTesting(UUID target) {
+        List<CompletableFuture<ClaimActionOutcome>> deletions = claimsOwnedBy(target).stream()
+                .map(claim -> claimRepository.delete(claim.id(), target))
+                .toList();
+        return CompletableFuture.allOf(deletions.toArray(CompletableFuture[]::new))
+                .thenCompose(v -> claimRepository.allClaims())
+                .thenCompose(list -> {
+                    runOnMainThread(() -> applyLoaded(list));
+                    return variableRepository.set(target, CLAIM_TIER_1_KEY, "false");
+                });
     }
 
     public CompletableFuture<ClaimActionOutcome> delete(UUID requester, String id) {

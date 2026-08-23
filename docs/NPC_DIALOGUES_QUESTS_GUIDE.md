@@ -593,6 +593,26 @@ Toutes les commandes ci-dessous sont réelles et vérifiées dans le code.
     recrée à chaque démarrage — voir section 1). Cliquez droit sur « Guide »
     → le dialogue doit toujours s'ouvrir normalement.
 
+### Second exemple : PNJ Jo (Acte de propriété, voir docs/CLAIMS.md)
+
+Même procédure exactement (créer le PNJ → `/rpgadmin npc tag jo` →
+redémarrer), avec un dialogue déjà **fourni dans le jar** comme exemple
+(`dialogues/jo.yml`, condition `NO_MAIN_CLAIM` + `VARIABLE_EQUALS
+CLAIM_TIER_1` pour l'Acte de propriété, condition `HAS_MAIN_CLAIM` pour « Me
+rendre sur ma propriété », `HAS_MAIN_CLAIM` + `LACKS_CUSTOM_ITEM` pour
+« Revoir les limites de ma propriété » et « Obtenir une Pierre de retour »)
+mais **jamais copié automatiquement** dans
+`plugins/RPGQuest/dialogues/` (contrairement à `guide.yml`/`libraire.yml`,
+mission explicite : ne jamais créer le PNJ Jo tout seul). Pour l'activer :
+copiez son contenu depuis le jar (ou `src/main/resources/dialogues/jo.yml`
+du dépôt) dans `plugins/RPGQuest/dialogues/jo.yml`, puis redémarrez — la
+commande `claim` doit aussi être présente dans `dialogue.allowed-commands`
+(`config.yml`, déjà le cas par défaut depuis cette étape) pour que « Me
+rendre sur ma propriété » fonctionne (`RUN_SAFE_COMMAND` → `/claim admin
+sendhome %player%`). Voir [docs/CLAIMS.md](CLAIMS.md), sections « Premier
+claim (Acte de propriété) » et « Retour à son claim (PNJ Jo / commande
+admin) », pour le détail complet des deux scénarios.
+
 ---
 
 ## 7. Rechargement et debug

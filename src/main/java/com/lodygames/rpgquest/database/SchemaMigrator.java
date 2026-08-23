@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 13;
+    private static final int CURRENT_VERSION = 15;
 
     private SchemaMigrator() {
     }
@@ -72,6 +72,14 @@ public final class SchemaMigrator {
         if (version < 13) {
             applyV13(connection);
             version = 13;
+        }
+        if (version < 14) {
+            applyV14(connection);
+            version = 14;
+        }
+        if (version < 15) {
+            applyV15(connection);
+            version = 15;
         }
 
         if (version != startingVersion) {
@@ -440,6 +448,62 @@ public final class SchemaMigrator {
                         FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
                     )
                     """);
+        }
+    }
+
+    private static void applyV14(Connection connection) throws SQLException {
+        // Position courante dans StoryDefinition#questIds() (voir com.lodygames.rpgquest.story
+        // .StoryService) : quelle quête de la story est actuellement suivie pour ce joueur.
+        // ALTER TABLE ... ADD COLUMN avec DEFAULT s'applique aussi aux lignes existantes (aucune
+        // ligne story_progress ne peut exister avant cette étape sans avoir déjà index 0, puisque
+        // seule /rpgadmin story start en créait jusqu'ici, toujours à l'index de départ).
+        //
+        // Contrairement à CREATE TABLE IF NOT EXISTS (idempotent nativement), ALTER TABLE ADD COLUMN
+        // échoue si la colonne existe déjà — un re-run de cette étape (ex. PRAGMA user_version
+        // corrompu/remis à zéro, ou toute future migration qui rejoue les étapes depuis une version
+        // antérieure) planterait sinon avec "duplicate column name". Vérification explicite d'abord.
+        if (columnExists(connection, "story_progress", "current_index")) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE story_progress ADD COLUMN current_index INTEGER NOT NULL DEFAULT 0");
+        }
+    }
+
+    private static void applyV15(Connection connection) throws SQLException {
+        // Réservation foncière (voir com.lodygames.rpgquest.claim.model.Claim/ClaimTier) : cuboïde
+        // englobant, toujours >= le cuboïde actif (min/max_x/y/z), qui empêche tout AUTRE claim de
+        // chevaucher cet espace même avant une éventuelle extension future (mission « premier claim
+        // 5x5 + réservation 100x100 »). Les claims déjà existants (créés avant cette étape, ex.
+        // /claim create à la baguette) n'ont aucune réservation supplémentaire : leur réservation est
+        // initialisée à leur propre cuboïde actif — comportement inchangé pour eux, même défaut que
+        // Claim#Claim(9 bornes, members, flags) côté Java.
+        if (columnExists(connection, "claims", "reserved_min_x")) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE claims ADD COLUMN reserved_min_x INTEGER");
+            statement.execute("ALTER TABLE claims ADD COLUMN reserved_min_y INTEGER");
+            statement.execute("ALTER TABLE claims ADD COLUMN reserved_min_z INTEGER");
+            statement.execute("ALTER TABLE claims ADD COLUMN reserved_max_x INTEGER");
+            statement.execute("ALTER TABLE claims ADD COLUMN reserved_max_y INTEGER");
+            statement.execute("ALTER TABLE claims ADD COLUMN reserved_max_z INTEGER");
+            statement.execute("""
+                    UPDATE claims SET reserved_min_x = min_x, reserved_min_y = min_y, reserved_min_z = min_z,
+                                       reserved_max_x = max_x, reserved_max_y = max_y, reserved_max_z = max_z
+                    """);
+        }
+    }
+
+    private static boolean columnExists(Connection connection, String table, String column) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (resultSet.next()) {
+                if (column.equals(resultSet.getString("name"))) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

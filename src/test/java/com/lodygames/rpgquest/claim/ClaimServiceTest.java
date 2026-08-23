@@ -10,6 +10,7 @@ import com.lodygames.rpgquest.database.ClaimActionOutcome;
 import com.lodygames.rpgquest.database.ClaimRepository;
 import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
+import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.ProgressionRepository;
 import com.lodygames.rpgquest.progression.ProgressionService;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
@@ -67,7 +68,9 @@ class ClaimServiceTest {
                 plugin, progressionRepository, () -> configService.current().progression(), plugin.getSLF4JLogger());
         progressionService.start();
 
-        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService, progressionService);
+        PlayerVariableRepository variableRepository = new PlayerVariableRepository(database);
+        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService,
+                progressionService, variableRepository);
         claimService.start();
     }
 
@@ -79,9 +82,18 @@ class ClaimServiceTest {
         MockBukkit.unmock();
     }
 
+    /**
+     * Joueur prêt à claim : {@link ClaimService#CLAIM_TIER_1_KEY} accordé (voir {@link
+     * #createRejectsWhenMissingClaimTierOnePrerequisiteForAFirstClaim} pour le test dédié du
+     * prérequis lui-même) — la plupart des tests de ce fichier couvrent la mécanique générale d'un
+     * claim déjà autorisé, pas le prérequis, qui n'aurait sinon aucun rapport avec ce qu'ils testent.
+     */
     private PlayerMock addPlayer() throws Exception {
         PlayerMock player = server.addPlayer();
         profileRepository.findOrCreate(player.getUniqueId(), player.getName()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        new PlayerVariableRepository(database)
+                .set(player.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, ClaimService.CLAIM_TIER_1_VALUE)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         return player;
     }
 
@@ -115,6 +127,29 @@ class ClaimServiceTest {
         assertEquals(ClaimService.CreateOutcome.CREATED, outcome);
         assertTrue(claimService.find("home").isPresent());
         assertEquals(owner.getUniqueId(), claimService.find("home").get().owner());
+    }
+
+    /**
+     * Mission « Jo : retourner à son claim » — {@link ClaimService#mainClaimOf} est le seul point
+     * d'accroche utilisé par {@code ClaimTeleportService}/la commande admin, jamais l'id ou le
+     * nombre de claims directement (préparation d'une future sélection multi-claims).
+     */
+    @Test
+    void mainClaimOfIsEmptyWhenThePlayerOwnsNoClaim() throws Exception {
+        PlayerMock owner = addPlayer();
+
+        assertTrue(claimService.mainClaimOf(owner.getUniqueId()).isEmpty());
+    }
+
+    @Test
+    void mainClaimOfReturnsTheOnlyClaimOwnedByThePlayer() throws Exception {
+        PlayerMock owner = addPlayer();
+        await(claimService.create(owner, "home", loc(100, 60, 100), loc(105, 63, 105)));
+
+        var mainClaim = claimService.mainClaimOf(owner.getUniqueId());
+
+        assertTrue(mainClaim.isPresent());
+        assertEquals("home", mainClaim.get().id());
     }
 
     @Test
@@ -250,5 +285,78 @@ class ClaimServiceTest {
         java.util.Optional<Claim> claim = claimService.claimAt("world", 102, 61, 102);
         assertTrue(claim.isPresent());
         assertTrue(claim.get().isTrusted(owner.getUniqueId()));
+    }
+
+    // ---- CLAIM_TIER_1 (mission « premier claim 5×5 débloqué par une Story ») ------------------
+
+    @Test
+    void createRejectsWhenMissingClaimTierOnePrerequisiteForAFirstClaim() throws Exception {
+        PlayerMock owner = server.addPlayer(); // pas addPlayer() : ce test veut justement CLAIM_TIER_1 absent.
+        profileRepository.findOrCreate(owner.getUniqueId(), owner.getName()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        ClaimService.CreateOutcome outcome = await(claimService.create(owner, "home", loc(100, 60, 100), loc(105, 63, 105)));
+
+        assertEquals(ClaimService.CreateOutcome.MISSING_PREREQUISITE, outcome);
+        assertTrue(claimService.find("home").isEmpty());
+    }
+
+    @Test
+    void createSucceedsForAFirstClaimOnceClaimTierOneIsGranted() throws Exception {
+        PlayerMock owner = server.addPlayer();
+        profileRepository.findOrCreate(owner.getUniqueId(), owner.getName()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        new PlayerVariableRepository(database)
+                .set(owner.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, ClaimService.CLAIM_TIER_1_VALUE)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        ClaimService.CreateOutcome outcome = await(claimService.create(owner, "home", loc(100, 60, 100), loc(105, 63, 105)));
+
+        assertEquals(ClaimService.CreateOutcome.CREATED, outcome);
+    }
+
+    @Test
+    void aSecondClaimNeverRequiresClaimTierOneAgain() throws Exception {
+        PlayerMock owner = addPlayer();
+        await(claimService.create(owner, "home", loc(100, 60, 100), loc(105, 63, 105)));
+        // Retire explicitement le prérequis : un 2e claim ne doit jamais le revérifier.
+        new PlayerVariableRepository(database)
+                .set(owner.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, "false")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        ClaimService.CreateOutcome outcome = await(claimService.create(owner, "second", loc(200, 60, 200), loc(205, 63, 205)));
+
+        assertEquals(ClaimService.CreateOutcome.CREATED, outcome);
+    }
+
+    // ---- Réservation (mission « 5×5 actif + réservation 100×100 ») ----------------------------
+
+    @Test
+    void createRejectsWhenTheReservationOverlapsAnotherClaimsReservation() throws Exception {
+        PlayerMock owner = addPlayer();
+        PlayerMock neighbour = addPlayer();
+        // Réservation 100x100 centrée sur (300,300) : 250..350 sur x/z.
+        await(claimService.create(owner, "resv1",
+                loc(298, 60, 298), loc(302, 63, 302), loc(250, 60, 250), loc(350, 63, 350)));
+
+        // Cuboïde actif hors de tout claim existant, mais sa réservation (100x100 centrée sur
+        // (340,340), soit 290..390) chevauche la réservation ci-dessus (250..350).
+        ClaimService.CreateOutcome outcome = await(claimService.create(neighbour, "resv2",
+                loc(338, 60, 338), loc(342, 63, 342), loc(290, 60, 290), loc(390, 63, 390)));
+
+        assertEquals(ClaimService.CreateOutcome.OVERLAPS_RESERVATION, outcome);
+        assertTrue(claimService.find("resv2").isEmpty());
+    }
+
+    @Test
+    void createSucceedsWhenReservationsDoNotOverlap() throws Exception {
+        PlayerMock owner = addPlayer();
+        PlayerMock neighbour = addPlayer();
+        await(claimService.create(owner, "resv1",
+                loc(298, 60, 298), loc(302, 63, 302), loc(250, 60, 250), loc(350, 63, 350)));
+
+        // Assez loin : réservation 700..800, ne touche pas 250..350.
+        ClaimService.CreateOutcome outcome = await(claimService.create(neighbour, "resv3",
+                loc(748, 60, 748), loc(752, 63, 752), loc(700, 60, 700), loc(800, 63, 800)));
+
+        assertEquals(ClaimService.CreateOutcome.CREATED, outcome);
     }
 }

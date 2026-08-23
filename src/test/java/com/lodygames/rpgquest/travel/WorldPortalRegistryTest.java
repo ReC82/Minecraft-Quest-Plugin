@@ -6,7 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.travel.model.DestinationStrategy;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -197,12 +200,92 @@ class WorldPortalRegistryTest {
 
     @Test
     void corruptFileIsIgnoredRatherThanCrashingReload() throws Exception {
-        java.nio.file.Files.createDirectories(tempDir.resolve("world-portals"));
-        java.nio.file.Files.writeString(tempDir.resolve("world-portals/broken.yml"), "not: a valid portal\n");
+        Files.createDirectories(tempDir.resolve("world-portals"));
+        Files.writeString(tempDir.resolve("world-portals/broken.yml"), "not: a valid portal\n");
 
         WorldPortalRegistry broken = new WorldPortalRegistry(tempDir.resolve("world-portals"), NOPLogger.NOP_LOGGER);
 
         org.junit.jupiter.api.Assertions.assertDoesNotThrow(broken::start);
         assertTrue(broken.portals().isEmpty());
+    }
+
+    // ---- portalsContaining (diagnostic) ------------------------------------------------------------
+
+    @Test
+    void portalsContainingReturnsEveryMatchNotJustTheFirst() {
+        registry.create(portal("hub_to_wild", "world", "wild"));
+        // create() rejette normalement les chevauchements (voir overlappingPortalInTheSameWorldIsRejected)
+        // — cette seconde zone est donc introduite par un fichier ajouté à la main, exactement comme
+        // le décrit le Javadoc de WorldPortalRegistry (voir le test suivant pour la preuve complète).
+        writeManualPortalFile("hub_to_other", "world", 0, 60, 0, 10, 70, 10, "other");
+        registry.reload();
+
+        var matches = registry.portalsContaining("world", 0, 65, 0);
+
+        assertEquals(2, matches.size(), "les deux zones superposées doivent apparaître, pas seulement la première");
+    }
+
+    @Test
+    void portalsContainingReturnsEmptyOutsideAnyZone() {
+        registry.create(portal("hub_to_wild", "world", "wild"));
+
+        assertTrue(registry.portalsContaining("world", 1000, 65, 1000).isEmpty());
+    }
+
+    /**
+     * TODO(debug bug TP hub) : preuve exécutable de l'anomalie documentée dans le Javadoc de la
+     * classe — {@link #reload()} (donc aussi {@link #start()}) ne rejette ni les id dupliqués ni
+     * les chevauchements entre fichiers, contrairement à {@code create()}. Un fichier ajouté ou
+     * édité à la main dans {@code plugins/RPGQuest/world-portals/} peut donc faire coexister deux
+     * zones actives superposées sans qu'aucune erreur ne soit jamais journalisée — exactement le
+     * genre de configuration invisible que {@code /rpgadmin worldportal here} est censé révéler.
+     * Ce test documente le comportement actuel tel quel (pas encore corrigé, mission : outils de
+     * diagnostic d'abord) plutôt que de l'affirmer en prose seulement.
+     */
+    @Test
+    void reloadNeverRejectsOverlappingZonesIntroducedByManuallyPlacedFiles() throws Exception {
+        writeManualPortalFile("hub_to_wild", "world", -5, 60, -5, 5, 70, 5, "wild");
+        writeManualPortalFile("hub_to_other", "world", 0, 60, 0, 10, 70, 10, "other");
+
+        registry.reload(); // reload(), pas create() : c'est ce chemin qui n'a aucune validation croisée.
+
+        assertEquals(2, registry.portals().size(), "aucun rejet de chevauchement lors d'un reload() (à la différence de create())");
+        assertTrue(registry.portalAt("world", 0, 65, 0).isPresent(), "portalAt continue de ne renvoyer que la première zone trouvée");
+        assertEquals(2, registry.portalsContaining("world", 0, 65, 0).size(), "les deux zones sont bien actives simultanément");
+    }
+
+    @Test
+    void reloadNeverRejectsDuplicateIdsIntroducedByManuallyPlacedFiles() throws Exception {
+        writeManualPortalFile("hub_to_wild", "world", -5, 60, -5, 5, 70, 5, "wild");
+        // Même id, fichier différent, bornes différentes (donc pas un simple doublon inoffensif).
+        Path duplicate = tempDir.resolve("world-portals/zz_duplicate.yml");
+        var yaml = new YamlConfiguration();
+        yaml.set("id", "hub_to_wild");
+        yaml.set("world", "world");
+        yaml.set("min.x", 100); yaml.set("min.y", 60); yaml.set("min.z", 100);
+        yaml.set("max.x", 110); yaml.set("max.y", 70); yaml.set("max.z", 110);
+        yaml.set("destination-world", "somewhere_else");
+        yaml.save(duplicate.toFile());
+
+        registry.reload();
+
+        assertEquals(2, registry.portals().size(), "aucun rejet de doublon d'id lors d'un reload()");
+    }
+
+    private void writeManualPortalFile(String id, String world, int minX, int minY, int minZ,
+                                        int maxX, int maxY, int maxZ, String destinationWorld) {
+        try {
+            Files.createDirectories(tempDir.resolve("world-portals"));
+            Path target = tempDir.resolve("world-portals/" + id + "_manual.yml");
+            var yaml = new YamlConfiguration();
+            yaml.set("id", id);
+            yaml.set("world", world);
+            yaml.set("min.x", minX); yaml.set("min.y", minY); yaml.set("min.z", minZ);
+            yaml.set("max.x", maxX); yaml.set("max.y", maxY); yaml.set("max.z", maxZ);
+            yaml.set("destination-world", destinationWorld);
+            yaml.save(target.toFile());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

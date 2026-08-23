@@ -1,0 +1,20 @@
+# STORY DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md, section
+# « Story de test manuel » pour la procédure d'activation/retrait.
+#
+# Réutilise volontairement les 3 quêtes de test manuel déjà existantes dans
+# docs/manual-tests/quests/ (BREAK_BLOCK/PLACE_BLOCK/COLLECT_ITEM) plutôt que
+# d'en créer de nouvelles : aucune coordonnée ni PNJ fixe, réalisable
+# n'importe où sur le serveur, et toutes trois `repeatable: true` (donc
+# rejouables après un /rpgadmin story resetwithquests sans jamais bloquer sur
+# "Quête déjà terminée (non répétable)").
+#
+# Copier CE fichier dans plugins/RPGQuest/stories/ ET les 3 fichiers
+# correspondants de docs/manual-tests/quests/ dans plugins/RPGQuest/quests/
+# avant de tester — voir docs/MANUAL_TEST_PLAN.md pour la procédure complète.
+id: story_test
+name: "<red>[TEST]</red> Histoire de test"
+quests:
+  - rpgquest:test_break_block
+  - rpgquest:test_place_block
+  - rpgquest:test_collect_item

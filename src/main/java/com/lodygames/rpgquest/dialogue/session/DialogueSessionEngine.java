@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.dialogue.session;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.bootstrap.PluginService;
+import com.lodygames.rpgquest.claim.ClaimService;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
 import com.lodygames.rpgquest.dialogue.model.AdvanceQuestAction;
@@ -13,7 +14,10 @@ import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
+import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
+import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
+import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
@@ -27,6 +31,7 @@ import com.lodygames.rpgquest.dialogue.render.DialogueChoiceHandler;
 import com.lodygames.rpgquest.dialogue.render.DialogueRenderer;
 import com.lodygames.rpgquest.dialogue.render.VisibleChoice;
 import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
+import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.util.ArrayList;
@@ -64,6 +69,8 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     private final PlayerVariableRepository variableRepository;
     private final MerchantTradeService merchantTradeService;
     private final NpcIdentityService npcIdentityService;
+    private final ClaimService claimService;
+    private final YamlCustomItemRegistry customItemRegistry;
     private final Logger logger;
 
     private final Map<UUID, DialogueSession> sessions = new ConcurrentHashMap<>();
@@ -71,13 +78,16 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
 
     public DialogueSessionEngine(RPGQuestPlugin plugin, YamlDialogueEngine dialogueEngine,
                                   QuestProgressEngine questProgressEngine, PlayerVariableRepository variableRepository,
-                                  MerchantTradeService merchantTradeService, NpcIdentityService npcIdentityService) {
+                                  MerchantTradeService merchantTradeService, NpcIdentityService npcIdentityService,
+                                  ClaimService claimService, YamlCustomItemRegistry customItemRegistry) {
         this.plugin = plugin;
         this.dialogueEngine = dialogueEngine;
         this.questProgressEngine = questProgressEngine;
         this.variableRepository = variableRepository;
         this.merchantTradeService = merchantTradeService;
         this.npcIdentityService = npcIdentityService;
+        this.claimService = claimService;
+        this.customItemRegistry = customItemRegistry;
         this.logger = plugin.getSLF4JLogger();
     }
 
@@ -249,7 +259,21 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             case HasPermissionCondition c -> CompletableFuture.completedFuture(player.hasPermission(c.permission()));
             case VariableEqualsCondition c -> variableRepository.get(player.getUniqueId(), c.key())
                     .thenApply(opt -> opt.map(v -> v.equals(c.value())).orElse(false));
+            case NoMainClaimCondition ignored -> CompletableFuture.completedFuture(
+                    claimService.claimsOwnedBy(player.getUniqueId()).isEmpty());
+            case HasMainClaimCondition ignored -> CompletableFuture.completedFuture(
+                    claimService.mainClaimOf(player.getUniqueId()).isPresent());
+            case LacksCustomItemCondition c -> CompletableFuture.completedFuture(!hasCustomItem(player, c.itemId()));
         };
+    }
+
+    private boolean hasCustomItem(Player player, NamespacedKey itemId) {
+        for (ItemStack stack : player.getInventory().getContents()) {
+            if (stack != null && customItemRegistry.identify(stack).map(itemId::equals).orElse(false)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private CompletableFuture<Boolean> evaluateAll(Player player, List<DialogueCondition> conditions) {

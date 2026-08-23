@@ -1552,6 +1552,66 @@ qu'embarqués dans le jar.
     section `admin`), réutilisant l'outil de sélection `wand` déjà existant
     pour délimiter la zone d'activation — aucun nouvel outil nécessaire.
 
+### Diagnostic WorldPortal (`/rpgadmin worldportal here`/`debug`, `TP-TRACE`)
+
+Ajouté pour investiguer un bug de téléportation automatique dans le Hub rapporté sur VeryGames,
+sans corriger la logique fonctionnelle « à l'aveugle » (consigne explicite de la mission — voir
+`docs/TRAVEL.md` pour l'analyse complète).
+
+-   **`WorldPortalRegistry#portalsContaining` ajouté à côté de `portalAt`, jamais en remplacement**
+    — `portalAt` (utilisé en jeu par `WorldPortalTeleportListener`) continue de ne renvoyer que la
+    première zone trouvée par ordre alphabétique de fichier ; `portalsContaining` (nouveau, utilisé
+    uniquement par `/rpgadmin worldportal here`) renvoie **toutes** les zones contenant une
+    position. Existaient déjà séparément dans l'esprit du code (`portalAt` doit rester bon marché à
+    chaque `PlayerMoveEvent`) — pas de fusion des deux pour ne jamais ralentir le chemin chaud.
+-   **Anomalie documentée dans le Javadoc de `WorldPortalRegistry`, pas corrigée** : `reload()`
+    (donc `start()`, et implicitement chaque `create()`/`enable`/`disable`/`delete` qui rappelle
+    `reload()` ensuite) ne fait aucune validation croisée entre fichiers (id dupliqué,
+    chevauchement) — contrairement à `zone.ZoneLoader`/`travel.PortalLoader`. Seul `create()`
+    (donc uniquement `/rpgadmin worldportal create`) vérifie les chevauchements, et seulement à la
+    création. Un fichier ajouté/édité à la main peut donc faire coexister deux zones actives
+    superposées sans qu'aucune erreur ne soit jamais journalisée — cause plausible du bug de
+    téléportation automatique, non confirmée. Preuve exécutable :
+    `WorldPortalRegistryTest#reloadNeverRejectsOverlappingZonesIntroducedByManuallyPlacedFiles`/
+    `#reloadNeverRejectsDuplicateIdsIntroducedByManuallyPlacedFiles`. Volontairement **non
+    corrigé** à cette étape (mission : diagnostic d'abord).
+-   **`WorldPortalDebugGeometry` — fonction purement géométrique, zéro dépendance Bukkit** — même
+    rationale que `travel.RandomSafeLocationFinder`/`quest.model` pour la testabilité sans
+    MockBukkit. Échantillonne les 12 arêtes du cuboïde avec un décalage de +1 sur les bornes max
+    (`WorldPortalDefinition#contains` est inclusif sur `maxX`/`maxY`/`maxZ` : le coin visuel réel
+    est la face extérieure de ce bloc, pas son coin intérieur — sans ce +1 le contour affiché
+    paraîtrait plus petit d'un bloc que le volume réellement actif, trompeur pour un diagnostic).
+-   **`WorldPortalDebugService` — état global, jamais par joueur** : `World#spawnParticle`
+    diffuse nativement à tous les joueurs à proximité, donc aucun ciblage par joueur n'est
+    nécessaire ni implémenté. Rendu **isolé par portail** dans la boucle de rafraîchissement (`try`/
+    `catch` autour du rendu de chaque zone) : un échec de rendu sur une zone (API d'affichage
+    indisponible, position aberrante) ne doit jamais empêcher les autres zones visibles de se
+    dessiner au même cycle, ni interrompre la tâche répétée elle-même — ajout motivé par une
+    limitation concrète de MockBukkit (`DisplayMock#setBillboard` non implémenté à ce jour),
+    mais une protection légitime et utile indépendamment de l'environnement de test.
+-   **Jamais de modification de bloc** (consigne explicite de la mission) — particules
+    (`Particle.DUST`, couleur dérivée d'un hash de l'id pour distinguer deux zones superposées) et
+    une étiquette flottante (`TextDisplay`, `setPersistent(false)` — jamais sauvegardée sur disque,
+    disparaît à un déchargement de chunk/redémarrage) uniquement. `stop()` retire explicitement
+    toute étiquette encore affichée (annulation à 100%, même en cas de rechargement du plugin).
+-   **`travel.TpTraceLogger` — format centralisé, une seule classe à retirer plus tard** — plutôt
+    que des chaînes de log ad hoc dispersées dans chaque appelant (c'était le cas avant cette
+    étape) : un seul format garanti identique partout, et un seul endroit à supprimer une fois
+    l'instrumentation devenue inutile. Champs non pertinents pour un événement donné rendus `"-"`
+    plutôt qu'omis, pour que la position des colonnes reste stable en cherchant dans les logs.
+-   **`event=external_teleport` peut se recouper avec le propre `teleport()`/`teleportAsync()` de
+    RPGQuest** — un garde-fou de ré-entrance (`selfInitiatedTeleport`, `Set<UUID>`) supprime ce
+    doublon pour `WorldPortalTeleportListener` (appel synchrone, fenêtre de ré-entrance fiable),
+    mais aucun garde-fou équivalent n'a été ajouté pour `PortalService` (`teleportAsync`,
+    potentiellement différé au tick suivant — la complexité d'un garde-fou partagé entre les deux
+    classes a été jugée disproportionnée pour une instrumentation temporaire). Documenté
+    explicitement dans le Javadoc de `onTeleport` plutôt que silencieusement laissé comme un bug.
+-   **`RpgAdminCommand` : les logs `TP-TRACE` ad hoc de `/rpgadmin spawn tp`/`world tp` (ajoutés
+    lors d'une session précédente) ont été retirés** — désormais couverts génériquement par
+    `WorldPortalTeleportListener#onTeleport` (`event=external_teleport`), qui capte tout
+    `PlayerTeleportEvent` quelle qu'en soit l'origine. Éviter un doublon incohérent plutôt que de
+    maintenir deux formats de log pour la même téléportation.
+
 ## `claim` (claims de terrain joueurs)
 
 -   **SQLite plutôt que YAML, contrairement à `zone`** — décision
@@ -2546,54 +2606,100 @@ Fabrication → Remise → Récompense
 
 ## `story` (moteur de Storyline)
 
--   **Indépendance délibérée du moteur de quête, lecture comme écriture** —
-    `story.StoryDefinition`/`story.StoryService` ne référencent jamais
-    `quest.progress.QuestProgressEngine` ni `quest.YamlQuestEngine` :
-    `questIds` d'une Story n'est jamais résolu contre les quêtes
-    réellement chargées, ni au chargement (`StoryDefinitionParser`) ni à
-    l'exécution. Une conséquence directe : une Story peut référencer un id
-    de quête inexistant sans erreur, et rien ne fait automatiquement
-    avancer une Story quand une de ses quêtes est terminée — c'est
-    volontairement hors périmètre de cette étape (voir `docs/storylines.md`,
-    section « Extensibilité prévue »), pas un oubli.
--   **`StoryService` sans cache mémoire, contrairement à
-    `QuestProgressEngine`** — chaque commande admin lit/écrit directement
-    `database.StoryProgressRepository` (SQLite). Choix délibéré : cet
-    outil n'est pas un chemin chaud consulté à chaque événement de jeu
-    (contrairement au moteur de quête, consulté à chaque
-    `PlayerMoveEvent`/casse de bloc/etc.), donc pas besoin de la complexité
-    d'un cache par joueur chargé à la connexion.
+-   **Connexion au moteur de quête, décision structurante de cette étape**
+    — `story.StoryService` référence désormais directement
+    `quest.progress.QuestProgressEngine` et `quest.YamlQuestEngine`,
+    contrairement à l'étape précédente qui les gardait délibérément
+    séparés. `questIds` d'une Story reste jamais résolu **au chargement**
+    (`StoryDefinitionParser` — une Story peut toujours référencer un id de
+    quête pas encore chargé sans erreur, pour ne dépendre d'aucun ordre de
+    démarrage entre les deux moteurs), mais est résolu **à l'exécution**
+    dans `StoryService#evaluateStory`/`advanceStory`/`startCurrentQuest`.
+-   **`StoryService` gagne un cache mémoire des Stories `ACTIVE`, même
+    conception que `QuestProgressEngine#activeByPlayer`** — nécessaire
+    depuis que la progression est automatique : c'est ce cache (pas la
+    base) qui sert de verrou anti-double-avance (voir plus bas), et il
+    doit être chargé à la connexion (`StoryConnectionListener`, copie du
+    patron `quest.progress.QuestProgressConnectionListener`) pour que
+    l'auto-guérison après reconnexion fonctionne.
+-   **Idempotence sans verrou explicite — même patron que
+    `QuestProgressEngine#turnIn`/`checkStepCompletion`** :
+    `StoryService#advanceStory` vérifie, juste avant de muter l'index en
+    mémoire, que la Story pointe encore vers la quête dont la complétion a
+    déclenché l'appel (comparaison directe, pas un flag de verrouillage
+    séparé) — un appel concurrent qui a déjà fait avancer l'index entre
+    temps voit cette vérification échouer et ne rejoue rien. Toute
+    interaction avec un `Player` (le `accept()` de la quête suivante, les
+    messages de chat) est systématiquement renvoyée sur le thread
+    principal via `runTask` avant d'agir, y compris quand
+    `onQuestProgressChanged` est lui-même invoqué depuis un thread autre
+    que principal (`QuestProgressEngine#accept` complète parfois son
+    `CompletableFuture` sur le thread exécuteur de la base de données, pas
+    toujours sur le thread principal).
+-   **Aucune récompense distribuée par la Story elle-même** — elle
+    n'appelle jamais que `QuestProgressEngine#accept` (jamais `turnIn`/
+    `grantRewards`), qui ne distribue de récompense qu'à la remise d'une
+    quête, déjà protégée par sa propre garde
+    (`if (progress.state() == QuestState.COMPLETED) return;`). Rien à
+    dédupliquer côté Story pour cette raison précise.
+-   **Reprise après redémarrage/reconnexion — auto-guérison, pas une
+    simple relecture** — `StoryService#loadForPlayer` ne se contente pas
+    de recharger l'index persisté : pour chaque Story `ACTIVE`, il
+    consulte l'état réel de la quête courante (`QuestProgressEngine#stateOf`)
+    et rattrape les trois cas anormaux possibles (jamais acceptée →
+    démarrée ; déjà `COMPLETED`, ex. crash entre la complétion et
+    l'avancement Story → la Story avance immédiatement ;
+    `ABANDONED`/`FAILED` → re-démarrée) en plus du cas normal (`ACTIVE`,
+    rien à faire). Voir `docs/storylines.md`, section « Reprise après
+    reconnexion/redémarrage ».
+-   **Feedback dans le chat, jamais Title/Subtitle — décision délibérée
+    pour éviter une course d'affichage** avec le Title « Quête commencée »
+    que `QuestProgressEngine#accept` affiche déjà à chaque démarrage de
+    quête (Story ou non) : deux appels distincts à `Player#showTitle`
+    depuis deux `CompletableFuture` séparés n'ont aucune garantie d'ordre
+    d'exécution fiable, le second écraserait le premier de façon
+    imprévisible. Le chat n'a pas ce problème (les messages s'empilent) et
+    garde un historique consultable — voir `messages.yml`, section `story:`.
+-   **`resetwithquests`, nouvelle sous-commande, distincte de `reset`** —
+    mission point 5 : « ne décide pas silencieusement qu'un reset Story
+    doit supprimer toute la progression normale des quêtes ». `reset` seul
+    ne touche toujours que `story_progress` (comportement inchangé de
+    l'étape précédente) ; `resetwithquests` est le seul chemin qui touche
+    aussi aux quêtes, en réutilisant tel quel
+    `QuestProgressEngine#resetQuest` (déjà garanti de ne jamais toucher aux
+    autres quêtes du joueur) pour chaque id de `questIds()` de la Story
+    ciblée — pas de nouvelle logique de suppression de quête écrite ici,
+    pure réutilisation.
 -   **`NOT_STARTED` jamais persisté** — même convention que
     `quest.model.QuestState` : l'absence de ligne dans `story_progress`
-    pour un couple joueur+story en tient lieu, `ACTIVE`/`COMPLETED` sont
-    les seuls états réellement écrits.
--   **`/rpgadmin story` est la seule branche de `/rpgadmin` utilisable
-    depuis la console** — elle cible un joueur passé en argument, jamais
-    la position de l'exécutant (contrairement à `zone`/`portal`/`flatten`
-    qui centrent tous sur l'exécutant), donc aucune raison d'exiger un
-    joueur en jeu. `RpgAdminCommand#onCommand` intercepte "story" avant la
-    vérification `instanceof Player`, seule exception dans tout le
-    fichier.
--   **Reset ciblé, jamais un `DELETE` sans clause `story_id`** — voir
-    mission storyline point 8 : `StoryProgressRepository#deleteStory`
-    filtre toujours sur `(player_uuid, story_id)`, `deleteAllForPlayer`
-    reste scopé à `story_progress` uniquement (jamais `quest_progress`, un
-    portefeuille, ou un inventaire).
--   **`reset` sur un id de Story inconnu est refusé** (sauf le mot-clé
-    réservé `all`) — évite une suppression silencieuse causée par une
-    faute de frappe d'administrateur, cohérent avec la validation déjà
-    faite par `start`.
--   **Aucune commande `story create`/`delete`** — contrairement à
-    `zone`/`portal`/`worldportal`, les Stories ne se créent qu'en éditant
-    les fichiers YAML de `plugins/RPGQuest/stories/` puis en redémarrant ;
-    décision délibérée pour rester minimal à cette étape (mission :
-    « moteur de Storyline minimal »), pas un oubli d'API.
+    pour un couple joueur+story en tient lieu.
+-   **`current_index` (migration V14, `ALTER TABLE`) — vérifie d'abord que
+    la colonne n'existe pas avant de l'ajouter**, contrairement aux
+    migrations précédentes qui ne créaient que des tables (`CREATE TABLE
+    IF NOT EXISTS`, idempotent nativement). `ALTER TABLE ADD COLUMN` ne
+    l'est pas — sans cette vérification explicite, rejouer la migration
+    depuis une version antérieure (scénario couvert par
+    `SchemaMigratorTest#migratingFromAnAlreadyPartiallyMigratedDatabaseStillReachesCurrentVersion`,
+    qui a effectivement détecté ce bug avant qu'il n'atteigne production)
+    échouerait avec « duplicate column name ».
+-   **`/rpgadmin story` reste la seule branche de `/rpgadmin` utilisable
+    depuis la console** — inchangé depuis l'étape précédente.
+-   **Aucune commande `story create`/`delete`** — inchangé : les Stories
+    ne se créent qu'en éditant les fichiers YAML de
+    `plugins/RPGQuest/stories/` puis en redémarrant.
 -   **Test manuel limité par l'environnement** — aucun client Minecraft
-    réel disponible ici. Compensé par `StoryDefinitionParserTest`/
-    `StoryLoaderTest`/`StoryRegistryTest` (chargement YAML, id dupliqués,
-    exemple embarqué jamais réécrit), `StoryProgressRepositoryTest` (JDBC
-    pur, isolation entre joueurs et entre stories) et `StoryServiceTest`
-    (toutes les combinaisons d'issues de `start`/`reset`, création du
-    profil d'un joueur hors ligne). Le ressenti en jeu des commandes admin
-    (tab-complete, messages MiniMessage, cible hors ligne réelle) reste à
+    réel disponible ici. Compensé par `StoryServiceTest`, désormais basé
+    sur MockBukkit (contrairement à l'étape précédente, pur JUnit) : un
+    vrai `QuestProgressEngine`/`YamlQuestEngine` chargés depuis un dossier
+    de quêtes temporaire, `QuestProgressEngine#forceComplete` pour simuler
+    une complétion sans dépendre d'un vrai événement de jeu (déjà couvert
+    ailleurs par `QuestProgressEngineTest`), et un helper `awaitUntil`
+    (même patron que `PortalServiceTest`) pour absorber les enchaînements
+    asynchrones + scheduler avant chaque assertion. Couvre : démarrage,
+    première quête auto-acceptée, avancement automatique, chaîne complète
+    jusqu'à `COMPLETED`, absence de double avancement, reprise après
+    déconnexion/redémarrage (dont la quête déjà terminée hors ligne),
+    `reset`/`resetwithquests`, deux Stories indépendantes pour le même
+    joueur, et une quête utilisée hors de toute Story active. Le ressenti
+    en jeu (tab-complete, rendu MiniMessage réel, timing du chat) reste à
     valider par un testeur humain — voir `docs/storylines.md`.

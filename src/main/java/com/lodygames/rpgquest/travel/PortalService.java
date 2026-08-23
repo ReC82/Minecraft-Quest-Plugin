@@ -111,13 +111,13 @@ public final class PortalService implements PluginService {
 
     void handleQuit(Player player) {
         UUID playerId = player.getUniqueId();
-        cancelChanneling(playerId, null);
+        cancelChanneling(playerId, null, "quit");
         currentPortalByPlayer.remove(playerId);
         cooldownCache.remove(playerId);
     }
 
     void handleDamage(Player player) {
-        cancelChanneling(player.getUniqueId(), "<red>Téléportation annulée : tu as subi des dégâts.</red>");
+        cancelChanneling(player.getUniqueId(), "<red>Téléportation annulée : tu as subi des dégâts.</red>", "damage");
     }
 
     /**
@@ -145,9 +145,15 @@ public final class PortalService implements PluginService {
         }
         if (newPortalId == null) {
             currentPortalByPlayer.remove(playerId);
+            TpTraceLogger.log(logger, "portal_exit", playerId, player.getName(), previousPortalId,
+                    world.getName(), to.getBlockX(), to.getBlockY(), to.getBlockZ(),
+                    false, true, null, null, null, null);
             return;
         }
         currentPortalByPlayer.put(playerId, newPortalId);
+        TpTraceLogger.log(logger, "portal_enter", playerId, player.getName(), newPortalId,
+                world.getName(), to.getBlockX(), to.getBlockY(), to.getBlockZ(),
+                true, previousPortalId != null, null, null, null, null);
         attemptActivate(player, portalOpt.get());
     }
 
@@ -232,15 +238,10 @@ public final class PortalService implements PluginService {
         ChannelingSession session = new ChannelingSession(playerId, portal, start.clone(), totalTicks);
         channeling.put(playerId, session);
 
-        // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée — montre
-        // le point de départ exact d'une canalisation qui aboutira à une téléportation ~channelSeconds
-        // plus tard (reason=channel_start, pas encore une téléportation, juste son déclenchement).
-        logger.info("[TP-TRACE] player={} uuid={} source=PortalService portal={} "
-                        + "from={}:{},{},{} to=? reason=channel_start channelSeconds={} at={}",
-                player.getName(), playerId, portal.id(),
+        TpTraceLogger.log(logger, "channel_start", playerId, player.getName(), portal.id(),
                 start.getWorld() != null ? start.getWorld().getName() : "?",
                 start.getBlockX(), start.getBlockY(), start.getBlockZ(),
-                portal.channelSeconds(), System.currentTimeMillis());
+                null, null, null, portal.channelSeconds() + "s", null, null);
 
         if (totalTicks <= 0) {
             completeChanneling(session);
@@ -264,7 +265,7 @@ public final class PortalService implements PluginService {
         World startWorld = session.startLocation.getWorld();
         if (startWorld == null || !startWorld.equals(current.getWorld())
                 || current.distanceSquared(session.startLocation) > MOVEMENT_TOLERANCE_SQUARED) {
-            cancelChanneling(session.playerId, "<red>Téléportation annulée : tu as bougé.</red>");
+            cancelChanneling(session.playerId, "<red>Téléportation annulée : tu as bougé.</red>", "movement");
             return;
         }
 
@@ -287,7 +288,8 @@ public final class PortalService implements PluginService {
                 Placeholder.unparsed("percent", String.valueOf(percent))));
     }
 
-    void cancelChanneling(UUID playerId, String message) {
+    /** @param cause court identifiant technique de la cause d'annulation (voir {@code TpTraceLogger}, champ {@code channel=}) — jamais affiché au joueur, seulement journalisé. */
+    void cancelChanneling(UUID playerId, String message, String cause) {
         ChannelingSession session = channeling.remove(playerId);
         if (session == null) {
             return;
@@ -295,11 +297,14 @@ public final class PortalService implements PluginService {
         if (session.task != null) {
             session.task.cancel();
         }
-        if (message != null) {
-            Player player = plugin.getServer().getPlayer(playerId);
-            if (player != null) {
-                player.sendMessage(MM.deserialize(message));
-            }
+        Player player = plugin.getServer().getPlayer(playerId);
+        Location current = player != null ? player.getLocation() : session.startLocation;
+        TpTraceLogger.log(logger, "channel_cancel", playerId, player != null ? player.getName() : "?", session.portal.id(),
+                current.getWorld() != null ? current.getWorld().getName() : "?",
+                current.getBlockX(), current.getBlockY(), current.getBlockZ(),
+                null, null, null, "cancel:" + cause, null, null);
+        if (message != null && player != null) {
+            player.sendMessage(MM.deserialize(message));
         }
     }
 
@@ -362,16 +367,18 @@ public final class PortalService implements PluginService {
 
     private void finishTeleport(Player player, PortalDefinition portal, Location safeLocation) {
         Location source = player.getLocation();
-        // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée.
-        logger.info("[TP-TRACE] player={} uuid={} source=PortalService portal={} "
-                        + "from={}:{},{},{} to={}:{},{},{} reason=channel_complete at={}",
-                player.getName(), player.getUniqueId(), portal.id(),
-                source.getWorld() != null ? source.getWorld().getName() : "?",
-                source.getBlockX(), source.getBlockY(), source.getBlockZ(),
+        UUID playerId = player.getUniqueId();
+        String from = portalLocationString(source);
+        String destination = portalLocationString(safeLocation);
+        TpTraceLogger.log(logger, "teleport_start", playerId, player.getName(), portal.id(),
                 safeLocation.getWorld() != null ? safeLocation.getWorld().getName() : "?",
                 safeLocation.getBlockX(), safeLocation.getBlockY(), safeLocation.getBlockZ(),
-                System.currentTimeMillis());
-        player.teleportAsync(safeLocation);
+                null, null, null, "channel_complete", from, destination);
+        player.teleportAsync(safeLocation).thenAccept(success -> TpTraceLogger.log(
+                logger, success ? "teleport_success" : "teleport_failed", playerId, player.getName(), portal.id(),
+                safeLocation.getWorld() != null ? safeLocation.getWorld().getName() : "?",
+                safeLocation.getBlockX(), safeLocation.getBlockY(), safeLocation.getBlockZ(),
+                null, null, null, null, from, destination));
         player.sendMessage(MM.deserialize("<green>Téléportation réussie.</green>"));
 
         if (portal.cooldownSeconds() > 0) {
@@ -445,6 +452,13 @@ public final class PortalService implements PluginService {
 
     private void runOnMainThread(Runnable task) {
         plugin.getServer().getScheduler().runTask(plugin, task);
+    }
+
+    private static String portalLocationString(Location location) {
+        if (location == null || location.getWorld() == null) {
+            return null;
+        }
+        return location.getWorld().getName() + ":" + location.getBlockX() + "," + location.getBlockY() + "," + location.getBlockZ();
     }
 
     private static final class ChannelingSession {

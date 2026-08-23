@@ -21,11 +21,12 @@ class YamlQuestEngineTest {
 
         engine.start();
 
+        assertTrue(Files.exists(tempDir.resolve("quests/premiers_pas.yml")));
         assertTrue(Files.exists(tempDir.resolve("quests/first_steps.yml")));
         assertTrue(Files.exists(tempDir.resolve("quests/woodcutters_request.yml")));
         assertTrue(Files.exists(tempDir.resolve("quests/crystal_hunt.yml")));
         assertEquals(0, engine.lastReport().issues().size(), () -> "issues: " + engine.lastReport().issues());
-        assertEquals(3, engine.quests().size());
+        assertEquals(4, engine.quests().size());
     }
 
     @Test

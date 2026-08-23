@@ -6,13 +6,20 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.claim.ClaimService;
+import com.lodygames.rpgquest.config.ConfigService;
+import com.lodygames.rpgquest.database.ClaimRepository;
 import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.database.NpcIdRepository;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
+import com.lodygames.rpgquest.database.ProgressionRepository;
 import com.lodygames.rpgquest.database.QuestProgressRepository;
 import com.lodygames.rpgquest.database.WalletRepository;
+import com.lodygames.rpgquest.progression.ProgressionService;
+import com.lodygames.rpgquest.travel.YamlPortalRegistry;
+import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
@@ -56,8 +63,13 @@ class DialogueSessionEngineTest {
     private QuestProgressEngine questProgressEngine;
     private DialogueSessionEngine sessionEngine;
     private MerchantTradeService merchantTradeService;
+    private ClaimService claimService;
     private RecordingRenderer renderer;
     private PlayerProfileRepository profileRepository;
+    private YamlDialogueEngine dialogueEngine;
+    private Path dialoguesDir;
+    private PlayerVariableRepository variableRepository;
+    private YamlCustomItemRegistry customItemRegistry;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -86,7 +98,7 @@ class DialogueSessionEngineTest {
         questEngine.reload();
 
         QuestProgressRepository progressRepository = new QuestProgressRepository(database);
-        PlayerVariableRepository variableRepository = new PlayerVariableRepository(database);
+        variableRepository = new PlayerVariableRepository(database);
         QuestMessagesService messagesService = new QuestMessagesService(plugin);
         messagesService.start();
         NpcIdentityService npcIdentityService = new NpcIdentityService(
@@ -95,7 +107,7 @@ class DialogueSessionEngineTest {
                 plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService);
         questProgressEngine.start();
 
-        Path dialoguesDir = tempDir.resolve("dialogues");
+        dialoguesDir = tempDir.resolve("dialogues");
         Files.createDirectories(dialoguesDir);
         Files.writeString(dialoguesDir.resolve("guard.yml"), """
                 id: rpgquest:guard
@@ -135,12 +147,12 @@ class DialogueSessionEngineTest {
                         actions:
                           - type: CLOSE
                 """);
-        YamlDialogueEngine dialogueEngine = new YamlDialogueEngine(dialoguesDir, plugin.getSLF4JLogger(), List.of("give", "xp"));
+        dialogueEngine = new YamlDialogueEngine(dialoguesDir, plugin.getSLF4JLogger(), List.of("give", "xp"));
         dialogueEngine.start();
 
         WalletRepository walletRepository = new WalletRepository(database);
         EconomyService economyService = new EconomyService(walletRepository);
-        YamlCustomItemRegistry customItemRegistry = new YamlCustomItemRegistry(tempDir.resolve("items"), plugin.getSLF4JLogger());
+        customItemRegistry = new YamlCustomItemRegistry(tempDir.resolve("items"), plugin.getSLF4JLogger());
         customItemRegistry.start();
         YamlMerchantRegistry merchantRegistry = new YamlMerchantRegistry(tempDir.resolve("merchants"), plugin.getSLF4JLogger());
         merchantRegistry.start();
@@ -148,8 +160,23 @@ class DialogueSessionEngineTest {
                 plugin, merchantRegistry, economyService, customItemRegistry, questProgressEngine);
         merchantTradeService.start();
 
+        ClaimRepository claimRepository = new ClaimRepository(database);
+        ZoneRegistry zoneRegistry = new ZoneRegistry(tempDir.resolve("zones"), plugin.getSLF4JLogger());
+        zoneRegistry.start();
+        YamlPortalRegistry portalRegistry = new YamlPortalRegistry(tempDir.resolve("portals"), plugin.getSLF4JLogger());
+        portalRegistry.start();
+        ConfigService configService = new ConfigService(plugin);
+        configService.start();
+        ProgressionService progressionService = new ProgressionService(
+                plugin, new ProgressionRepository(database), () -> configService.current().progression(), plugin.getSLF4JLogger());
+        progressionService.start();
+        claimService = new ClaimService(plugin, claimRepository, zoneRegistry, portalRegistry, configService,
+                progressionService, variableRepository);
+        claimService.start();
+
         sessionEngine = new DialogueSessionEngine(
-                plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService, npcIdentityService);
+                plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService, npcIdentityService,
+                claimService, customItemRegistry);
         sessionEngine.start();
         renderer = new RecordingRenderer();
         sessionEngine.setRenderer(renderer);
@@ -159,6 +186,7 @@ class DialogueSessionEngineTest {
     void tearDown() {
         sessionEngine.stop();
         merchantTradeService.stop();
+        claimService.stop();
         questProgressEngine.stop();
         database.shutdown();
         MockBukkit.unmock();
@@ -249,6 +277,149 @@ class DialogueSessionEngineTest {
         assertDoesNotThrow(() -> sessionEngine.open(player, new NamespacedKey("rpgquest", "does_not_exist")));
         assertNull(renderer.lastNode, "aucun rendu ne doit être déclenché pour un dialogue introuvable");
         assertTrue(player.nextMessage() != null, "un message d'erreur doit être envoyé au joueur");
+    }
+
+    /**
+     * Couvre {@code NO_MAIN_CLAIM} (mission « Jo » — option visible seulement si le joueur n'a
+     * encore aucun claim principal), utilisé par le dialogue Jo pour ne proposer l'Acte de propriété
+     * que tant qu'aucun claim n'existe déjà.
+     */
+    @Test
+    void noMainClaimConditionHidesTheChoiceOnceAClaimExists() throws Exception {
+        Files.writeString(dialoguesDir.resolve("jo.yml"), """
+                id: rpgquest:jo
+                start: greeting
+                nodes:
+                  greeting:
+                    speaker: "Jo"
+                    text: "Bonjour."
+                    choices:
+                      - text: "Je viens réclamer mon acte de propriété"
+                        conditions:
+                          - type: NO_MAIN_CLAIM
+                        actions:
+                          - type: CLOSE
+                      - text: "Rien pour le moment"
+                        actions:
+                          - type: CLOSE
+                """);
+        dialogueEngine.reload();
+        NamespacedKey joId = new NamespacedKey("rpgquest", "jo");
+        PlayerMock player = addPlayer();
+
+        sessionEngine.open(player, joId);
+        awaitRendered();
+        assertTrue(renderer.lastVisibleChoices.stream().anyMatch(c -> c.label().contains("acte de propriété")),
+                "aucun claim : l'option doit être visible");
+
+        variableRepository.set(player.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, ClaimService.CLAIM_TIER_1_VALUE)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        org.bukkit.World world = server.addSimpleWorld("world_for_claim_test");
+        var outcome = claimService.create(player, "main_" + player.getUniqueId(),
+                        new org.bukkit.Location(world, 0, 60, 0), new org.bukkit.Location(world, 4, 63, 4))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(ClaimService.CreateOutcome.CREATED, outcome, "pré-requis du test : le claim doit vraiment être créé");
+        server.getScheduler().performTicks(2);
+
+        renderer.lastNode = null;
+        sessionEngine.open(player, joId);
+        awaitRendered();
+        assertTrue(renderer.lastVisibleChoices.stream().noneMatch(c -> c.label().contains("acte de propriété")),
+                () -> "claim déjà créé : l'option doit disparaître, obtenu : " + renderer.lastVisibleChoices);
+    }
+
+    /**
+     * Couvre {@code HAS_MAIN_CLAIM} (mission « Jo : retourner à son claim ») — strict opposé de
+     * {@code NO_MAIN_CLAIM} : l'option « Me rendre sur ma propriété » ne doit apparaître qu'une fois
+     * qu'un claim principal existe réellement, jamais avant.
+     */
+    @Test
+    void hasMainClaimConditionShowsTheChoiceOnlyOnceAClaimExists() throws Exception {
+        Files.writeString(dialoguesDir.resolve("jo.yml"), """
+                id: rpgquest:jo
+                start: greeting
+                nodes:
+                  greeting:
+                    speaker: "Jo"
+                    text: "Bonjour."
+                    choices:
+                      - text: "Me rendre sur ma propriété"
+                        conditions:
+                          - type: HAS_MAIN_CLAIM
+                        actions:
+                          - type: CLOSE
+                      - text: "Rien pour le moment"
+                        actions:
+                          - type: CLOSE
+                """);
+        dialogueEngine.reload();
+        NamespacedKey joId = new NamespacedKey("rpgquest", "jo");
+        PlayerMock player = addPlayer();
+
+        sessionEngine.open(player, joId);
+        awaitRendered();
+        assertTrue(renderer.lastVisibleChoices.stream().noneMatch(c -> c.label().contains("propriété")),
+                "aucun claim : l'option ne doit pas être visible");
+
+        variableRepository.set(player.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, ClaimService.CLAIM_TIER_1_VALUE)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        org.bukkit.World world = server.addSimpleWorld("world_for_has_main_claim_test");
+        var outcome = claimService.create(player, "main_" + player.getUniqueId(),
+                        new org.bukkit.Location(world, 0, 60, 0), new org.bukkit.Location(world, 4, 63, 4))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(ClaimService.CreateOutcome.CREATED, outcome, "pré-requis du test : le claim doit vraiment être créé");
+        server.getScheduler().performTicks(2);
+
+        renderer.lastNode = null;
+        sessionEngine.open(player, joId);
+        awaitRendered();
+        assertTrue(renderer.lastVisibleChoices.stream().anyMatch(c -> c.label().contains("propriété")),
+                () -> "claim créé : l'option doit devenir visible, obtenu : " + renderer.lastVisibleChoices);
+    }
+
+    /**
+     * Couvre {@code LACKS_CUSTOM_ITEM} (mission « ne pas permettre de farmer inutilement » — Pierre
+     * de retour / Acte réutilisé comme visualiseur) : l'option ne doit être visible que tant que le
+     * joueur ne détient <strong>aucun</strong> exemplaire de l'objet identifié par PDC — jamais un
+     * simple match par matériau (voir {@code HasItemCondition}, volontairement différent).
+     */
+    @Test
+    void lacksCustomItemConditionHidesTheChoiceOnceTheItemIsHeld() throws Exception {
+        Files.writeString(dialoguesDir.resolve("jo.yml"), """
+                id: rpgquest:jo
+                start: greeting
+                nodes:
+                  greeting:
+                    speaker: "Jo"
+                    text: "Bonjour."
+                    choices:
+                      - text: "Obtenir une Pierre de retour"
+                        conditions:
+                          - type: LACKS_CUSTOM_ITEM
+                            item: rpgquest:pierre_retour
+                        actions:
+                          - type: CLOSE
+                      - text: "Rien pour le moment"
+                        actions:
+                          - type: CLOSE
+                """);
+        dialogueEngine.reload();
+        NamespacedKey joId = new NamespacedKey("rpgquest", "jo");
+        PlayerMock player = addPlayer();
+
+        sessionEngine.open(player, joId);
+        awaitRendered();
+        assertTrue(renderer.lastVisibleChoices.stream().anyMatch(c -> c.label().contains("Pierre de retour")),
+                "aucune Pierre en poche : l'option doit être visible");
+
+        player.getInventory().addItem(customItemRegistry.create(
+                new NamespacedKey("rpgquest", "pierre_retour"), 1).orElseThrow());
+
+        renderer.lastNode = null;
+        sessionEngine.open(player, joId);
+        awaitRendered();
+        assertTrue(renderer.lastVisibleChoices.stream().noneMatch(c -> c.label().contains("Pierre de retour")),
+                () -> "Pierre déjà en poche : l'option doit disparaître, obtenu : " + renderer.lastVisibleChoices);
     }
 
     private int currentTopInventorySize(PlayerMock player) {

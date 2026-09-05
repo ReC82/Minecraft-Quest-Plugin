@@ -2,6 +2,8 @@ package com.lodygames.rpgquest.database;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -14,6 +16,8 @@ public final class PlayerVariableRepository {
 
     private static final String SELECT =
             "SELECT variable_value FROM player_variables WHERE player_uuid = ? AND variable_key = ?";
+    private static final String SELECT_ALL_FOR_PLAYER =
+            "SELECT variable_key, variable_value FROM player_variables WHERE player_uuid = ? ORDER BY variable_key";
     private static final String UPSERT = """
             INSERT INTO player_variables (player_uuid, variable_key, variable_value) VALUES (?, ?, ?)
             ON CONFLICT (player_uuid, variable_key) DO UPDATE SET variable_value = excluded.variable_value
@@ -37,6 +41,27 @@ public final class PlayerVariableRepository {
                             : Optional.empty();
                 }
             }
+        });
+    }
+
+    /**
+     * Lit <strong>toutes</strong> les variables d'un joueur (unlocks type {@code CLAIM_TIER_1}, quête
+     * suivie, marqueur de kit de départ...), triées par clé. Lecture pure, aucune écriture — utilisé
+     * par le preview du reset admin « nouveau joueur » ({@code player.PlayerResetService#previewReset})
+     * pour lister ce qui serait effacé sans rien modifier.
+     */
+    public CompletableFuture<Map<String, String>> findAllForPlayer(UUID uuid) {
+        return database.execute(connection -> {
+            Map<String, String> variables = new LinkedHashMap<>();
+            try (PreparedStatement statement = connection.prepareStatement(SELECT_ALL_FOR_PLAYER)) {
+                statement.setString(1, uuid.toString());
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    while (resultSet.next()) {
+                        variables.put(resultSet.getString("variable_key"), resultSet.getString("variable_value"));
+                    }
+                }
+            }
+            return variables;
         });
     }
 

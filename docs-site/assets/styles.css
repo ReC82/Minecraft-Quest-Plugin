@@ -1,0 +1,96 @@
+:root {
+  --rpgq-bg: #12151a;
+  --rpgq-surface: #1a1f27;
+  --rpgq-border: #2a313c;
+  --rpgq-accent: #d8b34f;
+  --rpgq-text: #e8e6e1;
+  --rpgq-muted: #9aa4b2;
+}
+
+body {
+  background-color: var(--rpgq-bg);
+  color: var(--rpgq-text);
+  font-family: "Segoe UI", Roboto, sans-serif;
+}
+
+.navbar {
+  background-color: var(--rpgq-surface) !important;
+  border-bottom: 1px solid var(--rpgq-border);
+}
+
+.navbar-brand {
+  color: var(--rpgq-accent) !important;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.nav-link {
+  color: var(--rpgq-muted) !important;
+}
+
+.nav-link.active,
+.nav-link:hover {
+  color: var(--rpgq-text) !important;
+}
+
+.card,
+.rpgq-card {
+  background-color: var(--rpgq-surface);
+  border: 1px solid var(--rpgq-border);
+  border-radius: 0.5rem;
+}
+
+code, pre code {
+  color: #ffe9a8;
+}
+
+pre.rpgq-code {
+  background-color: #0d1014;
+  border: 1px solid var(--rpgq-border);
+  border-radius: 0.4rem;
+  padding: 1rem;
+  position: relative;
+  overflow-x: auto;
+}
+
+.rpgq-copy-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  font-size: 0.75rem;
+}
+
+table {
+  color: var(--rpgq-text);
+}
+
+.table > :not(caption) > * > * {
+  background-color: transparent;
+  color: var(--rpgq-text);
+  border-color: var(--rpgq-border);
+}
+
+.badge-status {
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.rpgq-hero {
+  border-bottom: 1px solid var(--rpgq-border);
+  padding: 3rem 0;
+}
+
+footer {
+  border-top: 1px solid var(--rpgq-border);
+  color: var(--rpgq-muted);
+  padding: 1.5rem 0;
+  font-size: 0.85rem;
+}
+
+a {
+  color: var(--rpgq-accent);
+}
+
+a:hover {
+  color: #f0cd6c;
+}

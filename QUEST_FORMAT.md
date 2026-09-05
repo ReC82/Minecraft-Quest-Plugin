@@ -38,6 +38,15 @@ variables:
   wood_collected: "0"
 ```
 
+## Objectif `TALK_TO_NPC`
+
+`npc:` (ex. `woodcutter_bob` ci-dessus) est l'identifiant stable attribué à
+une entité via `/rpgadmin npc tag <id>` (voir `docs/ARCHITECTURE.md`,
+package `npc`) — **jamais** le nom personnalisé affiché au-dessus d'elle.
+Le nom affiché reste purement cosmétique et peut être renommé librement sans
+casser l'objectif : marquez d'abord l'entité (`/rpgadmin npc tag
+woodcutter_bob`), puis nommez-la comme vous le souhaitez à l'enclume.
+
 ## Textes localisables
 
 `title`/`description` acceptent soit un texte simple, soit une table avec

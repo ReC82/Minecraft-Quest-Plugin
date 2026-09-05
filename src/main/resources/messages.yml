@@ -1,24 +1,57 @@
-# Messages MiniMessage envoyés par les commandes /quest. Personnalisables
-# sans recompiler ; rechargés avec /quest admin reload.
+# Messages MiniMessage envoyés par les commandes /quest et les notifications
+# de progression. Personnalisables sans recompiler ; rechargés avec
+# /quest admin reload.
 # Placeholders disponibles selon le message : <quest> <category> <state>
-# <step> <objective> <current> <total> <missing> <permission>
+# <objective> <current> <total> <missing> <permission> <amount> <item>
+#
+# started-title/started-subtitle et completed-title/completed-subtitle sont
+# affichés via un Title Adventure (jamais le chat) au démarrage/à la fin
+# d'une quête ; objective-progress via l'ActionBar à chaque progression d'un
+# objectif (qu'elle le complète ou non). Volontairement hors du chat pour ne
+# pas le spammer — voir docs-site/quests.html.
+#
+# reward-summary-header/reward-line-* sont l'exception : envoyés dans le chat,
+# une seule fois à la remise (jamais à l'acceptation ni en cours de route), et
+# seulement pour les récompenses réellement accordées par CETTE quête (une
+# quête sans récompense ITEM n'affiche jamais reward-line-item). reward-line-
+# special couvre les récompenses COMMAND (ex. objet personnalisé donné via
+# /customitem give) : le contenu exact d'une commande arbitraire n'est pas
+# inspectable, donc ce message reste volontairement générique plutôt que
+# d'inventer un nom d'objet.
 
 quest:
-  accepted: "<green>Quête acceptée :</green> <white><quest></white>"
   already-active: "<red>Tu as déjà accepté :</red> <white><quest></white>"
   not-repeatable: "<red>Quête déjà terminée (non répétable) :</red> <white><quest></white>"
   prerequisites-missing: "<red>Prérequis manquant(s) pour</red> <white><quest></white><red> :</red> <white><missing></white>"
   unknown: "<red>Quête inconnue :</red> <white><quest></white>"
   abandoned: "<yellow>Quête abandonnée :</yellow> <white><quest></white>"
   nothing-to-abandon: "<red>Aucune quête active à abandonner :</red> <white><quest></white>"
-  step-completed: "<gold>Étape terminée</gold> <gray>(<quest>) :</gray> <white><step></white>"
-  completed: "<gold><bold>Quête terminée !</bold></gold> <white><quest></white>"
   force-completed: "<gold>Quête forcée à terminée (admin) :</gold> <white><quest></white>"
   progress-empty: "<gray>Aucune quête en cours.</gray>"
   progress-line: "<yellow><quest></yellow> <gray>-</gray> <white><state></white>"
   progress-objective-line: "<gray> - <objective> :</gray> <white><current>/<total></white>"
   list-header: "<gold><bold>Quêtes</bold></gold>"
   list-entry: "<white><quest></white> <gray>[<category>] -</gray> <yellow><state></yellow>"
+  started-title: "<green><bold>Quête commencée</bold></green>"
+  started-subtitle: "<white><quest></white>"
+  objective-progress: "<yellow><objective></yellow> <gray><current>/<total></gray>"
+  completed-title: "<gold><bold>Quête terminée</bold></gold>"
+  completed-subtitle: "<white><quest></white>"
+  reward-summary-header: "<gold><bold>Quête terminée :</bold></gold> <white><quest></white> <gray>— récompenses :</gray>"
+  reward-line-experience: "<yellow> + <amount> XP</yellow>"
+  reward-line-item: "<yellow> + <amount>x <item></yellow>"
+  reward-line-special: "<yellow> + Récompense spéciale</yellow>"
 
 permission:
   denied: "<red>Permission manquante :</red> <white><permission></white>"
+
+# Feedback Story (story.StoryService) : envoyé dans le CHAT, jamais en Title/Subtitle comme les
+# messages de quête ci-dessus — QuestProgressEngine affiche déjà son propre Title "Quête commencée"
+# à chaque démarrage de quête (Story ou non), un second Title juste avant/après créerait une course
+# d'affichage (le second écrase toujours le premier). Le chat n'entre jamais en conflit et garde un
+# historique consultable du fil de la story. Placeholders : <story> (nom de la story), <quest> (titre
+# de la quête).
+story:
+  started: "<green><bold>Nouvelle aventure :</bold></green> <white><story></white>"
+  next-objective: "<green>Nouvel objectif :</green> <white><quest></white>"
+  completed: "<gold><bold>Aventure terminée :</bold></gold> <white><story></white>"

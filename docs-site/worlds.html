@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="fr" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mondes — RPGQuest</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/styles.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg">
+  <div class="container">
+    <a class="navbar-brand" href="index.html">RPGQuest</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="nav">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link" href="index.html">Accueil</a></li>
+        <li class="nav-item"><a class="nav-link" href="npc.html">PNJ</a></li>
+        <li class="nav-item"><a class="nav-link" href="dialogues.html">Dialogues</a></li>
+        <li class="nav-item"><a class="nav-link" href="quests.html">Quêtes</a></li>
+        <li class="nav-item"><a class="nav-link" href="admin-testing.html">Outils admin de test</a></li>
+        <li class="nav-item"><a class="nav-link" href="hub-safe-zone.html">Spawn du village</a></li>
+        <li class="nav-item"><a class="nav-link active" href="worlds.html">Mondes</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main class="container py-5">
+  <h1>Mondes</h1>
+  <p class="text-body-secondary">
+    RPGQuest fournit une <strong>gestion minimale des mondes supplémentaires</strong> propres à
+    RPGQuest : <code>world.WorldService</code> (API Bukkit/Paper <code>WorldCreator</code>, aucune
+    dépendance externe) et trois sous-commandes <code>/rpgadmin world create|tp|list</code>. Le
+    reste du code RPGQuest (<code>zone</code>, <code>travel</code>, <code>spawn</code>,
+    <code>mob</code>...) continue de seulement <strong>référencer</strong> un monde déjà chargé par
+    son nom (<code>Bukkit#getWorld(String)</code>) — <code>WorldService</code> est le seul endroit
+    du projet qui en crée un.
+  </p>
+
+  <div class="rpgq-card p-3 mb-4">
+    <p class="text-body-secondary mb-0 small">
+      <strong>Distinct du monde Hub (<code>world_hub</code>) :</strong> le Hub n'est pas créé par
+      <code>/rpgadmin world create</code> — c'est un monde déjà présent sur disque, déclaré à
+      <strong>Multiverse-Core</strong> (<code>/mv import world_hub normal</code>, installé et
+      utilisé en production VeryGames) puis régi automatiquement par
+      <code>hub.HubWorldRulesService</code> (jour/météo permanents, dégâts/PvP/casse-pose/claims
+      bloqués). RPGQuest ne dépend techniquement d'aucun plugin externe pour démarrer
+      (<code>plugin.yml</code> → <code>softdepend: [Citizens]</code> uniquement) : Multiverse-Core
+      reste un outil d'exploitation, jamais une dépendance de code. Détail complet des règles Hub :
+      <a href="hub-safe-zone.html">Spawn du village</a> ; procédure d'installation :
+      <code>docs/deployment/VERYGAMES.md</code>.
+    </p>
+  </div>
+
+  <div class="rpgq-card p-3 mb-4">
+    <p class="text-body-secondary mb-0 small">
+      <strong>Périmètre volontairement minimal (mondes créés par <code>/rpgadmin world</code>) :</strong>
+      environnement toujours <code>NORMAL</code>, seed toujours aléatoire, aucune configuration YAML
+      par monde, pas de règles spécifiques à un monde, pas de reset automatisé — voir « Prochaine
+      étape » plus bas. Le portail simple entre mondes (<code>/rpgadmin worldportal</code>) existe
+      déjà, voir plus bas.
+    </p>
+  </div>
+
+  <section class="my-5">
+    <h2 class="h4">Concepts minimum</h2>
+    <ul class="text-body-secondary">
+      <li><strong>Monde principal</strong> — l'unique monde qui existe aujourd'hui sur ce serveur,
+        nommé <code>world</code> (<code>level-name</code> dans <code>server.properties</code>), plus
+        ses deux dimensions vanilla compagnes générées automatiquement par Paper
+        (<code>world_nether</code>, <code>world_the_end</code>).</li>
+      <li><strong>Monde supplémentaire</strong> — un monde géré par RPGQuest via
+        <code>/rpgadmin world create &lt;name&gt;</code> (ex. futur <code>wild</code>, voir plus bas).
+        Toujours environnement <code>NORMAL</code>, seed aléatoire. Son nom est mémorisé dans
+        <code>plugins/RPGQuest/worlds.yml</code> pour être rechargé automatiquement à chaque
+        démarrage du plugin.</li>
+      <li><strong>Monde Hub (<code>world_hub</code>)</strong> — le monde social/sûr du serveur
+        (village, spawn), <strong>distinct</strong> des mondes ci-dessus : dossier déjà présent sur
+        disque, déclaré à Multiverse-Core (<code>/mv import</code>) plutôt que créé par
+        <code>/rpgadmin world create</code>, puis régi automatiquement par
+        <code>hub.HubWorldRulesService</code> (jour et météo figés, dégâts/PvP/casse-pose/claims
+        bloqués — détail sur <a href="hub-safe-zone.html">Spawn du village</a>). Le nom exact est lu
+        depuis <code>hub.world</code> dans <code>config.yml</code> (<code>world_hub</code> par
+        défaut).</li>
+      <li><strong>Spawn RPGQuest du village</strong> (<code>/rpgadmin spawn set|tp</code>, voir
+        <a href="hub-safe-zone.html">Spawn du village</a>) — une position unique (monde + x/y/z)
+        stockée dans <code>plugins/RPGQuest/spawn.yml</code>, indépendante du spawn vanilla du monde
+        (<code>World#getSpawnLocation()</code>). C'est <strong>elle</strong> qui régit l'arrivée d'un
+        nouveau joueur et la réapparition après la mort — pas le spawn vanilla du monde, et pas
+        <code>/rpgadmin world tp</code> (voir ci-dessous).</li>
+      <li><strong>Téléporter un joueur vers un monde</strong> — <code>/rpgadmin world tp &lt;name&gt;</code>
+        téléporte au spawn <em>vanilla</em> de n'importe quel monde actuellement chargé (celui du
+        monde lui-même, <code>World#getSpawnLocation()</code>) — distinct du spawn RPGQuest du
+        village ci-dessus, qui reste la seule position gérée pour l'arrivée/la réapparition des
+        joueurs.</li>
+    </ul>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Spawn Minecraft vs Multiverse vs RPGQuest</h2>
+    <p class="text-body-secondary">
+      Trois spawns coexistent sur ce serveur — un seul régit réellement le gameplay :
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Spawn</th><th>Défini par</th><th>Référence gameplay ?</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Spawn Minecraft/Paper (<code>World#getSpawnLocation()</code>)</td>
+            <td>Génération du monde ou <code>/setworldspawn</code> vanilla</td>
+            <td>Non — repli de <code>DestinationStrategy.WORLD_SPAWN</code> et cible de
+              <code>/rpgadmin world tp</code></td>
+          </tr>
+          <tr>
+            <td>Spawn Multiverse (<code>/mv setspawn</code>)</td>
+            <td>Commande Multiverse-Core</td>
+            <td><strong>Non</strong> — jamais utilisé par RPGQuest</td>
+          </tr>
+          <tr>
+            <td>Spawn RPGQuest (village)</td>
+            <td><code>/rpgadmin spawn set</code></td>
+            <td><strong>Oui</strong> — seule source de vérité pour l'arrivée/la réapparition, voir
+              <a href="hub-safe-zone.html">Spawn du village</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Créer et gérer un monde</h2>
+    <p class="text-body-secondary">
+      Procédure pas-à-pas pour un monde supplémentaire géré par RPGQuest, basée uniquement sur les
+      trois commandes <code>/rpgadmin world create|tp|list</code> (<code>world.WorldService</code>,
+      sans dépendance à Multiverse-Core) — ne concerne pas le monde Hub, géré différemment (voir
+      ci-dessus).
+    </p>
+    <ol class="text-body-secondary">
+      <li>
+        <strong>Créer un monde.</strong> <span class="badge text-bg-success badge-status">Disponible</span>
+        <code>/rpgadmin world create &lt;name&gt;</code> (permission <code>rpgquest.admin.world</code>,
+        même permission que le reste de <code>/rpgadmin</code>). Utilise l'API Bukkit
+        <code>WorldCreator</code> côté serveur — génère le dossier du monde s'il n'existe pas encore,
+        le charge immédiatement, et mémorise son nom dans
+        <code>plugins/RPGQuest/worlds.yml</code>. Si un monde du même nom est déjà chargé, la
+        commande ne le recrée pas : elle répond simplement qu'il est déjà chargé (idempotent).
+      </li>
+      <li>
+        <strong>Choisir son nom.</strong> Pour un monde supplémentaire : l'argument
+        <code>&lt;name&gt;</code> de <code>/rpgadmin world create</code> (minuscules, chiffres,
+        <code>_</code>/<code>-</code> uniquement — rejeté sinon, avec message d'erreur explicite).
+        Pour le monde principal, inchangé : uniquement via <code>level-name</code> dans
+        <code>server.properties</code>, avant le tout premier démarrage.
+      </li>
+      <li>
+        <strong>Seed.</strong> Pour un monde créé par <code>/rpgadmin world create</code> : toujours
+        aléatoire, aucun argument pour en fixer une à cette étape (choix volontairement minimal, voir
+        « Prochaine étape » plus bas). Pour le monde principal, inchangé : <code>level-seed</code>
+        dans <code>server.properties</code>, avant le tout premier démarrage.
+      </li>
+      <li>
+        <strong>Type/environnement.</strong> Pour un monde créé par
+        <code>/rpgadmin world create</code> : toujours <code>NORMAL</code> (vanilla classique),
+        fixé dans le code, pas de choix à la création à cette étape. Pour le monde principal,
+        inchangé : <code>level-type</code> dans <code>server.properties</code>.
+      </li>
+      <li>
+        <strong>Charger le monde.</strong> Immédiat lors de <code>/rpgadmin world create</code>. Un
+        monde déjà mémorisé (créé une première fois) est aussi rechargé automatiquement à chaque
+        démarrage du plugin, sans commande à retaper — voir l'étape « redémarrage » ci-dessous.
+      </li>
+      <li>
+        <strong>S'y téléporter.</strong> <span class="badge text-bg-success badge-status">Disponible</span>
+        <code>/rpgadmin world tp &lt;name&gt;</code> téléporte au spawn vanilla du monde donné, s'il
+        est actuellement chargé. Message d'erreur explicite si ce n'est pas le cas (invite à lancer
+        <code>/rpgadmin world create &lt;name&gt;</code> d'abord). Le système de portails RPGQuest
+        (<code>/rpgadmin portal</code>) reste la seule route <em>joueur</em> (pas admin) vers un
+        monde — toujours hors périmètre de cette page.
+      </li>
+      <li>
+        <strong>Revenir au monde principal.</strong> Même commande que ci-dessus, avec le nom du
+        monde principal : <code>/rpgadmin world tp world</code> (valeur par défaut de
+        <code>level-name</code> sur cette installation).
+      </li>
+      <li>
+        <strong>Vérifier que le monde existe et est chargé.</strong> <span class="badge text-bg-success badge-status">Disponible</span>
+        <code>/rpgadmin world list</code> affiche tous les mondes actuellement chargés (nom +
+        environnement), en indiquant lesquels sont gérés par RPGQuest.
+      </li>
+      <li>
+        <strong>Comportement après un redémarrage.</strong> Le monde principal (et ses dimensions
+        vanilla compagnes) continue d'être rechargé par Paper d'après <code>server.properties</code>,
+        indépendamment de RPGQuest. Un monde supplémentaire créé via
+        <code>/rpgadmin world create</code> est en plus rechargé automatiquement par
+        <code>world.WorldService</code> au démarrage du plugin, tant que son nom reste dans
+        <code>plugins/RPGQuest/worlds.yml</code> et que son dossier existe encore sur le disque.
+      </li>
+      <li>
+        <strong>Réinitialiser (« reset ») un monde pour les tests.</strong>
+        <span class="badge text-bg-secondary badge-status">Aucun outil automatisé</span>
+        RPGQuest ne fournit aucune commande de reset de monde (<code>/rpgadmin flatten</code> ne fait
+        qu'aplatir un terrain autour du joueur, pas régénérer un monde entier — hors sujet ici). La
+        seule méthode disponible est manuelle et destructive, standard à tout serveur
+        Paper/vanilla : arrêter le serveur, supprimer entièrement le dossier du monde concerné (ex.
+        <code>world/</code>, <code>world_nether/</code>, <code>world_the_end/</code>), puis
+        redémarrer — Paper régénère un monde neuf au prochain démarrage. À réserver strictement à un
+        serveur de test : irréversible, aucune confirmation, aucune sauvegarde automatique.
+      </li>
+    </ol>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Commandes copiables</h2>
+    <p class="text-body-secondary">
+      Uniquement des commandes/réglages vérifiés dans ce dépôt — l'origine de chacun est précisée.
+    </p>
+    <pre class="rpgq-code"><code># --- Fichier de config, PAS une commande en jeu (avant le tout premier démarrage du monde principal) ---
+# run/server.properties
+level-name=world
+level-seed=
+level-type=minecraft:normal
+
+# --- Commandes RPGQuest (en jeu, permission rpgquest.admin.world) ---
+/rpgadmin world create <name>   # crée (ou recharge) un monde NORMAL et le charge
+/rpgadmin world tp <name>       # téléporte au spawn de ce monde
+/rpgadmin world list            # liste les mondes actuellement chargés
+
+/rpgadmin spawn set   # définit le spawn RPGQuest du village à la position actuelle
+/rpgadmin spawn tp    # téléporte au spawn RPGQuest du village actuellement configuré
+
+/rpgadmin zone wand                              # outil de sélection (réutilisé pour le portail simple)
+/rpgadmin worldportal create <id> <destinationWorld> [world_spawn|random_safe]   # crée un portail simple depuis la sélection
+/rpgadmin worldportal info <id>                  # détail d'un portail simple
+/rpgadmin worldportal list                       # liste les portails simples
+/rpgadmin worldportal enable <id>                # réactive un portail simple
+/rpgadmin worldportal disable <id>               # désactive un portail simple (config conservée)
+/rpgadmin worldportal delete <id>                # supprime définitivement un portail simple</code></pre>
+    <p class="text-body-secondary small">
+      Les trois commandes <code>/rpgadmin world ...</code> ci-dessus sont entièrement RPGQuest
+      (<code>world.WorldService</code>), jamais Multiverse — RPGQuest n'a aucune dépendance de code
+      vers Multiverse-Core (<code>plugin.yml</code> ne déclare que
+      <code>softdepend: [Citizens]</code>). Multiverse-Core <strong>est</strong> installé et utilisé
+      en production VeryGames, mais uniquement pour déclarer/lister le monde Hub
+      (<code>/mv import world_hub normal</code>, <code>/mv list</code> — voir
+      <code>docs/deployment/VERYGAMES.md</code>), jamais pour un monde créé via
+      <code>/rpgadmin world create</code>.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Créer le monde <code>wild</code></h2>
+    <p class="text-body-secondary">
+      Exemple complet, dans l'ordre, avec les commandes exactes :
+    </p>
+    <pre class="rpgq-code"><code># 1. Créer et charger le monde (environnement NORMAL, seed aléatoire)
+/rpgadmin world create wild
+
+# 2. Vérifier qu'il est bien chargé
+/rpgadmin world list
+# -> ... - wild (NORMAL) (géré par RPGQuest) ...
+
+# 3. S'y téléporter
+/rpgadmin world tp wild
+
+# 4. Revenir au monde principal
+/rpgadmin world tp world</code></pre>
+    <p class="text-body-secondary small">
+      À ce stade, <code>wild</code> est un monde vanilla <code>NORMAL</code> nu, sans aucune règle
+      spécifique (pas de portail, pas de spawn aléatoire, pas de protection, pas de restriction de
+      dégâts/mobs/construction, pas de claims) — voir « Prochaine étape » ci-dessous pour la suite
+      prévue.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Règles du world <code>wild</code></h2>
+    <p class="text-body-secondary">
+      Toutes les protections RPGQuest (<code>zone.ZoneProtectionListener</code>,
+      <code>claim.ClaimProtectionListener</code>) ne s'appliquent qu'à l'intérieur d'une zone/d'un
+      claim explicitement enregistré à des coordonnées précises d'un monde donné — jamais à un monde
+      entier ni globalement au serveur. Comme aucune zone ni aucun claim n'est jamais créé dans
+      <code>wild</code>, ce monde reste un <strong>Survival vanilla normal</strong> par construction,
+      sans qu'aucun code n'ait eu besoin d'être modifié pour l'exempter des protections du Hub —
+      vérifié par <code>zone.WildWorldSeparationTest</code> (voir « Tests » ci-dessous).
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Fonction</th><th><code>wild</code></th></tr></thead>
+        <tbody>
+          <tr><td>Casse de blocs</td><td>Autorisé (vanilla)</td></tr>
+          <tr><td>Pose de blocs</td><td>Autorisé (vanilla)</td></tr>
+          <tr><td>Portes / boutons / leviers / conteneurs</td><td>Autorisé (vanilla)</td></tr>
+          <tr><td>Mobs (apparition, attaque, dégâts, mort, drops)</td><td>Autorisés (vanilla)</td></tr>
+          <tr><td>Dégâts (chute, mobs, feu/lave, noyade, PvP)</td><td>Autorisés (vanilla)</td></tr>
+          <tr><td>Mort du joueur</td><td>Autorisée (vanilla)</td></tr>
+          <tr><td>PvP</td><td>Autorisé (vanilla)</td></tr>
+          <tr><td>Explosions</td><td>Comportement vanilla (aucune interception)</td></tr>
+          <tr><td>Claims</td><td>Aucun (comportement claims global inchangé, hors périmètre ici)</td></tr>
+          <tr><td>Safe zone globale</td><td>Aucune</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-body-secondary small">
+      Un premier portail Hub → <code>wild</code> existe désormais (voir section suivante) :
+      entrer dans sa zone d'activation téléporte immédiatement au spawn de <code>wild</code>.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Portail Hub → <code>wild</code></h2>
+    <p class="text-body-secondary">
+      Système <strong>délibérément séparé</strong> du système de portails riche existant
+      (<code>/rpgadmin portal</code>, <code>travel.PortalService</code> : canalisation à délai, coût,
+      conditions de quête/niveau, cooldown persisté en base) — inadapté ici car bien plus complexe
+      que nécessaire pour « entrer dans une zone → arriver dans un monde ». Nouvelles classes :
+      <code>travel.model.WorldPortalDefinition</code> (id, monde source, zone cuboïde, monde
+      destination, actif/inactif, <strong>stratégie d'arrivée</strong>), <code>travel.WorldPortalRegistry</code>
+      (persistance YAML, même conception que <code>zone.ZoneRegistry</code>), <code>travel.WorldPortalTeleportListener</code>
+      (détection d'entrée + téléportation immédiate, aucune canalisation), <code>travel.RandomSafeLocationFinder</code>
+      (recherche de position aléatoire sûre, séparée de la téléportation pour rester testable seule —
+      voir plus bas). La <strong>sélection à deux points</strong> réutilise l'outil existant
+      <code>/rpgadmin zone wand</code> — aucune nouvelle commande <code>pos1</code>/<code>pos2</code>
+      n'a été ajoutée.
+    </p>
+    <h3 class="h6 mt-4">Stratégie d'arrivée : spawn fixe ou position aléatoire sûre</h3>
+    <p class="text-body-secondary">
+      Chaque portail simple a une <code>travel.model.DestinationStrategy</code> :
+    </p>
+    <ul class="text-body-secondary">
+      <li><code>WORLD_SPAWN</code> (par défaut, comportement inchangé) — arrivée au spawn du monde
+        destination, résolu à chaque activation.</li>
+      <li><code>RANDOM_SAFE</code> — arrivée à une position aléatoire <strong>sûre</strong> autour du
+        spawn du monde destination, favorisant l'exploration plutôt qu'un même point d'arrivée à
+        chaque fois. C'est la stratégie retenue pour <code>hub_to_wild</code>.</li>
+    </ul>
+    <p class="text-body-secondary">
+      Avec <code>RANDOM_SAFE</code>, chaque tentative tire un angle et une distance uniformes entre
+      <code>travel.random-safe-arrival.min-radius</code> (défaut <strong>500</strong> blocs) et
+      <code>max-radius</code> (défaut <strong>5000</strong> blocs) autour du spawn du monde
+      destination — configurable dans <code>config.yml</code>. Une position est acceptée seulement
+      si : le sol (plus haute colonne solide, <code>World#getHighestBlockYAt</code>) est solide et
+      non dangereux (lave, feu, magma, cactus, feu de camp, buisson de baies exclus), les deux blocs
+      au-dessus (pieds/tête) laissent la place au joueur, et la position reste à l'intérieur de la
+      bordure du monde. Jusqu'à <code>max-attempts</code> tentatives (défaut <strong>20</strong>) —
+      jamais de boucle infinie. <strong>Si aucune position sûre n'est trouvée</strong>, repli
+      automatique sur le spawn du monde (journalisé en avertissement côté console), le joueur est
+      toujours téléporté proprement.
+    </p>
+    <ol class="text-body-secondary">
+      <li>
+        <strong>Se placer à un coin du portail</strong> (dans le Hub), puis obtenir l'outil de
+        sélection :
+        <pre class="rpgq-code"><code>/rpgadmin zone wand</code></pre>
+      </li>
+      <li>
+        <strong>Définir pos1</strong> : clic gauche sur un bloc du premier coin.
+      </li>
+      <li>
+        <strong>Aller à l'autre coin</strong> de la zone d'activation souhaitée.
+      </li>
+      <li>
+        <strong>Définir pos2</strong> : clic droit sur un bloc du coin opposé.
+      </li>
+      <li>
+        <strong>Créer le portail</strong> — <code>&lt;destinationWorld&gt;</code> est un simple nom de
+        monde (celui de <code>wild</code>), pas un id de destination à créer séparément ; le
+        troisième argument optionnel choisit la stratégie d'arrivée (<code>world_spawn</code> par
+        défaut si omis) :
+        <pre class="rpgq-code"><code>/rpgadmin worldportal create hub_to_wild wild random_safe</code></pre>
+      </li>
+      <li>
+        <strong>Vérifier sa configuration</strong> :
+        <pre class="rpgq-code"><code>/rpgadmin worldportal info hub_to_wild
+/rpgadmin worldportal list</code></pre>
+      </li>
+    </ol>
+    <p class="text-body-secondary">
+      Permission <code>rpgquest.admin.world</code> (identique au reste de <code>/rpgadmin</code>).
+      Comme <code>/rpgadmin zone create</code>/<code>portal create</code>, les deux positions doivent
+      être dans le même monde ; ce monde devient le <strong>monde source</strong> du portail (le Hub,
+      en pratique). Une zone qui chevauche un portail simple déjà enregistré dans le même monde est
+      refusée. Pour corriger une zone mal placée : <code>delete</code> puis recréer (pas de commande
+      « resize », même limite que <code>/rpgadmin zone</code>).
+    </p>
+    <h3 class="h6 mt-4">Gérer un portail pendant les tests (activer / désactiver / supprimer)</h3>
+    <pre class="rpgq-code"><code>/rpgadmin worldportal disable hub_to_wild   # bloque le déclenchement, garde toute la configuration
+/rpgadmin worldportal enable hub_to_wild    # réactive le portail
+/rpgadmin worldportal delete hub_to_wild    # supprime définitivement (mémoire + fichier), jamais le monde ni ses blocs</code></pre>
+    <ul class="text-body-secondary">
+      <li><code>disable</code>/<code>enable</code> ne font que basculer le champ <code>enabled</code>
+        et persister immédiatement — <code>WorldPortalTeleportListener</code> ignore tout portail
+        désactivé, sans jamais oublier ses bornes/sa destination. Rebasculer sur le même état
+        (désactiver un portail déjà désactivé, par exemple) ne réécrit rien et répond simplement
+        que l'état est déjà celui demandé.</li>
+      <li><code>delete</code> retire le fichier YAML et recharge le registre — n'affecte jamais un
+        autre portail, ni le monde ou les blocs concernés.</li>
+      <li>Portail/id inconnu : message d'erreur explicite dans les trois cas, jamais de plantage.</li>
+    </ul>
+    <h3 class="h6 mt-4">Comment ça se déclenche</h3>
+    <ul class="text-body-secondary">
+      <li>Détection sur <code>PlayerMoveEvent</code>, uniquement sur un vrai changement de bloc (pas
+        chaque micro-mouvement) — même filtrage que <code>zone.ZoneProtectionListener</code>.</li>
+      <li><strong>Anti-boucle :</strong> un joueur ne déclenche la téléportation qu'au passage
+        extérieur → intérieur de la zone (un <code>Map&lt;UUID, String&gt;</code> retient le dernier
+        portail occupé par chaque joueur) — rester immobile ou se déplacer à l'intérieur de la même
+        zone ne redéclenche jamais rien.</li>
+      <li><strong>Vérification du monde source :</strong> la zone est ancrée à un nom de monde précis
+        (<code>WorldPortalDefinition#contains</code>) — les mêmes coordonnées dans un autre monde ne
+        correspondent jamais à la zone.</li>
+      <li>À l'activation : le monde destination est résolu via <code>world.WorldService</code>
+        (aucune dépendance à Multiverse ni à un autre registre) ; s'il n'est pas chargé, le joueur
+        reçoit un message clair et rien ne casse (juste journalisé en console) — sinon, téléportation
+        immédiate soit au spawn <em>actuel</em> de ce monde (<code>WORLD_SPAWN</code>), soit à une
+        position aléatoire sûre autour de ce spawn (<code>RANDOM_SAFE</code>, voir ci-dessus) — jamais
+        une position figée à la création du portail.</li>
+    </ul>
+    <h3 class="h6 mt-4">Persistance</h3>
+    <p class="text-body-secondary">
+      Un fichier YAML par portail dans <code>plugins/RPGQuest/world-portals/</code> (même mécanisme
+      que <code>zone.ZoneRegistry</code>/<code>travel.YamlPortalRegistry</code>), rechargé au
+      démarrage du plugin — un redémarrage complet du serveur ne perd donc jamais un portail simple
+      créé.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Prochaine étape : world <code>wild</code></h2>
+    <p class="text-body-secondary">
+      Un monde nommé <code>wild</code> est prévu (exploration, mobs, dégâts, destruction/pose de
+      blocs, quêtes, sans claims), relié au Hub par un portail — cette dernière partie est faite
+      (voir ci-dessus, aller simple uniquement). <strong>Reste encore à faire</strong> :
+    </p>
+    <ul class="text-body-secondary">
+      <li>aucun portail retour <code>wild</code> → Hub (le portail actuel n'est qu'à sens unique) ;</li>
+      <li>arrivée aléatoire sûre faite pour <code>hub_to_wild</code> (voir ci-dessus,
+        <code>RANDOM_SAFE</code>) — mais aucune mémorisation de position personnelle, aucun home,
+        aucun retour au dernier point : chaque passage tire une nouvelle position, rien n'est
+        conservé entre deux passages ;</li>
+      <li>aucune animation/particule sur le portail, aucun bloc spécial ;</li>
+      <li>aucune règle de dégâts, de mobs, de destruction/pose de blocs ni de quête spécifique à
+        <code>wild</code> — il se comporte comme n'importe quel monde vanilla <code>NORMAL</code>,
+        sans aucun réglage RPGQuest ;</li>
+      <li>aucun claim n'y est autorisé ni interdit spécifiquement (comportement claims inchangé,
+        non traité par cette étape) ;</li>
+      <li>aucun reset automatisé (voir l'étape « Réinitialiser » ci-dessus, toujours manuelle).</li>
+    </ul>
+    <p class="text-body-secondary">
+      Chacun de ces points sera une étape séparée.
+    </p>
+  </section>
+
+</main>
+
+<footer class="text-center">
+  <div class="container">RPGQuest — documentation générée pour ce dépôt, à jour du code actuel.</div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

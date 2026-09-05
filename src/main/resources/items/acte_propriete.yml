@@ -1,0 +1,20 @@
+id: rpgquest:acte_propriete
+type: QUEST_ITEM
+material: PAPER
+name: "<gold>Acte de propriété</gold>"
+lore:
+  - "<gray>Remis par Jo une fois ton droit de propriété débloqué.</gray>"
+  - "<gray>Clic droit sur un bloc dans le monde des claims</gray>"
+  - "<gray>pour poser ton premier claim (5x5).</gray>"
+  - "<dark_gray>Une fois posé : clic droit dans les claims</dark_gray>"
+  - "<dark_gray>pour revoir les limites de ta propriété.</dark_gray>"
+rarity: UNCOMMON
+stackable: false
+max-stack-size: 1
+
+gameplay-tags:
+  - "quest_item"
+  - "claim_deed"
+
+crafting:
+  craftable: false

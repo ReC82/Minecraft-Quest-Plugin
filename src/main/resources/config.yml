@@ -25,16 +25,22 @@ resource-pack:
 
 dialogue:
   # Renderer utilisé pour afficher les dialogues :
-  #   - chat         : texte cliquable dans le chat, compatible avec tout client (par défaut).
-  #   - paper-dialog : API Dialog native de Paper — marquée expérimentale
-  #                    dans cette version, voir docs/ARCHITECTURE.md.
-  renderer: chat
+  #   - paper-dialog : vraie fenêtre Paper native avec boutons cliquables (par défaut). Repose sur
+  #                    une API Paper marquée expérimentale par Paper lui-même (le contrat pourrait
+  #                    changer dans une future version de Paper), mais réelle et fonctionnelle contre
+  #                    la version exacte ciblée par ce projet ; repli automatique sur le chat en cas
+  #                    d'échec à l'exécution. Voir docs/ARCHITECTURE.md.
+  #   - chat         : texte cliquable dans le chat, compatible avec tout client, aucune API
+  #                    instable — à choisir explicitement si vous préférez l'éviter.
+  renderer: paper-dialog
   # Liste blanche des commandes autorisées dans l'action RUN_SAFE_COMMAND
   # d'un dialogue (nom de la commande seul, sans le "/" ni les arguments).
   # Aucune commande hors de cette liste ne peut être exécutée par un dialogue.
   allowed-commands:
     - "give"
     - "xp"
+    - "customitem"
+    - "claim"
 
 journal:
   # Affiche une bossbar de suivi (titre + progression) pour la quête suivie
@@ -51,6 +57,16 @@ claims:
   max-claims-per-player: 3
   # Distance minimale (en blocs) entre un nouveau claim et n'importe quel portail existant.
   portal-buffer-blocks: 16
+  # Nom exact du monde dédié au premier claim via l'Acte de propriété (voir
+  # claim.DeedClaimListener / claim.ClaimsWorldRulesListener) : clic droit avec l'Acte hors de ce
+  # monde est refusé proprement. N'affecte pas /claim create à la baguette (utilisable dans
+  # n'importe quel monde autre que le Hub). PvP et tout dégât joueur y sont désactivés (zone
+  # résidentielle totalement safe) ; jour/nuit et météo restent normaux (contrairement au Hub).
+  world: claims
+  # Tant que le rôle futur du Nether n'est pas décidé, un portail Nether activé depuis ce monde est
+  # refusé (message au joueur, aucun impact sur le Nether lui-même ni sur les autres mondes/portails
+  # RPGQuest). Simple bascule pour réautoriser plus tard.
+  block-nether-travel: true
 
 progression:
   # Courbe de niveaux (par compétence) : coût du niveau n -> n+1 =
@@ -133,6 +149,47 @@ client-mod:
   # sinon) — à activer uniquement en connaissance de cause.
   require-mod: false
   handshake-timeout-ticks: 60
+
+hub:
+  # Nom exact du monde Hub (voir hub.HubWorldRulesService / hub.HubWorldProtectionListener) :
+  # jour et météo verrouillés en permanence, aucun dégât aux joueurs, aucun mob hostile naturel,
+  # casse/pose de bloc interdite (sauf rpgquest.admin.world), claims interdits. Géré entièrement
+  # par le plugin, jamais par une commande /gamerule manuelle. Fonctionne que ce monde soit chargé
+  # avant ou après RPGQuest (ex. par Multiverse-Core).
+  world: world_hub
+
+travel:
+  # Nom exact du monde d'exploration (voir config.TravelConfig) : la Rune de rappel n'y fonctionne
+  # que là, l'avertissement d'entrée ne concerne que les portails qui y mènent, et c'est le seul
+  # monde où des Waystones sont générées.
+  wild-world: wild
+  rune:
+    # Rune de rappel (travel.ItemTravelService) : canalisation de retour au Hub depuis le Wild
+    # (annulée sur mouvement/dégâts) et cooldown après un usage réussi. Le cooldown est persisté
+    # par joueur (survit à une reconnexion/redémarrage). La Rune n'est jamais consommée.
+    channel-seconds: 10
+    cooldown-seconds: 1800
+  waystone:
+    # Génération paresseuse de Waystones dans travel.wild-world (voir waystone.WaystoneService) :
+    # au plus une par cellule carrée de « cell-size » blocs de côté, décidée de façon déterministe
+    # à partir de la seed du monde + des coordonnées de la cellule (donc identique à chaque
+    # reload/redémarrage, jamais de doublon). « chance » = probabilité (0..1) qu'une cellule en
+    # contienne une ; « minimum-spacing » = distance minimale entre deux Waystones ; « safe-attempts »
+    # = essais de recherche d'une surface sûre autour du point candidat ; « channel-seconds » =
+    # canalisation d'un retour au Hub depuis une Waystone (annulée sur mouvement/dégâts).
+    cell-size: 1000
+    chance: 0.6
+    minimum-spacing: 300
+    safe-attempts: 16
+    channel-seconds: 3
+  random-safe-arrival:
+    # Arrivée d'un portail simple (/rpgadmin worldportal) en stratégie RANDOM_SAFE — voir
+    # docs-site/worlds.html, section "Portail Hub → wild". Distance autour du spawn du monde
+    # destination (pas du portail lui-même) ; max-attempts borne le nombre d'essais avant repli
+    # automatique sur le spawn du monde (jamais de boucle infinie).
+    min-radius: 500
+    max-radius: 5000
+    max-attempts: 20
 
 admin:
   flatten:

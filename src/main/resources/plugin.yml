@@ -1,10 +1,18 @@
 name: RPGQuest
 version: ${version}
-main: be.lloyd.rpgquest.RPGQuestPlugin
+main: com.lodygames.rpgquest.RPGQuestPlugin
 api-version: '1.21'
-author: Lloyd
+author: LodyGames
 description: Plugin RPG pour Paper piloté par des quêtes YAML.
 folia-supported: false
+
+# Citizens n'est jamais requis pour démarrer : présent, il devient le système de PNJ prioritaire
+# (voir com.lodygames.rpgquest.npc) ; absent, les entités vanilla marquées via /rpgadmin npc tag
+# continuent de fonctionner comme avant. softdepend (pas depend) garantit que, quand Citizens est
+# installé, il est déjà activé avant RPGQuest (ordre requis pour détecter sa présence correctement),
+# sans jamais empêcher RPGQuest de démarrer en son absence.
+softdepend:
+  - Citizens
 
 libraries:
   - org.xerial:sqlite-jdbc:3.53.2.1
@@ -15,7 +23,7 @@ commands:
     usage: /<command> <version|help|profile [joueur]|reload>
   quest:
     description: Quêtes des joueurs et administration des définitions.
-    usage: /<command> <list|accept|progress|abandon|complete|admin>
+    usage: /<command> <list|accept|progress|abandon|complete|admin reload|validate|reset <joueur> <id|all>>
   dialogue:
     description: Ouvre un dialogue pour un joueur (administration).
     usage: /<command> open <joueur> <dialogueId>
@@ -29,8 +37,8 @@ commands:
     description: Nœuds de ressource récoltables (administration).
     usage: /<command> <create <typeId>|remove|inspect>
   rpgadmin:
-    description: Commandes d'administration du monde (aplatissement, zones, portails...).
-    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo|zone ...|portal create|delete|list|info|setdestination
+    description: Commandes d'administration du monde (aplatissement, zones, portails, PNJ, spawn, mondes supplémentaires...).
+    usage: /<command> flatten <rayon> [hauteur]|confirm|cancel|undo|zone ...|portal create|delete|list|info|setdestination|npc tag [id]|untag|info|spawn set|tp|world create <name>|tp <name>|list|worldportal create <id> <destinationWorld>|info <id>|list|enable <id>|disable <id>|delete <id>
   money:
     description: Portefeuille et paiements entre joueurs.
     usage: /<command> [pay <joueur> <montant>|admin <give|take|set> <joueur> <montant>]

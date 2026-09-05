@@ -37,7 +37,7 @@ Objectifs principaux :
 
 ## Package Java
 
-Le package historique `be.lloyd.rpgquest` est obsolète.
+Le package historique `com.lodygames.rpgquest` est obsolète.
 
 La cible du projet est :
 

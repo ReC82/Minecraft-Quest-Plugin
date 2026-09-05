@@ -1,0 +1,37 @@
+# PNJ Guide (Citizens), créé/configuré manuellement par un administrateur — voir
+# docs/NPC_DIALOGUES_QUESTS_GUIDE.md. Ce fichier ne crée jamais le PNJ, seulement son dialogue.
+#
+# Règle (mission « Rune de rappel ») :
+# - « Récupérer une rune de rappel » (re)donne rpgquest:rune_rappel gratuitement dès qu'elle manque
+#   (garde LACKS_CUSTOM_ITEM) ; objet permanent, lié au joueur, jamais consommé (voir
+#   travel.ItemTravelService, cooldown). Chaque nouveau joueur en reçoit déjà une automatiquement à
+#   sa première connexion (voir player.StarterKitListener) — cette option n'est là que comme filet.
+id: rpgquest:guide
+start: greeting
+
+nodes:
+  greeting:
+    speaker: "Guide"
+    text: "<white>Bienvenue au village !</white> <gray>Va donc voir notre libraire, il pourra t'aider.</gray>"
+    choices:
+      - text: "Très bien, j'y vais."
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:premiers_pas
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:premiers_pas
+
+      - text: "Récupérer une rune de rappel"
+        conditions:
+          - type: LACKS_CUSTOM_ITEM
+            item: rpgquest:rune_rappel
+        actions:
+          - type: RUN_SAFE_COMMAND
+            command: "customitem give %player% rpgquest:rune_rappel 1"
+          - type: CLOSE
+
+      - text: "D'accord !"
+        actions:
+          - type: CLOSE

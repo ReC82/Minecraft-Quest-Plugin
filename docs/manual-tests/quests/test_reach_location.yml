@@ -1,0 +1,28 @@
+# QUÊTE DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md, section
+# « Pack de quêtes de test manuel » pour la procédure d'activation/retrait.
+#
+# world/x/y/z ci-dessous ciblent le spawn par défaut d'un monde "world" fraîchement
+# généré (Paper), avec un rayon large (20 blocs) pour rester atteignable sans
+# viser un point exact. Si ton spawn réel est ailleurs, ouvre F3 en jeu pour
+# relever tes coordonnées et remplace x/y/z avant de copier le fichier.
+id: rpgquest:test_reach_location
+title: "<red>[TEST] Atteindre une zone</red>"
+description: "<gray>Quête de test manuel — objectif REACH_LOCATION. Approche-toi du point indiqué (rayon 20 blocs).</gray>"
+category: test
+icon: MAP
+repeatable: true
+
+steps:
+  - id: reach_spawn_area
+    objectives:
+      - type: REACH_LOCATION
+        world: world
+        x: 0.0
+        y: 64.0
+        z: 0.0
+        radius: 20.0
+
+rewards:
+  - type: EXPERIENCE
+    amount: 5

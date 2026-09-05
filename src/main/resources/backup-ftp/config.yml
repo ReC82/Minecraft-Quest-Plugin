@@ -1,0 +1,8 @@
+debug: false
+locale: fr
+database:
+  file: data.db
+resource-pack:
+  enabled: false
+  url: ""
+  sha1: ""

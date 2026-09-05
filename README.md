@@ -77,8 +77,10 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
     appliquer le résultat (dry-run) : utile pour vérifier avant de recharger.
 -   `/dialogue open <joueur> <dialogueId>` (`rpgquest.admin`) — ouvre un
     dialogue pour un joueur en ligne (administration/tests). En jeu, un
-    dialogue s'ouvre aussi en cliquant sur une entité vivante dont le nom
-    personnalisé correspond à un id de dialogue chargé.
+    dialogue s'ouvre aussi en cliquant sur un PNJ identifié via
+    `/rpgadmin npc tag` (identifiant logique stable, indépendant de son nom
+    affiché — voir [docs/RPGQUEST_BIBLE.md](docs/RPGQUEST_BIBLE.md) section 5)
+    dont l'id correspond à un dialogue chargé.
 -   `/quests` (`rpgquest.quest`) — ouvre le journal de quêtes (menu
     paginé : actives, disponibles, terminées).
 -   `/customitem give <joueur> <id> [quantité]` (`rpgquest.admin`) — donne
@@ -424,8 +426,8 @@ protocole complet et l'installation.
 (code ISO 639-1), `database.file`, `resource-pack` (désactivé par défaut,
 requis `url`/`sha1` uniquement si `enabled: true`, voir
 [RESOURCE_PACK.md](RESOURCE_PACK.md)), `dialogue` (`renderer`
-— `chat` par défaut ou `paper-dialog` — et `allowed-commands`, la liste
-blanche pour l'action `RUN_SAFE_COMMAND`), `journal` (`tracker-enabled`,
+— `paper-dialog` par défaut, alternative `chat` — et `allowed-commands`, la
+liste blanche pour l'action `RUN_SAFE_COMMAND`), `journal` (`tracker-enabled`,
 la bossbar optionnelle de la quête suivie), `web-export` (export
 périodique pour le [portail web](docs/WEB_API.md), désactivé par défaut),
 `store` (sondage des livraisons de la [boutique web](docs/STORE.md),
@@ -471,6 +473,23 @@ Voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Règles du projet
 
 Voir [PROJECT_RULES.md](PROJECT_RULES.md).
+
+## Bible technique
+
+[docs/RPGQUEST_BIBLE.md](docs/RPGQUEST_BIBLE.md) — référence exhaustive de
+toutes les commandes et procédures du projet (installation, admin, quêtes,
+dialogues, PNJ, portails, mondes, claims, items, économie, tests,
+dépannage...), vérifiée contre le code. Complète le
+[docs-site](docs-site/index.html) (navigation visuelle).
+
+## Déploiement VeryGames
+
+Voir [docs/deployment/VERYGAMES.md](docs/deployment/VERYGAMES.md) pour la
+procédure de déploiement (installation neuve, mise à jour du JAR,
+migration de données) et
+[docs/deployment/SERVER_CHANGELOG.md](docs/deployment/SERVER_CHANGELOG.md)
+pour l'historique daté des actions serveur nécessitées par chaque
+changement.
 
 ## Suivi des tâches
 

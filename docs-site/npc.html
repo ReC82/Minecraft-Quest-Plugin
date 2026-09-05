@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="fr" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PNJ — RPGQuest</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/styles.css" rel="stylesheet">
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg">
+  <div class="container">
+    <a class="navbar-brand" href="index.html">RPGQuest</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="nav">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link" href="index.html">Accueil</a></li>
+        <li class="nav-item"><a class="nav-link active" href="npc.html">PNJ</a></li>
+        <li class="nav-item"><a class="nav-link" href="dialogues.html">Dialogues</a></li>
+        <li class="nav-item"><a class="nav-link" href="quests.html">Quêtes</a></li>
+        <li class="nav-item"><a class="nav-link" href="admin-testing.html">Outils admin de test</a></li>
+        <li class="nav-item"><a class="nav-link" href="hub-safe-zone.html">Spawn du village</a></li>
+        <li class="nav-item"><a class="nav-link" href="worlds.html">Mondes</a></li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<main class="container py-5">
+  <h1>PNJ</h1>
+  <p class="text-body-secondary">
+    Implémentation : <code>npc.NpcIdentityService</code> (façade unique),
+    <code>npc.CitizensNpcBridge</code> (seul point de contact avec l'API Citizens),
+    <code>database.NpcBindingRepository</code> (persistance SQLite du mapping Citizens).
+  </p>
+
+  <section class="my-5">
+    <h2 class="h4">Deux types de PNJ pris en charge</h2>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="rpgq-card p-3 h-100">
+          <h3 class="h6"><span class="badge text-bg-warning badge-status">Prioritaire</span> PNJ Citizens</h3>
+          <p class="small text-body-secondary mb-1">
+            Si le plugin Citizens est installé et actif (<code>softdepend</code>), RPGQuest
+            l'utilise automatiquement. L'identifiant RPGQuest est lié à
+            <code>NPC#getUniqueId()</code> (UUID garanti stable par Citizens) et stocké dans
+            <strong><code>data.db</code></strong>, table <code>npc_citizens_bindings</code>.
+          </p>
+          <p class="small text-body-secondary mb-0">
+            Nécessaire car Citizens recrée une nouvelle entité Bukkit à chaque (re)spawn (y compris
+            au redémarrage) : un mapping posé sur l'entité seule serait perdu à chaque démarrage.
+          </p>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="rpgq-card p-3 h-100">
+          <h3 class="h6"><span class="badge text-bg-secondary badge-status">Non-régression</span> Entité vanilla</h3>
+          <p class="small text-body-secondary mb-1">
+            Si Citizens est absent (ou pour une entité qu'il ne gère pas), l'identifiant est stocké
+            directement dans le <code>PersistentDataContainer</code> de l'entité
+            (<code>rpgquest:npc_id</code>) — cette entité n'est jamais recréée par un tiers, donc
+            ça survit nativement aux redémarrages.
+          </p>
+        </div>
+      </div>
+    </div>
+    <p class="text-body-secondary mt-3">
+      Dans les deux cas, le <strong>nom affiché</strong> (<code>Entity#customName()</code>) reste
+      purement cosmétique : le renommer ne casse jamais le lien.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Créer un PNJ Citizens</h2>
+    <p class="text-body-secondary">
+      RPGQuest ne fournit ni ne modifie <strong>aucune</strong> commande Citizens — la création et
+      la gestion du PNJ lui-même (position, apparence, nom, squelette de comportement...) se fait
+      entièrement avec les commandes <strong>Citizens</strong> normales, avant toute commande
+      RPGQuest :
+    </p>
+    <pre class="rpgq-code"><code># Commandes Citizens (nécessitent le plugin Citizens installé et actif),
+# pas des commandes RPGQuest :
+/npc create Guide          # crée un PNJ nommé "Guide" à votre position
+/npc select                # sélectionne un PNJ existant à modifier
+/npc remove                # supprime le PNJ sélectionné</code></pre>
+    <p class="text-body-secondary">
+      Une fois le PNJ Citizens créé (et sélectionné, ou simplement regardé), passez à
+      l'identification RPGQuest ci-dessous (<code>/rpgadmin npc tag</code>) — c'est cette étape,
+      pas la création Citizens elle-même, qui relie le PNJ à un dialogue ou une quête.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Commande <code>/rpgadmin npc</code></h2>
+    <p class="text-body-secondary">
+      Permission <code>rpgquest.admin.world</code>. Cible toujours l'entité regardée directement, à
+      6 blocs maximum. Syntaxe strictement identique que le PNJ soit géré par Citizens ou non —
+      RPGQuest détecte automatiquement lequel.
+    </p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Commande</th><th>Effet</th></tr></thead>
+      <tbody>
+        <tr><td><code>/rpgadmin npc tag</code></td><td>Identifie le PNJ visé avec un id auto-généré (<code>npc_&lt;n&gt;</code>).</td></tr>
+        <tr><td><code>/rpgadmin npc tag &lt;id&gt;</code></td><td>Identifie le PNJ visé avec l'id choisi (minuscules, chiffres, <code>. _ -</code>).</td></tr>
+        <tr><td><code>/rpgadmin npc untag</code></td><td>Retire l'identifiant (le PNJ Citizens lui-même n'est jamais supprimé).</td></tr>
+        <tr><td><code>/rpgadmin npc info</code></td><td>Affiche l'id actuel — pour un PNJ Citizens, ajoute <code>(Citizens NPC #n)</code>.</td></tr>
+      </tbody>
+    </table>
+    <p class="text-body-secondary small">
+      <code>tag</code> est idempotent : sur un PNJ déjà identifié, il renvoie l'id existant sans
+      rien changer — faites <code>untag</code> d'abord pour en choisir un autre.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Associer un PNJ à un dialogue/une quête</h2>
+    <pre class="rpgq-code"><code># Quête (objectif TALK_TO_NPC) — l'id doit correspondre exactement
+steps:
+  - id: parler_au_libraire
+    objectives:
+      - type: TALK_TO_NPC
+        npc: libraire
+
+# Dialogue — l'id (sans namespace) doit correspondre exactement à l'id du PNJ
+# rpgquest:libraire s'ouvre automatiquement au clic sur le PNJ identifié "libraire"
+id: rpgquest:libraire</code></pre>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Créer un PNJ de A à Z</h2>
+    <p class="text-body-secondary">
+      Procédure complète, de la création du PNJ Citizens à son identification RPGQuest. Les
+      commandes <code>/npc ...</code> ci-dessous sont des commandes <strong>Citizens</strong>
+      (vérifiées sur <a href="https://wiki.citizensnpcs.co/Commands" target="_blank" rel="noopener">wiki.citizensnpcs.co</a>),
+      pas des commandes RPGQuest — RPGQuest n'intervient qu'à partir de l'étape 5.
+    </p>
+    <ol class="text-body-secondary">
+      <li>
+        <strong>Créer le PNJ Citizens</strong>, à votre position actuelle :
+        <pre class="rpgq-code"><code>/npc create "Jean - le guide"</code></pre>
+      </li>
+      <li>
+        <strong>Lui donner un nom</strong> — déjà fait ci-dessus en un seul passage (le nom est un
+        argument direct de <code>/npc create</code>, entre guillemets s'il contient un espace). Pour
+        renommer un PNJ déjà créé et sélectionné :
+        <pre class="rpgq-code"><code>/npc rename "Jean - le guide"</code></pre>
+      </li>
+      <li>
+        <strong>Positionner le PNJ</strong> à l'emplacement voulu : placez-vous à l'endroit exact
+        (le PNJ créé à l'étape 1 est automatiquement sélectionné), puis :
+        <pre class="rpgq-code"><code>/npc tphere</code></pre>
+      </li>
+      <li>
+        <strong>Appliquer un skin</strong> (optionnel) — disponible directement, car
+        <code>/npc create</code> crée par défaut un PNJ de type <code>PLAYER</code>, qui supporte
+        les skins :
+        <pre class="rpgq-code"><code>/npc skin &lt;PseudoJoueur&gt;</code></pre>
+        RPGQuest n'a aucun rôle dans cette étape, entièrement gérée par Citizens.
+      </li>
+      <li>
+        <strong>Attribuer un id RPGQuest stable.</strong> Regardez le PNJ directement (à 6 blocs
+        maximum, voir la commande <code>/rpgadmin npc</code> ci-dessus), puis :
+        <pre class="rpgq-code"><code>/rpgadmin npc tag jean_guide</code></pre>
+      </li>
+      <li>
+        <strong>Vérifier l'association</strong>, toujours en regardant le PNJ :
+        <pre class="rpgq-code"><code>/rpgadmin npc info</code></pre>
+        Doit afficher <code>jean_guide (Citizens NPC #n)</code>.
+      </li>
+      <li>
+        <strong>Trois identifiants différents, à ne pas confondre :</strong>
+        <ul>
+          <li><strong>Nom visible</strong> (<code>Jean - le guide</code>) — purement cosmétique,
+            modifiable à tout moment (<code>/npc rename</code>) sans jamais casser le lien
+            RPGQuest.</li>
+          <li><strong>Id Citizens</strong> (ex. <code>#7</code>, affiché entre parenthèses par
+            <code>/rpgadmin npc info</code>) — numérique, attribué par Citizens, non garanti stable
+            dans le temps : jamais utilisé par RPGQuest comme clé de persistance.</li>
+          <li><strong>Id RPGQuest</strong> (<code>jean_guide</code>) — celui attribué par
+            <code>/rpgadmin npc tag</code>, le seul utilisé dans les fichiers de quête/dialogue
+            (<code>npc: jean_guide</code>, <code>id: rpgquest:jean_guide</code>).</li>
+        </ul>
+      </li>
+      <li>
+        <strong>Déplacer le PNJ plus tard</strong> (après cette procédure initiale) : resélectionnez-le
+        avec Citizens, puis retéléportez-le comme à l'étape 3 :
+        <pre class="rpgq-code"><code>/npc select jean_guide   # ou /npc select &lt;id numérique Citizens&gt;
+/npc tphere</code></pre>
+        L'id RPGQuest n'est pas affecté par un déplacement : il est lié à
+        <code>NPC#getUniqueId()</code>, jamais à la position.
+      </li>
+      <li>
+        <strong>Retirer uniquement le tag RPGQuest</strong> (le PNJ Citizens lui-même reste en
+        place) : en regardant le PNJ :
+        <pre class="rpgq-code"><code>/rpgadmin npc untag</code></pre>
+      </li>
+      <li>
+        <strong>Supprimer complètement le PNJ Citizens</strong> (irréversible côté Citizens) :
+        faites l'étape précédente d'abord si un id RPGQuest est encore associé (voir « Limites
+        connues » ci-dessous) :
+        <pre class="rpgq-code"><code>/npc select jean_guide
+/npc remove</code></pre>
+      </li>
+    </ol>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Exemple : Jean - le guide</h2>
+    <p class="text-body-secondary">
+      Séquence complète, dans l'ordre, copiable directement dans Minecraft (adaptez le pseudo du
+      skin) :
+    </p>
+    <pre class="rpgq-code"><code># 1-2. Créer le PNJ avec son nom
+/npc create "Jean - le guide"
+
+# 3. Se placer à l'emplacement voulu, puis déplacer le PNJ (déjà sélectionné) dessus
+/npc tphere
+
+# 4. Skin (optionnel)
+/npc skin Notch
+
+# 5. Regarder le PNJ, puis lui attribuer un id RPGQuest stable
+/rpgadmin npc tag jean_guide
+
+# 6. Vérifier l'association (toujours en regardant le PNJ)
+/rpgadmin npc info
+# -> jean_guide (Citizens NPC #n)</code></pre>
+    <p class="text-body-secondary small">
+      À partir de là, <code>jean_guide</code> peut être référencé dans un fichier de quête
+      (<code>npc: jean_guide</code>) ou de dialogue (<code>id: rpgquest:jean_guide</code>) — voir
+      <a href="dialogues.html">Dialogues</a> et <a href="quests.html">Quêtes</a>.
+    </p>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Limites connues</h2>
+    <ul class="text-body-secondary">
+      <li>Aucune liste globale des PNJ identifiés — il faut viser physiquement l'entité.</li>
+      <li>Supprimer un PNJ Citizens (<code>/npc remove</code>) ne nettoie pas automatiquement le
+        mapping RPGQuest — faites <code>/rpgadmin npc untag</code> avant.</li>
+      <li>Aucune protection/persistance automatique du PNJ lui-même en dehors d'une zone protégée
+        (pas d'invulnérabilité ni de respawn intrinsèque) — RPGQuest ne gère que l'identité, pas le
+        cycle de vie de l'entité. À l'intérieur d'une zone protégée (voir
+        <a href="hub-safe-zone.html">Spawn du village</a>), un PNJ Citizens est en revanche protégé
+        de tout dégât par défaut (flag <code>npc-damage</code>).</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer class="text-center">
+  <div class="container">RPGQuest — documentation générée pour ce dépôt, à jour du code actuel.</div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

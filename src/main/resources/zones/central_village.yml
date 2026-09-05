@@ -12,8 +12,12 @@ flags:
   lava: false
   pistons-across-border: false
   hostile-spawn: false
+  hostile-damage: false
+  environmental-damage: false
+  npc-damage: false
   doors: true
   buttons: true
   levers: true
   npc-interact: true
   public-containers: false
+  force-day: true

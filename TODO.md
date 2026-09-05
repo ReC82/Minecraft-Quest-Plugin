@@ -642,6 +642,12 @@
 -   [x] Mod client prototype (Fabric, séparé)
 
 ## Plus tard
+-   [ ] Corriger `plugin.yml` : le texte d'usage de `/rpgadmin`
+    (`commands.rpgadmin.usage`) omet la sous-commande `mob`
+    (`spawn|list|inspect|reload|metrics`), qui existe pourtant réellement
+    dans le code (`RpgAdminCommand`) — n'affecte que le message d'aide
+    Bukkit affiché sur erreur de syntaxe, pas le comportement réel ; voir
+    [docs/RPGQUEST_BIBLE.md](docs/RPGQUEST_BIBLE.md) section 2.
 -   [ ] Prestataire de paiement réel (Stripe/PayPal en mode test)
 -   [ ] Connexion joueur sur le portail web
 -   [ ] Contenu client réel synchronisé serveur (nécessite un serveur Fabric/NeoForge compagnon ou un système de correspondance d'identifiants)

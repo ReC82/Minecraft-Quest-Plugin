@@ -15,7 +15,7 @@
 Confirmé par audit Git + build + tests le 2026-08-07 (session précédente) :
 étapes 1 à 10 réellement `DONE` (218 tests verts, `./gradlew clean build`
 vert, une branche `feature/NN-*` par étape, historique linéaire). Package
-Java confirmé : `be.lloyd.rpgquest` (aucune trace de `com.lodygames.rpgquest`
+Java confirmé : `com.lodygames.rpgquest` (aucune trace de `com.lodygames.rpgquest`
 nulle part dans le dépôt réel — le dépôt réel fait foi, voir règle de
 priorité des sources).
 
@@ -100,7 +100,7 @@ Paper vanilla-compatible — limite documentée), `ModNetworking` (canaux
 `PayloadTypeRegistry`/`ClientPlayNetworking`, réinitialisation à la
 déconnexion), `ModHud` (indicateur de statut).
 
-Portée réalisée, plugin (`be.lloyd.rpgquest.mod`) : `HandshakeProtocol`
+Portée réalisée, plugin (`com.lodygames.rpgquest.mod`) : `HandshakeProtocol`
 (encodage/décodage pur, testable sans MockBukkit — magic+byte pour le
 handshake, VarInt+UTF-8 compatible `PacketCodecs.STRING` pour le canal
 cosmétique, jamais l'inverse pour éviter tout désaccord de format),
@@ -162,7 +162,7 @@ octroi direct), routes site (`/store`, `/store/pay/*`) et API authentifiée
 (`/api/store/deliveries/pending|{id}/ack`, `/api/store/orders`,
 `/api/store/orders/{id}/refund`).
 
-Portée réalisée, plugin (`be.lloyd.rpgquest.store`) : `StoreConfig`
+Portée réalisée, plugin (`com.lodygames.rpgquest.store`) : `StoreConfig`
 (`config.yml` → `store:`, désactivé par défaut), `StoreProductRegistry`
 (YAML `store-products/*.yml`, cinq exemples, deux types d'octroi
 seulement — `BACKPACK_SIZE`/`ENTITLEMENT`, aucun attribut de combat

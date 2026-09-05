@@ -1,0 +1,20 @@
+# QUÊTE DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md, section
+# « Pack de quêtes de test manuel » pour la procédure d'activation/retrait.
+id: rpgquest:test_break_block
+title: "<red>[TEST] Casser des blocs</red>"
+description: "<gray>Quête de test manuel — objectif BREAK_BLOCK. Casse 3 blocs de terre.</gray>"
+category: test
+icon: DIRT
+repeatable: true
+
+steps:
+  - id: break_dirt
+    objectives:
+      - type: BREAK_BLOCK
+        material: DIRT
+        amount: 3
+
+rewards:
+  - type: EXPERIENCE
+    amount: 5

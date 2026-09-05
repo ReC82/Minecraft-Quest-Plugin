@@ -1,0 +1,82 @@
+# PNJ Jo (Citizens), créé/configuré manuellement par un administrateur — voir
+# docs/NPC_DIALOGUES_QUESTS_GUIDE.md, section 6 (/rpgadmin npc tag jo). Ce fichier ne crée jamais
+# le PNJ lui-même, seulement son dialogue logique (id = id NPC, convention du projet).
+#
+# Règles (mission « premier claim 5×5 ») :
+# - l'option n'est visible que si CLAIM_TIER_1 est débloqué (VARIABLE_EQUALS) ET qu'aucun claim
+#   principal n'existe encore (NO_MAIN_CLAIM) ;
+# - tant que ces deux conditions tiennent, Jo redonne l'Acte gratuitement à chaque fois (aucune
+#   condition sur l'inventaire : le perdre n'empêche jamais de le redemander) ;
+# - dès qu'un claim existe, NO_MAIN_CLAIM devient faux et l'option disparaît d'elle-même.
+#
+# Règles (mission « Jo : retourner à son claim ») :
+# - « Me rendre sur ma propriété » n'est visible que si le joueur possède déjà un claim principal
+#   (HAS_MAIN_CLAIM, strict opposé de NO_MAIN_CLAIM ci-dessus) ;
+# - jamais de coordonnées ici : l'action déclenche /claim admin sendhome (RUN_SAFE_COMMAND, "claim"
+#   whitelisté dans config.yml → dialogue.allowed-commands), qui résout le claim persistant du joueur
+#   et cherche une position sûre à chaque appel — fonctionne après reconnexion/redémarrage ;
+# - le portail Hub -> claims reste le seul moyen d'explorer avant de poser son premier claim : Jo ne
+#   fait qu'offrir un accès rapide à une propriété déjà existante, jamais une alternative au portail.
+#
+# Règles (mission « MVP du monde claims » — visualisation des limites / Pierre de retour) :
+# - « Revoir les limites de ma propriété » (re)donne l'Acte de propriété, désormais un outil de
+#   visualisation non consommable une fois un claim posé (voir claim.DeedClaimListener) — visible
+#   seulement si le joueur a un claim principal ET n'a pas déjà l'Acte en poche (LACKS_CUSTOM_ITEM),
+#   pour ne jamais permettre d'en farmer inutilement ;
+# - « Obtenir une Pierre de retour » donne l'objet de voyage claims -> Hub (travel.ItemTravelService),
+#   même garde LACKS_CUSTOM_ITEM ; objet permanent, jamais consommé, donc l'option redevient
+#   invisible dès qu'il est en poche et ne réapparaît que s'il est perdu.
+id: rpgquest:jo
+start: greeting
+
+nodes:
+  greeting:
+    speaker: "Jo"
+    text: "<white>Bonjour voyageur ! Que puis-je faire pour toi ?</white>"
+    choices:
+      - text: "Je viens réclamer mon acte de propriété"
+        conditions:
+          - type: VARIABLE_EQUALS
+            key: CLAIM_TIER_1
+            value: "true"
+          - type: NO_MAIN_CLAIM
+        actions:
+          - type: RUN_SAFE_COMMAND
+            command: "customitem give %player% rpgquest:acte_propriete 1"
+        next: deed_given
+      - text: "Me rendre sur ma propriété"
+        conditions:
+          - type: HAS_MAIN_CLAIM
+        actions:
+          - type: RUN_SAFE_COMMAND
+            command: "claim admin sendhome %player%"
+          - type: CLOSE
+      - text: "Revoir les limites de ma propriété"
+        conditions:
+          - type: HAS_MAIN_CLAIM
+          - type: LACKS_CUSTOM_ITEM
+            item: rpgquest:acte_propriete
+        actions:
+          - type: RUN_SAFE_COMMAND
+            command: "customitem give %player% rpgquest:acte_propriete 1"
+          - type: CLOSE
+      - text: "Obtenir une Pierre de retour"
+        conditions:
+          - type: HAS_MAIN_CLAIM
+          - type: LACKS_CUSTOM_ITEM
+            item: rpgquest:pierre_retour
+        actions:
+          - type: RUN_SAFE_COMMAND
+            command: "customitem give %player% rpgquest:pierre_retour 1"
+          - type: CLOSE
+      - text: "Rien pour le moment, merci"
+        actions:
+          - type: CLOSE
+
+  deed_given:
+    speaker: "Jo"
+    text: "<green>Tiens, voici ton acte de propriété !</green> <gray>Rends-toi dans le monde des claims et fais un clic droit avec pour poser ton premier terrain.</gray>"
+    choices:
+      - text: "Merci Jo"
+        actions:
+          - type: CLOSE

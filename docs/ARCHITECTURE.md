@@ -2,7 +2,7 @@
 
 ## Arborescence des packages (prévue)
 
-    be.lloyd.rpgquest
+    com.lodygames.rpgquest
     ├── RPGQuestPlugin       (point d'entrée, délègue tout à bootstrap)
     ├── admin                (/rpgadmin : aplatissement de terrain, zones, portails, mobs spéciaux)
     ├── backpack             (inventaire virtuel persistant par joueur, trois paliers)
@@ -31,6 +31,7 @@
     │   ├── model            (modèles immuables : définition de variante, capacités)
     │   └── ability          (écouteurs/services par capacité : explosion, agressivité, division)
     ├── mod                  (détection de compatibilité avec le mod client prototype, protocole)
+    ├── npc                  (identité stable d'un PNJ, indépendante de son nom affiché ; PNJ Citizens pris en charge en priorité, mapping persisté en base — voir docs/NPC_DIALOGUES_QUESTS_GUIDE.md)
     ├── player
     ├── progression          (XP RPG multi-compétences, indépendante de l'XP vanilla)
     │   ├── model            (modèles immuables : compétence, courbe de niveaux, résultat d'octroi)
@@ -319,14 +320,19 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
     désormais vérifiés un par un contre `quest_progress` : tous doivent être
     `COMPLETED` pour ce joueur, sinon `accept()` échoue en listant lesquels
     manquent.
--   **`TALK_TO_NPC` sans système de PNJ dédié** — `QuestNpcInteractListener`
-    écoute `PlayerInteractEntityEvent` et compare le nom personnalisé
-    (`Entity#customName()`, converti en texte brut via
-    `PlainTextComponentSerializer`, aucune dépendance Citizens) de l'entité
-    clic-droitée à l'id configuré dans l'objectif. N'importe quelle entité
-    vivante renommée (à l'enclume, par exemple) peut donc servir de PNJ
-    temporaire — limitation assumée, un vrai système de PNJ est hors
-    périmètre de cette étape.
+-   **`TALK_TO_NPC` sans système de PNJ dédié, identité découplée du nom
+    affiché** — `QuestNpcInteractListener` écoute `PlayerInteractEntityEvent`
+    et compare l'identifiant stable de l'entité clic-droitée (voir package
+    `npc`, ci-dessous) à l'id configuré dans l'objectif. N'importe quelle
+    entité vivante marquée par `/rpgadmin npc tag` peut donc servir de PNJ
+    temporaire — toujours aucune dépendance à Citizens, un vrai système de
+    PNJ reste hors périmètre. Avant l'introduction de `npc.NpcIdentityService`,
+    cette comparaison portait directement sur `Entity#customName()` (texte
+    brut via `PlainTextComponentSerializer`) : ce couplage a été supprimé
+    parce que `DialogueNpcInteractListener` (voir plus bas) construisait une
+    `NamespacedKey` directement à partir de ce nom affiché, qui peut contenir
+    n'importe quel caractère — une entité renommée avec une majuscule ou une
+    espace (ex. « Guide ») levait `IllegalArgumentException` au clic droit.
 -   **Persistance** — `QuestProgressRepository` (`database`, requêtes
     préparées, `ON CONFLICT` pour les upserts) couvre `quest_progress`
     (état + étape courante) et la nouvelle table `quest_objective_progress`
@@ -455,12 +461,14 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
         aussi un chemin joueur légitime, pas seulement un outil de test
         admin).
 -   **PNJ partagé avec les quêtes** — `DialogueNpcInteractListener` (clic
-    sur une entité) réutilise exactement la même convention que
-    `QuestNpcInteractListener` (étape 04) : le nom personnalisé de
-    l'entité identifie ce qu'elle représente. Un même PNJ renommé
-    « guard » peut donc à la fois satisfaire un objectif `TALK_TO_NPC` et
-    ouvrir le dialogue `rpgquest:guard` — cohérence volontaire entre les
-    deux systèmes, toujours sans dépendance à Citizens.
+    sur une entité) réutilise exactement la même identité stable que
+    `QuestNpcInteractListener` (voir package `npc`, ci-dessous) : l'entité
+    marquée `guard` via `/rpgadmin npc tag guard` peut donc à la fois
+    satisfaire un objectif `TALK_TO_NPC npc: guard` et ouvrir le dialogue
+    `rpgquest:guard` — cohérence volontaire entre les deux systèmes, toujours
+    sans dépendance à Citizens. Le nom personnalisé affiché au-dessus de
+    l'entité (ex. « Garde du village ») reste purement cosmétique et peut
+    être changé librement sans jamais toucher à cette identité.
 -   **`/dialogue open <joueur> <dialogueId>`** (`rpgquest.admin`) — seule
     commande demandée par la mission ; aucune commande n'est nécessaire
     pour sélectionner un choix (`ClickEvent.callback` est un mécanisme
@@ -1212,8 +1220,10 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
 Vertical slice minimal reliant tous les systèmes livrés, construit sur
 l'existant plutôt qu'un nouveau système dédié :
 
-1.  Parler au garde (`dialogues/guard.yml`) → accepter `first_steps` (déjà
-    existante depuis l'étape 3).
+1.  Marquer l'entité qui joue le rôle du garde avec
+    `/rpgadmin npc tag guard` (identité stable, indépendante de son nom
+    affiché — voir package `npc`), puis lui parler (`dialogues/guard.yml`)
+    → accepter `first_steps` (déjà existante depuis l'étape 3).
 2.  Tuer 10 araignées → remise automatique de `first_steps`
     (`TALK_TO_NPC`-free : uniquement `KILL_ENTITY`, une seule étape).
 3.  Reparler au garde (nouveau choix, visible seulement une fois
@@ -1351,6 +1361,37 @@ qu'embarqués dans le jar.
     boutons, dialogues PNJ) sans configuration supplémentaire, alors que
     l'accès à un conteneur partagé est un risque de vol qui justifie un
     opt-in explicite. Voir `docs/SAFE_ZONE.md` pour le détail complet.
+-   **Village central : trois protections « sécurité du joueur » ajoutées
+    au groupe « bloqué par défaut »** (`hostile-damage`, `environmental-damage`,
+    `npc-damage`) — la mission « village central / safe zone » exige
+    explicitement des dégâts de mob hostile, des dégâts environnementaux
+    (chute, noyade, faim...) et une protection des PNJ Citizens, aucun des
+    trois n'étant couvert par les flags existants (`pvp` ne couvre qu'un
+    attaquant `Player`, `explosions` que la cause explosion). Ajoutés en
+    fin de liste de champs du record `ZoneFlags` (pas insérés au milieu)
+    pour ne casser aucun appel positionnel existant ; absence dans un
+    fichier YAML déjà écrit (ancienne zone) => `ZoneDefinitionParser`
+    retombe sur `ZoneFlags.defaults()`, donc `false` (protégé) — une zone
+    créée avant cette mission devient protégée sans action de
+    l'administrateur, jamais l'inverse. Dégâts environnementaux **jamais
+    exemptés pour un bypass admin** (contrairement à casse/pose/PvP/PNJ) :
+    il n'y a pas d'« acteur » distinct de la victime pour une chute ou une
+    noyade, donc rien à exempter côté acteur — un admin qui voudrait
+    prendre des dégâts délibérément le ferait hors zone.
+-   **`forceDay` — pas une protection, un réglage cosmétique séparé** —
+    Minecraft/Paper n'offre aucune heure différente pour une seule région
+    d'un même monde (`World#setTime` est global par monde) ; figer
+    l'horloge du monde entier pour un confort visuel local casserait la
+    pousse des cultures et le spawn de monstres partout ailleurs. Solution
+    retenue : `Player#setPlayerTime`/`resetPlayerTime` (API Bukkit stable,
+    pas expérimentale), appliqué uniquement pendant qu'un joueur est
+    physiquement dans une zone `force-day: true`, jamais l'horloge du
+    monde — réutilise le même suivi de zone que l'affichage d'entrée/
+    sortie (`PlayerMoveEvent` filtré), plus `PlayerJoinEvent` pour l'état
+    initial d'un joueur qui apparaît déjà dans la zone (ex. spawn du
+    village). `false` par défaut sur `ZoneFlags.defaults()` (une zone
+    neuve ne change jamais le rendu du ciel sans opt-in explicite) ;
+    activé explicitement sur l'exemple embarqué `central_village.yml`.
 -   **`ZoneProtectionListener` — un seul point de vérification par
     catégorie d'événement**, chacun suivant le même patron
     (`zoneAt(location)` puis test du flag concerné) :
@@ -1401,10 +1442,18 @@ qu'embarqués dans le jar.
 -   **`ZoneSelectionService`/`ZoneWandListener`** — même conception que les
     sessions de dialogue/journal : état de sélection **en mémoire
     uniquement**, aucune raison de survivre à une reconnexion. L'outil
-    (hache en bois) est reconnu **exclusivement** par son
+    (tige de blaze) est reconnu **exclusivement** par son
     PersistentDataContainer (`rpgquest:zone_wand`), jamais par son nom
     affiché — même garantie anti-contrefaçon que les objets personnalisés
-    de l'étape 7.
+    de l'étape 7. Le matériau n'est volontairement **pas** une hache en
+    bois : bug constaté en test réel sur VeryGames (WorldEdit 7.4.1) —
+    WorldEdit reconnaît sa propre wand par défaut (`wand-item` dans sa
+    config) par **type d'objet**, pas par PDC, donc n'importe quelle hache
+    en bois déclenchait aussi sa sélection à lui et annulait parfois
+    l'événement avant que RPGQuest ne le voie. `ZoneWandListener` écoute en
+    plus avec `ignoreCancelled = false` (priorité `HIGHEST`) pour rester
+    utilisable même si un autre plugin annule l'interaction en premier —
+    sans risque de collision puisque la reconnaissance reste par PDC.
 -   **Pas de rechargement à chaud d'une zone éditée à la main** — modifier
     directement un fichier de zone existant sur disque n'est repris qu'au
     prochain redémarrage (pas de commande `/rpgadmin zone reload` à cette
@@ -1503,6 +1552,66 @@ qu'embarqués dans le jar.
     section `admin`), réutilisant l'outil de sélection `wand` déjà existant
     pour délimiter la zone d'activation — aucun nouvel outil nécessaire.
 
+### Diagnostic WorldPortal (`/rpgadmin worldportal here`/`debug`, `TP-TRACE`)
+
+Ajouté pour investiguer un bug de téléportation automatique dans le Hub rapporté sur VeryGames,
+sans corriger la logique fonctionnelle « à l'aveugle » (consigne explicite de la mission — voir
+`docs/TRAVEL.md` pour l'analyse complète).
+
+-   **`WorldPortalRegistry#portalsContaining` ajouté à côté de `portalAt`, jamais en remplacement**
+    — `portalAt` (utilisé en jeu par `WorldPortalTeleportListener`) continue de ne renvoyer que la
+    première zone trouvée par ordre alphabétique de fichier ; `portalsContaining` (nouveau, utilisé
+    uniquement par `/rpgadmin worldportal here`) renvoie **toutes** les zones contenant une
+    position. Existaient déjà séparément dans l'esprit du code (`portalAt` doit rester bon marché à
+    chaque `PlayerMoveEvent`) — pas de fusion des deux pour ne jamais ralentir le chemin chaud.
+-   **Anomalie documentée dans le Javadoc de `WorldPortalRegistry`, pas corrigée** : `reload()`
+    (donc `start()`, et implicitement chaque `create()`/`enable`/`disable`/`delete` qui rappelle
+    `reload()` ensuite) ne fait aucune validation croisée entre fichiers (id dupliqué,
+    chevauchement) — contrairement à `zone.ZoneLoader`/`travel.PortalLoader`. Seul `create()`
+    (donc uniquement `/rpgadmin worldportal create`) vérifie les chevauchements, et seulement à la
+    création. Un fichier ajouté/édité à la main peut donc faire coexister deux zones actives
+    superposées sans qu'aucune erreur ne soit jamais journalisée — cause plausible du bug de
+    téléportation automatique, non confirmée. Preuve exécutable :
+    `WorldPortalRegistryTest#reloadNeverRejectsOverlappingZonesIntroducedByManuallyPlacedFiles`/
+    `#reloadNeverRejectsDuplicateIdsIntroducedByManuallyPlacedFiles`. Volontairement **non
+    corrigé** à cette étape (mission : diagnostic d'abord).
+-   **`WorldPortalDebugGeometry` — fonction purement géométrique, zéro dépendance Bukkit** — même
+    rationale que `travel.RandomSafeLocationFinder`/`quest.model` pour la testabilité sans
+    MockBukkit. Échantillonne les 12 arêtes du cuboïde avec un décalage de +1 sur les bornes max
+    (`WorldPortalDefinition#contains` est inclusif sur `maxX`/`maxY`/`maxZ` : le coin visuel réel
+    est la face extérieure de ce bloc, pas son coin intérieur — sans ce +1 le contour affiché
+    paraîtrait plus petit d'un bloc que le volume réellement actif, trompeur pour un diagnostic).
+-   **`WorldPortalDebugService` — état global, jamais par joueur** : `World#spawnParticle`
+    diffuse nativement à tous les joueurs à proximité, donc aucun ciblage par joueur n'est
+    nécessaire ni implémenté. Rendu **isolé par portail** dans la boucle de rafraîchissement (`try`/
+    `catch` autour du rendu de chaque zone) : un échec de rendu sur une zone (API d'affichage
+    indisponible, position aberrante) ne doit jamais empêcher les autres zones visibles de se
+    dessiner au même cycle, ni interrompre la tâche répétée elle-même — ajout motivé par une
+    limitation concrète de MockBukkit (`DisplayMock#setBillboard` non implémenté à ce jour),
+    mais une protection légitime et utile indépendamment de l'environnement de test.
+-   **Jamais de modification de bloc** (consigne explicite de la mission) — particules
+    (`Particle.DUST`, couleur dérivée d'un hash de l'id pour distinguer deux zones superposées) et
+    une étiquette flottante (`TextDisplay`, `setPersistent(false)` — jamais sauvegardée sur disque,
+    disparaît à un déchargement de chunk/redémarrage) uniquement. `stop()` retire explicitement
+    toute étiquette encore affichée (annulation à 100%, même en cas de rechargement du plugin).
+-   **`travel.TpTraceLogger` — format centralisé, une seule classe à retirer plus tard** — plutôt
+    que des chaînes de log ad hoc dispersées dans chaque appelant (c'était le cas avant cette
+    étape) : un seul format garanti identique partout, et un seul endroit à supprimer une fois
+    l'instrumentation devenue inutile. Champs non pertinents pour un événement donné rendus `"-"`
+    plutôt qu'omis, pour que la position des colonnes reste stable en cherchant dans les logs.
+-   **`event=external_teleport` peut se recouper avec le propre `teleport()`/`teleportAsync()` de
+    RPGQuest** — un garde-fou de ré-entrance (`selfInitiatedTeleport`, `Set<UUID>`) supprime ce
+    doublon pour `WorldPortalTeleportListener` (appel synchrone, fenêtre de ré-entrance fiable),
+    mais aucun garde-fou équivalent n'a été ajouté pour `PortalService` (`teleportAsync`,
+    potentiellement différé au tick suivant — la complexité d'un garde-fou partagé entre les deux
+    classes a été jugée disproportionnée pour une instrumentation temporaire). Documenté
+    explicitement dans le Javadoc de `onTeleport` plutôt que silencieusement laissé comme un bug.
+-   **`RpgAdminCommand` : les logs `TP-TRACE` ad hoc de `/rpgadmin spawn tp`/`world tp` (ajoutés
+    lors d'une session précédente) ont été retirés** — désormais couverts génériquement par
+    `WorldPortalTeleportListener#onTeleport` (`event=external_teleport`), qui capte tout
+    `PlayerTeleportEvent` quelle qu'en soit l'origine. Éviter un doublon incohérent plutôt que de
+    maintenir deux formats de log pour la même téléportation.
+
 ## `claim` (claims de terrain joueurs)
 
 -   **SQLite plutôt que YAML, contrairement à `zone`** — décision
@@ -1531,8 +1640,9 @@ qu'embarqués dans le jar.
     `zone.ZoneSelectionService`, pas une réutilisation : un joueur qui est
     aussi administrateur ne doit pas voir sa sélection de claim mélangée à
     sa sélection de zone protégée (deux services, deux états en mémoire
-    totalement indépendants). Hache en **bois** différente (houe plutôt que
-    hache) pour que les deux outils restent visuellement distincts en jeu.
+    totalement indépendants). Matériau différent (houe en bois plutôt que
+    tige de blaze) pour que les deux outils restent visuellement distincts
+    en jeu.
 -   **Toutes les sous-commandes `/claim` sauf `create` opèrent sur « le
     claim où tu te trouves », jamais sur un id tapé à la main** — lecture
     littérale de la mission, qui ne montre un argument que pour
@@ -2053,6 +2163,32 @@ Fabrication → Remise → Récompense
     Choix d'un fichier séparé plutôt que d'alourdir `config.yml` (qui reste
     dédié aux réglages, pas au texte) — convention courante dans
     l'écosystème Bukkit.
+-   **Notifications de quête sobres — Title/ActionBar, jamais le chat**
+    (`QuestProgressEngine#showQuestStarted`/`#showQuestCompleted`/
+    `#showObjectiveProgress`) — trois événements fréquents (démarrage, fin,
+    et surtout progression d'objectif, qui peut arriver plusieurs fois par
+    seconde en combat) envoyaient auparavant un message de chat, un canal
+    persistant mal adapté à une notification transitoire et vite noyé sous
+    d'autres messages. Canal choisi par fréquence/importance : démarrage et
+    fin de quête (rares, un seul par quête) via un `Title` Adventure plein
+    écran bref (`FEEDBACK_TITLE_TIMES` : 250 ms/2,5 s/500 ms) ; progression
+    d'objectif (potentiellement très fréquente) via l'`ActionBar`, qui se
+    remplace en place plutôt que d'empiler des lignes — même canal que
+    `ProgressionService#display` pour l'XP, qui résout exactement le même
+    problème de fréquence. Le texte reste entièrement piloté par
+    `messages.yml` (`quest.started-title`/`started-subtitle`,
+    `quest.objective-progress`, `quest.completed-title`/`completed-subtitle`)
+    — jamais une quête codée en dur, le placeholder `<quest>` reçoit
+    toujours `quest.title().base()` au moment de l'appel. `QuestCommand`
+    n'envoie plus de message pour `AcceptOutcome.Result.ACCEPTED` (branche
+    vide dans le switch) : le `Title` de `QuestProgressEngine.accept()`
+    suffit, quel que soit le point d'entrée (`/quest accept` ou l'action de
+    dialogue `START_QUEST`) — un message en plus aurait été un doublon.
+    Le message `quest.step-completed` (transition vers une étape
+    intermédiaire, pas la dernière) a été retiré sans remplacement : cette
+    transition suit toujours la complétion du dernier objectif de l'étape
+    précédente, déjà signalée à l'instant par l'`ActionBar` de progression —
+    un second message aurait fait doublon.
 -   **Bug de migration de schéma corrigé pendant cette étape** :
     l'ajout de la migration V2 (`quest_objective_progress`) a révélé que
     `SchemaMigrator.migrate()` ne persistait jamais la nouvelle version via
@@ -2147,11 +2283,13 @@ Fabrication → Remise → Récompense
     mais ne pilotent encore aucun comportement réel (pas d'i18n, pas d'envoi
     de resource pack aux joueurs) — prévu pour des étapes ultérieures
     dédiées.
--   `TALK_TO_NPC` repose sur le nom personnalisé d'une entité vivante
-    quelconque (voir section `quest.progress`) : aucun système de PNJ dédié
-    n'existe (pas d'invulnérabilité, d'IA figée, de dialogue). `COMMAND` et
-    `VARIABLE` (récompenses) s'exécutent bien à la remise, mais aucune
-    commande ne permet encore de *lire* une `player_variable` en jeu.
+-   `TALK_TO_NPC` repose sur une entité vivante quelconque marquée par
+    `npc.NpcIdentityService` (voir section `quest.progress` et package `npc`,
+    identité indépendante du nom affiché depuis le refactor décrit plus bas) :
+    aucun système de PNJ dédié n'existe (pas d'invulnérabilité, d'IA figée, de
+    dialogue). `COMMAND` et `VARIABLE` (récompenses) s'exécutent bien à la
+    remise, mais aucune commande ne permet encore de *lire* une
+    `player_variable` en jeu.
 -   Fenêtre de risque théorique, non traitée : si le processus plante entre
     l'octroi d'une récompense (déjà appliqué au joueur) et la confirmation
     de l'écriture asynchrone de `state = COMPLETED` en base, un redémarrage
@@ -2465,3 +2603,103 @@ Fabrication → Remise → Récompense
     réseau, téléportation avec un inventaire chargé et une quête active,
     test depuis/vers une safe zone réelle) reste à valider par un testeur
     humain — voir `docs/TRAVEL.md`.
+
+## `story` (moteur de Storyline)
+
+-   **Connexion au moteur de quête, décision structurante de cette étape**
+    — `story.StoryService` référence désormais directement
+    `quest.progress.QuestProgressEngine` et `quest.YamlQuestEngine`,
+    contrairement à l'étape précédente qui les gardait délibérément
+    séparés. `questIds` d'une Story reste jamais résolu **au chargement**
+    (`StoryDefinitionParser` — une Story peut toujours référencer un id de
+    quête pas encore chargé sans erreur, pour ne dépendre d'aucun ordre de
+    démarrage entre les deux moteurs), mais est résolu **à l'exécution**
+    dans `StoryService#evaluateStory`/`advanceStory`/`startCurrentQuest`.
+-   **`StoryService` gagne un cache mémoire des Stories `ACTIVE`, même
+    conception que `QuestProgressEngine#activeByPlayer`** — nécessaire
+    depuis que la progression est automatique : c'est ce cache (pas la
+    base) qui sert de verrou anti-double-avance (voir plus bas), et il
+    doit être chargé à la connexion (`StoryConnectionListener`, copie du
+    patron `quest.progress.QuestProgressConnectionListener`) pour que
+    l'auto-guérison après reconnexion fonctionne.
+-   **Idempotence sans verrou explicite — même patron que
+    `QuestProgressEngine#turnIn`/`checkStepCompletion`** :
+    `StoryService#advanceStory` vérifie, juste avant de muter l'index en
+    mémoire, que la Story pointe encore vers la quête dont la complétion a
+    déclenché l'appel (comparaison directe, pas un flag de verrouillage
+    séparé) — un appel concurrent qui a déjà fait avancer l'index entre
+    temps voit cette vérification échouer et ne rejoue rien. Toute
+    interaction avec un `Player` (le `accept()` de la quête suivante, les
+    messages de chat) est systématiquement renvoyée sur le thread
+    principal via `runTask` avant d'agir, y compris quand
+    `onQuestProgressChanged` est lui-même invoqué depuis un thread autre
+    que principal (`QuestProgressEngine#accept` complète parfois son
+    `CompletableFuture` sur le thread exécuteur de la base de données, pas
+    toujours sur le thread principal).
+-   **Aucune récompense distribuée par la Story elle-même** — elle
+    n'appelle jamais que `QuestProgressEngine#accept` (jamais `turnIn`/
+    `grantRewards`), qui ne distribue de récompense qu'à la remise d'une
+    quête, déjà protégée par sa propre garde
+    (`if (progress.state() == QuestState.COMPLETED) return;`). Rien à
+    dédupliquer côté Story pour cette raison précise.
+-   **Reprise après redémarrage/reconnexion — auto-guérison, pas une
+    simple relecture** — `StoryService#loadForPlayer` ne se contente pas
+    de recharger l'index persisté : pour chaque Story `ACTIVE`, il
+    consulte l'état réel de la quête courante (`QuestProgressEngine#stateOf`)
+    et rattrape les trois cas anormaux possibles (jamais acceptée →
+    démarrée ; déjà `COMPLETED`, ex. crash entre la complétion et
+    l'avancement Story → la Story avance immédiatement ;
+    `ABANDONED`/`FAILED` → re-démarrée) en plus du cas normal (`ACTIVE`,
+    rien à faire). Voir `docs/storylines.md`, section « Reprise après
+    reconnexion/redémarrage ».
+-   **Feedback dans le chat, jamais Title/Subtitle — décision délibérée
+    pour éviter une course d'affichage** avec le Title « Quête commencée »
+    que `QuestProgressEngine#accept` affiche déjà à chaque démarrage de
+    quête (Story ou non) : deux appels distincts à `Player#showTitle`
+    depuis deux `CompletableFuture` séparés n'ont aucune garantie d'ordre
+    d'exécution fiable, le second écraserait le premier de façon
+    imprévisible. Le chat n'a pas ce problème (les messages s'empilent) et
+    garde un historique consultable — voir `messages.yml`, section `story:`.
+-   **`resetwithquests`, nouvelle sous-commande, distincte de `reset`** —
+    mission point 5 : « ne décide pas silencieusement qu'un reset Story
+    doit supprimer toute la progression normale des quêtes ». `reset` seul
+    ne touche toujours que `story_progress` (comportement inchangé de
+    l'étape précédente) ; `resetwithquests` est le seul chemin qui touche
+    aussi aux quêtes, en réutilisant tel quel
+    `QuestProgressEngine#resetQuest` (déjà garanti de ne jamais toucher aux
+    autres quêtes du joueur) pour chaque id de `questIds()` de la Story
+    ciblée — pas de nouvelle logique de suppression de quête écrite ici,
+    pure réutilisation.
+-   **`NOT_STARTED` jamais persisté** — même convention que
+    `quest.model.QuestState` : l'absence de ligne dans `story_progress`
+    pour un couple joueur+story en tient lieu.
+-   **`current_index` (migration V14, `ALTER TABLE`) — vérifie d'abord que
+    la colonne n'existe pas avant de l'ajouter**, contrairement aux
+    migrations précédentes qui ne créaient que des tables (`CREATE TABLE
+    IF NOT EXISTS`, idempotent nativement). `ALTER TABLE ADD COLUMN` ne
+    l'est pas — sans cette vérification explicite, rejouer la migration
+    depuis une version antérieure (scénario couvert par
+    `SchemaMigratorTest#migratingFromAnAlreadyPartiallyMigratedDatabaseStillReachesCurrentVersion`,
+    qui a effectivement détecté ce bug avant qu'il n'atteigne production)
+    échouerait avec « duplicate column name ».
+-   **`/rpgadmin story` reste la seule branche de `/rpgadmin` utilisable
+    depuis la console** — inchangé depuis l'étape précédente.
+-   **Aucune commande `story create`/`delete`** — inchangé : les Stories
+    ne se créent qu'en éditant les fichiers YAML de
+    `plugins/RPGQuest/stories/` puis en redémarrant.
+-   **Test manuel limité par l'environnement** — aucun client Minecraft
+    réel disponible ici. Compensé par `StoryServiceTest`, désormais basé
+    sur MockBukkit (contrairement à l'étape précédente, pur JUnit) : un
+    vrai `QuestProgressEngine`/`YamlQuestEngine` chargés depuis un dossier
+    de quêtes temporaire, `QuestProgressEngine#forceComplete` pour simuler
+    une complétion sans dépendre d'un vrai événement de jeu (déjà couvert
+    ailleurs par `QuestProgressEngineTest`), et un helper `awaitUntil`
+    (même patron que `PortalServiceTest`) pour absorber les enchaînements
+    asynchrones + scheduler avant chaque assertion. Couvre : démarrage,
+    première quête auto-acceptée, avancement automatique, chaîne complète
+    jusqu'à `COMPLETED`, absence de double avancement, reprise après
+    déconnexion/redémarrage (dont la quête déjà terminée hors ligne),
+    `reset`/`resetwithquests`, deux Stories indépendantes pour le même
+    joueur, et une quête utilisée hors de toute Story active. Le ressenti
+    en jeu (tab-complete, rendu MiniMessage réel, timing du chat) reste à
+    valider par un testeur humain — voir `docs/storylines.md`.

@@ -6,7 +6,7 @@ pièces distinctes :
 
 1.  **Le plugin** exporte périodiquement un instantané en lecture seule
     (`plugins/RPGQuest/<web-export.output-dir>/snapshot.json`) — voir
-    `be.lloyd.rpgquest.web.WebSnapshotWriter` et la section
+    `com.lodygames.rpgquest.web.WebSnapshotWriter` et la section
     [`web-export` de config.yml](../src/main/resources/config.yml).
 2.  **Le module `web-api`**, un projet Gradle séparé (`web-api/`, aucune
     dépendance vers `io.papermc`/Paper, aucun accès à `data.db`), lit
@@ -57,7 +57,7 @@ Le contenu du snapshot :
 
 Processus JVM indépendant, aucune dépendance externe obligatoire : HTTP via
 `com.sun.net.httpserver` (JDK) et un codec JSON maison
-(`be.lloyd.rpgquest.webapi.json.Json`), tous deux fournis par le JDK ou
+(`com.lodygames.rpgquest.webapi.json.Json`), tous deux fournis par le JDK ou
 écrits dans ce module.
 
 ### Déploiement local
@@ -128,7 +128,7 @@ du jeton).
 `/` (accueil + annonces), `/status`, `/leaderboards`, `/wiki` (catalogue).
 Pages HTML strictement en lecture (aucune donnée envoyée par le
 visiteur n'est jamais persistée), échappement HTML systématique des
-données du snapshot (`be.lloyd.rpgquest.webapi.site.Html`). Ni paiement, ni
+données du snapshot (`com.lodygames.rpgquest.webapi.site.Html`). Ni paiement, ni
 connexion joueur, ni modification de données à cette étape (mission point
 11) — ce sera l'objet d'une étape ultérieure.
 
@@ -147,7 +147,7 @@ jamais une erreur 500.
 -   Jeton en temps constant (`java.security.MessageDigest.isEqual`), jamais
     de comparaison de chaînes classique (résistance aux attaques par
     mesure de temps).
--   Le journal d'accès (`be.lloyd.rpgquest.webapi.http.AccessLogger`)
+-   Le journal d'accès (`com.lodygames.rpgquest.webapi.http.AccessLogger`)
     n'écrit jamais l'en-tête `Authorization` ni aucun jeton — seulement
     méthode, chemin, IP, statut, durée.
 -   Toutes les données affichées (pseudos, annonces, catalogue) sont

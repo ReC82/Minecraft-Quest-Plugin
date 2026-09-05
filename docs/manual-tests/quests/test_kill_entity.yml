@@ -1,0 +1,20 @@
+# QUÊTE DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md, section
+# « Pack de quêtes de test manuel » pour la procédure d'activation/retrait.
+id: rpgquest:test_kill_entity
+title: "<red>[TEST] Tuer des zombies</red>"
+description: "<gray>Quête de test manuel — objectif KILL_ENTITY. Tue 2 zombies (invoque-les avec /summon zombie si besoin).</gray>"
+category: test
+icon: ROTTEN_FLESH
+repeatable: true
+
+steps:
+  - id: kill_zombies
+    objectives:
+      - type: KILL_ENTITY
+        entity: ZOMBIE
+        amount: 2
+
+rewards:
+  - type: EXPERIENCE
+    amount: 5

@@ -21,6 +21,7 @@ web-api/web-export/
 *.ipr
 *.iws
 out/
+bin/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json

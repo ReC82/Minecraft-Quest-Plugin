@@ -5,7 +5,7 @@ plugins {
     id("xyz.jpenilla.run-paper") version "3.0.2"
 }
 
-group = "be.lloyd.rpgquest"
+group = "com.lodygames.rpgquest"
 version = "0.1.0-SNAPSHOT"
 description = "RPGQuest - plugin RPG pour Paper"
 
@@ -18,6 +18,12 @@ repositories {
     maven("https://repo.papermc.io/repository/maven-public/") {
         name = "papermc"
     }
+    // CitizensAPI uniquement (pas le plugin complet citizens-main) : l'implémentation réelle est
+    // fournie à l'exécution par le plugin Citizens lui-même, s'il est installé (compileOnly,
+    // soft-dependency déclarée dans plugin.yml — voir com.lodygames.rpgquest.npc.NpcIdentityService).
+    maven("https://maven.citizensnpcs.co/repo") {
+        name = "citizensnpcs"
+    }
 }
 
 configurations {
@@ -27,6 +33,7 @@ configurations {
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
+    compileOnly("net.citizensnpcs:citizensapi:2.0.43-SNAPSHOT")
 
     testImplementation(platform("org.junit:junit-bom:5.14.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")

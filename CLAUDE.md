@@ -91,6 +91,72 @@ Whenever a feature changes behaviour:
 
 ------------------------------------------------------------------------
 
+## Session Reports (mandatory — Definition of Done)
+
+After EVERY development request, bug fix, diagnostic, refactor, migration,
+or configuration/documentation change made in this repository, create a
+Markdown report in `docs/claude-reports/` — see
+`docs/claude-reports/README.md` for the exact filename format and the
+required sections.
+
+This applies even if:
+
+-   the task was very small;
+-   no code was ultimately changed;
+-   the task ended up PARTIAL or BLOCKED;
+-   tests failed;
+-   the request was diagnostic-only.
+
+Rules:
+
+-   A task is not done until its report exists — this is part of the
+    Definition of Done, in addition to the steps under "Development
+    Workflow" above.
+-   The report must reflect what was actually done, not just what the
+    prompt originally asked for.
+-   Never edit a previous report to match the current state of the
+    project — reports are immutable history, not living documentation.
+-   After creating a report, add one line to the chronological index in
+    `docs/claude-reports/README.md`.
+-   This does not replace `docs/current_state.md`, `docs/ARCHITECTURE.md`,
+    `docs/RPGQUEST_BIBLE.md`, or other functional documentation, which
+    continue to be maintained as described under "Documentation" above —
+    reports are a separate, parallel history, written so that another
+    assistant with no memory of this session can pick up the work.
+-   Reports follow this project's established documentation language
+    (French), even though this file is in English.
+
+------------------------------------------------------------------------
+
+## Session Reports — Time Tracking (mandatory, permanent)
+
+Every Claude report's `Informations` section must also record, using the
+machine's real local time (never invented, never estimated):
+
+-   Début de la tâche : `YYYY-MM-DD HH:MM:SS`
+-   Fin de la tâche : `YYYY-MM-DD HH:MM:SS`
+-   Durée totale : `HH:MM:SS`
+
+Rules:
+
+-   Capture the start timestamp as close as reasonably possible to the
+    actual beginning of work on the request (not the beginning of an
+    unrelated prior task).
+-   Capture the end timestamp when the report itself is being finalized,
+    after implementation/tests/documentation are done.
+-   Compute the total duration from those two real timestamps — never
+    estimate or infer a "thinking time".
+-   If the exact start time genuinely could not be captured for the
+    current task, write `non mesurable` explicitly instead of guessing.
+-   For every future task, capture the start timestamp as early as
+    possible (ideally the first action taken) so the duration can be
+    computed accurately.
+
+This rule applies automatically to all future requests without needing to
+be repeated, and to the report template in `docs/claude-reports/README.md`.
+
+------------------------------------------------------------------------
+
 ## Java / Paper Plugin
 
 -   Follow Java best practices.

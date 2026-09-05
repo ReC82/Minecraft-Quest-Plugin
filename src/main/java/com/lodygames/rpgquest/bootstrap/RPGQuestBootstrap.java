@@ -61,6 +61,7 @@ import com.lodygames.rpgquest.economy.market.MarketService;
 import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
 import com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry;
 import com.lodygames.rpgquest.entitlement.EntitlementService;
+import com.lodygames.rpgquest.hub.HubGuideRegistry;
 import com.lodygames.rpgquest.hub.HubWorldProtectionListener;
 import com.lodygames.rpgquest.hub.HubWorldRulesService;
 import com.lodygames.rpgquest.item.RpgItemKeys;
@@ -111,7 +112,6 @@ import com.lodygames.rpgquest.travel.WorldPortalTeleportListener;
 import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
 import com.lodygames.rpgquest.travel.model.ItemTravelDefinition;
-import com.lodygames.rpgquest.ui.QuestJournalBookService;
 import com.lodygames.rpgquest.ui.QuestJournalService;
 import com.lodygames.rpgquest.database.WaystoneRepository;
 import com.lodygames.rpgquest.waystone.SimpleWaystoneStructurePlacer;
@@ -164,6 +164,7 @@ public final class RPGQuestBootstrap {
     private QuestProgressEngine questProgressEngine;
     private YamlDialogueEngine dialogueEngine;
     private DialogueSessionEngine dialogueSessionEngine;
+    private HubGuideRegistry hubGuideRegistry;
     private QuestJournalService questJournalService;
     private ResourceNodeService resourceNodeService;
     private SpecialMobService mobService;
@@ -450,6 +451,13 @@ public final class RPGQuestBootstrap {
                 configService.current().dialogue().allowedCommands());
         registry.start(dialogueEngine);
 
+        // Structure d'aide/orientation par Hub (issue #11, partie A) : mapping Hub → dialogue d'aide
+        // + accueil/spécialité/orientations, en données (hub-guides/*.yml). Le contenu du menu d'aide
+        // vit dans le dialogue référencé — voir docs/HUB_GUIDE.md.
+        hubGuideRegistry = new HubGuideRegistry(
+                plugin.getDataFolder().toPath().resolve("hub-guides"), plugin.getSLF4JLogger());
+        registry.start(hubGuideRegistry);
+
         dialogueSessionEngine = new DialogueSessionEngine(
                 plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService, npcIdentityService,
                 claimService, customItemRegistry);
@@ -461,15 +469,14 @@ public final class RPGQuestBootstrap {
             registry.start(new PlayerListenerService(plugin, citizensDialogueListener));
         }
 
+        // Journal des quêtes : GUI paginée à deux onglets (en cours / terminées), ouverte par un
+        // clic droit sur l'item rpgquest:journal_quetes (remis par le Libraire) ou par /quests.
+        // Ne liste jamais les quêtes non découvertes (pas de catalogue) — voir docs/RPGQUEST_BIBLE.md.
         questJournalService = new QuestJournalService(
-                plugin, questEngine, questProgressEngine, variableRepository, configService.current().journal());
+                plugin, questEngine, questProgressEngine, variableRepository, customItemRegistry,
+                configService.current().journal());
         registry.start(questJournalService);
         registry.start(new PlayerListenerService(plugin, questJournalService.listener()));
-
-        QuestJournalBookService questJournalBookService = new QuestJournalBookService(
-                plugin, customItemRegistry, questProgressEngine, questEngine, storyService);
-        registry.start(questJournalBookService);
-        registry.start(new PlayerListenerService(plugin, questJournalBookService.listener()));
 
         // Reset admin « nouveau joueur » (/rpgadmin player resetnew) : orchestre les resets déjà
         // existants (quêtes, stories, claims/CLAIM_TIER_1, découvertes de Waystones) + les
@@ -744,7 +751,7 @@ public final class RPGQuestBootstrap {
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(
                 flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
-                worldPortalDebugService, storyService, waystoneService, playerResetService, plugin);
+                worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

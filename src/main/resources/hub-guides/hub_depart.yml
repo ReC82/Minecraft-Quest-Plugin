@@ -1,0 +1,28 @@
+# Guide du Hub de départ (issue #11, partie A).
+#
+# Ce fichier NE crée pas de PNJ et ne porte pas le texte du menu d'aide : le menu vit dans le
+# dialogue « guide-dialogue » ci-dessous (src/main/resources/dialogues/guide.yml, nœud « help-node »).
+# Cette entrée déclare la structure d'orientation du Hub, réutilisable pour d'autres Hubs :
+# il suffira d'ajouter hub-guides/<autre_hub>.yml + dialogues/guide_<autre_hub>.yml.
+#
+# Voir com.lodygames.rpgquest.hub.HubGuideRegistry et docs/HUB_GUIDE.md.
+
+hub-id: hub_depart
+worlds:
+  - world_hub
+guide-dialogue: rpgquest:guide
+help-node: help_menu
+
+welcome: "Bienvenue au village de départ !"
+specialty: "Ici, on apprend les bases : accepter des quêtes, tenir son journal, poser son premier terrain."
+
+referrals:
+  - role: "Journal & quêtes"
+    npc: "le Libraire"
+    note: "Il remet le journal des quêtes et explique les onglets « en cours » / « terminées »."
+  - role: "Claims (terrains)"
+    npc: "Jo"
+    note: "Le spécialiste des claims : va le voir pour obtenir ton premier acte de propriété."
+  - role: "Achats & ventes"
+    npc: "les marchands"
+    note: "Clic droit sur un marchand du village pour ouvrir sa vitrine."

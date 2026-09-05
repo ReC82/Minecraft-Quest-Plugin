@@ -1,18 +1,26 @@
 # PNJ Guide (Citizens), créé/configuré manuellement par un administrateur — voir
 # docs/NPC_DIALOGUES_QUESTS_GUIDE.md. Ce fichier ne crée jamais le PNJ, seulement son dialogue.
 #
+# Rôle (issue #11) : le Guide est le centre d'aide / d'orientation du Hub de départ.
+# - « Comment fonctionne le jeu ? » ouvre un menu d'aide structuré (nœud « help_menu ») ;
+#   chaque sujet est un nœud avec un texte court et un retour au menu. L'orientation vers les
+#   autres PNJ reste TEXTUELLE (nom + rôle + explication) — pas de waypoint / halo / navigation.
+# - le contenu vit à 100 % dans ce fichier de dialogue (données, pas de code) : un autre Hub aura
+#   son propre fichier « guide_<hub>.yml » et son entrée dans hub-guides/<hub>.yml
+#   (voir com.lodygames.rpgquest.hub.HubGuideRegistry et docs/HUB_GUIDE.md) — l'architecture
+#   n'est jamais figée sur un seul Hub / un seul Guide.
+#
 # Règle (mission « Rune de rappel ») :
 # - « Récupérer une rune de rappel » (re)donne rpgquest:rune_rappel gratuitement dès qu'elle manque
 #   (garde LACKS_CUSTOM_ITEM) ; objet permanent, lié au joueur, jamais consommé (voir
-#   travel.ItemTravelService, cooldown). Chaque nouveau joueur en reçoit déjà une automatiquement à
-#   sa première connexion (voir player.StarterKitListener) — cette option n'est là que comme filet.
+#   travel.ItemTravelService, cooldown). Chaque nouveau joueur en reçoit déjà une automatiquement.
 id: rpgquest:guide
 start: greeting
 
 nodes:
   greeting:
     speaker: "Guide"
-    text: "<white>Bienvenue au village !</white> <gray>Va donc voir notre libraire, il pourra t'aider.</gray>"
+    text: "<white>Bienvenue au village !</white> <gray>Je suis le Guide : je peux t'expliquer comment fonctionne le monde et te dire à qui parler.</gray>"
     choices:
       - text: "Très bien, j'y vais."
         conditions:
@@ -22,6 +30,9 @@ nodes:
         actions:
           - type: START_QUEST
             quest: rpgquest:premiers_pas
+
+      - text: "Comment fonctionne le jeu ?"
+        next: help_menu
 
       - text: "Récupérer une rune de rappel"
         conditions:
@@ -33,5 +44,85 @@ nodes:
           - type: CLOSE
 
       - text: "D'accord !"
+        actions:
+          - type: CLOSE
+
+  help_menu:
+    speaker: "Guide"
+    text: "<white>Sur quoi veux-tu de l'aide ?</white>"
+    choices:
+      - text: "Comment fonctionnent les quêtes ?"
+        next: help_quetes
+      - text: "Où consulter mes quêtes ?"
+        next: help_journal
+      - text: "Comment fonctionne le Wild ?"
+        next: help_wild
+      - text: "Comment fonctionnent les claims ?"
+        next: help_claims
+      - text: "Comment fonctionnent les marchands ?"
+        next: help_marchands
+      - text: "À qui parler pour quoi ?"
+        next: help_qui
+      - text: "Rien, merci."
+        actions:
+          - type: CLOSE
+
+  help_quetes:
+    speaker: "Guide"
+    text: "<gray>Les quêtes s'obtiennent en parlant aux PNJ. Une fois acceptée, une quête a des objectifs (récolter, vaincre, parler…) qui progressent en jouant. Quand tous les objectifs d'une quête sont remplis, retourne voir le PNJ concerné pour la rendre et toucher tes récompenses.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  help_journal:
+    speaker: "Guide"
+    text: "<gray>Va voir le Libraire, juste à côté : il te remet un <white>journal des quêtes</white>. Un clic droit dessus ouvre une fenêtre avec deux onglets : « Quêtes en cours » et « Quêtes terminées ». Seules les quêtes que tu as déjà acceptées y figurent.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  help_wild:
+    speaker: "Guide"
+    text: "<gray>Le Wild est la zone d'aventure hors du village : monstres, ressources et Waystones s'y trouvent. On y accède par le portail du village. Emporte toujours une <white>rune de rappel</white> — elle te ramène ici si les choses tournent mal. Chaque nouveau venu en reçoit une ; je peux t'en redonner une si tu l'as perdue.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  help_claims:
+    speaker: "Guide"
+    text: "<gray>Un claim est un terrain qui t'appartient et que personne d'autre ne peut modifier. Pour ton premier claim, parle à <white>Jo</white> : il te remettra un acte de propriété. Un clic droit avec l'acte, dans le monde des claims, pose ton terrain.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  help_marchands:
+    speaker: "Guide"
+    text: "<gray>Les marchands PNJ achètent et vendent des objets contre des pièces. Fais un clic droit sur un marchand pour ouvrir sa vitrine. Entre joueurs, l'hôtel des ventes (/market) permet d'acheter et de vendre librement.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  help_qui:
+    speaker: "Guide"
+    text: "<gray>Pour tes quêtes et ton journal : <white>le Libraire</white>. Pour ton premier terrain : <white>Jo</white>, le spécialiste des claims. Pour acheter et vendre : <white>les marchands</white> du village. Et pour te repérer ou une explication : reviens me voir, moi le Guide.</gray>"
+    choices:
+      - text: "← Autres questions"
+        next: help_menu
+      - text: "Fermer"
         actions:
           - type: CLOSE

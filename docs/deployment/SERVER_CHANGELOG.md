@@ -164,3 +164,88 @@ remplacement du JAR.
 3. Redémarrer et vérifier `/rpgquest version`.
 
 Aucune donnée migrée : le rollback ne touche que le JAR.
+
+---
+
+## 2026-09-05 - Guide « centre d'aide » + journal de quêtes en GUI (issue #11)
+
+### Changement
+
+- `dialogues/guide.yml` réécrit en **centre d'aide structuré** (nœud
+  `help_menu` + sujets ; orientations textuelles). Livré dans le jar,
+  **copie manuelle** par l'admin (seul `guard.yml` est copié
+  automatiquement — inchangé).
+- Nouveau dossier `hub-guides/` (registre `hub.HubGuideRegistry`) :
+  structure multi-Hub, exemple `hub_depart.yml` auto-copié au premier
+  démarrage. Nouveau diagnostic admin `/rpgadmin guide list|info <hub>`
+  (lecture seule).
+- Le journal de quêtes (`rpgquest:journal_quetes`, remis par le Libraire)
+  ouvre désormais la **GUI `/quests`** au clic droit (avant : résumé chat).
+  La GUI passe de **3 à 2 onglets** : « Quêtes en cours » / « Quêtes
+  terminées ». L'onglet catalogue « Disponibles » est **supprimé** — le
+  journal ne liste plus que les quêtes déjà acceptées.
+- `dialogues/libraire.yml` : texte mis à jour (nœud `journal_lost` ajouté).
+  `items/journal_quetes.yml` : lore mis à jour.
+- Service `QuestJournalBookService` (résumé chat) supprimé.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement.
+
+**Fichiers de configuration existants** (`dialogues/guide.yml`,
+`dialogues/libraire.yml`) sur un serveur déjà en service : ils ne sont
+**pas** réécrits automatiquement (seuls les fichiers absents sont
+recréés). Pour bénéficier du nouveau Guide « centre d'aide » et du nouveau
+texte du Libraire, **remplacer manuellement** `plugins/RPGQuest/dialogues/guide.yml`
+et `plugins/RPGQuest/dialogues/libraire.yml` par les versions du jar (ou du
+dépôt : `src/main/resources/dialogues/`). Le dossier `hub-guides/` et son
+exemple `hub_depart.yml` sont créés automatiquement au premier démarrage
+sur la nouvelle version.
+
+Aucune migration de base, aucune nouvelle clé `config.yml`
+(`dialogue.allowed-commands` contient déjà `customitem` et `claim`).
+
+### Sauvegarde préalable
+
+- Ancien JAR `plugins/RPGQuest-<version>.jar`.
+- `plugins/RPGQuest/dialogues/guide.yml` et `libraire.yml` (avant
+  remplacement manuel).
+- `plugins/RPGQuest/data.db` par précaution (procédure standard « mise à
+  jour du seul JAR »).
+
+### Déploiement
+
+1. Compiler (`./gradlew clean build`).
+2. Arrêter le serveur.
+3. Remplacer `plugins/RPGQuest-*.jar`.
+4. Remplacer manuellement `plugins/RPGQuest/dialogues/guide.yml` et
+   `plugins/RPGQuest/dialogues/libraire.yml` par les versions du jar.
+5. Redémarrer.
+
+### Validation
+
+- Log au démarrage : `Chargement des Guides de Hub : 1 chargé(s), 0 erreur(s).`
+- `plugins/RPGQuest/hub-guides/hub_depart.yml` a été créé.
+- `/rpgadmin guide list` affiche `hub_depart` ; `/rpgadmin guide info hub_depart`
+  affiche accueil, spécialité et orientations.
+- Parler au Guide → « Comment fonctionne le jeu ? » → menu d'aide, chaque
+  sujet s'affiche et ramène au menu.
+- Parler au Libraire sans journal → recevoir exactement un journal ; lui
+  reparler → l'option a disparu (pas de second exemplaire).
+- Clic droit sur le journal → GUI à deux onglets « en cours » / « terminées ».
+- Accepter une quête via un PNJ → elle apparaît en « en cours » ; la
+  terminer → elle passe en « terminées ». Une quête jamais acceptée
+  n'apparaît nulle part.
+- Aucun item de la GUI n'est récupérable (tout clic/drag annulé).
+
+### Rollback
+
+1. Arrêter le serveur.
+2. Remettre l'ancien JAR **et** les anciens `dialogues/guide.yml` /
+   `libraire.yml` sauvegardés.
+3. Le dossier `hub-guides/` peut rester : il est simplement ignoré par
+   l'ancienne version.
+4. Redémarrer, vérifier `/rpgquest version`.
+
+Aucune donnée migrée : le rollback ne touche que le JAR et deux fichiers de
+dialogue.

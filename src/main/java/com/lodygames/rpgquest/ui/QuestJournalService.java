@@ -3,6 +3,8 @@ package com.lodygames.rpgquest.ui;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.config.JournalConfig;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
+import com.lodygames.rpgquest.item.RpgItemKeys;
+import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
@@ -37,13 +39,16 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.slf4j.Logger;
 
 /**
- * Implémentation {@link QuestJournalUi} : un inventaire paginé (onglets
- * actives/disponibles/terminées) accessible via {@code /quests}, plus une
- * vue détail par quête et un suivi persistant (bossbar optionnelle). Toute
- * la logique de clic vit ici ; {@link QuestJournalListener} ne fait que
- * traduire les événements Bukkit en appels à cette classe (même
- * organisation que {@code DialogueSessionEngine}/{@code
- * DialogueNpcInteractListener}).
+ * Implémentation {@link QuestJournalUi} : un inventaire paginé (deux onglets
+ * « Quêtes en cours » / « Quêtes terminées ») ouvert soit par un clic droit
+ * sur l'item {@link RpgItemKeys#JOURNAL_QUETES} (remis par le Libraire),
+ * soit par {@code /quests}, plus une vue détail par quête et un suivi
+ * persistant (bossbar optionnelle). Le journal ne liste <strong>que</strong>
+ * les quêtes déjà connues du joueur (acceptées puis actives, ou terminées) :
+ * jamais de catalogue des quêtes non découvertes. Toute la logique de clic
+ * vit ici ; {@link QuestJournalListener} ne fait que traduire les événements
+ * Bukkit en appels à cette classe (même organisation que {@code
+ * DialogueSessionEngine}/{@code DialogueNpcInteractListener}).
  *
  * <p>L'affichage ne se rafraîchit jamais par sondage : {@link #handleProgressChanged}
  * est appelé par {@link QuestProgressEngine#onProgressChanged} uniquement
@@ -59,8 +64,7 @@ public final class QuestJournalService implements QuestJournalUi {
     private static final int LIST_SIZE = 54;
     private static final int DETAIL_SIZE = 27;
 
-    static final int TAB_ACTIVE_SLOT = 0;
-    static final int TAB_AVAILABLE_SLOT = 1;
+    static final int TAB_IN_PROGRESS_SLOT = 0;
     static final int TAB_COMPLETED_SLOT = 2;
     static final int PREV_PAGE_SLOT = 3;
     private static final int PAGE_INDICATOR_SLOT = 4;
@@ -81,6 +85,7 @@ public final class QuestJournalService implements QuestJournalUi {
     private final YamlQuestEngine questEngine;
     private final QuestProgressEngine questProgressEngine;
     private final PlayerVariableRepository variableRepository;
+    private final YamlCustomItemRegistry customItemRegistry;
     private final TrackedQuestDisplay trackedDisplay;
     private final Logger logger;
 
@@ -88,11 +93,13 @@ public final class QuestJournalService implements QuestJournalUi {
     private final Map<UUID, NamespacedKey> trackedByPlayer = new ConcurrentHashMap<>();
 
     public QuestJournalService(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressEngine questProgressEngine,
-                                PlayerVariableRepository variableRepository, JournalConfig config) {
+                                PlayerVariableRepository variableRepository, YamlCustomItemRegistry customItemRegistry,
+                                JournalConfig config) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
         this.variableRepository = variableRepository;
+        this.customItemRegistry = customItemRegistry;
         this.trackedDisplay = new TrackedQuestDisplay(config.trackerEnabled());
         this.logger = plugin.getSLF4JLogger();
     }
@@ -126,9 +133,15 @@ public final class QuestJournalService implements QuestJournalUi {
         return new QuestJournalListener(this);
     }
 
-    /** {@code /quests} : ouvre toujours sur l'onglet « actives », première page. */
+    /** {@code /quests} ou clic droit sur le journal : ouvre toujours sur l'onglet « en cours », première page. */
     public void open(Player player) {
-        showList(player, JournalTab.ACTIVE, 0);
+        showList(player, JournalTab.IN_PROGRESS, 0);
+    }
+
+    /** {@code true} si {@code stack} est l'item Journal des quêtes RPGQuest (identité PDC, jamais le nom/lore). */
+    public boolean isJournalItem(ItemStack stack) {
+        return stack != null
+                && customItemRegistry.identify(stack).map(RpgItemKeys.JOURNAL_QUETES::equals).orElse(false);
     }
 
     /** Suivi actuel du joueur, si présent. Public : réutilisable par une future sidebar/scoreboard. */
@@ -271,16 +284,14 @@ public final class QuestJournalService implements QuestJournalUi {
 
     private boolean tabMatches(JournalTab tab, QuestState state) {
         return switch (tab) {
-            case ACTIVE -> state == QuestState.ACTIVE || state == QuestState.READY_TO_TURN_IN;
+            case IN_PROGRESS -> state == QuestState.ACTIVE || state == QuestState.READY_TO_TURN_IN;
             case COMPLETED -> state == QuestState.COMPLETED;
-            case AVAILABLE -> state == QuestState.NOT_STARTED || state == QuestState.ABANDONED;
         };
     }
 
     private void renderChrome(Inventory inventory, JournalTab tab, int page, int pageCount) {
-        inventory.setItem(TAB_ACTIVE_SLOT, tabIcon("Actives", Material.BOOK, tab == JournalTab.ACTIVE));
-        inventory.setItem(TAB_AVAILABLE_SLOT, tabIcon("Disponibles", Material.WRITABLE_BOOK, tab == JournalTab.AVAILABLE));
-        inventory.setItem(TAB_COMPLETED_SLOT, tabIcon("Terminées", Material.ENCHANTED_BOOK, tab == JournalTab.COMPLETED));
+        inventory.setItem(TAB_IN_PROGRESS_SLOT, tabIcon("Quêtes en cours", Material.BOOK, tab == JournalTab.IN_PROGRESS));
+        inventory.setItem(TAB_COMPLETED_SLOT, tabIcon("Quêtes terminées", Material.ENCHANTED_BOOK, tab == JournalTab.COMPLETED));
         if (page > 0) {
             inventory.setItem(PREV_PAGE_SLOT, navIcon(Material.ARROW, "« Page précédente"));
         }
@@ -366,12 +377,8 @@ public final class QuestJournalService implements QuestJournalUi {
     // ---- Clics ------------------------------------------------------------
 
     void handleListClick(Player player, JournalSession session, int slot, boolean rightClick) {
-        if (slot == TAB_ACTIVE_SLOT) {
-            showList(player, JournalTab.ACTIVE, 0);
-            return;
-        }
-        if (slot == TAB_AVAILABLE_SLOT) {
-            showList(player, JournalTab.AVAILABLE, 0);
+        if (slot == TAB_IN_PROGRESS_SLOT) {
+            showList(player, JournalTab.IN_PROGRESS, 0);
             return;
         }
         if (slot == TAB_COMPLETED_SLOT) {

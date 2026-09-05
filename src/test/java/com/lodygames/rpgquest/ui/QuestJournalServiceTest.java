@@ -15,9 +15,12 @@ import com.lodygames.rpgquest.database.NpcIdRepository;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.QuestProgressRepository;
+import com.lodygames.rpgquest.item.RpgItemKeys;
+import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
+import com.lodygames.rpgquest.quest.model.QuestState;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -57,8 +60,10 @@ class QuestJournalServiceTest {
     private Path questsDir;
     private YamlQuestEngine questEngine;
     private QuestProgressEngine progressEngine;
+    private QuestProgressRepository progressRepository;
     private PlayerVariableRepository variableRepository;
     private PlayerProfileRepository profileRepository;
+    private YamlCustomItemRegistry customItemRegistry;
     private QuestJournalService service;
     private QuestJournalListener listener;
 
@@ -77,7 +82,7 @@ class QuestJournalServiceTest {
         questEngine = new YamlQuestEngine(questsDir, plugin.getSLF4JLogger());
         questEngine.reload();
 
-        QuestProgressRepository progressRepository = new QuestProgressRepository(database);
+        progressRepository = new QuestProgressRepository(database);
         QuestMessagesService messagesService = new QuestMessagesService(plugin);
         messagesService.start();
         NpcIdentityService npcIdentityService = new NpcIdentityService(
@@ -86,7 +91,11 @@ class QuestJournalServiceTest {
                 plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService);
         progressEngine.start();
 
-        service = new QuestJournalService(plugin, questEngine, progressEngine, variableRepository, new JournalConfig(true));
+        customItemRegistry = new YamlCustomItemRegistry(tempDir.resolve("items"), plugin.getSLF4JLogger());
+        customItemRegistry.start();
+
+        service = new QuestJournalService(
+                plugin, questEngine, progressEngine, variableRepository, customItemRegistry, new JournalConfig(true));
         service.start();
         listener = new QuestJournalListener(service);
     }
@@ -99,26 +108,91 @@ class QuestJournalServiceTest {
         MockBukkit.unmock();
     }
 
+    // ---- Reconnaissance de l'item journal (identité RPGQuest / PDC) ------------------------------
+
     @Test
-    void playerWithNoQuestsSeesAnEmptyFirstPage() throws Exception {
+    void theJournalItemIsRecognisedByItsRpgQuestIdentityNotItsName() {
+        ItemStack realJournal = customItemRegistry.create(RpgItemKeys.JOURNAL_QUETES, 1).orElseThrow();
+        assertTrue(service.isJournalItem(realJournal));
+
+        ItemStack plainBook = new ItemStack(Material.BOOK);
+        assertFalse(service.isJournalItem(plainBook), "un simple livre vanilla n'est pas le journal");
+        assertFalse(service.isJournalItem(null));
+    }
+
+    // ---- Onglets ------------------------------------------------------------------------------------
+
+    @Test
+    void playerWithNoQuestsSeesTwoEmptyTabs() throws Exception {
         PlayerMock player = addPlayer();
 
         service.open(player);
-        awaitList(player);
-
-        JournalSession session = service.sessionOf(player);
-        assertEquals(0, session.page());
-        assertTrue(session.pageQuests().isEmpty());
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        JournalSession inProgress = service.sessionOf(player);
+        assertEquals(0, inProgress.page());
+        assertTrue(inProgress.pageQuests().isEmpty());
         assertNotNull(player.getOpenInventory());
+
+        showAndAwait(player, JournalTab.COMPLETED);
+        assertTrue(service.sessionOf(player).pageQuests().isEmpty());
     }
 
     @Test
-    void pagination45QuestsFitsOnASinglePage() throws Exception {
-        writeAvailableQuests(45);
+    void anAcceptedActiveQuestShowsInTheInProgressTabOnly() throws Exception {
+        writeQuests(1);
         questEngine.reload();
         PlayerMock player = addPlayer();
+        NamespacedKey questId = new NamespacedKey("rpgquest", "quest_0");
+        setState(player, questId, QuestState.ACTIVE);
 
-        openAvailable(player);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        assertTrue(service.sessionOf(player).pageQuests().contains(questId), "quête active attendue dans « en cours »");
+
+        showAndAwait(player, JournalTab.COMPLETED);
+        assertFalse(service.sessionOf(player).pageQuests().contains(questId), "quête active absente de « terminées »");
+    }
+
+    @Test
+    void aCompletedQuestShowsInTheCompletedTabOnly() throws Exception {
+        writeQuests(1);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        NamespacedKey questId = new NamespacedKey("rpgquest", "quest_0");
+        setState(player, questId, QuestState.COMPLETED);
+
+        showAndAwait(player, JournalTab.COMPLETED);
+        assertTrue(service.sessionOf(player).pageQuests().contains(questId), "quête terminée attendue dans « terminées »");
+
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        assertFalse(service.sessionOf(player).pageQuests().contains(questId), "quête terminée absente de « en cours »");
+    }
+
+    @Test
+    void anUndiscoveredQuestNeverShowsInEitherTab() throws Exception {
+        writeQuests(1);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        NamespacedKey questId = new NamespacedKey("rpgquest", "quest_0");
+        // Aucune progression enregistrée : la quête n'a jamais été acceptée.
+
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        assertFalse(service.sessionOf(player).pageQuests().contains(questId));
+
+        showAndAwait(player, JournalTab.COMPLETED);
+        assertFalse(service.sessionOf(player).pageQuests().contains(questId),
+                "une quête jamais découverte ne doit apparaître dans aucun onglet (pas de catalogue)");
+    }
+
+    // ---- Pagination -------------------------------------------------------------------------------
+
+    @Test
+    void pagination45ActiveQuestsFitOnASinglePage() throws Exception {
+        writeQuests(45);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        setAllStates(player, 45, QuestState.ACTIVE);
+
+        openInProgress(player);
 
         assertEquals(45, service.sessionOf(player).pageQuests().size());
         assertNull(player.getOpenInventory().getTopInventory().getItem(QuestJournalService.NEXT_PAGE_SLOT),
@@ -126,12 +200,13 @@ class QuestJournalServiceTest {
     }
 
     @Test
-    void pagination46QuestsSpillsToASecondPage() throws Exception {
-        writeAvailableQuests(46);
+    void pagination46ActiveQuestsSpillToASecondPage() throws Exception {
+        writeQuests(46);
         questEngine.reload();
         PlayerMock player = addPlayer();
+        setAllStates(player, 46, QuestState.ACTIVE);
 
-        openAvailable(player);
+        openInProgress(player);
 
         assertEquals(45, service.sessionOf(player).pageQuests().size());
         assertNotNull(player.getOpenInventory().getTopInventory().getItem(QuestJournalService.NEXT_PAGE_SLOT),
@@ -144,13 +219,13 @@ class QuestJournalServiceTest {
 
     @Test
     void leftClickOnAQuestOpensDetailView() throws Exception {
-        writeAvailableQuests(1);
+        writeQuests(1);
         questEngine.reload();
         PlayerMock player = addPlayer();
+        NamespacedKey questId = new NamespacedKey("rpgquest", "quest_0");
+        setState(player, questId, QuestState.ACTIVE);
 
-        openAvailable(player);
-        NamespacedKey questId = service.sessionOf(player).pageQuests().get(0);
-
+        openInProgress(player);
         service.handleListClick(player, service.sessionOf(player), QuestJournalService.CONTENT_SLOTS[0], false);
         waitUntil(() -> service.sessionOf(player) != null && service.sessionOf(player).isDetail());
 
@@ -159,47 +234,45 @@ class QuestJournalServiceTest {
 
     @Test
     void closeButtonInTheListViewDefersClosingToTheNextTick() throws Exception {
-        writeAvailableQuests(1);
+        writeQuests(1);
         questEngine.reload();
         PlayerMock player = addPlayer();
-        openAvailable(player);
+        setState(player, new NamespacedKey("rpgquest", "quest_0"), QuestState.ACTIVE);
+        openInProgress(player);
 
         service.handleListClick(player, service.sessionOf(player), QuestJournalService.CLOSE_SLOT, false);
 
-        // Fermer dans le même tick que le clic (encore à l'intérieur du traitement de
-        // InventoryClickEvent) est la cause connue du bouton « Fermer » qui ne ferme pas réellement la
-        // fenêtre côté client : la fermeture doit être différée au tick suivant.
         assertTrue(isJournalStillOpen(player), "le clic ne doit pas fermer la fenêtre immédiatement");
-
         server.getScheduler().performTicks(1);
         assertFalse(isJournalStillOpen(player), "la fenêtre doit être fermée au tick suivant le clic");
     }
 
     @Test
     void closeButtonInTheDetailViewDefersClosingToTheNextTick() throws Exception {
-        writeAvailableQuests(1);
+        writeQuests(1);
         questEngine.reload();
         PlayerMock player = addPlayer();
-        openAvailable(player);
+        setState(player, new NamespacedKey("rpgquest", "quest_0"), QuestState.ACTIVE);
+        openInProgress(player);
         service.handleListClick(player, service.sessionOf(player), QuestJournalService.CONTENT_SLOTS[0], false);
         waitUntil(() -> service.sessionOf(player) != null && service.sessionOf(player).isDetail());
 
         service.handleDetailClick(player, service.sessionOf(player), QuestJournalService.DETAIL_CLOSE_SLOT);
 
         assertTrue(isJournalStillOpen(player), "le clic ne doit pas fermer la fenêtre immédiatement");
-
         server.getScheduler().performTicks(1);
         assertFalse(isJournalStillOpen(player), "la fenêtre doit être fermée au tick suivant le clic");
     }
 
     @Test
     void rightClickTogglesTracking() throws Exception {
-        writeAvailableQuests(1);
+        writeQuests(1);
         questEngine.reload();
         PlayerMock player = addPlayer();
+        NamespacedKey questId = new NamespacedKey("rpgquest", "quest_0");
+        setState(player, questId, QuestState.ACTIVE);
 
-        openAvailable(player);
-        NamespacedKey questId = service.sessionOf(player).pageQuests().get(0);
+        openInProgress(player);
         assertTrue(service.trackedQuestOf(player.getUniqueId()).isEmpty());
 
         service.handleListClick(player, service.sessionOf(player), QuestJournalService.CONTENT_SLOTS[0], true);
@@ -210,15 +283,17 @@ class QuestJournalServiceTest {
         waitUntil(() -> service.trackedQuestOf(player.getUniqueId()).isEmpty());
     }
 
+    // ---- UX / sécurité : rien de récupérable ni duplicable ---------------------------------------
+
     @Test
     void everyClickTypeInsideTheMenuIsCancelled() throws Exception {
-        writeAvailableQuests(1);
+        writeQuests(1);
         questEngine.reload();
         PlayerMock player = addPlayer();
-        openAvailable(player);
+        setState(player, new NamespacedKey("rpgquest", "quest_0"), QuestState.ACTIVE);
+        openInProgress(player);
 
         InventoryView view = player.getOpenInventory();
-
         assertCancelled(view, ClickType.SHIFT_LEFT, InventoryAction.MOVE_TO_OTHER_INVENTORY);
         assertCancelled(view, ClickType.DOUBLE_CLICK, InventoryAction.COLLECT_TO_CURSOR);
         assertCancelled(view, ClickType.NUMBER_KEY, InventoryAction.HOTBAR_SWAP);
@@ -228,10 +303,11 @@ class QuestJournalServiceTest {
 
     @Test
     void draggingIntoTheMenuIsCancelled() throws Exception {
-        writeAvailableQuests(1);
+        writeQuests(1);
         questEngine.reload();
         PlayerMock player = addPlayer();
-        openAvailable(player);
+        setState(player, new NamespacedKey("rpgquest", "quest_0"), QuestState.ACTIVE);
+        openInProgress(player);
 
         InventoryView view = player.getOpenInventory();
         Map<Integer, ItemStack> newItems = new LinkedHashMap<>();
@@ -244,10 +320,11 @@ class QuestJournalServiceTest {
 
     @Test
     void dragEntirelyInPlayerInventoryIsNotAffected() throws Exception {
-        writeAvailableQuests(1);
+        writeQuests(1);
         questEngine.reload();
         PlayerMock player = addPlayer();
-        openAvailable(player);
+        setState(player, new NamespacedKey("rpgquest", "quest_0"), QuestState.ACTIVE);
+        openInProgress(player);
 
         InventoryView view = player.getOpenInventory();
         int topSize = view.getTopInventory().getSize();
@@ -266,19 +343,19 @@ class QuestJournalServiceTest {
         PlayerMock player = addPlayer();
         NamespacedKey questId = new NamespacedKey("rpgquest", "temp");
 
-        service.showDetail(player, JournalTab.AVAILABLE, 0, questId);
+        service.showDetail(player, JournalTab.IN_PROGRESS, 0, questId);
         waitUntil(() -> service.sessionOf(player) != null && service.sessionOf(player).isDetail());
 
         Files.delete(questsDir.resolve("temp.yml"));
         questEngine.reload();
 
-        assertDoesNotThrow(() -> service.showDetail(player, JournalTab.AVAILABLE, 0, questId));
+        assertDoesNotThrow(() -> service.showDetail(player, JournalTab.IN_PROGRESS, 0, questId));
         waitUntil(() -> service.sessionOf(player) != null && !service.sessionOf(player).isDetail());
     }
 
     @Test
     void trackedQuestSurvivesAReconnection() throws Exception {
-        writeAvailableQuests(1);
+        writeQuests(1);
         questEngine.reload();
         PlayerMock player = addPlayer();
         NamespacedKey questId = questEngine.quests().get(0).id();
@@ -286,11 +363,9 @@ class QuestJournalServiceTest {
         variableRepository.set(player.getUniqueId(), TRACKED_KEY, questId.toString())
                 .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        // Déconnexion : le cache mémoire est vidé (la donnée persistée en base n'est pas touchée).
         service.handleQuit(player);
         assertTrue(service.trackedQuestOf(player.getUniqueId()).isEmpty());
 
-        // Reconnexion : le suivi doit être rechargé depuis la base.
         service.handleJoin(player);
         waitUntil(() -> service.trackedQuestOf(player.getUniqueId()).isPresent());
         assertEquals(questId, service.trackedQuestOf(player.getUniqueId()).orElseThrow());
@@ -305,20 +380,22 @@ class QuestJournalServiceTest {
         assertTrue(event.isCancelled(), () -> click + "/" + action + " doit être annulé");
     }
 
-    /**
-     * Après {@link PlayerMock#closeInventory()}, MockBukkit remplace la vue par un stub dont
-     * {@code getTopInventory()} renvoie {@code null} (malgré son annotation {@code @NotNull}) plutôt
-     * que de renvoyer l'inventaire du joueur — il faut donc se garder du {@code null}, pas seulement
-     * de la vue elle-même.
-     */
     private boolean isJournalStillOpen(PlayerMock player) {
         Inventory top = player.getOpenInventory().getTopInventory();
         return top != null && top.getHolder() instanceof JournalInventoryHolder;
     }
 
-    private void openAvailable(PlayerMock player) throws InterruptedException {
-        service.showList(player, JournalTab.AVAILABLE, 0);
-        awaitList(player);
+    private void openInProgress(PlayerMock player) throws InterruptedException {
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+    }
+
+    /** Ouvre {@code tab} puis attend que la session reflète bien cet onglet (pas une session périmée). */
+    private void showAndAwait(PlayerMock player, JournalTab tab) throws InterruptedException {
+        service.showList(player, tab, 0);
+        waitUntil(() -> {
+            JournalSession session = service.sessionOf(player);
+            return session != null && !session.isDetail() && session.tab() == tab;
+        });
     }
 
     private PlayerMock addPlayer() throws Exception {
@@ -327,10 +404,21 @@ class QuestJournalServiceTest {
         return player;
     }
 
-    private void writeAvailableQuests(int count) throws Exception {
+    private void writeQuests(int count) throws Exception {
         for (int i = 0; i < count; i++) {
             Files.writeString(questsDir.resolve("quest_" + i + ".yml"),
                     questYaml("rpgquest:quest_" + i, "Quête " + i));
+        }
+    }
+
+    private void setState(PlayerMock player, NamespacedKey questId, QuestState state) throws Exception {
+        progressRepository.upsertState(player.getUniqueId(), questId, state, "step_one")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private void setAllStates(PlayerMock player, int count, QuestState state) throws Exception {
+        for (int i = 0; i < count; i++) {
+            setState(player, new NamespacedKey("rpgquest", "quest_" + i), state);
         }
     }
 
@@ -347,10 +435,6 @@ class QuestJournalServiceTest {
                         entity: ZOMBIE
                         amount: 1
                 """.formatted(id, title);
-    }
-
-    private void awaitList(PlayerMock player) throws InterruptedException {
-        waitUntil(() -> service.sessionOf(player) != null && !service.sessionOf(player).isDetail());
     }
 
     private void waitUntil(BooleanSupplier condition) throws InterruptedException {

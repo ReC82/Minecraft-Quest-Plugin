@@ -358,8 +358,12 @@ Deux façons, toutes deux réellement câblées :
 - `/quest progress <id>` — détail objectif par objectif de l'étape en
   cours (`current`/`total`).
 - `/quest list` — toutes les quêtes connues avec leur état.
-- `/quests` — journal graphique (menu paginé, 3 onglets Actives/
-  Disponibles/Terminées, voir `docs/ARCHITECTURE.md` section `ui`).
+- **Journal des quêtes** — clic droit sur l'item `rpgquest:journal_quetes`
+  (remis par le Libraire), ou `/quests` : GUI paginée à **deux onglets**,
+  « Quêtes en cours » et « Quêtes terminées ». N'affiche que les quêtes
+  déjà acceptées par le joueur — **jamais** de catalogue des quêtes non
+  découvertes. Voir `docs/RPGQUEST_BIBLE.md` (« /quests — journal de
+  quêtes ») et `docs/ARCHITECTURE.md` section `ui`.
 
 ### Comment la terminer
 
@@ -612,6 +616,51 @@ rendre sur ma propriété » fonctionne (`RUN_SAFE_COMMAND` → `/claim admin
 sendhome %player%`). Voir [docs/CLAIMS.md](CLAIMS.md), sections « Premier
 claim (Acte de propriété) » et « Retour à son claim (PNJ Jo / commande
 admin) », pour le détail complet des deux scénarios.
+
+---
+
+## 6b. Guide « centre d'aide » et journal du Libraire (issue #11)
+
+### Le Guide oriente et explique
+
+Le dialogue livré `dialogues/guide.yml` (présent dans le jar ; à copier
+dans `plugins/RPGQuest/dialogues/` — seul `guard.yml` est copié
+automatiquement) est un **centre d'aide structuré** : le choix « Comment
+fonctionne le jeu ? » ouvre un nœud
+`help_menu` avec un sujet par mécanique principale (quêtes, consulter ses
+quêtes, Wild, claims, marchands, « à qui parler pour quoi »). Chaque sujet
+est un nœud d'aide court qui ramène au menu (`next: help_menu`) ou ferme.
+L'orientation vers les autres PNJ est **textuelle** (nom + rôle +
+explication) — pas de waypoint / halo / navigation (hors périmètre V1).
+
+C'est un dialogue ordinaire : pour l'adapter, éditez `guide.yml` puis
+redémarrez. Aucune commande, aucune action spéciale.
+
+### Structure multi-Hub
+
+Le mapping « quel Hub → quel Guide » vit dans
+`plugins/RPGQuest/hub-guides/<hub>.yml` (registre
+`com.lodygames.rpgquest.hub.HubGuideRegistry`, auto-copié :
+`hub_depart.yml`). Chaque entrée déclare l'accueil, la spécialité locale,
+les orientations vers les PNJ du Hub et le dialogue/nœud qui porte le menu
+d'aide. Ajouter un Hub = déposer `hub-guides/<autre_hub>.yml` +
+`dialogues/guide_<autre_hub>.yml` — **aucun code**. Diagnostic admin :
+`/rpgadmin guide list` et `/rpgadmin guide info <hub>` (lecture seule).
+Détail complet : [docs/HUB_GUIDE.md](HUB_GUIDE.md).
+
+### Le Libraire remet le journal
+
+`dialogues/libraire.yml` : le choix « Obtenir un journal des quêtes » est
+gardé par `LACKS_CUSTOM_ITEM rpgquest:journal_quetes` — il **disparaît dès
+que le joueur a le journal en poche**, donc jamais de second exemplaire. Le
+journal est aussi *soulbound* (`item.SoulboundItemService`) : il ne peut
+pas être perdu ; s'il manquait malgré tout, l'option réapparaît et le
+Libraire en redonne exactement un.
+
+Un clic droit sur le journal ouvre la **GUI à deux onglets** (« Quêtes en
+cours » / « Quêtes terminées »), identique à `/quests` — voir
+`docs/RPGQUEST_BIBLE.md`. La GUI reflète l'état à l'ouverture : une quête
+acceptée ou terminée apparaît dans le bon onglet sans recréer l'item.
 
 ---
 

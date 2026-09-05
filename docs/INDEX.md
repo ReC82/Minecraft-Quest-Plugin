@@ -11,6 +11,7 @@ documents ci-dessous détaillent chacun un sous-système spécifique.
 | [current_state.md](current_state.md) | Snapshot de ce qui est actuellement implémenté — mis à jour à chaque étape livrée. |
 | [storylines.md](storylines.md) | Moteur de Storyline : conteneur logique de quêtes, progression par joueur, commandes admin. |
 | [NPC_DIALOGUES_QUESTS_GUIDE.md](NPC_DIALOGUES_QUESTS_GUIDE.md) | Guide PNJ, dialogues et quêtes (format YAML, exemples). |
+| [HUB_GUIDE.md](HUB_GUIDE.md) | Guide « centre d'aide » d'un Hub, journal du Libraire, structure multi-Hub (`hub-guides/`). |
 | [SAFE_ZONE.md](SAFE_ZONE.md) | Zones protégées (village central / safe zone). |
 | [TRAVEL.md](TRAVEL.md) | Portails (`/rpgadmin portal`), destinations et portails simples (`/rpgadmin worldportal`). |
 | [CLAIMS.md](CLAIMS.md) | Claims de terrain joueurs. |

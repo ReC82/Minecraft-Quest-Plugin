@@ -3,11 +3,15 @@ package com.lodygames.rpgquest.ui;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.ItemStack;
 
 /**
  * Traduit les événements Bukkit en appels à {@link QuestJournalService}.
@@ -17,6 +21,9 @@ import org.bukkit.event.player.PlayerQuitEvent;
  * shift, double clic, touche numérique, échange main secondaire) — la
  * logique de menu (navigation, détails, suivi) s'exécute ensuite,
  * indépendamment de l'annulation.
+ *
+ * <p>Ouvre aussi la GUI sur un clic droit (main principale) avec l'item
+ * Journal des quêtes, identifié par son identité RPGQuest/PDC.</p>
  */
 final class QuestJournalListener implements Listener {
 
@@ -24,6 +31,20 @@ final class QuestJournalListener implements Listener {
 
     QuestJournalListener(QuestJournalService service) {
         this.service = service;
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onJournalRightClick(PlayerInteractEvent event) {
+        if (event.getHand() != EquipmentSlot.HAND
+                || (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK)) {
+            return;
+        }
+        ItemStack item = event.getItem();
+        if (!service.isJournalItem(item)) {
+            return;
+        }
+        event.setCancelled(true);
+        service.open(event.getPlayer());
     }
 
     @EventHandler

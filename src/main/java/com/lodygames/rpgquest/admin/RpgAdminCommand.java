@@ -1,6 +1,9 @@
 package com.lodygames.rpgquest.admin;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.hub.HubGuideDefinition;
+import com.lodygames.rpgquest.hub.HubGuideReferral;
+import com.lodygames.rpgquest.hub.HubGuideRegistry;
 import com.lodygames.rpgquest.mob.SpecialMobLoadIssue;
 import com.lodygames.rpgquest.mob.SpecialMobLoadReport;
 import com.lodygames.rpgquest.mob.SpecialMobRegistry;
@@ -70,7 +73,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String PERMISSION = "rpgquest.admin.world";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "story", "waystone", "player");
+            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "story", "waystone", "player", "guide");
+    private static final List<String> GUIDE_SUBCOMMANDS = List.of("list", "info");
     private static final List<String> WAYSTONE_SUBCOMMANDS =
             List.of("list", "here", "tp", "generatehere", "reset");
     private static final List<String> PLAYER_SUBCOMMANDS = List.of("resetnew");
@@ -103,6 +107,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final StoryService storyService;
     private final WaystoneService waystoneService;
     private final PlayerResetService playerResetService;
+    private final HubGuideRegistry hubGuideRegistry;
     private final RPGQuestPlugin plugin;
 
     public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService,
@@ -111,7 +116,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             SpawnService spawnService, WorldService worldService, WorldPortalRegistry worldPortalRegistry,
                             WorldPortalDebugService worldPortalDebugService,
                             StoryService storyService, WaystoneService waystoneService,
-                            PlayerResetService playerResetService, RPGQuestPlugin plugin) {
+                            PlayerResetService playerResetService, HubGuideRegistry hubGuideRegistry, RPGQuestPlugin plugin) {
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
@@ -127,6 +132,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         this.storyService = storyService;
         this.waystoneService = waystoneService;
         this.playerResetService = playerResetService;
+        this.hubGuideRegistry = hubGuideRegistry;
         this.plugin = plugin;
     }
 
@@ -149,6 +155,12 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         // depuis la console, même exception que "story" à la contrainte "joueur en jeu" ci-dessous.
         if (args.length > 0 && args[0].equalsIgnoreCase("player")) {
             handlePlayer(sender, args);
+            return true;
+        }
+        // "guide" : diagnostic en lecture seule des Guides de Hub configurés (issue #11) — aucune
+        // position requise, utilisable depuis la console comme "story"/"player".
+        if (args.length > 0 && args[0].equalsIgnoreCase("guide")) {
+            handleGuide(sender, args);
             return true;
         }
         if (!(sender instanceof Player player)) {
@@ -1369,6 +1381,73 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                 "<yellow>/rpgadmin player resetnew <joueur> confirm</yellow> <gray>- exécute le reset</gray>"));
     }
 
+    // ---- Guides de Hub (issue #11 — diagnostic en lecture seule de la structure d'aide multi-Hub) ----
+
+    /**
+     * {@code /rpgadmin guide list|info <hub>} — inspection en lecture seule des Guides de Hub
+     * configurés ({@code plugins/RPGQuest/hub-guides/*.yml}, voir {@code hub.HubGuideRegistry} et
+     * {@code docs/HUB_GUIDE.md}). N'ouvre aucun dialogue, ne modifie rien : outil pour vérifier la
+     * configuration d'aide/orientation d'un Hub avant/pendant l'ajout d'un nouveau Hub.
+     */
+    private void handleGuide(CommandSender sender, String[] args) {
+        if (args.length < 2 || args[1].equalsIgnoreCase("list")) {
+            List<HubGuideDefinition> guides = hubGuideRegistry.all();
+            if (guides.isEmpty()) {
+                sender.sendMessage(MM.deserialize("<gray>Aucun Guide de Hub chargé (dossier hub-guides/ vide ou invalide).</gray>"));
+                return;
+            }
+            sender.sendMessage(MM.deserialize("<gold><bold>Guides de Hub (<n>)</bold></gold>",
+                    Placeholder.unparsed("n", String.valueOf(guides.size()))));
+            for (HubGuideDefinition guide : guides) {
+                sender.sendMessage(MM.deserialize(
+                        "<yellow>- <hub></yellow> <gray>— mondes : <worlds> ; dialogue : <dialogue> (<node>)</gray>",
+                        Placeholder.unparsed("hub", guide.hubId()),
+                        Placeholder.unparsed("worlds", guide.worlds().isEmpty() ? "(aucun)" : String.join(", ", guide.worlds())),
+                        Placeholder.unparsed("dialogue", guide.guideDialogueId().toString()),
+                        Placeholder.unparsed("node", guide.helpNodeId())));
+            }
+            return;
+        }
+        if (!args[1].equalsIgnoreCase("info") || args.length < 3) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin guide <list|info <hub>></yellow>"));
+            return;
+        }
+        Optional<HubGuideDefinition> guideOpt = hubGuideRegistry.forHub(args[2].toLowerCase(Locale.ROOT));
+        if (guideOpt.isEmpty()) {
+            sender.sendMessage(MM.deserialize("<red>Guide de Hub inconnu :</red> <white><hub></white>",
+                    Placeholder.unparsed("hub", args[2])));
+            return;
+        }
+        HubGuideDefinition guide = guideOpt.get();
+        sender.sendMessage(MM.deserialize("<gold>=== Guide du Hub <hub> ===</gold>",
+                Placeholder.unparsed("hub", guide.hubId())));
+        sender.sendMessage(MM.deserialize("<white>Mondes :</white> <gray><worlds></gray>",
+                Placeholder.unparsed("worlds", guide.worlds().isEmpty() ? "(aucun)" : String.join(", ", guide.worlds()))));
+        sender.sendMessage(MM.deserialize("<white>Dialogue d'aide :</white> <gray><dialogue> (nœud <node>)</gray>",
+                Placeholder.unparsed("dialogue", guide.guideDialogueId().toString()),
+                Placeholder.unparsed("node", guide.helpNodeId())));
+        if (!guide.welcome().isBlank()) {
+            sender.sendMessage(MM.deserialize("<white>Accueil :</white> <gray><text></gray>",
+                    Placeholder.unparsed("text", guide.welcome())));
+        }
+        if (!guide.specialty().isBlank()) {
+            sender.sendMessage(MM.deserialize("<white>Spécialité :</white> <gray><text></gray>",
+                    Placeholder.unparsed("text", guide.specialty())));
+        }
+        if (guide.referrals().isEmpty()) {
+            sender.sendMessage(MM.deserialize("<gray>Aucune orientation vers un PNJ configurée.</gray>"));
+        } else {
+            sender.sendMessage(MM.deserialize("<white>Orientations :</white>"));
+            for (HubGuideReferral referral : guide.referrals()) {
+                sender.sendMessage(MM.deserialize(
+                        "<gray>- <role> → <npc> : <note></gray>",
+                        Placeholder.unparsed("role", referral.role()),
+                        Placeholder.unparsed("npc", referral.npcName()),
+                        Placeholder.unparsed("note", referral.note())));
+            }
+        }
+    }
+
     private void handleStoryInfo(CommandSender sender, String[] args) {
         if (args.length < 3) {
             sender.sendMessage(MM.deserialize("<yellow>/rpgadmin story info <joueur></yellow>"));
@@ -1853,6 +1932,13 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 4 && args[0].equalsIgnoreCase("player") && args[1].equalsIgnoreCase("resetnew")) {
             return List.of("confirm", "preview").stream().filter(s -> s.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("guide")) {
+            return GUIDE_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("guide") && args[1].equalsIgnoreCase("info")) {
+            return hubGuideRegistry.all().stream().map(HubGuideDefinition::hubId)
+                    .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("story")) {
             return plugin.getServer().getOnlinePlayers().stream().map(Player::getName)

@@ -16,6 +16,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 - **Dialogues** — graphes de nœuds PNJ (Citizens et entités vanilla), conditions et actions par
   choix, rendu via Paper Dialog.
 - **NPC / Citizens** — identité logique RPGQuest découplée du nom affiché de l'entité.
+- **Guide « centre d'aide » + journal du Libraire** *(issue #11)* — le dialogue `guide.yml` est un
+  centre d'aide structuré (nœud `help_menu` + un nœud par mécanique : quêtes, journal, Wild, claims,
+  marchands, « à qui parler »), orientation vers les PNJ **textuelle** (nom + rôle + explication).
+  Structure multi-Hub en données : `hub-guides/*.yml` (`hub.HubGuideRegistry`, exemple
+  `hub_depart.yml`) mappe chaque Hub → dialogue d'aide + accueil/spécialité/orientations ; diagnostic
+  admin `/rpgadmin guide list|info <hub>` (lecture seule) — voir [HUB_GUIDE.md](HUB_GUIDE.md). Le
+  Libraire remet `rpgquest:journal_quetes` (garde `LACKS_CUSTOM_ITEM` → jamais de doublon, soulbound
+  → jamais perdu) ; **clic droit ouvre désormais la GUI** `QuestJournalService` (deux onglets
+  « en cours » / « terminées »), plus le résumé chat (ancien `QuestJournalBookService` supprimé).
 - **Zones protégées** — cuboïdes avec flags configurables (PvP, casse, explosions, etc.),
   outil de sélection dédié (indépendant de WorldEdit, voir la note ci-dessous).
 - **Portails** — `/rpgadmin portal` (canalisation, coût, cooldown, conditions quête/niveau) et
@@ -28,9 +37,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   automatique à l'entrée ou volontaire via l'Acte réutilisé), faisceau dense (DUST + END_ROD)
   hors du claim ; retour au Hub sans commande via la Pierre de retour (mécanique générique de
   voyage par objet, `travel.ItemTravelService`).
-- **Boucle joueur Hub ↔ Wild** *(cette étape)* — Journal des quêtes (`rpgquest:journal_quetes`,
-  clic droit → résumé compact chat des stories/quêtes actives + objectifs, donné par le Libraire ;
-  stories/quêtes secrètes non découvertes masquées) ; Rune de rappel (`rpgquest:rune_rappel`,
+- **Boucle joueur Hub ↔ Wild** — Journal des quêtes (`rpgquest:journal_quetes`, donné par le
+  Libraire, clic droit → GUI deux onglets, voir ligne « Guide / journal » ci-dessus) ; Rune de
+  rappel (`rpgquest:rune_rappel`,
   Wild → Hub, canalisation 10 s, cooldown 30 min persistant, remise à chaque nouveau joueur, filet
   via le Guide) ; avertissement compact cliquable [Continuer]/[Annuler] à l'entrée du Wild sans
   Rune ; Waystones générées paresseusement et de façon déterministe dans le Wild

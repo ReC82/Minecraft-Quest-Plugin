@@ -185,7 +185,7 @@ class PlayerResetServiceTest {
         customItemRegistry.start();
 
         questJournalService = new QuestJournalService(
-                plugin, questEngine, questProgressEngine, variableRepository, new JournalConfig(true));
+                plugin, questEngine, questProgressEngine, variableRepository, customItemRegistry, new JournalConfig(true));
         questJournalService.start();
 
         YamlDestinationRegistry destinationRegistry =

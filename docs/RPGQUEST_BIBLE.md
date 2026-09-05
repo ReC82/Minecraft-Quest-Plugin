@@ -111,7 +111,7 @@ Voir [VERYGAMES.md § Rollback](deployment/VERYGAMES.md#rollback) pour la liste 
 
 ## 2. Administration RPGQuest (`/rpgadmin`)
 
-Vérifié intégralement dans `src/main/java/com/lodygames/rpgquest/admin/RpgAdminCommand.java` (1269 lignes, lu en entier). Racine unique pour huit sous-systèmes : `flatten`, `zone`, `portal`, `mob`, `npc`, `spawn`, `world`, `worldportal`.
+Vérifié intégralement dans `src/main/java/com/lodygames/rpgquest/admin/RpgAdminCommand.java` (1269 lignes, lu en entier). Racine unique pour les sous-systèmes d'administration : `flatten`, `zone`, `portal`, `mob`, `npc`, `spawn`, `world`, `worldportal`, `story`, `waystone`, `player`, `guide` (ces quatre derniers documentés dans leurs sections dédiées ci-dessous).
 
 Type : Admin (toutes les sous-commandes) — Permission : **`rpgquest.admin.world`** (unique pour tout `/rpgadmin`, pas de permission plus fine par sous-commande). Exigent toujours un **joueur en jeu** (jamais la console — aucune sous-commande ne prend de coordonnée explicite, toutes utilisent la position/sélection du joueur).
 
@@ -137,6 +137,16 @@ Détail complet : [docs/ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md).
 | `/rpgadmin player resetnew <joueur> confirm` | Remet l'état **RPGQuest** d'un seul joueur (en ligne **ou** hors ligne) dans l'équivalent d'un joueur jamais connecté : quêtes (actives/progression/terminées/suivie), Stories, **toutes** les variables/unlocks (dont `CLAIM_TIER_1`), progression RPG (`player_skills`/`xp_grants`), découvertes de Waystones, cooldowns persistants (portails + Rune), claim principal (données de protection uniquement, cascade `claim_members`), et objets personnalisés RPGQuest de l'inventaire (immédiat si en ligne, différé au prochain login sinon). |
 
 Ne touche **jamais** : `data.db` entier, un autre joueur, le profil/UUID/playerdata vanilla, les mondes, les PNJ Citizens, les définitions de quêtes/Stories, les portails, les Waystones globales, les blocs construits. Conservés volontairement : économie, backpacks/entitlements, annonces de marché. Console : autorisée (comme `/rpgadmin story`). Protection : mot `confirm` obligatoire.
+
+### Guides de Hub — `/rpgadmin guide`
+Détail complet : [docs/HUB_GUIDE.md](HUB_GUIDE.md). Lecture seule, console autorisée, permission `rpgquest.admin.world`.
+
+| Commande | Effet |
+|---|---|
+| `/rpgadmin guide list` | Liste les Guides de Hub chargés (`plugins/RPGQuest/hub-guides/*.yml`) : `hub-id`, mondes, dialogue d'aide + nœud. |
+| `/rpgadmin guide info <hub>` | Détail d'un Hub : mondes, dialogue/nœud d'aide, message d'accueil, spécialité locale, orientations vers les PNJ (`role → npc : note`). |
+
+Aucune écriture. Le contenu du menu d'aide vit dans le dialogue référencé (`guide.yml`, nœud `help_menu`) — voir « /quests » ci-dessus et [NPC_DIALOGUES_QUESTS_GUIDE.md](NPC_DIALOGUES_QUESTS_GUIDE.md) §6b.
 
 ### Zones protégées — `/rpgadmin zone`
 Détail complet : [docs/SAFE_ZONE.md](SAFE_ZONE.md). Page docs-site : `hub-safe-zone.html` (couvre `zone wand/create/delete/list/info` et le tableau des flags).
@@ -223,9 +233,9 @@ Persistance : oui pour tout ce qui touche à l'état (`accept`/`abandon`) — SQ
 
 ### `/quests` — journal de quêtes
 Type : Joueur — Permission : `rpgquest.quest`
-But : ouvrir le journal paginé (onglets Actives/Disponibles/Terminées).
-Syntaxe : `/quests`
-Effet : ouvre un inventaire GUI (voir `docs/ARCHITECTURE.md` pour le détail : clic gauche = détail, clic droit = suivi/bossbar). Aucun paramètre.
+But : ouvrir le journal paginé. **Deux onglets** : « Quêtes en cours » (`ACTIVE`/`READY_TO_TURN_IN`) et « Quêtes terminées » (`COMPLETED`). Il n'y a **pas** d'onglet catalogue des quêtes disponibles (issue #11) : le journal ne liste que les quêtes déjà acceptées par le joueur, jamais les quêtes non découvertes.
+Ouverture : `/quests`, **ou** un clic droit sur l'item `rpgquest:journal_quetes` remis par le Libraire (même GUI, `QuestJournalService`). L'item est reconnu par son identité RPGQuest/PDC, jamais par son nom/lore ; il ne peut pas être dupliqué (garde `LACKS_CUSTOM_ITEM` sur le dialogue du Libraire) ni perdu (`SoulboundItemService`).
+Effet : ouvre un inventaire GUI (voir `docs/ARCHITECTURE.md` pour le détail : clic gauche = détail, clic droit = suivi/bossbar). Aucune interaction ne permet de retirer ou dupliquer un item de la GUI (tout clic/drag sur un `JournalInventoryHolder` est annulé). Aucun paramètre.
 Persistance : le suivi (quête « trackée ») persiste (`player_variables`), pas la simple ouverture du menu.
 Bouton « Fermer » (slot `CLOSE_SLOT`/`DETAIL_CLOSE_SLOT`) : la fermeture est différée d'un tick serveur (`QuestJournalService#closeNextTick`) plutôt qu'appelée directement dans le gestionnaire de `InventoryClickEvent` — fermer une fenêtre pendant le traitement de son propre clic annulé pouvait laisser le client avec une fenêtre visuellement toujours ouverte (paquet de resynchronisation du clic annulé arrivant après le paquet de fermeture).
 
@@ -441,11 +451,17 @@ besoin.
 ### Exemple réel (environnement de développement, `world_hub`)
 
 -   id Citizens numérique `0` → PNJ **Guide** (id logique RPGQuest `guide`).
+    Dialogue `guide.yml` = **centre d'aide** : « Comment fonctionne le jeu ? »
+    → nœud `help_menu` (un sujet par mécanique), orientations textuelles vers
+    les autres PNJ. Structure multi-Hub : `hub-guides/*.yml`,
+    `/rpgadmin guide list|info` — voir [HUB_GUIDE.md](HUB_GUIDE.md).
 -   id Citizens numérique `1` → PNJ **Libraire** (id logique RPGQuest
-    `libraire`).
+    `libraire`). Remet `rpgquest:journal_quetes` (une seule fois, garde
+    `LACKS_CUSTOM_ITEM` + soulbound) ; clic droit sur le journal → GUI
+    `/quests` à deux onglets.
 
 Procédure complète (créer → tagger → dialogue → quête) : voir
-`docs/NPC_DIALOGUES_QUESTS_GUIDE.md` section 6.
+`docs/NPC_DIALOGUES_QUESTS_GUIDE.md` sections 6 et 6b.
 
 ### Limites connues
 

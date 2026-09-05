@@ -37,12 +37,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`waystone.WaystoneService`), découverte individuelle par joueur, retour au Hub par canalisation
   courte. Système **soulbound générique** (`item.SoulboundItemService`) : un seul écouteur anti-perte
   pour tous les objets permanents (Acte, Pierre de retour, Journal, Rune).
-- **Reset admin « nouveau joueur »** *(cette étape)* — `/rpgadmin player resetnew <joueur> confirm`
+- **Reset admin « nouveau joueur »** — `/rpgadmin player resetnew <joueur> confirm`
   (permission `rpgquest.admin.world`, console OK, online **ou** offline) : remet l'état RPGQuest
   d'un seul joueur à l'équivalent « jamais joué » (quêtes, Stories, variables/unlocks dont
   `CLAIM_TIER_1`, progression RPG, découvertes de Waystones, cooldowns persistants, claim principal
   + objets RPGQuest de l'inventaire). Ne touche jamais `data.db` entier, les autres joueurs, le
-  profil/UUID, les mondes, les blocs, les Waystones globales — voir
+  profil/UUID, les mondes, les blocs, les Waystones globales. Variante **`preview`** *(issue #8)* :
+  `/rpgadmin player resetnew <joueur> preview` — dry-run qui liste, catégorie par catégorie, ce qui
+  serait effacé, **sans aucune écriture** (`PlayerResetService#previewReset`). Voir
   [ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md).
 - **Items / équipements personnalisés** — objets marqués PDC, comportements d'arme/outil,
   recettes de craft dédiées.

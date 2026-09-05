@@ -93,6 +93,16 @@ public final class StoryService implements PluginService {
     public record StoryInfo(StoryDefinition story, StoryState state, int currentIndex) {
     }
 
+    /**
+     * Lignes brutes de {@code story_progress} d'un joueur (lecture pure, aucune écriture). Contrairement
+     * à {@link #info}, ne filtre pas sur le registre : reflète exactement ce que
+     * {@link #reset}{@code (id, "all")} supprimerait — utilisé par le preview du reset admin
+     * « nouveau joueur ».
+     */
+    public CompletableFuture<Map<String, StoryProgressRecord>> progressRecords(UUID playerId) {
+        return progressRepository.findAll(playerId);
+    }
+
     /** Un {@link StoryInfo} par story connue du registre, dans l'ordre chargé — {@code NOT_STARTED} si aucune ligne. */
     public CompletableFuture<List<StoryInfo>> info(UUID playerId) {
         return progressRepository.findAll(playerId).thenApply(records -> registry.stories().stream()

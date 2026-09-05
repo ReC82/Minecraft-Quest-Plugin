@@ -1251,30 +1251,34 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     // ---- Reset « nouveau joueur » (mission « reset admin complet pour retester le parcours ») ----
 
     /**
-     * {@code /rpgadmin player resetnew <joueur> confirm} — remet l'état RPGQuest d'<strong>un
+     * {@code /rpgadmin player resetnew <joueur> <confirm|preview>} — remet l'état RPGQuest d'<strong>un
      * seul</strong> joueur (en ligne ou hors ligne) dans l'équivalent fonctionnel d'un joueur qui
      * n'a jamais joué : quêtes, Stories, variables/unlocks (dont {@code CLAIM_TIER_1}), progression
      * RPG, découvertes de Waystones, cooldowns persistants, claim principal (données de protection,
      * pas les blocs). Voir {@link PlayerResetService} pour la portée exacte et
      * {@code docs/ADMIN_PLAYER_RESET.md}. Protection anti-erreur : le mot {@code confirm} est
-     * obligatoire (même esprit que {@code /rpgadmin flatten confirm}).
+     * obligatoire (même esprit que {@code /rpgadmin flatten confirm}) ; {@code preview} affiche ce
+     * qui serait effacé <strong>sans rien modifier</strong> (dry-run).
      */
     private void handlePlayer(CommandSender sender, String[] args) {
-        if (args.length < 2 || !args[1].equalsIgnoreCase("resetnew")) {
-            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin player resetnew <joueur> confirm</yellow>"));
-            return;
-        }
-        if (args.length < 3) {
-            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin player resetnew <joueur> confirm</yellow>"));
+        if (args.length < 3 || !args[1].equalsIgnoreCase("resetnew")) {
+            sendPlayerResetUsage(sender);
             return;
         }
         String rawName = args[2];
-        boolean confirmed = args.length >= 4 && args[3].equalsIgnoreCase("confirm");
-        if (!confirmed) {
+        String action = args.length >= 4 ? args[3].toLowerCase(Locale.ROOT) : "";
+        if (action.equals("preview")) {
+            handlePlayerResetPreview(sender, rawName);
+            return;
+        }
+        if (!action.equals("confirm")) {
             sender.sendMessage(MM.deserialize(
                     "<gold>⚠ Reset « nouveau joueur » pour</gold> <white><name></white> <gold>—</gold> "
                             + "<gray>efface ses quêtes, Stories, variables/unlocks, progression RPG, "
                             + "découvertes de Waystones, cooldowns et son claim principal.</gray>",
+                    Placeholder.unparsed("name", rawName)));
+            sender.sendMessage(MM.deserialize(
+                    "<yellow>Aperçu sans rien modifier :</yellow> <white>/rpgadmin player resetnew <name> preview</white>",
                     Placeholder.unparsed("name", rawName)));
             sender.sendMessage(MM.deserialize(
                     "<yellow>Confirme avec :</yellow> <white>/rpgadmin player resetnew <name> confirm</white>",
@@ -1310,6 +1314,59 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             "<red>Échec du reset (voir la console).</red>")));
                     return null;
                 }));
+    }
+
+    /**
+     * {@code /rpgadmin player resetnew <joueur> preview} — dry-run : liste ce qu'un reset réel
+     * effacerait, catégorie par catégorie, <strong>sans effectuer aucune écriture</strong>
+     * (délègue à {@link PlayerResetService#previewReset(UUID)}, lecture seule).
+     */
+    private void handlePlayerResetPreview(CommandSender sender, String rawName) {
+        resolveTargetPlayer(sender, rawName, (uuid, name) -> playerResetService.previewReset(uuid)
+                .thenAccept(preview -> runOnMainThread(() -> {
+                    sender.sendMessage(MM.deserialize(
+                            "<gold><bold>Aperçu du reset « nouveau joueur »</bold></gold> <gray>— <white><name></white> "
+                                    + "(<uuid>, <status>)</gray>",
+                            Placeholder.unparsed("name", name), Placeholder.unparsed("uuid", uuid.toString()),
+                            Placeholder.unparsed("status", preview.online() ? "en ligne" : "hors ligne")));
+                    sender.sendMessage(MM.deserialize(
+                            "<yellow>Dry-run : aucune donnée n'a été modifiée.</yellow>"));
+                    for (PlayerResetService.ResetCategory category : preview.categories()) {
+                        String line;
+                        if (!category.inspectable()) {
+                            line = "<gray>- <white><label></white> : <gray>non applicable</gray> <dark_gray>(<detail>)</dark_gray>";
+                        } else if (category.empty()) {
+                            line = "<gray>- <white><label></white> : <dark_gray>rien à réinitialiser (<detail>)</dark_gray>";
+                        } else {
+                            line = "<gray>- <white><label></white> : <yellow><count></yellow> <dark_gray>(<detail>)</dark_gray>";
+                        }
+                        sender.sendMessage(MM.deserialize(line,
+                                Placeholder.unparsed("label", category.label()),
+                                Placeholder.unparsed("count", String.valueOf(category.count())),
+                                Placeholder.unparsed("detail", category.detail())));
+                    }
+                    sender.sendMessage(MM.deserialize(
+                            "<gray>Conservés dans tous les cas : profil/UUID, économie, backpacks/entitlements, "
+                                    + "annonces de marché, blocs construits, Waystones globales.</gray>"));
+                    sender.sendMessage(MM.deserialize(
+                            "<yellow>Pour exécuter réellement :</yellow> <white>/rpgadmin player resetnew <name> confirm</white>",
+                            Placeholder.unparsed("name", name)));
+                }))
+                .exceptionally(error -> {
+                    plugin.getSLF4JLogger().error("Échec de /rpgadmin player resetnew preview pour {}", rawName, error);
+                    runOnMainThread(() -> sender.sendMessage(MM.deserialize(
+                            "<red>Échec de l'aperçu (voir la console).</red>")));
+                    return null;
+                }));
+    }
+
+    private void sendPlayerResetUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin player resetnew <joueur></yellow> <gray>- avertissement, ne fait rien</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin player resetnew <joueur> preview</yellow> <gray>- dry-run : liste ce qui serait effacé, sans rien modifier</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin player resetnew <joueur> confirm</yellow> <gray>- exécute le reset</gray>"));
     }
 
     private void handleStoryInfo(CommandSender sender, String[] args) {
@@ -1795,7 +1852,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                     .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 4 && args[0].equalsIgnoreCase("player") && args[1].equalsIgnoreCase("resetnew")) {
-            return List.of("confirm").stream().filter(s -> s.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
+            return List.of("confirm", "preview").stream().filter(s -> s.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("story")) {
             return plugin.getServer().getOnlinePlayers().stream().map(Player::getName)

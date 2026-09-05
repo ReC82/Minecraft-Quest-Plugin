@@ -184,6 +184,31 @@ class WaystoneServiceTest {
     }
 
     @Test
+    void discoveryCountReflectsWhatThePlayerHasFoundWithoutMutating() throws Exception {
+        Waystone w = generateAt(100, 100);
+        PlayerMock a = addPlayer();
+        PlayerMock b = addPlayer();
+        service.handleJoin(a);
+        service.handleJoin(b);
+
+        assertEquals(0, service.discoveryCount(a.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+        service.handleClick(a, w);
+        await(() -> {
+            try {
+                return repository.discoveriesFor(a.getUniqueId()).get(2, TimeUnit.SECONDS).contains(w.id());
+            } catch (Exception e) {
+                return false;
+            }
+        });
+
+        assertEquals(1, service.discoveryCount(a.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertEquals(0, service.discoveryCount(b.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        // Lecture pure : compter ne doit rien supprimer.
+        assertTrue(repository.discoveriesFor(a.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).contains(w.id()));
+    }
+
+    @Test
     void resetDiscoveriesClearsThemForThatPlayer() throws Exception {
         Waystone w = generateAt(100, 100);
         PlayerMock a = addPlayer();

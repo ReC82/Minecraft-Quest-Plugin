@@ -108,3 +108,59 @@ remplacement du JAR.
 
 Aucune donnée n'a été migrée par ce changement : le rollback ne touche que
 le JAR.
+
+---
+
+## 2026-09-05 - Preview / dry-run du reset joueur admin (issue #8)
+
+### Changement
+
+Ajout de la sous-commande `/rpgadmin player resetnew <joueur> preview` :
+dry-run qui liste, catégorie par catégorie, ce qu'un reset réel effacerait
+pour le joueur ciblé, **sans effectuer aucune écriture** (aucune
+suppression en base, aucun marqueur `__pending_new_player_reset__`, aucune
+invalidation de cache, aucun objet retiré de l'inventaire). En ligne ou
+hors ligne. Le comportement de `resetnew <joueur> confirm` est **inchangé**
+(seule une factorisation interne de `PlayerResetService.removeRpgItems` en
+`countOrRemoveRpgItems`). Nouveaux points de lecture seule :
+`PlayerVariableRepository#findAllForPlayer`, `WaystoneService#discoveryCount`,
+`StoryService#progressRecords`. Voir
+[docs/ADMIN_PLAYER_RESET.md](../ADMIN_PLAYER_RESET.md).
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement — aucune action manuelle autre que
+remplacement du JAR.
+
+### Sauvegarde préalable
+
+- Ancien JAR `plugins/RPGQuest-<ancienne_version>.jar`.
+- `plugins/RPGQuest/data.db` par précaution (aucune migration, aucun schéma
+  modifié — suivre la procédure standard de
+  [mise à jour du seul JAR](VERYGAMES.md#mise-à-jour-du-seul-jar-rpgquest-scénario-2)).
+
+### Déploiement
+
+1. Compiler (`./gradlew clean build`).
+2. Arrêter le serveur.
+3. Remplacer uniquement `plugins/RPGQuest-*.jar` par le nouveau JAR (FTP).
+   Ne toucher à aucun autre fichier (aucune nouvelle clé de config).
+4. Redémarrer.
+
+### Validation
+
+- `/rpgadmin player resetnew <joueur> preview` affiche l'en-tête, la ligne
+  `Dry-run : aucune donnée n'a été modifiée.`, une ligne par catégorie,
+  puis le rappel `Pour exécuter réellement : … confirm`.
+- Après un `preview`, `/rpgadmin player resetnew <joueur> confirm` (sur un
+  joueur de test) montre toujours les mêmes données qu'avant le preview
+  (le preview n'a rien altéré).
+- Tab-complétion : `resetnew <joueur> <TAB>` propose `confirm` et `preview`.
+
+### Rollback
+
+1. Arrêter le serveur.
+2. Remettre en place l'ancien JAR RPGQuest sauvegardé.
+3. Redémarrer et vérifier `/rpgquest version`.
+
+Aucune donnée migrée : le rollback ne touche que le JAR.

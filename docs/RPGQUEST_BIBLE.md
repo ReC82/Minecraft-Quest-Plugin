@@ -133,6 +133,7 @@ Détail complet : [docs/ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md).
 | Commande | Effet |
 |---|---|
 | `/rpgadmin player resetnew <joueur>` | Affiche l'avertissement listant ce qui serait effacé (ne fait rien). |
+| `/rpgadmin player resetnew <joueur> preview` | **Dry-run** : liste, catégorie par catégorie, ce qu'un reset réel effacerait (nombre + détail ; « rien à réinitialiser » si vide ; « non applicable » pour l'inventaire d'un joueur hors ligne). **Aucune écriture** : pas de suppression, pas de marqueur, pas d'invalidation de cache, aucun objet retiré. En ligne **ou** hors ligne. |
 | `/rpgadmin player resetnew <joueur> confirm` | Remet l'état **RPGQuest** d'un seul joueur (en ligne **ou** hors ligne) dans l'équivalent d'un joueur jamais connecté : quêtes (actives/progression/terminées/suivie), Stories, **toutes** les variables/unlocks (dont `CLAIM_TIER_1`), progression RPG (`player_skills`/`xp_grants`), découvertes de Waystones, cooldowns persistants (portails + Rune), claim principal (données de protection uniquement, cascade `claim_members`), et objets personnalisés RPGQuest de l'inventaire (immédiat si en ligne, différé au prochain login sinon). |
 
 Ne touche **jamais** : `data.db` entier, un autre joueur, le profil/UUID/playerdata vanilla, les mondes, les PNJ Citizens, les définitions de quêtes/Stories, les portails, les Waystones globales, les blocs construits. Conservés volontairement : économie, backpacks/entitlements, annonces de marché. Console : autorisée (comme `/rpgadmin story`). Protection : mot `confirm` obligatoire.

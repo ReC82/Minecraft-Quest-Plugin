@@ -231,6 +231,20 @@ class PlayerResetServiceTest {
         return future.get();
     }
 
+    /** Comme {@link #runReset}, {@code previewReset} se termine sur le thread principal. */
+    private PlayerResetService.ResetPreview runPreview(UUID uuid) throws Exception {
+        CompletableFuture<PlayerResetService.ResetPreview> future = resetService.previewReset(uuid);
+        await(future::isDone);
+        return future.get();
+    }
+
+    private static PlayerResetService.ResetCategory category(PlayerResetService.ResetPreview preview, String label) {
+        return preview.categories().stream()
+                .filter(c -> c.label().equals(label))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("catégorie absente du preview : " + label));
+    }
+
     /** Sème l'état d'onboarding complet d'un joueur directement en base (fonctionne en ligne comme hors ligne). */
     private void seedFullState(UUID uuid, String name) throws Exception {
         profileRepository.findOrCreate(uuid, name).get(TIMEOUT, TimeUnit.SECONDS);
@@ -331,5 +345,74 @@ class PlayerResetServiceTest {
                 questProgressEngine.stateOf(uuid, PREMIERS_PAS).get(TIMEOUT, TimeUnit.SECONDS),
                 "la quête d'introduction doit pouvoir être reprise depuis zéro");
         assertTrue(storyProgressRepository.findAll(uuid).get(TIMEOUT, TimeUnit.SECONDS).isEmpty());
+    }
+
+    // ---- Issue #8 : preview / dry-run --------------------------------------------------------------
+
+    @Test
+    void previewOfAnOfflinePlayerListsAffectedCategoriesAndWritesNothing() throws Exception {
+        UUID uuid = UUID.randomUUID();
+        seedFullState(uuid, "PreviewOffline");
+
+        PlayerResetService.ResetPreview preview = runPreview(uuid);
+
+        assertFalse(preview.online());
+        assertTrue(category(preview, "Quêtes").count() >= 1);
+        assertTrue(category(preview, "Stories").count() >= 1);
+        assertTrue(category(preview, "Variables / unlocks").count() >= 1);
+        assertEquals(1, category(preview, "Déblocage CLAIM_TIER_1").count());
+        assertTrue(category(preview, "Progression RPG").count() >= 1);
+        assertEquals(1, category(preview, "Découvertes de Waystones").count());
+        assertTrue(category(preview, "Cooldowns de portails").count() >= 1);
+        assertTrue(category(preview, "Cooldowns de voyage par objet (Rune…)").count() >= 1);
+        assertEquals(1, category(preview, "Claim principal").count());
+        assertFalse(category(preview, "Inventaire (objets RPGQuest)").inspectable(),
+                "l'inventaire d'un joueur hors ligne n'est pas inspectable par le preview");
+
+        // Aucune écriture : tout l'état d'onboarding est encore là après le preview.
+        assertFalse(dbStateGoneFor(uuid), "le preview ne doit rien supprimer en base");
+        assertTrue(claimRepository.allClaims().get(TIMEOUT, TimeUnit.SECONDS).stream()
+                .anyMatch(c -> c.owner().equals(uuid)), "le preview ne doit pas supprimer le claim");
+        assertTrue(claimService.hasClaimTierOne(uuid).get(TIMEOUT, TimeUnit.SECONDS),
+                "CLAIM_TIER_1 doit rester débloqué après un simple preview");
+        assertTrue(variableRepository.get(uuid, PlayerResetService.PENDING_INVENTORY_KEY)
+                        .get(TIMEOUT, TimeUnit.SECONDS).isEmpty(),
+                "le preview ne doit jamais poser le marqueur de nettoyage d'inventaire différé");
+    }
+
+    @Test
+    void previewOfAnOnlinePlayerCountsRpgItemsAndLeavesEverythingInPlace() throws Exception {
+        PlayerMock player = server.addPlayer();
+        seedFullState(player.getUniqueId(), player.getName());
+        player.getInventory().addItem(customItemRegistry.create(RpgItemKeys.PIERRE_RETOUR, 1).orElseThrow());
+        player.getInventory().addItem(customItemRegistry.create(RpgItemKeys.JOURNAL_QUETES, 1).orElseThrow());
+        player.getInventory().addItem(new ItemStack(Material.DIAMOND, 5));
+
+        PlayerResetService.ResetPreview preview = runPreview(player.getUniqueId());
+
+        assertTrue(preview.online());
+        PlayerResetService.ResetCategory inventory = category(preview, "Inventaire (objets RPGQuest)");
+        assertTrue(inventory.inspectable());
+        assertTrue(inventory.count() >= 2,
+                "au moins la Pierre de retour et le Journal ajoutés doivent être comptés");
+
+        assertTrue(java.util.Arrays.stream(player.getInventory().getContents())
+                        .filter(java.util.Objects::nonNull).anyMatch(customItemRegistry::isCustomItem),
+                "le preview ne doit retirer aucun objet de l'inventaire");
+        assertFalse(dbStateGoneFor(player.getUniqueId()), "le preview ne doit rien supprimer en base");
+    }
+
+    @Test
+    void previewOfAPristinePlayerReportsEveryCategoryAsEmptyOrNotApplicable() throws Exception {
+        UUID uuid = UUID.randomUUID();
+
+        PlayerResetService.ResetPreview preview = runPreview(uuid);
+
+        assertFalse(preview.online());
+        for (PlayerResetService.ResetCategory c : preview.categories()) {
+            assertTrue(c.empty() || !c.inspectable(),
+                    "catégorie inattendue non vide pour un joueur vierge : " + c.label());
+        }
+        assertEquals(0, category(preview, "Déblocage CLAIM_TIER_1").count());
     }
 }

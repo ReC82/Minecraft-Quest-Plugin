@@ -425,6 +425,15 @@ public final class WaystoneService implements PluginService {
         });
     }
 
+    /**
+     * Nombre de Waystones découvertes par ce joueur. Lecture pure (aucune écriture) — utilisé par le
+     * preview du reset admin « nouveau joueur » pour annoncer ce qui serait effacé de
+     * {@code waystone_discoveries} sans rien supprimer.
+     */
+    public CompletableFuture<Integer> discoveryCount(UUID playerId) {
+        return repository.discoveriesFor(playerId).thenApply(Set::size);
+    }
+
     public CompletableFuture<Integer> resetDiscoveries(UUID playerId) {
         return repository.deleteDiscoveries(playerId).thenApply(count -> {
             Set<String> cached = discoveriesByPlayer.get(playerId);

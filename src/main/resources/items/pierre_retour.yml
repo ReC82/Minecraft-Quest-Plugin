@@ -6,7 +6,8 @@ lore:
   - "<gray>Remise par Jo à tout propriétaire de claim.</gray>"
   - "<gray>Clic droit pour canaliser un voyage</gray>"
   - "<gray>vers le spawn du Hub (~3 secondes).</gray>"
-  - "<dark_gray>Objet RPGQuest — permanent, jamais consommé.</dark_gray>"
+  - "<gray>Utilisable uniquement dans le monde des claims.</gray>"
+  - "<dark_gray>Objet RPGQuest — permanent, jamais consommé, jamais perdu.</dark_gray>"
 rarity: RARE
 stackable: false
 max-stack-size: 1

@@ -5,11 +5,18 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.database.DatabaseManager;
+import com.lodygames.rpgquest.database.ItemTravelCooldownRepository;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.travel.model.ItemTravelDefinition;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -40,11 +47,12 @@ class ItemTravelServiceTest {
     private RPGQuestPlugin plugin;
     private World world;
     private YamlCustomItemRegistry customItemRegistry;
+    private DatabaseManager database;
     private ItemTravelService service;
     private Location destination;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         server = MockBukkit.mock();
         plugin = MockBukkit.load(RPGQuestPlugin.class);
         world = server.addSimpleWorld("world");
@@ -54,14 +62,20 @@ class ItemTravelServiceTest {
         customItemRegistry = new YamlCustomItemRegistry(tempDir.resolve("items"), plugin.getSLF4JLogger());
         customItemRegistry.start(); // génère notamment pierre_retour.yml.
 
-        service = new ItemTravelService(plugin, customItemRegistry, plugin.getSLF4JLogger());
+        database = new DatabaseManager(tempDir.resolve("test.db"));
+        database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        service = new ItemTravelService(plugin, customItemRegistry,
+                new ItemTravelCooldownRepository(database), plugin.getSLF4JLogger());
         service.start();
-        service.register(new ItemTravelDefinition(PIERRE_RETOUR, 3, () -> Optional.of(destination)));
+        service.register(new ItemTravelDefinition(
+                PIERRE_RETOUR, 3, () -> Optional.of(destination), () -> Optional.of(world.getName())));
     }
 
     @AfterEach
     void tearDown() {
         service.stop();
+        database.shutdown();
         MockBukkit.unmock();
     }
 
@@ -145,6 +159,126 @@ class ItemTravelServiceTest {
 
         int amountAfter = player.getInventory().all(item.getType()).values().stream().mapToInt(ItemStack::getAmount).sum();
         assertEquals(amountBefore, amountAfter, "l'objet de voyage ne doit jamais être consommé");
+    }
+
+    // ---- Restriction de monde (mission « Pierre de retour limitée à `claims` ») ----------------
+
+    @Test
+    void theItemDoesNothingOutsideItsRequiredWorld() throws Exception {
+        World otherWorld = server.addSimpleWorld("wild");
+        PlayerMock player = addPlayer();
+        player.teleport(new Location(otherWorld, 0.5, 61, 0.5));
+
+        service.handleInteract(player, pierreDeRetour());
+        awaitTicks(5);
+
+        assertFalse(service.isChanneling(player.getUniqueId()),
+                "hors du monde requis par la définition, aucune canalisation ne doit démarrer");
+    }
+
+    @Test
+    void anUnrestrictedDefinitionWorksInAnyWorld() throws Exception {
+        World otherWorld = server.addSimpleWorld("wild");
+        NamespacedKey unrestricted = new NamespacedKey("rpgquest", "acte_propriete");
+        Location otherDestination = new Location(otherWorld, 5.5, 61, 5.5);
+        service.register(new ItemTravelDefinition(unrestricted, 3, () -> Optional.of(otherDestination)));
+
+        PlayerMock player = addPlayer();
+        player.teleport(new Location(otherWorld, 0.5, 61, 0.5));
+        ItemStack deed = customItemRegistry.create(unrestricted, 1).orElseThrow();
+
+        service.handleInteract(player, deed);
+        awaitUntil(() -> service.isChanneling(player.getUniqueId()));
+
+        assertTrue(service.isChanneling(player.getUniqueId()),
+                "sans restriction de monde (Optional::empty), l'objet doit fonctionner n'importe où");
+    }
+
+    // ---- Indicateur de canalisation (mission « indicateur de canalisation ») --------------------
+
+    @Test
+    void theProgressIndicatorReachesFullPercentThenIsClearedAfterASuccessfulTravel() throws Exception {
+        PlayerMock player = addPlayer();
+        service.handleInteract(player, pierreDeRetour());
+        awaitUntil(() -> service.isChanneling(player.getUniqueId()));
+        awaitUntil(() -> !service.isChanneling(player.getUniqueId()));
+
+        List<String> renderedActionBars = drainActionBarsAsPlainText(player);
+
+        assertTrue(renderedActionBars.contains("Voyage : 100%"),
+                "la progression doit atteindre proprement 100% avant la complétion, jamais s'arrêter à un pourcentage tronqué");
+        assertEquals("", renderedActionBars.get(renderedActionBars.size() - 1),
+                "l'actionbar doit être retirée immédiatement après le succès, aucun résidu (ex. « 98% »)");
+    }
+
+    @Test
+    void theProgressIndicatorIsClearedImmediatelyAfterACancelledTravel() throws Exception {
+        PlayerMock player = addPlayer();
+        service.handleInteract(player, pierreDeRetour());
+        awaitUntil(() -> service.isChanneling(player.getUniqueId()));
+
+        player.teleport(new Location(world, 20.5, 61, 20.5));
+        awaitUntil(() -> !service.isChanneling(player.getUniqueId()));
+
+        List<String> renderedActionBars = drainActionBarsAsPlainText(player);
+
+        assertFalse(renderedActionBars.isEmpty());
+        assertEquals("", renderedActionBars.get(renderedActionBars.size() - 1),
+                "l'actionbar doit être retirée immédiatement après l'annulation, aucun résidu");
+    }
+
+    // ---- Cooldown (mission « Rune de rappel ») -------------------------------------------------
+
+    private static final NamespacedKey RUNE = new NamespacedKey("rpgquest", "rune_rappel");
+
+    private ItemStack rune() {
+        return customItemRegistry.create(RUNE, 1).orElseThrow();
+    }
+
+    @Test
+    void aSuccessfulTravelStartsACooldownThatBlocksTheNextUseAndIsPersisted() throws Exception {
+        service.register(new ItemTravelDefinition(
+                RUNE, 1, 3, () -> Optional.of(destination), () -> Optional.of(world.getName())));
+        PlayerMock player = addPlayer();
+
+        service.handleInteract(player, rune());
+        awaitUntil(() -> service.isChanneling(player.getUniqueId()));
+        awaitUntil(() -> !service.isChanneling(player.getUniqueId()));
+
+        // Deuxième usage immédiat : refusé par le cooldown, aucune canalisation ne redémarre.
+        player.teleport(new Location(world, 0.5, 61, 0.5));
+        service.handleInteract(player, rune());
+        awaitTicks(10);
+        assertFalse(service.isChanneling(player.getUniqueId()),
+                "un second usage pendant le cooldown ne doit jamais redémarrer de canalisation");
+
+        var persisted = new ItemTravelCooldownRepository(database)
+                .allForPlayer(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertTrue(persisted.containsKey(RUNE.toString()), "le cooldown doit être persisté par joueur");
+    }
+
+    @Test
+    void theRuneIsRefusedOutsideItsRequiredWorld() throws Exception {
+        World other = server.addSimpleWorld("not_wild");
+        service.register(new ItemTravelDefinition(
+                RUNE, 1, 3, () -> Optional.of(destination), () -> Optional.of("wild")));
+        PlayerMock player = addPlayer();
+        player.teleport(new Location(other, 0.5, 61, 0.5));
+
+        service.handleInteract(player, rune());
+        awaitTicks(5);
+
+        assertFalse(service.isChanneling(player.getUniqueId()),
+                "hors du monde requis, la Rune ne doit jamais démarrer de canalisation");
+    }
+
+    private List<String> drainActionBarsAsPlainText(PlayerMock player) {
+        List<String> rendered = new ArrayList<>();
+        Component next;
+        while ((next = player.nextActionBar()) != null) {
+            rendered.add(PlainTextComponentSerializer.plainText().serialize(next));
+        }
+        return rendered;
     }
 
     private void awaitTicks(int ticks) throws InterruptedException {

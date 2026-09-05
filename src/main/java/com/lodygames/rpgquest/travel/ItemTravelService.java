@@ -2,12 +2,16 @@ package com.lodygames.rpgquest.travel;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.bootstrap.PluginService;
+import com.lodygames.rpgquest.database.ItemTravelCooldownRepository;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.travel.model.ItemTravelDefinition;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Location;
@@ -39,14 +43,19 @@ public final class ItemTravelService implements PluginService {
 
     private final RPGQuestPlugin plugin;
     private final YamlCustomItemRegistry customItemRegistry;
+    private final ItemTravelCooldownRepository cooldownRepository;
     private final Logger logger;
 
     private final Map<NamespacedKey, ItemTravelDefinition> definitions = new ConcurrentHashMap<>();
     private final Map<UUID, ChannelSession> channeling = new ConcurrentHashMap<>();
+    /** Cooldowns par joueur (chargés à la connexion, jamais relus en base à chaque clic). */
+    private final Map<UUID, Map<String, Instant>> cooldowns = new ConcurrentHashMap<>();
 
-    public ItemTravelService(RPGQuestPlugin plugin, YamlCustomItemRegistry customItemRegistry, Logger logger) {
+    public ItemTravelService(RPGQuestPlugin plugin, YamlCustomItemRegistry customItemRegistry,
+                              ItemTravelCooldownRepository cooldownRepository, Logger logger) {
         this.plugin = plugin;
         this.customItemRegistry = customItemRegistry;
+        this.cooldownRepository = cooldownRepository;
         this.logger = logger;
     }
 
@@ -67,6 +76,7 @@ public final class ItemTravelService implements PluginService {
             }
         }
         channeling.clear();
+        cooldowns.clear();
     }
 
     public Listener listener() {
@@ -75,6 +85,46 @@ public final class ItemTravelService implements PluginService {
 
     boolean isChanneling(UUID playerId) {
         return channeling.containsKey(playerId);
+    }
+
+    /** Charge en mémoire les cooldowns persistés du joueur — appelé une fois à la connexion. */
+    void handleJoin(Player player) {
+        reloadCooldownsForPlayer(player.getUniqueId());
+    }
+
+    /**
+     * Recharge en mémoire les cooldowns de voyage par objet persistés d'un joueur (aussi appelé par
+     * le reset admin « nouveau joueur » après suppression des lignes en base — voir {@code
+     * player.PlayerResetService}). Un joueur hors ligne n'a aucun cache à invalider.
+     */
+    public void reloadCooldownsForPlayer(UUID playerId) {
+        cooldownRepository.allForPlayer(playerId)
+                .thenAccept(loaded -> cooldowns.put(playerId, new ConcurrentHashMap<>(loaded)))
+                .exceptionally(error -> {
+                    logger.error("Impossible de charger les cooldowns de voyage par objet pour {}", playerId, error);
+                    return null;
+                });
+    }
+
+    private Instant cooldownExpiry(UUID playerId, NamespacedKey itemId) {
+        Map<String, Instant> byItem = cooldowns.get(playerId);
+        return byItem == null ? null : byItem.get(itemId.toString());
+    }
+
+    private void applyCooldown(UUID playerId, ItemTravelDefinition definition) {
+        Instant expiresAt = Instant.now().plusSeconds(definition.cooldownSeconds());
+        cooldowns.computeIfAbsent(playerId, k -> new ConcurrentHashMap<>()).put(definition.itemId().toString(), expiresAt);
+        cooldownRepository.setCooldown(playerId, definition.itemId().toString(), expiresAt).exceptionally(error -> {
+            logger.error("Impossible de persister le cooldown de {} pour {}", definition.itemId(), playerId, error);
+            return null;
+        });
+    }
+
+    private static String formatRemaining(Duration remaining) {
+        long totalSeconds = Math.max(1, remaining.getSeconds());
+        long minutes = totalSeconds / 60;
+        long seconds = totalSeconds % 60;
+        return minutes > 0 ? minutes + " min " + seconds + " s" : seconds + " s";
     }
 
     void handleInteract(Player player, ItemStack item) {
@@ -90,6 +140,19 @@ public final class ItemTravelService implements PluginService {
         if (definition == null) {
             return;
         }
+        Optional<String> requiredWorld = definition.requiredWorld().get();
+        if (requiredWorld.isPresent() && !requiredWorld.get().equals(player.getWorld().getName())) {
+            player.sendMessage(MM.deserialize("<red>Cet objet ne fonctionne pas ici.</red>"));
+            return;
+        }
+        if (definition.hasCooldown()) {
+            Instant expiry = cooldownExpiry(playerId, definition.itemId());
+            if (expiry != null && expiry.isAfter(Instant.now())) {
+                player.sendMessage(MM.deserialize("<red>Cet objet se recharge encore :</red> <white><time></white>",
+                        Placeholder.unparsed("time", formatRemaining(Duration.between(Instant.now(), expiry)))));
+                return;
+            }
+        }
         startChanneling(player, definition);
     }
 
@@ -102,6 +165,7 @@ public final class ItemTravelService implements PluginService {
         if (session != null && session.task != null) {
             session.task.cancel();
         }
+        cooldowns.remove(player.getUniqueId());
     }
 
     private void startChanneling(Player player, ItemTravelDefinition definition) {
@@ -132,11 +196,12 @@ public final class ItemTravelService implements PluginService {
         }
 
         session.elapsedTicks++;
+        // Rapporte la progression avant de compléter (jamais après) : le dernier tick doit pouvoir
+        // afficher 100%, jamais s'arrêter net à un pourcentage tronqué (ex. 98%) juste avant.
+        reportProgress(session);
         if (session.elapsedTicks >= session.totalTicks) {
             complete(session);
-            return;
         }
-        reportProgress(session);
     }
 
     private void reportProgress(ChannelSession session) {
@@ -159,9 +224,17 @@ public final class ItemTravelService implements PluginService {
             session.task.cancel();
         }
         Player player = plugin.getServer().getPlayer(playerId);
-        if (message != null && player != null) {
-            player.sendMessage(MM.deserialize(message));
+        if (player != null) {
+            clearIndicator(player);
+            if (message != null) {
+                player.sendMessage(MM.deserialize(message));
+            }
         }
+    }
+
+    /** Retire immédiatement l'actionbar de progression — jamais de résidu après succès/annulation. */
+    private void clearIndicator(Player player) {
+        player.sendActionBar(Component.empty());
     }
 
     private void complete(ChannelSession session) {
@@ -173,6 +246,7 @@ public final class ItemTravelService implements PluginService {
         if (player == null || !player.isOnline()) {
             return;
         }
+        clearIndicator(player);
 
         Optional<Location> destination = session.definition.destination().get();
         if (destination.isEmpty()) {
@@ -183,6 +257,9 @@ public final class ItemTravelService implements PluginService {
         }
         player.teleportAsync(destination.get());
         player.sendMessage(MM.deserialize("<green>Voyage réussi.</green>"));
+        if (session.definition.hasCooldown()) {
+            applyCooldown(session.playerId, session.definition);
+        }
     }
 
     private static final class ChannelSession {

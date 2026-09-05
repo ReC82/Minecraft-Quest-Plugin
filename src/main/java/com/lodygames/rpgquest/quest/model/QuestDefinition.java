@@ -12,6 +12,7 @@ public record QuestDefinition(
         String category,
         Material icon,
         boolean repeatable,
+        boolean secret,
         List<NamespacedKey> prerequisites,
         List<QuestStep> steps,
         List<QuestReward> rewards,

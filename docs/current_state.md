@@ -25,8 +25,25 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 - **Claims** — terrains protégés créés par les joueurs eux-mêmes, confiance par UUID ; monde
   résidentiel `claims` réellement pacifique (tout dégât joueur annulé, tout mob hostile empêché et
   nettoyé, Nether bloqué en sortie) ; frontière visualisée par particules (propriétaire uniquement,
-  automatique à l'entrée ou volontaire via l'Acte réutilisé) ; retour au Hub sans commande via la
-  Pierre de retour (mécanique générique de voyage par objet, `travel.ItemTravelService`).
+  automatique à l'entrée ou volontaire via l'Acte réutilisé), faisceau dense (DUST + END_ROD)
+  hors du claim ; retour au Hub sans commande via la Pierre de retour (mécanique générique de
+  voyage par objet, `travel.ItemTravelService`).
+- **Boucle joueur Hub ↔ Wild** *(cette étape)* — Journal des quêtes (`rpgquest:journal_quetes`,
+  clic droit → résumé compact chat des stories/quêtes actives + objectifs, donné par le Libraire ;
+  stories/quêtes secrètes non découvertes masquées) ; Rune de rappel (`rpgquest:rune_rappel`,
+  Wild → Hub, canalisation 10 s, cooldown 30 min persistant, remise à chaque nouveau joueur, filet
+  via le Guide) ; avertissement compact cliquable [Continuer]/[Annuler] à l'entrée du Wild sans
+  Rune ; Waystones générées paresseusement et de façon déterministe dans le Wild
+  (`waystone.WaystoneService`), découverte individuelle par joueur, retour au Hub par canalisation
+  courte. Système **soulbound générique** (`item.SoulboundItemService`) : un seul écouteur anti-perte
+  pour tous les objets permanents (Acte, Pierre de retour, Journal, Rune).
+- **Reset admin « nouveau joueur »** *(cette étape)* — `/rpgadmin player resetnew <joueur> confirm`
+  (permission `rpgquest.admin.world`, console OK, online **ou** offline) : remet l'état RPGQuest
+  d'un seul joueur à l'équivalent « jamais joué » (quêtes, Stories, variables/unlocks dont
+  `CLAIM_TIER_1`, progression RPG, découvertes de Waystones, cooldowns persistants, claim principal
+  + objets RPGQuest de l'inventaire). Ne touche jamais `data.db` entier, les autres joueurs, le
+  profil/UUID, les mondes, les blocs, les Waystones globales — voir
+  [ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md).
 - **Items / équipements personnalisés** — objets marqués PDC, comportements d'arme/outil,
   recettes de craft dédiées.
 - **Ressources** — nœuds de ressources rechargeables.
@@ -71,10 +88,10 @@ Gap async corrigé lors de l'investigation dans `PortalService` (vérification `
 
 ## Persistance
 
-SQLite (`data.db`), migrations séquentielles via `SchemaMigrator` (version courante : **14**,
-ajoutée par cette étape pour `story_progress.current_index`, position courante dans la liste de
-quêtes d'une Story). YAML pour tout ce qui est éditable à la main par un administrateur (quêtes,
-zones, portails, stories, dialogues, items...).
+SQLite (`data.db`), migrations séquentielles via `SchemaMigrator` (version courante : **17** —
+V15 réservation foncière des claims, V16 `item_travel_cooldowns` (cooldown Rune de rappel),
+V17 `waystones` + `waystone_discoveries`). YAML pour tout ce qui est éditable à la main par un
+administrateur (quêtes, zones, portails, stories, dialogues, items...).
 
 ## Non implémenté / hors périmètre à ce jour
 

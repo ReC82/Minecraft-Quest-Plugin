@@ -100,7 +100,16 @@ public final class PortalService implements PluginService {
     }
 
     void handleJoin(Player player) {
-        UUID playerId = player.getUniqueId();
+        reloadCooldownsForPlayer(player.getUniqueId());
+    }
+
+    /**
+     * Recharge en mémoire les cooldowns de portail persistés d'un joueur (aussi appelé par le reset
+     * admin « nouveau joueur » après suppression des lignes en base — voir {@code
+     * player.PlayerResetService}). Un joueur hors ligne au moment de l'appel n'a aucun cache à
+     * invalider : le prochain {@link #handleJoin} rechargera l'état à jour.
+     */
+    public void reloadCooldownsForPlayer(UUID playerId) {
         cooldownRepository.allForPlayer(playerId)
                 .thenAccept(map -> cooldownCache.put(playerId, new ConcurrentHashMap<>(map)))
                 .exceptionally(error -> {

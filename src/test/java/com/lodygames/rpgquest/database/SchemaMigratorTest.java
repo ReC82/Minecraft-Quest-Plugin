@@ -21,7 +21,7 @@ class SchemaMigratorTest {
     void migrateSetsUserVersionToCurrentSchemaVersion() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(15, userVersion(connection));
+            assertEquals(17, userVersion(connection));
         }
     }
 
@@ -30,7 +30,7 @@ class SchemaMigratorTest {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema2.db"))) {
             SchemaMigrator.migrate(connection);
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(15, userVersion(connection));
+            assertEquals(17, userVersion(connection));
         }
     }
 
@@ -46,7 +46,7 @@ class SchemaMigratorTest {
 
             SchemaMigrator.migrate(connection);
 
-            assertEquals(15, userVersion(connection));
+            assertEquals(17, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='quest_objective_progress'")) {
@@ -243,7 +243,7 @@ class SchemaMigratorTest {
                 assertTrue(resultSet.next(), "les données déjà présentes avant la migration V14 doivent survivre telles quelles");
                 assertEquals("Steve", resultSet.getString("last_name"));
             }
-            assertEquals(15, userVersion(connection));
+            assertEquals(17, userVersion(connection));
         }
     }
 
@@ -309,7 +309,7 @@ class SchemaMigratorTest {
 
             SchemaMigrator.migrate(connection);
 
-            assertEquals(15, userVersion(connection));
+            assertEquals(17, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT min_x, max_x, reserved_min_x, reserved_max_x FROM claims WHERE id = 'legacy'")) {
@@ -318,6 +318,46 @@ class SchemaMigratorTest {
                         "un claim déjà existant doit voir sa réservation initialisée à son propre cuboïde actif");
                 assertEquals(resultSet.getInt("max_x"), resultSet.getInt("reserved_max_x"));
             }
+        }
+    }
+
+    @Test
+    void migrateCreatesItemTravelCooldownsTable() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema16.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT name FROM sqlite_master WHERE type='table' AND name='item_travel_cooldowns'")) {
+                assertTrue(resultSet.next());
+            }
+        }
+    }
+
+    @Test
+    void migrateCreatesWaystoneTables() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema17.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('waystones', 'waystone_discoveries')")) {
+                int found = 0;
+                while (resultSet.next()) {
+                    found++;
+                }
+                assertEquals(2, found);
+            }
+        }
+    }
+
+    @Test
+    void reRunningV16AndV17IsIdempotent() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema1617.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA user_version = 15");
+            }
+            assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
+            assertEquals(17, userVersion(connection));
         }
     }
 

@@ -52,6 +52,7 @@ final class QuestDefinitionParser {
         String category = parseCategory(section, errors);
         Material icon = parseIcon(section, errors);
         boolean repeatable = parseRepeatable(section, errors);
+        boolean secret = parseBoolean(section, "secret", errors);
         List<NamespacedKey> prerequisites = parsePrerequisites(section, id, errors);
         List<QuestStep> steps = parseSteps(section, errors);
         List<QuestReward> rewards = parseRewards(section, errors);
@@ -63,7 +64,7 @@ final class QuestDefinitionParser {
 
         try {
             QuestDefinition quest = new QuestDefinition(
-                    id, title, description, category, icon, repeatable, prerequisites, steps, rewards, variables);
+                    id, title, description, category, icon, repeatable, secret, prerequisites, steps, rewards, variables);
             return ParseResult.success(quest);
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new QuestLoadIssue(fileName, e.getMessage())));
@@ -149,14 +150,19 @@ final class QuestDefinitionParser {
     }
 
     private boolean parseRepeatable(ConfigurationSection section, List<String> errors) {
-        if (!section.isSet("repeatable")) {
+        return parseBoolean(section, "repeatable", errors);
+    }
+
+    /** Booléen optionnel, {@code false} par défaut ; une valeur non booléenne est signalée comme erreur. */
+    private boolean parseBoolean(ConfigurationSection section, String key, List<String> errors) {
+        if (!section.isSet(key)) {
             return false;
         }
-        if (!section.isBoolean("repeatable")) {
-            errors.add("« repeatable » doit être un booléen (true/false), valeur trouvée : " + section.get("repeatable"));
+        if (!section.isBoolean(key)) {
+            errors.add("« " + key + " » doit être un booléen (true/false), valeur trouvée : " + section.get(key));
             return false;
         }
-        return section.getBoolean("repeatable");
+        return section.getBoolean(key);
     }
 
     private List<NamespacedKey> parsePrerequisites(ConfigurationSection section, NamespacedKey ownId, List<String> errors) {

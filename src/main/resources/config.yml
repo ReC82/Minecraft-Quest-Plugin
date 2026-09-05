@@ -159,6 +159,29 @@ hub:
   world: world_hub
 
 travel:
+  # Nom exact du monde d'exploration (voir config.TravelConfig) : la Rune de rappel n'y fonctionne
+  # que là, l'avertissement d'entrée ne concerne que les portails qui y mènent, et c'est le seul
+  # monde où des Waystones sont générées.
+  wild-world: wild
+  rune:
+    # Rune de rappel (travel.ItemTravelService) : canalisation de retour au Hub depuis le Wild
+    # (annulée sur mouvement/dégâts) et cooldown après un usage réussi. Le cooldown est persisté
+    # par joueur (survit à une reconnexion/redémarrage). La Rune n'est jamais consommée.
+    channel-seconds: 10
+    cooldown-seconds: 1800
+  waystone:
+    # Génération paresseuse de Waystones dans travel.wild-world (voir waystone.WaystoneService) :
+    # au plus une par cellule carrée de « cell-size » blocs de côté, décidée de façon déterministe
+    # à partir de la seed du monde + des coordonnées de la cellule (donc identique à chaque
+    # reload/redémarrage, jamais de doublon). « chance » = probabilité (0..1) qu'une cellule en
+    # contienne une ; « minimum-spacing » = distance minimale entre deux Waystones ; « safe-attempts »
+    # = essais de recherche d'une surface sûre autour du point candidat ; « channel-seconds » =
+    # canalisation d'un retour au Hub depuis une Waystone (annulée sur mouvement/dégâts).
+    cell-size: 1000
+    chance: 0.6
+    minimum-spacing: 300
+    safe-attempts: 16
+    channel-seconds: 3
   random-safe-arrival:
     # Arrivée d'un portail simple (/rpgadmin worldportal) en stratégie RANDOM_SAFE — voir
     # docs-site/worlds.html, section "Portail Hub → wild". Distance autour du spawn du monde

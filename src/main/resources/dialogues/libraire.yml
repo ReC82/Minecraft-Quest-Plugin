@@ -1,3 +1,10 @@
+# PNJ Libraire (Citizens), créé/configuré manuellement par un administrateur — voir
+# docs/NPC_DIALOGUES_QUESTS_GUIDE.md. Ce fichier ne crée jamais le PNJ, seulement son dialogue.
+#
+# Règle (mission « Journal des quêtes ») :
+# - « Obtenir un journal des quêtes » (re)donne l'objet rpgquest:journal_quetes, gratuitement, à
+#   chaque fois qu'il manque (garde LACKS_CUSTOM_ITEM) ; objet permanent, lié au joueur, jamais
+#   perdu (voir item.SoulboundItemService) — l'option redevient invisible dès qu'il est en poche.
 id: rpgquest:libraire
 start: greeting
 
@@ -5,6 +12,22 @@ nodes:
   greeting:
     speaker: "Libraire"
     text: "<white>Ah, le Guide t'envoie ?</white> <gray>Bienvenue ! Tu trouveras ici tout ce qu'il faut pour commencer ton aventure.</gray>"
+    choices:
+      - text: "Obtenir un journal des quêtes"
+        conditions:
+          - type: LACKS_CUSTOM_ITEM
+            item: rpgquest:journal_quetes
+        actions:
+          - type: RUN_SAFE_COMMAND
+            command: "customitem give %player% rpgquest:journal_quetes 1"
+        next: journal_given
+      - text: "Merci !"
+        actions:
+          - type: CLOSE
+
+  journal_given:
+    speaker: "Libraire"
+    text: "<green>Voici ton journal.</green> <gray>Fais un clic droit avec pour consulter tes aventures et tes objectifs à tout moment.</gray>"
     choices:
       - text: "Merci !"
         actions:

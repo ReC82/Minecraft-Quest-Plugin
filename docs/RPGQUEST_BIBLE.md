@@ -127,6 +127,16 @@ Détail complet : [docs/ADMIN_FLATTEN.md](ADMIN_FLATTEN.md). Page docs-site : au
 
 Persistance : non (opère directement sur les blocs du monde ; l'état d'annulation est en mémoire, perdu au redémarrage). À savoir : rayon max configurable (`admin.flatten.max-radius`, 48 par défaut), traitement par lots (4000 blocs/tick par défaut) pour ne jamais geler le serveur.
 
+### Reset « nouveau joueur » — `/rpgadmin player resetnew`
+Détail complet : [docs/ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md).
+
+| Commande | Effet |
+|---|---|
+| `/rpgadmin player resetnew <joueur>` | Affiche l'avertissement listant ce qui serait effacé (ne fait rien). |
+| `/rpgadmin player resetnew <joueur> confirm` | Remet l'état **RPGQuest** d'un seul joueur (en ligne **ou** hors ligne) dans l'équivalent d'un joueur jamais connecté : quêtes (actives/progression/terminées/suivie), Stories, **toutes** les variables/unlocks (dont `CLAIM_TIER_1`), progression RPG (`player_skills`/`xp_grants`), découvertes de Waystones, cooldowns persistants (portails + Rune), claim principal (données de protection uniquement, cascade `claim_members`), et objets personnalisés RPGQuest de l'inventaire (immédiat si en ligne, différé au prochain login sinon). |
+
+Ne touche **jamais** : `data.db` entier, un autre joueur, le profil/UUID/playerdata vanilla, les mondes, les PNJ Citizens, les définitions de quêtes/Stories, les portails, les Waystones globales, les blocs construits. Conservés volontairement : économie, backpacks/entitlements, annonces de marché. Console : autorisée (comme `/rpgadmin story`). Protection : mot `confirm` obligatoire.
+
 ### Zones protégées — `/rpgadmin zone`
 Détail complet : [docs/SAFE_ZONE.md](SAFE_ZONE.md). Page docs-site : `hub-safe-zone.html` (couvre `zone wand/create/delete/list/info` et le tableau des flags).
 

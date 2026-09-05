@@ -15,7 +15,7 @@ import org.bukkit.NamespacedKey;
  * <p>{@code id} est stable et sert de clé de persistance (voir {@code database.StoryProgressRepository}) —
  * même contrainte de format que {@code travel.model.WorldPortalDefinition}/{@code zone.model.ZoneDefinition}.</p>
  */
-public record StoryDefinition(String id, LocalizedText name, List<NamespacedKey> questIds) {
+public record StoryDefinition(String id, LocalizedText name, List<NamespacedKey> questIds, boolean secret) {
 
     private static final Pattern ID_PATTERN = Pattern.compile("[a-z0-9_-]+");
 

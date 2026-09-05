@@ -136,6 +136,19 @@ public final class QuestJournalService implements QuestJournalUi {
         return Optional.ofNullable(trackedByPlayer.get(playerId));
     }
 
+    /**
+     * Oublie la quête suivie d'un joueur et retire sa bossbar (reset admin « nouveau joueur » —
+     * voir {@code player.PlayerResetService} ; la variable persistée {@code __tracked_quest__} est
+     * effacée séparément par le wipe des variables). Sans effet si le joueur est hors ligne.
+     */
+    public void clearTrackingFor(UUID playerId) {
+        trackedByPlayer.remove(playerId);
+        Player player = plugin.getServer().getPlayer(playerId);
+        if (player != null) {
+            trackedDisplay.clear(player);
+        }
+    }
+
     // ---- Cycle de vie joueur ----------------------------------------------
 
     void handleJoin(Player player) {

@@ -18,6 +18,7 @@ public final class PlayerVariableRepository {
             INSERT INTO player_variables (player_uuid, variable_key, variable_value) VALUES (?, ?, ?)
             ON CONFLICT (player_uuid, variable_key) DO UPDATE SET variable_value = excluded.variable_value
             """;
+    private static final String DELETE_ALL_FOR_PLAYER = "DELETE FROM player_variables WHERE player_uuid = ?";
 
     private final DatabaseManager database;
 
@@ -48,6 +49,21 @@ public final class PlayerVariableRepository {
                 statement.executeUpdate();
             }
             return null;
+        });
+    }
+
+    /**
+     * Supprime toutes les variables d'un joueur (unlocks type {@code CLAIM_TIER_1}, quête suivie,
+     * marqueur de kit de départ...) — utilisé par le reset admin « nouveau joueur » ({@code
+     * player.PlayerResetService}). Ne concerne que ce joueur : {@code player_uuid} fait partie du
+     * filtre, aucune autre ligne n'est touchée. Retourne le nombre de lignes supprimées.
+     */
+    public CompletableFuture<Integer> deleteAllForPlayer(UUID uuid) {
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(DELETE_ALL_FOR_PLAYER)) {
+                statement.setString(1, uuid.toString());
+                return statement.executeUpdate();
+            }
         });
     }
 }

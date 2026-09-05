@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.mob.SpecialMobService;
 import com.lodygames.rpgquest.mob.model.MobAbility;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.player.PlayerResetService;
 import com.lodygames.rpgquest.spawn.SpawnPoint;
 import com.lodygames.rpgquest.spawn.SpawnService;
 import com.lodygames.rpgquest.story.StoryService;
@@ -22,6 +23,8 @@ import com.lodygames.rpgquest.travel.model.Destination;
 import com.lodygames.rpgquest.travel.model.DestinationStrategy;
 import com.lodygames.rpgquest.travel.model.PortalDefinition;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
+import com.lodygames.rpgquest.waystone.WaystoneService;
+import com.lodygames.rpgquest.waystone.model.Waystone;
 import com.lodygames.rpgquest.world.WorldService;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.zone.ZoneSelectionService;
@@ -67,7 +70,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String PERMISSION = "rpgquest.admin.world";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "story");
+            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "story", "waystone", "player");
+    private static final List<String> WAYSTONE_SUBCOMMANDS =
+            List.of("list", "here", "tp", "generatehere", "reset");
+    private static final List<String> PLAYER_SUBCOMMANDS = List.of("resetnew");
     private static final List<String> FLATTEN_SUBCOMMANDS = List.of("confirm", "cancel", "undo");
     private static final List<String> ZONE_SUBCOMMANDS = List.of("create", "delete", "list", "info", "wand");
     private static final List<String> PORTAL_SUBCOMMANDS = List.of("create", "delete", "list", "info", "setdestination");
@@ -95,6 +101,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final WorldPortalRegistry worldPortalRegistry;
     private final WorldPortalDebugService worldPortalDebugService;
     private final StoryService storyService;
+    private final WaystoneService waystoneService;
+    private final PlayerResetService playerResetService;
     private final RPGQuestPlugin plugin;
 
     public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService,
@@ -102,7 +110,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             SpecialMobRegistry mobRegistry, SpecialMobService mobService, NpcIdentityService npcIdentityService,
                             SpawnService spawnService, WorldService worldService, WorldPortalRegistry worldPortalRegistry,
                             WorldPortalDebugService worldPortalDebugService,
-                            StoryService storyService, RPGQuestPlugin plugin) {
+                            StoryService storyService, WaystoneService waystoneService,
+                            PlayerResetService playerResetService, RPGQuestPlugin plugin) {
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
@@ -116,6 +125,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         this.worldPortalRegistry = worldPortalRegistry;
         this.worldPortalDebugService = worldPortalDebugService;
         this.storyService = storyService;
+        this.waystoneService = waystoneService;
+        this.playerResetService = playerResetService;
         this.plugin = plugin;
     }
 
@@ -132,6 +143,12 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         // contrainte "joueur en jeu" ci-dessous.
         if (args.length > 0 && args[0].equalsIgnoreCase("story")) {
             handleStory(sender, args);
+            return true;
+        }
+        // "player" cible aussi un joueur passé en argument (en ligne OU hors ligne) : utilisable
+        // depuis la console, même exception que "story" à la contrainte "joueur en jeu" ci-dessous.
+        if (args.length > 0 && args[0].equalsIgnoreCase("player")) {
+            handlePlayer(sender, args);
             return true;
         }
         if (!(sender instanceof Player player)) {
@@ -160,10 +177,118 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handleWorld(player, args);
         } else if (args[0].equalsIgnoreCase("worldportal")) {
             handleWorldPortal(player, args);
+        } else if (args[0].equalsIgnoreCase("waystone")) {
+            handleWaystone(player, args);
         } else {
             sendUsage(player);
         }
         return true;
+    }
+
+    // ---- Waystones (mission « Waystones Wild » — outils de test uniquement) --------------------
+
+    private void handleWaystone(Player player, String[] args) {
+        if (args.length < 2) {
+            player.sendMessage(MM.deserialize(
+                    "<yellow>/rpgadmin waystone <list|here|tp <id>|generatehere|reset discoveries <joueur>></yellow>"));
+            return;
+        }
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "list" -> handleWaystoneList(player);
+            case "here" -> handleWaystoneHere(player);
+            case "tp" -> handleWaystoneTp(player, args);
+            case "generatehere" -> handleWaystoneGenerateHere(player);
+            case "reset" -> handleWaystoneResetDiscoveries(player, args);
+            default -> player.sendMessage(MM.deserialize(
+                    "<yellow>/rpgadmin waystone <list|here|tp <id>|generatehere|reset discoveries <joueur>></yellow>"));
+        }
+    }
+
+    private void handleWaystoneList(Player player) {
+        List<Waystone> all = waystoneService.all();
+        if (all.isEmpty()) {
+            player.sendMessage(MM.deserialize("<gray>Aucune Waystone générée pour le moment.</gray>"));
+            return;
+        }
+        player.sendMessage(MM.deserialize("<gold><bold>Waystones (<n>)</bold></gold>",
+                Placeholder.unparsed("n", String.valueOf(all.size()))));
+        for (Waystone w : all) {
+            player.sendMessage(MM.deserialize(
+                    "<white><id></white> <gray>— <name> @ <world> <x>,<y>,<z> (cellule <cx>,<cz>)</gray>",
+                    Placeholder.unparsed("id", w.id()), Placeholder.parsed("name", w.name()),
+                    Placeholder.unparsed("world", w.world()), Placeholder.unparsed("x", String.valueOf(w.x())),
+                    Placeholder.unparsed("y", String.valueOf(w.y())), Placeholder.unparsed("z", String.valueOf(w.z())),
+                    Placeholder.unparsed("cx", String.valueOf(w.cellX())), Placeholder.unparsed("cz", String.valueOf(w.cellZ()))));
+        }
+    }
+
+    private void handleWaystoneHere(Player player) {
+        Optional<Waystone> here = waystoneService.waystoneInCellOf(player.getLocation());
+        if (here.isEmpty()) {
+            player.sendMessage(MM.deserialize("<gray>Aucune Waystone dans la cellule courante.</gray>"));
+            return;
+        }
+        Waystone w = here.get();
+        player.sendMessage(MM.deserialize(
+                "<white><id></white> <gray>— <name> @ <x>,<y>,<z></gray>",
+                Placeholder.unparsed("id", w.id()), Placeholder.parsed("name", w.name()),
+                Placeholder.unparsed("x", String.valueOf(w.x())), Placeholder.unparsed("y", String.valueOf(w.y())),
+                Placeholder.unparsed("z", String.valueOf(w.z()))));
+    }
+
+    private void handleWaystoneTp(Player player, String[] args) {
+        if (args.length < 3) {
+            player.sendMessage(MM.deserialize("<yellow>/rpgadmin waystone tp <id></yellow>"));
+            return;
+        }
+        Optional<Waystone> waystone = waystoneService.byId(args[2]);
+        if (waystone.isEmpty()) {
+            player.sendMessage(MM.deserialize("<red>Waystone inconnue :</red> <white><id></white>",
+                    Placeholder.unparsed("id", args[2])));
+            return;
+        }
+        Waystone w = waystone.get();
+        World world = plugin.getServer().getWorld(w.world());
+        if (world == null) {
+            player.sendMessage(MM.deserialize("<red>Le monde de cette Waystone n'est pas chargé.</red>"));
+            return;
+        }
+        player.teleport(new Location(world, w.x() + 0.5, w.y() + 1, w.z() + 0.5));
+        player.sendMessage(MM.deserialize("<green>Téléporté à</green> <white><id></white>.",
+                Placeholder.unparsed("id", w.id())));
+    }
+
+    private void handleWaystoneGenerateHere(Player player) {
+        waystoneService.generateAt(player.getLocation()).thenAccept(result -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (result.isPresent()) {
+                Waystone w = result.get();
+                player.sendMessage(MM.deserialize(
+                        "<green>Waystone générée :</green> <white><id></white> <gray>@ <x>,<y>,<z></gray>",
+                        Placeholder.unparsed("id", w.id()), Placeholder.unparsed("x", String.valueOf(w.x())),
+                        Placeholder.unparsed("y", String.valueOf(w.y())), Placeholder.unparsed("z", String.valueOf(w.z()))));
+            } else {
+                player.sendMessage(MM.deserialize(
+                        "<yellow>Aucune Waystone générée (cellule déjà occupée, ou aucune surface sûre trouvée).</yellow>"));
+            }
+        })).exceptionally(error -> {
+            plugin.getSLF4JLogger().error("Échec de /rpgadmin waystone generatehere", error);
+            return null;
+        });
+    }
+
+    private void handleWaystoneResetDiscoveries(Player player, String[] args) {
+        if (args.length < 4 || !args[2].equalsIgnoreCase("discoveries")) {
+            player.sendMessage(MM.deserialize("<yellow>/rpgadmin waystone reset discoveries <joueur></yellow>"));
+            return;
+        }
+        OfflinePlayer target = plugin.getServer().getOfflinePlayer(args[3]);
+        waystoneService.resetDiscoveries(target.getUniqueId()).thenAccept(count -> plugin.getServer().getScheduler().runTask(plugin, () ->
+                player.sendMessage(MM.deserialize(
+                        "<green>Découvertes de Waystones réinitialisées pour</green> <white><p></white> <gray>(<n> ligne(s)).</gray>",
+                        Placeholder.unparsed("p", args[3]), Placeholder.unparsed("n", String.valueOf(count)))))).exceptionally(error -> {
+            plugin.getSLF4JLogger().error("Échec de /rpgadmin waystone reset discoveries", error);
+            return null;
+        });
     }
 
     // ---- Portails -----------------------------------------------------------
@@ -1123,6 +1248,70 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    // ---- Reset « nouveau joueur » (mission « reset admin complet pour retester le parcours ») ----
+
+    /**
+     * {@code /rpgadmin player resetnew <joueur> confirm} — remet l'état RPGQuest d'<strong>un
+     * seul</strong> joueur (en ligne ou hors ligne) dans l'équivalent fonctionnel d'un joueur qui
+     * n'a jamais joué : quêtes, Stories, variables/unlocks (dont {@code CLAIM_TIER_1}), progression
+     * RPG, découvertes de Waystones, cooldowns persistants, claim principal (données de protection,
+     * pas les blocs). Voir {@link PlayerResetService} pour la portée exacte et
+     * {@code docs/ADMIN_PLAYER_RESET.md}. Protection anti-erreur : le mot {@code confirm} est
+     * obligatoire (même esprit que {@code /rpgadmin flatten confirm}).
+     */
+    private void handlePlayer(CommandSender sender, String[] args) {
+        if (args.length < 2 || !args[1].equalsIgnoreCase("resetnew")) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin player resetnew <joueur> confirm</yellow>"));
+            return;
+        }
+        if (args.length < 3) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin player resetnew <joueur> confirm</yellow>"));
+            return;
+        }
+        String rawName = args[2];
+        boolean confirmed = args.length >= 4 && args[3].equalsIgnoreCase("confirm");
+        if (!confirmed) {
+            sender.sendMessage(MM.deserialize(
+                    "<gold>⚠ Reset « nouveau joueur » pour</gold> <white><name></white> <gold>—</gold> "
+                            + "<gray>efface ses quêtes, Stories, variables/unlocks, progression RPG, "
+                            + "découvertes de Waystones, cooldowns et son claim principal.</gray>",
+                    Placeholder.unparsed("name", rawName)));
+            sender.sendMessage(MM.deserialize(
+                    "<yellow>Confirme avec :</yellow> <white>/rpgadmin player resetnew <name> confirm</white>",
+                    Placeholder.unparsed("name", rawName)));
+            return;
+        }
+        resolveTargetPlayer(sender, rawName, (uuid, name) -> playerResetService.resetToNewPlayer(uuid, name)
+                .thenAccept(summary -> runOnMainThread(() -> {
+                    sender.sendMessage(MM.deserialize(
+                            "<green>Reset « nouveau joueur » effectué pour</green> <white><name></white> <gray>(<uuid>)</gray>",
+                            Placeholder.unparsed("name", name), Placeholder.unparsed("uuid", uuid.toString())));
+                    sender.sendMessage(MM.deserialize(
+                            "<gray>Réinitialisés : quêtes (actives/progression/terminées/suivie), Stories, "
+                                    + "variables & unlocks (dont CLAIM_TIER_1), progression RPG (niveaux/XP), "
+                                    + "découvertes de Waystones, cooldowns portails + Rune, claim principal "
+                                    + "(données de protection uniquement).</gray>"));
+                    if (summary.online()) {
+                        sender.sendMessage(MM.deserialize(
+                                "<gray>Inventaire : <n> objet(s) RPGQuest retiré(s) maintenant (inventaire vanilla intact).</gray>",
+                                Placeholder.unparsed("n", String.valueOf(summary.inventoryItemsRemoved()))));
+                    } else {
+                        sender.sendMessage(MM.deserialize(
+                                "<yellow>Joueur hors ligne :</yellow> <gray>l'inventaire RPGQuest sera nettoyé "
+                                        + "automatiquement à sa prochaine connexion (avant le kit de départ).</gray>"));
+                    }
+                    sender.sendMessage(MM.deserialize(
+                            "<gray>Conservés volontairement : profil/UUID, économie, backpacks/entitlements, "
+                                    + "annonces de marché, blocs construits, Waystones globales.</gray>"));
+                }))
+                .exceptionally(error -> {
+                    plugin.getSLF4JLogger().error("Échec de /rpgadmin player resetnew pour {}", rawName, error);
+                    runOnMainThread(() -> sender.sendMessage(MM.deserialize(
+                            "<red>Échec du reset (voir la console).</red>")));
+                    return null;
+                }));
+    }
+
     private void handleStoryInfo(CommandSender sender, String[] args) {
         if (args.length < 3) {
             sender.sendMessage(MM.deserialize("<yellow>/rpgadmin story info <joueur></yellow>"));
@@ -1587,6 +1776,26 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("story")) {
             return STORY_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("waystone")) {
+            return WAYSTONE_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("waystone") && args[1].equalsIgnoreCase("reset")) {
+            return List.of("discoveries").stream().filter(s -> s.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("waystone") && args[1].equalsIgnoreCase("tp")) {
+            return waystoneService.all().stream().map(Waystone::id)
+                    .filter(id -> id.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("player")) {
+            return PLAYER_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("player") && args[1].equalsIgnoreCase("resetnew")) {
+            return plugin.getServer().getOnlinePlayers().stream().map(Player::getName)
+                    .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 4 && args[0].equalsIgnoreCase("player") && args[1].equalsIgnoreCase("resetnew")) {
+            return List.of("confirm").stream().filter(s -> s.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("story")) {
             return plugin.getServer().getOnlinePlayers().stream().map(Player::getName)

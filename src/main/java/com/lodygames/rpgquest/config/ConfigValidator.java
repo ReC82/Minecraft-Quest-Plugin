@@ -43,9 +43,10 @@ public final class ConfigValidator {
         ModCompatConfig clientMod = validateModCompat(section);
         RandomSafeArrivalConfig randomSafeArrival = validateRandomSafeArrival(section);
         HubConfig hub = validateHub(section);
+        TravelConfig travel = validateTravel(section);
         return new PluginConfig(
                 debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression,
-                backpacks, webExport, store, clientMod, randomSafeArrival, hub);
+                backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -559,5 +560,61 @@ public final class ConfigValidator {
             throw new ConfigValidationException("« hub.world » ne peut pas être vide.");
         }
         return new HubConfig(world);
+    }
+
+    private static TravelConfig validateTravel(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection travel = section.getConfigurationSection("travel");
+
+        String wildWorld = travel != null ? travel.getString("wild-world", "wild") : "wild";
+        if (wildWorld == null || wildWorld.isBlank()) {
+            throw new ConfigValidationException("« travel.wild-world » ne peut pas être vide.");
+        }
+
+        ConfigurationSection rune = travel != null ? travel.getConfigurationSection("rune") : null;
+        int runeChannel = positiveInt(rune, "travel.rune.channel-seconds", 10);
+        int runeCooldown = nonNegativeSeconds(rune, "travel.rune.cooldown-seconds", 1800);
+
+        ConfigurationSection waystone = travel != null ? travel.getConfigurationSection("waystone") : null;
+        long cellSize = waystone != null ? waystone.getLong("cell-size", 1000L) : 1000L;
+        if (cellSize < 16) {
+            throw new ConfigValidationException(
+                    "« travel.waystone.cell-size » doit être au moins 16, valeur trouvée : " + cellSize);
+        }
+        double chance = waystone != null ? waystone.getDouble("chance", 0.6) : 0.6;
+        if (chance < 0.0 || chance > 1.0) {
+            throw new ConfigValidationException(
+                    "« travel.waystone.chance » doit être compris entre 0.0 et 1.0, valeur trouvée : " + chance);
+        }
+        int minimumSpacing = waystone != null ? waystone.getInt("minimum-spacing", 300) : 300;
+        if (minimumSpacing < 0) {
+            throw new ConfigValidationException(
+                    "« travel.waystone.minimum-spacing » ne peut pas être négatif, valeur trouvée : " + minimumSpacing);
+        }
+        int safeAttempts = positiveInt(waystone, "travel.waystone.safe-attempts", 16);
+        int waystoneChannel = positiveInt(waystone, "travel.waystone.channel-seconds", 3);
+
+        return new TravelConfig(wildWorld,
+                new TravelConfig.RuneConfig(runeChannel, runeCooldown),
+                new TravelConfig.WaystoneConfig(cellSize, chance, minimumSpacing, safeAttempts, waystoneChannel));
+    }
+
+    private static int positiveInt(ConfigurationSection section, String path, int defaultValue)
+            throws ConfigValidationException {
+        String key = path.substring(path.lastIndexOf('.') + 1);
+        int value = section != null ? section.getInt(key, defaultValue) : defaultValue;
+        if (value <= 0) {
+            throw new ConfigValidationException("« " + path + " » doit être strictement positif, valeur trouvée : " + value);
+        }
+        return value;
+    }
+
+    private static int nonNegativeSeconds(ConfigurationSection section, String path, int defaultValue)
+            throws ConfigValidationException {
+        String key = path.substring(path.lastIndexOf('.') + 1);
+        int value = section != null ? section.getInt(key, defaultValue) : defaultValue;
+        if (value < 0) {
+            throw new ConfigValidationException("« " + path + " » ne peut pas être négatif, valeur trouvée : " + value);
+        }
+        return value;
     }
 }

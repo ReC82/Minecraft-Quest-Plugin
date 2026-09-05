@@ -15,6 +15,7 @@ public record PluginConfig(
         StoreConfig store,
         ModCompatConfig clientMod,
         RandomSafeArrivalConfig randomSafeArrival,
-        HubConfig hub
+        HubConfig hub,
+        TravelConfig travel
 ) {
 }

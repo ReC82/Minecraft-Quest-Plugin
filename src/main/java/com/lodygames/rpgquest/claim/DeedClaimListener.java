@@ -42,6 +42,11 @@ import org.bukkit.inventory.ItemStack;
  * consommé dans ce cas, et redonné gratuitement par Jo à cette fin (voir {@code dialogues/jo.yml},
  * condition {@code LACKS_CUSTOM_ITEM}). Choix délibéré plutôt qu'un second objet dédié : le
  * comportement de l'Acte est déjà entièrement conditionné à l'existence d'un claim principal.</p>
+ *
+ * <p><b>Périmètre ou faisceau</b> (mission « retrouver visuellement son claim à distance ») : ce
+ * même clic droit choisit selon la position réelle du joueur ({@link Claim#contains}, jamais le
+ * bloc visé) — {@link ClaimBorderRenderer#show} depuis l'intérieur du claim, {@link
+ * ClaimBorderRenderer#showBeacon} sinon (périmètre au sol peu repérable depuis ailleurs).</p>
  */
 public final class DeedClaimListener implements Listener {
 
@@ -102,8 +107,21 @@ public final class DeedClaimListener implements Listener {
         // refusée par ClaimService de toute façon), jamais besoin d'un second objet dédié.
         Optional<Claim> mainClaim = claimService.mainClaimOf(playerId);
         if (mainClaim.isPresent()) {
-            borderRenderer.show(player, mainClaim.get());
-            player.sendMessage(MM.deserialize("<green>Voici les limites de ta propriété.</green>"));
+            Claim claim = mainClaim.get();
+            Location playerLocation = player.getLocation();
+            boolean insideOwnClaim = claim.contains(playerLocation.getWorld().getName(),
+                    playerLocation.getBlockX(), playerLocation.getBlockY(), playerLocation.getBlockZ());
+            if (insideOwnClaim) {
+                borderRenderer.show(player, claim);
+                player.sendMessage(MM.deserialize("<green>Voici les limites de ta propriété.</green>"));
+            } else {
+                // Hors de son claim (mission « retrouver visuellement son claim à distance ») : le
+                // périmètre au sol ne serait pas repérable de là où il se trouve — un faisceau au
+                // centre du claim l'aide à retrouver la direction, jamais le périmètre lui-même.
+                borderRenderer.showBeacon(player, claim);
+                player.sendMessage(MM.deserialize(
+                        "<green>Un faisceau indique la position de ta propriété.</green>"));
+            }
             return;
         }
 

@@ -247,6 +247,29 @@ jamais modifier de bloc.
     (condition `HAS_MAIN_CLAIM` + `LACKS_CUSTOM_ITEM`, voir
     [docs/RPGQUEST_BIBLE.md](RPGQUEST_BIBLE.md)) — jamais de duplication
     tant qu'il en reste un exemplaire en poche.
+-   **Retrouver son claim à distance** (mission « retrouver visuellement son
+    claim à distance ») : ce même clic droit avec l'Acte choisit désormais
+    **selon la position réelle du joueur** au moment du clic (`Claim#contains`,
+    jamais le bloc visé) entre deux rendus, tous deux privés au propriétaire
+    et sans aucun bloc modifié :
+    -   **à l'intérieur** de son claim : le périmètre habituel
+        (`ClaimBorderRenderer#show`, ~5 s) ;
+    -   **ailleurs dans le monde des claims** : `ClaimBorderRenderer#showBeacon`
+        — une colonne de particules du sol du monde jusqu'à sa limite de
+        construction, au centre du claim (~13 s). Depuis la révision « boucle
+        joueur », la colonne est **dense** (pas de 1 bloc) et superpose une
+        particule `DUST` teintée (couleur du claim) et une `END_ROD` très
+        lumineuse — le plus proche possible d'un faisceau de balise, sans
+        poser le moindre bloc réel (fallback propre : un vrai beam vanilla
+        exigerait un bloc permanent). Jamais la réservation 100×100, jamais
+        les deux rendus en même temps (états/tâches strictement séparés).
+
+L'Acte de propriété est par ailleurs **soulbound** (mission « système soulbound
+générique ») — voir [docs/TRAVEL.md](TRAVEL.md), section « Système soulbound
+générique » : `item.SoulboundItemService` remplace les écouteurs dédiés par
+objet ; l'Acte (comme la Pierre de retour, le Journal des quêtes et la Rune de
+rappel) ne peut plus être jeté ni tomber à la mort, et Jo continue de le
+redonner gratuitement s'il manque.
 
 ## Modèle de palier / réservation
 
@@ -424,10 +447,19 @@ bornes actives, jamais la réservation, 4 côtés + 4 colonnes de coin),
 interne sans spam, sortie/nouvelle entrée réarme, visiteur jamais concerné,
 simple changement de vue jamais une transition), `DeedClaimListenerTest`
 (clic droit avec l'Acte une fois le claim posé → affiche les limites sans
-tenter une création, Acte jamais consommé dans ce cas), `ItemTravelServiceTest`
+tenter une création, Acte jamais consommé dans ce cas, **depuis l'intérieur
+du claim affiche le périmètre jamais le faisceau, depuis l'extérieur affiche
+le faisceau jamais le périmètre**), `ItemTravelServiceTest`
 (clic droit avec l'objet enregistré démarre la canalisation, objet
 non enregistré ignoré, mouvement/dégâts annulent proprement sans téléporter,
-déconnexion nettoie l'état, objet jamais consommé quelle que soit l'issue),
+déconnexion nettoie l'état, objet jamais consommé quelle que soit l'issue,
+**hors du monde requis par la définition aucune canalisation ne démarre,
+une définition sans restriction fonctionne n'importe où, la progression
+atteint 100% puis l'actionbar est vidée après un succès/une annulation**),
+`SoulboundItemListenerTest` (remplace `ReturnStoneGuardListenerTest` — tout
+objet soulbound enregistré, l'Acte de propriété inclus : drop annulé, retiré
+des drops à la mort puis restauré tel quel à la réapparition sans jamais
+dupliquer, objet quelconque jamais concerné),
 `ClaimNetherTravelListenerTest` (portail Nether depuis `claims` refusé,
 jamais depuis un autre monde y compris un retour, seule la cause
 `NETHER_PORTAL` concernée, bascule `block-nether-travel=false` réautorise),
@@ -446,13 +478,16 @@ rendre sur ma propriété » après reconnexion/redémarrage, `/claim admin tp`
 sur un joueur hors ligne, absence réelle de monstre hostile en jeu,
 **affichage réel des particules de frontière** (jamais vu par un visiteur),
 **chute d'une grande hauteur sans dégât réel**, **Pierre de retour en jeu**
-(canalisation, annulation par mouvement, arrivée au Hub), **portail Nether
-réel refusé depuis `claims`** (voir le rapport Claude de cette étape pour la
+(canalisation, annulation par mouvement, arrivée au Hub, **actionbar propre
+— 100% puis disparition immédiate**, **refus hors du monde `claims`**,
+**impossible à jeter, jamais perdue à la mort**), **portail Nether réel
+refusé depuis `claims`**, **faisceau de retrouvaille du claim visible à
+distance/de nuit** (voir le rapport Claude de cette étape pour la
 procédure exacte).
 
 Limitation connue (MockBukkit, sans rapport avec cette fonctionnalité) :
 `Player#teleportAsync` n'est pas implémenté par cette version de MockBukkit
-— les 3 tests `ClaimTeleportServiceTest` (et 1 test `ItemTravelServiceTest`)
+— les 3 tests `ClaimTeleportServiceTest` (et 2 tests `ItemTravelServiceTest`)
 qui vérifient une téléportation réellement effectuée sont marqués `skipped`
 (jamais `failed`) plutôt que vérifiés bout en bout ; même limitation déjà
 présente pour `PortalServiceTest` (voir ce fichier), pas une régression

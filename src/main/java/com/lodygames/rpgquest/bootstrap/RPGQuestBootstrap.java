@@ -35,6 +35,7 @@ import com.lodygames.rpgquest.crafting.YamlCraftingRegistry;
 import com.lodygames.rpgquest.database.BackpackRepository;
 import com.lodygames.rpgquest.database.DatabaseService;
 import com.lodygames.rpgquest.database.EntitlementRepository;
+import com.lodygames.rpgquest.database.ItemTravelCooldownRepository;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.database.NpcIdRepository;
 import com.lodygames.rpgquest.database.PlacedBlockRepository;
@@ -62,6 +63,8 @@ import com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry;
 import com.lodygames.rpgquest.entitlement.EntitlementService;
 import com.lodygames.rpgquest.hub.HubWorldProtectionListener;
 import com.lodygames.rpgquest.hub.HubWorldRulesService;
+import com.lodygames.rpgquest.item.RpgItemKeys;
+import com.lodygames.rpgquest.item.SoulboundItemService;
 import com.lodygames.rpgquest.item.SpiderFangDropListener;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.behavior.EquipmentBehaviorService;
@@ -75,7 +78,10 @@ import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.player.PlayerConnectionListener;
 import com.lodygames.rpgquest.player.PlayerListenerService;
 import com.lodygames.rpgquest.player.PlayerProfileService;
+import com.lodygames.rpgquest.player.NewPlayerResetJoinListener;
+import com.lodygames.rpgquest.player.PlayerResetService;
 import com.lodygames.rpgquest.player.ResourcePackListener;
+import com.lodygames.rpgquest.player.StarterKitListener;
 import com.lodygames.rpgquest.progression.PlacedBlockTracker;
 import com.lodygames.rpgquest.progression.ProgressionService;
 import com.lodygames.rpgquest.progression.listener.CombatXpListener;
@@ -100,18 +106,24 @@ import com.lodygames.rpgquest.travel.ItemTravelService;
 import com.lodygames.rpgquest.travel.PortalService;
 import com.lodygames.rpgquest.travel.WorldPortalRegistry;
 import com.lodygames.rpgquest.travel.WorldPortalDebugService;
+import com.lodygames.rpgquest.travel.WildEntryWarningService;
 import com.lodygames.rpgquest.travel.WorldPortalTeleportListener;
 import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
 import com.lodygames.rpgquest.travel.model.ItemTravelDefinition;
+import com.lodygames.rpgquest.ui.QuestJournalBookService;
 import com.lodygames.rpgquest.ui.QuestJournalService;
+import com.lodygames.rpgquest.database.WaystoneRepository;
+import com.lodygames.rpgquest.waystone.SimpleWaystoneStructurePlacer;
+import com.lodygames.rpgquest.waystone.WaystoneCellPlanner;
+import com.lodygames.rpgquest.waystone.WaystoneService;
 import com.lodygames.rpgquest.web.WebSnapshotWriter;
 import com.lodygames.rpgquest.world.WorldService;
 import com.lodygames.rpgquest.zone.ZoneProtectionListener;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.zone.ZoneSelectionService;
 import com.lodygames.rpgquest.zone.ZoneWandListener;
-import org.bukkit.NamespacedKey;
+import java.util.Optional;
 
 /**
  * Construit les services du plugin et orchestre leur démarrage/arrêt dans un
@@ -166,6 +178,8 @@ public final class RPGQuestBootstrap {
     private ClaimService claimService;
     private ClaimTeleportService claimTeleportService;
     private ItemTravelService itemTravelService;
+    private WaystoneService waystoneService;
+    private PlayerResetService playerResetService;
     private WebSnapshotWriter webSnapshotWriter;
     private StoreClient storeClient;
     private StoreDeliveryService storeDeliveryService;
@@ -345,9 +359,14 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, portalService.listener()));
 
         registry.start(worldPortalRegistry);
-        registry.start(new PlayerListenerService(plugin,
-                new WorldPortalTeleportListener(plugin, worldPortalRegistry, worldService,
-                        () -> configService.current().randomSafeArrival(), plugin.getSLF4JLogger())));
+        WorldPortalTeleportListener worldPortalTeleportListener = new WorldPortalTeleportListener(
+                plugin, worldPortalRegistry, worldService,
+                () -> configService.current().randomSafeArrival(), plugin.getSLF4JLogger());
+        // Avertissement avant entrée dans le Wild sans Rune de rappel (mission « boucle joueur ») :
+        // politique branchée sur le portail simple, jamais codée dedans.
+        worldPortalTeleportListener.setEntryGuard(new WildEntryWarningService(
+                plugin, customItemRegistry, () -> configService.current().travel().wildWorld(), worldPortalTeleportListener));
+        registry.start(new PlayerListenerService(plugin, worldPortalTeleportListener));
         worldPortalDebugService = new WorldPortalDebugService(plugin, worldPortalRegistry, plugin.getSLF4JLogger());
         registry.start(worldPortalDebugService);
 
@@ -384,11 +403,47 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin,
                 new DeedClaimListener(plugin, claimService, customItemRegistry, claimBorderRenderer, () -> configService.current().claims())));
 
-        itemTravelService = new ItemTravelService(plugin, customItemRegistry, plugin.getSLF4JLogger());
+        ItemTravelCooldownRepository itemTravelCooldownRepository =
+                new ItemTravelCooldownRepository(databaseService.databaseManager());
+        itemTravelService = new ItemTravelService(
+                plugin, customItemRegistry, itemTravelCooldownRepository, plugin.getSLF4JLogger());
         registry.start(itemTravelService);
         registry.start(new PlayerListenerService(plugin, itemTravelService.listener()));
         itemTravelService.register(new ItemTravelDefinition(
-                new NamespacedKey("rpgquest", "pierre_retour"), 3, spawnService::resolve));
+                RpgItemKeys.PIERRE_RETOUR, 3, spawnService::resolve,
+                () -> Optional.of(configService.current().claims().world())));
+        // Rune de rappel (mission « boucle joueur ») : wild → Hub, canalisation + cooldown depuis
+        // config.yml (travel.rune), lus au démarrage. Restreinte au monde d'exploration configuré.
+        itemTravelService.register(new ItemTravelDefinition(
+                RpgItemKeys.RUNE_RAPPEL,
+                configService.current().travel().rune().channelSeconds(),
+                configService.current().travel().rune().cooldownSeconds(),
+                spawnService::resolve,
+                () -> Optional.of(configService.current().travel().wildWorld())));
+
+        // Anti-perte générique (mission « système soulbound générique ») : un seul écouteur pour
+        // tous les objets permanents du plugin, plutôt qu'un écouteur dédié recopié par objet.
+        SoulboundItemService soulboundItemService = new SoulboundItemService(customItemRegistry);
+        soulboundItemService.register(RpgItemKeys.ACTE_PROPRIETE);
+        soulboundItemService.register(RpgItemKeys.PIERRE_RETOUR);
+        soulboundItemService.register(RpgItemKeys.JOURNAL_QUETES);
+        soulboundItemService.register(RpgItemKeys.RUNE_RAPPEL);
+        registry.start(soulboundItemService);
+        registry.start(new PlayerListenerService(plugin, soulboundItemService.listener()));
+
+        // Kit de départ (mission « boucle joueur ») : une Rune de rappel remise une seule fois à
+        // chaque joueur, à sa première connexion — marqueur persistant, jamais de duplication.
+        registry.start(new PlayerListenerService(plugin,
+                new StarterKitListener(plugin, variableRepository, customItemRegistry)));
+
+        // Waystones (mission « Waystones Wild ») : génération paresseuse déterministe dans le monde
+        // d'exploration, découverte individuelle par joueur, retour au Hub par canalisation courte.
+        waystoneService = new WaystoneService(plugin,
+                new WaystoneRepository(databaseService.databaseManager()),
+                new WaystoneCellPlanner(), new SimpleWaystoneStructurePlacer(), spawnService,
+                () -> configService.current().travel());
+        registry.start(waystoneService);
+        registry.start(new PlayerListenerService(plugin, waystoneService.listener()));
 
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
@@ -410,6 +465,21 @@ public final class RPGQuestBootstrap {
                 plugin, questEngine, questProgressEngine, variableRepository, configService.current().journal());
         registry.start(questJournalService);
         registry.start(new PlayerListenerService(plugin, questJournalService.listener()));
+
+        QuestJournalBookService questJournalBookService = new QuestJournalBookService(
+                plugin, customItemRegistry, questProgressEngine, questEngine, storyService);
+        registry.start(questJournalBookService);
+        registry.start(new PlayerListenerService(plugin, questJournalBookService.listener()));
+
+        // Reset admin « nouveau joueur » (/rpgadmin player resetnew) : orchestre les resets déjà
+        // existants (quêtes, stories, claims/CLAIM_TIER_1, découvertes de Waystones) + les
+        // suppressions par joueur manquantes (variables, progression RPG, cooldowns persistants).
+        playerResetService = new PlayerResetService(
+                plugin, questProgressEngine, storyService, waystoneService, claimService, progressionService,
+                questJournalService, portalService, itemTravelService, variableRepository, progressionRepository,
+                portalCooldownRepository, itemTravelCooldownRepository, customItemRegistry);
+        registry.start(new PlayerListenerService(plugin,
+                new NewPlayerResetJoinListener(plugin, variableRepository, customItemRegistry)));
 
         registerCommands();
     }
@@ -566,6 +636,10 @@ public final class RPGQuestBootstrap {
         return spawnService;
     }
 
+    public WaystoneService waystoneService() {
+        return waystoneService;
+    }
+
     public WorldService worldService() {
         return worldService;
     }
@@ -670,7 +744,7 @@ public final class RPGQuestBootstrap {
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(
                 flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
-                worldPortalDebugService, storyService, plugin);
+                worldPortalDebugService, storyService, waystoneService, playerResetService, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

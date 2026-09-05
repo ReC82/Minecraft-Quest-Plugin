@@ -1,0 +1,19 @@
+id: rpgquest:journal_quetes
+type: QUEST_ITEM
+material: BOOK
+name: "<yellow>Journal des quêtes</yellow>"
+lore:
+  - "<gray>Remis par le Libraire à tout aventurier.</gray>"
+  - "<gray>Clic droit pour consulter tes aventures</gray>"
+  - "<gray>en cours, tes objectifs et ta progression.</gray>"
+  - "<dark_gray>Objet RPGQuest — permanent, lié à toi, jamais perdu.</dark_gray>"
+rarity: UNCOMMON
+stackable: false
+max-stack-size: 1
+
+gameplay-tags:
+  - "quest_item"
+  - "quest_journal"
+
+crafting:
+  craftable: false

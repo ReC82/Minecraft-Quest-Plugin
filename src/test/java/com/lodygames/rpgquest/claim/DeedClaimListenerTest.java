@@ -20,6 +20,7 @@ import com.lodygames.rpgquest.zone.ZoneRegistry;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.event.block.Action;
@@ -246,12 +247,39 @@ class DeedClaimListenerTest {
         String claimId = claimService.claimsOwnedBy(player.getUniqueId()).get(0).id();
         borderRenderer.shownClaimIds.clear();
 
-        // Jo redonne un Acte pour visualiser (voir jo.yml, choix « Revoir les limites »).
+        // Jo redonne un Acte pour visualiser (voir jo.yml, choix « Revoir les limites »). Le joueur
+        // se trouve dans son propre claim (mission « retrouver visuellement son claim à distance » :
+        // le périmètre n'est affiché que depuis l'intérieur, voir le test dédié pour le cas contraire).
+        player.teleport(new Location(claimsWorld, 100.5, 64, 100.5));
+        ItemStack viewerDeed = deed();
+        player.getInventory().setItemInMainHand(viewerDeed);
+        rightClick(player, viewerDeed, claimsWorld.getBlockAt(100, 64, 100));
+
+        assertEquals(List.of(claimId), borderRenderer.shownClaimIds, "doit afficher les limites du claim déjà possédé, pas tenter une seconde création");
+        assertTrue(borderRenderer.shownBeaconClaimIds.isEmpty(), "depuis l'intérieur du claim, jamais le faisceau à distance");
+    }
+
+    @Test
+    void rightClickingTheDeedOutsideOwnMainClaimShowsTheBeaconInstead() throws Exception {
+        PlayerMock player = addPlayer();
+        grantClaimTierOne(player);
+        Block first = claimsWorld.getBlockAt(100, 64, 100);
+        ItemStack item = deed();
+        player.getInventory().setItemInMainHand(item);
+        rightClick(player, item, first);
+        rightClick(player, item, first); // claim créé, Acte consommé.
+        String claimId = claimService.claimsOwnedBy(player.getUniqueId()).get(0).id();
+        borderRenderer.shownClaimIds.clear();
+
+        // Le joueur est ailleurs dans le monde des claims, hors de son propre claim.
+        player.teleport(new Location(claimsWorld, 300.5, 64, 300.5));
         ItemStack viewerDeed = deed();
         player.getInventory().setItemInMainHand(viewerDeed);
         rightClick(player, viewerDeed, claimsWorld.getBlockAt(300, 64, 300));
 
-        assertEquals(List.of(claimId), borderRenderer.shownClaimIds, "doit afficher les limites du claim déjà possédé, pas tenter une seconde création");
+        assertEquals(List.of(claimId), borderRenderer.shownBeaconClaimIds,
+                "hors de son claim, doit afficher le faisceau à distance plutôt que le périmètre");
+        assertTrue(borderRenderer.shownClaimIds.isEmpty(), "hors de son claim, jamais le périmètre au sol");
     }
 
     @Test
@@ -275,9 +303,10 @@ class DeedClaimListenerTest {
         assertTrue(stillHasDeed, "l'Acte réutilisé comme visualiseur ne doit jamais être consommé");
     }
 
-    /** Enregistre les appels à {@link #show} plutôt que de vraiment envoyer des particules (non observables sous MockBukkit). */
+    /** Enregistre les appels à {@link #show}/{@link #showBeacon} plutôt que de vraiment envoyer des particules (non observables sous MockBukkit). */
     private static final class RecordingBorderRenderer extends ClaimBorderRenderer {
         private final List<String> shownClaimIds = new java.util.ArrayList<>();
+        private final List<String> shownBeaconClaimIds = new java.util.ArrayList<>();
 
         RecordingBorderRenderer(RPGQuestPlugin plugin) {
             super(plugin);
@@ -286,6 +315,11 @@ class DeedClaimListenerTest {
         @Override
         public void show(org.bukkit.entity.Player player, Claim claim) {
             shownClaimIds.add(claim.id());
+        }
+
+        @Override
+        public void showBeacon(org.bukkit.entity.Player player, Claim claim) {
+            shownBeaconClaimIds.add(claim.id());
         }
     }
 }

@@ -66,7 +66,7 @@ import org.slf4j.Logger;
  * (champ {@code grace=}) et {@code /rpgadmin worldportal here}/{@code debug} pour confirmer ou
  * infirmer cette hypothèse sur le serveur réel avant tout correctif.</p>
  */
-public final class WorldPortalTeleportListener implements Listener {
+public final class WorldPortalTeleportListener implements Listener, PortalTeleporter {
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
     private static final long ARRIVAL_GRACE_TICKS = 40L; // 2 s.
@@ -79,6 +79,8 @@ public final class WorldPortalTeleportListener implements Listener {
 
     private final Map<UUID, String> currentPortalByPlayer = new ConcurrentHashMap<>();
     private final Set<UUID> arrivalGrace = ConcurrentHashMap.newKeySet();
+    /** Politique optionnelle d'autorisation d'entrée (mission « avertissement avant entrée dans le Wild »). */
+    private volatile WorldPortalEntryGuard entryGuard;
     /** TODO(debug bug TP hub) : marqueur de ré-entrance — voir {@link #onTeleport}. */
     private final Set<UUID> selfInitiatedTeleport = ConcurrentHashMap.newKeySet();
 
@@ -94,6 +96,25 @@ public final class WorldPortalTeleportListener implements Listener {
     /** Durée du répit d'arrivée, en ticks — exposé pour {@code /rpgadmin worldportal info} (diagnostic, voir mission). */
     public static long arrivalGraceTicks() {
         return ARRIVAL_GRACE_TICKS;
+    }
+
+    /**
+     * Installe la politique d'autorisation d'entrée (mission « avertissement avant entrée dans le
+     * Wild »). {@code null} rétablit le comportement par défaut (aucune restriction). Setter plutôt
+     * qu'argument de constructeur : le garde a besoin d'une référence vers {@link #teleportNow} pour
+     * relancer la téléportation après un « Continuer », ce qui créerait un cycle de construction.
+     */
+    public void setEntryGuard(WorldPortalEntryGuard entryGuard) {
+        this.entryGuard = entryGuard;
+    }
+
+    /**
+     * Téléporte immédiatement {@code player} via {@code portal}, <strong>sans</strong> consulter le
+     * garde d'entrée — appelé par le garde lui-même après un « Continuer » explicite du joueur.
+     */
+    public void teleportNow(Player player, WorldPortalDefinition portal) {
+        currentPortalByPlayer.put(player.getUniqueId(), portal.id());
+        teleport(player, portal);
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -132,6 +153,10 @@ public final class WorldPortalTeleportListener implements Listener {
         TpTraceLogger.log(logger, "portal_enter", playerId, player.getName(), newPortalId,
                 world.getName(), to.getBlockX(), to.getBlockY(), to.getBlockZ(),
                 true, previousPortalId != null, null, null, portalLocationString(from), null);
+        WorldPortalEntryGuard guard = entryGuard;
+        if (guard != null && !guard.allowEntry(player, portalOpt.get())) {
+            return; // le garde a bloqué ce passage (ex. avertissement Wild sans Rune) et gère la suite.
+        }
         teleport(player, portalOpt.get());
     }
 

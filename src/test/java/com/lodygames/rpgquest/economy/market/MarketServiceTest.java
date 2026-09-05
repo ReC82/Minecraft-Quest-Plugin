@@ -165,6 +165,11 @@ class MarketServiceTest {
     private PlayerMock addPlayer() throws Exception {
         PlayerMock player = server.addPlayer();
         profileRepository.findOrCreate(player.getUniqueId(), player.getName()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        // Le plugin complet est chargé (MockBukkit.load) : son StarterKitListener remet une Rune de
+        // rappel à la connexion (tâche asynchrone → thread principal). On la laisse se poser AVANT
+        // que le test ne configure la main du joueur, pour que ce test du marché reste isolé de ce
+        // don sans rapport.
+        awaitAsyncWork();
         return player;
     }
 

@@ -110,6 +110,26 @@ public final class ProgressionRepository {
         }));
     }
 
+    /**
+     * Efface toute la progression RPG d'un joueur : ses lignes {@code player_skills} (totaux d'XP
+     * par compétence) et {@code xp_grants} (journal de déduplication des octrois). Utilisé par le
+     * reset admin « nouveau joueur » ({@code player.PlayerResetService}) — ne touche qu'à ce joueur,
+     * jamais aux classements ni aux autres joueurs.
+     */
+    public CompletableFuture<Void> resetPlayer(UUID uuid) {
+        return database.execute(connection -> inTransaction(connection, () -> {
+            try (PreparedStatement grants = connection.prepareStatement("DELETE FROM xp_grants WHERE player_uuid = ?")) {
+                grants.setString(1, uuid.toString());
+                grants.executeUpdate();
+            }
+            try (PreparedStatement skills = connection.prepareStatement("DELETE FROM player_skills WHERE player_uuid = ?")) {
+                skills.setString(1, uuid.toString());
+                skills.executeUpdate();
+            }
+            return null;
+        }));
+    }
+
     /** Fixe l'XP totale d'une compétence à une valeur exacte (outil admin de test), jamais négative. */
     public CompletableFuture<Void> setTotalXp(UUID uuid, SkillType skill, long totalXp) {
         if (totalXp < 0) {

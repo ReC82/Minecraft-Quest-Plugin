@@ -23,6 +23,7 @@ public final class PortalCooldownRepository {
             INSERT INTO portal_cooldowns (player_uuid, portal_id, expires_at) VALUES (?, ?, ?)
             ON CONFLICT (player_uuid, portal_id) DO UPDATE SET expires_at = excluded.expires_at
             """;
+    private static final String DELETE_ALL_FOR_PLAYER = "DELETE FROM portal_cooldowns WHERE player_uuid = ?";
 
     private final DatabaseManager database;
 
@@ -54,6 +55,16 @@ public final class PortalCooldownRepository {
                 statement.executeUpdate();
             }
             return null;
+        });
+    }
+
+    /** Supprime tous les cooldowns de portail d'un joueur (reset admin « nouveau joueur »). */
+    public CompletableFuture<Integer> deleteAllForPlayer(UUID playerId) {
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(DELETE_ALL_FOR_PLAYER)) {
+                statement.setString(1, playerId.toString());
+                return statement.executeUpdate();
+            }
         });
     }
 }

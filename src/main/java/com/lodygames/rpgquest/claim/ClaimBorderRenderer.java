@@ -28,6 +28,13 @@ import org.bukkit.scheduler.BukkitTask;
  * tâches). Séparée à dessein de toute détection d'entrée ({@link ClaimBorderEntryListener}) ou de
  * déclenchement volontaire ({@link DeedClaimListener}) — ce renderer ne sait que « dessiner ce claim
  * pour ce joueur pendant un moment », jamais pourquoi.</p>
+ *
+ * <p><b>{@link #showBeacon}</b> (mission « retrouver visuellement son claim à distance ») : un
+ * second rendu, volontairement indépendant de {@link #show} (états/tâches séparés — les deux ne
+ * représentent jamais la même situation, voir {@code claim.DeedClaimListener}) — une colonne de
+ * particules du sol du monde jusqu'à sa limite de construction, au centre du claim, bien plus
+ * visible de loin/de nuit qu'un périmètre au sol. Même garanties de confidentialité (uniquement le
+ * propriétaire) et d'absence de bloc modifié que {@link #show}.</p>
  */
 public class ClaimBorderRenderer implements PluginService {
 
@@ -38,8 +45,14 @@ public class ClaimBorderRenderer implements PluginService {
     private static final double CORNER_STEP = 0.4;
     private static final Particle.DustOptions DUST = new Particle.DustOptions(Color.fromRGB(80, 220, 120), 1.2f);
 
+    private static final long BEACON_DURATION_TICKS = 260L; // ~13 s — dans la fenêtre demandée de 10-15 s.
+    private static final long BEACON_PERIOD_TICKS = 5L; // plus fréquent : la colonne paraît pleine et continue.
+    private static final double BEACON_VERTICAL_STEP = 1.0; // colonne dense, sans trou visible de loin.
+    private static final Particle.DustOptions BEACON_DUST = new Particle.DustOptions(Color.fromRGB(255, 200, 40), 2.0f);
+
     private final RPGQuestPlugin plugin;
     private final Map<UUID, BukkitTask> activeRenders = new ConcurrentHashMap<>();
+    private final Map<UUID, BukkitTask> activeBeacons = new ConcurrentHashMap<>();
 
     public ClaimBorderRenderer(RPGQuestPlugin plugin) {
         this.plugin = plugin;
@@ -56,6 +69,10 @@ public class ClaimBorderRenderer implements PluginService {
             task.cancel();
         }
         activeRenders.clear();
+        for (BukkitTask task : activeBeacons.values()) {
+            task.cancel();
+        }
+        activeBeacons.clear();
     }
 
     /** Démarre (ou redémarre depuis zéro) l'affichage du contour de {@code claim} pour {@code player}, pendant ~5 s. */
@@ -87,6 +104,55 @@ public class ClaimBorderRenderer implements PluginService {
 
     private void cancel(UUID playerId) {
         BukkitTask task = activeRenders.remove(playerId);
+        if (task != null) {
+            task.cancel();
+        }
+    }
+
+    /**
+     * Démarre (ou redémarre depuis zéro) une colonne de particules au centre du claim {@code claim}
+     * pour {@code player}, pendant ~12 s — mission « retrouver visuellement son claim à distance » :
+     * repérable de loin/de nuit, contrairement au périmètre au sol de {@link #show}.
+     */
+    public void showBeacon(Player player, Claim claim) {
+        World world = plugin.getServer().getWorld(claim.world());
+        if (world == null) {
+            return;
+        }
+        UUID playerId = player.getUniqueId();
+        BukkitTask previous = activeBeacons.remove(playerId);
+        if (previous != null) {
+            previous.cancel();
+        }
+
+        double centerX = (claim.minX() + claim.maxX() + 1) / 2.0;
+        double centerZ = (claim.minZ() + claim.maxZ() + 1) / 2.0;
+        int minY = world.getMinHeight();
+        int maxY = world.getMaxHeight();
+
+        long[] elapsedTicks = {0L};
+        BukkitTask task = plugin.getServer().getScheduler().runTaskTimer(plugin, () -> {
+            if (!player.isOnline()) {
+                cancelBeacon(playerId);
+                return;
+            }
+            // Deux particules superposées : DUST colorée (couleur du claim) pour la teinte, END_ROD
+            // très lumineuse par-dessus pour la portée visuelle (repérable de loin/de nuit) — le
+            // plus proche possible d'un faisceau de balise sans poser le moindre bloc réel.
+            for (double y = minY; y <= maxY; y += BEACON_VERTICAL_STEP) {
+                player.spawnParticle(Particle.DUST, centerX, y, centerZ, 2, 0.08, 0, 0.08, 0, BEACON_DUST);
+                player.spawnParticle(Particle.END_ROD, centerX, y, centerZ, 1, 0, 0, 0, 0);
+            }
+            elapsedTicks[0] += BEACON_PERIOD_TICKS;
+            if (elapsedTicks[0] >= BEACON_DURATION_TICKS) {
+                cancelBeacon(playerId);
+            }
+        }, 0L, BEACON_PERIOD_TICKS);
+        activeBeacons.put(playerId, task);
+    }
+
+    private void cancelBeacon(UUID playerId) {
+        BukkitTask task = activeBeacons.remove(playerId);
         if (task != null) {
             task.cancel();
         }

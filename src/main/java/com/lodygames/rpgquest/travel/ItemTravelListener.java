@@ -6,6 +6,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
@@ -37,6 +38,11 @@ final class ItemTravelListener implements Listener {
         if (event.getEntity() instanceof Player player && service.isChanneling(player.getUniqueId())) {
             service.handleDamage(player);
         }
+    }
+
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        service.handleJoin(event.getPlayer());
     }
 
     @EventHandler

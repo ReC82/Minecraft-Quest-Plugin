@@ -271,9 +271,14 @@ clic droit sur un objet personnalisé, pas une entrée en zone ; aucune notion d
 ce stade) : ajouter une future pierre/destination n'est qu'un nouvel enregistrement
 (`travel.model.ItemTravelDefinition`), jamais un changement du moteur lui-même.
 
--   `ItemTravelDefinition(itemId, channelSeconds, destinationSupplier)` — la destination reste un
-    simple fournisseur (`Supplier<Optional<Location>>`), résolu à chaque téléportation réussie plutôt
-    qu'une position figée (ex. `spawn.SpawnService#resolve`, toujours l'état courant du spawn).
+-   `ItemTravelDefinition(itemId, channelSeconds, cooldownSeconds, destinationSupplier, requiredWorldSupplier)`
+    — la destination reste un simple fournisseur (`Supplier<Optional<Location>>`), résolu à chaque
+    téléportation réussie plutôt qu'une position figée (ex. `spawn.SpawnService#resolve`, toujours
+    l'état courant du spawn). `cooldownSeconds` (0 = aucun) applique, après un voyage réussi, un
+    délai de rechargement **persisté par joueur** (`database.ItemTravelCooldownRepository`, table
+    `item_travel_cooldowns`, migration V16 — même forme que `portal_cooldowns`), chargé en mémoire à
+    la connexion et vérifié avant chaque canalisation. Des constructeurs de confort couvrent « sans
+    restriction de monde, sans cooldown » et « restriction de monde, sans cooldown ».
 -   `ItemTravelService#register` associe un objet personnalisé (id namespacé, identifié par PDC via
     `item.YamlCustomItemRegistry#identify` — jamais par matériau) à une définition. Clic droit avec un
     objet non enregistré : ignoré silencieusement (aucun effet).
@@ -286,9 +291,99 @@ notion que `/rpgadmin spawn tp`), canalisation ~3 s (feedback action bar + parti
 `HAS_MAIN_CLAIM` + `LACKS_CUSTOM_ITEM` — jamais de farm tant qu'un exemplaire est en poche, redonnée
 gratuitement si perdue) — voir [docs/CLAIMS.md](CLAIMS.md), section « Retour à son claim ».
 
-Aucune restriction de monde dans le moteur générique lui-même (utilisable depuis n'importe où, pas
-seulement `claims`) — **point non tranché explicitement par la mission**, signalé dans le rapport
-Claude de cette étape comme décision à confirmer plus tard si une restriction s'avère nécessaire.
+**Restriction de monde** (mission « Pierre de retour limitée à `claims` ») — `ItemTravelDefinition`
+porte désormais un `requiredWorld` optionnel (`Supplier<Optional<String>>`, `Optional::empty` par
+défaut via le constructeur de confort à 3 arguments) : `Optional.empty()` signifie « aucune
+restriction », sinon le clic droit est ignoré (message bref, aucune canalisation) hors de ce monde
+précis. La Pierre de retour est enregistrée avec `requiredWorld = () -> Optional.of(claims.world())`
+(fournisseur, jamais une valeur figée — cohérent avec un `config.yml` potentiellement rechargé à
+chaud) dans `RPGQuestBootstrap` — **la restriction appartient à l'enregistrement de cette pierre,
+jamais à `travel.ItemTravelService`**, qui reste entièrement générique : une future pierre sans
+restriction n'a qu'à omettre ce paramètre.
+
+**Système soulbound générique** (mission « système soulbound générique ») — `item.SoulboundItemService`
++ `item.SoulboundItemListener` remplacent l'ancienne `travel.ReturnStoneGuardListener` (dédiée à la
+seule Pierre de retour). Un **unique** écouteur applique les deux règles anti-perte à *tous* les
+objets permanents enregistrés (`item.RpgItemKeys` : Acte de propriété, Pierre de retour, Journal des
+quêtes, Rune de rappel) : drop volontaire annulé (`PlayerDropItemEvent`), et à la mort chaque
+exemplaire soulbound est retiré des drops puis rendu **tel quel** (même méta/PDC) à la réapparition
+— jamais de duplication (seuls les exemplaires réellement retirés de *cette* mort sont restaurés).
+Identification toujours par PDC (`YamlCustomItemRegistry#identify`), jamais par matériau. Une fois
+ces deux chemins fermés, un objet soulbound ne devient plus jamais une entité posée dans le monde
+(lave/feu/cactus/explosion sans objet). Les PNJ (Jo pour l'Acte et la Pierre, le Libraire pour le
+Journal, le Guide pour la Rune) restent le filet de secours indépendant si le joueur n'a plus
+l'objet du tout.
+
+**Indicateur de canalisation** — `ItemTravelService#tick` rapporte désormais la progression *avant*
+de déclencher la complétion (jamais après) : le dernier tick affiche proprement 100% au lieu de
+s'arrêter à un pourcentage tronqué (ex. 98% pour une canalisation de 3 s/60 ticks, `59/60`). L'action
+bar est ensuite explicitement vidée (`Component.empty()`) à la complétion **et** à toute annulation
+— plus aucun résidu de pourcentage affiché après la fin d'un voyage.
+
+## Rune de rappel (`rpgquest:rune_rappel`)
+
+Moyen de secours du Wild vers le Hub, remis à chaque joueur dès sa première connexion
+(`player.StarterKitListener` — marqueur persistant `RUNE_RAPPEL_GRANTED` dans `player_variables`,
+jamais de duplication ; le Guide la redonne gratuitement, `dialogues/guide.yml`, garde
+`LACKS_CUSTOM_ITEM`). Enregistrée dans `ItemTravelService` comme une définition normale :
+`requiredWorld = () -> travel.wild-world` (refus bref hors du Wild), `channelSeconds =
+travel.rune.channel-seconds` (défaut 10), `cooldownSeconds = travel.rune.cooldown-seconds` (défaut
+1800 = 30 min, persisté), destination `SpawnService#resolve` (Hub). Jamais consommée. Soulbound.
+Les valeurs de canalisation/cooldown sont lues **au démarrage** du plugin (comme le `3` littéral de
+la Pierre de retour) — un changement de config nécessite un redémarrage pour ces deux champs.
+
+## Avertissement avant entrée dans le Wild
+
+`travel.WildEntryWarningService` implémente `travel.WorldPortalEntryGuard`, une politique
+**optionnelle** consultée par `WorldPortalTeleportListener` juste avant chaque téléportation de
+portail simple (installée via `setEntryGuard`, jamais codée dans le listener — le portail simple
+reste générique). Quand un joueur **sans Rune de rappel** entre dans un portail dont la destination
+est `travel.wild-world`, la téléportation est suspendue et un message compact et **cliquable** est
+envoyé dans le chat (jamais un titre plein écran) : « Vous partez sans moyen de rappel. Pour revenir
+au Hub, vous devrez trouver une Pierre de voyage. » `[Continuer]` (callback Adventure) accorde un
+laissez-passer bref à usage unique puis relance la téléportation (`PortalTeleporter#teleportNow`) ;
+`[Annuler]` le laisse au Hub. Un joueur qui possède une Rune n'est jamais averti ; les portails dont
+la destination n'est pas le Wild ne sont jamais concernés ; anti-spam de 4 s par joueur.
+
+## Waystones (`waystone.WaystoneService`)
+
+Système générique de « Pierres de voyage » dans `travel.wild-world`. Voir la section dédiée ci-dessous.
+
+### Génération paresseuse et déterministe
+
+`ChunkLoadEvent` (monde configuré uniquement) → les cellules carrées (`travel.waystone.cell-size`,
+défaut 1000) que le chunk touche sont évaluées **une seule fois**. `WaystoneCellPlanner` (pur, sans
+Bukkit) décide, à partir de `world.getSeed()` + coordonnées de cellule : `chance` (défaut 0.6) de
+contenir une Waystone, et une position de bloc déterministe dans la cellule (marge de bord 24). Deux
+appels identiques renvoient toujours le même résultat → **aucun doublon au reload/redémarrage**,
+garanti aussi par l'index unique `(world, cell_x, cell_z)` en base. Si le point candidat tombe dans
+un autre chunk de la cellule, la pose est différée au chargement de ce chunk. Avant la pose :
+distance minimale respectée (`travel.waystone.minimum-spacing`, défaut 300) et recherche d'une
+surface sûre autour du point (`travel.waystone.safe-attempts`, défaut 16, via
+`RandomSafeLocationFinder#findAtColumn` réutilisé). Persistance : table `waystones` (migration V17).
+
+### Structure
+
+`WaystoneStructurePlacer` (interface — permet un `.schem` plus tard). `SimpleWaystoneStructurePlacer` :
+socle 3×3 en pierre polie sombre, quatre montants d'angle éclairés, `LODESTONE` au centre. **Aucun
+gameplay ne dépend du matériau** : l'interaction est décidée par la position persistée du bloc
+sommital.
+
+### Découverte et utilisation
+
+La Waystone est globale physiquement mais **découverte individuellement** : premier clic droit →
+« Pierre de voyage découverte : <nom> », persisté dans `waystone_discoveries` (player UUID +
+waystoneId + discoveredAt). Sur une Waystone déjà découverte, un choix compact cliquable
+`[Retourner au Hub]` / `[Annuler]` ; « Retourner au Hub » canalise `travel.waystone.channel-seconds`
+(défaut 3, annulé sur mouvement/dégâts) puis téléporte à `SpawnService#resolve`. Aucun coût (MVP).
+La persistance (monde + x/y/z) suffit déjà comme destination pour un futur « Hub → Waystone
+découverte », non implémenté.
+
+### Admin/debug (`rpgquest.admin.world`)
+
+`/rpgadmin waystone list | here | tp <id> | generatehere | reset discoveries <joueur>`.
+`generatehere` ignore le tirage de probabilité mais respecte l'unicité par cellule et la recherche
+de surface sûre. Aucune commande joueur.
 
 ## Tests
 
@@ -313,14 +408,42 @@ lève jamais malgré des champs optionnels absents).
 
 Voyage par objet : `ItemTravelServiceTest` (clic droit avec l'objet enregistré démarre la
 canalisation, objet non enregistré ignoré, mouvement/dégâts annulent proprement sans téléporter,
-déconnexion nettoie l'état, objet jamais consommé quelle que soit l'issue) — voir aussi
-[docs/CLAIMS.md](CLAIMS.md) pour `ClaimNetherTravelListenerTest`/`ClaimBorderGeometryTest`/
-`ClaimBorderEntryListenerTest`, dans le même bloc de mission.
+déconnexion nettoie l'état, objet jamais consommé quelle que soit l'issue, **hors du monde requis
+par la définition aucune canalisation ne démarre**, **une définition sans restriction fonctionne
+n'importe où**, **la progression atteint 100% puis l'actionbar est vidée après un succès**,
+**l'actionbar est vidée après une annulation**) — voir aussi [docs/CLAIMS.md](CLAIMS.md) pour
+`ClaimNetherTravelListenerTest`/`ClaimBorderGeometryTest`/`ClaimBorderEntryListenerTest`, dans le
+même bloc de mission.
+
+Voyage par objet, suite : `ItemTravelServiceTest` couvre aussi le **cooldown** de la Rune
+(un voyage réussi bloque l'usage suivant, cooldown persisté) et le **refus hors du monde requis**.
+
+Système soulbound générique : `SoulboundItemListenerTest` (remplace `ReturnStoneGuardListenerTest`) —
+tout objet soulbound enregistré est intombable au drop et à la mort, restauré tel quel à la
+réapparition sans jamais dupliquer, un objet quelconque jamais concerné.
+
+Avertissement Wild : `WildEntryWarningServiceTest` — joueur sans Rune bloqué + averti avec les deux
+boutons, joueur avec Rune jamais averti, portail hors Wild jamais concerné, anti-spam, `[Continuer]`
+= laissez-passer à usage unique puis téléportation, `[Annuler]` = reste au Hub.
+
+Waystones : `WaystoneCellPlannerTest` (décision déterministe seed+cellule, idempotente, `chance`
+0/1, candidat toujours dans sa cellule) ; `WaystoneServiceTest` (génération non dupliquée / unicité
+par cellule, rechargement des Waystones persistées au démarrage, espacement minimal, surface sûre
+solide, découverte individuelle par joueur, `reset discoveries`, canalisation de retour annulée par
+un déplacement).
 
 `PENDING MANUAL VALIDATION` (client Minecraft réel requis) : portail vers
 un chunk réellement déchargé, déconnexion en pleine canalisation,
 reconnexion et persistance du cooldown, téléportation avec un inventaire
 chargé et une quête active, test depuis/vers une safe zone, rendu visuel
 réel de `/rpgadmin worldportal debug` (particules/étiquette), Pierre de
+génération réelle de Waystones à l'exploration de chunks (terrain non simulé par MockBukkit — seule
+la décision `WaystoneCellPlanner` et la pose forcée `generatehere` sont couvertes automatiquement),
+rendu visuel du faisceau/structure, callbacks de chat cliquables (`[Continuer]`/`[Retourner au
+Hub]`), Rune de rappel en jeu (canalisation 10 s, cooldown 30 min persistant après reconnexion),
+avertissement d'entrée dans le Wild sur le vrai portail Hub → wild. Pierre de
 retour en jeu (canalisation ~3 s, annulation par mouvement, arrivée
-effective au spawn du Hub).
+effective au spawn du Hub, **actionbar propre — 100% puis disparition
+immédiate, aucun résidu type « 98% »**, **refus propre et bref hors du
+monde `claims`**, **impossible à jeter (touche Q)**, **jamais perdue à la
+mort, redonnée automatiquement à la réapparition**).

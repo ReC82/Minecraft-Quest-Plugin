@@ -12,7 +12,7 @@ import java.sql.Statement;
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 15;
+    private static final int CURRENT_VERSION = 17;
 
     private SchemaMigrator() {
     }
@@ -80,6 +80,14 @@ public final class SchemaMigrator {
         if (version < 15) {
             applyV15(connection);
             version = 15;
+        }
+        if (version < 16) {
+            applyV16(connection);
+            version = 16;
+        }
+        if (version < 17) {
+            applyV17(connection);
+            version = 17;
         }
 
         if (version != startingVersion) {
@@ -491,6 +499,66 @@ public final class SchemaMigrator {
             statement.execute("""
                     UPDATE claims SET reserved_min_x = min_x, reserved_min_y = min_y, reserved_min_z = min_z,
                                        reserved_max_x = max_x, reserved_max_y = max_y, reserved_max_z = max_z
+                    """);
+        }
+    }
+
+    private static void applyV16(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Cooldown de voyage par objet (mission « Rune de rappel ») : doit survivre à une
+            // reconnexion/redémarrage — persisté ici, rechargé en mémoire à la connexion par
+            // travel.ItemTravelService (jamais consulté en base à chaque clic droit). Même forme que
+            // portal_cooldowns (V6), mais indexé par id d'objet plutôt que par id de portail : un
+            // objet dont la définition n'applique aucun cooldown n'écrit jamais dans cette table.
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS item_travel_cooldowns (
+                        player_uuid TEXT NOT NULL,
+                        item_id TEXT NOT NULL,
+                        expires_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, item_id),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """);
+        }
+    }
+
+    private static void applyV17(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Waystones générées (mission « Waystones Wild ») : la base est la seule source de vérité
+            // — une cellule dont l'id est déjà présent n'est jamais régénérée (pas de doublon au
+            // reload/restart), et la structure physique n'est jamais consultée pour décider si une
+            // Waystone existe. name : libellé lisible affiché à la découverte. La persistance est
+            // prête pour un futur « Hub → Waystone découverte » sans nouvelle migration (x/y/z/world
+            // suffisent comme destination).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS waystones (
+                        id TEXT PRIMARY KEY,
+                        world TEXT NOT NULL,
+                        x INTEGER NOT NULL,
+                        y INTEGER NOT NULL,
+                        z INTEGER NOT NULL,
+                        cell_x INTEGER NOT NULL,
+                        cell_z INTEGER NOT NULL,
+                        name TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """);
+            statement.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_waystones_cell ON waystones (world, cell_x, cell_z)
+                    """);
+
+            // Découverte individuelle par joueur : la Waystone est globale physiquement, mais chaque
+            // joueur la « découvre » à son premier clic (persistance player UUID + waystoneId +
+            // discoveredAt). Aucune clé étrangère vers waystones : une découverte survit à une
+            // éventuelle suppression/regénération d'id (jamais faite automatiquement).
+            statement.execute("""
+                    CREATE TABLE IF NOT EXISTS waystone_discoveries (
+                        player_uuid TEXT NOT NULL,
+                        waystone_id TEXT NOT NULL,
+                        discovered_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, waystone_id),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
                     """);
         }
     }

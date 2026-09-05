@@ -27,13 +27,14 @@ final class StoryDefinitionParser {
 
         LocalizedText name = parseName(section, errors);
         List<NamespacedKey> questIds = parseQuestIds(section, errors);
+        boolean secret = section.getBoolean("secret", false);
 
         if (!errors.isEmpty()) {
             return ParseResult.failure(errors.stream().map(m -> new StoryLoadIssue(fileName, m)).toList());
         }
 
         try {
-            return ParseResult.success(new StoryDefinition(id, name, questIds));
+            return ParseResult.success(new StoryDefinition(id, name, questIds, secret));
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new StoryLoadIssue(fileName, e.getMessage())));
         }

@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.claim;
 
 import com.lodygames.rpgquest.claim.model.Claim;
+import com.lodygames.rpgquest.permission.RpgQuestPermissions;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -43,13 +44,17 @@ import org.bukkit.inventory.EquipmentSlot;
  * traversant la frontière sont protégés inconditionnellement dès qu'un
  * acteur non membre est en cause.</p>
  *
- * <p>Bypass ({@code rpgquest.admin.world}, même permission que le bypass
- * des zones protégées) : vérifié sur l'acteur direct, jamais sur la
- * victime.</p>
+ * <p>Bypass : {@code rpgquest.claim.bypass} uniquement (fille de
+ * {@code rpgquest.admin.world}, {@code default: op}) — vérifié sur l'acteur
+ * direct, jamais sur la victime. <strong>Aucune</strong> permission de build
+ * ({@code rpgquest.build.*}, {@code rpgquest.build.hub.*}, {@code
+ * rpgquest.build.wild}...) n'accorde ce contournement : construire dans un
+ * Hub ou le Wild ne donne jamais le droit de toucher au claim d'un joueur
+ * (issue #27).</p>
  */
 public final class ClaimProtectionListener implements Listener {
 
-    private static final String BYPASS_PERMISSION = "rpgquest.admin.world";
+    private static final String BYPASS_PERMISSION = RpgQuestPermissions.CLAIM_BYPASS;
 
     private final ClaimService claimService;
 
@@ -210,6 +215,10 @@ public final class ClaimProtectionListener implements Listener {
     }
 
     private boolean isBypassing(Player player) {
-        return player != null && player.hasPermission(BYPASS_PERMISSION);
+        // rpgquest.admin.world reste un contournement direct (compat OP + rôle historique), en plus
+        // du nœud dédié rpgquest.claim.bypass. Aucune permission de build n'est acceptée ici.
+        return player != null
+                && (player.hasPermission(BYPASS_PERMISSION)
+                        || player.hasPermission(RpgQuestPermissions.ADMIN_WORLD));
     }
 }

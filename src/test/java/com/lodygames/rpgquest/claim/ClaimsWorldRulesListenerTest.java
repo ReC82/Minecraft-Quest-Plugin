@@ -87,7 +87,7 @@ class ClaimsWorldRulesListenerTest {
                 progressionService, variableRepository);
         claimService.start();
 
-        listener = new ClaimsWorldRulesListener(plugin, claimService, () -> CLAIMS_CONFIG);
+        listener = new ClaimsWorldRulesListener(plugin, claimService, () -> CLAIMS_CONFIG, com.lodygames.rpgquest.permission.TestBuildPermissions.standard());
     }
 
     @AfterEach

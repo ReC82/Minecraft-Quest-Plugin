@@ -48,7 +48,7 @@ class HubWorldProtectionListenerTest {
         hub = server.addSimpleWorld("world_hub");
         other = server.addSimpleWorld("world");
 
-        listener = new HubWorldProtectionListener(() -> HUB_CONFIG);
+        listener = new HubWorldProtectionListener(() -> HUB_CONFIG, com.lodygames.rpgquest.permission.TestBuildPermissions.standard());
     }
 
     @AfterEach
@@ -129,6 +129,42 @@ class HubWorldProtectionListenerTest {
         listener.onBreak(event);
 
         assertFalse(event.isCancelled(), "un administrateur doit pouvoir construire dans le Hub");
+    }
+
+    @Test
+    void builderHub0CanBuildInTheHubWithoutOp() {
+        PlayerMock builder = server.addPlayer();
+        builder.addAttachment(plugin, "rpgquest.build.hub.0", true);
+        Block block = hub.getBlockAt(0, 64, 0);
+        BlockBreakEvent event = new BlockBreakEvent(block, builder);
+
+        listener.onBreak(event);
+
+        assertFalse(event.isCancelled(), "rpgquest.build.hub.0 autorise la construction dans le Hub 0 sans op");
+    }
+
+    @Test
+    void builderWildCannotBuildInTheHub() {
+        PlayerMock builder = server.addPlayer();
+        builder.addAttachment(plugin, "rpgquest.build.wild", true);
+        Block block = hub.getBlockAt(0, 64, 0);
+        BlockBreakEvent event = new BlockBreakEvent(block, builder);
+
+        listener.onBreak(event);
+
+        assertTrue(event.isCancelled(), "rpgquest.build.wild ne donne rien dans le Hub");
+    }
+
+    @Test
+    void builderHub0StillTakesDamageInTheHub() {
+        PlayerMock builder = server.addPlayer();
+        builder.addAttachment(plugin, "rpgquest.build.hub.0", true);
+        builder.teleport(new Location(hub, 0.5, 64, 0.5));
+        EntityDamageEvent event = new EntityDamageEvent(builder, EntityDamageEvent.DamageCause.FALL, 5.0);
+
+        listener.onEntityDamage(event);
+
+        assertTrue(event.isCancelled(), "une permission de build ne change rien à la protection de dégâts du Hub");
     }
 
     @Test

@@ -1,6 +1,8 @@
 package com.lodygames.rpgquest.zone;
 
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.permission.BuildPermissionService;
+import com.lodygames.rpgquest.permission.RpgQuestPermissions;
 import com.lodygames.rpgquest.zone.model.ZoneDefinition;
 import com.lodygames.rpgquest.zone.model.ZoneFlags;
 import java.util.Map;
@@ -47,19 +49,23 @@ import org.jetbrains.annotations.Nullable;
  * ne coûte qu'un accès de map vide — jamais de balayage de toutes les
  * zones ni de tous les mondes.
  *
- * <p>Bypass ({@code rpgquest.admin.world}, la même permission que {@code
- * /rpgadmin flatten}) : vérifié sur l'acteur direct de chaque action
- * (joueur qui casse/pose/interagit, ou dégâts PvP/NPC), jamais sur la
- * victime — un administrateur peut agir librement dans la zone, mais
- * n'exempte personne d'autre de sa protection. Les dégâts environnementaux
- * (chute, noyade, faim...) n'ont pas d'« acteur » distinct de la victime :
- * ils s'appliquent donc à tout le monde, admin compris — rien ne justifierait
- * qu'un administrateur prenne des dégâts de chute dans le village alors que
- * personne d'autre n'en prend.</p>
+ * <p>Contournement, vérifié sur l'acteur direct de chaque action (jamais sur la victime), avec
+ * deux portes distinctes depuis l'issue #27 :</p>
+ * <ul>
+ *   <li><strong>casse / pose / interaction</strong> — {@code rpgquest.admin.world},
+ *       {@code rpgquest.build.zone}, ou le droit de construire dans le monde de la zone selon
+ *       {@link BuildPermissionService} (un {@code builder-hub-0} édite donc la zone du village
+ *       située dans le Hub 0, mais pas celle d'un autre monde) ;</li>
+ *   <li><strong>dégâts PvP / PNJ</strong> — {@code rpgquest.admin.world} seul : une permission de
+ *       build n'exempte jamais des règles de combat de la zone.</li>
+ * </ul>
+ *
+ * <p>Les dégâts environnementaux (chute, noyade, faim...) n'ont pas d'« acteur » distinct de la
+ * victime : ils s'appliquent à tout le monde, admin compris.</p>
  */
 public final class ZoneProtectionListener implements Listener {
 
-    private static final String BYPASS_PERMISSION = "rpgquest.admin.world";
+    private static final String COMBAT_BYPASS_PERMISSION = RpgQuestPermissions.ADMIN_WORLD;
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
     /** Midi (temps client figé) pour {@code forceDay} — pleine lumière, aucune ombre de lever/coucher. */
@@ -92,11 +98,14 @@ public final class ZoneProtectionListener implements Listener {
 
     private final ZoneRegistry registry;
     private final NpcIdentityService npcIdentityService;
+    private final BuildPermissionService buildPermissions;
     private final Map<UUID, String> currentZoneByPlayer = new ConcurrentHashMap<>();
 
-    public ZoneProtectionListener(ZoneRegistry registry, NpcIdentityService npcIdentityService) {
+    public ZoneProtectionListener(ZoneRegistry registry, NpcIdentityService npcIdentityService,
+                                  BuildPermissionService buildPermissions) {
         this.registry = registry;
         this.npcIdentityService = npcIdentityService;
+        this.buildPermissions = buildPermissions;
     }
 
     // ---- Dégâts (PvP, mobs hostiles, environnement, explosions, PNJ) -------------------------
@@ -122,7 +131,7 @@ public final class ZoneProtectionListener implements Listener {
         if (event instanceof EntityDamageByEntityEvent byEntity) {
             Player attacker = pvpAttacker(byEntity);
             if (attacker != null) {
-                if (!flags.allowPvp() && !isBypassing(attacker)) {
+                if (!flags.allowPvp() && !isBypassingCombat(attacker)) {
                     event.setCancelled(true);
                 }
                 return; // dégâts PvP déjà tranchés : jamais aussi comptés comme hostiles/environnementaux.
@@ -156,7 +165,7 @@ public final class ZoneProtectionListener implements Listener {
         }
         if (event instanceof EntityDamageByEntityEvent byEntity) {
             Player attacker = pvpAttacker(byEntity);
-            if (attacker != null && isBypassing(attacker)) {
+            if (attacker != null && isBypassingCombat(attacker)) {
                 return;
             }
         }
@@ -295,7 +304,7 @@ public final class ZoneProtectionListener implements Listener {
             return;
         }
         Optional<ZoneDefinition> zoneOpt = zoneAt(block.getLocation());
-        if (zoneOpt.isEmpty() || isBypassing(event.getPlayer())) {
+        if (zoneOpt.isEmpty() || isBypassingBuild(event.getPlayer(), block.getLocation())) {
             return;
         }
         ZoneFlags flags = zoneOpt.get().flags();
@@ -383,7 +392,7 @@ public final class ZoneProtectionListener implements Listener {
     private void applyBlockFlag(Location location, Player actor, java.util.function.Predicate<ZoneFlags> allowed,
                                  java.util.function.Consumer<Boolean> cancel) {
         Optional<ZoneDefinition> zoneOpt = zoneAt(location);
-        if (zoneOpt.isEmpty() || isBypassing(actor)) {
+        if (zoneOpt.isEmpty() || isBypassingBuild(actor, location)) {
             return;
         }
         if (!allowed.test(zoneOpt.get().flags())) {
@@ -399,7 +408,23 @@ public final class ZoneProtectionListener implements Listener {
         return registry.zoneAt(world.getName(), location.getBlockX(), location.getBlockY(), location.getBlockZ());
     }
 
-    private boolean isBypassing(Player player) {
-        return player != null && player.hasPermission(BYPASS_PERMISSION);
+    /** Contournement des règles de combat (PvP, dégâts PNJ) : administrateur monde uniquement. */
+    private boolean isBypassingCombat(Player player) {
+        return player != null && player.hasPermission(COMBAT_BYPASS_PERMISSION);
+    }
+
+    /**
+     * Contournement de la protection de <strong>build/interaction</strong> d'une zone : admin monde,
+     * permission dédiée {@code rpgquest.build.zone}, ou droit de construire dans le monde où se
+     * trouve la zone (un {@code builder-hub-0} édite la zone du village de son Hub, jamais celle
+     * d'un autre monde) — jamais un contournement de claim (issue #27).
+     */
+    private boolean isBypassingBuild(Player player, Location location) {
+        if (player == null) {
+            return false;
+        }
+        return player.hasPermission(COMBAT_BYPASS_PERMISSION)
+                || player.hasPermission(RpgQuestPermissions.BUILD_ZONE)
+                || buildPermissions.mayBuild(player, location.getWorld());
     }
 }

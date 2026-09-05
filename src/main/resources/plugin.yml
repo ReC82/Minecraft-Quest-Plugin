@@ -74,8 +74,92 @@ permissions:
   rpgquest.item:
     description: Accès aux commandes d'objets personnalisés joueur (/customitem inspect).
     default: true
+  # --- Administration du monde (issue #27) -------------------------------------------------------
+  # rpgquest.admin.world reste le parapluie historique : il porte en enfants TOUTES les actions
+  # /rpgadmin, la construction (rpgquest.build.*) et l'administration des claims. Un OP, ou un rôle
+  # existant à qui rpgquest.admin.world était accordé, garde donc exactement le même accès qu'avant.
+  # Pour déléguer sans op : accorder uniquement le(s) nœud(s) rpgquest.admin.<action> voulu(s).
   rpgquest.admin.world:
-    description: Accès aux commandes d'administration du monde (/rpgadmin), dont l'aplatissement de terrain.
+    description: Parapluie d'administration du monde — accorde toutes les actions /rpgadmin, la construction partout et l'administration des claims.
+    default: op
+    children:
+      rpgquest.build.*: true
+      rpgquest.build.zone: true
+      rpgquest.claim.bypass: true
+      rpgquest.claim.admin: true
+      rpgquest.admin.flatten: true
+      rpgquest.admin.zone: true
+      rpgquest.admin.portal: true
+      rpgquest.admin.mob: true
+      rpgquest.admin.npc: true
+      rpgquest.admin.spawn: true
+      rpgquest.admin.worlds: true
+      rpgquest.admin.waystone: true
+      rpgquest.admin.story: true
+      rpgquest.admin.player: true
+      rpgquest.admin.guide: true
+  rpgquest.admin.flatten:
+    description: "/rpgadmin flatten — aperçu et exécution d'aplatissement de terrain."
+    default: false
+  rpgquest.admin.zone:
+    description: "/rpgadmin zone — création/suppression/inspection des zones protégées."
+    default: false
+  rpgquest.admin.portal:
+    description: "/rpgadmin portal et /rpgadmin worldportal — portails et destinations."
+    default: false
+  rpgquest.admin.mob:
+    description: "/rpgadmin mob — mobs spéciaux (spawn de test, inspection, rechargement)."
+    default: false
+  rpgquest.admin.npc:
+    description: "/rpgadmin npc tag|untag|info — identité RPGQuest des PNJ (rôle « NPC editor »)."
+    default: false
+  rpgquest.admin.spawn:
+    description: "/rpgadmin spawn set|tp — point d'apparition du serveur."
+    default: false
+  rpgquest.admin.worlds:
+    description: "/rpgadmin world create|tp|list — mondes supplémentaires."
+    default: false
+  rpgquest.admin.waystone:
+    description: "/rpgadmin waystone — outils de test des Waystones du Wild."
+    default: false
+  rpgquest.admin.story:
+    description: "/rpgadmin story — progression de storyline (diagnostic/test)."
+    default: false
+  rpgquest.admin.player:
+    description: "/rpgadmin player resetnew — réinitialisation « nouveau joueur » (destructif)."
+    default: false
+  rpgquest.admin.guide:
+    description: "/rpgadmin guide list|info — diagnostic en lecture seule des Guides de Hub."
+    default: false
+  # --- Construction par monde / Hub (issue #27) : ne contourne JAMAIS un claim joueur ------------
+  rpgquest.build.*:
+    description: Construire dans toutes les zones de build gérées par RPGQuest (tous Hubs + Wild + mondes spécialisés).
+    default: op
+    children:
+      rpgquest.build.hub.*: true
+      rpgquest.build.wild: true
+      rpgquest.build.zone: true
+  rpgquest.build.hub.*:
+    description: Construire dans tous les Hubs, quel que soit leur identifiant.
+    default: false
+  rpgquest.build.hub.0:
+    description: Construire dans le Hub 0 uniquement (monde hub.world par défaut).
+    default: false
+  rpgquest.build.wild:
+    description: Construire des structures administratives dans le Wild — n'accorde aucun bypass de claim.
+    default: false
+  rpgquest.build.zone:
+    description: Construire / interagir librement à l'intérieur de n'importe quelle zone protégée RPGQuest.
+    default: false
+  # Hubs supplémentaires : déclarer ici rpgquest.build.hub.<id> (ou via LuckPerms / permissions.yml)
+  # et mapper le monde dans config.yml -> permissions.build-areas. Idem rpgquest.build.world.<clé>
+  # pour un monde spécialisé (ex. rpgquest.build.world.claims).
+  # --- Claims : administration et contournement, séparés du build (issue #27) -------------------
+  rpgquest.claim.bypass:
+    description: Ignorer la protection d'un claim joueur (casse/pose/conteneurs/animaux). Jamais accordé par une permission de build.
+    default: op
+  rpgquest.claim.admin:
+    description: Outils d'administration des claims (/claim admin — suppression d'un claim tiers, tp, sendhome).
     default: op
   rpgquest.money:
     description: Accès aux commandes joueur d'économie (/money, /money pay).

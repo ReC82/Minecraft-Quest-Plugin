@@ -76,6 +76,7 @@ import com.lodygames.rpgquest.mob.ability.SplitOnHitAbilityListener;
 import com.lodygames.rpgquest.mob.ability.StrongerExplosionAbilityListener;
 import com.lodygames.rpgquest.mod.ModCompatService;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.permission.BuildPermissionService;
 import com.lodygames.rpgquest.player.PlayerConnectionListener;
 import com.lodygames.rpgquest.player.PlayerListenerService;
 import com.lodygames.rpgquest.player.PlayerProfileService;
@@ -238,8 +239,18 @@ public final class RPGQuestBootstrap {
         modCompatService = new ModCompatService(plugin, () -> configService.current().clientMod(), plugin.getSLF4JLogger());
         registry.start(modCompatService);
         registry.start(flattenService);
+
+        // Permissions de build granulaires (issue #27) : partagées par toutes les protections de
+        // monde/zone/claim-world. Ne contourne jamais la protection d'un claim joueur.
+        BuildPermissionService buildPermissions = new BuildPermissionService(
+                () -> configService.current().permissions(),
+                () -> configService.current().hub(),
+                () -> configService.current().travel(),
+                () -> configService.current().claims());
+
         registry.start(zoneRegistry);
-        registry.start(new PlayerListenerService(plugin, new ZoneProtectionListener(zoneRegistry, npcIdentityService)));
+        registry.start(new PlayerListenerService(plugin,
+                new ZoneProtectionListener(zoneRegistry, npcIdentityService, buildPermissions)));
         registry.start(new PlayerListenerService(plugin, new ZoneWandListener(zoneSelectionService)));
 
         PlayerProfileRepository profileRepository = new PlayerProfileRepository(databaseService.databaseManager());
@@ -257,7 +268,8 @@ public final class RPGQuestBootstrap {
                 worldService, () -> configService.current().hub(), plugin.getSLF4JLogger());
         registry.start(hubWorldRulesService);
         registry.start(new PlayerListenerService(plugin, hubWorldRulesService.listener()));
-        registry.start(new PlayerListenerService(plugin, new HubWorldProtectionListener(() -> configService.current().hub())));
+        registry.start(new PlayerListenerService(plugin,
+                new HubWorldProtectionListener(() -> configService.current().hub(), buildPermissions)));
 
         registry.start(questEngine);
         registry.start(questMessagesService);
@@ -390,7 +402,7 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, new ClaimProtectionListener(claimService)));
         registry.start(new PlayerListenerService(plugin, new ClaimWandListener(claimSelectionService)));
         ClaimsWorldRulesListener claimsWorldRulesListener =
-                new ClaimsWorldRulesListener(plugin, claimService, () -> configService.current().claims());
+                new ClaimsWorldRulesListener(plugin, claimService, () -> configService.current().claims(), buildPermissions);
         registry.start(new PlayerListenerService(plugin, claimsWorldRulesListener));
         // Le monde des claims est généralement déjà chargé à ce stade (les mondes se chargent avant
         // les plugins) : WorldLoadEvent ne se déclenchera donc jamais pour lui — purge explicite unique.

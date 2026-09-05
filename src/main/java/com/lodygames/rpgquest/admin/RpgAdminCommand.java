@@ -62,15 +62,20 @@ import org.jetbrains.annotations.Nullable;
  * les sous-systèmes d'administration du monde : aplatissement de terrain,
  * zones protégées et portails à cette étape, mobs spéciaux dans une étape
  * ultérieure, ajoutés comme d'autres branches de {@link #onCommand}).
- * Toutes les sous-commandes exigent {@code rpgquest.admin.world} et un
- * joueur en jeu (jamais la console, qui n'a pas de position à centrer) —
- * aucune sous-commande ne prend de coordonnée explicite dans sa syntaxe :
- * {@code zone}/{@code portal} réutilisent tous deux l'outil de sélection
- * {@code wand} pour leur cuboïde (protection ou zone d'activation).
+ * Depuis l'issue #27, chaque sous-commande exige son propre nœud
+ * {@code rpgquest.admin.<action>} (voir {@link #permissionFor}), toutes filles de
+ * {@code rpgquest.admin.world} : un OP, ou un rôle historique portant
+ * {@code rpgquest.admin.world}, garde l'accès à tout ; un rôle ciblé (NPC editor,
+ * builder-testeur...) ne reçoit que le(s) nœud(s) voulu(s). La plupart des
+ * sous-commandes exigent aussi un joueur en jeu (jamais la console, qui n'a pas
+ * de position à centrer ; {@code story}/{@code player}/{@code guide} font
+ * exception) — aucune sous-commande ne prend de coordonnée explicite dans sa
+ * syntaxe : {@code zone}/{@code portal} réutilisent tous deux l'outil de
+ * sélection {@code wand} pour leur cuboïde (protection ou zone d'activation).
  */
 public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
-    private static final String PERMISSION = "rpgquest.admin.world";
+    private static final String PERMISSION = com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_WORLD;
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
             List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "story", "waystone", "player", "guide");
@@ -139,37 +144,57 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
                               @NotNull String label, String @NotNull [] args) {
-        if (!sender.hasPermission(PERMISSION)) {
-            sender.sendMessage(MM.deserialize(
-                    "<red>Permission manquante :</red> <white><permission></white>", Placeholder.unparsed("permission", PERMISSION)));
+        // Permissions granulaires (issue #27) : une sous-commande = un nœud dédié, toutes filles de
+        // rpgquest.admin.world (l'OP et l'ancien setup rpgquest.admin.world gardent donc tout).
+        if (args.length == 0) {
+            if (!requirePermission(sender, PERMISSION)) {
+                return true;
+            }
+            if (sender instanceof Player player) {
+                sendUsage(player);
+            } else {
+                sender.sendMessage(MM.deserialize(
+                        "<red>Cette commande doit être exécutée par un joueur en jeu (position requise, non fournie en argument).</red>"));
+            }
             return true;
         }
+        String subcommand = args[0].toLowerCase(Locale.ROOT);
+        String requiredNode = permissionFor(subcommand);
+        if (requiredNode == null) {
+            if (!requirePermission(sender, PERMISSION)) {
+                return true;
+            }
+            if (sender instanceof Player player) {
+                sendUsage(player);
+            }
+            return true;
+        }
+        if (!requirePermission(sender, requiredNode)) {
+            return true;
+        }
+
         // "story" cible un joueur passé en argument (pas la position de l'exécutant, contrairement à
         // toutes les autres sous-commandes) : utilisable depuis la console, seul cas à échapper à la
         // contrainte "joueur en jeu" ci-dessous.
-        if (args.length > 0 && args[0].equalsIgnoreCase("story")) {
+        if (subcommand.equals("story")) {
             handleStory(sender, args);
             return true;
         }
         // "player" cible aussi un joueur passé en argument (en ligne OU hors ligne) : utilisable
         // depuis la console, même exception que "story" à la contrainte "joueur en jeu" ci-dessous.
-        if (args.length > 0 && args[0].equalsIgnoreCase("player")) {
+        if (subcommand.equals("player")) {
             handlePlayer(sender, args);
             return true;
         }
         // "guide" : diagnostic en lecture seule des Guides de Hub configurés (issue #11) — aucune
         // position requise, utilisable depuis la console comme "story"/"player".
-        if (args.length > 0 && args[0].equalsIgnoreCase("guide")) {
+        if (subcommand.equals("guide")) {
             handleGuide(sender, args);
             return true;
         }
         if (!(sender instanceof Player player)) {
             sender.sendMessage(MM.deserialize(
                     "<red>Cette commande doit être exécutée par un joueur en jeu (position requise, non fournie en argument).</red>"));
-            return true;
-        }
-        if (args.length == 0) {
-            sendUsage(player);
             return true;
         }
 
@@ -195,6 +220,41 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             sendUsage(player);
         }
         return true;
+    }
+
+    /**
+     * Nœud de permission dédié d'une sous-commande {@code /rpgadmin} (issue #27), ou {@code null}
+     * si la sous-commande est inconnue. Chaque nœud est fille de {@link #PERMISSION} dans
+     * {@code plugin.yml} : un OP, ou un rôle historique portant {@code rpgquest.admin.world},
+     * conserve donc l'accès à tout.
+     */
+    private static @Nullable String permissionFor(String subcommand) {
+        return switch (subcommand) {
+            case "flatten" -> com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_FLATTEN;
+            case "zone" -> com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_ZONE;
+            case "portal", "worldportal" -> com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_PORTAL;
+            case "mob" -> com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_MOB;
+            case "npc" -> com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_NPC;
+            case "spawn" -> com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_SPAWN;
+            case "world" -> com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_WORLDS;
+            case "waystone" -> com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_WAYSTONE;
+            case "story" -> com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_STORY;
+            case "player" -> com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_PLAYER;
+            case "guide" -> com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_GUIDE;
+            default -> null;
+        };
+    }
+
+    private boolean requirePermission(CommandSender sender, String node) {
+        // Le parapluie rpgquest.admin.world reste suffisant pour tout, que le gestionnaire de
+        // permissions déploie ou non la hiérarchie children de plugin.yml (compat OP + rôle
+        // historique « admin monde »).
+        if (sender.hasPermission(node) || sender.hasPermission(PERMISSION)) {
+            return true;
+        }
+        sender.sendMessage(MM.deserialize(
+                "<red>Permission manquante :</red> <white><permission></white>", Placeholder.unparsed("permission", node)));
+        return false;
     }
 
     // ---- Waystones (mission « Waystones Wild » — outils de test uniquement) --------------------
@@ -1850,7 +1910,13 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
                                                   @NotNull String alias, String @NotNull [] args) {
         if (args.length == 1) {
-            return TOP_LEVEL_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[0].toLowerCase(Locale.ROOT))).toList();
+            return TOP_LEVEL_SUBCOMMANDS.stream()
+                    .filter(s -> s.startsWith(args[0].toLowerCase(Locale.ROOT)))
+                    .filter(s -> {
+                        String node = permissionFor(s);
+                        return node == null || sender.hasPermission(node) || sender.hasPermission(PERMISSION);
+                    })
+                    .toList();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("flatten")) {
             return FLATTEN_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();

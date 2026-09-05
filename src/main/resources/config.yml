@@ -153,10 +153,28 @@ client-mod:
 hub:
   # Nom exact du monde Hub (voir hub.HubWorldRulesService / hub.HubWorldProtectionListener) :
   # jour et météo verrouillés en permanence, aucun dégât aux joueurs, aucun mob hostile naturel,
-  # casse/pose de bloc interdite (sauf rpgquest.admin.world), claims interdits. Géré entièrement
-  # par le plugin, jamais par une commande /gamerule manuelle. Fonctionne que ce monde soit chargé
-  # avant ou après RPGQuest (ex. par Multiverse-Core).
+  # casse/pose de bloc interdite (sauf permission de build du Hub — voir « permissions » plus bas),
+  # claims interdits. Géré entièrement par le plugin, jamais par une commande /gamerule manuelle.
+  # Fonctionne que ce monde soit chargé avant ou après RPGQuest (ex. par Multiverse-Core).
   world: world_hub
+
+permissions:
+  # Permissions de build granulaires par monde/Hub (issue #27, voir docs/PERMISSIONS.md).
+  #
+  # build-areas : nom de monde -> zone de build. Valeurs acceptées :
+  #   hub.<id>    -> permission rpgquest.build.hub.<id>   (ex. hub.0, hub.arena)
+  #   wild        -> permission rpgquest.build.wild
+  #   world.<clé> -> permission rpgquest.build.world.<clé> (ex. world.claims)
+  #
+  # Sans entrée ici, RPGQuest applique déjà des valeurs par défaut :
+  #   hub.world (world_hub)      -> hub.0
+  #   travel.wild-world (wild)   -> wild
+  #   claims.world (claims)      -> world.claims
+  # Ajouter un Hub supplémentaire ne demande donc qu'une ligne (+ le nœud de permission côté
+  # gestionnaire de permissions), jamais de changement de code.
+  build-areas: {}
+    # world_hub: hub.0
+    # world_hub_arene: hub.arena
 
 travel:
   # Nom exact du monde d'exploration (voir config.TravelConfig) : la Rune de rappel n'y fonctionne

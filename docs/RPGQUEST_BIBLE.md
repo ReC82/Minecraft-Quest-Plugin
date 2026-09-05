@@ -113,7 +113,7 @@ Voir [VERYGAMES.md § Rollback](deployment/VERYGAMES.md#rollback) pour la liste 
 
 Vérifié intégralement dans `src/main/java/com/lodygames/rpgquest/admin/RpgAdminCommand.java` (1269 lignes, lu en entier). Racine unique pour les sous-systèmes d'administration : `flatten`, `zone`, `portal`, `mob`, `npc`, `spawn`, `world`, `worldportal`, `story`, `waystone`, `player`, `guide` (ces quatre derniers documentés dans leurs sections dédiées ci-dessous).
 
-Type : Admin (toutes les sous-commandes) — Permission : **`rpgquest.admin.world`** (unique pour tout `/rpgadmin`, pas de permission plus fine par sous-commande). Exigent toujours un **joueur en jeu** (jamais la console — aucune sous-commande ne prend de coordonnée explicite, toutes utilisent la position/sélection du joueur).
+Type : Admin. Permission **granulaire par sous-commande depuis l'issue #27** — un nœud `rpgquest.admin.<action>` par branche : `rpgquest.admin.flatten`, `.zone`, `.portal` (couvre aussi `worldportal`), `.mob`, `.npc`, `.spawn`, `.worlds` (`/rpgadmin world`), `.waystone`, `.story`, `.player`, `.guide`. Tous `default: false` et **filles de `rpgquest.admin.world`** (`default: op`) : un OP, ou un rôle historique portant `rpgquest.admin.world`, garde l'accès à **tout** ; un rôle ciblé ne reçoit que le(s) nœud(s) voulu(s). Arbre complet et profils de rôles : [docs/PERMISSIONS.md](PERMISSIONS.md). La plupart des sous-commandes exigent un **joueur en jeu** (`story`/`player`/`guide` : console autorisée).
 
 ### Aplatissement de terrain — `/rpgadmin flatten`
 Détail complet : [docs/ADMIN_FLATTEN.md](ADMIN_FLATTEN.md). Page docs-site : aucune.
@@ -139,7 +139,7 @@ Détail complet : [docs/ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md).
 Ne touche **jamais** : `data.db` entier, un autre joueur, le profil/UUID/playerdata vanilla, les mondes, les PNJ Citizens, les définitions de quêtes/Stories, les portails, les Waystones globales, les blocs construits. Conservés volontairement : économie, backpacks/entitlements, annonces de marché. Console : autorisée (comme `/rpgadmin story`). Protection : mot `confirm` obligatoire.
 
 ### Guides de Hub — `/rpgadmin guide`
-Détail complet : [docs/HUB_GUIDE.md](HUB_GUIDE.md). Lecture seule, console autorisée, permission `rpgquest.admin.world`.
+Détail complet : [docs/HUB_GUIDE.md](HUB_GUIDE.md). Lecture seule, console autorisée, permission `rpgquest.admin.guide` (ou `rpgquest.admin.world`).
 
 | Commande | Effet |
 |---|---|
@@ -412,7 +412,7 @@ absent). Page docs-site : `npc.html`. Référence complète :
 
 Documentées en détail en **section 2 (Administration)** ; résumé :
 `/rpgadmin npc tag [id]` (id auto-généré `npc_<n>` si omis) | `untag` |
-`info`, permission `rpgquest.admin.world`, ciblent toujours l'entité
+`info`, permission `rpgquest.admin.npc` (ou `rpgquest.admin.world`), ciblent toujours l'entité
 regardée à ≤ 6 blocs. `tag` est idempotent (ré-étiqueter exige `untag`
 d'abord). Aucune liste globale des PNJ identifiés n'existe (il faut viser
 physiquement l'entité).
@@ -552,7 +552,7 @@ Règles appliquées (idempotentes) :
 -   jour permanent (heure figée à midi, `ADVANCE_TIME` désactivé) ;
 -   météo permanente (`ADVANCE_WEATHER` désactivé, pas de pluie/orage) ;
 -   dégâts joueurs **toujours annulés** (aucune exception, même admin) → PvP bloqué de fait ;
--   casse/pose de bloc bloquée sauf bypass `rpgquest.admin.world` ;
+-   casse/pose de bloc bloquée sauf permission de build du Hub (`rpgquest.build.hub.<id>`, `rpgquest.build.hub.*`, `rpgquest.build.*` ou `rpgquest.admin.world` — voir [docs/PERMISSIONS.md](PERMISSIONS.md)) ;
 -   explosions sans destruction de bloc (`blockList()` vidée) ;
 -   aucun spawn naturel de mob hostile ;
 -   claims interdits (`ClaimService` refuse toute création dans le monde exact de `hub.world`, voir section 8).
@@ -610,7 +610,7 @@ But : supprimer le claim où le joueur se trouve.
 Syntaxe : `/claim delete`
 Effet : supprime le claim (cascade sur ses membres en base) ; refusé si le joueur n'est pas propriétaire ou n'est dans aucun claim.
 Persistance : oui — suppression SQLite.
-À savoir : bypass admin `rpgquest.admin.world` exempte l'acteur des protections mais ne donne pas le droit de `delete`/`trust`/`flag` sur le claim d'autrui (ces sous-commandes vérifient explicitement la propriété, indépendamment du bypass de protection).
+À savoir : le bypass de protection d'un claim est `rpgquest.claim.bypass` (ou `rpgquest.admin.world`) — **aucune** permission de build ne l'accorde (issue #27). Il exempte l'acteur des protections mais ne donne pas le droit de `delete`/`trust`/`flag` sur le claim d'autrui (ces sous-commandes vérifient explicitement la propriété) ; l'administration de claim tiers passe par `rpgquest.claim.admin`.
 
 ### `/claim info`
 Type : Joueur — Permission : `rpgquest.claim`
@@ -655,7 +655,7 @@ Persistance : oui — SQLite (flags du claim).
 | Explosions | non | Toujours bloquées (destruction de bloc empêchée) |
 | Pistons traversant la frontière | non | Toujours bloqué |
 
-Bypass : `rpgquest.admin.world` (même permission que le bypass des zones protégées) exempte l'acteur direct d'une action, jamais la victime.
+Bypass : `rpgquest.claim.bypass` (ou `rpgquest.admin.world`) exempte l'acteur direct d'une action, jamais la victime. **Aucune** permission de build (`rpgquest.build.*`, `rpgquest.build.hub.*`, `rpgquest.build.wild`…) ne contourne un claim (issue #27, voir [docs/PERMISSIONS.md](PERMISSIONS.md)).
 
 ### Prévu / TODO
 
@@ -744,7 +744,7 @@ Persistance : non (lecture seule).
 
 Variantes entièrement vanilla pilotées par YAML dans `plugins/RPGQuest/mobs/*.yml` (quatre exemples générés : `red_creeper`, `golden_creeper`, `creeper_pig`, `splitting_zombie`). Un spawn naturel correspondant au type d'entité/mondes/biomes/zones autorisés et sous la limite de population peut être tiré au sort comme variante ; identification uniquement par PersistentDataContainer. Format complet : [SPECIAL_MOB_FORMAT.md](../SPECIAL_MOB_FORMAT.md) ; détail d'implémentation : [docs/ARCHITECTURE.md](ARCHITECTURE.md).
 
-Les commandes d'administration (`/rpgadmin mob spawn|list|inspect|reload|metrics`, `rpgquest.admin.world`) sont documentées en **section 2 (Administration RPGQuest)** — non répétées ici.
+Les commandes d'administration (`/rpgadmin mob spawn|list|inspect|reload|metrics`, permission `rpgquest.admin.mob` ou `rpgquest.admin.world`) sont documentées en **section 2 (Administration RPGQuest)** — non répétées ici.
 
 Exemple minimal (registry `id`, `entity-type`, `name`, `spawn-chance` obligatoires) :
 ```yaml
@@ -1032,7 +1032,7 @@ FAQ basée sur des problèmes réellement documentés dans le projet (code, `VER
 
 ### Différences OP / joueur normal dans le Hub
 -   **Symptôme apparent de bug :** un joueur OP peut casser/poser des blocs dans `world_hub`, un joueur normal non.
--   **Explication (comportement attendu, pas un bug) :** `rpgquest.admin.world` accorde un bypass de casse/pose **à l'acteur direct uniquement** — ne s'applique jamais aux dégâts environnementaux/hostiles (toujours annulés pour tout le monde, y compris un admin) ni à la victime d'une action d'un tiers.
+-   **Explication (comportement attendu, pas un bug) :** une permission de build du Hub (`rpgquest.build.hub.<id>`, `rpgquest.build.hub.*`, `rpgquest.build.*` ou `rpgquest.admin.world` — un OP a la dernière) accorde la casse/pose **à l'acteur direct uniquement**, jamais aux dégâts environnementaux/hostiles (toujours annulés pour tout le monde, y compris un admin) ni à la victime d'une action d'un tiers. Depuis l'issue #27, un builder n'a plus besoin d'`op` : `rpgquest.build.hub.0` suffit pour construire dans le Hub 0 sans rien pouvoir ailleurs (voir [docs/PERMISSIONS.md](PERMISSIONS.md)).
 -   **Vérification :** comparer avec la checklist finale de VERYGAMES.md (« OP peut construire », « non-OP ne peut pas », « aucun dégât subi par quiconque »).
 
 ### Verrou de session orphelin (`run/world/session.lock`)

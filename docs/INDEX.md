@@ -21,6 +21,7 @@ documents ci-dessous détaillent chacun un sous-système spécifique.
 | [STORE.md](STORE.md) | Boutique web-api et livraisons en jeu. |
 | [WEB_API.md](WEB_API.md) | API web (endpoints, authentification, snapshot). |
 | [CLIENT_MOD.md](CLIENT_MOD.md) | Compatibilité avec le mod client. |
+| [PERMISSIONS.md](PERMISSIONS.md) | Permissions granulaires par rôle / monde / action (build par Hub, `/rpgadmin` par action, séparation claims). |
 | [ADMIN_FLATTEN.md](ADMIN_FLATTEN.md) | Aplatissement de terrain admin (`/rpgadmin flatten`). |
 | [ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md) | Reset admin « nouveau joueur » (`/rpgadmin player resetnew <joueur> confirm`). |
 | [LOCAL_SERVER.md](LOCAL_SERVER.md) | Lancer un serveur local de développement. |

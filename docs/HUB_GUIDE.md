@@ -53,7 +53,7 @@ Lecture seule, aucune modification, utilisable depuis la console :
 | `/rpgadmin guide list` | Liste les Guides de Hub chargés (hub-id, mondes, dialogue + nœud). |
 | `/rpgadmin guide info <hub>` | Détail d'un Hub : mondes, dialogue d'aide, accueil, spécialité, orientations. |
 
-Permission : `rpgquest.admin.world` (comme tout `/rpgadmin`).
+Permission : `rpgquest.admin.guide` (ou `rpgquest.admin.world`). Lecture seule, console autorisée.
 
 ## Limites V1 (hors périmètre)
 

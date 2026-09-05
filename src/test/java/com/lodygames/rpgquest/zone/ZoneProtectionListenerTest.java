@@ -72,7 +72,7 @@ class ZoneProtectionListenerTest {
         // Zone protégée (PvP/casse/explosions/mobs/environnement bloqués) couvrant -10..10 sur x/z.
         registry.create(new ZoneDefinition("safe", "world", -10, 0, -10, 10, 255, 10, ZoneFlags.defaults()));
 
-        listener = new ZoneProtectionListener(registry, npcIdentityService);
+        listener = new ZoneProtectionListener(registry, npcIdentityService, com.lodygames.rpgquest.permission.TestBuildPermissions.standard());
     }
 
     @AfterEach

@@ -249,3 +249,91 @@ Aucune migration de base, aucune nouvelle clé `config.yml`
 
 Aucune donnée migrée : le rollback ne touche que le JAR et deux fichiers de
 dialogue.
+
+---
+
+## 2026-09-05 - Permissions granulaires par rôle / monde / action (issue #27)
+
+### Changement
+
+Découpage des permissions d'administration du monde et de construction.
+Avant : `op` (ou `rpgquest.admin.world`) était nécessaire pour construire
+dans le Hub, ce qui donnait aussi toutes les commandes `/rpgadmin` et le
+contournement des claims joueurs. Après :
+
+- construction par monde/Hub via des nœuds dédiés
+  (`rpgquest.build.hub.<id>`, `rpgquest.build.hub.*`, `rpgquest.build.wild`,
+  `rpgquest.build.world.<clé>`, `rpgquest.build.*`, `rpgquest.build.zone`) ;
+- `/rpgadmin` : un nœud par sous-commande
+  (`rpgquest.admin.flatten|zone|portal|mob|npc|spawn|worlds|waystone|story|player|guide`) ;
+- claims : `rpgquest.claim.bypass` (contournement) et `rpgquest.claim.admin`
+  (`/claim admin`) séparés du build ;
+- **aucune** permission de build ne contourne un claim joueur.
+
+Tous les nouveaux nœuds `/rpgadmin` et build sont **filles de
+`rpgquest.admin.world`** (`default: op`) : un OP, ou un rôle serveur à qui
+`rpgquest.admin.world` était déjà accordé, garde exactement le même accès —
+**aucune régression, aucune action de migration de permissions requise**.
+
+Nouvelle section `config.yml` → `permissions.build-areas` (mapping monde →
+zone de build), **optionnelle** : vide par défaut, valeurs par défaut
+déduites de `hub.world` / `travel.wild-world` / `claims.world`.
+
+Documentation : nouveau `docs/PERMISSIONS.md`.
+
+### Action serveur
+
+- Remplacer uniquement le JAR RPGQuest.
+- **Optionnel** : ajouter une section `permissions.build-areas` dans
+  `plugins/RPGQuest/config.yml` uniquement si des Hubs supplémentaires
+  existent (sinon ne rien changer — les défauts suffisent). Le `config.yml`
+  embarqué du jar contient la section commentée en exemple ; un `config.yml`
+  existant sans cette section reste valide.
+- Créer les groupes/rôles voulus dans le gestionnaire de permissions
+  (LuckPerms recommandé, non obligatoire) d'après `docs/PERMISSIONS.md` §4.
+  Tant que ce n'est pas fait, seul un OP peut construire/administrer — état
+  identique à aujourd'hui.
+- Aucune migration de base de données, aucun nouveau monde, aucun plugin
+  externe, aucune commande manuelle.
+
+### Sauvegarde préalable
+
+- `plugins/RPGQuest-*.jar` (JAR actuellement déployé).
+- `plugins/RPGQuest/config.yml`.
+- `plugins/RPGQuest/data.db` par précaution (procédure standard « mise à
+  jour du seul JAR »).
+
+### Déploiement
+
+1. Compiler (`./gradlew clean build`).
+2. Arrêter le serveur.
+3. Remplacer `plugins/RPGQuest-*.jar`.
+4. (Optionnel) éditer `config.yml` → `permissions.build-areas` si Hubs
+   multiples.
+5. Redémarrer.
+6. Créer/ajuster les groupes de permissions dans LuckPerms si souhaité.
+
+### Validation
+
+- `/rpgquest version` répond ; log de démarrage sans erreur de config.
+- OP : `/rpgadmin flatten`, `/rpgadmin zone list`, casse/pose dans
+  `world_hub`, casse dans un claim de `world_claim` → tout fonctionne
+  comme avant.
+- Joueur non-OP avec `rpgquest.build.hub.0` seul : peut casser/poser dans
+  `world_hub`, **ne peut pas** casser dans `world_claim` (ni dans un claim,
+  ni hors claim), ne peut pas lancer `/rpgadmin flatten`
+  (« Permission manquante : rpgquest.admin.flatten »).
+- Joueur non-OP avec `rpgquest.build.wild` : peut construire dans `wild`,
+  **ne peut pas** contourner un claim.
+- Joueur non-OP avec `rpgquest.admin.npc` : `/rpgadmin npc info` passe la
+  vérification de permission ; `/rpgadmin flatten` est refusé.
+
+### Rollback
+
+1. Arrêter le serveur.
+2. Remettre l'ancien JAR sauvegardé (et l'ancien `config.yml` si modifié).
+3. Redémarrer, vérifier `/rpgquest version`.
+
+Aucune donnée migrée : le rollback ne touche que le JAR (et éventuellement
+`config.yml`). Les nœuds de permission ajoutés dans le gestionnaire externe
+sont simplement ignorés par l'ancienne version.

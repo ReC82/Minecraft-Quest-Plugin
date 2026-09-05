@@ -1,6 +1,6 @@
 # `/rpgadmin flatten` — aplatissement de terrain
 
-Outil d'administration (`rpgquest.admin.world`) pour aplatir rapidement une
+Outil d'administration (`rpgquest.admin.flatten`, ou `rpgquest.admin.world`) pour aplatir rapidement une
 zone autour d'un joueur — utile pour préparer le terrain d'un village ou
 d'une construction, sans WorldEdit ni autre dépendance externe.
 

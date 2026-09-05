@@ -36,7 +36,10 @@ import org.jetbrains.annotations.Nullable;
 public final class ClaimCommand implements CommandExecutor, TabCompleter {
 
     private static final String PERMISSION = "rpgquest.claim";
-    private static final String ADMIN_PERMISSION = "rpgquest.admin.world";
+    // Administration des claims séparée du parapluie monde depuis l'issue #27 : rpgquest.claim.admin
+    // est fille de rpgquest.admin.world (default: op) — aucun changement pour un OP ou un setup
+    // historique, mais une permission de build n'y donne jamais accès.
+    private static final String ADMIN_PERMISSION = com.lodygames.rpgquest.permission.RpgQuestPermissions.CLAIM_ADMIN;
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
             List.of("wand", "create", "delete", "info", "trust", "untrust", "list", "flag", "admin");
     private static final List<String> FLAG_SUBCOMMANDS = List.of("redstone");
@@ -466,7 +469,8 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
     }
 
     private boolean hasAdminPermission(CommandSender sender) {
-        if (sender.hasPermission(ADMIN_PERMISSION)) {
+        if (sender.hasPermission(ADMIN_PERMISSION)
+                || sender.hasPermission(com.lodygames.rpgquest.permission.RpgQuestPermissions.ADMIN_WORLD)) {
             return true;
         }
         sender.sendMessage(MM.deserialize(

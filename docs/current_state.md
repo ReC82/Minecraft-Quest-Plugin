@@ -46,8 +46,18 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`waystone.WaystoneService`), découverte individuelle par joueur, retour au Hub par canalisation
   courte. Système **soulbound générique** (`item.SoulboundItemService`) : un seul écouteur anti-perte
   pour tous les objets permanents (Acte, Pierre de retour, Journal, Rune).
+- **Permissions granulaires (rôle / monde / action)** *(issue #27)* — la construction dans un Hub,
+  le Wild ou un monde spécialisé passe par des nœuds dédiés (`rpgquest.build.hub.<id>`,
+  `rpgquest.build.hub.*`, `rpgquest.build.wild`, `rpgquest.build.world.<clé>`, `rpgquest.build.*`),
+  résolus par monde via `permission.BuildPermissionService` (mapping `config.yml` →
+  `permissions.build-areas`, défauts pour `hub.world`/`wild-world`/`claims.world`). **Aucune**
+  permission de build n'accorde le contournement d'un claim joueur (nœud séparé
+  `rpgquest.claim.bypass`). `/rpgadmin` est découpé en un nœud par sous-commande
+  (`rpgquest.admin.flatten|zone|portal|mob|npc|spawn|worlds|waystone|story|player|guide`), toutes
+  filles de `rpgquest.admin.world` — un OP ou un rôle historique garde tout. Compatible LuckPerms
+  sans le rendre obligatoire. Voir [PERMISSIONS.md](PERMISSIONS.md).
 - **Reset admin « nouveau joueur »** — `/rpgadmin player resetnew <joueur> confirm`
-  (permission `rpgquest.admin.world`, console OK, online **ou** offline) : remet l'état RPGQuest
+  (permission `rpgquest.admin.player` ou `rpgquest.admin.world`, console OK, online **ou** offline) : remet l'état RPGQuest
   d'un seul joueur à l'équivalent « jamais joué » (quêtes, Stories, variables/unlocks dont
   `CLAIM_TIER_1`, progression RPG, découvertes de Waystones, cooldowns persistants, claim principal
   + objets RPGQuest de l'inventaire). Ne touche jamais `data.db` entier, les autres joueurs, le

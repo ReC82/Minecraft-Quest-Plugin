@@ -44,9 +44,10 @@ public final class ConfigValidator {
         RandomSafeArrivalConfig randomSafeArrival = validateRandomSafeArrival(section);
         HubConfig hub = validateHub(section);
         TravelConfig travel = validateTravel(section);
+        PermissionsConfig permissions = validatePermissions(section);
         return new PluginConfig(
                 debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression,
-                backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel);
+                backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel, permissions);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -560,6 +561,45 @@ public final class ConfigValidator {
             throw new ConfigValidationException("« hub.world » ne peut pas être vide.");
         }
         return new HubConfig(world);
+    }
+
+    /**
+     * {@code permissions.build-areas} : nom de monde → spécification de zone de build (issue #27).
+     * Section entièrement optionnelle ; chaque valeur doit être {@code wild}, {@code hub.<id>},
+     * {@code world.<clé>} ou une clé de monde nue — jamais vide.
+     */
+    private static PermissionsConfig validatePermissions(ConfigurationSection section)
+            throws ConfigValidationException {
+        ConfigurationSection permissions = section.getConfigurationSection("permissions");
+        if (permissions == null) {
+            return PermissionsConfig.empty();
+        }
+        ConfigurationSection buildAreas = permissions.getConfigurationSection("build-areas");
+        if (buildAreas == null) {
+            return PermissionsConfig.empty();
+        }
+        java.util.Map<String, String> map = new java.util.LinkedHashMap<>();
+        for (String worldName : buildAreas.getKeys(false)) {
+            if (worldName.isBlank()) {
+                throw new ConfigValidationException("« permissions.build-areas » : nom de monde vide.");
+            }
+            String spec = buildAreas.getString(worldName);
+            if (spec == null || spec.isBlank()) {
+                throw new ConfigValidationException(
+                        "« permissions.build-areas." + worldName + " » ne peut pas être vide.");
+            }
+            String normalized = spec.trim().toLowerCase(Locale.ROOT);
+            boolean valid = normalized.equals("wild")
+                    || (normalized.startsWith("hub.") && normalized.length() > 4)
+                    || (normalized.startsWith("world.") && normalized.length() > 6)
+                    || normalized.matches("[a-z0-9_-]+");
+            if (!valid) {
+                throw new ConfigValidationException("« permissions.build-areas." + worldName
+                        + " » invalide : \"" + spec + "\" (attendu : wild, hub.<id>, world.<clé> ou une clé de monde).");
+            }
+            map.put(worldName, normalized);
+        }
+        return new PermissionsConfig(map);
     }
 
     private static TravelConfig validateTravel(ConfigurationSection section) throws ConfigValidationException {

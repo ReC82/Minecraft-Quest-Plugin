@@ -6,7 +6,7 @@ Zones cuboïdes protégées, définies en YAML dans
 en éditant les fichiers à la main (les coordonnées viennent de l'outil de
 sélection).
 
-## Commandes (toutes `rpgquest.admin.world`)
+## Commandes (`rpgquest.admin.zone`, ou `rpgquest.admin.world`)
 
 -   `/rpgadmin zone wand` — donne l'outil de sélection (tige de blaze
     marquée par PersistentDataContainer, jamais reconnue par son nom ni son
@@ -84,13 +84,21 @@ initial) : même limite résiduelle assumée (un joueur téléporté directement
 dans la zone sans bouger ensuite peut voir l'heure se corriger avec un
 tick de retard).
 
-## Bypass administrateur
+## Bypass administrateur / builder
 
-`rpgquest.admin.world` (même permission que `/rpgadmin flatten`) exempte
-l'acteur direct d'une action (joueur qui casse/pose/interagit, attaquant
-en cas de PvP, ou attaquant d'un PNJ Citizens) de la protection — jamais
-la victime : un administrateur peut construire librement dans la zone,
-mais n'exempte personne d'autre de sa protection. Exception délibérée :
+Depuis l'issue #27, deux portes distinctes (voir [PERMISSIONS.md](PERMISSIONS.md)),
+vérifiées sur l'acteur direct (jamais la victime) :
+
+-   **casse / pose / interaction** — `rpgquest.admin.world`,
+    `rpgquest.build.zone` (build/interaction dans **toute** zone protégée),
+    ou le droit de construire dans le **monde** où se trouve la zone
+    (`rpgquest.build.hub.<id>` pour une zone dans un Hub, `rpgquest.build.wild`
+    pour une zone du Wild, etc.) — un `builder-hub-0` édite ainsi la zone du
+    village de son Hub sans `op` ;
+-   **dégâts PvP / PNJ** — `rpgquest.admin.world` seul : une permission de
+    build n'exempte jamais des règles de combat de la zone.
+
+Exception délibérée :
 les dégâts environnementaux (`environmental-damage`, `hostile-damage`)
 n'ont pas d'« acteur » distinct de la victime — ils s'appliquent donc à
 **tout le monde**, administrateurs compris (rien ne justifierait qu'un

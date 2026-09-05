@@ -502,3 +502,29 @@ Première étape à reprendre: aucune — la table "Étapes" ne définit rien
   au-delà de 23 ; voir TODO.md "Plus tard" pour des pistes, à préciser par
   l'utilisateur avant de démarrer
 ```
+
+```text
+Date: 2026-09-05
+Branche de départ: feature/11-guide-help-center-quest-journal (état d'intégration
+  courant = feature/23-mod-prototype + refonte CLAUDE.md + issue #11)
+Étape de départ: issue GitHub #27 — permissions granulaires par rôle, monde et
+  action (label ready). Étapes 1 à 23 de la table restent DONE.
+Étapes terminées: issue #27
+Branche finale: feature/27-granular-permissions
+Dernier commit: feat(permission): granular per-role/world/action permissions (issue #27)
+Build: vert — ./gradlew test build BUILD SUCCESSFUL, JAR
+  build/libs/rpgquest-0.1.0-SNAPSHOT.jar produit
+Tests: 956 tests plugin (0 échec, 0 erreur, 17 ignorés = limitation MockBukkit
+  héritée de l'étape 18) + 30 web-api ; nouveaux : BuildPermissionServiceTest
+  (11), RpgAdminCommandPermissionsTest (7), ajouts ClaimProtectionListenerTest
+  (2), HubWorldProtectionListenerTest (3), ConfigValidatorTest (4) ; 4 tests de
+  listeners existants adaptés à la nouvelle signature via la fabrique
+  TestBuildPermissions
+Tests manuels en attente: PENDING MANUAL VALIDATION — checklist du
+  SERVER_CHANGELOG (entrée 2026-09-05 « Permissions granulaires ») : OP inchangé,
+  builder-hub-0 limité au Hub 0 et bloqué dans world_claim, builder Wild sans
+  bypass claim, NPC editor sans /rpgadmin flatten
+Blocages: aucun
+Première étape à reprendre: aucune imposée — issue #27 livrée sur sa branche,
+  non fusionnée, non déployée (conformément à la demande)
+```

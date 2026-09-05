@@ -19,7 +19,7 @@ pour le détail d'implémentation.
 Un portail **sans destination configurée** ne fait rien : entrer dans sa
 zone d'activation affiche un message et ne déclenche aucune canalisation.
 
-## Commandes (toutes `rpgquest.admin.world`)
+## Commandes (`rpgquest.admin.portal`, ou `rpgquest.admin.world`)
 
 -   `/rpgadmin zone wand` — même outil de sélection que les zones
     protégées, réutilisé pour délimiter la zone d'activation d'un portail.
@@ -379,7 +379,7 @@ waystoneId + discoveredAt). Sur une Waystone déjà découverte, un choix compac
 La persistance (monde + x/y/z) suffit déjà comme destination pour un futur « Hub → Waystone
 découverte », non implémenté.
 
-### Admin/debug (`rpgquest.admin.world`)
+### Admin/debug (`rpgquest.admin.waystone`, ou `rpgquest.admin.world`)
 
 `/rpgadmin waystone list | here | tp <id> | generatehere | reset discoveries <joueur>`.
 `generatehere` ignore le tirage de probabilité mais respecte l'unicité par cellule et la recherche

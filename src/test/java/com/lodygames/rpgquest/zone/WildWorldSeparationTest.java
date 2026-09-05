@@ -73,7 +73,7 @@ class WildWorldSeparationTest {
         // Zone protégée dans "world" (le Hub) uniquement — jamais de zone enregistrée dans "wild".
         registry.create(new ZoneDefinition("hub", "world", -10, 0, -10, 10, 255, 10, ZoneFlags.defaults()));
 
-        listener = new ZoneProtectionListener(registry, npcIdentityService);
+        listener = new ZoneProtectionListener(registry, npcIdentityService, com.lodygames.rpgquest.permission.TestBuildPermissions.standard());
     }
 
     @AfterEach

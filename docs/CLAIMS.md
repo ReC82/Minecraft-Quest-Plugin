@@ -38,11 +38,11 @@ Deux façons d'obtenir un claim, qui **partagent le même moteur**
     trouves (propriétaire uniquement). Seule permission réellement
     configurable, voir plus bas.
 -   `/claim admin resettier1 <joueur>` — **admin uniquement**
-    (`rpgquest.admin.world`, pas `rpgquest.claim`), voir « Réinitialisation
-    admin (test/QA) » plus bas.
+    (`rpgquest.claim.admin` ou `rpgquest.admin.world`, pas `rpgquest.claim`),
+    voir « Réinitialisation admin (test/QA) » plus bas.
 -   `/claim admin tp <joueur>` — **admin/debug uniquement**
-    (`rpgquest.admin.world`), voir « Retour à son claim (PNJ Jo / commande
-    admin) » plus bas.
+    (`rpgquest.claim.admin` ou `rpgquest.admin.world`), voir « Retour à son
+    claim (PNJ Jo / commande admin) » plus bas.
 
 Toutes les sous-commandes qui agissent sur un claim précis (`delete`,
 `info`, `trust`, `untrust`, `flag`) opèrent sur **le claim où tu te
@@ -104,11 +104,21 @@ les autres protections sont fixes, conformément à la mission.
 
 ## Bypass administrateur
 
-`rpgquest.admin.world` (même permission que le bypass des zones protégées)
-exempte l'acteur direct d'une action de la protection d'un claim — jamais
-la victime. Le bypass s'applique de la même façon aux règles du monde des
-claims (`ClaimsWorldRulesListener`, construction hors de tout claim) — voir
-ci-dessous.
+`rpgquest.claim.bypass` (ou `rpgquest.admin.world`, qui la porte en enfant —
+`default: op`) exempte l'acteur direct d'une action de la protection d'un
+claim — jamais la victime.
+
+> **Issue #27 — garantie centrale :** **aucune** permission de build
+> (`rpgquest.build.*`, `rpgquest.build.hub.*`, `rpgquest.build.wild`,
+> `rpgquest.build.zone`…) n'accorde, à aucun niveau, le contournement d'un
+> claim joueur. Construire dans un Hub ou le Wild ne donne jamais le droit
+> de toucher au terrain protégé d'un joueur. Voir
+> [PERMISSIONS.md](PERMISSIONS.md).
+
+La construction **hors de tout claim** dans le monde des claims
+(`ClaimsWorldRulesListener`) est régie séparément par les permissions de
+build de ce monde (`rpgquest.build.world.claims`, `rpgquest.build.*` ou
+`rpgquest.admin.world`) — voir ci-dessous.
 
 ## Premier claim (Acte de propriété)
 
@@ -196,8 +206,8 @@ redémarrage du serveur.
     d'explorer avant de poser un premier claim ; Jo n'offre qu'un accès
     rapide à une propriété déjà existante.
 -   **`/claim admin sendhome <joueur>`** — jamais tapé par un joueur, sous-
-    commande **volontairement admin-only** (`rpgquest.admin.world`, toujours
-    accordée à la console) uniquement dispatchée par la console via
+    commande **volontairement admin-only** (`rpgquest.claim.admin` ou
+    `rpgquest.admin.world`, toujours accordée à la console) uniquement dispatchée par la console via
     `RUN_SAFE_COMMAND` depuis le dialogue de Jo (même mécanisme déjà utilisé
     pour donner l'Acte de propriété via `customitem give`). Téléporte le
     joueur **ciblé** (celui qui vient de parler à Jo, donc forcément en
@@ -310,7 +320,7 @@ s'appliquent au **monde entier** désigné par `claims.world` :
 |---|---|
 | Dégâts joueur | **Tous** annulés, toute `DamageCause` (chute, feu, lave, noyade, suffocation, explosion, projectile, attaque d'entité — PvP inclus, faim, vide, etc. — mission « monde claims = réellement pacifique »/zone résidentielle safe) ; jamais un effet persistant posé sur le joueur (aucune résistance/invulnérabilité) — seul l'événement est annulé, le comportement normal revient **instantanément** dès la sortie de ce monde ; les mobs/animaux ne sont jamais concernés (peuvent toujours se blesser normalement) |
 | Mobs hostiles | Spawn **toujours** empêché, quelle que soit la cause (naturel, spawner, renforts de zombie, invasion de patrouille, invocation par commande...) — pas seulement le spawn naturel (mission « monstres hostiles dans claims ») ; animaux/passifs jamais concernés |
-| Construction hors de tout claim | Casse/pose de bloc refusée **en dehors** de tout claim (bypass `rpgquest.admin.world`) — à l'intérieur d'un claim, la protection revient entièrement à `ClaimProtectionListener` |
+| Construction hors de tout claim | Casse/pose de bloc refusée **en dehors** de tout claim (autorisée pour `rpgquest.build.world.claims` / `rpgquest.build.*` / `rpgquest.admin.world` — jamais une permission de Hub ou de Wild, et jamais un contournement de la protection d'un claim existant) — à l'intérieur d'un claim, la protection revient entièrement à `ClaimProtectionListener` |
 | Voyage vers le Nether | Portail Nether activé **depuis** ce monde refusé (`claim.ClaimNetherTravelListener`, bascule `claims.block-nether-travel`) — construire un cadre en obsidienne reste autorisé, seul le voyage est bloqué ; un portail utilisé pour **revenir** vers `claims`, un portail dans un autre monde, ou un worldportal RPGQuest ne sont jamais concernés |
 
 **Nettoyage des mobs hostiles déjà présents** (mission « monstres hostiles
@@ -329,8 +339,8 @@ météo normaux.
 
 ## Réinitialisation admin (test/QA)
 
-`/claim admin resettier1 <joueur>` (permission `rpgquest.admin.world`, même
-bypass que la protection de claim) — supprime **tous** les claims du
+`/claim admin resettier1 <joueur>` (permission `rpgquest.claim.admin` ou
+`rpgquest.admin.world`) — supprime **tous** les claims du
 joueur ciblé et remet `CLAIM_TIER_1` à `false`, pour rejouer le scénario
 Story → CLAIM_TIER_1 → Acte de propriété → claim depuis zéro sans toucher à
 aucun autre joueur ni système. Voir `ClaimService#resetTierOneClaimForTesting`.

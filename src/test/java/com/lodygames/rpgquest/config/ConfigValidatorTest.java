@@ -504,6 +504,58 @@ class ConfigValidatorTest {
         assertTrue(exception.getMessage().contains("hub.world"));
     }
 
+    // ---- permissions.build-areas (issue #27) ---------------------------------------------------
+
+    @Test
+    void permissionsBuildAreasDefaultsToEmptyWhenSectionIsMissing() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load(""));
+
+        assertTrue(config.permissions().buildAreas().isEmpty());
+    }
+
+    @Test
+    void permissionsBuildAreasKeepsAndNormalizesValidEntries() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                permissions:
+                  build-areas:
+                    world_hub: Hub.0
+                    world_hub_arene: hub.arena
+                    wild: wild
+                    build_world: world.staging
+                """));
+
+        assertEquals("hub.0", config.permissions().buildAreas().get("world_hub"));
+        assertEquals("hub.arena", config.permissions().buildAreas().get("world_hub_arene"));
+        assertEquals("wild", config.permissions().buildAreas().get("wild"));
+        assertEquals("world.staging", config.permissions().buildAreas().get("build_world"));
+    }
+
+    @Test
+    void permissionsBuildAreasRejectsABlankValue() {
+        ConfigurationSection section = load("""
+                permissions:
+                  build-areas:
+                    world_hub: ""
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("build-areas"));
+    }
+
+    @Test
+    void permissionsBuildAreasRejectsAnInvalidSpec() {
+        ConfigurationSection section = load("""
+                permissions:
+                  build-areas:
+                    world_hub: "hub .0"
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("build-areas.world_hub"));
+    }
+
     private ConfigurationSection load(String yaml) {
         return YamlConfiguration.loadConfiguration(new StringReader(yaml));
     }

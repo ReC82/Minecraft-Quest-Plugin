@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.claim;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.claim.model.Claim;
 import com.lodygames.rpgquest.config.ClaimConfig;
+import com.lodygames.rpgquest.permission.BuildPermissionService;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Optional;
@@ -45,7 +46,11 @@ import org.bukkit.event.world.WorldLoadEvent;
  *       ce moment-là) — jamais les animaux/passifs, seulement {@link Monster} ;</li>
  *   <li>casse/pose de bloc refusée <strong>hors de tout claim</strong> (le monde des claims n'est
  *       pas une zone de construction libre — seul l'intérieur d'un claim, protégé/géré par {@link
- *       ClaimProtectionListener}, est constructible). Bypass {@code rpgquest.admin.world}.</li>
+ *       ClaimProtectionListener}, est constructible). Contournement : le joueur autorisé à
+ *       construire dans ce monde selon {@link BuildPermissionService} — {@code rpgquest.admin.world},
+ *       {@code rpgquest.build.*} ou {@code rpgquest.build.world.claims} (issue #27) ; jamais une
+ *       permission de Hub ou de Wild, et jamais un contournement de la protection d'un claim
+ *       existant (elle reste gérée par {@link ClaimProtectionListener}).</li>
  * </ul>
  *
  * <p><strong>Volontairement absent</strong> (contrairement au Hub) : aucun verrouillage du
@@ -54,16 +59,17 @@ import org.bukkit.event.world.WorldLoadEvent;
  */
 public final class ClaimsWorldRulesListener implements Listener {
 
-    private static final String BYPASS_PERMISSION = "rpgquest.admin.world";
-
     private final RPGQuestPlugin plugin;
     private final ClaimService claimService;
     private final Supplier<ClaimConfig> config;
+    private final BuildPermissionService buildPermissions;
 
-    public ClaimsWorldRulesListener(RPGQuestPlugin plugin, ClaimService claimService, Supplier<ClaimConfig> config) {
+    public ClaimsWorldRulesListener(RPGQuestPlugin plugin, ClaimService claimService, Supplier<ClaimConfig> config,
+                                    BuildPermissionService buildPermissions) {
         this.plugin = plugin;
         this.claimService = claimService;
         this.config = config;
+        this.buildPermissions = buildPermissions;
     }
 
     // ---- Zone résidentielle totalement safe (tout dégât joueur annulé, toute cause) -----------
@@ -135,7 +141,7 @@ public final class ClaimsWorldRulesListener implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onBreak(BlockBreakEvent event) {
-        if (isClaimsWorld(event.getBlock().getWorld()) && !isBypassing(event.getPlayer())
+        if (isClaimsWorld(event.getBlock().getWorld()) && !canBuild(event.getPlayer(), event.getBlock().getWorld())
                 && claimAt(event.getBlock().getWorld(), event.getBlock().getX(), event.getBlock().getY(), event.getBlock().getZ()).isEmpty()) {
             event.setCancelled(true);
         }
@@ -143,7 +149,7 @@ public final class ClaimsWorldRulesListener implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onPlace(BlockPlaceEvent event) {
-        if (isClaimsWorld(event.getBlockPlaced().getWorld()) && !isBypassing(event.getPlayer())
+        if (isClaimsWorld(event.getBlockPlaced().getWorld()) && !canBuild(event.getPlayer(), event.getBlockPlaced().getWorld())
                 && claimAt(event.getBlockPlaced().getWorld(), event.getBlockPlaced().getX(),
                         event.getBlockPlaced().getY(), event.getBlockPlaced().getZ()).isEmpty()) {
             event.setCancelled(true);
@@ -160,7 +166,7 @@ public final class ClaimsWorldRulesListener implements Listener {
         return world != null && world.getName().equals(config.get().world());
     }
 
-    private boolean isBypassing(Player player) {
-        return player != null && player.hasPermission(BYPASS_PERMISSION);
+    private boolean canBuild(Player player, World world) {
+        return player != null && buildPermissions.mayBuild(player, world);
     }
 }

@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.hub;
 
 import com.lodygames.rpgquest.config.HubConfig;
+import com.lodygames.rpgquest.permission.BuildPermissionService;
 import java.util.function.Supplier;
 import org.bukkit.World;
 import org.bukkit.entity.Monster;
@@ -27,18 +28,21 @@ import org.bukkit.event.entity.EntityExplodeEvent;
  * volontairement, car le Hub n'a besoin que d'une seule politique (contrairement à une zone
  * protégée configurable au cas par cas).</p>
  *
- * <p>Bypass ({@code rpgquest.admin.world}, même permission que {@code zone.ZoneProtectionListener})
- * uniquement pour la casse/pose de bloc (« admins/OP : construction autorisée ») — jamais pour les
+ * <p>Casse/pose de bloc : autorisée uniquement au joueur qui peut construire dans ce Hub selon
+ * {@link BuildPermissionService} — {@code rpgquest.admin.world}, {@code rpgquest.build.*},
+ * {@code rpgquest.build.hub.*} ou {@code rpgquest.build.hub.<id>} (id « 0 » par défaut). Un
+ * {@code builder-hub-0} construit donc ici sans être OP, mais {@code rpgquest.build.wild} ou un
+ * autre {@code rpgquest.build.hub.<autre>} n'y donne rien (issue #27). Jamais de bypass pour les
  * dégâts, qui n'ont pas de raison de viser un administrateur dans un monde de spawn paisible.</p>
  */
 public final class HubWorldProtectionListener implements Listener {
 
-    private static final String BYPASS_PERMISSION = "rpgquest.admin.world";
-
     private final Supplier<HubConfig> config;
+    private final BuildPermissionService buildPermissions;
 
-    public HubWorldProtectionListener(Supplier<HubConfig> config) {
+    public HubWorldProtectionListener(Supplier<HubConfig> config, BuildPermissionService buildPermissions) {
         this.config = config;
+        this.buildPermissions = buildPermissions;
     }
 
     // ---- Dégâts aux joueurs (PvP inclus) --------------------------------------------------------
@@ -54,14 +58,15 @@ public final class HubWorldProtectionListener implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onBreak(BlockBreakEvent event) {
-        if (isHub(event.getBlock().getWorld()) && !isBypassing(event.getPlayer())) {
+        if (isHub(event.getBlock().getWorld()) && !canBuild(event.getPlayer(), event.getBlock().getWorld())) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onPlace(BlockPlaceEvent event) {
-        if (isHub(event.getBlockPlaced().getWorld()) && !isBypassing(event.getPlayer())) {
+        if (isHub(event.getBlockPlaced().getWorld())
+                && !canBuild(event.getPlayer(), event.getBlockPlaced().getWorld())) {
             event.setCancelled(true);
         }
     }
@@ -100,7 +105,7 @@ public final class HubWorldProtectionListener implements Listener {
         return world != null && world.getName().equals(config.get().world());
     }
 
-    private boolean isBypassing(Player player) {
-        return player != null && player.hasPermission(BYPASS_PERMISSION);
+    private boolean canBuild(Player player, World world) {
+        return player != null && buildPermissions.mayBuild(player, world);
     }
 }

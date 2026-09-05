@@ -186,6 +186,32 @@ class ClaimProtectionListenerTest {
     }
 
     @Test
+    void buildPermissionsNeverBypassAClaim() {
+        // issue #27 : un builder Hub/Wild ne doit JAMAIS pouvoir toucher au claim d'un joueur.
+        stranger.addAttachment(plugin, "rpgquest.build.*", true);
+        stranger.addAttachment(plugin, "rpgquest.build.hub.0", true);
+        stranger.addAttachment(plugin, "rpgquest.build.wild", true);
+        stranger.addAttachment(plugin, "rpgquest.build.zone", true);
+        Block block = world.getBlockAt(0, 64, 0);
+        BlockBreakEvent event = new BlockBreakEvent(block, stranger);
+
+        listener.onBreak(event);
+
+        assertTrue(event.isCancelled(), "aucune permission de build n'accorde le contournement d'un claim");
+    }
+
+    @Test
+    void claimBypassPermissionAloneIsEnoughWithoutOp() {
+        stranger.addAttachment(plugin, "rpgquest.claim.bypass", true);
+        Block block = world.getBlockAt(0, 64, 0);
+        BlockBreakEvent event = new BlockBreakEvent(block, stranger);
+
+        listener.onBreak(event);
+
+        assertFalse(event.isCancelled(), "rpgquest.claim.bypass suffit, sans op");
+    }
+
+    @Test
     void blockPlaceByAStrangerIsCancelled() {
         Block block = world.getBlockAt(0, 64, 0);
         block.setType(Material.AIR);

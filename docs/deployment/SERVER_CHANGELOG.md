@@ -393,6 +393,21 @@ Puis, **en jeu** (admin, après redémarrage) : créer le PNJ Garde et le lier �
 
 Oui (nouveau JAR + rechargement des dialogues au démarrage du plugin).
 
+### Exécution
+
+- **2026-09-06 13:04:54Z** : `scripts/deploy-verygames.sh -y --also
+  src/main/resources/dialogues/guard.yml:RPGQuest/dialogues/guard.yml`.
+  - JAR : ancien `3806243c…8946` (1 117 023 o) → nouveau
+    `89b226b8fee9773a46ef90120244be8163ca275a96359e53c33dd027bc60cb58`
+    (1 117 682 o). Backup :
+    `verygames-backups/rpgquest-20260906T130454Z-predeploy.jar`.
+  - `RPGQuest/dialogues/guard.yml` : 1108 o (version périmée, sans
+    `crystal_hunt`) → 1850 o (== dépôt, diff vérifié après upload). Backup :
+    `verygames-backups/extra-20260906T130454Z/RPGQuest/dialogues/guard.yml`.
+  - `quests/first_steps.yml` **non transféré** (édition serveur conservée).
+  - **Redémarrage serveur + création du PNJ Garde : actions manuelles non
+    encore effectuées** au moment de ce déploiement.
+
 ### Migration automatique
 
 Aucune. La création du PNJ Garde ajoute une seule ligne à

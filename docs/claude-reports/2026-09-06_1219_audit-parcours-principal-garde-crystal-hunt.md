@@ -4,12 +4,16 @@
 * Date : 2026-09-06
 * Heure : 12:19 (heure locale réelle de la machine)
 * Sujet : Audit complet du parcours principal (nouveau joueur → `crystal_hunt` → déblocage `CLAIM_TIER_1`) et ré-audit des issues #21 (accès monde claims) / #22 (retour Hub). Cause du « Garde introuvable » et de « La chasse aux cristaux introuvable ».
-* Statut : PARTIAL — causes identifiées et corrigées côté dépôt + serveur ; création du PNJ Garde et validation en jeu = actions manuelles restantes (voir checklist). Aucune issue fermée, aucune branche fusionnée.
+* Statut : PARTIAL — causes identifiées, corrigées côté dépôt et **déployées sur DEV** (JAR +
+  `dialogues/guard.yml`) ; restent 3 actions manuelles : redémarrer DEV, **créer le PNJ Garde**
+  (`/npc create` + `/rpgadmin npc tag guard`), dérouler la checklist en jeu avec un compte **non
+  opéré**. Aucune issue fermée, aucune branche fusionnée.
 * Branche Git : `deploy/issue-21-claims-journey`
-* Commit actuel si disponible : voir « Commit(s) »
+* Commit(s) : `37c468f` (docs de rattrapage session précédente), `692ac36` (audit + journalisation
+  + docs), plus un commit `docs` de finalisation de ce rapport.
 * Début de la tâche : 2026-09-06 12:04:11
-* Fin de la tâche : 2026-09-06 12:__:__
-* Durée totale : 00:__:__
+* Fin de la tâche : 2026-09-06 13:07:00
+* Durée totale : 01:02:49
 
 ## Demande
 
@@ -256,8 +260,15 @@ Aucun changement de `config.yml`. `dialogue.allowed-commands` contient déjà `c
 ## Tests automatiques
 
 - Journalisation seule ajoutée au code : aucun test existant n'assert sur ces logs.
-- `./gradlew test` — __RÉSULTAT À COMPLÉTER__
-- `./gradlew build` — __RÉSULTAT À COMPLÉTER__
+- `./gradlew test` — **BUILD SUCCESSFUL in 13m 52s** (suite complète, module racine + `web-api` ;
+  machine DEV ~900 Mo de RAM → exécution lente, plafonds mémoire locaux ajoutés hors dépôt :
+  `~/.gradle/init.d/lowmem.gradle` + `~/.gradle/gradle.properties`, non versionnés).
+- `./gradlew build` — **BUILD SUCCESSFUL in 24s** (`:test` UP-TO-DATE).
+- `./gradlew jar` reconstruit — JAR `build/libs/rpgquest-0.1.0-SNAPSHOT.jar`,
+  SHA-256 `89b226b8fee9773a46ef90120244be8163ca275a96359e53c33dd027bc60cb58`.
+- Incident environnemental résolu : premières relances en `java.io.EOFException` (worker de test tué
+  par pression mémoire + `build/test-results/binary` verrouillé/corrompu d'un run interrompu) —
+  corrigé par `rm -rf build/test-results` + plafonds mémoire ; la suite passe ensuite intégralement.
 
 Note (règle de la demande) : MockBukkit ne prouve pas #21/#22 puisque la logique dépend du **nom
 réel du monde**, d'un **World-Portal configuré** et du **statut OP du testeur** — d'où l'audit du
@@ -287,14 +298,22 @@ création du PNJ Garde, test #21/#22 **avec un compte non opéré**.
 
 ### À transférer
 
-1. `rpgquest-0.1.0-SNAPSHOT.jar` (reconstruit — ajoute la journalisation de décision) → racine FTP
-   (= `plugins/`).
-2. `RPGQuest/dialogues/guard.yml` — **obligatoire** : débloque la branche `crystal_hunt`.
-3. `RPGQuest/quests/first_steps.yml` — **recommandé** : réaligne la version éditée à la main sur
-   le serveur (écrase le texte « modifiées ! » et rétablit `icon: IRON_SWORD`). Non bloquant ;
-   à omettre si l'on veut conserver l'édition serveur.
+**Déploiement DEV exécuté le 2026-09-06 13:04:54Z** (`scripts/deploy-verygames.sh -y --also …`) :
 
-Chaque fichier distant remplacé est sauvegardé (backup daté) par le script de déploiement.
+1. ✅ `rpgquest-0.1.0-SNAPSHOT.jar` (reconstruit — ajoute la journalisation de décision) → racine
+   FTP (= `plugins/`). SHA-256 `89b226b8…cb58` (== local, vérifié après upload). Backup de l'ancien
+   (`3806243c…8946`) : `verygames-backups/rpgquest-20260906T130454Z-predeploy.jar`.
+2. ✅ `RPGQuest/dialogues/guard.yml` — **obligatoire**, débloque la branche `crystal_hunt`. L'ancien
+   fichier faisait **1108 o** (version minimale sans `crystal_hunt`), le nouveau **1850 o** (==
+   dépôt, re-téléchargé et diffé après upload). Backup :
+   `verygames-backups/extra-20260906T130454Z/RPGQuest/dialogues/guard.yml`.
+3. ⏸ `RPGQuest/quests/first_steps.yml` — **NON transféré**. La version serveur a été éditée à la
+   main (`description` « Apprends les bases modifiées ! », `icon` retiré) ; non bloquant (la quête
+   démarre et fonctionne). À redéployer seulement sur décision explicite (écraserait l'édition
+   serveur) :
+   `scripts/deploy-verygames.sh -y --also src/main/resources/quests/first_steps.yml:RPGQuest/quests/first_steps.yml`.
+
+Chaque fichier distant remplacé a été sauvegardé (backup daté) par le script.
 
 ### Ne PAS transférer / altérer
 

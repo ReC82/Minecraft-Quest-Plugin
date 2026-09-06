@@ -108,3 +108,76 @@ remplacement du JAR.
 
 Aucune donnée n'a été migrée par ce changement : le rollback ne touche que
 le JAR.
+
+---
+
+## 2026-09-06 - Scripts de déploiement / rollback VeryGames (issue #10)
+
+### Changement
+
+Ajout de scripts versionnés pour automatiser l'*exécution* d'un déploiement
+JAR vers VeryGames (le déclenchement reste manuel) :
+
+- `scripts/deploy-verygames.sh` — vérifie le working tree Git, affiche
+  branche+commit, `./gradlew test` puis `build`, contrôle la présence du
+  JAR, télécharge la version en ligne dans un backup daté local, transfère
+  le nouveau JAR de façon atomique (nom temporaire puis `RNFR`/`RNTO`).
+  N'adresse **que** le chemin distant du JAR : `data.db`, `config.yml`,
+  `messages.yml`, mondes et autres plugins ne sont jamais touchés.
+- `scripts/rollback-verygames.sh` — restaure un backup daté (le plus récent
+  ou un fichier précis), après avoir sauvegardé la version courante ; refuse
+  d'agir sans backup valide.
+- `scripts/lib/verygames-common.sh`, `scripts/verygames.env.example`.
+
+Transfert via `curl` en FTP (port 21). AUTH TLS tentée par défaut
+(`VERYGAMES_FTP_TLS=auto`).
+
+### Action serveur
+
+**Aucune action sur le serveur de production pour ce changement en
+lui-même** : il n'ajoute que des fichiers dans le dépôt (scripts + doc) et
+ne déploie rien. Aucun redémarrage, aucune migration, aucun nouveau JAR.
+
+Action requise **côté poste de déploiement AWS** (une fois, hors serveur
+de jeu) avant le premier usage des scripts :
+
+```bash
+mkdir -p ~/.config/rpgquest
+chmod 700 ~/.config/rpgquest
+cp scripts/verygames.env.example ~/.config/rpgquest/verygames.env
+chmod 600 ~/.config/rpgquest/verygames.env
+# renseigner VERYGAMES_FTP_HOST et VERYGAMES_FTP_PASS (panel VeryGames, compte awsplugin)
+```
+
+Le fichier `~/.config/rpgquest/verygames.env` **ne doit jamais être
+committé** (il est hors dépôt ; `.gitignore` couvre aussi
+`scripts/verygames.env` par sécurité).
+
+### Sauvegarde préalable
+
+Sans objet (aucune modification serveur). Les futurs déploiements via le
+script créent eux-mêmes un backup daté du JAR en ligne dans
+`~/.local/share/rpgquest/verygames-backups/` avant tout remplacement.
+
+### Déploiement
+
+Le prochain déploiement RPGQuest pourra utiliser
+`scripts/deploy-verygames.sh` (voir
+[VERYGAMES.md § Déploiement automatisé](VERYGAMES.md#déploiement-automatisé-scriptsdeploy-verygamessh)).
+Aucun déploiement n'est effectué par cette entrée.
+
+### Validation
+
+Sur le poste AWS, sans toucher au serveur :
+
+```bash
+scripts/deploy-verygames.sh --dry-run          # git + test + build + plan FTP, aucune connexion
+scripts/deploy-verygames.sh --check            # valide la config, teste la connexion si identifiants présents
+scripts/rollback-verygames.sh --list           # liste des backups (vide au départ)
+```
+
+### Rollback
+
+Retirer les scripts (`git revert` du commit) suffit — rien n'a été déployé.
+Le fichier d'identifiants local peut être conservé ou supprimé
+(`rm ~/.config/rpgquest/verygames.env`).

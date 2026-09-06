@@ -27,6 +27,17 @@ bin/
 !.vscode/extensions.json
 !.vscode/tasks.json
 
+# Déploiement VeryGames (issue #10) : le fichier d'identifiants réel vit HORS
+# du dépôt (~/.config/rpgquest/verygames.env). Ces règles sont un filet de
+# sécurité au cas où quelqu'un le placerait quand même sous scripts/.
+# Seul scripts/verygames.env.example (sans secret) est versionné.
+scripts/verygames.env
+scripts/*.env
+!scripts/verygames.env.example
+# Backups de JAR téléchargés par les scripts s'ils sont dirigés vers le dépôt.
+scripts/verygames-backups/
+*.jar.meta
+
 # OS / misc
 .DS_Store
 *.log

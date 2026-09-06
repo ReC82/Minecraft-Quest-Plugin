@@ -55,22 +55,204 @@ Ne pas mélanger ces procédures : un scénario 2 traité comme un scénario 3
 
 ## Accès FTP VeryGames
 
--   **Protocole/port :** FTP, port `21`.
+-   **Protocole/port :** FTP simple, port `21`. **VeryGames ne fournit pas
+    de SFTP** — pas de transfert sur SSH possible.
 -   **Host / utilisateur / mot de passe :** récupérés depuis le panel
     VeryGames (Gameserver → onglet FTP), propres à chaque instance de
     serveur.
+-   **Compte dédié au déploiement du plugin : `awsplugin`.** Ce compte est
+    **restreint au dossier `plugins/`** : après connexion, la racine FTP
+    *est* `plugins/` (donc le JAR se dépose directement à la racine de la
+    session, pas dans un sous-dossier `plugins/`).
 -   **Ne jamais stocker le mot de passe FTP dans Git**, ni dans ce
     document, ni dans un fichier de configuration versionné. Le conserver
-    uniquement dans un gestionnaire de mots de passe ou les variables
-    d'environnement locales de la personne qui déploie.
--   **Arborescence côté serveur :**
+    uniquement dans un gestionnaire de mots de passe ou dans le fichier
+    local d'identifiants décrit ci-dessous (hors dépôt).
+-   **Arborescence côté serveur (compte non restreint uniquement) :**
     -   les plugins se déposent dans `/plugins/` ;
     -   les mondes (`world`, `world_nether`, `world_the_end`, `world_hub`,
         ...) se trouvent **à la racine** du serveur, pas dans `/plugins/`.
 
-Un client FTP classique (FileZilla, WinSCP...) ou `sftp`/`ftp` en ligne de
-commande convient. Toutes les étapes de transfert ci-dessous supposent une
-connexion FTP déjà établie vers la racine du serveur VeryGames.
+Un client FTP classique (FileZilla, WinSCP...) ou `ftp`/`curl` en ligne de
+commande convient. Pour la mise à jour du seul JAR (scénario 2), utiliser
+de préférence le script automatisé ci-dessous.
+
+---
+
+## Déploiement automatisé (`scripts/deploy-verygames.sh`)
+
+**Recommandé pour le scénario 2 (mise à jour du seul JAR).** Le script
+automatise l'*exécution* d'un déploiement ; son *déclenchement* reste
+manuel, et l'**arrêt / redémarrage du serveur VeryGames reste manuel**
+(VeryGames n'expose ni API ni RCON exploitable — FTP port 21 uniquement).
+
+Fichiers (versionnés, sans secret) :
+
+-   `scripts/deploy-verygames.sh` — build vérifié + backup daté + transfert ;
+-   `scripts/rollback-verygames.sh` — restauration d'un backup ;
+-   `scripts/lib/verygames-common.sh` — fonctions partagées ;
+-   `scripts/verygames.env.example` — modèle du fichier d'identifiants.
+
+### 1. Créer le fichier local d'identifiants (hors Git)
+
+Le fichier **réel** vit **hors du dépôt**. Emplacement par défaut :
+
+```
+~/.config/rpgquest/verygames.env
+```
+
+(surchargeable via la variable d'environnement `RPGQUEST_VERYGAMES_ENV`).
+
+Commandes exactes à exécuter sur AWS :
+
+```bash
+mkdir -p ~/.config/rpgquest
+chmod 700 ~/.config/rpgquest
+cp scripts/verygames.env.example ~/.config/rpgquest/verygames.env
+chmod 600 ~/.config/rpgquest/verygames.env
+${EDITOR:-nano} ~/.config/rpgquest/verygames.env
+```
+
+Format : `CLE=valeur`, une par ligne (fichier sourcé par bash, pas de
+`export`). Mettre les valeurs contenant des espaces ou des caractères
+spéciaux entre **guillemets simples** — en particulier le mot de passe :
+
+```sh
+# ~/.config/rpgquest/verygames.env
+VERYGAMES_FTP_HOST=ftpXX.verygames.net          # depuis le panel VeryGames
+VERYGAMES_FTP_PORT=21
+VERYGAMES_FTP_USER=awsplugin
+VERYGAMES_FTP_PASS='le-mot-de-passe-du-panel'
+VERYGAMES_FTP_REMOTE_DIR=/                       # awsplugin est chrooté sur plugins/
+VERYGAMES_PLUGIN_JAR_NAME=rpgquest-0.1.0-SNAPSHOT.jar
+VERYGAMES_FTP_TLS=auto                           # tente AUTH TLS, repli en clair
+```
+
+Variables reconnues (voir `scripts/verygames.env.example` pour la liste
+complète et les optionnelles `VERYGAMES_BACKUP_DIR`,
+`VERYGAMES_BACKUP_KEEP`, `VERYGAMES_CURL_*`,
+`VERYGAMES_FTP_EXTRA_CURL_ARGS`) :
+
+| Variable | Obligatoire | Défaut | Rôle |
+|---|---|---|---|
+| `VERYGAMES_FTP_HOST` | oui | — | hôte FTP VeryGames, **sans** `ftp://`, sans port |
+| `VERYGAMES_FTP_PASS` | oui | — | mot de passe du compte FTP |
+| `VERYGAMES_FTP_PORT` | non | `21` | port FTP |
+| `VERYGAMES_FTP_USER` | non | `awsplugin` | compte FTP |
+| `VERYGAMES_FTP_REMOTE_DIR` | non | `/` | dossier distant du JAR (racine de session pour `awsplugin`) |
+| `VERYGAMES_PLUGIN_JAR_NAME` | non | `rpgquest-0.1.0-SNAPSHOT.jar` | nom exact du JAR à remplacer |
+| `VERYGAMES_FTP_TLS` | non | `auto` | `auto` \| `require` \| `none` (AUTH TLS sur le port 21) |
+| `VERYGAMES_BACKUP_DIR` | non | `~/.local/share/rpgquest/verygames-backups` | où sont téléchargés les backups datés |
+
+Précédence : une variable déjà **exportée dans l'environnement** du shell
+l'emporte sur la valeur du fichier (utile pour un secret injecté par un
+gestionnaire externe). Le script **refuse** le fichier s'il n'est pas en
+mode `600` (ou `400`).
+
+Vérifier qu'il n'est **jamais** suivi par Git :
+
+```bash
+# Le fichier réel est hors du dépôt : Git ne peut pas le voir.
+# Filet de sécurité si quelqu'un le place quand même sous scripts/ :
+git check-ignore -v scripts/verygames.env          # -> une règle de .gitignore
+git status --porcelain | grep -i 'verygames\.env'  # -> aucune sortie (hors .example)
+git ls-files | grep -i 'verygames\.env'            # -> uniquement scripts/verygames.env.example
+```
+
+### 2. Préparer / valider sans rien transférer
+
+```bash
+# Charger + valider la config (et, si les identifiants sont là, tester la connexion) :
+scripts/deploy-verygames.sh --check
+
+# Simulation complète : git propre + ./gradlew test + build + JAR présent,
+# puis affichage des actions FTP qui SERAIENT faites (aucune connexion) :
+scripts/deploy-verygames.sh --dry-run
+
+# Idem sans relancer Gradle (itération rapide sur la logique FTP) :
+scripts/deploy-verygames.sh --dry-run --skip-build
+```
+
+`--dry-run` réussit (sortie 0) **même si l'hôte et le mot de passe ne sont
+pas encore renseignés** : il liste alors ce qu'il reste à configurer.
+
+### 3. Déployer (serveur arrêté)
+
+```bash
+# 1. Arrêter le serveur depuis le panel VeryGames (manuel).
+# 2. Puis, depuis la racine du dépôt sur AWS :
+scripts/deploy-verygames.sh
+# 3. Redémarrer le serveur depuis le panel (manuel).
+# 4. Vérifier : /rpgquest version, /plugins, absence d'ERROR au démarrage.
+```
+
+Ce que fait le script, dans l'ordre (échec immédiat à la moindre erreur —
+`set -euo pipefail`) :
+
+1.  vérifie que le working tree Git est **propre** (sinon `--allow-dirty`) ;
+2.  affiche **branche + commit** déployés ;
+3.  exécute `./gradlew test` ;
+4.  exécute `./gradlew build` ;
+5.  vérifie la présence de `build/libs/<VERYGAMES_PLUGIN_JAR_NAME>` et
+    calcule sa taille + SHA-256 ;
+6.  charge la config d'accès, teste la connexion FTP (listing du dossier
+    distant) — **abandon avant toute écriture** si la connexion échoue ;
+7.  **télécharge la version actuellement en ligne** vers
+    `…/verygames-backups/rpgquest-<UTC>Z-predeploy.jar` (+ un `.meta` :
+    SHA-256, taille, commit qui l'a remplacée, opérateur, date) ;
+8.  téléverse le nouveau JAR sous un nom **temporaire**
+    (`<jar>.part-<UTC>Z`), vérifie la taille distante, puis le **renomme**
+    (`RNFR`/`RNTO`) sur le nom final — le JAR final n'est jamais un fichier
+    à moitié transféré (repli sur téléversement direct si le serveur refuse
+    le renommage) ;
+9.  **ne touche à rien d'autre** : `data.db`, `config.yml`, `messages.yml`,
+    `spawn.yml`, dossiers de contenu, mondes, autres plugins — le script
+    n'adresse qu'un seul chemin distant, celui du JAR ;
+10. conserve **tous** les backups (noms horodatés, jamais écrasés) ;
+    `--prune-keep N` (ou `VERYGAMES_BACKUP_KEEP`) permet de ne garder que
+    les N `predeploy` les plus récents, **jamais** le plus récent ;
+11. affiche les **actions manuelles restantes** (démarrage + vérifications
+    panel/console).
+
+Options utiles : `--server-stopped` (saute la question interactive
+« serveur arrêté ? »), `-y` (aucune question), `--allow-no-backup`
+(premier déploiement, rien à sauvegarder), `--jar PATH` (JAR explicite).
+`scripts/deploy-verygames.sh --help` pour la liste complète.
+
+### 4. Rollback (`scripts/rollback-verygames.sh`)
+
+```bash
+scripts/rollback-verygames.sh --list               # backups disponibles + méta
+scripts/rollback-verygames.sh --latest --dry-run   # simulation
+# Serveur arrêté (panel), puis :
+scripts/rollback-verygames.sh --latest             # restaure la version d'avant le dernier déploiement
+scripts/rollback-verygames.sh --backup <chemin>    # restaure un backup précis
+# Redémarrer le serveur (panel) + vérifier /rpgquest version.
+```
+
+Le rollback :
+
+1.  refuse d'agir si **aucun backup valide** n'est disponible (fichier
+    présent, non vide, signature ZIP, SHA-256 conforme au `.meta`) ;
+2.  crée d'abord un **backup de sécurité** de la version actuellement en
+    ligne (`rpgquest-<UTC>Z-prerollback.jar`) — le rollback est lui-même
+    réversible ;
+3.  restaure via le même transfert atomique (nom temporaire puis renommage) ;
+4.  **ne modifie aucune donnée persistante** ;
+5.  affiche les instructions de redémarrage et de vérification.
+
+### Limites assumées (contraintes VeryGames)
+
+-   **Arrêt et redémarrage du serveur : manuels** (panel VeryGames). Aucune
+    API ni RCON exploitable. Le script demande confirmation que le serveur
+    est arrêté avant d'écrire, et rappelle les étapes de redémarrage à la
+    fin.
+-   **Pas de vérification post-redémarrage automatique** (`/rpgquest
+    version` se fait à la main, console/jeu).
+-   FTP en clair par défaut ; `VERYGAMES_FTP_TLS=require` force AUTH TLS si
+    le serveur le supporte.
+-   Le script ne gère **que le JAR**. Migration de mondes / `data.db` /
+    configs : hors périmètre, voir les scénarios 1 et 3 ci-dessous.
 
 ---
 
@@ -362,6 +544,14 @@ VeryGames et que seule une nouvelle version compilée du plugin doit être
 déployée — **aucune donnée de jeu, aucun monde, aucune configuration
 d'autre plugin n'est touché**.
 
+> **Chemin recommandé : le script automatisé.** Les étapes 1, 3 et 4
+> ci-dessous (build, backup daté, remplacement du seul JAR) sont exactement
+> ce que fait `scripts/deploy-verygames.sh` — voir
+> [Déploiement automatisé](#déploiement-automatisé-scriptsdeploy-verygamessh).
+> Seuls l'arrêt (étape 2) et le redémarrage/vérification (étapes 5-6)
+> restent manuels. La procédure manuelle ci-dessous reste la référence si
+> le script n'est pas utilisable.
+
 1.  Compiler la nouvelle version (`./gradlew clean build`).
 2.  Arrêter le serveur (`stop`, arrêt propre).
 3.  Sauvegarder l'ancien `rpgquest-<version>.jar` et `plugins/RPGQuest/data.db`
@@ -434,6 +624,14 @@ neuve ou migration complète) :
 ---
 
 ## Rollback
+
+> **Rollback du seul JAR (scénario 2) :** utiliser
+> `scripts/rollback-verygames.sh --latest` — il restaure le backup daté
+> créé automatiquement par `deploy-verygames.sh` lors du dernier
+> déploiement, après avoir sauvegardé la version en ligne. Voir
+> [Déploiement automatisé § 4](#4-rollback-scriptsrollback-verygamessh).
+> La procédure ci-dessous couvre le rollback **complet** (JAR + données +
+> mondes), pour une migration (scénario 3) qui aurait mal tourné.
 
 Avant toute opération de mise à jour ou de migration, sauvegarder (copie
 FTP vers un poste local ou un stockage externe, jamais uniquement sur le

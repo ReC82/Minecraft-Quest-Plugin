@@ -12,7 +12,8 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   quêtes existantes, désormais connecté au moteur de quête : une Story `ACTIVE` avance toute seule
   (démarrage/avancement/fin automatiques, sans commande joueur), état `NOT_STARTED`/`ACTIVE`/
   `COMPLETED` + position courante par joueur, commandes admin/debug uniquement
-  (`/rpgadmin story info|start|reset|resetwithquests`) — voir [storylines.md](storylines.md).
+  (`/rpgadmin story info|start|advance|complete|reset|resetwithquests`) — voir
+  [storylines.md](storylines.md) et [ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md).
 - **Dialogues** — graphes de nœuds PNJ (Citizens et entités vanilla), conditions et actions par
   choix, rendu via Paper Dialog.
 - **NPC / Citizens** — identité logique RPGQuest découplée du nom affiché de l'entité.
@@ -72,6 +73,18 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `/rpgadmin player resetnew <joueur> preview` — dry-run qui liste, catégorie par catégorie, ce qui
   serait effacé, **sans aucune écriture** (`PlayerResetService#previewReset`). Voir
   [ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md).
+- **Raccourcis d'administration / test quêtes & stories** *(issue #36)* — atteindre rapidement une
+  étape précise sans rejouer le gameplay, en réutilisant les services métier (jamais d'écriture
+  directe en base). `/rpgadmin quest start|complete|reset <joueur> <quest-id>` (+ `force` pour
+  ignorer les prérequis au `start`) ; `/rpgadmin story advance|complete <joueur> <storyId>`
+  (`advance` = complète l'étape courante et accepte la suivante, en indiquant laquelle tester ;
+  `complete` = toute la story, dans l'ordre) ; `/rpgadmin player variable get|set <joueur> <clé>
+  [valeur]`. `complete`/`advance` appliquent les récompenses (dont `VARIABLE`, ex. `CLAIM_TIER_1`)
+  **une seule fois** (garde de `QuestProgressEngine.forceComplete`). `quest reset` rend la quête
+  rejouable mais **n'annule pas** les récompenses déjà accordées (limite documentée). Permission
+  `rpgquest.admin.world` ; `variable set` exige en plus `rpgquest.admin.debug` (défaut `op`) et est
+  journalisée. `quest start/complete` et `story advance/complete` exigent une cible **en ligne**.
+  Voir [ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md).
 - **Items / équipements personnalisés** — objets marqués PDC, comportements d'arme/outil,
   recettes de craft dédiées.
 - **Ressources** — nœuds de ressources rechargeables.

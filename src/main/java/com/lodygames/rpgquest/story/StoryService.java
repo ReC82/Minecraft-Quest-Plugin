@@ -10,9 +10,11 @@ import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestState;
 import com.lodygames.rpgquest.quest.progress.AcceptOutcome;
+import com.lodygames.rpgquest.quest.progress.CompleteOutcome;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.story.model.StoryDefinition;
 import com.lodygames.rpgquest.story.model.StoryState;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -400,6 +402,258 @@ public final class StoryService implements PluginService {
                 active.remove(storyIdOrNullForAll);
             }
         });
+    }
+
+    // ---- Raccourcis d'administration / test (issue #36) ---------------------------------------------
+    //
+    // Outils DEV pour atteindre rapidement une étape précise d'une story sans rejouer le gameplay des
+    // quêtes précédentes. Ne réimplémentent AUCUNE logique métier : ils orchestrent, dans un ordre
+    // connu, les mêmes services que la progression normale — QuestProgressEngine#forceComplete (qui
+    // porte déjà la garde anti double-récompense), QuestProgressEngine#accept (idempotent) et
+    // StoryProgressRepository. La seule différence avec la progression automatique (onQuestProgressChanged)
+    // est le déclenchement : ici l'admin pousse une étape à la fois, au lieu d'attendre un événement
+    // de jeu. Le chemin réactif (advanceStory) reste inoffensif s'il se déclenche en parallèle : sa
+    // garde « progress pointe toujours vers la quête tout juste complétée » échoue puisqu'on a déjà
+    // fait avancer l'index de l'objet ActiveStoryProgress partagé.
+
+    public enum StoryAdvanceOutcome {
+        /** La quête courante a été complétée ; la story pointe maintenant vers la quête suivante ({@code nextQuestId}). */
+        ADVANCED,
+        /** La dernière quête a été complétée ; la story est désormais {@code COMPLETED}. */
+        STORY_COMPLETED,
+        /** La story était déjà {@code COMPLETED} avant l'appel — rien fait. */
+        ALREADY_COMPLETED,
+        UNKNOWN_STORY,
+        /** La story référence, à sa position courante, un id de quête que le moteur de quête ne connaît pas. */
+        UNKNOWN_CURRENT_QUEST
+    }
+
+    /**
+     * @param storyWasStarted               la story était {@code NOT_STARTED} et vient d'être démarrée par cet appel.
+     * @param completedQuestId              quête tout juste complétée (null pour {@code UNKNOWN_STORY}/{@code ALREADY_COMPLETED}).
+     * @param completedQuestWasAlreadyDone  {@code forceComplete} a renvoyé {@code ALREADY_COMPLETED} (aucune récompense re-créditée).
+     * @param nextQuestId                   quête maintenant {@code ACTIVE} à tester manuellement (null si {@code STORY_COMPLETED}).
+     * @param stepNumber                    position 1-indexée maintenant courante (== total si {@code STORY_COMPLETED}).
+     */
+    public record StoryAdvanceReport(StoryAdvanceOutcome outcome, String storyId, boolean storyWasStarted,
+                                     NamespacedKey completedQuestId, boolean completedQuestWasAlreadyDone,
+                                     NamespacedKey nextQuestId, int stepNumber, int totalSteps) {
+
+        static StoryAdvanceReport unknownStory(String id) {
+            return new StoryAdvanceReport(StoryAdvanceOutcome.UNKNOWN_STORY, id, false, null, false, null, 0, 0);
+        }
+
+        static StoryAdvanceReport alreadyCompleted(String id, int total) {
+            return new StoryAdvanceReport(StoryAdvanceOutcome.ALREADY_COMPLETED, id, false, null, false, null, total, total);
+        }
+
+        static StoryAdvanceReport unknownCurrentQuest(String id, NamespacedKey quest, int index, int total) {
+            return new StoryAdvanceReport(StoryAdvanceOutcome.UNKNOWN_CURRENT_QUEST, id, false, quest, false, null, index + 1, total);
+        }
+
+        static StoryAdvanceReport advanced(String id, NamespacedKey done, boolean wasDone, boolean started,
+                                           NamespacedKey next, int newIndex, int total) {
+            return new StoryAdvanceReport(StoryAdvanceOutcome.ADVANCED, id, started, done, wasDone, next, newIndex + 1, total);
+        }
+
+        static StoryAdvanceReport storyCompleted(String id, NamespacedKey done, boolean wasDone, boolean started, int total) {
+            return new StoryAdvanceReport(StoryAdvanceOutcome.STORY_COMPLETED, id, started, done, wasDone, null, total, total);
+        }
+    }
+
+    /**
+     * Fait progresser {@code storyId} d'exactement <strong>une</strong> étape pour {@code player}
+     * (qui doit être en ligne : le moteur de quête n'agit que sur un {@code Player} connecté) :
+     *
+     * <ol>
+     *   <li>story {@code NOT_STARTED} → démarrée (profil + ligne {@code story_progress ACTIVE} à
+     *       l'index 0), puis on enchaîne ;</li>
+     *   <li>{@code forceComplete} de la quête courante de la story — applique ses récompenses
+     *       normalement (dont {@code VARIABLE}, ex. {@code CLAIM_TIER_1}), une seule fois (garde de
+     *       {@code forceComplete}) ;</li>
+     *   <li>l'index de la story avance d'un cran : soit la story devient {@code COMPLETED}, soit la
+     *       quête suivante est acceptée automatiquement (via {@link QuestProgressEngine#accept},
+     *       idempotent) et devient l'étape à tester.</li>
+     * </ol>
+     *
+     * <p>Le {@link CompletableFuture} ne se résout qu'une fois l'acceptation de la quête suivante
+     * réglée — pour que {@link #adminComplete}, qui boucle sur cette méthode, ne parte jamais dans
+     * une itération suivante avant que l'état soit stable.</p>
+     */
+    public CompletableFuture<StoryAdvanceReport> adminAdvance(Player player, String storyId) {
+        Optional<StoryDefinition> storyOpt = registry.find(storyId);
+        if (storyOpt.isEmpty()) {
+            return CompletableFuture.completedFuture(StoryAdvanceReport.unknownStory(storyId));
+        }
+        StoryDefinition story = storyOpt.get();
+        int total = story.questIds().size();
+        UUID playerId = player.getUniqueId();
+        CompletableFuture<StoryAdvanceReport> result = new CompletableFuture<>();
+
+        progressRepository.find(playerId, storyId).thenAccept(existing -> {
+            StoryState state = existing.map(StoryProgressRecord::state).orElse(StoryState.NOT_STARTED);
+            if (state == StoryState.COMPLETED) {
+                result.complete(StoryAdvanceReport.alreadyCompleted(storyId, total));
+                return;
+            }
+            boolean wasStarted = state == StoryState.NOT_STARTED;
+            int startIndex = wasStarted ? 0 : Math.min(Math.max(existing.get().currentIndex(), 0), total - 1);
+
+            CompletableFuture<Void> prep = wasStarted
+                    ? profileRepository.findOrCreate(playerId, player.getName())
+                            .thenCompose(profile -> progressRepository.upsertProgress(playerId, storyId, StoryState.ACTIVE, 0))
+                    : CompletableFuture.completedFuture(null);
+
+            prep.thenRun(() -> runOnMainThread(() -> {
+                if (!player.isOnline()) {
+                    result.complete(StoryAdvanceReport.unknownStory(storyId)); // cible partie entre-temps : traité comme échec neutre.
+                    return;
+                }
+                Map<String, ActiveStoryProgress> active = activeByPlayer.computeIfAbsent(playerId, k -> new ConcurrentHashMap<>());
+                if (wasStarted) {
+                    active.put(storyId, new ActiveStoryProgress(storyId, 0));
+                    showStoryStarted(player, story);
+                }
+                ActiveStoryProgress progress = active.computeIfAbsent(storyId, k -> new ActiveStoryProgress(storyId, startIndex));
+                int index = progress.currentIndex();
+                NamespacedKey currentQuestId = story.questIds().get(index);
+
+                questProgressEngine.forceComplete(player, currentQuestId).thenAccept(complete -> runOnMainThread(() ->
+                        onCurrentQuestForced(player, story, progress, index, currentQuestId, complete, wasStarted, total, result)))
+                        .exceptionally(error -> {
+                            logger.error("[admin] story advance « {} » : échec de forceComplete({}) pour {}", storyId, currentQuestId, playerId, error);
+                            result.completeExceptionally(error);
+                            return null;
+                        });
+            }));
+        }).exceptionally(error -> {
+            logger.error("[admin] story advance « {} » pour {} : lecture de progression impossible", storyId, playerId, error);
+            result.completeExceptionally(error);
+            return null;
+        });
+
+        return result;
+    }
+
+    private void onCurrentQuestForced(Player player, StoryDefinition story, ActiveStoryProgress progress, int index,
+                                      NamespacedKey currentQuestId, CompleteOutcome complete, boolean wasStarted,
+                                      int total, CompletableFuture<StoryAdvanceReport> result) {
+        if (complete == CompleteOutcome.UNKNOWN_QUEST) {
+            logger.warn("[admin] story advance « {} » : la quête courante « {} » est inconnue du moteur de quête.",
+                    story.id(), currentQuestId);
+            result.complete(StoryAdvanceReport.unknownCurrentQuest(story.id(), currentQuestId, index, total));
+            return;
+        }
+        boolean questWasAlreadyDone = complete == CompleteOutcome.ALREADY_COMPLETED;
+        int nextIndex = index + 1;
+        UUID playerId = player.getUniqueId();
+
+        // Avancer l'objet partagé AVANT toute chose : la garde de advanceStory (chemin réactif) voit
+        // alors que progress ne pointe plus vers currentQuestId et s'annule d'elle-même.
+        boolean weAdvance = progress.currentIndex() == index;
+        if (weAdvance) {
+            progress.setCurrentIndex(nextIndex);
+        }
+
+        if (nextIndex >= total) {
+            if (weAdvance) {
+                Map<String, ActiveStoryProgress> active = activeByPlayer.get(playerId);
+                if (active != null) {
+                    active.remove(story.id());
+                }
+                progressRepository.upsertProgress(playerId, story.id(), StoryState.COMPLETED, nextIndex).exceptionally(error -> {
+                    logger.error("[admin] story advance : impossible de persister la complétion de « {} » pour {}", story.id(), playerId, error);
+                    return null;
+                });
+                logger.info("[admin] story advance « {} » : TERMINÉE pour {} — quête {} complétée{}.",
+                        story.id(), playerId, currentQuestId, questWasAlreadyDone ? " (déjà faite)" : "");
+                showStoryCompleted(player, story);
+            }
+            result.complete(StoryAdvanceReport.storyCompleted(story.id(), currentQuestId, questWasAlreadyDone, wasStarted, total));
+            return;
+        }
+
+        NamespacedKey nextQuestId = story.questIds().get(nextIndex);
+        if (!weAdvance) {
+            // Le chemin réactif a déjà fait avancer la story (et accepté la quête suivante) : rien à
+            // refaire, on rapporte juste l'état déterministe (exactement une étape franchie).
+            result.complete(StoryAdvanceReport.advanced(story.id(), currentQuestId, questWasAlreadyDone, wasStarted, nextQuestId, nextIndex, total));
+            return;
+        }
+
+        progressRepository.upsertProgress(playerId, story.id(), StoryState.ACTIVE, nextIndex).exceptionally(error -> {
+            logger.error("[admin] story advance : impossible de persister l'avancement de « {} » pour {}", story.id(), playerId, error);
+            return null;
+        });
+        logger.info("[admin] story advance « {} » : {} → étape {}/{} ({}) pour {} — quête {} complétée{}.",
+                story.id(), currentQuestId, nextIndex + 1, total, nextQuestId, playerId,
+                currentQuestId, questWasAlreadyDone ? " (déjà faite)" : "");
+        showNextObjective(player, nextQuestId);
+        questProgressEngine.accept(player, nextQuestId).whenComplete((outcome, error) -> {
+            if (error == null && outcome.result() != AcceptOutcome.Result.ACCEPTED
+                    && outcome.result() != AcceptOutcome.Result.ALREADY_ACTIVE) {
+                logger.warn("[admin] story advance « {} » : acceptation automatique de « {} » → {}.",
+                        story.id(), nextQuestId, outcome.result());
+            }
+            result.complete(StoryAdvanceReport.advanced(story.id(), currentQuestId, questWasAlreadyDone, wasStarted, nextQuestId, nextIndex, total));
+        });
+    }
+
+    public enum StoryCompleteOutcome {
+        COMPLETED, ALREADY_COMPLETED, UNKNOWN_STORY,
+        /** Une quête de la chaîne est inconnue du moteur de quête — arrêt propre à cette étape. */
+        BLOCKED
+    }
+
+    public record StoryCompleteReport(StoryCompleteOutcome outcome, String storyId,
+                                      List<NamespacedKey> completedQuests, NamespacedKey blockedOnQuestId) {
+    }
+
+    /**
+     * Complète {@code storyId} de bout en bout pour {@code player} en enchaînant {@link #adminAdvance}
+     * jusqu'à {@code STORY_COMPLETED} (ou {@code ALREADY_COMPLETED}), une quête à la fois et dans
+     * l'ordre. Chaque quête voit ses récompenses appliquées une seule fois (garde de {@code
+     * forceComplete}). Borné à {@code totalSteps + 1} itérations — jamais de boucle infinie.
+     */
+    public CompletableFuture<StoryCompleteReport> adminComplete(Player player, String storyId) {
+        Optional<StoryDefinition> storyOpt = registry.find(storyId);
+        if (storyOpt.isEmpty()) {
+            return CompletableFuture.completedFuture(
+                    new StoryCompleteReport(StoryCompleteOutcome.UNKNOWN_STORY, storyId, List.of(), null));
+        }
+        int maxIterations = storyOpt.get().questIds().size() + 1;
+        return adminCompleteLoop(player, storyId, new ArrayList<>(), 0, maxIterations);
+    }
+
+    private CompletableFuture<StoryCompleteReport> adminCompleteLoop(Player player, String storyId,
+                                                                     List<NamespacedKey> completed, int iteration, int max) {
+        if (iteration >= max) {
+            logger.warn("[admin] story complete « {} » : arrêt de sécurité après {} itérations pour {}.",
+                    storyId, iteration, player.getUniqueId());
+            return CompletableFuture.completedFuture(
+                    new StoryCompleteReport(StoryCompleteOutcome.BLOCKED, storyId, completed, null));
+        }
+        return adminAdvance(player, storyId).thenCompose(report -> switch (report.outcome()) {
+            case UNKNOWN_STORY -> CompletableFuture.completedFuture(
+                    new StoryCompleteReport(StoryCompleteOutcome.UNKNOWN_STORY, storyId, completed, null));
+            case ALREADY_COMPLETED -> CompletableFuture.completedFuture(
+                    new StoryCompleteReport(StoryCompleteOutcome.ALREADY_COMPLETED, storyId, completed, null));
+            case UNKNOWN_CURRENT_QUEST -> CompletableFuture.completedFuture(
+                    new StoryCompleteReport(StoryCompleteOutcome.BLOCKED, storyId, completed, report.completedQuestId()));
+            case ADVANCED -> {
+                completed.add(report.completedQuestId());
+                yield adminCompleteLoop(player, storyId, completed, iteration + 1, max);
+            }
+            case STORY_COMPLETED -> {
+                completed.add(report.completedQuestId());
+                yield CompletableFuture.completedFuture(
+                        new StoryCompleteReport(StoryCompleteOutcome.COMPLETED, storyId, completed, null));
+            }
+        });
+    }
+
+    private void runOnMainThread(Runnable task) {
+        plugin.getServer().getScheduler().runTask(plugin, task);
     }
 
     // ---- Feedback joueur (chat, jamais Title/Subtitle — voir docs/storylines.md) ----------------

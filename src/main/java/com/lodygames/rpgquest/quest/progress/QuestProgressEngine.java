@@ -223,6 +223,17 @@ public final class QuestProgressEngine implements PluginService {
     // ---- Commandes joueur ------------------------------------------------
 
     public CompletableFuture<AcceptOutcome> accept(Player player, NamespacedKey questId) {
+        return accept(player, questId, false);
+    }
+
+    /**
+     * Variante avec {@code ignorePrerequisites} : {@code true} saute uniquement la vérification des
+     * prérequis (quête déjà {@code ACTIVE}/{@code COMPLETED} non répétable reste refusée à
+     * l'identique). Réservé à un raccourci d'administration explicite ({@code
+     * /rpgadmin quest start <joueur> <id> force}) — la valeur par défaut {@code false} garde le
+     * respect strict des prérequis pour tout le reste (dialogues, moteur de Story, commande joueur).
+     */
+    public CompletableFuture<AcceptOutcome> accept(Player player, NamespacedKey questId, boolean ignorePrerequisites) {
         Optional<QuestDefinition> questOpt = questEngine.find(questId);
         if (questOpt.isEmpty()) {
             return CompletableFuture.completedFuture(AcceptOutcome.unknown());
@@ -244,7 +255,10 @@ public final class QuestProgressEngine implements PluginService {
                 return CompletableFuture.completedFuture(AcceptOutcome.notRepeatable());
             }
 
-            return checkPrerequisites(playerId, quest).thenCompose(missing -> {
+            CompletableFuture<List<NamespacedKey>> missingFuture = ignorePrerequisites
+                    ? CompletableFuture.completedFuture(List.of())
+                    : checkPrerequisites(playerId, quest);
+            return missingFuture.thenCompose(missing -> {
                 if (!missing.isEmpty()) {
                     return CompletableFuture.completedFuture(AcceptOutcome.missingPrerequisites(missing));
                 }

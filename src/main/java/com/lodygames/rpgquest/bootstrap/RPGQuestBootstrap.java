@@ -166,6 +166,7 @@ public final class RPGQuestBootstrap {
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
+    private PlayerVariableRepository variableRepository;
     private YamlDialogueEngine dialogueEngine;
     private DialogueSessionEngine dialogueSessionEngine;
     private HubGuideRegistry hubGuideRegistry;
@@ -291,7 +292,7 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, equipmentBehaviorService.cooldownCleanupListener()));
 
         QuestProgressRepository progressRepository = new QuestProgressRepository(databaseService.databaseManager());
-        PlayerVariableRepository variableRepository = new PlayerVariableRepository(databaseService.databaseManager());
+        variableRepository = new PlayerVariableRepository(databaseService.databaseManager());
         questProgressEngine = new QuestProgressEngine(
                 plugin, questEngine, progressRepository, variableRepository, questMessagesService, npcIdentityService);
         registry.start(questProgressEngine);
@@ -771,7 +772,8 @@ public final class RPGQuestBootstrap {
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(
                 flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
-                worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry, plugin);
+                worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry,
+                questProgressEngine, questEngine, variableRepository, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

@@ -111,9 +111,9 @@ Voir [VERYGAMES.md § Rollback](deployment/VERYGAMES.md#rollback) pour la liste 
 
 ## 2. Administration RPGQuest (`/rpgadmin`)
 
-Vérifié intégralement dans `src/main/java/com/lodygames/rpgquest/admin/RpgAdminCommand.java` (1269 lignes, lu en entier). Racine unique pour les sous-systèmes d'administration : `flatten`, `zone`, `portal`, `mob`, `npc`, `spawn`, `world`, `worldportal`, `story`, `waystone`, `player`, `guide` (ces quatre derniers documentés dans leurs sections dédiées ci-dessous).
+Vérifié dans `src/main/java/com/lodygames/rpgquest/admin/RpgAdminCommand.java`. Racine unique pour les sous-systèmes d'administration : `flatten`, `zone`, `portal`, `mob`, `npc`, `spawn`, `world`, `worldportal`, `quest`, `story`, `waystone`, `player`, `guide`.
 
-Type : Admin (toutes les sous-commandes) — Permission : **`rpgquest.admin.world`** (unique pour tout `/rpgadmin`, pas de permission plus fine par sous-commande). Exigent toujours un **joueur en jeu** (jamais la console — aucune sous-commande ne prend de coordonnée explicite, toutes utilisent la position/sélection du joueur).
+Type : Admin (toutes les sous-commandes) — Permission : **`rpgquest.admin.world`** pour tout `/rpgadmin`. **Exception** : `/rpgadmin player variable set` exige **en plus** `rpgquest.admin.debug` (défaut `op`, écriture bas niveau). La plupart des sous-commandes exigent un **joueur en jeu** (position/sélection) ; `quest`, `story`, `player` et `guide` ciblent au contraire un joueur passé en argument et sont utilisables **depuis la console**.
 
 ### Aplatissement de terrain — `/rpgadmin flatten`
 Détail complet : [docs/ADMIN_FLATTEN.md](ADMIN_FLATTEN.md). Page docs-site : aucune.
@@ -137,6 +137,21 @@ Détail complet : [docs/ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md).
 | `/rpgadmin player resetnew <joueur> confirm` | Remet l'état **RPGQuest** d'un seul joueur (en ligne **ou** hors ligne) dans l'équivalent d'un joueur jamais connecté : quêtes (actives/progression/terminées/suivie), Stories, **toutes** les variables/unlocks (dont `CLAIM_TIER_1`), progression RPG (`player_skills`/`xp_grants`), découvertes de Waystones, cooldowns persistants (portails + Rune), claim principal (données de protection uniquement, cascade `claim_members`), et objets personnalisés RPGQuest de l'inventaire (immédiat si en ligne, différé au prochain login sinon). |
 
 Ne touche **jamais** : `data.db` entier, un autre joueur, le profil/UUID/playerdata vanilla, les mondes, les PNJ Citizens, les définitions de quêtes/Stories, les portails, les Waystones globales, les blocs construits. Conservés volontairement : économie, backpacks/entitlements, annonces de marché. Console : autorisée (comme `/rpgadmin story`). Protection : mot `confirm` obligatoire.
+
+### Raccourcis de test quêtes & stories — `/rpgadmin quest`, `/rpgadmin story advance|complete`, `/rpgadmin player variable` (issue #36)
+Détail complet : [docs/ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md). Outils DEV/admin pour atteindre vite un état de progression sans rejouer le gameplay ; réutilisent `QuestProgressEngine`/`StoryService`, jamais d'écriture directe en base. Console OK. Opérations journalisées (`[admin] …`).
+
+| Commande | Effet | Cible | Récompenses |
+|---|---|---|---|
+| `/rpgadmin quest start <joueur> <quest-id> [force]` | Démarre la quête (`QuestProgressEngine.accept`). Prérequis respectés sauf `force`. Id inconnu refusé ; pas de doublon d'une quête active. | en ligne | aucune (l'acceptation n'en donne jamais) |
+| `/rpgadmin quest complete <joueur> <quest-id>` | Complète sans simuler les objectifs (`forceComplete`). | en ligne | **appliquées une seule fois** : `VARIABLE` (ex. `CLAIM_TIER_1=true`), `EXPERIENCE`, `ITEM`, `COMMAND`. Quête déjà `COMPLETED` → « déjà terminée », rien re-crédité. |
+| `/rpgadmin quest reset <joueur> <quest-id>` | Supprime progression + compteurs → quête rejouable (`resetQuest`). | en ligne **ou** hors ligne | **n'annule pas** les récompenses déjà données (XP, objets, variables, effets de commande) — limite documentée. |
+| `/rpgadmin story advance <joueur> <storyId>` | Démarre la story si besoin, `forceComplete` de sa quête courante, avance d'un cran (accepte la suivante ou termine la story). Le message dit quelle étape tester. | en ligne | via `forceComplete`, une seule fois par quête |
+| `/rpgadmin story complete <joueur> <storyId>` | Enchaîne `advance` jusqu'au bout, dans l'ordre, borné. | en ligne | via `forceComplete`, une seule fois par quête |
+| `/rpgadmin player variable get <joueur> <clé>` | Lit `player_variables` (lecture pure). Clé absente signalée. | en ligne **ou** hors ligne | — |
+| `/rpgadmin player variable set <joueur> <clé> <valeur>` | Écrit la clé. Avertissement + journalisation (ancienne/nouvelle valeur). | en ligne **ou** hors ligne | **exige `rpgquest.admin.debug` en plus** |
+
+`story advance`/`complete` ne touchent jamais une quête non référencée par la story ciblée. Pour un état vraiment propre : `/rpgadmin player resetnew … confirm`, `/rpgadmin story resetwithquests …`, ou `/rpgadmin player variable set … CLAIM_TIER_1 false`.
 
 ### Guides de Hub — `/rpgadmin guide`
 Détail complet : [docs/HUB_GUIDE.md](HUB_GUIDE.md). Lecture seule, console autorisée, permission `rpgquest.admin.world`.
@@ -1126,6 +1141,8 @@ Définitions chargées depuis `plugins/RPGQuest/stories/` (un exemple `main_stor
 |---|---|---|
 | `/rpgadmin story info <joueur>` | Liste toutes les Stories connues, leur état, et — si `ACTIVE` — la quête courante (id + position `n/total`). | non |
 | `/rpgadmin story start <joueur> <storyId>` | Démarre une Story (`ACTIVE`) et sa première quête. Refusé si id inconnu, déjà active, ou déjà terminée. | oui |
+| `/rpgadmin story advance <joueur> <storyId>` | *(issue #36)* Démarre la Story si besoin, `forceComplete` de sa quête courante (récompenses appliquées **une fois**), avance d'un cran — accepte la quête suivante ou termine la Story. Message : quelle étape tester maintenant. Cible **en ligne**. Voir [ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md). | oui |
+| `/rpgadmin story complete <joueur> <storyId>` | *(issue #36)* Enchaîne `advance` jusqu'au bout, dans l'ordre, borné (jamais de boucle infinie). Récompenses appliquées **une fois par quête**. Cible **en ligne**. | oui |
 | `/rpgadmin story reset <joueur> <storyId\|all>` | Supprime la progression d'une Story (ou de toutes), reset ciblé — jamais l'inventaire, l'économie, ni les quêtes (`quest_progress` non touché). | oui (suppression) |
 | `/rpgadmin story resetwithquests <joueur> <storyId>` | Comme `reset`, **et** réinitialise (via `QuestProgressEngine#resetQuest`) chacune des quêtes que cette Story référence — jamais les autres quêtes du joueur, jamais un `... all`. Outil ciblé pour rejouer un scénario de test. | oui (suppression) |
 

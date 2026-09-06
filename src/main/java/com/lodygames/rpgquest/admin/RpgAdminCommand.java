@@ -10,8 +10,12 @@ import com.lodygames.rpgquest.mob.SpecialMobRegistry;
 import com.lodygames.rpgquest.mob.SpecialMobService;
 import com.lodygames.rpgquest.mob.model.MobAbility;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
+import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.player.PlayerResetService;
+import com.lodygames.rpgquest.quest.YamlQuestEngine;
+import com.lodygames.rpgquest.quest.model.QuestDefinition;
+import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.spawn.SpawnPoint;
 import com.lodygames.rpgquest.spawn.SpawnService;
 import com.lodygames.rpgquest.story.StoryService;
@@ -40,6 +44,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Location;
@@ -59,25 +65,36 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * {@code /rpgadmin} — commande d'administration racine, point d'entrée pour
- * les sous-systèmes d'administration du monde : aplatissement de terrain,
- * zones protégées et portails à cette étape, mobs spéciaux dans une étape
- * ultérieure, ajoutés comme d'autres branches de {@link #onCommand}).
- * Toutes les sous-commandes exigent {@code rpgquest.admin.world} et un
- * joueur en jeu (jamais la console, qui n'a pas de position à centrer) —
- * aucune sous-commande ne prend de coordonnée explicite dans sa syntaxe :
- * {@code zone}/{@code portal} réutilisent tous deux l'outil de sélection
- * {@code wand} pour leur cuboïde (protection ou zone d'activation).
+ * les sous-systèmes d'administration : aplatissement de terrain, zones
+ * protégées, portails, mobs spéciaux, PNJ, mondes, waystones, stories, reset
+ * joueur, et raccourcis de test quêtes/stories (issue #36), ajoutés comme
+ * autant de branches de {@link #onCommand}.
+ *
+ * <p>Toutes les sous-commandes exigent {@code rpgquest.admin.world} ;
+ * {@code /rpgadmin player variable set} exige <strong>en plus</strong>
+ * {@code rpgquest.admin.debug} (écriture bas niveau). La plupart des branches
+ * exigent un joueur en jeu (elles utilisent sa position/sélection, jamais de
+ * coordonnée explicite) ; {@code quest}, {@code story}, {@code player} et
+ * {@code guide} ciblent au contraire un joueur passé en argument et sont
+ * utilisables depuis la console.</p>
  */
 public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
     private static final String PERMISSION = "rpgquest.admin.world";
+    /** Permission supplémentaire, plus stricte, pour les écritures bas niveau (voir {@code /rpgadmin player variable set}). */
+    private static final String DEBUG_PERMISSION = "rpgquest.admin.debug";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "story", "waystone", "player", "guide");
+            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide");
     private static final List<String> GUIDE_SUBCOMMANDS = List.of("list", "info");
     private static final List<String> WAYSTONE_SUBCOMMANDS =
             List.of("list", "here", "tp", "generatehere", "reset");
-    private static final List<String> PLAYER_SUBCOMMANDS = List.of("resetnew");
+    private static final List<String> PLAYER_SUBCOMMANDS = List.of("resetnew", "variable");
+    private static final List<String> PLAYER_VARIABLE_SUBCOMMANDS = List.of("get", "set");
+    private static final List<String> QUEST_SUBCOMMANDS = List.of("start", "complete", "reset");
+    /** Clés proposées en tab-complétion pour {@code /rpgadmin player variable} — jamais une liste blanche, la saisie libre reste acceptée. */
+    private static final List<String> KNOWN_VARIABLE_KEYS =
+            List.of("CLAIM_TIER_1", "tutorial_started", "crystal_hunt_started", "woodcutter_reputation", "RUNE_RAPPEL_GRANTED");
     private static final List<String> FLATTEN_SUBCOMMANDS = List.of("confirm", "cancel", "undo");
     private static final List<String> ZONE_SUBCOMMANDS = List.of("create", "delete", "list", "info", "wand");
     private static final List<String> PORTAL_SUBCOMMANDS = List.of("create", "delete", "list", "info", "setdestination");
@@ -88,7 +105,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final List<String> WORLD_PORTAL_SUBCOMMANDS =
             List.of("create", "info", "list", "enable", "disable", "delete", "debug", "here");
     private static final List<String> WORLD_PORTAL_DEBUG_SUBCOMMANDS = List.of("show", "hide", "showall", "hideall");
-    private static final List<String> STORY_SUBCOMMANDS = List.of("info", "start", "reset", "resetwithquests");
+    private static final List<String> STORY_SUBCOMMANDS =
+            List.of("info", "start", "advance", "complete", "reset", "resetwithquests");
     private static final double NPC_REACH = 6.0;
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
@@ -108,6 +126,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final WaystoneService waystoneService;
     private final PlayerResetService playerResetService;
     private final HubGuideRegistry hubGuideRegistry;
+    private final QuestProgressEngine questProgressEngine;
+    private final YamlQuestEngine questEngine;
+    private final PlayerVariableRepository variableRepository;
     private final RPGQuestPlugin plugin;
 
     public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService,
@@ -116,7 +137,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             SpawnService spawnService, WorldService worldService, WorldPortalRegistry worldPortalRegistry,
                             WorldPortalDebugService worldPortalDebugService,
                             StoryService storyService, WaystoneService waystoneService,
-                            PlayerResetService playerResetService, HubGuideRegistry hubGuideRegistry, RPGQuestPlugin plugin) {
+                            PlayerResetService playerResetService, HubGuideRegistry hubGuideRegistry,
+                            QuestProgressEngine questProgressEngine, YamlQuestEngine questEngine,
+                            PlayerVariableRepository variableRepository, RPGQuestPlugin plugin) {
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
@@ -133,6 +156,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         this.waystoneService = waystoneService;
         this.playerResetService = playerResetService;
         this.hubGuideRegistry = hubGuideRegistry;
+        this.questProgressEngine = questProgressEngine;
+        this.questEngine = questEngine;
+        this.variableRepository = variableRepository;
         this.plugin = plugin;
     }
 
@@ -155,6 +181,12 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         // depuis la console, même exception que "story" à la contrainte "joueur en jeu" ci-dessous.
         if (args.length > 0 && args[0].equalsIgnoreCase("player")) {
             handlePlayer(sender, args);
+            return true;
+        }
+        // "quest" : raccourcis d'administration / test (issue #36) — cible un joueur passé en
+        // argument, utilisable depuis la console comme "story"/"player".
+        if (args.length > 0 && args[0].equalsIgnoreCase("quest")) {
+            handleQuestAdmin(sender, args);
             return true;
         }
         // "guide" : diagnostic en lecture seule des Guides de Hub configurés (issue #11) — aucune
@@ -1254,6 +1286,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         switch (args[1].toLowerCase(Locale.ROOT)) {
             case "info" -> handleStoryInfo(sender, args);
             case "start" -> handleStoryStart(sender, args);
+            case "advance" -> handleStoryAdvance(sender, args);
+            case "complete" -> handleStoryComplete(sender, args);
             case "reset" -> handleStoryReset(sender, args);
             case "resetwithquests" -> handleStoryResetWithQuests(sender, args);
             default -> sendStoryUsage(sender);
@@ -1273,6 +1307,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
      * qui serait effacé <strong>sans rien modifier</strong> (dry-run).
      */
     private void handlePlayer(CommandSender sender, String[] args) {
+        if (args.length >= 2 && args[1].equalsIgnoreCase("variable")) {
+            handlePlayerVariable(sender, args);
+            return;
+        }
         if (args.length < 3 || !args[1].equalsIgnoreCase("resetnew")) {
             sendPlayerResetUsage(sender);
             return;
@@ -1553,9 +1591,384 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage(MM.deserialize(
                 "<yellow>/rpgadmin story start <joueur> <storyId></yellow> <gray>- démarre une story</gray>"));
         sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin story advance <joueur> <storyId></yellow> <gray>- complète l'étape courante et passe à la suivante (joueur en ligne)</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin story complete <joueur> <storyId></yellow> <gray>- complète toute la story, étape par étape (joueur en ligne)</gray>"));
+        sender.sendMessage(MM.deserialize(
                 "<yellow>/rpgadmin story reset <joueur> <storyId|all></yellow> <gray>- réinitialise une (ou toutes) story(ies), jamais ses quêtes</gray>"));
         sender.sendMessage(MM.deserialize(
                 "<yellow>/rpgadmin story resetwithquests <joueur> <storyId></yellow> <gray>- réinitialise UNE story ET ses quêtes associées (jamais les autres quêtes du joueur)</gray>"));
+    }
+
+    // ==== Raccourcis d'administration / test : quêtes & stories (issue #36) ========================
+    //
+    // Toutes derrière rpgquest.admin.world (vérifiée en tête de onCommand). Réutilisent les services
+    // métier (QuestProgressEngine, StoryService), jamais d'écriture directe en base. Chaque opération
+    // sensible est journalisée avec l'exécutant, la cible et l'opération.
+
+    private void handleQuestAdmin(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sendQuestAdminUsage(sender);
+            return;
+        }
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "start" -> handleQuestStart(sender, args);
+            case "complete" -> handleQuestComplete(sender, args);
+            case "reset" -> handleQuestReset(sender, args);
+            default -> sendQuestAdminUsage(sender);
+        }
+    }
+
+    /**
+     * {@code /rpgadmin quest start <joueur> <quest-id> [force]} — démarre la quête comme une
+     * acceptation normale ({@link QuestProgressEngine#accept}). Prérequis respectés par défaut ;
+     * {@code force} les ignore explicitement. Cible en ligne (le moteur de quête n'agit que sur un
+     * {@code Player} connecté).
+     */
+    private void handleQuestStart(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin quest start <joueur> <quest-id> [force]</yellow>"));
+            return;
+        }
+        Player target = resolveOnlineTarget(sender, args[2]);
+        if (target == null) {
+            return;
+        }
+        NamespacedKey questId = resolveQuestId(args[3]);
+        if (questId == null || questEngine.find(questId).isEmpty()) {
+            sender.sendMessage(unknownQuest(args[3]));
+            return;
+        }
+        boolean force = args.length >= 5 && args[4].equalsIgnoreCase("force");
+        plugin.getSLF4JLogger().info("[admin] {} : /rpgadmin quest start {} {}{}",
+                senderName(sender), target.getName(), questId, force ? " (force)" : "");
+        questProgressEngine.accept(target, questId, force).thenAccept(outcome -> runOnMainThread(() -> {
+            switch (outcome.result()) {
+                case ACCEPTED -> sender.sendMessage(MM.deserialize(
+                        "<green>Quête démarrée pour</green> <white><p></white> <gray>:</gray> <white><q></white>"
+                                + (force ? " <dark_gray>(prérequis ignorés)</dark_gray>" : ""),
+                        Placeholder.unparsed("p", target.getName()), Placeholder.unparsed("q", questId.toString())));
+                case ALREADY_ACTIVE -> sender.sendMessage(MM.deserialize(
+                        "<yellow>Quête déjà active pour <p> :</yellow> <white><q></white>",
+                        Placeholder.unparsed("p", target.getName()), Placeholder.unparsed("q", questId.toString())));
+                case NOT_REPEATABLE -> sender.sendMessage(MM.deserialize(
+                        "<yellow>Déjà terminée (non répétable) pour <p> :</yellow> <white><q></white> "
+                                + "<gray>— </gray><yellow>/rpgadmin quest reset</yellow><gray> d'abord.</gray>",
+                        Placeholder.unparsed("p", target.getName()), Placeholder.unparsed("q", questId.toString())));
+                case MISSING_PREREQUISITES -> sender.sendMessage(MM.deserialize(
+                        "<red>Prérequis manquants :</red> <white><m></white> "
+                                + "<gray>— ajouter</gray> <yellow>force</yellow> <gray>pour passer outre.</gray>",
+                        Placeholder.unparsed("m", outcome.missingPrerequisites().stream()
+                                .map(NamespacedKey::toString).collect(Collectors.joining(", ")))));
+                case UNKNOWN_QUEST -> sender.sendMessage(unknownQuest(args[3]));
+            }
+        }));
+    }
+
+    /**
+     * {@code /rpgadmin quest complete <joueur> <quest-id>} — complète la quête via {@link
+     * QuestProgressEngine#forceComplete} : applique les récompenses normales (dont {@code VARIABLE},
+     * ex. {@code CLAIM_TIER_1}) <strong>une seule fois</strong> (garde de {@code forceComplete} : une
+     * quête déjà {@code COMPLETED} renvoie {@code ALREADY_COMPLETED}, rien n'est re-crédité). Cible
+     * en ligne.
+     */
+    private void handleQuestComplete(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin quest complete <joueur> <quest-id></yellow>"));
+            return;
+        }
+        Player target = resolveOnlineTarget(sender, args[2]);
+        if (target == null) {
+            return;
+        }
+        NamespacedKey questId = resolveQuestId(args[3]);
+        if (questId == null || questEngine.find(questId).isEmpty()) {
+            sender.sendMessage(unknownQuest(args[3]));
+            return;
+        }
+        plugin.getSLF4JLogger().info("[admin] {} : /rpgadmin quest complete {} {}",
+                senderName(sender), target.getName(), questId);
+        questProgressEngine.forceComplete(target, questId).thenAccept(outcome -> runOnMainThread(() -> {
+            switch (outcome) {
+                case COMPLETED -> sender.sendMessage(MM.deserialize(
+                        "<green>Quête complétée (récompenses appliquées) pour</green> <white><p></white> <gray>:</gray> <white><q></white>",
+                        Placeholder.unparsed("p", target.getName()), Placeholder.unparsed("q", questId.toString())));
+                case ALREADY_COMPLETED -> sender.sendMessage(MM.deserialize(
+                        "<yellow>Déjà terminée pour <p> :</yellow> <white><q></white> <gray>— aucune récompense re-créditée.</gray>",
+                        Placeholder.unparsed("p", target.getName()), Placeholder.unparsed("q", questId.toString())));
+                case UNKNOWN_QUEST -> sender.sendMessage(unknownQuest(args[3]));
+            }
+        }));
+    }
+
+    /**
+     * {@code /rpgadmin quest reset <joueur> <quest-id>} — {@link QuestProgressEngine#resetQuest} :
+     * supprime la ligne de progression + les compteurs d'objectifs (quête rejouable), rien d'autre.
+     * <strong>N'annule pas</strong> les récompenses déjà accordées (XP, objets, variables comme
+     * {@code CLAIM_TIER_1}, effets de commande) — limite affichée à chaque appel. Fonctionne hors
+     * ligne.
+     */
+    private void handleQuestReset(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin quest reset <joueur> <quest-id></yellow>"));
+            return;
+        }
+        NamespacedKey questId = resolveQuestId(args[3]);
+        if (questId == null || questEngine.find(questId).isEmpty()) {
+            sender.sendMessage(unknownQuest(args[3]));
+            return;
+        }
+        resolveTargetPlayer(sender, args[2], (uuid, name) -> {
+            plugin.getSLF4JLogger().info("[admin] {} : /rpgadmin quest reset {} {}", senderName(sender), name, questId);
+            questProgressEngine.resetQuest(uuid, questId).thenRun(() -> runOnMainThread(() -> {
+                sender.sendMessage(MM.deserialize(
+                        "<green>Quête réinitialisée (progression + compteurs) pour</green> <white><p></white> <gray>:</gray> <white><q></white>",
+                        Placeholder.unparsed("p", name), Placeholder.unparsed("q", questId.toString())));
+                sender.sendMessage(MM.deserialize(
+                        "<gray>Limite : un reset ciblé n'annule PAS les récompenses déjà accordées (XP, objets, "
+                                + "variables comme <white>CLAIM_TIER_1</white>, effets de commande). Remise à zéro complète : </gray>"
+                                + "<yellow>/rpgadmin player resetnew <p> confirm</yellow><gray>. Annuler une variable précise : </gray>"
+                                + "<yellow>/rpgadmin player variable set <p> <clé> false</yellow><gray>.</gray>",
+                        Placeholder.unparsed("p", name)));
+            })).exceptionally(error -> {
+                plugin.getSLF4JLogger().error("Échec de /rpgadmin quest reset pour {}", name, error);
+                runOnMainThread(() -> sender.sendMessage(MM.deserialize("<red>Échec (voir la console).</red>")));
+                return null;
+            });
+        });
+    }
+
+    private void sendQuestAdminUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin quest start <joueur> <quest-id> [force]</yellow> <gray>- démarre une quête (prérequis respectés sauf « force »)</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin quest complete <joueur> <quest-id></yellow> <gray>- complète une quête, récompenses incluses, une seule fois</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin quest reset <joueur> <quest-id></yellow> <gray>- rend la quête rejouable (n'annule pas les récompenses déjà données)</gray>"));
+    }
+
+    // ---- Story advance / complete ----------------------------------------------------------------
+
+    private void handleStoryAdvance(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin story advance <joueur> <storyId></yellow>"));
+            return;
+        }
+        Player target = resolveOnlineTarget(sender, args[2]);
+        if (target == null) {
+            return;
+        }
+        String storyId = args[3].toLowerCase(Locale.ROOT);
+        plugin.getSLF4JLogger().info("[admin] {} : /rpgadmin story advance {} {}", senderName(sender), target.getName(), storyId);
+        storyService.adminAdvance(target, storyId)
+                .thenAccept(report -> runOnMainThread(() -> sendStoryAdvanceReport(sender, target.getName(), report)))
+                .exceptionally(error -> {
+                    plugin.getSLF4JLogger().error("Échec de /rpgadmin story advance {} {}", target.getName(), storyId, error);
+                    runOnMainThread(() -> sender.sendMessage(MM.deserialize("<red>Échec (voir la console).</red>")));
+                    return null;
+                });
+    }
+
+    private void sendStoryAdvanceReport(CommandSender sender, String targetName, StoryService.StoryAdvanceReport r) {
+        switch (r.outcome()) {
+            case UNKNOWN_STORY -> sender.sendMessage(unknownStory(r.storyId()));
+            case UNKNOWN_CURRENT_QUEST -> sender.sendMessage(MM.deserialize(
+                    "<red>La story <id> référence, à l'étape <n>, une quête inconnue :</red> <white><q></white>",
+                    Placeholder.unparsed("id", r.storyId()), Placeholder.unparsed("n", String.valueOf(r.stepNumber())),
+                    Placeholder.unparsed("q", String.valueOf(r.completedQuestId()))));
+            case ALREADY_COMPLETED -> sender.sendMessage(MM.deserialize(
+                    "<yellow>Story <id> déjà terminée pour <p>.</yellow> <gray>(</gray><yellow>/rpgadmin story reset</yellow><gray> pour rejouer.)</gray>",
+                    Placeholder.unparsed("id", r.storyId()), Placeholder.unparsed("p", targetName)));
+            case ADVANCED -> {
+                if (r.storyWasStarted()) {
+                    sender.sendMessage(MM.deserialize("<gray>Story <id> démarrée (elle n'était pas commencée).</gray>",
+                            Placeholder.unparsed("id", r.storyId())));
+                }
+                sender.sendMessage(questCompletedLine(r.completedQuestId(), r.completedQuestWasAlreadyDone()));
+                sender.sendMessage(MM.deserialize(
+                        "<green>➜ <p> est maintenant à l'étape <n>/<t> de <id> :</green> <white><q></white> "
+                                + "<gray>(ACTIVE) — à tester manuellement.</gray>",
+                        Placeholder.unparsed("p", targetName), Placeholder.unparsed("n", String.valueOf(r.stepNumber())),
+                        Placeholder.unparsed("t", String.valueOf(r.totalSteps())), Placeholder.unparsed("id", r.storyId()),
+                        Placeholder.unparsed("q", String.valueOf(r.nextQuestId()))));
+            }
+            case STORY_COMPLETED -> {
+                if (r.storyWasStarted()) {
+                    sender.sendMessage(MM.deserialize("<gray>Story <id> démarrée (elle n'était pas commencée).</gray>",
+                            Placeholder.unparsed("id", r.storyId())));
+                }
+                sender.sendMessage(questCompletedLine(r.completedQuestId(), r.completedQuestWasAlreadyDone()));
+                sender.sendMessage(MM.deserialize(
+                        "<green>➜ Story <id> TERMINÉE pour <p>.</green> <gray>Dernière étape franchie — vérifier maintenant "
+                                + "les systèmes qui dépendent de la fin de cette story.</gray>",
+                        Placeholder.unparsed("id", r.storyId()), Placeholder.unparsed("p", targetName)));
+            }
+        }
+    }
+
+    private Component questCompletedLine(NamespacedKey questId, boolean wasAlreadyDone) {
+        return MM.deserialize("<green>Quête complétée<w> :</green> <white><q></white>",
+                Placeholder.unparsed("w", wasAlreadyDone
+                        ? " <dark_gray>(elle était déjà terminée — aucune récompense re-créditée)</dark_gray>"
+                        : " <dark_gray>(récompenses appliquées)</dark_gray>"),
+                Placeholder.unparsed("q", String.valueOf(questId)));
+    }
+
+    private void handleStoryComplete(CommandSender sender, String[] args) {
+        if (args.length < 4) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin story complete <joueur> <storyId></yellow>"));
+            return;
+        }
+        Player target = resolveOnlineTarget(sender, args[2]);
+        if (target == null) {
+            return;
+        }
+        String storyId = args[3].toLowerCase(Locale.ROOT);
+        plugin.getSLF4JLogger().info("[admin] {} : /rpgadmin story complete {} {}", senderName(sender), target.getName(), storyId);
+        storyService.adminComplete(target, storyId).thenAccept(report -> runOnMainThread(() -> {
+            String quests = report.completedQuests().isEmpty()
+                    ? "(aucune)"
+                    : report.completedQuests().stream().map(NamespacedKey::toString).collect(Collectors.joining(", "));
+            switch (report.outcome()) {
+                case UNKNOWN_STORY -> sender.sendMessage(unknownStory(storyId));
+                case ALREADY_COMPLETED -> sender.sendMessage(MM.deserialize(
+                        "<yellow>Story <id> déjà terminée pour <p>.</yellow>",
+                        Placeholder.unparsed("id", storyId), Placeholder.unparsed("p", target.getName())));
+                case BLOCKED -> sender.sendMessage(MM.deserialize(
+                        "<red>Story <id> : arrêtée sur une quête problématique (<q>).</red> <gray>Quêtes complétées : <l></gray>",
+                        Placeholder.unparsed("id", storyId), Placeholder.unparsed("q", String.valueOf(report.blockedOnQuestId())),
+                        Placeholder.unparsed("l", quests)));
+                case COMPLETED -> {
+                    sender.sendMessage(MM.deserialize(
+                            "<green>Story <id> complétée pour <p>.</green> <gray>Quêtes complétées dans l'ordre : <l></gray>",
+                            Placeholder.unparsed("id", storyId), Placeholder.unparsed("p", target.getName()),
+                            Placeholder.unparsed("l", quests)));
+                    sender.sendMessage(MM.deserialize(
+                            "<gray>Toutes les récompenses (dont les VARIABLE comme <white>CLAIM_TIER_1</white>) ont été appliquées "
+                                    + "une seule fois. Vérifier maintenant les systèmes qui dépendent de la fin de cette story.</gray>"));
+                }
+            }
+        })).exceptionally(error -> {
+            plugin.getSLF4JLogger().error("Échec de /rpgadmin story complete {} {}", target.getName(), storyId, error);
+            runOnMainThread(() -> sender.sendMessage(MM.deserialize("<red>Échec (voir la console).</red>")));
+            return null;
+        });
+    }
+
+    // ---- player variable get / set --------------------------------------------------------------
+
+    /**
+     * {@code /rpgadmin player variable get|set <joueur> <clé> [valeur]}. {@code get} lit
+     * {@code player_variables} (lecture pure, hors ligne accepté). {@code set} écrit la clé —
+     * outil bas niveau, exige la permission stricte {@code rpgquest.admin.debug} en plus, affiche
+     * un avertissement et journalise l'opération (ancienne + nouvelle valeur). Ne reproduit jamais
+     * une progression de quête/story à lui seul.
+     */
+    private void handlePlayerVariable(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            sendPlayerVariableUsage(sender);
+            return;
+        }
+        String op = args[2].toLowerCase(Locale.ROOT);
+        if (op.equals("get")) {
+            if (args.length < 5) {
+                sender.sendMessage(MM.deserialize("<yellow>/rpgadmin player variable get <joueur> <clé></yellow>"));
+                return;
+            }
+            String key = args[4];
+            resolveTargetPlayer(sender, args[3], (uuid, name) -> variableRepository.get(uuid, key)
+                    .thenAccept(opt -> runOnMainThread(() -> sender.sendMessage(MM.deserialize(
+                            opt.isPresent()
+                                    ? "<white><p></white> <gray>: variable</gray> <yellow><k></yellow> <gray>=</gray> <white><v></white>"
+                                    : "<white><p></white> <gray>: variable</gray> <yellow><k></yellow> <gray>absente (équivaut à non définie).</gray>",
+                            Placeholder.unparsed("p", name), Placeholder.unparsed("k", key),
+                            Placeholder.unparsed("v", opt.orElse(""))))))
+                    .exceptionally(error -> {
+                        plugin.getSLF4JLogger().error("Échec de /rpgadmin player variable get {} {}", args[3], key, error);
+                        runOnMainThread(() -> sender.sendMessage(MM.deserialize("<red>Échec (voir la console).</red>")));
+                        return null;
+                    }));
+            return;
+        }
+        if (op.equals("set")) {
+            if (!sender.hasPermission(DEBUG_PERMISSION)) {
+                sender.sendMessage(MM.deserialize(
+                        "<red>Permission manquante :</red> <white><p></white> <gray>(écriture bas niveau).</gray>",
+                        Placeholder.unparsed("p", DEBUG_PERMISSION)));
+                return;
+            }
+            if (args.length < 6) {
+                sender.sendMessage(MM.deserialize("<yellow>/rpgadmin player variable set <joueur> <clé> <valeur></yellow>"));
+                return;
+            }
+            String key = args[4];
+            String value = args[5];
+            resolveTargetPlayer(sender, args[3], (uuid, name) -> variableRepository.get(uuid, key)
+                    .thenCompose(old -> variableRepository.set(uuid, key, value).thenApply(v -> old))
+                    .thenAccept(old -> runOnMainThread(() -> {
+                        plugin.getSLF4JLogger().info("[admin] {} : /rpgadmin player variable set {} {} = {} (ancienne : {})",
+                                senderName(sender), name, key, value, old.orElse("<absente>"));
+                        sender.sendMessage(MM.deserialize(
+                                "<green>Variable</green> <yellow><k></yellow> <green>=</green> <white><v></white> <green>écrite pour</green> "
+                                        + "<white><p></white> <gray>(ancienne : <o>).</gray>",
+                                Placeholder.unparsed("k", key), Placeholder.unparsed("v", value),
+                                Placeholder.unparsed("p", name), Placeholder.unparsed("o", old.orElse("absente"))));
+                        sender.sendMessage(MM.deserialize(
+                                "<gray>Écriture bas niveau : une variable seule ne reproduit PAS une progression de quête/story "
+                                        + "(objectifs, récompenses, prérequis). Pour un vrai état de test : </gray>"
+                                        + "<yellow>/rpgadmin quest complete</yellow> <gray>ou</gray> <yellow>/rpgadmin story advance</yellow><gray>.</gray>"));
+                    }))
+                    .exceptionally(error -> {
+                        plugin.getSLF4JLogger().error("Échec de /rpgadmin player variable set {} {}", args[3], key, error);
+                        runOnMainThread(() -> sender.sendMessage(MM.deserialize("<red>Échec (voir la console).</red>")));
+                        return null;
+                    }));
+            return;
+        }
+        sendPlayerVariableUsage(sender);
+    }
+
+    private void sendPlayerVariableUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin player variable get <joueur> <clé></yellow> <gray>- lit une variable joueur (ex. CLAIM_TIER_1)</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin player variable set <joueur> <clé> <valeur></yellow> <gray>- écrit une variable (bas niveau, "
+                        + "permission " + DEBUG_PERMISSION + ")</gray>"));
+    }
+
+    // ---- Helpers partagés issue #36 -----------------------------------------------------------
+
+    private @Nullable Player resolveOnlineTarget(CommandSender sender, String name) {
+        Player target = plugin.getServer().getPlayerExact(name);
+        if (target == null) {
+            sender.sendMessage(MM.deserialize(
+                    "<red>Joueur introuvable ou hors-ligne :</red> <white><n></white> "
+                            + "<gray>(cette commande a besoin d'une cible connectée).</gray>",
+                    Placeholder.unparsed("n", name)));
+        }
+        return target;
+    }
+
+    private @Nullable NamespacedKey resolveQuestId(String raw) {
+        try {
+            return raw.contains(":")
+                    ? NamespacedKey.fromString(raw)
+                    : new NamespacedKey(DEFAULT_NAMESPACE, raw.toLowerCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private Component unknownQuest(String raw) {
+        return MM.deserialize("<red>Quête inconnue :</red> <white><q></white>", Placeholder.unparsed("q", raw));
+    }
+
+    private Component unknownStory(String id) {
+        return MM.deserialize("<red>Story inconnue :</red> <white><id></white>", Placeholder.unparsed("id", id));
+    }
+
+    private String senderName(CommandSender sender) {
+        return sender instanceof Player p ? p.getName() : "console";
     }
 
     /**
@@ -1910,6 +2323,18 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             return worldPortalRegistry.portals().stream().map(WorldPortalDefinition::id)
                     .filter(id -> id.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
         }
+        if (args.length == 2 && args[0].equalsIgnoreCase("quest")) {
+            return QUEST_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("quest")) {
+            return onlinePlayerNames(args[2]);
+        }
+        if (args.length == 4 && args[0].equalsIgnoreCase("quest")) {
+            return questIdCompletions(args[3]);
+        }
+        if (args.length == 5 && args[0].equalsIgnoreCase("quest") && args[1].equalsIgnoreCase("start")) {
+            return List.of("force").stream().filter(s -> s.startsWith(args[4].toLowerCase(Locale.ROOT))).toList();
+        }
         if (args.length == 2 && args[0].equalsIgnoreCase("story")) {
             return STORY_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
         }
@@ -1945,7 +2370,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                     .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 4 && args[0].equalsIgnoreCase("story")
-                && (args[1].equalsIgnoreCase("start") || args[1].equalsIgnoreCase("reset")
+                && (args[1].equalsIgnoreCase("start") || args[1].equalsIgnoreCase("advance")
+                        || args[1].equalsIgnoreCase("complete") || args[1].equalsIgnoreCase("reset")
                         || args[1].equalsIgnoreCase("resetwithquests"))) {
             List<String> ids = new ArrayList<>(
                     storyService.stories().stream().map(StoryDefinition::id).toList());
@@ -1954,6 +2380,26 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             }
             return ids.stream().filter(id -> id.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
         }
+        if (args.length == 3 && args[0].equalsIgnoreCase("player") && args[1].equalsIgnoreCase("variable")) {
+            return PLAYER_VARIABLE_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 4 && args[0].equalsIgnoreCase("player") && args[1].equalsIgnoreCase("variable")) {
+            return onlinePlayerNames(args[3]);
+        }
+        if (args.length == 5 && args[0].equalsIgnoreCase("player") && args[1].equalsIgnoreCase("variable")) {
+            return KNOWN_VARIABLE_KEYS.stream()
+                    .filter(k -> k.toLowerCase(Locale.ROOT).startsWith(args[4].toLowerCase(Locale.ROOT))).toList();
+        }
         return List.of();
+    }
+
+    private List<String> onlinePlayerNames(String prefix) {
+        return plugin.getServer().getOnlinePlayers().stream().map(Player::getName)
+                .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix.toLowerCase(Locale.ROOT))).toList();
+    }
+
+    private List<String> questIdCompletions(String prefix) {
+        return questEngine.quests().stream().map(QuestDefinition::id).map(NamespacedKey::toString)
+                .filter(id -> id.startsWith(prefix.toLowerCase(Locale.ROOT))).toList();
     }
 }

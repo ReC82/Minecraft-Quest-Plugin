@@ -2,16 +2,23 @@
 # docs/NPC_DIALOGUES_QUESTS_GUIDE.md, section 6 (/rpgadmin npc tag jo). Ce fichier ne crée jamais
 # le PNJ lui-même, seulement son dialogue logique (id = id NPC, convention du projet).
 #
-# Règles (mission « premier claim 5×5 ») :
-# - l'option n'est visible que si CLAIM_TIER_1 est débloqué (VARIABLE_EQUALS) ET qu'aucun claim
-#   principal n'existe encore (NO_MAIN_CLAIM) ;
-# - tant que ces deux conditions tiennent, Jo redonne l'Acte gratuitement à chaque fois (aucune
-#   condition sur l'inventaire : le perdre n'empêche jamais de le redemander) ;
-# - dès qu'un claim existe, NO_MAIN_CLAIM devient faux et l'option disparaît d'elle-même.
+# Condition réelle du premier claim (issues #21/#22/#23) : la variable CLAIM_TIER_1 == "true",
+# accordée uniquement par la dernière quête de l'histoire principale (rpgquest:crystal_hunt,
+# rendue au Garde — voir quests/crystal_hunt.yml). Aucune autre mécanique. Jo se contente de
+# constater cet état, jamais de l'accorder.
+#
+# Jo adapte donc son dialogue aux 3 états du joueur (mission « Jo adapte son dialogue ») :
+#   (a) claim NON débloqué  -> « Comment obtenir mon premier terrain ? » (CLAIM_TIER_1 != "true"
+#       ET aucun claim) : Jo explique qu'il faut finir l'histoire principale au Garde ;
+#   (b) claim débloqué mais AUCUN claim posé (CLAIM_TIER_1 == "true" ET NO_MAIN_CLAIM) : Jo remet
+#       l'Acte de propriété (redonné gratuitement à chaque passage tant que ces 2 conditions
+#       tiennent — le perdre n'empêche jamais de le redemander) ;
+#   (c) claim EXISTANT (HAS_MAIN_CLAIM) : « me rendre sur ma propriété », « revoir les limites »,
+#       « obtenir une Pierre de retour ».
 #
 # Règles (mission « Jo : retourner à son claim ») :
 # - « Me rendre sur ma propriété » n'est visible que si le joueur possède déjà un claim principal
-#   (HAS_MAIN_CLAIM, strict opposé de NO_MAIN_CLAIM ci-dessus) ;
+#   (HAS_MAIN_CLAIM, strict opposé de NO_MAIN_CLAIM) ;
 # - jamais de coordonnées ici : l'action déclenche /claim admin sendhome (RUN_SAFE_COMMAND, "claim"
 #   whitelisté dans config.yml → dialogue.allowed-commands), qui résout le claim persistant du joueur
 #   et cherche une position sûre à chaque appel — fonctionne après reconnexion/redémarrage ;
@@ -25,7 +32,9 @@
 #   pour ne jamais permettre d'en farmer inutilement ;
 # - « Obtenir une Pierre de retour » donne l'objet de voyage claims -> Hub (travel.ItemTravelService),
 #   même garde LACKS_CUSTOM_ITEM ; objet permanent, jamais consommé, donc l'option redevient
-#   invisible dès qu'il est en poche et ne réapparaît que s'il est perdu.
+#   invisible dès qu'il est en poche et ne réapparaît que s'il est perdu. Une Pierre de retour est
+#   de toute façon donnée automatiquement à l'arrivée dans le monde des claims si elle manque
+#   (claim.ClaimWorldSafetyListener) : cette option n'est qu'un rappel depuis le village.
 id: rpgquest:jo
 start: greeting
 
@@ -34,6 +43,14 @@ nodes:
     speaker: "Jo"
     text: "<white>Bonjour voyageur ! Que puis-je faire pour toi ?</white>"
     choices:
+      - text: "Comment obtenir mon premier terrain ?"
+        conditions:
+          - type: VARIABLE_EQUALS
+            key: CLAIM_TIER_1
+            value: "true"
+            negate: true
+          - type: NO_MAIN_CLAIM
+        next: how_to_unlock
       - text: "Je viens réclamer mon acte de propriété"
         conditions:
           - type: VARIABLE_EQUALS
@@ -73,9 +90,17 @@ nodes:
         actions:
           - type: CLOSE
 
+  how_to_unlock:
+    speaker: "Jo"
+    text: "<gray>Le droit de poser ton premier terrain se mérite. Termine d'abord <white>l'histoire principale</white> du village : ta dernière étape, <white>La chasse aux cristaux</white>, se rend au <white>Garde</white>. Une fois cette quête rendue, ce droit t'est acquis — reviens me voir, je te remettrai ton acte de propriété.</gray>"
+    choices:
+      - text: "Compris, merci Jo"
+        actions:
+          - type: CLOSE
+
   deed_given:
     speaker: "Jo"
-    text: "<green>Tiens, voici ton acte de propriété !</green> <gray>Rends-toi dans le monde des claims et fais un clic droit avec pour poser ton premier terrain.</gray>"
+    text: "<green>Tiens, voici ton acte de propriété !</green> <gray>Passe par le portail vers le monde des claims et fais un clic droit avec pour poser ton premier terrain. Tu recevras une Pierre de retour en arrivant là-bas : un clic droit avec elle te ramènera au village.</gray>"
     choices:
       - text: "Merci Jo"
         actions:

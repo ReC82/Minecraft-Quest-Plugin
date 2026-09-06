@@ -399,6 +399,48 @@ vg::remote_delete() { # <remote-name>
   vg::curl -o /dev/null --quote "DELE $1" "$(vg::remote_dir_url)"
 }
 
+# Téléverse <local> vers <remote-rel> de façon atomique : téléversement sous un
+# nom .part-<stamp>, contrôle de taille, puis RNFR/RNTO sur le nom final (repli
+# sur téléversement direct si le serveur refuse le renommage). N'écrit jamais
+# ailleurs que sur <remote-rel>.
+vg::remote_put_atomic() { # <local> <remote-rel> <stamp> <expected-size>
+  local lp=$1 rp=$2 tmp="${2}.part-${3}" want=$4 got
+  vg::remote_upload "$lp" "$tmp" || { vg::remote_delete "$tmp" 2>/dev/null || true; return 1; }
+  got=$(vg::remote_file_size "$tmp" || true)
+  if [ -n "$got" ] && [ -n "$want" ] && [ "$got" != "$want" ]; then
+    vg::remote_delete "$tmp" 2>/dev/null || true
+    vg::err "Taille distante ($got) != locale ($want) pour '$rp' — fichier partiel supprimé."
+    return 1
+  fi
+  if ! vg::remote_rename "$tmp" "$rp"; then
+    vg::warn "RNFR/RNTO refusé pour '$rp' — repli : téléversement direct."
+    vg::remote_upload "$lp" "$rp" || return 1
+    vg::remote_delete "$tmp" 2>/dev/null || true
+  fi
+}
+
+# Garde-fou pour --also : refuse (code 0 = INTERDIT) tout chemin distant qui
+# n'est pas strictement sous RPGQuest/, toute traversée, et les fichiers
+# sensibles quel que soit l'emplacement. Ne permet JAMAIS de toucher data.db,
+# config.yml, messages.yml, spawn.yml, Citizens/, un autre plugin ou un monde.
+vg::_is_forbidden_remote() {
+  local p=$1 base
+  case "$p" in
+    ''|/*|~*) return 0 ;;
+    *..*)     return 0 ;;
+  esac
+  [ "${p#RPGQuest/}" != "$p" ] || return 0     # DOIT commencer par RPGQuest/
+  [ "$p" != "RPGQuest/" ] || return 0
+  case "$p" in
+    RPGQuest/Citizens/*) return 0 ;;
+  esac
+  base=${p##*/}
+  case "$base" in
+    data.db|config.yml|messages.yml|spawn.yml) return 0 ;;
+  esac
+  return 1
+}
+
 # Test de connexion : liste le dossier distant, renvoie 0/!=0.
 vg::connectivity_check() {
   vg::remote_list >/dev/null

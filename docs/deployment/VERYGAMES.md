@@ -246,6 +246,34 @@ Options utiles : `--server-stopped` (saute la question interactive
 (premier déploiement, rien à sauvegarder), `--jar PATH` (JAR explicite).
 `scripts/deploy-verygames.sh --help` pour la liste complète.
 
+#### Fichiers RPGQuest supplémentaires : `--also LOCAL:REMOTE`
+
+Certaines évolutions demandent, en plus du JAR, le remplacement de quelques
+fichiers de contenu **déjà présents** que le plugin ne réécrit jamais tout
+seul (p. ex. `dialogues/guide.yml` pour l'issue #11 — voir l'entrée
+correspondante de `SERVER_CHANGELOG.md`). L'option `--also` prend une
+**liste blanche explicite**, répétable :
+
+```bash
+scripts/deploy-verygames.sh --server-stopped \
+  --also src/main/resources/dialogues/guide.yml:RPGQuest/dialogues/guide.yml \
+  --also src/main/resources/dialogues/libraire.yml:RPGQuest/dialogues/libraire.yml
+```
+
+- `LOCAL` = chemin relatif au dépôt (ou absolu) ; `REMOTE` = chemin distant
+  (relatif à `VERYGAMES_FTP_REMOTE_DIR`) qui **doit commencer par
+  `RPGQuest/`**.
+- Chaque fichier est **téléchargé (backup) avant remplacement** dans
+  `…/verygames-backups/extra-<UTC>Z/<REMOTE>` + un `MANIFEST.txt`
+  (sha256 avant/après). Transfert atomique (`.part` → `RNFR`/`RNTO`).
+- Le script **refuse** toute cible hors `RPGQuest/`, toute traversée
+  (`..`), et — quel que soit l'emplacement — `data.db`, `config.yml`,
+  `messages.yml`, `spawn.yml`, `RPGQuest/Citizens/`. **Aucune
+  synchronisation de dossier**, jamais.
+- Restauration : `scripts/rollback-verygames.sh --also
+  <backup>:<REMOTE>` (répétable, utilisable seul), qui sauvegarde d'abord
+  la version en ligne avant d'écraser.
+
 ### 4. Rollback (`scripts/rollback-verygames.sh`)
 
 ```bash

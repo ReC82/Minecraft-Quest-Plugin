@@ -3,16 +3,25 @@
 # deploy-verygames.sh — déploiement JAR RPGQuest vers VeryGames (issue #10).
 #
 # Automatise l'EXÉCUTION d'un déploiement (build vérifié, backup daté, transfert
-# FTP atomique du seul JAR). Le déclenchement reste MANUEL, et l'arrêt /
-# redémarrage du serveur VeryGames reste MANUEL (VeryGames n'expose ni API ni
-# RCON exploitable dans notre configuration — accès FTP port 21 uniquement).
+# FTP atomique). Le déclenchement reste MANUEL, et l'arrêt / redémarrage du
+# serveur VeryGames reste MANUEL (VeryGames n'expose ni API ni RCON exploitable
+# dans notre configuration — accès FTP port 21 uniquement).
 #
-# Ne touche JAMAIS data.db, config.yml, messages.yml, les mondes ni les autres
-# plugins : le script n'adresse qu'un seul chemin distant, celui du JAR.
+# Par défaut, le script n'adresse QU'UN seul chemin distant : celui du JAR.
+# L'option --also permet une LISTE BLANCHE EXPLICITE de fichiers supplémentaires
+# sous RPGQuest/ (chacun sauvegardé avant remplacement). Le script REFUSE
+# toujours data.db, config.yml, messages.yml, spawn.yml, RPGQuest/Citizens/,
+# tout autre plugin, tout monde, et toute traversée de chemin. Il ne synchronise
+# JAMAIS un dossier entier.
 #
 # Usage :
 #   scripts/deploy-verygames.sh [options]
 #
+#   --also LOCAL:REMOTE  Fichier supplémentaire à déployer, en plus du JAR.
+#                        LOCAL   = chemin relatif au dépôt (ou absolu).
+#                        REMOTE  = chemin distant, relatif à VERYGAMES_FTP_REMOTE_DIR,
+#                                  qui DOIT commencer par "RPGQuest/".
+#                        Répétable. Chaque fichier est sauvegardé avant remplacement.
 #   --dry-run            Tout vérifier (git, tests, build, JAR) et n'AFFICHER
 #                        que les actions FTP qui seraient faites. Aucune
 #                        connexion. Sortie 0 même si l'hôte/mot de passe
@@ -21,8 +30,8 @@
 #                        (si les identifiants sont présents) tester la connexion.
 #   --skip-build         (avec --dry-run uniquement) sauter ./gradlew test+build.
 #   --allow-dirty        Autoriser un working tree Git non propre (déconseillé).
-#   --allow-no-backup    Autoriser un déploiement même si aucune version n'est
-#                        actuellement en ligne (premier déploiement).
+#   --allow-no-backup    Autoriser un déploiement même si un fichier ciblé
+#                        (JAR ou --also) n'existe pas encore en ligne.
 #   --server-stopped     Confirmer que le serveur VeryGames est déjà arrêté
 #                        (saute la question interactive).
 #   --prune-keep N       Après un déploiement réussi, ne garder que les N
@@ -55,9 +64,11 @@ ALLOW_NO_BACKUP=0
 SERVER_STOPPED=0
 PRUNE_KEEP=""
 JAR_OVERRIDE=""
+ALSO_SPECS=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --also)            ALSO_SPECS+=("${2:-}"); shift ;;
     --dry-run)         DRY_RUN=1 ;;
     --check)           CHECK_ONLY=1 ;;
     --skip-build)      SKIP_BUILD=1 ;;
@@ -72,6 +83,35 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+
+# --- Validation des fichiers supplémentaires (--also LOCAL:REMOTE) -----------
+ALSO_LOCAL=()
+ALSO_REMOTE=()
+for spec in "${ALSO_SPECS[@]:-}"; do
+  [ -n "$spec" ] || continue
+  case "$spec" in
+    *:*) : ;;
+    *) vg::die "--also attend LOCAL:REMOTE (deux-points manquant) : '$spec'" ;;
+  esac
+  lp=${spec%%:*}
+  rp=${spec#*:}
+  if [ -z "$lp" ] || [ -z "$rp" ]; then
+    vg::die "--also LOCAL et REMOTE ne peuvent pas être vides : '$spec'"
+  fi
+  case "$lp" in
+    /*) : ;;
+    *)  lp="$REPO_ROOT/$lp" ;;
+  esac
+  [ -f "$lp" ] || vg::die "--also : fichier local introuvable : $lp"
+  [ -s "$lp" ] || vg::die "--also : fichier local vide : $lp"
+  rp=${rp#./}
+  if vg::_is_forbidden_remote "$rp"; then
+    vg::die "--also : cible distante INTERDITE : '$rp'. Autorisé uniquement sous 'RPGQuest/' (jamais data.db, config.yml, messages.yml, spawn.yml, RPGQuest/Citizens/, un autre plugin, un monde, ni '..')."
+  fi
+  ALSO_LOCAL+=("$lp")
+  ALSO_REMOTE+=("$rp")
+done
+ALSO_COUNT=${#ALSO_LOCAL[@]}
 
 vg::require_curl
 
@@ -213,14 +253,22 @@ if [ "$DRY_RUN" -eq 1 ]; then
   2. Télécharger la version en ligne, si elle existe :
         $REMOTE_JAR
      -> ${VERYGAMES_BACKUP_DIR}/rpgquest-<UTC>Z-predeploy.jar (+ .meta)
-  3. Téléverser le nouveau JAR sous un nom temporaire :
-        ${VERYGAMES_PLUGIN_JAR_NAME}.part-<UTC>Z
-  4. Renommer (RNFR/RNTO) le fichier temporaire en :
-        ${VERYGAMES_PLUGIN_JAR_NAME}
-  5. Vérifier la taille distante == ${JAR_SIZE} octets.
+  3. Téléverser le nouveau JAR sous un nom temporaire (.part-<UTC>Z),
+     contrôler la taille (== ${JAR_SIZE} o), puis RNFR/RNTO -> ${VERYGAMES_PLUGIN_JAR_NAME}
+EOF
+  if [ "$ALSO_COUNT" -gt 0 ]; then
+    printf '\n  Fichiers supplémentaires (--also), après le JAR :\n' >&2
+    for i in $(seq 0 $((ALSO_COUNT - 1))); do
+      printf '    - %s\n        backup : %s\n        upload : %s%s (atomique .part -> RNFR/RNTO)\n' \
+        "${ALSO_REMOTE[$i]}" \
+        "${VERYGAMES_BACKUP_DIR}/extra-<UTC>Z/${ALSO_REMOTE[$i]}" \
+        "$(vg::redact "$(vg::remote_dir_url)")" "${ALSO_REMOTE[$i]}" >&2
+    done
+  fi
+  cat >&2 <<EOF
 
   Fichiers JAMAIS touchés : data.db, config.yml, messages.yml, spawn.yml,
-  dossiers de contenu, mondes, autres plugins.
+  RPGQuest/Citizens/, tout autre plugin, tout monde. Aucune synchro de dossier.
 EOF
   if [ "$CONNECTION_READY" -eq 1 ]; then
     vg::log "Config de connexion : présente et valide."
@@ -236,8 +284,10 @@ fi
 # Confirmation : serveur arrêté ?
 # ---------------------------------------------------------------------------
 if [ "$SERVER_STOPPED" -eq 0 ]; then
+  _also_note=""
+  [ "$ALSO_COUNT" -gt 0 ] && _also_note=" + $ALSO_COUNT fichier(s) --also"
   if [ -r /dev/tty ]; then
-    printf '%s\n' "Le serveur VeryGames doit être ARRÊTÉ (panel) avant de remplacer le JAR." >&2
+    printf '%s\n' "Le serveur VeryGames doit être ARRÊTÉ (panel) avant de remplacer le JAR$_also_note." >&2
     printf '%s' "Le serveur est-il arrêté ? [y/N] " >&2
     read -r reply </dev/tty || reply=""
     case "$reply" in
@@ -303,32 +353,64 @@ fi
 # Étape 8 — transfert atomique du nouveau JAR
 # ---------------------------------------------------------------------------
 vg::step "8/8 — Transfert du nouveau JAR"
-TMP_NAME="${VERYGAMES_PLUGIN_JAR_NAME}.part-${STAMP}"
-
-vg::log "Téléversement -> $TMP_NAME"
-vg::remote_upload "$JAR_PATH" "$TMP_NAME" || {
-  vg::err "Échec du téléversement. Tentative de nettoyage du fichier partiel…"
-  vg::remote_delete "$TMP_NAME" 2>/dev/null || true
-  vg::die "Déploiement interrompu. La version en ligne n'a PAS été modifiée."
-}
-
-REMOTE_TMP_SIZE=$(vg::remote_file_size "$TMP_NAME" || true)
-if [ -n "$REMOTE_TMP_SIZE" ] && [ "$REMOTE_TMP_SIZE" != "$JAR_SIZE" ]; then
-  vg::remote_delete "$TMP_NAME" 2>/dev/null || true
-  vg::die "Taille distante ($REMOTE_TMP_SIZE) != locale ($JAR_SIZE). Fichier partiel supprimé, version en ligne intacte."
-fi
-
-vg::log "Renommage $TMP_NAME -> $VERYGAMES_PLUGIN_JAR_NAME"
-if ! vg::remote_rename "$TMP_NAME" "$VERYGAMES_PLUGIN_JAR_NAME"; then
-  vg::warn "RNFR/RNTO refusé par le serveur. Repli : téléversement direct sur le nom final."
-  vg::remote_upload "$JAR_PATH" "$VERYGAMES_PLUGIN_JAR_NAME" \
-    || vg::die "Échec du téléversement direct. Restaurer via scripts/rollback-verygames.sh --latest si besoin."
-  vg::remote_delete "$TMP_NAME" 2>/dev/null || true
-fi
+vg::log "Téléversement atomique -> $VERYGAMES_PLUGIN_JAR_NAME"
+vg::remote_put_atomic "$JAR_PATH" "$VERYGAMES_PLUGIN_JAR_NAME" "$STAMP" "$JAR_SIZE" \
+  || vg::die "Échec du transfert du JAR. La version en ligne n'a PAS été modifiée (ou : restaurer via scripts/rollback-verygames.sh --latest)."
 
 FINAL_SIZE=$(vg::remote_file_size "$VERYGAMES_PLUGIN_JAR_NAME" || true)
 if [ -n "$FINAL_SIZE" ] && [ "$FINAL_SIZE" != "$JAR_SIZE" ]; then
   vg::warn "Taille distante finale ($FINAL_SIZE) != locale ($JAR_SIZE) — À VÉRIFIER manuellement."
+else
+  vg::log "JAR en ligne : $FINAL_SIZE octets (== local)."
+fi
+
+# ---------------------------------------------------------------------------
+# Étape 8b — fichiers RPGQuest supplémentaires (--also), liste blanche
+# ---------------------------------------------------------------------------
+EXTRA_BACKUP_DIR=""
+if [ "$ALSO_COUNT" -gt 0 ]; then
+  vg::step "8b — $ALSO_COUNT fichier(s) supplémentaire(s) (--also)"
+  EXTRA_BACKUP_DIR="$VERYGAMES_BACKUP_DIR/extra-${STAMP}"
+  mkdir -p "$EXTRA_BACKUP_DIR"
+  MANIFEST="$EXTRA_BACKUP_DIR/MANIFEST.txt"
+  {
+    printf 'deploy_utc=%s\noperator=%s\ngit_branch=%s\ngit_commit=%s\ngit_describe=%s\n\n' \
+      "$STAMP" "$(vg::operator_tag)" "$GIT_BRANCH" "$GIT_COMMIT" "$GIT_DESCRIBE"
+    printf '# remote_path | ancien_sha256 | ancienne_taille | nouveau_sha256 (local) | nouvelle_taille\n'
+  } >"$MANIFEST"
+
+  for i in $(seq 0 $((ALSO_COUNT - 1))); do
+    lp="${ALSO_LOCAL[$i]}"
+    rp="${ALSO_REMOTE[$i]}"
+    lsize=$(wc -c <"$lp" | tr -d ' ')
+    lsha=$(vg::sha256 "$lp")
+    vg::log "· $rp"
+
+    old_sha="(absent)"; old_size="0"
+    if vg::remote_file_exists "$rp"; then
+      bpath="$EXTRA_BACKUP_DIR/$rp"
+      mkdir -p "$(dirname "$bpath")"
+      vg::remote_download "$rp" "$bpath" \
+        || vg::die "Échec du backup de '$rp'. Aucun remplacement effectué pour ce fichier."
+      old_sha=$(vg::sha256 "$bpath")
+      old_size=$(wc -c <"$bpath" | tr -d ' ')
+      vg::log "  backup : $bpath ($old_size o, sha256 $old_sha)"
+    else
+      if [ "$ALLOW_NO_BACKUP" -eq 1 ]; then
+        vg::warn "  '$rp' absent en ligne — création (--allow-no-backup)."
+      else
+        vg::die "  '$rp' absent en ligne : rien à sauvegarder. Utiliser --allow-no-backup pour créer le fichier."
+      fi
+    fi
+
+    vg::remote_put_atomic "$lp" "$rp" "$STAMP" "$lsize" \
+      || vg::die "Échec du transfert de '$rp'. Fichiers déjà transférés : voir résumé ; restaurer depuis $EXTRA_BACKUP_DIR si besoin."
+    gsize=$(vg::remote_file_size "$rp" || true)
+    [ -z "$gsize" ] || [ "$gsize" = "$lsize" ] || vg::warn "  taille distante ($gsize) != locale ($lsize) pour '$rp' — À VÉRIFIER."
+    vg::log "  transféré ($lsize o, sha256 $lsha)"
+    printf '%s | %s | %s | %s | %s\n' "$rp" "$old_sha" "$old_size" "$lsha" "$lsize" >>"$MANIFEST"
+  done
+  vg::log "Manifeste : $MANIFEST"
 fi
 
 # ---------------------------------------------------------------------------
@@ -359,8 +441,17 @@ ${VG_GREEN}Étapes réalisées :${VG_RESET}
   - ./gradlew test  : OK
   - ./gradlew build : OK
   - JAR : $JAR_PATH ($JAR_SIZE o, SHA-256 $JAR_SHA)
-  - backup version précédente : $BACKUP_JAR
+  - backup JAR précédent : $BACKUP_JAR
   - JAR transféré vers : $(vg::redact "$(vg::remote_jar_url)")
+EOF
+if [ "$ALSO_COUNT" -gt 0 ]; then
+  printf '  - fichiers --also transférés (%s) :\n' "$ALSO_COUNT" >&2
+  for i in $(seq 0 $((ALSO_COUNT - 1))); do
+    printf '      %s%s\n' "$(vg::redact "$(vg::remote_dir_url)")" "${ALSO_REMOTE[$i]}" >&2
+  done
+  printf '  - backups --also : %s/\n' "$EXTRA_BACKUP_DIR" >&2
+fi
+cat >&2 <<EOF
 
 ${VG_YELLOW}Actions MANUELLES restantes (VeryGames n'expose ni API ni RCON) :${VG_RESET}
   1. Démarrer le serveur depuis le panel VeryGames.
@@ -372,5 +463,12 @@ ${VG_YELLOW}Actions MANUELLES restantes (VeryGames n'expose ni API ni RCON) :${V
   6. Renseigner docs/deployment/SERVER_CHANGELOG.md (déploiement effectué).
 
 ${VG_YELLOW}En cas de problème :${VG_RESET}
-  scripts/rollback-verygames.sh --latest     # restaure la version précédente
+  scripts/rollback-verygames.sh --latest     # restaure le JAR précédent
 EOF
+if [ "$ALSO_COUNT" -gt 0 ]; then
+  cat >&2 <<EOF
+  # Restaurer les fichiers --also : réutiliser --also en sens inverse, p.ex.
+  #   scripts/rollback-verygames.sh --also $EXTRA_BACKUP_DIR/<remote_path>:<remote_path>
+  # (voir MANIFEST.txt dans le dossier de backup)
+EOF
+fi

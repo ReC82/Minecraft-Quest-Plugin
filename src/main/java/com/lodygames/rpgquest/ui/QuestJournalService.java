@@ -189,6 +189,14 @@ public final class QuestJournalService implements QuestJournalUi {
         trackedDisplay.clear(player);
     }
 
+    /**
+     * Appelé sur {@code InventoryCloseEvent} d'un inventaire du journal. Efface la session car le
+     * joueur quitte le menu. <strong>Contrat d'ordre</strong> : {@link #showList}/{@link #showDetail}
+     * (re)posent la session <em>après</em> {@code player.openInventory(...)}, précisément parce que
+     * ce {@code openInventory} déclenche d'abord ce {@code handleClose} pour le menu précédent — sans
+     * quoi une simple navigation (changement d'onglet, retour, bouton Fermer) laisserait
+     * {@code openSessions} vide et tous les clics suivants inertes.
+     */
     void handleClose(Player player) {
         openSessions.remove(player.getUniqueId());
     }
@@ -262,8 +270,6 @@ public final class QuestJournalService implements QuestJournalUi {
             List<QuestDefinition> pageItems = JournalPagination.pageOf(matching, page);
             List<NamespacedKey> pageIds = pageItems.stream().map(QuestDefinition::id).toList();
 
-            openSessions.put(playerId, JournalSession.list(tab, page, pageIds));
-
             JournalInventoryHolder holder = new JournalInventoryHolder(JournalKind.LIST);
             Inventory inventory = Bukkit.createInventory(holder, LIST_SIZE, MM.deserialize(TITLE_LIST));
             holder.bind(inventory);
@@ -275,7 +281,14 @@ public final class QuestJournalService implements QuestJournalUi {
                 boolean tracked = quest.id().equals(trackedByPlayer.get(playerId));
                 inventory.setItem(CONTENT_SLOTS[i], buildIcon(playerId, quest, state, tracked));
             }
+            // openInventory AVANT d'enregistrer la session : quand il remplace un menu déjà ouvert,
+            // il déclenche un InventoryCloseEvent SYNCHRONE pour l'ancien inventaire, que
+            // QuestJournalListener traduit en handleClose -> openSessions.remove(playerId). Poser la
+            // session ensuite garantit qu'elle survit à ce close (bug de navigation directionnelle :
+            // COMPLETED -> IN_PROGRESS et le bouton Fermer devenaient inertes après le 1er changement
+            // d'onglet, la session ayant été effacée par le close du ré-affichage).
             player.openInventory(inventory);
+            openSessions.put(playerId, JournalSession.list(tab, page, pageIds));
         })).exceptionally(error -> {
             logger.error("Impossible de construire le journal de quêtes pour {}", playerId, error);
             return null;
@@ -346,8 +359,6 @@ public final class QuestJournalService implements QuestJournalUi {
             QuestState state = states.getOrDefault(questId, QuestState.NOT_STARTED);
             boolean tracked = questId.equals(trackedByPlayer.get(playerId));
 
-            openSessions.put(playerId, JournalSession.detail(tab, page, questId));
-
             JournalInventoryHolder holder = new JournalInventoryHolder(JournalKind.DETAIL);
             Inventory inventory = Bukkit.createInventory(holder, DETAIL_SIZE, MM.deserialize(TITLE_DETAIL));
             holder.bind(inventory);
@@ -357,7 +368,10 @@ public final class QuestJournalService implements QuestJournalUi {
             inventory.setItem(DETAIL_TRACK_SLOT, trackToggleIcon(tracked));
             inventory.setItem(DETAIL_CLOSE_SLOT, navIcon(Material.BARRIER, "Fermer"));
 
+            // Session enregistrée APRÈS openInventory — voir la note dans showList (le close
+            // synchrone du menu précédent effacerait sinon la session tout juste posée).
             player.openInventory(inventory);
+            openSessions.put(playerId, JournalSession.detail(tab, page, questId));
         })).exceptionally(error -> {
             logger.error("Impossible de construire la vue détail pour {}", playerId, error);
             return null;

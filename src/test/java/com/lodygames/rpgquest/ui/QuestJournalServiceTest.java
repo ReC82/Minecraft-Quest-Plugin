@@ -265,6 +265,48 @@ class QuestJournalServiceTest {
     }
 
     @Test
+    void bidirectionalTabNavigationWithoutClosingKeepsWorkingAndCloseButtonStillWorks() throws Exception {
+        // Reproduit le bug remonté en validation manuelle DEV : IN_PROGRESS -> COMPLETED marche,
+        // mais COMPLETED -> IN_PROGRESS (sans fermer) « ne rafraîchit pas », et le bouton Fermer
+        // devient inerte. Cause : openInventory (qui remplace le menu ouvert) déclenche un
+        // InventoryCloseEvent synchrone -> handleClose -> openSessions.remove, ce qui effaçait la
+        // session tout juste posée. Il FAUT donc enregistrer le listener ici pour que le close
+        // event soit réellement traité.
+        writeQuests(2);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        NamespacedKey active = new NamespacedKey("rpgquest", "quest_0");
+        NamespacedKey done = new NamespacedKey("rpgquest", "quest_1");
+        setState(player, active, QuestState.ACTIVE);
+        setState(player, done, QuestState.COMPLETED);
+
+        server.getPluginManager().registerEvents(listener, plugin);
+
+        service.open(player);
+        waitUntil(() -> listTabOf(player) == JournalTab.IN_PROGRESS);
+        assertTrue(service.sessionOf(player).pageQuests().contains(active));
+
+        // 1) IN_PROGRESS -> COMPLETED, via un vrai clic sur l'onglet (slot 2)
+        clickTopSlot(player, QuestJournalService.TAB_COMPLETED_SLOT, ClickType.LEFT);
+        waitUntil(() -> listTabOf(player) == JournalTab.COMPLETED);
+        assertTrue(service.sessionOf(player).pageQuests().contains(done), "onglet terminées affiché");
+
+        // 2) COMPLETED -> IN_PROGRESS, via un vrai clic sur l'onglet (slot 0), SANS fermer le menu
+        clickTopSlot(player, QuestJournalService.TAB_IN_PROGRESS_SLOT, ClickType.LEFT);
+        waitUntil(() -> listTabOf(player) == JournalTab.IN_PROGRESS);
+        assertEquals(JournalTab.IN_PROGRESS, listTabOf(player),
+                "le retour sur « en cours » doit rafraîchir la vue, pas rester bloqué sur « terminées »");
+        assertTrue(service.sessionOf(player).pageQuests().contains(active));
+        assertFalse(service.sessionOf(player).pageQuests().contains(done));
+
+        // 3) le bouton Fermer fonctionne encore après cette navigation bidirectionnelle
+        clickTopSlot(player, QuestJournalService.CLOSE_SLOT, ClickType.LEFT);
+        assertTrue(isJournalStillOpen(player), "fermeture différée d'un tick");
+        server.getScheduler().performTicks(2);
+        assertFalse(isJournalStillOpen(player), "le bouton Fermer doit bien fermer le journal");
+    }
+
+    @Test
     void rightClickTogglesTracking() throws Exception {
         writeQuests(1);
         questEngine.reload();
@@ -383,6 +425,20 @@ class QuestJournalServiceTest {
     private boolean isJournalStillOpen(PlayerMock player) {
         Inventory top = player.getOpenInventory().getTopInventory();
         return top != null && top.getHolder() instanceof JournalInventoryHolder;
+    }
+
+    /** Onglet de la session liste courante, ou {@code null} (pas de session, ou vue détail). */
+    private JournalTab listTabOf(PlayerMock player) {
+        JournalSession session = service.sessionOf(player);
+        return session != null && !session.isDetail() ? session.tab() : null;
+    }
+
+    /** Clic réel sur un slot du haut du menu, routé par le listener (comme sur un serveur Paper). */
+    private void clickTopSlot(PlayerMock player, int rawSlot, ClickType click) {
+        InventoryView view = player.getOpenInventory();
+        InventoryClickEvent event = new InventoryClickEvent(
+                view, InventoryType.SlotType.CONTAINER, rawSlot, click, InventoryAction.PICKUP_ALL);
+        listener.onInventoryClick(event);
     }
 
     private void openInProgress(PlayerMock player) throws InterruptedException {

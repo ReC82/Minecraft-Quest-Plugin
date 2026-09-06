@@ -431,3 +431,50 @@ Observer les logs `[claims-access]` / `[claims-safety]`.
 
 Aucune donnée migrée. La liaison PNJ `guard` créée en jeu peut être retirée
 avec `/rpgadmin npc untag` (en visant le PNJ) si besoin.
+
+---
+
+## 2026-09-06 - Raccourcis d'administration / test quêtes & stories (issue #36)
+
+Voir le rapport `docs/claude-reports/2026-09-06_2028_admin-test-shortcuts-issue-36.md`
+et `docs/ADMIN_TEST_SHORTCUTS.md`.
+
+### Changement
+
+Nouvelles sous-commandes `/rpgadmin` (outils DEV/admin, réutilisent les
+services métier, aucune écriture directe en base) :
+
+- `/rpgadmin quest start|complete|reset <joueur> <quest-id> [force]`
+- `/rpgadmin story advance|complete <joueur> <storyId>`
+- `/rpgadmin player variable get|set <joueur> <clé> [valeur]`
+
+`complete` / `story advance|complete` appliquent les récompenses (dont
+`VARIABLE`, ex. `CLAIM_TIER_1`) **une seule fois**. `quest reset` rend la
+quête rejouable mais **n'annule pas** les récompenses déjà accordées.
+
+### Nouvelle permission
+
+`rpgquest.admin.debug` (`default: op`) — requise **en plus** de
+`rpgquest.admin.world` pour `/rpgadmin player variable set` uniquement.
+Livrée avec le JAR (`plugin.yml` embarqué). Ne jamais l'accorder à un
+joueur normal.
+
+### Action serveur
+
+Remplacer **uniquement** le JAR RPGQuest. Aucun fichier de contenu, aucune
+migration, aucun changement de `config.yml`.
+
+- 2026-09-06 21:28:47Z : `scripts/deploy-verygames.sh -y`.
+  - JAR : `89b226b8…cb58` → `bcc3a6ec765c7fb7adeff2a15f2b49637a535fcc89c156184ab16bbd700bccdd`
+    (1 136 148 o, vérifié après upload). Backup :
+    `verygames-backups/rpgquest-20260906T212847Z-predeploy.jar`.
+  - **Redémarrage serveur : action manuelle non encore effectuée.**
+
+### Redémarrage requis
+
+Oui (nouveau JAR + nouvelle permission dans le `plugin.yml` embarqué).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` (restaure `rpgquest-20260906T212847Z-predeploy.jar`),
+puis redémarrer et vérifier `/rpgquest version`. Aucune donnée migrée.

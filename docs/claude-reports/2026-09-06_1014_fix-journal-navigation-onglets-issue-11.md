@@ -173,7 +173,10 @@ de backup). Aucune donnée persistante touchée.
 
 ## Déploiement VeryGames
 
-*(Renseigné après exécution du déploiement — voir la fin du rapport.)*
+Effectué sur le serveur **DEV** `si-16041.dg.vg` le 2026-09-06 ~10:16 UTC via
+`scripts/deploy-verygames.sh --server-stopped` (branche locale
+`deploy/issue-11-guide-dev` = `feature/11` `07e2310` + outillage `scripts/`,
+non poussée). Voir « Exécution du déploiement DEV » en fin de rapport.
 
 ### À transférer
 `rpgquest-0.1.0-SNAPSHOT.jar` **uniquement** (seul le code Java a changé ; les
@@ -219,4 +222,37 @@ fonctionne ».
 
 ## Exécution du déploiement DEV
 
-*(Complété après le run de `scripts/deploy-verygames.sh`.)*
+`scripts/deploy-verygames.sh --server-stopped` — code retour **0**.
+
+- Working tree Git : propre.
+- Branche/commit déployés : `deploy/issue-11-guide-dev` `c2584fd` (parent
+  `07e2310` = `feature/11` avec le correctif `cbe711d`). **Le JAR est bien
+  compilé depuis le code #11 + correctif** — `scripts/` n'entre pas dans le
+  build Gradle.
+- `./gradlew test` : OK. `./gradlew build` : OK.
+- JAR : `build/libs/rpgquest-0.1.0-SNAPSHOT.jar`, **1 105 839 o**,
+  SHA-256 `559e88a65504a2506de9eb20c2c2da3638aad7ff0f180fea4249775920e9094a`.
+- **Backup de la version en ligne (pré-correctif)** :
+  `~/.local/share/rpgquest/verygames-backups/rpgquest-20260906T101637Z-predeploy.jar`
+  (1 105 848 o, SHA-256 `3ae6cd437dd696f6dc0b46fa54219989fdaa6dc84bb3d56f0c8029b89b2a8703`)
+  + `.meta`. C'est la cible d'un `rollback --latest`.
+- Transfert atomique (`.part-20260906T101637Z` → `RNFR`/`RNTO`).
+
+### Vérification post-transfert (indépendante)
+
+| Élément | Résultat |
+|---|---|
+| `rpgquest-0.1.0-SNAPSHOT.jar` en ligne | 1 105 839 o, SHA-256 `559e88a6…` == JAR local, `Last-Modified` 2026-09-06 10:16:49 GMT |
+| Fichiers `.part` résiduels | aucun |
+| `RPGQuest/dialogues/guide.yml` | 5 570 o — **inchangé** (version #11) |
+| `RPGQuest/dialogues/libraire.yml` | 1 844 o — **inchangé** |
+| `RPGQuest/{data.db, config.yml, config.yml.bak, messages.yml, spawn.yml}` | présents, **non touchés** |
+| `Citizens/`, autres plugins, mondes | non touchés |
+
+### Rollback (si la validation manuelle échoue)
+
+```bash
+cd /srv/rpgquest/repo   # branche deploy/issue-11-guide-dev
+scripts/rollback-verygames.sh --server-stopped --latest
+# -> restaure rpgquest-20260906T101637Z-predeploy.jar (#11 pré-correctif), puis redémarrer
+```

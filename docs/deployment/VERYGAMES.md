@@ -55,15 +55,32 @@ Ne pas mélanger ces procédures : un scénario 2 traité comme un scénario 3
 
 ## Accès FTP VeryGames
 
--   **Protocole/port :** FTP simple, port `21`. **VeryGames ne fournit pas
-    de SFTP** — pas de transfert sur SSH possible.
--   **Host / utilisateur / mot de passe :** récupérés depuis le panel
-    VeryGames (Gameserver → onglet FTP), propres à chaque instance de
-    serveur.
--   **Compte dédié au déploiement du plugin : `awsplugin`.** Ce compte est
-    **restreint au dossier `plugins/`** : après connexion, la racine FTP
-    *est* `plugins/` (donc le JAR se dépose directement à la racine de la
-    session, pas dans un sous-dossier `plugins/`).
+-   **Protocole/port :** FTP sur le port `21`, **avec AUTH TLS explicite
+    obligatoire** (FTPS explicite). **VeryGames ne fournit pas de SFTP** et
+    **refuse toute connexion FTP en clair** (réponse `530` — vérifié le
+    2026-09-06). Le chiffrement n'est donc pas optionnel : mode
+    `VERYGAMES_FTP_TLS=require`.
+-   **Chaîne de certificat incomplète (côté serveur).** Le certificat est
+    un Let's Encrypt valide (`*.dg.vg`), mais ProFTPD ne renvoie **que** le
+    certificat feuille — les intermédiaires (`YE1`, puis `Root YE`
+    cross-signé par `ISRG Root X2`, racine déjà de confiance) ne sont pas
+    envoyés. `curl`/`openssl` ne peuvent donc pas construire la chaîne :
+    erreur *« unable to get local issuer certificate »*. **Solution — sans
+    jamais `--insecure` :** générer les intermédiaires manquants une fois
+    avec `scripts/verygames-fetch-ca.sh` (il suit les URL AIA de Let's
+    Encrypt, vérifie la chaîne complète contre le magasin système, écrit un
+    PEM public), puis renseigner `VERYGAMES_FTP_CA_EXTRA` dans le fichier
+    d'identifiants. Le script `deploy-verygames.sh` fusionne alors ce PEM au
+    magasin système (`curl --cacert`) et la vérification passe proprement.
+-   **Host / login / mot de passe :** récupérés depuis le panel VeryGames
+    (Gameserver → onglet FTP), propres à chaque instance de serveur.
+-   **Le login FTP est préfixé par l'identifiant du slot.** Le serveur
+    multi-clients attend `<slot>.<sous-compte>` — p.ex. `si-16041.awsplugin`
+    (le nom `awsplugin` **seul** est refusé par un `530`). Reprendre la
+    valeur EXACTE du panel.
+-   **Sous-compte `awsplugin` restreint au dossier `plugins/`** : après
+    connexion, la racine FTP *est* `plugins/` (le JAR se dépose directement
+    à la racine de session, pas dans un sous-dossier `plugins/`).
 -   **Ne jamais stocker le mot de passe FTP dans Git**, ni dans ce
     document, ni dans un fichier de configuration versionné. Le conserver
     uniquement dans un gestionnaire de mots de passe ou dans le fichier
@@ -119,29 +136,39 @@ spéciaux entre **guillemets simples** — en particulier le mot de passe :
 
 ```sh
 # ~/.config/rpgquest/verygames.env
-VERYGAMES_FTP_HOST=ftpXX.verygames.net          # depuis le panel VeryGames
+VERYGAMES_FTP_HOST=si-16041.dg.vg               # hôte du panel VeryGames (onglet FTP)
 VERYGAMES_FTP_PORT=21
-VERYGAMES_FTP_USER=awsplugin
+VERYGAMES_FTP_USER=si-16041.awsplugin          # login EXACT du panel : <slot>.<sous-compte>
 VERYGAMES_FTP_PASS='le-mot-de-passe-du-panel'
 VERYGAMES_FTP_REMOTE_DIR=/                       # awsplugin est chrooté sur plugins/
 VERYGAMES_PLUGIN_JAR_NAME=rpgquest-0.1.0-SNAPSHOT.jar
-VERYGAMES_FTP_TLS=auto                           # tente AUTH TLS, repli en clair
+VERYGAMES_FTP_TLS=require                        # VeryGames impose AUTH TLS (le clair est refusé)
+VERYGAMES_FTP_CA_EXTRA=~/.config/rpgquest/verygames-ca.pem   # généré par verygames-fetch-ca.sh
 ```
+
+> Avant le premier `--check`, générer les intermédiaires TLS manquants
+> (chaîne incomplète côté VeryGames — voir « Accès FTP » plus haut) :
+>
+> ```bash
+> scripts/verygames-fetch-ca.sh          # -> ~/.config/rpgquest/verygames-ca.pem (public, sans secret)
+> ```
 
 Variables reconnues (voir `scripts/verygames.env.example` pour la liste
 complète et les optionnelles `VERYGAMES_BACKUP_DIR`,
 `VERYGAMES_BACKUP_KEEP`, `VERYGAMES_CURL_*`,
-`VERYGAMES_FTP_EXTRA_CURL_ARGS`) :
+`VERYGAMES_FTP_EXTRA_CURL_ARGS`, `VERYGAMES_FTP_CACERT`) :
 
 | Variable | Obligatoire | Défaut | Rôle |
 |---|---|---|---|
 | `VERYGAMES_FTP_HOST` | oui | — | hôte FTP VeryGames, **sans** `ftp://`, sans port |
 | `VERYGAMES_FTP_PASS` | oui | — | mot de passe du compte FTP |
+| `VERYGAMES_FTP_USER` | oui (en pratique) | `awsplugin` | **login EXACT du panel**, préfixé : `<slot>.<sous-compte>` (ex. `si-16041.awsplugin`) — le défaut nu ne fonctionne pas |
+| `VERYGAMES_FTP_CA_EXTRA` | oui (VeryGames) | — | PEM d'intermédiaires TLS manquants, généré par `scripts/verygames-fetch-ca.sh` ; fusionné au magasin système |
+| `VERYGAMES_FTP_TLS` | non | `require` | `require` (mode VeryGames, cert vérifié) \| `auto` (= `require`) \| `none` (clair, inutilisable chez VeryGames) |
 | `VERYGAMES_FTP_PORT` | non | `21` | port FTP |
-| `VERYGAMES_FTP_USER` | non | `awsplugin` | compte FTP |
 | `VERYGAMES_FTP_REMOTE_DIR` | non | `/` | dossier distant du JAR (racine de session pour `awsplugin`) |
 | `VERYGAMES_PLUGIN_JAR_NAME` | non | `rpgquest-0.1.0-SNAPSHOT.jar` | nom exact du JAR à remplacer |
-| `VERYGAMES_FTP_TLS` | non | `auto` | `auto` \| `require` \| `none` (AUTH TLS sur le port 21) |
+| `VERYGAMES_FTP_CACERT` | non | — | magasin CA de remplacement **total** (usage avancé) |
 | `VERYGAMES_BACKUP_DIR` | non | `~/.local/share/rpgquest/verygames-backups` | où sont téléchargés les backups datés |
 
 Précédence : une variable déjà **exportée dans l'environnement** du shell
@@ -249,8 +276,13 @@ Le rollback :
     fin.
 -   **Pas de vérification post-redémarrage automatique** (`/rpgquest
     version` se fait à la main, console/jeu).
--   FTP en clair par défaut ; `VERYGAMES_FTP_TLS=require` force AUTH TLS si
-    le serveur le supporte.
+-   **AUTH TLS obligatoire et certificat vérifié** (`VERYGAMES_FTP_TLS=require`,
+    défaut) : jamais `--insecure`. La chaîne incomplète servie par VeryGames
+    est compensée par `VERYGAMES_FTP_CA_EXTRA` (voir « Accès FTP »). Si
+    `scripts/verygames-fetch-ca.sh` ne parvient plus à reconstruire une
+    chaîne vérifiable (rotation d'intermédiaire Let's Encrypt), c'est à
+    VeryGames de corriger sa configuration TLS ProFTPD (chaîne complète) —
+    ne pas désactiver la vérification.
 -   Le script ne gère **que le JAR**. Migration de mondes / `data.db` /
     configs : hors périmètre, voir les scénarios 1 et 3 ci-dessous.
 

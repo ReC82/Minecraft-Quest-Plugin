@@ -181,3 +181,84 @@ scripts/rollback-verygames.sh --list           # liste des backups (vide au dép
 Retirer les scripts (`git revert` du commit) suffit — rien n'a été déployé.
 Le fichier d'identifiants local peut être conservé ou supprimé
 (`rm ~/.config/rpgquest/verygames.env`).
+
+---
+
+## 2026-09-06 - Audit TLS FTPS VeryGames + support chaîne CA (issue #10)
+
+### Changement
+
+Suite au test réseau concluant (`curl -v ftp://si-16041.dg.vg:21/` → bannière
+ProFTPD), audit du comportement TLS des scripts de l'issue #10 avec les vrais
+identifiants, en **listing non destructif uniquement** (aucun transfert).
+
+Constats :
+
+- **FTP en clair : refusé.** `USER` → `530` avant même `PASS`. VeryGames
+  impose **AUTH TLS explicite** (FTPS) sur le port 21.
+- **FTPS : accepté.** Handshake TLS 1.3 OK, SAN `*.dg.vg` correspond à
+  `si-16041.dg.vg`.
+- **Chaîne de certificat incomplète (côté serveur).** ProFTPD ne renvoie que
+  le certificat feuille ; les intermédiaires Let's Encrypt (`YE1`, puis
+  `Root YE` cross-signé par `ISRG Root X2` déjà de confiance) ne sont pas
+  envoyés → `curl`/`openssl` : *« unable to get local issuer certificate »*,
+  bien que le certificat soit valide. **Résolu sans `--insecure`** : nouveau
+  `scripts/verygames-fetch-ca.sh` reconstruit les intermédiaires depuis les
+  URL AIA de Let's Encrypt, vérifie la chaîne complète contre le magasin
+  système, écrit un PEM public ; nouvelle variable `VERYGAMES_FTP_CA_EXTRA`
+  fusionnée au magasin système par les scripts.
+- **Login FTP : le nom nu `awsplugin` est refusé (`530`).** Le serveur
+  multi-clients attend `<slot>.<sous-compte>` — ici `si-16041.awsplugin`
+  (déterminé par une commande `USER` seule, sans mot de passe). Avec ce
+  login, le serveur répond `331 Password required` ; le mot de passe
+  actuellement dans le fichier local n'est pas (encore) le bon → à récupérer
+  dans le panel VeryGames.
+
+Modifs scripts : défaut `VERYGAMES_FTP_TLS=require` (au lieu de `auto`) ;
+`auto` = alias de `require` (plus jamais l'option opportuniste `--ssl`) ;
+diagnostics curl parlants (`60` = chaîne CA, `67` = login refusé + format du
+login attendu, etc.) ; `--check` liste le dossier distant et signale la
+présence/absence du JAR.
+
+### Action serveur
+
+**Aucune action sur le serveur de production.** Audit en lecture seule, aucun
+fichier transféré, aucun redémarrage.
+
+Actions requises **côté poste AWS** avant le premier déploiement réel :
+
+```bash
+scripts/verygames-fetch-ca.sh          # génère ~/.config/rpgquest/verygames-ca.pem
+# éditer ~/.config/rpgquest/verygames.env :
+#   VERYGAMES_FTP_USER=si-16041.awsplugin        (login EXACT du panel, préfixé)
+#   VERYGAMES_FTP_TLS=require
+#   VERYGAMES_FTP_CA_EXTRA=~/.config/rpgquest/verygames-ca.pem
+#   VERYGAMES_FTP_PASS=<mot de passe EXACT du sous-compte, depuis le panel>
+scripts/deploy-verygames.sh --check
+```
+
+### Sauvegarde préalable
+
+Sans objet (aucune modification serveur).
+
+### Déploiement
+
+Aucun. Le déploiement JAR reste soumis à autorisation explicite.
+
+### Validation
+
+`scripts/deploy-verygames.sh --check` doit afficher « Connexion + TLS OK »
+puis le contenu de `plugins/` et la présence/absence du JAR RPGQuest.
+
+### Rollback
+
+`git revert` du commit. Le fichier `~/.config/rpgquest/verygames-ca.pem` peut
+être supprimé (`rm`), il ne contient que des certificats publics.
+
+### Remarque VeryGames
+
+La cause racine du problème TLS est une **chaîne de certificat incomplète
+servie par ProFTPD côté VeryGames**. Le correctif propre à terme est côté
+hébergeur (inclure les intermédiaires dans `TLSCertificateChainFile`). En
+attendant, `VERYGAMES_FTP_CA_EXTRA` traite le problème côté client sans
+jamais désactiver la vérification.

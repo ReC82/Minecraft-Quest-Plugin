@@ -179,7 +179,10 @@ fi
 # Connexion + backup de sécurité de la version courante
 # ---------------------------------------------------------------------------
 vg::step "Connexion FTP VeryGames"
-vg::connectivity_check || vg::die "Impossible de lister le dossier distant. Abandon avant toute écriture."
+vg::connectivity_check && _rc=0 || _rc=$?
+if [ "$_rc" -ne 0 ]; then
+  vg::die "Connexion FTP impossible : $(vg::explain_curl_rc "$_rc"). Abandon avant toute écriture."
+fi
 
 mkdir -p "$VERYGAMES_BACKUP_DIR"
 STAMP=$(vg::utc_stamp)

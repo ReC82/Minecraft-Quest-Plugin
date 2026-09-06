@@ -96,12 +96,20 @@ fi
 if [ "$CHECK_ONLY" -eq 1 ]; then
   if vg::has_connection_config; then
     vg::validate_config --require-connection || vg::die "Configuration de connexion invalide."
-    vg::step "Test de connexion FTP"
-    if vg::connectivity_check; then
-      vg::log "Connexion OK — dossier distant listé avec succès."
+    vg::step "Test de connexion FTP (listing non destructif)"
+    if out=$(vg::remote_list 2>&1); then
+      vg::log "Connexion + TLS OK. Dossier distant '$VERYGAMES_FTP_REMOTE_DIR' listé :"
+      if [ -n "$out" ]; then printf '%s\n' "$out" | sed 's/^/    /' >&2; else vg::log "  (dossier vide)"; fi
+      if printf '%s\n' "$out" | grep -qx "$VERYGAMES_PLUGIN_JAR_NAME"; then
+        vg::log "JAR '$VERYGAMES_PLUGIN_JAR_NAME' : PRÉSENT en ligne."
+      else
+        vg::log "JAR '$VERYGAMES_PLUGIN_JAR_NAME' : ABSENT (premier déploiement -> --allow-no-backup)."
+      fi
       exit 0
     else
-      vg::die "Échec de connexion / listing du dossier distant. Vérifier hôte, port, identifiants, TLS."
+      rc=$?
+      vg::err "Échec : $(vg::explain_curl_rc "$rc")"
+      exit 1
     fi
   else
     vg::warn "Hôte et/ou mot de passe absents : test de connexion impossible pour l'instant."
@@ -245,7 +253,10 @@ fi
 # Étape 6 — connexion (déjà validée) + listing
 # ---------------------------------------------------------------------------
 vg::step "6/8 — Connexion FTP VeryGames"
-vg::connectivity_check || vg::die "Impossible de lister le dossier distant. Abandon avant toute écriture."
+vg::connectivity_check && _rc=0 || _rc=$?
+if [ "$_rc" -ne 0 ]; then
+  vg::die "Connexion FTP impossible : $(vg::explain_curl_rc "$_rc"). Abandon avant toute écriture."
+fi
 vg::log "Connexion OK."
 
 # ---------------------------------------------------------------------------

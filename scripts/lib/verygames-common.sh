@@ -83,7 +83,8 @@ vg::load_config() {
     local k save
     local vg_keys=(VERYGAMES_FTP_HOST VERYGAMES_FTP_PORT VERYGAMES_FTP_USER
                    VERYGAMES_FTP_PASS VERYGAMES_FTP_REMOTE_DIR VERYGAMES_PLUGIN_JAR_NAME
-                   VERYGAMES_FTP_TLS VERYGAMES_BACKUP_DIR VERYGAMES_FTP_EXTRA_CURL_ARGS
+                   VERYGAMES_FTP_TLS VERYGAMES_FTP_CA_EXTRA VERYGAMES_FTP_CACERT
+                   VERYGAMES_BACKUP_DIR VERYGAMES_FTP_EXTRA_CURL_ARGS
                    VERYGAMES_CURL_CONNECT_TIMEOUT VERYGAMES_CURL_MAX_TIME VERYGAMES_BACKUP_KEEP)
     for k in "${vg_keys[@]}"; do
       if [ -n "${!k+x}" ]; then
@@ -118,12 +119,25 @@ vg::load_config() {
   : "${VERYGAMES_FTP_USER:=awsplugin}"
   : "${VERYGAMES_FTP_REMOTE_DIR:=/}"
   : "${VERYGAMES_PLUGIN_JAR_NAME:=rpgquest-0.1.0-SNAPSHOT.jar}"
-  : "${VERYGAMES_FTP_TLS:=auto}"
+  # VeryGames impose AUTH TLS sur le port 21 : une connexion en clair est
+  # refusée (530). « require » est donc le défaut. « auto » est un alias de
+  # « require » (jamais l'option opportuniste --ssl, que curl signale comme
+  # non sûre). « none » n'est utile que pour un hôte FTP réellement en clair.
+  : "${VERYGAMES_FTP_TLS:=require}"
+  # Certificats supplémentaires (chaîne incomplète servie par VeryGames — voir
+  # scripts/verygames-fetch-ca.sh) : fichier PEM d'intermédiaires, fusionné au
+  # magasin système à l'exécution.
+  : "${VERYGAMES_FTP_CA_EXTRA:=}"
+  # Magasin CA complet, en remplacement total du magasin système (usage avancé).
+  : "${VERYGAMES_FTP_CACERT:=}"
   : "${VERYGAMES_BACKUP_DIR:=${XDG_DATA_HOME:-$HOME/.local/share}/rpgquest/verygames-backups}"
   : "${VERYGAMES_CURL_CONNECT_TIMEOUT:=20}"
   : "${VERYGAMES_CURL_MAX_TIME:=600}"
   : "${VERYGAMES_FTP_EXTRA_CURL_ARGS:=}"
   : "${VERYGAMES_BACKUP_KEEP:=}"
+
+  VERYGAMES_FTP_CA_EXTRA=${VERYGAMES_FTP_CA_EXTRA/#\~/$HOME}
+  VERYGAMES_FTP_CACERT=${VERYGAMES_FTP_CACERT/#\~/$HOME}
 
   # Normalise le dossier distant : garantit un unique slash de tête, pas de
   # slash de fin (sauf racine).
@@ -167,6 +181,13 @@ vg::validate_config() {
     *) vg::err "VERYGAMES_FTP_TLS doit valoir auto | require | none (trouvé : '$VERYGAMES_FTP_TLS')"; errors=$((errors + 1)) ;;
   esac
 
+  if [ -n "$VERYGAMES_FTP_CA_EXTRA" ] && [ ! -r "$VERYGAMES_FTP_CA_EXTRA" ]; then
+    vg::err "VERYGAMES_FTP_CA_EXTRA introuvable ou illisible : $VERYGAMES_FTP_CA_EXTRA"; errors=$((errors + 1))
+  fi
+  if [ -n "$VERYGAMES_FTP_CACERT" ] && [ ! -r "$VERYGAMES_FTP_CACERT" ]; then
+    vg::err "VERYGAMES_FTP_CACERT introuvable ou illisible : $VERYGAMES_FTP_CACERT"; errors=$((errors + 1))
+  fi
+
   if [ "$require_conn" -eq 1 ]; then
     if [ -z "${VERYGAMES_FTP_HOST:-}" ]; then
       vg::err "VERYGAMES_FTP_HOST est vide — indispensable pour se connecter."; errors=$((errors + 1))
@@ -199,7 +220,9 @@ vg::config_summary() {
   port FTP          : ${VERYGAMES_FTP_PORT}
   utilisateur FTP   : ${VERYGAMES_FTP_USER}
   mot de passe FTP  : ${pass_state}
-  TLS (AUTH TLS)    : ${VERYGAMES_FTP_TLS}
+  TLS (AUTH TLS)    : ${VERYGAMES_FTP_TLS}$( [ "$VERYGAMES_FTP_TLS" = auto ] && printf ' (= require)')
+  CA intermédiaires : ${VERYGAMES_FTP_CA_EXTRA:-(magasin système seul)}
+  CA (remplacement) : ${VERYGAMES_FTP_CACERT:-(non)}
   dossier distant   : ${VERYGAMES_FTP_REMOTE_DIR}
   nom du JAR        : ${VERYGAMES_PLUGIN_JAR_NAME}
   cible distante    : $(vg::redact "$(vg::remote_jar_url)")
@@ -242,19 +265,62 @@ vg::_curl_config() {
   p=${p//\\/\\\\}; p=${p//\"/\\\"}
   printf 'user = "%s:%s"\n' "$u" "$p"
   case "$VERYGAMES_FTP_TLS" in
-    require) printf 'ssl-reqd\n' ;;
-    auto)    printf 'ssl\n' ;;
-    none)    : ;;
+    require|auto) printf 'ssl-reqd\n' ;;   # AUTH TLS obligatoire, cert vérifié
+    none)         : ;;                     # FTP en clair (jamais accepté par VeryGames)
   esac
+}
+
+# Cherche le magasin CA système (fichier PEM concaténé). Vide si introuvable.
+vg::_system_ca_file() {
+  local f
+  for f in "${CURL_CA_BUNDLE:-}" "${SSL_CERT_FILE:-}" \
+           /etc/ssl/certs/ca-certificates.crt \
+           /etc/pki/tls/certs/ca-bundle.crt \
+           /etc/ssl/cert.pem; do
+    [ -n "$f" ] && [ -r "$f" ] && { printf '%s' "$f"; return 0; }
+  done
+  return 1
+}
+
+# Bundle CA temporaire (magasin système + VERYGAMES_FTP_CA_EXTRA) et tableau
+# d'arguments curl associés — remplis par vg::_build_ca_args dans le shell
+# courant (pas de sous-shell : le chemin temporaire doit rester visible du trap).
+VG_CA_BUNDLE=""
+VG_CA_ARGS=()
+
+# Prépare VG_CA_ARGS (arguments curl de vérification du certificat), sans jamais
+# désactiver la vérification (--insecure interdit) :
+#  - VERYGAMES_FTP_CACERT   remplace totalement le magasin (usage avancé) ;
+#  - VERYGAMES_FTP_CA_EXTRA ajoute des intermédiaires au magasin système
+#    (chaîne incomplète servie par VeryGames — voir scripts/verygames-fetch-ca.sh).
+vg::_build_ca_args() {
+  VG_CA_ARGS=()
+  if [ -n "$VERYGAMES_FTP_CACERT" ]; then
+    VG_CA_ARGS=(--cacert "$VERYGAMES_FTP_CACERT")
+    return 0
+  fi
+  [ -n "$VERYGAMES_FTP_CA_EXTRA" ] || return 0
+
+  local sysca
+  sysca=$(vg::_system_ca_file || true)
+  VG_CA_BUNDLE=$(mktemp "${TMPDIR:-/tmp}/vg-ca.XXXXXX") || return 1
+  chmod 600 "$VG_CA_BUNDLE"
+  if [ -n "$sysca" ]; then
+    cat "$sysca" "$VERYGAMES_FTP_CA_EXTRA" >"$VG_CA_BUNDLE"
+    VG_CA_ARGS=(--cacert "$VG_CA_BUNDLE")
+  else
+    cat "$VERYGAMES_FTP_CA_EXTRA" >"$VG_CA_BUNDLE"
+    VG_CA_ARGS=(--capath /etc/ssl/certs --cacert "$VG_CA_BUNDLE")
+  fi
 }
 
 # Fichier de config curl courant (chemin), pour le nettoyage par trap.
 VG_CURL_CFG=""
 
-# À appeler une fois par le script : garantit l'effacement du fichier de
-# config curl temporaire même en cas d'interruption (Ctrl-C, kill, erreur).
+# À appeler une fois par le script : garantit l'effacement des fichiers
+# temporaires (config curl, bundle CA) même en cas d'interruption.
 vg::install_cleanup() {
-  trap 'rm -f "$VG_CURL_CFG" 2>/dev/null || true' EXIT INT TERM
+  trap 'rm -f "$VG_CURL_CFG" "$VG_CA_BUNDLE" 2>/dev/null || true' EXIT INT TERM
 }
 
 # vg::curl <args...> : curl durci, identité fournie via un --config temporaire
@@ -275,19 +341,22 @@ vg::curl() {
     extra=($VERYGAMES_FTP_EXTRA_CURL_ARGS)
   fi
 
+  vg::_build_ca_args || { rm -f "$cfg"; return 1; }
+
   set +e
   curl --disable --config "$cfg" \
        --fail --show-error --silent \
        --connect-timeout "$VERYGAMES_CURL_CONNECT_TIMEOUT" \
        --max-time "$VERYGAMES_CURL_MAX_TIME" \
        --ftp-pasv \
+       "${VG_CA_ARGS[@]}" \
        "${extra[@]}" \
        "$@"
   rc=$?
   set -e
 
-  rm -f "$cfg"
-  VG_CURL_CFG=""
+  rm -f "$cfg"; VG_CURL_CFG=""
+  [ -n "$VG_CA_BUNDLE" ] && { rm -f "$VG_CA_BUNDLE"; VG_CA_BUNDLE=""; }
   return $rc
 }
 
@@ -333,6 +402,22 @@ vg::remote_delete() { # <remote-name>
 # Test de connexion : liste le dossier distant, renvoie 0/!=0.
 vg::connectivity_check() {
   vg::remote_list >/dev/null
+}
+
+# Message actionnable pour un code de sortie curl (contexte FTP/FTPS).
+vg::explain_curl_rc() {
+  case "$1" in
+    0)  printf 'OK' ;;
+    6)  printf "hôte introuvable (DNS) : VERYGAMES_FTP_HOST='%s'" "${VERYGAMES_FTP_HOST:-}" ;;
+    7)  printf 'connexion TCP refusée/impossible (port %s, pare-feu ?)' "${VERYGAMES_FTP_PORT:-}" ;;
+    28) printf 'délai dépassé (VERYGAMES_CURL_CONNECT_TIMEOUT / réseau)' ;;
+    35|58|59|77) printf 'échec de négociation TLS (AUTH TLS) — voir VERYGAMES_FTP_TLS' ;;
+    60) printf 'certificat serveur NON vérifiable : chaîne incomplète côté VeryGames. Lancer scripts/verygames-fetch-ca.sh puis définir VERYGAMES_FTP_CA_EXTRA. Ne JAMAIS utiliser --insecure.' ;;
+    67) printf "identifiants FTP refusés (530) pour l'utilisateur '%s' : login ou mot de passe erroné. Le login FTP VeryGames est celui EXACT du panel (onglet FTP) — souvent au format <slot>.<sous-compte>, ex. \"si-XXXXX.awsplugin\", pas juste \"awsplugin\"." "${VERYGAMES_FTP_USER:-}" ;;
+    9)  printf 'accès au dossier distant refusé (droits FTP / VERYGAMES_FTP_REMOTE_DIR)' ;;
+    78) printf 'fichier distant introuvable' ;;
+    *)  printf 'échec curl (code %s)' "$1" ;;
+  esac
 }
 
 # ----------------------------------------------------------------------------

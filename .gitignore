@@ -37,6 +37,9 @@ scripts/*.env
 # Backups de JAR téléchargés par les scripts s'ils sont dirigés vers le dépôt.
 scripts/verygames-backups/
 *.jar.meta
+# Bundle CA local reconstruit par verygames-fetch-ca.sh (certs publics, mais
+# généré par machine : pas dans le dépôt).
+scripts/verygames-ca*.pem
 
 # OS / misc
 .DS_Store

@@ -12,6 +12,8 @@ import com.lodygames.rpgquest.claim.ClaimSelectionService;
 import com.lodygames.rpgquest.claim.ClaimService;
 import com.lodygames.rpgquest.claim.ClaimTeleportService;
 import com.lodygames.rpgquest.claim.ClaimWandListener;
+import com.lodygames.rpgquest.claim.ClaimWorldAccessGuard;
+import com.lodygames.rpgquest.claim.ClaimWorldSafetyListener;
 import com.lodygames.rpgquest.claim.ClaimsWorldRulesListener;
 import com.lodygames.rpgquest.claim.DeedClaimListener;
 import com.lodygames.rpgquest.command.BackpackCommand;
@@ -103,6 +105,7 @@ import com.lodygames.rpgquest.store.StoreDeliveryService;
 import com.lodygames.rpgquest.store.StoreProductRegistry;
 import com.lodygames.rpgquest.story.StoryRegistry;
 import com.lodygames.rpgquest.story.StoryService;
+import com.lodygames.rpgquest.travel.CompositeWorldPortalEntryGuard;
 import com.lodygames.rpgquest.travel.ItemTravelService;
 import com.lodygames.rpgquest.travel.PortalService;
 import com.lodygames.rpgquest.travel.WorldPortalRegistry;
@@ -123,6 +126,7 @@ import com.lodygames.rpgquest.zone.ZoneProtectionListener;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.zone.ZoneSelectionService;
 import com.lodygames.rpgquest.zone.ZoneWandListener;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -363,10 +367,9 @@ public final class RPGQuestBootstrap {
         WorldPortalTeleportListener worldPortalTeleportListener = new WorldPortalTeleportListener(
                 plugin, worldPortalRegistry, worldService,
                 () -> configService.current().randomSafeArrival(), plugin.getSLF4JLogger());
-        // Avertissement avant entrée dans le Wild sans Rune de rappel (mission « boucle joueur ») :
-        // politique branchée sur le portail simple, jamais codée dedans.
-        worldPortalTeleportListener.setEntryGuard(new WildEntryWarningService(
-                plugin, customItemRegistry, () -> configService.current().travel().wildWorld(), worldPortalTeleportListener));
+        // Le garde d'entrée du portail simple est installé plus bas (setEntryGuard), une fois
+        // claimService disponible : il compose l'avertissement d'entrée dans le Wild (« boucle
+        // joueur ») ET le contrôle d'accès au monde des claims (issues #21/#22/#23).
         registry.start(new PlayerListenerService(plugin, worldPortalTeleportListener));
         worldPortalDebugService = new WorldPortalDebugService(plugin, worldPortalRegistry, plugin.getSLF4JLogger());
         registry.start(worldPortalDebugService);
@@ -397,6 +400,23 @@ public final class RPGQuestBootstrap {
         claimsWorldRulesListener.purgeAlreadyLoadedWorld();
         registry.start(new PlayerListenerService(plugin,
                 new ClaimNetherTravelListener(() -> configService.current().claims())));
+
+        // Parcours Claims cohérent (issues #21/#22/#23) : accès au monde des claims réservé au
+        // déblocage réel du premier terrain (CLAIM_TIER_1 / claim existant), composé avec
+        // l'avertissement d'entrée dans le Wild — un seul garde côté WorldPortalTeleportListener.
+        ClaimWorldAccessGuard claimWorldAccessGuard = new ClaimWorldAccessGuard(
+                plugin, claimService, () -> configService.current().claims(), worldPortalTeleportListener);
+        worldPortalTeleportListener.setEntryGuard(new CompositeWorldPortalEntryGuard(List.of(
+                claimWorldAccessGuard,
+                new WildEntryWarningService(plugin, customItemRegistry,
+                        () -> configService.current().travel().wildWorld(), worldPortalTeleportListener))));
+        // Filet de sécurité : personne ne reste coincé dans le monde des claims, et un retour Hub
+        // sans commande y est toujours possible (Pierre de retour donnée si absente ; joueur non
+        // éligible arrivé autrement que par le portail renvoyé au village).
+        registry.start(new PlayerListenerService(plugin, new ClaimWorldSafetyListener(
+                plugin, claimService, customItemRegistry, () -> configService.current().claims(),
+                () -> spawnService.resolve().or(() -> worldService.find(configService.current().hub().world())
+                        .map(w -> w.getSpawnLocation())))));
 
         ClaimBorderRenderer claimBorderRenderer = new ClaimBorderRenderer(plugin);
         registry.start(claimBorderRenderer);

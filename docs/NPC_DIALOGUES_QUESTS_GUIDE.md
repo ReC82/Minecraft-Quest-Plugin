@@ -208,9 +208,21 @@ liens cliquables dans le chat (`ChatDialogueRenderer`, par défaut,
 | `QUEST_STATE` | `quest` (id), `state` (`NOT_STARTED`\|`ACTIVE`\|`READY_TO_TURN_IN`\|`COMPLETED`\|`FAILED`\|`ABANDONED`) | Vrai si la quête du joueur est dans cet état. |
 | `HAS_ITEM` | `material`, `amount` | Vrai si l'inventaire du joueur contient au moins `amount` de `material`. |
 | `HAS_PERMISSION` | `permission` | Vrai si le joueur a cette permission Bukkit. |
-| `VARIABLE_EQUALS` | `key`, `value` | Vrai si la variable joueur `key` (voir `SET_VARIABLE`/récompense `VARIABLE`) vaut `value`. |
+| `VARIABLE_EQUALS` | `key`, `value` | Vrai si la variable joueur `key` (voir `SET_VARIABLE`/récompense `VARIABLE`) vaut `value`. Variable **absente** ⇒ faux. |
+| `NO_MAIN_CLAIM` | — | Vrai si le joueur ne possède encore **aucun** claim (source : `ClaimService#claimsOwnedBy`). |
+| `HAS_MAIN_CLAIM` | — | Vrai si le joueur possède **au moins un** claim (strict opposé de `NO_MAIN_CLAIM`). |
+| `LACKS_CUSTOM_ITEM` | `item` (id namespacé, ex. `rpgquest:acte_propriete`) | Vrai si le joueur ne détient **aucun** exemplaire de cet objet personnalisé (identifié par PDC, jamais par matériau). |
 
-Un choix sans `conditions` est toujours visible. Les conditions sont
+**`negate: true`** sur n'importe quelle condition **inverse** son verdict
+(vrai ⇔ faux). Indispensable pour exprimer une condition négative que le
+moteur ne fournit pas directement — par exemple « le déblocage n'a *pas*
+eu lieu » : `VARIABLE_EQUALS key: CLAIM_TIER_1 value: "true"` + `negate: true`
+est vrai tant que la variable vaut autre chose que `"true"` **ou** n'existe
+pas (utilisé par `dialogues/jo.yml` pour l'état « claim non débloqué »). La
+double négation est refusée au chargement.
+
+Un choix sans `conditions` est toujours visible. Toutes les conditions
+d'un choix doivent être vraies (ET logique). Les conditions sont
 revérifiées **au clic**, pas seulement à l'affichage.
 
 ### Actions disponibles (`choices[].actions[].type`)

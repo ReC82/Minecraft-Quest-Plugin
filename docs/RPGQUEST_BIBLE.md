@@ -348,7 +348,14 @@ matériau seul contrairement à `HAS_ITEM` — vrai si le joueur ne possède
 aucun exemplaire ; utilisé par Jo pour ne jamais permettre de farmer
 l'Acte réutilisé comme visualiseur ou la Pierre de retour, voir
 [docs/CLAIMS.md](CLAIMS.md)).
-Revérifiées au clic, pas seulement à l'affichage.
+`negate: true` sur **n'importe quelle** condition inverse son verdict
+(`dialogue.model.NegatedCondition`, double négation refusée au chargement) —
+sert notamment à exprimer « le déblocage n'a *pas* eu lieu » :
+`VARIABLE_EQUALS key: CLAIM_TIER_1 value: "true"` + `negate: true` est vrai
+tant que la variable n'est pas `"true"` (valeur absente incluse), utilisé
+par `dialogues/jo.yml` pour l'état « claim non débloqué ».
+Toutes les conditions d'un choix doivent être vraies (ET). Revérifiées au
+clic, pas seulement à l'affichage.
 
 **Actions** (`choices[].actions[].type`) : `START_QUEST`, `ADVANCE_QUEST`,
 `TURN_IN_QUEST` (champ `quest`) ; `GIVE_ITEM`/`TAKE_ITEM` (`material`,
@@ -656,6 +663,18 @@ Persistance : oui — SQLite (flags du claim).
 | Pistons traversant la frontière | non | Toujours bloqué |
 
 Bypass : `rpgquest.admin.world` (même permission que le bypass des zones protégées) exempte l'acteur direct d'une action, jamais la victime.
+
+### Accès au monde des claims et retour au Hub (issues #21/#22/#23)
+
+Vérifié dans `claim.ClaimWorldAccessGuard`, `claim.ClaimWorldSafetyListener`, `travel.CompositeWorldPortalEntryGuard`, `dialogues/guide.yml`, `dialogues/jo.yml`, `quests/crystal_hunt.yml`.
+
+**Condition réelle du premier claim** : la variable joueur `CLAIM_TIER_1 == "true"`, accordée **uniquement** par la récompense `VARIABLE` de `rpgquest:crystal_hunt` (dernière quête de `main_story`, rendue au Garde). Aucune autre mécanique. `/rpgadmin player resetnew` l'efface (avec tous les claims), `/claim admin resettier1` la met à `"false"`.
+
+**Portail Hub → `claims` fermé tant que le premier claim n'est pas débloqué** : `ClaimWorldAccessGuard` (un `travel.WorldPortalEntryGuard`, composé avec l'avertissement d'entrée dans le Wild) refuse l'entrée d'un joueur qui n'a ni `CLAIM_TIER_1 == "true"` ni claim existant — **aucune téléportation**, message d'orientation vers Jo / le Guide. Seul `rpgquest.admin.world` passe outre ; aucune permission de build/admin ne contourne la règle par accident.
+
+**Aucun joueur coincé, retour Hub sans commande** : `ClaimWorldSafetyListener` (sur `PlayerChangedWorldEvent` / `PlayerJoinEvent`) donne automatiquement une `rpgquest:pierre_retour` (voyage claims → Hub, clic droit, jamais consommée) à tout joueur éligible qui arrive dans le monde des claims sans en avoir une ; un joueur non éligible qui s'y retrouve autrement (`/tp`, reconnexion) est renvoyé au Hub. `/claim admin sendhome` et `/spawn` restent auxiliaires.
+
+**Dialogues alignés** : `guide.yml` (`help_claims`) énonce le prérequis réel (finir l'histoire principale au Garde, *puis* voir Jo) ; `jo.yml` adapte son texte aux 3 états — non débloqué (« Comment obtenir mon premier terrain ? », via `negate` sur `VARIABLE_EQUALS CLAIM_TIER_1`), débloqué sans claim (remet l'Acte), claim existant (retour / limites / Pierre de retour).
 
 ### Prévu / TODO
 

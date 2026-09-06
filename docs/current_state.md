@@ -37,6 +37,16 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   automatique à l'entrée ou volontaire via l'Acte réutilisé), faisceau dense (DUST + END_ROD)
   hors du claim ; retour au Hub sans commande via la Pierre de retour (mécanique générique de
   voyage par objet, `travel.ItemTravelService`).
+- **Parcours Claims cohérent (issues #21/#22/#23)** — le portail Hub → `claims` est réservé aux
+  joueurs qui ont réellement débloqué leur premier terrain (`CLAIM_TIER_1 == "true"` accordé par la
+  dernière quête de l'histoire principale, ou claim déjà existant) : `claim.ClaimWorldAccessGuard`
+  (composé avec l'avertissement Wild via `travel.CompositeWorldPortalEntryGuard`) refuse l'entrée
+  sans téléporter et oriente vers Jo/le Guide ; seul le bypass explicite `rpgquest.admin.world`
+  passe outre. `claim.ClaimWorldSafetyListener` garantit qu'aucun joueur ne reste coincé : Pierre
+  de retour donnée automatiquement à l'arrivée si absente, joueur non éligible arrivé autrement
+  (`/tp`, reconnexion) renvoyé au Hub. Les dialogues du Guide (`help_claims`) et de Jo reflètent
+  exactement ce prérequis, et Jo adapte son texte aux 3 états (non débloqué / débloqué sans claim /
+  claim existant) grâce à `negate: true` sur une condition de dialogue (`dialogue.model.NegatedCondition`).
 - **Boucle joueur Hub ↔ Wild** — Journal des quêtes (`rpgquest:journal_quetes`, donné par le
   Libraire, clic droit → GUI deux onglets, voir ligne « Guide / journal » ci-dessus) ; Rune de
   rappel (`rpgquest:rune_rappel`,

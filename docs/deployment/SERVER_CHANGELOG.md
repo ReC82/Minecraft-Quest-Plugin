@@ -249,3 +249,88 @@ Aucune migration de base, aucune nouvelle clé `config.yml`
 
 Aucune donnée migrée : le rollback ne touche que le JAR et deux fichiers de
 dialogue.
+
+---
+
+## 2026-09-06 - Parcours Claims cohérent : accès au monde des claims + retour Hub (issues #21/#22/#23)
+
+### Changement
+
+Rend le parcours joueur autour des claims cohérent de bout en bout, y
+compris après `/rpgadmin player resetnew <joueur> confirm`.
+
+- **Accès au monde `claims` réservé au déblocage réel** : nouveau
+  `claim.ClaimWorldAccessGuard` (un `travel.WorldPortalEntryGuard`, composé
+  avec l'avertissement d'entrée dans le Wild via
+  `travel.CompositeWorldPortalEntryGuard`). Un portail simple vers
+  `claims.world` ne laisse passer que les joueurs qui ont
+  `CLAIM_TIER_1 == "true"` (même vérité que `ClaimService.create` pour un
+  premier claim) **ou** possèdent déjà un claim. Sinon : aucune
+  téléportation, message d'orientation vers Jo / le Guide. Seul le bypass
+  `rpgquest.admin.world` passe outre.
+- **Aucun joueur coincé, retour Hub sans commande** : nouveau
+  `claim.ClaimWorldSafetyListener`. À l'arrivée dans le monde des claims
+  (changement de monde ou connexion), un joueur éligible sans
+  `rpgquest:pierre_retour` en reçoit une automatiquement (voyage
+  claims → Hub, clic droit, jamais consommée) ; un joueur non éligible qui
+  s'y retrouve autrement (`/tp`, reconnexion, présence antérieure) est
+  renvoyé au Hub (spawn du village, sinon spawn du monde Hub).
+- **Dialogues alignés sur la logique réelle** :
+  `dialogues/guide.yml` (`help_claims`, `help_qui`) énonce le prérequis —
+  terminer l'histoire principale (`crystal_hunt`, rendue au Garde) *puis*
+  voir Jo. `dialogues/jo.yml` adapte son texte aux 3 états : non débloqué
+  (« Comment obtenir mon premier terrain ? »), débloqué sans claim (remet
+  l'Acte), claim existant (retour / limites / Pierre de retour).
+- **Moteur de dialogue** : nouveau modificateur `negate: true` sur
+  n'importe quelle condition (`dialogue.model.NegatedCondition`).
+
+### Action serveur
+
+Remplacer le JAR RPGQuest **et** trois fichiers de dialogue :
+`plugins/RPGQuest/dialogues/guide.yml`, `plugins/RPGQuest/dialogues/jo.yml`.
+(`guide.yml` était déjà à remplacer pour l'issue #11.) Aucune migration de
+données, aucun changement de `config.yml` (`dialogue.allowed-commands`
+contient déjà `customitem` et `claim`).
+
+### Sauvegarde préalable
+
+- JAR RPGQuest en ligne → backup daté.
+- `plugins/RPGQuest/dialogues/guide.yml` et `plugins/RPGQuest/dialogues/jo.yml`
+  → backup daté avant remplacement.
+- `plugins/RPGQuest/data.db` par précaution (procédure « mise à jour du
+  seul JAR »). **Ne pas** toucher `data.db`, les mondes, Citizens, les
+  autres plugins, ni les autres fichiers de `plugins/RPGQuest/`.
+
+### Déploiement
+
+1. Compiler (`./gradlew test` puis `./gradlew build`).
+2. Arrêter le serveur (ou déployer à chaud puis `reload confirm` — dialogues
+   rechargés au démarrage du plugin).
+3. Remplacer `plugins/RPGQuest-*.jar`.
+4. Remplacer `plugins/RPGQuest/dialogues/guide.yml` et
+   `plugins/RPGQuest/dialogues/jo.yml` par les versions du jar.
+5. Redémarrer.
+
+### Validation
+
+- Nouveau joueur / après `resetnew` : parler à Jo → seule l'option
+  « Comment obtenir mon premier terrain ? » ; le portail Hub → claims
+  refuse l'entrée avec un message, aucune téléportation.
+- Terminer l'histoire principale (rendre `crystal_hunt` au Garde) : Jo
+  propose « Je viens réclamer mon acte de propriété » ; le portail laisse
+  passer et une Pierre de retour est reçue à l'arrivée.
+- Dans le monde des claims, clic droit sur la Pierre de retour → retour au
+  village, sans commande.
+- `resetnew` du même joueur → le portail refuse de nouveau l'entrée.
+- Portails vers le Wild / autres mondes : comportement inchangé.
+
+### Rollback
+
+1. Arrêter le serveur.
+2. Remettre l'ancien JAR **et** les anciens `dialogues/guide.yml` /
+   `dialogues/jo.yml` sauvegardés.
+3. Redémarrer, vérifier `/rpgquest version`.
+
+Aucune donnée migrée : le rollback ne touche que le JAR et deux fichiers de
+dialogue. `CLAIM_TIER_1` et les claims existants ne sont jamais modifiés
+par ce changement.

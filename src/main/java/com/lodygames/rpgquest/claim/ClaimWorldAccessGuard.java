@@ -73,9 +73,20 @@ public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard {
             return true; // contrôle réussi tout juste effectué : ce passage-ci est le nôtre.
         }
         if (player.hasPermission(BYPASS_PERMISSION)) {
+            // Trace explicite (issues #21/#22) : un test « en jeu » d'un compte OP passe par ici et
+            // *contourne* volontairement le contrôle — c'est la cause la plus fréquente d'un « je
+            // peux entrer sans avoir débloqué le claim ». Le parcours d'un vrai nouveau joueur doit
+            // être validé avec un compte NON opéré.
+            plugin.getSLF4JLogger().info(
+                    "[claims-access] {} : entrée dans « {} » via le portail {} AUTORISÉE par le bypass {} "
+                            + "(compte OP ou permission explicite) — contrôle CLAIM_TIER_1 non appliqué.",
+                    player.getName(), portal.destinationWorld(), portal.id(), BYPASS_PERMISSION);
             return true; // bypass explicitement prévu (admin/build de monde).
         }
         if (claimService.mainClaimOf(playerId).isPresent()) {
+            plugin.getSLF4JLogger().info(
+                    "[claims-access] {} : entrée dans « {} » autorisée (possède déjà un claim principal).",
+                    player.getName(), portal.destinationWorld());
             return true; // possède déjà un claim : retour chez lui toujours autorisé.
         }
         if (!pendingChecks.add(playerId)) {
@@ -95,10 +106,16 @@ public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard {
                 return;
             }
             if (Boolean.TRUE.equals(unlocked) || claimService.mainClaimOf(playerId).isPresent()) {
+                plugin.getSLF4JLogger().info(
+                        "[claims-access] {} : entrée dans « {} » autorisée (CLAIM_TIER_1 débloqué) — téléportation relancée.",
+                        player.getName(), portal.destinationWorld());
                 cleared.add(playerId);
                 plugin.getServer().getScheduler().runTaskLater(plugin, () -> cleared.remove(playerId), CLEARED_TTL_TICKS);
                 teleporter.teleportNow(player, portal);
             } else {
+                plugin.getSLF4JLogger().info(
+                        "[claims-access] {} : entrée dans « {} » REFUSÉE (CLAIM_TIER_1 non débloqué, aucun claim) — aucune téléportation.",
+                        player.getName(), portal.destinationWorld());
                 refuse(player);
             }
         }));

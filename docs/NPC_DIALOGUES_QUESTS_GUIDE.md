@@ -103,6 +103,51 @@ entité-là n'est jamais recréée par un tiers. Le nom affiché
 
 ---
 
+## 1b. PNJ obligatoires pour le parcours principal (à créer physiquement)
+
+Le parcours d'un nouveau joueur jusqu'au **déblocage du premier claim**
+(`CLAIM_TIER_1`) dépend de **4 PNJ Citizens qui doivent exister en jeu** et
+être liés via `/rpgadmin npc tag <id>` (jamais par leur nom affiché — voir
+§1). Si l'un d'eux manque, la chaîne `stories/main_story.yml`
+(`premiers_pas → first_steps → crystal_hunt`) est rompue et le claim ne se
+débloque jamais.
+
+| Id de liaison (exact) | Rôle dans la chaîne | Dialogue | Sans ce PNJ… |
+|---|---|---|---|
+| `guide` | Démarre `premiers_pas` ; centre d'aide du Hub | `dialogues/guide.yml` | Le joueur n'a aucun point d'entrée. |
+| `libraire` | Cible de rendu de `premiers_pas` (`TALK_TO_NPC libraire`) ; remet le journal | `dialogues/libraire.yml` | `premiers_pas` ne se termine jamais. |
+| **`guard`** | **Démarre `first_steps` ; démarre ET valide `crystal_hunt`** (dont la récompense pose `CLAIM_TIER_1="true"`) | `dialogues/guard.yml` | **`first_steps` et `crystal_hunt` sont indémarrables → `CLAIM_TIER_1` jamais accordé.** C'est la panne « je ne trouve pas le Garde / je ne trouve pas *La chasse aux cristaux* ». |
+| `jo` | Remet `rpgquest:acte_propriete` une fois `CLAIM_TIER_1="true"` | `dialogues/jo.yml` | Le joueur a le droit mais pas l'acte. |
+
+Le **nom affiché** est libre (« Garde », « Le Garde »…) : seul l'**id de
+liaison** compte, et il doit être exactement `guard`. Un PNJ nommé « Garde »
+mais non lié `guard` n'ouvre **rien** et ne valide **aucune** quête.
+
+Vérifier l'état réel côté serveur : table `npc_citizens_bindings` de
+`data.db` (une ligne par PNJ lié), ou en jeu `/rpgadmin npc info` en visant
+chaque PNJ.
+
+### Créer et lier le Garde (procédure exacte)
+
+Prérequis : `dialogues/guard.yml` **à jour** (il doit contenir la branche
+« J'ai entendu dire que tu avais besoin d'aide pour forger un équipement »
+et le nœud `crystal_hunt_accepted` — sinon `crystal_hunt` reste
+indémarrable même avec le PNJ) + serveur redémarré.
+
+```
+/npc create Garde --type player      # crée le PNJ et le sélectionne
+/npc skin <pseudo>                    # optionnel, cosmétique
+# se placer à ≤ 6 blocs, regarder DROIT le PNJ :
+/rpgadmin npc info                    # -> "Cette entité n'est pas identifiée."
+/rpgadmin npc tag guard              # -> "Entité identifiée : guard (Citizens NPC #N)"
+/rpgadmin npc info                    # -> "Identifiant : guard (Citizens NPC #N)"
+```
+
+Le mapping est persisté dans `data.db` (`npc_citizens_bindings`) et survit
+aux redémarrages. Placer ensuite le PNJ près des autres (`/npc move`).
+
+---
+
 ## 2. Comment créer un dialogue
 
 ### Fichier

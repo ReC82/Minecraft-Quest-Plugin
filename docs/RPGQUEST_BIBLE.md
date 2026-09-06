@@ -676,6 +676,14 @@ Vérifié dans `claim.ClaimWorldAccessGuard`, `claim.ClaimWorldSafetyListener`, 
 
 **Dialogues alignés** : `guide.yml` (`help_claims`) énonce le prérequis réel (finir l'histoire principale au Garde, *puis* voir Jo) ; `jo.yml` adapte son texte aux 3 états — non débloqué (« Comment obtenir mon premier terrain ? », via `negate` sur `VARIABLE_EQUALS CLAIM_TIER_1`), débloqué sans claim (remet l'Acte), claim existant (retour / limites / Pierre de retour).
 
+**Prérequis opérationnels de ce parcours (non portés par le code, à provisionner sur chaque serveur)** :
+
+- **4 PNJ Citizens liés** — `guide`, `libraire`, **`guard`**, `jo` (via `/rpgadmin npc tag <id>`, jamais par le nom affiché ; mapping en base `npc_citizens_bindings`). Le PNJ **`guard`** démarre `first_steps` **et** démarre/valide `crystal_hunt` : sans lui, `CLAIM_TIER_1` ne peut **jamais** être accordé et le déblocage du claim est impossible (voir `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b).
+- **`dialogues/guard.yml` à jour** — doit contenir la branche `crystal_hunt` (choix « J'ai entendu dire… » + nœud `crystal_hunt_accepted`). Un `guard.yml` antérieur ne permet de démarrer que `first_steps`.
+- **Un World-Portal RPGQuest** `world_hub → claims` (`world-portals/hub_to_claims.yml`, `destination-world` = `claims.world`). `ClaimWorldAccessGuard` ne contrôle que les World-Portals : une téléportation par un autre moyen (`/mv tp`, `/tp`) est rattrapée par `ClaimWorldSafetyListener`, pas par le garde d'entrée.
+
+**Compte OP = bypass, pas un bug** : `rpgquest.admin.world` (défaut `op`, aucun plugin de permissions requis) contourne **à la fois** `ClaimWorldAccessGuard` (entre sans contrôle) **et** `ClaimWorldSafetyListener` (ni renvoi, ni Pierre de retour). Toute validation « le portail refuse / le retour Hub fonctionne » doit se faire avec un **compte non opéré** — un test OP produit exactement les symptômes « j'entre sans avoir débloqué » / « je reste coincé sans objet de retour ». Les décisions des deux composants sont journalisées (`[claims-access]` / `[claims-safety]`).
+
 ### Prévu / TODO
 
 -   **Agrandissement de claim par le propriétaire (largeur/hauteur au-delà du niveau RPG)** : non implémenté. Seul le **nombre** maximal de claims augmente avec le niveau `GLOBAL` (+1 tous les 10 niveaux) ; largeur/hauteur restent fixes (`config.yml`, identiques pour tous). Aucun avantage payant n'est prévu (politique confirmée dans `docs/CLAIMS.md`).

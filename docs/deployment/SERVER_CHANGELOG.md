@@ -334,3 +334,85 @@ contient déjà `customitem` et `claim`).
 Aucune donnée migrée : le rollback ne touche que le JAR et deux fichiers de
 dialogue. `CLAIM_TIER_1` et les claims existants ne sont jamais modifiés
 par ce changement.
+
+---
+
+## 2026-09-06 - Audit parcours principal : Garde manquant + `guard.yml` périmé, journalisation d'accès claims
+
+Voir le rapport `docs/claude-reports/2026-09-06_1219_audit-parcours-principal-garde-crystal-hunt.md`.
+
+### Constat (audit du contenu réel DEV)
+
+- **Aucun PNJ Citizens lié `guard`** sur DEV (`npc_citizens_bindings` : `guide`,
+  `libraire`, `help`, `jeff`, `junior`, `jo` — pas de `guard`). Conséquence :
+  `first_steps` **et** `crystal_hunt` sont indémarrables → `CLAIM_TIER_1`
+  jamais accordé → premier claim impossible. Preuve base : 0 progression
+  `first_steps`/`crystal_hunt`, 0 `CLAIM_TIER_1`, 0 claim, `story_progress`
+  vide.
+- **`plugins/RPGQuest/dialogues/guard.yml` périmé** : ne contient pas la
+  branche `crystal_hunt` (« J'ai entendu dire… ») ni le nœud
+  `crystal_hunt_accepted`. Même avec un PNJ `guard`, `crystal_hunt` resterait
+  indémarrable.
+- **#21/#22** : le code refuse bien l'entrée / renvoie au Hub pour un compte
+  **non opéré** ; les symptômes rapportés (« j'entre sans déblocage »,
+  « je reste coincé sans Pierre de retour ») correspondent au **bypass
+  `rpgquest.admin.world`** (défaut `op`, aucun plugin de permissions installé)
+  déclenché par un test depuis un compte OP.
+
+### Changement
+
+- **Code** : `ClaimWorldAccessGuard` et `ClaimWorldSafetyListener` journalisent
+  désormais chaque décision (`INFO`, préfixes `[claims-access]` /
+  `[claims-safety]`) — bypass OP, refus, autorisation, renvoi Hub, Pierre de
+  retour. Aucun changement de comportement.
+
+### Action serveur
+
+Remplacer le JAR RPGQuest **et** :
+
+- `plugins/RPGQuest/dialogues/guard.yml` — **obligatoire** (débloque
+  `crystal_hunt`).
+- `plugins/RPGQuest/quests/first_steps.yml` — **recommandé** (réaligne une
+  édition faite à la main sur le serveur ; à omettre pour la conserver).
+
+Puis, **en jeu** (admin, après redémarrage) : créer le PNJ Garde et le lier —
+`/npc create Garde --type player` puis, en le visant, `/rpgadmin npc tag guard`
+(ajoute une ligne à `npc_citizens_bindings`). Détail :
+`docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b.
+
+### Sauvegarde préalable
+
+- JAR RPGQuest en ligne → backup daté (script).
+- `dialogues/guard.yml` (+ `quests/first_steps.yml` s'il est remplacé) →
+  backup daté avant remplacement (script).
+- **Ne pas** toucher `data.db`, `config.yml`, `messages.yml`, `spawn.yml`,
+  `worlds.yml`, les mondes, `plugins/Citizens/**`, `plugins/Multiverse-Core/**`,
+  les autres plugins.
+
+### Redémarrage requis
+
+Oui (nouveau JAR + rechargement des dialogues au démarrage du plugin).
+
+### Migration automatique
+
+Aucune. La création du PNJ Garde ajoute une seule ligne à
+`npc_citizens_bindings` via `/rpgadmin npc tag`.
+
+### Validation
+
+Avec un compte **non opéré** : portail Hub → claims refusé sans `CLAIM_TIER_1`
+(aucune téléportation) ; après `crystal_hunt` rendue au Garde, portail
+autorisé + Pierre de retour à l'arrivée ; clic droit Pierre de retour →
+retour Hub sans commande ; `/tp` forcé dans `claims` sans droit → renvoi Hub.
+Observer les logs `[claims-access]` / `[claims-safety]`.
+
+### Rollback
+
+1. Arrêter le serveur.
+2. Restaurer l'ancien JAR **et** l'ancien `dialogues/guard.yml` (+
+   `quests/first_steps.yml` s'il a été remplacé) depuis les backups datés
+   (`scripts/rollback-verygames.sh --latest` pour le JAR).
+3. Redémarrer, vérifier `/rpgquest version`.
+
+Aucune donnée migrée. La liaison PNJ `guard` créée en jeu peut être retirée
+avec `/rpgadmin npc untag` (en visant le PNJ) si besoin.

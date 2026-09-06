@@ -407,10 +407,27 @@ neuve ou migration complète) :
 -   [ ] `world_hub` chargé (`/mv list`).
 -   [ ] Règles du monde Hub appliquées (ligne de log `Règles du monde Hub
     appliquées : world_hub`).
--   [ ] PNJ Guide présent en jeu.
--   [ ] PNJ Libraire présent en jeu.
--   [ ] Dialogues fonctionnels (clic droit sur Guide/Libraire ouvre bien un
-    dialogue).
+-   [ ] **PNJ Citizens obligatoires du parcours principal présents ET liés**
+    (`/rpgadmin npc info` en visant chacun) : `guide`, `libraire`,
+    **`guard`**, `jo`. Sans le PNJ lié **`guard`**, `first_steps` et
+    `crystal_hunt` sont indémarrables → `CLAIM_TIER_1` jamais accordé →
+    premier claim impossible. Créer/lier : voir
+    `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b. Vérif base :
+    `SELECT npc_id FROM npc_citizens_bindings;` doit lister `guard`.
+-   [ ] `plugins/RPGQuest/dialogues/guard.yml` contient la branche
+    `crystal_hunt` (choix « J'ai entendu dire… » + nœud
+    `crystal_hunt_accepted`) — un `guard.yml` périmé ne démarre que
+    `first_steps`.
+-   [ ] World-Portal `world_hub → claims` configuré
+    (`plugins/RPGQuest/world-portals/hub_to_claims.yml`,
+    `destination-world` = `claims.world`).
+-   [ ] Dialogues fonctionnels (clic droit sur Guide/Libraire/Garde/Jo
+    ouvre bien un dialogue).
+-   [ ] Accès `claims` : un joueur **non-OP** sans `CLAIM_TIER_1` est
+    **refusé** au portail (aucune téléportation) ; s'il y est mis autrement,
+    il est **renvoyé** au Hub. Un joueur **OP** (`rpgquest.admin.world`)
+    passe outre — c'est voulu, tracé `[claims-access]` / `[claims-safety]`
+    dans la console. Ne jamais valider ce point avec un compte OP.
 -   [ ] Spawn RPGQuest correct (`/rpgadmin spawn tp` arrive au bon endroit).
 -   [ ] Jour fixe dans `world_hub` (l'heure ne progresse pas).
 -   [ ] Météo claire en permanence dans `world_hub`.

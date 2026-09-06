@@ -47,6 +47,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`/tp`, reconnexion) renvoyé au Hub. Les dialogues du Guide (`help_claims`) et de Jo reflètent
   exactement ce prérequis, et Jo adapte son texte aux 3 états (non débloqué / débloqué sans claim /
   claim existant) grâce à `negate: true` sur une condition de dialogue (`dialogue.model.NegatedCondition`).
+  Prérequis **opérationnels** (à provisionner par serveur, non portés par le code) : les 4 PNJ Citizens
+  liés `guide` / `libraire` / **`guard`** / `jo` doivent exister physiquement (`/rpgadmin npc tag <id>`),
+  `dialogues/guard.yml` doit contenir la branche `crystal_hunt`, et un World-Portal `world_hub → claims`
+  doit être configuré. Sans PNJ `guard`, `first_steps` et `crystal_hunt` sont indémarrables et
+  `CLAIM_TIER_1` n'est jamais accordé. Toute validation #21/#22 se fait avec un compte **non opéré**
+  (`rpgquest.admin.world`, défaut `op`, contourne les deux gardes — décisions journalisées
+  `[claims-access]` / `[claims-safety]`). Voir `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b.
 - **Boucle joueur Hub ↔ Wild** — Journal des quêtes (`rpgquest:journal_quetes`, donné par le
   Libraire, clic droit → GUI deux onglets, voir ligne « Guide / journal » ci-dessus) ; Rune de
   rappel (`rpgquest:rune_rappel`,

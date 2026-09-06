@@ -82,9 +82,19 @@ public final class ClaimWorldSafetyListener implements Listener {
     private void handleArrival(Player player) {
         UUID playerId = player.getUniqueId();
         if (player.hasPermission(ClaimWorldAccessGuard.BYPASS_PERMISSION)) {
+            // Trace explicite (issues #21/#22) : un compte OP n'est ni renvoyé ni doté d'une Pierre
+            // de retour — c'est la cause la plus fréquente d'un « je reste coincé dans le monde des
+            // claims ». Valider le retour Hub avec un compte NON opéré.
+            plugin.getSLF4JLogger().info(
+                    "[claims-safety] {} présent dans « {} » : filet de sécurité IGNORÉ (bypass {}) — "
+                            + "ni renvoi au Hub ni Pierre de retour.",
+                    player.getName(), player.getWorld().getName(), ClaimWorldAccessGuard.BYPASS_PERMISSION);
             return; // bypass explicite : ni renvoi, ni objet imposé dans l'inventaire.
         }
         if (claimService.mainClaimOf(playerId).isPresent()) {
+            plugin.getSLF4JLogger().info(
+                    "[claims-safety] {} (propriétaire d'un claim) dans « {} » : garantie d'une Pierre de retour.",
+                    player.getName(), player.getWorld().getName());
             ensureReturnStone(player);
             return;
         }
@@ -98,8 +108,14 @@ public final class ClaimWorldSafetyListener implements Listener {
                 return;
             }
             if (Boolean.TRUE.equals(unlocked) || claimService.mainClaimOf(playerId).isPresent()) {
+                plugin.getSLF4JLogger().info(
+                        "[claims-safety] {} éligible dans « {} » (CLAIM_TIER_1 débloqué) : garantie d'une Pierre de retour.",
+                        player.getName(), player.getWorld().getName());
                 ensureReturnStone(player);
             } else {
+                plugin.getSLF4JLogger().info(
+                        "[claims-safety] {} NON éligible dans « {} » : renvoi au Hub.",
+                        player.getName(), player.getWorld().getName());
                 sendBackToHub(player);
             }
         }));

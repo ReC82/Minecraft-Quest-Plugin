@@ -17,6 +17,7 @@ import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
 import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
+import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
@@ -264,6 +265,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             case HasMainClaimCondition ignored -> CompletableFuture.completedFuture(
                     claimService.mainClaimOf(player.getUniqueId()).isPresent());
             case LacksCustomItemCondition c -> CompletableFuture.completedFuture(!hasCustomItem(player, c.itemId()));
+            case NegatedCondition c -> evaluateCondition(player, c.inner()).thenApply(result -> !result);
         };
     }
 

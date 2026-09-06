@@ -4,9 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
+import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
+import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import java.io.StringReader;
 import java.util.Set;
 import org.bukkit.configuration.ConfigurationSection;
@@ -116,6 +119,44 @@ class DialogueDefinitionParserTest {
                 """)));
 
         assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+    }
+
+    @Test
+    void negateTrueWrapsAnyConditionInANegatedCondition() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("negate.yml", load(minimalDialogueWithChoice("""
+                      - text: "Comment débloquer ?"
+                        conditions:
+                          - type: VARIABLE_EQUALS
+                            key: CLAIM_TIER_1
+                            value: "true"
+                            negate: true
+                        actions:
+                          - type: CLOSE
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        DialogueCondition condition = result.dialogue().nodes().get("greeting").choices().get(0).conditions().get(0);
+        assertTrue(condition instanceof NegatedCondition, "negate: true doit produire une NegatedCondition");
+        DialogueCondition inner = ((NegatedCondition) condition).inner();
+        assertTrue(inner instanceof VariableEqualsCondition);
+        assertEquals("CLAIM_TIER_1", ((VariableEqualsCondition) inner).key());
+    }
+
+    @Test
+    void negateFalseOrAbsentLeavesTheConditionUnwrapped() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("no-negate.yml", load(minimalDialogueWithChoice("""
+                      - text: "Choix"
+                        conditions:
+                          - type: VARIABLE_EQUALS
+                            key: CLAIM_TIER_1
+                            value: "true"
+                        actions:
+                          - type: CLOSE
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        DialogueCondition condition = result.dialogue().nodes().get("greeting").choices().get(0).conditions().get(0);
+        assertTrue(condition instanceof VariableEqualsCondition, "sans negate, la condition reste telle quelle");
     }
 
     @Test

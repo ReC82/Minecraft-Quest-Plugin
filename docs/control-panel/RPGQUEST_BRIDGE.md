@@ -1,9 +1,18 @@
 # Contrat de communication — Control Panel ↔ plugin RPGQuest
 
-Le **bridge** est le seul canal d'intégration. Il vit **dans le plugin**
-(`com.lodygames.rpgquest.web.admin`, classes `WebAdminServer` + `HealthSource` /
-`BukkitHealthSource`). Le Control Panel n'accède jamais à `data.db`, aux mondes ou à
-`Citizens/saves.yml` directement.
+Il existe **deux canaux**, complémentaires, qui partagent la même source d'état
+(`HealthSource` / `BukkitHealthSource`) :
+
+| Canal | Sens | Doc | Usage |
+|---|---|---|---|
+| **Bridge local** `/admin/v1/*` (ce document) | PlugAdmin → plugin | ici | dev local, RPGQuest **co-localisé**, diagnostic |
+| **Agent sortant** `/agent/v1/*` (#51) | plugin → PlugAdmin | [AGENT.md](AGENT.md) | **VeryGames** / tout serveur derrière NAT |
+
+Le **bridge local** vit **dans le plugin** (`com.lodygames.rpgquest.web.admin`, classes
+`WebAdminServer` + `HealthSource` / `BukkitHealthSource`) et écoute `127.0.0.1`. L'**agent
+sortant** vit aussi dans le plugin (`com.lodygames.rpgquest.web.agent`) mais n'écoute rien : il
+initie des requêtes HTTPS vers PlugAdmin. Dans les deux cas, le Control Panel n'accède jamais à
+`data.db`, aux mondes ou à `Citizens/saves.yml` directement.
 
 ## Principes (tous appliqués en #37)
 
@@ -89,9 +98,9 @@ POST /admin/v1/actions/content-reload    { }
 Pour ces actions, `RpgAdminCommand` (#36) devra être refactoré : la logique métier passe dans des
 services appelables sans commande texte.
 
-## Mode dégradé (VeryGames sans port entrant) — futur
+## VeryGames sans port entrant — **résolu par l'agent sortant #51**
 
-Le plugin pourra écrire un `admin-snapshot.json` (health + bindings + `content/issues`), poussé
-par le même mécanisme d'export atomique que `web-api`. Le panel le lit et affiche un dashboard +
-diagnostics **en lecture seule** ; les actions sont désactivées pour cette cible. Mêmes DTO que le
-mode live. Voir [DECISIONS.md](DECISIONS.md) ADR-004.
+L'hypothèse « mode dégradé `admin-snapshot.json` » (ADR-004) est **abandonnée** : #51 livre un
+canal live temps quasi réel dans le bon sens (plugin → PlugAdmin, HTTPS sortant). Voir
+[AGENT.md](AGENT.md). Le bridge local `/admin/v1/health` reste utile pour un serveur co-localisé
+ou du dev local, et n'est pas supprimé.

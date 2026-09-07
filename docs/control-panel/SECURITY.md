@@ -19,6 +19,8 @@ progression, reload de contenu, plus tard édition et déploiement). La sécurit
 | Kill-switch `PANEL_DISABLED` → 503 partout sauf `/health` | ✅ |
 | Bridge : Bearer, temps constant, fail-closed, bind interne | ✅ |
 | Secrets absents des réponses (test `responsesNeverLeakSecrets`) | ✅ |
+| **Agent sortant #51** : `/agent/v1/*` — jeton porteur **par agent**, temps constant, `agent_id`+`environnement` validés, payload borné (413), `action_id` restreint, types d'action whitelistés, aucun shell/RCON/SQL/chemin, idempotence/anti-rejeu, audit `agent.action.*` | ✅ ([AGENT.md](AGENT.md) §9) |
+| Agent : HTTPS validé (aucun `trustAll`), aucun secret dans logs/`toString`/réponses, kill-switch → 503 | ✅ |
 | Rate limiting login / backoff | ⏳ à ajouter (délai constant PBKDF2 déjà payé sur échec ; nginx devant) |
 | HTTPS + reverse proxy | ✅ #44 — `https://plugadmin.lodylands.com`, TLS Let's Encrypt, 80→443, backend `127.0.0.1:8090` non exposé ([DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md)) |
 | RBAC multi-rôles | ⏳ énum posée, un seul rôle `owner` actif |
@@ -35,6 +37,8 @@ progression, reload de contenu, plus tard édition et déploiement). La sécurit
 | Injection / payload malformé | validation stricte de **tous** les inputs (type, longueur, bornes, existence). Rejet fail-closed. Pas de rendu de HTML non échappé. |
 | Exécution arbitraire via le bridge | le bridge n'expose **que** des actions nommées whitelistées. Aucune route `exec`. Le plugin refuse `dispatchCommand` générique. |
 | Pivot depuis le panel vers le serveur MC | bridge **bind interne uniquement**, token distinct par environnement, rate limité, audité des deux côtés. |
+| Abus du endpoint agent public (`/agent/v1/*` exposé en HTTPS) | jeton fort **par cible** (comparaison temps constant), `agent_id`+env validés, payload borné, types whitelistés (aucune commande/chemin/SQL), idempotence anti-rejeu, audit. Rate limiting applicatif non fait — nginx devant + backoff agent ; à durcir si multi-agents. |
+| Rejeu d'une action / double exécution | UUID par action ; côté panel une action reste livrée jusqu'au résultat terminal, un résultat sur action terminale est un no-op ; côté agent `ProcessedActionCache` (TTL 30 min) empêche la ré-exécution. |
 | Compromission du panel → catastrophe | actions destructives derrière `confirm` explicite + audit log immuable ; kill-switch d'accès ; permissions (voir RBAC). |
 
 ## Authentification (V1 mono-utilisateur acceptable)

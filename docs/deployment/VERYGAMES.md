@@ -393,6 +393,38 @@ tout autre fichier runtime existant ne doivent **jamais** être remplacés pour 
 La table de progression story déjà présente en base et les YAML de portails simples ne sont pas
 touchés par cette étape (aucune nouvelle migration de schéma).
 
+### Cas particulier — agent sortant PlugAdmin (issue #51)
+
+Le plugin peut ouvrir une connexion **HTTPS sortante** vers PlugAdmin
+(`https://plugadmin.lodylands.com`) pour publier son état et exécuter des actions whitelistées.
+C'est **désactivé par défaut** : le code est inerte tant que le fichier
+`plugins/RPGQuest/plugadmin-agent.properties` n'existe pas (ou n'a pas `enabled=true` + `base-url`
++ `agent-id` + `token`).
+
+1. **Scénario 2 d'abord** (JAR seul) : déployer le nouveau JAR, redémarrer, vérifier au log
+   `Agent PlugAdmin désactivé` / `Agent PlugAdmin inactif` — **aucune régression**, aucune
+   connexion sortante.
+2. **Préparer le fichier agent hors dépôt** : copier `scripts/plugadmin-agent.properties.example`
+   vers un fichier local (ex. `~/.config/rpgquest/plugadmin-agent.properties`), renseigner
+   `token=` avec le jeton réel (jamais committé, jamais dans un rapport).
+3. **Transférer** ce fichier sous `plugins/RPGQuest/` :
+   ```bash
+   scripts/deploy-verygames.sh --dry-run \
+     --also ~/.config/rpgquest/plugadmin-agent.properties:RPGQuest/plugadmin-agent.properties
+   # puis sans --dry-run pour transférer réellement
+   ```
+   Le script sauvegarde tout fichier ciblé existant avant remplacement et **refuse** `data.db`,
+   `config.yml`, `Citizens/`, les mondes, les autres plugins. Alternative : upload manuel dans le
+   panel FTP VeryGames sous `plugins/RPGQuest/`.
+4. **Redémarrer** le serveur RPGQuest (action manuelle owner dans le panel VeryGames).
+5. **Vérifier** : log `event=plugadmin_probe status=ok …` (connectivité confirmée) puis, côté
+   PlugAdmin, `journalctl -u plugadmin | grep agent_heartbeat` et le dashboard « RPGQuest DEV —
+   ONLINE ».
+
+**Rollback** : `enabled=false` dans `plugadmin-agent.properties` (ou supprimer le fichier) +
+redémarrer → agent inerte. Le JAR peut rester en place. Voir
+[docs/control-panel/AGENT.md](../control-panel/AGENT.md) §12.
+
 ---
 
 ## Checklist finale

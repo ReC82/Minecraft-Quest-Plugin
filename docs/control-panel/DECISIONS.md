@@ -57,7 +57,11 @@ d'intégration côté plugin.
 ---
 
 ## ADR-004 — Mode dégradé « admin-snapshot » tant que le bridge live n'est pas joignable sur VeryGames
-**2026-09-07 · Accepté**
+**2026-09-07 · Accepté — puis REMPLACÉ par [ADR-011](#adr-011--canal-détat-live--agent-sortant-dans-le-plugin-pas-de-port-entrant-ni-de-snapshot) (#51)**
+
+> L'agent sortant #51 fournit un canal live dans le bon sens (plugin → PlugAdmin, HTTPS sortant).
+> Le mode `admin-snapshot.json` n'a jamais été implémenté et est abandonné. Section conservée pour
+> l'historique.
 
 **Contexte.** Le plugin de prod tourne sur VeryGames sans port entrant exploitable. Un bridge
 HTTP live nécessite une co-localisation, un tunnel ou un relais — pas disponible aujourd'hui.
@@ -172,3 +176,42 @@ non forgeable, CSRF sur les POST.
 **Conséquences.** Pas de dépendance externe. La CookieManager du JDK gère mal les hôtes IP sans
 `Domain` : les tests utilisent un bocal à cookies explicite (voir `PanelAppTest`) — sans impact
 sur les navigateurs réels.
+
+---
+
+## ADR-011 — Canal d'état live : agent **sortant** dans le plugin, pas de port entrant ni de snapshot
+**2026-09-07 · Accepté — implémenté en #51**
+
+**Contexte.** RPGQuest tourne chez VeryGames (NAT, aucun port entrant, ni RCON ni API) ; PlugAdmin
+tourne sur AWS. Le bridge local `/admin/v1/*` (#37, ADR-003) n'est donc pas joignable depuis AWS.
+ADR-004 prévoyait un mode dégradé « admin-snapshot.json » poussé par FTP.
+
+**Décision.**
+- Abandonner le mode « admin-snapshot » (ADR-004 **remplacée**). Le plugin ouvre à la place une
+  connexion **HTTPS sortante** vers PlugAdmin (`com.lodygames.rpgquest.web.agent`) :
+  `POST /agent/v1/heartbeat`, `GET /agent/v1/actions`, `POST /agent/v1/actions/{id}/result`
+  (contrat versionné, distinct des routes navigateur et de `/admin/v1/*`).
+- Le heartbeat **réutilise `HealthSource`** (#37) — aucune logique de health dupliquée.
+- Configuration côté serveur : **fichier local hors Git** `plugadmin-agent.properties`
+  (surcharge env facultative), fail-closed. Les variables d'environnement ne sont pas imposées
+  comme unique mécanisme (VeryGames peut ne pas en fournir proprement au process Paper).
+- Authentification **par agent/cible** : jeton dédié (env côté PlugAdmin), comparaison temps
+  constant. Multi-cible dès le départ (`agents=…`).
+- Actions **structurées et whitelistées** (`AgentActionType`), appelant les services métier —
+  jamais une commande texte `/rpgadmin`. MVP : une seule action non destructive
+  `player.variable.get`.
+- **Idempotence** des deux côtés : côté PlugAdmin une action reste livrée jusqu'au résultat
+  terminal et un résultat sur action terminale est un no-op ; côté agent un cache borné
+  `action_id → résultat` (TTL 30 min) empêche la ré-exécution.
+- Robustesse : tout le trafic sur threads asynchrones Bukkit, timeouts courts, backoff
+  exponentiel plafonné, logs limités, arrêt propre. Une panne PlugAdmin n'affecte jamais le
+  gameplay.
+- Persistance : `control-panel.db` (`agent_heartbeat`, `agent_action`), migrations idempotentes.
+  Pas de migration MySQL #43 pour ce jalon.
+- Le **bridge local #37 est conservé** (dev local, serveur co-localisé, diagnostic) ; le
+  dashboard affiche l'agent en priorité et le bridge local en secondaire.
+
+**Conséquences.** Le endpoint agent est **public** (HTTPS) : conçu comme tel (jeton fort, payload
+borné, types whitelistés, audit, anti-rejeu). Pas de PKI (HTTPS + jeton + idempotence suffisent
+au MVP). Rate limiting applicatif non fait — nginx devant + backoff agent ; à revoir si d'autres
+agents apparaissent. #38/#39/#45 réutiliseront ce canal sans nouvelle architecture réseau.

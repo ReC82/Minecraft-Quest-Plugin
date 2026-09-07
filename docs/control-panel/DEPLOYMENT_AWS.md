@@ -224,5 +224,38 @@ sur VeryGames, derrière NAT, sans port entrant. #51 ajoutera un **agent sortant
 des actions whitelistées.
 
 Le déploiement décrit ici est **prêt pour #51 sans refonte** : le vhost, le service, la structure
-multi-cibles (`targets=…`) et `HealthSource` (#37) restent valables ; #51 ajoutera des routes
+multi-cibles (`targets=…`) et `HealthSource` (#37) restent valables ; #51 ajoute des routes
 `/agent/v1/*` servies par le même process `plugadmin` sur le même `127.0.0.1:8090`.
+
+### Activation de l'agent (#51) sur l'instance déjà déployée
+
+1. `/etc/plugadmin/control-panel.properties` — déclarer l'agent (non secret) :
+   ```properties
+   agents=rpgquest-dev
+   agent.rpgquest-dev.environment=dev
+   agent.rpgquest-dev.token-env=RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV
+   agent.stale-seconds=45
+   agent.offline-seconds=150
+   agent.action-expiry-seconds=300
+   target.dev.agent=rpgquest-dev
+   ```
+2. `/etc/plugadmin/plugadmin.env` (`0640 root:plugadmin`) — ajouter le jeton (secret) :
+   ```
+   RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV=<jeton fort, identique côté agent VeryGames>
+   ```
+3. Déployer le nouveau code + redémarrer :
+   ```bash
+   scripts/plugadmin/deploy.sh          # build :control-panel:installDist + swap + restart + /health
+   ```
+4. Vérifier :
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' https://plugadmin.lodylands.com/agent/v1/actions \
+     -H 'Authorization: Bearer wrong' -H 'X-Agent-Id: rpgquest-dev'    # -> 401
+   journalctl -u plugadmin -f | grep -E 'agent_heartbeat|agent_actions_poll'   # après démarrage de l'agent côté serveur
+   ```
+5. Côté serveur RPGQuest : déposer `plugins/RPGQuest/plugadmin-agent.properties` avec **le même
+   jeton** et redémarrer (voir [AGENT.md](AGENT.md) §2 et
+   [docs/deployment/VERYGAMES.md](../deployment/VERYGAMES.md)).
+
+**Rollback** : `agents=` (vide) dans `control-panel.properties` + `systemctl restart plugadmin` →
+`/agent/v1/*` répond `401` partout ; le dashboard retombe sur le bridge local.

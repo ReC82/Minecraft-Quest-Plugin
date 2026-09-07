@@ -26,6 +26,13 @@ Modèle : [`control-panel/control-panel.properties.example`](../../control-panel
 | `target.<id>.mode` | `bridge` | `bridge` (live) ou `snapshot` (mode dégradé, futur) |
 | `target.<id>.bridge-url` | `http://127.0.0.1:8100/admin/v1` | base des routes du bridge |
 | `target.<id>.token-env` | `RPGQUEST_BRIDGE_TOKEN_<ID>` | **nom** de la variable d'env contenant le jeton |
+| `target.<id>.agent` | *(auto si 1 agent)* | id de l'agent sortant #51 affiché sur le dashboard de cette cible |
+| `agents` | *(vide)* | liste CSV des agents sortants #51 ; vide = canal agent désactivé |
+| `agent.<id>.environment` | `unknown` | étiquette d'environnement attendue de l'agent |
+| `agent.<id>.token-env` | `RPGQUEST_AGENT_TOKEN_<ID>` | **nom** de la variable d'env contenant le jeton de l'agent (`-`→`_`, majuscules) |
+| `agent.stale-seconds` | `45` | âge du heartbeat au-delà duquel l'agent est `STALE` |
+| `agent.offline-seconds` | `150` | âge du heartbeat au-delà duquel l'agent est `OFFLINE` |
+| `agent.action-expiry-seconds` | `300` | délai sans résultat après lequel une action passe `EXPIRED` |
 
 ## Variables d'environnement
 
@@ -36,6 +43,7 @@ Modèle : [`control-panel/control-panel.properties.example`](../../control-panel
 | `RPGQUEST_PANEL_SECRET` | **oui** | secret de signature du cookie de session (≥ 32 car. aléatoires) |
 | `RPGQUEST_PANEL_OWNER_HASH` | **oui** | hash du mot de passe owner — `.../bin/control-panel hash-password` (après `:control-panel:installDist`) |
 | `RPGQUEST_BRIDGE_TOKEN_<ENV>` | par cible `bridge` | jeton partagé avec le bridge du plugin (ex. `RPGQUEST_BRIDGE_TOKEN_DEV`) |
+| `RPGQUEST_AGENT_TOKEN_<ID>` | par agent #51 | jeton de l'agent sortant (ex. `RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV`) = clé `token=` de `plugadmin-agent.properties` |
 | `RPGQUEST_PANEL_OWNER_USERNAME` | non | surcharge `panel.owner-username` |
 | `RPGQUEST_PANEL_PORT` | non | surcharge `panel.port` |
 | `RPGQUEST_PANEL_COOKIE_SECURE` | non | surcharge `panel.cookie-secure` |
@@ -59,6 +67,21 @@ activation vivent hors du dépôt et hors des fichiers de contenu.
 
 Le jeton doit être **identique** entre `RPGQUEST_WEB_ADMIN_TOKEN` (plugin) et
 `RPGQUEST_BRIDGE_TOKEN_<ENV>` (panel).
+
+### Plugin — agent sortant PlugAdmin (#51)
+
+Mécanisme de référence : fichier local **`plugins/RPGQuest/plugadmin-agent.properties`** (hors
+Git, modèle [`scripts/plugadmin-agent.properties.example`](../../scripts/plugadmin-agent.properties.example)).
+Clés : `enabled`, `base-url`, `agent-id`, `environment`, `token`, `heartbeat-seconds`,
+`poll-seconds`, `actions-enabled`, `connect-timeout-ms`, `request-timeout-ms`,
+`max-backoff-seconds`, `max-response-kib`. Fail-closed sans `enabled=true` + `base-url` +
+`agent-id` + `token`.
+
+Surcharge facultative par variables d'environnement (précédence env > fichier > défaut) :
+`RPGQUEST_PLUGADMIN_ENABLED`, `_BASE_URL`, `_AGENT_ID`, `_ENVIRONMENT`, `_TOKEN`,
+`_HEARTBEAT_SECONDS`, `_POLL_SECONDS`, `_ACTIONS_ENABLED`.
+
+`token` (agent) = `RPGQUEST_AGENT_TOKEN_<ID>` (PlugAdmin). Détails : [AGENT.md](AGENT.md).
 
 ## Prod — déployé par #44 (voir [DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md))
 

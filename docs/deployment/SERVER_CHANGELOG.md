@@ -478,3 +478,96 @@ Oui (nouveau JAR + nouvelle permission dans le `plugin.yml` embarqué).
 
 `scripts/rollback-verygames.sh --latest` (restaure `rpgquest-20260906T212847Z-predeploy.jar`),
 puis redémarrer et vérifier `/rpgquest version`. Aucune donnée migrée.
+
+---
+
+## 2026-09-07 - Agent sortant PlugAdmin (issue #51)
+
+### Changement
+
+Nouveau composant plugin `com.lodygames.rpgquest.web.agent` (`PlugAdminAgent`) :
+RPGQuest ouvre une connexion **HTTPS SORTANTE** vers PlugAdmin
+(`https://plugadmin.lodylands.com`) pour publier un heartbeat régulier et
+récupérer une file d'actions whitelistées. Aucune écoute entrante ajoutée
+côté serveur. Aucun impact gameplay : tout est asynchrone, avec timeouts
+courts, backoff et arrêt propre ; si PlugAdmin est injoignable, le serveur
+Minecraft continue normalement.
+
+Le heartbeat réutilise `HealthSource` (#37) — aucune logique de health
+dupliquée. La seule action ouverte est **non destructive** :
+`player.variable.get` (lecture de `player_variables` via le service métier).
+Tout autre type d'action est refusé (`REJECTED`).
+
+### Action serveur
+
+1. **Remplacer le JAR RPGQuest** (build de la branche `feat/51-plugadmin-outbound-agent`).
+   À ce stade, **l'agent reste INERTE** : aucun fichier de configuration
+   agent n'est présent → aucune connexion sortante, aucun changement de
+   comportement observable.
+2. **Déposer le fichier de configuration agent** (hors Git, contient un
+   jeton) :
+   `plugins/RPGQuest/plugadmin-agent.properties`
+   à partir du modèle `scripts/plugadmin-agent.properties.example`, avec au
+   minimum `enabled=true`, `base-url=https://plugadmin.lodylands.com`,
+   `agent-id=rpgquest-dev`, `environment=dev`, `token=<jeton>`.
+   Transfert : `scripts/deploy-verygames.sh --also
+   scripts/plugadmin-agent.properties:RPGQuest/plugadmin-agent.properties`
+   (le fichier réel avec le vrai jeton doit être préparé localement, hors
+   dépôt) **ou** upload manuel dans le panel FTP VeryGames.
+3. Côté PlugAdmin/AWS (déjà fait par cette session) : ajouter
+   `RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV=<le même jeton>` dans
+   `/etc/plugadmin/plugadmin.env` et déclarer l'agent dans
+   `/etc/plugadmin/control-panel.properties`, puis `systemctl restart plugadmin`.
+4. **Redémarrer le serveur RPGQuest** (VeryGames) — action manuelle owner
+   dans le panel VeryGames (pas d'API/RCON).
+
+### Ne PAS altérer
+
+`data.db`, `config.yml`, `messages.yml`, mondes, `Citizens/`, autres
+plugins. Le fichier agent est le SEUL ajout sous `plugins/RPGQuest/`.
+
+### Sauvegarde préalable
+
+- Ancien JAR `plugins/RPGQuest-<ancienne_version>.jar` (backup automatique
+  par `deploy-verygames.sh`).
+- `plugins/RPGQuest/data.db` (procédure standard, même si aucune donnée
+  n'est touchée).
+- Aucun `plugadmin-agent.properties` préexistant à sauvegarder (fichier
+  nouveau).
+
+### Déploiement
+
+1. `./gradlew clean build` sur `feat/51-plugadmin-outbound-agent`.
+2. `scripts/deploy-verygames.sh -y` (JAR seul) — **agent inerte**.
+3. Vérifier au redémarrage : aucune régression, log
+   `Agent PlugAdmin désactivé` ou `Agent PlugAdmin inactif`.
+4. Déposer `plugins/RPGQuest/plugadmin-agent.properties` (jeton hors Git).
+5. Redémarrer le serveur.
+6. Vérifier le log `event=plugadmin_probe status=ok …` (connectivité HTTPS
+   sortante confirmée) et le dashboard PlugAdmin (« RPGQuest DEV — ONLINE »).
+
+### Validation
+
+- Serveur RPGQuest : démarre normalement ; log
+  `Agent PlugAdmin démarré : cible rpgquest-dev …` puis
+  `event=plugadmin_probe status=ok`.
+- PlugAdmin : `journalctl -u plugadmin` → `event=agent_heartbeat agent=rpgquest-dev …` ;
+  dashboard `https://plugadmin.lodylands.com/dashboard` → **ONLINE**, version
+  plugin / joueurs / mondes réels.
+- Aller-retour d'action : page **Agents** → envoyer `player.variable.get`
+  (`CLAIM_TIER_1`) → résultat `SUCCESS` avec la valeur.
+- Coupure PlugAdmin (ex. `systemctl stop plugadmin` quelques minutes) : le
+  serveur Minecraft n'est pas affecté ; l'agent passe en backoff puis se
+  reconnecte au retour.
+
+### Rollback
+
+- **Simple** : mettre `enabled=false` dans
+  `plugins/RPGQuest/plugadmin-agent.properties` (ou supprimer le fichier) et
+  redémarrer → agent inerte, JAR conservable en l'état.
+- **JAR** : `scripts/rollback-verygames.sh --latest` (restaure le backup
+  `*-predeploy.jar`), redémarrer, vérifier `/rpgquest version`.
+- Côté PlugAdmin : `agents=` (vide) dans `control-panel.properties` +
+  `systemctl restart plugadmin`, ou `scripts/plugadmin/rollback.sh app`.
+- Aucune migration `data.db` à défaire. Les tables `agent_*` de
+  `control-panel.db` sont sans effet sur RPGQuest.

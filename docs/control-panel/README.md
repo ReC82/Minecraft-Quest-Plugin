@@ -79,6 +79,7 @@ affiche l'état réel du bridge. Health du panel lui-même : `GET http://127.0.0
 | [SECURITY.md](SECURITY.md) | auth, sessions, CSRF, secrets, audit log, kill-switch, menaces |
 | [CONFIGURATION.md](CONFIGURATION.md) | clés `control-panel.properties` + variables d'environnement réelles |
 | [RPGQUEST_BRIDGE.md](RPGQUEST_BRIDGE.md) | contrat `/admin/v1/*` réel + roadmap des actions |
+| [AGENT.md](AGENT.md) | **agent sortant #51** : flux VeryGames → PlugAdmin, `/agent/v1/*`, heartbeat, actions, idempotence, sécurité, rollback |
 | [AWS.md](AWS.md) | audit lecture seule de l'instance + ce qu'il faut pour le déploiement #44 |
 | [ROADMAP.md](ROADMAP.md) | découpage modulaire, V1 / plus tard |
 | [DECISIONS.md](DECISIONS.md) | ADR datées |
@@ -94,8 +95,11 @@ Scripts reproductibles : [`scripts/plugadmin/`](../../scripts/plugadmin/).
 
 - **#44** : déploiement AWS **fait** — reverse proxy nginx dédié + `plugadmin.lodylands.com` + TLS.
   Voir [DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md). Rien n'est déployé par #37.
-- **#51** : agent sortant `RPGQuest VeryGames → PlugAdmin AWS` pour l'état live. Tant qu'il n'est
-  pas là, le dashboard affiche « RPGQuest DEV indisponible » — c'est normal, pas un échec de #44.
+- **#51** : agent sortant `RPGQuest VeryGames → PlugAdmin AWS` pour l'état live — **socle livré**
+  (voir [AGENT.md](AGENT.md)). RPGQuest pousse un heartbeat HTTPS + relève une file d'actions
+  whitelistées (`player.variable.get` en MVP). Le dashboard affiche l'état **AGENT DISTANT**
+  (ONLINE / STALE / OFFLINE) dès qu'un agent est configuré ; le bridge local #37 reste un
+  affichage secondaire. Validation live VeryGames : voir le rapport de session #51.
 - **#36** : les raccourcis admin de test deviendront des *actions du bridge* (#45), logique
   **dans le plugin**, jamais dupliquée côté web.
 - **#29** : futur module « Développement », **même socle** — pas une 2e application.

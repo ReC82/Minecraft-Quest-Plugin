@@ -39,6 +39,31 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       chaîne d'auth est vérifié : GET login, login invalide → 401, CSRF, `/dashboard` anonyme → 303,
       cookies `Secure`/`HttpOnly`/`SameSite`).
 
+## Étape 0c — agent sortant VeryGames → PlugAdmin (issue #51) — **SOCLE LIVRÉ**
+
+- [x] plugin `com.lodygames.rpgquest.web.agent` : `PlugAdminAgent` (service Paper) + `AgentLoop`
+      (heartbeat + file d'actions, backoff, idempotence) + `PlugAdminClient` (HTTPS sortant) +
+      `AgentConfigLoader` (fichier local `plugadmin-agent.properties` hors Git, surcharge env,
+      fail-closed).
+- [x] heartbeat via `HealthSource` (#37 réutilisé, aucune logique de health dupliquée).
+- [x] contrat versionné `/agent/v1/heartbeat` · `/agent/v1/actions` · `/agent/v1/actions/{id}/result`
+      côté PlugAdmin (`AgentEndpoints`), auth **par agent** (jeton dédié, temps constant), payload
+      borné, kill-switch.
+- [x] persistance `control-panel.db` : `agent_heartbeat` (dernier par agent) + `agent_action`
+      (file + résultats), migrations idempotentes. Pas de MySQL #43.
+- [x] ONLINE / STALE / OFFLINE (`AgentLiveness`), seuils configurables, indépendant du navigateur.
+- [x] 1re action **non destructive** : `player.variable.get` via `PlayerVariableRepository`
+      (jamais `/rpgadmin` texte). Type inconnu → `REJECTED`.
+- [x] idempotence des deux côtés (action livrée jusqu'au résultat ; `ProcessedActionCache` agent).
+- [x] dashboard : section **AGENT DISTANT** prioritaire quand configurée ; bridge local #37
+      conservé en affichage secondaire (dev / co-localisé). Page **Agents** (diagnostic owner :
+      statut, dernier heartbeat, envoi de l'action de preuve, historique).
+- [x] tests : plugin `web.agent.*` (30) + control-panel `panel.agent.*` (17). `./gradlew build` vert.
+- [x] docs : [AGENT.md](AGENT.md), `CONFIGURATION.md`, `SECURITY.md`, `ARCHITECTURE.md`,
+      `RPGQUEST_BRIDGE.md`.
+- [ ] validation **live VeryGames** (déploiement JAR + fichier agent + redémarrage owner) — voir
+      rapport de session #51.
+
 ## Étape 1 — lectures
 
 - [ ] module **PNJ** : bindings + « PNJ attendus mais non liés » (aurait signalé le `guard`

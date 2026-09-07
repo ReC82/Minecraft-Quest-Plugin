@@ -95,6 +95,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 - **Boutique web** — catalogue, commandes, livraisons idempotentes (voir `web-api/`).
 - **Compatibilité mod client** — détection de handshake, politique configurable pour les clients
   vanilla.
+- **Bridge d'administration** (`web.admin`, issue #37) — `GET /admin/v1/health` authentifié par
+  jeton porteur, bind interne, fail-closed ; consommé par le Control Panel (« PlugAdmin »,
+  déployé sur `https://plugadmin.lodylands.com`, issue #44).
+- **Agent sortant PlugAdmin** (`web.agent`, issue #51) — le plugin ouvre une connexion **HTTPS
+  sortante** vers PlugAdmin (heartbeat régulier réutilisant `HealthSource`, + file d'actions
+  whitelistées). **Inerte par défaut** : nécessite `plugins/RPGQuest/plugadmin-agent.properties`
+  (hors Git) avec `enabled=true` + `base-url` + `agent-id` + `token`. Seule action ouverte au MVP :
+  `player.variable.get` (lecture). Asynchrone, backoff, aucun impact gameplay si PlugAdmin est
+  down. Voir [control-panel/AGENT.md](control-panel/AGENT.md).
 
 ## Bugs connus et corrigés
 

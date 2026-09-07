@@ -68,7 +68,7 @@ class AgentLoopTest {
             variableReads.incrementAndGet();
             return CompletableFuture.completedFuture(Optional.of("false"));
         };
-        return new AgentActionExecutor(directory, variables);
+        return new AgentActionExecutor(directory, variables, new StubAgentActions());
     }
 
     private AgentLoop loop(FakeTransport transport, Instant[] clock) {

@@ -125,6 +125,7 @@ import com.lodygames.rpgquest.web.admin.BukkitHealthSource;
 import com.lodygames.rpgquest.web.admin.HealthSource;
 import com.lodygames.rpgquest.web.admin.WebAdminServer;
 import com.lodygames.rpgquest.web.agent.AgentActionExecutor;
+import com.lodygames.rpgquest.web.agent.BukkitAgentActions;
 import com.lodygames.rpgquest.web.agent.AgentConfig;
 import com.lodygames.rpgquest.web.agent.AgentConfigLoader;
 import com.lodygames.rpgquest.web.agent.BukkitPlayerDirectory;
@@ -327,10 +328,9 @@ public final class RPGQuestBootstrap {
         // inerte tant que plugins/RPGQuest/plugadmin-agent.properties (hors Git) n'active pas
         // l'agent et ne fournit pas base-url + agent-id + token. Réutilise HealthSource (#37),
         // ne recalcule jamais le health.
+        // NB : l'agent est démarré plus bas (après construction de storyService et
+        // playerResetService), dont dépendent les actions métier whitelistées.
         AgentConfig agentConfig = new AgentConfigLoader(plugin.getDataFolder().toPath(), plugin.getSLF4JLogger()).load();
-        registry.start(new PlugAdminAgent(
-                plugin, agentConfig, new HeartbeatPayload(healthSource),
-                new AgentActionExecutor(new BukkitPlayerDirectory(plugin), variableRepository::get)));
 
         PlacedBlockRepository placedBlockRepository = new PlacedBlockRepository(databaseService.databaseManager());
         PlacedBlockTracker placedBlockTracker = new PlacedBlockTracker(plugin, placedBlockRepository, plugin.getSLF4JLogger());
@@ -532,6 +532,17 @@ public final class RPGQuestBootstrap {
                 portalCooldownRepository, itemTravelCooldownRepository, customItemRegistry);
         registry.start(new PlayerListenerService(plugin,
                 new NewPlayerResetJoinListener(plugin, variableRepository, customItemRegistry)));
+
+        // Agent sortant PlugAdmin (issue #51 + outillage Control Panel) — RPGQuest/VeryGames initie
+        // une connexion HTTPS SORTANTE vers PlugAdmin/AWS (heartbeat + file d'actions whitelistées).
+        // Fail-closed : inerte tant que plugins/RPGQuest/plugadmin-agent.properties (hors Git)
+        // n'active pas l'agent (base-url + agent-id + token). Réutilise HealthSource (#37) pour le
+        // heartbeat et les services métier existants pour les actions (jamais de commande texte).
+        registry.start(new PlugAdminAgent(
+                plugin, agentConfig, new HeartbeatPayload(healthSource),
+                new AgentActionExecutor(new BukkitPlayerDirectory(plugin), variableRepository::get,
+                        new BukkitAgentActions(plugin, questEngine, questProgressEngine, storyService,
+                                customItemRegistry, playerResetService, variableRepository::set))));
 
         registerCommands();
     }

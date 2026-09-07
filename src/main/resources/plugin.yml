@@ -16,6 +16,10 @@ softdepend:
 
 libraries:
   - org.xerial:sqlite-jdbc:3.53.2.1
+  # Backend MySQL/MariaDB (issue #41) — utilisés seulement si database.type: mysql,
+  # mais téléchargés au démarrage par le LibraryLoader de Paper dans tous les cas.
+  - com.zaxxer:HikariCP:5.1.0
+  - org.mariadb.jdbc:mariadb-java-client:3.4.1
 
 commands:
   rpgquest:
@@ -75,7 +79,10 @@ permissions:
     description: Accès aux commandes d'objets personnalisés joueur (/customitem inspect).
     default: true
   rpgquest.admin.world:
-    description: Accès aux commandes d'administration du monde (/rpgadmin), dont l'aplatissement de terrain.
+    description: Accès aux commandes d'administration du monde (/rpgadmin), dont l'aplatissement de terrain et les raccourcis de test quêtes/stories (/rpgadmin quest|story).
+    default: op
+  rpgquest.admin.debug:
+    description: Permission stricte supplémentaire pour les écritures bas niveau de debug (/rpgadmin player variable set). Ne jamais accorder à un joueur normal.
     default: op
   rpgquest.money:
     description: Accès aux commandes joueur d'économie (/money, /money pay).

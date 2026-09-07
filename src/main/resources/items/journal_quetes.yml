@@ -4,8 +4,8 @@ material: BOOK
 name: "<yellow>Journal des quêtes</yellow>"
 lore:
   - "<gray>Remis par le Libraire à tout aventurier.</gray>"
-  - "<gray>Clic droit pour consulter tes aventures</gray>"
-  - "<gray>en cours, tes objectifs et ta progression.</gray>"
+  - "<gray>Clic droit pour ouvrir ton journal :</gray>"
+  - "<gray>onglets « Quêtes en cours » et « Quêtes terminées ».</gray>"
   - "<dark_gray>Objet RPGQuest — permanent, lié à toi, jamais perdu.</dark_gray>"
 rarity: UNCOMMON
 stackable: false

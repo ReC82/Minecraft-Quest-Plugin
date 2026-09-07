@@ -12,10 +12,20 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   quêtes existantes, désormais connecté au moteur de quête : une Story `ACTIVE` avance toute seule
   (démarrage/avancement/fin automatiques, sans commande joueur), état `NOT_STARTED`/`ACTIVE`/
   `COMPLETED` + position courante par joueur, commandes admin/debug uniquement
-  (`/rpgadmin story info|start|reset|resetwithquests`) — voir [storylines.md](storylines.md).
+  (`/rpgadmin story info|start|advance|complete|reset|resetwithquests`) — voir
+  [storylines.md](storylines.md) et [ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md).
 - **Dialogues** — graphes de nœuds PNJ (Citizens et entités vanilla), conditions et actions par
   choix, rendu via Paper Dialog.
 - **NPC / Citizens** — identité logique RPGQuest découplée du nom affiché de l'entité.
+- **Guide « centre d'aide » + journal du Libraire** *(issue #11)* — le dialogue `guide.yml` est un
+  centre d'aide structuré (nœud `help_menu` + un nœud par mécanique : quêtes, journal, Wild, claims,
+  marchands, « à qui parler »), orientation vers les PNJ **textuelle** (nom + rôle + explication).
+  Structure multi-Hub en données : `hub-guides/*.yml` (`hub.HubGuideRegistry`, exemple
+  `hub_depart.yml`) mappe chaque Hub → dialogue d'aide + accueil/spécialité/orientations ; diagnostic
+  admin `/rpgadmin guide list|info <hub>` (lecture seule) — voir [HUB_GUIDE.md](HUB_GUIDE.md). Le
+  Libraire remet `rpgquest:journal_quetes` (garde `LACKS_CUSTOM_ITEM` → jamais de doublon, soulbound
+  → jamais perdu) ; **clic droit ouvre désormais la GUI** `QuestJournalService` (deux onglets
+  « en cours » / « terminées »), plus le résumé chat (ancien `QuestJournalBookService` supprimé).
 - **Zones protégées** — cuboïdes avec flags configurables (PvP, casse, explosions, etc.),
   outil de sélection dédié (indépendant de WorldEdit, voir la note ci-dessous).
 - **Portails** — `/rpgadmin portal` (canalisation, coût, cooldown, conditions quête/niveau) et
@@ -28,22 +38,53 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   automatique à l'entrée ou volontaire via l'Acte réutilisé), faisceau dense (DUST + END_ROD)
   hors du claim ; retour au Hub sans commande via la Pierre de retour (mécanique générique de
   voyage par objet, `travel.ItemTravelService`).
-- **Boucle joueur Hub ↔ Wild** *(cette étape)* — Journal des quêtes (`rpgquest:journal_quetes`,
-  clic droit → résumé compact chat des stories/quêtes actives + objectifs, donné par le Libraire ;
-  stories/quêtes secrètes non découvertes masquées) ; Rune de rappel (`rpgquest:rune_rappel`,
+- **Parcours Claims cohérent (issues #21/#22/#23)** — le portail Hub → `claims` est réservé aux
+  joueurs qui ont réellement débloqué leur premier terrain (`CLAIM_TIER_1 == "true"` accordé par la
+  dernière quête de l'histoire principale, ou claim déjà existant) : `claim.ClaimWorldAccessGuard`
+  (composé avec l'avertissement Wild via `travel.CompositeWorldPortalEntryGuard`) refuse l'entrée
+  sans téléporter et oriente vers Jo/le Guide ; seul le bypass explicite `rpgquest.admin.world`
+  passe outre. `claim.ClaimWorldSafetyListener` garantit qu'aucun joueur ne reste coincé : Pierre
+  de retour donnée automatiquement à l'arrivée si absente, joueur non éligible arrivé autrement
+  (`/tp`, reconnexion) renvoyé au Hub. Les dialogues du Guide (`help_claims`) et de Jo reflètent
+  exactement ce prérequis, et Jo adapte son texte aux 3 états (non débloqué / débloqué sans claim /
+  claim existant) grâce à `negate: true` sur une condition de dialogue (`dialogue.model.NegatedCondition`).
+  Prérequis **opérationnels** (à provisionner par serveur, non portés par le code) : les 4 PNJ Citizens
+  liés `guide` / `libraire` / **`guard`** / `jo` doivent exister physiquement (`/rpgadmin npc tag <id>`),
+  `dialogues/guard.yml` doit contenir la branche `crystal_hunt`, et un World-Portal `world_hub → claims`
+  doit être configuré. Sans PNJ `guard`, `first_steps` et `crystal_hunt` sont indémarrables et
+  `CLAIM_TIER_1` n'est jamais accordé. Toute validation #21/#22 se fait avec un compte **non opéré**
+  (`rpgquest.admin.world`, défaut `op`, contourne les deux gardes — décisions journalisées
+  `[claims-access]` / `[claims-safety]`). Voir `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b.
+- **Boucle joueur Hub ↔ Wild** — Journal des quêtes (`rpgquest:journal_quetes`, donné par le
+  Libraire, clic droit → GUI deux onglets, voir ligne « Guide / journal » ci-dessus) ; Rune de
+  rappel (`rpgquest:rune_rappel`,
   Wild → Hub, canalisation 10 s, cooldown 30 min persistant, remise à chaque nouveau joueur, filet
   via le Guide) ; avertissement compact cliquable [Continuer]/[Annuler] à l'entrée du Wild sans
   Rune ; Waystones générées paresseusement et de façon déterministe dans le Wild
   (`waystone.WaystoneService`), découverte individuelle par joueur, retour au Hub par canalisation
   courte. Système **soulbound générique** (`item.SoulboundItemService`) : un seul écouteur anti-perte
   pour tous les objets permanents (Acte, Pierre de retour, Journal, Rune).
-- **Reset admin « nouveau joueur »** *(cette étape)* — `/rpgadmin player resetnew <joueur> confirm`
+- **Reset admin « nouveau joueur »** — `/rpgadmin player resetnew <joueur> confirm`
   (permission `rpgquest.admin.world`, console OK, online **ou** offline) : remet l'état RPGQuest
   d'un seul joueur à l'équivalent « jamais joué » (quêtes, Stories, variables/unlocks dont
   `CLAIM_TIER_1`, progression RPG, découvertes de Waystones, cooldowns persistants, claim principal
   + objets RPGQuest de l'inventaire). Ne touche jamais `data.db` entier, les autres joueurs, le
-  profil/UUID, les mondes, les blocs, les Waystones globales — voir
+  profil/UUID, les mondes, les blocs, les Waystones globales. Variante **`preview`** *(issue #8)* :
+  `/rpgadmin player resetnew <joueur> preview` — dry-run qui liste, catégorie par catégorie, ce qui
+  serait effacé, **sans aucune écriture** (`PlayerResetService#previewReset`). Voir
   [ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md).
+- **Raccourcis d'administration / test quêtes & stories** *(issue #36)* — atteindre rapidement une
+  étape précise sans rejouer le gameplay, en réutilisant les services métier (jamais d'écriture
+  directe en base). `/rpgadmin quest start|complete|reset <joueur> <quest-id>` (+ `force` pour
+  ignorer les prérequis au `start`) ; `/rpgadmin story advance|complete <joueur> <storyId>`
+  (`advance` = complète l'étape courante et accepte la suivante, en indiquant laquelle tester ;
+  `complete` = toute la story, dans l'ordre) ; `/rpgadmin player variable get|set <joueur> <clé>
+  [valeur]`. `complete`/`advance` appliquent les récompenses (dont `VARIABLE`, ex. `CLAIM_TIER_1`)
+  **une seule fois** (garde de `QuestProgressEngine.forceComplete`). `quest reset` rend la quête
+  rejouable mais **n'annule pas** les récompenses déjà accordées (limite documentée). Permission
+  `rpgquest.admin.world` ; `variable set` exige en plus `rpgquest.admin.debug` (défaut `op`) et est
+  journalisée. `quest start/complete` et `story advance/complete` exigent une cible **en ligne**.
+  Voir [ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md).
 - **Items / équipements personnalisés** — objets marqués PDC, comportements d'arme/outil,
   recettes de craft dédiées.
 - **Ressources** — nœuds de ressources rechargeables.
@@ -54,6 +95,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 - **Boutique web** — catalogue, commandes, livraisons idempotentes (voir `web-api/`).
 - **Compatibilité mod client** — détection de handshake, politique configurable pour les clients
   vanilla.
+- **Bridge d'administration** (`web.admin`, issue #37) — `GET /admin/v1/health` authentifié par
+  jeton porteur, bind interne, fail-closed ; consommé par le Control Panel (« PlugAdmin »,
+  déployé sur `https://plugadmin.lodylands.com`, issue #44).
+- **Agent sortant PlugAdmin** (`web.agent`, issue #51) — le plugin ouvre une connexion **HTTPS
+  sortante** vers PlugAdmin (heartbeat régulier réutilisant `HealthSource`, + file d'actions
+  whitelistées). **Inerte par défaut** : nécessite `plugins/RPGQuest/plugadmin-agent.properties`
+  (hors Git) avec `enabled=true` + `base-url` + `agent-id` + `token`. Seule action ouverte au MVP :
+  `player.variable.get` (lecture). Asynchrone, backoff, aucun impact gameplay si PlugAdmin est
+  down. Voir [control-panel/AGENT.md](control-panel/AGENT.md).
 
 ## Bugs connus et corrigés
 
@@ -88,10 +138,29 @@ Gap async corrigé lors de l'investigation dans `PortalService` (vérification `
 
 ## Persistance
 
-SQLite (`data.db`), migrations séquentielles via `SchemaMigrator` (version courante : **17** —
-V15 réservation foncière des claims, V16 `item_travel_cooldowns` (cooldown Rune de rappel),
-V17 `waystones` + `waystone_discoveries`). YAML pour tout ce qui est éditable à la main par un
-administrateur (quêtes, zones, portails, stories, dialogues, items...).
+**Couche abstraite (issue #40)** : le moteur SQL est un détail d'infrastructure choisi par
+`config.yml` (`database.type: sqlite | mysql`). Le code de gameplay ne contient aucun SQL et ne
+teste jamais le moteur ; le seul point de choix est `DatabaseEngineFactory`. Abstractions :
+`DatabaseEngine`, `SqlDialect` (`rewrite`/`ddl` + upsert/insert-ignore/identité/`columnExists`),
+`SchemaHistory` (`PragmaUserVersionHistory` SQLite / `MigrationTableHistory` portable),
+`SchemaMigrationRunner` (application ordonnée, idempotente, échec nommé).
+
+**Backend MySQL/MariaDB réel (issue #41)** : `MySqlDatabaseEngine` = driver *MariaDB Connector/J*
++ pool *HikariCP* (`plugin.yml` `libraries:`, jamais empaqueté). `MySqlDialect` traduit le DML des
+repositories (`INSERT OR IGNORE` → `INSERT IGNORE`, `ON CONFLICT … DO UPDATE` → `ON DUPLICATE KEY
+UPDATE`) et le DDL des migrations (`TEXT` clé → `VARCHAR(191)`, `INTEGER` → `BIGINT`,
+`AUTOINCREMENT` → `AUTO_INCREMENT`, `BLOB` → `LONGBLOB`, InnoDB + `utf8mb4_bin`, `CREATE INDEX` →
+`ALTER TABLE ADD INDEX`). Historique de schéma dans la table portable `rpgquest_schema_migrations`.
+**Validé contre un vrai serveur MariaDB 10.11** (base de test VeryGames vide) : schéma créé depuis
+zéro, historique V1..V17, CRUD/transactions/generated-keys des repos, health, reprise après
+connexion cassée. **Non fait (issue #42)** : migration des données `data.db` → MariaDB et bascule
+de production. Détail : [PERSISTENCE.md](PERSISTENCE.md).
+
+**Backend actif en production** : **SQLite** (`data.db`) — comportement **strictement inchangé**
+(DDL/DML passés par des dialectes-identité). Migrations via `SchemaMigrator.ALL` (version courante :
+**17**). Le mot de passe MySQL n'est jamais dans `config.yml` (`database.mysql.password-env` = nom
+d'une variable d'environnement). YAML pour tout ce qui est éditable à la main par un administrateur
+(quêtes, zones, portails, stories, dialogues, items...).
 
 ## Non implémenté / hors périmètre à ce jour
 

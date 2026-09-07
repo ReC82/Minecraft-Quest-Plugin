@@ -103,6 +103,51 @@ entité-là n'est jamais recréée par un tiers. Le nom affiché
 
 ---
 
+## 1b. PNJ obligatoires pour le parcours principal (à créer physiquement)
+
+Le parcours d'un nouveau joueur jusqu'au **déblocage du premier claim**
+(`CLAIM_TIER_1`) dépend de **4 PNJ Citizens qui doivent exister en jeu** et
+être liés via `/rpgadmin npc tag <id>` (jamais par leur nom affiché — voir
+§1). Si l'un d'eux manque, la chaîne `stories/main_story.yml`
+(`premiers_pas → first_steps → crystal_hunt`) est rompue et le claim ne se
+débloque jamais.
+
+| Id de liaison (exact) | Rôle dans la chaîne | Dialogue | Sans ce PNJ… |
+|---|---|---|---|
+| `guide` | Démarre `premiers_pas` ; centre d'aide du Hub | `dialogues/guide.yml` | Le joueur n'a aucun point d'entrée. |
+| `libraire` | Cible de rendu de `premiers_pas` (`TALK_TO_NPC libraire`) ; remet le journal | `dialogues/libraire.yml` | `premiers_pas` ne se termine jamais. |
+| **`guard`** | **Démarre `first_steps` ; démarre ET valide `crystal_hunt`** (dont la récompense pose `CLAIM_TIER_1="true"`) | `dialogues/guard.yml` | **`first_steps` et `crystal_hunt` sont indémarrables → `CLAIM_TIER_1` jamais accordé.** C'est la panne « je ne trouve pas le Garde / je ne trouve pas *La chasse aux cristaux* ». |
+| `jo` | Remet `rpgquest:acte_propriete` une fois `CLAIM_TIER_1="true"` | `dialogues/jo.yml` | Le joueur a le droit mais pas l'acte. |
+
+Le **nom affiché** est libre (« Garde », « Le Garde »…) : seul l'**id de
+liaison** compte, et il doit être exactement `guard`. Un PNJ nommé « Garde »
+mais non lié `guard` n'ouvre **rien** et ne valide **aucune** quête.
+
+Vérifier l'état réel côté serveur : table `npc_citizens_bindings` de
+`data.db` (une ligne par PNJ lié), ou en jeu `/rpgadmin npc info` en visant
+chaque PNJ.
+
+### Créer et lier le Garde (procédure exacte)
+
+Prérequis : `dialogues/guard.yml` **à jour** (il doit contenir la branche
+« J'ai entendu dire que tu avais besoin d'aide pour forger un équipement »
+et le nœud `crystal_hunt_accepted` — sinon `crystal_hunt` reste
+indémarrable même avec le PNJ) + serveur redémarré.
+
+```
+/npc create Garde --type player      # crée le PNJ et le sélectionne
+/npc skin <pseudo>                    # optionnel, cosmétique
+# se placer à ≤ 6 blocs, regarder DROIT le PNJ :
+/rpgadmin npc info                    # -> "Cette entité n'est pas identifiée."
+/rpgadmin npc tag guard              # -> "Entité identifiée : guard (Citizens NPC #N)"
+/rpgadmin npc info                    # -> "Identifiant : guard (Citizens NPC #N)"
+```
+
+Le mapping est persisté dans `data.db` (`npc_citizens_bindings`) et survit
+aux redémarrages. Placer ensuite le PNJ près des autres (`/npc move`).
+
+---
+
 ## 2. Comment créer un dialogue
 
 ### Fichier
@@ -208,9 +253,21 @@ liens cliquables dans le chat (`ChatDialogueRenderer`, par défaut,
 | `QUEST_STATE` | `quest` (id), `state` (`NOT_STARTED`\|`ACTIVE`\|`READY_TO_TURN_IN`\|`COMPLETED`\|`FAILED`\|`ABANDONED`) | Vrai si la quête du joueur est dans cet état. |
 | `HAS_ITEM` | `material`, `amount` | Vrai si l'inventaire du joueur contient au moins `amount` de `material`. |
 | `HAS_PERMISSION` | `permission` | Vrai si le joueur a cette permission Bukkit. |
-| `VARIABLE_EQUALS` | `key`, `value` | Vrai si la variable joueur `key` (voir `SET_VARIABLE`/récompense `VARIABLE`) vaut `value`. |
+| `VARIABLE_EQUALS` | `key`, `value` | Vrai si la variable joueur `key` (voir `SET_VARIABLE`/récompense `VARIABLE`) vaut `value`. Variable **absente** ⇒ faux. |
+| `NO_MAIN_CLAIM` | — | Vrai si le joueur ne possède encore **aucun** claim (source : `ClaimService#claimsOwnedBy`). |
+| `HAS_MAIN_CLAIM` | — | Vrai si le joueur possède **au moins un** claim (strict opposé de `NO_MAIN_CLAIM`). |
+| `LACKS_CUSTOM_ITEM` | `item` (id namespacé, ex. `rpgquest:acte_propriete`) | Vrai si le joueur ne détient **aucun** exemplaire de cet objet personnalisé (identifié par PDC, jamais par matériau). |
 
-Un choix sans `conditions` est toujours visible. Les conditions sont
+**`negate: true`** sur n'importe quelle condition **inverse** son verdict
+(vrai ⇔ faux). Indispensable pour exprimer une condition négative que le
+moteur ne fournit pas directement — par exemple « le déblocage n'a *pas*
+eu lieu » : `VARIABLE_EQUALS key: CLAIM_TIER_1 value: "true"` + `negate: true`
+est vrai tant que la variable vaut autre chose que `"true"` **ou** n'existe
+pas (utilisé par `dialogues/jo.yml` pour l'état « claim non débloqué »). La
+double négation est refusée au chargement.
+
+Un choix sans `conditions` est toujours visible. Toutes les conditions
+d'un choix doivent être vraies (ET logique). Les conditions sont
 revérifiées **au clic**, pas seulement à l'affichage.
 
 ### Actions disponibles (`choices[].actions[].type`)
@@ -358,8 +415,12 @@ Deux façons, toutes deux réellement câblées :
 - `/quest progress <id>` — détail objectif par objectif de l'étape en
   cours (`current`/`total`).
 - `/quest list` — toutes les quêtes connues avec leur état.
-- `/quests` — journal graphique (menu paginé, 3 onglets Actives/
-  Disponibles/Terminées, voir `docs/ARCHITECTURE.md` section `ui`).
+- **Journal des quêtes** — clic droit sur l'item `rpgquest:journal_quetes`
+  (remis par le Libraire), ou `/quests` : GUI paginée à **deux onglets**,
+  « Quêtes en cours » et « Quêtes terminées ». N'affiche que les quêtes
+  déjà acceptées par le joueur — **jamais** de catalogue des quêtes non
+  découvertes. Voir `docs/RPGQUEST_BIBLE.md` (« /quests — journal de
+  quêtes ») et `docs/ARCHITECTURE.md` section `ui`.
 
 ### Comment la terminer
 
@@ -612,6 +673,51 @@ rendre sur ma propriété » fonctionne (`RUN_SAFE_COMMAND` → `/claim admin
 sendhome %player%`). Voir [docs/CLAIMS.md](CLAIMS.md), sections « Premier
 claim (Acte de propriété) » et « Retour à son claim (PNJ Jo / commande
 admin) », pour le détail complet des deux scénarios.
+
+---
+
+## 6b. Guide « centre d'aide » et journal du Libraire (issue #11)
+
+### Le Guide oriente et explique
+
+Le dialogue livré `dialogues/guide.yml` (présent dans le jar ; à copier
+dans `plugins/RPGQuest/dialogues/` — seul `guard.yml` est copié
+automatiquement) est un **centre d'aide structuré** : le choix « Comment
+fonctionne le jeu ? » ouvre un nœud
+`help_menu` avec un sujet par mécanique principale (quêtes, consulter ses
+quêtes, Wild, claims, marchands, « à qui parler pour quoi »). Chaque sujet
+est un nœud d'aide court qui ramène au menu (`next: help_menu`) ou ferme.
+L'orientation vers les autres PNJ est **textuelle** (nom + rôle +
+explication) — pas de waypoint / halo / navigation (hors périmètre V1).
+
+C'est un dialogue ordinaire : pour l'adapter, éditez `guide.yml` puis
+redémarrez. Aucune commande, aucune action spéciale.
+
+### Structure multi-Hub
+
+Le mapping « quel Hub → quel Guide » vit dans
+`plugins/RPGQuest/hub-guides/<hub>.yml` (registre
+`com.lodygames.rpgquest.hub.HubGuideRegistry`, auto-copié :
+`hub_depart.yml`). Chaque entrée déclare l'accueil, la spécialité locale,
+les orientations vers les PNJ du Hub et le dialogue/nœud qui porte le menu
+d'aide. Ajouter un Hub = déposer `hub-guides/<autre_hub>.yml` +
+`dialogues/guide_<autre_hub>.yml` — **aucun code**. Diagnostic admin :
+`/rpgadmin guide list` et `/rpgadmin guide info <hub>` (lecture seule).
+Détail complet : [docs/HUB_GUIDE.md](HUB_GUIDE.md).
+
+### Le Libraire remet le journal
+
+`dialogues/libraire.yml` : le choix « Obtenir un journal des quêtes » est
+gardé par `LACKS_CUSTOM_ITEM rpgquest:journal_quetes` — il **disparaît dès
+que le joueur a le journal en poche**, donc jamais de second exemplaire. Le
+journal est aussi *soulbound* (`item.SoulboundItemService`) : il ne peut
+pas être perdu ; s'il manquait malgré tout, l'option réapparaît et le
+Libraire en redonne exactement un.
+
+Un clic droit sur le journal ouvre la **GUI à deux onglets** (« Quêtes en
+cours » / « Quêtes terminées »), identique à `/quests` — voir
+`docs/RPGQUEST_BIBLE.md`. La GUI reflète l'état à l'ouverture : une quête
+acceptée ou terminée apparaît dans le bon onglet sans recréer l'item.
 
 ---
 

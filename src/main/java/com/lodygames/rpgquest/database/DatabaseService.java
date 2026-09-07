@@ -6,10 +6,10 @@ import java.nio.file.Path;
 import org.slf4j.Logger;
 
 /**
- * Adapte {@link DatabaseManager} au cycle de vie {@link PluginService}. Le
- * nom du fichier de base de données vient de {@link ConfigService}, donc ce
- * service doit démarrer après lui : {@link #start()} ne construit le
- * {@link DatabaseManager} qu'à l'appel, jamais avant.
+ * Adapte {@link DatabaseManager} au cycle de vie {@link PluginService}. Le <strong>moteur</strong>
+ * (SQLite, MySQL…) est choisi par la configuration : ce service ne construit le
+ * {@link DatabaseEngine} et le {@link DatabaseManager} qu'à l'appel de {@link #start()}, jamais
+ * avant, car il a besoin de {@link ConfigService} déjà démarré.
  */
 public final class DatabaseService implements PluginService {
 
@@ -26,10 +26,12 @@ public final class DatabaseService implements PluginService {
 
     @Override
     public void start() {
-        String fileName = configService.current().databaseFile();
-        databaseManager = new DatabaseManager(dataFolder.resolve(fileName));
+        DatabaseSettings settings = configService.current().database();
+        DatabaseEngine engine = DatabaseEngineFactory.create(settings, dataFolder);
+        logger.info("Base de données RPGQuest : moteur {}.", engine.describe());
+        databaseManager = new DatabaseManager(engine);
         databaseManager.initialize().exceptionally(error -> {
-            logger.error("Impossible d'initialiser la base de données RPGQuest.", error);
+            logger.error("Impossible d'initialiser la base de données RPGQuest ({}).", engine.describe(), error);
             return null;
         });
     }

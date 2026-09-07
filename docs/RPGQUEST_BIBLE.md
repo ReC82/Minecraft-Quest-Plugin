@@ -111,9 +111,9 @@ Voir [VERYGAMES.md § Rollback](deployment/VERYGAMES.md#rollback) pour la liste 
 
 ## 2. Administration RPGQuest (`/rpgadmin`)
 
-Vérifié intégralement dans `src/main/java/com/lodygames/rpgquest/admin/RpgAdminCommand.java` (1269 lignes, lu en entier). Racine unique pour huit sous-systèmes : `flatten`, `zone`, `portal`, `mob`, `npc`, `spawn`, `world`, `worldportal`.
+Vérifié dans `src/main/java/com/lodygames/rpgquest/admin/RpgAdminCommand.java`. Racine unique pour les sous-systèmes d'administration : `flatten`, `zone`, `portal`, `mob`, `npc`, `spawn`, `world`, `worldportal`, `quest`, `story`, `waystone`, `player`, `guide`.
 
-Type : Admin (toutes les sous-commandes) — Permission : **`rpgquest.admin.world`** (unique pour tout `/rpgadmin`, pas de permission plus fine par sous-commande). Exigent toujours un **joueur en jeu** (jamais la console — aucune sous-commande ne prend de coordonnée explicite, toutes utilisent la position/sélection du joueur).
+Type : Admin (toutes les sous-commandes) — Permission : **`rpgquest.admin.world`** pour tout `/rpgadmin`. **Exception** : `/rpgadmin player variable set` exige **en plus** `rpgquest.admin.debug` (défaut `op`, écriture bas niveau). La plupart des sous-commandes exigent un **joueur en jeu** (position/sélection) ; `quest`, `story`, `player` et `guide` ciblent au contraire un joueur passé en argument et sont utilisables **depuis la console**.
 
 ### Aplatissement de terrain — `/rpgadmin flatten`
 Détail complet : [docs/ADMIN_FLATTEN.md](ADMIN_FLATTEN.md). Page docs-site : aucune.
@@ -133,9 +133,35 @@ Détail complet : [docs/ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md).
 | Commande | Effet |
 |---|---|
 | `/rpgadmin player resetnew <joueur>` | Affiche l'avertissement listant ce qui serait effacé (ne fait rien). |
+| `/rpgadmin player resetnew <joueur> preview` | **Dry-run** : liste, catégorie par catégorie, ce qu'un reset réel effacerait (nombre + détail ; « rien à réinitialiser » si vide ; « non applicable » pour l'inventaire d'un joueur hors ligne). **Aucune écriture** : pas de suppression, pas de marqueur, pas d'invalidation de cache, aucun objet retiré. En ligne **ou** hors ligne. |
 | `/rpgadmin player resetnew <joueur> confirm` | Remet l'état **RPGQuest** d'un seul joueur (en ligne **ou** hors ligne) dans l'équivalent d'un joueur jamais connecté : quêtes (actives/progression/terminées/suivie), Stories, **toutes** les variables/unlocks (dont `CLAIM_TIER_1`), progression RPG (`player_skills`/`xp_grants`), découvertes de Waystones, cooldowns persistants (portails + Rune), claim principal (données de protection uniquement, cascade `claim_members`), et objets personnalisés RPGQuest de l'inventaire (immédiat si en ligne, différé au prochain login sinon). |
 
 Ne touche **jamais** : `data.db` entier, un autre joueur, le profil/UUID/playerdata vanilla, les mondes, les PNJ Citizens, les définitions de quêtes/Stories, les portails, les Waystones globales, les blocs construits. Conservés volontairement : économie, backpacks/entitlements, annonces de marché. Console : autorisée (comme `/rpgadmin story`). Protection : mot `confirm` obligatoire.
+
+### Raccourcis de test quêtes & stories — `/rpgadmin quest`, `/rpgadmin story advance|complete`, `/rpgadmin player variable` (issue #36)
+Détail complet : [docs/ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md). Outils DEV/admin pour atteindre vite un état de progression sans rejouer le gameplay ; réutilisent `QuestProgressEngine`/`StoryService`, jamais d'écriture directe en base. Console OK. Opérations journalisées (`[admin] …`).
+
+| Commande | Effet | Cible | Récompenses |
+|---|---|---|---|
+| `/rpgadmin quest start <joueur> <quest-id> [force]` | Démarre la quête (`QuestProgressEngine.accept`). Prérequis respectés sauf `force`. Id inconnu refusé ; pas de doublon d'une quête active. | en ligne | aucune (l'acceptation n'en donne jamais) |
+| `/rpgadmin quest complete <joueur> <quest-id>` | Complète sans simuler les objectifs (`forceComplete`). | en ligne | **appliquées une seule fois** : `VARIABLE` (ex. `CLAIM_TIER_1=true`), `EXPERIENCE`, `ITEM`, `COMMAND`. Quête déjà `COMPLETED` → « déjà terminée », rien re-crédité. |
+| `/rpgadmin quest reset <joueur> <quest-id>` | Supprime progression + compteurs → quête rejouable (`resetQuest`). | en ligne **ou** hors ligne | **n'annule pas** les récompenses déjà données (XP, objets, variables, effets de commande) — limite documentée. |
+| `/rpgadmin story advance <joueur> <storyId>` | Démarre la story si besoin, `forceComplete` de sa quête courante, avance d'un cran (accepte la suivante ou termine la story). Le message dit quelle étape tester. | en ligne | via `forceComplete`, une seule fois par quête |
+| `/rpgadmin story complete <joueur> <storyId>` | Enchaîne `advance` jusqu'au bout, dans l'ordre, borné. | en ligne | via `forceComplete`, une seule fois par quête |
+| `/rpgadmin player variable get <joueur> <clé>` | Lit `player_variables` (lecture pure). Clé absente signalée. | en ligne **ou** hors ligne | — |
+| `/rpgadmin player variable set <joueur> <clé> <valeur>` | Écrit la clé. Avertissement + journalisation (ancienne/nouvelle valeur). | en ligne **ou** hors ligne | **exige `rpgquest.admin.debug` en plus** |
+
+`story advance`/`complete` ne touchent jamais une quête non référencée par la story ciblée. Pour un état vraiment propre : `/rpgadmin player resetnew … confirm`, `/rpgadmin story resetwithquests …`, ou `/rpgadmin player variable set … CLAIM_TIER_1 false`.
+
+### Guides de Hub — `/rpgadmin guide`
+Détail complet : [docs/HUB_GUIDE.md](HUB_GUIDE.md). Lecture seule, console autorisée, permission `rpgquest.admin.world`.
+
+| Commande | Effet |
+|---|---|
+| `/rpgadmin guide list` | Liste les Guides de Hub chargés (`plugins/RPGQuest/hub-guides/*.yml`) : `hub-id`, mondes, dialogue d'aide + nœud. |
+| `/rpgadmin guide info <hub>` | Détail d'un Hub : mondes, dialogue/nœud d'aide, message d'accueil, spécialité locale, orientations vers les PNJ (`role → npc : note`). |
+
+Aucune écriture. Le contenu du menu d'aide vit dans le dialogue référencé (`guide.yml`, nœud `help_menu`) — voir « /quests » ci-dessus et [NPC_DIALOGUES_QUESTS_GUIDE.md](NPC_DIALOGUES_QUESTS_GUIDE.md) §6b.
 
 ### Zones protégées — `/rpgadmin zone`
 Détail complet : [docs/SAFE_ZONE.md](SAFE_ZONE.md). Page docs-site : `hub-safe-zone.html` (couvre `zone wand/create/delete/list/info` et le tableau des flags).
@@ -222,9 +248,9 @@ Persistance : oui pour tout ce qui touche à l'état (`accept`/`abandon`) — SQ
 
 ### `/quests` — journal de quêtes
 Type : Joueur — Permission : `rpgquest.quest`
-But : ouvrir le journal paginé (onglets Actives/Disponibles/Terminées).
-Syntaxe : `/quests`
-Effet : ouvre un inventaire GUI (voir `docs/ARCHITECTURE.md` pour le détail : clic gauche = détail, clic droit = suivi/bossbar). Aucun paramètre.
+But : ouvrir le journal paginé. **Deux onglets** : « Quêtes en cours » (`ACTIVE`/`READY_TO_TURN_IN`) et « Quêtes terminées » (`COMPLETED`). Il n'y a **pas** d'onglet catalogue des quêtes disponibles (issue #11) : le journal ne liste que les quêtes déjà acceptées par le joueur, jamais les quêtes non découvertes.
+Ouverture : `/quests`, **ou** un clic droit sur l'item `rpgquest:journal_quetes` remis par le Libraire (même GUI, `QuestJournalService`). L'item est reconnu par son identité RPGQuest/PDC, jamais par son nom/lore ; il ne peut pas être dupliqué (garde `LACKS_CUSTOM_ITEM` sur le dialogue du Libraire) ni perdu (`SoulboundItemService`).
+Effet : ouvre un inventaire GUI (voir `docs/ARCHITECTURE.md` pour le détail : clic gauche = détail, clic droit = suivi/bossbar). Aucune interaction ne permet de retirer ou dupliquer un item de la GUI (tout clic/drag sur un `JournalInventoryHolder` est annulé). Aucun paramètre.
 Persistance : le suivi (quête « trackée ») persiste (`player_variables`), pas la simple ouverture du menu.
 Bouton « Fermer » (slot `CLOSE_SLOT`/`DETAIL_CLOSE_SLOT`) : la fermeture est différée d'un tick serveur (`QuestJournalService#closeNextTick`) plutôt qu'appelée directement dans le gestionnaire de `InventoryClickEvent` — fermer une fenêtre pendant le traitement de son propre clic annulé pouvait laisser le client avec une fenêtre visuellement toujours ouverte (paquet de resynchronisation du clic annulé arrivant après le paquet de fermeture).
 
@@ -337,7 +363,14 @@ matériau seul contrairement à `HAS_ITEM` — vrai si le joueur ne possède
 aucun exemplaire ; utilisé par Jo pour ne jamais permettre de farmer
 l'Acte réutilisé comme visualiseur ou la Pierre de retour, voir
 [docs/CLAIMS.md](CLAIMS.md)).
-Revérifiées au clic, pas seulement à l'affichage.
+`negate: true` sur **n'importe quelle** condition inverse son verdict
+(`dialogue.model.NegatedCondition`, double négation refusée au chargement) —
+sert notamment à exprimer « le déblocage n'a *pas* eu lieu » :
+`VARIABLE_EQUALS key: CLAIM_TIER_1 value: "true"` + `negate: true` est vrai
+tant que la variable n'est pas `"true"` (valeur absente incluse), utilisé
+par `dialogues/jo.yml` pour l'état « claim non débloqué ».
+Toutes les conditions d'un choix doivent être vraies (ET). Revérifiées au
+clic, pas seulement à l'affichage.
 
 **Actions** (`choices[].actions[].type`) : `START_QUEST`, `ADVANCE_QUEST`,
 `TURN_IN_QUEST` (champ `quest`) ; `GIVE_ITEM`/`TAKE_ITEM` (`material`,
@@ -440,11 +473,17 @@ besoin.
 ### Exemple réel (environnement de développement, `world_hub`)
 
 -   id Citizens numérique `0` → PNJ **Guide** (id logique RPGQuest `guide`).
+    Dialogue `guide.yml` = **centre d'aide** : « Comment fonctionne le jeu ? »
+    → nœud `help_menu` (un sujet par mécanique), orientations textuelles vers
+    les autres PNJ. Structure multi-Hub : `hub-guides/*.yml`,
+    `/rpgadmin guide list|info` — voir [HUB_GUIDE.md](HUB_GUIDE.md).
 -   id Citizens numérique `1` → PNJ **Libraire** (id logique RPGQuest
-    `libraire`).
+    `libraire`). Remet `rpgquest:journal_quetes` (une seule fois, garde
+    `LACKS_CUSTOM_ITEM` + soulbound) ; clic droit sur le journal → GUI
+    `/quests` à deux onglets.
 
 Procédure complète (créer → tagger → dialogue → quête) : voir
-`docs/NPC_DIALOGUES_QUESTS_GUIDE.md` section 6.
+`docs/NPC_DIALOGUES_QUESTS_GUIDE.md` sections 6 et 6b.
 
 ### Limites connues
 
@@ -639,6 +678,26 @@ Persistance : oui — SQLite (flags du claim).
 | Pistons traversant la frontière | non | Toujours bloqué |
 
 Bypass : `rpgquest.admin.world` (même permission que le bypass des zones protégées) exempte l'acteur direct d'une action, jamais la victime.
+
+### Accès au monde des claims et retour au Hub (issues #21/#22/#23)
+
+Vérifié dans `claim.ClaimWorldAccessGuard`, `claim.ClaimWorldSafetyListener`, `travel.CompositeWorldPortalEntryGuard`, `dialogues/guide.yml`, `dialogues/jo.yml`, `quests/crystal_hunt.yml`.
+
+**Condition réelle du premier claim** : la variable joueur `CLAIM_TIER_1 == "true"`, accordée **uniquement** par la récompense `VARIABLE` de `rpgquest:crystal_hunt` (dernière quête de `main_story`, rendue au Garde). Aucune autre mécanique. `/rpgadmin player resetnew` l'efface (avec tous les claims), `/claim admin resettier1` la met à `"false"`.
+
+**Portail Hub → `claims` fermé tant que le premier claim n'est pas débloqué** : `ClaimWorldAccessGuard` (un `travel.WorldPortalEntryGuard`, composé avec l'avertissement d'entrée dans le Wild) refuse l'entrée d'un joueur qui n'a ni `CLAIM_TIER_1 == "true"` ni claim existant — **aucune téléportation**, message d'orientation vers Jo / le Guide. Seul `rpgquest.admin.world` passe outre ; aucune permission de build/admin ne contourne la règle par accident.
+
+**Aucun joueur coincé, retour Hub sans commande** : `ClaimWorldSafetyListener` (sur `PlayerChangedWorldEvent` / `PlayerJoinEvent`) donne automatiquement une `rpgquest:pierre_retour` (voyage claims → Hub, clic droit, jamais consommée) à tout joueur éligible qui arrive dans le monde des claims sans en avoir une ; un joueur non éligible qui s'y retrouve autrement (`/tp`, reconnexion) est renvoyé au Hub. `/claim admin sendhome` et `/spawn` restent auxiliaires.
+
+**Dialogues alignés** : `guide.yml` (`help_claims`) énonce le prérequis réel (finir l'histoire principale au Garde, *puis* voir Jo) ; `jo.yml` adapte son texte aux 3 états — non débloqué (« Comment obtenir mon premier terrain ? », via `negate` sur `VARIABLE_EQUALS CLAIM_TIER_1`), débloqué sans claim (remet l'Acte), claim existant (retour / limites / Pierre de retour).
+
+**Prérequis opérationnels de ce parcours (non portés par le code, à provisionner sur chaque serveur)** :
+
+- **4 PNJ Citizens liés** — `guide`, `libraire`, **`guard`**, `jo` (via `/rpgadmin npc tag <id>`, jamais par le nom affiché ; mapping en base `npc_citizens_bindings`). Le PNJ **`guard`** démarre `first_steps` **et** démarre/valide `crystal_hunt` : sans lui, `CLAIM_TIER_1` ne peut **jamais** être accordé et le déblocage du claim est impossible (voir `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b).
+- **`dialogues/guard.yml` à jour** — doit contenir la branche `crystal_hunt` (choix « J'ai entendu dire… » + nœud `crystal_hunt_accepted`). Un `guard.yml` antérieur ne permet de démarrer que `first_steps`.
+- **Un World-Portal RPGQuest** `world_hub → claims` (`world-portals/hub_to_claims.yml`, `destination-world` = `claims.world`). `ClaimWorldAccessGuard` ne contrôle que les World-Portals : une téléportation par un autre moyen (`/mv tp`, `/tp`) est rattrapée par `ClaimWorldSafetyListener`, pas par le garde d'entrée.
+
+**Compte OP = bypass, pas un bug** : `rpgquest.admin.world` (défaut `op`, aucun plugin de permissions requis) contourne **à la fois** `ClaimWorldAccessGuard` (entre sans contrôle) **et** `ClaimWorldSafetyListener` (ni renvoi, ni Pierre de retour). Toute validation « le portail refuse / le retour Hub fonctionne » doit se faire avec un **compte non opéré** — un test OP produit exactement les symptômes « j'entre sans avoir débloqué » / « je reste coincé sans objet de retour ». Les décisions des deux composants sont journalisées (`[claims-access]` / `[claims-safety]`).
 
 ### Prévu / TODO
 
@@ -922,12 +981,47 @@ docs-site/                        # version HTML conviviale/navigation visuelle,
 
 RPGQuest identifie les PNJ Citizens par leur id numérique Citizens (`npc_citizens_bindings`, migration V12, table `npc_ids` migration V11 pour l'identité générique — voir section 2 § `/rpgadmin npc`). **Ne jamais migrer l'un sans l'autre** : les deux doivent provenir du même instantané temporel. Détail complet et procédure : [VERYGAMES.md § Migration des données](deployment/VERYGAMES.md#migration-des-données-scénario-3).
 
-### Tables SQLite par migration (`PRAGMA user_version`, vérifié dans `SchemaMigrator.java`, version courante = 12)
+### Moteur SQL configurable (issues #40 / #41)
+
+Le moteur de base de données est un **détail d'infrastructure** choisi par `config.yml` :
+
+```yaml
+database:
+  type: sqlite            # sqlite (défaut) | mysql (alias : mariadb)
+  sqlite:
+    file: data.db
+  mysql:
+    host: localhost
+    port: 3306
+    database: rpgquest
+    username: rpgquest    # compte dédié RPGQuest, jamais admin global
+    password-env: RPGQUEST_DB_PASSWORD   # NOM d'une variable d'environnement — jamais le mot de passe
+    ssl-mode: disable      # disable | trust | verify-ca | verify-full
+    pool:
+      minimum-idle: 2
+      maximum-pool-size: 10
+      connection-timeout-ms: 10000
+      max-lifetime-ms: 1800000
+```
+
+- **SQLite** reste câblé et **inchangé** : c'est le défaut, le mode test et le mode « installation
+  simple ». L'ancienne clé `database.file` reste acceptée comme alias de `database.sqlite.file`.
+- **MySQL/MariaDB (issue #41)** : backend **réel** — driver *MariaDB Connector/J* + pool
+  *HikariCP* (déclarés dans `plugin.yml` `libraries:`, jamais empaquetés). `MySqlDialect` adapte
+  automatiquement le SQL des repositories et le DDL des migrations (types, `AUTO_INCREMENT`,
+  `LONGBLOB`, InnoDB/`utf8mb4_bin`, `ON DUPLICATE KEY UPDATE`, index). Historique de schéma dans
+  la table `rpgquest_schema_migrations`. **Validé** contre un serveur MariaDB 10.11 (base de test
+  VeryGames vide). Si la base est injoignable/mal configurée : refus de démarrage propre et borné.
+- Le code de gameplay ne contient **aucun SQL** et ne teste **jamais** le moteur.
+- **Migration des données `data.db` → MariaDB et bascule de production = issue #42** (non faite).
+- Détail complet : [PERSISTENCE.md](PERSISTENCE.md).
+
+### Tables SQLite par migration (catalogue `SchemaMigrator.ALL`, version courante = 17)
 
 | Version | Tables créées | Domaine |
 |---|---|---|
-| V1 | `player_profiles`, `player_variables` | Socle joueur |
-| V2 | `quest_progress`, `quest_objective_progress` | Quêtes |
+| V1 | `player_profiles`, `player_variables`, `quest_progress` | Socle joueur / quêtes |
+| V2 | `quest_objective_progress` | Quêtes |
 | V3 | `resource_nodes` | Ressources |
 | V4 | `wallets`, `transactions` | Économie |
 | V5 | `market_listings` | Marché entre joueurs |
@@ -938,8 +1032,16 @@ RPGQuest identifie les PNJ Citizens par leur id numérique Citizens (`npc_citize
 | V10 | `store_deliveries_processed` | Boutique web (idempotence des livraisons) |
 | V11 | `npc_ids` | Identité PNJ stable (`/rpgadmin npc`) |
 | V12 | `npc_citizens_bindings` | Liaison PNJ Citizens ↔ identifiant RPGQuest |
+| V13 | `story_progress` | Storylines |
+| V14 | `story_progress.current_index` (ALTER) | Storylines — quête suivie |
+| V15 | colonnes `claims.reserved_*` (ALTER) | Claims — réservation foncière |
+| V16 | `item_travel_cooldowns` | Voyage — cooldown Rune de rappel |
+| V17 | `waystones`, `waystone_discoveries` | Voyage — Waystones Wild |
 
-Migrations idempotentes : `migrate()` sur une base déjà à jour ne fait rien ; toutes les `CREATE TABLE` utilisent `IF NOT EXISTS`.
+Suivi de version : `PRAGMA user_version` en SQLite (natif, inchangé) ; table portable
+`rpgquest_schema_migrations` en MySQL (#41). `SchemaMigrationRunner` applique les étapes en
+attente **dans l'ordre**, une fois ; rejeu = no-op ; échec → `SchemaMigrationException` nommant
+l'étape. Migrations idempotentes (`CREATE TABLE IF NOT EXISTS`, `ALTER` gardé par `columnExists`).
 
 ### Classification des données
 
@@ -1082,6 +1184,8 @@ Définitions chargées depuis `plugins/RPGQuest/stories/` (un exemple `main_stor
 |---|---|---|
 | `/rpgadmin story info <joueur>` | Liste toutes les Stories connues, leur état, et — si `ACTIVE` — la quête courante (id + position `n/total`). | non |
 | `/rpgadmin story start <joueur> <storyId>` | Démarre une Story (`ACTIVE`) et sa première quête. Refusé si id inconnu, déjà active, ou déjà terminée. | oui |
+| `/rpgadmin story advance <joueur> <storyId>` | *(issue #36)* Démarre la Story si besoin, `forceComplete` de sa quête courante (récompenses appliquées **une fois**), avance d'un cran — accepte la quête suivante ou termine la Story. Message : quelle étape tester maintenant. Cible **en ligne**. Voir [ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md). | oui |
+| `/rpgadmin story complete <joueur> <storyId>` | *(issue #36)* Enchaîne `advance` jusqu'au bout, dans l'ordre, borné (jamais de boucle infinie). Récompenses appliquées **une fois par quête**. Cible **en ligne**. | oui |
 | `/rpgadmin story reset <joueur> <storyId\|all>` | Supprime la progression d'une Story (ou de toutes), reset ciblé — jamais l'inventaire, l'économie, ni les quêtes (`quest_progress` non touché). | oui (suppression) |
 | `/rpgadmin story resetwithquests <joueur> <storyId>` | Comme `reset`, **et** réinitialise (via `QuestProgressEngine#resetQuest`) chacune des quêtes que cette Story référence — jamais les autres quêtes du joueur, jamais un `... all`. Outil ciblé pour rejouer un scénario de test. | oui (suppression) |
 

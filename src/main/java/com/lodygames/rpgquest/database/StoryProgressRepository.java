@@ -37,9 +37,11 @@ public final class StoryProgressRepository {
             "DELETE FROM story_progress WHERE player_uuid = ?";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public StoryProgressRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     public CompletableFuture<Optional<StoryProgressRecord>> find(UUID playerUuid, String storyId) {
@@ -71,7 +73,7 @@ public final class StoryProgressRepository {
 
     public CompletableFuture<Void> upsertProgress(UUID playerUuid, String storyId, StoryState state, int currentIndex) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(UPSERT_PROGRESS)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPSERT_PROGRESS))) {
                 statement.setString(1, playerUuid.toString());
                 statement.setString(2, storyId);
                 statement.setString(3, state.name());

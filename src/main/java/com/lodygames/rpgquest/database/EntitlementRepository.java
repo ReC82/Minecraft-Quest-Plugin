@@ -28,9 +28,11 @@ public final class EntitlementRepository implements EntitlementService {
             "DELETE FROM player_entitlements WHERE player_uuid = ? AND entitlement_key = ?";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public EntitlementRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     @Override
@@ -49,7 +51,7 @@ public final class EntitlementRepository implements EntitlementService {
     @Override
     public CompletableFuture<Void> grant(UUID playerId, String entitlementKey, String tier, String reason) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(UPSERT_ENTITLEMENT)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPSERT_ENTITLEMENT))) {
                 statement.setString(1, playerId.toString());
                 statement.setString(2, entitlementKey);
                 statement.setString(3, tier);

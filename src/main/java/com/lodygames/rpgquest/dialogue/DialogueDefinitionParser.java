@@ -14,6 +14,7 @@ import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
 import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
+import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
@@ -216,7 +217,7 @@ final class DialogueDefinitionParser {
             return null;
         }
 
-        return switch (type) {
+        DialogueCondition condition = switch (type) {
             case QUEST_STATE -> {
                 NamespacedKey questId = parseQuestRef(section, "quest", context, errors);
                 QuestState state = parseQuestState(section, context, errors);
@@ -260,6 +261,13 @@ final class DialogueDefinitionParser {
                 yield new LacksCustomItemCondition(itemId);
             }
         };
+
+        // « negate: true » enrobe n'importe quelle condition pour en inverser le verdict (voir
+        // NegatedCondition) — appliqué ici, après construction, pour rester indépendant du type.
+        if (condition != null && section.getBoolean("negate", false)) {
+            return new NegatedCondition(condition);
+        }
+        return condition;
     }
 
     private List<DialogueAction> parseActions(ConfigurationSection choiceSection, String context, List<String> errors) {

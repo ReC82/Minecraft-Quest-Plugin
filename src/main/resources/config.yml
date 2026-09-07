@@ -8,9 +8,42 @@ debug: false
 locale: fr
 
 database:
-  # Nom du fichier SQLite, créé dans le dossier de données du plugin
-  # (plugins/RPGQuest/<database.file>). Doit être un simple nom de fichier.
-  file: data.db
+  # Moteur de persistance : sqlite (défaut) ou mysql (alias : mariadb).
+  # SQLite convient au dev local, aux tests et à une petite instance mono-serveur.
+  # mysql : backend MySQL/MariaDB réel (driver MariaDB Connector/J + pool HikariCP,
+  # issue #41). Le gameplay ne dépend jamais du moteur SQL.
+  type: sqlite
+
+  sqlite:
+    # Nom du fichier SQLite, créé dans le dossier de données du plugin
+    # (plugins/RPGQuest/<sqlite.file>). Doit être un simple nom de fichier.
+    file: data.db
+
+  mysql:
+    host: localhost
+    port: 3306
+    database: rpgquest
+    # Compte DÉDIÉ à RPGQuest, limité à cette seule base (jamais un compte admin
+    # global). Privilèges runtime : SELECT, INSERT, UPDATE, DELETE. Privilèges
+    # supplémentaires pour l'installation/les migrations : CREATE, ALTER, INDEX,
+    # REFERENCES. Voir docs/PERSISTENCE.md.
+    username: rpgquest
+    # Le mot de passe n'est JAMAIS écrit ici : indiquer le NOM d'une variable
+    # d'environnement qui le contient (résolue à l'ouverture de la connexion).
+    password-env: RPGQUEST_DB_PASSWORD
+    # TLS du driver : disable (défaut), trust, verify-ca, verify-full.
+    ssl-mode: disable
+    pool:
+      minimum-idle: 2
+      maximum-pool-size: 10
+      connection-timeout-ms: 10000
+      max-lifetime-ms: 1800000
+      # Ping des connexions inactives (0 = désactivé). Doit rester < max-lifetime-ms.
+      keepalive-ms: 0
+
+  # Rétrocompatibilité : l'ancienne clé « database.file » reste acceptée comme
+  # alias de « database.sqlite.file ».
+  # file: data.db
 
 resource-pack:
   # Le plugin démarre normalement même si le resource pack est désactivé

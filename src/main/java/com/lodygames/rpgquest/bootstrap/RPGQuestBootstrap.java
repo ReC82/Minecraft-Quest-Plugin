@@ -12,6 +12,8 @@ import com.lodygames.rpgquest.claim.ClaimSelectionService;
 import com.lodygames.rpgquest.claim.ClaimService;
 import com.lodygames.rpgquest.claim.ClaimTeleportService;
 import com.lodygames.rpgquest.claim.ClaimWandListener;
+import com.lodygames.rpgquest.claim.ClaimWorldAccessGuard;
+import com.lodygames.rpgquest.claim.ClaimWorldSafetyListener;
 import com.lodygames.rpgquest.claim.ClaimsWorldRulesListener;
 import com.lodygames.rpgquest.claim.DeedClaimListener;
 import com.lodygames.rpgquest.command.BackpackCommand;
@@ -61,6 +63,7 @@ import com.lodygames.rpgquest.economy.market.MarketService;
 import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
 import com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry;
 import com.lodygames.rpgquest.entitlement.EntitlementService;
+import com.lodygames.rpgquest.hub.HubGuideRegistry;
 import com.lodygames.rpgquest.hub.HubWorldProtectionListener;
 import com.lodygames.rpgquest.hub.HubWorldRulesService;
 import com.lodygames.rpgquest.item.RpgItemKeys;
@@ -102,6 +105,7 @@ import com.lodygames.rpgquest.store.StoreDeliveryService;
 import com.lodygames.rpgquest.store.StoreProductRegistry;
 import com.lodygames.rpgquest.story.StoryRegistry;
 import com.lodygames.rpgquest.story.StoryService;
+import com.lodygames.rpgquest.travel.CompositeWorldPortalEntryGuard;
 import com.lodygames.rpgquest.travel.ItemTravelService;
 import com.lodygames.rpgquest.travel.PortalService;
 import com.lodygames.rpgquest.travel.WorldPortalRegistry;
@@ -111,18 +115,27 @@ import com.lodygames.rpgquest.travel.WorldPortalTeleportListener;
 import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
 import com.lodygames.rpgquest.travel.model.ItemTravelDefinition;
-import com.lodygames.rpgquest.ui.QuestJournalBookService;
 import com.lodygames.rpgquest.ui.QuestJournalService;
 import com.lodygames.rpgquest.database.WaystoneRepository;
 import com.lodygames.rpgquest.waystone.SimpleWaystoneStructurePlacer;
 import com.lodygames.rpgquest.waystone.WaystoneCellPlanner;
 import com.lodygames.rpgquest.waystone.WaystoneService;
 import com.lodygames.rpgquest.web.WebSnapshotWriter;
+import com.lodygames.rpgquest.web.admin.BukkitHealthSource;
+import com.lodygames.rpgquest.web.admin.HealthSource;
+import com.lodygames.rpgquest.web.admin.WebAdminServer;
+import com.lodygames.rpgquest.web.agent.AgentActionExecutor;
+import com.lodygames.rpgquest.web.agent.AgentConfig;
+import com.lodygames.rpgquest.web.agent.AgentConfigLoader;
+import com.lodygames.rpgquest.web.agent.BukkitPlayerDirectory;
+import com.lodygames.rpgquest.web.agent.HeartbeatPayload;
+import com.lodygames.rpgquest.web.agent.PlugAdminAgent;
 import com.lodygames.rpgquest.world.WorldService;
 import com.lodygames.rpgquest.zone.ZoneProtectionListener;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.zone.ZoneSelectionService;
 import com.lodygames.rpgquest.zone.ZoneWandListener;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -162,8 +175,10 @@ public final class RPGQuestBootstrap {
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
+    private PlayerVariableRepository variableRepository;
     private YamlDialogueEngine dialogueEngine;
     private DialogueSessionEngine dialogueSessionEngine;
+    private HubGuideRegistry hubGuideRegistry;
     private QuestJournalService questJournalService;
     private ResourceNodeService resourceNodeService;
     private SpecialMobService mobService;
@@ -286,7 +301,7 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, equipmentBehaviorService.cooldownCleanupListener()));
 
         QuestProgressRepository progressRepository = new QuestProgressRepository(databaseService.databaseManager());
-        PlayerVariableRepository variableRepository = new PlayerVariableRepository(databaseService.databaseManager());
+        variableRepository = new PlayerVariableRepository(databaseService.databaseManager());
         questProgressEngine = new QuestProgressEngine(
                 plugin, questEngine, progressRepository, variableRepository, questMessagesService, npcIdentityService);
         registry.start(questProgressEngine);
@@ -301,6 +316,21 @@ public final class RPGQuestBootstrap {
                 plugin, plugin.getDataFolder().toPath(), progressionRepository, customItemRegistry,
                 () -> configService.current().webExport(), plugin.getSLF4JLogger());
         registry.start(webSnapshotWriter);
+
+        // Bridge d'administration HTTP (issue #37) — désactivé sauf RPGQUEST_WEB_ADMIN_ENABLED=true
+        // + RPGQUEST_WEB_ADMIN_TOKEN (env, jamais config.yml). Seule voie d'intégration du Control Panel.
+        HealthSource healthSource = new BukkitHealthSource(plugin, worldService, () -> configService.current());
+        registry.start(new WebAdminServer(healthSource, plugin.getSLF4JLogger()));
+
+        // Agent sortant PlugAdmin (issue #51) — RPGQuest/VeryGames initie une connexion HTTPS
+        // SORTANTE vers PlugAdmin/AWS (heartbeat + file d'actions whitelistées). Fail-closed :
+        // inerte tant que plugins/RPGQuest/plugadmin-agent.properties (hors Git) n'active pas
+        // l'agent et ne fournit pas base-url + agent-id + token. Réutilise HealthSource (#37),
+        // ne recalcule jamais le health.
+        AgentConfig agentConfig = new AgentConfigLoader(plugin.getDataFolder().toPath(), plugin.getSLF4JLogger()).load();
+        registry.start(new PlugAdminAgent(
+                plugin, agentConfig, new HeartbeatPayload(healthSource),
+                new AgentActionExecutor(new BukkitPlayerDirectory(plugin), variableRepository::get)));
 
         PlacedBlockRepository placedBlockRepository = new PlacedBlockRepository(databaseService.databaseManager());
         PlacedBlockTracker placedBlockTracker = new PlacedBlockTracker(plugin, placedBlockRepository, plugin.getSLF4JLogger());
@@ -362,10 +392,9 @@ public final class RPGQuestBootstrap {
         WorldPortalTeleportListener worldPortalTeleportListener = new WorldPortalTeleportListener(
                 plugin, worldPortalRegistry, worldService,
                 () -> configService.current().randomSafeArrival(), plugin.getSLF4JLogger());
-        // Avertissement avant entrée dans le Wild sans Rune de rappel (mission « boucle joueur ») :
-        // politique branchée sur le portail simple, jamais codée dedans.
-        worldPortalTeleportListener.setEntryGuard(new WildEntryWarningService(
-                plugin, customItemRegistry, () -> configService.current().travel().wildWorld(), worldPortalTeleportListener));
+        // Le garde d'entrée du portail simple est installé plus bas (setEntryGuard), une fois
+        // claimService disponible : il compose l'avertissement d'entrée dans le Wild (« boucle
+        // joueur ») ET le contrôle d'accès au monde des claims (issues #21/#22/#23).
         registry.start(new PlayerListenerService(plugin, worldPortalTeleportListener));
         worldPortalDebugService = new WorldPortalDebugService(plugin, worldPortalRegistry, plugin.getSLF4JLogger());
         registry.start(worldPortalDebugService);
@@ -396,6 +425,23 @@ public final class RPGQuestBootstrap {
         claimsWorldRulesListener.purgeAlreadyLoadedWorld();
         registry.start(new PlayerListenerService(plugin,
                 new ClaimNetherTravelListener(() -> configService.current().claims())));
+
+        // Parcours Claims cohérent (issues #21/#22/#23) : accès au monde des claims réservé au
+        // déblocage réel du premier terrain (CLAIM_TIER_1 / claim existant), composé avec
+        // l'avertissement d'entrée dans le Wild — un seul garde côté WorldPortalTeleportListener.
+        ClaimWorldAccessGuard claimWorldAccessGuard = new ClaimWorldAccessGuard(
+                plugin, claimService, () -> configService.current().claims(), worldPortalTeleportListener);
+        worldPortalTeleportListener.setEntryGuard(new CompositeWorldPortalEntryGuard(List.of(
+                claimWorldAccessGuard,
+                new WildEntryWarningService(plugin, customItemRegistry,
+                        () -> configService.current().travel().wildWorld(), worldPortalTeleportListener))));
+        // Filet de sécurité : personne ne reste coincé dans le monde des claims, et un retour Hub
+        // sans commande y est toujours possible (Pierre de retour donnée si absente ; joueur non
+        // éligible arrivé autrement que par le portail renvoyé au village).
+        registry.start(new PlayerListenerService(plugin, new ClaimWorldSafetyListener(
+                plugin, claimService, customItemRegistry, () -> configService.current().claims(),
+                () -> spawnService.resolve().or(() -> worldService.find(configService.current().hub().world())
+                        .map(w -> w.getSpawnLocation())))));
 
         ClaimBorderRenderer claimBorderRenderer = new ClaimBorderRenderer(plugin);
         registry.start(claimBorderRenderer);
@@ -450,6 +496,13 @@ public final class RPGQuestBootstrap {
                 configService.current().dialogue().allowedCommands());
         registry.start(dialogueEngine);
 
+        // Structure d'aide/orientation par Hub (issue #11, partie A) : mapping Hub → dialogue d'aide
+        // + accueil/spécialité/orientations, en données (hub-guides/*.yml). Le contenu du menu d'aide
+        // vit dans le dialogue référencé — voir docs/HUB_GUIDE.md.
+        hubGuideRegistry = new HubGuideRegistry(
+                plugin.getDataFolder().toPath().resolve("hub-guides"), plugin.getSLF4JLogger());
+        registry.start(hubGuideRegistry);
+
         dialogueSessionEngine = new DialogueSessionEngine(
                 plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService, npcIdentityService,
                 claimService, customItemRegistry);
@@ -461,15 +514,14 @@ public final class RPGQuestBootstrap {
             registry.start(new PlayerListenerService(plugin, citizensDialogueListener));
         }
 
+        // Journal des quêtes : GUI paginée à deux onglets (en cours / terminées), ouverte par un
+        // clic droit sur l'item rpgquest:journal_quetes (remis par le Libraire) ou par /quests.
+        // Ne liste jamais les quêtes non découvertes (pas de catalogue) — voir docs/RPGQUEST_BIBLE.md.
         questJournalService = new QuestJournalService(
-                plugin, questEngine, questProgressEngine, variableRepository, configService.current().journal());
+                plugin, questEngine, questProgressEngine, variableRepository, customItemRegistry,
+                configService.current().journal());
         registry.start(questJournalService);
         registry.start(new PlayerListenerService(plugin, questJournalService.listener()));
-
-        QuestJournalBookService questJournalBookService = new QuestJournalBookService(
-                plugin, customItemRegistry, questProgressEngine, questEngine, storyService);
-        registry.start(questJournalBookService);
-        registry.start(new PlayerListenerService(plugin, questJournalBookService.listener()));
 
         // Reset admin « nouveau joueur » (/rpgadmin player resetnew) : orchestre les resets déjà
         // existants (quêtes, stories, claims/CLAIM_TIER_1, découvertes de Waystones) + les
@@ -744,7 +796,8 @@ public final class RPGQuestBootstrap {
         RpgAdminCommand rpgAdminCommand = new RpgAdminCommand(
                 flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
-                worldPortalDebugService, storyService, waystoneService, playerResetService, plugin);
+                worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry,
+                questProgressEngine, questEngine, variableRepository, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

@@ -15,6 +15,7 @@ suppressions par joueur qui manquaient (variables, progression RPG, cooldowns pe
 
 ```
 /rpgadmin player resetnew <joueur>            # affiche un avertissement, ne fait rien
+/rpgadmin player resetnew <joueur> preview    # dry-run : liste ce qui serait effacé, sans rien modifier
 /rpgadmin player resetnew <joueur> confirm    # exécute le reset
 ```
 
@@ -24,6 +25,30 @@ suppressions par joueur qui manquaient (variables, progression RPG, cooldowns pe
   qui serait effacé.
 - **Console** : utilisable depuis la console du serveur (comme `/rpgadmin story ...`).
 - **Cible** : toujours **un seul** joueur, désigné par son pseudo.
+
+## Preview / dry-run — `preview`
+
+`/rpgadmin player resetnew <joueur> preview` affiche, catégorie par catégorie, ce qu'un reset réel
+effacerait pour ce joueur, **sans effectuer aucune écriture** : aucune suppression en base, aucun
+marqueur `__pending_new_player_reset__` posé, aucun cache mémoire invalidé, aucun objet retiré de
+l'inventaire. Utile pour vérifier la cible avant de lancer un `confirm`.
+
+- **En ligne ou hors ligne** : toutes les catégories persistantes sont lues dans les deux cas.
+  L'**inventaire** n'est comptabilisé que si le joueur est **en ligne** ; hors ligne, la catégorie
+  est affichée comme « non applicable » (l'inventaire sera nettoyé au prochain login).
+- Une catégorie **déjà vide** est affichée comme « rien à réinitialiser » plutôt que masquée.
+- Implémentation : `PlayerResetService#previewReset(UUID)` → `ResetPreview` (liste de
+  `ResetCategory` : `label`, `count`, `detail` ; `count == -1` = non inspectable, `count == 0` =
+  inspectée mais vide). Réutilise la logique de collecte existante (mêmes services que le reset
+  réel) via des lectures pures : `QuestProgressEngine#allStates`, `StoryService#progressRecords`,
+  `PlayerVariableRepository#findAllForPlayer`, `ProgressionRepository#findAll`,
+  `PortalCooldownRepository#allForPlayer`, `ItemTravelCooldownRepository#allForPlayer`,
+  `WaystoneService#discoveryCount`, `ClaimService#claimsOwnedBy` / `#hasClaimTierOne`,
+  `PlayerResetService#countRpgItems`.
+
+Catégories affichées : Quêtes · Stories · Variables / unlocks · Déblocage `CLAIM_TIER_1` ·
+Progression RPG · Découvertes de Waystones · Cooldowns de portails · Cooldowns de voyage par objet
+(Rune…) · Claim principal · Inventaire (objets RPGQuest).
 
 ## Online / offline
 
@@ -90,6 +115,14 @@ auprès de Jo, et reposer un claim (y compris au même endroit).
 /rpgadmin player resetnew LoDyMcFly
 ```
 → affiche l'avertissement listant ce qui sera effacé.
+
+```
+/rpgadmin player resetnew LoDyMcFly preview
+```
+→ dry-run : affiche l'en-tête (`en ligne`/`hors ligne`), la ligne
+`Dry-run : aucune donnée n'a été modifiée.`, une ligne par catégorie (nombre + détail, ou
+« rien à réinitialiser », ou « non applicable »), le rappel des données conservées, et enfin
+`Pour exécuter réellement : /rpgadmin player resetnew LoDyMcFly confirm`. **Aucune donnée touchée.**
 
 ```
 /rpgadmin player resetnew LoDyMcFly confirm

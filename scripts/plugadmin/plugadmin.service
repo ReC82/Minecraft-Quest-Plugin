@@ -1,0 +1,49 @@
+# PlugAdmin — RPGQuest Control Panel (issue #44)
+#
+# Service systemd DÉDIÉ. N'a aucun impact sur les autres services de l'instance
+# (dig.service, lodyland.service, nginx.service).
+#
+# Installé par scripts/plugadmin/install.sh en /etc/systemd/system/plugadmin.service.
+# Ne PAS lancer le panel depuis le working tree Git : l'app tourne depuis
+# /opt/plugadmin/app (sortie de `./gradlew :control-panel:installDist`).
+#
+# Secrets : EnvironmentFile hors dépôt, /etc/plugadmin/plugadmin.env (chmod 640,
+# root:plugadmin). Voir scripts/plugadmin/plugadmin.env.example.
+
+[Unit]
+Description=PlugAdmin - RPGQuest Control Panel
+Documentation=https://github.com/ReC82/Minecraft-Quest-Plugin/issues/44
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=plugadmin
+Group=plugadmin
+WorkingDirectory=/var/lib/plugadmin
+EnvironmentFile=/etc/plugadmin/plugadmin.env
+ExecStart=/opt/plugadmin/app/bin/control-panel
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+# Le script Gradle exec() la JVM ; à l'arrêt, la JVM sort sur SIGTERM avec 143.
+# Sans ça, `systemctl stop` laisse l'unité en état « failed » (cosmétique mais trompeur).
+SuccessExitStatus=143 130 SIGTERM
+
+# --- Durcissement (le panel n'écrit que dans /var/lib/plugadmin) ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/plugadmin
+StateDirectory=plugadmin
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

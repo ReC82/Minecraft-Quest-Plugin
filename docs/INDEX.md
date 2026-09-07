@@ -9,8 +9,10 @@ documents ci-dessous détaillent chacun un sous-système spécifique.
 | [RPGQUEST_BIBLE.md](RPGQUEST_BIBLE.md) | Référence complète du projet : tous les systèmes, toutes les commandes, décisions techniques. |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Décisions d'ingénierie détaillées par sous-système (pourquoi, pas seulement quoi). |
 | [current_state.md](current_state.md) | Snapshot de ce qui est actuellement implémenté — mis à jour à chaque étape livrée. |
+| [PERSISTENCE.md](PERSISTENCE.md) | Couche de persistance : moteur SQL configurable (SQLite/MySQL), abstractions, migrations versionnées, règles async, secrets. |
 | [storylines.md](storylines.md) | Moteur de Storyline : conteneur logique de quêtes, progression par joueur, commandes admin. |
 | [NPC_DIALOGUES_QUESTS_GUIDE.md](NPC_DIALOGUES_QUESTS_GUIDE.md) | Guide PNJ, dialogues et quêtes (format YAML, exemples). |
+| [HUB_GUIDE.md](HUB_GUIDE.md) | Guide « centre d'aide » d'un Hub, journal du Libraire, structure multi-Hub (`hub-guides/`). |
 | [SAFE_ZONE.md](SAFE_ZONE.md) | Zones protégées (village central / safe zone). |
 | [TRAVEL.md](TRAVEL.md) | Portails (`/rpgadmin portal`), destinations et portails simples (`/rpgadmin worldportal`). |
 | [CLAIMS.md](CLAIMS.md) | Claims de terrain joueurs. |

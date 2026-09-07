@@ -504,6 +504,114 @@ class ConfigValidatorTest {
         assertTrue(exception.getMessage().contains("hub.world"));
     }
 
+    // ---- database: section (issue #40) ----------------------------------------------------
+
+    @Test
+    void databaseDefaultsToSqliteDataDb() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load(""));
+        assertEquals(com.lodygames.rpgquest.database.DatabaseType.SQLITE, config.database().type());
+        assertEquals("data.db", config.database().sqlite().file());
+        assertEquals("data.db", config.databaseFile());
+    }
+
+    @Test
+    void databaseAcceptsTheNewSqliteSubSection() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                database:
+                  type: sqlite
+                  sqlite:
+                    file: world.db
+                """));
+        assertEquals("world.db", config.database().sqlite().file());
+        assertEquals("world.db", config.databaseFile());
+    }
+
+    @Test
+    void databaseFileLegacyKeyStillWorksAsAlias() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                database:
+                  file: legacy.db
+                """));
+        assertEquals("legacy.db", config.database().sqlite().file());
+    }
+
+    @Test
+    void databaseAcceptsMysqlSelectionWithoutClearPassword() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                database:
+                  type: mysql
+                  mysql:
+                    host: db.internal
+                    port: 3307
+                    database: rpg
+                    username: rpg_app
+                    password-env: RPGQUEST_DB_PASSWORD
+                    ssl-mode: verify-ca
+                    pool:
+                      minimum-idle: 3
+                      maximum-pool-size: 20
+                """));
+        assertEquals(com.lodygames.rpgquest.database.DatabaseType.MYSQL, config.database().type());
+        assertEquals("db.internal", config.database().mysql().host());
+        assertEquals(3307, config.database().mysql().port());
+        assertEquals("rpg_app", config.database().mysql().username());
+        assertEquals("RPGQUEST_DB_PASSWORD", config.database().mysql().passwordEnv());
+        assertEquals("verify-ca", config.database().mysql().sslMode());
+        assertEquals(20, config.database().mysql().pool().maximumPoolSize());
+        assertEquals(3, config.database().mysql().pool().minimumIdle());
+    }
+
+    @Test
+    void databaseRejectsUnknownMysqlSslMode() {
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(load("""
+                database:
+                  type: mysql
+                  mysql:
+                    ssl-mode: bogus
+                """)));
+    }
+
+    @Test
+    void databaseRejectsUnknownEngineType() {
+        ConfigValidationException exception = assertThrows(ConfigValidationException.class,
+                () -> ConfigValidator.validate(load("""
+                        database:
+                          type: postgres
+                        """)));
+        assertTrue(exception.getMessage().contains("database.type"));
+    }
+
+    @Test
+    void databaseRejectsClearMysqlPassword() {
+        ConfigValidationException exception = assertThrows(ConfigValidationException.class,
+                () -> ConfigValidator.validate(load("""
+                        database:
+                          type: mysql
+                          mysql:
+                            password: hunter2
+                        """)));
+        assertTrue(exception.getMessage().contains("password-env"));
+    }
+
+    @Test
+    void databaseRejectsMysqlPortOutOfRange() {
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(load("""
+                database:
+                  type: mysql
+                  mysql:
+                    port: 70000
+                """)));
+    }
+
+    @Test
+    void databaseMariadbIsAnAliasOfMysql() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                database:
+                  type: mariadb
+                """));
+        assertEquals(com.lodygames.rpgquest.database.DatabaseType.MYSQL, config.database().type());
+    }
+
     private ConfigurationSection load(String yaml) {
         return YamlConfiguration.loadConfiguration(new StringReader(yaml));
     }

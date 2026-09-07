@@ -45,9 +45,11 @@ public final class BackpackRepository {
             "INSERT INTO backpack_audit (player_uuid, event_type, detail, created_at) VALUES (?, ?, ?, ?)";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public BackpackRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     public CompletableFuture<Optional<StoredBackpack>> find(UUID playerId) {
@@ -146,7 +148,7 @@ public final class BackpackRepository {
 
     private void upsertBackpack(Connection connection, UUID playerId, int schemaVersion, byte[] contents)
             throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(UPSERT_BACKPACK)) {
+        try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPSERT_BACKPACK))) {
             statement.setString(1, playerId.toString());
             statement.setInt(2, schemaVersion);
             statement.setBytes(3, contents);

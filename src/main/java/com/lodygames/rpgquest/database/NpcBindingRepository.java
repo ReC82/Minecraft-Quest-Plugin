@@ -32,14 +32,16 @@ public final class NpcBindingRepository {
     private static final String SELECT_ALL = "SELECT citizens_uuid, citizens_numeric_id, npc_id FROM npc_citizens_bindings";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public NpcBindingRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     public CompletableFuture<Void> upsert(UUID citizensUuid, int citizensNumericId, String npcId) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(UPSERT)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPSERT))) {
                 statement.setString(1, citizensUuid.toString());
                 statement.setInt(2, citizensNumericId);
                 statement.setString(3, npcId);

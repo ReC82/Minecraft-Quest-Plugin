@@ -460,6 +460,32 @@ class QuestProgressEngineTest {
     }
 
     @Test
+    void acceptWithIgnorePrerequisitesBypassesTheMissingPrerequisiteCheck() throws Exception {
+        writeKillQuest(KILL_QUEST_TWO, "with_prereq_forced.yml", 1, false, KILL_QUEST.toString());
+        engine.reloadQuestDefinitions();
+
+        PlayerMock player = addPlayer();
+        AcceptOutcome outcome = engine.accept(player, KILL_QUEST_TWO, true).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(AcceptOutcome.Result.ACCEPTED, outcome.result(),
+                "ignorePrerequisites=true doit sauter la seule vérification des prérequis");
+        assertEquals(QuestState.ACTIVE, engine.stateOf(player.getUniqueId(), KILL_QUEST_TWO).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void acceptWithIgnorePrerequisitesStillRefusesAnAlreadyActiveQuest() throws Exception {
+        writeKillQuest(KILL_QUEST_TWO, "already_active_forced.yml", 1, false, null);
+        engine.reloadQuestDefinitions();
+
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST_TWO, true).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        AcceptOutcome again = engine.accept(player, KILL_QUEST_TWO, true).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(AcceptOutcome.Result.ALREADY_ACTIVE, again.result(),
+                "ignorePrerequisites ne relâche QUE le contrôle des prérequis, jamais la garde anti-doublon");
+    }
+
+    @Test
     void resetQuestAllowsRestartEvenWhenNotRepeatable() throws Exception {
         writeKillQuest(KILL_QUEST_TWO, "not_repeatable_reset.yml", 1, false, null);
         engine.reloadQuestDefinitions();

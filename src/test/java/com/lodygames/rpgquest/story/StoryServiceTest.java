@@ -357,6 +357,123 @@ class StoryServiceTest {
         assertEquals(StoryState.NOT_STARTED, stateOf(player, SIDE_STORY_ID));
     }
 
+    // ---- Raccourcis d'administration / test (issue #36) -------------------------------------------
+
+    @Test
+    void adminAdvanceOnANotStartedStoryStartsItAndCompletesTheFirstQuest() throws Exception {
+        PlayerMock player = addPlayer();
+
+        StoryService.StoryAdvanceReport report =
+                pumpAwait(storyService.adminAdvance(player, STORY_ID));
+
+        assertEquals(StoryService.StoryAdvanceOutcome.ADVANCED, report.outcome());
+        assertTrue(report.storyWasStarted(), "la story n'était pas commencée : advance doit la démarrer");
+        assertEquals(QUEST_ONE, report.completedQuestId());
+        assertEquals(QUEST_TWO, report.nextQuestId());
+        assertEquals(2, report.stepNumber());
+        assertEquals(3, report.totalSteps());
+
+        awaitUntil(() -> questState(player, QUEST_ONE) == QuestState.COMPLETED);
+        awaitUntil(() -> currentIndexOf(player, STORY_ID) == 1);
+        awaitUntil(() -> questState(player, QUEST_TWO) == QuestState.ACTIVE);
+        assertEquals(StoryState.ACTIVE, stateOf(player, STORY_ID));
+    }
+
+    @Test
+    void adminAdvanceRespectsTheStoryOrderAndNeverSkipsAStep() throws Exception {
+        PlayerMock player = addPlayer();
+
+        pumpAwait(storyService.adminAdvance(player, STORY_ID));
+        awaitUntil(() -> questState(player, QUEST_TWO) == QuestState.ACTIVE);
+
+        StoryService.StoryAdvanceReport second =
+                pumpAwait(storyService.adminAdvance(player, STORY_ID));
+
+        assertEquals(QUEST_TWO, second.completedQuestId(), "la 2e étape complétée doit être la 2e quête, jamais la 3e");
+        assertEquals(QUEST_THREE, second.nextQuestId());
+        awaitUntil(() -> currentIndexOf(player, STORY_ID) == 2);
+        assertEquals(QuestState.COMPLETED, questState(player, QUEST_TWO));
+        assertEquals(QuestState.ACTIVE, questState(player, QUEST_THREE), "quest_three ne démarre qu'une fois quest_two terminée");
+    }
+
+    @Test
+    void adminAdvanceOnTheLastStepCompletesTheStory() throws Exception {
+        PlayerMock player = addPlayer();
+        pumpAwait(storyService.adminAdvance(player, STORY_ID));
+        awaitUntil(() -> questState(player, QUEST_TWO) == QuestState.ACTIVE);
+        pumpAwait(storyService.adminAdvance(player, STORY_ID));
+        awaitUntil(() -> questState(player, QUEST_THREE) == QuestState.ACTIVE);
+
+        StoryService.StoryAdvanceReport last =
+                pumpAwait(storyService.adminAdvance(player, STORY_ID));
+
+        assertEquals(StoryService.StoryAdvanceOutcome.STORY_COMPLETED, last.outcome());
+        assertEquals(QUEST_THREE, last.completedQuestId());
+        awaitUntil(() -> stateOf(player, STORY_ID) == StoryState.COMPLETED);
+    }
+
+    @Test
+    void adminAdvanceOnAnAlreadyCompletedStoryDoesNothing() throws Exception {
+        PlayerMock player = addPlayer();
+        pumpAwait(storyService.adminComplete(player, STORY_ID));
+        awaitUntil(() -> stateOf(player, STORY_ID) == StoryState.COMPLETED);
+
+        StoryService.StoryAdvanceReport report =
+                pumpAwait(storyService.adminAdvance(player, STORY_ID));
+
+        assertEquals(StoryService.StoryAdvanceOutcome.ALREADY_COMPLETED, report.outcome());
+        assertEquals(StoryState.COMPLETED, stateOf(player, STORY_ID));
+    }
+
+    @Test
+    void adminAdvanceOnAnUnknownStoryReportsCleanly() throws Exception {
+        PlayerMock player = addPlayer();
+
+        StoryService.StoryAdvanceReport report =
+                pumpAwait(storyService.adminAdvance(player, "does_not_exist"));
+
+        assertEquals(StoryService.StoryAdvanceOutcome.UNKNOWN_STORY, report.outcome());
+    }
+
+    @Test
+    void adminCompleteFinishesEveryQuestOfTheStoryInOrder() throws Exception {
+        PlayerMock player = addPlayer();
+
+        StoryService.StoryCompleteReport report =
+                pumpAwait(storyService.adminComplete(player, STORY_ID));
+
+        assertEquals(StoryService.StoryCompleteOutcome.COMPLETED, report.outcome());
+        assertEquals(java.util.List.of(QUEST_ONE, QUEST_TWO, QUEST_THREE), report.completedQuests(),
+                "les quêtes doivent être complétées une fois chacune, dans l'ordre de la story");
+        awaitUntil(() -> stateOf(player, STORY_ID) == StoryState.COMPLETED);
+        assertEquals(QuestState.COMPLETED, questState(player, QUEST_ONE));
+        assertEquals(QuestState.COMPLETED, questState(player, QUEST_TWO));
+        assertEquals(QuestState.COMPLETED, questState(player, QUEST_THREE));
+    }
+
+    @Test
+    void adminCompleteOnAnAlreadyFinishedStoryIsANoOp() throws Exception {
+        PlayerMock player = addPlayer();
+        pumpAwait(storyService.adminComplete(player, STORY_ID));
+        awaitUntil(() -> stateOf(player, STORY_ID) == StoryState.COMPLETED);
+
+        StoryService.StoryCompleteReport again =
+                pumpAwait(storyService.adminComplete(player, STORY_ID));
+
+        assertEquals(StoryService.StoryCompleteOutcome.ALREADY_COMPLETED, again.outcome());
+        assertTrue(again.completedQuests().isEmpty(), "rien de neuf à compléter : aucune quête re-listée");
+    }
+
+    @Test
+    void adminAdvanceLeavesAnUnrelatedStandaloneQuestUntouched() throws Exception {
+        PlayerMock player = addPlayer();
+
+        pumpAwait(storyService.adminComplete(player, STORY_ID));
+
+        assertEquals(QuestState.NOT_STARTED, questState(player, STANDALONE_QUEST),
+                "une quête hors de la story ne doit jamais être touchée par story advance/complete");
+    }
+
     // ---- Helpers ------------------------------------------------------------------------------------
 
     private PlayerMock addPlayer() throws Exception {
@@ -402,6 +519,16 @@ class StoryServiceTest {
             server.getScheduler().performTicks(1);
             Thread.sleep(10);
         }
+    }
+
+    /** Attend un futur qui dépend de tâches planifiées sur le thread principal : pompe les ticks jusqu'à résolution. */
+    private <T> T pumpAwait(java.util.concurrent.CompletableFuture<T> future) throws Exception {
+        long deadline = System.currentTimeMillis() + TIMEOUT_SECONDS * 1000;
+        while (!future.isDone() && System.currentTimeMillis() < deadline) {
+            server.getScheduler().performTicks(1);
+            Thread.sleep(5);
+        }
+        return future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     private void writeSimpleQuest(Path questsDir, NamespacedKey id, String fileName) throws Exception {

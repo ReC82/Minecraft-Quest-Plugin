@@ -3,6 +3,8 @@ package com.lodygames.rpgquest.ui;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.config.JournalConfig;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
+import com.lodygames.rpgquest.item.RpgItemKeys;
+import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
@@ -37,13 +39,16 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.slf4j.Logger;
 
 /**
- * Implémentation {@link QuestJournalUi} : un inventaire paginé (onglets
- * actives/disponibles/terminées) accessible via {@code /quests}, plus une
- * vue détail par quête et un suivi persistant (bossbar optionnelle). Toute
- * la logique de clic vit ici ; {@link QuestJournalListener} ne fait que
- * traduire les événements Bukkit en appels à cette classe (même
- * organisation que {@code DialogueSessionEngine}/{@code
- * DialogueNpcInteractListener}).
+ * Implémentation {@link QuestJournalUi} : un inventaire paginé (deux onglets
+ * « Quêtes en cours » / « Quêtes terminées ») ouvert soit par un clic droit
+ * sur l'item {@link RpgItemKeys#JOURNAL_QUETES} (remis par le Libraire),
+ * soit par {@code /quests}, plus une vue détail par quête et un suivi
+ * persistant (bossbar optionnelle). Le journal ne liste <strong>que</strong>
+ * les quêtes déjà connues du joueur (acceptées puis actives, ou terminées) :
+ * jamais de catalogue des quêtes non découvertes. Toute la logique de clic
+ * vit ici ; {@link QuestJournalListener} ne fait que traduire les événements
+ * Bukkit en appels à cette classe (même organisation que {@code
+ * DialogueSessionEngine}/{@code DialogueNpcInteractListener}).
  *
  * <p>L'affichage ne se rafraîchit jamais par sondage : {@link #handleProgressChanged}
  * est appelé par {@link QuestProgressEngine#onProgressChanged} uniquement
@@ -59,8 +64,7 @@ public final class QuestJournalService implements QuestJournalUi {
     private static final int LIST_SIZE = 54;
     private static final int DETAIL_SIZE = 27;
 
-    static final int TAB_ACTIVE_SLOT = 0;
-    static final int TAB_AVAILABLE_SLOT = 1;
+    static final int TAB_IN_PROGRESS_SLOT = 0;
     static final int TAB_COMPLETED_SLOT = 2;
     static final int PREV_PAGE_SLOT = 3;
     private static final int PAGE_INDICATOR_SLOT = 4;
@@ -81,6 +85,7 @@ public final class QuestJournalService implements QuestJournalUi {
     private final YamlQuestEngine questEngine;
     private final QuestProgressEngine questProgressEngine;
     private final PlayerVariableRepository variableRepository;
+    private final YamlCustomItemRegistry customItemRegistry;
     private final TrackedQuestDisplay trackedDisplay;
     private final Logger logger;
 
@@ -88,11 +93,13 @@ public final class QuestJournalService implements QuestJournalUi {
     private final Map<UUID, NamespacedKey> trackedByPlayer = new ConcurrentHashMap<>();
 
     public QuestJournalService(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressEngine questProgressEngine,
-                                PlayerVariableRepository variableRepository, JournalConfig config) {
+                                PlayerVariableRepository variableRepository, YamlCustomItemRegistry customItemRegistry,
+                                JournalConfig config) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
         this.variableRepository = variableRepository;
+        this.customItemRegistry = customItemRegistry;
         this.trackedDisplay = new TrackedQuestDisplay(config.trackerEnabled());
         this.logger = plugin.getSLF4JLogger();
     }
@@ -126,9 +133,15 @@ public final class QuestJournalService implements QuestJournalUi {
         return new QuestJournalListener(this);
     }
 
-    /** {@code /quests} : ouvre toujours sur l'onglet « actives », première page. */
+    /** {@code /quests} ou clic droit sur le journal : ouvre toujours sur l'onglet « en cours », première page. */
     public void open(Player player) {
-        showList(player, JournalTab.ACTIVE, 0);
+        showList(player, JournalTab.IN_PROGRESS, 0);
+    }
+
+    /** {@code true} si {@code stack} est l'item Journal des quêtes RPGQuest (identité PDC, jamais le nom/lore). */
+    public boolean isJournalItem(ItemStack stack) {
+        return stack != null
+                && customItemRegistry.identify(stack).map(RpgItemKeys.JOURNAL_QUETES::equals).orElse(false);
     }
 
     /** Suivi actuel du joueur, si présent. Public : réutilisable par une future sidebar/scoreboard. */
@@ -176,6 +189,14 @@ public final class QuestJournalService implements QuestJournalUi {
         trackedDisplay.clear(player);
     }
 
+    /**
+     * Appelé sur {@code InventoryCloseEvent} d'un inventaire du journal. Efface la session car le
+     * joueur quitte le menu. <strong>Contrat d'ordre</strong> : {@link #showList}/{@link #showDetail}
+     * (re)posent la session <em>après</em> {@code player.openInventory(...)}, précisément parce que
+     * ce {@code openInventory} déclenche d'abord ce {@code handleClose} pour le menu précédent — sans
+     * quoi une simple navigation (changement d'onglet, retour, bouton Fermer) laisserait
+     * {@code openSessions} vide et tous les clics suivants inertes.
+     */
     void handleClose(Player player) {
         openSessions.remove(player.getUniqueId());
     }
@@ -249,8 +270,6 @@ public final class QuestJournalService implements QuestJournalUi {
             List<QuestDefinition> pageItems = JournalPagination.pageOf(matching, page);
             List<NamespacedKey> pageIds = pageItems.stream().map(QuestDefinition::id).toList();
 
-            openSessions.put(playerId, JournalSession.list(tab, page, pageIds));
-
             JournalInventoryHolder holder = new JournalInventoryHolder(JournalKind.LIST);
             Inventory inventory = Bukkit.createInventory(holder, LIST_SIZE, MM.deserialize(TITLE_LIST));
             holder.bind(inventory);
@@ -262,7 +281,14 @@ public final class QuestJournalService implements QuestJournalUi {
                 boolean tracked = quest.id().equals(trackedByPlayer.get(playerId));
                 inventory.setItem(CONTENT_SLOTS[i], buildIcon(playerId, quest, state, tracked));
             }
+            // openInventory AVANT d'enregistrer la session : quand il remplace un menu déjà ouvert,
+            // il déclenche un InventoryCloseEvent SYNCHRONE pour l'ancien inventaire, que
+            // QuestJournalListener traduit en handleClose -> openSessions.remove(playerId). Poser la
+            // session ensuite garantit qu'elle survit à ce close (bug de navigation directionnelle :
+            // COMPLETED -> IN_PROGRESS et le bouton Fermer devenaient inertes après le 1er changement
+            // d'onglet, la session ayant été effacée par le close du ré-affichage).
             player.openInventory(inventory);
+            openSessions.put(playerId, JournalSession.list(tab, page, pageIds));
         })).exceptionally(error -> {
             logger.error("Impossible de construire le journal de quêtes pour {}", playerId, error);
             return null;
@@ -271,16 +297,14 @@ public final class QuestJournalService implements QuestJournalUi {
 
     private boolean tabMatches(JournalTab tab, QuestState state) {
         return switch (tab) {
-            case ACTIVE -> state == QuestState.ACTIVE || state == QuestState.READY_TO_TURN_IN;
+            case IN_PROGRESS -> state == QuestState.ACTIVE || state == QuestState.READY_TO_TURN_IN;
             case COMPLETED -> state == QuestState.COMPLETED;
-            case AVAILABLE -> state == QuestState.NOT_STARTED || state == QuestState.ABANDONED;
         };
     }
 
     private void renderChrome(Inventory inventory, JournalTab tab, int page, int pageCount) {
-        inventory.setItem(TAB_ACTIVE_SLOT, tabIcon("Actives", Material.BOOK, tab == JournalTab.ACTIVE));
-        inventory.setItem(TAB_AVAILABLE_SLOT, tabIcon("Disponibles", Material.WRITABLE_BOOK, tab == JournalTab.AVAILABLE));
-        inventory.setItem(TAB_COMPLETED_SLOT, tabIcon("Terminées", Material.ENCHANTED_BOOK, tab == JournalTab.COMPLETED));
+        inventory.setItem(TAB_IN_PROGRESS_SLOT, tabIcon("Quêtes en cours", Material.BOOK, tab == JournalTab.IN_PROGRESS));
+        inventory.setItem(TAB_COMPLETED_SLOT, tabIcon("Quêtes terminées", Material.ENCHANTED_BOOK, tab == JournalTab.COMPLETED));
         if (page > 0) {
             inventory.setItem(PREV_PAGE_SLOT, navIcon(Material.ARROW, "« Page précédente"));
         }
@@ -335,8 +359,6 @@ public final class QuestJournalService implements QuestJournalUi {
             QuestState state = states.getOrDefault(questId, QuestState.NOT_STARTED);
             boolean tracked = questId.equals(trackedByPlayer.get(playerId));
 
-            openSessions.put(playerId, JournalSession.detail(tab, page, questId));
-
             JournalInventoryHolder holder = new JournalInventoryHolder(JournalKind.DETAIL);
             Inventory inventory = Bukkit.createInventory(holder, DETAIL_SIZE, MM.deserialize(TITLE_DETAIL));
             holder.bind(inventory);
@@ -346,7 +368,10 @@ public final class QuestJournalService implements QuestJournalUi {
             inventory.setItem(DETAIL_TRACK_SLOT, trackToggleIcon(tracked));
             inventory.setItem(DETAIL_CLOSE_SLOT, navIcon(Material.BARRIER, "Fermer"));
 
+            // Session enregistrée APRÈS openInventory — voir la note dans showList (le close
+            // synchrone du menu précédent effacerait sinon la session tout juste posée).
             player.openInventory(inventory);
+            openSessions.put(playerId, JournalSession.detail(tab, page, questId));
         })).exceptionally(error -> {
             logger.error("Impossible de construire la vue détail pour {}", playerId, error);
             return null;
@@ -366,12 +391,8 @@ public final class QuestJournalService implements QuestJournalUi {
     // ---- Clics ------------------------------------------------------------
 
     void handleListClick(Player player, JournalSession session, int slot, boolean rightClick) {
-        if (slot == TAB_ACTIVE_SLOT) {
-            showList(player, JournalTab.ACTIVE, 0);
-            return;
-        }
-        if (slot == TAB_AVAILABLE_SLOT) {
-            showList(player, JournalTab.AVAILABLE, 0);
+        if (slot == TAB_IN_PROGRESS_SLOT) {
+            showList(player, JournalTab.IN_PROGRESS, 0);
             return;
         }
         if (slot == TAB_COMPLETED_SLOT) {

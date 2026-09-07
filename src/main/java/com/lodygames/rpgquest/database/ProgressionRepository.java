@@ -39,9 +39,11 @@ public final class ProgressionRepository {
                     + "ORDER BY s.total_xp DESC LIMIT ?";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public ProgressionRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     /** Toute l'XP totale connue d'un joueur par compétence (absente = 0, jamais interrogée en base pour une compétence inconnue). */
@@ -77,7 +79,7 @@ public final class ProgressionRepository {
             String now = Instant.now().toString();
 
             int inserted;
-            try (PreparedStatement statement = connection.prepareStatement(INSERT_GRANT)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(INSERT_GRANT))) {
                 statement.setString(1, uuid.toString());
                 statement.setString(2, skill.name());
                 statement.setString(3, eventId);
@@ -90,7 +92,7 @@ public final class ProgressionRepository {
                 return GrantOutcome.duplicate();
             }
 
-            try (PreparedStatement ensure = connection.prepareStatement(ENSURE_SKILL_ROW)) {
+            try (PreparedStatement ensure = connection.prepareStatement(dialect.rewrite(ENSURE_SKILL_ROW))) {
                 ensure.setString(1, uuid.toString());
                 ensure.setString(2, skill.name());
                 ensure.setString(3, now);
@@ -138,7 +140,7 @@ public final class ProgressionRepository {
         }
         return database.execute(connection -> inTransaction(connection, () -> {
             String now = Instant.now().toString();
-            try (PreparedStatement ensure = connection.prepareStatement(ENSURE_SKILL_ROW)) {
+            try (PreparedStatement ensure = connection.prepareStatement(dialect.rewrite(ENSURE_SKILL_ROW))) {
                 ensure.setString(1, uuid.toString());
                 ensure.setString(2, skill.name());
                 ensure.setString(3, now);

@@ -27,7 +27,17 @@ nodes:
 
   journal_given:
     speaker: "Libraire"
-    text: "<green>Voici ton journal.</green> <gray>Fais un clic droit avec pour consulter tes aventures et tes objectifs à tout moment.</gray>"
+    text: "<green>Voici ton journal.</green> <gray>Fais un clic droit avec pour ouvrir la vue de tes quêtes : onglet « en cours » et onglet « terminées ». Seules les quêtes que tu as déjà acceptées y figurent.</gray>"
+    choices:
+      - text: "Et si je le perds ?"
+        next: journal_lost
+      - text: "Merci !"
+        actions:
+          - type: CLOSE
+
+  journal_lost:
+    speaker: "Libraire"
+    text: "<gray>Aucune inquiétude : ce journal t'est lié et ne peut pas être perdu. Si jamais il te manquait, reviens me voir et je t'en redonnerai un — jamais deux.</gray>"
     choices:
       - text: "Merci !"
         actions:

@@ -1,0 +1,217 @@
+# Control Panel — décisions d'architecture (ADR)
+
+Format léger : contexte → décision → conséquences. Daté. Immuable (une décision révisée =
+nouvelle ADR qui référence l'ancienne).
+
+---
+
+## ADR-001 — Le Control Panel est un module séparé, pas un package de `web-api/`
+**2026-09-07 · Accepté** — *partie « extraction `web-common` » révisée par [ADR-009].*
+
+**Contexte.** `web-api/` est un portail **public anonyme** (site + boutique) qui lit un snapshot
+read-only. Le Control Panel est **authentifié** et aura des **pouvoirs admin** (reset joueur,
+avance de progression, reload, plus tard déploiement).
+
+**Décision.** Nouveau module Gradle `control-panel/`. Le code d'infrastructure réutilisable
+(serveur HTTP, codec JSON, `RequestPipeline`, `RateLimiter`, `AccessLogger`) est **extrait** de
+`web-api/` vers un module `web-common/` dont dépendent les deux. La posture de sécurité (sessions,
+CSRF, RBAC, audit) reste **propre au Control Panel**.
+
+**Conséquences.** Un peu de refactor initial (`web-common`). Isolation nette : une faille du
+portail public ne touche pas le panel admin et inversement. `web-api/` continue de fonctionner à
+l'identique.
+
+---
+
+## ADR-002 — Stack HTTP : réutiliser `com.sun.net.httpserver`, réévaluer si le rendu HTML devient pénible
+**2026-09-07 · Accepté (provisoire)** — *implémenté en #37 sans `web-common` (voir [ADR-009]) ; rendu HTML serveur, pas de SPA.*
+
+**Contexte.** `web-api` utilise `com.sun.net.httpserver` (JDK, zéro dépendance). Le Control Panel
+a besoin de sessions, CSRF, rendu HTML server-rendered, formulaires.
+
+**Décision.** Démarrer sur `com.sun.net.httpserver` + `web-common`. Si sessions/CSRF/templating à
+la main deviennent une source de bugs, adopter **un** micro-framework léger (ex. Javalin) — via
+une ADR-002bis, pas en douce. **Pas de SPA** en V1 (progressive enhancement).
+
+**Conséquences.** Cohérence avec l'existant, pas de nouvelle grosse dépendance imposée d'emblée.
+Risque : réécrire un peu de plomberie web ; accepté pour la V1.
+
+---
+
+## ADR-003 — Le plugin reste la source de vérité ; intégration par un bridge HTTP admin, jamais par `data.db`
+**2026-09-07 · Accepté**
+
+**Contexte.** Exigence dure de l'issue #37 : « SQLite ne doit pas devenir l'API du Control
+Panel ». Les règles métier vivent dans `QuestProgressEngine`, `StoryService`, `ClaimService`,
+`PlayerResetService`, `NpcIdentityService`.
+
+**Décision.** Nouveau package `com.lodygames.rpgquest.web.admin` **dans le plugin** : endpoint
+HTTP `/admin/v1/*`, authentifié, **bind interne**, qui **délègue** aux services existants. Le
+Control Panel ne connaît pas le schéma SQLite. Actions **déclaratives whitelistées** (une route =
+une opération nommée), **jamais** de route `exec`.
+
+**Conséquences.** Un peu de code plugin (léger : réutilise `RpgAdminCommand`/#36 refactoré en
+service). Le panel reste découplé du stockage. Testable : stub du bridge côté panel, tests
+d'intégration côté plugin.
+
+---
+
+## ADR-004 — Mode dégradé « admin-snapshot » tant que le bridge live n'est pas joignable sur VeryGames
+**2026-09-07 · Accepté — puis REMPLACÉ par [ADR-011](#adr-011--canal-détat-live--agent-sortant-dans-le-plugin-pas-de-port-entrant-ni-de-snapshot) (#51)**
+
+> L'agent sortant #51 fournit un canal live dans le bon sens (plugin → PlugAdmin, HTTPS sortant).
+> Le mode `admin-snapshot.json` n'a jamais été implémenté et est abandonné. Section conservée pour
+> l'historique.
+
+**Contexte.** Le plugin de prod tourne sur VeryGames sans port entrant exploitable. Un bridge
+HTTP live nécessite une co-localisation, un tunnel ou un relais — pas disponible aujourd'hui.
+
+**Décision.** Le plugin peut écrire un `admin-snapshot.json` étendu (health + bindings PNJ + PNJ
+attendus + diagnostics de contenu), poussé par le même mécanisme d'export atomique que
+`web-api`. Le Control Panel le lit et affiche un **dashboard + diagnostics en lecture seule** ;
+les **actions** sont désactivées pour cette cible avec un message clair. Les DTO sont **communs**
+aux deux modes : quand un canal live arrive, le frontend ne change pas.
+
+**Conséquences.** Le Control Panel apporte de la valeur immédiate (diagnostics, « quel PNJ
+manque ») sans attendre l'infra live. La bascule bridge live = config, pas réécriture.
+
+---
+
+## ADR-005 — Autorisation par `PermissionService` dès la V1, même avec un seul utilisateur
+**2026-09-07 · Accepté**
+
+**Contexte.** V1 = 1 owner. Tentation : `if user == owner`.
+
+**Décision.** `PermissionService.can(session, Permission.X)` partout dès le début. Énum
+`Permission` + `Role` + table `roles`/`user_roles` dans `control-panel.db` posées maintenant, un
+seul rôle (`owner`) actif. Ajout de `tester`/`content-editor`/`builder`/`read-only` = données +
+UI, pas de refactor.
+
+**Conséquences.** Un peu de structure « inutile » en V1, mais l'ajout du RBAC ne touche pas les
+handlers.
+
+---
+
+## ADR-006 — Cible = objet `{env, mode, url|file, token}`, jamais de constante globale
+**2026-09-07 · Accepté**
+
+**Contexte.** Exigence #37-A : multi-serveur/multi-environnement. Risque : `localhost` / `claims`
+/ `world_hub` codés partout.
+
+**Décision.** `TargetRegistry` chargé depuis la config. Chaque requête backend porte une cible.
+Le token du bridge est **sélectionné côté backend selon `env`**, jamais transmis au navigateur.
+Aucun nom de monde en dur dans le panel (ils viennent du bridge/snapshot).
+
+**Conséquences.** Sélecteur de cible dans l'UI dès la V1 (même s'il n'y a qu'une entrée). Prêt
+pour DEV/staging/prod et plusieurs serveurs.
+
+---
+
+## ADR-007 — Audit log append-only dès le socle
+**2026-09-07 · Accepté**
+
+**Contexte.** Exigence #37-5 : mécanisme central de journalisation des actions sensibles, même si
+peu d'actions en V1.
+
+**Décision.** Table `audit_log` (`control-panel.db`), écriture avant (intention) + après
+(résultat) de chaque action, `request_id` corrélé avec les logs HTTP et le log `[web-admin]` du
+plugin. Jamais de secret dans les `details`. Pas de purge auto en V1.
+
+**Conséquences.** ~1 table + 1 DAO + 1 appel par action. Traçabilité totale dès la 1re action
+réelle.
+
+---
+
+## ADR-008 — Le bridge du plugin se configure par variables d'environnement, pas par `config.yml`
+**2026-09-07 · Accepté — implémenté en #37**
+
+**Contexte.** Le bridge est un composant de sécurité (endpoint HTTP admin). Le système de config
+du plugin (`PluginConfig` record 16 champs + `ConfigValidator` + `config.yml` versionné) est strict
+et versionné ; y ajouter une section `web-admin` élargit la surface et met l'activation d'un
+endpoint sensible dans un fichier suivi par Git.
+
+**Décision.** `WebAdminServer` lit **uniquement** l'environnement :
+`RPGQUEST_WEB_ADMIN_ENABLED` / `_TOKEN` / `_BIND` / `_PORT` / `_ENV`. **Fail-closed** : rien
+n'écoute sans `ENABLED=true` **et** un `TOKEN` non vide. Aucun changement de `config.yml`, de
+`PluginConfig` ni de `ConfigValidator`.
+
+**Conséquences.** Cohérent avec `web-api` (`RPGQUEST_WEB_API_TOKEN` en env). Zéro blast-radius sur
+la config du plugin. Une section `config.yml` `web-admin:` (non secrète) pourra être ajoutée plus
+tard si un besoin non lié aux secrets apparaît (ex. rate-limit) — via une ADR dédiée.
+
+---
+
+## ADR-009 — Pas d'extraction d'un module `web-common` en V1
+**2026-09-07 · Accepté — implémenté en #37**
+
+**Contexte.** ADR-001 envisageait d'extraire le socle HTTP/JSON de `web-api` vers `web-common`
+partagé. En pratique, le Control Panel n'a besoin en V1 que d'un serveur HTTP JDK, d'un client
+HTTP JDK et d'un tout petit codec JSON pour la réponse `health`.
+
+**Décision.** `control-panel/` est **autonome** : `panel.json.Json` (parser + writer maison, ~250
+lignes), helpers HTTP dans `panel.http.Http`, aucun code partagé avec `web-api`. `web-api` n'est
+pas touché.
+
+**Conséquences.** Un peu de duplication assumée (déjà la règle entre le plugin, `web-api` et le
+Control Panel). Extraction de `web-common` reportée à quand ≥ 2 modules partageront réellement de
+la plomberie non triviale (probablement au moment des actions #45).
+
+---
+
+## ADR-010 — Bocal à cookies : session signée par HMAC, CSRF double-submit au login
+**2026-09-07 · Accepté — implémenté en #37**
+
+**Contexte.** V1 mono-utilisateur, sessions serveur-side en mémoire. Besoin : cookie de session
+non forgeable, CSRF sur les POST.
+
+**Décision.**
+- Cookie de session = `<id aléatoire 256 bits>.<HMAC-SHA256(id, RPGQUEST_PANEL_SECRET)>` : un id
+  volé/forgé sans le secret est rejeté avant même la recherche en mémoire (`SessionStore.resolve`).
+  Flags `HttpOnly`, `SameSite=Lax`, `Secure` configurable (`panel.cookie-secure`).
+- CSRF **synchroniseur** (jeton en session) sur tout POST authentifié (`/logout`, futures actions).
+- CSRF **double-submit** au `/login` (pas encore de session) : cookie court `panel_login_csrf` +
+  champ caché identique, comparés en temps constant.
+- Expiration absolue (`ttl`) **et** sur inactivité (`idle`).
+
+**Conséquences.** Pas de dépendance externe. La CookieManager du JDK gère mal les hôtes IP sans
+`Domain` : les tests utilisent un bocal à cookies explicite (voir `PanelAppTest`) — sans impact
+sur les navigateurs réels.
+
+---
+
+## ADR-011 — Canal d'état live : agent **sortant** dans le plugin, pas de port entrant ni de snapshot
+**2026-09-07 · Accepté — implémenté en #51**
+
+**Contexte.** RPGQuest tourne chez VeryGames (NAT, aucun port entrant, ni RCON ni API) ; PlugAdmin
+tourne sur AWS. Le bridge local `/admin/v1/*` (#37, ADR-003) n'est donc pas joignable depuis AWS.
+ADR-004 prévoyait un mode dégradé « admin-snapshot.json » poussé par FTP.
+
+**Décision.**
+- Abandonner le mode « admin-snapshot » (ADR-004 **remplacée**). Le plugin ouvre à la place une
+  connexion **HTTPS sortante** vers PlugAdmin (`com.lodygames.rpgquest.web.agent`) :
+  `POST /agent/v1/heartbeat`, `GET /agent/v1/actions`, `POST /agent/v1/actions/{id}/result`
+  (contrat versionné, distinct des routes navigateur et de `/admin/v1/*`).
+- Le heartbeat **réutilise `HealthSource`** (#37) — aucune logique de health dupliquée.
+- Configuration côté serveur : **fichier local hors Git** `plugadmin-agent.properties`
+  (surcharge env facultative), fail-closed. Les variables d'environnement ne sont pas imposées
+  comme unique mécanisme (VeryGames peut ne pas en fournir proprement au process Paper).
+- Authentification **par agent/cible** : jeton dédié (env côté PlugAdmin), comparaison temps
+  constant. Multi-cible dès le départ (`agents=…`).
+- Actions **structurées et whitelistées** (`AgentActionType`), appelant les services métier —
+  jamais une commande texte `/rpgadmin`. MVP : une seule action non destructive
+  `player.variable.get`.
+- **Idempotence** des deux côtés : côté PlugAdmin une action reste livrée jusqu'au résultat
+  terminal et un résultat sur action terminale est un no-op ; côté agent un cache borné
+  `action_id → résultat` (TTL 30 min) empêche la ré-exécution.
+- Robustesse : tout le trafic sur threads asynchrones Bukkit, timeouts courts, backoff
+  exponentiel plafonné, logs limités, arrêt propre. Une panne PlugAdmin n'affecte jamais le
+  gameplay.
+- Persistance : `control-panel.db` (`agent_heartbeat`, `agent_action`), migrations idempotentes.
+  Pas de migration MySQL #43 pour ce jalon.
+- Le **bridge local #37 est conservé** (dev local, serveur co-localisé, diagnostic) ; le
+  dashboard affiche l'agent en priorité et le bridge local en secondaire.
+
+**Conséquences.** Le endpoint agent est **public** (HTTPS) : conçu comme tel (jeton fort, payload
+borné, types whitelistés, audit, anti-rejeu). Pas de PKI (HTTPS + jeton + idempotence suffisent
+au MVP). Rate limiting applicatif non fait — nginx devant + backoff agent ; à revoir si d'autres
+agents apparaissent. #38/#39/#45 réutiliseront ce canal sans nouvelle architecture réseau.

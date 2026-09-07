@@ -90,16 +90,25 @@ Toujours respecter :
 - tâches répétitives coûteuses ;
 - chargement forcé permanent de chunks.
 
-## SQLite
+## Persistance (moteur SQL configurable — issue #40)
+
+Le moteur SQL est un **détail d'infrastructure** choisi par `config.yml`
+(`database.type: sqlite | mysql`). SQLite reste le défaut, câblé et inchangé ; MySQL/MariaDB est
+reconnu (backend réel = #41). Le code de gameplay **ne contient aucun SQL** et ne teste **jamais**
+le moteur ; seul `DatabaseEngineFactory` fait ce choix (un `switch`, jamais dupliqué). Différences
+SQL encapsulées dans `SqlDialect`, version de schéma dans `SchemaHistory`. Détail :
+`docs/PERSISTENCE.md`.
 
 Toujours privilégier :
 
 - prepared statements ;
-- transactions atomiques ;
-- migrations idempotentes ;
-- schéma versionné ;
+- transactions atomiques dans un seul `DatabaseManager#execute` ;
+- migrations idempotentes numérotées (`SchemaMigration`) ;
+- schéma versionné (`SchemaHistory` : `PRAGMA user_version` SQLite / table portable pour MySQL) ;
 - UUID comme identité joueur ;
-- callbacks Bukkit remis sur le thread principal lorsqu'ils manipulent l'API Paper.
+- aucun SQL bloquant sur le main thread ; pas d'ouverture de connexion par requête ;
+- callbacks Bukkit remis sur le thread principal lorsqu'ils manipulent l'API Paper ;
+- aucun secret DB dans le dépôt (`database.mysql.password-env` = nom d'une variable d'env).
 
 ## Anti-duplication / concurrence
 

@@ -72,6 +72,76 @@ Un client FTP classique (FileZilla, WinSCP...) ou `sftp`/`ftp` en ligne de
 commande convient. Toutes les étapes de transfert ci-dessous supposent une
 connexion FTP déjà établie vers la racine du serveur VeryGames.
 
+## Accès RCON VeryGames (redémarrage automatisable)
+
+**RCON est disponible et validé** sur le serveur DEV (contrairement à ce que
+d'anciennes notes indiquaient). Il permet d'automatiser le redémarrage après un
+déploiement, sans passer par le panel VeryGames.
+
+-   **Host / port :** onglet du panel VeryGames (DEV : `51.68.57.28:7469` ;
+    Minecraft : `51.68.57.28:28257`).
+-   **Mot de passe RCON :** panel VeryGames. **Jamais dans Git / logs / rapports.**
+    Le conserver dans `~/.config/rpgquest/verygames.env` (le **même** fichier
+    que le FTP), clés `RCON_HOST` / `RCON_PORT` / `RCON_PASSWORD`, `chmod 600`.
+-   **Outils du dépôt :**
+    -   `scripts/verygames-rcon.py "list"` — client RCON minimal (pur Python).
+        `--ping` = exit 0 si connexion + auth OK.
+    -   `scripts/verygames-restart.sh` — `stop` RCON puis attente du retour en
+        ligne (VeryGames relance automatiquement le processus ~15 s après un
+        `stop`). À enchaîner après `scripts/deploy-verygames.sh`.
+-   Comportement observé : `stop` → serveur OFFLINE → relance automatique
+    VeryGames → ONLINE en ~15–60 s.
+
+## Base MySQL/MariaDB VeryGames (issue #41 — backend optionnel)
+
+RPGQuest peut utiliser une base **MariaDB** au lieu de SQLite (`database.type: mysql`). VeryGames
+permet de provisionner des bases MySQL/MariaDB associées au serveur. **La bascule des données de
+production (`data.db` → MariaDB) est l'issue #42** — cette section ne couvre que la mise en place
+et la validation sur une base **de test**.
+
+Serveur observé et validé : `10.11.6-MariaDB-0+deb12u1-log` (accessible en direct depuis AWS sur
+le port `3306`).
+
+### Checklist manuelle
+
+1. **Créer une base RPGQuest dédiée** dans le panel VeryGames (ex. `rpgquest` pour la prod,
+   `rpgquest_test` pour les tests). Une base ≠ un compte.
+2. **Compte dédié**, restreint à cette **seule** base — jamais le compte admin global VeryGames.
+   Privilèges :
+   - runtime : `SELECT, INSERT, UPDATE, DELETE` ;
+   - installation / migrations : en plus `CREATE, ALTER, INDEX, REFERENCES` (`DROP` **non**
+     requis par RPGQuest).
+3. **Secrets hors Git** : le mot de passe va dans une variable d'environnement du process
+   (`RPGQUEST_DB_PASSWORD` par défaut), jamais dans `config.yml`, le dépôt, les logs, un rapport.
+   Pour un test depuis AWS : fichier local `chmod 600`, chargé avant `./gradlew` :
+   `RPGQUEST_DB_HOST`, `RPGQUEST_DB_PORT`, `RPGQUEST_DB_NAME`, `RPGQUEST_DB_USER`,
+   `RPGQUEST_DB_PASSWORD`.
+4. **Tester la connexion** : `scripts/verygames-rcon.py` n'a rien à voir ici ; utiliser
+   `mysql -h <host> -P 3306 -u <user> -p <db> -e 'SELECT VERSION()'` ou les tests d'intégration
+   RPGQuest (voir 6).
+5. **`config.yml`** : `database.type: mysql`, `database.mysql.{host,port,database,username}`,
+   `password-env`, éventuellement `ssl-mode` et `pool.*`. Voir
+   [docs/PERSISTENCE.md](../PERSISTENCE.md) §2.
+6. **Démarrer sur une base VIDE de test** — le plugin crée tout le schéma (25 tables +
+   `rpgquest_schema_migrations`) via `SchemaMigrationRunner`. Vérification automatisée possible
+   depuis AWS sans démarrer le serveur MC :
+   ```bash
+   set -a; . ~/.rpgquest-mysql.env; set +a
+   ./gradlew :test --tests 'com.lodygames.rpgquest.database.MariaDb*'
+   ```
+   (ces tests sont **ignorés** si les variables `RPGQUEST_DB_*` sont absentes).
+7. **Vérifier logs + health** : au démarrage plugin, `Base de données RPGQuest : moteur mariadb
+   <user>@<host>:3306/<db> (pool 2..10, ssl=disable)` puis `MariaDB/MySQL serveur : 10.11.6-…`.
+   `DatabaseManager.healthCheck()` → OK. Historique : `SELECT version, name, applied_at FROM
+   rpgquest_schema_migrations ORDER BY version` doit lister V1..V17.
+8. **Ne pas basculer les données de production** avant l'issue #42. `data.db` n'est jamais touché
+   par #41.
+
+### Rollback
+
+Re-basculer `database.type: sqlite` et redémarrer : `data.db` est intact et redevient la source de
+vérité. Les deux bases peuvent coexister pendant la fenêtre de migration #42.
+
 ---
 
 ## Compiler RPGQuest
@@ -393,6 +463,36 @@ tout autre fichier runtime existant ne doivent **jamais** être remplacés pour 
 La table de progression story déjà présente en base et les YAML de portails simples ne sont pas
 touchés par cette étape (aucune nouvelle migration de schéma).
 
+### Cas particulier — agent sortant PlugAdmin (issue #51)
+
+Le plugin peut ouvrir une connexion **HTTPS sortante** vers PlugAdmin
+(`https://plugadmin.lodylands.com`) pour publier son état et exécuter des actions whitelistées.
+C'est **désactivé par défaut** : le code est inerte tant que le fichier
+`plugins/RPGQuest/plugadmin-agent.properties` n'existe pas (ou n'a pas `enabled=true` + `base-url`
++ `agent-id` + `token`).
+
+1. **Scénario 2 d'abord** (JAR seul) : déployer le nouveau JAR, redémarrer, vérifier au log
+   `Agent PlugAdmin désactivé` / `Agent PlugAdmin inactif` — **aucune régression**, aucune
+   connexion sortante.
+2. **Préparer le fichier agent hors dépôt** : copier `scripts/plugadmin-agent.properties.example`
+   vers un fichier local (ex. `~/.config/rpgquest/plugadmin-agent.properties`), renseigner
+   `token=` avec le jeton réel (jamais committé, jamais dans un rapport).
+3. **Transférer** JAR + fichier agent :
+   ```bash
+   scripts/deploy-verygames.sh -y --allow-no-backup \
+     --also ~/.config/rpgquest/plugadmin-agent.properties:RPGQuest/plugadmin-agent.properties
+   ```
+   Le script sauvegarde tout fichier ciblé existant avant remplacement et **refuse** `data.db`,
+   `config.yml`, `Citizens/`, les mondes, les autres plugins.
+4. **Redémarrer** via RCON : `scripts/verygames-restart.sh` (ou panel VeryGames).
+5. **Vérifier** : log serveur `event=plugadmin_probe status=ok …` (si la console est accessible)
+   et, côté PlugAdmin, `journalctl -u plugadmin | grep agent_heartbeat` + dashboard « RPGQuest
+   DEV — ONLINE ».
+
+**Rollback** : `enabled=false` dans `plugadmin-agent.properties` (ou supprimer le fichier) +
+redémarrer → agent inerte. Le JAR peut rester en place. Voir
+[docs/control-panel/AGENT.md](../control-panel/AGENT.md) §12.
+
 ---
 
 ## Checklist finale
@@ -407,10 +507,27 @@ neuve ou migration complète) :
 -   [ ] `world_hub` chargé (`/mv list`).
 -   [ ] Règles du monde Hub appliquées (ligne de log `Règles du monde Hub
     appliquées : world_hub`).
--   [ ] PNJ Guide présent en jeu.
--   [ ] PNJ Libraire présent en jeu.
--   [ ] Dialogues fonctionnels (clic droit sur Guide/Libraire ouvre bien un
-    dialogue).
+-   [ ] **PNJ Citizens obligatoires du parcours principal présents ET liés**
+    (`/rpgadmin npc info` en visant chacun) : `guide`, `libraire`,
+    **`guard`**, `jo`. Sans le PNJ lié **`guard`**, `first_steps` et
+    `crystal_hunt` sont indémarrables → `CLAIM_TIER_1` jamais accordé →
+    premier claim impossible. Créer/lier : voir
+    `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b. Vérif base :
+    `SELECT npc_id FROM npc_citizens_bindings;` doit lister `guard`.
+-   [ ] `plugins/RPGQuest/dialogues/guard.yml` contient la branche
+    `crystal_hunt` (choix « J'ai entendu dire… » + nœud
+    `crystal_hunt_accepted`) — un `guard.yml` périmé ne démarre que
+    `first_steps`.
+-   [ ] World-Portal `world_hub → claims` configuré
+    (`plugins/RPGQuest/world-portals/hub_to_claims.yml`,
+    `destination-world` = `claims.world`).
+-   [ ] Dialogues fonctionnels (clic droit sur Guide/Libraire/Garde/Jo
+    ouvre bien un dialogue).
+-   [ ] Accès `claims` : un joueur **non-OP** sans `CLAIM_TIER_1` est
+    **refusé** au portail (aucune téléportation) ; s'il y est mis autrement,
+    il est **renvoyé** au Hub. Un joueur **OP** (`rpgquest.admin.world`)
+    passe outre — c'est voulu, tracé `[claims-access]` / `[claims-safety]`
+    dans la console. Ne jamais valider ce point avec un compte OP.
 -   [ ] Spawn RPGQuest correct (`/rpgadmin spawn tp` arrive au bon endroit).
 -   [ ] Jour fixe dans `world_hub` (l'heure ne progresse pas).
 -   [ ] Météo claire en permanence dans `world_hub`.

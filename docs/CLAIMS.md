@@ -140,6 +140,21 @@ commande, via un objet spécial remis par un PNJ.
    à chaque fois (aucune condition sur l'inventaire : le perdre n'empêche
    jamais de le redemander). Dès qu'un claim existe, l'option disparaît
    d'elle-même.
+
+   **Dialogue adapté aux 3 états du parcours (issues #21/#22/#23)** — Jo ne
+   reste jamais muet après un reset :
+   -   *claim non débloqué* (`CLAIM_TIER_1` ≠ `"true"` — via `negate: true`
+       sur `VARIABLE_EQUALS` — **et** `NO_MAIN_CLAIM`) : option « Comment
+       obtenir mon premier terrain ? » → explique qu'il faut d'abord
+       terminer l'histoire principale (`crystal_hunt`, rendue au Garde) ;
+   -   *débloqué, aucun claim* : option « Je viens réclamer mon acte de
+       propriété » (ci-dessus) ;
+   -   *claim existant* (`HAS_MAIN_CLAIM`) : « Me rendre sur ma propriété »,
+       « Revoir les limites », « Obtenir une Pierre de retour ».
+   Le dialogue du **Guide** (`guide.yml`, nœud `help_claims`) énonce
+   désormais le même prérequis réel : le droit se mérite en terminant
+   l'histoire principale, *puis* Jo remet l'acte — plus aucune promesse que
+   Jo donne un acte « sur simple demande ».
 3. **Acte de propriété** (`rpgquest:acte_propriete`, objet personnalisé
    `QUEST_ITEM`, non empilable) — remis via l'action de dialogue
    `RUN_SAFE_COMMAND` (`customitem give %player% rpgquest:acte_propriete 1`,
@@ -162,6 +177,53 @@ commande, via un objet spécial remis par un PNJ.
        n'est qu'une intention, jamais un engagement).
 
 Voir `claim.DeedClaimListener` pour l'implémentation complète.
+
+## Accès au monde des claims et retour au Hub (issues #21/#22/#23)
+
+Le parcours autour des claims est cohérent de bout en bout, y compris
+après `/rpgadmin player resetnew <joueur> confirm` (qui efface `CLAIM_TIER_1`
+et tous les claims du joueur).
+
+### Portail Hub → claims réservé au déblocage réel
+
+`claim.ClaimWorldAccessGuard` (un `travel.WorldPortalEntryGuard`, composé
+avec l'avertissement d'entrée dans le Wild via
+`travel.CompositeWorldPortalEntryGuard`) contrôle **toute** entrée dans
+`claims.world` par un portail simple :
+
+-   **éligible** — `CLAIM_TIER_1 == "true"` (`ClaimService#hasClaimTierOne`,
+    même vérité que `ClaimService.create` exige pour un premier claim,
+    jamais une copie) **ou** le joueur possède déjà un claim
+    (`ClaimService#mainClaimOf`) : passage autorisé (la téléportation
+    réelle est relancée via `WorldPortalTeleportListener#teleportNow` une
+    fois le contrôle asynchrone terminé) ;
+-   **non éligible** : **aucune téléportation**, le joueur reste au Hub et
+    reçoit un message qui l'oriente vers Jo / le Guide ;
+-   **bypass** : seul `rpgquest.admin.world` (le même nœud que
+    `ClaimsWorldRulesListener`) passe outre — aucune permission de build ni
+    d'admin ne contourne la règle par accident.
+
+### Retour au Hub garanti, sans commande
+
+`claim.ClaimWorldSafetyListener` (sur `PlayerChangedWorldEvent` et
+`PlayerJoinEvent`) garantit qu'aucun joueur ne reste coincé dans le monde
+des claims :
+
+-   **arrivée d'un joueur éligible sans Pierre de retour** → une
+    `rpgquest:pierre_retour` lui est donnée automatiquement (objet de
+    voyage claims → Hub géré par `travel.ItemTravelService`, permanent,
+    jamais consommé, clic droit — **aucune commande**). Idempotent : jamais
+    de second exemplaire (même patron que `player.StarterKitListener` pour
+    la Rune). C'est le parcours de retour **normal** ;
+-   **joueur non éligible qui se retrouve malgré tout dans le monde des
+    claims** (`/tp` d'un administrateur, reconnexion dans ce monde, joueur
+    présent avant l'ajout du contrôle d'accès) → renvoyé au Hub (spawn du
+    village configuré, sinon spawn du monde Hub) avec un message ;
+-   **bypass `rpgquest.admin.world`** : ni renvoi, ni objet imposé.
+
+La commande `/claim admin sendhome` (déclenchée par l'option « Me rendre
+sur ma propriété » de Jo) et `/spawn` restent des voies **auxiliaires**,
+jamais le parcours imposé.
 
 ## Retour à son claim (PNJ Jo / commande admin)
 
@@ -430,7 +492,22 @@ claim 5×5 avec réservation 100×100 centrée sur la cible, consommation de
 l'Acte, refus d'un second claim principal), `DialogueSessionEngineTest`
 (condition `NO_MAIN_CLAIM`, visible sans claim puis masquée une fois le
 claim créé ; condition `HAS_MAIN_CLAIM`, invisible sans claim puis visible
-une fois le claim créé — strict opposé), `ClaimTeleportServiceTest`
+une fois le claim créé — strict opposé ; **Jo adapte son dialogue aux 3
+états** : explication « comment obtenir » via `negate` sur
+`VARIABLE_EQUALS CLAIM_TIER_1` tant que non débloqué, puis acte de
+propriété une fois débloqué), `DialogueDefinitionParserTest` (`negate:
+true` enrobe la condition dans une `NegatedCondition`),
+`ClaimWorldAccessGuardTest` (issues #21/#22/#23 : joueur sans unlock →
+accès refusé sans téléportation + message ; avec `CLAIM_TIER_1` → autorisé ;
+propriétaire d'un claim → autorisé immédiatement ; bypass
+`rpgquest.admin.world` ; après effacement des variables — équivalent
+`resetnew` — refusé à nouveau ; portail non-claims ignoré),
+`ClaimWorldSafetyListenerTest` (issues #21/#22/#23 : Pierre de retour
+donnée à l'arrivée d'un joueur éligible, jamais en double ; joueur non
+éligible renvoyé au Hub ; propriétaire jamais renvoyé ; bypass ni renvoyé
+ni doté ; connexion dans le monde des claims traitée comme une arrivée),
+`CompositeWorldPortalEntryGuardTest` (ET logique, arrêt au premier refus),
+`ClaimTeleportServiceTest`
 (`NO_MAIN_CLAIM`/`WORLD_UNAVAILABLE`/`NO_SAFE_LOCATION`/`TELEPORTED`, centre
 sûr, repli sur une autre colonne du claim quand le centre est obstrué,
 destination toujours dans les bornes actives du claim), `RandomSafeLocationFinderTest`

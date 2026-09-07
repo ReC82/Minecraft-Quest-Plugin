@@ -40,10 +40,15 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.110.0")
 
-    // Le driver JDBC n'est pas empaqueté : il est déclaré dans plugin.yml
-    // (libraries:) et résolu à l'exécution par le LibraryLoader de Paper.
-    // Il n'est utilisé ici que pour exécuter les tests JUnit en JVM nue.
+    // Persistance : ni le driver JDBC ni le pool ne sont empaquetés. Ils sont déclarés dans
+    // plugin.yml (libraries:) et résolus à l'exécution par le LibraryLoader de Paper. Ici :
+    //   - sqlite-jdbc         : uniquement pour les tests JUnit en JVM nue (jamais importé côté main) ;
+    //   - HikariCP            : référencé côté main (com.lodygames.rpgquest.database.MySqlDatabaseEngine)
+    //                           -> compileOnly (comme paper-api) ; les configs test héritent de compileOnly ;
+    //   - mariadb-java-client : chargé par URL JDBC, jamais importé -> runtime de test seulement.
     testImplementation("org.xerial:sqlite-jdbc:3.53.2.1")
+    compileOnly("com.zaxxer:HikariCP:5.1.0")
+    testRuntimeOnly("org.mariadb.jdbc:mariadb-java-client:3.4.1")
 }
 
 tasks {
@@ -75,6 +80,12 @@ tasks {
 
     test {
         useJUnitPlatform()
+        maxParallelForks = 1
+        // Le tas du worker de test est ajustable par variable d'environnement pour les machines de
+        // build très contraintes (défaut : laissé à la JVM). Ne pas utiliser forkEvery : il force
+        // la ré-initialisation du registre Material de Bukkit à chaque nouveau fork, ce qui touche
+        // un chemin non implémenté de MockBukkit (UnsafeValues#fromLegacy).
+        System.getenv("RPGQUEST_TEST_MAX_HEAP")?.let { maxHeapSize = it }
     }
 
     compileJava {

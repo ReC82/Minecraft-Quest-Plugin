@@ -23,9 +23,11 @@ public final class PlacedBlockRepository {
     private static final String DELETE = "DELETE FROM player_placed_blocks WHERE world = ? AND x = ? AND y = ? AND z = ?";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public PlacedBlockRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     /** Toutes les positions suivies, sous forme {@code "world:x:y:z"} — chargées une fois au démarrage. */
@@ -45,7 +47,7 @@ public final class PlacedBlockRepository {
 
     public CompletableFuture<Void> markPlaced(String world, int x, int y, int z) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(INSERT)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(INSERT))) {
                 statement.setString(1, world);
                 statement.setInt(2, x);
                 statement.setInt(3, y);

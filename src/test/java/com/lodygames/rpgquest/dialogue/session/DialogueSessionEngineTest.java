@@ -422,6 +422,67 @@ class DialogueSessionEngineTest {
                 () -> "Pierre déjà en poche : l'option doit disparaître, obtenu : " + renderer.lastVisibleChoices);
     }
 
+    /**
+     * Issues #21/#22/#23 — Jo adapte son dialogue aux 3 états du parcours Claims. Ce test couvre
+     * les états (a) « claim non débloqué » et (b) « débloqué, aucun claim » via {@code negate} sur
+     * {@code VARIABLE_EQUALS CLAIM_TIER_1} — l'état (c) « claim existant » est déjà couvert par
+     * {@link #hasMainClaimConditionShowsTheChoiceOnlyOnceAClaimExists}.
+     */
+    @Test
+    void joOffersTheUnlockExplanationUntilClaimTierOneIsGrantedThenOffersTheDeed() throws Exception {
+        Files.writeString(dialoguesDir.resolve("jo.yml"), """
+                id: rpgquest:jo
+                start: greeting
+                nodes:
+                  greeting:
+                    speaker: "Jo"
+                    text: "Bonjour."
+                    choices:
+                      - text: "Comment obtenir mon premier terrain ?"
+                        conditions:
+                          - type: VARIABLE_EQUALS
+                            key: CLAIM_TIER_1
+                            value: "true"
+                            negate: true
+                          - type: NO_MAIN_CLAIM
+                        actions:
+                          - type: CLOSE
+                      - text: "Je viens réclamer mon acte de propriété"
+                        conditions:
+                          - type: VARIABLE_EQUALS
+                            key: CLAIM_TIER_1
+                            value: "true"
+                          - type: NO_MAIN_CLAIM
+                        actions:
+                          - type: CLOSE
+                      - text: "Rien pour le moment"
+                        actions:
+                          - type: CLOSE
+                """);
+        dialogueEngine.reload();
+        NamespacedKey joId = new NamespacedKey("rpgquest", "jo");
+        PlayerMock player = addPlayer();
+
+        // État (a) : CLAIM_TIER_1 absent -> l'explication est visible, l'acte non.
+        sessionEngine.open(player, joId);
+        awaitRendered();
+        assertTrue(renderer.lastVisibleChoices.stream().anyMatch(c -> c.label().contains("Comment obtenir")),
+                () -> "non débloqué : l'explication doit être visible, obtenu : " + renderer.lastVisibleChoices);
+        assertTrue(renderer.lastVisibleChoices.stream().noneMatch(c -> c.label().contains("réclamer mon acte")),
+                "non débloqué : l'acte ne doit pas être proposé");
+
+        // État (b) : CLAIM_TIER_1 = "true", toujours aucun claim -> l'acte est proposé, l'explication disparaît.
+        variableRepository.set(player.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, ClaimService.CLAIM_TIER_1_VALUE)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        renderer.lastNode = null;
+        sessionEngine.open(player, joId);
+        awaitRendered();
+        assertTrue(renderer.lastVisibleChoices.stream().anyMatch(c -> c.label().contains("réclamer mon acte")),
+                () -> "débloqué : l'acte doit être proposé, obtenu : " + renderer.lastVisibleChoices);
+        assertTrue(renderer.lastVisibleChoices.stream().noneMatch(c -> c.label().contains("Comment obtenir")),
+                "débloqué : l'explication « comment obtenir » doit disparaître");
+    }
+
     private int currentTopInventorySize(PlayerMock player) {
         var view = player.getOpenInventory();
         return (view == null || view.getTopInventory() == null) ? 0 : view.getTopInventory().getSize();

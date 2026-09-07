@@ -58,6 +58,7 @@ public final class PanelApp {
     private final AgentStore agentStore;
     private final AgentRegistry agentRegistry;
     private final AgentEndpoints agentEndpoints;
+    private final AgentPages agentPages;
 
     private HttpServer server;
 
@@ -67,6 +68,7 @@ public final class PanelApp {
         this.bridge = bridge;
         this.agentStore = agentStore;
         this.agentRegistry = new AgentRegistry(config.agents().agents());
+        this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId());
         this.agentEndpoints = new AgentEndpoints(agentRegistry, agentStore, audit,
                 config.agents().actionExpiry(), config::disabled);
         this.authService = new AuthService(config.ownerUsername(), config.ownerPasswordHash(), new PasswordHasher());
@@ -87,9 +89,16 @@ public final class PanelApp {
         route("/logout", this::handleLogout);
         route("/dashboard", this::handleDashboard);
         route("/agents", this::handleAgents);
+        route("/agents/action", this::handleActionCreate);
         route("/agents/actions.json", this::handleAgentActionsJson);
         route("/assets/panel.js", this::handleAssetPanelJs);
-        for (String path : new String[] {"/players", "/npc", "/quests", "/stories", "/diagnostics", "/admin", "/dev"}) {
+        route("/players", exchange -> handleBusinessPage(exchange, "/players", "Joueurs",
+                Permission.PLAYERS_READ, agentPages::players));
+        route("/quests", exchange -> handleBusinessPage(exchange, "/quests", "Quêtes",
+                Permission.CONTENT_READ, agentPages::quests));
+        route("/stories", exchange -> handleBusinessPage(exchange, "/stories", "Stories",
+                Permission.CONTENT_READ, agentPages::stories));
+        for (String path : new String[] {"/npc", "/diagnostics", "/admin", "/dev"}) {
             route(path, exchange -> handlePlaceholder(exchange, path));
         }
         agentEndpoints.register(server);
@@ -373,50 +382,9 @@ public final class PanelApp {
     }
 
     private void handleAgentActionCreate(HttpExchange exchange, Session session) throws IOException {
-        Map<String, String> form = Http.formBody(exchange);
-        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
-            Http.html(exchange, 403, Layout.bare("CSRF", "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
-            return;
-        }
-        String rid = UUID.randomUUID().toString().substring(0, 8);
-        if (!permissions.can(session.role(), Permission.ACTION_VARIABLE_GET)) {
-            audit.record(session.username(), "agent.action.create", "type=player.variable.get", "DENIED",
-                    "permission manquante", rid);
-            Http.html(exchange, 403, renderPage("Refusé", session, "/agents",
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission ACTION_VARIABLE_GET requise.</p>"));
-            return;
-        }
-        String agentId = form.getOrDefault("agent", "").trim();
-        String player = form.getOrDefault("player", "").trim();
-        String key = form.getOrDefault("key", "").trim();
-        if (key.isEmpty()) {
-            key = "CLAIM_TIER_1";
-        }
-        Optional<AgentIdentity> agent = agentRegistry.byId(agentId);
-        String error = null;
-        if (agent.isEmpty()) {
-            error = "Agent inconnu : " + agentId;
-        } else if (player.isEmpty() || player.length() > 40) {
-            error = "Nom / UUID de joueur manquant ou trop long.";
-        } else if (!key.matches("[A-Za-z0-9_.:\\-]{1,128}")) {
-            error = "Clé de variable invalide.";
-        }
-        if (error != null) {
-            audit.record(session.username(), "agent.action.create", "agent=" + agentId, "DENIED", error, rid);
-            Http.html(exchange, 400, renderPage("Agents", session, "/agents",
-                    "<div class=\"banner err\">" + Http.esc(error) + "</div>" + agentsContent(session)));
-            return;
-        }
-        Map<String, String> params = new LinkedHashMap<>();
-        params.put("player", player);
-        params.put("key", key);
-        String id = agentStore.createAction(agentId, "player.variable.get", params, session.username());
-        audit.record(session.username(), "agent.action.create",
-                "agent=" + agentId + " type=player.variable.get action=" + id, "PENDING",
-                "player=" + player + " key=" + key, rid);
-        LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + agentId
-                + " action=" + id + " by=" + session.username());
-        Http.redirect(exchange, "/agents");
+        // Formulaire de preuve de /agents (type par défaut player.variable.get) et point d'entrée
+        // générique partagent la même validation whitelistée.
+        createAgentAction(exchange, session, "/agents");
     }
 
     /**
@@ -489,6 +457,141 @@ public final class PanelApp {
         try (var out = exchange.getResponseBody()) {
             out.write(js);
         }
+    }
+
+    // ---- Pages métier (Joueurs / Quêtes / Stories) ----------------------------------
+
+    private interface PageRenderer {
+        String render(Session session, Map<String, String> query);
+    }
+
+    private void handleBusinessPage(HttpExchange exchange, String path, String title,
+                                    Permission permission, PageRenderer renderer) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.role(), permission)) {
+            Http.html(exchange, 403, renderPage("Refusé", session, path,
+                    "<h1>Accès refusé</h1><p class=\"muted\">Permission manquante.</p>"));
+            return;
+        }
+        Map<String, String> query = Http.query(exchange);
+        StringBuilder body = new StringBuilder();
+        String err = query.get("err");
+        if (err != null && !err.isBlank()) {
+            body.append("<div class=\"banner err\">").append(Http.esc(trimTo(err, 200))).append("</div>");
+        }
+        body.append(renderer.render(session, query));
+        Http.html(exchange, 200, renderPage(title, session, path, body.toString()));
+    }
+
+    /** {@code POST /agents/action} : création générique d'une action whitelistée depuis n'importe quelle page. */
+    private void handleActionCreate(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "POST requis");
+            return;
+        }
+        createAgentAction(exchange, maybe.get(), "/agents");
+    }
+
+    /**
+     * Valide (permission + whitelist + bornes des paramètres) puis crée une action agent, journalise
+     * et redirige vers la page d'origine. Défense en profondeur : l'agent puis le service métier
+     * re-valident tout.
+     */
+    private void createAgentAction(HttpExchange exchange, Session session, String defaultReturn) throws IOException {
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF", "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String rawType = form.getOrDefault("type", "").trim();
+        String type = rawType.isEmpty() ? "player.variable.get" : rawType;
+        String agentId = form.getOrDefault("agent", "").trim();
+        String returnPath = safeReturnPath(form.getOrDefault("return", defaultReturn), defaultReturn);
+
+        Optional<com.lodygames.rpgquest.panel.agent.AgentActionCatalog.Spec> spec =
+                com.lodygames.rpgquest.panel.agent.AgentActionCatalog.spec(type);
+        if (spec.isEmpty()) {
+            audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED", "type non whitelisté", rid);
+            Http.redirect(exchange, withError(returnPath, agentId, null, "Type d'action non autorisé."));
+            return;
+        }
+        if (!permissions.can(session.role(), spec.get().permission())) {
+            audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED", "permission manquante", rid);
+            Http.html(exchange, 403, renderPage("Refusé", session, returnPath,
+                    "<h1>Accès refusé</h1><p class=\"muted\">Permission " + spec.get().permission() + " requise.</p>"));
+            return;
+        }
+        Optional<AgentIdentity> agent = agentRegistry.byId(agentId);
+        if (agent.isEmpty()) {
+            audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED", "agent inconnu : " + agentId, rid);
+            Http.redirect(exchange, withError(returnPath, agentId, null, "Agent inconnu."));
+            return;
+        }
+        com.lodygames.rpgquest.panel.agent.AgentActionCatalog.Validation v =
+                com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate(type, form);
+        if (!v.valid()) {
+            audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                    "DENIED", v.error(), rid);
+            Http.redirect(exchange, withError(returnPath, agentId, form.get("player"), v.error()));
+            return;
+        }
+        String id = agentStore.createAction(agentId, type, v.params(), session.username());
+        audit.record(session.username(), "agent.action.create",
+                "agent=" + agentId + " type=" + type + " action=" + id, "PENDING", safeParams(v.params()), rid);
+        LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + agentId
+                + " type=" + type + " action=" + id + " by=" + session.username());
+        Http.redirect(exchange, appendContext(returnPath, agentId, v.params().get("player")));
+    }
+
+    private static String safeReturnPath(String requested, String fallback) {
+        return switch (requested == null ? "" : requested) {
+            case "/players", "/quests", "/stories", "/agents" -> requested;
+            default -> fallback;
+        };
+    }
+
+    private static String appendContext(String path, String agentId, String player) {
+        StringBuilder sb = new StringBuilder(path).append("?agent=").append(enc(agentId));
+        if (player != null && !player.isBlank()) {
+            sb.append("&player=").append(enc(player));
+        }
+        return sb.toString();
+    }
+
+    private static String withError(String path, String agentId, String player, String error) {
+        return appendContext(path, agentId, player) + "&err=" + enc(error == null ? "Requête invalide." : error);
+    }
+
+    private static String enc(String value) {
+        return java.net.URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
+    }
+
+    private static String safeParams(Map<String, String> params) {
+        StringBuilder sb = new StringBuilder();
+        params.forEach((k, val) -> {
+            if (!"value".equals(k)) { // ne jamais recopier une valeur libre dans l'audit
+                sb.append(sb.isEmpty() ? "" : " ").append(k).append('=').append(val);
+            } else {
+                sb.append(sb.isEmpty() ? "" : " ").append("value=<défini>");
+            }
+        });
+        return sb.toString();
+    }
+
+    private static String trimTo(String value, int max) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() <= max ? value : value.substring(0, max);
     }
 
     private String agentsContent(Session session) {

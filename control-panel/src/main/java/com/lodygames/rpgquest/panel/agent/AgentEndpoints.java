@@ -187,8 +187,10 @@ public final class AgentEndpoints {
         String value = str(json.get("value"));
         String message = truncate(str(json.get("message")), 500);
 
+        // Le corps brut (détails structurés non secrets : listes de quêtes/stories/joueurs pour les
+        // pages du Control Panel) est conservé dans la base PROPRE du panel — borne large mais finie.
         boolean accepted = store.recordResult(actionId, agent.id(), status, value, message,
-                truncate(rawBody, 4000), Instant.now());
+                truncate(rawBody, 20000), Instant.now());
         if (!accepted) {
             return send(exchange, 404, error("unknown_action", "Action inconnue ou destinée à un autre agent."));
         }

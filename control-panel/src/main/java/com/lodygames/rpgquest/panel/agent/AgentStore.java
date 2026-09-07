@@ -240,6 +240,20 @@ public final class AgentStore {
         }
     }
 
+    /** Dernière action d'un type donné pour un agent (tous statuts) — pour réafficher un résultat de liste/état. */
+    public Optional<AgentActionRow> latestActionOfType(String agentId, String type) {
+        String sql = "SELECT * FROM agent_action WHERE agent_id = ? AND type = ? ORDER BY created_at DESC LIMIT 1";
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, agentId);
+            ps.setString(2, type);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(readAction(rs)) : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Lecture de la dernière action « " + type + " » impossible (" + agentId + ")", e);
+        }
+    }
+
     public List<AgentActionRow> recentActions(String agentId, int limit) {
         String sql = "SELECT * FROM agent_action WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?";
         List<AgentActionRow> rows = new ArrayList<>();

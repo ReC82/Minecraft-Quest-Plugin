@@ -17,10 +17,10 @@ public final class Layout {
         return List.of(
                 item("Dashboard", "/dashboard", true, activeHref),
                 item("Agents", "/agents", true, activeHref),
-                item("Joueurs", "/players", false, activeHref),
+                item("Joueurs", "/players", true, activeHref),
                 item("PNJ", "/npc", false, activeHref),
-                item("Quêtes", "/quests", false, activeHref),
-                item("Stories", "/stories", false, activeHref),
+                item("Quêtes", "/quests", true, activeHref),
+                item("Stories", "/stories", true, activeHref),
                 item("Diagnostics", "/diagnostics", false, activeHref),
                 item("Admin", "/admin", false, activeHref),
                 item("Développement", "/dev", false, activeHref));
@@ -131,6 +131,19 @@ public final class Layout {
             .actions-panel{margin-top:6px}
             .poll-status{font-size:12px;margin-top:6px;color:var(--muted)}
             [hidden]{display:none}
+            select,input[type=number],input[list]{width:100%;max-width:420px;padding:9px 10px;background:var(--panel2);
+            border:1px solid var(--line);border-radius:8px;color:var(--txt)}
+            .actform{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0}
+            .actform .btn{width:auto;max-width:none;padding:8px 16px}
+            .btn.danger{background:var(--err)}
+            label.inline{display:inline-flex;align-items:center;gap:6px;margin:10px 0 0;color:var(--txt);font-size:13px}
+            label.inline.confirm{color:var(--warn)}
+            .resline{margin:8px 0;font-size:13px}
+            .agentpicker{display:flex;gap:8px;align-items:center;margin:8px 0}
+            .agentpicker label{margin:0}
+            details{margin:10px 0;border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+            summary{cursor:pointer}
+            ol,ul{margin:6px 0;padding-left:20px}
             @media(max-width:720px){.shell{flex-direction:column}.side{width:auto;flex-direction:row;flex-wrap:wrap}
             .main{padding:14px}.login{width:100%}}
             """;

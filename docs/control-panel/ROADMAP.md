@@ -22,11 +22,22 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
 - [x] `docs/control-panel/*` alignés sur l'implémentation.
 - [ ] `admin-snapshot.json` (mode dégradé) — reporté ([ADR-004]).
 
-## Étape 0b — déploiement AWS (issue #44)
+## Étape 0b — déploiement AWS (issue #44) — **LIVRÉ** (validation login owner par navigateur en attente)
 
-- [ ] voir [AWS.md](AWS.md) : sous-domaine `panel.lodygames.com`, vhost nginx dédié, TLS Certbot,
-      service systemd `rpgquest-panel`, décision « où tourne le bridge ». **Aucun site existant
-      touché.**
+- [x] **https://plugadmin.lodylands.com** en ligne : vhost nginx dédié + TLS Let's Encrypt ECDSA +
+      redirection 80→443.
+- [x] service systemd **`plugadmin`** (utilisateur système dédié, durci), app sous `/opt/plugadmin/app`
+      (`installDist`), secrets `/etc/plugadmin/plugadmin.env` hors dépôt.
+- [x] backend `127.0.0.1:8090` non exposé ; `/health` OK local **et** public.
+- [x] scripts reproductibles `scripts/plugadmin/` (`install.sh` / `deploy.sh` / `rollback.sh`) +
+      runbook [DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md).
+- [x] **non-régression** `dig.lodygames.com` / `lodylands.com` (+ `www` / `beta`) : inchangés
+      avant/après.
+- [x] dashboard « RPGQuest DEV indisponible » rendu proprement (200, pas de 500) — état normal
+      jusqu'à #51.
+- [ ] login owner **réel** validé depuis un navigateur externe (l'owner ; tout le reste de la
+      chaîne d'auth est vérifié : GET login, login invalide → 401, CSRF, `/dashboard` anonyme → 303,
+      cookies `Secure`/`HttpOnly`/`SameSite`).
 
 ## Étape 1 — lectures
 

@@ -1,7 +1,14 @@
-# Control Panel sur AWS — audit lecture seule & préparation de l'issue #44
+# Control Panel sur AWS — audit d'instance (préparation #37, réalisé par #44)
 
-> **#37 ne déploie rien.** Ce document est l'audit (lecture seule) de l'instance et la liste
-> exacte de ce qu'il faudra pour #44. **Aucune configuration de site existant n'a été modifiée.**
+> **Statut : #44 LIVRÉ.** PlugAdmin tourne sur AWS derrière nginx + TLS sur
+> **https://plugadmin.lodylands.com** (backend `127.0.0.1:8090`, service systemd `plugadmin`).
+> La **procédure d'exploitation réelle** (installation, upgrade, rollback, diagnostic,
+> non-régression) est dans **[DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md)**.
+>
+> Ce document reste l'**audit d'instance** d'origine (lecture seule, fait pendant #37) : il garde
+> une valeur de référence historique. Les anciennes hypothèses `panel.lodygames.com` /
+> `rpgquest-panel.service` / `/home/ubuntu/rpgquest-panel/` sont **abandonnées** — voir
+> DEPLOYMENT_AWS.md pour les valeurs réellement déployées.
 
 ## Instance (audit du 2026-09-07)
 
@@ -18,14 +25,17 @@
 | TLS | Let's Encrypt / Certbot, **certificats par domaine** : `/etc/letsencrypt/live/dig.lodygames.com/`, `/etc/letsencrypt/live/lodylands.com/`. **Pas de wildcard.** |
 | Zone DNS | `lodygames.com` (dig.lodygames.com y résout). `lodylands.com` = domaine distinct. |
 
-## Cible retenue
+## Cible retenue — telle que déployée par #44
 
-- sous-domaine **`panel.lodygames.com`** (nom exact à confirmer) dans la zone `lodygames.com` ;
-- HTTPS obligatoire, redirection 80→443 ;
-- reverse proxy nginx public → **service local `127.0.0.1:8090`** (le Control Panel) ;
-- service systemd dédié `rpgquest-panel.service`, `User=ubuntu` (ou utilisateur dédié), répertoire
-  applicatif dédié, `EnvironmentFile=` hors dépôt (`chmod 600`), `Restart=on-failure` ;
-- **le port 8090 n'est jamais exposé publiquement** — seul nginx y accède.
+- sous-domaine **`plugadmin.lodylands.com`** (zone `lodylands.com`, NS `one.com`) — l'enregistrement
+  `A → 3.226.216.90` **existait déjà** au moment de #44, aucune action DNS n'a été nécessaire ;
+- HTTPS obligatoire, redirection 80→443 (Certbot `--redirect`) ;
+- reverse proxy nginx public → **service local `127.0.0.1:8090`** (PlugAdmin) ;
+- service systemd dédié **`plugadmin.service`**, utilisateur système dédié **`plugadmin`**
+  (`nologin`, hors `sudo`), app sous **`/opt/plugadmin/app`**, secrets dans
+  **`/etc/plugadmin/plugadmin.env`** (`0640 root:plugadmin`, hors dépôt), `Restart=on-failure` ;
+- **le port 8090 n'est jamais exposé publiquement** — `listen 127.0.0.1:8090`, seul nginx y accède,
+  security group inchangé (80/443/22).
 
 ## ⚠️ Point structurant : où tourne le bridge ?
 
@@ -47,41 +57,28 @@ Options pour #44 (à trancher avec l'owner) :
 Le socle #37 supporte déjà (1) sans changement (`target.dev.bridge-url` + token). (2) et (3) sont
 des évolutions.
 
-## Ce qu'il faut de la part de l'owner pour #44
+Décision effective pour #44 : le dashboard affiche **« RPGQuest DEV indisponible »** (option
+« aucune des trois » pour l'instant). L'état live viendra de l'**agent sortant #51**
+(`RPGQuest VeryGames → HTTPS sortant → PlugAdmin AWS`), pas d'un bridge joignable depuis AWS.
+#44 n'installe **pas** de Paper DEV sur l'instance.
 
-| # | Élément | Détail |
-|---|---|---|
-| 1 | **Nom de sous-domaine** | `panel.lodygames.com` ? `rpgquest.lodygames.com` ? |
-| 2 | **IP publique / Elastic IP** de l'instance AWS | pour l'enregistrement DNS `A` (et éventuellement `AAAA`) |
-| 3 | **Accès au gestionnaire DNS** de `lodygames.com` | soit l'owner crée l'enregistrement `A <sous-domaine> → <IP>`, soit il confirme que Claude peut fournir la valeur exacte à créer manuellement (pas d'API DNS ici) |
-| 4 | **Décision « où tourne le bridge »** | option 1 / 2 / 3 ci-dessus |
-| 5 | Si option 1 : **feu vert pour installer un Paper DEV headless** sur l'instance | version Paper, `server.properties` minimal, `eula=true`, ressources |
-| 6 | Confirmation que le compte `ubuntu` (ou un utilisateur dédié) peut porter un `rpgquest-panel.service` | + emplacement voulu (`/home/ubuntu/rpgquest-panel/` ?) |
-| 7 | Email pour Certbot (renouvellement) | souvent déjà configuré globalement |
+## Ce qui a effectivement été fait par #44
 
-## Procédure #44 (esquisse, à valider — NE PAS exécuter en #37)
+Voir **[DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md)** pour le détail. En résumé :
 
-1. build : `./gradlew :control-panel:build` → `control-panel/build/libs/control-panel.jar`.
-2. installer sous `/home/ubuntu/rpgquest-panel/` (jar + `control-panel.properties`) ;
-   `EnvironmentFile=/home/ubuntu/rpgquest-panel/panel.env` (`chmod 600`, secrets).
-3. `rpgquest-panel.service` : `ExecStart=/usr/bin/java -jar .../control-panel.jar`,
-   `WorkingDirectory=/home/ubuntu/rpgquest-panel`, `User=ubuntu`, `Restart=on-failure`.
-   `systemctl enable --now rpgquest-panel` → écoute `127.0.0.1:8090`.
-4. **nouveau** vhost nginx `/etc/nginx/sites-available/rpgquest-panel` (server block dédié,
-   `server_name panel.lodygames.com`, `proxy_pass http://127.0.0.1:8090`, en-têtes `X-Forwarded-*`).
-   Symlink dans `sites-enabled/`. `nginx -t` puis `systemctl reload nginx`. **Ne toucher ni `dig`
-   ni `lodyland`.** Sauvegarder tout fichier créé/modifié.
-5. `certbot --nginx -d panel.lodygames.com` → cert + bloc 443 + redirection 80→443.
-6. `panel.cookie-secure=true`, `panel.base-url=https://panel.lodygames.com`.
-7. health : `curl -fsS https://panel.lodygames.com/health` → `{"panel":"ONLINE",...}` ;
-   ouvrir l'URL, login owner, dashboard.
-8. rollback : `systemctl disable --now rpgquest-panel` + retirer le symlink nginx + `reload` +
-   `certbot delete --cert-name panel.lodygames.com` si besoin. Les sites existants ne sont jamais
-   touchés → rollback sans impact.
+- DNS : `plugadmin.lodylands.com` **résolvait déjà** vers `3.226.216.90` → aucune action DNS ;
+- `scripts/plugadmin/install.sh` : utilisateur système `plugadmin`, `/opt/plugadmin/app` (sortie
+  `installDist`), `/etc/plugadmin/plugadmin.env` (secrets générés, hors dépôt), `/var/lib/plugadmin`
+  (SQLite), `plugadmin.service` (durci), vhost nginx dédié `sites-available/plugadmin` ;
+- `nginx -t` OK → `reload` (jamais `restart`) ; `dig` et `lodyland` **non touchés** ;
+- `certbot --nginx -d plugadmin.lodylands.com --redirect` → certificat ECDSA valide, 80→443 ;
+- hash du mot de passe owner fourni par l'owner (`hash-password`), jamais committé ;
+- `systemctl enable --now plugadmin` → `127.0.0.1:8090`, `/health` OK local **et** public.
 
-## Sécurité déploiement (rappel)
+## Sécurité déploiement (rappel, appliqué)
 
 - port `8090` **jamais** ouvert dans le security group ; seuls `80`/`443`/`22` publics ;
-- secrets uniquement dans `EnvironmentFile` `chmod 600`, hors dépôt ;
-- cookies `Secure` en prod ;
-- kill-switch : `PANEL_DISABLED=true` dans l'`EnvironmentFile` + `systemctl restart rpgquest-panel`.
+  `listen 127.0.0.1:8090` vérifié, test externe direct sur `:8090` = échec de connexion ;
+- secrets uniquement dans `EnvironmentFile` `chmod 640 root:plugadmin`, hors dépôt ;
+- cookies `Secure` en prod (`RPGQUEST_PANEL_COOKIE_SECURE=true`) ;
+- kill-switch : `PANEL_DISABLED=true` dans `/etc/plugadmin/plugadmin.env` + `systemctl restart plugadmin`.

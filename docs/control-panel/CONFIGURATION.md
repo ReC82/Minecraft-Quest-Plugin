@@ -60,11 +60,18 @@ activation vivent hors du dépôt et hors des fichiers de contenu.
 Le jeton doit être **identique** entre `RPGQUEST_WEB_ADMIN_TOKEN` (plugin) et
 `RPGQUEST_BRIDGE_TOKEN_<ENV>` (panel).
 
-## Prod (référence, mise en œuvre = #44)
+## Prod — déployé par #44 (voir [DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md))
 
-- reverse proxy nginx : `panel.lodygames.com` (443, TLS Let's Encrypt) → `127.0.0.1:8090`,
-  redirection 80→443, cookies `Secure` (`panel.cookie-secure=true`) ;
-- bridge : joint depuis AWS soit en local (si co-localisé), soit via tunnel/relais — voir
-  [AWS.md](AWS.md) et [DECISIONS.md](DECISIONS.md) ADR-004 ;
-- secrets : variables d'environnement du service systemd, `EnvironmentFile=` `chmod 600` ;
-- `RPGQUEST_PANEL_CONFIG` pointe un `control-panel.properties` hors dépôt.
+- **URL publique : `https://plugadmin.lodylands.com`** (l'ancien exemple `panel.lodygames.com` est
+  abandonné) ;
+- reverse proxy nginx dédié `sites-available/plugadmin` (443, TLS Let's Encrypt ECDSA) →
+  `127.0.0.1:8090`, redirection 80→443, cookies `Secure` (`RPGQUEST_PANEL_COOKIE_SECURE=true`) ;
+- service systemd **`plugadmin`**, utilisateur système **`plugadmin`**, app sous
+  **`/opt/plugadmin/app`** (sortie `installDist`, jamais lancée depuis le working tree Git) ;
+- secrets : `EnvironmentFile=/etc/plugadmin/plugadmin.env` (`chmod 640 root:plugadmin`, hors dépôt).
+  `RPGQUEST_PANEL_SECRET` et `RPGQUEST_BRIDGE_TOKEN_DEV` générés par `install.sh` ;
+  `RPGQUEST_PANEL_OWNER_HASH` renseigné par l'owner (`hash-password`) ;
+- `RPGQUEST_PANEL_CONFIG=/etc/plugadmin/control-panel.properties` (hors dépôt) ;
+- `RPGQUEST_PANEL_DB=/var/lib/plugadmin/control-panel.db` ;
+- cible `dev` en mode `bridge` sur `http://127.0.0.1:8100/admin/v1` : **rien n'écoute là sur AWS**
+  aujourd'hui → dashboard « RPGQuest DEV indisponible » (attendu jusqu'à #51).

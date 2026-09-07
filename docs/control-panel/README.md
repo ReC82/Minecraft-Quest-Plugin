@@ -83,10 +83,19 @@ affiche l'état réel du bridge. Health du panel lui-même : `GET http://127.0.0
 | [ROADMAP.md](ROADMAP.md) | découpage modulaire, V1 / plus tard |
 | [DECISIONS.md](DECISIONS.md) | ADR datées |
 
+## Déploiement (issue #44) — **PlugAdmin en ligne**
+
+Le Control Panel est déployé sous le nom **PlugAdmin** sur **https://plugadmin.lodylands.com**
+(instance AWS, nginx dédié + TLS Let's Encrypt, service systemd `plugadmin`, backend
+`127.0.0.1:8090` jamais exposé). Runbook complet : **[DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md)**.
+Scripts reproductibles : [`scripts/plugadmin/`](../../scripts/plugadmin/).
+
 ## Relation avec les autres issues
 
-- **#44** : déploiement AWS (reverse proxy nginx + sous-domaine `lodygames.com` + TLS) — voir
-  [AWS.md](AWS.md). Rien n'est déployé par #37.
+- **#44** : déploiement AWS **fait** — reverse proxy nginx dédié + `plugadmin.lodylands.com` + TLS.
+  Voir [DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md). Rien n'est déployé par #37.
+- **#51** : agent sortant `RPGQuest VeryGames → PlugAdmin AWS` pour l'état live. Tant qu'il n'est
+  pas là, le dashboard affiche « RPGQuest DEV indisponible » — c'est normal, pas un échec de #44.
 - **#36** : les raccourcis admin de test deviendront des *actions du bridge* (#45), logique
   **dans le plugin**, jamais dupliquée côté web.
 - **#29** : futur module « Développement », **même socle** — pas une 2e application.

@@ -19,8 +19,8 @@ progression, reload de contenu, plus tard édition et déploiement). La sécurit
 | Kill-switch `PANEL_DISABLED` → 503 partout sauf `/health` | ✅ |
 | Bridge : Bearer, temps constant, fail-closed, bind interne | ✅ |
 | Secrets absents des réponses (test `responsesNeverLeakSecrets`) | ✅ |
-| Rate limiting login / backoff | ⏳ à ajouter (protection reverse-proxy possible entre-temps) |
-| HTTPS + reverse proxy | ⏳ #44 ([AWS.md](AWS.md)) |
+| Rate limiting login / backoff | ⏳ à ajouter (délai constant PBKDF2 déjà payé sur échec ; nginx devant) |
+| HTTPS + reverse proxy | ✅ #44 — `https://plugadmin.lodylands.com`, TLS Let's Encrypt, 80→443, backend `127.0.0.1:8090` non exposé ([DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md)) |
 | RBAC multi-rôles | ⏳ énum posée, un seul rôle `owner` actif |
 
 ## Modèle de menace (V1)

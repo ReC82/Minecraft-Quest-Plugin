@@ -1,0 +1,27 @@
+# PlugAdmin — configuration NON SECRÈTE déployée sur AWS (issue #44)
+#
+# Installé par scripts/plugadmin/install.sh en
+#   /etc/plugadmin/control-panel.properties  (root:plugadmin, chmod 644).
+#
+# Les secrets ne sont JAMAIS ici : voir /etc/plugadmin/plugadmin.env.
+# Rappel de précédence : variables d'environnement > ce fichier > défauts du code.
+# plugadmin.env fixe déjà port / base-url / cookie-secure / db / config ; ce
+# fichier sert de référence lisible et de source pour la config des cibles.
+
+panel.port=8090
+panel.bind=127.0.0.1
+panel.base-url=https://plugadmin.lodylands.com
+panel.cookie-secure=true
+panel.session-ttl-minutes=120
+panel.session-idle-minutes=30
+panel.owner-username=owner
+panel.disabled=false
+panel.db=/var/lib/plugadmin/control-panel.db
+
+# --- Cibles RPGQuest (multi-environnement, prêt pour staging/prod plus tard) ---
+targets=dev
+targets.default=dev
+target.dev.label=RPGQuest DEV
+target.dev.mode=bridge
+target.dev.bridge-url=http://127.0.0.1:8100/admin/v1
+target.dev.token-env=RPGQUEST_BRIDGE_TOKEN_DEV

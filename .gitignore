@@ -34,3 +34,10 @@ bin/
 # RPGQuest Control Panel — configuration et base locales (issue #37)
 control-panel.properties
 control-panel.db
+
+# PlugAdmin (issue #44) — sécurité : aucun EnvironmentFile réel dans Git.
+# Le fichier de prod vit hors dépôt (/etc/plugadmin/plugadmin.env). Ces motifs
+# ne couvrent QUE d'éventuelles copies locales ; les .example restent versionnés.
+plugadmin.env
+scripts/plugadmin/plugadmin.env
+scripts/plugadmin/control-panel.properties

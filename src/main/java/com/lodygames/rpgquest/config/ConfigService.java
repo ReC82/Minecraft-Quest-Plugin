@@ -78,7 +78,8 @@ public final class ConfigService implements PluginService {
     }
 
     private void logApplied(String action) {
-        logger.info("{} : debug={}, locale={}, database.file={}, resource-pack.enabled={}",
-                action, current.debug(), current.locale(), current.databaseFile(), current.resourcePack().enabled());
+        logger.info("{} : debug={}, locale={}, database={}, resource-pack.enabled={}",
+                action, current.debug(), current.locale(), current.database().describe(),
+                current.resourcePack().enabled());
     }
 }

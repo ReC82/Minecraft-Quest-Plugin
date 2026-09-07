@@ -1,6 +1,8 @@
 package com.lodygames.rpgquest.config;
 
 import com.lodygames.rpgquest.backpack.model.BackpackSize;
+import com.lodygames.rpgquest.database.DatabaseSettings;
+import com.lodygames.rpgquest.database.DatabaseType;
 import com.lodygames.rpgquest.progression.model.SkillType;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -30,7 +32,7 @@ public final class ConfigValidator {
     public static PluginConfig validate(ConfigurationSection section) throws ConfigValidationException {
         boolean debug = validateDebug(section);
         String locale = validateLocale(section);
-        String databaseFile = validateDatabaseFile(section);
+        DatabaseSettings database = validateDatabase(section);
         ResourcePackConfig resourcePack = validateResourcePack(section);
         DialogueConfig dialogue = validateDialogue(section);
         JournalConfig journal = validateJournal(section);
@@ -45,7 +47,7 @@ public final class ConfigValidator {
         HubConfig hub = validateHub(section);
         TravelConfig travel = validateTravel(section);
         return new PluginConfig(
-                debug, locale, databaseFile, resourcePack, dialogue, journal, adminFlatten, claims, progression,
+                debug, locale, database, resourcePack, dialogue, journal, adminFlatten, claims, progression,
                 backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel);
     }
 
@@ -72,17 +74,92 @@ public final class ConfigValidator {
         return locale.toLowerCase(Locale.ROOT);
     }
 
-    private static String validateDatabaseFile(ConfigurationSection section) throws ConfigValidationException {
-        String file = section.getString("database.file", "data.db");
-        if (file.isBlank()) {
-            throw new ConfigValidationException("« database.file » ne peut pas être vide.");
+    /**
+     * Section {@code database:} (issue #40). Choisit le moteur ({@code type: sqlite|mysql}) et
+     * valide ses paramètres. Le mot de passe MySQL n'est <strong>jamais</strong> lu ici : seul le
+     * nom d'une variable d'environnement est configuré ({@code mysql.password-env}).
+     *
+     * <p>Rétrocompatibilité : la clé historique {@code database.file} reste acceptée comme alias de
+     * {@code database.sqlite.file}.</p>
+     */
+    private static DatabaseSettings validateDatabase(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection database = section.getConfigurationSection("database");
+
+        String rawType = database != null ? database.getString("type", "sqlite") : "sqlite";
+        DatabaseType type;
+        try {
+            type = DatabaseType.parse(rawType);
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException("« database.type » invalide : " + e.getMessage());
         }
-        if (file.contains("/") || file.contains("\\") || file.contains("..")) {
+
+        // Une clé explicitement présente mais vide est une erreur (comportement historique) ; une
+        // clé absente retombe sur le défaut.
+        for (String key : new String[] {"sqlite.file", "file"}) {
+            if (database != null && database.isSet(key) && database.getString(key, "").isBlank()) {
+                throw new ConfigValidationException("« database." + key + " » ne peut pas être vide.");
+            }
+        }
+        String sqliteFile = firstNonBlank(
+                database != null ? database.getString("sqlite.file") : null,
+                database != null ? database.getString("file") : null,
+                "data.db");
+        if (sqliteFile.contains("/") || sqliteFile.contains("\\") || sqliteFile.contains("..")) {
             throw new ConfigValidationException(
-                    "« database.file » doit être un simple nom de fichier (sans séparateur de dossier ni \"..\"), "
-                            + "valeur trouvée : " + file);
+                    "« database.sqlite.file » (ou « database.file ») doit être un simple nom de fichier "
+                            + "(sans séparateur de dossier ni \"..\"), valeur trouvée : " + sqliteFile);
         }
-        return file;
+
+        DatabaseSettings.MySqlSettings mysql = validateMySql(
+                database != null ? database.getConfigurationSection("mysql") : null, type);
+
+        return new DatabaseSettings(type, new DatabaseSettings.SqliteSettings(sqliteFile), mysql);
+    }
+
+    private static DatabaseSettings.MySqlSettings validateMySql(ConfigurationSection mysql, DatabaseType type)
+            throws ConfigValidationException {
+        if (mysql == null) {
+            return DatabaseSettings.MySqlSettings.defaults();
+        }
+
+        String host = firstNonBlank(mysql.getString("host"), "localhost");
+        int port = mysql.getInt("port", 3306);
+        String databaseName = firstNonBlank(mysql.getString("database"), "rpgquest");
+        String username = firstNonBlank(mysql.getString("username"), "rpgquest");
+        String passwordEnv = firstNonBlank(mysql.getString("password-env"), "RPGQUEST_DB_PASSWORD");
+
+        if (type == DatabaseType.MYSQL) {
+            if (port <= 0 || port > 65535) {
+                throw new ConfigValidationException(
+                        "« database.mysql.port » doit être compris entre 1 et 65535, valeur trouvée : " + port);
+            }
+            if (mysql.isSet("password") || mysql.isSet("pass")) {
+                throw new ConfigValidationException(
+                        "« database.mysql » ne doit contenir aucun mot de passe en clair : utiliser "
+                                + "« password-env » (nom d'une variable d'environnement).");
+            }
+        }
+
+        ConfigurationSection poolSection = mysql.getConfigurationSection("pool");
+        int maxSize = poolSection != null ? poolSection.getInt("max-size", 10) : 10;
+        long connectionTimeoutMs = poolSection != null ? poolSection.getLong("connection-timeout-ms", 10_000L) : 10_000L;
+        long maxLifetimeMs = poolSection != null ? poolSection.getLong("max-lifetime-ms", 1_800_000L) : 1_800_000L;
+        if (type == DatabaseType.MYSQL && maxSize <= 0) {
+            throw new ConfigValidationException(
+                    "« database.mysql.pool.max-size » doit être strictement positif, valeur trouvée : " + maxSize);
+        }
+
+        return new DatabaseSettings.MySqlSettings(host, port, databaseName, username, passwordEnv,
+                new DatabaseSettings.PoolSettings(maxSize, connectionTimeoutMs, maxLifetimeMs));
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     private static ResourcePackConfig validateResourcePack(ConfigurationSection section) throws ConfigValidationException {

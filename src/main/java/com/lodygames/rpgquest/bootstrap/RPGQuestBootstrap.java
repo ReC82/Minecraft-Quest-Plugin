@@ -122,7 +122,14 @@ import com.lodygames.rpgquest.waystone.WaystoneCellPlanner;
 import com.lodygames.rpgquest.waystone.WaystoneService;
 import com.lodygames.rpgquest.web.WebSnapshotWriter;
 import com.lodygames.rpgquest.web.admin.BukkitHealthSource;
+import com.lodygames.rpgquest.web.admin.HealthSource;
 import com.lodygames.rpgquest.web.admin.WebAdminServer;
+import com.lodygames.rpgquest.web.agent.AgentActionExecutor;
+import com.lodygames.rpgquest.web.agent.AgentConfig;
+import com.lodygames.rpgquest.web.agent.AgentConfigLoader;
+import com.lodygames.rpgquest.web.agent.BukkitPlayerDirectory;
+import com.lodygames.rpgquest.web.agent.HeartbeatPayload;
+import com.lodygames.rpgquest.web.agent.PlugAdminAgent;
 import com.lodygames.rpgquest.world.WorldService;
 import com.lodygames.rpgquest.zone.ZoneProtectionListener;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
@@ -312,9 +319,18 @@ public final class RPGQuestBootstrap {
 
         // Bridge d'administration HTTP (issue #37) — désactivé sauf RPGQUEST_WEB_ADMIN_ENABLED=true
         // + RPGQUEST_WEB_ADMIN_TOKEN (env, jamais config.yml). Seule voie d'intégration du Control Panel.
-        registry.start(new WebAdminServer(
-                new BukkitHealthSource(plugin, worldService, () -> configService.current()),
-                plugin.getSLF4JLogger()));
+        HealthSource healthSource = new BukkitHealthSource(plugin, worldService, () -> configService.current());
+        registry.start(new WebAdminServer(healthSource, plugin.getSLF4JLogger()));
+
+        // Agent sortant PlugAdmin (issue #51) — RPGQuest/VeryGames initie une connexion HTTPS
+        // SORTANTE vers PlugAdmin/AWS (heartbeat + file d'actions whitelistées). Fail-closed :
+        // inerte tant que plugins/RPGQuest/plugadmin-agent.properties (hors Git) n'active pas
+        // l'agent et ne fournit pas base-url + agent-id + token. Réutilise HealthSource (#37),
+        // ne recalcule jamais le health.
+        AgentConfig agentConfig = new AgentConfigLoader(plugin.getDataFolder().toPath(), plugin.getSLF4JLogger()).load();
+        registry.start(new PlugAdminAgent(
+                plugin, agentConfig, new HeartbeatPayload(healthSource),
+                new AgentActionExecutor(new BukkitPlayerDirectory(plugin), variableRepository::get)));
 
         PlacedBlockRepository placedBlockRepository = new PlacedBlockRepository(databaseService.databaseManager());
         PlacedBlockTracker placedBlockTracker = new PlacedBlockTracker(plugin, placedBlockRepository, plugin.getSLF4JLogger());

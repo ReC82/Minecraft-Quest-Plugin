@@ -3,9 +3,11 @@
 # deploy-verygames.sh — déploiement JAR RPGQuest vers VeryGames (issue #10).
 #
 # Automatise l'EXÉCUTION d'un déploiement (build vérifié, backup daté, transfert
-# FTP atomique). Le déclenchement reste MANUEL, et l'arrêt / redémarrage du
-# serveur VeryGames reste MANUEL (VeryGames n'expose ni API ni RCON exploitable
-# dans notre configuration — accès FTP port 21 uniquement).
+# FTP atomique). Le déclenchement reste MANUEL. Le redémarrage du serveur peut
+# être fait juste après via RCON : `scripts/verygames-restart.sh` (stop RCON ->
+# VeryGames relance automatiquement). RCON validé sur le DEV (host/port/pass dans
+# ~/.config/rpgquest/verygames.env, comme le FTP). Ce script-ci ne fait que le
+# transfert FTP ; il n'arrête/relance rien lui-même.
 #
 # Par défaut, le script n'adresse QU'UN seul chemin distant : celui du JAR.
 # L'option --also permet une LISTE BLANCHE EXPLICITE de fichiers supplémentaires
@@ -453,14 +455,15 @@ if [ "$ALSO_COUNT" -gt 0 ]; then
 fi
 cat >&2 <<EOF
 
-${VG_YELLOW}Actions MANUELLES restantes (VeryGames n'expose ni API ni RCON) :${VG_RESET}
-  1. Démarrer le serveur depuis le panel VeryGames.
-  2. Console : vérifier l'absence d'ERROR au démarrage, Java 21 confirmé.
-  3. En jeu / console : /rpgquest version  -> doit afficher la nouvelle version.
-  4. /plugins  -> RPGQuest en vert.
-  5. Vérifier que world_hub, les PNJ et les quêtes sont intacts
+${VG_YELLOW}Étapes restantes :${VG_RESET}
+  1. Redémarrer le serveur :  scripts/verygames-restart.sh
+     (stop RCON -> VeryGames relance le processus ; attend le retour ONLINE).
+     À défaut : redémarrer depuis le panel VeryGames.
+  2. Console / logs : vérifier l'absence d'ERROR au démarrage, Java 21.
+  3. /rpgquest version -> nouvelle version ; /plugins -> RPGQuest en vert.
+  4. Vérifier que world_hub, les PNJ et les quêtes sont intacts
      (sous-ensemble de la checklist docs/deployment/VERYGAMES.md).
-  6. Renseigner docs/deployment/SERVER_CHANGELOG.md (déploiement effectué).
+  5. Renseigner docs/deployment/SERVER_CHANGELOG.md (déploiement effectué).
 
 ${VG_YELLOW}En cas de problème :${VG_RESET}
   scripts/rollback-verygames.sh --latest     # restaure le JAR précédent

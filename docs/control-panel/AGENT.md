@@ -8,10 +8,12 @@
 
 ## 1. Pourquoi un flux *sortant*
 
-RPGQuest tourne chez **VeryGames** (hébergeur mutualisé, derrière NAT/pare-feu, **aucun port
-entrant** exploitable, ni RCON, ni API). PlugAdmin tourne sur **AWS**
-(`https://plugadmin.lodylands.com`). AWS ne peut donc pas raisonnablement ouvrir une connexion
-*vers* le bridge HTTP local du plugin sur VeryGames.
+RPGQuest tourne chez **VeryGames** (hébergeur mutualisé, derrière NAT/pare-feu). VeryGames expose
+un port **RCON** (commandes texte — utilisé pour le redémarrage, voir
+[VERYGAMES.md](../deployment/VERYGAMES.md)), mais **aucun moyen d'exposer en entrée le bridge HTTP
+du plugin** (`/admin/v1/*`) : pas de port HTTP arbitraire ouvrable, RCON ne sert pas du JSON.
+PlugAdmin tourne sur **AWS** (`https://plugadmin.lodylands.com`) et ne peut donc pas raisonnablement
+ouvrir une connexion *vers* le bridge local du plugin sur VeryGames.
 
 La solution est d'**inverser le sens** :
 
@@ -305,7 +307,8 @@ nécessaire pour ce jalon.
 ## 12. Rollback
 
 **Côté serveur RPGQuest** : mettre `enabled=false` dans `plugadmin-agent.properties` (ou supprimer
-le fichier) puis redémarrer. L'agent redevient inerte ; aucune régression gameplay possible
+le fichier) puis redémarrer (`scripts/verygames-restart.sh` via RCON, ou panel VeryGames).
+L'agent redevient inerte ; aucune régression gameplay possible
 (l'agent n'a aucun point de contact avec le jeu hormis une lecture de variable à la demande).
 Le JAR peut rester en place : sans le fichier, le code est dormant.
 

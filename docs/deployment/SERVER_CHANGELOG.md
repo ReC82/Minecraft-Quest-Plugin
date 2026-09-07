@@ -571,3 +571,38 @@ plugins. Le fichier agent est le SEUL ajout sous `plugins/RPGQuest/`.
   `systemctl restart plugadmin`, ou `scripts/plugadmin/rollback.sh app`.
 - Aucune migration `data.db` à défaire. Les tables `agent_*` de
   `control-panel.db` sont sans effet sur RPGQuest.
+
+### Exécution réelle — 2026-09-07 ~12:20 UTC
+
+- **RCON VeryGames confirmé fonctionnel** depuis AWS (DEV : `51.68.57.28:7469`).
+  Les mentions antérieures « pas de RCON / redémarrage manuel owner » sont
+  **obsolètes**. Outils ajoutés au dépôt : `scripts/verygames-rcon.py`,
+  `scripts/verygames-restart.sh`.
+- Config RCON : `~/.config/rpgquest/verygames.env` (mêmes que FTP), clés
+  `RCON_HOST` / `RCON_PORT` / `RCON_PASSWORD`, `chmod 600`. Mot de passe jamais
+  affiché / committé.
+- `scripts/deploy-verygames.sh -y --allow-no-backup --also
+  ~/.config/rpgquest/plugadmin-agent.properties:RPGQuest/plugadmin-agent.properties`
+  - `./gradlew test` + `build` : OK.
+  - Backup du JAR en ligne :
+    `verygames-backups/rpgquest-20260907T121945Z-predeploy.jar`
+    (`bcc3a6ec…` — c'était l'ancien JAR de l'issue #36, jamais redémarré).
+  - JAR déployé : `rpgquest-0.1.0-SNAPSHOT.jar`
+    `5e9d9a5e02ae9b515f1bcd06147b3bdb0794a59efc97a6159d687ae91e39a3e4`
+    (1 181 666 o, branche `feat/51-plugadmin-outbound-agent`, commit `858e7d4`).
+  - Fichier agent déployé : `plugins/RPGQuest/plugadmin-agent.properties`
+    (283 o, hors Git, `enabled=true`, jeton partagé avec AWS).
+  - Aucun autre fichier touché.
+- `scripts/verygames-restart.sh` : `save-all` → `stop` (RCON) → serveur OFFLINE
+  → relance automatique VeryGames → **ONLINE** en < 1 min.
+- **Validation live** : heartbeats réels reçus par PlugAdmin
+  (`event=agent_heartbeat agent=rpgquest-dev version=0.1.0-SNAPSHOT`,
+  mondes hub/claims/wild chargés) ; action `player.variable.get`
+  (Rondoudou9000 / CLAIM_TIER_1) → `SUCCESS` (« variable absente ») ; type
+  inconnu → `REJECTED` ; idempotence (re-livraison) OK ; arrêt de PlugAdmin
+  ~45 s → Minecraft non affecté, agent reconnecté automatiquement au retour.
+- Côté AWS : `/etc/plugadmin/control-panel.properties` (bloc `agents=`) et
+  `/etc/plugadmin/plugadmin.env` (`RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV`, généré,
+  jamais affiché) ; PlugAdmin redéployé (`scripts/plugadmin/deploy.sh`) ;
+  autres sites (`dig.lodygames.com`, `lodylands.com`) non impactés.
+- Rapport : `docs/claude-reports/2026-09-07_1127_plugadmin-outbound-agent-issue-51.md`.

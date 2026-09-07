@@ -72,6 +72,26 @@ Un client FTP classique (FileZilla, WinSCP...) ou `sftp`/`ftp` en ligne de
 commande convient. Toutes les étapes de transfert ci-dessous supposent une
 connexion FTP déjà établie vers la racine du serveur VeryGames.
 
+## Accès RCON VeryGames (redémarrage automatisable)
+
+**RCON est disponible et validé** sur le serveur DEV (contrairement à ce que
+d'anciennes notes indiquaient). Il permet d'automatiser le redémarrage après un
+déploiement, sans passer par le panel VeryGames.
+
+-   **Host / port :** onglet du panel VeryGames (DEV : `51.68.57.28:7469` ;
+    Minecraft : `51.68.57.28:28257`).
+-   **Mot de passe RCON :** panel VeryGames. **Jamais dans Git / logs / rapports.**
+    Le conserver dans `~/.config/rpgquest/verygames.env` (le **même** fichier
+    que le FTP), clés `RCON_HOST` / `RCON_PORT` / `RCON_PASSWORD`, `chmod 600`.
+-   **Outils du dépôt :**
+    -   `scripts/verygames-rcon.py "list"` — client RCON minimal (pur Python).
+        `--ping` = exit 0 si connexion + auth OK.
+    -   `scripts/verygames-restart.sh` — `stop` RCON puis attente du retour en
+        ligne (VeryGames relance automatiquement le processus ~15 s après un
+        `stop`). À enchaîner après `scripts/deploy-verygames.sh`.
+-   Comportement observé : `stop` → serveur OFFLINE → relance automatique
+    VeryGames → ONLINE en ~15–60 s.
+
 ---
 
 ## Compiler RPGQuest
@@ -407,19 +427,17 @@ C'est **désactivé par défaut** : le code est inerte tant que le fichier
 2. **Préparer le fichier agent hors dépôt** : copier `scripts/plugadmin-agent.properties.example`
    vers un fichier local (ex. `~/.config/rpgquest/plugadmin-agent.properties`), renseigner
    `token=` avec le jeton réel (jamais committé, jamais dans un rapport).
-3. **Transférer** ce fichier sous `plugins/RPGQuest/` :
+3. **Transférer** JAR + fichier agent :
    ```bash
-   scripts/deploy-verygames.sh --dry-run \
+   scripts/deploy-verygames.sh -y --allow-no-backup \
      --also ~/.config/rpgquest/plugadmin-agent.properties:RPGQuest/plugadmin-agent.properties
-   # puis sans --dry-run pour transférer réellement
    ```
    Le script sauvegarde tout fichier ciblé existant avant remplacement et **refuse** `data.db`,
-   `config.yml`, `Citizens/`, les mondes, les autres plugins. Alternative : upload manuel dans le
-   panel FTP VeryGames sous `plugins/RPGQuest/`.
-4. **Redémarrer** le serveur RPGQuest (action manuelle owner dans le panel VeryGames).
-5. **Vérifier** : log `event=plugadmin_probe status=ok …` (connectivité confirmée) puis, côté
-   PlugAdmin, `journalctl -u plugadmin | grep agent_heartbeat` et le dashboard « RPGQuest DEV —
-   ONLINE ».
+   `config.yml`, `Citizens/`, les mondes, les autres plugins.
+4. **Redémarrer** via RCON : `scripts/verygames-restart.sh` (ou panel VeryGames).
+5. **Vérifier** : log serveur `event=plugadmin_probe status=ok …` (si la console est accessible)
+   et, côté PlugAdmin, `journalctl -u plugadmin | grep agent_heartbeat` + dashboard « RPGQuest
+   DEV — ONLINE ».
 
 **Rollback** : `enabled=false` dans `plugadmin-agent.properties` (ou supprimer le fichier) +
 redémarrer → agent inerte. Le JAR peut rester en place. Voir

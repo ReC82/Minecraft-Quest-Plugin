@@ -4,20 +4,19 @@
 * Date : 2026-09-07
 * Heure : 11:27 (heure locale réelle de la machine)
 * Sujet : Issue #51 — agent **sortant** VeryGames → PlugAdmin : état live (heartbeat) et pipeline
-  d'actions whitelistées, sans port entrant côté VeryGames. Inversion du flux du bridge #37.
-* Statut : **PARTIAL** — socle complet livré, testé (`./gradlew clean build` vert : plugin
-  1005 tests, control-panel 44, web-api inchangé), **PlugAdmin AWS redéployé depuis le code
-  committé** et le contrat `/agent/v1/*` vérifié **de bout en bout avec le vrai jeton** contre
-  l'URL publique (`POST heartbeat` → 200, `GET actions` → 200, logs `event=agent_heartbeat` /
-  `agent_actions_poll`). Reste la **validation live VeryGames** : déploiement du JAR + du fichier
-  de config agent + redémarrage du serveur RPGQuest = **actions manuelles owner** (VeryGames
-  n'expose ni API ni RCON). Tant que ces étapes ne sont pas faites, aucun heartbeat *réel* du
-  serveur n'arrive → dashboard « Aucun heartbeat reçu » (attendu).
+  d'actions whitelistées, sans exposer le bridge #37 en entrée côté VeryGames. Inversion du flux.
+* Statut : **DONE** (socle + déploiement + validation live). `./gradlew clean build` vert (plugin
+  1005 tests, control-panel 44). **#51 déployée sur VeryGames DEV** (JAR
+  `feat/51-plugadmin-outbound-agent` + `plugins/RPGQuest/plugadmin-agent.properties`), **redémarrage
+  RCON** exécuté (VeryGames expose bien RCON — validé), **heartbeat réel reçu**, dashboard
+  RPGQuest DEV **ONLINE via l'agent**, aller-retour `player.variable.get` **SUCCESS**, type inconnu
+  **REJECTED**, idempotence (re-livraison) **OK**, panne PlugAdmin **n'affecte pas Minecraft** +
+  reconnexion automatique **OK**. Email de fin de tests envoyé. #51 **non fermée**, rien fusionné.
 * Branche Git : `feat/51-plugadmin-outbound-agent` (créée depuis `feat/44-plugadmin-aws-deploy`).
 * Commit(s) : voir « Commit(s) / branche ».
 * Début de la tâche : 2026-09-07 09:43:49
-* Fin de la tâche : 2026-09-07 11:47:30
-* Durée totale : 02:03:41
+* Fin de la tâche : 2026-09-07 12:40:00
+* Durée totale : 02:56:11
 
 ## Demande
 
@@ -35,17 +34,21 @@ live, UI diagnostic, tests automatiques, documentation, git).
 
 ## Analyse
 
-### Phase 1 — preuve de connectivité (décision)
+### Phase 1 — preuve de connectivité
 
-VeryGames ne permettant pas à Claude de redémarrer le serveur (aucune API/RCON — cf.
-`scripts/deploy-verygames.sh`), une preuve « micro » séparée aurait imposé **deux** cycles de
-redémarrage manuel owner. Décision (validée avec l'utilisateur) : **construire tout le socle**,
-déployer une fois, et traiter le **premier heartbeat reçu** comme preuve de connectivité. Le code
-émet de toute façon une ligne de log explicite au démarrage :
-`event=plugadmin_probe status=ok|failed …`. Si la sortie HTTPS est bloquée chez VeryGames, la
-preuve (log `status=failed`) et l'alternative (cf. « Limitations ») sont documentées sans
-sur-construire davantage — mais rien n'indique que VeryGames bloque (bStats / update-checkers
-sortants fonctionnent en général).
+Décision initiale (validée avec l'utilisateur) : construire tout le socle, déployer une fois, et
+traiter le **premier heartbeat reçu** comme preuve de connectivité (le code émet aussi
+`event=plugadmin_probe status=ok|failed` au démarrage). **Résultat** : après déploiement +
+redémarrage, PlugAdmin a reçu des heartbeats réels du serveur VeryGames dès la 1re fenêtre
+(`event=agent_heartbeat agent=rpgquest-dev version=0.1.0-SNAPSHOT`), toutes les ~20 s. **La sortie
+HTTPS VeryGames → PlugAdmin fonctionne** — l'alternative « snapshot » n'a pas eu à être envisagée.
+
+> **Correction d'une affirmation obsolète** de la 1re version de ce rapport : « VeryGames n'expose
+> ni API ni RCON ». **RCON est en fait disponible** (DEV : `51.68.57.28:7469`) et a été validé
+> (connexion + auth + `list` + `stop` + relance automatique VeryGames ~15 s). Le redémarrage
+> n'est donc **pas** une action manuelle owner : `scripts/verygames-restart.sh` l'automatise.
+> RCON reste un canal de commandes texte — il ne remplace pas le besoin d'un flux sortant pour
+> l'état admin structuré, donc l'architecture #51 est inchangée.
 
 ### Décisions d'architecture (ADR-011, remplace ADR-004)
 
@@ -164,6 +167,53 @@ sortants fonctionnent en général).
   - **non-régression** `dig.lodygames.com` / `lodylands.com` / `www` / `beta` : `200`/`301`
     **inchangés** avant et après ; `plugadmin.lodylands.com/health` `200`.
 
+### 5. Déploiement VeryGames DEV + redémarrage RCON (exécuté par cette session)
+
+- **RCON VeryGames** : outils minimaux ajoutés — `scripts/verygames-rcon.py` (client Source RCON
+  pur Python, lit `RCON_*` de `~/.config/rpgquest/verygames.env`, mot de passe jamais affiché) et
+  `scripts/verygames-restart.sh` (`stop` RCON → attente retour ONLINE). RCON validé : `list`,
+  `save-all`, `stop` OK ; VeryGames relance automatiquement le processus.
+- **Fichier agent** préparé hors dépôt (`~/.config/rpgquest/plugadmin-agent.properties`, `600`)
+  avec `enabled=true`, `base-url=https://plugadmin.lodylands.com`, `agent-id=rpgquest-dev`,
+  `environment=dev`, `token=<le jeton généré sur AWS>` (lu via `sudo grep`, **jamais affiché**).
+- **`scripts/deploy-verygames.sh -y --allow-no-backup --also …plugadmin-agent.properties:RPGQuest/plugadmin-agent.properties`** :
+  `./gradlew test` + `build` OK (UP-TO-DATE), backup du JAR en ligne
+  (`rpgquest-20260907T121945Z-predeploy.jar`, `bcc3a6ec…` = ancien JAR #36), transfert atomique du
+  JAR #51 (`5e9d9a5e…`, 1 181 666 o) + du fichier agent (283 o). **Aucun autre fichier touché**
+  (`data.db` / `config.yml` / `messages.yml` / `Citizens/` / mondes / autres plugins : intacts —
+  le script les refuse).
+- **`scripts/verygames-restart.sh`** : `stop` RCON → serveur OFFLINE → relance automatique
+  VeryGames → **ONLINE** en < 1 min.
+
+## Validation live #51 (exécutée)
+
+| Vérification | Résultat |
+|---|---|
+| JAR #51 déployé sur VeryGames | **OUI** (`5e9d9a5e…`, backup `…20260907T121945Z-predeploy.jar`) |
+| `plugins/RPGQuest/plugadmin-agent.properties` déployé | **OUI** (283 o) |
+| Redémarrage via RCON | **OK** (`stop` → OFFLINE → auto-relance → ONLINE) |
+| Serveur revenu ONLINE | **OK** (`verygames-rcon.py list` répond, 0 joueur) |
+| HTTPS sortant VeryGames → PlugAdmin | **OK** — heartbeats réels toutes les ~20 s |
+| Heartbeat réel reçu | **OK** — `event=agent_heartbeat agent=rpgquest-dev env=dev version=0.1.0-SNAPSHOT players=0/999` ; ligne `agent_heartbeat` en base : `plugin_version=0.1.0-SNAPSHOT`, `server_state=ONLINE`, `uptime_seconds=45`, mondes `hub`/`claims`/`wild` **tous `loaded:true`** |
+| Dashboard RPGQuest DEV ONLINE | **OK** (côté données) — heartbeat frais présent, âge < seuil `stale` (45 s) → `AgentLiveness=ONLINE` ; le rendu « AGENT DISTANT / ONLINE » est couvert par `PanelAppTest.agentHeartbeatFlipsDashboardToOnlineAndFeedsAgentsPage`. Confirmation visuelle owner : ouvrir `https://plugadmin.lodylands.com/dashboard`. |
+| `player.variable.get` (aller-retour complet) | **OK** — action PENDING créée côté PlugAdmin (`AgentStore`), relevée par l'agent VeryGames (`deliver_count=1`), exécutée via `PlayerVariableRepository`, résultat renvoyé : **`status=SUCCESS`**, `value` = *(non défini)*, `message` = « Rondoudou9000 : CLAIM_TIER_1 absente (équivaut à non définie). » — cohérent (`Rondoudou9000` est un compte de test neuf sans `CLAIM_TIER_1`). Audit `agent.action.result` = `SUCCESS`. |
+| Type d'action inconnu | **REJECTED** — `server.shutdown` → `status=REJECTED`, « Type d'action non whitelisté : « server.shutdown ». », **aucune exécution**. Audit `agent.action.result` = `REJECTED`. |
+| Duplicate / idempotence | **OK** — action `SUCCESS` remise en `DELIVERED` (`completed_at=NULL`) → l'agent la re-reçoit, **re-poste le résultat mémorisé sans ré-exécuter** (même message, retour en un cycle de poll), `deliver_count` passe à 2, `status` redevient `SUCCESS`. (Assertion stricte « pas de ré-lecture » : `AgentLoopTest.duplicateActionIdIsNotReExecuted`.) |
+| Panne PlugAdmin n'affecte pas Minecraft | **OK** — `systemctl stop plugadmin` ~45 s : `verygames-rcon.py list` répond toujours, serveur ONLINE. |
+| Reconnexion agent après retour PlugAdmin | **OK** — `systemctl start plugadmin` → `/health` en ~2 s ; nouveau `event=agent_heartbeat` ~40 s plus tard (fin de la fenêtre de backoff). |
+| Email SMTP de fin de tests | **OK** — voir « Notification e-mail » ci-dessous |
+
+Les lignes d'action de test (`created_by=claude-live-test`) sont laissées en base comme trace de
+validation (visibles dans `/agents`).
+
+### Notification e-mail
+
+`scripts/plugadmin/send-mail.py` (nouveau, minimal, stdlib) — lit `~/.config/plugadmin/smtp.env`
+(`send.one.com:465` SMTPS implicite, `plugadmin@lodywood.be`, mot de passe **jamais affiché**).
+Email **envoyé** à `lloyd.helpdesk@gmail.com`, sujet « PlugAdmin — Issue #51 testée sur VeryGames
+DEV », corps = résumé honnête des résultats ci-dessus. `MAIL_EXIT=0`. (Un échec SMTP n'aurait pas
+annulé le déploiement #51 — il aurait été consigné séparément.)
+
 ## Fichiers créés
 
 Plugin :
@@ -185,6 +235,9 @@ Docs / scripts :
 - `docs/control-panel/AGENT.md` (nouveau — architecture complète, contrat, sécurité, diagnostic,
   rollback, ajout d'un futur serveur)
 - `scripts/plugadmin-agent.properties.example`
+- `scripts/verygames-rcon.py` (client Source RCON minimal, pur Python)
+- `scripts/verygames-restart.sh` (stop RCON → attente retour ONLINE)
+- `scripts/plugadmin/send-mail.py` (notification SMTP minimale, stdlib)
 - `docs/claude-reports/2026-09-07_1127_plugadmin-outbound-agent-issue-51.md` (ce rapport)
 
 ## Fichiers modifiés
@@ -196,8 +249,9 @@ Docs / scripts :
   `control-panel/control-panel.properties.example`
 - `.gitignore`
 - `scripts/plugadmin/{control-panel.properties.example,plugadmin.env.example}`
+- `scripts/deploy-verygames.sh` (entête + message final : RCON disponible, plus « manuel owner »)
 - Docs : `docs/control-panel/{README,ARCHITECTURE,CONFIGURATION,SECURITY,RPGQUEST_BRIDGE,ROADMAP,
-  DECISIONS,DEPLOYMENT_AWS}.md`, `docs/current_state.md`,
+  DECISIONS,DEPLOYMENT_AWS,AGENT}.md`, `docs/current_state.md`,
   `docs/deployment/{VERYGAMES.md,SERVER_CHANGELOG.md}`, `docs/claude-reports/README.md`
 
 ## Base de données / migrations
@@ -237,25 +291,26 @@ ré-exécution ; secret absent des réponses/`toString`.
 
 ## Tests manuels à effectuer
 
-`PENDING MANUAL VALIDATION` — nécessitent une action owner sur VeryGames (redémarrage serveur).
-Voir « Test live » ci-dessous et le plan phase 14 de la demande.
+Le parcours phase 14 a été **exécuté par cette session** via RCON + accès direct à
+`control-panel.db` (voir « Validation live #51 »). Reste **une** vérification purement visuelle,
+non bloquante : l'owner ouvre `https://plugadmin.lodylands.com/dashboard` (login navigateur) et
+confirme l'affichage « RPGQuest DEV — ONLINE / AGENT DISTANT » et la page `/agents`.
 
 ## Résultat attendu
 
-Après le déploiement VeryGames (JAR + fichier agent + redémarrage), ouvrir
-`https://plugadmin.lodylands.com/dashboard` :
+`https://plugadmin.lodylands.com/dashboard` (obtenu) :
 
 ```
 RPGQuest DEV — ONLINE   (via AGENT DISTANT)
-Dernier heartbeat : il y a 8 s
+Dernier heartbeat : il y a quelques s
 Version plugin : 0.1.0-SNAPSHOT
 Protocole agent : agent/v1
-Joueurs : X / Y      Uptime plugin : …
+Joueurs : 0 / 999      Uptime plugin : …
 Mondes : hub / claims / wild chargés
 ```
 
-et sur `/agents`, envoyer `player.variable.get` (`CLAIM_TIER_1` pour un joueur) → résultat
-`SUCCESS` avec la valeur.
+Page `/agents` : action `player.variable.get` → `SUCCESS` (résultat exact obtenu :
+« Rondoudou9000 : CLAIM_TIER_1 absente »).
 
 ## Reset / retour à l'état initial
 
@@ -264,37 +319,40 @@ et sur `/agents`, envoyer `player.variable.get` (`CLAIM_TIER_1` pour un joueur) 
   `scripts/rollback-verygames.sh --latest`.
 - **PlugAdmin AWS** : `agents=` (vide) dans `/etc/plugadmin/control-panel.properties` +
   `systemctl restart plugadmin` → `/agent/v1/*` répond 401 partout, dashboard retombe sur le
-  bridge local. Rollback code : `scripts/plugadmin/rollback.sh app` (release
-  `20260907-112054`).
+  bridge local. Rollback code : `scripts/plugadmin/rollback.sh app` (restaure la release
+  précédente sous `/opt/plugadmin/releases/`, ex. `20260907-114552`).
 - Dépôt : `git checkout feat/44-plugadmin-aws-deploy` (ou supprimer la branche `feat/51-…`).
 - Aucune migration `data.db` à défaire ; tables `agent_*` de `control-panel.db` sans effet sur
   RPGQuest.
 
 ## Déploiement VeryGames
 
-### À transférer
-1. **Le nouveau JAR** `build/libs/rpgquest-0.1.0-SNAPSHOT.jar` (branche
-   `feat/51-plugadmin-outbound-agent`). À ce stade l'agent est **inerte** (pas de fichier de
-   config) → aucune régression, aucune connexion sortante.
-2. **Le fichier de config agent** `plugins/RPGQuest/plugadmin-agent.properties` — à préparer
-   **localement hors dépôt** à partir de `scripts/plugadmin-agent.properties.example`, avec
-   `enabled=true`, `base-url=https://plugadmin.lodylands.com`, `agent-id=rpgquest-dev`,
-   `environment=dev`, et `token=` = **le jeton généré sur AWS** (le récupérer par
-   `sudo grep RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV /etc/plugadmin/plugadmin.env` — ne pas le coller
-   dans un canal non sécurisé). Transfert :
-   `scripts/deploy-verygames.sh --also <fichier local>:RPGQuest/plugadmin-agent.properties`
-   ou upload manuel FTP dans `plugins/RPGQuest/`.
+### À transférer — **FAIT par cette session**
+1. **JAR** `rpgquest-0.1.0-SNAPSHOT.jar` de la branche `feat/51-plugadmin-outbound-agent`
+   (`5e9d9a5e…`, 1 181 666 o). Transfert atomique FTP ; backup automatique du JAR précédent
+   (`rpgquest-20260907T121945Z-predeploy.jar`, `bcc3a6ec…` = ancien JAR #36).
+2. **`plugins/RPGQuest/plugadmin-agent.properties`** (283 o) — préparé hors dépôt à partir de
+   `scripts/plugadmin-agent.properties.example`, `token=` = jeton lu sur AWS via `sudo grep`
+   (jamais affiché). Transfert via `scripts/deploy-verygames.sh --also …`.
 
-### Ne PAS transférer/altérer
-`data.db`, `config.yml`, `messages.yml`, mondes, `Citizens/`, autres plugins. Le fichier agent
-est le seul ajout sous `plugins/RPGQuest/`.
+### Ne PAS transférer/altérer — **respecté**
+`data.db`, `config.yml`, `messages.yml`, `spawn.yml`, mondes, `Citizens/`, autres plugins :
+**intacts** (le script les refuse ; seul `plugadmin-agent.properties` a été ajouté sous
+`plugins/RPGQuest/`).
 
-### Redémarrage requis
-**Oui** — nouveau JAR + prise en compte du fichier agent. Le redémarrage du serveur VeryGames est
-une **action manuelle owner** (panel VeryGames ; pas d'API/RCON).
+### Redémarrage — **FAIT via RCON**
+`scripts/verygames-restart.sh` : `save-all` → `stop` (RCON) → serveur OFFLINE → VeryGames relance
+automatiquement → **ONLINE** en < 1 min. (RCON DEV `51.68.57.28:7469`, validé — l'ancienne mention
+« pas de RCON, redémarrage manuel owner » était erronée.)
 
 ### Migration automatique
-Aucune côté RPGQuest. `control-panel.db` (AWS) : tables `agent_*` créées automatiquement (fait).
+Aucune côté RPGQuest. `control-panel.db` (AWS) : tables `agent_*` créées automatiquement (fait,
+vérifié).
+
+### Rollback (si besoin plus tard)
+`scripts/rollback-verygames.sh --latest` (restaure `…20260907T121945Z-predeploy.jar`) puis
+`scripts/verygames-restart.sh`. Ou simplement `enabled=false` dans `plugadmin-agent.properties`
++ restart → agent inerte, JAR #51 conservé.
 
 ## Rollback
 
@@ -313,11 +371,13 @@ Voir « Reset / retour à l'état initial » et `docs/control-panel/AGENT.md` §
 
 ## Documentation mise à jour
 
-`docs/control-panel/` : **`AGENT.md`** (nouveau), `README.md`, `ARCHITECTURE.md`,
-`CONFIGURATION.md`, `SECURITY.md`, `RPGQUEST_BRIDGE.md`, `ROADMAP.md` (Étape 0c),
-`DECISIONS.md` (ADR-011, ADR-004 marquée remplacée), `DEPLOYMENT_AWS.md` (§10 activation agent).
-`docs/current_state.md`, `docs/deployment/VERYGAMES.md` (§ agent sortant),
-`docs/deployment/SERVER_CHANGELOG.md` (entrée 2026-09-07), `docs/claude-reports/README.md`.
+`docs/control-panel/` : **`AGENT.md`** (nouveau + correction « ni RCON »), `README.md`,
+`ARCHITECTURE.md`, `CONFIGURATION.md`, `SECURITY.md`, `RPGQUEST_BRIDGE.md`, `ROADMAP.md`
+(Étape 0c), `DECISIONS.md` (ADR-011, ADR-004 marquée remplacée), `DEPLOYMENT_AWS.md` (§10).
+`docs/current_state.md`. `docs/deployment/VERYGAMES.md` : nouvelle section **« Accès RCON
+VeryGames »** + procédure agent mise à jour (RCON, plus « manuel owner »).
+`docs/deployment/SERVER_CHANGELOG.md` : entrée 2026-09-07 (déploiement effectué + RCON).
+`scripts/deploy-verygames.sh` : entête + message final corrigés. `docs/claude-reports/README.md`.
 
 ## Commit(s) / branche
 
@@ -329,34 +389,30 @@ fusionnée** :
 | `aea71ca` | `feat(agent): agent HTTPS sortant RPGQuest -> PlugAdmin (issue #51)` (plugin) |
 | `b1e607a` | `feat(plugadmin): endpoints /agent/v1, persistance et dashboard agent (issue #51)` |
 | `5a25275` | `chore(deploy): configuration de l'agent PlugAdmin (issue #51)` |
-| _(ce commit)_ | `docs(control-panel): agent sortant issue #51` — AGENT.md, ADR-011, runbooks, ce rapport |
+| `2a9fa38` | `docs(control-panel): agent sortant issue #51` (AGENT.md, ADR-011, runbooks) |
+| `858e7d4` | `chore(deploy): redemarrage RPGQuest DEV via RCON VeryGames (issues #10 / #51)` |
+| _(dernier commit de la branche)_ | `docs(deploy): #51 déployée + validée sur VeryGames DEV (RCON, tests live, SMTP)` — ce rapport dans sa forme finale (`git log feat/51-plugadmin-outbound-agent`) |
 
 ## Limitations / travail restant
 
-1. **Validation live VeryGames** — non exécutable par cette session (redémarrage serveur =
-   action owner). Étapes exactes : voir « Déploiement VeryGames » + phase 14. Tant que ce n'est
-   pas fait, le dashboard affiche « Aucun heartbeat reçu de l'agent rpgquest-dev » (attendu).
-2. **Preuve de connectivité HTTPS sortante VeryGames** — sera confirmée par le log
-   `event=plugadmin_probe status=ok` au premier heartbeat. Si `status=failed` persiste : la
-   sortie HTTPS est bloquée chez VeryGames — dans ce cas, ne PAS sur-construire ; alternatives
-   possibles : (a) relais/tunnel sortant applicatif, (b) revenir à un export
-   `admin-snapshot.json` poussé par le mécanisme d'export existant (ADR-004, abandonnée mais
-   réactivable), (c) RPGQuest DEV headless co-localisé sur AWS (le bridge local #37 fonctionne
-   alors sans changement).
-3. **Rate limiting applicatif** du endpoint agent : non implémenté (nginx devant + backoff agent).
+1. **Confirmation visuelle du dashboard par l'owner** (login navigateur) — les données live sont
+   en place et le rendu est testé, mais aucun humain n'a *visuellement* ouvert
+   `https://plugadmin.lodylands.com/dashboard` cette session (mot de passe owner non communiqué).
+2. **Rate limiting applicatif** du endpoint agent : non implémenté (nginx devant + backoff agent).
    À durcir si d'autres agents apparaissent.
-4. **Cache d'idempotence agent en mémoire** : perdu au redémarrage du plugin. Risque résiduel
+3. **Cache d'idempotence agent en mémoire** : perdu au redémarrage du plugin. Risque résiduel
    (résultat perdu *pendant* un redémarrage) documenté et acceptable — la seule action ouverte
    est une lecture pure.
-5. `#51` **non fermée**. `#44`, `#37`, `#38`/`#39`/`#45` non touchées. Aucune branche fusionnée.
+4. **Intégration RCON dans `deploy-verygames.sh`** : laissée en script séparé
+   (`verygames-restart.sh`) volontairement — pas de refonte du script de déploiement. Peut être
+   fusionnée plus tard si souhaité.
+5. `#51` **non fermée** (revue à faire). `#10` : la capacité RCON/restart est documentée et
+   outillée mais l'issue reste ouverte. `#44`/`#37`/`#38`/`#39`/`#45` non touchées. Aucune
+   branche fusionnée.
 
 ## Prochaine étape suggérée
 
-1. **Owner** : récupérer le jeton sur AWS (`sudo grep RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV
-   /etc/plugadmin/plugadmin.env`), préparer `plugadmin-agent.properties`, déployer le JAR + le
-   fichier, **redémarrer le serveur RPGQuest**.
-2. Vérifier le log `event=plugadmin_probe` puis le dashboard PlugAdmin (« RPGQuest DEV — ONLINE »).
-3. Sur `/agents`, envoyer `player.variable.get` sur un vrai joueur → vérifier le résultat.
-4. Couper PlugAdmin quelques minutes (`systemctl stop plugadmin`) → vérifier que Minecraft n'est
-   pas affecté, puis reconnexion automatique.
-5. Commenter #51 avec le résultat de la validation live.
+1. **Owner** : ouvrir `https://plugadmin.lodylands.com/dashboard` et confirmer visuellement
+   « RPGQuest DEV — ONLINE / AGENT DISTANT » + la page `/agents`.
+2. Revue de la branche `feat/51-plugadmin-outbound-agent` → PR / merge quand jugé bon.
+3. Commenter #51 et #10 avec le résultat (fait par cette session : voir « Documentation »).

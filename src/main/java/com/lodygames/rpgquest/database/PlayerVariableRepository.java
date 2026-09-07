@@ -25,9 +25,11 @@ public final class PlayerVariableRepository {
     private static final String DELETE_ALL_FOR_PLAYER = "DELETE FROM player_variables WHERE player_uuid = ?";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public PlayerVariableRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     public CompletableFuture<Optional<String>> get(UUID uuid, String key) {
@@ -67,7 +69,7 @@ public final class PlayerVariableRepository {
 
     public CompletableFuture<Void> set(UUID uuid, String key, String value) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(UPSERT)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPSERT))) {
                 statement.setString(1, uuid.toString());
                 statement.setString(2, key);
                 statement.setString(3, value);

@@ -16,6 +16,10 @@ softdepend:
 
 libraries:
   - org.xerial:sqlite-jdbc:3.53.2.1
+  # Backend MySQL/MariaDB (issue #41) — utilisés seulement si database.type: mysql,
+  # mais téléchargés au démarrage par le LibraryLoader de Paper dans tous les cas.
+  - com.zaxxer:HikariCP:5.1.0
+  - org.mariadb.jdbc:mariadb-java-client:3.4.1
 
 commands:
   rpgquest:

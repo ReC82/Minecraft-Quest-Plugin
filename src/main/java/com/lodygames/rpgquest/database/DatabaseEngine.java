@@ -5,15 +5,20 @@ import java.sql.SQLException;
 
 /**
  * Détail d'infrastructure : <strong>comment</strong> RPGQuest obtient des connexions et
- * <strong>quel dialecte / historique de migrations</strong> s'applique (issue #40).
+ * <strong>quel dialecte / historique de migrations</strong> s'applique (issues #40 / #41).
  *
  * <p>{@link DatabaseManager} ne connaît que cette abstraction : il n'ouvre jamais une URL JDBC en
- * dur, n'exécute jamais un {@code PRAGMA} spécifique, ne choisit jamais un dialecte. Le code
- * métier, lui, ne voit même pas cette interface — il passe par les repositories et
+ * dur, n'exécute jamais un {@code PRAGMA} spécifique, ne choisit jamais un dialecte, ne connaît pas
+ * le pool. Le code métier ne voit même pas cette interface — il passe par les repositories et
  * {@link DatabaseManager#execute}.</p>
  *
- * <p>Implémentations : {@link SqliteDatabaseEngine} (câblée) et {@link MySqlDatabaseEngine}
- * (reconnue, corps réel = issue #41).</p>
+ * <p>Modèle de connexion : {@link #borrow()} / {@link #release(Connection)} par unité de travail.
+ * Pour SQLite c'est <strong>toujours la même</strong> connexion unique (comportement historique) ;
+ * pour MariaDB c'est une connexion empruntée à un pool HikariCP puis rendue. Comme
+ * {@link DatabaseManager} sérialise tout sur un thread unique, une seule connexion est active à la
+ * fois quel que soit le moteur — la garantie d'ordre FIFO des repositories est préservée.</p>
+ *
+ * <p>Implémentations : {@link SqliteDatabaseEngine}, {@link MySqlDatabaseEngine}.</p>
  */
 public interface DatabaseEngine {
 
@@ -23,22 +28,30 @@ public interface DatabaseEngine {
     String describe();
 
     /**
-     * Ouvre une connexion prête à l'emploi. Pour SQLite : la connexion unique du fichier. Pour
-     * MySQL (#41) : une connexion empruntée à un pool. Doit créer les répertoires nécessaires.
+     * Ouvre les ressources du moteur (fichier SQLite / pool de connexions) et vérifie la
+     * connectivité. Doit échouer par une {@link SQLException} claire si la base est injoignable ou
+     * mal configurée — jamais de boucle de reconnexion agressive.
      */
-    Connection openConnection() throws SQLException;
+    void start() throws SQLException;
 
-    /** Applique les réglages de session propres au moteur (ex. {@code PRAGMA foreign_keys = ON}). */
-    void configureSession(Connection connection) throws SQLException;
+    /**
+     * Emprunte une connexion prête à l'emploi (session déjà configurée). SQLite : la connexion
+     * unique. MariaDB : une connexion du pool.
+     */
+    Connection borrow() throws SQLException;
 
-    /** Différences SQL du moteur (upsert, existence de colonne, identité auto-incrémentée…). */
+    /**
+     * Rend une connexion empruntée par {@link #borrow()}. SQLite : sans effet. MariaDB : rendue au
+     * pool ({@code close()}), état de transaction remis à zéro.
+     */
+    void release(Connection connection);
+
+    /** Différences SQL du moteur (upsert, insert-ignore, DDL, existence de colonne…). */
     SqlDialect dialect();
 
     /** Mécanisme de suivi de la version de schéma pour ce moteur. */
     SchemaHistory schemaHistory();
 
-    /** Libère les ressources du moteur (pool de connexions…). Sans objet pour SQLite. */
-    default void close() {
-        // no-op par défaut
-    }
+    /** Libère toutes les ressources (connexion / pool). Réservé à l'arrêt du plugin. */
+    void close();
 }

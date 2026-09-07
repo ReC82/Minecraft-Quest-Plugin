@@ -21,9 +21,11 @@ public final class StoreDeliveryRepository {
             "INSERT OR IGNORE INTO store_deliveries_processed (delivery_id, outcome, detail, processed_at) VALUES (?, ?, ?, ?)";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public StoreDeliveryRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     public CompletableFuture<Boolean> isProcessed(String deliveryId) {
@@ -39,7 +41,7 @@ public final class StoreDeliveryRepository {
 
     public CompletableFuture<Void> markProcessed(String deliveryId, String outcome, String detail) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(INSERT_PROCESSED)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(INSERT_PROCESSED))) {
                 statement.setString(1, deliveryId);
                 statement.setString(2, outcome);
                 statement.setString(3, detail);

@@ -11,15 +11,16 @@ import java.sql.Statement;
 /**
  * Moteur SQLite — <strong>comportement strictement identique</strong> à ce que faisait
  * {@link DatabaseManager} avant l'issue #40 : un fichier {@code data.db} dans le dossier du
- * plugin, {@code PRAGMA foreign_keys = ON}, version de schéma via {@code PRAGMA user_version}.
- * Aucune dépendance ni configuration supplémentaire — SQLite reste le mode « installation simple »
- * et le mode des tests.
+ * plugin, {@code PRAGMA foreign_keys = ON}, version de schéma via {@code PRAGMA user_version},
+ * une <strong>connexion unique</strong> réutilisée. Aucune dépendance ni configuration
+ * supplémentaire — SQLite reste le mode « installation simple » et le mode des tests.
  */
 public final class SqliteDatabaseEngine implements DatabaseEngine {
 
     private final Path databaseFile;
     private final SqlDialect dialect = new SqliteDialect();
     private final SchemaHistory schemaHistory = new PragmaUserVersionHistory();
+    private volatile Connection connection;
 
     public SqliteDatabaseEngine(Path databaseFile) {
         this.databaseFile = databaseFile;
@@ -36,7 +37,7 @@ public final class SqliteDatabaseEngine implements DatabaseEngine {
     }
 
     @Override
-    public Connection openConnection() throws SQLException {
+    public void start() throws SQLException {
         Path absolute = databaseFile.toAbsolutePath();
         Path parent = absolute.getParent();
         if (parent != null) {
@@ -46,14 +47,23 @@ public final class SqliteDatabaseEngine implements DatabaseEngine {
                 throw new SQLException("Impossible de créer le dossier de la base SQLite : " + parent, e);
             }
         }
-        return DriverManager.getConnection("jdbc:sqlite:" + absolute);
-    }
-
-    @Override
-    public void configureSession(Connection connection) throws SQLException {
+        connection = DriverManager.getConnection("jdbc:sqlite:" + absolute);
         try (Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA foreign_keys = ON");
         }
+    }
+
+    @Override
+    public Connection borrow() throws SQLException {
+        if (connection == null) {
+            throw new SQLException("Moteur SQLite non démarré.");
+        }
+        return connection;
+    }
+
+    @Override
+    public void release(Connection connection) {
+        // connexion unique : rien à rendre
     }
 
     @Override
@@ -64,5 +74,17 @@ public final class SqliteDatabaseEngine implements DatabaseEngine {
     @Override
     public SchemaHistory schemaHistory() {
         return schemaHistory;
+    }
+
+    @Override
+    public void close() {
+        if (connection != null) {
+            try {
+                connection.close();
+            } catch (SQLException ignored) {
+                // best effort à l'arrêt
+            }
+            connection = null;
+        }
     }
 }

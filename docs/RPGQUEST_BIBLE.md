@@ -981,7 +981,7 @@ docs-site/                        # version HTML conviviale/navigation visuelle,
 
 RPGQuest identifie les PNJ Citizens par leur id numérique Citizens (`npc_citizens_bindings`, migration V12, table `npc_ids` migration V11 pour l'identité générique — voir section 2 § `/rpgadmin npc`). **Ne jamais migrer l'un sans l'autre** : les deux doivent provenir du même instantané temporel. Détail complet et procédure : [VERYGAMES.md § Migration des données](deployment/VERYGAMES.md#migration-des-données-scénario-3).
 
-### Moteur SQL configurable (issue #40)
+### Moteur SQL configurable (issues #40 / #41)
 
 Le moteur de base de données est un **détail d'infrastructure** choisi par `config.yml` :
 
@@ -994,17 +994,27 @@ database:
     host: localhost
     port: 3306
     database: rpgquest
-    username: rpgquest
+    username: rpgquest    # compte dédié RPGQuest, jamais admin global
     password-env: RPGQUEST_DB_PASSWORD   # NOM d'une variable d'environnement — jamais le mot de passe
+    ssl-mode: disable      # disable | trust | verify-ca | verify-full
+    pool:
+      minimum-idle: 2
+      maximum-pool-size: 10
+      connection-timeout-ms: 10000
+      max-lifetime-ms: 1800000
 ```
 
 - **SQLite** reste câblé et **inchangé** : c'est le défaut, le mode test et le mode « installation
   simple ». L'ancienne clé `database.file` reste acceptée comme alias de `database.sqlite.file`.
-- **MySQL/MariaDB** est **reconnu et validé** par la configuration ; son backend réel (driver,
-  pool de connexions) est l'**issue #41**. Y basculer aujourd'hui refuse le démarrage avec un
-  message explicite — le gameplay ne dépend jamais du moteur SQL.
-- Le code de gameplay ne contient **aucun SQL** et ne teste **jamais** le moteur. Détail complet :
-  [PERSISTENCE.md](PERSISTENCE.md).
+- **MySQL/MariaDB (issue #41)** : backend **réel** — driver *MariaDB Connector/J* + pool
+  *HikariCP* (déclarés dans `plugin.yml` `libraries:`, jamais empaquetés). `MySqlDialect` adapte
+  automatiquement le SQL des repositories et le DDL des migrations (types, `AUTO_INCREMENT`,
+  `LONGBLOB`, InnoDB/`utf8mb4_bin`, `ON DUPLICATE KEY UPDATE`, index). Historique de schéma dans
+  la table `rpgquest_schema_migrations`. **Validé** contre un serveur MariaDB 10.11 (base de test
+  VeryGames vide). Si la base est injoignable/mal configurée : refus de démarrage propre et borné.
+- Le code de gameplay ne contient **aucun SQL** et ne teste **jamais** le moteur.
+- **Migration des données `data.db` → MariaDB et bascule de production = issue #42** (non faite).
+- Détail complet : [PERSISTENCE.md](PERSISTENCE.md).
 
 ### Tables SQLite par migration (catalogue `SchemaMigrator.ALL`, version courante = 17)
 

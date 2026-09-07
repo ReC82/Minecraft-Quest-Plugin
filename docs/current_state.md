@@ -141,18 +141,26 @@ Gap async corrigé lors de l'investigation dans `PortalService` (vérification `
 **Couche abstraite (issue #40)** : le moteur SQL est un détail d'infrastructure choisi par
 `config.yml` (`database.type: sqlite | mysql`). Le code de gameplay ne contient aucun SQL et ne
 teste jamais le moteur ; le seul point de choix est `DatabaseEngineFactory`. Abstractions :
-`DatabaseEngine` (`SqliteDatabaseEngine` câblé, `MySqlDatabaseEngine` reconnu — backend réel = #41),
-`SqlDialect` (`SqliteDialect` / `MySqlDialect` : upsert, insert-ignore, identité, `columnExists`),
-`SchemaHistory` (`PragmaUserVersionHistory` SQLite natif / `MigrationTableHistory` portable),
-`SchemaMigrationRunner` (application ordonnée, idempotente, échec nommé). Détail :
-[PERSISTENCE.md](PERSISTENCE.md).
+`DatabaseEngine`, `SqlDialect` (`rewrite`/`ddl` + upsert/insert-ignore/identité/`columnExists`),
+`SchemaHistory` (`PragmaUserVersionHistory` SQLite / `MigrationTableHistory` portable),
+`SchemaMigrationRunner` (application ordonnée, idempotente, échec nommé).
 
-**Backend actif** : SQLite (`data.db`) — comportement **strictement inchangé**. Migrations
-séquentielles via `SchemaMigrator.ALL` (version courante : **17** — V15 réservation foncière des
-claims, V16 `item_travel_cooldowns`, V17 `waystones` + `waystone_discoveries`). Le mot de passe
-MySQL éventuel n'est jamais dans `config.yml` (`database.mysql.password-env` = nom d'une variable
-d'environnement). YAML pour tout ce qui est éditable à la main par un administrateur (quêtes,
-zones, portails, stories, dialogues, items...).
+**Backend MySQL/MariaDB réel (issue #41)** : `MySqlDatabaseEngine` = driver *MariaDB Connector/J*
++ pool *HikariCP* (`plugin.yml` `libraries:`, jamais empaqueté). `MySqlDialect` traduit le DML des
+repositories (`INSERT OR IGNORE` → `INSERT IGNORE`, `ON CONFLICT … DO UPDATE` → `ON DUPLICATE KEY
+UPDATE`) et le DDL des migrations (`TEXT` clé → `VARCHAR(191)`, `INTEGER` → `BIGINT`,
+`AUTOINCREMENT` → `AUTO_INCREMENT`, `BLOB` → `LONGBLOB`, InnoDB + `utf8mb4_bin`, `CREATE INDEX` →
+`ALTER TABLE ADD INDEX`). Historique de schéma dans la table portable `rpgquest_schema_migrations`.
+**Validé contre un vrai serveur MariaDB 10.11** (base de test VeryGames vide) : schéma créé depuis
+zéro, historique V1..V17, CRUD/transactions/generated-keys des repos, health, reprise après
+connexion cassée. **Non fait (issue #42)** : migration des données `data.db` → MariaDB et bascule
+de production. Détail : [PERSISTENCE.md](PERSISTENCE.md).
+
+**Backend actif en production** : **SQLite** (`data.db`) — comportement **strictement inchangé**
+(DDL/DML passés par des dialectes-identité). Migrations via `SchemaMigrator.ALL` (version courante :
+**17**). Le mot de passe MySQL n'est jamais dans `config.yml` (`database.mysql.password-env` = nom
+d'une variable d'environnement). YAML pour tout ce qui est éditable à la main par un administrateur
+(quêtes, zones, portails, stories, dialogues, items...).
 
 ## Non implémenté / hors périmètre à ce jour
 

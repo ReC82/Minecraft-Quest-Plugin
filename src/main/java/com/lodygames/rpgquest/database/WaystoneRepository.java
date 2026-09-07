@@ -34,9 +34,11 @@ public final class WaystoneRepository {
             "DELETE FROM waystone_discoveries WHERE player_uuid = ?";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public WaystoneRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     public CompletableFuture<List<Waystone>> loadAll() {
@@ -55,7 +57,7 @@ public final class WaystoneRepository {
     /** {@code true} si la ligne a bien été insérée (aucune Waystone n'existait pour cette cellule). */
     public CompletableFuture<Boolean> insertIfAbsent(Waystone waystone) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(INSERT_WAYSTONE)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(INSERT_WAYSTONE))) {
                 statement.setString(1, waystone.id());
                 statement.setString(2, waystone.world());
                 statement.setInt(3, waystone.x());
@@ -88,7 +90,7 @@ public final class WaystoneRepository {
     /** {@code true} si c'est une découverte réellement nouvelle pour ce joueur. */
     public CompletableFuture<Boolean> recordDiscovery(UUID playerId, String waystoneId, Instant at) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(INSERT_DISCOVERY)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(INSERT_DISCOVERY))) {
                 statement.setString(1, playerId.toString());
                 statement.setString(2, waystoneId);
                 statement.setString(3, at.toString());

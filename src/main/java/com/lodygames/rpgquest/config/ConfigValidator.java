@@ -127,6 +127,16 @@ public final class ConfigValidator {
         String databaseName = firstNonBlank(mysql.getString("database"), "rpgquest");
         String username = firstNonBlank(mysql.getString("username"), "rpgquest");
         String passwordEnv = firstNonBlank(mysql.getString("password-env"), "RPGQUEST_DB_PASSWORD");
+        String sslModeRaw = firstNonBlank(mysql.getString("ssl-mode"), "disable");
+
+        String sslMode;
+        try {
+            // La normalisation (et le rejet d'une valeur inconnue) vit dans le record.
+            sslMode = new DatabaseSettings.MySqlSettings(host, port, databaseName, username, passwordEnv,
+                    sslModeRaw, DatabaseSettings.PoolSettings.defaults()).sslMode();
+        } catch (IllegalArgumentException e) {
+            throw new ConfigValidationException("« database.mysql.ssl-mode » invalide : " + e.getMessage());
+        }
 
         if (type == DatabaseType.MYSQL) {
             if (port <= 0 || port > 65535) {
@@ -141,16 +151,32 @@ public final class ConfigValidator {
         }
 
         ConfigurationSection poolSection = mysql.getConfigurationSection("pool");
-        int maxSize = poolSection != null ? poolSection.getInt("max-size", 10) : 10;
+        int maximumPoolSize = poolSection != null ? poolSection.getInt("maximum-pool-size", 10) : 10;
+        int minimumIdle = poolSection != null ? poolSection.getInt("minimum-idle", 2) : 2;
         long connectionTimeoutMs = poolSection != null ? poolSection.getLong("connection-timeout-ms", 10_000L) : 10_000L;
         long maxLifetimeMs = poolSection != null ? poolSection.getLong("max-lifetime-ms", 1_800_000L) : 1_800_000L;
-        if (type == DatabaseType.MYSQL && maxSize <= 0) {
-            throw new ConfigValidationException(
-                    "« database.mysql.pool.max-size » doit être strictement positif, valeur trouvée : " + maxSize);
+        long keepaliveMs = poolSection != null ? poolSection.getLong("keepalive-ms", 0L) : 0L;
+        if (type == DatabaseType.MYSQL) {
+            if (maximumPoolSize <= 0) {
+                throw new ConfigValidationException(
+                        "« database.mysql.pool.maximum-pool-size » doit être strictement positif, valeur trouvée : "
+                                + maximumPoolSize);
+            }
+            if (minimumIdle < 0 || minimumIdle > maximumPoolSize) {
+                throw new ConfigValidationException(
+                        "« database.mysql.pool.minimum-idle » doit être compris entre 0 et maximum-pool-size, "
+                                + "valeur trouvée : " + minimumIdle);
+            }
+            if (connectionTimeoutMs < 250) {
+                throw new ConfigValidationException(
+                        "« database.mysql.pool.connection-timeout-ms » doit être d'au moins 250, valeur trouvée : "
+                                + connectionTimeoutMs);
+            }
         }
 
-        return new DatabaseSettings.MySqlSettings(host, port, databaseName, username, passwordEnv,
-                new DatabaseSettings.PoolSettings(maxSize, connectionTimeoutMs, maxLifetimeMs));
+        return new DatabaseSettings.MySqlSettings(host, port, databaseName, username, passwordEnv, sslMode,
+                new DatabaseSettings.PoolSettings(minimumIdle, maximumPoolSize, connectionTimeoutMs, maxLifetimeMs,
+                        keepaliveMs));
     }
 
     private static String firstNonBlank(String... values) {

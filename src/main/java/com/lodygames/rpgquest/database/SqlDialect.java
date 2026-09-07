@@ -9,14 +9,34 @@ import java.util.List;
  * couche de persistance et le mécanisme de migrations parlent à cette abstraction, jamais à un
  * moteur concret via des {@code if (type == MYSQL) … else …} dispersés.
  *
- * <p>Deux implémentations : {@link SqliteDialect} (câblée aujourd'hui) et {@link MySqlDialect}
- * (prête pour #41). Les repositories métier existants portent encore leur SQL SQLite inline
- * (recensé dans le rapport #40) ; #41 les fera passer par ces helpers avant d'activer MySQL.</p>
+ * <p>Deux implémentations : {@link SqliteDialect} (câblée) et {@link MySqlDialect} (branchée par
+ * #41). Les repositories écrivent leur SQL en <strong>SQLite canonique</strong> et le passent par
+ * {@link #rewrite(String)} ; les migrations écrivent leur DDL en SQLite canonique et le passent par
+ * {@link #ddl(String)}. Pour {@link SqliteDialect}, les deux sont l'<strong>identité</strong> —
+ * aucun changement de comportement possible sur SQLite.</p>
  */
 public interface SqlDialect {
 
-    /** Nom lisible ({@code sqlite} / {@code mysql}). */
+    /** Nom lisible ({@code sqlite} / {@code mariadb}). */
     String name();
+
+    /**
+     * Adapte une requête DML écrite en <strong>SQLite canonique</strong> au moteur cible :
+     * {@code INSERT OR IGNORE} → {@code INSERT IGNORE} ; {@code ON CONFLICT (…) DO UPDATE SET
+     * col = excluded.col} → {@code ON DUPLICATE KEY UPDATE col = VALUES(col)}. Identité pour SQLite.
+     */
+    default String rewrite(String canonicalSqliteSql) {
+        return canonicalSqliteSql;
+    }
+
+    /**
+     * Adapte une instruction DDL écrite en <strong>SQLite canonique</strong> au moteur cible
+     * (types {@code TEXT}/{@code INTEGER}/{@code BLOB}, {@code AUTOINCREMENT}, moteur InnoDB,
+     * index). Identité pour SQLite.
+     */
+    default String ddl(String canonicalSqliteDdl) {
+        return canonicalSqliteDdl;
+    }
 
     /** Requête triviale de vérification de vie de la connexion. */
     default String healthQuery() {

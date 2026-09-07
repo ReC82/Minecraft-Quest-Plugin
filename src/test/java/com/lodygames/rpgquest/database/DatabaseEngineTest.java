@@ -3,17 +3,18 @@ package com.lodygames.rpgquest.database;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Sélection et comportement des moteurs (issue #40). Un seul point de câblage : la factory. */
+/** Sélection et comportement des moteurs (issues #40 / #41). Un seul point de câblage : la factory. */
 class DatabaseEngineTest {
 
     @Test
@@ -38,37 +39,51 @@ class DatabaseEngineTest {
     }
 
     @Test
-    void sqliteEngineOpensAndConfiguresAConnection(@TempDir Path dir) throws SQLException {
+    void sqliteEngineLendsTheSameSingleConnection(@TempDir Path dir) throws SQLException {
         DatabaseEngine engine = DatabaseEngineFactory.create(DatabaseSettings.sqlite("x.db"), dir);
-        try (Connection connection = engine.openConnection()) {
-            engine.configureSession(connection);
-            assertFalse(connection.isClosed());
+        engine.start();
+        try {
+            Connection first = engine.borrow();
+            engine.release(first);
+            Connection second = engine.borrow();
+            engine.release(second);
+            assertSame(first, second, "SQLite : connexion unique réutilisée (comportement historique)");
+            assertFalse(first.isClosed());
+        } finally {
+            engine.close();
         }
     }
 
     @Test
-    void mySqlEngineFailsCleanlyPointingToIssue41(@TempDir Path dir) {
+    void mySqlEngineFailsCleanlyWhenPasswordEnvVarIsMissing(@TempDir Path dir) {
         DatabaseEngine engine = DatabaseEngineFactory.create(
                 new DatabaseSettings(DatabaseType.MYSQL, DatabaseSettings.SqliteSettings.defaults(),
                         DatabaseSettings.MySqlSettings.defaults()),
                 dir, k -> null);
-        SQLException error = assertThrows(SQLException.class, engine::openConnection);
-        assertTrue(error.getMessage().contains("#41"));
-        assertTrue(error.getMessage().contains("sqlite"));
-        // aide diagnostique : la variable d'environnement manquante est nommée, jamais sa valeur
-        assertTrue(error.getMessage().contains("RPGQUEST_DB_PASSWORD"));
+        SQLException error = assertThrows(SQLException.class, engine::start);
+        assertTrue(error.getMessage().contains("RPGQUEST_DB_PASSWORD"),
+                "le nom de la variable manquante est indiqué");
+        assertFalse(error.getMessage().toLowerCase().contains("select"));
     }
 
     @Test
-    void mySqlEngineDescribeAndErrorNeverLeakThePassword(@TempDir Path dir) {
-        DatabaseSettings settings = new DatabaseSettings(DatabaseType.MYSQL,
-                DatabaseSettings.SqliteSettings.defaults(),
-                new DatabaseSettings.MySqlSettings("h", 3306, "d", "u", "RPGQUEST_DB_PASSWORD",
-                        DatabaseSettings.PoolSettings.defaults()));
-        DatabaseEngine engine = DatabaseEngineFactory.create(settings, dir,
-                Map.of("RPGQUEST_DB_PASSWORD", "TOP-SECRET")::get);
+    void mySqlEngineFailsCleanlyWhenServerUnreachable(@TempDir Path dir) {
+        // hôte inexistant + timeout court : échec borné, pas de boucle de reconnexion
+        DatabaseSettings.MySqlSettings settings = new DatabaseSettings.MySqlSettings(
+                "127.0.0.1", 1, "rpgquest", "rpgquest", "PW", "disable",
+                new DatabaseSettings.PoolSettings(1, 1, 800L, 60_000L, 0L));
+        DatabaseEngine engine = new MySqlDatabaseEngine(settings, k -> "irrelevant");
+        assertThrows(SQLException.class, engine::start);
+        engine.close();
+    }
+
+    @Test
+    void mySqlEngineDescribeNeverLeaksThePassword(@TempDir Path dir) {
+        DatabaseSettings.MySqlSettings settings = new DatabaseSettings.MySqlSettings(
+                "h", 3306, "d", "u", "PW", "disable", DatabaseSettings.PoolSettings.defaults());
+        DatabaseEngine engine = new MySqlDatabaseEngine(settings, k -> "TOP-SECRET");
         assertFalse(engine.describe().contains("TOP-SECRET"));
-        SQLException error = assertThrows(SQLException.class, engine::openConnection);
-        assertFalse(error.getMessage().contains("TOP-SECRET"));
+        assertTrue(engine.describe().startsWith("mariadb u@h:3306/d"));
+        assertNotSame(engine.dialect(), null);
     }
 }

@@ -47,9 +47,11 @@ public final class ClaimRepository {
             "UPDATE claims SET allow_public_redstone = ? WHERE id = ? AND owner_uuid = ?";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public ClaimRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     public CompletableFuture<List<Claim>> allClaims() {
@@ -147,7 +149,7 @@ public final class ClaimRepository {
             if (ownerCheck != ClaimActionOutcome.SUCCESS) {
                 return ownerCheck;
             }
-            try (PreparedStatement statement = connection.prepareStatement(INSERT_MEMBER_IGNORE)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(INSERT_MEMBER_IGNORE))) {
                 statement.setString(1, id);
                 statement.setString(2, member.toString());
                 statement.executeUpdate();

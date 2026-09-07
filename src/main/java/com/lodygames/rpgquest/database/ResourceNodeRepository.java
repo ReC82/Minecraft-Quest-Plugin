@@ -27,9 +27,11 @@ public final class ResourceNodeRepository {
             "DELETE FROM resource_nodes WHERE world = ? AND x = ? AND y = ? AND z = ?";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public ResourceNodeRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     public CompletableFuture<List<ResourceNodeRecord>> findAll() {
@@ -47,7 +49,7 @@ public final class ResourceNodeRepository {
 
     public CompletableFuture<Void> upsert(ResourceNodeRecord record) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(UPSERT)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPSERT))) {
                 statement.setString(1, record.world());
                 statement.setInt(2, record.x());
                 statement.setInt(3, record.y());

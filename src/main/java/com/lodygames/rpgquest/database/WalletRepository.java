@@ -30,9 +30,11 @@ public final class WalletRepository {
             "INSERT INTO transactions (player_uuid, type, amount, context, created_at) VALUES (?, ?, ?, ?, ?)";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public WalletRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     /** Solde actuel, {@code 0} si le joueur n'a encore aucun portefeuille (jamais créé tant que rien ne l'a touché). */
@@ -149,7 +151,7 @@ public final class WalletRepository {
     }
 
     private void ensureWallet(Connection connection, UUID uuid) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(ENSURE_WALLET)) {
+        try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(ENSURE_WALLET))) {
             statement.setString(1, uuid.toString());
             statement.setString(2, Instant.now().toString());
             statement.executeUpdate();

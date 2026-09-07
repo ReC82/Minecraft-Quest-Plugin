@@ -25,9 +25,11 @@ public final class ItemTravelCooldownRepository {
     private static final String DELETE_ALL_FOR_PLAYER = "DELETE FROM item_travel_cooldowns WHERE player_uuid = ?";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public ItemTravelCooldownRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     public CompletableFuture<Map<String, Instant>> allForPlayer(UUID playerId) {
@@ -47,7 +49,7 @@ public final class ItemTravelCooldownRepository {
 
     public CompletableFuture<Void> setCooldown(UUID playerId, String itemId, Instant expiresAt) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(UPSERT)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPSERT))) {
                 statement.setString(1, playerId.toString());
                 statement.setString(2, itemId);
                 statement.setString(3, expiresAt.toString());

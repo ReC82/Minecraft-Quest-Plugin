@@ -128,33 +128,38 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
 
 ### `database` (indépendant de Bukkit/Paper)
 
-> **Issue #40** : la persistance est désormais **abstraite** et le moteur SQL est un détail
+> **Issues #40 / #41** : la persistance est **abstraite** et le moteur SQL est un détail
 > d'infrastructure choisi par `config.yml` (`database.type: sqlite|mysql`). SQLite reste câblé et
-> inchangé ; MySQL/MariaDB est reconnu, modélisé et testé, mais son backend réel (driver, pool)
-> arrive avec #41. **Vue d'ensemble complète : [PERSISTENCE.md](PERSISTENCE.md).**
+> **inchangé** ; le backend **MySQL/MariaDB réel** (driver *MariaDB Connector/J*, pool *HikariCP*,
+> dialecte SQL/DDL) est livré par #41 et validé contre un serveur MariaDB 10.11. **Vue d'ensemble
+> complète : [PERSISTENCE.md](PERSISTENCE.md).**
 
 -   `DatabaseEngine` — abstraction « comment obtenir une connexion + quel dialecte / historique de
-    migrations ». `SqliteDatabaseEngine` (fichier `data.db`, `PRAGMA foreign_keys = ON`,
-    `PRAGMA user_version` — comportement d'avant #40) ; `MySqlDatabaseEngine` (reconnu ;
-    `openConnection()` lève une `SQLException` explicite renvoyant à #41). `DatabaseEngineFactory`
-    est le **seul** endroit qui choisit le moteur — un unique `switch (type)`, jamais dupliqué.
--   `SqlDialect` — encapsule les différences SQL réelles : `upsert` (`ON CONFLICT` vs
-    `ON DUPLICATE KEY UPDATE`), `insertOrIgnore` (`INSERT OR IGNORE` vs `INSERT IGNORE`),
-    `autoIncrementPrimaryKey`, `columnExists` (`PRAGMA table_info` vs `information_schema`).
-    `SqliteDialect` / `MySqlDialect`. Les repositories métier portent encore leur SQL SQLite inline
-    (recensé dans le rapport #40) ; #41 les fera passer par ces helpers.
--   `DatabaseManager` — possède la `Connection` JDBC (via le moteur) et sérialise tous les accès
-    sur un `ExecutorService` mono-thread dédié (thread daemon `RPGQuest-Database`). `initialize()`
-    ouvre la connexion via le moteur, applique les réglages de session, puis lance
-    `SchemaMigrationRunner`. `execute(SqlFunction<T>)` exécute une action JDBC sur ce thread et
-    retourne un `CompletableFuture<T>` — jamais bloquant. Comme l'executor est mono-thread et FIFO,
-    toute requête soumise avant la fin de `initialize()` est mise en file et s'exécute après la
-    migration. `healthCheck()` (non bloquant, ne lève jamais) constate une base momentanément
-    indisponible. Le constructeur historique `DatabaseManager(Path)` sélectionne SQLite —
-    comportement inchangé (utilisé tel quel par les tests de repositories).
+    migrations ». `start()` (ouverture / pool + contrôle de connectivité), `borrow()`/`release()`
+    d'une connexion par unité de travail, `close()`. `SqliteDatabaseEngine` (fichier `data.db`,
+    `PRAGMA foreign_keys = ON`, `PRAGMA user_version`, **connexion unique réutilisée** —
+    comportement d'avant #40) ; `MySqlDatabaseEngine` (pool HikariCP `RPGQuest-DB`, `SELECT
+    VERSION()` au démarrage, `connectionInitSql` = `time_zone`/`sql_mode`, échec propre et borné
+    si injoignable). `DatabaseEngineFactory` est le **seul** endroit qui choisit le moteur — un
+    unique `switch (type)`, jamais dupliqué.
+-   `SqlDialect` — `rewrite(sql)` (DML des repositories, écrit en SQLite canonique) et `ddl(sql)`
+    (DDL des migrations), + `upsert`, `insertOrIgnore`, `autoIncrementPrimaryKey`, `columnExists`.
+    `SqliteDialect` : `rewrite`/`ddl` = **identité**. `MySqlDialect` : `INSERT OR IGNORE` →
+    `INSERT IGNORE` ; `ON CONFLICT … DO UPDATE SET c = excluded.c` → `ON DUPLICATE KEY UPDATE
+    c = VALUES(c)` ; `TEXT` clé/index/`NOT NULL` → `VARCHAR(191)` ; `INTEGER` → `BIGINT` ;
+    `AUTOINCREMENT` → `AUTO_INCREMENT` ; `BLOB` → `LONGBLOB` ; InnoDB + `utf8mb4_bin` ;
+    `CREATE INDEX IF NOT EXISTS` → `ALTER TABLE … ADD INDEX IF NOT EXISTS`. Chaque repository fait
+    `dialect = database.dialect()` au constructeur — aucune conditionnelle de moteur dans le code.
+-   `DatabaseManager` — sérialise tous les accès sur un `ExecutorService` mono-thread dédié
+    (thread daemon `RPGQuest-Database`). `initialize()` démarre le moteur puis lance
+    `SchemaMigrationRunner`. `execute(SqlFunction<T>)` **emprunte** une connexion au moteur pour
+    la durée de l'action et la **rend** ensuite (SQLite : connexion unique, no-op ; MariaDB :
+    pool) — l'executor mono-thread garantit qu'une seule connexion est active à la fois, l'ordre
+    FIFO des repositories est préservé. `healthCheck()` (non bloquant, ne lève jamais).
+    `DatabaseManager(Path)` sélectionne SQLite — comportement inchangé.
 -   `SchemaHistory` — version de schéma appliquée. `PragmaUserVersionHistory` (SQLite,
     `PRAGMA user_version` — **inchangé**, aucune migration rejouée sur un `data.db` existant) ;
-    `MigrationTableHistory` (table portable `rpgquest_schema_migrations`, pour MySQL/#41).
+    `MigrationTableHistory` (table portable `rpgquest_schema_migrations`, MariaDB).
 -   `SchemaMigrator` — **catalogue** ordonné des migrations V1..V{@code CURRENT_VERSION} (SQL
     inchangé). `SchemaMigrationRunner` applique les étapes en attente dans l'ordre, une fois ;
     rejeu = no-op ; échec → `SchemaMigrationException` nommant l'étape, version non avancée.

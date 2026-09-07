@@ -47,9 +47,11 @@ public final class QuestProgressRepository {
             "DELETE FROM quest_objective_progress WHERE player_uuid = ?";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public QuestProgressRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     public CompletableFuture<Optional<QuestProgressRecord>> find(UUID playerUuid, NamespacedKey questId) {
@@ -81,7 +83,7 @@ public final class QuestProgressRepository {
 
     public CompletableFuture<Void> upsertState(UUID playerUuid, NamespacedKey questId, QuestState state, String currentStepId) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(UPSERT_STATE)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPSERT_STATE))) {
                 statement.setString(1, playerUuid.toString());
                 statement.setString(2, questId.toString());
                 statement.setString(3, state.name());
@@ -113,7 +115,7 @@ public final class QuestProgressRepository {
     public CompletableFuture<Void> setObjectiveProgress(
             UUID playerUuid, NamespacedKey questId, String stepId, int objectiveIndex, int progress) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(UPSERT_OBJECTIVE_PROGRESS)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPSERT_OBJECTIVE_PROGRESS))) {
                 statement.setString(1, playerUuid.toString());
                 statement.setString(2, questId.toString());
                 statement.setString(3, stepId);

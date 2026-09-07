@@ -49,7 +49,7 @@ class SqlDialectTest {
     @Test
     void autoIncrementPrimaryKeyDiffersByEngine() {
         assertEquals("id INTEGER PRIMARY KEY AUTOINCREMENT", sqlite.autoIncrementPrimaryKey("id"));
-        assertEquals("id BIGINT PRIMARY KEY AUTO_INCREMENT", mysql.autoIncrementPrimaryKey("id"));
+        assertEquals("id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY", mysql.autoIncrementPrimaryKey("id"));
     }
 
     @Test

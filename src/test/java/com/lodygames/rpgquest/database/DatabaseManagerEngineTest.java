@@ -11,8 +11,24 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** {@link DatabaseManager} piloté par un {@link DatabaseEngine} (issue #40). */
+/** {@link DatabaseManager} piloté par un {@link DatabaseEngine} (issues #40 / #41). */
 class DatabaseManagerEngineTest {
+
+    @Test
+    void borrowReleaseOnSqliteKeepsTheSingleConnectionOpenAcrossOperations(@TempDir Path dir) throws Exception {
+        DatabaseManager database = new DatabaseManager(dir.resolve("data.db"));
+        try {
+            database.initialize().get(10, TimeUnit.SECONDS);
+            // deux opérations successives : la connexion SQLite n'est jamais fermée entre-temps
+            for (int i = 0; i < 3; i++) {
+                boolean open = database.execute(connection -> !connection.isClosed()).get(10, TimeUnit.SECONDS);
+                assertTrue(open);
+            }
+            assertEquals(SchemaMigrator.CURRENT_VERSION, database.expectedSchemaVersion());
+        } finally {
+            database.shutdown();
+        }
+    }
 
     @Test
     void legacyPathConstructorStillWorksExactlyAsBefore(@TempDir Path dir) throws Exception {
@@ -71,7 +87,7 @@ class DatabaseManagerEngineTest {
     }
 
     @Test
-    void mysqlEngineMakesInitializeFailWithAnActionableMessage(@TempDir Path dir) {
+    void mysqlEngineWithoutPasswordMakesInitializeFailCleanly(@TempDir Path dir) {
         DatabaseEngine engine = DatabaseEngineFactory.create(
                 new DatabaseSettings(DatabaseType.MYSQL, DatabaseSettings.SqliteSettings.defaults(),
                         DatabaseSettings.MySqlSettings.defaults()),
@@ -80,7 +96,22 @@ class DatabaseManagerEngineTest {
         try {
             ExecutionException error = assertThrows(ExecutionException.class,
                     () -> database.initialize().get(10, TimeUnit.SECONDS));
-            assertTrue(error.getCause().getMessage().contains("#41"));
+            assertTrue(error.getCause() instanceof java.sql.SQLException);
+            assertTrue(error.getCause().getMessage().contains("RPGQUEST_DB_PASSWORD"));
+            assertTrue(database.isClosed(), "moteur jamais démarré -> considéré fermé");
+        } finally {
+            database.shutdown();
+        }
+    }
+
+    @Test
+    void mysqlEngineWithUnreachableServerMakesInitializeFailWithoutHanging(@TempDir Path dir) {
+        DatabaseSettings.MySqlSettings settings = new DatabaseSettings.MySqlSettings(
+                "127.0.0.1", 1, "rpgquest", "rpgquest", "PW", "disable",
+                new DatabaseSettings.PoolSettings(1, 1, 800L, 60_000L, 0L));
+        DatabaseManager database = new DatabaseManager(new MySqlDatabaseEngine(settings, k -> "irrelevant"));
+        try {
+            assertThrows(ExecutionException.class, () -> database.initialize().get(15, TimeUnit.SECONDS));
         } finally {
             database.shutdown();
         }

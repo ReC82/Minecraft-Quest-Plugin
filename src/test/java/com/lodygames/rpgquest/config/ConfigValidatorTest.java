@@ -546,15 +546,29 @@ class ConfigValidatorTest {
                     database: rpg
                     username: rpg_app
                     password-env: RPGQUEST_DB_PASSWORD
+                    ssl-mode: verify-ca
                     pool:
-                      max-size: 20
+                      minimum-idle: 3
+                      maximum-pool-size: 20
                 """));
         assertEquals(com.lodygames.rpgquest.database.DatabaseType.MYSQL, config.database().type());
         assertEquals("db.internal", config.database().mysql().host());
         assertEquals(3307, config.database().mysql().port());
         assertEquals("rpg_app", config.database().mysql().username());
         assertEquals("RPGQUEST_DB_PASSWORD", config.database().mysql().passwordEnv());
-        assertEquals(20, config.database().mysql().pool().maxSize());
+        assertEquals("verify-ca", config.database().mysql().sslMode());
+        assertEquals(20, config.database().mysql().pool().maximumPoolSize());
+        assertEquals(3, config.database().mysql().pool().minimumIdle());
+    }
+
+    @Test
+    void databaseRejectsUnknownMysqlSslMode() {
+        assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(load("""
+                database:
+                  type: mysql
+                  mysql:
+                    ssl-mode: bogus
+                """)));
     }
 
     @Test

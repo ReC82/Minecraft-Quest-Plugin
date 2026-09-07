@@ -1,9 +1,10 @@
 # Persistance RPGQuest — architecture, moteur configurable, migrations
 
-> Livré par l'**issue #40** (« abstraire la persistance et rendre le moteur de base configurable »).
-> #40 pose le **socle** : le moteur SQL devient un détail d'infrastructure choisi par
-> configuration. Le **backend MySQL/MariaDB réel** (driver, pool) est l'**issue #41** ; la
-> **migration des données** VeryGames est l'**issue #42**.
+> **#40** a posé le socle : le moteur SQL est un détail d'infrastructure choisi par configuration.
+> **#41** ajoute le **backend MySQL/MariaDB réel** — driver *MariaDB Connector/J*, pool *HikariCP*,
+> dialecte SQL/DDL MariaDB dans les repositories et les migrations, tests d'intégration contre un
+> serveur MariaDB. SQLite reste le défaut et fonctionne **exactement comme avant**. La **migration
+> des données** `data.db` → MariaDB et la **bascule de production** sont l'**issue #42**.
 
 ---
 
@@ -43,23 +44,28 @@ database:
     host: localhost
     port: 3306
     database: rpgquest
-    username: rpgquest
+    username: rpgquest    # compte dédié, jamais admin global (§11)
     password-env: RPGQUEST_DB_PASSWORD   # NOM d'une variable d'environnement, jamais le mot de passe
+    ssl-mode: disable     # disable | trust | verify-ca | verify-full
     pool:
-      max-size: 10
+      minimum-idle: 2
+      maximum-pool-size: 10
       connection-timeout-ms: 10000
       max-lifetime-ms: 1800000
+      keepalive-ms: 0     # 0 = désactivé ; sinon < max-lifetime-ms
 ```
 
-- **Défaut** : `sqlite`, fichier `data.db` — comportement identique à avant #40. Un `config.yml`
-  existant sans section `database:` complète, ou avec seulement l'ancienne clé `database.file`,
-  démarre sans changement (voir §7).
-- **`type: mysql`** est **reconnu et validé** par la configuration mais le moteur refuse
-  actuellement d'ouvrir une connexion, avec un message explicite renvoyant à #41. Le gameplay ne
-  dépend jamais du moteur : basculer aujourd'hui échoue proprement au démarrage, il ne « casse »
-  rien de subtil.
-- Validation stricte de la section (`ConfigValidator#validateDatabase`) : type inconnu, port hors
-  plage, mot de passe en clair (`mysql.password` / `mysql.pass`) → refus de démarrage avec un
+- **Défaut** : `sqlite`, fichier `data.db` — comportement identique à avant #40/#41. Un
+  `config.yml` existant sans section `database:` complète, ou avec seulement l'ancienne clé
+  `database.file`, démarre sans changement (voir §7).
+- **`type: mysql`** (alias `mariadb`) : backend réel — driver *MariaDB Connector/J* + pool
+  *HikariCP*. Au démarrage, `MySqlDatabaseEngine.start()` construit le pool, vérifie la connexion
+  et applique les migrations. Si la base est injoignable ou mal configurée : **échec propre**
+  (`SQLException` claire), une seule tentative, pas de boucle de reconnexion — le plugin ne sert
+  pas de gameplay sur un schéma incomplet.
+- Validation stricte de la section (`ConfigValidator#validateDatabase`) : type / `ssl-mode`
+  inconnus, port hors plage, `minimum-idle` > `maximum-pool-size`, `connection-timeout-ms` trop
+  court, mot de passe en clair (`mysql.password` / `mysql.pass`) → refus de démarrage avec un
   message précis.
 
 ---
@@ -82,43 +88,47 @@ database:
 
 | Type | Rôle |
 |---|---|
-| **`DatabaseSettings`** (record) | configuration validée : `type`, `sqlite.file`, `mysql.{host,port,database,username,password-env,pool}` |
+| **`DatabaseSettings`** (record) | configuration validée : `type`, `sqlite.file`, `mysql.{host,port,database,username,password-env,ssl-mode,pool}` |
 | **`DatabaseType`** (enum) | `SQLITE` / `MYSQL` (`mariadb` = alias) |
-| **`DatabaseEngine`** (interface) | ouvre une connexion, applique les réglages de session, expose le `SqlDialect` et le `SchemaHistory` du moteur, `describe()` sans secret |
-| **`SqliteDatabaseEngine`** | fichier `data.db`, `PRAGMA foreign_keys = ON`, `PRAGMA user_version` — **comportement inchangé** |
-| **`MySqlDatabaseEngine`** | reconnu ; `openConnection()` lève une `SQLException` explicite (#41) ; fournit déjà `MySqlDialect` + `MigrationTableHistory` |
+| **`DatabaseEngine`** (interface) | `start()` (ouverture / pool + contrôle de connectivité), `borrow()` / `release()` d'une connexion par unité de travail, `dialect()`, `schemaHistory()`, `close()`, `describe()` sans secret |
+| **`SqliteDatabaseEngine`** | fichier `data.db`, `PRAGMA foreign_keys = ON`, `PRAGMA user_version`, **connexion unique réutilisée** — **comportement inchangé** |
+| **`MySqlDatabaseEngine`** | driver *MariaDB Connector/J* + pool *HikariCP* ; `start()` construit le pool et vérifie la connexion (`SELECT VERSION()`) ; échec propre si injoignable / mot de passe absent ; `connectionInitSql` = `time_zone='+00:00'`, `sql_mode` strict |
 | **`DatabaseEngineFactory`** | **unique** point de choix du moteur (`create(settings, dataFolder)`) |
-| **`SqlDialect`** (interface) | différences SQL réelles : `upsert(...)`, `insertOrIgnore(...)`, `autoIncrementPrimaryKey(...)`, `columnExists(...)`, `healthQuery()` |
-| **`SqliteDialect`** / **`MySqlDialect`** | `ON CONFLICT … DO UPDATE SET … excluded.*` vs `ON DUPLICATE KEY UPDATE … VALUES(...)` ; `INSERT OR IGNORE` vs `INSERT IGNORE` ; `INTEGER … AUTOINCREMENT` vs `BIGINT … AUTO_INCREMENT` ; `PRAGMA table_info` vs `information_schema.columns` |
+| **`SqlDialect`** (interface) | `rewrite(sql)` (DML repositories), `ddl(sql)` (DDL migrations), + `upsert(...)`, `insertOrIgnore(...)`, `autoIncrementPrimaryKey(...)`, `columnExists(...)`, `healthQuery()` |
+| **`SqliteDialect`** | `rewrite`/`ddl` = **identité** (aucun changement de SQL possible sur SQLite) |
+| **`MySqlDialect`** | `INSERT OR IGNORE` → `INSERT IGNORE` ; `ON CONFLICT (…) DO UPDATE SET c = excluded.c` → `ON DUPLICATE KEY UPDATE c = VALUES(c)` ; `TEXT` clé/index/`NOT NULL` → `VARCHAR(191)`, `TEXT` nullable → `TEXT` ; `INTEGER` → `BIGINT` ; `… AUTOINCREMENT` → `BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY` ; `BLOB` → `LONGBLOB` ; `… ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin` ; `CREATE INDEX IF NOT EXISTS` → `ALTER TABLE … ADD INDEX IF NOT EXISTS` ; `columnExists` via `information_schema.columns` |
 | **`SchemaHistory`** (interface) | version de schéma appliquée : `currentVersion` / `recordApplied` |
 | **`PragmaUserVersionHistory`** | SQLite natif (`PRAGMA user_version`) — **inchangé**, aucune table, aucune migration rejouée sur `data.db` existant |
-| **`MigrationTableHistory`** | table portable `rpgquest_schema_migrations(version, name, applied_at)` — pour MySQL (#41) et tout moteur sans registre natif |
+| **`MigrationTableHistory`** | table portable `rpgquest_schema_migrations(version, name, applied_at)` — utilisée par MariaDB |
 | **`SchemaMigration`** (record) | une étape numérotée : `version`, `name`, `Step.apply(Connection, SqlDialect)` |
 | **`SchemaMigrationRunner`** | applique les étapes en attente **dans l'ordre**, une fois ; rejeu = no-op ; échec → `SchemaMigrationException` identifiant l'étape ; `targetVersion()` |
-| **`SchemaMigrator`** | **catalogue** des migrations V1..V17 (SQL inchangé) + `migrate(Connection)` historique (SQLite) |
-| **`DatabaseManager`** | possède la connexion, sérialise tout sur le thread `RPGQuest-Database`, `execute(Connection→T)` async, `healthCheck()`, `dialect()` |
+| **`SchemaMigrator`** | **catalogue** des migrations V1..V17. Chaque DDL est écrit en SQLite canonique et passé par `dialect.ddl(...)`. `migrate(Connection)` historique (SQLite). |
+| **`DatabaseManager`** | sérialise tout sur le thread `RPGQuest-Database` ; `execute` emprunte/rend une connexion au moteur ; `healthCheck()`, `dialect()`, `engineType()`, `expectedSchemaVersion()` |
 | **`DatabaseService`** (`PluginService`) | construit le moteur depuis la config puis `DatabaseManager` |
 
 ---
 
 ## 5. Contrat repositories / services
 
-Inchangé par #40 :
-
 - un repository prend un `DatabaseManager` et n'expose que des méthodes **asynchrones**
   (`CompletableFuture<T>`), en types 100 % JDK (`UUID`, `Instant`, `Optional`, `byte[]`…), sans
   aucun type Bukkit/Paper — testables en JUnit pur ;
-- toute opération passe par `database.execute(connection -> …)` : le `connection` fourni est celui
-  du thread base de données, jamais partagé, jamais fermé par l'appelant ;
+- toute opération passe par `database.execute(connection -> …)` : le `connection` fourni est
+  emprunté au moteur pour la durée de l'action puis rendu (jamais fermé par l'appelant) ;
 - une opération multi-écritures atomique utilise une transaction JDBC explicite
   (`setAutoCommit(false)` / `commit` / `rollback`) **dans un seul `execute`** (voir
   `WalletRepository`, `ClaimRepository`, `MarketRepository`, `ProgressionRepository`,
   `BackpackRepository`) ;
+- **SQL canonique + dialecte (#41)** : le SQL des repositories est écrit en **SQLite canonique**
+  (`INSERT OR IGNORE`, `ON CONFLICT … DO UPDATE SET c = excluded.c`) et passé par
+  `dialect.rewrite(...)` avant `prepareStatement`. Pour SQLite c'est l'identité ; pour MariaDB
+  c'est traduit (`INSERT IGNORE`, `ON DUPLICATE KEY UPDATE`). Aucune conditionnelle de moteur dans
+  un repository — juste `dialect = database.dialect()` au constructeur. `SELECT`/`UPDATE`/`DELETE`
+  passent inchangés dans les deux moteurs ;
+- `Statement.RETURN_GENERATED_KEYS` (`MarketRepository`, `NpcIdRepository`) : identique sur les
+  deux moteurs, vérifié par les tests d'intégration MariaDB ;
 - les services de gameplay appellent les repositories et **remettent sur le thread principal**
   tout callback qui touche l'API Paper.
-
-`DatabaseManager#dialect()` est disponible pour qu'un repository construise du SQL portable via
-`SqlDialect` — les repositories existants ne l'utilisent pas encore (voir §8).
 
 ---
 
@@ -138,19 +148,22 @@ Inchangé par #40 :
   - **SQLite conserve `PRAGMA user_version`** (`PragmaUserVersionHistory`). C'est un compteur de
     version natif, sans table, et **c'est ce qu'utilisent les bases `data.db` existantes** : aucune
     migration n'est rejouée, aucun risque sur les données de production.
-  - **MySQL/MariaDB utilisera la table portable `rpgquest_schema_migrations`**
-    (`MigrationTableHistory`) : `PRAGMA` n'existe pas, et une table donne en prime l'historique
-    horodaté demandé pour les évolutions futures.
+  - **MariaDB utilise la table portable `rpgquest_schema_migrations`** (`MigrationTableHistory`) :
+    `PRAGMA` n'existe pas, et une table donne en prime l'historique horodaté (une ligne
+    `version, name, applied_at` par migration appliquée).
   - Aucune librairie de migration externe (Flyway/Liquibase) : le besoin est couvert par ~200
     lignes maison, cohérent avec la règle « pas de dépendance externe si une intégration simple
     suffit ».
 
 ---
 
-## 7. Compatibilité SQLite (obligation #40)
+## 7. Compatibilité SQLite (obligation #40 / #41)
 
-- Le SQL des migrations V1..V17 est **identique** à avant #40 (seules V14/V15 passent par
-  `dialect.columnExists`, qui génère le même `PRAGMA table_info` pour SQLite).
+- Le SQL/DDL des migrations V1..V17 est **inchangé** : il est écrit en SQLite canonique et passé
+  par `SqliteDialect.ddl(...)` = **identité**. Le SQL des repositories passe par
+  `SqliteDialect.rewrite(...)` = **identité**. Rien ne change pour SQLite, à la lettre.
+- `SqliteDatabaseEngine` garde la **connexion unique réutilisée** (`borrow()` renvoie toujours la
+  même, `release()` est un no-op) — comportement d'avant #40.
 - `DatabaseManager(Path)` (constructeur historique) fonctionne toujours et sélectionne SQLite —
   utilisé tel quel par ~15 tests de repositories.
 - `SchemaMigrator.migrate(Connection)` (API statique) est conservée — `SchemaMigratorTest`
@@ -159,70 +172,123 @@ Inchangé par #40 :
   Le fichier historique VeryGames (`src/main/resources/backup-ftp/config.yml`, 4 clés) démarre
   sans changement.
 - `PluginConfig#databaseFile()` est conservé (raccourci vers `database().sqlite().file()`).
+- `data.db` n'est **jamais** touché par #41 (aucun test d'intégration MariaDB n'écrit dans un
+  fichier SQLite ; la table `rpgquest_schema_migrations` n'est créée que par le moteur MariaDB).
 
 ---
 
-## 8. Règles async / concurrence (revues pour un backend distant)
+## 8. Règles async / concurrence (backend distant)
 
 - **Aucune requête SQL bloquante sur le thread principal** : tout passe par
-  `DatabaseManager#execute`, exécuté sur le thread `RPGQuest-Database`. #40 n'ajoute **aucune**
-  opération DB synchrone.
-- **Pas d'ouverture de connexion par requête** : SQLite garde sa connexion unique ; MySQL (#41)
-  utilisera un **pool** (`DatabaseSettings.PoolSettings` déjà modélisé), jamais un
-  `DriverManager.getConnection` par appel.
-- **Transactions** : déjà explicites là où c'est nécessaire (§5).
-- **Timeouts / indisponibilité** : `PoolSettings.connectionTimeoutMs` borne l'attente ;
-  `DatabaseManager#healthCheck()` (nouveau, non bloquant, ne lève jamais) permet de constater une
-  base momentanément indisponible sans planter l'appelant. La stratégie de reconnexion/backoff
-  côté pool est détaillée dans #41.
-- `DatabaseManager#shutdown()` reste volontairement bloquant (≤ 5 s), uniquement depuis
-  `onDisable()`.
+  `DatabaseManager#execute`, exécuté sur le thread `RPGQuest-Database`. #40 et #41 n'ajoutent
+  **aucune** opération DB synchrone.
+- **Pas d'ouverture de connexion TCP par requête** : SQLite garde sa connexion unique ; MariaDB
+  emprunte/rend une connexion au **pool HikariCP** (`RPGQuest-DB`) par unité de travail. Comme
+  l'executor est mono-thread, une seule connexion est active à la fois — l'ordre FIFO dont
+  dépendent des repositories comme `WalletRepository` est préservé quel que soit le moteur.
+- **Transactions** : explicites là où c'est nécessaire (§5), toujours dans un seul `execute`. Sur
+  MariaDB, `release()` fait un `rollback` défensif si une transaction a été laissée ouverte, avant
+  de rendre la connexion au pool.
+- **Timeouts / indisponibilité** : `pool.connection-timeout-ms` borne l'attente d'une connexion.
+  Au **démarrage**, si la base est injoignable, `MySqlDatabaseEngine.start()` échoue vite
+  (`initializationFailTimeout` = `connection-timeout-ms`, **une** tentative) — pas de boucle de
+  reconnexion. Après démarrage, HikariCP remplace de lui-même les connexions cassées ; une
+  connexion fermée « sous le pool » est simplement remplacée à l'emprunt suivant (testé).
+  `DatabaseManager#healthCheck()` (non bloquant, ne lève jamais) constate une base momentanément
+  indisponible.
+- `DatabaseManager#shutdown()` ferme le pool (`HikariDataSource.close()`) puis le thread DB
+  (≤ 5 s), uniquement depuis `onDisable()`.
 
 ---
 
 ## 9. Stratégie de tests
 
-Tous en **JUnit pur** (aucun MockBukkit) — la couche `database` ne dépend d'aucun type Bukkit.
+Tous en **JUnit pur** (aucun MockBukkit).
+
+### Tests SQLite / unitaires (toujours exécutés, `./gradlew test`)
 
 | Test | Vérifie |
 |---|---|
-| `DatabaseSettingsTest` | défauts ; `describe()` sans mot de passe ; résolution du mot de passe depuis l'environnement uniquement |
+| `DatabaseSettingsTest` | défauts ; `describe()` sans mot de passe ; mot de passe résolu depuis l'environnement uniquement ; `ssl-mode` normalisé / rejeté ; bornage du pool |
 | `SqlDialectTest` | SQL généré par `SqliteDialect` / `MySqlDialect` (upsert, insert-ignore, identité) ; `columnExists` réel sur SQLite |
-| `MigrationTableHistory` (via runner) | `currentVersion` 0 → N, `recordApplied`, `ensureInitialised` |
-| `SchemaMigrationRunnerTest` | ordre d'application ; reprise depuis la version enregistrée ; rejeu = no-op ; migration fautive → `SchemaMigrationException` + version non avancée ; versions dupliquées rejetées ; catalogue réel V1..V17 atteint `CURRENT_VERSION` |
-| `DatabaseEngineTest` | la factory choisit le bon moteur ; `SqliteDatabaseEngine` ouvre/configure une connexion ; `MySqlDatabaseEngine.openConnection()` échoue proprement en pointant #41 ; aucun secret dans `describe()` / message d'erreur |
-| `DatabaseManagerEngineTest` | constructeur `Path` historique inchangé ; init via moteur SQLite explicite applique les migrations ; `healthCheck()` faux avant init, vrai après, ne lève jamais ; moteur MySQL → `initialize()` échoue avec un message actionnable |
+| `MySqlDialectTranslationTest` | `rewrite(...)` (upsert, insert-ignore, clause sans espace, statements inchangés) ; `ddl(...)` (types, `AUTOINCREMENT`, `BLOB`, InnoDB/utf8mb4_bin, `CREATE INDEX` → `ALTER TABLE ADD INDEX`, `ALTER … INTEGER` → `BIGINT`) ; **balayage des 17 migrations réelles** : aucune `TEXT` en clé, aucun `AUTOINCREMENT`, moteur InnoDB présent |
+| `SchemaMigrationRunnerTest` | ordre ; reprise depuis la version enregistrée ; rejeu = no-op ; migration fautive → `SchemaMigrationException` + version non avancée ; versions dupliquées rejetées ; catalogue réel V1..V17 → `CURRENT_VERSION` (sur `MigrationTableHistory` + SQLite) |
+| `DatabaseEngineTest` | la factory choisit le bon moteur ; SQLite prête **la même** connexion unique ; MariaDB échoue proprement si le mot de passe (variable d'env) est absent, ou si le serveur est injoignable (borné) ; aucun secret dans `describe()` |
+| `DatabaseManagerEngineTest` | constructeur `Path` historique inchangé ; `borrow/release` SQLite ne ferme jamais la connexion entre opérations ; `healthCheck()` faux avant init / vrai après / ne lève jamais ; MariaDB sans mot de passe ou serveur injoignable → `initialize()` échoue sans blocage |
 | `SchemaMigratorTest` (existant, 21) | migrations SQLite bout-en-bout — **inchangé** |
-| `ConfigValidatorTest` (+8) | défaut SQLite ; nouvelle sous-section `sqlite:` ; alias `database.file` ; sélection `mysql` sans mot de passe en clair ; type inconnu rejeté ; mot de passe en clair rejeté ; port hors plage rejeté ; `mariadb` alias |
-| `*RepositoryTest` (existants) | tous les repositories métier — **inchangés**, prouvent la non-régression SQLite |
+| `ConfigValidatorTest` (+10) | défaut SQLite ; sous-section `sqlite:` ; alias `database.file` ; `mysql` sans mot de passe en clair ; `ssl-mode` / type inconnus rejetés ; `pool.minimum-idle` / `maximum-pool-size` / `connection-timeout-ms` validés ; `mariadb` alias |
+| `*RepositoryTest` (existants) | tous les repositories métier sur SQLite — **inchangés**, non-régression |
 
-`./gradlew test` et `./gradlew build` : verts.
+### Tests d'intégration MariaDB (optionnels)
+
+Ne s'exécutent que si `RPGQUEST_DB_HOST` / `_PORT` / `_NAME` / `_USER` / `_PASSWORD` sont dans
+l'environnement — sinon **ignorés** (`Assumptions`), jamais en échec. `./gradlew test` passe donc
+sur une machine sans MariaDB. Chaque classe **vide** les tables RPGQuest de la base de test avant
+de commencer (base de **test** dédiée, jamais de prod). Le mot de passe n'est jamais imprimé.
+
+| Test | Vérifie (contre un vrai serveur MariaDB) |
+|---|---|
+| `MariaDbSchemaIntegrationTest` | init depuis une base **vide** → 25 tables + `rpgquest_schema_migrations` ; historique V1..V17 dans l'ordre ; re-init = no-op (pas de ligne d'historique en double) ; `health` OK ; tables en `InnoDB` + `utf8mb4` ; clé étrangère `claim_members → claims` créée |
+| `MariaDbRepositoryIntegrationTest` | `PlayerProfile` CRUD ; `PlayerVariable` upsert (dont sensibilité à la casse via `utf8mb4_bin`) ; `Wallet` transactions atomiques (crédit / débit refusé si solde insuffisant / `pay`) ; `Market` **generated keys** + BLOB restitué à l'identique ; `NpcId` ids générés séquentiels ; `QuestProgress` upsert + objectifs ; **connexion fermée sous le pool → opération suivante OK** ; base inexistante → `initialize()` échoue proprement |
+
+`./gradlew test` (sans env MariaDB) **et** `./gradlew build` : verts.
 
 ---
 
-## 10. Travail restant pour #41 (backend MySQL réel)
+## 10. Compatibilité MariaDB 10.11 (validée)
 
-1. **Dépendance driver** : ajouter `com.mysql:mysql-connector-j` (ou `org.mariadb.jdbc:mariadb-java-client`)
-   à `plugin.yml` `libraries:` (résolu par le `LibraryLoader` de Paper, comme `sqlite-jdbc`) et à
-   `build.gradle.kts` en `testImplementation`.
-2. **Pool** : implémenter `MySqlDatabaseEngine.openConnection()` avec un `DataSource` de pool
-   (HikariCP léger, ou pool JDK). `DatabaseManager` devra emprunter/rendre une connexion par
-   `execute` au lieu de garder une connexion unique — le contrat public ne change pas.
-3. **Dialecte dans les repositories** : faire passer le SQL SQLite-spécifique par `SqlDialect`.
-   Sites recensés (audit #40) :
-   - `ON CONFLICT … DO UPDATE` : `PlayerVariableRepository`, `QuestProgressRepository` (×2),
-     `StoryProgressRepository`, `ItemTravelCooldownRepository`, `PortalCooldownRepository`,
-     `ResourceNodeRepository`, `EntitlementRepository`, `NpcBindingRepository`, `BackpackRepository` ;
-   - `INSERT OR IGNORE` : `WalletRepository`, `ProgressionRepository` (×2), `StoreDeliveryRepository`,
-     `ClaimRepository`, `PlacedBlockRepository`, `WaystoneRepository` (×2) ;
-   - `Statement.RETURN_GENERATED_KEYS` : `MarketRepository`, `NpcIdRepository` (OK sur les deux
-     moteurs, à re-vérifier).
-4. **Types de colonnes des migrations** : traduire `TEXT` → `VARCHAR(n)` pour les colonnes de clé
-   primaire / indexées, `BLOB` → `LONGBLOB`, `INTEGER PRIMARY KEY AUTOINCREMENT` →
-   `dialect.autoIncrementPrimaryKey(...)`. Migration par migration ; les tables actuelles sont
-   toutes à clé primaire composite, donc les colonnes de PK doivent devenir `VARCHAR`.
-5. **Historique** : `MySqlDatabaseEngine` renvoie déjà `MigrationTableHistory` — rien à faire.
-6. **Session** : `MySqlDatabaseEngine.configureSession` (fuseau horaire, `sql_mode`…).
-7. **Reconnexion / indisponibilité** : politique de retry/backoff au niveau du pool ; le
-   `healthCheck()` est déjà là.
-8. **Validation VeryGames** : #42 (création de la base, migration des données `data.db` → MySQL).
+Serveur cible et **validé** : `10.11.6-MariaDB` (Debian 12). Driver : **MariaDB Connector/J
+3.4.x**. Pool : **HikariCP 5.1.0**. Les deux sont déclarés dans `plugin.yml` `libraries:`
+(résolution par le `LibraryLoader` de Paper au démarrage, comme `sqlite-jdbc`) et en
+`compileOnly` / `testRuntimeOnly` côté Gradle — **jamais empaquetés** dans le JAR.
+
+| Aspect | Traitement MariaDB |
+|---|---|
+| Types texte de clé / index / `NOT NULL` | `TEXT` → `VARCHAR(191)` (indexable en `utf8mb4`, largement au-dessus des identifiants RPGQuest ≤ 128) |
+| Types texte libres nullables | `TEXT` conservé (`variable_value`, `progress_data`, `context`, `detail`, `reason`, timestamps nullables) |
+| Entiers | `INTEGER` → `BIGINT` (SQLite stocke déjà en 64 bits, le code fait des `getLong`) |
+| Auto-increment | `INTEGER PRIMARY KEY AUTOINCREMENT` → `BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY` |
+| Booléens | colonne entière (`allow_public_redstone`) + coercition JDBC `setBoolean`/`getBoolean` (identique SQLite) |
+| Timestamps | **aucune colonne native** : RPGQuest stocke des chaînes ISO-8601 (`Instant.toString()`), aucun problème de fuseau |
+| BLOB | `BLOB` → `LONGBLOB` (backpacks, `market_listings.item_data`) |
+| Clés étrangères | `FOREIGN KEY … ON DELETE CASCADE` conservées (InnoDB), types de colonnes alignés via `VARCHAR(191)` uniforme |
+| Index | `CREATE [UNIQUE] INDEX IF NOT EXISTS` → `ALTER TABLE … ADD [UNIQUE] INDEX IF NOT EXISTS` (forme 100 % MariaDB) |
+| Collation | `utf8mb4_bin` : comparaisons **binaires**, comme le `BINARY` par défaut de SQLite — parité de comportement sur les clés sensibles à la casse (ids de quêtes, compétences…) |
+| UPSERT | `ON CONFLICT (…) DO UPDATE SET c = excluded.c` → `ON DUPLICATE KEY UPDATE c = VALUES(c)` (supporté par MariaDB 10.11 ; la forme `VALUES()` y est toujours valide, non dépréciée contrairement à MySQL 8.0.20+) |
+| INSERT-OR-IGNORE | `INSERT OR IGNORE` → `INSERT IGNORE` (même sémantique : ignore le conflit de clé) |
+| Generated keys | `Statement.RETURN_GENERATED_KEYS` + `getGeneratedKeys()` — identique, testé |
+| Transactions | `setAutoCommit(false)` / `commit` / `rollback` — isolation InnoDB `REPEATABLE READ` (≥ le besoin ; la sérialisation vient du thread unique de `DatabaseManager`) |
+| `sql_mode` | `STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION,NO_ZERO_DATE` appliqué par connexion (`connectionInitSql`) |
+
+## 11. Compte MySQL / privilèges (VeryGames)
+
+Utiliser un **compte dédié** à RPGQuest, restreint à sa **seule** base — jamais un compte
+administrateur global VeryGames.
+
+- **Runtime** (fonctionnement normal) : `SELECT, INSERT, UPDATE, DELETE`.
+- **Installation / migrations de schéma** : en plus `CREATE, ALTER, INDEX, REFERENCES`
+  (création des tables, `ALTER TABLE ADD COLUMN/INDEX`, clés étrangères). `DROP` n'est **pas**
+  requis par RPGQuest (aucune migration ne supprime de table).
+- Le mot de passe vit dans une variable d'environnement du process (`RPGQUEST_DB_PASSWORD` par
+  défaut), jamais dans `config.yml`, le dépôt, les logs ou un rapport.
+
+## 12. Diagnostics
+
+`DatabaseManager` expose, sans secret : `engineType()` (`SQLITE` / `MYSQL`), `describeEngine()`
+(`sqlite (data.db)` ou `mariadb <user>@<host>:<port>/<db> (pool m..M, ssl=…)`),
+`expectedSchemaVersion()`, `healthCheck()` (async, ne lève jamais). Au démarrage, la version du
+serveur MariaDB est journalisée (`MariaDB/MySQL serveur : 10.11.6-MariaDB-…`). Ces éléments sont
+prêts pour un futur affichage par le Control Panel via l'API RPGQuest (hors périmètre #41).
+
+## 13. Reste pour #42 (migration des données + bascule)
+
+1. **Créer la base RPGQuest de production** sur VeryGames + le compte dédié (§11).
+2. **Exporter** l'état de `data.db` (25 tables) puis l'**importer** dans MariaDB — outil de
+   migration à écrire (lecture SQLite → écriture MariaDB via les repositories ou en bulk), avec
+   contrôle d'intégrité (comptes de lignes, FK, `player_variables` critiques comme `CLAIM_TIER_1`).
+3. **Bascule** : arrêt serveur → `database.type: mysql` + secrets → redémarrage → vérifications
+   (health, version de schéma, parcours joueur) → conservation de `data.db` en sauvegarde.
+4. **Rollback** documenté : re-basculer `database.type: sqlite` (les deux bases coexistent
+   pendant la fenêtre de migration).
+5. Le `SchemaMigrationRunner` gère déjà l'idempotence : si la base MariaDB est pré-remplie par
+   l'outil de migration avec `rpgquest_schema_migrations` à jour, un démarrage ne rejoue rien.

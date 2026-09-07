@@ -92,6 +92,56 @@ déploiement, sans passer par le panel VeryGames.
 -   Comportement observé : `stop` → serveur OFFLINE → relance automatique
     VeryGames → ONLINE en ~15–60 s.
 
+## Base MySQL/MariaDB VeryGames (issue #41 — backend optionnel)
+
+RPGQuest peut utiliser une base **MariaDB** au lieu de SQLite (`database.type: mysql`). VeryGames
+permet de provisionner des bases MySQL/MariaDB associées au serveur. **La bascule des données de
+production (`data.db` → MariaDB) est l'issue #42** — cette section ne couvre que la mise en place
+et la validation sur une base **de test**.
+
+Serveur observé et validé : `10.11.6-MariaDB-0+deb12u1-log` (accessible en direct depuis AWS sur
+le port `3306`).
+
+### Checklist manuelle
+
+1. **Créer une base RPGQuest dédiée** dans le panel VeryGames (ex. `rpgquest` pour la prod,
+   `rpgquest_test` pour les tests). Une base ≠ un compte.
+2. **Compte dédié**, restreint à cette **seule** base — jamais le compte admin global VeryGames.
+   Privilèges :
+   - runtime : `SELECT, INSERT, UPDATE, DELETE` ;
+   - installation / migrations : en plus `CREATE, ALTER, INDEX, REFERENCES` (`DROP` **non**
+     requis par RPGQuest).
+3. **Secrets hors Git** : le mot de passe va dans une variable d'environnement du process
+   (`RPGQUEST_DB_PASSWORD` par défaut), jamais dans `config.yml`, le dépôt, les logs, un rapport.
+   Pour un test depuis AWS : fichier local `chmod 600`, chargé avant `./gradlew` :
+   `RPGQUEST_DB_HOST`, `RPGQUEST_DB_PORT`, `RPGQUEST_DB_NAME`, `RPGQUEST_DB_USER`,
+   `RPGQUEST_DB_PASSWORD`.
+4. **Tester la connexion** : `scripts/verygames-rcon.py` n'a rien à voir ici ; utiliser
+   `mysql -h <host> -P 3306 -u <user> -p <db> -e 'SELECT VERSION()'` ou les tests d'intégration
+   RPGQuest (voir 6).
+5. **`config.yml`** : `database.type: mysql`, `database.mysql.{host,port,database,username}`,
+   `password-env`, éventuellement `ssl-mode` et `pool.*`. Voir
+   [docs/PERSISTENCE.md](../PERSISTENCE.md) §2.
+6. **Démarrer sur une base VIDE de test** — le plugin crée tout le schéma (25 tables +
+   `rpgquest_schema_migrations`) via `SchemaMigrationRunner`. Vérification automatisée possible
+   depuis AWS sans démarrer le serveur MC :
+   ```bash
+   set -a; . ~/.rpgquest-mysql.env; set +a
+   ./gradlew :test --tests 'com.lodygames.rpgquest.database.MariaDb*'
+   ```
+   (ces tests sont **ignorés** si les variables `RPGQUEST_DB_*` sont absentes).
+7. **Vérifier logs + health** : au démarrage plugin, `Base de données RPGQuest : moteur mariadb
+   <user>@<host>:3306/<db> (pool 2..10, ssl=disable)` puis `MariaDB/MySQL serveur : 10.11.6-…`.
+   `DatabaseManager.healthCheck()` → OK. Historique : `SELECT version, name, applied_at FROM
+   rpgquest_schema_migrations ORDER BY version` doit lister V1..V17.
+8. **Ne pas basculer les données de production** avant l'issue #42. `data.db` n'est jamais touché
+   par #41.
+
+### Rollback
+
+Re-basculer `database.type: sqlite` et redémarrer : `data.db` est intact et redevient la source de
+vérité. Les deux bases peuvent coexister pendant la fenêtre de migration #42.
+
 ---
 
 ## Compiler RPGQuest

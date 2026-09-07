@@ -2,13 +2,19 @@ package com.lodygames.rpgquest.database;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-/** Modèle de configuration de persistance (issue #40) : défauts, secrets hors config. */
+/** Modèle de configuration de persistance (issues #40 / #41) : défauts, secrets hors config. */
 class DatabaseSettingsTest {
+
+    private static DatabaseSettings.MySqlSettings mysql(String host, int port, String db, String user, String sslMode) {
+        return new DatabaseSettings.MySqlSettings(host, port, db, user, "RPGQUEST_DB_PASSWORD", sslMode,
+                DatabaseSettings.PoolSettings.defaults());
+    }
 
     @Test
     void defaultsToSqliteDataDb() {
@@ -25,33 +31,51 @@ class DatabaseSettingsTest {
         assertEquals("data.db", settings.sqlite().file());
         assertEquals(3306, settings.mysql().port());
         assertEquals("RPGQUEST_DB_PASSWORD", settings.mysql().passwordEnv());
-        assertEquals(10, settings.mysql().pool().maxSize());
+        assertEquals("disable", settings.mysql().sslMode());
+        assertEquals(10, settings.mysql().pool().maximumPoolSize());
+        assertEquals(2, settings.mysql().pool().minimumIdle());
     }
 
     @Test
-    void describeNeverContainsAPassword() {
+    void describeNeverContainsAPasswordOrJdbcSecret() {
         DatabaseSettings settings = new DatabaseSettings(DatabaseType.MYSQL,
                 DatabaseSettings.SqliteSettings.defaults(),
-                new DatabaseSettings.MySqlSettings("db.example", 3307, "rpg", "rpguser", "RPGQUEST_DB_PASSWORD",
-                        DatabaseSettings.PoolSettings.defaults()));
+                mysql("db.example", 3307, "rpg", "rpguser", "trust"));
         String described = settings.describe();
-        assertEquals("mysql rpguser@db.example:3307/rpg", described);
+        assertTrue(described.startsWith("mariadb rpguser@db.example:3307/rpg"));
         assertFalse(described.toLowerCase().contains("password"));
         assertFalse(described.contains("s3cr3t"));
     }
 
     @Test
     void passwordIsResolvedFromEnvironmentOnly() {
-        DatabaseSettings.MySqlSettings mysql = DatabaseSettings.MySqlSettings.defaults();
-        assertTrue(mysql.resolvePassword(k -> null).isEmpty(), "variable absente -> pas de mot de passe");
+        DatabaseSettings.MySqlSettings settings = DatabaseSettings.MySqlSettings.defaults();
+        assertTrue(settings.resolvePassword(k -> null).isEmpty(), "variable absente -> pas de mot de passe");
         assertEquals("s3cr3t",
-                mysql.resolvePassword(Map.of("RPGQUEST_DB_PASSWORD", "s3cr3t")::get).orElseThrow());
+                settings.resolvePassword(Map.of("RPGQUEST_DB_PASSWORD", "s3cr3t")::get).orElseThrow());
     }
 
     @Test
-    void jdbcUrlHasNoCredentials() {
+    void jdbcUrlUsesMariadbDriverAndHasNoCredentials() {
         String url = DatabaseSettings.MySqlSettings.defaults().jdbcUrl();
-        assertEquals("jdbc:mysql://localhost:3306/rpgquest", url);
+        assertEquals("jdbc:mariadb://localhost:3306/rpgquest", url);
         assertFalse(url.contains("@"));
+    }
+
+    @Test
+    void sslModeIsNormalisedAndUnknownRejected() {
+        assertEquals("disable", mysql("h", 3306, "d", "u", "OFF").sslMode());
+        assertEquals("verify-ca", mysql("h", 3306, "d", "u", "verify_ca").sslMode());
+        assertThrows(IllegalArgumentException.class, () -> mysql("h", 3306, "d", "u", "please"));
+    }
+
+    @Test
+    void poolClampsInvalidValues() {
+        DatabaseSettings.PoolSettings pool = new DatabaseSettings.PoolSettings(50, 5, 10L, -1L, 999_999_999L);
+        assertEquals(5, pool.maximumPoolSize());
+        assertTrue(pool.minimumIdle() <= pool.maximumPoolSize());
+        assertEquals(10_000L, pool.connectionTimeoutMs(), "trop court -> défaut");
+        assertEquals(1_800_000L, pool.maxLifetimeMs(), "négatif -> défaut");
+        assertEquals(0L, pool.keepaliveMs(), "keepalive >= maxLifetime -> désactivé");
     }
 }

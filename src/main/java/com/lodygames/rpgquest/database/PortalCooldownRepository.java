@@ -26,9 +26,11 @@ public final class PortalCooldownRepository {
     private static final String DELETE_ALL_FOR_PLAYER = "DELETE FROM portal_cooldowns WHERE player_uuid = ?";
 
     private final DatabaseManager database;
+    private final SqlDialect dialect;
 
     public PortalCooldownRepository(DatabaseManager database) {
         this.database = database;
+        this.dialect = database.dialect();
     }
 
     public CompletableFuture<Map<String, Instant>> allForPlayer(UUID playerId) {
@@ -48,7 +50,7 @@ public final class PortalCooldownRepository {
 
     public CompletableFuture<Void> setCooldown(UUID playerId, String portalId, Instant expiresAt) {
         return database.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement(UPSERT)) {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPSERT))) {
                 statement.setString(1, playerId.toString());
                 statement.setString(2, portalId);
                 statement.setString(3, expiresAt.toString());

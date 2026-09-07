@@ -87,6 +87,8 @@ public final class PanelApp {
         route("/logout", this::handleLogout);
         route("/dashboard", this::handleDashboard);
         route("/agents", this::handleAgents);
+        route("/agents/actions.json", this::handleAgentActionsJson);
+        route("/assets/panel.js", this::handleAssetPanelJs);
         for (String path : new String[] {"/players", "/npc", "/quests", "/stories", "/diagnostics", "/admin", "/dev"}) {
             route(path, exchange -> handlePlaceholder(exchange, path));
         }
@@ -417,6 +419,78 @@ public final class PanelApp {
         Http.redirect(exchange, "/agents");
     }
 
+    /**
+     * État JSON compact des actions récentes d'un agent — consommé par {@code /assets/panel.js}
+     * pour le rafraîchissement automatique (issue #65). Même modèle que le tableau rendu côté
+     * serveur ; {@code pending} = nombre d'actions non terminales (le polling s'arrête à 0).
+     */
+    private void handleAgentActionsJson(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.json(exchange, 405, "{\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        Optional<Session> maybe = currentSession(exchange);
+        if (maybe.isEmpty()) {
+            Http.json(exchange, 401, "{\"error\":\"unauthorized\"}");
+            return;
+        }
+        if (!permissions.can(maybe.get().role(), Permission.DIAGNOSTICS_READ)) {
+            Http.json(exchange, 403, "{\"error\":\"forbidden\"}");
+            return;
+        }
+        String agentId = Http.query(exchange).getOrDefault("agent", "").trim();
+        if (agentRegistry.byId(agentId).isEmpty()) {
+            Http.json(exchange, 404, "{\"error\":\"unknown_agent\"}");
+            return;
+        }
+        List<AgentActionRow> actions = agentStore.recentActions(agentId, 20);
+        List<Map<String, Object>> items = new java.util.ArrayList<>();
+        int pending = 0;
+        for (AgentActionRow a : actions) {
+            if (!a.status().terminal()) {
+                pending++;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", shortId(a.id()));
+            item.put("type", a.type());
+            item.put("params", renderParams(a.params()));
+            item.put("status", a.status().name());
+            item.put("pill", actionPill(a.status()));
+            item.put("terminal", a.status().terminal());
+            item.put("deliverCount", a.deliverCount());
+            item.put("result", renderResult(a));
+            item.put("createdAt", a.createdAt().toString());
+            items.add(item);
+        }
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("agent", agentId);
+        root.put("pending", pending);
+        root.put("actions", items);
+        Http.json(exchange, 200, com.lodygames.rpgquest.panel.json.Json.write(root));
+    }
+
+    /** Sert le script de rafraîchissement automatique (même origine, conforme CSP). */
+    private void handleAssetPanelJs(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "GET requis");
+            return;
+        }
+        byte[] js;
+        try (var in = PanelApp.class.getResourceAsStream("/assets/panel.js")) {
+            if (in == null) {
+                Http.text(exchange, 404, "asset introuvable");
+                return;
+            }
+            js = in.readAllBytes();
+        }
+        Http.securityHeaders(exchange);
+        exchange.getResponseHeaders().set("Content-Type", "application/javascript; charset=utf-8");
+        exchange.sendResponseHeaders(200, js.length);
+        try (var out = exchange.getResponseBody()) {
+            out.write(js);
+        }
+    }
+
     private String agentsContent(Session session) {
         StringBuilder sb = new StringBuilder();
         sb.append("<h1>Agents RPGQuest</h1>")
@@ -459,12 +533,15 @@ public final class PanelApp {
             }
 
             List<AgentActionRow> actions = agentStore.recentActions(agent.id(), 20);
+            long pending = actions.stream().filter(a -> !a.status().terminal()).count();
+            sb.append("<div class=\"actions-panel\" data-actions-agent=\"").append(Http.esc(agent.id()))
+                    .append("\" data-actions-pending=\"").append(pending).append("\">");
             sb.append("<h3>Actions récentes</h3>");
+            sb.append("<table><thead><tr><th>Id</th><th>Type</th><th>Params</th><th>Statut</th>"
+                    + "<th>Livraisons</th><th>Résultat</th><th>Créée</th></tr></thead><tbody>");
             if (actions.isEmpty()) {
-                sb.append("<p class=\"muted\">Aucune action.</p>");
+                sb.append("<tr><td colspan=\"7\" class=\"muted\">Aucune action.</td></tr>");
             } else {
-                sb.append("<table><tr><th>Id</th><th>Type</th><th>Params</th><th>Statut</th>"
-                        + "<th>Livraisons</th><th>Résultat</th><th>Créée</th></tr>");
                 for (AgentActionRow a : actions) {
                     sb.append("<tr><td><code>").append(Http.esc(shortId(a.id()))).append("</code></td>")
                             .append("<td>").append(Http.esc(a.type())).append("</td>")
@@ -475,9 +552,12 @@ public final class PanelApp {
                             .append("<td>").append(Http.esc(renderResult(a))).append("</td>")
                             .append("<td class=\"muted\">").append(Http.esc(a.createdAt().toString())).append("</td></tr>");
                 }
-                sb.append("</table>");
             }
+            sb.append("</tbody></table>");
+            sb.append("<p class=\"muted poll-status\" hidden></p>");
+            sb.append("</div>");
         }
+        sb.append("<script src=\"/assets/panel.js\" defer></script>");
         return sb.toString();
     }
 

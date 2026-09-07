@@ -128,6 +128,9 @@ public final class Layout {
             color:#fff;font-weight:600;cursor:pointer}
             .formerr{color:var(--err);margin-top:12px;font-size:13px}
             .muted{color:var(--muted)}
+            .actions-panel{margin-top:6px}
+            .poll-status{font-size:12px;margin-top:6px;color:var(--muted)}
+            [hidden]{display:none}
             @media(max-width:720px){.shell{flex-direction:column}.side{width:auto;flex-direction:row;flex-wrap:wrap}
             .main{padding:14px}.login{width:100%}}
             """;

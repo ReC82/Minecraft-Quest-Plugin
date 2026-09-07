@@ -81,6 +81,16 @@ public final class Http {
         }
     }
 
+    public static void json(HttpExchange exchange, int status, String body) throws IOException {
+        securityHeaders(exchange);
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(bytes);
+        }
+    }
+
     public static void text(HttpExchange exchange, int status, String body) throws IOException {
         securityHeaders(exchange);
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);

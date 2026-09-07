@@ -21,6 +21,17 @@ target.dev.mode=bridge
 target.dev.bridge-url=http://127.0.0.1:8100/admin/v1
 # nom de la variable d'environnement contenant le jeton du bridge pour cette cible
 target.dev.token-env=RPGQUEST_BRIDGE_TOKEN_DEV
+# agent sortant (#51) associé à cette cible pour l'affichage du dashboard
+target.dev.agent=rpgquest-dev
+
+# --- Agents sortants (issue #51) — RPGQuest/VeryGames -> PlugAdmin en HTTPS ---
+# Laisser vide (agents=) pour désactiver complètement le canal agent.
+agents=rpgquest-dev
+agent.rpgquest-dev.environment=dev
+agent.rpgquest-dev.token-env=RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV
+agent.stale-seconds=45
+agent.offline-seconds=150
+agent.action-expiry-seconds=300
 
 # ============================================================================
 # SECRETS — variables d'environnement uniquement, jamais dans un fichier versionné :
@@ -29,6 +40,8 @@ target.dev.token-env=RPGQUEST_BRIDGE_TOKEN_DEV
 #   RPGQUEST_PANEL_OWNER_HASH    hash du mot de passe owner
 #                                -> `java -jar control-panel.jar hash-password`
 #   RPGQUEST_BRIDGE_TOKEN_DEV    jeton partagé avec le bridge du plugin (= RPGQUEST_WEB_ADMIN_TOKEN côté plugin)
+#   RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV  jeton de l'agent sortant (#51) = clé « token= » de
+#                                plugins/RPGQuest/plugadmin-agent.properties côté serveur RPGQuest
 #
 # Optionnel :
 #   RPGQUEST_PANEL_CONFIG        chemin d'un control-panel.properties alternatif

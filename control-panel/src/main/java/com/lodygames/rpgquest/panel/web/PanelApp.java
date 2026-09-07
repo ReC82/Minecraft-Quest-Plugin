@@ -1,5 +1,13 @@
 package com.lodygames.rpgquest.panel.web;
 
+import com.lodygames.rpgquest.panel.agent.AgentActionRow;
+import com.lodygames.rpgquest.panel.agent.AgentActionStatus;
+import com.lodygames.rpgquest.panel.agent.AgentEndpoints;
+import com.lodygames.rpgquest.panel.agent.AgentIdentity;
+import com.lodygames.rpgquest.panel.agent.AgentLiveness;
+import com.lodygames.rpgquest.panel.agent.AgentRegistry;
+import com.lodygames.rpgquest.panel.agent.AgentStore;
+import com.lodygames.rpgquest.panel.agent.HeartbeatRecord;
 import com.lodygames.rpgquest.panel.audit.AuditLog;
 import com.lodygames.rpgquest.panel.authz.Permission;
 import com.lodygames.rpgquest.panel.authz.PermissionService;
@@ -23,6 +31,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -45,13 +55,20 @@ public final class PanelApp {
     private final AuthService authService;
     private final SessionStore sessions;
     private final PermissionService permissions = new PermissionService();
+    private final AgentStore agentStore;
+    private final AgentRegistry agentRegistry;
+    private final AgentEndpoints agentEndpoints;
 
     private HttpServer server;
 
-    public PanelApp(PanelConfig config, AuditLog audit, BridgeClient bridge) {
+    public PanelApp(PanelConfig config, AuditLog audit, BridgeClient bridge, AgentStore agentStore) {
         this.config = config;
         this.audit = audit;
         this.bridge = bridge;
+        this.agentStore = agentStore;
+        this.agentRegistry = new AgentRegistry(config.agents().agents());
+        this.agentEndpoints = new AgentEndpoints(agentRegistry, agentStore, audit,
+                config.agents().actionExpiry(), config::disabled);
         this.authService = new AuthService(config.ownerUsername(), config.ownerPasswordHash(), new PasswordHasher());
         this.sessions = new SessionStore(config.sessionSecret(),
                 Duration.ofMinutes(config.sessionTtlMinutes()), Duration.ofMinutes(config.sessionIdleMinutes()));
@@ -69,9 +86,11 @@ public final class PanelApp {
         route("/login", this::handleLogin);
         route("/logout", this::handleLogout);
         route("/dashboard", this::handleDashboard);
+        route("/agents", this::handleAgents);
         for (String path : new String[] {"/players", "/npc", "/quests", "/stories", "/diagnostics", "/admin", "/dev"}) {
             route(path, exchange -> handlePlaceholder(exchange, path));
         }
+        agentEndpoints.register(server);
         server.start();
         int port = server.getAddress().getPort();
         LOG.log(System.Logger.Level.INFO, "event=panel_started port=" + port + " target=" + config.defaultTargetId()
@@ -231,16 +250,90 @@ public final class PanelApp {
             return;
         }
         Target target = config.defaultTarget();
-        String content;
+        String agentId = config.agents().defaultAgentId();
+
+        StringBuilder body = new StringBuilder();
+        body.append("<h1>Dashboard</h1><p class=\"sub\">État réel du serveur RPGQuest — cible « ")
+                .append(Http.esc(target.label())).append(" ».</p>");
+
+        boolean agentIsPrimary = agentId != null;
+        if (agentIsPrimary) {
+            body.append(agentDashboardSection(agentId, target));
+        }
+        body.append(localBridgeSection(target, !agentIsPrimary));
+
+        Http.html(exchange, 200, renderPage("Dashboard", session, "/dashboard", body.toString()));
+    }
+
+    /** Section « agent distant » : l'état pris en compte quand une cible a un agent (issue #51). */
+    private String agentDashboardSection(String agentId, Target target) {
+        Optional<HeartbeatRecord> hb = agentStore.latestHeartbeat(agentId);
+        Instant now = Instant.now();
+        AgentLiveness live = AgentLiveness.of(hb, config.agents().thresholds(), now);
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("<h2>RPGQuest ").append(Http.esc(target.label()))
+                .append(" — <span class=\"pill ").append(livenessPill(live)).append("\">").append(live).append("</span>")
+                .append(" <span class=\"muted\">via AGENT DISTANT</span></h2>");
+
+        if (hb.isEmpty()) {
+            sb.append("<div class=\"banner err\"><strong>Aucun heartbeat reçu de l'agent « ")
+                    .append(Http.esc(agentId)).append(" ».</strong><br>Le plugin RPGQuest n'a pas encore contacté "
+                    + "PlugAdmin en HTTPS sortant. Vérifier <code>plugadmin-agent.properties</code> côté serveur.</div>");
+            return sb.toString();
+        }
+        HeartbeatRecord h = hb.get();
+        String age = AgentLiveness.ageHuman(h.receivedAt(), now);
+
+        sb.append("<div class=\"cards\">");
+        card(sb, "Statut", "<span class=\"pill " + livenessPill(live) + "\">" + live + "</span>");
+        card(sb, "Dernier heartbeat", Http.esc(age) + " <span class=\"muted\">(" + Http.esc(h.receivedAt().toString()) + ")</span>");
+        card(sb, "Version plugin", Http.esc(nz(h.pluginVersion())));
+        card(sb, "Protocole agent", Http.esc(nz(h.protocol())));
+        card(sb, "Joueurs", h.playersOnline() < 0 ? "—" : h.playersOnline() + " / " + h.maxPlayers());
+        card(sb, "Uptime plugin", Http.esc(h.uptimeHuman()));
+        card(sb, "État serveur", Http.esc(nz(h.serverState())));
+        card(sb, "Environnement", Http.esc(nz(h.environment())));
+        sb.append("</div>");
+
+        appendWorldsTable(sb, h.worldsJson());
+        return sb.toString();
+    }
+
+    /**
+     * Section « bridge local » {@code /admin/v1/health} de #37. Utile pour le dev local ou un
+     * serveur co-localisé. {@code primary} = true quand aucune cible n'a d'agent (comportement
+     * historique : bannière rouge si injoignable) ; false = affichage secondaire discret.
+     */
+    private String localBridgeSection(Target target, boolean primary) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<h2>Bridge local <span class=\"muted\">(").append(Http.esc(target.bridgeBaseUrl() == null ? "—" : target.bridgeBaseUrl()))
+                .append(")</span></h2>");
         try {
             BridgeHealth health = bridge.health(target);
-            content = dashboardContent(target, health, null);
+            sb.append("<div class=\"cards\">");
+            card(sb, "RPGQuest", "<span class=\"pill ok\">" + Http.esc(nz(health.status())) + "</span>");
+            card(sb, "Version plugin", Http.esc(nz(health.pluginVersion())));
+            card(sb, "API bridge", Http.esc(nz(health.bridgeApiVersion())));
+            card(sb, "Joueurs", health.playersOnline() < 0 ? "—" : health.playersOnline() + " / " + health.maxPlayers());
+            card(sb, "Uptime plugin", Http.esc(health.uptimeHuman()));
+            sb.append("</div>");
+            appendWorldStatusTable(sb, health);
         } catch (BridgeException e) {
             LOG.log(System.Logger.Level.INFO, "event=bridge_unavailable target=" + target.id() + " reason="
                     + e.getMessage().replace('\n', ' '));
-            content = dashboardContent(target, null, e.getMessage());
+            if (primary) {
+                sb.append("<div class=\"banner err\"><strong>RPGQuest ").append(Http.esc(target.label()))
+                        .append(" indisponible.</strong> <span class=\"pill err\">OFFLINE</span><br>")
+                        .append(Http.esc(e.getMessage()))
+                        .append("<br><span class=\"muted\">Aucun agent distant n'est configuré pour cette cible "
+                                + "(voir docs/control-panel/AGENT.md).</span></div>");
+            } else {
+                sb.append("<p class=\"muted\">Bridge local non joignable — normal si RPGQuest tourne ailleurs "
+                        + "(VeryGames). Détail : ").append(Http.esc(e.getMessage())).append("</p>");
+            }
         }
-        Http.html(exchange, 200, renderPage("Dashboard", session, "/dashboard", content));
+        return sb.toString();
     }
 
     private void handlePlaceholder(HttpExchange exchange, String path) throws IOException {
@@ -257,49 +350,227 @@ public final class PanelApp {
                         + "dashboard et le health check réel.</p>"));
     }
 
-    // ---- Rendu ------------------------------------------------------------------------
+    // ---- Agents (issue #51) -----------------------------------------------------------
 
-    private String dashboardContent(Target target, BridgeHealth health, String bridgeError) {
-        boolean online = health != null;
-        StringBuilder sb = new StringBuilder();
-        sb.append("<h1>Dashboard</h1><p class=\"sub\">État réel du serveur RPGQuest — cible « ")
-                .append(Http.esc(target.label())).append(" ».</p>");
-
-        if (bridgeError != null) {
-            sb.append("<div class=\"banner err\"><strong>RPGQuest ").append(Http.esc(target.label()))
-                    .append(" indisponible.</strong><br>").append(Http.esc(bridgeError)).append("</div>");
+    private void handleAgents(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
         }
+        Session session = maybe.get();
+        if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+            Http.html(exchange, 403, renderPage("Refusé", session, "/agents",
+                    "<h1>Accès refusé</h1><p class=\"muted\">Permission manquante.</p>"));
+            return;
+        }
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            handleAgentActionCreate(exchange, session);
+            return;
+        }
+        Http.html(exchange, 200, renderPage("Agents", session, "/agents", agentsContent(session)));
+    }
 
-        sb.append("<div class=\"cards\">");
-        card(sb, "Control Panel", "<span class=\"pill ok\">ONLINE</span>");
-        card(sb, "Environnement cible", Http.esc(target.label()) + " <span class=\"muted\">(" + Http.esc(target.id()) + ")</span>");
-        card(sb, "RPGQuest", online
-                ? "<span class=\"pill ok\">ONLINE</span>"
-                : "<span class=\"pill err\">OFFLINE</span>");
-        card(sb, "Version plugin", online ? Http.esc(nz(health.pluginVersion())) : "—");
-        card(sb, "API bridge", online ? Http.esc(nz(health.bridgeApiVersion())) : "—");
-        card(sb, "Joueurs en ligne", online
-                ? (health.playersOnline() < 0 ? "—" : health.playersOnline() + " / " + health.maxPlayers())
-                : "—");
-        card(sb, "Uptime plugin", online ? Http.esc(health.uptimeHuman()) : "—");
-        card(sb, "Dernier check", Http.esc(Instant.now().toString()));
-        sb.append("</div>");
+    private void handleAgentActionCreate(HttpExchange exchange, Session session) throws IOException {
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF", "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        if (!permissions.can(session.role(), Permission.ACTION_VARIABLE_GET)) {
+            audit.record(session.username(), "agent.action.create", "type=player.variable.get", "DENIED",
+                    "permission manquante", rid);
+            Http.html(exchange, 403, renderPage("Refusé", session, "/agents",
+                    "<h1>Accès refusé</h1><p class=\"muted\">Permission ACTION_VARIABLE_GET requise.</p>"));
+            return;
+        }
+        String agentId = form.getOrDefault("agent", "").trim();
+        String player = form.getOrDefault("player", "").trim();
+        String key = form.getOrDefault("key", "").trim();
+        if (key.isEmpty()) {
+            key = "CLAIM_TIER_1";
+        }
+        Optional<AgentIdentity> agent = agentRegistry.byId(agentId);
+        String error = null;
+        if (agent.isEmpty()) {
+            error = "Agent inconnu : " + agentId;
+        } else if (player.isEmpty() || player.length() > 40) {
+            error = "Nom / UUID de joueur manquant ou trop long.";
+        } else if (!key.matches("[A-Za-z0-9_.:\\-]{1,128}")) {
+            error = "Clé de variable invalide.";
+        }
+        if (error != null) {
+            audit.record(session.username(), "agent.action.create", "agent=" + agentId, "DENIED", error, rid);
+            Http.html(exchange, 400, renderPage("Agents", session, "/agents",
+                    "<div class=\"banner err\">" + Http.esc(error) + "</div>" + agentsContent(session)));
+            return;
+        }
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("player", player);
+        params.put("key", key);
+        String id = agentStore.createAction(agentId, "player.variable.get", params, session.username());
+        audit.record(session.username(), "agent.action.create",
+                "agent=" + agentId + " type=player.variable.get action=" + id, "PENDING",
+                "player=" + player + " key=" + key, rid);
+        LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + agentId
+                + " action=" + id + " by=" + session.username());
+        Http.redirect(exchange, "/agents");
+    }
 
-        if (online && !health.worlds().isEmpty()) {
-            sb.append("<h2>Mondes RPGQuest essentiels</h2><table><tr><th>Rôle</th><th>Monde</th><th>Chargé</th></tr>");
-            for (BridgeHealth.WorldStatus w : health.worlds()) {
-                sb.append("<tr><td>").append(Http.esc(w.role())).append("</td><td>").append(Http.esc(nz(w.name())))
-                        .append("</td><td>").append(w.loaded()
-                                ? "<span class=\"pill ok\">oui</span>" : "<span class=\"pill warn\">non</span>")
-                        .append("</td></tr>");
+    private String agentsContent(Session session) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<h1>Agents RPGQuest</h1>")
+                .append("<p class=\"sub\">Canal <strong>sortant</strong> : RPGQuest / VeryGames contacte PlugAdmin en "
+                        + "HTTPS. PlugAdmin n'ouvre jamais de connexion vers VeryGames.</p>");
+        if (agentRegistry.isEmpty()) {
+            sb.append("<p class=\"muted\">Aucun agent configuré (propriété <code>agents</code> de "
+                    + "<code>control-panel.properties</code>). Voir <code>docs/control-panel/AGENT.md</code>.</p>");
+            return sb.toString();
+        }
+        boolean canSend = permissions.can(session.role(), Permission.ACTION_VARIABLE_GET);
+        Instant now = Instant.now();
+        for (AgentIdentity agent : agentRegistry.all()) {
+            Optional<HeartbeatRecord> hb = agentStore.latestHeartbeat(agent.id());
+            AgentLiveness live = AgentLiveness.of(hb, config.agents().thresholds(), now);
+            sb.append("<h2>").append(Http.esc(agent.id()))
+                    .append(" <span class=\"pill ").append(livenessPill(live)).append("\">").append(live).append("</span>")
+                    .append(" <span class=\"muted\">env ").append(Http.esc(agent.environment()))
+                    .append(agent.usable() ? "" : " — jeton absent").append("</span></h2>");
+
+            sb.append("<div class=\"cards\">");
+            card(sb, "Dernier heartbeat", hb.map(h -> Http.esc(AgentLiveness.ageHuman(h.receivedAt(), now))
+                    + " <span class=\"muted\">(" + Http.esc(h.receivedAt().toString()) + ")</span>").orElse("—"));
+            card(sb, "Version plugin", hb.map(h -> Http.esc(nz(h.pluginVersion()))).orElse("—"));
+            card(sb, "Joueurs", hb.map(h -> h.playersOnline() < 0 ? "—" : h.playersOnline() + " / " + h.maxPlayers()).orElse("—"));
+            card(sb, "Uptime", hb.map(HeartbeatRecord::uptimeHuman).map(Http::esc).orElse("—"));
+            sb.append("</div>");
+
+            if (canSend) {
+                sb.append("<h3>Action de preuve — <code>player.variable.get</code></h3>")
+                        .append("<form method=\"post\" action=\"/agents\">")
+                        .append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken())).append("\">")
+                        .append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agent.id())).append("\">")
+                        .append("<label>Joueur (nom ou UUID)</label><input type=\"text\" name=\"player\" autocomplete=\"off\">")
+                        .append("<label>Clé de variable</label><input type=\"text\" name=\"key\" value=\"CLAIM_TIER_1\">")
+                        .append("<button class=\"btn\" type=\"submit\">Envoyer l'action</button>")
+                        .append("</form>");
+            } else {
+                sb.append("<p class=\"muted\">Envoi d'action non autorisé pour ce rôle.</p>");
             }
-            sb.append("</table>");
-            if (!health.allEssentialWorldsLoaded()) {
-                sb.append("<div class=\"banner err\">Un ou plusieurs mondes essentiels ne sont pas chargés — "
-                        + "certains parcours (Claims, Wild) seront cassés.</div>");
+
+            List<AgentActionRow> actions = agentStore.recentActions(agent.id(), 20);
+            sb.append("<h3>Actions récentes</h3>");
+            if (actions.isEmpty()) {
+                sb.append("<p class=\"muted\">Aucune action.</p>");
+            } else {
+                sb.append("<table><tr><th>Id</th><th>Type</th><th>Params</th><th>Statut</th>"
+                        + "<th>Livraisons</th><th>Résultat</th><th>Créée</th></tr>");
+                for (AgentActionRow a : actions) {
+                    sb.append("<tr><td><code>").append(Http.esc(shortId(a.id()))).append("</code></td>")
+                            .append("<td>").append(Http.esc(a.type())).append("</td>")
+                            .append("<td class=\"muted\">").append(Http.esc(renderParams(a.params()))).append("</td>")
+                            .append("<td><span class=\"pill ").append(actionPill(a.status())).append("\">")
+                            .append(a.status()).append("</span></td>")
+                            .append("<td>").append(a.deliverCount()).append("</td>")
+                            .append("<td>").append(Http.esc(renderResult(a))).append("</td>")
+                            .append("<td class=\"muted\">").append(Http.esc(a.createdAt().toString())).append("</td></tr>");
+                }
+                sb.append("</table>");
             }
         }
         return sb.toString();
+    }
+
+    private static String actionPill(AgentActionStatus status) {
+        return switch (status) {
+            case SUCCESS -> "ok";
+            case PENDING, DELIVERED -> "warn";
+            case FAILED, REJECTED, EXPIRED -> "err";
+        };
+    }
+
+    private static String shortId(String id) {
+        return id == null ? "" : (id.length() > 8 ? id.substring(0, 8) : id);
+    }
+
+    private static String renderParams(Map<String, String> params) {
+        if (params.isEmpty()) {
+            return "—";
+        }
+        StringBuilder sb = new StringBuilder();
+        params.forEach((k, v) -> sb.append(sb.isEmpty() ? "" : ", ").append(k).append('=').append(v));
+        return sb.toString();
+    }
+
+    private static String renderResult(AgentActionRow a) {
+        if (!a.status().terminal()) {
+            return "—";
+        }
+        String value = a.resultValue() == null ? "" : " = " + a.resultValue();
+        String message = a.resultMessage() == null ? "" : " · " + a.resultMessage();
+        return (a.resultStatus() == null ? a.status().name() : a.resultStatus()) + value + message;
+    }
+
+    // ---- Rendu ------------------------------------------------------------------------
+
+    private static String livenessPill(AgentLiveness live) {
+        return switch (live) {
+            case ONLINE -> "ok";
+            case STALE -> "warn";
+            case OFFLINE, UNKNOWN -> "err";
+        };
+    }
+
+    /** Table des mondes essentiels à partir du JSON {@code {role:{name,loaded}}} d'un heartbeat. */
+    private void appendWorldsTable(StringBuilder sb, String worldsJson) {
+        Map<String, Object> worlds;
+        try {
+            worlds = worldsJson == null || worldsJson.isBlank()
+                    ? Map.of() : com.lodygames.rpgquest.panel.json.Json.parseObject(worldsJson);
+        } catch (RuntimeException e) {
+            return;
+        }
+        if (worlds.isEmpty()) {
+            return;
+        }
+        sb.append("<h2>Mondes RPGQuest essentiels</h2><table><tr><th>Rôle</th><th>Monde</th><th>Chargé</th></tr>");
+        boolean allLoaded = true;
+        for (Map.Entry<String, Object> e : worlds.entrySet()) {
+            Map<String, Object> w = e.getValue() instanceof Map<?, ?> m
+                    ? castMap(m) : Map.of();
+            boolean loaded = Boolean.TRUE.equals(w.get("loaded"));
+            allLoaded &= loaded;
+            sb.append("<tr><td>").append(Http.esc(e.getKey())).append("</td><td>")
+                    .append(Http.esc(nz(w.get("name") == null ? null : String.valueOf(w.get("name")))))
+                    .append("</td><td>").append(loaded
+                            ? "<span class=\"pill ok\">oui</span>" : "<span class=\"pill warn\">non</span>")
+                    .append("</td></tr>");
+        }
+        sb.append("</table>");
+        if (!allLoaded) {
+            sb.append("<div class=\"banner err\">Un ou plusieurs mondes essentiels ne sont pas chargés — "
+                    + "certains parcours (Claims, Wild) seront cassés.</div>");
+        }
+    }
+
+    private void appendWorldStatusTable(StringBuilder sb, BridgeHealth health) {
+        if (health.worlds().isEmpty()) {
+            return;
+        }
+        sb.append("<h2>Mondes RPGQuest essentiels <span class=\"muted\">(bridge local)</span></h2>")
+                .append("<table><tr><th>Rôle</th><th>Monde</th><th>Chargé</th></tr>");
+        for (BridgeHealth.WorldStatus w : health.worlds()) {
+            sb.append("<tr><td>").append(Http.esc(w.role())).append("</td><td>").append(Http.esc(nz(w.name())))
+                    .append("</td><td>").append(w.loaded()
+                            ? "<span class=\"pill ok\">oui</span>" : "<span class=\"pill warn\">non</span>")
+                    .append("</td></tr>");
+        }
+        sb.append("</table>");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMap(Map<?, ?> m) {
+        return (Map<String, Object>) m;
     }
 
     private static void card(StringBuilder sb, String key, String value) {

@@ -1,9 +1,13 @@
 package com.lodygames.rpgquest.panel.config;
 
+import com.lodygames.rpgquest.panel.agent.AgentIdentity;
+import com.lodygames.rpgquest.panel.agent.AgentLiveness;
+import com.lodygames.rpgquest.panel.agent.AgentSettings;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -65,8 +69,51 @@ public final class PanelConfigLoader {
                     + " » ne correspond à aucune cible déclarée (" + targets.stream().map(Target::id).toList() + ").");
         }
 
+        AgentSettings agents = readAgents(props, defaultTargetId);
+
         return new PanelConfig(port, bind, baseUrl, disabled, cookieSecure, ttl, idle, dbPath,
-                ownerUsername, ownerHash, secret, targets, defaultTargetId);
+                ownerUsername, ownerHash, secret, targets, defaultTargetId, agents);
+    }
+
+    /**
+     * Canal « agent sortant » (issue #51). Clés :
+     * <pre>
+     *   agents=rpgquest-dev[,rpgquest-staging]
+     *   agent.&lt;id&gt;.environment=dev
+     *   agent.&lt;id&gt;.token-env=RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV   (défaut dérivé de l'id)
+     *   agent.stale-seconds=45
+     *   agent.offline-seconds=150
+     *   agent.action-expiry-seconds=300
+     *   target.&lt;defaultTargetId&gt;.agent=rpgquest-dev   (agent affiché sur le dashboard)
+     * </pre>
+     * Le jeton vient <strong>uniquement</strong> de l'environnement. Un agent sans jeton est déclaré
+     * mais refusé à l'authentification (fail-closed).
+     */
+    private AgentSettings readAgents(Properties props, String defaultTargetId) {
+        String list = firstNonBlank(props.getProperty("agents"), "");
+        List<AgentIdentity> agents = new ArrayList<>();
+        if (list != null) {
+            for (String rawId : list.split(",")) {
+                String id = rawId.trim();
+                if (id.isEmpty()) {
+                    continue;
+                }
+                String environment = firstNonBlank(props.getProperty("agent." + id + ".environment"), "unknown");
+                String tokenEnvKey = firstNonBlank(props.getProperty("agent." + id + ".token-env"),
+                        "RPGQUEST_AGENT_TOKEN_" + id.toUpperCase(Locale.ROOT).replace('-', '_'));
+                String token = firstNonBlank(env.apply(tokenEnvKey), "");
+                agents.add(new AgentIdentity(id, environment, token == null ? "" : token));
+            }
+        }
+        long stale = intOf(firstNonBlank(props.getProperty("agent.stale-seconds"), "45"), 45);
+        long offline = intOf(firstNonBlank(props.getProperty("agent.offline-seconds"), "150"), 150);
+        long expiry = intOf(firstNonBlank(props.getProperty("agent.action-expiry-seconds"), "300"), 300);
+        String defaultAgentId = firstNonBlank(
+                props.getProperty("target." + defaultTargetId + ".agent"),
+                agents.size() == 1 ? agents.get(0).id() : null);
+
+        return new AgentSettings(agents, new AgentLiveness.Thresholds(stale, offline),
+                Duration.ofSeconds(Math.max(30, expiry)), defaultAgentId);
     }
 
     private List<Target> readTargets(Properties props) {

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.panel;
 
+import com.lodygames.rpgquest.panel.agent.AgentStore;
 import com.lodygames.rpgquest.panel.audit.AuditLog;
 import com.lodygames.rpgquest.panel.audit.SqliteAuditLog;
 import com.lodygames.rpgquest.panel.bridge.BridgeClient;
@@ -42,7 +43,8 @@ public final class PanelMain {
         }
 
         AuditLog audit = new SqliteAuditLog(config.panelDbPath());
-        PanelApp app = new PanelApp(config, audit, new BridgeClient());
+        AgentStore agentStore = new AgentStore(config.panelDbPath());
+        PanelApp app = new PanelApp(config, audit, new BridgeClient(), agentStore);
         int port = app.start();
         Runtime.getRuntime().addShutdownHook(new Thread(app::stop, "rpgquest-panel-shutdown"));
 

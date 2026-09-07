@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.panel.config;
 
+import com.lodygames.rpgquest.panel.agent.AgentSettings;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +21,7 @@ import java.util.Optional;
  * @param sessionSecret      secret de signature du cookie de session — depuis l'environnement
  * @param targets            cibles RPGQuest connues (au moins une)
  * @param defaultTargetId    cible sélectionnée par défaut
+ * @param agents             configuration du canal « agent sortant » (issue #51)
  */
 public record PanelConfig(
         int httpPort,
@@ -34,10 +36,12 @@ public record PanelConfig(
         String ownerPasswordHash,
         String sessionSecret,
         List<Target> targets,
-        String defaultTargetId) {
+        String defaultTargetId,
+        AgentSettings agents) {
 
     public PanelConfig {
         targets = targets == null ? List.of() : List.copyOf(targets);
+        agents = agents == null ? AgentSettings.none() : agents;
     }
 
     public Target defaultTarget() {

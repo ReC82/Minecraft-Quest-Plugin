@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.panel.agent.AgentStore;
 import com.lodygames.rpgquest.panel.audit.AuditEntry;
 import com.lodygames.rpgquest.panel.audit.InMemoryAuditLog;
 import com.lodygames.rpgquest.panel.bridge.BridgeClient;
@@ -47,8 +48,9 @@ class PanelAppTest {
 
     private void startWith(String bridgeUrl) throws Exception {
         audit = new InMemoryAuditLog();
-        app = new PanelApp(TestConfig.withBridgeUrl(tmp.resolve("cp.db").toString(), bridgeUrl),
-                audit, new BridgeClient(Duration.ofMillis(400), Duration.ofMillis(600)));
+        String db = tmp.resolve("cp.db").toString();
+        app = new PanelApp(TestConfig.withBridgeUrl(db, bridgeUrl),
+                audit, new BridgeClient(Duration.ofMillis(400), Duration.ofMillis(600)), new AgentStore(db));
         port = app.start();
         client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
         jar.clear();
@@ -212,13 +214,74 @@ class PanelAppTest {
     @Test
     void killSwitchServes503ForEverythingButLiveness() throws Exception {
         audit = new InMemoryAuditLog();
-        app = new PanelApp(TestConfig.disabled(tmp.resolve("cp.db").toString()), audit, new BridgeClient());
+        String db = tmp.resolve("cp.db").toString();
+        app = new PanelApp(TestConfig.disabled(db), audit, new BridgeClient(), new AgentStore(db));
         port = app.start();
         client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
         jar.clear();
         assertEquals(200, get("/health").statusCode());
         assertEquals(503, get("/login").statusCode());
         assertEquals(503, get("/dashboard").statusCode());
+    }
+
+    @Test
+    void agentHeartbeatFlipsDashboardToOnlineAndFeedsAgentsPage() throws Exception {
+        audit = new InMemoryAuditLog();
+        String db = tmp.resolve("cp.db").toString();
+        app = new PanelApp(TestConfig.withAgent(db, "http://127.0.0.1:1/admin/v1"),
+                audit, new BridgeClient(Duration.ofMillis(300), Duration.ofMillis(400)), new AgentStore(db));
+        port = app.start();
+        client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+        jar.clear();
+
+        // Sans heartbeat : dashboard "AGENT DISTANT" mais aucun heartbeat reçu.
+        loginOk();
+        String before = get("/dashboard").body();
+        assertTrue(before.contains("AGENT DISTANT"));
+        assertTrue(before.contains("Aucun heartbeat"));
+
+        // L'agent (VeryGames) pousse un heartbeat via le contrat /agent/v1/*.
+        String hb = "{\"protocol\":\"agent/v1\",\"agent_id\":\"" + TestConfig.AGENT_ID + "\",\"environment\":\"dev\","
+                + "\"plugin\":{\"name\":\"RPGQuest\",\"version\":\"7.7.7-live\"},"
+                + "\"server\":{\"state\":\"ONLINE\",\"players_online\":4,\"max_players\":30,\"uptime_seconds\":120},"
+                + "\"worlds\":{\"hub\":{\"name\":\"world_hub\",\"loaded\":true}}}";
+        HttpResponse<String> hbRes = client.send(HttpRequest.newBuilder(uri("/agent/v1/heartbeat"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(hb)).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, hbRes.statusCode());
+
+        String after = get("/dashboard").body();
+        assertTrue(after.contains("ONLINE"), "le dashboard passe ONLINE via l'agent");
+        assertTrue(after.contains("7.7.7-live"), "version du heartbeat affichée");
+        assertTrue(after.contains("4 / 30"), "joueurs du heartbeat affichés");
+        assertFalse(after.contains(TestConfig.AGENT_TOKEN), "aucun secret dans la page");
+
+        // Un jeton faux est refusé.
+        HttpResponse<String> bad = client.send(HttpRequest.newBuilder(uri("/agent/v1/heartbeat"))
+                .header("Authorization", "Bearer nope").header("X-Agent-Id", TestConfig.AGENT_ID)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(hb)).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(401, bad.statusCode());
+
+        // La page Agents liste l'agent et permet de créer l'action de preuve.
+        String agentsPage = get("/agents").body();
+        assertTrue(agentsPage.contains(TestConfig.AGENT_ID));
+        assertTrue(agentsPage.contains("player.variable.get"));
+        String token = csrf(get("/agents").body());
+        HttpResponse<String> created = post("/agents",
+                "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID + "&player=Rondoudou9000&key=CLAIM_TIER_1");
+        assertEquals(303, created.statusCode());
+        assertTrue(audit.recent(20).stream().anyMatch(e -> e.action().equals("agent.action.create")));
+
+        // L'agent relève l'action via le contrat.
+        HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, poll.statusCode());
+        assertTrue(poll.body().contains("player.variable.get"));
+        assertTrue(poll.body().contains("CLAIM_TIER_1"));
     }
 
     @Test

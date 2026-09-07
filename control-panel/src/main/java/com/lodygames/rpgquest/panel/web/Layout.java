@@ -16,6 +16,7 @@ public final class Layout {
     public static List<NavItem> nav(String activeHref) {
         return List.of(
                 item("Dashboard", "/dashboard", true, activeHref),
+                item("Agents", "/agents", true, activeHref),
                 item("Joueurs", "/players", false, activeHref),
                 item("PNJ", "/npc", false, activeHref),
                 item("Quêtes", "/quests", false, activeHref),

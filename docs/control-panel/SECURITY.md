@@ -4,6 +4,25 @@ Le Control Panel aura à terme des **pouvoirs administratifs importants** (reset
 progression, reload de contenu, plus tard édition et déploiement). La sécurité est une
 **contrainte de socle**, pas un ajout ultérieur.
 
+## État #37 (implémenté)
+
+| Exigence | Statut |
+|---|---|
+| Auth obligatoire, fail-closed (tout sauf `/login`, `/health`) | ✅ |
+| Hash mot de passe owner PBKDF2-HMAC-SHA256 (`PasswordHasher`), hors Git | ✅ |
+| Session serveur-side, id 256 bits, **cookie signé HMAC** (`RPGQUEST_PANEL_SECRET`) | ✅ |
+| Cookies `HttpOnly` + `SameSite=Lax` + `Secure` configurable | ✅ |
+| Expiration absolue (`ttl`) **et** inactivité (`idle`), invalidation au logout | ✅ |
+| CSRF : double-submit au `/login`, synchroniseur sur POST authentifié (`/logout`, futures actions) | ✅ |
+| En-têtes : `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, CSP restrictive, `Cache-Control: no-store` | ✅ |
+| Audit log append-only (`SqliteAuditLog`, `control-panel.db`) — login/logout | ✅ |
+| Kill-switch `PANEL_DISABLED` → 503 partout sauf `/health` | ✅ |
+| Bridge : Bearer, temps constant, fail-closed, bind interne | ✅ |
+| Secrets absents des réponses (test `responsesNeverLeakSecrets`) | ✅ |
+| Rate limiting login / backoff | ⏳ à ajouter (protection reverse-proxy possible entre-temps) |
+| HTTPS + reverse proxy | ⏳ #44 ([AWS.md](AWS.md)) |
+| RBAC multi-rôles | ⏳ énum posée, un seul rôle `owner` actif |
+
 ## Modèle de menace (V1)
 
 | Menace | Mitigation |

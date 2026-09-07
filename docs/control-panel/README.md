@@ -1,53 +1,92 @@
 # RPGQuest Control Panel — vision & index
 
-> Socle architectural de l'issue **#37**. Cette première étape pose une **architecture propre,
-> sécurisée et extensible** ; elle n'implémente pas tous les modules. Statut : **architecture
-> documentée, code à venir** (issue/branche `feat/37-control-panel`).
+> Issue **#37**. Cette étape pose l'**architecture** *et* livre un **premier flux vertical
+> exécutable** : navigateur → login → dashboard → backend → bridge RPGQuest authentifié → **état
+> réel du plugin**. Modules métier (Joueurs, PNJ, Quêtes…) = étapes suivantes (#38, #39, #45…).
 
 ## Ce que c'est
 
 Un **outil d'administration séparé du jeu**, pour le propriétaire/développeur du serveur.
-**Pas** une fonctionnalité de gameplay, **pas** un site public (ça, c'est déjà `web-api/`, voir
+**Pas** une fonctionnalité de gameplay, **pas** le portail public (ça, c'est `web-api/`, voir
 [docs/WEB_API.md](../WEB_API.md)).
 
-À terme, point d'entrée unique pour : état réel du serveur, joueurs & progression, PNJ (et ceux
-qui manquent), quêtes/stories/dépendances, actions admin sûres (dont les commandes de test #36),
-préparation d'états de test, comparaison contenu dépôt/serveur, suivi des validations manuelles,
-et — plus tard — pilotage Claude/GitHub (#29).
+## Livré par #37 (V1)
+
+- module Gradle **`control-panel/`** — application démarrable ([`PanelMain`](../../control-panel/src/main/java/com/lodygames/rpgquest/panel/PanelMain.java)) ;
+- **authentification owner** mono-utilisateur : login/logout, session signée (cookie `HttpOnly` +
+  `SameSite=Lax` + `Secure` configurable), CSRF, hash PBKDF2-HMAC-SHA256, `PermissionService` +
+  `Role`/`Permission` (RBAC minimal extensible) ;
+- **configuration externe** (`control-panel.properties` + secrets par variables d'environnement),
+  structure **multi-cibles** (`Target` = `{env, mode, bridge-url, token}`) ;
+- **bridge RPGQuest** côté plugin — `GET /admin/v1/health`, authentifié par jeton porteur,
+  **fail-closed**, écoute `127.0.0.1` par défaut ; renvoie l'**état réel** (version plugin, joueurs
+  en ligne, uptime, mondes essentiels chargés, timestamp) — **jamais** de lecture de `data.db` ;
+- **dashboard** sobre et responsive : Control Panel ONLINE, cible, RPGQuest ONLINE/OFFLINE,
+  version plugin, joueurs, dernier check, **bannière claire si le bridge est indisponible** (pas
+  un HTTP 500 opaque) ;
+- **journal d'audit** append-only (`control-panel.db`, SQLite, séparée de `data.db`) — utilisé
+  dès maintenant pour login/logout ;
+- navigation prête pour Dashboard / Joueurs / PNJ / Quêtes / Stories / Diagnostics / Admin /
+  Développement (modules non faits = « à venir », pas de faux écran).
+
+## Démarrage local (5 min)
+
+```bash
+# 1. générer le hash du mot de passe owner
+./gradlew :control-panel:installDist
+./control-panel/build/install/control-panel/bin/control-panel hash-password
+#   -> RPGQUEST_PANEL_OWNER_HASH=pbkdf2_sha256$210000$...
+
+# 2. côté plugin : activer le bridge (variables d'env du process serveur Paper)
+export RPGQUEST_WEB_ADMIN_ENABLED=true
+export RPGQUEST_WEB_ADMIN_TOKEN="un-jeton-long-et-aleatoire"     # >= 32 caractères
+export RPGQUEST_WEB_ADMIN_BIND=127.0.0.1
+export RPGQUEST_WEB_ADMIN_PORT=8100
+export RPGQUEST_WEB_ADMIN_ENV=DEV
+#   redémarrer le serveur -> "Bridge d'administration web à l'écoute sur 127.0.0.1:8100"
+
+# 3. côté panel
+cp control-panel/control-panel.properties.example control-panel.properties   # ajuster si besoin
+export RPGQUEST_PANEL_SECRET="autre-secret-long-et-aleatoire"
+export RPGQUEST_PANEL_OWNER_HASH="pbkdf2_sha256$210000$...."                  # étape 1
+export RPGQUEST_BRIDGE_TOKEN_DEV="un-jeton-long-et-aleatoire"                 # = RPGQUEST_WEB_ADMIN_TOKEN
+export RPGQUEST_PANEL_COOKIE_SECURE=false                                     # http local uniquement
+./control-panel/build/install/control-panel/bin/control-panel      # ou: ./gradlew :control-panel:run
+#   -> http://127.0.0.1:8090
+```
+
+Ouvrir `http://127.0.0.1:8090`, se connecter avec `owner` + le mot de passe choisi → le dashboard
+affiche l'état réel du bridge. Health du panel lui-même : `GET http://127.0.0.1:8090/health`.
 
 ## Principes non négociables
 
-1. **SQLite n'est pas l'API du Control Panel.** Le panel ne lit/écrit jamais `data.db` en direct
-   comme mécanisme d'intégration. Le **plugin reste la source de vérité métier**.
+1. **SQLite n'est pas l'API du Control Panel.** Le panel ne touche jamais `data.db`. Le plugin
+   reste la source de vérité métier.
 2. **Le web ne réimplémente pas les règles métier.** Il appelle des opérations explicites du
-   plugin (bridge), qui délèguent aux services existants (`QuestProgressEngine`, `StoryService`,
-   `PlayerResetService`, `ClaimService`, `NpcIdentityService`…).
-3. **Aucun shell arbitraire** exposé depuis le navigateur. Actions **déclaratives et
-   whitelistées** uniquement.
-4. **Multi-environnement dès le design.** Une cible = `{env, bridgeUrl, token}` — jamais de
-   `localhost` / `world_hub` / `claims` codés en dur.
-5. **Aucun couplage FTP.** VeryGames/FTP est un détail de déploiement, pas une dépendance du
-   cœur.
-6. **Sécurité de base dès la V1** : auth obligatoire, secrets hors Git, session sûre, CSRF,
-   validation stricte, audit log, HTTPS documenté pour la prod, kill-switch d'accès.
+   plugin (bridge), qui délèguent aux services existants.
+3. **Aucun shell arbitraire** exposé. Actions **déclaratives et whitelistées** uniquement (aucune
+   en V1 : seul `health`).
+4. **Multi-environnement** dès le design : une cible = objet configurable.
+5. **Aucun couplage FTP.**
+6. **Sécurité de base dès la V1** : auth, secrets hors Git, CSRF, session signée, audit log,
+   kill-switch, HTTPS documenté pour la prod.
 
 ## Documents
 
 | Fichier | Contenu |
 |---|---|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | modules, frontières, flux, stack, structure de code, démarrage local, déploiement AWS |
-| [SECURITY.md](SECURITY.md) | auth, sessions, CSRF, secrets, rate limiting, audit log, HTTPS, kill-switch, modèle de menace |
-| [CONFIGURATION.md](CONFIGURATION.md) | configuration hors code, par environnement, secrets, clés attendues |
-| [RPGQUEST_BRIDGE.md](RPGQUEST_BRIDGE.md) | contrat de communication Control Panel ↔ plugin (endpoints, versionnage, erreurs, actions whitelistées) |
-| [ROADMAP.md](ROADMAP.md) | découpage modulaire, ordre d'implémentation, ce qui est V1 / plus tard |
-| [DECISIONS.md](DECISIONS.md) | ADR — décisions d'architecture datées et justifiées |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | modules réels, frontières, flux, stack, structure de code |
+| [SECURITY.md](SECURITY.md) | auth, sessions, CSRF, secrets, audit log, kill-switch, menaces |
+| [CONFIGURATION.md](CONFIGURATION.md) | clés `control-panel.properties` + variables d'environnement réelles |
+| [RPGQUEST_BRIDGE.md](RPGQUEST_BRIDGE.md) | contrat `/admin/v1/*` réel + roadmap des actions |
+| [AWS.md](AWS.md) | audit lecture seule de l'instance + ce qu'il faut pour le déploiement #44 |
+| [ROADMAP.md](ROADMAP.md) | découpage modulaire, V1 / plus tard |
+| [DECISIONS.md](DECISIONS.md) | ADR datées |
 
 ## Relation avec les autres issues
 
-- **#36** (commandes admin de test) : deviennent des *actions du bridge*. Logique **dans le
-  plugin**, jamais dupliquée côté web. Voir [docs/ADMIN_TEST_SHORTCUTS.md](../ADMIN_TEST_SHORTCUTS.md).
-- **#29** (pilotage Claude/mobile) : futur **module « Développement »** du Control Panel, **même
-  socle** auth/backend — pas une 2e application web.
-- **`web-api/`** (portail public + boutique) : reste séparé. Le Control Panel peut partager du
-  code *infrastructure* (HTTP, JSON, pipeline) via un module commun, jamais la posture de
-  sécurité (le portail est anonyme, le panel est authentifié et a des pouvoirs admin).
+- **#44** : déploiement AWS (reverse proxy nginx + sous-domaine `lodygames.com` + TLS) — voir
+  [AWS.md](AWS.md). Rien n'est déployé par #37.
+- **#36** : les raccourcis admin de test deviendront des *actions du bridge* (#45), logique
+  **dans le plugin**, jamais dupliquée côté web.
+- **#29** : futur module « Développement », **même socle** — pas une 2e application.

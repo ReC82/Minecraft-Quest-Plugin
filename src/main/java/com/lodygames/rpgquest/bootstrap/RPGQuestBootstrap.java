@@ -121,6 +121,8 @@ import com.lodygames.rpgquest.waystone.SimpleWaystoneStructurePlacer;
 import com.lodygames.rpgquest.waystone.WaystoneCellPlanner;
 import com.lodygames.rpgquest.waystone.WaystoneService;
 import com.lodygames.rpgquest.web.WebSnapshotWriter;
+import com.lodygames.rpgquest.web.admin.BukkitHealthSource;
+import com.lodygames.rpgquest.web.admin.WebAdminServer;
 import com.lodygames.rpgquest.world.WorldService;
 import com.lodygames.rpgquest.zone.ZoneProtectionListener;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
@@ -307,6 +309,12 @@ public final class RPGQuestBootstrap {
                 plugin, plugin.getDataFolder().toPath(), progressionRepository, customItemRegistry,
                 () -> configService.current().webExport(), plugin.getSLF4JLogger());
         registry.start(webSnapshotWriter);
+
+        // Bridge d'administration HTTP (issue #37) — désactivé sauf RPGQUEST_WEB_ADMIN_ENABLED=true
+        // + RPGQUEST_WEB_ADMIN_TOKEN (env, jamais config.yml). Seule voie d'intégration du Control Panel.
+        registry.start(new WebAdminServer(
+                new BukkitHealthSource(plugin, worldService, () -> configService.current()),
+                plugin.getSLF4JLogger()));
 
         PlacedBlockRepository placedBlockRepository = new PlacedBlockRepository(databaseService.databaseManager());
         PlacedBlockTracker placedBlockTracker = new PlacedBlockTracker(plugin, placedBlockRepository, plugin.getSLF4JLogger());

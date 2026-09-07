@@ -1,5 +1,8 @@
 # Control Panel — architecture
 
+> Ce document décrit l'**architecture réelle** livrée par #37 (socle exécutable). Les modules
+> métier (Joueurs, PNJ, Diagnostics, actions) sont décrits comme cibles, non encore implémentés.
+
 ## 1. Frontière générale
 
 ```
@@ -33,17 +36,19 @@ Navigateur (desktop + Android)
 Le frontend ne connaît **jamais** le schéma SQLite. Le backend Control Panel ne réimplémente
 **jamais** une règle métier du plugin.
 
-## 2. Modules et responsabilités
+## 2. Modules et responsabilités (réels)
 
-| Module | Responsabilité | Dépendances autorisées |
+| Module | Responsabilité | Dépendances |
 |---|---|---|
-| `web-common/` *(à extraire de `web-api/`)* | HTTP (`com.sun.net.httpserver` ou remplacement décidé en ADR-002), codec JSON, `RequestPipeline`, `RateLimiter`, `AccessLogger`, helpers de réponse | JDK seul (+ éventuel micro-framework, voir ADR-002) |
-| `control-panel/` (nouveau module Gradle) | app d'admin : routing, **sessions**, **CSRF**, pages HTML server-rendered (pas de SPA en V1), `AuthService`, `PermissionService`, `AuditLog`, `TargetRegistry`, `RpgQuestBridgeClient`, modules fonctionnels | `web-common`, JDK, driver HTTP client |
-| plugin `com.lodygames.rpgquest.web.admin` (nouveau package **dans le plugin**) | endpoint HTTP admin authentifié : health + lectures + **actions déclaratives** déléguées aux services métier existants | services métier du plugin uniquement — **jamais** JDBC direct exposé, **jamais** `Runtime.exec` |
-| `web-api/` (existant, inchangé) | portail public read-only + boutique. Continue de lire `snapshot.json`. | — |
+| **`control-panel/`** (module Gradle, `application`) | app d'admin autonome : routing (`com.sun.net.httpserver`), **sessions signées HMAC**, **CSRF**, pages HTML server-rendered (pas de SPA), `AuthService`, `PermissionService`, `AuditLog` (SQLite `control-panel.db`), `TargetRegistry`, `BridgeClient` (`java.net.http`), `panel.json.Json` maison | JDK + `org.xerial:sqlite-jdbc` (audit log). **Aucune** dépendance vers Paper ni vers `:web-api`. |
+| plugin — package **`com.lodygames.rpgquest.web.admin`** | `WebAdminServer` (endpoint `/admin/v1/*`, auth Bearer, fail-closed, bind interne) + `HealthSource` / `BukkitHealthSource` (état réel via l'API publique Paper) | services/API du plugin uniquement — **jamais** `data.db` exposé, **jamais** `Runtime.exec` |
+| `web-api/` (existant) | **inchangé** — portail public read-only + boutique, lit `snapshot.json` | — |
+
+`web-common/` **n'a pas été extrait** en V1 (voir [DECISIONS.md](DECISIONS.md) ADR-009) : le
+Control Panel est autonome, `web-api` n'est pas touché.
 
 > Le Control Panel **n'est pas** un package de `web-api/` : posture de sécurité différente
-> (anonyme vs authentifié + pouvoirs admin) — voir [DECISIONS.md](DECISIONS.md) ADR-001.
+> (anonyme vs authentifié + pouvoirs admin) — [ADR-001].
 
 ## 3. Frontière live / dépôt / runtime / fichiers
 
@@ -73,48 +78,46 @@ en session #21).
   `store.db`) pour l'audit log et, plus tard, les utilisateurs/rôles. **Séparée de `data.db`.**
 - **Client bridge** : `java.net.http.HttpClient`.
 
-## 5. Structure de code cible (`control-panel/`)
+## 5. Structure de code (réelle — #37)
 
 ```
 control-panel/
   build.gradle.kts
+  control-panel.properties.example
   src/main/java/com/lodygames/rpgquest/panel/
-    PanelMain.java
-    config/        PanelConfig, PanelConfigLoader, TargetRegistry
-    http/          Router, SessionFilter, CsrfFilter, StaticAssets   (ou via web-common)
-    auth/          AuthService, PasswordHasher, Session, LoginHandler, LogoutHandler
-    authz/         Permission, Role, PermissionService               (RBAC minimal extensible)
-    audit/         AuditLog, AuditEntry, AuditDao
-    bridge/        RpgQuestBridgeClient, BridgeException, dto/*        (miroir du contrat /admin/v1)
-    modules/
-      dashboard/   DashboardHandler   (health réel : panel + bridge + version plugin + timestamp)
-      players/     PlayersHandler     (V1 : liste + détail lecture ; actions plus tard)
-      npc/         NpcHandler         (V1 : bindings + "manquants" ; futur)
-      quests/      QuestsHandler      (futur)
-      stories/     StoriesHandler     (futur)
-      diagnostics/ DiagnosticsHandler (futur)
-      admin/       AdminActionsHandler (actions #36 whitelistées ; câblage progressif)
-      dev/         DevHandler         (#29 ; futur)
-  src/test/java/...   (auth, session, audit, bridge client contre un stub, health check)
+    PanelMain.java                        # entrée : run | hash-password
+    config/    PanelConfig, PanelConfigLoader, PanelConfigException, Target
+    json/      Json, JsonParseException   # codec maison (parser + writer)
+    security/  PasswordHasher (PBKDF2), AuthService, Session, SessionStore (cookie signé HMAC)
+    authz/     Permission, Role, PermissionService     # RBAC minimal extensible
+    audit/     AuditLog (interface), AuditEntry, SqliteAuditLog, InMemoryAuditLog
+    bridge/    BridgeClient, BridgeException, BridgeHealth
+    http/      Http                       # cookies, form, réponses, en-têtes de sécurité, escape
+    web/       PanelApp, Layout           # assemblage + handlers + gabarit HTML/CSS
+  src/test/java/com/lodygames/rpgquest/panel/
+    web/PanelAppTest              (11 : liveness, protection, login ok/ko, logout+CSRF, secrets, bridge up/down, kill-switch, audit)
+    bridge/BridgeClientTest       (4)
+    security/PasswordHasherTest   (4)
+    json/JsonTest                 (3)
+    support/  TestConfig, StubBridge
+
+src/main/java/com/lodygames/rpgquest/web/admin/          # DANS le plugin
+  WebAdminServer.java            # /admin/v1/health, auth Bearer, fail-closed
+  HealthSource.java              # interface (payload JSON)
+  BukkitHealthSource.java        # impl réelle (API publique Paper)
+src/test/java/com/lodygames/rpgquest/web/admin/WebAdminServerTest.java   (4 : fail-closed, 401×3, health réel, 405)
 ```
 
-Chaque module = handler + service dédié. **Pas** de contrôleur géant. Un module non implémenté
-affiche « module à venir », **jamais** un faux écran fonctionnel.
+Handlers regroupés dans `PanelApp` en V1 (peu de routes) ; ils seront éclatés en modules dédiés
+dès que les modules métier arrivent (#38…). Un module non implémenté affiche « à venir »,
+**jamais** un faux écran fonctionnel.
 
 ## 6. Démarrage local
 
-```
-# plugin : activer l'endpoint admin (config.yml, section web-admin — voir RPGQUEST_BRIDGE.md)
-#   web-admin.enabled: true / port / bind 127.0.0.1 / token via env
-
-export RPGQUEST_PANEL_SECRET=...            # secret de session
-export RPGQUEST_BRIDGE_TOKEN_DEV=...        # token partagé avec le plugin (env DEV)
-./gradlew :control-panel:run
-# -> http://127.0.0.1:8090 , page de login
-```
-
-Config par `control-panel.properties` (répertoire de travail) + variables d'env pour les secrets.
-Voir [CONFIGURATION.md](CONFIGURATION.md).
+Voir [README.md](README.md) § « Démarrage local (5 min) » et [CONFIGURATION.md](CONFIGURATION.md).
+En résumé : `.../bin/control-panel hash-password` (après `:control-panel:installDist`) pour l'owner ; activer le bridge côté
+plugin par `RPGQUEST_WEB_ADMIN_ENABLED=true` + `RPGQUEST_WEB_ADMIN_TOKEN` ; lancer
+`.../bin/control-panel` (distribution `installDist`) ou `./gradlew :control-panel:run` → `http://127.0.0.1:8090`.
 
 ## 7. Déploiement AWS
 

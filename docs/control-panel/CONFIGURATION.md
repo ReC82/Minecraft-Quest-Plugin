@@ -1,70 +1,70 @@
-# Control Panel — configuration
+# Control Panel — configuration (implémentée en #37)
 
-**Aucun secret dans Git.** Toute la configuration sensible vient de variables d'environnement ou
-d'un fichier ignoré (`control-panel.properties`, `chmod 600`). Un `control-panel.properties.example`
-versionné documente les clés.
+**Aucun secret dans Git.** Configuration non secrète dans `control-panel.properties` (toutes les
+clés ont un défaut) ; **secrets par variables d'environnement uniquement**. Précédence :
+env > fichier > défauts du code. Le panel **refuse de démarrer** si un secret obligatoire manque
+(`PanelConfigLoader`, fail-closed).
 
-## Fichier `control-panel.properties` (non versionné)
+## `control-panel.properties` (non versionné)
 
-```properties
-# --- Serveur du panel ---
-panel.port=8090
-panel.bind=127.0.0.1            # prod : derrière un reverse proxy TLS
-panel.base-url=https://panel.example            # pour les liens absolus / cookies
-panel.session-ttl-minutes=120
-panel.session-idle-minutes=30
-panel.disabled=false                            # kill-switch (ou env PANEL_DISABLED)
+Modèle : [`control-panel/control-panel.properties.example`](../../control-panel/control-panel.properties.example).
 
-# --- Cibles (multi-environnement) ---
-targets=dev,prod
-target.dev.label=VeryGames DEV
-target.dev.mode=bridge|snapshot                 # bridge = live ; snapshot = mode dégradé
-target.dev.bridge-url=http://127.0.0.1:8100/admin/v1
-target.dev.snapshot-file=/srv/rpgquest/exports/dev/admin-snapshot.json
-target.prod.label=VeryGames PROD
-target.prod.mode=snapshot
-target.prod.snapshot-file=/srv/rpgquest/exports/prod/admin-snapshot.json
+| Clé | Défaut | Rôle |
+|---|---|---|
+| `panel.port` | `8090` | port d'écoute local (reverse proxy TLS public devant) |
+| `panel.bind` | `127.0.0.1` | interface d'écoute |
+| `panel.base-url` | *(vide)* | URL publique (liens absolus futurs) |
+| `panel.cookie-secure` | `true` | ajoute `Secure` aux cookies ; mettre `false` en http local |
+| `panel.session-ttl-minutes` | `120` | durée de vie absolue d'une session |
+| `panel.session-idle-minutes` | `30` | expiration sur inactivité |
+| `panel.owner-username` | `owner` | identifiant de l'unique compte V1 |
+| `panel.disabled` | `false` | kill-switch (voir `PANEL_DISABLED`) |
+| `panel.db` | `control-panel.db` | base SQLite du panel (audit log) — **jamais** `data.db` |
+| `targets` | `dev` | liste CSV des cibles RPGQuest |
+| `targets.default` | 1re cible | cible sélectionnée par défaut |
+| `target.<id>.label` | `RPGQuest <ID>` | libellé affiché |
+| `target.<id>.mode` | `bridge` | `bridge` (live) ou `snapshot` (mode dégradé, futur) |
+| `target.<id>.bridge-url` | `http://127.0.0.1:8100/admin/v1` | base des routes du bridge |
+| `target.<id>.token-env` | `RPGQUEST_BRIDGE_TOKEN_<ID>` | **nom** de la variable d'env contenant le jeton |
 
-# --- Persistance du panel ---
-panel.db=control-panel.db                       # SQLite, séparé de data.db et store.db
+## Variables d'environnement
 
-# --- GitHub / Claude / SMTP : réservés, non utilisés en V1 ---
-# github.token=(env)
-# smtp.host=...
-```
+### Control Panel
 
-## Variables d'environnement (secrets — jamais dans le fichier)
+| Variable | Obligatoire | Rôle |
+|---|---|---|
+| `RPGQUEST_PANEL_SECRET` | **oui** | secret de signature du cookie de session (≥ 32 car. aléatoires) |
+| `RPGQUEST_PANEL_OWNER_HASH` | **oui** | hash du mot de passe owner — `.../bin/control-panel hash-password` (après `:control-panel:installDist`) |
+| `RPGQUEST_BRIDGE_TOKEN_<ENV>` | par cible `bridge` | jeton partagé avec le bridge du plugin (ex. `RPGQUEST_BRIDGE_TOKEN_DEV`) |
+| `RPGQUEST_PANEL_OWNER_USERNAME` | non | surcharge `panel.owner-username` |
+| `RPGQUEST_PANEL_PORT` | non | surcharge `panel.port` |
+| `RPGQUEST_PANEL_COOKIE_SECURE` | non | surcharge `panel.cookie-secure` |
+| `RPGQUEST_PANEL_BASE_URL` | non | surcharge `panel.base-url` |
+| `RPGQUEST_PANEL_DB` | non | surcharge `panel.db` |
+| `RPGQUEST_PANEL_CONFIG` | non | chemin d'un `control-panel.properties` alternatif |
+| `PANEL_DISABLED` | non | `true` → kill-switch (prioritaire sur `panel.disabled`) |
 
-| Variable | Rôle |
-|---|---|
-| `RPGQUEST_PANEL_SECRET` | secret de signature/chiffrement de session (≥ 32 octets aléatoires) |
-| `RPGQUEST_PANEL_OWNER_HASH` | hash Argon2id/PBKDF2 du mot de passe owner |
-| `RPGQUEST_BRIDGE_TOKEN_DEV` | token Bearer partagé avec le bridge du plugin (env DEV) |
-| `RPGQUEST_BRIDGE_TOKEN_PROD` | idem PROD |
-| `PANEL_DISABLED` | `true` → kill-switch (prioritaire sur le fichier) |
-| `GITHUB_TOKEN` *(futur #29)* | — |
-| `SMTP_PASSWORD` *(futur)* | — |
+### Plugin — bridge d'administration
 
-## Côté plugin — section `web-admin` de `config.yml` (bridge live)
+**Env uniquement** (jamais `config.yml`) : le bridge est un composant sensible, sa clé et son
+activation vivent hors du dépôt et hors des fichiers de contenu.
 
-```yaml
-web-admin:
-  enabled: false            # désactivé par défaut ; rien n'écoute tant que false
-  bind: 127.0.0.1
-  port: 8100
-  # token : jamais dans config.yml — variable d'env RPGQUEST_WEB_ADMIN_TOKEN
-  rate-limit-per-minute: 120
-  snapshot:
-    enabled: false          # mode dégradé : écrit admin-snapshot.json (atomique) toutes les N s
-    output-dir: web-export
-    interval-seconds: 30
-```
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `RPGQUEST_WEB_ADMIN_ENABLED` | `false` | `true` pour démarrer le bridge |
+| `RPGQUEST_WEB_ADMIN_TOKEN` | *(aucun)* | jeton porteur attendu ; **absent → le bridge ne démarre pas** |
+| `RPGQUEST_WEB_ADMIN_BIND` | `127.0.0.1` | interface d'écoute |
+| `RPGQUEST_WEB_ADMIN_PORT` | `8100` | port d'écoute |
+| `RPGQUEST_WEB_ADMIN_ENV` | `unknown` | étiquette d'environnement renvoyée dans `/health` |
 
-## Précédence
+Le jeton doit être **identique** entre `RPGQUEST_WEB_ADMIN_TOKEN` (plugin) et
+`RPGQUEST_BRIDGE_TOKEN_<ENV>` (panel).
 
-1. variables d'environnement ;
-2. `control-panel.properties` du répertoire de travail (ou `$RPGQUEST_PANEL_CONFIG`) ;
-3. valeurs par défaut du code.
+## Prod (référence, mise en œuvre = #44)
 
-Le panel **refuse de démarrer** si un secret obligatoire manque (`RPGQUEST_PANEL_SECRET`,
-`RPGQUEST_PANEL_OWNER_HASH`) — fail-closed, message explicite.
+- reverse proxy nginx : `panel.lodygames.com` (443, TLS Let's Encrypt) → `127.0.0.1:8090`,
+  redirection 80→443, cookies `Secure` (`panel.cookie-secure=true`) ;
+- bridge : joint depuis AWS soit en local (si co-localisé), soit via tunnel/relais — voir
+  [AWS.md](AWS.md) et [DECISIONS.md](DECISIONS.md) ADR-004 ;
+- secrets : variables d'environnement du service systemd, `EnvironmentFile=` `chmod 600` ;
+- `RPGQUEST_PANEL_CONFIG` pointe un `control-panel.properties` hors dépôt.

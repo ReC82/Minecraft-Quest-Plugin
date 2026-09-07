@@ -3,22 +3,30 @@
 Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune ne fabrique de faux
 écran fonctionnel : un module non implémenté affiche « à venir ».
 
-## Étape 0 — socle (issue #37, V1) — *doc livrée, code à faire*
+## Étape 0 — socle (issue #37, V1) — **LIVRÉ**
 
-- [ ] module Gradle `control-panel` + `web-common` extrait de `web-api` (HTTP/JSON/pipeline).
-- [ ] `PanelMain`, config par environnement (`TargetRegistry`), fail-closed sur secrets manquants.
-- [ ] auth mono-utilisateur : `/login`, `/logout`, session sûre, CSRF, rate limit login.
-- [ ] `PermissionService` + énum `Permission`/`Role` (seul `owner` actif).
-- [ ] `AuditLog` (table append-only `control-panel.db`) — écrit dès la 1re action.
-- [ ] **Dashboard = health réel** : statut panel + statut bridge (par cible) + version plugin si
-      disponible + timestamp du dernier check. Indisponibilité du bridge gérée proprement.
-- [ ] plugin : endpoint `web-admin` **ou** `admin-snapshot.json` (mode dégradé) exposant
-      `GET /admin/v1/health` + bindings PNJ + `content/issues`.
-- [ ] navigation prête (Dashboard, Joueurs, PNJ, Quêtes, Stories, Diagnostics, Admin,
-      Développement) — sections futures marquées comme telles.
-- [ ] tests : accès anonyme refusé, login OK, logout invalide, session, health réel,
-      bridge down géré, aucun secret dans HTML/API/logs, audit log fonctionnel, build vert.
-- [ ] `docs/control-panel/*` (fait).
+- [x] module Gradle `control-panel` autonome (pas de `web-common` en V1 — [ADR-009]).
+- [x] `PanelMain` (+ `hash-password`), config par environnement (`Target` multi-cibles), fail-closed
+      sur secrets manquants.
+- [x] auth mono-utilisateur : `/login`, `/logout`, session signée HMAC, CSRF (double-submit login +
+      synchroniseur authentifié), cookies `HttpOnly`/`SameSite`/`Secure` configurable.
+- [x] `PermissionService` + énum `Permission`/`Role` (seul `owner` actif).
+- [x] `AuditLog` append-only (`control-panel.db`) — utilisé par login/logout.
+- [x] **Dashboard = health réel** : statut panel + statut bridge + version plugin + joueurs +
+      uptime + mondes essentiels + dernier check. Indisponibilité du bridge → bannière claire,
+      jamais un 500.
+- [x] plugin : `WebAdminServer` — `GET /admin/v1/health` authentifié, fail-closed, bind interne.
+- [x] navigation prête (Dashboard actif ; Joueurs/PNJ/Quêtes/Stories/Diagnostics/Admin/Dev = « à venir »).
+- [x] tests : `PanelAppTest` (11), `BridgeClientTest` (4), `PasswordHasherTest` (4), `JsonTest` (3),
+      `WebAdminServerTest` (4). `./gradlew test build` vert.
+- [x] `docs/control-panel/*` alignés sur l'implémentation.
+- [ ] `admin-snapshot.json` (mode dégradé) — reporté ([ADR-004]).
+
+## Étape 0b — déploiement AWS (issue #44)
+
+- [ ] voir [AWS.md](AWS.md) : sous-domaine `panel.lodygames.com`, vhost nginx dédié, TLS Certbot,
+      service systemd `rpgquest-panel`, décision « où tourne le bridge ». **Aucun site existant
+      touché.**
 
 ## Étape 1 — lectures
 

@@ -30,3 +30,7 @@ bin/
 # OS / misc
 .DS_Store
 *.log
+
+# RPGQuest Control Panel — configuration et base locales (issue #37)
+control-panel.properties
+control-panel.db

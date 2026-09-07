@@ -6,7 +6,7 @@ nouvelle ADR qui référence l'ancienne).
 ---
 
 ## ADR-001 — Le Control Panel est un module séparé, pas un package de `web-api/`
-**2026-09-07 · Accepté**
+**2026-09-07 · Accepté** — *partie « extraction `web-common` » révisée par [ADR-009].*
 
 **Contexte.** `web-api/` est un portail **public anonyme** (site + boutique) qui lit un snapshot
 read-only. Le Control Panel est **authentifié** et aura des **pouvoirs admin** (reset joueur,
@@ -24,7 +24,7 @@ l'identique.
 ---
 
 ## ADR-002 — Stack HTTP : réutiliser `com.sun.net.httpserver`, réévaluer si le rendu HTML devient pénible
-**2026-09-07 · Accepté (provisoire)**
+**2026-09-07 · Accepté (provisoire)** — *implémenté en #37 sans `web-common` (voir [ADR-009]) ; rendu HTML serveur, pas de SPA.*
 
 **Contexte.** `web-api` utilise `com.sun.net.httpserver` (JDK, zéro dépendance). Le Control Panel
 a besoin de sessions, CSRF, rendu HTML server-rendered, formulaires.
@@ -115,3 +115,60 @@ plugin. Jamais de secret dans les `details`. Pas de purge auto en V1.
 
 **Conséquences.** ~1 table + 1 DAO + 1 appel par action. Traçabilité totale dès la 1re action
 réelle.
+
+---
+
+## ADR-008 — Le bridge du plugin se configure par variables d'environnement, pas par `config.yml`
+**2026-09-07 · Accepté — implémenté en #37**
+
+**Contexte.** Le bridge est un composant de sécurité (endpoint HTTP admin). Le système de config
+du plugin (`PluginConfig` record 16 champs + `ConfigValidator` + `config.yml` versionné) est strict
+et versionné ; y ajouter une section `web-admin` élargit la surface et met l'activation d'un
+endpoint sensible dans un fichier suivi par Git.
+
+**Décision.** `WebAdminServer` lit **uniquement** l'environnement :
+`RPGQUEST_WEB_ADMIN_ENABLED` / `_TOKEN` / `_BIND` / `_PORT` / `_ENV`. **Fail-closed** : rien
+n'écoute sans `ENABLED=true` **et** un `TOKEN` non vide. Aucun changement de `config.yml`, de
+`PluginConfig` ni de `ConfigValidator`.
+
+**Conséquences.** Cohérent avec `web-api` (`RPGQUEST_WEB_API_TOKEN` en env). Zéro blast-radius sur
+la config du plugin. Une section `config.yml` `web-admin:` (non secrète) pourra être ajoutée plus
+tard si un besoin non lié aux secrets apparaît (ex. rate-limit) — via une ADR dédiée.
+
+---
+
+## ADR-009 — Pas d'extraction d'un module `web-common` en V1
+**2026-09-07 · Accepté — implémenté en #37**
+
+**Contexte.** ADR-001 envisageait d'extraire le socle HTTP/JSON de `web-api` vers `web-common`
+partagé. En pratique, le Control Panel n'a besoin en V1 que d'un serveur HTTP JDK, d'un client
+HTTP JDK et d'un tout petit codec JSON pour la réponse `health`.
+
+**Décision.** `control-panel/` est **autonome** : `panel.json.Json` (parser + writer maison, ~250
+lignes), helpers HTTP dans `panel.http.Http`, aucun code partagé avec `web-api`. `web-api` n'est
+pas touché.
+
+**Conséquences.** Un peu de duplication assumée (déjà la règle entre le plugin, `web-api` et le
+Control Panel). Extraction de `web-common` reportée à quand ≥ 2 modules partageront réellement de
+la plomberie non triviale (probablement au moment des actions #45).
+
+---
+
+## ADR-010 — Bocal à cookies : session signée par HMAC, CSRF double-submit au login
+**2026-09-07 · Accepté — implémenté en #37**
+
+**Contexte.** V1 mono-utilisateur, sessions serveur-side en mémoire. Besoin : cookie de session
+non forgeable, CSRF sur les POST.
+
+**Décision.**
+- Cookie de session = `<id aléatoire 256 bits>.<HMAC-SHA256(id, RPGQUEST_PANEL_SECRET)>` : un id
+  volé/forgé sans le secret est rejeté avant même la recherche en mémoire (`SessionStore.resolve`).
+  Flags `HttpOnly`, `SameSite=Lax`, `Secure` configurable (`panel.cookie-secure`).
+- CSRF **synchroniseur** (jeton en session) sur tout POST authentifié (`/logout`, futures actions).
+- CSRF **double-submit** au `/login` (pas encore de session) : cookie court `panel_login_csrf` +
+  champ caché identique, comparés en temps constant.
+- Expiration absolue (`ttl`) **et** sur inactivité (`idle`).
+
+**Conséquences.** Pas de dépendance externe. La CookieManager du JDK gère mal les hôtes IP sans
+`Domain` : les tests utilisent un bocal à cookies explicite (voir `PanelAppTest`) — sans impact
+sur les navigateurs réels.

@@ -138,10 +138,21 @@ Gap async corrigé lors de l'investigation dans `PortalService` (vérification `
 
 ## Persistance
 
-SQLite (`data.db`), migrations séquentielles via `SchemaMigrator` (version courante : **17** —
-V15 réservation foncière des claims, V16 `item_travel_cooldowns` (cooldown Rune de rappel),
-V17 `waystones` + `waystone_discoveries`). YAML pour tout ce qui est éditable à la main par un
-administrateur (quêtes, zones, portails, stories, dialogues, items...).
+**Couche abstraite (issue #40)** : le moteur SQL est un détail d'infrastructure choisi par
+`config.yml` (`database.type: sqlite | mysql`). Le code de gameplay ne contient aucun SQL et ne
+teste jamais le moteur ; le seul point de choix est `DatabaseEngineFactory`. Abstractions :
+`DatabaseEngine` (`SqliteDatabaseEngine` câblé, `MySqlDatabaseEngine` reconnu — backend réel = #41),
+`SqlDialect` (`SqliteDialect` / `MySqlDialect` : upsert, insert-ignore, identité, `columnExists`),
+`SchemaHistory` (`PragmaUserVersionHistory` SQLite natif / `MigrationTableHistory` portable),
+`SchemaMigrationRunner` (application ordonnée, idempotente, échec nommé). Détail :
+[PERSISTENCE.md](PERSISTENCE.md).
+
+**Backend actif** : SQLite (`data.db`) — comportement **strictement inchangé**. Migrations
+séquentielles via `SchemaMigrator.ALL` (version courante : **17** — V15 réservation foncière des
+claims, V16 `item_travel_cooldowns`, V17 `waystones` + `waystone_discoveries`). Le mot de passe
+MySQL éventuel n'est jamais dans `config.yml` (`database.mysql.password-env` = nom d'une variable
+d'environnement). YAML pour tout ce qui est éditable à la main par un administrateur (quêtes,
+zones, portails, stories, dialogues, items...).
 
 ## Non implémenté / hors périmètre à ce jour
 

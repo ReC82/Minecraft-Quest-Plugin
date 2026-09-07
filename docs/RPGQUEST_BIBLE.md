@@ -981,12 +981,37 @@ docs-site/                        # version HTML conviviale/navigation visuelle,
 
 RPGQuest identifie les PNJ Citizens par leur id numérique Citizens (`npc_citizens_bindings`, migration V12, table `npc_ids` migration V11 pour l'identité générique — voir section 2 § `/rpgadmin npc`). **Ne jamais migrer l'un sans l'autre** : les deux doivent provenir du même instantané temporel. Détail complet et procédure : [VERYGAMES.md § Migration des données](deployment/VERYGAMES.md#migration-des-données-scénario-3).
 
-### Tables SQLite par migration (`PRAGMA user_version`, vérifié dans `SchemaMigrator.java`, version courante = 12)
+### Moteur SQL configurable (issue #40)
+
+Le moteur de base de données est un **détail d'infrastructure** choisi par `config.yml` :
+
+```yaml
+database:
+  type: sqlite            # sqlite (défaut) | mysql (alias : mariadb)
+  sqlite:
+    file: data.db
+  mysql:
+    host: localhost
+    port: 3306
+    database: rpgquest
+    username: rpgquest
+    password-env: RPGQUEST_DB_PASSWORD   # NOM d'une variable d'environnement — jamais le mot de passe
+```
+
+- **SQLite** reste câblé et **inchangé** : c'est le défaut, le mode test et le mode « installation
+  simple ». L'ancienne clé `database.file` reste acceptée comme alias de `database.sqlite.file`.
+- **MySQL/MariaDB** est **reconnu et validé** par la configuration ; son backend réel (driver,
+  pool de connexions) est l'**issue #41**. Y basculer aujourd'hui refuse le démarrage avec un
+  message explicite — le gameplay ne dépend jamais du moteur SQL.
+- Le code de gameplay ne contient **aucun SQL** et ne teste **jamais** le moteur. Détail complet :
+  [PERSISTENCE.md](PERSISTENCE.md).
+
+### Tables SQLite par migration (catalogue `SchemaMigrator.ALL`, version courante = 17)
 
 | Version | Tables créées | Domaine |
 |---|---|---|
-| V1 | `player_profiles`, `player_variables` | Socle joueur |
-| V2 | `quest_progress`, `quest_objective_progress` | Quêtes |
+| V1 | `player_profiles`, `player_variables`, `quest_progress` | Socle joueur / quêtes |
+| V2 | `quest_objective_progress` | Quêtes |
 | V3 | `resource_nodes` | Ressources |
 | V4 | `wallets`, `transactions` | Économie |
 | V5 | `market_listings` | Marché entre joueurs |
@@ -997,8 +1022,16 @@ RPGQuest identifie les PNJ Citizens par leur id numérique Citizens (`npc_citize
 | V10 | `store_deliveries_processed` | Boutique web (idempotence des livraisons) |
 | V11 | `npc_ids` | Identité PNJ stable (`/rpgadmin npc`) |
 | V12 | `npc_citizens_bindings` | Liaison PNJ Citizens ↔ identifiant RPGQuest |
+| V13 | `story_progress` | Storylines |
+| V14 | `story_progress.current_index` (ALTER) | Storylines — quête suivie |
+| V15 | colonnes `claims.reserved_*` (ALTER) | Claims — réservation foncière |
+| V16 | `item_travel_cooldowns` | Voyage — cooldown Rune de rappel |
+| V17 | `waystones`, `waystone_discoveries` | Voyage — Waystones Wild |
 
-Migrations idempotentes : `migrate()` sur une base déjà à jour ne fait rien ; toutes les `CREATE TABLE` utilisent `IF NOT EXISTS`.
+Suivi de version : `PRAGMA user_version` en SQLite (natif, inchangé) ; table portable
+`rpgquest_schema_migrations` en MySQL (#41). `SchemaMigrationRunner` applique les étapes en
+attente **dans l'ordre**, une fois ; rejeu = no-op ; échec → `SchemaMigrationException` nommant
+l'étape. Migrations idempotentes (`CREATE TABLE IF NOT EXISTS`, `ALTER` gardé par `columnExists`).
 
 ### Classification des données
 

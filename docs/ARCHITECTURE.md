@@ -128,21 +128,37 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
 
 ### `database` (indépendant de Bukkit/Paper)
 
--   `DatabaseManager` — possède l'unique `Connection` JDBC SQLite et sérialise
-    tous les accès sur un `ExecutorService` mono-thread dédié (thread daemon
-    `RPGQuest-Database`). `initialize()` crée le dossier de données, ouvre la
-    connexion, active `PRAGMA foreign_keys` et applique les migrations.
-    `execute(SqlFunction<T>)` exécute une action JDBC sur ce thread et
-    retourne un `CompletableFuture<T>` — jamais bloquant pour l'appelant.
-    Comme l'executor est mono-thread et FIFO, toute requête soumise avant la
-    fin de `initialize()` est simplement mise en file et s'exécute après la
-    migration : aucune synchronisation explicite n'est nécessaire pour
-    garantir « schéma prêt avant requêtes ».
--   `SchemaMigrator` — version de schéma suivie via `PRAGMA user_version`
-    (SQLite natif, pas de table dédiée). `migrate()` est idempotent : rejouée
-    sur une base déjà à jour, elle ne fait rien (et les `CREATE TABLE IF NOT
-    EXISTS` protègent en plus contre toute erreur si le mécanisme de version
-    était contourné).
+> **Issue #40** : la persistance est désormais **abstraite** et le moteur SQL est un détail
+> d'infrastructure choisi par `config.yml` (`database.type: sqlite|mysql`). SQLite reste câblé et
+> inchangé ; MySQL/MariaDB est reconnu, modélisé et testé, mais son backend réel (driver, pool)
+> arrive avec #41. **Vue d'ensemble complète : [PERSISTENCE.md](PERSISTENCE.md).**
+
+-   `DatabaseEngine` — abstraction « comment obtenir une connexion + quel dialecte / historique de
+    migrations ». `SqliteDatabaseEngine` (fichier `data.db`, `PRAGMA foreign_keys = ON`,
+    `PRAGMA user_version` — comportement d'avant #40) ; `MySqlDatabaseEngine` (reconnu ;
+    `openConnection()` lève une `SQLException` explicite renvoyant à #41). `DatabaseEngineFactory`
+    est le **seul** endroit qui choisit le moteur — un unique `switch (type)`, jamais dupliqué.
+-   `SqlDialect` — encapsule les différences SQL réelles : `upsert` (`ON CONFLICT` vs
+    `ON DUPLICATE KEY UPDATE`), `insertOrIgnore` (`INSERT OR IGNORE` vs `INSERT IGNORE`),
+    `autoIncrementPrimaryKey`, `columnExists` (`PRAGMA table_info` vs `information_schema`).
+    `SqliteDialect` / `MySqlDialect`. Les repositories métier portent encore leur SQL SQLite inline
+    (recensé dans le rapport #40) ; #41 les fera passer par ces helpers.
+-   `DatabaseManager` — possède la `Connection` JDBC (via le moteur) et sérialise tous les accès
+    sur un `ExecutorService` mono-thread dédié (thread daemon `RPGQuest-Database`). `initialize()`
+    ouvre la connexion via le moteur, applique les réglages de session, puis lance
+    `SchemaMigrationRunner`. `execute(SqlFunction<T>)` exécute une action JDBC sur ce thread et
+    retourne un `CompletableFuture<T>` — jamais bloquant. Comme l'executor est mono-thread et FIFO,
+    toute requête soumise avant la fin de `initialize()` est mise en file et s'exécute après la
+    migration. `healthCheck()` (non bloquant, ne lève jamais) constate une base momentanément
+    indisponible. Le constructeur historique `DatabaseManager(Path)` sélectionne SQLite —
+    comportement inchangé (utilisé tel quel par les tests de repositories).
+-   `SchemaHistory` — version de schéma appliquée. `PragmaUserVersionHistory` (SQLite,
+    `PRAGMA user_version` — **inchangé**, aucune migration rejouée sur un `data.db` existant) ;
+    `MigrationTableHistory` (table portable `rpgquest_schema_migrations`, pour MySQL/#41).
+-   `SchemaMigrator` — **catalogue** ordonné des migrations V1..V{@code CURRENT_VERSION} (SQL
+    inchangé). `SchemaMigrationRunner` applique les étapes en attente dans l'ordre, une fois ;
+    rejeu = no-op ; échec → `SchemaMigrationException` nommant l'étape, version non avancée.
+    `SchemaMigrator.migrate(Connection)` (API statique historique) est conservée pour les tests.
 -   `PlayerProfileRepository` / `PlayerVariableRepository` — requêtes
     préparées uniquement (`PreparedStatement`), aucune concaténation de
     valeurs dans le SQL. Types 100% JDK (`UUID`, `Instant`, `Optional`) : ces
@@ -162,11 +178,11 @@ Tous les packages listés existent désormais. `quest`, `dialogue`, `ui`,
     déclenchée. Ce n'est pas une exception à la règle « aucun accès disque
     sur le thread principal », qui vise le fonctionnement normal du serveur.
 -   `DatabaseService` (implémente `PluginService`) — adapte `DatabaseManager`
-    au cycle de vie du plugin. Ne construit le `DatabaseManager` qu'à
-    l'intérieur de `start()` (jamais dans le constructeur), pour lire
-    `configService.current().databaseFile()` uniquement une fois
-    `ConfigService` réellement démarré — c'est cette dépendance concrète qui
-    justifie l'ordre de démarrage imposé par `RPGQuestBootstrap`.
+    au cycle de vie du plugin. Ne construit le moteur (`DatabaseEngineFactory`)
+    ni le `DatabaseManager` qu'à l'intérieur de `start()` (jamais dans le
+    constructeur), pour lire `configService.current().database()` uniquement
+    une fois `ConfigService` réellement démarré — c'est cette dépendance
+    concrète qui justifie l'ordre de démarrage imposé par `RPGQuestBootstrap`.
 
 ### `player` (dépendant de Bukkit/Paper)
 

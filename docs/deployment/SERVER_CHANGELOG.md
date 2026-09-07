@@ -606,3 +606,78 @@ plugins. Le fichier agent est le SEUL ajout sous `plugins/RPGQuest/`.
   jamais affiché) ; PlugAdmin redéployé (`scripts/plugadmin/deploy.sh`) ;
   autres sites (`dig.lodygames.com`, `lodylands.com`) non impactés.
 - Rapport : `docs/claude-reports/2026-09-07_1127_plugadmin-outbound-agent-issue-51.md`.
+
+---
+
+## 2026-09-07 - Actions métier whitelistées pour l'outillage Control Panel
+
+### Changement
+
+Extension de l'agent sortant (#51) : `com.lodygames.rpgquest.web.agent` gagne
+la façade `AgentActions` (impl. `BukkitAgentActions`) et de nouveaux types
+whitelistés dans `AgentActionType`, chacun adossé à un **service métier
+existant** (`QuestProgressEngine`, `StoryService`, `YamlCustomItemRegistry`,
+`PlayerResetService`, `PlayerVariableRepository`) — jamais une commande texte
+`/rpgadmin`, jamais de SQL direct, mutations replacées sur le thread principal.
+
+Lectures : `player.list`, `quest.list`, `quest.player.status`, `story.list`,
+`story.player.status`, `item.list`, `player.resetnew.preview`.
+Mutations : `player.item.give`, `quest.start|complete|reset`,
+`story.advance|complete`, `player.variable.set`, `player.resetnew.confirm`.
+
+Tout type absent des listes blanches → `REJECTED`. Les mutations exigent une
+confirmation explicite côté panel ; l'agent exige en plus `confirm=true` pour
+`player.resetnew.confirm`.
+
+### Action serveur
+
+1. **Remplacer le JAR RPGQuest** (build de la branche
+   `feat/control-panel-admin-tools`).
+2. **Aucune autre action** : pas de nouveau fichier de configuration, pas de
+   migration, pas de changement `config.yml` / `data.db` / mondes / Citizens.
+3. L'agent reste **inerte** sans `plugins/RPGQuest/plugadmin-agent.properties`
+   (comme #51). Avec l'agent actif, **aucune** de ces actions ne s'exécute
+   tant que le Control Panel n'en crée pas une explicitement (file `PENDING`).
+4. Redémarrage serveur requis (remplacement de JAR).
+
+### Ne PAS altérer
+
+`data.db`, `config.yml`, `messages.yml`, mondes, `Citizens/`, autres plugins,
+`plugadmin-agent.properties` existant.
+
+### Sauvegarde préalable
+
+- Ancien JAR (backup automatique par `deploy-verygames.sh`).
+- `plugins/RPGQuest/data.db` (procédure standard).
+
+### Déploiement
+
+1. `./gradlew test build` sur `feat/control-panel-admin-tools`.
+2. `scripts/deploy-verygames.sh -y` (JAR seul).
+3. Redémarrer le serveur.
+4. Côté PlugAdmin/AWS : redéployer l'app du panel (`scripts/plugadmin/deploy.sh`)
+   pour obtenir les pages Joueurs / Quêtes / Stories et la liste blanche
+   `AgentActionCatalog`.
+
+### Validation
+
+- Serveur RPGQuest démarre normalement ; agent : `event=plugadmin_probe status=ok`.
+- Panel → page **Joueurs** → « Rafraîchir la liste » → l'action passe
+  `PENDING → SUCCESS` **sans rechargement** (issue #65) et le roster s'affiche.
+- Page **Quêtes** → « Rafraîchir le catalogue » → titres lisibles + étapes.
+- `quest.complete` sur une quête déjà terminée → `FAILED` « déjà terminée »
+  (aucune récompense re-créditée) ; sans confirmation → refusée côté panel.
+- Un type d'action inconnu (ex. `console.run`) → `REJECTED`, audité `DENIED`.
+
+### Rollback
+
+- **Simple** : `enabled=false` dans `plugadmin-agent.properties` → agent inerte.
+- **JAR** : `scripts/rollback-verygames.sh --latest`, redémarrer.
+- Aucune migration `data.db` à défaire. `control-panel.db` (tables `agent_*`)
+  sans effet sur RPGQuest.
+
+### Exécution réelle
+
+Non déployé par cette session (développement uniquement, sur AWS). Branche
+`feat/control-panel-admin-tools` poussée, **non fusionnée**.
+Rapport : `docs/claude-reports/2026-09-07_2159_control-panel-admin-tools.md`.

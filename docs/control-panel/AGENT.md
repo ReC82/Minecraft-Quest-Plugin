@@ -219,15 +219,43 @@ un redémarrage) est documenté et acceptable pour le MVP — la seule action ou
 
 ## 7. Actions whitelistées
 
-Le MVP #51 n'ouvre qu'un seul type, **non destructif** :
+`AgentActionType` (plugin) et `AgentActionCatalog` (panel) sont deux listes blanches **miroir**.
+Tout type absent → `REJECTED` sans exécution. Le payload n'est **jamais** transformé en commande
+texte `/rpgadmin …` : l'agent appelle une opération **structurée** d'un service métier existant
+(`BukkitAgentActions` → `QuestProgressEngine` / `StoryService` / `YamlCustomItemRegistry` /
+`PlayerResetService` / `PlayerVariableRepository`). Toute mutation est replacée sur le **thread
+principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 
-| Type | Paramètres | Service métier appelé | Effet |
+### Lectures (aucun effet de bord)
+
+| Type | Paramètres | Service | Résultat (`details`) |
 |---|---|---|---|
-| `player.variable.get` | `player` (nom ou UUID) **ou** `player_uuid` ; `key` | `PlayerVariableRepository#get` | lecture seule |
+| `player.variable.get` | `player` \| `player_uuid` ; `key` | `PlayerVariableRepository#get` | `present`, `value` |
+| `player.list` | — | `Server#getOnlinePlayers` | `players[]` (uuid, name, world, x/y/z) |
+| `quest.list` | — | `YamlQuestEngine#quests` | `quests[]` (id, titre, catégorie, étapes/objectifs, récompenses) |
+| `quest.player.status` | `player` | `QuestProgressEngine#allStates` / `activeStepView` | `quests[]` (state, étape, objectifs current/required) |
+| `story.list` | — | `StoryService#stories` | `stories[]` (id, titre, quêtes ordonnées) |
+| `story.player.status` | `player` | `StoryService#info` | `stories[]` (state, étape courante/total, quête courante) |
+| `item.list` | — | `YamlCustomItemRegistry#items` | `items[]` (id, displayName, type) |
+| `player.resetnew.preview` | `player` | `PlayerResetService#previewReset` | `lines[]` (label, count, detail) — **dry-run** |
 
-Tout autre type → `REJECTED`, sans exécution. Le payload n'est **jamais** transformé en commande
-texte `/rpgadmin …` : l'agent appelle une opération structurée. Les mutations #36/#45 viendront
-s'ajouter à `AgentActionType`, chacune whitelistée et adossée à un service.
+### Mutations (confirmation exigée côté panel)
+
+| Type | Paramètres | Service | Effet |
+|---|---|---|---|
+| `player.item.give` | `player` ; `item_id` ; `amount` (1–64) | `YamlCustomItemRegistry#create` + `Inventory#addItem` | joueur **en ligne** requis |
+| `quest.start` | `player` ; `quest_id` ; `force`? | `QuestProgressEngine#accept(…, ignorePrerequisites)` | en ligne requis |
+| `quest.complete` | `player` ; `quest_id` | `QuestProgressEngine#forceComplete` | récompenses appliquées **une fois** |
+| `quest.reset` | `player` ; `quest_id` | `QuestProgressEngine#resetQuest` | hors ligne OK ; **n'annule pas** les récompenses déjà données |
+| `story.advance` | `player` ; `story_id` | `StoryService#adminAdvance` | en ligne requis |
+| `story.complete` | `player` ; `story_id` | `StoryService#adminComplete` | en ligne requis ; VARIABLE (CLAIM_TIER_1…) appliquées une fois |
+| `player.variable.set` | `player` ; `key` ; `value` (≤256) | `PlayerVariableRepository#set` | **outil debug** ; ne rejoue pas une progression |
+| `player.resetnew.confirm` | `player` ; `confirm=true` (garde-fou agent) | `PlayerResetService#resetToNewPlayer` | remet l'état RPGQuest « jamais joué » (jamais `data.db` entier, jamais un autre joueur) |
+
+Validation à **trois couches** : `AgentActionCatalog` (panel, avant création) → `AgentActionExecutor`
+(agent, patterns bornés) → service métier. Quantité GIVE plafonnée à 64. `player.resetnew.confirm`
+et toutes les mutations exigent une confirmation explicite dans le formulaire du panel ; l'agent
+exige en plus `confirm=true` pour le reset.
 
 ---
 

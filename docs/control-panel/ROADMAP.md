@@ -64,20 +64,26 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
 - [ ] validation **live VeryGames** (déploiement JAR + fichier agent + redémarrage owner) — voir
       rapport de session #51.
 
-## Étape 1 — lectures
+## Étape 1 — lectures — **PARTIELLEMENT LIVRÉ** (`feat/control-panel-admin-tools`)
 
+- [x] module **Joueurs** : roster live + détail (variables get/set, aperçu reset, GIVE) via
+      actions agent whitelistées.
+- [x] module **Quêtes** : catalogue (titre lisible d'abord, étapes/objectifs/récompenses) + état
+      par joueur.
+- [x] module **Stories** : catalogue ordonné + état par joueur.
 - [ ] module **PNJ** : bindings + « PNJ attendus mais non liés » (aurait signalé le `guard`
-      manquant de la session #21). Comparaison contenu chargé ↔ bindings.
-- [ ] module **Joueurs** : liste + détail lecture (quêtes/stories/variables/claims).
+      manquant de la session #21). Comparaison contenu chargé ↔ bindings. **(P1, non livré)**
 - [ ] module **Diagnostics** : contenu dépôt ↔ contenu chargé ↔ runtime (dépendances cassées,
-      quête référencée inconnue, story sans PNJ de rendu…).
+      quête référencée inconnue, story sans PNJ de rendu…). **(P1, non livré)**
 
-## Étape 2 — actions sûres (#36 via le panel)
+## Étape 2 — actions sûres (#36 via le panel) — **LIVRÉ** (via l'agent sortant #51, pas le bridge)
 
-- [ ] `quest complete|start|reset`, `story advance|complete`, `variable get|set`,
-      `player resetnew` — **appels au bridge**, logique dans le plugin, audit log, `confirm` sur
-      le destructif, permission `ACTION_*`.
-- [ ] « préparer un état de test » = macro d'actions (ex. « claims: débloqué sans claim »).
+- [x] `quest start|complete|reset`, `story advance|complete`, `player.variable get|set`,
+      `player.item.give`, `player.resetnew preview|confirm` — **actions agent whitelistées**
+      (`AgentActionType` ↔ `AgentActionCatalog`), logique dans les services métier du plugin,
+      audit log, `confirm` obligatoire sur les mutations, permission `ACTION_*`, validation 3 couches.
+- [x] rafraîchissement auto du résultat des actions (issue #65).
+- [ ] « préparer un état de test » = macro d'actions (ex. « claims: débloqué sans claim »). **(non livré)**
 
 ## Étape 3 — contenu (lecture structurée)
 

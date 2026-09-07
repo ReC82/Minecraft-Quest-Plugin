@@ -101,9 +101,20 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 - **Agent sortant PlugAdmin** (`web.agent`, issue #51) — le plugin ouvre une connexion **HTTPS
   sortante** vers PlugAdmin (heartbeat régulier réutilisant `HealthSource`, + file d'actions
   whitelistées). **Inerte par défaut** : nécessite `plugins/RPGQuest/plugadmin-agent.properties`
-  (hors Git) avec `enabled=true` + `base-url` + `agent-id` + `token`. Seule action ouverte au MVP :
-  `player.variable.get` (lecture). Asynchrone, backoff, aucun impact gameplay si PlugAdmin est
-  down. Voir [control-panel/AGENT.md](control-panel/AGENT.md).
+  (hors Git) avec `enabled=true` + `base-url` + `agent-id` + `token`. Asynchrone, backoff, aucun
+  impact gameplay si PlugAdmin est down. Voir [control-panel/AGENT.md](control-panel/AGENT.md).
+- **Outillage admin du Control Panel** *(branche `feat/control-panel-admin-tools`)* — l'agent
+  expose désormais des **actions métier whitelistées** au-delà de la lecture : `player.list`,
+  `quest.list` / `quest.player.status`, `story.list` / `story.player.status`, `item.list`,
+  `player.resetnew.preview` (lectures) ; `player.item.give`, `quest.start|complete|reset`,
+  `story.advance|complete`, `player.variable.set`, `player.resetnew.confirm` (mutations). Chacune
+  est adossée à un **service métier existant** via `BukkitAgentActions` (`QuestProgressEngine`,
+  `StoryService`, `YamlCustomItemRegistry`, `PlayerResetService`) — jamais une commande texte,
+  jamais de SQL, mutations replacées sur le thread principal. Côté panel : pages **Joueurs /
+  Quêtes / Stories** (catalogues avec titre lisible d'abord, état par joueur, raccourcis admin),
+  liste blanche `AgentActionCatalog` + validation à 3 couches, confirmation obligatoire pour les
+  mutations, audit. Le tableau des actions se rafraîchit tout seul (issue #65,
+  `/assets/panel.js` + `/agents/actions.json`). Voir [control-panel/AGENT.md](control-panel/AGENT.md) §7.
 
 ## Bugs connus et corrigés
 

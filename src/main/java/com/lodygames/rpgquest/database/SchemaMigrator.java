@@ -1,114 +1,65 @@
 package com.lodygames.rpgquest.database;
 
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.List;
 
 /**
- * Applies schema migrations in order, tracked via SQLite's {@code PRAGMA
- * user_version}. Running {@link #migrate(Connection)} on an already
- * up-to-date database is a no-op.
+ * Catalogue des migrations de schéma RPGQuest, dans l'ordre (issue #40).
+ *
+ * <p>Auparavant, cette classe portait <em>aussi</em> le suivi de version ({@code PRAGMA
+ * user_version}) et la boucle d'application. Ces deux responsabilités sont désormais dans
+ * {@link SchemaHistory} et {@link SchemaMigrationRunner}, ce qui rend le mécanisme portable
+ * (SQLite <em>et</em> MySQL/MariaDB via #41) sans conditionnelle dispersée.</p>
+ *
+ * <p>Le SQL des étapes V1..V{@value #CURRENT_VERSION} est <strong>inchangé</strong> : une base
+ * {@code data.db} existante continue de fonctionner exactement comme avant. Seules V14 et V15
+ * consultent le {@link SqlDialect} (test d'existence de colonne portable) — le SQL généré pour
+ * SQLite reste identique.</p>
  */
 public final class SchemaMigrator {
 
-    private static final int CURRENT_VERSION = 17;
+    /** Version de schéma attendue par ce build. */
+    public static final int CURRENT_VERSION = 17;
+
+    /** Toutes les migrations connues, dans l'ordre croissant de version. */
+    public static final List<SchemaMigration> ALL = List.of(
+            new SchemaMigration(1, "player_profiles, player_variables, quest_progress", SchemaMigrator::applyV1),
+            new SchemaMigration(2, "quest_objective_progress", SchemaMigrator::applyV2),
+            new SchemaMigration(3, "resource_nodes", SchemaMigrator::applyV3),
+            new SchemaMigration(4, "wallets, transactions", SchemaMigrator::applyV4),
+            new SchemaMigration(5, "market_listings", SchemaMigrator::applyV5),
+            new SchemaMigration(6, "portal_cooldowns", SchemaMigrator::applyV6),
+            new SchemaMigration(7, "claims, claim_members", SchemaMigrator::applyV7),
+            new SchemaMigration(8, "player_skills, xp_grants, player_placed_blocks", SchemaMigrator::applyV8),
+            new SchemaMigration(9, "player_entitlements, backpacks, backpack_overflow, backpack_audit", SchemaMigrator::applyV9),
+            new SchemaMigration(10, "store_deliveries_processed", SchemaMigrator::applyV10),
+            new SchemaMigration(11, "npc_ids", SchemaMigrator::applyV11),
+            new SchemaMigration(12, "npc_citizens_bindings", SchemaMigrator::applyV12),
+            new SchemaMigration(13, "story_progress", SchemaMigrator::applyV13),
+            new SchemaMigration(14, "story_progress.current_index", SchemaMigrator::applyV14),
+            new SchemaMigration(15, "claims land reservation columns", SchemaMigrator::applyV15),
+            new SchemaMigration(16, "item_travel_cooldowns", SchemaMigrator::applyV16),
+            new SchemaMigration(17, "waystones, waystone_discoveries", SchemaMigrator::applyV17));
 
     private SchemaMigrator() {
     }
 
+    /**
+     * Applique les migrations SQLite en attente via {@code PRAGMA user_version} — API historique,
+     * conservée pour la compatibilité (tests, appels directs sur une {@link Connection} SQLite).
+     * Rejouée sur une base à jour : no-op.
+     */
     public static void migrate(Connection connection) throws SQLException {
-        int startingVersion = currentVersion(connection);
-        int version = startingVersion;
-
-        if (version < 1) {
-            applyV1(connection);
-            version = 1;
-        }
-        if (version < 2) {
-            applyV2(connection);
-            version = 2;
-        }
-        if (version < 3) {
-            applyV3(connection);
-            version = 3;
-        }
-        if (version < 4) {
-            applyV4(connection);
-            version = 4;
-        }
-        if (version < 5) {
-            applyV5(connection);
-            version = 5;
-        }
-        if (version < 6) {
-            applyV6(connection);
-            version = 6;
-        }
-        if (version < 7) {
-            applyV7(connection);
-            version = 7;
-        }
-        if (version < 8) {
-            applyV8(connection);
-            version = 8;
-        }
-        if (version < 9) {
-            applyV9(connection);
-            version = 9;
-        }
-        if (version < 10) {
-            applyV10(connection);
-            version = 10;
-        }
-        if (version < 11) {
-            applyV11(connection);
-            version = 11;
-        }
-        if (version < 12) {
-            applyV12(connection);
-            version = 12;
-        }
-        if (version < 13) {
-            applyV13(connection);
-            version = 13;
-        }
-        if (version < 14) {
-            applyV14(connection);
-            version = 14;
-        }
-        if (version < 15) {
-            applyV15(connection);
-            version = 15;
-        }
-        if (version < 16) {
-            applyV16(connection);
-            version = 16;
-        }
-        if (version < 17) {
-            applyV17(connection);
-            version = 17;
-        }
-
-        if (version != startingVersion) {
-            setVersion(connection, version);
-        }
+        new SchemaMigrationRunner(ALL, new PragmaUserVersionHistory(), new SqliteDialect()).run(connection);
     }
 
-    private static int currentVersion(Connection connection) throws SQLException {
-        try (Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery("PRAGMA user_version")) {
-            return resultSet.next() ? resultSet.getInt(1) : 0;
-        }
-    }
+    // --------------------------------------------------------------------------------------------
+    //  Étapes de migration — SQL inchangé depuis l'origine du projet.
+    // --------------------------------------------------------------------------------------------
 
-    private static void setVersion(Connection connection, int version) throws SQLException {
-        try (Statement statement = connection.createStatement()) {
-            statement.execute("PRAGMA user_version = " + version);
-        }
-    }
-
-    private static void applyV1(Connection connection) throws SQLException {
+    private static void applyV1(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute("""
                     CREATE TABLE IF NOT EXISTS player_profiles (
@@ -144,7 +95,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV2(Connection connection) throws SQLException {
+    private static void applyV2(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute("""
                     CREATE TABLE IF NOT EXISTS quest_objective_progress (
@@ -160,7 +111,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV3(Connection connection) throws SQLException {
+    private static void applyV3(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // Positions par joueur inutile ici : un nœud appartient au monde, pas à un joueur.
             statement.execute("""
@@ -177,7 +128,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV4(Connection connection) throws SQLException {
+    private static void applyV4(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute("""
                     CREATE TABLE IF NOT EXISTS wallets (
@@ -202,7 +153,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV5(Connection connection) throws SQLException {
+    private static void applyV5(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // item_data : ItemStack#serializeAsBytes(), l'objet complet (méta, PDC d'un objet
             // personnalisé compris) plutôt qu'une référence recomposée à la remise.
@@ -225,7 +176,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV6(Connection connection) throws SQLException {
+    private static void applyV6(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // Un cooldown de portail doit survivre à une reconnexion (mission étape 16) : persisté ici,
             // rechargé en mémoire à la connexion par travel.PortalService (jamais consulté en base
@@ -242,7 +193,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV7(Connection connection) throws SQLException {
+    private static void applyV7(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute("""
                     CREATE TABLE IF NOT EXISTS claims (
@@ -275,7 +226,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV8(Connection connection) throws SQLException {
+    private static void applyV8(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // total_xp seul : le niveau n'est jamais persisté (toujours recalculé via
             // ProgressionCurve#levelForTotalXp), aucun risque de divergence niveau/XP.
@@ -324,7 +275,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV9(Connection connection) throws SQLException {
+    private static void applyV9(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // Avantage générique (mission étape 20, point 11) : le backpack est le premier
             // consommateur concret, d'autres avantages futurs réutiliseront cette même table sans
@@ -388,7 +339,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV10(Connection connection) throws SQLException {
+    private static void applyV10(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // Filet de sécurité d'idempotence côté serveur de jeu (mission étape 22, points 7-8) :
             // web-api acquitte déjà les livraisons de façon idempotente, mais si l'accusé de
@@ -405,7 +356,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV11(Connection connection) throws SQLException {
+    private static void applyV11(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // Allocateur d'identifiants de PNJ (voir com.lodygames.rpgquest.npc.NpcIdentityService) :
             // une ligne par identifiant "npc_<n>" auto-généré, jamais réutilisé (id AUTOINCREMENT).
@@ -421,7 +372,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV12(Connection connection) throws SQLException {
+    private static void applyV12(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // Liaison persistante PNJ Citizens <-> identifiant logique RPGQuest (voir
             // com.lodygames.rpgquest.npc.NpcIdentityService / NpcBindingRepository). Nécessaire car
@@ -440,7 +391,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV13(Connection connection) throws SQLException {
+    private static void applyV13(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // Progression Story (voir com.lodygames.rpgquest.story.StoryService) : un conteneur
             // logique de quest_progress existantes, jamais couplé à ces lignes — état minimal
@@ -459,7 +410,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV14(Connection connection) throws SQLException {
+    private static void applyV14(Connection connection, SqlDialect dialect) throws SQLException {
         // Position courante dans StoryDefinition#questIds() (voir com.lodygames.rpgquest.story
         // .StoryService) : quelle quête de la story est actuellement suivie pour ce joueur.
         // ALTER TABLE ... ADD COLUMN avec DEFAULT s'applique aussi aux lignes existantes (aucune
@@ -467,10 +418,10 @@ public final class SchemaMigrator {
         // seule /rpgadmin story start en créait jusqu'ici, toujours à l'index de départ).
         //
         // Contrairement à CREATE TABLE IF NOT EXISTS (idempotent nativement), ALTER TABLE ADD COLUMN
-        // échoue si la colonne existe déjà — un re-run de cette étape (ex. PRAGMA user_version
+        // échoue si la colonne existe déjà — un re-run de cette étape (ex. historique de version
         // corrompu/remis à zéro, ou toute future migration qui rejoue les étapes depuis une version
         // antérieure) planterait sinon avec "duplicate column name". Vérification explicite d'abord.
-        if (columnExists(connection, "story_progress", "current_index")) {
+        if (dialect.columnExists(connection, "story_progress", "current_index")) {
             return;
         }
         try (Statement statement = connection.createStatement()) {
@@ -478,7 +429,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV15(Connection connection) throws SQLException {
+    private static void applyV15(Connection connection, SqlDialect dialect) throws SQLException {
         // Réservation foncière (voir com.lodygames.rpgquest.claim.model.Claim/ClaimTier) : cuboïde
         // englobant, toujours >= le cuboïde actif (min/max_x/y/z), qui empêche tout AUTRE claim de
         // chevaucher cet espace même avant une éventuelle extension future (mission « premier claim
@@ -486,7 +437,7 @@ public final class SchemaMigrator {
         // /claim create à la baguette) n'ont aucune réservation supplémentaire : leur réservation est
         // initialisée à leur propre cuboïde actif — comportement inchangé pour eux, même défaut que
         // Claim#Claim(9 bornes, members, flags) côté Java.
-        if (columnExists(connection, "claims", "reserved_min_x")) {
+        if (dialect.columnExists(connection, "claims", "reserved_min_x")) {
             return;
         }
         try (Statement statement = connection.createStatement()) {
@@ -503,7 +454,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV16(Connection connection) throws SQLException {
+    private static void applyV16(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // Cooldown de voyage par objet (mission « Rune de rappel ») : doit survivre à une
             // reconnexion/redémarrage — persisté ici, rechargé en mémoire à la connexion par
@@ -522,7 +473,7 @@ public final class SchemaMigrator {
         }
     }
 
-    private static void applyV17(Connection connection) throws SQLException {
+    private static void applyV17(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // Waystones générées (mission « Waystones Wild ») : la base est la seule source de vérité
             // — une cellule dont l'id est déjà présent n'est jamais régénérée (pas de doublon au
@@ -560,18 +511,6 @@ public final class SchemaMigrator {
                         FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
                     )
                     """);
-        }
-    }
-
-    private static boolean columnExists(Connection connection, String table, String column) throws SQLException {
-        try (Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
-            while (resultSet.next()) {
-                if (column.equals(resultSet.getString("name"))) {
-                    return true;
-                }
-            }
-            return false;
         }
     }
 }

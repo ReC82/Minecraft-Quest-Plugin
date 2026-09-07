@@ -41,3 +41,9 @@ control-panel.db
 plugadmin.env
 scripts/plugadmin/plugadmin.env
 scripts/plugadmin/control-panel.properties
+
+# Agent sortant PlugAdmin (issue #51) — le fichier RÉEL vit sur le serveur
+# RPGQuest (plugins/RPGQuest/plugadmin-agent.properties) et contient un jeton :
+# jamais dans Git. Le .example reste versionné.
+plugadmin-agent.properties
+scripts/plugadmin-agent.properties

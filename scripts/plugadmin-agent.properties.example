@@ -1,0 +1,65 @@
+# =============================================================================
+# RPGQuest — agent sortant PlugAdmin (issue #51) — EXEMPLE, SANS SECRET
+# =============================================================================
+#
+# Ce fichier .example est versionné et NE CONTIENT AUCUN secret.
+#
+# Le fichier RÉEL est déployé SUR LE SERVEUR RPGQuest, hors dépôt Git, à :
+#
+#     plugins/RPGQuest/plugadmin-agent.properties
+#
+# Il est lu par le plugin au démarrage (com.lodygames.rpgquest.web.agent.
+# AgentConfigLoader). Sans lui, ou sans "enabled=true" + base-url + agent-id +
+# token, l'agent reste INERTE (fail-closed) : aucune connexion sortante.
+#
+# Déploiement VeryGames (le serveur ne tourne PAS sur AWS) :
+#   1. adapter ce fichier (surtout token=)
+#   2. le transférer via FTP dans plugins/RPGQuest/ :
+#        scripts/deploy-verygames.sh --also \
+#          scripts/plugadmin-agent.properties:RPGQuest/plugadmin-agent.properties
+#      (ou upload manuel dans le panel FTP VeryGames)
+#   3. permissions serveur : lecture par le seul compte du process Paper si
+#      VeryGames le permet (sinon, au minimum, ne jamais le rendre public).
+#   4. (re)démarrer le serveur RPGQuest.
+#
+# Précédence : variables d'environnement RPGQUEST_PLUGADMIN_* > ce fichier >
+# défauts du code. Les variables d'environnement peuvent surcharger n'importe
+# quelle clé si VeryGames permet d'en fournir au process Paper — mais elles ne
+# sont pas obligatoires.
+# -----------------------------------------------------------------------------
+
+# Active l'agent. Tant que ce n'est pas exactement "true", l'agent ne fait rien.
+enabled=true
+
+# Racine HTTPS de PlugAdmin. HTTPS obligatoire (http accepté uniquement en
+# 127.0.0.1/localhost pour un test local).
+base-url=https://plugadmin.lodylands.com
+
+# Identifiant de CET agent / cette cible. Doit correspondre à un agent déclaré
+# côté PlugAdmin (propriété "agents" de control-panel.properties).
+agent-id=rpgquest-dev
+
+# Étiquette d'environnement (dev / staging / prod). Doit correspondre à
+# "agent.<id>.environment" côté PlugAdmin.
+environment=dev
+
+# Jeton porteur DÉDIÉ à cette cible. NE JAMAIS committer. Doit être identique à
+# la valeur de RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV côté PlugAdmin (AWS).
+# Générer par ex. avec :  openssl rand -base64 32
+token=REMPLACER_PAR_LE_JETON_REEL
+
+# --- Cadences (optionnel) ---------------------------------------------------
+# Intervalle du heartbeat, en secondes (borné 5..600).
+heartbeat-seconds=20
+# Intervalle de relevé de la file d'actions, en secondes (borné 5..600).
+poll-seconds=15
+# Mettre à false pour n'envoyer QUE le heartbeat (pas de récupération d'actions).
+actions-enabled=true
+
+# --- Réseau (optionnel, valeurs par défaut prudentes) --------------------
+connect-timeout-ms=5000
+request-timeout-ms=10000
+# Plafond du backoff exponentiel en cas de panne réseau (secondes).
+max-backoff-seconds=300
+# Taille maximale d'un corps de réponse accepté de PlugAdmin (Kio).
+max-response-kib=256

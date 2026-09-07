@@ -25,3 +25,21 @@ target.dev.label=RPGQuest DEV
 target.dev.mode=bridge
 target.dev.bridge-url=http://127.0.0.1:8100/admin/v1
 target.dev.token-env=RPGQUEST_BRIDGE_TOKEN_DEV
+# Agent sortant associé à cette cible : le dashboard affiche en priorité l'état
+# reçu de cet agent (mode AGENT DISTANT). Le bridge local reste un affichage
+# secondaire.
+target.dev.agent=rpgquest-dev
+
+# --- Agents sortants — issue #51 -------------------------------------------
+# RPGQuest / VeryGames initie une connexion HTTPS SORTANTE vers PlugAdmin ;
+# PlugAdmin n'ouvre JAMAIS de connexion vers VeryGames (NAT/pare-feu).
+agents=rpgquest-dev
+agent.rpgquest-dev.environment=dev
+# Variable d'environnement (dans /etc/plugadmin/plugadmin.env) contenant le
+# jeton dédié de cet agent. Défaut si omis : RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV.
+agent.rpgquest-dev.token-env=RPGQUEST_AGENT_TOKEN_RPGQUEST_DEV
+# Seuils de fraîcheur (secondes) : ONLINE <= stale < STALE <= offline < OFFLINE.
+agent.stale-seconds=45
+agent.offline-seconds=150
+# Au-delà de ce délai sans résultat, une action passe EXPIRED (secondes).
+agent.action-expiry-seconds=300

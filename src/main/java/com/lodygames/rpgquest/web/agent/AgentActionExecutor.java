@@ -35,6 +35,9 @@ public final class AgentActionExecutor {
     /** Id de PNJ logique : fragment de clé RPGQuest, minuscules uniquement. */
     private static final Pattern NPC_ID = Pattern.compile("[a-z0-9._-]{1,64}");
     private static final Pattern DIALOGUE_REF = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,128})?");
+    /** Id de nœud de dialogue : minuscules / chiffres / « _ - », borné. */
+    private static final Pattern DIALOGUE_NODE_ID = Pattern.compile("[a-z0-9_][a-z0-9_-]{0,63}");
+    private static final int MAX_DIALOGUE_CHOICE_INDEX = 199;
     private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
     /** Nom de monde : jamais un chemin, jamais une commande — caractères sûrs, longueur bornée. */
     private static final Pattern WORLD_NAME = Pattern.compile("[A-Za-z0-9_./-]{1,64}");
@@ -74,6 +77,11 @@ public final class AgentActionExecutor {
                 case NPC_CITIZENS_CREATE -> npcCitizensCreate(action);
                 case DIALOGUE_LIST -> dialogueList(action);
                 case DIALOGUE_DEFINITION_CREATE -> dialogueDefinitionCreate(action);
+                case DIALOGUE_NODE_CREATE -> dialogueNodeWrite(action, true);
+                case DIALOGUE_NODE_UPDATE -> dialogueNodeWrite(action, false);
+                case DIALOGUE_CHOICE_ADD -> dialogueChoiceAdd(action);
+                case DIALOGUE_CHOICE_UPDATE -> dialogueChoiceUpdate(action);
+                case DIALOGUE_CHOICE_DELETE -> dialogueChoiceDelete(action);
                 case QUEST_PLAYER_STATUS -> questPlayerStatus(action);
                 case STORY_PLAYER_STATUS -> storyPlayerStatus(action);
                 case PLAYER_RESETNEW_PREVIEW -> resetPreview(action);
@@ -526,6 +534,131 @@ public final class AgentActionExecutor {
         return actions.dialogueDefinitionCreate(key.toLowerCase(java.util.Locale.ROOT), speaker, text)
                 .thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- dialogue.node.* / dialogue.choice.* (éditeur guidé — issue #82 phase 1) --------------
+
+    private CompletableFuture<AgentActionOutcome> dialogueNodeWrite(AgentAction action, boolean create) {
+        String dialogueId = dialogueId(action);
+        if (dialogueId == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « dialogue_id » manquant ou invalide."));
+        }
+        String nodeId = trimOrNull(action.param("node_id"));
+        if (nodeId == null || !DIALOGUE_NODE_ID.matcher(nodeId.toLowerCase(java.util.Locale.ROOT)).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « node_id » manquant ou invalide (minuscules, chiffres, « _ - », max 64)."));
+        }
+        String speaker = trimOrNull(action.param("speaker"));
+        if (speaker == null || speaker.length() > MAX_DISPLAY_NAME || speaker.indexOf('\n') >= 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « speaker » manquant, trop long, ou multi-ligne."));
+        }
+        String text = trimOrNull(action.param("text"));
+        if (text == null || text.length() > MAX_DIALOGUE_TEXT || text.indexOf('\n') >= 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « text » manquant, trop long (max " + MAX_DIALOGUE_TEXT + "), ou multi-ligne."));
+        }
+        String id = nodeId.toLowerCase(java.util.Locale.ROOT);
+        CompletableFuture<AgentActions.MutationResult> future = create
+                ? actions.dialogueNodeCreate(dialogueId, id, speaker, text)
+                : actions.dialogueNodeUpdate(dialogueId, id, speaker, text);
+        return future.thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> dialogueChoiceAdd(AgentAction action) {
+        String dialogueId = dialogueId(action);
+        if (dialogueId == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « dialogue_id » manquant ou invalide."));
+        }
+        String nodeId = dialogueNodeRef(action.param("node_id"));
+        if (nodeId == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « node_id » manquant ou invalide."));
+        }
+        String choiceText = trimOrNull(action.param("choice_text"));
+        if (choiceText == null || choiceText.length() > MAX_DIALOGUE_TEXT || choiceText.indexOf('\n') >= 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « choice_text » manquant, trop long (max " + MAX_DIALOGUE_TEXT + "), ou multi-ligne."));
+        }
+        boolean close = isTrue(action.param("close"));
+        String next = close ? null : dialogueNodeRef(action.param("next_node_id"));
+        if (!close && next == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Un choix simple redirige vers un nœud (« next_node_id ») OU ferme le dialogue (« close=true »)."));
+        }
+        return actions.dialogueChoiceAdd(dialogueId, nodeId, choiceText, next, close)
+                .thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> dialogueChoiceUpdate(AgentAction action) {
+        String dialogueId = dialogueId(action);
+        if (dialogueId == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « dialogue_id » manquant ou invalide."));
+        }
+        String nodeId = dialogueNodeRef(action.param("node_id"));
+        if (nodeId == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « node_id » manquant ou invalide."));
+        }
+        int index = parseAmount(action.param("choice_index"), -1);
+        if (index < 0 || index > MAX_DIALOGUE_CHOICE_INDEX) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « choice_index » manquant ou hors bornes."));
+        }
+        String choiceText = trimOrNull(action.param("choice_text"));
+        if (choiceText == null || choiceText.length() > MAX_DIALOGUE_TEXT || choiceText.indexOf('\n') >= 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « choice_text » manquant, trop long (max " + MAX_DIALOGUE_TEXT + "), ou multi-ligne."));
+        }
+        boolean close = isTrue(action.param("close"));
+        String next = close ? null : dialogueNodeRef(action.param("next_node_id"));
+        if (!close && next == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Un choix simple redirige vers un nœud (« next_node_id ») OU ferme le dialogue (« close=true »)."));
+        }
+        return actions.dialogueChoiceUpdate(dialogueId, nodeId, index, choiceText, next, close)
+                .thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> dialogueChoiceDelete(AgentAction action) {
+        String dialogueId = dialogueId(action);
+        if (dialogueId == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « dialogue_id » manquant ou invalide."));
+        }
+        String nodeId = dialogueNodeRef(action.param("node_id"));
+        if (nodeId == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « node_id » manquant ou invalide."));
+        }
+        int index = parseAmount(action.param("choice_index"), -1);
+        if (index < 0 || index > MAX_DIALOGUE_CHOICE_INDEX) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « choice_index » manquant ou hors bornes."));
+        }
+        return actions.dialogueChoiceDelete(dialogueId, nodeId, index)
+                .thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code dialogue_id} normalisé en {@code namespace:key} minuscule, ou {@code null} si invalide. */
+    private static String dialogueId(AgentAction action) {
+        String raw = firstNonBlank(action.param("dialogue_id"), action.param("dialogue"), action.param("id"));
+        if (raw == null) {
+            return null;
+        }
+        String value = raw.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!DIALOGUE_REF.matcher(value).matches()) {
+            return null;
+        }
+        return value.contains(":") ? value : "rpgquest:" + value;
+    }
+
+    /** Référence de nœud existant (jamais créé ici) : minuscules, borné, ou {@code null}. */
+    private static String dialogueNodeRef(String raw) {
+        String value = trimOrNull(raw);
+        if (value == null) {
+            return null;
+        }
+        value = value.toLowerCase(java.util.Locale.ROOT);
+        return DIALOGUE_NODE_ID.matcher(value).matches() ? value : null;
     }
 
     // ---- Lectures avec joueur -------------------------------------------------------

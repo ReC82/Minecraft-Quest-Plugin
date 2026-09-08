@@ -557,6 +557,9 @@ public final class RPGQuestBootstrap {
                                 this::rpgWorldWhitelist,
                                 new com.lodygames.rpgquest.dialogue.DialogueDefinitionStore(
                                         plugin.getDataFolder().toPath().resolve("dialogues"),
+                                        configService.current().dialogue().allowedCommands()),
+                                new com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor(
+                                        plugin.getDataFolder().toPath().resolve("dialogues"),
                                         configService.current().dialogue().allowedCommands())))));
 
         registerCommands();

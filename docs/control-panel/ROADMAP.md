@@ -125,9 +125,22 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       `dialogues/<key>.yml` (`DialogueDraft` → `DialogueDefinitionYaml` déterministe →
       `DialogueDefinitionStore` atomique, refus d'écrasement, re-parsé). Page `/dialogues` :
       graphe lisible par carte, nœud de départ mis en avant, nœuds inaccessibles marqués,
-      MiniMessage rendu, formulaire de création de squelette. **Reste (futur éditeur)** :
-      `dialogue.node.create/update`, `dialogue.choice.add/update/delete`, édition texte préservant
-      commentaires/structure (couche AST), réordonnancement, builder graphique.
+      MiniMessage rendu, formulaire de création de squelette.
+- [~] **Éditeur guidé `/dialogues` — phase 1 de #82.** Refonte de la page en quatre blocs
+      (en-tête identité+état · résumé · diagnostics triés erreur→attention→info · graphe de
+      cartes nœud). Cinq mutations agent (`DIALOGUE_WRITE`, `confirm`, audit) via
+      `DialogueDefinitionEditor` : `dialogue.node.update` (locuteur/texte, choix conservés),
+      `dialogue.node.create` (nœud simple orphelin), `dialogue.choice.add` / `.update` /
+      `.delete` — **choix simple** seulement (ni condition ni action hors « fermer » ; `next`
+      vers un nœud existant *ou* fermeture ; jamais le dernier choix). Écriture sûre :
+      localisation par `id`, refus d'un fichier déjà invalide, **sérialisation fidèle du
+      dialogue complet** (`DialogueDefinitionWriter` — toutes actions/conditions préservées),
+      **garde-fou round-trip** (re-parse + égalité sémantique) → écriture atomique →
+      rechargement → **restauration** si échec. Fichier édité au **format canonique** (perte
+      assumée des commentaires). Formulaires `<details>` par nœud, cibles en `<select>`,
+      aucun JS. **Reste pour #82** : actions/conditions typées éditables (`START_QUEST`,
+      `CLOSE`…), renommage / déplacement / suppression de nœud, réordonnancement des choix,
+      builder graphique interactif.
 - [~] `quest.list` transporte des **objectifs et récompenses structurés**
       (`objectiveDetails` / `rewardDetails` = `{kind, target, amount, value, command, raw}`,
       commande non tronquée) + le **PNJ donneur** (`giverId`, champ YAML `giver:` optionnel) —

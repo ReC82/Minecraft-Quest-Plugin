@@ -84,4 +84,66 @@ class AgentActionCatalogTest {
         assertEquals(Permission.PLAYERS_READ, AgentActionCatalog.spec("player.list").orElseThrow().permission());
         assertEquals(Permission.ACTION_PLAYER_RESET, AgentActionCatalog.spec("player.resetnew.confirm").orElseThrow().permission());
     }
+
+    // ---- Éditeur guidé de dialogue (issue #82 phase 1) --------------------------------------
+
+    @Test
+    void dialogueEditActionsRequireDialogueWriteAndConfirm() {
+        for (String type : new String[] {"dialogue.node.create", "dialogue.node.update",
+                "dialogue.choice.add", "dialogue.choice.update", "dialogue.choice.delete"}) {
+            assertEquals(Permission.DIALOGUE_WRITE, AgentActionCatalog.spec(type).orElseThrow().permission());
+            assertTrue(AgentActionCatalog.spec(type).orElseThrow().mutation());
+        }
+        assertFalse(AgentActionCatalog.validate("dialogue.node.update", Map.of(
+                "dialogue_id", "guard", "node_id", "greeting", "speaker", "G", "text", "T")).valid(), "confirm requis");
+    }
+
+    @Test
+    void dialogueNodeUpdateNormalisesIdsAndRejectsBadInput() {
+        AgentActionCatalog.Validation ok = AgentActionCatalog.validate("dialogue.node.update", Map.of(
+                "dialogue_id", "Guard", "node_id", "Greeting", "speaker", "Capitaine",
+                "text", "<y>Salut</y>", "confirm", "true"));
+        assertTrue(ok.valid());
+        assertEquals("rpgquest:guard", ok.params().get("dialogue_id"));
+        assertEquals("greeting", ok.params().get("node_id"));
+
+        assertFalse(AgentActionCatalog.validate("dialogue.node.update", Map.of(
+                "dialogue_id", "guard", "node_id", "bad node", "speaker", "G", "text", "T", "confirm", "true")).valid());
+        assertFalse(AgentActionCatalog.validate("dialogue.node.update", Map.of(
+                "dialogue_id", "guard", "node_id", "greeting", "speaker", "G",
+                "text", "a\nb", "confirm", "true")).valid(), "texte multi-ligne");
+    }
+
+    @Test
+    void dialogueChoiceAddNeedsExactlyOneTarget() {
+        assertFalse(AgentActionCatalog.validate("dialogue.choice.add", Map.of(
+                "dialogue_id", "guard", "node_id", "accepted", "choice_text", "Retour", "confirm", "true")).valid());
+        assertFalse(AgentActionCatalog.validate("dialogue.choice.add", Map.of(
+                "dialogue_id", "guard", "node_id", "accepted", "choice_text", "Retour",
+                "next_node_id", "greeting", "close", "true", "confirm", "true")).valid());
+        AgentActionCatalog.Validation next = AgentActionCatalog.validate("dialogue.choice.add", Map.of(
+                "dialogue_id", "guard", "node_id", "accepted", "choice_text", "Retour",
+                "next_node_id", "greeting", "confirm", "true"));
+        assertTrue(next.valid());
+        assertEquals("greeting", next.params().get("next_node_id"));
+        AgentActionCatalog.Validation close = AgentActionCatalog.validate("dialogue.choice.add", Map.of(
+                "dialogue_id", "guard", "node_id", "accepted", "choice_text", "Fin", "close", "true", "confirm", "true"));
+        assertTrue(close.valid());
+        assertEquals("true", close.params().get("close"));
+        assertFalse(close.params().containsKey("next_node_id"));
+    }
+
+    @Test
+    void dialogueChoiceUpdateAndDeleteBoundTheIndex() {
+        assertFalse(AgentActionCatalog.validate("dialogue.choice.update", Map.of(
+                "dialogue_id", "guard", "node_id", "greeting", "choice_index", "-1",
+                "choice_text", "X", "close", "true", "confirm", "true")).valid());
+        AgentActionCatalog.Validation ok = AgentActionCatalog.validate("dialogue.choice.update", Map.of(
+                "dialogue_id", "guard", "node_id", "greeting", "choice_index", "2",
+                "choice_text", "X", "next_node_id", "accepted", "confirm", "true"));
+        assertTrue(ok.valid());
+        assertEquals("2", ok.params().get("choice_index"));
+        assertFalse(AgentActionCatalog.validate("dialogue.choice.delete", Map.of(
+                "dialogue_id", "guard", "node_id", "greeting", "choice_index", "abc", "confirm", "true")).valid());
+    }
 }

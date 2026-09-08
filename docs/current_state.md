@@ -193,9 +193,25 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   d'écrasement, re-parsé après écriture ; jamais de YAML brut ni de chemin). Page `/dialogues`
   activée : cartes par dialogue (graphe lisible, nœud de départ mis en avant, nœuds inaccessibles
   marqués, MiniMessage rendu), bannières pour les fichiers rejetés et les définitions pointant
-  vers un dialogue absent, formulaire de création de squelette. **Non fait** (futur éditeur) :
-  ajout/suppression de nœuds et choix, actions/conditions depuis le web, réordonnancement,
-  édition texte préservant commentaires/structure sur des dialogues riches.
+  vers un dialogue absent, formulaire de création de squelette.
+- **Éditeur guidé `/dialogues` — phase 1 de #82** *(branche `feat/control-panel-admin-tools`)* —
+  refonte de la page en quatre blocs (en-tête identité+état · résumé départ/PNJ/quêtes ·
+  diagnostics hiérarchisés erreur→attention→info · graphe de cartes nœud) + première édition
+  guidée réellement utilisable. Cinq mutations agent (`DIALOGUE_WRITE`, `confirm`, audit) via
+  `DialogueDefinitionEditor` : `dialogue.node.update` (locuteur/texte d'un nœud, choix conservés),
+  `dialogue.node.create` (nœud simple orphelin + choix « fermer »), `dialogue.choice.add` /
+  `dialogue.choice.update` / `dialogue.choice.delete` (**choix simple** uniquement : ni condition
+  ni action hors « fermer » ; redirige vers un nœud existant *ou* termine le dialogue ; refuse le
+  dernier choix d'un nœud). Écriture sûre : localisation du fichier par `id`, refus d'un fichier
+  déjà invalide, **sérialisation fidèle du dialogue complet** (`DialogueDefinitionWriter` — 10
+  actions + 8 conditions + négation, aucune perte), **garde-fou round-trip** (re-parse en mémoire
+  + égalité sémantique) avant écriture atomique, **rechargement** puis **restauration du contenu
+  d'origine** si le fichier ne recharge pas. Le fichier édité adopte le **format canonique** du
+  panel (commentaires / mise en forme d'origine non conservés — choix assumé). Cibles de choix =
+  `<select>` des nœuds du dialogue (jamais un champ libre). Formulaires `<details>` semi-inline
+  par nœud, aucun JS (conforme CSP `default-src 'self'`). **Non fait** (suite de #82) : édition
+  des actions/conditions riches, renommage / déplacement / suppression de nœud, réordonnancement
+  des choix, rendu graphe interactif.
 
 ## Bugs connus et corrigés
 

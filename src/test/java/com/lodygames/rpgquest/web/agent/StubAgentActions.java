@@ -98,6 +98,35 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<MutationResult> dialogueNodeUpdate(String dialogueId, String nodeId, String speaker,
+                                                               String text) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> dialogueNodeCreate(String dialogueId, String nodeId, String speaker,
+                                                               String text) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> dialogueChoiceAdd(String dialogueId, String nodeId, String choiceText,
+                                                              String nextNodeId, boolean close) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> dialogueChoiceUpdate(String dialogueId, String nodeId, int choiceIndex,
+                                                                 String choiceText, String nextNodeId, boolean close) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> dialogueChoiceDelete(String dialogueId, String nodeId, int choiceIndex) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<ResetPreview> resetPreview(UUID playerId) {
         return CompletableFuture.completedFuture(new ResetPreview(false, List.of()));
     }

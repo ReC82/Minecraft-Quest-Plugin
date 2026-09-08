@@ -1441,3 +1441,72 @@ Restaurer les 7 fichiers dans `plugins/RPGQuest/dialogues/` depuis
 puis `scripts/verygames-restart.sh`. Aucune migration à défaire, aucun JAR à restaurer.
 
 Rapport : `docs/claude-reports/2026-09-08_1547_nettoyage-fixtures-test-dialogues-dev-83.md`.
+
+---
+
+## 2026-09-08 - Éditeur guidé /dialogues — phase 1 (#82) : dialogue.node.* / dialogue.choice.*
+
+### Changement
+
+Cinq nouvelles mutations agent (`DIALOGUE_WRITE`, `confirm` obligatoire côté panel, audit,
+whitelist `AgentActionType` ↔ `AgentActionCatalog`) pour **éditer un dialogue déjà chargé** —
+périmètre restreint et sûr :
+
+- `dialogue.node.update` — locuteur + texte d'un nœud (choix / conditions / actions conservés) ;
+- `dialogue.node.create` — nœud simple (locuteur + texte + un choix « fermer »), **orphelin** ;
+- `dialogue.choice.add` / `dialogue.choice.update` / `dialogue.choice.delete` — **choix simple**
+  uniquement (aucune condition, aucune action hors `CLOSE`) : redirige vers un nœud existant
+  **ou** ferme le dialogue ; `delete` refuse le dernier choix d'un nœud.
+
+`DialogueDefinitionEditor` (nouveau) : localise le fichier par son `id`, refuse un fichier déjà
+invalide, applique la mutation sur le modèle métier, **re-sérialise le dialogue complet**
+(`DialogueDefinitionWriter` — 10 actions + 8 conditions + négation, aucune perte), **re-parse en
+mémoire + exige l'égalité sémantique** (garde-fou round-trip), **écrit atomiquement**, **recharge
+tout le dossier** puis **restaure le contenu d'origine** si le fichier ne recharge pas. Le
+fichier édité adopte le **format canonique** du panel (commentaires / mise en forme d'origine
+non conservés — choix assumé ; l'intégrité fonctionnelle est garantie par le round-trip).
+
+Page `/dialogues` **refondue** (4 blocs : en-tête + état, résumé, diagnostics triés
+erreur→attention→info, graphe de cartes nœud) avec l'édition guidée en `<details>` semi-inline
+par nœud (aucun JS, conforme CSP). **Aucune migration SQL. `data.db` jamais touché.**
+
+### Action serveur
+
+- **Remplacement du seul JAR RPGQuest** (pour que l'agent connaisse les 5 nouveaux types).
+- Redémarrage serveur (`scripts/verygames-restart.sh` — `stop` RCON → relance auto).
+- Control Panel AWS redéployé (`scripts/plugadmin/deploy.sh`).
+- Aucun autre fichier. Aucune migration.
+
+### Sauvegarde préalable
+
+- Ancien JAR : sauvegardé automatiquement par `deploy-verygames.sh`.
+- **Recommandé avant toute mutation réelle** : sauvegarde FTPS du dossier
+  `plugins/RPGQuest/dialogues/` (l'éditeur restaure le contenu d'origine en cas d'échec de
+  rechargement, mais un backup hors-ligne reste la garantie).
+
+### Déploiement
+
+1. `scripts/deploy-verygames.sh -y` (JAR seul) puis `scripts/verygames-restart.sh`.
+2. `scripts/plugadmin/deploy.sh` (AWS).
+
+### Validation
+
+- `/plugins` (RCON) : RPGQuest en vert ; `rpgquest version` répond.
+- Heartbeat agent reçu ; aucun `ERROR` dans `journalctl -u plugadmin`.
+- `dialogue.list` → **SUCCESS** ; `npc.list` toujours **SUCCESS**.
+- Si exécutée : une mutation `dialogue.node.update` / `dialogue.choice.add` sur un **dialogue de
+  test sûr** (jamais un dialogue gameplay pour la seule démonstration) → **SUCCESS**, dialogue
+  toujours chargé, aucune régression sur les autres dialogues.
+
+### Rollback
+
+- VeryGames : `scripts/rollback-verygames.sh --latest` puis `scripts/verygames-restart.sh`. Un
+  dialogue édité en réel : restaurer son `.yml` depuis le backup puis redémarrage.
+- AWS : `scripts/plugadmin/rollback.sh app`.
+- Aucune migration à défaire.
+
+### Exécution réelle
+
+À compléter au déploiement.
+
+Rapport : `docs/claude-reports/2026-09-08_1642_dialogues-editeur-guide-phase1-82.md`.

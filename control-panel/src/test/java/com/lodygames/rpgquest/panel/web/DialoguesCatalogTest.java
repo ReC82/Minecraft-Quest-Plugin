@@ -84,9 +84,9 @@ class DialoguesCatalogTest {
 
         assertTrue(page.contains("data-copy=\"rpgquest:guard\""), "id copiable");
         assertTrue(page.contains("Nœud de départ"));
-        // MiniMessage rendu, jamais brut
+        // MiniMessage rendu dans le texte affiché du nœud (le champ d'édition, lui, porte la source brute).
         assertTrue(page.contains("<span style=\"color:"), "MiniMessage interprété");
-        assertFalse(page.contains("&lt;white&gt;Bonjour."), "pas de balise brute dans le texte de nœud");
+        assertFalse(page.contains("dlg-text\">&lt;white&gt;Bonjour."), "texte affiché du nœud jamais en balises brutes");
         // graphe : nœud de départ identifiable + nœud inaccessible marqué
         assertTrue(page.contains("dlg-node start"));
         assertTrue(page.contains("dlg-node") && page.contains("unreachable"));
@@ -125,6 +125,66 @@ class DialoguesCatalogTest {
                 + "&type=dialogue.definition.create&agent=" + TestConfig.AGENT_ID
                 + "&return=/dialogues&key=" + enc("Bad Key") + "&speaker=X&text=Y&confirm=true");
         assertTrue(bad.headers().firstValue("Location").orElse("").contains("err="));
+    }
+
+    @Test
+    void catalogExposesGuidedEditFormsAndTargetSelect() throws Exception {
+        start();
+        runListWithSuccess(DIALOGUE_DETAILS);
+        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("name=\"type\" value=\"dialogue.node.update\""), "édition de nœud");
+        assertTrue(page.contains("name=\"type\" value=\"dialogue.choice.add\""), "ajout de choix");
+        assertTrue(page.contains("name=\"type\" value=\"dialogue.node.create\""), "ajout de nœud");
+        assertTrue(page.contains("name=\"type\" value=\"dialogue.choice.update\""), "édition de choix simple");
+        assertTrue(page.contains("name=\"type\" value=\"dialogue.choice.delete\""), "suppression de choix simple");
+        // Cible d'un choix : select des nœuds existants du dialogue, pas un champ libre.
+        assertTrue(page.contains("<option value=\"accepted\""));
+        // Le choix « J'accepte » porte une action START_QUEST + une condition -> non simple : pas de form d'édition,
+        // mais la note « édition avancée » à la place.
+        assertTrue(page.contains("édition prévue dans une phase"), "note choix avancé");
+        // Bandeau explicatif du format canonique.
+        assertTrue(page.contains("canonique</strong>"), "bandeau format canonique");
+    }
+
+    @Test
+    void nodeUpdateActionIsValidatedAndQueued() throws Exception {
+        start();
+        runListWithSuccess(DIALOGUE_DETAILS);
+        String token = csrf(get("/dialogues?agent=" + TestConfig.AGENT_ID).body());
+
+        HttpResponse<String> noConfirm = post("/agents/action", "_csrf=" + token
+                + "&type=dialogue.node.update&agent=" + TestConfig.AGENT_ID + "&return=/dialogues"
+                + "&dialogue_id=rpgquest:guard&node_id=greeting&speaker=Capitaine&text=" + enc("<y>Salut</y>"));
+        assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "confirm obligatoire");
+
+        HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
+                + "&type=dialogue.node.update&agent=" + TestConfig.AGENT_ID + "&return=/dialogues"
+                + "&dialogue_id=guard&node_id=greeting&speaker=Capitaine&text=" + enc("<y>Salut</y>") + "&confirm=true");
+        assertEquals(303, ok.statusCode());
+        assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1);
+
+        HttpResponse<String> badNode = post("/agents/action", "_csrf=" + token
+                + "&type=dialogue.node.update&agent=" + TestConfig.AGENT_ID + "&return=/dialogues"
+                + "&dialogue_id=guard&node_id=" + enc("Bad Node") + "&speaker=X&text=Y&confirm=true");
+        assertTrue(badNode.headers().firstValue("Location").orElse("").contains("err="));
+    }
+
+    @Test
+    void choiceAddActionRejectsAmbiguousTarget() throws Exception {
+        start();
+        runListWithSuccess(DIALOGUE_DETAILS);
+        String token = csrf(get("/dialogues?agent=" + TestConfig.AGENT_ID).body());
+
+        HttpResponse<String> both = post("/agents/action", "_csrf=" + token
+                + "&type=dialogue.choice.add&agent=" + TestConfig.AGENT_ID + "&return=/dialogues"
+                + "&dialogue_id=guard&node_id=accepted&choice_text=Retour&next_node_id=greeting&close=true&confirm=true");
+        assertTrue(both.headers().firstValue("Location").orElse("").contains("err="));
+
+        HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
+                + "&type=dialogue.choice.add&agent=" + TestConfig.AGENT_ID + "&return=/dialogues"
+                + "&dialogue_id=guard&node_id=accepted&choice_text=Retour&next_node_id=greeting&confirm=true");
+        assertEquals(303, ok.statusCode());
     }
 
     // ---- helpers ----------------------------------------------------------------------

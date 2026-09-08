@@ -219,19 +219,34 @@ public final class Layout {
             .coord-row label.coord{display:flex;flex-direction:column;gap:3px;margin:0;
             font-size:12px;color:var(--muted);flex:1 1 80px}
             .coord-row label.coord input{width:100%}
-            /* ---- graphe de dialogue (V1 /dialogues) ---- */
-            .dlg-graph{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+            /* ---- graphe de dialogue + éditeur guidé (/dialogues — issue #82) ---- */
+            .dlg-summary{margin:4px 0 2px}
+            .dlg-diag{margin:10px 0 2px;border-left:3px solid var(--line2);padding:2px 0 2px 10px}
+            .dlg-diag-h{margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+            .dlg-graph-wrap>summary{font-weight:600;color:var(--txt)}
+            .dlg-graph{display:flex;flex-direction:column;gap:10px;margin-top:8px}
             .dlg-node{border:1px solid var(--line);border-left:3px solid var(--line2);
-            border-radius:8px;padding:8px 12px;background:var(--panel2)}
+            border-radius:8px;padding:9px 12px;background:var(--panel2)}
             .dlg-node.start{border-left-color:var(--accent)}
-            .dlg-node.unreachable{border-left-color:var(--err);opacity:.8}
+            .dlg-node.unreachable{border-left-color:var(--err);opacity:.85}
             .dlg-node-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-            .dlg-speaker{margin:6px 0 2px;font-weight:600;font-size:13px}
-            .dlg-text{margin:0 0 6px;font-size:13px;color:var(--muted)}
-            .dlg-choices{margin:4px 0 0;padding-left:18px}
-            .dlg-choices li{margin:3px 0;font-size:12.5px}
-            .dlg-arrow{color:var(--accent);font-weight:600}
+            .dlg-speaker{margin:7px 0 2px;font-weight:600;font-size:13px}
+            .dlg-text{margin:0 0 6px;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+            .dlg-choices{margin:4px 0 0;padding-left:20px}
+            .dlg-choices li{margin:5px 0;font-size:12.5px;overflow-wrap:anywhere}
+            .dlg-arrow{color:var(--accent);font-weight:600;white-space:nowrap}
             .dlg-choice-text{color:var(--txt)}
+            .dlg-fx{display:inline-block;font-size:11px;color:var(--info);background:var(--panel3);
+            border:1px solid var(--line2);border-radius:6px;padding:0 6px}
+            .dlg-cond{display:inline-block;font-size:11px;color:var(--warn);background:var(--panel3);
+            border:1px solid var(--line2);border-radius:6px;padding:0 6px}
+            .dlg-adv{font-size:11px}
+            .dlg-node-edit{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+            .dlg-edit{margin:0;flex:1 1 240px;background:var(--panel3);border-color:var(--line2)}
+            .dlg-edit>summary{font-size:12px;color:var(--accent)}
+            .dlg-edit .actform{background:transparent;border:0;padding:6px 0 0;margin:4px 0 0}
+            .dlg-edit-choice{display:block;margin-top:4px}
+            .dlg-add-node{margin-top:10px}
             .agentpicker{display:flex;gap:8px;align-items:center;margin:8px 0}
             .agentpicker label{margin:0}
             .actions-panel{margin-top:6px}

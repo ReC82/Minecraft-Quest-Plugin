@@ -472,8 +472,21 @@ jeu se fait toujours par convention `rpgquest:<id du PNJ>`** (identité stable d
 PNJ) — le champ `dialogue:` d'une `NpcDefinition` ne sert qu'aux diagnostics.
 L'action `dialogue.definition.create` (permission dédiée `DIALOGUE_WRITE`) crée
 un **squelette** de dialogue minimal (`id` + `start` + un nœud avec
-locuteur/texte + un choix « fermer ») ; l'édition fine des nœuds/choix/actions
-viendra avec un **éditeur dédié**, pas dans cette V1.
+locuteur/texte + un choix « fermer »).
+
+Un **éditeur guidé** (issue #82, phase 1) permet en plus, toujours sous
+`DIALOGUE_WRITE` et confirmation : modifier le **locuteur / texte** d'un nœud
+(`dialogue.node.update`), **ajouter un nœud simple** (`dialogue.node.create`,
+nœud orphelin à relier ensuite), et **ajouter / modifier / supprimer un choix
+simple** (`dialogue.choice.add` / `.update` / `.delete`) — un choix « simple »
+n'a ni condition ni action autre que « fermer », et redirige vers un nœud
+existant *ou* termine le dialogue. Chaque écriture **réécrit le fichier au format
+canonique** du panel (commentaires et mise en forme d'origine non conservés),
+puis le **re-parse** et le **recharge** ; en cas d'échec le contenu d'origine est
+**restauré**. Les actions/conditions riches d'un choix (`START_QUEST`,
+`QUEST_STATE`…) sont **intégralement préservées** mais pas encore éditables :
+c'est le périmètre des phases suivantes de #82 (avec le renommage / déplacement /
+suppression de nœud et le réordonnancement des choix).
 
 ### Commandes RPGQuest — `/rpgadmin npc`
 

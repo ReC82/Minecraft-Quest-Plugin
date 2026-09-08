@@ -264,6 +264,30 @@ public interface AgentActions {
      */
     CompletableFuture<MutationResult> dialogueDefinitionCreate(String key, String speaker, String text);
 
+    // ---- Édition guidée d'un dialogue existant (issue #82 phase 1) -----------------------------
+    //
+    // Périmètre volontairement restreint : locuteur/texte d'un nœud, nœud simple, choix simple
+    // (sans condition, sans action autre que « fermer »). Chaque écriture réécrit le fichier au
+    // format canonique du panel, est re-parsée puis rechargée ; en cas d'échec le contenu d'origine
+    // est restauré. Jamais de YAML brut, jamais de chemin — seulement des champs métier validés.
+
+    /** Modifie le locuteur et le texte d'un nœud existant (les choix sont conservés). */
+    CompletableFuture<MutationResult> dialogueNodeUpdate(String dialogueId, String nodeId, String speaker, String text);
+
+    /** Ajoute un nœud simple (locuteur + texte + un choix « fermer ») ; nœud orphelin assumé. */
+    CompletableFuture<MutationResult> dialogueNodeCreate(String dialogueId, String nodeId, String speaker, String text);
+
+    /** Ajoute un choix simple à un nœud : texte + (redirection vers un nœud existant OU fermeture). */
+    CompletableFuture<MutationResult> dialogueChoiceAdd(String dialogueId, String nodeId, String choiceText,
+                                                        String nextNodeId, boolean close);
+
+    /** Modifie le texte et la cible d'un choix simple existant (repéré par son index dans le nœud). */
+    CompletableFuture<MutationResult> dialogueChoiceUpdate(String dialogueId, String nodeId, int choiceIndex,
+                                                           String choiceText, String nextNodeId, boolean close);
+
+    /** Supprime un choix simple (si le nœud garde au moins un choix). */
+    CompletableFuture<MutationResult> dialogueChoiceDelete(String dialogueId, String nodeId, int choiceIndex);
+
     /** Aperçu (dry-run, aucune écriture) de ce qu'un reset « nouveau joueur » supprimerait. */
     record ResetPreviewLine(String label, int count, String detail) {
     }

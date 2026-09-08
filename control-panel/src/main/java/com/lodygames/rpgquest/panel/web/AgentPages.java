@@ -914,6 +914,11 @@ public final class AgentPages {
                 .append(loadIssues.size()).append(" fichier(s) rejeté(s)</p>");
 
         if (canWrite) {
+            sb.append("<div class=\"banner info\">Édition guidée <strong>phase 1</strong> : locuteur / texte d'un nœud, "
+                    + "ajout d'un nœud simple, ajout / modification / suppression d'un <strong>choix simple</strong> "
+                    + "(sans condition ni action de quête). Chaque écriture réécrit le fichier au <strong>format "
+                    + "canonique</strong> du panel (commentaires et mise en forme d'origine non conservés), puis le "
+                    + "re-parse et le recharge — en cas d'échec le contenu d'origine est restauré.</div>");
             sb.append(dialogueCreateForm(session, agentId));
         }
 
@@ -921,15 +926,20 @@ public final class AgentPages {
             sb.append(Ui.empty("Aucun dialogue chargé."));
         } else {
             for (Object o : dialogues) {
-                sb.append(renderDialogueCard(asMap(o), questTitles));
+                sb.append(renderDialogueCard(asMap(o), questTitles, session, agentId, canWrite));
             }
         }
         sb.append(actionsPanel(agentId));
         return sb.toString();
     }
 
-    /** Carte dialogue : entête + warnings + relations + graphe des nœuds ordonné (start en tête). */
-    private String renderDialogueCard(Map<String, Object> dg, Map<String, String> questTitles) {
+    /**
+     * Carte dialogue en quatre blocs : en-tête (identité + compteurs + état) · résumé (départ,
+     * PNJ, quêtes) · diagnostics hiérarchisés (erreur → attention → info) · graphe des nœuds
+     * (cartes, départ accentué, inaccessibles marqués) avec l'édition guidée par nœud.
+     */
+    private String renderDialogueCard(Map<String, Object> dg, Map<String, String> questTitles,
+                                      Session session, String agentId, boolean canWrite) {
         String id = str(dg.get("id"));
         String key = str(dg.get("key"));
         String start = str(dg.get("startNodeId"));
@@ -938,98 +948,282 @@ public final class AgentPages {
         List<Object> nodes = asList(dg.get("nodes"));
         List<Object> refQuests = asList(dg.get("referencedQuestIds"));
         List<Object> startsQuests = asList(dg.get("startsQuestIds"));
+        List<String> nodeIds = dialogueNodeIds(nodes);
 
-        StringBuilder sb = new StringBuilder("<article class=\"entity-card\">");
+        StringBuilder sb = new StringBuilder("<article class=\"entity-card dlg-card\">");
+
+        // ---- En-tête -------------------------------------------------------------------------
         sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
                 .append(Http.esc(MiniText.prettifyId(key.isEmpty() ? id : key))).append("</h3><div class=\"entity-meta\">")
                 .append(Ui.badge(str(dg.get("nodeCount")) + " nœud(s)"))
-                .append(Ui.badge(str(dg.get("choiceCount")) + " choix"));
-        if (linked.isEmpty()) {
-            sb.append(Ui.pill("aucun PNJ", "pending", "!"));
-        }
-        sb.append(Ui.id(id)).append("</div></div>");
+                .append(Ui.badge(str(dg.get("choiceCount")) + " choix"))
+                .append(dialogueHealthPill(warnings))
+                .append(Ui.id(id)).append("</div></div>");
 
-        if (!warnings.isEmpty()) {
-            sb.append("<ul class=\"obj-list\">");
-            for (Object w : warnings) {
-                Map<String, Object> wm = asMap(w);
-                sb.append("<li>").append(Ui.severity(str(wm.get("severity"))))
-                        .append("<span class=\"obj-text\">").append(Http.esc(str(wm.get("message"))))
-                        .append("</span>").append(Ui.id(str(wm.get("code")))).append("</li>");
-            }
-            sb.append("</ul>");
-        }
-
-        StringBuilder npcHtml = new StringBuilder();
-        if (linked.isEmpty()) {
-            npcHtml.append("<span class=\"muted\">aucun PNJ logique</span>");
-        } else {
-            for (Object n : linked) {
-                npcHtml.append(Ui.id(str(n))).append(' ');
-            }
-        }
-        sb.append(Ui.metaLine("PNJ liés", npcHtml.toString()));
+        // ---- Résumé -------------------------------------------------------------------------
+        sb.append("<div class=\"dlg-summary\">");
         sb.append(Ui.metaLine("Nœud de départ", Ui.id(start)));
+        sb.append(Ui.metaLine("PNJ liés", linked.isEmpty()
+                ? "<span class=\"muted\">aucun PNJ logique lié</span>"
+                : linked.stream().map(n -> Ui.id(str(n))).reduce((a, b) -> a + " " + b).orElse("")));
         if (!startsQuests.isEmpty()) {
             sb.append(Ui.metaLine("Démarre les quêtes", referencedQuests(startsQuests, questTitles)));
         }
         if (!refQuests.isEmpty()) {
             sb.append(Ui.metaLine("Quêtes référencées", referencedQuests(refQuests, questTitles)));
         }
+        sb.append("</div>");
 
-        // Graphe : nœuds ordonnés (start d'abord), start mis en avant, inaccessibles marqués.
-        sb.append("<details open><summary>Graphe (").append(nodes.size()).append(" nœud(s))</summary>");
-        sb.append("<div class=\"dlg-graph\">");
+        // ---- Diagnostics (triés erreur → attention → info) ---------------------------------
+        sb.append(dialogueDiagnostics(warnings));
+
+        // ---- Graphe -----------------------------------------------------------------------
+        sb.append("<details open class=\"dlg-graph-wrap\"><summary>Graphe — ").append(nodes.size())
+                .append(" nœud(s)</summary><div class=\"dlg-graph\">");
         for (Object o : nodes) {
-            Map<String, Object> n = asMap(o);
-            boolean isStart = Boolean.TRUE.equals(n.get("start"));
-            boolean reachable = Boolean.TRUE.equals(n.get("reachable"));
-            sb.append("<div class=\"dlg-node").append(isStart ? " start" : "")
-                    .append(reachable ? "" : " unreachable").append("\">");
-            sb.append("<div class=\"dlg-node-head\">").append(Ui.id(str(n.get("id"))));
-            if (isStart) {
-                sb.append(Ui.pill("départ", "success", "▶"));
-            }
-            if (!reachable) {
-                sb.append(Ui.pill("inaccessible", "failed", "✕"));
-            }
-            sb.append("</div>");
-            sb.append("<p class=\"dlg-speaker\">").append(Http.esc(str(n.get("speaker")))).append("</p>");
-            sb.append("<p class=\"dlg-text\">").append(MiniText.html(str(n.get("text")))).append("</p>");
-            List<Object> choices = asList(n.get("choices"));
-            if (!choices.isEmpty()) {
-                sb.append("<ul class=\"dlg-choices\">");
-                for (Object c : choices) {
-                    Map<String, Object> cm = asMap(c);
-                    String next = str(cm.get("nextNodeId"));
-                    sb.append("<li><span class=\"dlg-choice-text\">« ").append(MiniText.html(str(cm.get("text"))))
-                            .append(" »</span>");
-                    if (!next.isEmpty()) {
-                        sb.append(" <span class=\"dlg-arrow\">→ ").append(Http.esc(next)).append("</span>");
-                    }
-                    for (Object a : asList(cm.get("actions"))) {
-                        Map<String, Object> am = asMap(a);
-                        sb.append(" ").append(Ui.badge(dialogueEffectLabel(str(am.get("kind")), str(am.get("target")),
-                                str(am.get("value")), questTitles)));
-                    }
-                    for (Object cond : asList(cm.get("conditions"))) {
-                        Map<String, Object> condm = asMap(cond);
-                        String label = (Boolean.TRUE.equals(condm.get("negated")) ? "non " : "")
-                                + dialogueEffectLabel(str(condm.get("kind")), str(condm.get("target")),
-                                str(condm.get("value")), questTitles);
-                        sb.append(" ").append(Ui.pill(label, "pending", "?"));
-                    }
-                    if (next.isEmpty() && asList(cm.get("actions")).isEmpty()) {
-                        sb.append(" <span class=\"muted\">(ferme)</span>");
-                    }
-                    sb.append("</li>");
-                }
-                sb.append("</ul>");
-            }
-            sb.append("</div>");
+            sb.append(dialogueNodeCard(asMap(o), id, nodeIds, questTitles, session, agentId, canWrite));
         }
         sb.append("</div></details>");
+
+        // ---- Ajouter un nœud ------------------------------------------------------------------
+        if (canWrite) {
+            sb.append(dialogueNodeCreateForm(session, agentId, id));
+        }
         return sb.append("</article>").toString();
+    }
+
+    /** Pastille d'état global d'un dialogue à partir de la sévérité la plus haute de ses warnings. */
+    private static String dialogueHealthPill(List<Object> warnings) {
+        int worst = 3; // 1=error 2=warning 3=info/none
+        for (Object w : warnings) {
+            worst = Math.min(worst, severityRank(str(asMap(w).get("severity"))));
+        }
+        if (warnings.isEmpty()) {
+            return Ui.pill("cohérent", "success", "✓");
+        }
+        return switch (worst) {
+            case 1 -> Ui.pill(warnings.size() + " anomalie(s)", "failed", "✕");
+            case 2 -> Ui.pill(warnings.size() + " avertissement(s)", "pending", "!");
+            default -> Ui.pill(warnings.size() + " info(s)", "neutral", "i");
+        };
+    }
+
+    /** Bloc diagnostics : message humain d'abord, code technique discret, groupé par sévérité. */
+    private String dialogueDiagnostics(List<Object> warnings) {
+        if (warnings.isEmpty()) {
+            return "";
+        }
+        List<Map<String, Object>> sorted = new java.util.ArrayList<>();
+        for (Object w : warnings) {
+            sorted.add(asMap(w));
+        }
+        sorted.sort(java.util.Comparator.comparingInt(m -> severityRank(str(m.get("severity")))));
+        StringBuilder sb = new StringBuilder("<div class=\"dlg-diag\"><p class=\"dlg-diag-h\">Diagnostics</p><ul class=\"obj-list\">");
+        for (Map<String, Object> wm : sorted) {
+            sb.append("<li>").append(Ui.severity(str(wm.get("severity"))))
+                    .append("<span class=\"obj-text\">").append(Http.esc(str(wm.get("message")))).append("</span>")
+                    .append(Ui.id(str(wm.get("code")))).append("</li>");
+        }
+        return sb.append("</ul></div>").toString();
+    }
+
+    private static int severityRank(String severity) {
+        return switch (severity == null ? "" : severity.toLowerCase(java.util.Locale.ROOT)) {
+            case "error" -> 1;
+            case "warning" -> 2;
+            default -> 3;
+        };
+    }
+
+    /** Une carte nœud : identité + rôle, locuteur, texte, choix lisibles, et l'édition guidée. */
+    private String dialogueNodeCard(Map<String, Object> n, String dialogueId, List<String> nodeIds,
+                                    Map<String, String> questTitles, Session session, String agentId, boolean canWrite) {
+        String nodeId = str(n.get("id"));
+        boolean isStart = Boolean.TRUE.equals(n.get("start"));
+        boolean reachable = Boolean.TRUE.equals(n.get("reachable"));
+        List<Object> choices = asList(n.get("choices"));
+
+        StringBuilder sb = new StringBuilder("<div class=\"dlg-node")
+                .append(isStart ? " start" : "").append(reachable ? "" : " unreachable").append("\">");
+        sb.append("<div class=\"dlg-node-head\">").append(Ui.id(nodeId));
+        if (isStart) {
+            sb.append(Ui.pill("départ", "success", "▶"));
+        }
+        if (!reachable) {
+            sb.append(Ui.pill("inaccessible", "failed", "✕"));
+        }
+        sb.append("</div>");
+        sb.append("<p class=\"dlg-speaker\">").append(Http.esc(str(n.get("speaker")))).append("</p>");
+        sb.append("<p class=\"dlg-text\">").append(MiniText.html(str(n.get("text")))).append("</p>");
+
+        if (!choices.isEmpty()) {
+            sb.append("<ol class=\"dlg-choices\">");
+            for (int i = 0; i < choices.size(); i++) {
+                Map<String, Object> cm = asMap(choices.get(i));
+                String next = str(cm.get("nextNodeId"));
+                List<Object> acts = asList(cm.get("actions"));
+                List<Object> conds = asList(cm.get("conditions"));
+                sb.append("<li><span class=\"dlg-choice-text\">« ").append(MiniText.html(str(cm.get("text"))))
+                        .append(" »</span>");
+                if (!next.isEmpty()) {
+                    sb.append(" <span class=\"dlg-arrow\">→ ").append(Http.esc(next)).append("</span>");
+                } else if (choiceCloses(cm)) {
+                    sb.append(" <span class=\"muted\">(ferme le dialogue)</span>");
+                }
+                for (Object a : acts) {
+                    Map<String, Object> am = asMap(a);
+                    if (!"CLOSE".equals(str(am.get("kind")))) {
+                        sb.append(" <span class=\"dlg-fx\">").append(Http.esc(dialogueEffectLabel(str(am.get("kind")),
+                                str(am.get("target")), str(am.get("value")), questTitles))).append("</span>");
+                    }
+                }
+                for (Object c : conds) {
+                    Map<String, Object> condm = asMap(c);
+                    String label = (Boolean.TRUE.equals(condm.get("negated")) ? "non " : "")
+                            + dialogueEffectLabel(str(condm.get("kind")), str(condm.get("target")),
+                            str(condm.get("value")), questTitles);
+                    sb.append(" <span class=\"dlg-cond\">si ").append(Http.esc(label)).append("</span>");
+                }
+                if (canWrite) {
+                    sb.append(dialogueChoiceEditForms(session, agentId, dialogueId, nodeId, i, cm, next, nodeIds));
+                }
+                sb.append("</li>");
+            }
+            sb.append("</ol>");
+        }
+
+        if (canWrite) {
+            sb.append("<div class=\"dlg-node-edit\">");
+            sb.append(dialogueNodeUpdateForm(session, agentId, dialogueId, nodeId,
+                    str(n.get("speaker")), str(n.get("text"))));
+            sb.append(dialogueChoiceAddForm(session, agentId, dialogueId, nodeId, nodeIds));
+            sb.append("</div>");
+        }
+        return sb.append("</div>").toString();
+    }
+
+    private static List<String> dialogueNodeIds(List<Object> nodes) {
+        List<String> ids = new java.util.ArrayList<>();
+        for (Object o : nodes) {
+            String v = str(asMap(o).get("id"));
+            if (!v.isEmpty()) {
+                ids.add(v);
+            }
+        }
+        return ids;
+    }
+
+    /** Un choix « simple » (éditable en phase 1) : aucune condition, aucune action hors {@code CLOSE}. */
+    private static boolean choiceIsSimple(Map<String, Object> choice) {
+        if (!asList(choice.get("conditions")).isEmpty()) {
+            return false;
+        }
+        for (Object a : asList(choice.get("actions"))) {
+            if (!"CLOSE".equals(str(asMap(a).get("kind")))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean choiceCloses(Map<String, Object> choice) {
+        for (Object a : asList(choice.get("actions"))) {
+            if ("CLOSE".equals(str(asMap(a).get("kind")))) {
+                return true;
+            }
+        }
+        return asList(choice.get("actions")).isEmpty() && str(choice.get("nextNodeId")).isEmpty();
+    }
+
+    /** {@code <select name="next_node_id">} des nœuds existants ; {@code selected} pré-sélectionné. */
+    private static String nodeTargetSelect(List<String> nodeIds, String selected) {
+        StringBuilder sb = new StringBuilder("<select name=\"next_node_id\">");
+        sb.append("<option value=\"\"").append(selected.isEmpty() ? " selected" : "")
+                .append(">— (choisir un nœud) —</option>");
+        for (String nid : nodeIds) {
+            sb.append("<option value=\"").append(Http.esc(nid)).append("\"")
+                    .append(nid.equals(selected) ? " selected" : "").append(">").append(Http.esc(nid)).append("</option>");
+        }
+        return sb.append("</select>").toString();
+    }
+
+    private String dialogueNodeUpdateForm(Session session, String agentId, String dialogueId, String nodeId,
+                                          String speaker, String text) {
+        StringBuilder sb = new StringBuilder("<details class=\"dlg-edit\"><summary>Modifier ce nœud (locuteur / texte)</summary>");
+        sb.append(formStart(session, agentId, "dialogue.node.update", "/dialogues", ""));
+        sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
+        sb.append("<label>Locuteur</label><input type=\"text\" name=\"speaker\" value=\"")
+                .append(Http.esc(speaker)).append("\" maxlength=\"128\">");
+        sb.append("<label>Texte (MiniMessage autorisé)</label><input type=\"text\" name=\"text\" value=\"")
+                .append(Http.esc(text)).append("\" maxlength=\"512\">");
+        sb.append(confirmBox("Réécrire le fichier au format canonique (les choix du nœud sont conservés)."));
+        sb.append("<button class=\"btn\" type=\"submit\">Enregistrer le nœud</button></form>");
+        return sb.append("</details>").toString();
+    }
+
+    private String dialogueChoiceAddForm(Session session, String agentId, String dialogueId, String nodeId,
+                                         List<String> nodeIds) {
+        StringBuilder sb = new StringBuilder("<details class=\"dlg-edit\"><summary>Ajouter un choix à ce nœud</summary>");
+        sb.append(formStart(session, agentId, "dialogue.choice.add", "/dialogues", ""));
+        sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
+        sb.append("<label>Texte du choix</label><input type=\"text\" name=\"choice_text\" maxlength=\"512\" "
+                + "placeholder=\"D'accord\">");
+        sb.append("<label>Nœud cible</label>").append(nodeTargetSelect(nodeIds, ""));
+        sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"close\" value=\"true\"> "
+                + "ou : ce choix termine le dialogue (laisser « nœud cible » vide)</label>");
+        sb.append(confirmBox("Ajouter ce choix simple (sans condition ni action de quête)."));
+        sb.append("<button class=\"btn\" type=\"submit\">Ajouter le choix</button></form>");
+        return sb.append("</details>").toString();
+    }
+
+    /** Sous un choix : édition/suppression si « simple », sinon une note « édition avancée à venir ». */
+    private String dialogueChoiceEditForms(Session session, String agentId, String dialogueId, String nodeId,
+                                           int index, Map<String, Object> choice, String next, List<String> nodeIds) {
+        if (!choiceIsSimple(choice)) {
+            return " <span class=\"muted dlg-adv\">— actions / conditions avancées : édition prévue dans une phase "
+                    + "ultérieure</span>";
+        }
+        String sourceText = str(choice.get("text")); // source MiniMessage brute (jamais échappée deux fois)
+        StringBuilder sb = new StringBuilder("<details class=\"dlg-edit dlg-edit-choice\"><summary>Modifier / supprimer</summary>");
+        // Modifier
+        sb.append(formStart(session, agentId, "dialogue.choice.update", "/dialogues", ""));
+        sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"choice_index\" value=\"").append(index).append("\">");
+        sb.append("<label>Texte du choix</label><input type=\"text\" name=\"choice_text\" maxlength=\"512\" value=\"")
+                .append(Http.esc(sourceText)).append("\">");
+        sb.append("<label>Nœud cible</label>").append(nodeTargetSelect(nodeIds, next));
+        sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"close\" value=\"true\"")
+                .append(next.isEmpty() ? " checked" : "").append("> ce choix termine le dialogue</label>");
+        sb.append(confirmBox("Réécrire ce choix (format canonique)."));
+        sb.append("<button class=\"btn\" type=\"submit\">Enregistrer le choix</button></form>");
+        // Supprimer
+        sb.append(formStart(session, agentId, "dialogue.choice.delete", "/dialogues", ""));
+        sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"choice_index\" value=\"").append(index).append("\">");
+        sb.append(confirmBox("Supprimer ce choix (impossible si c'est le dernier choix du nœud)."));
+        sb.append("<button class=\"btn secondary\" type=\"submit\">Supprimer ce choix</button></form>");
+        return sb.append("</details>").toString();
+    }
+
+    private String dialogueNodeCreateForm(Session session, String agentId, String dialogueId) {
+        StringBuilder sb = new StringBuilder("<details class=\"dlg-edit dlg-add-node\"><summary>Ajouter un nœud à ce dialogue</summary>");
+        sb.append("<p class=\"faint\" style=\"font-size:12px\">Crée un nœud simple avec un unique choix « fermer ». "
+                + "Il n'est relié à aucun choix existant (nœud orphelin) : ajouter ensuite un choix « → " + Http.esc(
+                MiniText.prettifyId(dialogueId)) + " » vers lui depuis un autre nœud.</p>");
+        sb.append(formStart(session, agentId, "dialogue.node.create", "/dialogues", ""));
+        sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
+        sb.append("<label>Id du nœud (minuscules, « _ - »)</label><input type=\"text\" name=\"node_id\" "
+                + "pattern=\"[a-z0-9_][a-z0-9_-]{0,63}\" placeholder=\"farewell\">");
+        sb.append("<label>Locuteur</label><input type=\"text\" name=\"speaker\" maxlength=\"128\" placeholder=\"Garde\">");
+        sb.append("<label>Texte du nœud (MiniMessage autorisé)</label><input type=\"text\" name=\"text\" "
+                + "maxlength=\"512\" placeholder=\"&lt;gray&gt;À bientôt.&lt;/gray&gt;\">");
+        sb.append(confirmBox("Ajouter ce nœud (réécriture canonique du fichier)."));
+        sb.append("<button class=\"btn\" type=\"submit\">Ajouter le nœud</button></form>");
+        return sb.append("</details>").toString();
     }
 
     /** Libellé lisible d'une action/condition typée de dialogue (titre humain de quête si connu). */

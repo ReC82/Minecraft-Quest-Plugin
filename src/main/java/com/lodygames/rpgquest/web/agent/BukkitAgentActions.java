@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.web.agent;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.dialogue.DialogueCatalog;
+import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionStore;
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
 import com.lodygames.rpgquest.dialogue.model.AdvanceQuestAction;
@@ -110,6 +111,7 @@ public final class BukkitAgentActions implements AgentActions {
     private final QuestGiverStore questGiverStore;
     private final Supplier<Set<String>> allowedSpawnWorlds;
     private final DialogueDefinitionStore dialogueStore;
+    private final DialogueDefinitionEditor dialogueEditor;
 
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
                               QuestProgressEngine questProgressEngine, StoryService storyService,
@@ -117,7 +119,8 @@ public final class BukkitAgentActions implements AgentActions {
                               PlayerVariableWriter variableWriter, YamlDialogueEngine dialogueEngine,
                               NpcIdentityService npcIdentityService, NpcBindingRepository npcBindingRepository,
                               YamlNpcEngine npcEngine, NpcDefinitionStore npcStore, QuestGiverStore questGiverStore,
-                              Supplier<Set<String>> allowedSpawnWorlds, DialogueDefinitionStore dialogueStore) {
+                              Supplier<Set<String>> allowedSpawnWorlds, DialogueDefinitionStore dialogueStore,
+                              DialogueDefinitionEditor dialogueEditor) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -133,6 +136,7 @@ public final class BukkitAgentActions implements AgentActions {
         this.questGiverStore = questGiverStore;
         this.allowedSpawnWorlds = allowedSpawnWorlds;
         this.dialogueStore = dialogueStore;
+        this.dialogueEditor = dialogueEditor;
     }
 
     // ---- Lectures -------------------------------------------------------------------------------
@@ -690,6 +694,52 @@ public final class BukkitAgentActions implements AgentActions {
         dialogueEngine.reload();
         return done(new MutationResult(true, r.code(), r.message(),
                 List.of("dialogues/" + r.file(), "start: " + draft.startNodeId())));
+    }
+
+    // ---- Édition guidée d'un dialogue existant (issue #82 phase 1) -----------------------------
+    //
+    // L'IO disque + le re-parse se font sur le thread appelant (poll asynchrone de l'agent), jamais
+    // sur le thread principal — comme dialogueDefinitionCreate. YamlDialogueEngine.reload() se
+    // contente de relire les fichiers et d'échanger une référence volatile : sûr hors thread
+    // principal.
+
+    @Override
+    public CompletableFuture<MutationResult> dialogueNodeUpdate(String dialogueId, String nodeId, String speaker,
+                                                                String text) {
+        return applyEdit(dialogueEditor.updateNode(dialogueId, nodeId, speaker, text));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> dialogueNodeCreate(String dialogueId, String nodeId, String speaker,
+                                                                String text) {
+        return applyEdit(dialogueEditor.createNode(dialogueId, nodeId, speaker, text, null));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> dialogueChoiceAdd(String dialogueId, String nodeId, String choiceText,
+                                                               String nextNodeId, boolean close) {
+        return applyEdit(dialogueEditor.addChoice(dialogueId, nodeId, choiceText, nextNodeId, close));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> dialogueChoiceUpdate(String dialogueId, String nodeId, int choiceIndex,
+                                                                  String choiceText, String nextNodeId, boolean close) {
+        return applyEdit(dialogueEditor.updateChoice(dialogueId, nodeId, choiceIndex, choiceText, nextNodeId, close));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> dialogueChoiceDelete(String dialogueId, String nodeId, int choiceIndex) {
+        return applyEdit(dialogueEditor.deleteChoice(dialogueId, nodeId, choiceIndex));
+    }
+
+    private CompletableFuture<MutationResult> applyEdit(DialogueDefinitionEditor.Result r) {
+        if (!r.ok()) {
+            String msg = r.issues().isEmpty() ? r.message() : r.message() + " — " + String.join(" ; ", r.issues());
+            return done(MutationResult.of(false, r.code(), msg));
+        }
+        // Rechargement en mémoire : le dialogue édité est immédiatement pris en compte en jeu.
+        dialogueEngine.reload();
+        return done(new MutationResult(true, r.code(), r.message(), r.effects()));
     }
 
     private static String blank(String value) {

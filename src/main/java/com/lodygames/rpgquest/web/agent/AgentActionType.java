@@ -26,7 +26,11 @@ import java.util.Optional;
  *       {@link #NPC_CITIZENS_CREATE} (crée physiquement un PNJ Citizens depuis une définition puis
  *       le lie ; rollback si la liaison échoue — issue #81 phase 2),
  *       {@link #DIALOGUE_DEFINITION_CREATE} (crée un squelette de dialogue minimal valide —
- *       V1 {@code /dialogues}).</li>
+ *       V1 {@code /dialogues}), {@link #DIALOGUE_NODE_CREATE} / {@link #DIALOGUE_NODE_UPDATE} /
+ *       {@link #DIALOGUE_CHOICE_ADD} / {@link #DIALOGUE_CHOICE_UPDATE} /
+ *       {@link #DIALOGUE_CHOICE_DELETE} (édition guidée d'un dialogue existant — nœud simple et
+ *       choix simple uniquement, réécriture canonique re-parsée puis rechargée avant validation,
+ *       issue #82 phase 1).</li>
  * </ul>
  */
 public enum AgentActionType {
@@ -56,7 +60,12 @@ public enum AgentActionType {
     NPC_CITIZENS_LINK("npc.citizens.link"),
     NPC_CITIZENS_CREATE("npc.citizens.create"),
     DIALOGUE_LIST("dialogue.list"),
-    DIALOGUE_DEFINITION_CREATE("dialogue.definition.create");
+    DIALOGUE_DEFINITION_CREATE("dialogue.definition.create"),
+    DIALOGUE_NODE_CREATE("dialogue.node.create"),
+    DIALOGUE_NODE_UPDATE("dialogue.node.update"),
+    DIALOGUE_CHOICE_ADD("dialogue.choice.add"),
+    DIALOGUE_CHOICE_UPDATE("dialogue.choice.update"),
+    DIALOGUE_CHOICE_DELETE("dialogue.choice.delete");
 
     private final String wire;
 

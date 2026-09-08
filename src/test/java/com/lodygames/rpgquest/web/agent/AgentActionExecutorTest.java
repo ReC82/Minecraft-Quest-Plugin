@@ -218,6 +218,73 @@ class AgentActionExecutorTest {
     }
 
     @Test
+    void dialogueNodeUpdateValidatesAndNormalisesDialogueId() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dn0", "dialogue.node.update",
+                Map.of("node_id", "greeting", "speaker", "Garde", "text", "Salut"))).status(), "dialogue_id obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dn1", "dialogue.node.update",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "Bad Node", "speaker", "G", "text", "T"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dn2", "dialogue.node.update",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "greeting", "speaker", "G",
+                        "text", "ligne1\nligne2"))).status(), "texte multi-ligne refusé");
+        AgentActionOutcome ok = run(new AgentAction("dn3", "dialogue.node.update",
+                Map.of("dialogue_id", "guard", "node_id", "Greeting", "speaker", "Capitaine", "text", "<y>Salut</y>")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("node.update", actions.lastEdit);
+        assertEquals("rpgquest:guard", actions.lastEditDialogueId, "dialogue_id normalisé");
+        assertEquals("greeting", actions.lastEditNodeId, "node_id normalisé en minuscules");
+        assertEquals("Capitaine", actions.lastDialogueSpeaker);
+    }
+
+    @Test
+    void dialogueNodeCreateDelegates() {
+        AgentActionOutcome ok = run(new AgentAction("dnc", "dialogue.node.create",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "farewell", "speaker", "Garde", "text", "Adieu")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("node.create", actions.lastEdit);
+        assertEquals("farewell", actions.lastEditNodeId);
+    }
+
+    @Test
+    void dialogueChoiceAddRequiresExactlyOneTarget() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dca0", "dialogue.choice.add",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "accepted", "choice_text", "Retour"))).status(),
+                "ni next ni close");
+        AgentActionOutcome next = run(new AgentAction("dca1", "dialogue.choice.add",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "accepted", "choice_text", "Retour",
+                        "next_node_id", "greeting")));
+        assertEquals(AgentActionOutcome.SUCCESS, next.status());
+        assertEquals("choice.add", actions.lastEdit);
+        assertEquals("greeting", actions.lastEditNext);
+        assertFalse(actions.lastEditClose);
+
+        AgentActionOutcome close = run(new AgentAction("dca2", "dialogue.choice.add",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "accepted", "choice_text", "Fin", "close", "true")));
+        assertEquals(AgentActionOutcome.SUCCESS, close.status());
+        assertTrue(actions.lastEditClose);
+        assertNull(actions.lastEditNext);
+    }
+
+    @Test
+    void dialogueChoiceUpdateAndDeleteValidateIndex() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dcu0", "dialogue.choice.update",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "greeting", "choice_index", "-1",
+                        "choice_text", "X", "close", "true"))).status());
+        AgentActionOutcome upd = run(new AgentAction("dcu1", "dialogue.choice.update",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "greeting", "choice_index", "1",
+                        "choice_text", "Je refuse", "next_node_id", "accepted")));
+        assertEquals(AgentActionOutcome.SUCCESS, upd.status());
+        assertEquals("choice.update", actions.lastEdit);
+        assertEquals(1, actions.lastEditChoiceIndex);
+
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dcd0", "dialogue.choice.delete",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "greeting", "choice_index", "999"))).status());
+        AgentActionOutcome del = run(new AgentAction("dcd1", "dialogue.choice.delete",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "greeting", "choice_index", "1")));
+        assertEquals(AgentActionOutcome.SUCCESS, del.status());
+        assertEquals("choice.delete", actions.lastEdit);
+    }
+
+    @Test
     void npcCitizensCreateBindFailureIsAReadableFailedOutcome() {
         actions.createOk = false;
         actions.createCode = "BIND_FAILED_ROLLED_BACK";
@@ -521,6 +588,67 @@ class AgentActionExecutorTest {
             lastDialogueSpeaker = speaker;
             lastDialogueText = text;
             return mutation("dialogue " + key);
+        }
+
+        String lastEdit;
+        String lastEditDialogueId;
+        String lastEditNodeId;
+        int lastEditChoiceIndex = -1;
+        String lastEditNext;
+        boolean lastEditClose;
+
+        @Override
+        public CompletableFuture<MutationResult> dialogueNodeUpdate(String dialogueId, String nodeId, String speaker,
+                                                                    String text) {
+            lastEdit = "node.update";
+            lastEditDialogueId = dialogueId;
+            lastEditNodeId = nodeId;
+            lastDialogueSpeaker = speaker;
+            lastDialogueText = text;
+            return mutation("node.update " + nodeId);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> dialogueNodeCreate(String dialogueId, String nodeId, String speaker,
+                                                                    String text) {
+            lastEdit = "node.create";
+            lastEditDialogueId = dialogueId;
+            lastEditNodeId = nodeId;
+            lastDialogueSpeaker = speaker;
+            lastDialogueText = text;
+            return mutation("node.create " + nodeId);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> dialogueChoiceAdd(String dialogueId, String nodeId, String choiceText,
+                                                                   String nextNodeId, boolean close) {
+            lastEdit = "choice.add";
+            lastEditDialogueId = dialogueId;
+            lastEditNodeId = nodeId;
+            lastEditNext = nextNodeId;
+            lastEditClose = close;
+            return mutation("choice.add " + nodeId);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> dialogueChoiceUpdate(String dialogueId, String nodeId, int choiceIndex,
+                                                                      String choiceText, String nextNodeId, boolean close) {
+            lastEdit = "choice.update";
+            lastEditDialogueId = dialogueId;
+            lastEditNodeId = nodeId;
+            lastEditChoiceIndex = choiceIndex;
+            lastEditNext = nextNodeId;
+            lastEditClose = close;
+            return mutation("choice.update " + nodeId + "#" + choiceIndex);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> dialogueChoiceDelete(String dialogueId, String nodeId, int choiceIndex) {
+            lastEdit = "choice.delete";
+            lastEditDialogueId = dialogueId;
+            lastEditNodeId = nodeId;
+            lastEditChoiceIndex = choiceIndex;
+            return mutation("choice.delete " + nodeId + "#" + choiceIndex);
         }
 
         @Override

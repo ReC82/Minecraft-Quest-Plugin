@@ -260,6 +260,11 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 | `npc.citizens.link` | `npc_id` ; `citizens_id` (entier > 0) | `NpcIdentityService#bindCitizens` (`CitizensBindPlanner` + `NpcBindingRepository#insertIfAbsent`) | lie une **définition existante** à un **PNJ Citizens existant** — issue #81, phase 1 ; jamais de spawn/rebind |
 | `npc.citizens.create` | `npc_id` ; `world` ; `x` ; `y` ; `z` ; `yaw`? ; `pitch`? | `CitizensSpawnPlanner` (pur) → `CitizensSpawnCoordinator` (`NpcIdentityService#createCitizensNpc` + `#bindCitizens`, rollback `#destroyCitizensNpc`) | **crée physiquement** un PNJ Citizens depuis la définition (nom = `displayName`) puis le lie ; rollback du PNJ créé si la liaison échoue — issue #81, phase 2 ; permission dédiée `NPC_SPAWN_WRITE` |
 | `dialogue.definition.create` | `key` (clé minuscule) ; `speaker` ; `text` | `DialogueDefinitionStore#create` (`DialogueDraft.skeleton` → `DialogueDefinitionYaml`) | crée un **squelette** `dialogues/<key>.yml` (un nœud `start`, un choix « fermer ») — jamais de YAML brut, refus d'écrasement, re-parsé après écriture ; permission dédiée `DIALOGUE_WRITE` — V1 `/dialogues` |
+| `dialogue.node.update` | `dialogue_id` ; `node_id` ; `speaker` ; `text` | `DialogueDefinitionEditor#updateNode` | change le locuteur + le texte d'un nœud existant (les choix, conditions et actions sont conservés) — éditeur guidé #82 phase 1 |
+| `dialogue.node.create` | `dialogue_id` ; `node_id` (minuscule) ; `speaker` ; `text` | `DialogueDefinitionEditor#createNode` | ajoute un nœud simple + un choix « fermer » ; **nœud orphelin** (à relier via `dialogue.choice.add`) ; refuse un id déjà pris |
+| `dialogue.choice.add` | `dialogue_id` ; `node_id` ; `choice_text` ; `next_node_id` **ou** `close=true` | `DialogueDefinitionEditor#addChoice` | ajoute un **choix simple** (aucune condition, aucune action hors « fermer ») : soit une redirection `next` vers un nœud existant, soit une fermeture |
+| `dialogue.choice.update` | `dialogue_id` ; `node_id` ; `choice_index` ; `choice_text` ; `next_node_id` **ou** `close=true` | `DialogueDefinitionEditor#updateChoice` | réécrit le texte + la cible d'un **choix simple** ; **refuse** un choix portant condition ou action de quête (`UNSAFE_CHOICE`) |
+| `dialogue.choice.delete` | `dialogue_id` ; `node_id` ; `choice_index` | `DialogueDefinitionEditor#deleteChoice` | retire un **choix simple** ; **refuse** le dernier choix d'un nœud (`LAST_CHOICE`) ou un choix non simple |
 
 Validation à **trois couches** : `AgentActionCatalog` (panel, avant création) → `AgentActionExecutor`
 (agent, patterns bornés) → service métier. Quantité GIVE plafonnée à 64. `player.resetnew.confirm`
@@ -415,12 +420,41 @@ nœud `start` avec `speaker` + `text` + un unique choix « Au revoir » (`type: 
 + `DialogueDefinitionYaml.render` (déterministe, re-parsable) + `DialogueDefinitionStore.create`
 (écriture atomique tmp + `ATOMIC_MOVE`, **refus d'écrasement** `EXISTS`, rechargement complet du
 dossier — fichier supprimé si le nouveau dialogue ne se recharge pas). Jamais de YAML brut, jamais
-de chemin. **L'édition fine** (ajout de nœuds/choix, actions `START_QUEST`, conditions,
-réordonnancement) est le périmètre d'un **futur éditeur** — API métier envisagée :
-`dialogue.node.create` / `dialogue.node.update` / `dialogue.choice.add` / `dialogue.choice.update`
-/ `dialogue.choice.delete` (aucune n'est implémentée). Une édition texte préservant
-commentaires/structure sur des dialogues riches nécessite une vraie couche AST (comme
-`QuestGiverEditor` mais imbriquée) — non bricolée dans cette V1.
+de chemin.
+
+### Éditeur guidé `dialogue.node.*` / `dialogue.choice.*` (issue #82 phase 1)
+
+Cinq mutations (`DIALOGUE_WRITE`, `confirm` obligatoire côté panel, audit) éditent un dialogue
+**déjà chargé**, via `DialogueDefinitionEditor` (pur IO + parsing). Périmètre volontairement
+restreint : **locuteur / texte** d'un nœud, **nœud simple**, **choix simple** (aucune condition,
+aucune action hors `CLOSE`). Hors périmètre phase 1 : édition des actions/conditions riches,
+renommage de nœud, suppression de nœud, réordonnancement.
+
+Discipline d'écriture, à chaque mutation :
+
+1. **localiser** le fichier du dialogue par son `id` (jamais un chemin fourni) ;
+2. le **re-parser tel quel** — s'il est *déjà* invalide → `SOURCE_INVALID`, rien n'est écrit ;
+3. appliquer la mutation sur le modèle métier `DialogueDefinition` ;
+4. **sérialiser le dialogue complet** (`DialogueDefinitionWriter` — les 10 actions et 8 conditions
+   + négation, aucune perte), le re-parser **en mémoire** et exiger l'**égalité sémantique**
+   (`reparsed.equals(muté)`) — sinon `ROUNDTRIP`, rien n'est écrit ;
+5. écrire **atomiquement** (fichier temporaire + `move`) ;
+6. **recharger tout le dossier** : si le fichier est rejeté ou le dialogue absent → `RELOAD_FAILED`
+   et le contenu d'origine est **restauré à l'octet près** ; sinon `YamlDialogueEngine.reload()`
+   (le dialogue édité est immédiatement pris en compte en jeu).
+
+Le fichier édité adopte le **format canonique** du panel : `id` / `start` / `nodes` (départ
+d'abord puis par id), `text` toujours entre guillemets doubles, commentaires et mise en forme
+d'origine **non conservés**. Choix assumé (voir rapport #82) : l'intégrité des actions/conditions,
+elle, est garantie par le garde-fou round-trip.
+
+Codes d'échec : `NOT_FOUND`, `SOURCE_INVALID`, `INVALID`, `NODE_EXISTS`, `UNKNOWN_NODE`,
+`UNKNOWN_TARGET`, `UNKNOWN_CHOICE`, `UNSAFE_CHOICE`, `LAST_CHOICE`, `ROUNDTRIP`, `RELOAD_FAILED`,
+`ERROR`.
+
+**Reste pour la suite de #82** : actions typées éditables (`START_QUEST`, `CLOSE`…), conditions
+éditables, renommage / déplacement / suppression de nœud, réordonnancement des choix, rendu
+graphe interactif.
 
 ---
 

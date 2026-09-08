@@ -23,6 +23,9 @@ public final class AgentActionCatalog {
     private static final Pattern STORY_ID = Pattern.compile("[a-z0-9_-]{1,64}");
     private static final Pattern NPC_ID = Pattern.compile("[a-z0-9._-]{1,64}");
     private static final Pattern DIALOGUE_REF = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,128})?");
+    private static final Pattern DIALOGUE_NODE_ID = Pattern.compile("[a-z0-9_][a-z0-9_-]{0,63}");
+    private static final int MAX_DIALOGUE_TEXT = 512;
+    private static final int MAX_DIALOGUE_CHOICE_INDEX = 199;
     private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
     private static final Pattern WORLD_NAME = Pattern.compile("[A-Za-z0-9_./-]{1,64}");
     /** Bornes de sécurité de position miroir de {@code CitizensSpawnPlanner} côté plugin (#81 phase 2). */
@@ -70,6 +73,11 @@ public final class AgentActionCatalog {
         add("npc.citizens.link", Permission.NPC_BIND_WRITE, true, false, "Lier un PNJ Citizens existant");
         add("npc.citizens.create", Permission.NPC_SPAWN_WRITE, true, false, "Créer le PNJ Citizens");
         add("dialogue.definition.create", Permission.DIALOGUE_WRITE, true, false, "Créer un dialogue (squelette)");
+        add("dialogue.node.create", Permission.DIALOGUE_WRITE, true, false, "Ajouter un nœud");
+        add("dialogue.node.update", Permission.DIALOGUE_WRITE, true, false, "Modifier un nœud");
+        add("dialogue.choice.add", Permission.DIALOGUE_WRITE, true, false, "Ajouter un choix");
+        add("dialogue.choice.update", Permission.DIALOGUE_WRITE, true, false, "Modifier un choix");
+        add("dialogue.choice.delete", Permission.DIALOGUE_WRITE, true, false, "Supprimer un choix");
         // Mutations
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");
@@ -301,6 +309,85 @@ public final class AgentActionCatalog {
                 params.put("speaker", speaker);
                 params.put("text", text);
             }
+            case "dialogue.node.create", "dialogue.node.update" -> {
+                String dialogueId = normalizeDialogueId(trim(form.get("dialogue_id")));
+                if (dialogueId == null) {
+                    return Validation.fail("Identifiant de dialogue manquant ou invalide (« namespace:clé » ou une clé simple).");
+                }
+                String nodeId = trim(form.get("node_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!DIALOGUE_NODE_ID.matcher(nodeId).matches()) {
+                    return Validation.fail("Identifiant de nœud manquant ou invalide (minuscules, chiffres, « _ - », max 64).");
+                }
+                String speaker = trim(form.get("speaker"));
+                if (speaker.isEmpty() || speaker.length() > 128 || speaker.indexOf('\n') >= 0) {
+                    return Validation.fail("Locuteur manquant, trop long, ou multi-ligne.");
+                }
+                String text = trim(form.get("text"));
+                if (text.isEmpty() || text.length() > MAX_DIALOGUE_TEXT || text.indexOf('\n') >= 0) {
+                    return Validation.fail("Texte du nœud manquant, trop long (max " + MAX_DIALOGUE_TEXT + "), ou multi-ligne.");
+                }
+                params.put("dialogue_id", dialogueId);
+                params.put("node_id", nodeId);
+                params.put("speaker", speaker);
+                params.put("text", text);
+            }
+            case "dialogue.choice.add", "dialogue.choice.update" -> {
+                String dialogueId = normalizeDialogueId(trim(form.get("dialogue_id")));
+                if (dialogueId == null) {
+                    return Validation.fail("Identifiant de dialogue manquant ou invalide.");
+                }
+                String nodeId = trim(form.get("node_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!DIALOGUE_NODE_ID.matcher(nodeId).matches()) {
+                    return Validation.fail("Nœud source manquant ou invalide.");
+                }
+                String choiceText = trim(form.get("choice_text"));
+                if (choiceText.isEmpty() || choiceText.length() > MAX_DIALOGUE_TEXT || choiceText.indexOf('\n') >= 0) {
+                    return Validation.fail("Texte du choix manquant, trop long (max " + MAX_DIALOGUE_TEXT + "), ou multi-ligne.");
+                }
+                boolean close = "true".equals(trim(form.get("close")));
+                String next = trim(form.get("next_node_id")).toLowerCase(java.util.Locale.ROOT);
+                if (close) {
+                    if (!next.isEmpty()) {
+                        return Validation.fail("Un choix « fermeture » ne cible pas de nœud — laisser « nœud cible » vide.");
+                    }
+                } else {
+                    if (!DIALOGUE_NODE_ID.matcher(next).matches()) {
+                        return Validation.fail("Choisir un nœud cible OU cocher « termine le dialogue ».");
+                    }
+                }
+                params.put("dialogue_id", dialogueId);
+                params.put("node_id", nodeId);
+                params.put("choice_text", choiceText);
+                if (close) {
+                    params.put("close", "true");
+                } else {
+                    params.put("next_node_id", next);
+                }
+                if ("dialogue.choice.update".equals(type)) {
+                    Integer idx = parseIndex(trim(form.get("choice_index")));
+                    if (idx == null) {
+                        return Validation.fail("Index de choix manquant ou hors bornes.");
+                    }
+                    params.put("choice_index", idx.toString());
+                }
+            }
+            case "dialogue.choice.delete" -> {
+                String dialogueId = normalizeDialogueId(trim(form.get("dialogue_id")));
+                if (dialogueId == null) {
+                    return Validation.fail("Identifiant de dialogue manquant ou invalide.");
+                }
+                String nodeId = trim(form.get("node_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!DIALOGUE_NODE_ID.matcher(nodeId).matches()) {
+                    return Validation.fail("Nœud source manquant ou invalide.");
+                }
+                Integer idx = parseIndex(trim(form.get("choice_index")));
+                if (idx == null) {
+                    return Validation.fail("Index de choix manquant ou hors bornes.");
+                }
+                params.put("dialogue_id", dialogueId);
+                params.put("node_id", nodeId);
+                params.put("choice_index", idx.toString());
+            }
             case "player.resetnew.confirm" -> params.put("confirm", "true");
             default -> {
                 // player.list / *.player.status / *.list / player.resetnew.preview : pas de paramètre
@@ -312,6 +399,24 @@ public final class AgentActionCatalog {
 
     private static String trim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /** {@code namespace:clé} minuscule, ou {@code null} si invalide. Une clé simple reçoit {@code rpgquest:}. */
+    private static String normalizeDialogueId(String raw) {
+        String value = trim(raw).toLowerCase(java.util.Locale.ROOT);
+        if (value.isEmpty() || !DIALOGUE_REF.matcher(value).matches()) {
+            return null;
+        }
+        return value.contains(":") ? value : "rpgquest:" + value;
+    }
+
+    private static Integer parseIndex(String raw) {
+        try {
+            int v = Integer.parseInt(raw);
+            return (v < 0 || v > MAX_DIALOGUE_CHOICE_INDEX) ? null : v;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /** Parse un décimal fini, ou {@code null} (vide / non numérique / NaN / Infinity). */

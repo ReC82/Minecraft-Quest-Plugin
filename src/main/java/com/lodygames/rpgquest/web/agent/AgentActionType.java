@@ -14,7 +14,8 @@ import java.util.Optional;
  * <ul>
  *   <li><strong>Lectures</strong> (sans effet) : {@link #PLAYER_VARIABLE_GET}, {@link #PLAYER_LIST},
  *       {@link #QUEST_LIST}, {@link #QUEST_PLAYER_STATUS}, {@link #STORY_LIST},
- *       {@link #STORY_PLAYER_STATUS}, {@link #ITEM_LIST}, {@link #PLAYER_RESETNEW_PREVIEW}.</li>
+ *       {@link #STORY_PLAYER_STATUS}, {@link #ITEM_LIST}, {@link #NPC_LIST},
+ *       {@link #PLAYER_RESETNEW_PREVIEW}.</li>
  *   <li><strong>Mutations</strong> (confirmation exigée côté panel) : {@link #PLAYER_ITEM_GIVE},
  *       {@link #QUEST_START}, {@link #QUEST_COMPLETE}, {@link #QUEST_RESET}, {@link #STORY_ADVANCE},
  *       {@link #STORY_COMPLETE}, {@link #PLAYER_VARIABLE_SET}, {@link #PLAYER_RESETNEW_CONFIRM}.</li>
@@ -29,6 +30,7 @@ public enum AgentActionType {
     STORY_LIST("story.list"),
     STORY_PLAYER_STATUS("story.player.status"),
     ITEM_LIST("item.list"),
+    NPC_LIST("npc.list"),
     PLAYER_RESETNEW_PREVIEW("player.resetnew.preview"),
 
     PLAYER_ITEM_GIVE("player.item.give"),

@@ -60,6 +60,7 @@ public final class AgentActionExecutor {
                 case QUEST_LIST -> questList(action);
                 case STORY_LIST -> storyList(action);
                 case ITEM_LIST -> itemList(action);
+                case NPC_LIST -> npcList(action);
                 case QUEST_PLAYER_STATUS -> questPlayerStatus(action);
                 case STORY_PLAYER_STATUS -> storyPlayerStatus(action);
                 case PLAYER_RESETNEW_PREVIEW -> resetPreview(action);
@@ -226,6 +227,48 @@ public final class AgentActionExecutor {
         } catch (RuntimeException e) {
             return done(AgentActionOutcome.failed(action.id(), "Échec : " + e.getClass().getSimpleName()));
         }
+    }
+
+    private CompletableFuture<AgentActionOutcome> npcList(AgentAction action) {
+        return actions.npcDefinitions().thenApply(view -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (AgentActions.NpcSummary n : view.npcs()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", n.id());
+                row.put("displayName", n.displayName());
+                row.put("citizensNumericId", n.citizensNumericId());
+                row.put("bindingCount", n.bindingCount());
+                row.put("bound", n.bound());
+                row.put("hasDialogue", n.hasDialogue());
+                row.put("dialogueId", n.dialogueId());
+                row.put("dialogueNodes", n.dialogueNodes());
+                row.put("dialogueChoices", n.dialogueChoices());
+                row.put("dialogueStartsQuests", n.dialogueStartsQuests());
+                row.put("questsGiven", n.questsGiven());
+                row.put("questsReferenced", n.questsReferenced());
+                row.put("sources", n.sources());
+                List<Map<String, Object>> warnings = new ArrayList<>();
+                for (AgentActions.NpcWarning w : n.warnings()) {
+                    Map<String, Object> wm = new LinkedHashMap<>();
+                    wm.put("code", w.code());
+                    wm.put("severity", w.severity());
+                    wm.put("message", w.message());
+                    warnings.add(wm);
+                }
+                row.put("warnings", warnings);
+                rows.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("npcs", rows);
+            details.put("canonicalIds", view.canonicalIds());
+            details.put("citizensAvailable", view.citizensAvailable());
+            details.put("total", view.total());
+            details.put("bound", view.bound());
+            details.put("unbound", view.unbound());
+            details.put("withWarnings", view.withWarnings());
+            return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
+                    rows.size() + " PNJ RPGQuest (" + view.withWarnings() + " avec avertissement).", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
     // ---- Lectures avec joueur -------------------------------------------------------

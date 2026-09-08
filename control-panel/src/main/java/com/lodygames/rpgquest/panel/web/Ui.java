@@ -89,6 +89,20 @@ public final class Ui {
         return "<span class=\"badge\">" + Http.esc(label) + "</span>";
     }
 
+    /**
+     * Pastille de sévérité d'une anomalie de configuration : {@code error} / {@code warning} /
+     * {@code info} — glyphe + texte, jamais couleur seule. Réutilise les styles de pastille
+     * existants (aucun CSS nouveau).
+     */
+    public static String severity(String level) {
+        String l = level == null ? "" : level.trim().toLowerCase(java.util.Locale.ROOT);
+        return switch (l) {
+            case "error" -> pill("ERREUR", "failed", "✕");
+            case "warning" -> pill("ATTENTION", "pending", "!");
+            default -> pill("INFO", "neutral", "i");
+        };
+    }
+
     /** Type d'action agent : libellé humain (via {@link AgentActionCatalog}) + fil technique copiable. */
     public static String actionType(String type) {
         String label = AgentActionCatalog.spec(type).map(AgentActionCatalog.Spec::label).orElse(type);

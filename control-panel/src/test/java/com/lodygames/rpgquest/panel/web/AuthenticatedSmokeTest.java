@@ -34,7 +34,8 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class AuthenticatedSmokeTest {
 
-    private static final List<String> PROTECTED_PAGES = List.of("/dashboard", "/players", "/quests", "/stories");
+    private static final List<String> PROTECTED_PAGES =
+            List.of("/dashboard", "/players", "/quests", "/stories", "/npcs");
 
     @TempDir
     Path tmp;
@@ -84,6 +85,7 @@ class AuthenticatedSmokeTest {
         assertTrue(get("/players").body().contains("<h1>Joueurs</h1>"));
         assertTrue(get("/quests").body().contains("<h1>Quêtes</h1>"));
         assertTrue(get("/stories").body().contains("<h1>Stories</h1>"));
+        assertTrue(get("/npcs").body().contains("<h1>PNJ</h1>"));
     }
 
     // ---- infra ------------------------------------------------------------------------

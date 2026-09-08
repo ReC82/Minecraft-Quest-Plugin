@@ -110,6 +110,30 @@ public interface AgentActions {
 
     List<ItemSummary> itemDefinitions();
 
+    /**
+     * Catalogue PNJ (action {@code npc.list}) — <strong>lecture seule</strong>. Un « PNJ RPGQuest »
+     * est un id logique croisé entre la liaison Citizens, le dialogue {@code rpgquest:<id>}, le
+     * champ {@code giver:} des quêtes (#75) et les objectifs {@code TALK_TO_NPC}. Voir
+     * {@link com.lodygames.rpgquest.npc.NpcCatalog} pour la dérivation (aucun accès au monde :
+     * position/monde et PNJ Citizens non tagués sont hors périmètre de cette V1).
+     */
+    record NpcSummary(String id, String displayName, Integer citizensNumericId, int bindingCount,
+                      boolean bound, boolean hasDialogue, String dialogueId, int dialogueNodes,
+                      int dialogueChoices, List<String> dialogueStartsQuests, List<String> questsGiven,
+                      List<String> questsReferenced, List<String> sources, List<NpcWarning> warnings) {
+    }
+
+    /** Anomalie de configuration d'un PNJ. {@code severity} ∈ {@code error|warning|info}. */
+    record NpcWarning(String code, String severity, String message) {
+    }
+
+    /** Vue complète renvoyée par {@code npc.list} : catalogue + ids canoniques (#66) + compteurs. */
+    record NpcCatalogView(List<NpcSummary> npcs, List<String> canonicalIds, boolean citizensAvailable,
+                          int total, int bound, int unbound, int withWarnings) {
+    }
+
+    CompletableFuture<NpcCatalogView> npcDefinitions();
+
     /** Aperçu (dry-run, aucune écriture) de ce qu'un reset « nouveau joueur » supprimerait. */
     record ResetPreviewLine(String label, int count, String detail) {
     }

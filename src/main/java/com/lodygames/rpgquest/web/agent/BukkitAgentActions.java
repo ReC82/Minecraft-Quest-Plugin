@@ -1,8 +1,15 @@
 package com.lodygames.rpgquest.web.agent;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.database.NpcBindingRepository;
+import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
+import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
+import com.lodygames.rpgquest.dialogue.model.DialogueNode;
+import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
+import com.lodygames.rpgquest.npc.NpcCatalog;
+import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.player.PlayerResetService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
@@ -62,11 +69,15 @@ public final class BukkitAgentActions implements AgentActions {
     private final YamlCustomItemRegistry customItemRegistry;
     private final PlayerResetService playerResetService;
     private final PlayerVariableWriter variableWriter;
+    private final YamlDialogueEngine dialogueEngine;
+    private final NpcIdentityService npcIdentityService;
+    private final NpcBindingRepository npcBindingRepository;
 
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
                               QuestProgressEngine questProgressEngine, StoryService storyService,
                               YamlCustomItemRegistry customItemRegistry, PlayerResetService playerResetService,
-                              PlayerVariableWriter variableWriter) {
+                              PlayerVariableWriter variableWriter, YamlDialogueEngine dialogueEngine,
+                              NpcIdentityService npcIdentityService, NpcBindingRepository npcBindingRepository) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -74,6 +85,9 @@ public final class BukkitAgentActions implements AgentActions {
         this.customItemRegistry = customItemRegistry;
         this.playerResetService = playerResetService;
         this.variableWriter = variableWriter;
+        this.dialogueEngine = dialogueEngine;
+        this.npcIdentityService = npcIdentityService;
+        this.npcBindingRepository = npcBindingRepository;
     }
 
     // ---- Lectures -------------------------------------------------------------------------------
@@ -187,6 +201,69 @@ public final class BukkitAgentActions implements AgentActions {
             out.add(new ItemSummary(d.id().toString(), d.displayName(), d.type().name()));
         }
         return out;
+    }
+
+    @Override
+    public CompletableFuture<NpcCatalogView> npcDefinitions() {
+        // Extraction Bukkit -> types simples, puis dérivation pure par NpcCatalog. Aucune lecture du
+        // monde (position / PNJ Citizens non tagués = hors périmètre V1). Le seul accès disque est
+        // le SELECT des liaisons Citizens, déjà asynchrone.
+        List<NpcCatalog.DialogueLink> dialogueLinks = new ArrayList<>();
+        for (DialogueDefinition d : dialogueEngine.dialogues()) {
+            if (!DEFAULT_NAMESPACE.equals(d.id().getNamespace())) {
+                continue;
+            }
+            int choiceCount = 0;
+            List<String> starts = new ArrayList<>();
+            for (DialogueNode node : d.nodes().values()) {
+                choiceCount += node.choices().size();
+                node.choices().forEach(choice -> choice.actions().stream()
+                        .filter(a -> a instanceof StartQuestAction)
+                        .map(a -> ((StartQuestAction) a).questId().toString())
+                        .forEach(q -> {
+                            if (!starts.contains(q)) {
+                                starts.add(q);
+                            }
+                        }));
+            }
+            dialogueLinks.add(new NpcCatalog.DialogueLink(d.id().getKey(), d.id().toString(),
+                    d.nodes().size(), choiceCount, List.copyOf(starts), d.startNode().speaker()));
+        }
+
+        List<NpcCatalog.QuestLink> questLinks = new ArrayList<>();
+        for (QuestDefinition q : questEngine.quests()) {
+            List<String> talk = new ArrayList<>();
+            for (QuestStep step : q.steps()) {
+                for (QuestObjective objective : step.objectives()) {
+                    if (objective instanceof TalkToNpcObjective t && !talk.contains(t.npcId())) {
+                        talk.add(t.npcId());
+                    }
+                }
+            }
+            questLinks.add(new NpcCatalog.QuestLink(q.id().toString(), q.giver(), List.copyOf(talk)));
+        }
+
+        boolean citizensAvailable = npcIdentityService.citizensAvailable();
+        return npcBindingRepository.loadAll().thenApply(bindings -> {
+            List<NpcCatalog.CitizensBinding> cb = new ArrayList<>();
+            for (NpcBindingRepository.Binding b : bindings) {
+                cb.add(new NpcCatalog.CitizensBinding(b.npcId(), b.citizensNumericId()));
+            }
+            NpcCatalog.Result result = NpcCatalog.build(dialogueLinks, questLinks, cb, citizensAvailable);
+            List<NpcSummary> npcs = new ArrayList<>();
+            for (NpcCatalog.NpcRow r : result.npcs()) {
+                List<NpcWarning> warnings = new ArrayList<>();
+                for (NpcCatalog.Warning w : r.warnings()) {
+                    warnings.add(new NpcWarning(w.code(), w.severity(), w.message()));
+                }
+                npcs.add(new NpcSummary(r.id(), r.displayName(), r.citizensNumericId(), r.bindingCount(),
+                        r.bound(), r.hasDialogue(), r.dialogueId(), r.dialogueNodes(), r.dialogueChoices(),
+                        r.dialogueStartsQuests(), r.questsGiven(), r.questsReferenced(), r.sources(),
+                        List.copyOf(warnings)));
+            }
+            return new NpcCatalogView(List.copyOf(npcs), result.canonicalIds(), result.citizensAvailable(),
+                    result.total(), result.bound(), result.unbound(), result.withWarnings());
+        });
     }
 
     @Override

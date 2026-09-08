@@ -98,7 +98,9 @@ public final class PanelApp {
                 Permission.CONTENT_READ, agentPages::quests));
         route("/stories", exchange -> handleBusinessPage(exchange, "/stories", "Stories",
                 Permission.CONTENT_READ, agentPages::stories));
-        for (String path : new String[] {"/npc", "/diagnostics", "/admin", "/dev"}) {
+        route("/npcs", exchange -> handleBusinessPage(exchange, "/npcs", "PNJ",
+                Permission.NPC_READ, agentPages::npcs));
+        for (String path : new String[] {"/diagnostics", "/admin", "/dev"}) {
             route(path, exchange -> handlePlaceholder(exchange, path));
         }
         agentEndpoints.register(server);
@@ -560,7 +562,7 @@ public final class PanelApp {
 
     private static String safeReturnPath(String requested, String fallback) {
         return switch (requested == null ? "" : requested) {
-            case "/players", "/quests", "/stories", "/agents" -> requested;
+            case "/players", "/quests", "/stories", "/npcs", "/agents" -> requested;
             default -> fallback;
         };
     }

@@ -114,6 +114,15 @@ class AgentActionExecutorTest {
     }
 
     @Test
+    void npcListReturnsCatalogWithWarnings() {
+        AgentActionOutcome outcome = run(new AgentAction("n0", "npc.list", Map.of()));
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertTrue(outcome.details().containsKey("npcs"));
+        assertEquals(List.of("guard"), outcome.details().get("canonicalIds"));
+        assertEquals(1, outcome.details().get("withWarnings"));
+    }
+
+    @Test
     void questPlayerStatusResolvesPlayer() {
         AgentActionOutcome outcome = run(new AgentAction("q1", "quest.player.status",
                 Map.of("player", "Rondoudou9000")));
@@ -275,6 +284,20 @@ class AgentActionExecutorTest {
         @Override
         public List<ItemSummary> itemDefinitions() {
             return List.of(new ItemSummary("rpgquest:rune_rappel", "Rune de rappel", "TOOL"));
+        }
+
+        @Override
+        public CompletableFuture<NpcCatalogView> npcDefinitions() {
+            NpcSummary guard = new NpcSummary("guard", "Garde", 7, 1, true, true, "rpgquest:guard", 6, 9,
+                    List.of("rpgquest:first_steps"), List.of("rpgquest:crystal_hunt"),
+                    List.of("rpgquest:crystal_hunt"), List.of("BINDING", "DIALOGUE", "QUEST_GIVER", "QUEST_TALK"),
+                    List.of());
+            NpcSummary garde = new NpcSummary("garde", null, 3, 1, true, false, null, 0, 0,
+                    List.of(), List.of(), List.of(), List.of("BINDING"),
+                    List.of(new NpcWarning("TAGGED_UNUSED", "info",
+                            "PNJ tagué « garde » mais aucun dialogue ni quête ne l'utilise. Id canonique proche : « guard » ?")));
+            return CompletableFuture.completedFuture(new NpcCatalogView(
+                    List.of(garde, guard), List.of("guard"), true, 2, 2, 0, 1));
         }
 
         @Override

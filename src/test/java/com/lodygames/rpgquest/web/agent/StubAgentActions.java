@@ -46,6 +46,12 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<NpcCatalogView> npcDefinitions() {
+        return CompletableFuture.completedFuture(
+                new NpcCatalogView(List.of(), List.of(), false, 0, 0, 0, 0));
+    }
+
+    @Override
     public CompletableFuture<ResetPreview> resetPreview(UUID playerId) {
         return CompletableFuture.completedFuture(new ResetPreview(false, List.of()));
     }

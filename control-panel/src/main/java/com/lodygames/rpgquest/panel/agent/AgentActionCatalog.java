@@ -52,6 +52,7 @@ public final class AgentActionCatalog {
         add("story.list", Permission.CONTENT_READ, false, false, "Rafraîchir le catalogue de stories");
         add("story.player.status", Permission.PLAYERS_READ, false, true, "État des stories d'un joueur");
         add("item.list", Permission.CONTENT_READ, false, false, "Rafraîchir la liste des objets");
+        add("npc.list", Permission.NPC_READ, false, false, "Rafraîchir le catalogue des PNJ");
         // Mutations
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");

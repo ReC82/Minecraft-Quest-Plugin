@@ -542,7 +542,9 @@ public final class RPGQuestBootstrap {
                 plugin, agentConfig, new HeartbeatPayload(healthSource),
                 new AgentActionExecutor(new BukkitPlayerDirectory(plugin), variableRepository::get,
                         new BukkitAgentActions(plugin, questEngine, questProgressEngine, storyService,
-                                customItemRegistry, playerResetService, variableRepository::set))));
+                                customItemRegistry, playerResetService, variableRepository::set,
+                                dialogueEngine, npcIdentityService,
+                                new NpcBindingRepository(databaseService.databaseManager())))));
 
         registerCommands();
     }

@@ -441,6 +441,136 @@ public final class AgentPages {
     }
 
     // ================================================================================
+    //  PNJ (V1 — lecture, issues #66 / #75 réutilisées)
+    // ================================================================================
+
+    public String npcs(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append("<h1>PNJ</h1><p class=\"sub\">Catalogue en lecture des PNJ RPGQuest : identité "
+                + "technique, liaison Citizens, dialogue et quêtes associés, et anomalies de "
+                + "configuration. Un « PNJ » est un id logique (ex. <code>guard</code>), pas une "
+                + "entité — position et monde ne sont pas suivis dans cette V1.</p>");
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+        sb.append(agentPicker(agentId, "/npcs", ""));
+
+        sb.append("<h2>Catalogue</h2>");
+        sb.append(actionButton(session, agentId, "npc.list", "/npcs", "", "Rafraîchir le catalogue", ""));
+
+        Optional<Map<String, Object>> details = latestDetails(agentId, "npc.list");
+        if (details.isEmpty()) {
+            sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Rafraîchir le catalogue »."));
+            sb.append(actionsPanel(agentId));
+            return sb.toString();
+        }
+        Map<String, Object> d = details.get();
+        List<Object> npcs = asList(d.get("npcs"));
+
+        // Titres humains des quêtes, si un quest.list a déjà été chargé (données locales du panel).
+        Map<String, String> questTitles = titleIndex(
+                latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of()), "id", "title");
+
+        boolean citizensAvailable = Boolean.TRUE.equals(d.get("citizensAvailable"));
+        if (!citizensAvailable) {
+            sb.append("<div class=\"banner info\">Citizens est inactif sur le serveur cible : les "
+                    + "liaisons PNJ ne peuvent pas être vérifiées, les anomalies « aucun PNJ tagué » "
+                    + "sont affichées à titre indicatif seulement.</div>");
+        }
+        sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Résumé</span> ")
+                .append(Http.esc(str(d.get("total")))).append(" PNJ · ")
+                .append(Http.esc(str(d.get("bound")))).append(" tagué(s) Citizens · ")
+                .append(Http.esc(str(d.get("unbound")))).append(" sans tag · ")
+                .append(Http.esc(str(d.get("withWarnings")))).append(" avec avertissement</p>");
+
+        if (npcs.isEmpty()) {
+            sb.append(Ui.empty("Aucun PNJ RPGQuest connu (ni liaison Citizens, ni dialogue, ni quête)."));
+        } else {
+            for (Object o : npcs) {
+                sb.append(renderNpcCard(asMap(o), questTitles));
+            }
+        }
+
+        List<Object> canonical = asList(d.get("canonicalIds"));
+        sb.append("<details><summary class=\"muted\">IDs canoniques connus (")
+                .append(canonical.size()).append(") — attendus par les dialogues et quêtes</summary>");
+        if (canonical.isEmpty()) {
+            sb.append(Ui.empty("Aucun id référencé par le contenu."));
+        } else {
+            sb.append("<p class=\"meta-line\">");
+            for (Object c : canonical) {
+                sb.append(Ui.id(str(c))).append(' ');
+            }
+            sb.append("</p><p class=\"faint\" style=\"font-size:12px\">Cette liste est la source de "
+                    + "vérité pour <code>/rpgadmin npc tag</code> (issue #66, non encore câblée côté "
+                    + "commande).</p>");
+        }
+        sb.append("</details>");
+
+        sb.append(actionsPanel(agentId));
+        return sb.toString();
+    }
+
+    /** Carte PNJ : nom lisible d'abord, id technique copiable, relations et anomalies en clair. */
+    private String renderNpcCard(Map<String, Object> n, Map<String, String> questTitles) {
+        String id = str(n.get("id"));
+        String displayName = str(n.get("displayName"));
+        boolean hasName = !displayName.isEmpty() && !"null".equals(displayName);
+        boolean bound = Boolean.TRUE.equals(n.get("bound"));
+
+        StringBuilder sb = new StringBuilder("<article class=\"entity-card\">");
+        sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
+                .append(hasName ? MiniText.html(displayName) : Http.esc(MiniText.prettifyId(id)))
+                .append("</h3><div class=\"entity-meta\">");
+        String numeric = str(n.get("citizensNumericId"));
+        if (bound && !numeric.isEmpty() && !"null".equals(numeric)) {
+            sb.append(Ui.badge("Citizens #" + numeric));
+        } else if (bound) {
+            sb.append(Ui.badge("Citizens"));
+        } else {
+            sb.append(Ui.pill("non tagué", "pending", "!"));
+        }
+        if (Boolean.TRUE.equals(n.get("hasDialogue"))) {
+            sb.append(Ui.badge("dialogue"));
+        }
+        sb.append(Ui.id(id)).append("</div></div>");
+
+        List<Object> warnings = asList(n.get("warnings"));
+        if (!warnings.isEmpty()) {
+            sb.append("<ul class=\"obj-list\">");
+            for (Object w : warnings) {
+                Map<String, Object> wm = asMap(w);
+                sb.append("<li>").append(Ui.severity(str(wm.get("severity"))))
+                        .append("<span class=\"obj-text\">").append(Http.esc(str(wm.get("message"))))
+                        .append("</span>").append(Ui.id(str(wm.get("code")))).append("</li>");
+            }
+            sb.append("</ul>");
+        }
+
+        String dialogueId = str(n.get("dialogueId"));
+        if (!dialogueId.isEmpty() && !"null".equals(dialogueId)) {
+            String detail = str(n.get("dialogueNodes")) + " nœud(s), " + str(n.get("dialogueChoices")) + " choix";
+            sb.append(Ui.metaLine("Dialogue", Http.esc(MiniText.prettifyId(dialogueId)) + " " + Ui.id(dialogueId)
+                    + " <span class=\"muted\">— " + Http.esc(detail) + "</span>"));
+            List<Object> starts = asList(n.get("dialogueStartsQuests"));
+            if (!starts.isEmpty()) {
+                sb.append(Ui.metaLine("Le dialogue démarre", referencedQuests(starts, questTitles)));
+            }
+        }
+        List<Object> given = asList(n.get("questsGiven"));
+        if (!given.isEmpty()) {
+            sb.append(Ui.metaLine("Donne", referencedQuests(given, questTitles)));
+        }
+        List<Object> referenced = asList(n.get("questsReferenced"));
+        if (!referenced.isEmpty()) {
+            sb.append(Ui.metaLine("Objectif « parler à »", referencedQuests(referenced, questTitles)));
+        }
+        return sb.append("</article>").toString();
+    }
+
+    // ================================================================================
     //  Fragments partagés
     // ================================================================================
 

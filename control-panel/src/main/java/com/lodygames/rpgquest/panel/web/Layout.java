@@ -18,7 +18,7 @@ public final class Layout {
                 item("Dashboard", "/dashboard", true, activeHref),
                 item("Agents", "/agents", true, activeHref),
                 item("Joueurs", "/players", true, activeHref),
-                item("PNJ", "/npc", false, activeHref),
+                item("PNJ", "/npcs", true, activeHref),
                 item("Quêtes", "/quests", true, activeHref),
                 item("Stories", "/stories", true, activeHref),
                 item("Diagnostics", "/diagnostics", false, activeHref),

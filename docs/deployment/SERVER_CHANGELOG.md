@@ -1598,6 +1598,22 @@ migration à défaire.
 
 ### Exécution réelle
 
-À compléter au déploiement.
+Session du 2026-09-08 (~19:14–19:18 UTC). Branche `feat/control-panel-admin-tools` @ `4006095`.
+
+- `scripts/deploy-verygames.sh -y` — JAR `rpgquest-0.1.0-SNAPSHOT.jar` 1 429 560 o, SHA-256
+  `d9a47cf868991dae8f6a072856f1f0519e87fd201cfc63388c486e4b0ba9f7ee` ; backup auto
+  `~/.local/share/rpgquest/verygames-backups/rpgquest-20260908T191434Z-predeploy.jar`
+  (SHA-256 `12f66391…`).
+- `scripts/verygames-restart.sh` **une fois** → OFFLINE → relance auto → **ONLINE** (aucune
+  protection anti-boucle déclenchée ; serveur stable depuis ~2 h avant le restart). `/plugins`
+  RPGQuest + Citizens + Multiverse + WorldEdit **verts** ; `rpgquest version` → `v0.1.0-SNAPSHOT` ;
+  heartbeat agent **ONLINE** ; mondes `world_hub` / `claims` / `wild` `loaded:true`.
+- Non-régression : `dialogue.list` → **SUCCESS** (7) ; `npc.list` → **SUCCESS** (8) ;
+  `journalctl -u plugadmin` **0 `ERROR`**.
+- **Test manuel en jeu #87** (owner, non-OP) : `PENDING MANUAL VALIDATION` — entrer dans le Wild,
+  relever la position, se déconnecter/reconnecter ×2 → `world` doit rester `wild`, position
+  identique ou très proche, aucun passage Hub ; log serveur `join_restore … world=wild
+  action=KEEP_LAST_LOCATION`. Non-régression à confirmer : déconnexion dans le Hub → retour Hub ;
+  nouveau compte → spawn du village.
 
 Rapport : `docs/claude-reports/2026-09-08_1905_bug-wild-reconnexion-hub-87.md`.

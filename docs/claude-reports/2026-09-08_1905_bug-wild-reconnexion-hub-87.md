@@ -4,12 +4,12 @@
 * Date : 2026-09-08
 * Heure : 19:05 (locale, UTC sur cette machine)
 * Sujet : Bug **#87** — un joueur déconnecté dans le Wild se reconnecte au Hub au lieu de sa position
-* Statut : DONE (code + tests + build ; déploiement DEV + validation manuelle en jeu = voir « Déploiement » / `PENDING MANUAL VALIDATION`)
+* Statut : DONE — code + tests + build verts ; **JAR déployé sur VeryGames DEV** (1 restart, serveur `ONLINE`, agent reconnecté, `dialogue.list`/`npc.list` `SUCCESS`, 0 `ERROR`). **Validation manuelle en jeu (owner, client réel) = `PENDING MANUAL VALIDATION`.**
 * Branche Git : `feat/control-panel-admin-tools`
-* Commit actuel si disponible : commit de suivi de ce rapport
+* Commit actuel si disponible : `4006095` (fix) — commit de suivi pour ce rapport + « Exécution réelle »
 * Début de la tâche : 2026-09-08 18:50:51 (heure locale réelle)
-* Fin de la tâche : 2026-09-08 19:35:00 (heure locale réelle, approx.)
-* Durée totale : ~00:44:00
+* Fin de la tâche : 2026-09-08 19:20:00 (heure locale réelle)
+* Durée totale : 00:29:09
 
 ## Demande
 
@@ -153,8 +153,8 @@ Aucun changement de `config.yml`. `hub.world` (déjà existant) est désormais a
   `brandNewPlayerLandingInHubWorldIsStillRedirectedToVillageSpawn` (onboarding conservé) ; les
   cas existants (`firstJoin*`, `returningPlayer*`, `respawn*`) restent verts.
 
-Commandes : `./gradlew :test` · `./gradlew :control-panel:test` · `./gradlew build` — **à
-renseigner** ci-dessous après exécution (lancées).
+Résultats : `./gradlew :test` → **1208 tests, 0 échec, 0 erreur** (29 ignorés) ;
+`./gradlew :control-panel:test` → **121, 0** ; `./gradlew build` → **BUILD SUCCESSFUL**.
 
 ## Tests manuels à effectuer
 
@@ -211,6 +211,26 @@ Aucune.
 
 - `scripts/rollback-verygames.sh --latest` puis **un seul** `scripts/verygames-restart.sh`.
 - Aucune migration à défaire.
+
+## Logs / diagnostic — exécution réelle du 2026-09-08 (~19:14–19:18 UTC)
+
+Branche `feat/control-panel-admin-tools` @ `4006095`.
+
+- `scripts/deploy-verygames.sh -y` — JAR `rpgquest-0.1.0-SNAPSHOT.jar` **1 429 560 o**, SHA-256
+  **`d9a47cf868991dae8f6a072856f1f0519e87fd201cfc63388c486e4b0ba9f7ee`** ; backup auto
+  `~/.local/share/rpgquest/verygames-backups/rpgquest-20260908T191434Z-predeploy.jar`
+  (SHA-256 `12f66391be6ca65fc694095b21cc3a603c779187026ecde189392e6b61b3788d`, 1 427 111 o).
+- `scripts/verygames-restart.sh` — **une seule fois** — OFFLINE → relance auto → **ONLINE**.
+  `/plugins` (RCON) : `Citizens, Multiverse-Core, RPGQuest, WorldEdit` **verts** ;
+  `rpgquest version` → `v0.1.0-SNAPSHOT`. Heartbeat agent **ONLINE**, uptime croissant, mondes
+  `world_hub` / `claims` / `wild` **tous `loaded:true`**.
+- **Non-régression** : `dialogue.list` → **SUCCESS** (7 dialogues, `loadIssues=0`) ;
+  `npc.list` → **SUCCESS** (8 PNJ). `journalctl -u plugadmin` depuis le déploiement : **0 ligne
+  `ERROR` / `Exception` / `SEVERE`**.
+- **Test manuel en jeu #87 (owner, non-OP, client réel)** : `PENDING MANUAL VALIDATION` — non
+  réalisable depuis le périmètre (pas de client). Procédure exacte : section « Tests manuels à
+  effectuer » ci-dessus. Le log serveur attendu au retour dans le Wild :
+  `join_restore player=<uuid> world=wild action=KEEP_LAST_LOCATION`.
 
 ## Logs / diagnostic
 

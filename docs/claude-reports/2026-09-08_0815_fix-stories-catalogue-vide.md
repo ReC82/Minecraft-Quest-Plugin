@@ -143,5 +143,5 @@ n'est **pas** concerné (aucun changement côté agent).
 * **Fichiers modifiés** : `AgentStore.java`, `AgentPages.java`, `AgentStoreTest.java`,
   `StoriesCatalogTest.java` (nouveau).
 * **Tests** : `:control-panel:test` 70/0 échec ; `:control-panel:build` vert.
-* **Commit final** : voir ci-dessous (ajouté après rédaction).
+* **Commit final** : `541f549` sur `feat/control-panel-admin-tools` (poussé sur origin).
 * **Aucun déploiement effectué. Aucun merge.**

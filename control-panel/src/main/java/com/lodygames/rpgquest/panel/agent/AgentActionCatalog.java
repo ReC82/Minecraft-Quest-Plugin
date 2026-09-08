@@ -21,6 +21,9 @@ public final class AgentActionCatalog {
     private static final Pattern VARIABLE_KEY = Pattern.compile("[A-Za-z0-9_.:\\-]{1,128}");
     private static final Pattern RESOURCE_ID = Pattern.compile("[a-zA-Z0-9_.:\\-/]{1,128}");
     private static final Pattern STORY_ID = Pattern.compile("[a-z0-9_-]{1,64}");
+    private static final Pattern NPC_ID = Pattern.compile("[a-z0-9._-]{1,64}");
+    private static final Pattern DIALOGUE_REF = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,128})?");
+    private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
 
     /** Suggestions de clés de variables pour les listes déroulantes (jamais imposées). */
     public static final List<String> KNOWN_VARIABLE_KEYS = List.of(
@@ -53,6 +56,10 @@ public final class AgentActionCatalog {
         add("story.player.status", Permission.PLAYERS_READ, false, true, "État des stories d'un joueur");
         add("item.list", Permission.CONTENT_READ, false, false, "Rafraîchir la liste des objets");
         add("npc.list", Permission.NPC_READ, false, false, "Rafraîchir le catalogue des PNJ");
+        // Écritures de contenu (V2 déclarative des PNJ) — confirmation obligatoire, jamais de YAML brut.
+        add("npc.definition.create", Permission.NPC_WRITE, true, false, "Créer une définition PNJ");
+        add("npc.definition.update", Permission.NPC_WRITE, true, false, "Modifier une définition PNJ");
+        add("quest.giver.set", Permission.QUEST_GIVER_WRITE, true, false, "Attribuer une quête à un PNJ");
         // Mutations
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");
@@ -173,6 +180,45 @@ public final class AgentActionCatalog {
                     return Validation.fail("Identifiant de story manquant ou invalide.");
                 }
                 params.put("story_id", storyId);
+            }
+            case "npc.definition.create", "npc.definition.update" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide (minuscules, « . _ - »).");
+                }
+                String displayName = trim(form.get("display_name"));
+                if (displayName.isEmpty() || displayName.length() > 128 || displayName.indexOf('\n') >= 0) {
+                    return Validation.fail("Nom affiché manquant, trop long, ou multi-ligne.");
+                }
+                String dialogueId = trim(form.get("dialogue_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!dialogueId.isEmpty() && !DIALOGUE_REF.matcher(dialogueId).matches()) {
+                    return Validation.fail("Dialogue invalide (« namespace:clé » ou une clé simple).");
+                }
+                String role = trim(form.get("role")).toLowerCase(java.util.Locale.ROOT);
+                if (!role.isEmpty() && !NPC_ROLE.matcher(role).matches()) {
+                    return Validation.fail("Rôle invalide (minuscules, « _ - », max 32).");
+                }
+                params.put("npc_id", npcId);
+                params.put("display_name", displayName);
+                if (!dialogueId.isEmpty()) {
+                    params.put("dialogue_id", dialogueId);
+                }
+                if (!role.isEmpty()) {
+                    params.put("role", role);
+                }
+                params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
+            }
+            case "quest.giver.set" -> {
+                String questId = trim(form.get("quest_id"));
+                if (!RESOURCE_ID.matcher(questId).matches()) {
+                    return Validation.fail("Identifiant de quête manquant ou invalide.");
+                }
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide.");
+                }
+                params.put("quest_id", questId);
+                params.put("npc_id", npcId);
             }
             case "player.resetnew.confirm" -> params.put("confirm", "true");
             default -> {

@@ -18,7 +18,10 @@ import java.util.Optional;
  *       {@link #PLAYER_RESETNEW_PREVIEW}.</li>
  *   <li><strong>Mutations</strong> (confirmation exigée côté panel) : {@link #PLAYER_ITEM_GIVE},
  *       {@link #QUEST_START}, {@link #QUEST_COMPLETE}, {@link #QUEST_RESET}, {@link #STORY_ADVANCE},
- *       {@link #STORY_COMPLETE}, {@link #PLAYER_VARIABLE_SET}, {@link #PLAYER_RESETNEW_CONFIRM}.</li>
+ *       {@link #STORY_COMPLETE}, {@link #PLAYER_VARIABLE_SET}, {@link #PLAYER_RESETNEW_CONFIRM},
+ *       {@link #NPC_DEFINITION_CREATE}, {@link #NPC_DEFINITION_UPDATE}, {@link #QUEST_GIVER_SET}
+ *       (écritures de contenu : définitions PNJ {@code npcs/*.yml} et champ {@code giver:} des
+ *       quêtes — jamais de YAML brut ni de chemin arbitraire).</li>
  * </ul>
  */
 public enum AgentActionType {
@@ -40,7 +43,10 @@ public enum AgentActionType {
     STORY_ADVANCE("story.advance"),
     STORY_COMPLETE("story.complete"),
     PLAYER_VARIABLE_SET("player.variable.set"),
-    PLAYER_RESETNEW_CONFIRM("player.resetnew.confirm");
+    PLAYER_RESETNEW_CONFIRM("player.resetnew.confirm"),
+    NPC_DEFINITION_CREATE("npc.definition.create"),
+    NPC_DEFINITION_UPDATE("npc.definition.update"),
+    QUEST_GIVER_SET("quest.giver.set");
 
     private final String wire;
 

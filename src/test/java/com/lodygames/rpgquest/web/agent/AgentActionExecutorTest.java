@@ -114,12 +114,38 @@ class AgentActionExecutorTest {
     }
 
     @Test
-    void npcListReturnsCatalogWithWarnings() {
+    void npcListReturnsCatalogWithDefinitionsAndWarnings() {
         AgentActionOutcome outcome = run(new AgentAction("n0", "npc.list", Map.of()));
         assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
         assertTrue(outcome.details().containsKey("npcs"));
-        assertEquals(List.of("guard"), outcome.details().get("canonicalIds"));
+        assertEquals(List.of("guard", "woodcutter_bob"), outcome.details().get("canonicalIds"));
+        assertEquals(List.of("guard"), outcome.details().get("definedIds"));
+        assertEquals(1, outcome.details().get("withDefinition"));
         assertEquals(1, outcome.details().get("withWarnings"));
+    }
+
+    @Test
+    void npcDefinitionCreateValidatesIdAndDelegates() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("nd0", "npc.definition.create",
+                Map.of("npc_id", "Bad Id", "display_name", "X"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("nd1", "npc.definition.create",
+                Map.of("npc_id", "woodcutter_bob"))).status(), "display_name obligatoire");
+        AgentActionOutcome ok = run(new AgentAction("nd2", "npc.definition.create",
+                Map.of("npc_id", "woodcutter_bob", "display_name", "Bûcheron Bob",
+                        "dialogue_id", "rpgquest:woodcutter_bob", "enabled", "true")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("woodcutter_bob", actions.lastNpcCreateId);
+    }
+
+    @Test
+    void questGiverSetValidatesAndDelegates() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("qg0", "quest.giver.set",
+                Map.of("quest_id", "rpgquest:woodcutters_request"))).status(), "npc_id obligatoire");
+        AgentActionOutcome ok = run(new AgentAction("qg1", "quest.giver.set",
+                Map.of("quest_id", "rpgquest:woodcutters_request", "npc_id", "woodcutter_bob")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("rpgquest:woodcutters_request", actions.lastGiverQuestId);
+        assertEquals("woodcutter_bob", actions.lastGiverNpcId);
     }
 
     @Test
@@ -286,18 +312,48 @@ class AgentActionExecutorTest {
             return List.of(new ItemSummary("rpgquest:rune_rappel", "Rune de rappel", "TOOL"));
         }
 
+        String lastNpcCreateId;
+        String lastNpcUpdateId;
+        String lastGiverQuestId;
+        String lastGiverNpcId;
+
         @Override
         public CompletableFuture<NpcCatalogView> npcDefinitions() {
-            NpcSummary guard = new NpcSummary("guard", "Garde", 7, 1, true, true, "rpgquest:guard", 6, 9,
+            NpcSummary guard = new NpcSummary("guard", "Garde", true, true, 7, 1, true,
+                    "Garde du village", "quest_giver", "rpgquest:guard", true, "rpgquest:guard", 6, 9,
                     List.of("rpgquest:first_steps"), List.of("rpgquest:crystal_hunt"),
-                    List.of("rpgquest:crystal_hunt"), List.of("BINDING", "DIALOGUE", "QUEST_GIVER", "QUEST_TALK"),
-                    List.of());
-            NpcSummary garde = new NpcSummary("garde", null, 3, 1, true, false, null, 0, 0,
-                    List.of(), List.of(), List.of(), List.of("BINDING"),
-                    List.of(new NpcWarning("TAGGED_UNUSED", "info",
-                            "PNJ tagué « garde » mais aucun dialogue ni quête ne l'utilise. Id canonique proche : « guard » ?")));
+                    List.of("rpgquest:crystal_hunt"),
+                    List.of("DEFINITION", "BINDING", "DIALOGUE", "QUEST_GIVER", "QUEST_TALK"), "LINKED", List.of());
+            NpcSummary woodcutter = new NpcSummary("woodcutter_bob", null, false, false, null, 0, true,
+                    null, null, null, false, null, 0, 0,
+                    List.of(), List.of(), List.of("rpgquest:woodcutters_request"), List.of("QUEST_TALK"),
+                    "UNDEFINED_REFERENCE",
+                    List.of(new NpcWarning("NO_DEFINITION", "error",
+                            "Aucune définition logique RPGQuest pour « woodcutter_bob » (référencé par objectif « parler à »).")));
             return CompletableFuture.completedFuture(new NpcCatalogView(
-                    List.of(garde, guard), List.of("guard"), true, 2, 2, 0, 1));
+                    List.of(woodcutter, guard), List.of("guard", "woodcutter_bob"), List.of("guard"),
+                    true, 2, 1, 1, 1, 1));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> npcDefinitionCreate(String id, String displayName, String dialogueId,
+                                                                     String role, boolean enabled) {
+            lastNpcCreateId = id;
+            return mutation("create " + id);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> npcDefinitionUpdate(String id, String displayName, String dialogueId,
+                                                                     String role, boolean enabled) {
+            lastNpcUpdateId = id;
+            return mutation("update " + id);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> questGiverSet(String questId, String npcId) {
+            lastGiverQuestId = questId;
+            lastGiverNpcId = npcId;
+            return mutation("giver " + questId + " -> " + npcId);
         }
 
         @Override

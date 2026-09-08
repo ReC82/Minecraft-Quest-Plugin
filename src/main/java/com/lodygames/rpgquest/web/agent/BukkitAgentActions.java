@@ -9,7 +9,12 @@ import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
 import com.lodygames.rpgquest.npc.NpcCatalog;
+import com.lodygames.rpgquest.npc.NpcDefinitionStore;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.npc.NpcLoadIssue;
+import com.lodygames.rpgquest.npc.QuestGiverStore;
+import com.lodygames.rpgquest.npc.YamlNpcEngine;
+import com.lodygames.rpgquest.npc.model.NpcDefinition;
 import com.lodygames.rpgquest.player.PlayerResetService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
@@ -72,12 +77,16 @@ public final class BukkitAgentActions implements AgentActions {
     private final YamlDialogueEngine dialogueEngine;
     private final NpcIdentityService npcIdentityService;
     private final NpcBindingRepository npcBindingRepository;
+    private final YamlNpcEngine npcEngine;
+    private final NpcDefinitionStore npcStore;
+    private final QuestGiverStore questGiverStore;
 
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
                               QuestProgressEngine questProgressEngine, StoryService storyService,
                               YamlCustomItemRegistry customItemRegistry, PlayerResetService playerResetService,
                               PlayerVariableWriter variableWriter, YamlDialogueEngine dialogueEngine,
-                              NpcIdentityService npcIdentityService, NpcBindingRepository npcBindingRepository) {
+                              NpcIdentityService npcIdentityService, NpcBindingRepository npcBindingRepository,
+                              YamlNpcEngine npcEngine, NpcDefinitionStore npcStore, QuestGiverStore questGiverStore) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -88,6 +97,9 @@ public final class BukkitAgentActions implements AgentActions {
         this.dialogueEngine = dialogueEngine;
         this.npcIdentityService = npcIdentityService;
         this.npcBindingRepository = npcBindingRepository;
+        this.npcEngine = npcEngine;
+        this.npcStore = npcStore;
+        this.questGiverStore = questGiverStore;
     }
 
     // ---- Lectures -------------------------------------------------------------------------------
@@ -243,27 +255,96 @@ public final class BukkitAgentActions implements AgentActions {
             questLinks.add(new NpcCatalog.QuestLink(q.id().toString(), q.giver(), List.copyOf(talk)));
         }
 
+        List<NpcCatalog.LogicalDefinition> defs = new ArrayList<>();
+        for (NpcDefinition d : npcEngine.definitions()) {
+            defs.add(new NpcCatalog.LogicalDefinition(d.id(), d.displayName(), d.description(),
+                    d.dialogueId(), d.role(), d.enabled()));
+        }
+
         boolean citizensAvailable = npcIdentityService.citizensAvailable();
         return npcBindingRepository.loadAll().thenApply(bindings -> {
             List<NpcCatalog.CitizensBinding> cb = new ArrayList<>();
             for (NpcBindingRepository.Binding b : bindings) {
                 cb.add(new NpcCatalog.CitizensBinding(b.npcId(), b.citizensNumericId()));
             }
-            NpcCatalog.Result result = NpcCatalog.build(dialogueLinks, questLinks, cb, citizensAvailable);
+            NpcCatalog.Result result = NpcCatalog.build(defs, dialogueLinks, questLinks, cb, citizensAvailable);
             List<NpcSummary> npcs = new ArrayList<>();
             for (NpcCatalog.NpcRow r : result.npcs()) {
                 List<NpcWarning> warnings = new ArrayList<>();
                 for (NpcCatalog.Warning w : r.warnings()) {
                     warnings.add(new NpcWarning(w.code(), w.severity(), w.message()));
                 }
-                npcs.add(new NpcSummary(r.id(), r.displayName(), r.citizensNumericId(), r.bindingCount(),
-                        r.bound(), r.hasDialogue(), r.dialogueId(), r.dialogueNodes(), r.dialogueChoices(),
-                        r.dialogueStartsQuests(), r.questsGiven(), r.questsReferenced(), r.sources(),
-                        List.copyOf(warnings)));
+                npcs.add(new NpcSummary(r.id(), r.displayName(), r.logicalDefinitionPresent(),
+                        r.citizensBindingPresent(), r.citizensNumericId(), r.bindingCount(), r.enabled(),
+                        r.description(), r.role(), r.definedDialogueId(), r.hasDialogue(), r.dialogueId(),
+                        r.dialogueNodes(), r.dialogueChoices(), r.dialogueStartsQuests(), r.questsGiven(),
+                        r.questsReferenced(), r.sources(), r.state(), List.copyOf(warnings)));
             }
-            return new NpcCatalogView(List.copyOf(npcs), result.canonicalIds(), result.citizensAvailable(),
-                    result.total(), result.bound(), result.unbound(), result.withWarnings());
+            return new NpcCatalogView(List.copyOf(npcs), result.canonicalIds(), result.definedIds(),
+                    result.citizensAvailable(), result.total(), result.withDefinition(),
+                    result.withoutDefinition(), result.bound(), result.withWarnings());
         });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> npcDefinitionCreate(String id, String displayName, String dialogueId,
+                                                                 String role, boolean enabled) {
+        return writeDefinition(id, displayName, dialogueId, role, enabled, true);
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> npcDefinitionUpdate(String id, String displayName, String dialogueId,
+                                                                 String role, boolean enabled) {
+        return writeDefinition(id, displayName, dialogueId, role, enabled, false);
+    }
+
+    /** Écriture d'une définition PNJ (create/update) : IO hors thread principal, aucun listener à rebrancher. */
+    private CompletableFuture<MutationResult> writeDefinition(String id, String displayName, String dialogueId,
+                                                             String role, boolean enabled, boolean create) {
+        NpcDefinition definition;
+        try {
+            definition = new NpcDefinition(id, displayName, null, blank(dialogueId), blank(role), enabled);
+        } catch (IllegalArgumentException e) {
+            return done(MutationResult.of(false, "INVALID", e.getMessage()));
+        }
+        NpcDefinitionStore.Result r = create ? npcStore.create(definition) : npcStore.update(definition);
+        npcEngine.reload();
+        List<String> effects = new ArrayList<>();
+        if (r.file() != null) {
+            effects.add("npcs/" + r.file());
+        }
+        if (r.report() != null) {
+            for (NpcLoadIssue issue : r.report().issues()) {
+                effects.add("⚠ " + issue.file() + " : " + issue.message());
+            }
+        }
+        return done(new MutationResult(r.ok(), r.code(), r.message(), List.copyOf(effects)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> questGiverSet(String rawQuestId, String npcId) {
+        if (npcEngine.find(npcId).isEmpty()) {
+            return done(MutationResult.of(false, "UNKNOWN_NPC",
+                    "Aucune définition logique de PNJ « " + safe(npcId) + " » — créer d'abord la définition."));
+        }
+        NamespacedKey questId = resolveKey(rawQuestId);
+        if (questId == null || questEngine.find(questId).isEmpty()) {
+            return done(MutationResult.of(false, "UNKNOWN_QUEST", "Quête inconnue : " + safe(rawQuestId)));
+        }
+        QuestGiverStore.Result r = questGiverStore.setGiver(rawQuestId, npcId);
+        if (!r.ok()) {
+            return done(MutationResult.of(false, r.code(), r.message()));
+        }
+        // Le rebuild du moteur de quêtes (dé)branche des listeners -> thread principal obligatoire.
+        return onMain(() -> {
+            questProgressEngine.reloadQuestDefinitions();
+            return done(new MutationResult(true, "SET", r.message(),
+                    List.of("quests/" + r.file(), "giver: " + npcId)));
+        });
+    }
+
+    private static String blank(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     @Override

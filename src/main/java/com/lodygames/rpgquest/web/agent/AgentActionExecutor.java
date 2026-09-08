@@ -32,7 +32,12 @@ public final class AgentActionExecutor {
     /** Id de quête / story / objet : namespace optionnel + clé, caractères sûrs uniquement. */
     private static final Pattern RESOURCE_ID = Pattern.compile("[a-zA-Z0-9_.:\\-/]{1,128}");
     private static final Pattern STORY_ID = Pattern.compile("[a-z0-9_-]{1,64}");
+    /** Id de PNJ logique : fragment de clé RPGQuest, minuscules uniquement. */
+    private static final Pattern NPC_ID = Pattern.compile("[a-z0-9._-]{1,64}");
+    private static final Pattern DIALOGUE_REF = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,128})?");
+    private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
     private static final int MAX_GIVE_AMOUNT = 64;
+    private static final int MAX_DISPLAY_NAME = 128;
 
     private final PlayerDirectory players;
     private final PlayerVariables variables;
@@ -72,6 +77,9 @@ public final class AgentActionExecutor {
                 case STORY_COMPLETE -> storyMutation(action, AgentActionType.STORY_COMPLETE);
                 case PLAYER_VARIABLE_SET -> variableSet(action);
                 case PLAYER_RESETNEW_CONFIRM -> resetConfirm(action);
+                case NPC_DEFINITION_CREATE -> npcDefinitionWrite(action, true);
+                case NPC_DEFINITION_UPDATE -> npcDefinitionWrite(action, false);
+                case QUEST_GIVER_SET -> questGiverSet(action);
             };
         } catch (RuntimeException e) {
             return done(AgentActionOutcome.failed(action.id(), "Échec interne : " + e.getClass().getSimpleName()));
@@ -236,9 +244,14 @@ public final class AgentActionExecutor {
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("id", n.id());
                 row.put("displayName", n.displayName());
+                row.put("logicalDefinitionPresent", n.logicalDefinitionPresent());
+                row.put("citizensBindingPresent", n.citizensBindingPresent());
                 row.put("citizensNumericId", n.citizensNumericId());
                 row.put("bindingCount", n.bindingCount());
-                row.put("bound", n.bound());
+                row.put("enabled", n.enabled());
+                row.put("description", n.description());
+                row.put("role", n.role());
+                row.put("definedDialogueId", n.definedDialogueId());
                 row.put("hasDialogue", n.hasDialogue());
                 row.put("dialogueId", n.dialogueId());
                 row.put("dialogueNodes", n.dialogueNodes());
@@ -247,6 +260,7 @@ public final class AgentActionExecutor {
                 row.put("questsGiven", n.questsGiven());
                 row.put("questsReferenced", n.questsReferenced());
                 row.put("sources", n.sources());
+                row.put("state", n.state());
                 List<Map<String, Object>> warnings = new ArrayList<>();
                 for (AgentActions.NpcWarning w : n.warnings()) {
                     Map<String, Object> wm = new LinkedHashMap<>();
@@ -261,10 +275,12 @@ public final class AgentActionExecutor {
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("npcs", rows);
             details.put("canonicalIds", view.canonicalIds());
+            details.put("definedIds", view.definedIds());
             details.put("citizensAvailable", view.citizensAvailable());
             details.put("total", view.total());
+            details.put("withDefinition", view.withDefinition());
+            details.put("withoutDefinition", view.withoutDefinition());
             details.put("bound", view.bound());
-            details.put("unbound", view.unbound());
             details.put("withWarnings", view.withWarnings());
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " PNJ RPGQuest (" + view.withWarnings() + " avec avertissement).", details);
@@ -414,6 +430,51 @@ public final class AgentActionExecutor {
         }
         return withResolvedUuid(action, (uuid, name) ->
                 actions.resetConfirm(uuid, name).thenApply(r -> toOutcome(action, r)));
+    }
+
+    // ---- Écritures de contenu PNJ (V2 déclarative) -----------------------------------
+
+    private CompletableFuture<AgentActionOutcome> npcDefinitionWrite(AgentAction action, boolean create) {
+        String id = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (id == null || !NPC_ID.matcher(id).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        String displayName = trimOrNull(action.param("display_name"));
+        if (displayName == null || displayName.length() > MAX_DISPLAY_NAME || displayName.indexOf('\n') >= 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « display_name » manquant, trop long, ou multi-ligne."));
+        }
+        String dialogueId = trimOrNull(action.param("dialogue_id"));
+        if (dialogueId != null && !DIALOGUE_REF.matcher(dialogueId.toLowerCase(java.util.Locale.ROOT)).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « dialogue_id » invalide."));
+        }
+        String role = trimOrNull(action.param("role"));
+        if (role != null && !NPC_ROLE.matcher(role.toLowerCase(java.util.Locale.ROOT)).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « role » invalide."));
+        }
+        boolean enabled = !"false".equalsIgnoreCase(trimOrNull(action.param("enabled")));
+        CompletableFuture<AgentActions.MutationResult> future = create
+                ? actions.npcDefinitionCreate(id, displayName, dialogueId, role, enabled)
+                : actions.npcDefinitionUpdate(id, displayName, dialogueId, role, enabled);
+        return future.thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> questGiverSet(AgentAction action) {
+        String questId = firstNonBlank(action.param("quest_id"), action.param("quest"));
+        if (questId == null || !RESOURCE_ID.matcher(questId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « quest_id » manquant ou invalide."));
+        }
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("giver"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        return actions.questGiverSet(questId, npcId).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private static String trimOrNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     // ---- Résolution joueur + helpers --------------------------------------------

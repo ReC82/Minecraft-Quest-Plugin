@@ -77,7 +77,10 @@ import com.lodygames.rpgquest.mob.ability.ExplosiveOnAttackAbilityService;
 import com.lodygames.rpgquest.mob.ability.SplitOnHitAbilityListener;
 import com.lodygames.rpgquest.mob.ability.StrongerExplosionAbilityListener;
 import com.lodygames.rpgquest.mod.ModCompatService;
+import com.lodygames.rpgquest.npc.NpcDefinitionStore;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.npc.QuestGiverStore;
+import com.lodygames.rpgquest.npc.YamlNpcEngine;
 import com.lodygames.rpgquest.player.PlayerConnectionListener;
 import com.lodygames.rpgquest.player.PlayerListenerService;
 import com.lodygames.rpgquest.player.PlayerProfileService;
@@ -157,6 +160,7 @@ public final class RPGQuestBootstrap {
     private final ConfigService configService;
     private final DatabaseService databaseService;
     private final YamlQuestEngine questEngine;
+    private final YamlNpcEngine npcEngine;
     private final QuestMessagesService questMessagesService;
     private final YamlCustomItemRegistry customItemRegistry;
     private final ResourceNodeRegistry resourceNodeRegistry;
@@ -213,6 +217,8 @@ public final class RPGQuestBootstrap {
                 plugin.getDataFolder().toPath(), configService, plugin.getSLF4JLogger());
         this.questEngine = new YamlQuestEngine(
                 plugin.getDataFolder().toPath().resolve("quests"), plugin.getSLF4JLogger());
+        this.npcEngine = new YamlNpcEngine(
+                plugin.getDataFolder().toPath().resolve("npcs"), plugin.getSLF4JLogger());
         this.questMessagesService = new QuestMessagesService(plugin);
         this.customItemRegistry = new YamlCustomItemRegistry(
                 plugin.getDataFolder().toPath().resolve("items"), plugin.getSLF4JLogger());
@@ -495,6 +501,7 @@ public final class RPGQuestBootstrap {
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
                 configService.current().dialogue().allowedCommands());
         registry.start(dialogueEngine);
+        registry.start(npcEngine);
 
         // Structure d'aide/orientation par Hub (issue #11, partie A) : mapping Hub → dialogue d'aide
         // + accueil/spécialité/orientations, en données (hub-guides/*.yml). Le contenu du menu d'aide
@@ -544,7 +551,9 @@ public final class RPGQuestBootstrap {
                         new BukkitAgentActions(plugin, questEngine, questProgressEngine, storyService,
                                 customItemRegistry, playerResetService, variableRepository::set,
                                 dialogueEngine, npcIdentityService,
-                                new NpcBindingRepository(databaseService.databaseManager())))));
+                                new NpcBindingRepository(databaseService.databaseManager()),
+                                npcEngine, new NpcDefinitionStore(npcEngine.directory()),
+                                new QuestGiverStore(plugin.getDataFolder().toPath().resolve("quests"))))));
 
         registerCommands();
     }

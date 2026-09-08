@@ -48,7 +48,24 @@ class StubAgentActions implements AgentActions {
     @Override
     public CompletableFuture<NpcCatalogView> npcDefinitions() {
         return CompletableFuture.completedFuture(
-                new NpcCatalogView(List.of(), List.of(), false, 0, 0, 0, 0));
+                new NpcCatalogView(List.of(), List.of(), List.of(), false, 0, 0, 0, 0, 0));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> npcDefinitionCreate(String id, String displayName, String dialogueId,
+                                                                 String role, boolean enabled) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> npcDefinitionUpdate(String id, String displayName, String dialogueId,
+                                                                 String role, boolean enabled) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> questGiverSet(String questId, String npcId) {
+        return unsupported();
     }
 
     @Override

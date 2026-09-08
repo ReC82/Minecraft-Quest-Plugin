@@ -1,0 +1,9 @@
+# Définition logique de PNJ RPGQuest — exemple livré au premier démarrage.
+# Indépendante de Citizens : ce PNJ peut être configuré ici avant même
+# d'exister physiquement en jeu (voir docs/NPC_FORMAT.md).
+id: guard
+display_name: "<yellow>Garde</yellow>"
+description: "Garde du village — donneur de la quête de la chasse aux cristaux."
+dialogue: rpgquest:guard
+role: quest_giver
+enabled: true

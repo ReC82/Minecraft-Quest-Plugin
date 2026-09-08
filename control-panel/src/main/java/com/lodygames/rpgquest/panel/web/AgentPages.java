@@ -6,6 +6,8 @@ import com.lodygames.rpgquest.panel.agent.AgentActionStatus;
 import com.lodygames.rpgquest.panel.agent.AgentIdentity;
 import com.lodygames.rpgquest.panel.agent.AgentRegistry;
 import com.lodygames.rpgquest.panel.agent.AgentStore;
+import com.lodygames.rpgquest.panel.authz.Permission;
+import com.lodygames.rpgquest.panel.authz.PermissionService;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.json.Json;
 import com.lodygames.rpgquest.panel.security.Session;
@@ -28,11 +30,13 @@ public final class AgentPages {
     private final AgentStore store;
     private final AgentRegistry registry;
     private final String defaultAgentId;
+    private final PermissionService perms;
 
-    public AgentPages(AgentStore store, AgentRegistry registry, String defaultAgentId) {
+    public AgentPages(AgentStore store, AgentRegistry registry, String defaultAgentId, PermissionService perms) {
         this.store = store;
         this.registry = registry;
         this.defaultAgentId = defaultAgentId;
+        this.perms = perms;
     }
 
     // ================================================================================
@@ -441,101 +445,144 @@ public final class AgentPages {
     }
 
     // ================================================================================
-    //  PNJ (V1 — lecture, issues #66 / #75 réutilisées)
+    //  PNJ (V2 déclarative — définition logique vs binding Citizens ; #66 / #75)
     // ================================================================================
 
     public String npcs(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
-        sb.append("<h1>PNJ</h1><p class=\"sub\">Catalogue en lecture des PNJ RPGQuest : identité "
-                + "technique, liaison Citizens, dialogue et quêtes associés, et anomalies de "
-                + "configuration. Un « PNJ » est un id logique (ex. <code>guard</code>), pas une "
-                + "entité — position et monde ne sont pas suivis dans cette V1.</p>");
+        sb.append("<h1>PNJ</h1><p class=\"sub\">Un PNJ RPGQuest a une <strong>définition logique</strong> "
+                + "(fichier <code>npcs/&lt;id&gt;.yml</code>, indépendante du monde et de Citizens) et un "
+                + "<strong>binding Citizens</strong> éventuel. La définition peut exister avant même que "
+                + "le PNJ ne soit tagué en jeu. Position et monde ne sont pas suivis ici.</p>");
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
         String agentId = agent.get().id();
+        boolean canWrite = perms.can(session.role(), Permission.NPC_WRITE);
+        boolean canSetGiver = perms.can(session.role(), Permission.QUEST_GIVER_WRITE);
         sb.append(agentPicker(agentId, "/npcs", ""));
 
         sb.append("<h2>Catalogue</h2>");
         sb.append(actionButton(session, agentId, "npc.list", "/npcs", "", "Rafraîchir le catalogue", ""));
 
+        Map<String, String> questTitles = titleIndex(
+                latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of()), "id", "title");
+        List<String> questIds = latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of())
+                .stream().map(o -> str(asMap(o).get("id"))).filter(s -> !s.isEmpty()).toList();
+
         Optional<Map<String, Object>> details = latestDetails(agentId, "npc.list");
         if (details.isEmpty()) {
             sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Rafraîchir le catalogue »."));
+            if (canWrite) {
+                sb.append(createDefinitionForm(session, agentId, ""));
+            }
             sb.append(actionsPanel(agentId));
             return sb.toString();
         }
         Map<String, Object> d = details.get();
         List<Object> npcs = asList(d.get("npcs"));
 
-        // Titres humains des quêtes, si un quest.list a déjà été chargé (données locales du panel).
-        Map<String, String> questTitles = titleIndex(
-                latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of()), "id", "title");
-
-        boolean citizensAvailable = Boolean.TRUE.equals(d.get("citizensAvailable"));
-        if (!citizensAvailable) {
+        if (!Boolean.TRUE.equals(d.get("citizensAvailable"))) {
             sb.append("<div class=\"banner info\">Citizens est inactif sur le serveur cible : les "
-                    + "liaisons PNJ ne peuvent pas être vérifiées, les anomalies « aucun PNJ tagué » "
-                    + "sont affichées à titre indicatif seulement.</div>");
+                    + "bindings ne peuvent pas être vérifiés (les définitions logiques restent gérables).</div>");
         }
         sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Résumé</span> ")
                 .append(Http.esc(str(d.get("total")))).append(" PNJ · ")
-                .append(Http.esc(str(d.get("bound")))).append(" tagué(s) Citizens · ")
-                .append(Http.esc(str(d.get("unbound")))).append(" sans tag · ")
+                .append(Http.esc(str(d.get("withDefinition")))).append(" avec définition · ")
+                .append(Http.esc(str(d.get("withoutDefinition")))).append(" sans définition · ")
+                .append(Http.esc(str(d.get("bound")))).append(" liés Citizens · ")
                 .append(Http.esc(str(d.get("withWarnings")))).append(" avec avertissement</p>");
 
+        if (canWrite) {
+            sb.append(createDefinitionForm(session, agentId, ""));
+        }
+
         if (npcs.isEmpty()) {
-            sb.append(Ui.empty("Aucun PNJ RPGQuest connu (ni liaison Citizens, ni dialogue, ni quête)."));
+            sb.append(Ui.empty("Aucun PNJ RPGQuest connu (ni définition, ni binding, ni référence)."));
         } else {
             for (Object o : npcs) {
-                sb.append(renderNpcCard(asMap(o), questTitles));
+                sb.append(renderNpcCard(session, agentId, asMap(o), questTitles, questIds, canWrite, canSetGiver));
             }
         }
 
+        List<Object> definedIds = asList(d.get("definedIds"));
         List<Object> canonical = asList(d.get("canonicalIds"));
-        sb.append("<details><summary class=\"muted\">IDs canoniques connus (")
-                .append(canonical.size()).append(") — attendus par les dialogues et quêtes</summary>");
-        if (canonical.isEmpty()) {
-            sb.append(Ui.empty("Aucun id référencé par le contenu."));
+        sb.append("<details><summary class=\"muted\">Registre canonique — ")
+                .append(definedIds.size()).append(" définition(s), ").append(canonical.size())
+                .append(" id(s) référencé(s) au total</summary>");
+        sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Définis</span> ");
+        if (definedIds.isEmpty()) {
+            sb.append("<span class=\"muted\">aucun</span>");
         } else {
-            sb.append("<p class=\"meta-line\">");
-            for (Object c : canonical) {
+            for (Object c : definedIds) {
                 sb.append(Ui.id(str(c))).append(' ');
             }
-            sb.append("</p><p class=\"faint\" style=\"font-size:12px\">Cette liste est la source de "
-                    + "vérité pour <code>/rpgadmin npc tag</code> (issue #66, non encore câblée côté "
-                    + "commande).</p>");
         }
-        sb.append("</details>");
+        sb.append("</p><p class=\"meta-line\"><span class=\"meta-k\">Tous</span> ");
+        for (Object c : canonical) {
+            sb.append(Ui.id(str(c))).append(' ');
+        }
+        sb.append("</p><p class=\"faint\" style=\"font-size:12px\">La liste <em>Définis</em> devient la "
+                + "source de vérité des ids PNJ (préparation #66 — la validation de "
+                + "<code>/rpgadmin npc tag</code> n'est pas encore câblée).</p></details>");
 
         sb.append(actionsPanel(agentId));
         return sb.toString();
     }
 
-    /** Carte PNJ : nom lisible d'abord, id technique copiable, relations et anomalies en clair. */
-    private String renderNpcCard(Map<String, Object> n, Map<String, String> questTitles) {
+    /** Formulaire « Créer une définition PNJ » (id libre ou pré-rempli depuis une carte). */
+    private String createDefinitionForm(Session session, String agentId, String prefillId) {
+        StringBuilder sb = new StringBuilder("<details").append(prefillId.isEmpty() ? "" : " open")
+                .append("><summary>").append(prefillId.isEmpty()
+                        ? "Créer une définition PNJ" : "Créer la définition « " + Http.esc(prefillId) + " »")
+                .append("</summary>");
+        sb.append(formStart(session, agentId, "npc.definition.create", "/npcs", ""));
+        sb.append("<label>ID technique</label><input type=\"text\" name=\"npc_id\" value=\"")
+                .append(Http.esc(prefillId)).append("\" placeholder=\"woodcutter_bob\" pattern=\"[a-z0-9._-]{1,64}\">");
+        sb.append("<label>Nom affiché</label><input type=\"text\" name=\"display_name\" placeholder=\"Bûcheron Bob\">");
+        sb.append("<label>Dialogue (optionnel)</label><input type=\"text\" name=\"dialogue_id\" placeholder=\"rpgquest:woodcutter_bob\">");
+        sb.append("<label>Rôle (optionnel)</label><input type=\"text\" name=\"role\" placeholder=\"quest_giver\">");
+        sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"enabled\" value=\"true\" checked> actif</label>");
+        sb.append(confirmBox("Créer la définition logique (fichier npcs/<id>.yml) — aucun PNJ Citizens créé."));
+        sb.append("<button class=\"btn\" type=\"submit\">Créer la définition</button></form>");
+        latestForPlayer(agentId, "npc.definition.create", "").ifPresent(row -> sb.append(resultLine("Dernière création", row)));
+        return sb.append("</details>").toString();
+    }
+
+    /** Carte PNJ V2 : deux blocs (Définition RPGQuest / Binding Citizens), anomalies, relations, actions. */
+    private String renderNpcCard(Session session, String agentId, Map<String, Object> n,
+                                 Map<String, String> questTitles, List<String> questIds,
+                                 boolean canWrite, boolean canSetGiver) {
         String id = str(n.get("id"));
         String displayName = str(n.get("displayName"));
         boolean hasName = !displayName.isEmpty() && !"null".equals(displayName);
-        boolean bound = Boolean.TRUE.equals(n.get("bound"));
+        boolean hasDefinition = Boolean.TRUE.equals(n.get("logicalDefinitionPresent"));
+        boolean boundCitizens = Boolean.TRUE.equals(n.get("citizensBindingPresent"));
+        boolean enabled = Boolean.TRUE.equals(n.get("enabled"));
+        String numeric = str(n.get("citizensNumericId"));
+        String role = str(n.get("role"));
+        String state = str(n.get("state"));
 
         StringBuilder sb = new StringBuilder("<article class=\"entity-card\">");
         sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
                 .append(hasName ? MiniText.html(displayName) : Http.esc(MiniText.prettifyId(id)))
                 .append("</h3><div class=\"entity-meta\">");
-        String numeric = str(n.get("citizensNumericId"));
-        if (bound && !numeric.isEmpty() && !"null".equals(numeric)) {
+        sb.append(hasDefinition ? Ui.badge("définition") : Ui.pill("sans définition", "failed", "✕"));
+        if (boundCitizens && !numeric.isEmpty() && !"null".equals(numeric)) {
             sb.append(Ui.badge("Citizens #" + numeric));
-        } else if (bound) {
+        } else if (boundCitizens) {
             sb.append(Ui.badge("Citizens"));
         } else {
-            sb.append(Ui.pill("non tagué", "pending", "!"));
+            sb.append(Ui.pill("non lié", "pending", "!"));
         }
-        if (Boolean.TRUE.equals(n.get("hasDialogue"))) {
-            sb.append(Ui.badge("dialogue"));
+        if (hasDefinition && !enabled) {
+            sb.append(Ui.pill("désactivé", "expired", "⧖"));
         }
-        sb.append(Ui.id(id)).append("</div></div>");
+        if (!role.isEmpty() && !"null".equals(role)) {
+            sb.append(Ui.badge(MiniText.prettifyId(role)));
+        }
+        sb.append(npcStateBadge(state)).append(Ui.id(id)).append("</div></div>");
 
         List<Object> warnings = asList(n.get("warnings"));
         if (!warnings.isEmpty()) {
@@ -549,15 +596,48 @@ public final class AgentPages {
             sb.append("</ul>");
         }
 
+        // --- Bloc Définition RPGQuest ---
+        sb.append("<p class=\"meta-line\" style=\"margin-top:10px\"><span class=\"meta-k\">Définition RPGQuest</span> ");
+        if (!hasDefinition) {
+            sb.append("<span class=\"muted\">aucune — à créer</span></p>");
+        } else {
+            sb.append(enabled ? "active" : "désactivée").append("</p>");
+            String desc = str(n.get("description"));
+            if (!desc.isEmpty() && !"null".equals(desc)) {
+                sb.append(Ui.metaLine("Description", Http.esc(desc)));
+            }
+            String definedDialogue = str(n.get("definedDialogueId"));
+            if (!definedDialogue.isEmpty() && !"null".equals(definedDialogue)) {
+                sb.append(Ui.metaLine("Dialogue déclaré", Http.esc(MiniText.prettifyId(definedDialogue))
+                        + " " + Ui.id(definedDialogue)));
+            }
+        }
+
+        // --- Bloc Binding Citizens ---
+        sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Binding Citizens</span> ");
+        if (boundCitizens && !numeric.isEmpty() && !"null".equals(numeric)) {
+            sb.append("PNJ Citizens #").append(Http.esc(numeric));
+        } else if (boundCitizens) {
+            sb.append("lié");
+        } else {
+            sb.append("<span class=\"muted\">aucun — à créer / lier en jeu (<code>/rpgadmin npc tag ")
+                    .append(Http.esc(id)).append("</code>)</span>");
+        }
+        sb.append("</p>");
+
+        // --- Relations ---
         String dialogueId = str(n.get("dialogueId"));
         if (!dialogueId.isEmpty() && !"null".equals(dialogueId)) {
             String detail = str(n.get("dialogueNodes")) + " nœud(s), " + str(n.get("dialogueChoices")) + " choix";
-            sb.append(Ui.metaLine("Dialogue", Http.esc(MiniText.prettifyId(dialogueId)) + " " + Ui.id(dialogueId)
+            sb.append(Ui.metaLine("Dialogue en jeu", Http.esc(MiniText.prettifyId(dialogueId)) + " " + Ui.id(dialogueId)
                     + " <span class=\"muted\">— " + Http.esc(detail) + "</span>"));
             List<Object> starts = asList(n.get("dialogueStartsQuests"));
             if (!starts.isEmpty()) {
                 sb.append(Ui.metaLine("Le dialogue démarre", referencedQuests(starts, questTitles)));
             }
+        } else if (hasDefinition) {
+            sb.append(Ui.metaLine("Dialogue en jeu", "<span class=\"muted\">aucun dialogue rpgquest:"
+                    + Http.esc(id) + "</span>"));
         }
         List<Object> given = asList(n.get("questsGiven"));
         if (!given.isEmpty()) {
@@ -567,7 +647,57 @@ public final class AgentPages {
         if (!referenced.isEmpty()) {
             sb.append(Ui.metaLine("Objectif « parler à »", referencedQuests(referenced, questTitles)));
         }
+
+        // --- Actions (écriture) ---
+        if (canWrite && !hasDefinition) {
+            sb.append(createDefinitionForm(session, agentId, id));
+        }
+        if (canWrite && hasDefinition) {
+            sb.append("<details><summary>Éditer la définition</summary>");
+            sb.append(formStart(session, agentId, "npc.definition.update", "/npcs", ""));
+            sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(id)).append("\">");
+            sb.append("<label>Nom affiché</label><input type=\"text\" name=\"display_name\" value=\"")
+                    .append(Http.esc(hasName ? displayName : "")).append("\">");
+            sb.append("<label>Dialogue (vide = aucun)</label><input type=\"text\" name=\"dialogue_id\" value=\"")
+                    .append(Http.esc(cleanNull(str(n.get("definedDialogueId"))))).append("\">");
+            sb.append("<label>Rôle (vide = aucun)</label><input type=\"text\" name=\"role\" value=\"")
+                    .append(Http.esc(cleanNull(role))).append("\">");
+            sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"enabled\" value=\"true\"")
+                    .append(enabled ? " checked" : "").append("> actif</label>");
+            sb.append(confirmBox("Remplacer les champs de la définition « " + id + " » (id inchangé)."));
+            sb.append("<button class=\"btn\" type=\"submit\">Enregistrer</button></form></details>");
+        }
+        if (canSetGiver && hasDefinition) {
+            sb.append("<details><summary>Attribuer une quête (giver)</summary>");
+            if (questIds.isEmpty()) {
+                sb.append(Ui.empty("Charger d'abord le catalogue de quêtes (page Quêtes)."));
+            } else {
+                sb.append(formStart(session, agentId, "quest.giver.set", "/npcs", ""));
+                sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(id)).append("\">");
+                sb.append("<label>Quête</label>").append(idSelect("quest_id", questIds, "rpgquest:woodcutters_request"));
+                sb.append(confirmBox("Poser giver: " + id + " sur la quête choisie (édition minimale du YAML)."));
+                sb.append("<button class=\"btn\" type=\"submit\">Attribuer</button></form>");
+            }
+            sb.append("</details>");
+        }
         return sb.append("</article>").toString();
+    }
+
+    private static String npcStateBadge(String state) {
+        String s = state == null ? "" : state;
+        return switch (s) {
+            case "LINKED" -> Ui.pill("lié", "success", "✓");
+            case "NOT_LINKED" -> Ui.pill("à lier", "pending", "○");
+            case "DISABLED" -> Ui.pill("désactivé", "expired", "⧖");
+            case "CITIZENS_ORPHAN" -> Ui.pill("Citizens orphelin", "failed", "✕");
+            case "UNDEFINED_REFERENCE" -> Ui.pill("non défini", "failed", "✕");
+            case "BROKEN" -> Ui.pill("cassé", "failed", "✕");
+            default -> Ui.badge(s.isEmpty() ? "?" : s);
+        };
+    }
+
+    private static String cleanNull(String value) {
+        return value == null || "null".equals(value) ? "" : value;
     }
 
     // ================================================================================

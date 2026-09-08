@@ -9,6 +9,8 @@ public enum Permission {
     DASHBOARD_VIEW,
     PLAYERS_READ,
     NPC_READ,
+    NPC_WRITE,
+    QUEST_GIVER_WRITE,
     CONTENT_READ,
     DIAGNOSTICS_READ,
     AUDIT_READ,

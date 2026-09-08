@@ -1,11 +1,13 @@
 package com.lodygames.rpgquest.panel.web;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.panel.agent.AgentStore;
 import com.lodygames.rpgquest.panel.audit.InMemoryAuditLog;
 import com.lodygames.rpgquest.panel.bridge.BridgeClient;
+import com.lodygames.rpgquest.panel.json.Json;
 import com.lodygames.rpgquest.panel.support.TestConfig;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -23,7 +25,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Rendu du catalogue {@code /npcs} (V1) : nom lisible, id copiable, relations et anomalies. */
+/** Rendu et écritures de la page {@code /npcs} V2 : définition logique vs binding Citizens. */
 class NpcsCatalogTest {
 
     @TempDir
@@ -34,26 +36,26 @@ class NpcsCatalogTest {
     private HttpClient client;
     private final Map<String, String> jar = new LinkedHashMap<>();
 
-    // Payload npc.list : un PNJ sain (guard) + un tag orphelin (garde) + un id référencé sans PNJ.
+    // Payload npc.list V2 : guard (défini + lié) + woodcutter_bob (référencé, sans définition).
     private static final String NPC_DETAILS = "{"
-            + "\"citizensAvailable\":true,\"total\":3,\"bound\":2,\"unbound\":1,\"withWarnings\":2,"
-            + "\"canonicalIds\":[\"guard\",\"libraire\"],"
+            + "\"citizensAvailable\":true,\"total\":2,\"withDefinition\":1,\"withoutDefinition\":1,"
+            + "\"bound\":1,\"withWarnings\":1,"
+            + "\"definedIds\":[\"guard\"],\"canonicalIds\":[\"guard\",\"woodcutter_bob\"],"
             + "\"npcs\":["
-            + "{\"id\":\"libraire\",\"displayName\":null,\"citizensNumericId\":null,\"bindingCount\":0,\"bound\":false,"
-            + "\"hasDialogue\":true,\"dialogueId\":\"rpgquest:libraire\",\"dialogueNodes\":3,\"dialogueChoices\":4,"
-            + "\"dialogueStartsQuests\":[\"rpgquest:premiers_pas\"],\"questsGiven\":[\"rpgquest:premiers_pas\"],"
-            + "\"questsReferenced\":[],\"sources\":[\"DIALOGUE\",\"QUEST_GIVER\"],"
-            + "\"warnings\":[{\"code\":\"QUEST_REF_NO_NPC\",\"severity\":\"warning\","
-            + "\"message\":\"Référencé par une quête mais aucun PNJ Citizens n'est tagué « libraire ».\"}]},"
-            + "{\"id\":\"garde\",\"displayName\":null,\"citizensNumericId\":3,\"bindingCount\":1,\"bound\":true,"
-            + "\"hasDialogue\":false,\"dialogueId\":null,\"dialogueNodes\":0,\"dialogueChoices\":0,"
-            + "\"dialogueStartsQuests\":[],\"questsGiven\":[],\"questsReferenced\":[],\"sources\":[\"BINDING\"],"
-            + "\"warnings\":[{\"code\":\"TAGGED_UNUSED\",\"severity\":\"info\","
-            + "\"message\":\"PNJ tagué « garde » mais aucun dialogue ni quête ne l'utilise. Id canonique proche : « guard » ?\"}]},"
-            + "{\"id\":\"guard\",\"displayName\":\"Garde\",\"citizensNumericId\":7,\"bindingCount\":1,\"bound\":true,"
+            + "{\"id\":\"woodcutter_bob\",\"displayName\":null,\"logicalDefinitionPresent\":false,"
+            + "\"citizensBindingPresent\":false,\"citizensNumericId\":null,\"bindingCount\":0,\"enabled\":true,"
+            + "\"description\":null,\"role\":null,\"definedDialogueId\":null,\"hasDialogue\":false,\"dialogueId\":null,"
+            + "\"dialogueNodes\":0,\"dialogueChoices\":0,\"dialogueStartsQuests\":[],\"questsGiven\":[],"
+            + "\"questsReferenced\":[\"rpgquest:woodcutters_request\"],\"sources\":[\"QUEST_TALK\"],"
+            + "\"state\":\"UNDEFINED_REFERENCE\",\"warnings\":[{\"code\":\"NO_DEFINITION\",\"severity\":\"error\","
+            + "\"message\":\"Aucune définition logique RPGQuest pour « woodcutter_bob » (référencé par objectif « parler à »). À migrer : créer la définition.\"}]},"
+            + "{\"id\":\"guard\",\"displayName\":\"<yellow>Garde</yellow>\",\"logicalDefinitionPresent\":true,"
+            + "\"citizensBindingPresent\":true,\"citizensNumericId\":6,\"bindingCount\":1,\"enabled\":true,"
+            + "\"description\":\"Garde du village\",\"role\":\"quest_giver\",\"definedDialogueId\":\"rpgquest:guard\","
             + "\"hasDialogue\":true,\"dialogueId\":\"rpgquest:guard\",\"dialogueNodes\":6,\"dialogueChoices\":9,"
             + "\"dialogueStartsQuests\":[\"rpgquest:first_steps\"],\"questsGiven\":[\"rpgquest:crystal_hunt\"],"
-            + "\"questsReferenced\":[\"rpgquest:crystal_hunt\"],\"sources\":[\"BINDING\",\"DIALOGUE\"],\"warnings\":[]}"
+            + "\"questsReferenced\":[\"rpgquest:crystal_hunt\"],\"sources\":[\"DEFINITION\",\"BINDING\",\"DIALOGUE\"],"
+            + "\"state\":\"LINKED\",\"warnings\":[]}"
             + "]}";
 
     @AfterEach
@@ -64,51 +66,95 @@ class NpcsCatalogTest {
     }
 
     @Test
-    void catalogRendersNamesIdsRelationsAndWarnings() throws Exception {
+    void catalogSeparatesDefinitionFromCitizensBindingAndOffersWrites() throws Exception {
         start();
         runListWithSuccess(NPC_DETAILS);
         String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
 
-        // nom lisible d'abord (depuis le dialogue), id technique copiable
-        assertTrue(page.contains("Garde"), "nom du PNJ affiché");
-        assertTrue(page.contains("data-copy=\"guard\""), "id RPGQuest copiable");
-        assertTrue(page.contains("Citizens #7"), "id Citizens affiché");
-        assertFalse(page.contains("&lt;gold&gt;") || page.contains("<gold>"), "aucune balise brute");
+        assertTrue(page.contains("Définition RPGQuest"), "bloc définition");
+        assertTrue(page.contains("Binding Citizens"), "bloc binding");
+        assertTrue(page.contains("Garde"), "nom lisible depuis la définition");
+        assertTrue(page.contains("<span style=\"color:"), "MiniMessage interprété dans le titre");
+        // le titre de carte ne montre jamais la balise brute (l'input d'édition, lui, garde la valeur brute)
+        int guardNameAt = page.lastIndexOf("class=\"entity-name\"");
+        assertFalse(page.substring(guardNameAt, guardNameAt + 150).contains("&lt;yellow&gt;"), "titre sans balise brute");
+        assertTrue(page.contains("data-copy=\"guard\""), "id copiable");
+        assertTrue(page.contains("PNJ Citizens #6"), "binding Citizens affiché");
+        assertTrue(page.contains("quest_giver") || page.contains("Quest Giver"), "rôle affiché");
 
-        // relations
-        assertTrue(page.contains("rpgquest:guard"), "id de dialogue conservé");
-        assertTrue(page.contains("Donne"), "meta-line quêtes données");
-        assertTrue(page.contains("Objectif « parler à »"), "meta-line quêtes référencées");
-        assertTrue(page.contains("Le dialogue démarre"), "meta-line START_QUEST du dialogue");
+        // woodcutter_bob : sans définition -> erreur de contenu + état
+        assertTrue(page.contains("sans définition"), "PNJ sans définition marqué");
+        assertTrue(page.contains("non défini") || page.contains("UNDEFINED_REFERENCE"), "état non défini");
+        assertTrue(page.contains("data-copy=\"NO_DEFINITION\""), "code d'anomalie");
+        assertTrue(page.indexOf("data-copy=\"woodcutter_bob\"") < page.indexOf("data-copy=\"guard\""),
+                "PNJ en erreur listé avant le PNJ sain");
 
-        // anomalies : pastille de sévérité + message + code
-        assertTrue(page.contains("ATTENTION"), "pastille warning");
-        assertTrue(page.contains("INFO"), "pastille info");
-        assertTrue(page.contains("Id canonique proche"), "suggestion garde -> guard");
-        assertTrue(page.contains("data-copy=\"TAGGED_UNUSED\""), "code d'anomalie visible/copiable");
-        assertTrue(page.contains("non tagué"), "PNJ sans binding marqué");
+        // écritures proposées (rôle OWNER)
+        assertTrue(page.contains("name=\"type\" value=\"npc.definition.create\""), "formulaire de création");
+        assertTrue(page.contains("name=\"type\" value=\"npc.definition.update\""), "formulaire d'édition");
+        assertTrue(page.contains("Créer la définition « woodcutter_bob »"), "création pré-remplie sur la carte non définie");
 
-        // résumé + ids canoniques (#66)
-        assertTrue(page.contains("2 avec avertissement") || page.contains("withWarnings")
-                || page.contains("avec avertissement"), "résumé compteurs");
-        assertTrue(page.contains("IDs canoniques connus"), "bloc ids canoniques");
-        assertTrue(page.contains("data-copy=\"libraire\""), "id canonique listé");
-
-        // ordre préservé du payload (l'agent trie : anomalies d'abord) -> carte 'libraire' avant 'guard'
-        assertTrue(page.indexOf("data-copy=\"libraire\"") < page.indexOf("data-copy=\"guard\""),
-                "PNJ en anomalie listés avant les PNJ sains");
+        // registre canonique : définis vs tous
+        assertTrue(page.contains("Registre canonique"));
+        assertTrue(page.contains("Définis"));
     }
 
     @Test
-    void emptyStateBeforeAnyRefresh() throws Exception {
+    void emptyStateStillOffersDefinitionCreation() throws Exception {
         start();
         String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
         assertTrue(page.contains("<h1>PNJ</h1>"));
         assertTrue(page.contains("Aucun catalogue chargé"));
         assertTrue(page.contains("name=\"type\" value=\"npc.list\""));
+        assertTrue(page.contains("name=\"type\" value=\"npc.definition.create\""));
     }
 
-    // ---- helpers (identiques à QuestsCatalogTest) -----------------------------------------
+    @Test
+    void createDefinitionActionIsValidatedAndQueued() throws Exception {
+        start();
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+        // sans confirm -> refusé
+        HttpResponse<String> noConfirm = post("/agents/action", "_csrf=" + token
+                + "&type=npc.definition.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&npc_id=woodcutter_bob&display_name=" + enc("Bûcheron Bob"));
+        assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "confirm obligatoire");
+
+        HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
+                + "&type=npc.definition.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&npc_id=woodcutter_bob&display_name=" + enc("Bûcheron Bob")
+                + "&dialogue_id=rpgquest:woodcutter_bob&enabled=true&confirm=true");
+        assertEquals(303, ok.statusCode());
+        assertTrue(ok.headers().firstValue("Location").orElse("").startsWith("/npcs?agent="));
+        assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1, "une action npc.definition.create en attente");
+
+        // id invalide -> refusé
+        HttpResponse<String> bad = post("/agents/action", "_csrf=" + token
+                + "&type=npc.definition.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&npc_id=" + enc("Bad Id") + "&display_name=X&confirm=true");
+        assertTrue(bad.headers().firstValue("Location").orElse("").contains("err="));
+    }
+
+    @Test
+    void questGiverSetActionIsValidatedAndQueued() throws Exception {
+        start();
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+        HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
+                + "&type=quest.giver.set&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&quest_id=rpgquest:woodcutters_request&npc_id=woodcutter_bob&confirm=true");
+        assertEquals(303, ok.statusCode());
+        assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1);
+    }
+
+    // ---- helpers ----------------------------------------------------------------------
+
+    private static String enc(String v) {
+        return URLEncoder.encode(v, StandardCharsets.UTF_8);
+    }
+
+    private int pendingFor(String agent) throws Exception {
+        Map<String, Object> body = Json.parseObject(get("/agents/actions.json?agent=" + agent).body());
+        return ((Number) body.get("pending")).intValue();
+    }
 
     private void runListWithSuccess(String details) throws Exception {
         String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
@@ -119,8 +165,8 @@ class NpcsCatalogTest {
         Matcher m = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"").matcher(poll.body());
         m.find();
         String id = m.group(1);
-        String result = "{\"action_id\":\"" + id + "\",\"status\":\"SUCCESS\",\"value\":\"3\","
-                + "\"message\":\"3 PNJ\",\"details\":" + details + "}";
+        String result = "{\"action_id\":\"" + id + "\",\"status\":\"SUCCESS\",\"value\":\"2\","
+                + "\"message\":\"2 PNJ\",\"details\":" + details + "}";
         client.send(HttpRequest.newBuilder(uri("/agent/v1/actions/" + id + "/result"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
                 .header("X-Agent-Id", TestConfig.AGENT_ID)

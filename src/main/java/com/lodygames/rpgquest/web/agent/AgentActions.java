@@ -111,28 +111,54 @@ public interface AgentActions {
     List<ItemSummary> itemDefinitions();
 
     /**
-     * Catalogue PNJ (action {@code npc.list}) — <strong>lecture seule</strong>. Un « PNJ RPGQuest »
-     * est un id logique croisé entre la liaison Citizens, le dialogue {@code rpgquest:<id>}, le
-     * champ {@code giver:} des quêtes (#75) et les objectifs {@code TALK_TO_NPC}. Voir
+     * Catalogue PNJ (action {@code npc.list}) — <strong>lecture seule</strong>. Distingue la
+     * <strong>définition logique</strong> RPGQuest ({@code npcs/*.yml}, indépendante de Citizens et
+     * du monde) du <strong>binding physique Citizens</strong> éventuel. Voir
      * {@link com.lodygames.rpgquest.npc.NpcCatalog} pour la dérivation (aucun accès au monde :
-     * position/monde et PNJ Citizens non tagués sont hors périmètre de cette V1).
+     * position/monde et PNJ Citizens non tagués sont hors périmètre).
      */
-    record NpcSummary(String id, String displayName, Integer citizensNumericId, int bindingCount,
-                      boolean bound, boolean hasDialogue, String dialogueId, int dialogueNodes,
-                      int dialogueChoices, List<String> dialogueStartsQuests, List<String> questsGiven,
-                      List<String> questsReferenced, List<String> sources, List<NpcWarning> warnings) {
+    record NpcSummary(String id, String displayName, boolean logicalDefinitionPresent,
+                      boolean citizensBindingPresent, Integer citizensNumericId, int bindingCount,
+                      boolean enabled, String description, String role, String definedDialogueId,
+                      boolean hasDialogue, String dialogueId, int dialogueNodes, int dialogueChoices,
+                      List<String> dialogueStartsQuests, List<String> questsGiven,
+                      List<String> questsReferenced, List<String> sources, String state,
+                      List<NpcWarning> warnings) {
     }
 
     /** Anomalie de configuration d'un PNJ. {@code severity} ∈ {@code error|warning|info}. */
     record NpcWarning(String code, String severity, String message) {
     }
 
-    /** Vue complète renvoyée par {@code npc.list} : catalogue + ids canoniques (#66) + compteurs. */
-    record NpcCatalogView(List<NpcSummary> npcs, List<String> canonicalIds, boolean citizensAvailable,
-                          int total, int bound, int unbound, int withWarnings) {
+    /**
+     * Vue complète renvoyée par {@code npc.list} : catalogue + registre canonique
+     * ({@code definedIds} = ids ayant une définition logique ; {@code canonicalIds} = union avec
+     * les ids encore seulement référencés, transition #66) + compteurs.
+     */
+    record NpcCatalogView(List<NpcSummary> npcs, List<String> canonicalIds, List<String> definedIds,
+                          boolean citizensAvailable, int total, int withDefinition, int withoutDefinition,
+                          int bound, int withWarnings) {
     }
 
     CompletableFuture<NpcCatalogView> npcDefinitions();
+
+    /**
+     * Crée une <strong>définition logique</strong> de PNJ ({@code npcs/<id>.yml}). Écriture
+     * whitelistée et auditée ; jamais de YAML brut ni de chemin arbitraire ; échoue si l'id existe
+     * déjà (pas d'écrasement silencieux).
+     */
+    CompletableFuture<MutationResult> npcDefinitionCreate(String id, String displayName, String dialogueId,
+                                                          String role, boolean enabled);
+
+    /** Modifie une définition PNJ existante ({@code displayName} / {@code dialogue} / {@code role} / {@code enabled}) — jamais l'id. */
+    CompletableFuture<MutationResult> npcDefinitionUpdate(String id, String displayName, String dialogueId,
+                                                         String role, boolean enabled);
+
+    /**
+     * Pose le champ {@code giver:} d'une quête existante (édition texte minimale, commentaires
+     * préservés). Exige que la quête <em>et</em> la définition logique du PNJ existent.
+     */
+    CompletableFuture<MutationResult> questGiverSet(String questId, String npcId);
 
     /** Aperçu (dry-run, aucune écriture) de ce qu'un reset « nouveau joueur » supprimerait. */
     record ResetPreviewLine(String label, int count, String detail) {

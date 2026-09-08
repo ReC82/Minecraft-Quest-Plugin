@@ -68,7 +68,7 @@ public final class PanelApp {
         this.bridge = bridge;
         this.agentStore = agentStore;
         this.agentRegistry = new AgentRegistry(config.agents().agents());
-        this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId());
+        this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(), permissions);
         this.agentEndpoints = new AgentEndpoints(agentRegistry, agentStore, audit,
                 config.agents().actionExpiry(), config::disabled);
         this.authService = new AuthService(config.ownerUsername(), config.ownerPasswordHash(), new PasswordHasher());

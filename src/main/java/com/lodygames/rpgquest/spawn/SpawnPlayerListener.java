@@ -6,10 +6,12 @@ import org.bukkit.event.player.PlayerRespawnEvent;
 import org.spigotmc.event.player.PlayerSpawnLocationEvent;
 
 /**
- * Traduit les événements Bukkit en appels à {@link SpawnService}. {@code
- * Player#hasPlayedBefore()} distingue un tout nouveau joueur (jamais vu par ce serveur) d'une
- * reconnexion normale — seul le premier cas redirige la position d'arrivée vers le spawn
- * configuré ; une reconnexion normale ne déplace jamais un joueur déjà positionné ailleurs.
+ * Traduit les événements Bukkit en appels à {@link SpawnService}. La distinction « nouveau
+ * joueur » ↔ « reconnexion » n'est plus faite ici via le seul {@code Player#hasPlayedBefore()}
+ * (peu fiable — voir issue #87) : {@link SpawnService#applyJoinSpawnPolicy} délègue à
+ * {@link JoinSpawnPolicy}, qui ne redirige vers le spawn du village que si Paper place un
+ * nouveau joueur dans le monde principal ou le Hub, jamais quand il restaure déjà le joueur
+ * ailleurs (Wild, claims…).
  */
 final class SpawnPlayerListener implements Listener {
 
@@ -22,9 +24,7 @@ final class SpawnPlayerListener implements Listener {
     @SuppressWarnings("removal")
     @EventHandler
     public void onSpawnLocation(PlayerSpawnLocationEvent event) {
-        if (!event.getPlayer().hasPlayedBefore()) {
-            service.handleFirstJoin(event);
-        }
+        service.applyJoinSpawnPolicy(event);
     }
 
     @EventHandler

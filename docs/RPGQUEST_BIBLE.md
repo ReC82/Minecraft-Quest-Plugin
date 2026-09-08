@@ -620,6 +620,22 @@ Vérifié dans `RpgAdminCommand.java` (`handleWorld*`), `hub/HubWorldRulesServic
 | Spawn Multiverse (`/mv setspawn`) | Commande Multiverse-Core | **Non** — `VERYGAMES.md` est explicite : « le spawn Multiverse n'est pas la référence gameplay » |
 | Spawn RPGQuest (village) | `/rpgadmin spawn set` | **Oui** — seule source de vérité pour le point d'apparition du village, gérée par `SpawnService` |
 
+**Redirection à la connexion (issue #87)** : à chaque connexion, `SpawnService.applyJoinSpawnPolicy`
+(règle pure `spawn.JoinSpawnPolicy`) ne redirige vers le spawn du village **que** si un nouveau
+joueur (`Player#hasPlayedBefore() == false`, heuristique **peu fiable** — voir plus bas) est placé
+par Paper dans le **monde principal** (`getServer().getWorlds().get(0)`) ou le **monde Hub**
+(`hub.world`). Si Paper restaure déjà le joueur dans un autre monde chargé (`wild`, `claims`…), sa
+position est **conservée telle quelle**, quel que soit `hasPlayedBefore()` : une reconnexion depuis
+le Wild reste dans le Wild (ce n'est **pas** un raccourci gratuit vers le Hub). Repli légitime :
+si le monde précédent n'est plus chargé, Paper renvoie lui-même le joueur au monde principal, ce
+qui retombe sur la redirection village. `SpawnService.handleRespawn` (réapparition **après la
+mort**) est indépendant et redirige toujours vers le village. Log par connexion :
+`join_restore player=<uuid> world=<w> action=KEEP_LAST_LOCATION|REDIRECT_TO_VILLAGE_SPAWN`.
+> `hasPlayedBefore()` renvoie `false` pour un joueur déjà venu si la métadonnée Bukkit
+> `bukkit.firstPlayed` de son `playerdata` manque (migration/transfert de serveur, UUID
+> hors-ligne↔en-ligne, restauration de sauvegarde) — d'où la double condition sur le monde
+> d'arrivée plutôt qu'une confiance aveugle en cette méthode.
+
 ### `/rpgadmin world` — mondes supplémentaires
 Page docs-site : `worlds.html` (⚠️ obsolète sur le point Multiverse/Hub, voir section 19).
 

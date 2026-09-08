@@ -1542,3 +1542,62 @@ Rappel : `dialogue.list` reste **SUCCESS**, `npc.list` **inchangé**, aucune pro
 touchée, aucune migration.
 
 Rapport : `docs/claude-reports/2026-09-08_1642_dialogues-editeur-guide-phase1-82.md`.
+
+---
+
+## 2026-09-08 - #87 : reconnexion depuis le Wild ne renvoie plus au Hub
+
+### Changement
+
+**Code plugin uniquement. Aucune migration. `data.db` / `config.yml` / `spawn.yml` / mondes non
+touchés.**
+
+Un joueur non-OP déconnecté dans `wild` se reconnectait au spawn du village (`world_hub`).
+**Cause** : `SpawnPlayerListener` traitait comme « nouveau joueur » tout joueur dont
+`Player#hasPlayedBefore()` renvoie `false`, puis `SpawnService` redirigeait sa position
+d'arrivée vers `spawn.yml`. Or `hasPlayedBefore()` renvoie `false` à tort pour un joueur déjà
+venu quand la métadonnée Bukkit `bukkit.firstPlayed` de son `playerdata` manque
+(migration/transfert de serveur, UUID hors-ligne↔en-ligne, restauration de sauvegarde).
+
+**Correction** : `spawn.JoinSpawnPolicy` (règle pure) ne redirige vers le village que si un
+nouveau joueur (`!hasPlayedBefore()`) est placé par Paper dans le **monde principal**
+(`getWorlds().get(0)`) **ou** le **monde Hub** (`hub.world`). Sinon la position restaurée par
+Paper est conservée — une reconnexion depuis `wild` reste dans `wild`. Onboarding et repli
+« monde disparu » (Paper renvoie au monde principal → redirection village) inchangés. Respawn
+après mort (`SpawnService.handleRespawn`) inchangé. Nouveau log par connexion
+`join_restore player=<uuid> world=<w> action=KEEP_LAST_LOCATION|REDIRECT_TO_VILLAGE_SPAWN`.
+
+### Action serveur
+
+- **Remplacement du seul JAR RPGQuest**.
+- **Un seul** redémarrage (`scripts/verygames-restart.sh`) — ne pas enchaîner (protection
+  anti-boucle VeryGames : 10 auto-reboots en 30 min → relance manuelle panel).
+- Aucun autre fichier. Aucune migration. Control Panel AWS non concerné.
+
+### Sauvegarde préalable
+
+Ancien JAR sauvegardé automatiquement par `deploy-verygames.sh`.
+
+### Déploiement
+
+1. `scripts/deploy-verygames.sh -y` puis `scripts/verygames-restart.sh` (une fois).
+
+### Validation
+
+- `/plugins` (RCON) : RPGQuest vert ; heartbeat agent `ONLINE` ; `dialogue.list` / `npc.list`
+  toujours `SUCCESS`.
+- **Manuel (owner, client réel)** : `LoDyMcFly` non-OP entre dans le Wild, relève sa position,
+  se déconnecte/reconnecte ×2 → `world` toujours `wild`, position identique ou très proche,
+  aucun passage Hub. Non-régression : déconnexion dans le Hub → retour Hub ; nouveau compte →
+  spawn du village.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` puis un seul `scripts/verygames-restart.sh`. Aucune
+migration à défaire.
+
+### Exécution réelle
+
+À compléter au déploiement.
+
+Rapport : `docs/claude-reports/2026-09-08_1905_bug-wild-reconnexion-hub-87.md`.

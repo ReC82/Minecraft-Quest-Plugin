@@ -173,7 +173,7 @@ class PlayerResetServiceTest {
                 progressionService, variableRepository);
         claimService.start();
 
-        SpawnService spawnService = new SpawnService(plugin, tempDir.resolve("spawn.yml"), plugin.getSLF4JLogger());
+        SpawnService spawnService = new SpawnService(plugin, tempDir.resolve("spawn.yml"), plugin.getSLF4JLogger(), () -> "world_hub");
         spawnService.start();
         TravelConfig travelConfig = new TravelConfig("wild", new RuneConfig(10, 1800),
                 new WaystoneConfig(1000L, 0.6, 300, 16, 3));

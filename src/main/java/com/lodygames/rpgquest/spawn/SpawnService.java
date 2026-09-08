@@ -5,7 +5,9 @@ import com.lodygames.rpgquest.bootstrap.PluginService;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -31,13 +33,16 @@ public final class SpawnService implements PluginService {
     private final RPGQuestPlugin plugin;
     private final Path spawnFile;
     private final Logger logger;
+    /** Nom du monde Hub configuré ({@code hub.world}) — un des deux mondes où un nouveau joueur apparaît (issue #87). */
+    private final Supplier<String> hubWorldName;
 
     private volatile SpawnPoint current;
 
-    public SpawnService(RPGQuestPlugin plugin, Path spawnFile, Logger logger) {
+    public SpawnService(RPGQuestPlugin plugin, Path spawnFile, Logger logger, Supplier<String> hubWorldName) {
         this.plugin = plugin;
         this.spawnFile = spawnFile;
         this.logger = logger;
+        this.hubWorldName = hubWorldName;
     }
 
     @Override
@@ -119,31 +124,44 @@ public final class SpawnService implements PluginService {
     }
 
     /**
-     * Nouveau joueur (jamais connecté auparavant) : sa position d'arrivée est redirigée vers le
-     * spawn configuré via {@link PlayerSpawnLocationEvent} (l'événement Spigot historique, marqué
+     * Décide, à chaque connexion, s'il faut rediriger la position d'arrivée vers le spawn du
+     * village configuré ({@link PlayerSpawnLocationEvent} — l'événement Spigot historique, marqué
      * {@code @Deprecated(forRemoval)} par Paper au profit de {@code
      * io.papermc.paper.event.player.AsyncPlayerSpawnLocationEvent} — mais ce dernier fournit une
      * {@code PlayerConfigurationConnection} plutôt qu'un {@code Player}, encore marqué {@code
      * @ApiStatus.Experimental}, et surtout non simulé par MockBukkit dans cette version : rester
      * sur l'événement Spigot garde le comportement testable en JUnit, même stratégie que {@code
-     * dialogue.render.PaperDialogRenderer} pour une API instable choisie en connaissance de
-     * cause). Jamais un téléport après coup : le joueur apparaît directement au bon endroit.
+     * dialogue.render.PaperDialogRenderer}). Jamais un téléport après coup : le joueur apparaît
+     * directement au bon endroit.
+     *
+     * <p>La règle est portée par {@link JoinSpawnPolicy} (fonction pure, testée séparément) : on ne
+     * redirige que si un nouveau joueur ({@code !hasPlayedBefore()}, heuristique peu fiable) est
+     * placé par Paper dans le <strong>monde principal</strong> ou le <strong>monde Hub</strong> —
+     * jamais quand Paper restaure déjà le joueur dans un autre monde chargé (Wild, claims…), ce
+     * qui trahit une session antérieure réelle. Corrige l'issue #87 (reconnexion depuis le Wild
+     * renvoyée au Hub à tort).</p>
      */
     @SuppressWarnings("removal")
-    void handleFirstJoin(PlayerSpawnLocationEvent event) {
-        resolve().ifPresent(target -> {
-            // TODO(debug bug TP hub) : trace temporaire, à retirer une fois la cause confirmée.
-            Location defaultSpawn = event.getSpawnLocation();
-            logger.info("[TP-TRACE] player={} uuid={} source=SpawnService portal=none "
-                            + "from={}:{},{},{} to={}:{},{},{} reason=first_join_spawn at={}",
-                    event.getPlayer().getName(), event.getPlayer().getUniqueId(),
-                    defaultSpawn.getWorld() != null ? defaultSpawn.getWorld().getName() : "?",
-                    defaultSpawn.getBlockX(), defaultSpawn.getBlockY(), defaultSpawn.getBlockZ(),
-                    target.getWorld() != null ? target.getWorld().getName() : "?",
-                    target.getBlockX(), target.getBlockY(), target.getBlockZ(),
-                    System.currentTimeMillis());
-            event.setSpawnLocation(target);
-        });
+    void applyJoinSpawnPolicy(PlayerSpawnLocationEvent event) {
+        Optional<Location> target = resolve();
+        Location incoming = event.getSpawnLocation();
+        String incomingWorld = incoming != null && incoming.getWorld() != null ? incoming.getWorld().getName() : null;
+        List<World> worlds = plugin.getServer().getWorlds();
+        String primaryWorld = worlds.isEmpty() ? null : worlds.get(0).getName();
+        String hubWorld = hubWorldName == null ? null : hubWorldName.get();
+
+        JoinSpawnPolicy.Decision decision = JoinSpawnPolicy.decide(
+                target.isPresent(), event.getPlayer().hasPlayedBefore(), incomingWorld, primaryWorld, hubWorld);
+
+        if (decision == JoinSpawnPolicy.Decision.REDIRECT_TO_CONFIGURED_SPAWN && target.isPresent()) {
+            logger.info("join_restore player={} world={} action=REDIRECT_TO_VILLAGE_SPAWN",
+                    event.getPlayer().getUniqueId(), incomingWorld);
+            event.setSpawnLocation(target.get());
+            return;
+        }
+        // Non spammy : une seule ligne par connexion, jamais de coordonnées en INFO.
+        logger.info("join_restore player={} world={} action=KEEP_LAST_LOCATION",
+                event.getPlayer().getUniqueId(), incomingWorld);
     }
 
     /** Réapparition après la mort : toujours redirigée vers le spawn configuré, lit/ancre inclus. */

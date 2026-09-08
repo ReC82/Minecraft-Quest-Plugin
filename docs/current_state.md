@@ -222,6 +222,36 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   littéralement (`[message manquant : ...]`) y compris en Title/Subtitle plein écran. Corrigé
   (fallback discret + log serveur, jamais le nom technique de la clé côté joueur).
 
+## Bug résolu : reconnexion depuis le Wild renvoyée au Hub (issue #87)
+
+Un joueur **non-OP** déconnecté dans `wild` se reconnectait dans `world_hub`, exactement au
+spawn du village (`spawn.yml`) — logout/login devenait un échappatoire gratuit du Wild. **Cause
+racine** : `SpawnPlayerListener` distinguait « nouveau joueur » ↔ « reconnexion » via le seul
+`Player#hasPlayedBefore()`, puis `SpawnService.handleFirstJoin` redirigeait **inconditionnellement**
+la position d'arrivée vers le spawn du village. Or `hasPlayedBefore()` renvoie `false` pour un
+joueur qui a pourtant déjà joué dès que la métadonnée Bukkit `bukkit.firstPlayed` de son
+`playerdata` est absente ou pas encore peuplée (migration / transfert de serveur — cas VeryGames,
+bascule hors-ligne ↔ en-ligne des UUID, restauration de sauvegarde, aléa de timing du login).
+Aucun autre chemin de connexion RPGQuest ne téléporte au Hub — audit exhaustif des ~15
+`PlayerJoinEvent` / `PlayerSpawnLocationEvent` / `PlayerRespawnEvent`. Multiverse-Core sur DEV :
+`enforce-access: false`, `first-spawn-override: false`, `enable-join-destination: false`, et
+`wild` n'est même pas un monde Multiverse — donc pas MV non plus.
+
+**Correction** (minimale, sans nouvelle persistance) : `spawn.JoinSpawnPolicy` (fonction pure,
+testée séparément) décide de la redirection. On ne redirige vers le village que si un nouveau
+joueur (`!hasPlayedBefore()`) est placé par Paper dans le **monde principal**
+(`getServer().getWorlds().get(0)`) **ou** le **monde Hub** (`config.yml` → `hub.world`) — les deux
+seuls mondes où un tout nouveau joueur apparaît légitimement. Si Paper restaure déjà le joueur
+dans un autre monde chargé (`wild`, `claims`, …), sa position est **conservée**, quel que soit
+`hasPlayedBefore()`. Onboarding inchangé ; repli Hub « monde précédent disparu » préservé (Paper
+renvoie alors le joueur au monde principal → redirection village). Aucun `if (!world.equals("world_hub"))`
+codé en dur : c'est un allowlist config/API. `dialogue.node.*`, la Rune/Pierre de rappel, les
+Claims, le respawn après mort (`SpawnService.handleRespawn`, inchangé) ne sont pas touchés. Log
+`join_restore player=<uuid> world=<w> action=KEEP_LAST_LOCATION|REDIRECT_TO_VILLAGE_SPAWN` (une
+ligne par connexion, sans coordonnées). Point d'intégration futur anti-combat-logging (#88)
+documenté dans `JoinSpawnPolicy` (non implémenté). Tests : `JoinSpawnPolicyTest` (nouveau),
+`SpawnServiceTest` étendu (régression #87 + onboarding Hub).
+
 ## Bug résolu : téléportation automatique dans le Hub (`hub_to_claims`)
 
 Un joueur était téléporté automatiquement hors de `world_hub` ~1-2 s après son arrivée. **Cause

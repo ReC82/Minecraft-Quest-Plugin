@@ -23,7 +23,7 @@ import org.mockbukkit.mockbukkit.entity.PlayerMock;
  * application aux événements de connexion/réapparition — voir {@code docs-site/hub-safe-zone.html}
  * pour la checklist manuelle en jeu.
  */
-@SuppressWarnings("removal") // org.spigotmc.event.player.PlayerSpawnLocationEvent — voir SpawnService#handleFirstJoin.
+@SuppressWarnings("removal") // org.spigotmc.event.player.PlayerSpawnLocationEvent — voir SpawnService#applyJoinSpawnPolicy.
 class SpawnServiceTest {
 
     @TempDir
@@ -51,7 +51,7 @@ class SpawnServiceTest {
     }
 
     private SpawnService newService() {
-        return new SpawnService(plugin, tempDir.resolve("spawn.yml"), plugin.getSLF4JLogger());
+        return new SpawnService(plugin, tempDir.resolve("spawn.yml"), plugin.getSLF4JLogger(), () -> "world_hub");
     }
 
     // ---- Persistance ------------------------------------------------------
@@ -113,7 +113,7 @@ class SpawnServiceTest {
         Files.writeString(tempDir.resolve("ghost.yml"),
                 "world: ghost_world\nx: 0.0\ny: 65.0\nz: 0.0\nyaw: 0.0\npitch: 0.0\n");
 
-        SpawnService ghost = new SpawnService(plugin, tempDir.resolve("ghost.yml"), plugin.getSLF4JLogger());
+        SpawnService ghost = new SpawnService(plugin, tempDir.resolve("ghost.yml"), plugin.getSLF4JLogger(), () -> "world_hub");
         ghost.start();
 
         assertTrue(ghost.current().isPresent(), "le fichier est valide, la position doit être chargée en mémoire");
@@ -125,7 +125,7 @@ class SpawnServiceTest {
         Files.createDirectories(tempDir);
         Files.writeString(tempDir.resolve("broken.yml"), "not: a valid spawn\n");
 
-        SpawnService broken = new SpawnService(plugin, tempDir.resolve("broken.yml"), plugin.getSLF4JLogger());
+        SpawnService broken = new SpawnService(plugin, tempDir.resolve("broken.yml"), plugin.getSLF4JLogger(), () -> "world_hub");
         broken.start();
 
         assertFalse(broken.current().isPresent());
@@ -169,6 +169,35 @@ class SpawnServiceTest {
         server.getPluginManager().callEvent(event);
 
         assertEquals(elsewhere, event.getSpawnLocation(), "une reconnexion normale ne doit jamais être redirigée vers le spawn");
+    }
+
+    @Test
+    void returningPlayerInWildIsKeptEvenWhenHasPlayedBeforeIsWrong() {
+        // Régression issue #87 : joueur revenant du Wild, mais hasPlayedBefore() renvoie false
+        // (métadonnée Bukkit absente après migration/transfert). L'ancien code le renvoyait au Hub.
+        service.set(new Location(world, 3.5, 70.0, 3.5, 180.0f, 0.0f));
+        World wild = server.addSimpleWorld("wild");
+        PlayerMock player = server.addPlayer(); // hasPlayedBefore() reste false (jamais setFirstPlayed)
+
+        Location savedInWild = new Location(wild, -1765, 80, 2607);
+        PlayerSpawnLocationEvent event = new PlayerSpawnLocationEvent(player, savedInWild);
+        server.getPluginManager().callEvent(event);
+
+        assertEquals(savedInWild, event.getSpawnLocation(),
+                "un joueur que Paper restaure dans le Wild n'est jamais renvoyé au Hub, quel que soit hasPlayedBefore()");
+    }
+
+    @Test
+    void brandNewPlayerLandingInHubWorldIsStillRedirectedToVillageSpawn() {
+        service.set(new Location(world, 3.5, 70.0, 3.5, 180.0f, 0.0f));
+        World hub = server.addSimpleWorld("world_hub");
+        PlayerMock player = server.addPlayer(); // hasPlayedBefore() == false
+
+        PlayerSpawnLocationEvent event = new PlayerSpawnLocationEvent(player, new Location(hub, 10, 64, 10));
+        server.getPluginManager().callEvent(event);
+
+        assertEquals(world, event.getSpawnLocation().getWorld(), "onboarding conservé : redirigé vers le village");
+        assertEquals(3.5, event.getSpawnLocation().getX());
     }
 
     // ---- Réapparition après la mort ----------------------------------------

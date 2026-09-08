@@ -63,7 +63,7 @@ class WaystoneServiceTest {
         database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         repository = new WaystoneRepository(database);
 
-        spawnService = new SpawnService(plugin, tempDir.resolve("spawn.yml"), plugin.getSLF4JLogger());
+        spawnService = new SpawnService(plugin, tempDir.resolve("spawn.yml"), plugin.getSLF4JLogger(), () -> "world_hub");
         spawnService.start();
         World hub = server.addSimpleWorld("world_hub");
         buildPlatform(hub, 0, 0);

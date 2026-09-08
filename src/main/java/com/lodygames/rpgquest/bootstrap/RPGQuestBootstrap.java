@@ -246,7 +246,8 @@ public final class RPGQuestBootstrap {
         this.storeProductRegistry = new StoreProductRegistry(
                 plugin.getDataFolder().toPath().resolve("store-products"), plugin.getSLF4JLogger());
         this.spawnService = new SpawnService(
-                plugin, plugin.getDataFolder().toPath().resolve("spawn.yml"), plugin.getSLF4JLogger());
+                plugin, plugin.getDataFolder().toPath().resolve("spawn.yml"), plugin.getSLF4JLogger(),
+                () -> configService.current().hub().world());
         this.worldService = new WorldService(
                 plugin, plugin.getDataFolder().toPath().resolve("worlds.yml"), plugin.getSLF4JLogger());
     }

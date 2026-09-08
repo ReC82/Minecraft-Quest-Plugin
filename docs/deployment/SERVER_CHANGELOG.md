@@ -1024,4 +1024,29 @@ un fichier par PNJ sous `plugins/RPGQuest/npcs/*.yml` (`YamlNpcEngine`, `NpcDefi
 
 ### Exécution réelle
 
-_À compléter par la session qui déploie (voir le rapport `docs/claude-reports/` associé)._
+Session du 2026-09-08 (~12:35–12:46 UTC). Branche `feat/control-panel-admin-tools` @ `1340dda`,
+**non fusionnée**.
+
+- **AWS Control Panel — DÉPLOYÉ** : `scripts/plugadmin/deploy.sh` → ancienne app sauvegardée
+  `/opt/plugadmin/releases/20260908-123552`, `systemctl restart` → `active` (PID 166440). JAR
+  déployé sha256 `01f14c6071584261f932eca36cc38ff11769999bc3c1ff3d60be1c3819dd51a5` == build de
+  la branche. `/health` local + public `ONLINE` ×3 ; `/npcs` + `/dashboard` (anon) → 303 ; autres
+  vhosts 200 ; nginx/secrets/TLS non touchés. Rollback : `scripts/plugadmin/rollback.sh app`.
+- **VeryGames DEV — EN ATTENTE (panne FTP externe)** : `scripts/deploy-verygames.sh -y` a
+  construit le JAR (tests + build verts, sha256
+  `261d7a378c58f714a35c1bea861b2cdf69727ad73b94b2f73cf9e9c8a30c3549`, 1 317 563 o) puis a échoué à
+  la **connexion FTP** (`curl (28) timed out`, hôte `si-16041.dg.vg` injoignable — il répondait
+  ~15 min plus tôt). Le script **abandonne avant toute écriture** : serveur DEV **inchangé** (tourne
+  toujours le JAR `12786cb3…` de l'entrée précédente), aucune donnée touchée, aucun rollback requis.
+  **À faire dès que le FTP répond** (arbre Git propre) :
+  `scripts/deploy-verygames.sh -y` puis `scripts/verygames-restart.sh`, puis la validation du
+  rapport `docs/claude-reports/2026-09-08_1235_npc-v2-declarative.md` (`npc.list` V2,
+  `npc.definition.create`, `quest.giver.set`).
+
+### Rollback (points exacts)
+
+- AWS : `scripts/plugadmin/rollback.sh app` → release `20260908-123552`.
+- VeryGames : rien à défaire (déploiement non effectué). Après déploiement futur :
+  `scripts/rollback-verygames.sh --latest` + `scripts/verygames-restart.sh` ; supprimer les
+  `npcs/*.yml` créés ; restaurer un YAML de quête édité par `quest.giver.set`.
+- Rapport : `docs/claude-reports/2026-09-08_1235_npc-v2-declarative.md`.

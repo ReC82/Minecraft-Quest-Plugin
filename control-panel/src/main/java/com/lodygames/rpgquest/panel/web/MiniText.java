@@ -111,6 +111,11 @@ public final class MiniText {
         return out.toString();
     }
 
+    /** Sigle court à laisser tel quel (jamais « prettifié » ni traduit) : {@code XP}, {@code HP}… */
+    public static boolean keepUpper(String token) {
+        return token != null && KEEP_UPPER.contains(token);
+    }
+
     /** {@code AMETHYST_SHARD} et autres jetons en capitales d'un texte deviennent « Amethyst Shard ». */
     public static String prettifyTokens(String text) {
         if (text == null || text.isEmpty()) {

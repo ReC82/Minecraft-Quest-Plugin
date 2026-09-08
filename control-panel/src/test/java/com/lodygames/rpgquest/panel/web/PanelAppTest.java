@@ -234,10 +234,10 @@ class PanelAppTest {
         client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
         jar.clear();
 
-        // Sans heartbeat : dashboard "AGENT DISTANT" mais aucun heartbeat reçu.
+        // Sans heartbeat : dashboard "via agent distant" mais aucun heartbeat reçu.
         loginOk();
         String before = get("/dashboard").body();
-        assertTrue(before.contains("AGENT DISTANT"));
+        assertTrue(before.toLowerCase().contains("agent distant"));
         assertTrue(before.contains("Aucun heartbeat"));
 
         // L'agent (VeryGames) pousse un heartbeat via le contrat /agent/v1/*.

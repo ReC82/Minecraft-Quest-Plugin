@@ -131,17 +131,28 @@ public final class Layout {
             .meta-line{margin:8px 0 0;font-size:13px;color:var(--muted)}
             .meta-k{display:inline-block;min-width:88px;color:var(--faint);font-size:11px;
             text-transform:uppercase;letter-spacing:.05em}
-            .obj-list,.step-list{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
-            .obj-list li,.step-list li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13.5px}
-            .obj-list li{padding-left:14px;position:relative}
+            .obj-list,.step-list,.reward-list{margin:8px 0 0;padding:0;list-style:none;display:flex;
+            flex-direction:column;gap:6px}
+            .obj-list li,.step-list li,.reward-list li{display:flex;flex-wrap:wrap;align-items:center;
+            gap:8px;font-size:13.5px}
+            .obj-list li,.reward-list li{padding-left:14px;position:relative}
             .obj-list li::before{content:"▹";position:absolute;left:0;color:var(--faint)}
+            .reward-list li::before{content:"◆";position:absolute;left:0;color:var(--faint);font-size:9px;top:5px}
             .step-n{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
             flex-shrink:0;border-radius:50%;background:var(--panel3);border:1px solid var(--line2);
             font-size:11px;color:var(--muted)}
-            .obj-text{color:var(--txt)}
+            .obj-text{color:var(--txt);overflow-wrap:anywhere}
+            .act-type{color:var(--txt)}
+            .reward-list .obj-text{font-weight:500}
             /* ---- identifiant technique en second plan ---- */
             .tid{font-size:11.5px;color:var(--faint);background:var(--panel2);border:1px solid var(--line);
-            border-radius:5px;padding:1px 6px;white-space:nowrap}
+            border-radius:5px;padding:1px 6px;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+            .tid--wrap{white-space:normal;word-break:break-word}
+            .tid[data-copy]{cursor:pointer;transition:color .1s,border-color .1s}
+            .tid[data-copy]:hover,.tid[data-copy]:focus-visible{color:var(--muted);border-color:var(--muted);outline:none}
+            .tid[data-copy]::after{content:" ⧉";opacity:.45;font-size:10px}
+            .tid.copied{color:var(--ok);border-color:var(--ok)}
+            .tid.copied::after{content:" ✓"}
             .badge{display:inline-block;font-size:11px;color:var(--muted);background:var(--panel2);
             border:1px solid var(--line);border-radius:999px;padding:1px 9px;white-space:nowrap}
             /* ---- pastilles de statut (texte + glyphe, jamais couleur seule) ---- */

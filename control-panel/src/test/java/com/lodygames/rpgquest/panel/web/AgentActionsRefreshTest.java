@@ -142,6 +142,12 @@ class AgentActionsRefreshTest {
         Map<String, Object> row1 = (Map<String, Object>) actions1.get(0);
         assertEquals("player.variable.get", row1.get("type"));
         assertEquals(Boolean.FALSE, row1.get("terminal"));
+        // Non-régression du rendu enrichi consommé par panel.js (lot UX) : le JSON porte le
+        // libellé humain du type, la pastille normalisée et l'id complet pour la copie.
+        assertTrue(String.valueOf(row1.get("typeHtml")).contains("Lire une variable joueur"), "libellé de type");
+        assertTrue(String.valueOf(row1.get("typeHtml")).contains("data-copy=\"player.variable.get\""));
+        assertTrue(String.valueOf(row1.get("statusHtml")).contains("pill--pending"));
+        assertTrue(String.valueOf(row1.get("idFull")).length() == 36, "id complet fourni pour la copie");
 
         // L'agent relève l'action (id complet) puis renvoie un résultat SUCCESS.
         HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
@@ -201,6 +207,10 @@ class AgentActionsRefreshTest {
         assertTrue(js.contains("tick(); // premier relevé immédiat"));
         // Arrêt garanti dès qu'il n'y a plus d'action en cours.
         assertTrue(js.contains("data.pending > 0") && js.contains("stop(null)"));
+        // Lot UX : rendu enrichi (typeHtml/statusHtml) + copie d'identifiant, sans casser le polling.
+        assertTrue(js.contains("a.typeHtml") && js.contains("a.statusHtml"), "cellules serveur réutilisées");
+        assertTrue(js.contains("navigator.clipboard") && js.contains("execCommand"), "copie + repli");
+        assertTrue(js.contains("data-copy"));
     }
 
     @Test

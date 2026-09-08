@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.panel.web;
 
+import com.lodygames.rpgquest.panel.agent.AgentActionCatalog;
 import com.lodygames.rpgquest.panel.agent.AgentActionStatus;
 import com.lodygames.rpgquest.panel.http.Http;
 
@@ -63,6 +64,17 @@ public final class Ui {
         return pill(s, kindFor(s), glyphFor(s));
     }
 
+    /** Vivacité d'un agent (ONLINE / STALE / OFFLINE / UNKNOWN) — même langage visuel. */
+    public static String liveness(String live) {
+        String s = live == null || live.isBlank() ? "UNKNOWN" : live.trim().toUpperCase(java.util.Locale.ROOT);
+        return switch (s) {
+            case "ONLINE" -> pill(s, "success", "✓");
+            case "STALE" -> pill(s, "pending", "○");
+            case "OFFLINE" -> pill(s, "failed", "✕");
+            default -> pill(s, "neutral", "•");
+        };
+    }
+
     // ---- Briques génériques ---------------------------------------------------------------
 
     /** Pastille : {@code kind} ∈ success|failed|rejected|pending|delivered|expired|neutral. */
@@ -77,16 +89,35 @@ public final class Ui {
         return "<span class=\"badge\">" + Http.esc(label) + "</span>";
     }
 
-    /** Identifiant technique en second plan : monospace, discret, valeur complète en infobulle. */
+    /** Type d'action agent : libellé humain (via {@link AgentActionCatalog}) + fil technique copiable. */
+    public static String actionType(String type) {
+        String label = AgentActionCatalog.spec(type).map(AgentActionCatalog.Spec::label).orElse(type);
+        return "<span class=\"act-type\">" + Http.esc(label) + "</span> " + id(type);
+    }
+
+    /** Identifiant technique en second plan : monospace, discret, cliquable pour copier. */
     public static String id(String id) {
         return id(id, id);
     }
 
-    /** Idem, avec un libellé abrégé affiché et la valeur complète en infobulle (UUID tronqué…). */
+    /**
+     * Idem, avec un libellé abrégé affiché et la valeur complète copiée / en infobulle (UUID
+     * tronqué…). Le clic (ou Entrée/Espace) copie {@code fullValue} — géré par {@code panel.js},
+     * avec repli si l'API Clipboard est indisponible ; sans JS, l'infobulle reste consultable.
+     */
     public static String id(String label, String fullValue) {
         String l = label == null ? "" : label;
         String f = fullValue == null ? l : fullValue;
-        return "<code class=\"tid\" title=\"Identifiant technique : " + Http.esc(f) + "\">" + Http.esc(l) + "</code>";
+        return "<code class=\"tid\" role=\"button\" tabindex=\"0\" data-copy=\"" + Http.esc(f)
+                + "\" title=\"Cliquer pour copier : " + Http.esc(f) + "\">" + Http.esc(l) + "</code>";
+    }
+
+    /** Valeur technique longue (commande de récompense, chaîne libre) : monospace discret,
+     *  retour à la ligne autorisé, cliquable pour copier. */
+    public static String rawValue(String value) {
+        String v = value == null ? "" : value;
+        return "<code class=\"tid tid--wrap\" role=\"button\" tabindex=\"0\" data-copy=\"" + Http.esc(v)
+                + "\" title=\"Cliquer pour copier\">" + Http.esc(v) + "</code>";
     }
 
     /** Ligne « Clé : valeur(HTML déjà sûr) » discrète sous un titre. */

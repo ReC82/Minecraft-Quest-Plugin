@@ -254,7 +254,8 @@ public final class AgentPages {
             sb.append("<ul class=\"obj-list\">");
             for (Object s : steps) {
                 Map<String, Object> st = asMap(s);
-                String objectives = MiniText.prettifyTokens(join(asList(st.get("objectives"))));
+                // #76 : noms FR des matériaux / mobs dans les objectifs (repli prettify si inconnu).
+                String objectives = MinecraftNames.humanizeTokens(join(asList(st.get("objectives"))));
                 sb.append("<li><span class=\"obj-text\">").append(Http.esc(objectives)).append("</span>")
                         .append(Ui.id(str(st.get("id")))).append("</li>");
             }
@@ -262,11 +263,18 @@ public final class AgentPages {
         }
         List<Object> rewards = asList(qd.get("rewards"));
         if (!rewards.isEmpty()) {
-            StringBuilder rw = new StringBuilder();
+            // #77 : libellé fonctionnel d'abord, valeur technique brute conservée en second plan.
+            sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Récompenses</span></p>");
+            sb.append("<ul class=\"reward-list\">");
             for (Object o : rewards) {
-                rw.append(rw.isEmpty() ? "" : " · ").append(Http.esc(MiniText.prettifyTokens(str(o))));
+                RewardText.Reward rw = RewardText.parse(str(o));
+                sb.append("<li><span class=\"obj-text\">").append(Http.esc(rw.label())).append("</span>");
+                if (rw.hasDetail()) {
+                    sb.append(Ui.rawValue(rw.rawDetail()));
+                }
+                sb.append("</li>");
             }
-            sb.append(Ui.metaLine("Récompenses", rw.toString()));
+            sb.append("</ul>");
         }
         return sb.append("</article>").toString();
     }
@@ -284,11 +292,14 @@ public final class AgentPages {
             if (objectives.isEmpty()) {
                 sb.append("étape ").append(Ui.id(step));
             }
-            for (Object o : objectives) {
-                Map<String, Object> ob = asMap(o);
-                sb.append(MiniText.prettifyTokens(str(ob.get("description")))).append(" — <strong>")
+            for (int i = 0; i < objectives.size(); i++) {
+                Map<String, Object> ob = asMap(objectives.get(i));
+                if (i > 0) {
+                    sb.append("<br>");
+                }
+                sb.append(Http.esc(MinecraftNames.humanizeTokens(str(ob.get("description"))))).append(" — <strong>")
                         .append(Http.esc(str(ob.get("current")))).append("/").append(Http.esc(str(ob.get("required"))))
-                        .append("</strong><br>");
+                        .append("</strong>");
             }
         } else {
             sb.append("—");
@@ -457,7 +468,7 @@ public final class AgentPages {
         } else {
             for (AgentActionRow a : actions) {
                 sb.append("<tr><td>").append(Ui.id(shorten(a.id(), 8))).append("</td>")
-                        .append("<td><code class=\"tid\">").append(Http.esc(a.type())).append("</code></td>")
+                        .append("<td>").append(Ui.actionType(a.type())).append("</td>")
                         .append("<td class=\"muted\">").append(Http.esc(renderParams(a.params()))).append("</td>")
                         .append("<td>").append(Ui.actionStatus(a.status())).append("</td>")
                         .append("<td>").append(a.deliverCount()).append("</td>")

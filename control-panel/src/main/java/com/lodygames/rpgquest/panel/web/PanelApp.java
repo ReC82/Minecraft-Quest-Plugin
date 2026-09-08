@@ -283,9 +283,9 @@ public final class PanelApp {
         AgentLiveness live = AgentLiveness.of(hb, config.agents().thresholds(), now);
         StringBuilder sb = new StringBuilder();
 
-        sb.append("<h2>RPGQuest ").append(Http.esc(target.label()))
-                .append(" — <span class=\"pill ").append(livenessPill(live)).append("\">").append(live).append("</span>")
-                .append(" <span class=\"muted\">via AGENT DISTANT</span></h2>");
+        sb.append("<h2>").append(Http.esc(target.label()))
+                .append(" ").append(Ui.liveness(live.name()))
+                .append(" <span class=\"muted\">via agent distant</span></h2>");
 
         if (hb.isEmpty()) {
             sb.append("<div class=\"banner err\"><strong>Aucun heartbeat reçu de l'agent « ")
@@ -297,7 +297,7 @@ public final class PanelApp {
         String age = AgentLiveness.ageHuman(h.receivedAt(), now);
 
         sb.append("<div class=\"cards\">");
-        card(sb, "Statut", "<span class=\"pill " + livenessPill(live) + "\">" + live + "</span>");
+        card(sb, "Statut", Ui.liveness(live.name()));
         card(sb, "Dernier heartbeat", Http.esc(age) + " <span class=\"muted\">(" + Http.esc(h.receivedAt().toString()) + ")</span>");
         card(sb, "Version plugin", Http.esc(nz(h.pluginVersion())));
         card(sb, "Protocole agent", Http.esc(nz(h.protocol())));
@@ -420,7 +420,9 @@ public final class PanelApp {
             }
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", shortId(a.id()));
+            item.put("idFull", a.id());
             item.put("type", a.type());
+            item.put("typeHtml", Ui.actionType(a.type())); // libellé humain + fil technique copiable
             item.put("params", renderParams(a.params()));
             item.put("status", a.status().name());
             item.put("pill", actionPill(a.status()));
@@ -613,9 +615,9 @@ public final class PanelApp {
         for (AgentIdentity agent : agentRegistry.all()) {
             Optional<HeartbeatRecord> hb = agentStore.latestHeartbeat(agent.id());
             AgentLiveness live = AgentLiveness.of(hb, config.agents().thresholds(), now);
-            sb.append("<h2>").append(Http.esc(agent.id()))
-                    .append(" <span class=\"pill ").append(livenessPill(live)).append("\">").append(live).append("</span>")
-                    .append(" <span class=\"muted\">env ").append(Http.esc(agent.environment()))
+            sb.append("<h2>Agent ").append(Ui.liveness(live.name()))
+                    .append(" <span class=\"muted\">").append(Http.esc(agent.id()))
+                    .append(" · env ").append(Http.esc(agent.environment()))
                     .append(agent.usable() ? "" : " — jeton absent").append("</span></h2>");
 
             sb.append("<div class=\"cards\">");
@@ -627,7 +629,7 @@ public final class PanelApp {
             sb.append("</div>");
 
             if (canSend) {
-                sb.append("<h3>Action de preuve <span class=\"faint\">·</span> <code class=\"tid\">player.variable.get</code></h3>")
+                sb.append("<h3>Action de preuve <span class=\"faint\">·</span> ").append(Ui.id("player.variable.get")).append("</h3>")
                         .append("<form method=\"post\" action=\"/agents\" class=\"actform read\">")
                         .append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken())).append("\">")
                         .append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agent.id())).append("\">")
@@ -650,7 +652,7 @@ public final class PanelApp {
             } else {
                 for (AgentActionRow a : actions) {
                     sb.append("<tr><td>").append(Ui.id(shortId(a.id()), a.id())).append("</td>")
-                            .append("<td><code class=\"tid\">").append(Http.esc(a.type())).append("</code></td>")
+                            .append("<td>").append(Ui.actionType(a.type())).append("</td>")
                             .append("<td class=\"muted\">").append(Http.esc(renderParams(a.params()))).append("</td>")
                             .append("<td>").append(Ui.actionStatus(a.status())).append("</td>")
                             .append("<td>").append(a.deliverCount()).append("</td>")
@@ -700,14 +702,6 @@ public final class PanelApp {
     }
 
     // ---- Rendu ------------------------------------------------------------------------
-
-    private static String livenessPill(AgentLiveness live) {
-        return switch (live) {
-            case ONLINE -> "ok";
-            case STALE -> "warn";
-            case OFFLINE, UNKNOWN -> "err";
-        };
-    }
 
     /** Table des mondes essentiels à partir du JSON {@code {role:{name,loaded}}} d'un heartbeat. */
     private void appendWorldsTable(StringBuilder sb, String worldsJson) {

@@ -34,13 +34,17 @@
       return '<tr><td colspan="7" class="muted">Aucune action.</td></tr>';
     }
     return actions.map(function (a) {
-      // a.statusHtml est produit côté serveur par Ui.actionStatus (texte de statut + glyphe,
-      // aucune donnée utilisateur) : inséré tel quel pour un rendu identique au serveur.
+      // a.statusHtml / a.typeHtml sont produits cote serveur (Ui.actionStatus / Ui.actionType) :
+      // aucune donnee utilisateur, inseres tels quels pour un rendu identique au serveur.
       var statusCell = a.statusHtml
         || ('<span class="pill pill--' + esc(a.pill) + '">' + esc(a.status) + '</span>');
+      var idCell = '<code class="tid" role="button" tabindex="0" data-copy="'
+        + esc(a.idFull || a.id) + '" title="Cliquer pour copier : ' + esc(a.idFull || a.id) + '">'
+        + esc(a.id) + '</code>';
+      var typeCell = a.typeHtml || ('<code class="tid">' + esc(a.type) + '</code>');
       return '<tr>'
-        + '<td><code class="tid">' + esc(a.id) + '</code></td>'
-        + '<td><code class="tid">' + esc(a.type) + '</code></td>'
+        + '<td>' + idCell + '</td>'
+        + '<td>' + typeCell + '</td>'
         + '<td class="muted">' + esc(a.params) + '</td>'
         + '<td>' + statusCell + '</td>'
         + '<td>' + esc(a.deliverCount) + '</td>'
@@ -147,11 +151,60 @@
     tick(); // premier relevé immédiat : pas d'attente de 2 s avant la première mise à jour
   }
 
+  /* ---- Copie d'un identifiant technique (issue #75/#76 lot UX) --------------------------
+   * Délégation sur le document : tout élément [data-copy] (rendu par Ui.id / Ui.rawValue)
+   * copie sa valeur complète au clic ou à Entrée/Espace. Repli execCommand si l'API
+   * Clipboard est absente ou refusée ; sans JS, l'infobulle title reste consultable.
+   */
+  function flashCopied(el) {
+    el.classList.add("copied");
+    window.setTimeout(function () { el.classList.remove("copied"); }, 1200);
+  }
+
+  function copyText(text, el) {
+    var done = function () { flashCopied(el); };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { legacyCopy(text, done); });
+        return;
+      }
+    } catch (e) { /* tombe dans le repli */ }
+    legacyCopy(text, done);
+  }
+
+  function legacyCopy(text, done) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      done();
+    } catch (e) { /* rien de mieux à faire : l'infobulle reste dispo */ }
+  }
+
+  function initCopy() {
+    document.addEventListener("click", function (ev) {
+      var el = ev.target.closest ? ev.target.closest("[data-copy]") : null;
+      if (el) { copyText(el.getAttribute("data-copy") || el.textContent, el); }
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Enter" && ev.key !== " " && ev.key !== "Spacebar") { return; }
+      var el = ev.target && ev.target.matches && ev.target.matches("[data-copy]") ? ev.target : null;
+      if (el) { ev.preventDefault(); copyText(el.getAttribute("data-copy") || el.textContent, el); }
+    });
+  }
+
   function init() {
     var blocks = document.querySelectorAll("[data-actions-agent]");
     for (var i = 0; i < blocks.length; i++) {
       attach(blocks[i]);
     }
+    initCopy();
   }
 
   if (document.readyState === "loading") {

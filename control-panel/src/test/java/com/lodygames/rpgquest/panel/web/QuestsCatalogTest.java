@@ -37,13 +37,16 @@ class QuestsCatalogTest {
     private HttpClient client;
     private final Map<String, String> jar = new LinkedHashMap<>();
 
+    // Formats réellement produits par BukkitAgentActions.describeRewards / QuestObjective.describe.
     private static final String QUEST_DETAILS = "{\"quests\":[{"
             + "\"id\":\"rpgquest:crystal_hunt\",\"title\":\"<gold>La chasse aux cristaux</gold>\","
             + "\"category\":\"crafting\",\"repeatable\":false,"
             + "\"prerequisites\":[\"rpgquest:first_steps\"],"
             + "\"steps\":[{\"id\":\"hunt_spiders\",\"objectives\":[\"Tuer SPIDER (x5)\"]},"
             + "{\"id\":\"gather_crystals\",\"objectives\":[\"Collecter AMETHYST_SHARD (x2)\"]}],"
-            + "\"rewards\":[\"+100 XP\",\"objet DIAMOND_SWORD\"]}]}";
+            + "\"rewards\":[\"+100 XP\",\"+1x DIAMOND_SWORD\","
+            + "\"variable CLAIM_TIER_1 = true\","
+            + "\"commande console : customitem give %player% rpgquest:miner_pickaxe 1\"]}]}";
 
     @AfterEach
     void tearDown() {
@@ -64,16 +67,24 @@ class QuestsCatalogTest {
         assertTrue(cat.contains("<span style=\"color:"), "couleur MiniMessage interprétée");
         assertTrue(cat.contains("class=\"entity-name\""), "titre dans un composant nom d'entité");
 
-        // ids techniques conservés, mais dans le style « second plan » (.tid)
+        // ids techniques conservés, dans le style « second plan » (.tid) et copiables (data-copy)
         assertTrue(cat.contains("class=\"tid\"") && cat.contains("rpgquest:crystal_hunt"), "id quête conservé");
-        assertTrue(cat.contains(">hunt_spiders<") || cat.contains("hunt_spiders"), "id d'étape conservé");
+        assertTrue(cat.contains("data-copy=\"rpgquest:crystal_hunt\""), "id quête copiable");
+        assertTrue(cat.contains("hunt_spiders"), "id d'étape conservé");
         assertTrue(cat.contains("rpgquest:first_steps"), "prérequis (id) conservé");
 
-        // objectifs lisibles : jetons en capitales normalisés
-        assertTrue(cat.contains("Tuer Spider (x5)"), "objectif lisible");
-        assertTrue(cat.contains("Collecter Amethyst Shard (x2)"));
-        assertTrue(cat.contains("+100 XP"), "XP court non massacré");
-        assertTrue(cat.contains("Diamond Sword"), "récompense lisible");
+        // #76 : objectifs en français quand connu, repli prettify sinon (apostrophe échappée en HTML)
+        assertTrue(cat.contains("Tuer Araignée (x5)"), "objectif FR : SPIDER -> Araignée");
+        assertTrue(cat.contains("Collecter Éclat d&#39;améthyste (x2)"), "objectif FR : AMETHYST_SHARD");
+
+        // #77 : récompenses lisibles + valeur technique conservée
+        assertTrue(cat.contains("+100 XP"), "XP inchangé");
+        assertTrue(cat.contains("Objet : Épée en diamant ×1"), "item reward lisible");
+        assertTrue(cat.contains("Débloque : Claim Tier 1"), "variable reward lisible");
+        assertTrue(cat.contains("Objet : Miner Pickaxe ×1"), "commande customitem résumée");
+        assertTrue(cat.contains("customitem give %player% rpgquest:miner_pickaxe 1"),
+                "commande brute conservée en secondaire");
+        assertTrue(cat.contains("variable CLAIM_TIER_1 = true"), "valeur technique de la variable conservée");
     }
 
     @Test

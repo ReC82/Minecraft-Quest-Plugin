@@ -1338,4 +1338,36 @@ nœuds/choix/actions viendra avec un futur éditeur.
 
 ### Exécution réelle
 
-_À compléter par la session qui déploie (voir le rapport `docs/claude-reports/` associé)._
+Session du 2026-09-08 (~15:16–15:22 UTC). Branche `feat/control-panel-admin-tools` @ `1fa7f4a`.
+
+- **AWS / PlugAdmin** : `scripts/plugadmin/deploy.sh` — OK (release
+  `/opt/plugadmin/releases/20260908-151618`, `control-panel-0.1.0-SNAPSHOT.jar` SHA-256
+  `3c873e538a01c88ba4bf5a1a4dfea46840e9ce6c589b9b2888b576bfbfc259e9`). `DIALOGUE_READ` /
+  `DIALOGUE_WRITE` + `dialogue.list` / `dialogue.definition.create` présents dans le JAR.
+  `/health` public **ONLINE** ; `/dialogues` anon → 303 ; `dig.lodygames.com` /
+  `lodylands.com` inchangés (200).
+- **VeryGames DEV** : `scripts/deploy-verygames.sh -y` — JAR `rpgquest-0.1.0-SNAPSHOT.jar`
+  1 403 924 o, SHA-256 `57bda61b54ea726e957a4d37079cd4aa85644e73a865c31d027c5472c2733b42` ;
+  backup auto `~/.local/share/rpgquest/verygames-backups/rpgquest-20260908T151640Z-predeploy.jar`.
+  `scripts/verygames-restart.sh` → `stop` RCON → OFFLINE → relance auto → **ONLINE**.
+- `/plugins` (RCON) : `Citizens, Multiverse-Core, RPGQuest, WorldEdit` verts ;
+  `rpgquest version` → `v0.1.0-SNAPSHOT`. Heartbeat agent `2026-09-08T15:19:17Z` (`ONLINE`,
+  `0.1.0-SNAPSHOT`) ; aucun `ERROR` dans `journalctl -u plugadmin`.
+- `dialogue.list` → **SUCCESS** : « 7 dialogue(s) (4 avec avertissement, 14 fichier(s)
+  rejeté(s)) », `nodeTotal=22`.
+  - 7 dialogues chargés (`guide`, `help`, `jeff`, `jo`, `guard`, `junior`, `libraire`).
+  - Actions/conditions **typées** présentes (`START_QUEST`, `RUN_SAFE_COMMAND`, `CLOSE`,
+    `QUEST_STATE`, `VARIABLE_EQUALS`, `NO_MAIN_CLAIM`, `LACKS_CUSTOM_ITEM`).
+  - Relations PNJ : `guard` / `junior` / `libraire` liés (ids canoniques) ;
+    `guide` / `help` / `jeff` / `jo` non liés → warning `DIALOGUE_NO_NPC` (PNJ Citizens sans
+    `NpcDefinition`, cohérent avec #81 phase 1).
+  - `loadIssues` (14) : 7 fixtures `test_*.yml` **préexistantes** (`test_break_block`, …,
+    `test_talk_to_npc`), chacune « `start` obligatoire » + « `nodes` obligatoire ». Correctement
+    rejetées et absentes de la liste des dialogues — la page se rend quand même. Non touchées
+    par cette tâche. `declaredButMissing: []`.
+- `npc.list` → toujours **SUCCESS** (8 PNJ).
+- `dialogue.definition.create` **non exécuté en réel** (consigne : ne pas ajouter de contenu de
+  dialogue à DEV) — couvert par les tests.
+- Aucun dialogue existant modifié ; aucune progression joueur touchée ; aucune migration.
+
+Rapport : `docs/claude-reports/2026-09-08_1510_dialogues-page-v1.md`.

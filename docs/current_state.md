@@ -175,6 +175,27 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   chargés du heartbeat), coordonnées à saisir (jamais devinées), confirmation obligatoire. **Non
   fait** (chantiers séparés) : suppression générale d'un PNJ Citizens, rebind/déplacement, choix
   de position depuis une carte, téléportation admin, câblage `/rpgadmin npc tag` (#66).
+- **Page `/dialogues` V1** *(branche `feat/control-panel-admin-tools`)* — lecture structurée des
+  dialogues à embranchements + bases d'un futur éditeur. Nouvelle action agent `dialogue.list`
+  (lecture, permission dédiée `DIALOGUE_READ`) : `DialogueCatalog` (pur, sans Bukkit) dérive
+  depuis `YamlDialogueEngine` + `YamlNpcEngine` + `YamlQuestEngine` un catalogue par dialogue
+  (`id`, `startNodeId`, `linkedNpcIds`, `nodeCount`/`choiceCount`, quêtes référencées/démarrées,
+  `nodes[]` ordonnés — départ d'abord — avec `reachable`, `choices[]` dont **actions et
+  conditions typées** `{kind, target, value, raw}`). Warnings de cohérence : `NODE_UNREACHABLE`,
+  `QUEST_REF_UNKNOWN`, `DIALOGUE_NO_NPC`, `MULTIPLE_NPCS`, `DEFINITION_DIALOGUE_DIVERGES`,
+  `NEXT_MISSING`. Les erreurs de chargement (dialogue sans nœud, `start` invalide, cycle
+  `OPEN_DIALOGUE`, id dupliqué) — qui empêchent un fichier de devenir une `DialogueDefinition` —
+  sont remontées à part (`loadIssues[]`). L'ouverture en jeu reste **toujours** par convention
+  `rpgquest:<npcId>` (jamais via `NpcDefinition.dialogue`, qui ne sert qu'aux diagnostics).
+  Action mutation `dialogue.definition.create` (permission dédiée `DIALOGUE_WRITE`, `confirm`
+  obligatoire) : crée un **squelette** `dialogues/<key>.yml` (`DialogueDraft.skeleton` →
+  `DialogueDefinitionYaml` déterministe → `DialogueDefinitionStore` : écriture atomique, refus
+  d'écrasement, re-parsé après écriture ; jamais de YAML brut ni de chemin). Page `/dialogues`
+  activée : cartes par dialogue (graphe lisible, nœud de départ mis en avant, nœuds inaccessibles
+  marqués, MiniMessage rendu), bannières pour les fichiers rejetés et les définitions pointant
+  vers un dialogue absent, formulaire de création de squelette. **Non fait** (futur éditeur) :
+  ajout/suppression de nœuds et choix, actions/conditions depuis le web, réordonnancement,
+  édition texte préservant commentaires/structure sur des dialogues riches.
 
 ## Bugs connus et corrigés
 

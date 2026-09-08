@@ -112,8 +112,22 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       les cartes définies `NOT_LINKED` — preview + monde en liste (heartbeat) + coordonnées à
       saisir + confirmation. **Reste** : premier spawn réel `PENDING MANUAL VALIDATION` ;
       suppression générale (`npc.citizens.delete`), rebind/déplacement, choix de position depuis
-      une carte, téléportation admin, éditeur de dialogues, câblage `/rpgadmin npc tag` (#66),
+      une carte, téléportation admin, câblage `/rpgadmin npc tag` (#66),
       enrichissement live (position/monde, PNJ Citizens non tagués).
+- [~] **Page `/dialogues` V1** — lecture structurée + bases d'un futur éditeur. `dialogue.list`
+      (lecture, permission dédiée `DIALOGUE_READ`) : `DialogueCatalog` (pur) dérive de
+      `YamlDialogueEngine` + `YamlNpcEngine` + `YamlQuestEngine` : par dialogue, nœuds ordonnés
+      (départ d'abord) avec `reachable`, choix avec **actions et conditions typées**
+      `{kind, target, value, raw}`, relations PNJ (convention `rpgquest:<id>` + `NpcDefinition.dialogue`),
+      quêtes référencées/démarrées, warnings (`NODE_UNREACHABLE`, `QUEST_REF_UNKNOWN`,
+      `DIALOGUE_NO_NPC`, `DEFINITION_DIALOGUE_DIVERGES`…), `loadIssues[]` à part pour les fichiers
+      rejetés. `dialogue.definition.create` (permission dédiée `DIALOGUE_WRITE`) : squelette
+      `dialogues/<key>.yml` (`DialogueDraft` → `DialogueDefinitionYaml` déterministe →
+      `DialogueDefinitionStore` atomique, refus d'écrasement, re-parsé). Page `/dialogues` :
+      graphe lisible par carte, nœud de départ mis en avant, nœuds inaccessibles marqués,
+      MiniMessage rendu, formulaire de création de squelette. **Reste (futur éditeur)** :
+      `dialogue.node.create/update`, `dialogue.choice.add/update/delete`, édition texte préservant
+      commentaires/structure (couche AST), réordonnancement, builder graphique.
 - [~] `quest.list` transporte des **objectifs et récompenses structurés**
       (`objectiveDetails` / `rewardDetails` = `{kind, target, amount, value, command, raw}`,
       commande non tronquée) + le **PNJ donneur** (`giverId`, champ YAML `giver:` optionnel) —

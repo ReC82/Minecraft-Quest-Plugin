@@ -1272,3 +1272,70 @@ Session du 2026-09-08 (~14:22–14:45 UTC). Branche `feat/control-panel-admin-to
 - Aucun PNJ Citizens créé ni supprimé ; aucune progression joueur touchée ; aucune migration.
 
 Rapport : `docs/claude-reports/2026-09-08_1423_npc-citizens-create-81-phase2.md`.
+
+## 2026-09-08 - Page /dialogues V1 : lecture structurée + squelette — action agent dialogue.list / dialogue.definition.create
+
+### Changement
+
+Nouveau canal agent **lecture** `dialogue.list` (permission dédiée `DIALOGUE_READ`) et **écriture**
+`dialogue.definition.create` (permission dédiée `DIALOGUE_WRITE`, `confirm` obligatoire, audit).
+
+- `dialogue.list` : `DialogueCatalog` (pur, sans Bukkit) dérive de `YamlDialogueEngine.dialogues()`
+  + `lastReport().issues()` + `YamlNpcEngine` + `YamlQuestEngine` un catalogue structuré — par
+  dialogue : nœuds ordonnés (départ d'abord) avec `reachable` (BFS des `next`), choix avec
+  **actions et conditions typées** `{kind, target, value, raw}`, relations PNJ (convention
+  `rpgquest:<id>` + `NpcDefinition.dialogue`), quêtes référencées/démarrées, warnings de
+  cohérence. Les fichiers rejetés au chargement (dialogue sans nœud, `start` invalide, cycle
+  `OPEN_DIALOGUE`, id dupliqué) sont remontés à part (`loadIssues[]`), jamais dans la liste des
+  dialogues.
+- `dialogue.definition.create` : crée un **squelette** `dialogues/<key>.yml` (un nœud `start`,
+  un choix « fermer »). `DialogueDraft` → `DialogueDefinitionYaml.render` (déterministe) →
+  `DialogueDefinitionStore.create` (écriture atomique tmp + `ATOMIC_MOVE`, **refus d'écrasement**,
+  rechargement complet du dossier — fichier supprimé si le nouveau dialogue ne se recharge pas).
+  Jamais de YAML brut, jamais de chemin. Après succès : `YamlDialogueEngine.reload()` (le
+  dialogue devient immédiatement ouvrable en jeu — l'ouverture se fait par convention
+  `rpgquest:<id>`).
+
+**Aucune migration SQL. Aucun contenu de dialogue existant modifié.** L'édition fine des
+nœuds/choix/actions viendra avec un futur éditeur.
+
+### Action serveur
+
+- **Remplacement du seul JAR RPGQuest** (pour que l'agent connaisse `dialogue.list` /
+  `dialogue.definition.create`).
+- Redémarrage serveur (RCON `stop` → relance auto VeryGames).
+- Aucun autre fichier. Aucune migration.
+- Control Panel AWS redéployé (`scripts/plugadmin/deploy.sh`).
+
+### Sauvegarde préalable
+
+- Ancien JAR : sauvegardé automatiquement par `deploy-verygames.sh`.
+- `plugins/RPGQuest/dialogues/` par précaution (une création via `dialogue.definition.create`
+  ajoute un fichier `<key>.yml` — jamais d'écrasement).
+
+### Déploiement
+
+1. `scripts/deploy-verygames.sh -y` (JAR seul) puis `scripts/verygames-restart.sh`.
+2. `scripts/plugadmin/deploy.sh` (AWS).
+
+### Validation
+
+- `/plugins` (RCON) : RPGQuest en vert ; `rpgquest version` répond.
+- Heartbeat agent reçu ; aucun `ERROR` dans `journalctl -u plugadmin`.
+- `dialogue.list` → **SUCCESS** ; `details.dialogues[]` peuplé (dialogues livrés : `guard`,
+  `guide`, `jo`, `libraire`, `merchant`), `loadIssues` cohérent, actions typées présentes.
+- `npc.list` toujours **SUCCESS**.
+- `dialogue.definition.create` : **non exécuté en réel** pour ne pas ajouter de contenu de
+  dialogue à DEV ; validé sur fixture / tests (round-trip parse, refus d'écrasement).
+
+### Rollback
+
+- VeryGames : `scripts/rollback-verygames.sh --latest` puis `scripts/verygames-restart.sh`.
+  Un squelette créé se retire en supprimant `plugins/RPGQuest/dialogues/<key>.yml` puis
+  `quest admin reload` / redémarrage.
+- AWS : `scripts/plugadmin/rollback.sh app`.
+- Aucune migration à défaire.
+
+### Exécution réelle
+
+_À compléter par la session qui déploie (voir le rapport `docs/claude-reports/` associé)._

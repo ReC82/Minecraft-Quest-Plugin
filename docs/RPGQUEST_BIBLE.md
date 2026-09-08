@@ -460,6 +460,21 @@ brut ni de commande console. Le câblage de `/rpgadmin npc tag` (#66), la
 suppression générale d'un PNJ Citizens et le rebind d'un binding existant ne
 sont **pas** encore faits.
 
+Une page **`/dialogues`** (V1) donne la **lecture structurée** des dialogues à
+embranchements (`dialogues/*.yml`) : par dialogue, les nœuds ordonnés (départ
+d'abord), les choix avec leurs **actions et conditions typées**
+(`{kind, target, value, raw}`), les relations PNJ et quêtes, l'accessibilité de
+chaque nœud, et des diagnostics de cohérence (`NODE_UNREACHABLE`,
+`QUEST_REF_UNKNOWN`, `DIALOGUE_NO_NPC`, `DEFINITION_DIALOGUE_DIVERGES`…). Les
+erreurs de chargement (dialogue sans nœud, `start` invalide, cycle
+`OPEN_DIALOGUE`, id dupliqué) sont listées à part. **L'ouverture d'un dialogue en
+jeu se fait toujours par convention `rpgquest:<id du PNJ>`** (identité stable du
+PNJ) — le champ `dialogue:` d'une `NpcDefinition` ne sert qu'aux diagnostics.
+L'action `dialogue.definition.create` (permission dédiée `DIALOGUE_WRITE`) crée
+un **squelette** de dialogue minimal (`id` + `start` + un nœud avec
+locuteur/texte + un choix « fermer ») ; l'édition fine des nœuds/choix/actions
+viendra avec un **éditeur dédié**, pas dans cette V1.
+
 ### Commandes RPGQuest — `/rpgadmin npc`
 
 Documentées en détail en **section 2 (Administration)** ; résumé :

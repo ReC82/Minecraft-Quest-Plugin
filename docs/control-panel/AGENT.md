@@ -239,6 +239,7 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 | `item.list` | — | `YamlCustomItemRegistry#items` | `items[]` (id, displayName, type) |
 | `npc.list` | — | `NpcCatalog` (`YamlNpcEngine` + dialogues + quêtes + `NpcBindingRepository`) | `npcs[]` + `definedIds` + `canonicalIds` — voir **Payload `npc.list`** ci-dessous |
 | `npc.citizens.list` | — | `NpcIdentityService#citizensRoster` (registre Citizens, thread principal) + `NpcBindingRepository` | `citizens[]` `{numericId, uuid, name, linkedNpcId?, availableForBinding, spawned}` + `total`/`available`/`linked`. **Catalogue physique**, séparé du catalogue logique `npc.list`. Aucune position/monde. Vide si Citizens inactif. |
+| `dialogue.list` | — | `DialogueCatalog` (pur) sur `YamlDialogueEngine` + `YamlNpcEngine` + `YamlQuestEngine` | `dialogues[]` (id, key, startNodeId, linkedNpcIds, nodeCount, choiceCount, referencedQuestIds, startsQuestIds, `nodes[]` `{id, speaker, text, start, reachable, choices[]}` avec **actions et conditions typées** `{kind, target, value, raw}`, warnings) + `loadIssues[]` (fichiers rejetés) + `declaredButMissing[]` — voir **Payload `dialogue.list`** ci-dessous |
 | `player.resetnew.preview` | `player` | `PlayerResetService#previewReset` | `lines[]` (label, count, detail) — **dry-run** |
 
 ### Mutations (confirmation exigée côté panel)
@@ -258,6 +259,7 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 | `quest.giver.set` | `quest_id` ; `npc_id` | `QuestGiverEditor` + `QuestProgressEngine#reloadQuestDefinitions` | pose `giver:` sur le YAML d'une quête |
 | `npc.citizens.link` | `npc_id` ; `citizens_id` (entier > 0) | `NpcIdentityService#bindCitizens` (`CitizensBindPlanner` + `NpcBindingRepository#insertIfAbsent`) | lie une **définition existante** à un **PNJ Citizens existant** — issue #81, phase 1 ; jamais de spawn/rebind |
 | `npc.citizens.create` | `npc_id` ; `world` ; `x` ; `y` ; `z` ; `yaw`? ; `pitch`? | `CitizensSpawnPlanner` (pur) → `CitizensSpawnCoordinator` (`NpcIdentityService#createCitizensNpc` + `#bindCitizens`, rollback `#destroyCitizensNpc`) | **crée physiquement** un PNJ Citizens depuis la définition (nom = `displayName`) puis le lie ; rollback du PNJ créé si la liaison échoue — issue #81, phase 2 ; permission dédiée `NPC_SPAWN_WRITE` |
+| `dialogue.definition.create` | `key` (clé minuscule) ; `speaker` ; `text` | `DialogueDefinitionStore#create` (`DialogueDraft.skeleton` → `DialogueDefinitionYaml`) | crée un **squelette** `dialogues/<key>.yml` (un nœud `start`, un choix « fermer ») — jamais de YAML brut, refus d'écrasement, re-parsé après écriture ; permission dédiée `DIALOGUE_WRITE` — V1 `/dialogues` |
 
 Validation à **trois couches** : `AgentActionCatalog` (panel, avant création) → `AgentActionExecutor`
 (agent, patterns bornés) → service métier. Quantité GIVE plafonnée à 64. `player.resetnew.confirm`
@@ -375,6 +377,50 @@ Résultat structuré : `{code, npc_id, citizens_id, world, rolled_back, effects}
 **Hors périmètre** (chantiers séparés) : suppression générale d'un PNJ Citizens
 (`npc.citizens.delete` — seul le rollback interne supprime), rebind/déplacement d'un PNJ existant,
 choix de position depuis une carte, téléportation admin vers le PNJ.
+
+### Payload `dialogue.list` + squelette `dialogue.definition.create` (V1 `/dialogues`)
+
+`dialogue.list` (lecture, permission dédiée `DIALOGUE_READ`) : `DialogueCatalog` (pur, sans
+Bukkit) dérive depuis `YamlDialogueEngine.dialogues()` + `lastReport().issues()` + `YamlNpcEngine`
++ `YamlQuestEngine`.
+
+- **Structure par dialogue** : `id` (`rpgquest:<key>`), `startNodeId`, `linkedNpcIds`,
+  `nodeCount`, `choiceCount`, `referencedQuestIds`, `startsQuestIds`, `nodes[]` (dans l'ordre :
+  départ d'abord, puis par id) `{id, speaker, text, start, reachable, choices[]}`. Chaque choix :
+  `{text, nextNodeId, actions[], conditions[]}` où **actions et conditions sont typées**
+  `{kind, target, value, raw}` (jamais une simple chaîne) — `kind` ∈ `START_QUEST` /
+  `ADVANCE_QUEST` / `TURN_IN_QUEST` / `GIVE_ITEM` / `TAKE_ITEM` / `SET_VARIABLE` /
+  `RUN_SAFE_COMMAND` / `OPEN_DIALOGUE` / `OPEN_MERCHANT` / `CLOSE` (actions) et `QUEST_STATE` /
+  `HAS_ITEM` / `HAS_PERMISSION` / `VARIABLE_EQUALS` / `NO_MAIN_CLAIM` / `HAS_MAIN_CLAIM` /
+  `LACKS_CUSTOM_ITEM` (conditions, `negated` déplié depuis `NegatedCondition`).
+- **`reachable`** : BFS depuis `startNodeId` en suivant les `next` (les `OPEN_DIALOGUE`
+  inter-dialogues ne comptent pas). Un nœud non atteint → warning `NODE_UNREACHABLE` (info).
+- **Warnings** : `NODE_UNREACHABLE` (info), `QUEST_REF_UNKNOWN` (warning — `START_QUEST`… ou
+  condition `QUEST_STATE` vers une quête non chargée), `DIALOGUE_NO_NPC` (info — dialogue relié à
+  aucun PNJ logique), `MULTIPLE_NPCS` (info), `DEFINITION_DIALOGUE_DIVERGES` (warning — une
+  définition PNJ déclare un `dialogue:` différent du dialogue de convention `rpgquest:<id>`),
+  `NEXT_MISSING` (error, défensif).
+- **Erreurs de chargement** (dialogue sans nœud, `start` invalide, `next` inexistant, id
+  dupliqué, cycle `OPEN_DIALOGUE`) : elles empêchent le fichier de devenir une
+  `DialogueDefinition` → remontées **à part** dans `loadIssues[]` `{file, message}` (jamais dans
+  la liste des dialogues). `declaredButMissing[]` `{npcId, dialogueId}` = définitions PNJ
+  pointant vers un dialogue absent.
+- Ouverture en jeu : **toujours par convention `rpgquest:<npcId>`** (identité stable du PNJ
+  Citizens/vanilla, voir `DialogueNpcInteractListener` / `DialogueCitizensNpcInteractListener`),
+  jamais via `NpcDefinition.dialogue` (ce champ ne sert qu'aux diagnostics).
+
+`dialogue.definition.create` (mutation, `DIALOGUE_WRITE`, `confirm` obligatoire, audit) : produit
+un **squelette minimal valide** `dialogues/<key>.yml` — `id: rpgquest:<key>`, `start: start`, un
+nœud `start` avec `speaker` + `text` + un unique choix « Au revoir » (`type: CLOSE`). `DialogueDraft`
++ `DialogueDefinitionYaml.render` (déterministe, re-parsable) + `DialogueDefinitionStore.create`
+(écriture atomique tmp + `ATOMIC_MOVE`, **refus d'écrasement** `EXISTS`, rechargement complet du
+dossier — fichier supprimé si le nouveau dialogue ne se recharge pas). Jamais de YAML brut, jamais
+de chemin. **L'édition fine** (ajout de nœuds/choix, actions `START_QUEST`, conditions,
+réordonnancement) est le périmètre d'un **futur éditeur** — API métier envisagée :
+`dialogue.node.create` / `dialogue.node.update` / `dialogue.choice.add` / `dialogue.choice.update`
+/ `dialogue.choice.delete` (aucune n'est implémentée). Une édition texte préservant
+commentaires/structure sur des dialogues riches nécessite une vraie couche AST (comme
+`QuestGiverEditor` mais imbriquée) — non bricolée dans cette V1.
 
 ---
 

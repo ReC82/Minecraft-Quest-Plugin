@@ -1236,4 +1236,39 @@ interne supprime — une action `npc.citizens.delete` éventuelle serait un chan
 
 ### Exécution réelle
 
-_À compléter par la session qui déploie (voir le rapport `docs/claude-reports/` associé)._
+Session du 2026-09-08 (~14:22–14:45 UTC). Branche `feat/control-panel-admin-tools`.
+
+- **AWS / PlugAdmin** : `scripts/plugadmin/deploy.sh` — OK (release
+  `/opt/plugadmin/releases/20260908-143939`, `control-panel-0.1.0-SNAPSHOT.jar` SHA-256
+  `bff44c5b08c86a89b6afd989db4a2589e5e2a40edcb232e677244c9db33bec65`). `NPC_SPAWN_WRITE` +
+  `npc.citizens.create` présents dans le JAR. `/health` public **ONLINE** ; `dig.lodygames.com` /
+  `lodylands.com` inchangés (200).
+- **VeryGames DEV — 1re passe (`e56930c`)** : `deploy-verygames.sh -y` + `verygames-restart.sh`.
+  Validation live : `npc.citizens.create` échouait en **`NullPointerException`** sur tous les
+  chemins de refus (`AgentActionOutcome` recopie ses détails via `Map.copyOf`, qui refuse les
+  valeurs `null` ; `citizens_id` était `null` avant création).
+- **Correctif `b9f3beb`** (`citizens_id` → `-1` quand aucun PNJ Citizens ; test de régression) —
+  `./gradlew build` vert.
+- **VeryGames DEV — 2e passe (`b9f3beb`)** : `deploy-verygames.sh -y` — JAR
+  `rpgquest-0.1.0-SNAPSHOT.jar` 1 349 308 o, SHA-256
+  `6a7ff0d4b2147f8153c05bed954a93df35f0cb6cf60033152840b7f31f4d94a9` ; backup auto
+  `~/.local/share/rpgquest/verygames-backups/rpgquest-20260908T144029Z-predeploy.jar`.
+- `scripts/verygames-restart.sh` — `stop` RCON → OFFLINE → relance auto → **ONLINE**.
+- `/plugins` (RCON) : `Citizens, Multiverse-Core, RPGQuest, WorldEdit` verts ;
+  `rpgquest version` → `v0.1.0-SNAPSHOT`. Heartbeat agent `2026-09-08T14:41:43Z` (`ONLINE`,
+  `0.1.0-SNAPSHOT`) ; aucun `ERROR` dans `journalctl -u plugadmin`.
+- `npc.list` → **SUCCESS** (8 PNJ) ; `npc.citizens.list` → **SUCCESS** (7 Citizens, 0 libre) —
+  inchangés.
+- `npc.citizens.create` — **aucun spawn réel** (consigne : pas de position sûre explicite sur
+  DEV) :
+  - `guard` (déjà lié à Citizens #6) → **FAILED `NPC_ALREADY_LINKED`** ;
+  - `woodcutter_bob` → `the_nether` → **FAILED `UNKNOWN_WORLD`** (message : « hors de la liste
+    blanche RPGQuest (claims, wild, world_hub) ») ;
+  - `woodcutter_bob` → `world_hub`, `y=99999` → **FAILED `INVALID_POSITION`** ;
+  - `does_not_exist_xyz` → **FAILED `UNKNOWN_NPC`** ; `details.citizens_id = -1` (plus de NPE) ;
+  - `woodcutter_bob` → `world_hub`, `x=NaN` → **REJECTED** (`AgentActionExecutor`, avant la
+    couche métier).
+- **Chemin nominal `CREATED` non exercé en direct** — couvert par les tests automatisés.
+- Aucun PNJ Citizens créé ni supprimé ; aucune progression joueur touchée ; aucune migration.
+
+Rapport : `docs/claude-reports/2026-09-08_1423_npc-citizens-create-81-phase2.md`.

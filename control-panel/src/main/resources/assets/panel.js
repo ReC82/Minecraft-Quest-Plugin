@@ -199,12 +199,83 @@
     });
   }
 
+  /* ---- Filtrage progressif des listes de cartes (refonte #92) --------------------------
+   * Un champ [data-filter-input="scope"] filtre par texte les éléments [data-filter-item="scope"].
+   * Des puces [data-filter-chip="value"] (dans [data-filter-chips="scope"]) filtrent en plus par
+   * [data-filter-cat] (liste séparée par des espaces). Sans JS, tout reste visible.
+   */
+  function initFilters() {
+    var inputs = document.querySelectorAll("[data-filter-input]");
+    for (var i = 0; i < inputs.length; i++) {
+      (function (input) {
+        var scope = input.getAttribute("data-filter-input");
+        var items = document.querySelectorAll('[data-filter-item="' + cssEsc(scope) + '"]');
+        var chipBox = document.querySelector('[data-filter-chips="' + cssEsc(scope) + '"]');
+        var note = document.querySelector("[data-count-note]");
+        var activeCat = null;
+
+        function apply() {
+          var q = (input.value || "").trim().toLowerCase();
+          var shown = 0;
+          for (var k = 0; k < items.length; k++) {
+            var el = items[k];
+            var hay = (el.getAttribute("data-filter-text") || el.textContent || "").toLowerCase();
+            var cats = (" " + (el.getAttribute("data-filter-cat") || "") + " ");
+            var okText = !q || hay.indexOf(q) !== -1;
+            var okCat = !activeCat || cats.indexOf(" " + activeCat + " ") !== -1;
+            var show = okText && okCat;
+            el.hidden = !show;
+            if (show) { shown++; }
+          }
+          if (note) {
+            var noun = note.getAttribute("data-noun") || "résultat";
+            note.textContent = shown + " " + noun + (shown > 1 ? "s" : "");
+          }
+        }
+        input.addEventListener("input", apply);
+        if (chipBox) {
+          chipBox.addEventListener("click", function (ev) {
+            var chip = ev.target.closest ? ev.target.closest("[data-filter-chip]") : null;
+            if (!chip) { return; }
+            var val = chip.getAttribute("data-filter-chip");
+            var chips = chipBox.querySelectorAll("[data-filter-chip]");
+            if (activeCat === val) {
+              activeCat = null;
+              chip.classList.remove("on");
+            } else {
+              activeCat = val;
+              for (var c = 0; c < chips.length; c++) { chips[c].classList.toggle("on", chips[c] === chip); }
+            }
+            apply();
+          });
+        }
+        apply();
+      })(inputs[i]);
+    }
+  }
+
+  function cssEsc(s) {
+    return String(s).replace(/["\\\]]/g, "\\$&");
+  }
+
+  /* Fermer le tiroir mobile quand on suit un lien de navigation. */
+  function initDrawer() {
+    var toggle = document.getElementById("nav-toggle");
+    if (!toggle) { return; }
+    var links = document.querySelectorAll(".side .navlink");
+    for (var i = 0; i < links.length; i++) {
+      links[i].addEventListener("click", function () { toggle.checked = false; });
+    }
+  }
+
   function init() {
     var blocks = document.querySelectorAll("[data-actions-agent]");
     for (var i = 0; i < blocks.length; i++) {
       attach(blocks[i]);
     }
     initCopy();
+    initFilters();
+    initDrawer();
   }
 
   if (document.readyState === "loading") {

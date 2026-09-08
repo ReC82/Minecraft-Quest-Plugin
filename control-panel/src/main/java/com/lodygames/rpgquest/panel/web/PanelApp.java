@@ -271,51 +271,77 @@ public final class PanelApp {
         String agentId = config.agents().defaultAgentId();
 
         StringBuilder body = new StringBuilder();
-        body.append("<h1>Dashboard</h1><p class=\"sub\">État réel du serveur RPGQuest — cible « ")
-                .append(Http.esc(target.label())).append(" ».</p>");
+        body.append(Ui.pageHeader("dashboard", "Dashboard",
+                "État réel du serveur RPGQuest — cible « " + target.label() + " ».", ""));
 
         boolean agentIsPrimary = agentId != null;
+        String serverState = "UNKNOWN";
         if (agentIsPrimary) {
-            body.append(agentDashboardSection(agentId, target));
+            AgentDash d = agentDashboard(agentId, target);
+            serverState = d.state();
+            body.append(d.html());
         }
         body.append(localBridgeSection(target, !agentIsPrimary));
 
-        Http.html(exchange, 200, renderPage("Dashboard", session, "/dashboard", body.toString()));
+        Http.html(exchange, 200, renderPage("Dashboard", session, "/dashboard", body.toString(),
+                Layout.Shell.of(target.label(), serverState, session.username())));
+    }
+
+    private record AgentDash(String html, String state) {
     }
 
     /** Section « agent distant » : l'état pris en compte quand une cible a un agent (issue #51). */
-    private String agentDashboardSection(String agentId, Target target) {
+    private AgentDash agentDashboard(String agentId, Target target) {
         Optional<HeartbeatRecord> hb = agentStore.latestHeartbeat(agentId);
         Instant now = Instant.now();
         AgentLiveness live = AgentLiveness.of(hb, config.agents().thresholds(), now);
         StringBuilder sb = new StringBuilder();
 
-        sb.append("<h2>").append(Http.esc(target.label()))
-                .append(" ").append(Ui.liveness(live.name()))
-                .append(" <span class=\"muted\">via agent distant</span></h2>");
-
         if (hb.isEmpty()) {
-            sb.append("<div class=\"banner err\"><strong>Aucun heartbeat reçu de l'agent « ")
-                    .append(Http.esc(agentId)).append(" ».</strong><br>Le plugin RPGQuest n'a pas encore contacté "
-                    + "PlugAdmin en HTTPS sortant. Vérifier <code>plugadmin-agent.properties</code> côté serveur.</div>");
-            return sb.toString();
+            sb.append("<div class=\"hero err\"><div class=\"hero-main\"><span class=\"hero-ic\">")
+                    .append(Icons.icon("server")).append("</span><div><div class=\"hero-name\">")
+                    .append(Http.esc(target.label())).append("</div><div class=\"hero-state\">")
+                    .append("Aucun heartbeat — <span class=\"muted\">via agent distant</span></div></div></div></div>");
+            sb.append(Ui.banner("err", "<strong>Aucun heartbeat reçu de l'agent « " + Http.esc(agentId)
+                    + " ».</strong><br>Le plugin RPGQuest n'a pas encore contacté PlugAdmin en HTTPS sortant. "
+                    + "Vérifier <code>plugadmin-agent.properties</code> côté serveur."));
+            return new AgentDash(sb.toString(), "OFFLINE");
         }
         HeartbeatRecord h = hb.get();
         String age = AgentLiveness.ageHuman(h.receivedAt(), now);
+        String state = nz(h.serverState()).toUpperCase(java.util.Locale.ROOT);
+        String heroKind = "ONLINE".equals(state) ? "ok" : "OFFLINE".equals(state) ? "err" : "";
+
+        sb.append("<div class=\"hero ").append(heroKind).append("\"><div class=\"hero-main\">")
+                .append("<span class=\"hero-ic\">").append(Icons.icon("ONLINE".equals(state) ? "online" : "server"))
+                .append("</span><div><div class=\"hero-name\">").append(Http.esc(target.label()))
+                .append("</div><div class=\"hero-state\">").append(Ui.liveness(live.name()))
+                .append(" <span class=\"muted\">").append(Http.esc(state))
+                .append(" · via agent distant</span></div></div></div>");
+        sb.append("<div class=\"hero-facts\">")
+                .append(heroFact("Heartbeat", Http.esc(age)))
+                .append(heroFact("Joueurs", h.playersOnline() < 0 ? "—" : h.playersOnline() + " / " + h.maxPlayers()))
+                .append(heroFact("Version", Http.esc(nz(h.pluginVersion()))))
+                .append(heroFact("Uptime", Http.esc(h.uptimeHuman())))
+                .append("</div></div>");
 
         sb.append("<div class=\"cards\">");
-        card(sb, "Statut", Ui.liveness(live.name()));
-        card(sb, "Dernier heartbeat", Http.esc(age) + " <span class=\"muted\">(" + Http.esc(h.receivedAt().toString()) + ")</span>");
-        card(sb, "Version plugin", Http.esc(nz(h.pluginVersion())));
-        card(sb, "Protocole agent", Http.esc(nz(h.protocol())));
-        card(sb, "Joueurs", h.playersOnline() < 0 ? "—" : h.playersOnline() + " / " + h.maxPlayers());
-        card(sb, "Uptime plugin", Http.esc(h.uptimeHuman()));
-        card(sb, "État serveur", Http.esc(nz(h.serverState())));
-        card(sb, "Environnement", Http.esc(nz(h.environment())));
+        sb.append(Ui.statCard("players", h.playersOnline() < 0 ? "—" : String.valueOf(h.playersOnline()),
+                "Joueurs en ligne", "", "<span class=\"muted\">/ " + h.maxPlayers() + " max</span>"));
+        sb.append(Ui.statCard("version", nz(h.pluginVersion()), "Version du plugin", "", null));
+        sb.append(Ui.statCard("uptime", h.uptimeHuman(), "Uptime du plugin", "", null));
+        sb.append(Ui.statCard("agents", nz(h.protocol()), "Protocole agent", "",
+                "<span class=\"muted\">" + Http.esc(nz(h.environment())) + "</span>"));
+        sb.append(Ui.statCard(state.equals("ONLINE") ? "online" : "server", state, "État serveur",
+                state.equals("ONLINE") ? "ok" : state.equals("OFFLINE") ? "err" : "", null));
         sb.append("</div>");
 
         appendWorldsTable(sb, h.worldsJson());
-        return sb.toString();
+        return new AgentDash(sb.toString(), state);
+    }
+
+    private static String heroFact(String k, String v) {
+        return "<div class=\"hero-fact\"><div class=\"hf-k\">" + Http.esc(k) + "</div><div class=\"hf-v\">" + v + "</div></div>";
     }
 
     /**
@@ -324,34 +350,43 @@ public final class PanelApp {
      * historique : bannière rouge si injoignable) ; false = affichage secondaire discret.
      */
     private String localBridgeSection(Target target, boolean primary) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("<h2>Bridge local <span class=\"muted\">(").append(Http.esc(target.bridgeBaseUrl() == null ? "—" : target.bridgeBaseUrl()))
-                .append(")</span></h2>");
+        StringBuilder inner = new StringBuilder();
+        boolean bridgeOk = false;
         try {
             BridgeHealth health = bridge.health(target);
-            sb.append("<div class=\"cards\">");
-            card(sb, "RPGQuest", "<span class=\"pill ok\">" + Http.esc(nz(health.status())) + "</span>");
-            card(sb, "Version plugin", Http.esc(nz(health.pluginVersion())));
-            card(sb, "API bridge", Http.esc(nz(health.bridgeApiVersion())));
-            card(sb, "Joueurs", health.playersOnline() < 0 ? "—" : health.playersOnline() + " / " + health.maxPlayers());
-            card(sb, "Uptime plugin", Http.esc(health.uptimeHuman()));
-            sb.append("</div>");
-            appendWorldStatusTable(sb, health);
+            bridgeOk = true;
+            inner.append("<div class=\"cards\">");
+            card(inner, "RPGQuest", "<span class=\"pill ok\">" + Http.esc(nz(health.status())) + "</span>");
+            card(inner, "Version plugin", Http.esc(nz(health.pluginVersion())));
+            card(inner, "API bridge", Http.esc(nz(health.bridgeApiVersion())));
+            card(inner, "Joueurs", health.playersOnline() < 0 ? "—" : health.playersOnline() + " / " + health.maxPlayers());
+            card(inner, "Uptime plugin", Http.esc(health.uptimeHuman()));
+            inner.append("</div>");
+            appendWorldStatusTable(inner, health);
         } catch (BridgeException e) {
             LOG.log(System.Logger.Level.INFO, "event=bridge_unavailable target=" + target.id() + " reason="
                     + e.getMessage().replace('\n', ' '));
             if (primary) {
-                sb.append("<div class=\"banner err\"><strong>RPGQuest ").append(Http.esc(target.label()))
-                        .append(" indisponible.</strong> <span class=\"pill err\">OFFLINE</span><br>")
-                        .append(Http.esc(e.getMessage()))
-                        .append("<br><span class=\"muted\">Aucun agent distant n'est configuré pour cette cible "
-                                + "(voir docs/control-panel/AGENT.md).</span></div>");
+                inner.append(Ui.banner("err", "<strong>RPGQuest " + Http.esc(target.label())
+                        + " indisponible.</strong> <span class=\"pill err\">OFFLINE</span><br>"
+                        + Http.esc(e.getMessage())
+                        + "<br><span class=\"muted\">Aucun agent distant n'est configuré pour cette cible "
+                        + "(voir docs/control-panel/AGENT.md).</span>"));
             } else {
-                sb.append("<p class=\"muted\">Bridge local non joignable — normal si RPGQuest tourne ailleurs "
+                inner.append("<p class=\"muted\">Bridge local non joignable — normal si RPGQuest tourne ailleurs "
                         + "(VeryGames). Détail : ").append(Http.esc(e.getMessage())).append("</p>");
             }
         }
-        return sb.toString();
+        // Détail technique : replié par défaut si tout va bien et qu'un agent est déjà la source.
+        if (primary) {
+            return "<h2>Bridge local <span class=\"muted\">("
+                    + Http.esc(target.bridgeBaseUrl() == null ? "—" : target.bridgeBaseUrl())
+                    + ")</span></h2>" + inner;
+        }
+        String open = bridgeOk ? "" : " open";
+        return "<details class=\"tech-detail\"" + open + "><summary>Détails techniques — bridge local <span class=\"muted\">("
+                + Http.esc(target.bridgeBaseUrl() == null ? "—" : target.bridgeBaseUrl())
+                + ")</span></summary>" + inner + "</details>";
     }
 
     /** {@code /docs} (accueil + recherche) et {@code /docs/<slug>} (fiche). Slug résolu côté serveur. */
@@ -814,6 +849,11 @@ public final class PanelApp {
 
     private String renderPage(String title, Session session, String activeHref, String content) {
         return Layout.page(title, session.username(), activeHref, content)
+                .replace("%CSRF%", "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">");
+    }
+
+    private String renderPage(String title, Session session, String activeHref, String content, Layout.Shell shell) {
+        return Layout.page(title, activeHref, content, shell)
                 .replace("%CSRF%", "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">");
     }
 

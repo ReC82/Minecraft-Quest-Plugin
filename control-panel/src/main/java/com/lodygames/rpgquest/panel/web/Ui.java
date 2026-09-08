@@ -144,6 +144,106 @@ public final class Ui {
         return "<p class=\"empty\">" + Http.esc(message) + "</p>";
     }
 
+    /** État vide avec icône (issue #92). */
+    public static String empty(String iconName, String message) {
+        return "<div class=\"empty\">" + Icons.icon(iconName) + Http.esc(message) + "</div>";
+    }
+
+    // ---- Composants de shell / page (refonte #92) --------------------------------------------
+
+    /**
+     * En-tête de page standard : icône + titre exact (jamais de balise entre {@code <h1>} et le
+     * texte), sous-titre, et zone d'actions principales (HTML déjà sûr).
+     */
+    public static String pageHeader(String iconName, String title, String subtitle, String actionsHtml) {
+        StringBuilder sb = new StringBuilder("<div class=\"pagehead\"><div class=\"ph-l\">");
+        sb.append("<div class=\"ph-title\">").append(Icons.icon(iconName))
+                .append("<h1>").append(Http.esc(title)).append("</h1></div>");
+        if (subtitle != null && !subtitle.isBlank()) {
+            sb.append("<p class=\"sub\">").append(Http.esc(subtitle)).append("</p>");
+        }
+        sb.append("</div>");
+        if (actionsHtml != null && !actionsHtml.isBlank()) {
+            sb.append("<div class=\"ph-actions\">").append(actionsHtml).append("</div>");
+        }
+        return sb.append("</div>").toString();
+    }
+
+    /** Titre de section avec icône. */
+    public static String sectionTitle(String iconName, String label) {
+        return "<p class=\"section-title\">" + Icons.icon(iconName) + Http.esc(label) + "</p>";
+    }
+
+    /**
+     * Carte statistique : icône + valeur + libellé (+ ligne secondaire HTML sûre optionnelle).
+     * {@code kind} ∈ {@code ""|ok|warn|err}.
+     */
+    public static String statCard(String iconName, String value, String label, String kind, String extraHtml) {
+        String k = kind == null || kind.isBlank() ? "" : " " + kind;
+        StringBuilder sb = new StringBuilder("<div class=\"stat").append(k).append("\">");
+        sb.append("<span class=\"stat-ic\">").append(Icons.icon(iconName)).append("</span>");
+        sb.append("<div class=\"stat-b\"><div class=\"stat-v\">").append(Http.esc(value)).append("</div>");
+        sb.append("<div class=\"stat-k\">").append(Http.esc(label)).append("</div>");
+        if (extraHtml != null && !extraHtml.isBlank()) {
+            sb.append("<div class=\"stat-l\">").append(extraHtml).append("</div>");
+        }
+        return sb.append("</div></div>").toString();
+    }
+
+    /** Bannière avec icône selon le type ({@code ok|err|warn|info}). {@code bodyHtml} déjà sûr. */
+    public static String banner(String type, String bodyHtml) {
+        String t = switch (type == null ? "" : type) {
+            case "ok", "err", "warn", "info" -> type;
+            default -> "info";
+        };
+        String ic = switch (t) {
+            case "ok" -> "check";
+            case "err" -> "error";
+            case "warn" -> "warning";
+            default -> "info";
+        };
+        return "<div class=\"banner " + t + "\">" + Icons.icon(ic) + "<div>" + bodyHtml + "</div></div>";
+    }
+
+    /**
+     * Barre d'outils recherche + filtres pour une liste de cartes. Le champ pilote
+     * {@code data-filter-input="<scope>"} ; les puces {@code data-filter-chip}. Le filtrage est
+     * fait par {@code panel.js} (progressif — sans JS la liste reste entièrement visible).
+     *
+     * @param scope        identifiant du groupe filtrable (les cartes portent {@code data-filter-item="<scope>"})
+     * @param placeholder  texte du champ
+     * @param chipsHtml    HTML des puces de filtre (peut être vide)
+     */
+    public static String searchToolbar(String scope, String placeholder, String chipsHtml) {
+        StringBuilder sb = new StringBuilder("<div class=\"toolbar\">");
+        sb.append("<div class=\"search\">").append(Icons.icon("search"))
+                .append("<input type=\"search\" data-filter-input=\"").append(Http.esc(scope))
+                .append("\" placeholder=\"").append(Http.esc(placeholder))
+                .append("\" aria-label=\"").append(Http.esc(placeholder)).append("\"></div>");
+        if (chipsHtml != null && !chipsHtml.isBlank()) {
+            sb.append("<div class=\"chips\" data-filter-chips=\"").append(Http.esc(scope)).append("\">")
+                    .append(chipsHtml).append("</div>");
+        }
+        sb.append("</div>");
+        return sb.toString();
+    }
+
+    /** Une puce de filtre par catégorie. {@code value} = valeur comparée à {@code data-filter-cat} des cartes. */
+    public static String filterChip(String value, String label, boolean on) {
+        return "<button type=\"button\" class=\"chip" + (on ? " on" : "") + "\" data-filter-chip=\""
+                + Http.esc(value) + "\">" + Http.esc(label) + "</button>";
+    }
+
+    /** Petit compteur « N élément(s) » sous la barre d'outils. */
+    public static String countNote(int n, String noun) {
+        return "<p class=\"count-note\" data-count-note>" + n + " " + Http.esc(noun) + (n > 1 ? "s" : "") + "</p>";
+    }
+
+    /** Bouton-lien avec icône (action principale d'une page). */
+    public static String primaryLink(String href, String iconName, String label) {
+        return "<a class=\"btn\" href=\"" + Http.esc(href) + "\">" + Icons.icon(iconName) + Http.esc(label) + "</a>";
+    }
+
     /** Ouvre un conteneur qui rend un tableau scrollable horizontalement sur petit écran. */
     public static String tableOpen(String... headers) {
         StringBuilder sb = new StringBuilder("<div class=\"table-wrap\"><table><thead><tr>");

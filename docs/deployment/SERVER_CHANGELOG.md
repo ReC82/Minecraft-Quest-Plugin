@@ -1507,6 +1507,38 @@ par nœud (aucun JS, conforme CSP). **Aucune migration SQL. `data.db` jamais tou
 
 ### Exécution réelle
 
-À compléter au déploiement.
+Session du 2026-09-08 (~16:52–17:08 UTC). Branche `feat/control-panel-admin-tools` @ `171849b`.
+
+- **AWS** : `scripts/plugadmin/deploy.sh` — OK (release
+  `/opt/plugadmin/releases/20260908-165221`). `/health` public **ONLINE** ×3 ; `/dialogues`
+  anon → **303** ; `dig.lodygames.com` / `lodylands.com` → **200**. Les 5 nouveaux types
+  présents dans `AgentActionCatalog.class` du JAR déployé.
+- **VeryGames DEV** : `scripts/deploy-verygames.sh -y` — JAR `rpgquest-0.1.0-SNAPSHOT.jar`
+  1 427 111 o, SHA-256
+  `12f66391be6ca65fc694095b21cc3a603c779187026ecde189392e6b61b3788d` ; backup auto
+  `~/.local/share/rpgquest/verygames-backups/rpgquest-20260908T165252Z-predeploy.jar`
+  (SHA-256 `57bda61b54ea726e957a4d37079cd4aa85644e73a865c31d027c5472c2733b42`).
+  `scripts/verygames-restart.sh` → OFFLINE → relance auto → **ONLINE** ; `/plugins` (RCON) :
+  `Citizens, Multiverse-Core, RPGQuest, WorldEdit` verts ; heartbeat agent **ONLINE**.
+- Baseline : `dialogue.list` → **SUCCESS** (7 dialogues, `nodeTotal=22`, `loadIssues=0`) ;
+  `npc.list` → **SUCCESS** (8 PNJ).
+- **Mutations exercées en réel** sur un dialogue de test sûr `rpgquest:panel_edit_probe` (créé
+  via `dialogue.definition.create`, jamais un dialogue gameplay) : `dialogue.node.update`,
+  `dialogue.node.create`, `dialogue.choice.add`, `dialogue.choice.update`,
+  `dialogue.choice.delete` → **tous SUCCESS `UPDATED`**. Garde-fous : suppression du dernier
+  choix d'un nœud → **FAILED `LAST_CHOICE`** ; `node.update` sur un nœud inexistant → **FAILED
+  `UNKNOWN_NODE`**.
+- `dialogue.list` après édition : **SUCCESS**, `loadIssues=0`, les **7 dialogues gameplay
+  inchangés** (compteurs + warnings identiques à la baseline).
+- **Nettoyage** : `panel_edit_probe.yml` supprimé de `plugins/RPGQuest/dialogues/` via FTP.
+  `verygames-restart.sh` : VeryGames a tardé ~6 min à relancer (aléa hébergeur, > délai 180 s du
+  script), serveur **revenu de lui-même à 17:06 UTC**. État final : `/plugins` verts,
+  `dialogue.list` → **SUCCESS** 7 dialogues `loadIssues=0`, `npc.list` → **SUCCESS** 8 PNJ,
+  `journalctl -u plugadmin` **0 `ERROR`**. DEV revenu à son état d'avant-tâche + nouveau JAR.
+- Vue navigateur `/dialogues` authentifiée (rendu 4 blocs, formulaires d'édition) =
+  `PENDING MANUAL VALIDATION`.
+
+Rappel : `dialogue.list` reste **SUCCESS**, `npc.list` **inchangé**, aucune progression joueur
+touchée, aucune migration.
 
 Rapport : `docs/claude-reports/2026-09-08_1642_dialogues-editeur-guide-phase1-82.md`.

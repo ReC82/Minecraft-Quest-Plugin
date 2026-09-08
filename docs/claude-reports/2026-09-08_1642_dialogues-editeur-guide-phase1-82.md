@@ -4,7 +4,7 @@
 * Date : 2026-09-08
 * Heure : 16:42 (locale, UTC sur cette machine)
 * Sujet : Éditeur guidé `/dialogues` — **phase 1 de l'issue #82** : édition simple et sûre (nœud / choix) + refonte UX de la page
-* Statut : DONE — `:test` **1197/0**, `:control-panel:test` **121/0**, `./gradlew build` **SUCCESSFUL**. Déploiement AWS/DEV et validation navigateur : `PENDING` (voir « Déploiement » / « Tests manuels »).
+* Statut : DONE — `:test` **1197/0**, `:control-panel:test` **121/0**, `./gradlew build` **SUCCESSFUL**. **Déployé AWS + VeryGames DEV** ; **5 mutations exercées en réel** sur un dialogue de test (SUCCESS) + garde-fous (FAILED attendus) ; 7 dialogues gameplay inchangés, `npc.list` inchangé, 0 `ERROR`. Validation **navigateur** authentifiée = `PENDING MANUAL VALIDATION`.
 * Branche Git : `feat/control-panel-admin-tools`
 * Commit actuel si disponible : code + docs = commit de suivi de ce rapport (poussé sur la branche de travail)
 * Début de la tâche : 2026-09-08 16:13:50 (heure locale réelle)
@@ -252,13 +252,69 @@ Aucune.
 - Un dialogue édité en réel : restaurer son `.yml` depuis le backup daté du dossier `dialogues/`,
   puis redémarrage.
 
-## Logs / diagnostic
+## Logs / diagnostic — exécution réelle du 2026-09-08 (~16:52–17:00 UTC)
 
-Section « ### Exécution réelle » à renseigner dans `docs/deployment/SERVER_CHANGELOG.md` au
-déploiement (déploiement AWS + VeryGames DEV, `dialogue.list` toujours `SUCCESS`, `npc.list`
-inchangé, heartbeat OK, `journalctl -u plugadmin` sans `ERROR`, et — si exécutée — une mutation
-`dialogue.node.update` / `dialogue.choice.add` sur un dialogue de test sûr, jamais sur un
-dialogue gameplay pour la seule démonstration).
+Branche `feat/control-panel-admin-tools` @ `171849b`.
+
+### AWS / PlugAdmin
+
+- `scripts/plugadmin/deploy.sh` — **OK**. Release `/opt/plugadmin/releases/20260908-165221` ;
+  `systemctl restart plugadmin` → `active (running)` ; `event=panel_started port=8090`.
+- `/health` public **ONLINE** ×3 ; `/dialogues` anon → **303** ;
+  `dig.lodygames.com` / `lodylands.com` → **200** (inchangés).
+- JAR déployé : `AgentActionCatalog.class` contient `dialogue.node.create` / `dialogue.node.update`
+  / `dialogue.choice.add` / `dialogue.choice.update` / `dialogue.choice.delete`.
+
+### VeryGames DEV
+
+- `scripts/deploy-verygames.sh -y` — JAR `rpgquest-0.1.0-SNAPSHOT.jar` **1 427 111 o**, SHA-256
+  `12f66391be6ca65fc694095b21cc3a603c779187026ecde189392e6b61b3788d` ; backup auto
+  `~/.local/share/rpgquest/verygames-backups/rpgquest-20260908T165252Z-predeploy.jar`
+  (SHA-256 `57bda61b54ea726e957a4d37079cd4aa85644e73a865c31d027c5472c2733b42`).
+- `scripts/verygames-restart.sh` → OFFLINE → relance auto → **ONLINE**. `/plugins` (RCON) :
+  `Citizens, Multiverse-Core, RPGQuest, WorldEdit` **verts** ; `rpgquest version` →
+  `v0.1.0-SNAPSHOT`. Heartbeat agent **ONLINE** (`0.1.0-SNAPSHOT`, uptime croissant).
+- **Baseline** : `dialogue.list` → **SUCCESS** (7 dialogues, `nodeTotal=22`, `loadIssues=0`,
+  4 × `DIALOGUE_NO_NPC` préexistants) ; `npc.list` → **SUCCESS** (8 PNJ).
+- **Mutations exercées en réel sur un dialogue de test sûr `rpgquest:panel_edit_probe`** (créé
+  via `dialogue.definition.create` — jamais un dialogue gameplay) :
+
+  | Action | Résultat |
+  |---|---|
+  | `dialogue.node.update` (`start` : locuteur + texte) | **SUCCESS** `UPDATED` |
+  | `dialogue.node.create` (`farewell`) | **SUCCESS** `UPDATED` |
+  | `dialogue.choice.add` (`start` → `farewell`) | **SUCCESS** `UPDATED` |
+  | `dialogue.choice.update` (`start` choix #1 : texte + cible) | **SUCCESS** `UPDATED` |
+  | `dialogue.choice.delete` (`start` choix #1) | **SUCCESS** `UPDATED` |
+  | `dialogue.choice.delete` (dernier choix de `farewell`) — garde-fou | **FAILED** `LAST_CHOICE` |
+  | `dialogue.node.update` (nœud inexistant) — garde-fou | **FAILED** `UNKNOWN_NODE` |
+
+- **`dialogue.list` final** → **SUCCESS**, `loadIssues=0` : les **7 dialogues gameplay
+  inchangés** (`guide` 8n/23c, `help`, `jeff`, `jo` 3n/8c, `guard` 5n/8c, `junior`, `libraire` —
+  compteurs et warnings identiques à la baseline) ; `panel_edit_probe` reflète bien les éditions
+  (locuteur `Sonde v2`, texte modifié, nœud `farewell` présent, choix add/update/delete
+  appliqués — `farewell` redevenu `NODE_UNREACHABLE` après la suppression volontaire du seul
+  choix qui le ciblait, ce qui **confirme le diagnostic**).
+- `npc.list` final → **SUCCESS** (9 PNJ : +1 = `panel_edit_probe` vu comme id canonique *par la
+  convention dialogue → PNJ*, effet attendu de la création d'un dialogue de test, **pas** une
+  régression du code de mutation).
+- `journalctl -u plugadmin` depuis le déploiement : **0 ligne `ERROR` / `Exception` / `SEVERE`**
+  (les 2 seuls `status=FAILED` sont les garde-fous volontaires ci-dessus).
+
+### Nettoyage du dialogue de test
+
+`panel_edit_probe.yml` **supprimé** de `plugins/RPGQuest/dialogues/` sur DEV via FTP (même
+mécanisme que #83, garde-fou sur le nom). Un `scripts/verygames-restart.sh` a été lancé pour
+purger le dialogue de test de la mémoire du serveur ; **VeryGames a tardé à relancer le
+processus** (~6 min, au-delà du délai de 180 s du script — aléa d'infrastructure hébergeur, sans
+rapport avec le JAR, déjà validé ONLINE au premier redémarrage). Le serveur **est revenu de
+lui-même** à 17:06 UTC.
+
+**État final DEV vérifié** : `/plugins` RPGQuest + Citizens + WorldEdit + Multiverse **verts** ;
+heartbeat agent **ONLINE** ; `dialogue.list` → **SUCCESS**, **7 dialogues gameplay**,
+`nodeTotal=22`, **`loadIssues=0`** (plus de `panel_edit_probe`) ; `npc.list` → **SUCCESS**,
+**8 PNJ** (retour à la baseline) ; `journalctl -u plugadmin` **0 `ERROR`** après recovery. DEV
+est donc revenu à son état d'avant-tâche, avec le nouveau JAR agent.
 
 ## Documentation mise à jour
 

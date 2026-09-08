@@ -815,5 +815,49 @@ quêtes existants restent valides tels quels (`giver:` est optionnel).
 
 ### Exécution réelle
 
-_À compléter par la session qui déploie (voir le rapport
-`docs/claude-reports/` associé)._
+Déployé par cette session le 2026-09-08 (~11:00–11:04 UTC). Branche
+`feat/control-panel-admin-tools` @ `02642e9`, **non fusionnée**.
+
+- **AWS Control Panel** : `scripts/plugadmin/deploy.sh` → `installDist` OK,
+  ancienne app sauvegardée sous `/opt/plugadmin/releases/20260908-105940`,
+  `systemctl restart` → `active` (PID 124361, `event=panel_started port=8090`).
+  JAR déployé sha256 `6493fc1584deafb1a61b78f9d46b91ec0a5a834c37a6d2963df59816ce2a5bff`
+  == build frais de la branche ; classes `ObjectiveText`/`RewardText` présentes.
+  `/health` local + public `ONLINE` (×3) ; `/dashboard` `/quests` `/players`
+  `/stories` (anon) → 303 `/login` ; `/login` 200 ; autres vhosts
+  (`dig.lodygames.com`, `lodylands.com`, `www.lodylands.com`) → 200 ; `nginx -t` OK,
+  nginx/secrets/TLS non touchés.
+- **VeryGames DEV** :
+  1. `scripts/deploy-verygames.sh -y` → `./gradlew test`+`build` OK, backup auto
+     `rpgquest-20260908T110044Z-predeploy.jar` (sha256 `cd66574c…`), transfert FTP
+     atomique du JAR **sha256 `4fbaa3456b00534c6309b4b1fcbf789fd9c2e0bdf43e6c51180817f6ddeb9c2f`**
+     (1 261 384 o, taille distante == locale).
+  2. `scripts/verygames-restart.sh` → `save-all` → `stop` RCON → OFFLINE → relance
+     auto VeryGames → **ONLINE** en < 1 min.
+  3. `scripts/deploy-verygames.sh -y --also src/main/resources/quests/crystal_hunt.yml:RPGQuest/quests/crystal_hunt.yml`
+     → ancien `crystal_hunt.yml` sauvegardé
+     (`verygames-backups/extra-20260908T110340Z/…`, sha256 `06156d6d…`), nouveau
+     transféré (sha256 `e8f2c8ce…`) ; puis RCON `quest admin reload` →
+     « 10 quête(s) chargée(s), 0 erreur(s) ».
+- **Vérifs VeryGames** : `/plugins` → RPGQuest **en vert** (+ Citizens,
+  Multiverse-Core) ; `rpgquest version` → `v0.1.0-SNAPSHOT` ; heartbeat agent reçu
+  par PlugAdmin (`server_state=ONLINE`, `uptime_seconds` faible → redémarrage pris
+  en compte) ; aucune ligne `ERROR` dans `journalctl -u plugadmin`.
+- **Validation `quest.list` réelle** (action `PENDING` injectée dans
+  `control-panel.db`, relevée + exécutée par l'agent DEV) → **SUCCESS**
+  « 10 quête(s) chargée(s). » ; `details.quests[].steps[].objectiveDetails`
+  (`kind`/`target`/`amount`/`raw` pour `KILL_ENTITY`/`COLLECT_ITEM`/`CRAFT_ITEM`/
+  `TALK_TO_NPC`) et `rewardDetails` (`EXPERIENCE`/`COMMAND`/`VARIABLE`, `command`
+  complète non tronquée) **présents** ; après le reload avec `giver: guard`,
+  `rpgquest:crystal_hunt` porte `giverId: "guard"`. Champs legacy toujours
+  présents en parallèle (compat).
+
+### Rollback (points exacts)
+
+- VeryGames JAR : `scripts/rollback-verygames.sh --latest` →
+  `rpgquest-20260908T110044Z-predeploy.jar` (sha256 `cd66574c…`).
+- VeryGames `crystal_hunt.yml` : `scripts/rollback-verygames.sh --also
+  /home/ubuntu/.local/share/rpgquest/verygames-backups/extra-20260908T110340Z/RPGQuest/quests/crystal_hunt.yml:RPGQuest/quests/crystal_hunt.yml`
+  puis RCON `quest admin reload` (voir `MANIFEST.txt` du dossier de backup).
+- AWS : `scripts/plugadmin/rollback.sh app` → release `20260908-105940`.
+- Rapport : `docs/claude-reports/2026-09-08_1100_quest-list-structure-78-75.md`.

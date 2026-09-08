@@ -89,6 +89,13 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
 
 ## Étape 3 — contenu (lecture structurée)
 
+- [~] **Page `/npcs` V1** (lecture) — catalogue PNJ RPGQuest via l'action agent `npc.list`
+      (`NpcCatalog` croise liaison Citizens ↔ dialogue `rpgquest:<id>` ↔ `giver:` ↔ `TALK_TO_NPC`).
+      Affiche nom lisible + id RPGQuest/Citizens copiables, dialogue associé (nœuds/choix,
+      `START_QUEST`), quêtes données / référencées, et **anomalies de configuration**
+      (`QUEST_REF_NO_NPC`, `TAGGED_UNUSED` + suggestion `garde`→`guard`, `DUPLICATE_BINDING`…).
+      Liste les **ids canoniques** connus (préparation #66). Sans lecture du monde :
+      position/monde et PNJ Citizens non tagués = évolutions séparées.
 - [~] `quest.list` transporte des **objectifs et récompenses structurés**
       (`objectiveDetails` / `rewardDetails` = `{kind, target, amount, value, command, raw}`,
       commande non tronquée) + le **PNJ donneur** (`giverId`, champ YAML `giver:` optionnel) —

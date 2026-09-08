@@ -237,6 +237,7 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 | `story.list` | — | `StoryService#stories` | `stories[]` (id, titre, quêtes ordonnées) |
 | `story.player.status` | `player` | `StoryService#info` | `stories[]` (state, étape courante/total, quête courante) |
 | `item.list` | — | `YamlCustomItemRegistry#items` | `items[]` (id, displayName, type) |
+| `npc.list` | — | `NpcCatalog` (dialogues + quêtes + `NpcBindingRepository`) | `npcs[]` + `canonicalIds` — voir **Payload `npc.list`** ci-dessous |
 | `player.resetnew.preview` | `player` | `PlayerResetService#previewReset` | `lines[]` (label, count, detail) — **dry-run** |
 
 ### Mutations (confirmation exigée côté panel)
@@ -275,6 +276,25 @@ Le panel privilégie les champs structurés (`ObjectiveText` / `RewardText.fromS
 sur les chaînes legacy (`MinecraftNames.humanizeTokens` / `RewardText.parse`) tant que l'agent
 d'une cible n'a pas été redéployé. Les champs legacy sont **dépréciés** : à retirer une fois tous
 les agents à jour.
+
+### Payload `npc.list` (catalogue PNJ — V1, issues #66 / #75)
+
+**Lecture seule.** Un « PNJ RPGQuest » est un id logique (fragment de `NamespacedKey`, ex.
+`guard`) croisé entre 4 sources : liaison Citizens (`npc_citizens_bindings`), dialogue
+`rpgquest:<id>` (convention des listeners d'interaction), champ `giver:` d'une quête (#75), et
+objectif `TALK_TO_NPC`. Dérivation dans `com.lodygames.rpgquest.npc.NpcCatalog` (pure, testable).
+**Ne lit jamais le monde** : position, monde et détection des PNJ Citizens *non tagués* sont hors
+périmètre de cette V1.
+
+`details` :
+
+| Champ | Type | Détail |
+|---|---|---|
+| `npcs[]` | `object[]` | `{id, displayName?, citizensNumericId?, bindingCount, bound, hasDialogue, dialogueId?, dialogueNodes, dialogueChoices, dialogueStartsQuests[], questsGiven[], questsReferenced[], sources[], warnings[]}`. `displayName` = `speaker` du nœud de départ du dialogue, ou `null`. Trié : erreurs, puis avertissements, puis PNJ sains. |
+| `npcs[].warnings[]` | `object[]` | `{code, severity, message}`. `severity` ∈ `error\|warning\|info`. Codes : `DUPLICATE_BINDING` (err), `QUEST_REF_NO_NPC` (warn — id référencé sans PNJ tagué), `TAGGED_UNUSED` (info — tag orphelin + suggestion d'id canonique proche, ex. `garde`→`guard`), `DIALOGUE_NO_NPC`, `GIVER_NO_DIALOGUE` (info). |
+| `canonicalIds` | `string[]` | Ids attendus par le contenu (dialogues + quêtes), triés — **jamais** les tags Citizens eux-mêmes. Source de vérité prévue pour `/rpgadmin npc tag` (#66, non encore câblée côté commande). |
+| `citizensAvailable` | `bool` | Citizens actif sur le serveur cible. Si `false`, les avertissements « aucun PNJ tagué » sont dégradés en `info`. |
+| `total`, `bound`, `unbound`, `withWarnings` | `int` | Compteurs. |
 
 ---
 

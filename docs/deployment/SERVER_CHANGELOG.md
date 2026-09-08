@@ -861,3 +861,60 @@ Déployé par cette session le 2026-09-08 (~11:00–11:04 UTC). Branche
   puis RCON `quest admin reload` (voir `MANIFEST.txt` du dossier de backup).
 - AWS : `scripts/plugadmin/rollback.sh app` → release `20260908-105940`.
 - Rapport : `docs/claude-reports/2026-09-08_1100_quest-list-structure-78-75.md`.
+
+---
+
+## 2026-09-08 - Action agent `npc.list` + page Control Panel `/npcs` (V1) — issues #66 / #75
+
+### Changement
+
+Nouvelle action agent **`npc.list`** (lecture seule, whitelistée `AgentActionType` ↔
+`AgentActionCatalog`). Elle renvoie un **catalogue PNJ RPGQuest** dérivé (`NpcCatalog`,
+classe pure) par croisement de : liaisons Citizens (`npc_citizens_bindings`), dialogues
+`rpgquest:<id>`, champ `giver:` des quêtes (#75), objectifs `TALK_TO_NPC`. Le payload porte
+`npcs[]` (id, nom lisible, id Citizens, dialogue, quêtes données/référencées, `warnings[]`),
+`canonicalIds` (préparation #66) et des compteurs.
+
+Aucun changement de gameplay, de schéma SQL, de commande en jeu, ni de contenu YAML.
+`NpcCatalog` **ne lit jamais le monde** (pas de scan d'entités ; position/monde et PNJ
+Citizens non tagués hors périmètre V1). Le seul accès disque est le `SELECT` déjà asynchrone
+des liaisons Citizens.
+
+Côté Control Panel : l'entrée « PNJ » du menu (`/npcs`) n'est plus « à venir ».
+
+### Action serveur
+
+- **Remplacement du seul JAR RPGQuest** (pour que l'agent connaisse le type `npc.list`).
+- Redémarrage serveur (RCON `stop` → relance automatique VeryGames).
+- Aucun autre fichier : ni `data.db`, ni `config.yml`, ni `messages.yml`, ni mondes, ni
+  `Citizens/`, ni YAML de contenu, ni `plugadmin-agent.properties`. Aucune migration.
+- Control Panel AWS redéployé (`scripts/plugadmin/deploy.sh`) pour la page `/npcs`.
+
+### Sauvegarde préalable
+
+- Ancien JAR : sauvegardé automatiquement par `deploy-verygames.sh` dans
+  `~/.local/share/rpgquest/verygames-backups/` (+ `.meta`). Ne jamais écraser le dernier backup.
+
+### Déploiement
+
+1. `scripts/deploy-verygames.sh -y` (JAR seul) puis `scripts/verygames-restart.sh`.
+2. `scripts/plugadmin/deploy.sh` (AWS).
+
+### Validation
+
+- `/plugins` (RCON) : RPGQuest en vert ; `rpgquest version` répond.
+- Heartbeat agent reçu par PlugAdmin ; aucun `ERROR` dans `journalctl -u plugadmin`.
+- Action `npc.list` (file `control-panel.db`) → **SUCCESS** ; `details.npcs` non vide,
+  `canonicalIds` contient `guard`, warnings cohérents.
+- `/npcs` du panel exploitable (nom lisible, ids copiables, anomalies visibles).
+- `/health` AWS local + public `ONLINE` ; `/npcs` (anon) → 303 `/login`.
+
+### Rollback
+
+- VeryGames : `scripts/rollback-verygames.sh --latest` puis `scripts/verygames-restart.sh`.
+- AWS : `scripts/plugadmin/rollback.sh app`.
+- Aucune migration à défaire.
+
+### Exécution réelle
+
+_À compléter par la session qui déploie (voir le rapport `docs/claude-reports/` associé)._

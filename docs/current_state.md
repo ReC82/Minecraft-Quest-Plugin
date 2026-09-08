@@ -125,6 +125,15 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   structure en priorité (`ObjectiveText`, `RewardText.fromSummary`) et retombe sur le reparse de
   chaînes uniquement pour un agent pas encore redéployé. Champs legacy conservés = dépréciés. Un
   nouveau champ optionnel `giver:` existe dans le format de quête (`QuestDefinition` / `QUEST_FORMAT.md`).
+- **Page Control Panel `/npcs` (V1)** *(branche `feat/control-panel-admin-tools`)* — l'entrée « PNJ »
+  du menu n'est plus « à venir ». Nouvelle action agent **`npc.list`** (lecture seule, whitelistée) :
+  `NpcCatalog` (pur, `com.lodygames.rpgquest.npc`) croise les liaisons Citizens
+  (`NpcBindingRepository`), les dialogues `rpgquest:<id>`, le `giver:` des quêtes et les objectifs
+  `TALK_TO_NPC` pour produire un catalogue de PNJ RPGQuest avec : nom lisible, id RPGQuest/Citizens,
+  dialogue associé, quêtes données/référencées, **ids canoniques** connus (préparation #66) et
+  **anomalies de configuration** (id référencé sans PNJ tagué, tag orphelin avec suggestion
+  `garde`→`guard`, doublon de liaison…). Aucune lecture du monde : position, monde et PNJ Citizens
+  *non tagués* sont hors périmètre de cette V1. `/rpgadmin npc tag` (#66) reste inchangé.
 
 ## Bugs connus et corrigés
 

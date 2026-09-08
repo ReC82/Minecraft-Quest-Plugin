@@ -438,8 +438,15 @@ Documentées en détail en **section 2 (Administration)** ; résumé :
 `/rpgadmin npc tag [id]` (id auto-généré `npc_<n>` si omis) | `untag` |
 `info`, permission `rpgquest.admin.world`, ciblent toujours l'entité
 regardée à ≤ 6 blocs. `tag` est idempotent (ré-étiqueter exige `untag`
-d'abord). Aucune liste globale des PNJ identifiés n'existe (il faut viser
-physiquement l'entité).
+d'abord). **Aucune liste globale des PNJ n'existe en jeu** (il faut viser
+physiquement l'entité) — en revanche le **Control Panel** expose une page
+`/npcs` en lecture (action agent `npc.list`, `NpcCatalog`) qui croise
+liaisons Citizens, dialogues `rpgquest:<id>`, `giver:` des quêtes et
+objectifs `TALK_TO_NPC`, liste les **ids canoniques** connus et signale les
+anomalies de configuration (id référencé sans PNJ tagué, tag orphelin type
+`garde` au lieu de `guard`, doublon). Voir `docs/control-panel/AGENT.md`
+(payload `npc.list`). La validation/autocomplétion de `/rpgadmin npc tag`
+elle-même (issue #66) n'est **pas** encore câblée.
 
 ### Commandes Citizens (plugin externe 2.0.43) réellement utilisées dans ce projet
 

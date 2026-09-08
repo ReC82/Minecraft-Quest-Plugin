@@ -356,6 +356,12 @@ public final class Layout {
             input:disabled,select:disabled,textarea:disabled{background:var(--surface-3);color:var(--txt-faint);cursor:not-allowed}
             .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 22px}
             .form-grid .full{grid-column:1/-1}
+            .field{min-width:0}
+            .field label{margin-top:12px}
+            .diag-list{margin:8px 0 0;padding-left:2px;list-style:none;display:flex;flex-direction:column;gap:6px}
+            .diag-list li{font-size:12.5px;line-height:1.5}
+            .diag-list .pill{margin-right:4px}
+            .editor .form-section>.fs-h .ic{flex:none}
             .form-section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
               padding:14px 18px 18px;margin:12px 0;box-shadow:var(--shadow-s)}
             .form-section>.fs-h{display:flex;align-items:center;gap:8px;margin:0 0 4px;font-weight:700;font-size:14px}

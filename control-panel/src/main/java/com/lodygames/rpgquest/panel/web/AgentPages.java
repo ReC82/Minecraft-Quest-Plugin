@@ -224,7 +224,7 @@ public final class AgentPages {
             sb.append(Ui.searchToolbar("quests", "Rechercher une quête\u2026", ""));
             sb.append("<p class=\"count-note\" data-count-note data-noun=\"qu\u00eate\">" + catalog.size() + " qu\u00eate(s)</p>");
             for (Object o : catalog) {
-                sb.append(renderQuestCard(asMap(o), questTitles));
+                sb.append(renderQuestCard(asMap(o), questTitles, canEditQuests));
             }
         }
 
@@ -244,12 +244,19 @@ public final class AgentPages {
     }
 
     /** Carte de quête lisible : titre humain d'abord, id technique discret, objectifs/récompenses en clair. */
-    private String renderQuestCard(Map<String, Object> qd, Map<String, String> questTitles) {
+    private String renderQuestCard(Map<String, Object> qd, Map<String, String> questTitles, boolean canEdit) {
         String ft = Http.esc(str(qd.get("id")) + " " + com.lodygames.rpgquest.panel.web.MiniText.plain(str(qd.get("title")))
                 + " " + str(qd.get("category")) + " " + str(qd.get("giverId")) + " " + str(qd.get("giverName")));
         StringBuilder sb = new StringBuilder("<article class=\"entity-card\" data-filter-item=\"quests\" data-filter-text=\"" + ft + "\">");
         sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
                 .append(MiniText.html(str(qd.get("title")))).append("</h3><div class=\"entity-meta\">");
+        if (canEdit) {
+            String slug = editSlug(str(qd.get("id")));
+            if (!slug.isEmpty()) {
+                sb.append("<a class=\"doc-cm-link\" href=\"/quests/edit/").append(Http.esc(slug)).append("\">")
+                        .append(Icons.icon("edit")).append("Modifier</a>");
+            }
+        }
         String category = str(qd.get("category"));
         if (!category.isEmpty()) {
             sb.append(Ui.badge(MiniText.prettifyId(category)));
@@ -397,7 +404,7 @@ public final class AgentPages {
             sb.append(Ui.searchToolbar("stories", "Rechercher une story\u2026", ""));
             sb.append("<p class=\"count-note\" data-count-note data-noun=\"story\">" + catalog.size() + " story(s)</p>");
             for (Object o : catalog) {
-                sb.append(renderStoryCard(asMap(o), questTitles));
+                sb.append(renderStoryCard(asMap(o), questTitles, canEditStories));
             }
         }
 
@@ -416,14 +423,21 @@ public final class AgentPages {
     }
 
     /** Carte de story lisible : titre humain, id discret, nombre d'étapes, quêtes ordonnées. */
-    private String renderStoryCard(Map<String, Object> sd, Map<String, String> questTitles) {
+    private String renderStoryCard(Map<String, Object> sd, Map<String, String> questTitles, boolean canEdit) {
         List<Object> steps = asList(sd.get("stepQuestIds"));
         String ft = Http.esc(str(sd.get("id")) + " " + MiniText.plain(str(sd.get("title"))));
         StringBuilder sb = new StringBuilder("<article class=\"entity-card\" data-filter-item=\"stories\" data-filter-text=\""
                 + ft + "\">");
         sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
-                .append(MiniText.html(str(sd.get("title")))).append("</h3><div class=\"entity-meta\">")
-                .append(Ui.badge(steps.size() + (steps.size() > 1 ? " étapes" : " étape")))
+                .append(MiniText.html(str(sd.get("title")))).append("</h3><div class=\"entity-meta\">");
+        if (canEdit) {
+            String slug = editSlug(str(sd.get("id")));
+            if (!slug.isEmpty()) {
+                sb.append("<a class=\"doc-cm-link\" href=\"/stories/edit/").append(Http.esc(slug)).append("\">")
+                        .append(Icons.icon("edit")).append("Modifier</a>");
+            }
+        }
+        sb.append(Ui.badge(steps.size() + (steps.size() > 1 ? " étapes" : " étape")))
                 .append(Ui.id(str(sd.get("id")))).append("</div></div>");
         if (!steps.isEmpty()) {
             sb.append("<ol class=\"step-list\">");
@@ -1493,6 +1507,27 @@ public final class AgentPages {
         }
     }
 
+    /**
+     * Données de référence pour l'éditeur guidé #46 : id de quêtes / PNJ connus et mondes chargés,
+     * pris du dernier relevé <em>réussi</em> de l'agent ({@code quest.list} / {@code npc.list} +
+     * heartbeat). Si un relevé manque, la partie correspondante est marquée « inconnue » et la
+     * validation dégrade ses contrôles en {@code INFO}.
+     */
+    public com.lodygames.rpgquest.panel.content.RefData referenceData(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return com.lodygames.rpgquest.panel.content.RefData.empty();
+        }
+        Optional<Map<String, Object>> questDet = latestDetails(agentId, "quest.list");
+        Optional<Map<String, Object>> npcDet = latestDetails(agentId, "npc.list");
+        List<String> quests = questDet.map(d -> asList(d.get("quests"))).orElse(List.of())
+                .stream().map(o -> str(asMap(o).get("id"))).filter(s -> !s.isEmpty()).toList();
+        List<String> npcs = npcDet.map(d -> asList(d.get("npcs"))).orElse(List.of())
+                .stream().map(o -> str(asMap(o).get("id"))).filter(s -> !s.isEmpty()).toList();
+        List<String> worlds = loadedWorldNames(agentId);
+        return new com.lodygames.rpgquest.panel.content.RefData(
+                quests, npcs, worlds, questDet.isPresent(), npcDet.isPresent(), !worlds.isEmpty());
+    }
+
     // ---- Petits utilitaires ---------------------------------------------------------
 
     private String noAgent() {
@@ -1506,6 +1541,15 @@ public final class AgentPages {
                 : ("dialogues".equals(slugOrQuery) ? "/docs?q=dialogue" : "/docs/" + slugOrQuery);
         return "<a class=\"doc-cm-link\" href=\"" + Http.esc(href) + "\">" + Icons.icon("book")
                 + Http.esc(label) + "</a>";
+    }
+
+    /** Id de quête/story → slug de fichier pour {@code /quests/edit/…} (vide si non représentable). */
+    static String editSlug(String rawId) {
+        String s = rawId == null ? "" : rawId.trim().toLowerCase(java.util.Locale.ROOT);
+        if (s.startsWith("rpgquest:")) {
+            s = s.substring("rpgquest:".length());
+        }
+        return s.matches("[a-z0-9][a-z0-9_-]{0,63}") ? s : "";
     }
 
     private static String cleanPlayer(String raw) {

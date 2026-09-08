@@ -24,25 +24,34 @@ public final class TestConfig {
     }
 
     public static PanelConfig withBridgeUrl(String dbPath, String bridgeUrl) {
-        return build(dbPath, bridgeUrl, false, AgentSettings.none());
+        return build(dbPath, bridgeUrl, false, AgentSettings.none(), null);
     }
 
     public static PanelConfig disabled(String dbPath) {
-        return build(dbPath, "http://127.0.0.1:1/admin/v1", true, AgentSettings.none());
+        return build(dbPath, "http://127.0.0.1:1/admin/v1", true, AgentSettings.none(), null);
     }
 
     /** Config avec un agent {@code rpgquest-dev} déclaré (jeton {@link #AGENT_TOKEN}). */
     public static PanelConfig withAgent(String dbPath, String bridgeUrl) {
-        AgentSettings agents = new AgentSettings(
-                List.of(new AgentIdentity(AGENT_ID, "dev", AGENT_TOKEN)),
-                new AgentLiveness.Thresholds(45, 150), Duration.ofMinutes(5), AGENT_ID);
-        return build(dbPath, bridgeUrl, false, agents);
+        return build(dbPath, bridgeUrl, false, agentSettings(), null);
     }
 
-    private static PanelConfig build(String dbPath, String bridgeUrl, boolean disabled, AgentSettings agents) {
+    /** Config avec un agent déclaré <em>et</em> un espace de travail contenu (#46). */
+    public static PanelConfig withContentDir(String dbPath, String bridgeUrl, String contentRepoDir) {
+        return build(dbPath, bridgeUrl, false, agentSettings(), contentRepoDir);
+    }
+
+    private static AgentSettings agentSettings() {
+        return new AgentSettings(
+                List.of(new AgentIdentity(AGENT_ID, "dev", AGENT_TOKEN)),
+                new AgentLiveness.Thresholds(45, 150), Duration.ofMinutes(5), AGENT_ID);
+    }
+
+    private static PanelConfig build(String dbPath, String bridgeUrl, boolean disabled, AgentSettings agents,
+                                     String contentRepoDir) {
         Target dev = new Target("dev", "RPGQuest DEV", Target.Mode.BRIDGE, bridgeUrl, BRIDGE_TOKEN);
         return new PanelConfig(
                 0, "127.0.0.1", "", disabled, false, 120, 30, dbPath,
-                OWNER_USERNAME, OWNER_HASH, SESSION_SECRET, List.of(dev), "dev", agents);
+                OWNER_USERNAME, OWNER_HASH, SESSION_SECRET, List.of(dev), "dev", agents, contentRepoDir);
     }
 }

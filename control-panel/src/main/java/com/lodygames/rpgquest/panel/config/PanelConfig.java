@@ -22,6 +22,8 @@ import java.util.Optional;
  * @param targets            cibles RPGQuest connues (au moins une)
  * @param defaultTargetId    cible sélectionnée par défaut
  * @param agents             configuration du canal « agent sortant » (issue #51)
+ * @param contentRepoDir     racine du checkout Git source du contenu éditable (#46) — typiquement
+ *                           {@code <repo>/src/main/resources} ; {@code null} = éditeur désactivé
  */
 public record PanelConfig(
         int httpPort,
@@ -37,7 +39,8 @@ public record PanelConfig(
         String sessionSecret,
         List<Target> targets,
         String defaultTargetId,
-        AgentSettings agents) {
+        AgentSettings agents,
+        String contentRepoDir) {
 
     public PanelConfig {
         targets = targets == null ? List.of() : List.copyOf(targets);

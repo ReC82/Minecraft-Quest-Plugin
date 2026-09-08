@@ -17,6 +17,8 @@ import com.lodygames.rpgquest.panel.bridge.BridgeException;
 import com.lodygames.rpgquest.panel.bridge.BridgeHealth;
 import com.lodygames.rpgquest.panel.config.PanelConfig;
 import com.lodygames.rpgquest.panel.config.Target;
+import com.lodygames.rpgquest.panel.content.ContentWorkspace;
+import com.lodygames.rpgquest.panel.content.RefData;
 import com.lodygames.rpgquest.panel.docs.DocLibrary;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.security.AuthService;
@@ -29,6 +31,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
@@ -61,6 +64,8 @@ public final class PanelApp {
     private final AgentEndpoints agentEndpoints;
     private final AgentPages agentPages;
     private final DocsPages docsPages = new DocsPages(DocLibrary.load());
+    private final ContentWorkspace contentWorkspace;
+    private final ContentEditorPages contentEditor;
 
     private HttpServer server;
 
@@ -71,6 +76,10 @@ public final class PanelApp {
         this.agentStore = agentStore;
         this.agentRegistry = new AgentRegistry(config.agents().agents());
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(), permissions);
+        this.contentWorkspace = new ContentWorkspace(
+                config.contentRepoDir() == null || config.contentRepoDir().isBlank()
+                        ? null : Path.of(config.contentRepoDir()));
+        this.contentEditor = new ContentEditorPages(contentWorkspace);
         this.agentEndpoints = new AgentEndpoints(agentRegistry, agentStore, audit,
                 config.agents().actionExpiry(), config::disabled);
         this.authService = new AuthService(config.ownerUsername(), config.ownerPasswordHash(), new PasswordHasher());
@@ -100,6 +109,18 @@ public final class PanelApp {
                 Permission.CONTENT_READ, agentPages::quests));
         route("/stories", exchange -> handleBusinessPage(exchange, "/stories", "Stories",
                 Permission.CONTENT_READ, agentPages::stories));
+        route("/quests/new", exchange -> handleContentEditor(exchange, "quests", "/quests",
+                Permission.QUEST_CONTENT_WRITE, "NEW"));
+        route("/quests/edit", exchange -> handleContentEditor(exchange, "quests", "/quests",
+                Permission.QUEST_CONTENT_WRITE, "EDIT"));
+        route("/quests/save", exchange -> handleContentEditor(exchange, "quests", "/quests",
+                Permission.QUEST_CONTENT_WRITE, "SAVE"));
+        route("/stories/new", exchange -> handleContentEditor(exchange, "stories", "/stories",
+                Permission.STORY_CONTENT_WRITE, "NEW"));
+        route("/stories/edit", exchange -> handleContentEditor(exchange, "stories", "/stories",
+                Permission.STORY_CONTENT_WRITE, "EDIT"));
+        route("/stories/save", exchange -> handleContentEditor(exchange, "stories", "/stories",
+                Permission.STORY_CONTENT_WRITE, "SAVE"));
         route("/npcs", exchange -> handleBusinessPage(exchange, "/npcs", "PNJ",
                 Permission.NPC_READ, agentPages::npcs));
         route("/dialogues", exchange -> handleBusinessPage(exchange, "/dialogues", "Dialogues",
@@ -563,6 +584,74 @@ public final class PanelApp {
         }
         body.append(renderer.render(session, query));
         Http.html(exchange, 200, renderPage(title, session, path, body.toString()));
+    }
+
+    /**
+     * Éditeur guidé de quêtes / stories (issue #46). {@code mode} ∈ {@code NEW} / {@code EDIT} (GET)
+     * ou {@code SAVE} (POST, CSRF obligatoire). L'écriture est whitelistée et versionnée par
+     * {@link ContentWorkspace} ; aucun déploiement.
+     */
+    private void handleContentEditor(HttpExchange exchange, String kind, String base,
+                                     Permission permission, String mode) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.role(), permission)) {
+            Http.html(exchange, 403, renderPage("Refusé", session, base,
+                    "<h1>Accès refusé</h1><p class=\"muted\">Permission d'édition de contenu manquante.</p>"));
+            return;
+        }
+
+        RefData ref = agentPages.referenceData(config.agents().defaultAgentId());
+        ContentEditorPages.Result result;
+
+        if ("SAVE".equals(mode)) {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                Http.text(exchange, 405, "POST requis");
+                return;
+            }
+            Map<String, String> form = Http.formBody(exchange);
+            if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+                Http.html(exchange, 403, Layout.bare("CSRF",
+                        "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+                return;
+            }
+            result = kind.equals("quests") ? contentEditor.questPost(ref, form) : contentEditor.storyPost(ref, form);
+            String actor = session.username();
+            String act = form.getOrDefault("_action", "");
+            if ("save".equals(act) && result instanceof ContentEditorPages.Result.Redirect rd) {
+                audit.record(actor, kind + ".content.write", rd.location(), "OK", null,
+                        UUID.randomUUID().toString().substring(0, 8));
+            }
+        } else {
+            String slug = null;
+            if ("EDIT".equals(mode)) {
+                String prefix = base + "/edit/";
+                String path = exchange.getRequestURI().getPath();
+                if (!path.startsWith(prefix) || path.length() <= prefix.length()) {
+                    Http.redirect(exchange, base);
+                    return;
+                }
+                slug = path.substring(prefix.length());
+                if (slug.endsWith("/")) {
+                    slug = slug.substring(0, slug.length() - 1);
+                }
+            }
+            boolean saved = "1".equals(Http.query(exchange).get("saved"));
+            result = kind.equals("quests")
+                    ? contentEditor.questPage(ref, slug, saved)
+                    : contentEditor.storyPage(ref, slug, saved);
+        }
+
+        if (result instanceof ContentEditorPages.Result.Redirect rd) {
+            Http.redirect(exchange, rd.location());
+            return;
+        }
+        String body = ((ContentEditorPages.Result.Html) result).body();
+        String title = kind.equals("quests") ? "Éditeur de quête" : "Éditeur de story";
+        Http.html(exchange, 200, renderPage(title, session, base, body));
     }
 
     /** {@code POST /agents/action} : création générique d'une action whitelistée depuis n'importe quelle page. */

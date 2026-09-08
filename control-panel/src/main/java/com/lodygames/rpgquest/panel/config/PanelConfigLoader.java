@@ -71,8 +71,11 @@ public final class PanelConfigLoader {
 
         AgentSettings agents = readAgents(props, defaultTargetId);
 
+        String contentRepoDir = firstNonBlank(env.apply("PLUGADMIN_CONTENT_DIR"),
+                props.getProperty("content.repo-dir"), null);
+
         return new PanelConfig(port, bind, baseUrl, disabled, cookieSecure, ttl, idle, dbPath,
-                ownerUsername, ownerHash, secret, targets, defaultTargetId, agents);
+                ownerUsername, ownerHash, secret, targets, defaultTargetId, agents, contentRepoDir);
     }
 
     /**

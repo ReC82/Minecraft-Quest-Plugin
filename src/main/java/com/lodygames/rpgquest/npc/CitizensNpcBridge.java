@@ -5,8 +5,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import net.citizensnpcs.api.CitizensAPI;
+import net.citizensnpcs.api.event.SpawnReason;
 import net.citizensnpcs.api.npc.NPC;
+import org.bukkit.Location;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 
 /**
  * Isole toute référence à un type Citizens (import {@code net.citizensnpcs.*}).
@@ -55,6 +58,55 @@ final class CitizensNpcBridge {
 
     private static CitizensNpc toSummary(NPC npc) {
         return new CitizensNpc(npc.getId(), npc.getUniqueId(), npc.getName(), npc.isSpawned());
+    }
+
+    // ---- Création + rollback (issue #81, phase 2) --------------------------------------------
+
+    /**
+     * Crée un PNJ Citizens de type {@code PLAYER} nommé {@code name} et le fait apparaître à
+     * {@code location}. <strong>Thread principal obligatoire</strong> (API Citizens + monde).
+     * Renvoie vide si Citizens n'a pas pu le matérialiser — dans ce cas le PNJ à moitié créé est
+     * détruit avant de rendre la main (aucun résidu).
+     */
+    Optional<CitizensNpc> createAndSpawn(String name, Location location) {
+        NPC npc = CitizensAPI.getNPCRegistry().createNPC(EntityType.PLAYER, name);
+        try {
+            boolean spawned = npc.spawn(location, SpawnReason.CREATE);
+            if (!spawned || !npc.isSpawned()) {
+                npc.destroy();
+                return Optional.empty();
+            }
+            CitizensAPI.getNPCRegistry().saveToStore();
+            return Optional.of(toSummary(npc));
+        } catch (RuntimeException e) {
+            safeDestroy(npc);
+            throw e;
+        }
+    }
+
+    /**
+     * Détruit définitivement un PNJ Citizens — <strong>réservé au rollback</strong> d'une création
+     * qui vient d'échouer. La double clé ({@code uuid} + {@code numericId}) garantit qu'on ne
+     * détruit que le PNJ visé, jamais un homonyme. Thread principal obligatoire.
+     *
+     * @return {@code true} si le PNJ correspondait et a été détruit.
+     */
+    boolean destroyIfMatches(int numericId, UUID uuid) {
+        NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(uuid);
+        if (npc == null || npc.getId() != numericId) {
+            return false;
+        }
+        npc.destroy();
+        CitizensAPI.getNPCRegistry().saveToStore();
+        return true;
+    }
+
+    private static void safeDestroy(NPC npc) {
+        try {
+            npc.destroy();
+        } catch (RuntimeException ignored) {
+            // Rien de mieux à faire : l'exception d'origine est relancée par l'appelant.
+        }
     }
 
     /**

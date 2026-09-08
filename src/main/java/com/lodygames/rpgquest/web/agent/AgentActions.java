@@ -182,6 +182,35 @@ public interface AgentActions {
      */
     CompletableFuture<MutationResult> citizensLink(String npcId, int citizensNumericId);
 
+    /**
+     * Résultat de {@code npc.citizens.create} (issue #81, phase 2). En cas d'échec de la liaison
+     * <em>après</em> création du PNJ Citizens, {@code rolledBack} indique si le PNJ créé a bien été
+     * détruit (aucun PNJ physique orphelin) — code {@code BIND_FAILED_ROLLED_BACK}.
+     *
+     * @param code {@code CREATED} / {@code CITIZENS_UNAVAILABLE} / {@code UNKNOWN_NPC} /
+     *             {@code NPC_DISABLED} / {@code NPC_ALREADY_LINKED} / {@code UNKNOWN_WORLD} /
+     *             {@code INVALID_POSITION} / {@code CREATE_FAILED} / {@code BIND_FAILED_ROLLED_BACK} /
+     *             {@code ERROR}
+     */
+    record CitizensCreateResult(boolean ok, String code, String message, Integer citizensNumericId,
+                                String npcId, List<String> effects, boolean rolledBack) {
+        static CitizensCreateResult reject(String npcId, String code, String message) {
+            return new CitizensCreateResult(false, code, message, null, npcId, List.of(), false);
+        }
+    }
+
+    /**
+     * Crée <strong>physiquement</strong> un PNJ Citizens à partir d'une {@code NpcDefinition}
+     * existante (nom = {@code displayName}), puis le lie immédiatement à son {@code npc_id} — issue
+     * #81, phase 2. Toutes les préconditions logiques (définition présente et {@code enabled}, pas
+     * de binding préexistant, monde de la liste blanche RPGQuest, position bornée) sont vérifiées
+     * <em>avant</em> toute création. Si la liaison échoue après création, le PNJ créé est détruit
+     * (rollback applicatif — jamais un PNJ préexistant). Aucun rebind, aucune suppression générale.
+     */
+    CompletableFuture<CitizensCreateResult> citizensCreate(String npcId, String world,
+                                                           double x, double y, double z,
+                                                           float yaw, float pitch);
+
     /** Aperçu (dry-run, aucune écriture) de ce qu'un reset « nouveau joueur » supprimerait. */
     record ResetPreviewLine(String label, int count, String detail) {
     }

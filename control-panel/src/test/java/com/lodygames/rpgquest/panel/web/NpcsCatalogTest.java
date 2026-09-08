@@ -129,6 +129,62 @@ class NpcsCatalogTest {
     }
 
     @Test
+    void citizensCreateFormShownOnlyOnDefinedNotLinkedCard_withHeartbeatWorlds() throws Exception {
+        start();
+        sendHeartbeat("{\"hub\":{\"name\":\"world_hub\",\"loaded\":true},"
+                + "\"claims\":{\"name\":\"claims\",\"loaded\":true},"
+                + "\"wild\":{\"name\":\"wild\",\"loaded\":false}}");
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Créer le PNJ Citizens"), "form de spawn sur le PNJ NOT_LINKED défini");
+        assertTrue(page.contains("name=\"type\" value=\"npc.citizens.create\""));
+        // preview
+        assertTrue(page.contains("Aucun PNJ Citizens n'est actuellement lié à « woodcutter_bob »"));
+        // mondes chargés proposés en liste (wild non chargé -> absent)
+        assertTrue(page.contains("<option value=\"world_hub\">world_hub</option>"));
+        assertTrue(page.contains("<option value=\"claims\">claims</option>"));
+        assertFalse(page.contains("<option value=\"wild\">"), "monde non chargé exclu de la liste");
+        // coordonnées à saisir, jamais devinées
+        assertTrue(page.contains("name=\"x\"") && page.contains("name=\"y\"") && page.contains("name=\"z\""));
+        assertTrue(page.contains("name=\"yaw\"") && page.contains("name=\"pitch\""));
+        // le PNJ déjà lié (guard) n'a pas le formulaire de spawn
+        int guardCard = page.lastIndexOf("data-copy=\"guard\"");
+        assertFalse(page.substring(guardCard).contains("Créer le PNJ Citizens"),
+                "pas de spawn proposé sur un PNJ déjà LINKED");
+    }
+
+    @Test
+    void citizensCreateActionIsValidatedAndQueued() throws Exception {
+        start();
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        // sans confirm -> refusé
+        HttpResponse<String> noConfirm = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&npc_id=woodcutter_bob&world=world_hub&x=125.5&y=64&z=-82.5");
+        assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "confirm obligatoire");
+
+        HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&npc_id=woodcutter_bob&world=world_hub&x=125.5&y=64&z=-82.5&yaw=90&pitch=0&confirm=true");
+        assertEquals(303, ok.statusCode());
+        assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1);
+
+        // coordonnée non finie -> refusé
+        HttpResponse<String> bad = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&npc_id=woodcutter_bob&world=world_hub&x=NaN&y=64&z=2&confirm=true");
+        assertTrue(bad.headers().firstValue("Location").orElse("").contains("err="));
+
+        // Y hors bornes -> refusé
+        HttpResponse<String> outOfBounds = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&npc_id=woodcutter_bob&world=world_hub&x=1&y=99999&z=2&confirm=true");
+        assertTrue(outOfBounds.headers().firstValue("Location").orElse("").contains("err="));
+    }
+
+    @Test
     void citizensLinkActionIsValidatedAndQueued() throws Exception {
         start();
         String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
@@ -199,6 +255,21 @@ class NpcsCatalogTest {
     private int pendingFor(String agent) throws Exception {
         Map<String, Object> body = Json.parseObject(get("/agents/actions.json?agent=" + agent).body());
         return ((Number) body.get("pending")).intValue();
+    }
+
+    private void sendHeartbeat(String worldsJson) throws Exception {
+        String hb = "{\"protocol\":\"agent/v1\",\"agent_id\":\"" + TestConfig.AGENT_ID + "\",\"environment\":\"dev\","
+                + "\"plugin\":{\"name\":\"RPGQuest\",\"version\":\"7.7.7\"},"
+                + "\"server\":{\"state\":\"ONLINE\",\"players_online\":0,\"max_players\":30,\"uptime_seconds\":10},"
+                + "\"worlds\":" + worldsJson + "}";
+        HttpResponse<String> res = client.send(HttpRequest.newBuilder(uri("/agent/v1/heartbeat"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(hb)).build(), HttpResponse.BodyHandlers.ofString());
+        if (res.statusCode() != 200) {
+            throw new IllegalStateException("heartbeat rejeté : " + res.statusCode());
+        }
     }
 
     private void runListWithSuccess(String details) throws Exception {

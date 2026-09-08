@@ -462,6 +462,8 @@ public final class AgentPages {
         boolean canWrite = perms.can(session.role(), Permission.NPC_WRITE);
         boolean canSetGiver = perms.can(session.role(), Permission.QUEST_GIVER_WRITE);
         boolean canLink = perms.can(session.role(), Permission.NPC_BIND_WRITE);
+        boolean canSpawn = perms.can(session.role(), Permission.NPC_SPAWN_WRITE);
+        List<String> spawnWorlds = loadedWorldNames(agentId);
         sb.append(agentPicker(agentId, "/npcs", ""));
 
         sb.append("<h2>Catalogue</h2>");
@@ -518,7 +520,7 @@ public final class AgentPages {
         } else {
             for (Object o : npcs) {
                 sb.append(renderNpcCard(session, agentId, asMap(o), questTitles, questIds,
-                        citizensRoster, canWrite, canSetGiver, canLink));
+                        citizensRoster, spawnWorlds, canWrite, canSetGiver, canLink, canSpawn));
             }
         }
 
@@ -569,7 +571,8 @@ public final class AgentPages {
     /** Carte PNJ V2 : deux blocs (Définition RPGQuest / Binding Citizens), anomalies, relations, actions. */
     private String renderNpcCard(Session session, String agentId, Map<String, Object> n,
                                  Map<String, String> questTitles, List<String> questIds,
-                                 List<Object> citizensRoster, boolean canWrite, boolean canSetGiver, boolean canLink) {
+                                 List<Object> citizensRoster, List<String> spawnWorlds, boolean canWrite,
+                                 boolean canSetGiver, boolean canLink, boolean canSpawn) {
         String id = str(n.get("id"));
         String displayName = str(n.get("displayName"));
         boolean hasName = !displayName.isEmpty() && !"null".equals(displayName);
@@ -702,13 +705,88 @@ public final class AgentPages {
             }
             sb.append("</details>");
         }
-        // Liaison à un PNJ Citizens existant (#81) — seulement si définition présente et pas encore liée.
+        // Liaison à un PNJ Citizens existant (#81 phase 1) — définition présente, pas encore liée.
         if (canLink && hasDefinition && !boundCitizens && enabled) {
             sb.append("<details><summary>Lier un PNJ Citizens existant</summary>");
             sb.append(citizensLinkForm(session, agentId, id, citizensRoster));
             sb.append("</details>");
         }
+        // Créer physiquement le PNJ Citizens depuis la définition (#81 phase 2) — mêmes conditions.
+        if (canSpawn && hasDefinition && !boundCitizens && enabled) {
+            sb.append("<details><summary>Créer le PNJ Citizens</summary>");
+            sb.append(citizensCreateForm(session, agentId, id, hasName ? displayName : MiniText.prettifyId(id),
+                    spawnWorlds));
+            sb.append("</details>");
+        }
         return sb.append("</article>").toString();
+    }
+
+    /**
+     * Formulaire de spawn (#81 phase 2) : preview stricte (définition, nom, « aucun Citizens lié »),
+     * monde en liste déroulante (mondes chargés annoncés par le heartbeat), coordonnées à saisir
+     * (jamais devinées), confirmation obligatoire.
+     */
+    private String citizensCreateForm(Session session, String agentId, String npcId, String displayName,
+                                      List<String> spawnWorlds) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"preview\"><p class=\"meta-line\"><span class=\"meta-k\">ID RPGQuest</span> ")
+                .append(Ui.id(npcId)).append("</p>");
+        sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Nom</span> ")
+                .append(MiniText.html(displayName)).append("</p>");
+        sb.append("<p class=\"faint\" style=\"font-size:12px\">Nom repris de la définition — non modifiable "
+                + "ici. Aucun PNJ Citizens n'est actuellement lié à « ").append(Http.esc(npcId))
+                .append(" ».</p></div>");
+
+        sb.append(formStart(session, agentId, "npc.citizens.create", "/npcs", ""));
+        sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
+        if (spawnWorlds.isEmpty()) {
+            sb.append("<label>Monde</label><input type=\"text\" name=\"world\" placeholder=\"world_hub\" "
+                    + "pattern=\"[A-Za-z0-9_./-]{1,64}\">");
+            sb.append("<p class=\"faint\" style=\"font-size:12px\">Liste des mondes indisponible "
+                    + "(heartbeat non reçu) — saisir un monde RPGQuest autorisé (hub / claims / exploration).</p>");
+        } else {
+            sb.append("<label>Monde</label><select name=\"world\">");
+            for (String w : spawnWorlds) {
+                sb.append("<option value=\"").append(Http.esc(w)).append("\">").append(Http.esc(w)).append("</option>");
+            }
+            sb.append("</select>");
+        }
+        sb.append("<div class=\"coord-row\">");
+        sb.append("<label class=\"coord\">X<input type=\"text\" name=\"x\" inputmode=\"decimal\" placeholder=\"125.5\"></label>");
+        sb.append("<label class=\"coord\">Y<input type=\"text\" name=\"y\" inputmode=\"decimal\" placeholder=\"64\"></label>");
+        sb.append("<label class=\"coord\">Z<input type=\"text\" name=\"z\" inputmode=\"decimal\" placeholder=\"-82.5\"></label>");
+        sb.append("<label class=\"coord\">Yaw<input type=\"text\" name=\"yaw\" inputmode=\"decimal\" placeholder=\"0\"></label>");
+        sb.append("<label class=\"coord\">Pitch<input type=\"text\" name=\"pitch\" inputmode=\"decimal\" placeholder=\"0\"></label>");
+        sb.append("</div>");
+        sb.append(confirmBox("Créer le PNJ Citizens « " + npcId + " » à la position indiquée et le lier "
+                + "immédiatement (rollback automatique si la liaison échoue)."));
+        sb.append("<button class=\"btn\" type=\"submit\">Confirmer la création</button></form>");
+        latestForPlayer(agentId, "npc.citizens.create", "").ifPresent(row -> sb.append(resultLine("Dernier spawn", row)));
+        return sb.toString();
+    }
+
+    /** Noms des mondes annoncés <em>chargés</em> par le dernier heartbeat de l'agent (pour la liste de spawn). */
+    private List<String> loadedWorldNames(String agentId) {
+        return store.latestHeartbeat(agentId).map(hb -> {
+            String worldsJson = hb.worldsJson();
+            if (worldsJson == null || worldsJson.isBlank()) {
+                return List.<String>of();
+            }
+            try {
+                Map<String, Object> worlds = Json.parseObject(worldsJson);
+                java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+                for (Object v : worlds.values()) {
+                    Map<String, Object> w = asMap(v);
+                    String name = str(w.get("name"));
+                    if (!name.isEmpty() && !"null".equals(name) && Boolean.TRUE.equals(w.get("loaded"))) {
+                        names.add(name);
+                    }
+                }
+                return List.copyOf(names);
+            } catch (RuntimeException e) {
+                return List.<String>of();
+            }
+        }).orElse(List.of());
     }
 
     /** Formulaire de liaison : select des PNJ Citizens, seuls les libres sont sélectionnables. */

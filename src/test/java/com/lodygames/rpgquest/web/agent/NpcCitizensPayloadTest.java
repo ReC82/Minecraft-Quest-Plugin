@@ -65,6 +65,36 @@ class NpcCitizensPayloadTest {
         assertEquals("NOOP", noop.value());
     }
 
+    @Test
+    void citizensCreateWhitelistedValidatedAndStructured() {
+        // paramètres manquants / invalides -> REJECTED, jamais d'appel métier
+        assertEquals(AgentActionOutcome.REJECTED, run("npc.citizens.create",
+                Map.of("world", "world_hub", "x", "1", "y", "64", "z", "2")).status());
+        assertEquals(AgentActionOutcome.REJECTED, run("npc.citizens.create",
+                Map.of("npc_id", "woodcutter_bob", "world", "bad world", "x", "1", "y", "64", "z", "2")).status());
+        assertEquals(AgentActionOutcome.REJECTED, run("npc.citizens.create",
+                Map.of("npc_id", "woodcutter_bob", "world", "world_hub", "x", "Infinity", "y", "64", "z", "2")).status());
+
+        AgentActionOutcome ok = run("npc.citizens.create", Map.of("npc_id", "woodcutter_bob",
+                "world", "world_hub", "x", "125.5", "y", "64", "z", "-82.5", "yaw", "90", "pitch", "0"));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("31", ok.value());
+        String json = Json.write(ok.details());
+        assertTrue(json.contains("\"code\":\"CREATED\""));
+        assertTrue(json.contains("\"citizens_id\":31"));
+        assertTrue(json.contains("\"npc_id\":\"woodcutter_bob\""));
+        assertTrue(json.contains("\"rolled_back\":false"));
+    }
+
+    @Test
+    void citizensCreateRollbackIsAReadableFailedOutcome() {
+        AgentActionOutcome out = run("npc.citizens.create", Map.of("npc_id", "rollback_me",
+                "world", "world_hub", "x", "1", "y", "64", "z", "2"));
+        assertEquals(AgentActionOutcome.FAILED, out.status());
+        assertEquals("BIND_FAILED_ROLLED_BACK", out.value());
+        assertTrue(Json.write(out.details()).contains("\"rolled_back\":true"));
+    }
+
     private static final class CitizensActions extends StubAgentActions {
         @Override
         public CompletableFuture<CitizensRosterView> citizensRoster() {
@@ -86,6 +116,21 @@ class NpcCitizensPayloadTest {
             }
             return CompletableFuture.completedFuture(new MutationResult(true, "LINKED",
                     "« " + npcId + " » lié à Citizens #" + citizensNumericId + ".", List.of("Citizens #" + citizensNumericId + " <-> " + npcId)));
+        }
+
+        @Override
+        public CompletableFuture<CitizensCreateResult> citizensCreate(String npcId, String world,
+                                                                      double x, double y, double z,
+                                                                      float yaw, float pitch) {
+            if (npcId.equals("rollback_me")) {
+                return CompletableFuture.completedFuture(new CitizensCreateResult(false,
+                        "BIND_FAILED_ROLLED_BACK", "Liaison impossible — PNJ #31 supprimé (rollback effectué).",
+                        31, npcId, List.of(), true));
+            }
+            return CompletableFuture.completedFuture(new CitizensCreateResult(true, "CREATED",
+                    "« " + npcId + " » créé et lié à Citizens #31 — " + world + ".",
+                    31, npcId, List.of("Citizens #31 spawné dans " + world, "binding " + npcId + " <-> Citizens #31"),
+                    false));
         }
     }
 }

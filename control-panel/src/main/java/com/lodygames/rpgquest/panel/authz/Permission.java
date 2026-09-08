@@ -11,6 +11,7 @@ public enum Permission {
     NPC_READ,
     NPC_WRITE,
     NPC_BIND_WRITE,
+    NPC_SPAWN_WRITE,
     QUEST_GIVER_WRITE,
     CONTENT_READ,
     DIAGNOSTICS_READ,

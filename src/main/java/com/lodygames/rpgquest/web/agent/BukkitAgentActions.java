@@ -9,6 +9,8 @@ import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
 import com.lodygames.rpgquest.npc.CitizensNpc;
+import com.lodygames.rpgquest.npc.CitizensSpawnCoordinator;
+import com.lodygames.rpgquest.npc.CitizensSpawnPlanner;
 import com.lodygames.rpgquest.npc.NpcCatalog;
 import com.lodygames.rpgquest.npc.NpcDefinitionStore;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
@@ -45,11 +47,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
@@ -83,13 +87,15 @@ public final class BukkitAgentActions implements AgentActions {
     private final YamlNpcEngine npcEngine;
     private final NpcDefinitionStore npcStore;
     private final QuestGiverStore questGiverStore;
+    private final Supplier<Set<String>> allowedSpawnWorlds;
 
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
                               QuestProgressEngine questProgressEngine, StoryService storyService,
                               YamlCustomItemRegistry customItemRegistry, PlayerResetService playerResetService,
                               PlayerVariableWriter variableWriter, YamlDialogueEngine dialogueEngine,
                               NpcIdentityService npcIdentityService, NpcBindingRepository npcBindingRepository,
-                              YamlNpcEngine npcEngine, NpcDefinitionStore npcStore, QuestGiverStore questGiverStore) {
+                              YamlNpcEngine npcEngine, NpcDefinitionStore npcStore, QuestGiverStore questGiverStore,
+                              Supplier<Set<String>> allowedSpawnWorlds) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -103,6 +109,7 @@ public final class BukkitAgentActions implements AgentActions {
         this.npcEngine = npcEngine;
         this.npcStore = npcStore;
         this.questGiverStore = questGiverStore;
+        this.allowedSpawnWorlds = allowedSpawnWorlds;
     }
 
     // ---- Lectures -------------------------------------------------------------------------------
@@ -406,6 +413,83 @@ public final class BukkitAgentActions implements AgentActions {
                                     bind.ok() ? List.of("Citizens #" + bind.citizensNumericId() + " <-> " + npcId)
                                               : List.of()));
                 });
+    }
+
+    @Override
+    public CompletableFuture<CitizensCreateResult> citizensCreate(String npcId, String world,
+                                                                  double x, double y, double z,
+                                                                  float yaw, float pitch) {
+        Optional<NpcDefinition> definition = npcEngine.find(npcId);
+        boolean present = definition.isPresent();
+        boolean enabled = present && definition.get().enabled();
+        boolean citizensAvailable = npcIdentityService.citizensAvailable();
+        Set<String> allowed = allowedSpawnWorlds.get();
+        String worldName = world == null ? "" : world.trim();
+        String posLabel = worldName + " " + fmt(x) + " / " + fmt(y) + " / " + fmt(z)
+                + " (yaw " + fmt(yaw) + " / pitch " + fmt(pitch) + ")";
+
+        // 1) Préconditions logiques pures — besoin des bindings pour « npc_id déjà lié ? » (base, async).
+        return npcBindingRepository.loadAll().thenCompose(bindings -> {
+            boolean npcIdLinked = bindings.stream().anyMatch(b -> b.npcId().equals(npcId));
+            CitizensSpawnPlanner.Plan plan = CitizensSpawnPlanner.plan(npcId, present, enabled, npcIdLinked,
+                    citizensAvailable, worldName, allowed, x, y, z, yaw, pitch);
+            if (plan.action() == CitizensSpawnPlanner.Action.REJECT) {
+                return done(CitizensCreateResult.reject(npcId, plan.code(), plan.message()));
+            }
+            String displayName = definition.get().displayName();
+
+            // 2) Thread principal : le monde doit être chargé + Y dans les limites réelles du monde.
+            return onMain(() -> {
+                World w = plugin.getServer().getWorld(worldName);
+                if (w == null) {
+                    return done(CitizensCreateResult.reject(npcId, "UNKNOWN_WORLD",
+                            "Le monde « " + safe(worldName) + " » n'est pas chargé sur le serveur cible."));
+                }
+                if (y < w.getMinHeight() || y >= w.getMaxHeight()) {
+                    return done(CitizensCreateResult.reject(npcId, "INVALID_POSITION",
+                            "Y=" + fmt(y) + " hors des limites du monde « " + w.getName() + " » ("
+                                    + w.getMinHeight() + " à " + w.getMaxHeight() + ")."));
+                }
+                return done((CitizensCreateResult) null);
+            }).thenCompose(worldFailure -> {
+                if (worldFailure != null) {
+                    return done(worldFailure);
+                }
+                // 3) create -> bind -> (ok | rollback) : orchestration pure, collaborateurs hoppant sur le main.
+                CitizensSpawnCoordinator.Spawner spawner = new CitizensSpawnCoordinator.Spawner() {
+                    @Override
+                    public CompletableFuture<Optional<CitizensNpc>> createAndSpawn() {
+                        return onMain(() -> {
+                            World w = plugin.getServer().getWorld(worldName);
+                            if (w == null) {
+                                return done(Optional.<CitizensNpc>empty());
+                            }
+                            return done(npcIdentityService.createCitizensNpc(displayName,
+                                    new Location(w, x, y, z, yaw, pitch)));
+                        });
+                    }
+
+                    @Override
+                    public CompletableFuture<Boolean> destroyCreated(CitizensNpc created) {
+                        return onMain(() -> done(
+                                npcIdentityService.destroyCitizensNpc(created.numericId(), created.uuid())));
+                    }
+                };
+                return CitizensSpawnCoordinator.run(npcId, posLabel, spawner, npcIdentityService::bindCitizens)
+                        .thenApply(r -> new CitizensCreateResult(r.ok(), r.code(), r.message(),
+                                r.citizensNumericId(), r.npcId(), r.effects(), r.rolledBack()));
+            });
+        }).exceptionally(error -> new CitizensCreateResult(false, "ERROR",
+                "Échec du spawn : " + rootName(error), null, npcId, List.of(), false));
+    }
+
+    /** Formate un nombre : entier si rond, sinon décimal court. */
+    private static String fmt(double v) {
+        return v == Math.rint(v) && !Double.isInfinite(v) ? Long.toString((long) v) : Double.toString(v);
+    }
+
+    private static String fmt(float v) {
+        return fmt((double) v);
     }
 
     private static String blank(String value) {

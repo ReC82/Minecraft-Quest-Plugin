@@ -22,7 +22,9 @@ import java.util.Optional;
  *       {@link #NPC_DEFINITION_CREATE}, {@link #NPC_DEFINITION_UPDATE}, {@link #QUEST_GIVER_SET}
  *       (écritures de contenu : définitions PNJ {@code npcs/*.yml} et champ {@code giver:} des
  *       quêtes — jamais de YAML brut ni de chemin arbitraire), {@link #NPC_CITIZENS_LINK}
- *       (liaison définition ↔ PNJ Citizens existant, jamais de spawn/rebind — issue #81).</li>
+ *       (liaison définition ↔ PNJ Citizens existant, jamais de spawn/rebind — issue #81 phase 1),
+ *       {@link #NPC_CITIZENS_CREATE} (crée physiquement un PNJ Citizens depuis une définition puis
+ *       le lie ; rollback si la liaison échoue — issue #81 phase 2).</li>
  * </ul>
  */
 public enum AgentActionType {
@@ -49,7 +51,8 @@ public enum AgentActionType {
     NPC_DEFINITION_UPDATE("npc.definition.update"),
     QUEST_GIVER_SET("quest.giver.set"),
     NPC_CITIZENS_LIST("npc.citizens.list"),
-    NPC_CITIZENS_LINK("npc.citizens.link");
+    NPC_CITIZENS_LINK("npc.citizens.link"),
+    NPC_CITIZENS_CREATE("npc.citizens.create");
 
     private final String wire;
 

@@ -24,6 +24,11 @@ public final class AgentActionCatalog {
     private static final Pattern NPC_ID = Pattern.compile("[a-z0-9._-]{1,64}");
     private static final Pattern DIALOGUE_REF = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,128})?");
     private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
+    private static final Pattern WORLD_NAME = Pattern.compile("[A-Za-z0-9_./-]{1,64}");
+    /** Bornes de sécurité de position miroir de {@code CitizensSpawnPlanner} côté plugin (#81 phase 2). */
+    private static final double HORIZONTAL_LIMIT = 29_999_984.0;
+    private static final double Y_MIN = -2048.0;
+    private static final double Y_MAX = 2048.0;
 
     /** Suggestions de clés de variables pour les listes déroulantes (jamais imposées). */
     public static final List<String> KNOWN_VARIABLE_KEYS = List.of(
@@ -62,6 +67,7 @@ public final class AgentActionCatalog {
         add("npc.definition.update", Permission.NPC_WRITE, true, false, "Modifier une définition PNJ");
         add("quest.giver.set", Permission.QUEST_GIVER_WRITE, true, false, "Attribuer une quête à un PNJ");
         add("npc.citizens.link", Permission.NPC_BIND_WRITE, true, false, "Lier un PNJ Citizens existant");
+        add("npc.citizens.create", Permission.NPC_SPAWN_WRITE, true, false, "Créer le PNJ Citizens");
         // Mutations
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");
@@ -239,6 +245,43 @@ public final class AgentActionCatalog {
                 params.put("npc_id", npcId);
                 params.put("citizens_id", Integer.toString(citizensId));
             }
+            case "npc.citizens.create" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide.");
+                }
+                String world = trim(form.get("world"));
+                if (!WORLD_NAME.matcher(world).matches()) {
+                    return Validation.fail("Nom de monde manquant ou invalide.");
+                }
+                Double x = finite(form.get("x"));
+                Double y = finite(form.get("y"));
+                Double z = finite(form.get("z"));
+                if (x == null || y == null || z == null) {
+                    return Validation.fail("Coordonnées X / Y / Z manquantes ou non numériques.");
+                }
+                if (Math.abs(x) > HORIZONTAL_LIMIT || Math.abs(z) > HORIZONTAL_LIMIT) {
+                    return Validation.fail("X / Z hors du bord de monde (±" + (long) HORIZONTAL_LIMIT + ").");
+                }
+                if (y < Y_MIN || y > Y_MAX) {
+                    return Validation.fail("Y hors bornes de sécurité (" + (long) Y_MIN + " à " + (long) Y_MAX + ").");
+                }
+                Double yaw = form.getOrDefault("yaw", "").isBlank() ? Double.valueOf(0.0) : finite(form.get("yaw"));
+                Double pitch = form.getOrDefault("pitch", "").isBlank() ? Double.valueOf(0.0) : finite(form.get("pitch"));
+                if (yaw == null || pitch == null) {
+                    return Validation.fail("Orientation yaw / pitch non numérique.");
+                }
+                if (pitch < -90.0 || pitch > 90.0) {
+                    return Validation.fail("Pitch hors bornes (-90 à 90).");
+                }
+                params.put("npc_id", npcId);
+                params.put("world", world);
+                params.put("x", trimNumber(x));
+                params.put("y", trimNumber(y));
+                params.put("z", trimNumber(z));
+                params.put("yaw", trimNumber(yaw));
+                params.put("pitch", trimNumber(pitch));
+            }
             case "player.resetnew.confirm" -> params.put("confirm", "true");
             default -> {
                 // player.list / *.player.status / *.list / player.resetnew.preview : pas de paramètre
@@ -250,6 +293,25 @@ public final class AgentActionCatalog {
 
     private static String trim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /** Parse un décimal fini, ou {@code null} (vide / non numérique / NaN / Infinity). */
+    private static Double finite(String value) {
+        String t = trim(value);
+        if (t.isEmpty()) {
+            return null;
+        }
+        try {
+            double v = Double.parseDouble(t);
+            return Double.isFinite(v) ? v : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** Sérialise un décimal : entier si rond (« 64 »), sinon décimal court (« 125.5 »). */
+    private static String trimNumber(double v) {
+        return v == Math.rint(v) && Double.isFinite(v) ? Long.toString((long) v) : Double.toString(v);
     }
 
     private static String orDefault(String value, String fallback) {

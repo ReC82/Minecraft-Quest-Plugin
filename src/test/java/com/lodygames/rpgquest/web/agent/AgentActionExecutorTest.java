@@ -162,6 +162,44 @@ class AgentActionExecutorTest {
     }
 
     @Test
+    void npcCitizensCreateValidatesParamsAndDelegates() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cc0", "npc.citizens.create",
+                Map.of("world", "world_hub", "x", "1", "y", "64", "z", "2"))).status(), "npc_id obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cc1", "npc.citizens.create",
+                Map.of("npc_id", "woodcutter_bob", "world", "bad world!", "x", "1", "y", "64", "z", "2"))).status(),
+                "world invalide");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cc2", "npc.citizens.create",
+                Map.of("npc_id", "woodcutter_bob", "world", "world_hub", "x", "NaN", "y", "64", "z", "2"))).status(),
+                "coordonnée non finie");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cc3", "npc.citizens.create",
+                Map.of("npc_id", "woodcutter_bob", "world", "world_hub", "y", "64", "z", "2"))).status(),
+                "x manquant");
+
+        AgentActionOutcome ok = run(new AgentAction("cc4", "npc.citizens.create", Map.of(
+                "npc_id", "woodcutter_bob", "world", "world_hub",
+                "x", "125.5", "y", "64", "z", "-82.5", "yaw", "90", "pitch", "0")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("woodcutter_bob", actions.lastCreateNpcId);
+        assertEquals("world_hub", actions.lastCreateWorld);
+        assertEquals(125.5, actions.lastCreateX);
+        assertEquals(90.0f, actions.lastCreateYaw);
+        assertEquals(Integer.valueOf(31), ok.details().get("citizens_id"));
+        assertEquals(Boolean.FALSE, ok.details().get("rolled_back"));
+    }
+
+    @Test
+    void npcCitizensCreateBindFailureIsAReadableFailedOutcome() {
+        actions.createOk = false;
+        actions.createCode = "BIND_FAILED_ROLLED_BACK";
+        actions.createRolledBack = true;
+        AgentActionOutcome out = run(new AgentAction("cc5", "npc.citizens.create", Map.of(
+                "npc_id", "woodcutter_bob", "world", "world_hub", "x", "1", "y", "64", "z", "2")));
+        assertEquals(AgentActionOutcome.FAILED, out.status());
+        assertEquals("BIND_FAILED_ROLLED_BACK", out.value());
+        assertEquals(Boolean.TRUE, out.details().get("rolled_back"));
+    }
+
+    @Test
     void questGiverSetValidatesAndDelegates() {
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("qg0", "quest.giver.set",
                 Map.of("quest_id", "rpgquest:woodcutters_request"))).status(), "npc_id obligatoire");
@@ -396,6 +434,27 @@ class AgentActionExecutorTest {
             lastLinkNpcId = npcId;
             lastLinkCitizensId = citizensNumericId;
             return mutation("link " + npcId + " <-> #" + citizensNumericId);
+        }
+
+        String lastCreateNpcId;
+        String lastCreateWorld;
+        double lastCreateX;
+        float lastCreateYaw;
+        boolean createOk = true;
+        String createCode = "CREATED";
+        boolean createRolledBack = false;
+
+        @Override
+        public CompletableFuture<CitizensCreateResult> citizensCreate(String npcId, String world,
+                                                                      double x, double y, double z,
+                                                                      float yaw, float pitch) {
+            lastCreateNpcId = npcId;
+            lastCreateWorld = world;
+            lastCreateX = x;
+            lastCreateYaw = yaw;
+            return CompletableFuture.completedFuture(new CitizensCreateResult(createOk, createCode,
+                    createOk ? "créé" : "liaison impossible", createOk || createRolledBack ? 31 : null,
+                    npcId, createOk ? List.of("Citizens #31 spawné") : List.of(), createRolledBack));
         }
 
         @Override

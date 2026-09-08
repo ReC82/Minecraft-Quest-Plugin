@@ -211,6 +211,13 @@ public final class Layout {
             label.inline{display:inline-flex;align-items:center;gap:6px;margin:10px 0 0;color:var(--txt);font-size:13px}
             label.inline.confirm{color:var(--warn)}
             .resline{margin:8px 0;font-size:13px}
+            .preview{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+            padding:8px 12px;margin:8px 0}
+            .preview .meta-line{margin:4px 0}
+            .coord-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+            .coord-row label.coord{display:flex;flex-direction:column;gap:3px;margin:0;
+            font-size:12px;color:var(--muted);flex:1 1 80px}
+            .coord-row label.coord input{width:100%}
             .agentpicker{display:flex;gap:8px;align-items:center;margin:8px 0}
             .agentpicker label{margin:0}
             .actions-panel{margin-top:6px}

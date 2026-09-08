@@ -553,9 +553,25 @@ public final class RPGQuestBootstrap {
                                 dialogueEngine, npcIdentityService,
                                 new NpcBindingRepository(databaseService.databaseManager()),
                                 npcEngine, new NpcDefinitionStore(npcEngine.directory()),
-                                new QuestGiverStore(plugin.getDataFolder().toPath().resolve("quests"))))));
+                                new QuestGiverStore(plugin.getDataFolder().toPath().resolve("quests")),
+                                this::rpgWorldWhitelist))));
 
         registerCommands();
+    }
+
+    /**
+     * Liste blanche des mondes où l'action {@code npc.citizens.create} (#81 phase 2) peut faire
+     * apparaître un PNJ : les trois mondes RPGQuest de la config (hub / claims / exploration). Pas
+     * d'ACL géographique — le monde doit en plus être réellement chargé, vérifié côté agent.
+     */
+    private java.util.Set<String> rpgWorldWhitelist() {
+        var cfg = configService.current();
+        java.util.Set<String> worlds = new java.util.LinkedHashSet<>();
+        worlds.add(cfg.hub().world());
+        worlds.add(cfg.claims().world());
+        worlds.add(cfg.travel().wildWorld());
+        worlds.removeIf(w -> w == null || w.isBlank());
+        return worlds;
     }
 
     private DialogueRenderer createRenderer(DialogueSessionEngine handler) {

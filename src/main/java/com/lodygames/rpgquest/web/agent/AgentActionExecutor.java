@@ -36,6 +36,8 @@ public final class AgentActionExecutor {
     private static final Pattern NPC_ID = Pattern.compile("[a-z0-9._-]{1,64}");
     private static final Pattern DIALOGUE_REF = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,128})?");
     private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
+    /** Nom de monde : jamais un chemin, jamais une commande — caractères sûrs, longueur bornée. */
+    private static final Pattern WORLD_NAME = Pattern.compile("[A-Za-z0-9_./-]{1,64}");
     private static final int MAX_GIVE_AMOUNT = 64;
     private static final int MAX_DISPLAY_NAME = 128;
 
@@ -68,6 +70,7 @@ public final class AgentActionExecutor {
                 case NPC_LIST -> npcList(action);
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
+                case NPC_CITIZENS_CREATE -> npcCitizensCreate(action);
                 case QUEST_PLAYER_STATUS -> questPlayerStatus(action);
                 case STORY_PLAYER_STATUS -> storyPlayerStatus(action);
                 case PLAYER_RESETNEW_PREVIEW -> resetPreview(action);
@@ -335,6 +338,61 @@ public final class AgentActionExecutor {
         try {
             int value = Integer.parseInt(raw.trim());
             return value > 0 && value <= 10_000_000 ? value : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** {@code npc.citizens.create} (#81 phase 2) : paramètres métier stricts, aucun spawn si un contrôle échoue. */
+    private CompletableFuture<AgentActionOutcome> npcCitizensCreate(AgentAction action) {
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        String world = firstNonBlank(action.param("world"));
+        if (world == null || !WORLD_NAME.matcher(world).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « world » manquant ou invalide."));
+        }
+        Double x = parseFinite(action.param("x"));
+        Double y = parseFinite(action.param("y"));
+        Double z = parseFinite(action.param("z"));
+        if (x == null || y == null || z == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètres « x » / « y » / « z » manquants ou non finis."));
+        }
+        Double yaw = action.param("yaw") == null || action.param("yaw").isBlank() ? 0.0 : parseFinite(action.param("yaw"));
+        Double pitch = action.param("pitch") == null || action.param("pitch").isBlank()
+                ? 0.0 : parseFinite(action.param("pitch"));
+        if (yaw == null || pitch == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « yaw » / « pitch » non fini."));
+        }
+        return actions.citizensCreate(npcId, world, x, y, z, yaw.floatValue(), pitch.floatValue())
+                .thenApply(r -> {
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    details.put("code", r.code());
+                    details.put("npc_id", r.npcId());
+                    details.put("citizens_id", r.citizensNumericId());
+                    details.put("world", world);
+                    details.put("rolled_back", r.rolledBack());
+                    details.put("effects", r.effects());
+                    if (r.ok()) {
+                        return AgentActionOutcome.success(action.id(),
+                                r.citizensNumericId() == null ? r.code() : String.valueOf(r.citizensNumericId()),
+                                r.message(), details);
+                    }
+                    return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, r.code(), r.message(),
+                            details, java.time.Instant.now());
+                })
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private static Double parseFinite(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            double value = Double.parseDouble(raw.trim());
+            return Double.isFinite(value) ? value : null;
         } catch (NumberFormatException e) {
             return null;
         }

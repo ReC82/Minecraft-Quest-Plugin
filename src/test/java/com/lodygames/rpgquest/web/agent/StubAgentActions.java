@@ -79,6 +79,14 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<CitizensCreateResult> citizensCreate(String npcId, String world,
+                                                                  double x, double y, double z,
+                                                                  float yaw, float pitch) {
+        return CompletableFuture.completedFuture(
+                CitizensCreateResult.reject(npcId, "UNSUPPORTED", "non câblé (stub de test)"));
+    }
+
+    @Override
     public CompletableFuture<ResetPreview> resetPreview(UUID playerId) {
         return CompletableFuture.completedFuture(new ResetPreview(false, List.of()));
     }

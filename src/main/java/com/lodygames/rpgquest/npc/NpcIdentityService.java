@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Entity;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -162,6 +163,29 @@ public final class NpcIdentityService {
 
     /** @param code {@code LINKED} / {@code NOOP} / {@code CITIZENS_TAKEN} / {@code NPC_ID_TAKEN} / {@code ERROR} */
     public record BindResult(boolean ok, String code, String message, int citizensNumericId) {
+    }
+
+    // ---- Création physique + rollback (issue #81, phase 2) -------------------------------------
+
+    /**
+     * Crée un PNJ Citizens ({@code EntityType.PLAYER}) nommé {@code name} et le fait apparaître à
+     * {@code location}, puis renvoie sa vue registre. Vide si Citizens est inactif ou si la
+     * matérialisation a échoué (dans ce cas rien n'est laissé derrière).
+     *
+     * <p><strong>Thread principal obligatoire</strong> — l'appelant orchestre le hop. Cette méthode
+     * ne persiste aucun binding : la liaison passe ensuite par {@link #bindCitizens}.</p>
+     */
+    public Optional<CitizensNpc> createCitizensNpc(String name, Location location) {
+        return citizensBridge == null ? Optional.empty() : citizensBridge.createAndSpawn(name, location);
+    }
+
+    /**
+     * Détruit définitivement un PNJ Citizens — <strong>réservé au rollback</strong> d'une création
+     * qui vient d'échouer (jamais un PNJ préexistant : la double clé {@code numericId}+{@code uuid}
+     * cible l'entité exacte créée par l'action). <strong>Thread principal obligatoire</strong>.
+     */
+    public boolean destroyCitizensNpc(int numericId, UUID uuid) {
+        return citizensBridge != null && citizensBridge.destroyIfMatches(numericId, uuid);
     }
 
     /**

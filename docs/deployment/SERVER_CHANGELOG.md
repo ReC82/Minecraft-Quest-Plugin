@@ -1617,3 +1617,51 @@ Session du 2026-09-08 (~19:14–19:18 UTC). Branche `feat/control-panel-admin-to
   nouveau compte → spawn du village.
 
 Rapport : `docs/claude-reports/2026-09-08_1905_bug-wild-reconnexion-hub-87.md`.
+
+---
+
+## 2026-09-08 - Control Panel : centre de documentation /docs (#49) — AWS uniquement
+
+### Changement
+
+**Control Panel AWS uniquement. Aucun code plugin, aucun agent, aucune migration, aucun impact
+serveur Minecraft — ne pas redéployer/redémarrer VeryGames.**
+
+Nouvelle section **Documentation** dans PlugAdmin : route `/docs` (authentifiée, permission
+`DOCS_READ` accordée à tous les rôles), recherche plein texte en mémoire, rendu Markdown sûr,
+catégories, commandes copiables. Contenu = 9 fiches Markdown versionnées et livrées dans le jar
+(`control-panel/src/main/resources/docs/`), listées par `_index.txt` (liste blanche). Aucun
+contenu en base ; aucun chemin du navigateur ouvert (slug interne résolu en mémoire).
+
+### Action serveur
+
+- `scripts/plugadmin/deploy.sh` (AWS) — release + `systemctl restart plugadmin` + check `/health`.
+- Aucune autre action.
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` public **ONLINE**.
+- `/docs` **anonyme** → **303** vers `/login` ; `/docs/<slug>` anonyme → **303**.
+- `/docs` **authentifié** → 200 (recherche + catégories) ; `/docs?q=tag+npc` → fiche PNJ.
+- Autres vhosts nginx (`dig.lodygames.com`, `lodylands.com`) → **200**.
+- `journalctl -u plugadmin` : aucun `ERROR`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (release précédente + restart). Aucune migration.
+
+### Exécution réelle
+
+Session du 2026-09-08 (~20:10 UTC). Branche `feat/control-panel-admin-tools` @ `0516a0b`.
+`deploy.sh` OK (release `/opt/plugadmin/releases/20260908-201035`). Jar : 9 `docs/*.md` +
+`_index.txt` embarqués. `/health` ONLINE ×3 ; `/docs` anon → **303**, `/docs/pnj-citizens` anon
+→ **303** ; `dig` / `lodylands` → **200** ; `journalctl -u plugadmin` **0 `ERROR`**. Navigateur
+authentifié : `PENDING MANUAL VALIDATION`.
+
+Rapport : `docs/claude-reports/2026-09-08_2003_control-panel-centre-documentation-49.md`.

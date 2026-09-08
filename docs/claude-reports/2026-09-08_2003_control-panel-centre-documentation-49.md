@@ -217,10 +217,21 @@ Vérifs :
 
 `scripts/plugadmin/rollback.sh app` (release précédente + restart). Aucune migration à défaire.
 
-## Logs / diagnostic
+## Logs / diagnostic — exécution réelle du 2026-09-08 (~20:10 UTC)
 
-Section « ### Exécution réelle » à compléter au déploiement (release, `/health`, `/docs`
-anon/auth, recherche, autres sites, absence d'`ERROR`).
+Branche `feat/control-panel-admin-tools` @ `0516a0b`.
+
+- `scripts/plugadmin/deploy.sh` — OK. Release `/opt/plugadmin/releases/20260908-201035` ;
+  `systemctl restart plugadmin` → `active (running)` ; `event=panel_started port=8090`.
+- Le jar déployé embarque **9** fiches `docs/*.md` + `docs/_index.txt`.
+- `/health` public **ONLINE** ×3.
+- **`/docs` anonyme → 303** vers `/login` ; **`/docs/pnj-citizens` anonyme → 303**.
+- Autres vhosts nginx : `dig.lodygames.com` → **200**, `lodylands.com` → **200** (inchangés).
+- `journalctl -u plugadmin` depuis le déploiement : **0 ligne `ERROR` / `Exception` / `SEVERE`**.
+- **Navigateur authentifié** (ouvrir Documentation, `tag npc`, `skin`, `reset joueur`,
+  `rollback`, copier une commande, rendu mobile) : `PENDING MANUAL VALIDATION` — non réalisable
+  depuis le périmètre (identifiants owner). Couvert par `DocsPagesTest` (flux complet avec un
+  compte owner de test).
 
 ## Documentation mise à jour
 

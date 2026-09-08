@@ -126,8 +126,8 @@ class AgentActionsRefreshTest {
         // Critère #65 : l'action neuve apparaît immédiatement en PENDING, et le compteur
         // exposé au script est strictement positif (le polling doit démarrer).
         assertTrue(pendingAttr(agentsPage) >= 1, "data-actions-pending doit être >= 1 après création");
-        assertTrue(agentsPage.contains("<span class=\"pill warn\">PENDING</span>"),
-                "la nouvelle action doit être rendue en PENDING");
+        assertTrue(agentsPage.contains("pill--pending") && agentsPage.contains("PENDING</span>"),
+                "la nouvelle action doit être rendue avec la pastille PENDING");
 
         // Endpoint JSON : action présente, non terminale, pending >= 1.
         HttpResponse<String> json1 = get("/agents/actions.json?agent=" + TestConfig.AGENT_ID);
@@ -179,7 +179,7 @@ class AgentActionsRefreshTest {
         // permanent) et pastille SUCCESS.
         String settledPage = get("/agents").body();
         assertEquals(0, pendingAttr(settledPage), "data-actions-pending doit retomber à 0 une fois l'action terminée");
-        assertTrue(settledPage.contains("<span class=\"pill ok\">SUCCESS</span>"));
+        assertTrue(settledPage.contains("pill--success") && settledPage.contains("SUCCESS</span>"));
     }
 
     /** Premier chiffre de {@code data-actions-pending="N"} dans la page (0 si absent). */

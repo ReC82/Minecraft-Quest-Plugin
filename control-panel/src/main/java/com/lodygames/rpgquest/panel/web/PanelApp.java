@@ -424,6 +424,7 @@ public final class PanelApp {
             item.put("params", renderParams(a.params()));
             item.put("status", a.status().name());
             item.put("pill", actionPill(a.status()));
+            item.put("statusHtml", Ui.actionStatus(a.status())); // pastille normalisée (glyphe + texte)
             item.put("terminal", a.status().terminal());
             item.put("deliverCount", a.deliverCount());
             item.put("result", renderResult(a));
@@ -482,6 +483,9 @@ public final class PanelApp {
         String err = query.get("err");
         if (err != null && !err.isBlank()) {
             body.append("<div class=\"banner err\">").append(Http.esc(trimTo(err, 200))).append("</div>");
+        } else if ("1".equals(query.get("ok"))) {
+            body.append("<div class=\"banner ok\">Action envoyée à l'agent — son statut apparaît "
+                    + "ci-dessous dans « Actions récentes » et se rafraîchit tout seul.</div>");
         }
         body.append(renderer.render(session, query));
         Http.html(exchange, 200, renderPage(title, session, path, body.toString()));
@@ -549,7 +553,7 @@ public final class PanelApp {
                 "agent=" + agentId + " type=" + type + " action=" + id, "PENDING", safeParams(v.params()), rid);
         LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + agentId
                 + " type=" + type + " action=" + id + " by=" + session.username());
-        Http.redirect(exchange, appendContext(returnPath, agentId, v.params().get("player")));
+        Http.redirect(exchange, appendContext(returnPath, agentId, v.params().get("player")) + "&ok=1");
     }
 
     private static String safeReturnPath(String requested, String fallback) {
@@ -623,8 +627,8 @@ public final class PanelApp {
             sb.append("</div>");
 
             if (canSend) {
-                sb.append("<h3>Action de preuve — <code>player.variable.get</code></h3>")
-                        .append("<form method=\"post\" action=\"/agents\">")
+                sb.append("<h3>Action de preuve <span class=\"faint\">·</span> <code class=\"tid\">player.variable.get</code></h3>")
+                        .append("<form method=\"post\" action=\"/agents\" class=\"actform read\">")
                         .append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken())).append("\">")
                         .append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agent.id())).append("\">")
                         .append("<label>Joueur (nom ou UUID)</label><input type=\"text\" name=\"player\" autocomplete=\"off\">")
@@ -632,7 +636,7 @@ public final class PanelApp {
                         .append("<button class=\"btn\" type=\"submit\">Envoyer l'action</button>")
                         .append("</form>");
             } else {
-                sb.append("<p class=\"muted\">Envoi d'action non autorisé pour ce rôle.</p>");
+                sb.append(Ui.empty("Envoi d'action non autorisé pour ce rôle."));
             }
 
             List<AgentActionRow> actions = agentStore.recentActions(agent.id(), 20);
@@ -640,23 +644,21 @@ public final class PanelApp {
             sb.append("<div class=\"actions-panel\" data-actions-agent=\"").append(Http.esc(agent.id()))
                     .append("\" data-actions-pending=\"").append(pending).append("\">");
             sb.append("<h3>Actions récentes</h3>");
-            sb.append("<table><thead><tr><th>Id</th><th>Type</th><th>Params</th><th>Statut</th>"
-                    + "<th>Livraisons</th><th>Résultat</th><th>Créée</th></tr></thead><tbody>");
+            sb.append(Ui.tableOpen("Id", "Type", "Params", "Statut", "Livr.", "Résultat", "Créée"));
             if (actions.isEmpty()) {
-                sb.append("<tr><td colspan=\"7\" class=\"muted\">Aucune action.</td></tr>");
+                sb.append("<tr><td colspan=\"7\" class=\"muted\">Aucune action pour le moment.</td></tr>");
             } else {
                 for (AgentActionRow a : actions) {
-                    sb.append("<tr><td><code>").append(Http.esc(shortId(a.id()))).append("</code></td>")
-                            .append("<td>").append(Http.esc(a.type())).append("</td>")
+                    sb.append("<tr><td>").append(Ui.id(shortId(a.id()), a.id())).append("</td>")
+                            .append("<td><code class=\"tid\">").append(Http.esc(a.type())).append("</code></td>")
                             .append("<td class=\"muted\">").append(Http.esc(renderParams(a.params()))).append("</td>")
-                            .append("<td><span class=\"pill ").append(actionPill(a.status())).append("\">")
-                            .append(a.status()).append("</span></td>")
+                            .append("<td>").append(Ui.actionStatus(a.status())).append("</td>")
                             .append("<td>").append(a.deliverCount()).append("</td>")
                             .append("<td>").append(Http.esc(renderResult(a))).append("</td>")
                             .append("<td class=\"muted\">").append(Http.esc(a.createdAt().toString())).append("</td></tr>");
                 }
             }
-            sb.append("</tbody></table>");
+            sb.append(Ui.tableClose());
             sb.append("<p class=\"muted poll-status\" hidden></p>");
             sb.append("</div>");
         }
@@ -689,9 +691,12 @@ public final class PanelApp {
         if (!a.status().terminal()) {
             return "—";
         }
-        String value = a.resultValue() == null ? "" : " = " + a.resultValue();
-        String message = a.resultMessage() == null ? "" : " · " + a.resultMessage();
-        return (a.resultStatus() == null ? a.status().name() : a.resultStatus()) + value + message;
+        // Le statut est déjà porté par la pastille de la colonne « Statut » : ici, seulement
+        // la valeur et le message lisibles.
+        String value = a.resultValue() == null || a.resultValue().isBlank() ? "" : a.resultValue();
+        String message = a.resultMessage() == null || a.resultMessage().isBlank() ? "" : a.resultMessage();
+        String out = (value + (value.isEmpty() || message.isEmpty() ? "" : " · ") + message).trim();
+        return out.isEmpty() ? "—" : MiniText.prettifyTokens(out);
     }
 
     // ---- Rendu ------------------------------------------------------------------------
@@ -716,7 +721,7 @@ public final class PanelApp {
         if (worlds.isEmpty()) {
             return;
         }
-        sb.append("<h2>Mondes RPGQuest essentiels</h2><table><tr><th>Rôle</th><th>Monde</th><th>Chargé</th></tr>");
+        sb.append("<h2>Mondes RPGQuest essentiels</h2>").append(Ui.tableOpen("Rôle", "Monde", "Chargé"));
         boolean allLoaded = true;
         for (Map.Entry<String, Object> e : worlds.entrySet()) {
             Map<String, Object> w = e.getValue() instanceof Map<?, ?> m
@@ -726,10 +731,10 @@ public final class PanelApp {
             sb.append("<tr><td>").append(Http.esc(e.getKey())).append("</td><td>")
                     .append(Http.esc(nz(w.get("name") == null ? null : String.valueOf(w.get("name")))))
                     .append("</td><td>").append(loaded
-                            ? "<span class=\"pill ok\">oui</span>" : "<span class=\"pill warn\">non</span>")
+                            ? Ui.pill("oui", "success", "✓") : Ui.pill("non", "pending", "○"))
                     .append("</td></tr>");
         }
-        sb.append("</table>");
+        sb.append(Ui.tableClose());
         if (!allLoaded) {
             sb.append("<div class=\"banner err\">Un ou plusieurs mondes essentiels ne sont pas chargés — "
                     + "certains parcours (Claims, Wild) seront cassés.</div>");
@@ -741,14 +746,14 @@ public final class PanelApp {
             return;
         }
         sb.append("<h2>Mondes RPGQuest essentiels <span class=\"muted\">(bridge local)</span></h2>")
-                .append("<table><tr><th>Rôle</th><th>Monde</th><th>Chargé</th></tr>");
+                .append(Ui.tableOpen("Rôle", "Monde", "Chargé"));
         for (BridgeHealth.WorldStatus w : health.worlds()) {
             sb.append("<tr><td>").append(Http.esc(w.role())).append("</td><td>").append(Http.esc(nz(w.name())))
                     .append("</td><td>").append(w.loaded()
-                            ? "<span class=\"pill ok\">oui</span>" : "<span class=\"pill warn\">non</span>")
+                            ? Ui.pill("oui", "success", "✓") : Ui.pill("non", "pending", "○"))
                     .append("</td></tr>");
         }
-        sb.append("</table>");
+        sb.append(Ui.tableClose());
     }
 
     @SuppressWarnings("unchecked")

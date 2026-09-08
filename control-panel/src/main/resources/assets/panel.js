@@ -22,7 +22,6 @@
 (function () {
   var INTERVAL_MS = 2000;
   var MAX_POLLS = 150; // 150 * 2 s = 5 min
-  var NON_TERMINAL = { PENDING: 1, DELIVERED: 1 };
 
   function esc(value) {
     return String(value == null ? "" : value)
@@ -35,11 +34,15 @@
       return '<tr><td colspan="7" class="muted">Aucune action.</td></tr>';
     }
     return actions.map(function (a) {
+      // a.statusHtml est produit côté serveur par Ui.actionStatus (texte de statut + glyphe,
+      // aucune donnée utilisateur) : inséré tel quel pour un rendu identique au serveur.
+      var statusCell = a.statusHtml
+        || ('<span class="pill pill--' + esc(a.pill) + '">' + esc(a.status) + '</span>');
       return '<tr>'
-        + '<td><code>' + esc(a.id) + '</code></td>'
-        + '<td>' + esc(a.type) + '</td>'
+        + '<td><code class="tid">' + esc(a.id) + '</code></td>'
+        + '<td><code class="tid">' + esc(a.type) + '</code></td>'
         + '<td class="muted">' + esc(a.params) + '</td>'
-        + '<td><span class="pill ' + esc(a.pill) + '">' + esc(a.status) + '</span></td>'
+        + '<td>' + statusCell + '</td>'
         + '<td>' + esc(a.deliverCount) + '</td>'
         + '<td>' + esc(a.result) + '</td>'
         + '<td class="muted">' + esc(a.createdAt) + '</td>'
@@ -54,7 +57,8 @@
     }
     var pills = body.querySelectorAll(".pill");
     for (var i = 0; i < pills.length; i++) {
-      if (NON_TERMINAL[(pills[i].textContent || "").trim()]) {
+      var t = (pills[i].textContent || "").toUpperCase();
+      if (t.indexOf("PENDING") !== -1 || t.indexOf("DELIVERED") !== -1) {
         return true;
       }
     }

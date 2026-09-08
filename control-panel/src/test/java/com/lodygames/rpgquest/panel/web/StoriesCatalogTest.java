@@ -75,13 +75,23 @@ class StoriesCatalogTest {
         runStoryListWithSuccess(STORY_DETAILS);
 
         String page = get("/stories?agent=" + TestConfig.AGENT_ID).body();
-        assertFalse(page.contains("Aucun catalogue chargé."), "le catalogue ne doit plus être vide");
-        assertTrue(page.contains("main_story"), "story #1 rendue");
-        assertTrue(page.contains("story_test"), "story #2 rendue");
-        assertTrue(page.contains("Histoire principale"));
-        assertTrue(page.contains("rpgquest:premiers_pas"), "les quêtes de l'étape sont listées");
-        // titre échappé (pas d'injection MiniMessage brute)
-        assertTrue(page.contains("&lt;red&gt;[TEST]&lt;/red&gt; Histoire de test"));
+        String catalogue = section(page);
+        assertFalse(catalogue.contains("Aucun catalogue chargé"), "le catalogue ne doit plus être vide");
+        assertTrue(catalogue.contains("main_story"), "id technique story #1 conservé");
+        assertTrue(catalogue.contains("story_test"), "id technique story #2 conservé");
+        assertTrue(catalogue.contains("Histoire principale"));
+        assertTrue(catalogue.contains("rpgquest:premiers_pas"), "les quêtes de l'étape sont listées");
+        // #74 : aucune balise MiniMessage brute, mais le libellé humain reste lisible.
+        assertFalse(catalogue.contains("&lt;red&gt;") || catalogue.contains("<red>"),
+                "aucune balise MiniMessage brute dans le catalogue");
+        assertTrue(catalogue.contains("[TEST]") && catalogue.contains("Histoire de test"), "libellé humain nettoyé");
+    }
+
+    /** Le fragment de page depuis « Catalogue » jusqu'à la section suivante. */
+    private static String section(String page) {
+        int a = page.indexOf("<h2>Catalogue</h2>");
+        int b = page.indexOf("<h2>", a + 4);
+        return a < 0 ? page : page.substring(a, b < 0 ? page.length() : b);
     }
 
     @Test
@@ -100,7 +110,7 @@ class StoriesCatalogTest {
         assertTrue(pendingCount() >= 1, "une action story.list en attente");
 
         String page = get("/stories?agent=" + TestConfig.AGENT_ID).body();
-        assertFalse(page.contains("Aucun catalogue chargé."),
+        assertFalse(page.contains("Aucun catalogue chargé"),
                 "une action story.list PENDING plus récente ne doit pas vider le catalogue déjà chargé");
         assertTrue(page.contains("main_story"));
         assertTrue(page.contains("story_test"));
@@ -114,7 +124,7 @@ class StoriesCatalogTest {
         post("/agents/action", "_csrf=" + token + "&type=story.list&agent=" + TestConfig.AGENT_ID + "&return=/stories");
 
         String page = get("/stories?agent=" + TestConfig.AGENT_ID).body();
-        assertTrue(page.contains("Aucun catalogue chargé."));
+        assertTrue(page.contains("Aucun catalogue chargé"));
         assertFalse(page.contains("main_story"));
     }
 

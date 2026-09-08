@@ -57,26 +57,25 @@ public final class AgentPages {
                 "Rafraîchir la liste", ""));
         Optional<Map<String, Object>> roster = latestDetails(agentId, "player.list");
         if (roster.isEmpty()) {
-            sb.append("<p class=\"muted\">Aucune liste chargée — cliquer sur « Rafraîchir la liste ».</p>");
+            sb.append(Ui.empty("Aucune liste chargée — cliquer sur « Rafraîchir la liste »."));
         } else {
             List<Object> rows = asList(roster.get().get("players"));
             if (rows.isEmpty()) {
-                sb.append("<p class=\"muted\">Aucun joueur connecté au dernier relevé.</p>");
+                sb.append(Ui.empty("Aucun joueur connecté au dernier relevé."));
             } else {
-                sb.append("<table><thead><tr><th>Nom</th><th>UUID</th><th>Monde</th><th>Position</th><th></th></tr></thead><tbody>");
+                sb.append(Ui.tableOpen("Nom", "UUID", "Monde", "Position", ""));
                 for (Object o : rows) {
                     Map<String, Object> r = asMap(o);
                     String name = str(r.get("name"));
                     sb.append("<tr><td><strong>").append(Http.esc(name)).append("</strong></td>")
-                            .append("<td class=\"muted\"><code title=\"").append(Http.esc(str(r.get("uuid")))).append("\">")
-                            .append(Http.esc(shorten(str(r.get("uuid")), 8))).append("</code></td>")
+                            .append("<td>").append(Ui.id(shorten(str(r.get("uuid")), 13), str(r.get("uuid")))).append("</td>")
                             .append("<td>").append(Http.esc(str(r.get("world")))).append("</td>")
                             .append("<td class=\"muted\">").append(Http.esc(str(r.get("x")) + " " + str(r.get("y")) + " " + str(r.get("z"))))
                             .append("</td>")
                             .append("<td><a href=\"/players?agent=").append(Http.esc(agentId)).append("&player=")
                             .append(Http.esc(name)).append("\">Sélectionner</a></td></tr>");
                 }
-                sb.append("</tbody></table>");
+                sb.append(Ui.tableClose());
             }
         }
 
@@ -128,8 +127,10 @@ public final class AgentPages {
             sb.append("<select name=\"item_id\">");
             for (Object o : items) {
                 Map<String, Object> it = asMap(o);
+                String dn = MiniText.plain(str(it.get("displayName")));
                 sb.append("<option value=\"").append(Http.esc(str(it.get("id")))).append("\">")
-                        .append(Http.esc(str(it.get("displayName")))).append(" — ").append(Http.esc(str(it.get("id"))))
+                        .append(Http.esc(dn.isEmpty() ? str(it.get("id")) : dn))
+                        .append("  ·  ").append(Http.esc(str(it.get("id"))))
                         .append("</option>");
             }
             sb.append("</select>");
@@ -140,38 +141,51 @@ public final class AgentPages {
         latestForPlayer(agentId, "player.item.give", player).ifPresent(row ->
                 sb.append(resultLine("Dernier give", row)));
 
-        // --- Reset new player ---
+        // --- Reset new player (action sensible) ---
         sb.append("<h3>Reset « nouveau joueur »</h3>");
-        sb.append("<p class=\"muted\">L'aperçu ne modifie rien. La confirmation remet à zéro l'état RPGQuest "
+        sb.append("<p class=\"sub\">L'aperçu ne modifie rien. La confirmation remet à zéro l'état RPGQuest "
                 + "(quêtes, stories, variables/unlocks dont CLAIM_TIER_1, progression RPG, découvertes de "
                 + "Waystones, cooldowns, claim principal + objets RPGQuest de l'inventaire). Ne touche jamais "
                 + "le profil/UUID, les mondes, les autres joueurs.</p>");
-        sb.append(actionButton(session, agentId, "player.resetnew.preview", "/players", player,
-                "Aperçu (aucune écriture)", ""));
+        sb.append(readForm(session, agentId, "player.resetnew.preview", "/players", player,
+                "Aperçu (aucune écriture)"));
         latestForPlayer(agentId, "player.resetnew.preview", player).ifPresent(row -> {
             sb.append(resultLine("Aperçu", row));
             detailsOf(row).map(d -> asList(d.get("lines"))).ifPresent(lines -> {
                 if (!lines.isEmpty()) {
-                    sb.append("<table><thead><tr><th>Catégorie</th><th>Nombre</th><th>Détail</th></tr></thead><tbody>");
+                    sb.append(Ui.tableOpen("Catégorie", "Nombre", "Détail"));
                     for (Object o : lines) {
                         Map<String, Object> l = asMap(o);
                         sb.append("<tr><td>").append(Http.esc(str(l.get("label")))).append("</td><td>")
                                 .append(Http.esc(str(l.get("count")))).append("</td><td class=\"muted\">")
-                                .append(Http.esc(str(l.get("detail")))).append("</td></tr>");
+                                .append(Http.esc(MiniText.prettifyTokens(str(l.get("detail"))))).append("</td></tr>");
                     }
-                    sb.append("</tbody></table>");
+                    sb.append(Ui.tableClose());
                 }
             });
         });
-        sb.append("<details><summary class=\"muted\">Confirmer le reset réel de ").append(Http.esc(player)).append("</summary>");
+        sb.append("<div class=\"danger-zone\"><div class=\"dz-title\">⚠ Action irréversible</div>");
+        sb.append("<details><summary>Confirmer le reset réel de ").append(Http.esc(player)).append("</summary>");
         sb.append(formStart(session, agentId, "player.resetnew.confirm", "/players", player));
         sb.append(confirmBox("Je confirme la remise à zéro complète de l'état RPGQuest de " + player + "."));
         sb.append("<button class=\"btn danger\" type=\"submit\">Reset « nouveau joueur »</button></form>");
         latestForPlayer(agentId, "player.resetnew.confirm", player).ifPresent(row ->
                 sb.append(resultLine("Dernier reset", row)));
-        sb.append("</details>");
+        sb.append("</details></div>");
 
         return sb.toString();
+    }
+
+    /** Bouton d'action en lecture seule : style discret (secondaire), pas de confirmation. */
+    private String readForm(Session session, String agentId, String type, String page, String player, String label) {
+        return "<form method=\"post\" action=\"/agents/action\" class=\"actform read\">"
+                + "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">"
+                + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
+                + "<input type=\"hidden\" name=\"type\" value=\"" + Http.esc(type) + "\">"
+                + "<input type=\"hidden\" name=\"return\" value=\"" + Http.esc(page) + "\">"
+                + (player != null && !player.isEmpty()
+                    ? "<input type=\"hidden\" name=\"player\" value=\"" + Http.esc(player) + "\">" : "")
+                + "<button class=\"btn secondary\" type=\"submit\">" + Http.esc(label) + "</button></form>";
     }
 
     // ================================================================================
@@ -193,35 +207,12 @@ public final class AgentPages {
         sb.append("<h2>Catalogue</h2>");
         sb.append(actionButton(session, agentId, "quest.list", "/quests", player, "Rafraîchir le catalogue", ""));
         List<Object> catalog = latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of());
+        Map<String, String> questTitles = titleIndex(catalog, "id", "title");
         if (catalog.isEmpty()) {
-            sb.append("<p class=\"muted\">Aucun catalogue chargé.</p>");
+            sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Rafraîchir le catalogue »."));
         } else {
             for (Object o : catalog) {
-                Map<String, Object> qd = asMap(o);
-                sb.append("<div class=\"card\" style=\"margin:8px 0\">");
-                sb.append("<div><strong>").append(Http.esc(str(qd.get("title")))).append("</strong> ")
-                        .append("<code class=\"muted\">").append(Http.esc(str(qd.get("id")))).append("</code></div>");
-                sb.append("<div class=\"muted\">catégorie : ").append(Http.esc(str(qd.get("category"))))
-                        .append(Boolean.TRUE.equals(qd.get("repeatable")) ? " · répétable" : "").append("</div>");
-                List<Object> prereq = asList(qd.get("prerequisites"));
-                if (!prereq.isEmpty()) {
-                    sb.append("<div class=\"muted\">prérequis : ").append(Http.esc(join(prereq))).append("</div>");
-                }
-                List<Object> steps = asList(qd.get("steps"));
-                if (!steps.isEmpty()) {
-                    sb.append("<ol>");
-                    for (Object s : steps) {
-                        Map<String, Object> st = asMap(s);
-                        sb.append("<li>").append(Http.esc(join(asList(st.get("objectives")))))
-                                .append(" <code class=\"muted\">").append(Http.esc(str(st.get("id")))).append("</code></li>");
-                    }
-                    sb.append("</ol>");
-                }
-                List<Object> rewards = asList(qd.get("rewards"));
-                if (!rewards.isEmpty()) {
-                    sb.append("<div class=\"muted\">récompenses : ").append(Http.esc(join(rewards))).append("</div>");
-                }
-                sb.append("</div>");
+                sb.append(renderQuestCard(asMap(o), questTitles));
             }
         }
 
@@ -240,20 +231,64 @@ public final class AgentPages {
         return sb.toString();
     }
 
+    /** Carte de quête lisible : titre humain d'abord, id technique discret, objectifs/récompenses en clair. */
+    private String renderQuestCard(Map<String, Object> qd, Map<String, String> questTitles) {
+        StringBuilder sb = new StringBuilder("<article class=\"entity-card\">");
+        sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
+                .append(MiniText.html(str(qd.get("title")))).append("</h3><div class=\"entity-meta\">");
+        String category = str(qd.get("category"));
+        if (!category.isEmpty()) {
+            sb.append(Ui.badge(MiniText.prettifyId(category)));
+        }
+        if (Boolean.TRUE.equals(qd.get("repeatable"))) {
+            sb.append(Ui.badge("répétable"));
+        }
+        sb.append(Ui.id(str(qd.get("id")))).append("</div></div>");
+
+        List<Object> prereq = asList(qd.get("prerequisites"));
+        if (!prereq.isEmpty()) {
+            sb.append(Ui.metaLine("Prérequis", referencedQuests(prereq, questTitles)));
+        }
+        List<Object> steps = asList(qd.get("steps"));
+        if (!steps.isEmpty()) {
+            sb.append("<ul class=\"obj-list\">");
+            for (Object s : steps) {
+                Map<String, Object> st = asMap(s);
+                String objectives = MiniText.prettifyTokens(join(asList(st.get("objectives"))));
+                sb.append("<li><span class=\"obj-text\">").append(Http.esc(objectives)).append("</span>")
+                        .append(Ui.id(str(st.get("id")))).append("</li>");
+            }
+            sb.append("</ul>");
+        }
+        List<Object> rewards = asList(qd.get("rewards"));
+        if (!rewards.isEmpty()) {
+            StringBuilder rw = new StringBuilder();
+            for (Object o : rewards) {
+                rw.append(rw.isEmpty() ? "" : " · ").append(Http.esc(MiniText.prettifyTokens(str(o))));
+            }
+            sb.append(Ui.metaLine("Récompenses", rw.toString()));
+        }
+        return sb.append("</article>").toString();
+    }
+
     private String renderQuestPlayerRow(Map<String, Object> r) {
         StringBuilder sb = new StringBuilder();
-        sb.append("<tr><td><strong>").append(Http.esc(str(r.get("title")))).append("</strong><br>")
-                .append("<code class=\"muted\">").append(Http.esc(str(r.get("questId")))).append("</code></td>");
-        sb.append("<td>").append(statePill(str(r.get("state")))).append("</td>");
+        sb.append("<tr><td><div class=\"entity-name\" style=\"font-size:13.5px\">")
+                .append(MiniText.html(str(r.get("title")))).append("</div>")
+                .append(Ui.id(str(r.get("questId")))).append("</td>");
+        sb.append("<td>").append(Ui.stateBadge(str(r.get("state")))).append("</td>");
         sb.append("<td class=\"muted\">");
         String step = str(r.get("currentStepId"));
         if (!step.isEmpty() && !"null".equals(step)) {
-            sb.append("étape : ").append(Http.esc(step));
             List<Object> objectives = asList(r.get("objectives"));
+            if (objectives.isEmpty()) {
+                sb.append("étape ").append(Ui.id(step));
+            }
             for (Object o : objectives) {
                 Map<String, Object> ob = asMap(o);
-                sb.append("<br>").append(Http.esc(str(ob.get("description")))).append(" — ")
-                        .append(Http.esc(str(ob.get("current")))).append("/").append(Http.esc(str(ob.get("required"))));
+                sb.append(MiniText.prettifyTokens(str(ob.get("description")))).append(" — <strong>")
+                        .append(Http.esc(str(ob.get("current")))).append("/").append(Http.esc(str(ob.get("required"))))
+                        .append("</strong><br>");
             }
         } else {
             sb.append("—");
@@ -297,18 +332,15 @@ public final class AgentPages {
         sb.append("<h2>Catalogue</h2>");
         sb.append(actionButton(session, agentId, "story.list", "/stories", player, "Rafraîchir le catalogue", ""));
         List<Object> catalog = latestDetails(agentId, "story.list").map(d -> asList(d.get("stories"))).orElse(List.of());
+        // Titres humains des quêtes composant les stories, si un quest.list a déjà été chargé (données
+        // locales du panel — aucun appel agent supplémentaire).
+        Map<String, String> questTitles = titleIndex(
+                latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of()), "id", "title");
         if (catalog.isEmpty()) {
-            sb.append("<p class=\"muted\">Aucun catalogue chargé.</p>");
+            sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Rafraîchir le catalogue »."));
         } else {
             for (Object o : catalog) {
-                Map<String, Object> sd = asMap(o);
-                sb.append("<div class=\"card\" style=\"margin:8px 0\"><div><strong>")
-                        .append(Http.esc(str(sd.get("title")))).append("</strong> <code class=\"muted\">")
-                        .append(Http.esc(str(sd.get("id")))).append("</code></div><ol>");
-                for (Object qid : asList(sd.get("stepQuestIds"))) {
-                    sb.append("<li><code class=\"muted\">").append(Http.esc(str(qid))).append("</code></li>");
-                }
-                sb.append("</ol></div>");
+                sb.append(renderStoryCard(asMap(o), questTitles));
             }
         }
 
@@ -326,11 +358,37 @@ public final class AgentPages {
         return sb.toString();
     }
 
+    /** Carte de story lisible : titre humain, id discret, nombre d'étapes, quêtes ordonnées. */
+    private String renderStoryCard(Map<String, Object> sd, Map<String, String> questTitles) {
+        List<Object> steps = asList(sd.get("stepQuestIds"));
+        StringBuilder sb = new StringBuilder("<article class=\"entity-card\">");
+        sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
+                .append(MiniText.html(str(sd.get("title")))).append("</h3><div class=\"entity-meta\">")
+                .append(Ui.badge(steps.size() + (steps.size() > 1 ? " étapes" : " étape")))
+                .append(Ui.id(str(sd.get("id")))).append("</div></div>");
+        if (!steps.isEmpty()) {
+            sb.append("<ol class=\"step-list\">");
+            int n = 1;
+            for (Object qid : steps) {
+                String id = str(qid);
+                String title = questTitles.get(id);
+                sb.append("<li><span class=\"step-n\">").append(n++).append("</span>")
+                        .append("<span class=\"obj-text\">")
+                        .append(title != null ? MiniText.html(title) : Http.esc(MiniText.prettifyId(id)))
+                        .append("</span>").append(Ui.id(id)).append("</li>");
+            }
+            sb.append("</ol>");
+        }
+        return sb.append("</article>").toString();
+    }
+
     private String renderStoryPlayerRow(Map<String, Object> r) {
-        return "<tr><td><strong>" + Http.esc(str(r.get("title"))) + "</strong><br><code class=\"muted\">"
-                + Http.esc(str(r.get("storyId"))) + "</code></td><td>" + statePill(str(r.get("state")))
-                + "</td><td class=\"muted\">étape " + Http.esc(str(r.get("currentStep"))) + "/"
-                + Http.esc(str(r.get("totalSteps"))) + " · " + Http.esc(str(r.get("currentQuestId"))) + "</td></tr>";
+        return "<tr><td><div class=\"entity-name\" style=\"font-size:13.5px\">"
+                + MiniText.html(str(r.get("title"))) + "</div>" + Ui.id(str(r.get("storyId")))
+                + "</td><td>" + Ui.stateBadge(str(r.get("state")))
+                + "</td><td class=\"muted\">étape <strong>" + Http.esc(str(r.get("currentStep"))) + "/"
+                + Http.esc(str(r.get("totalSteps"))) + "</strong><br>"
+                + questRef(str(r.get("currentQuestId")), null) + "</td></tr>";
     }
 
     private String storyActionForm(Session session, String agentId, String player, String type, String label,
@@ -363,20 +421,24 @@ public final class AgentPages {
                 .append("\" placeholder=\"LoDyMcFly\">")
                 .append("<button class=\"btn\" type=\"submit\">Sélectionner</button></form>");
         if (player.isEmpty()) {
-            sb.append("<p class=\"muted\">Sélectionner un joueur pour voir son état et agir dessus.</p>");
+            sb.append(Ui.empty("Sélectionner un joueur pour voir son état et agir dessus."));
             return sb.toString();
         }
-        sb.append(actionButton(session, agentId, type, page, player, "Rafraîchir l'état de " + player, ""));
+        sb.append(readForm(session, agentId, type, page, player, "Rafraîchir l'état de " + player));
         Optional<AgentActionRow> row = latestForPlayer(agentId, type, player);
         if (row.isPresent() && row.get().status() == AgentActionStatus.SUCCESS) {
             List<Object> rows = detailsOf(row.get()).map(d -> asList(d.get(listKey))).orElse(List.of());
-            sb.append("<table><thead><tr><th>Élément</th><th>État</th><th>Détail</th></tr></thead><tbody>");
-            for (Object o : rows) {
-                sb.append(renderer.render(asMap(o)));
+            if (rows.isEmpty()) {
+                sb.append(Ui.empty("Aucun élément à afficher pour " + player + " au dernier relevé."));
+            } else {
+                sb.append(Ui.tableOpen("Élément", "État", "Détail"));
+                for (Object o : rows) {
+                    sb.append(renderer.render(asMap(o)));
+                }
+                sb.append(Ui.tableClose());
             }
-            sb.append("</tbody></table>");
         } else {
-            sb.append("<p class=\"muted\">Cliquer sur « Rafraîchir l'état » pour interroger le serveur.</p>");
+            sb.append(Ui.empty("Cliquer sur « Rafraîchir l'état » pour interroger le serveur."));
         }
         return sb.toString();
     }
@@ -389,22 +451,21 @@ public final class AgentPages {
         sb.append("<div class=\"actions-panel\" data-actions-agent=\"").append(Http.esc(agentId))
                 .append("\" data-actions-pending=\"").append(pending).append("\">");
         sb.append("<h2>Actions récentes</h2>");
-        sb.append("<table><thead><tr><th>Id</th><th>Type</th><th>Params</th><th>Statut</th>"
-                + "<th>Livraisons</th><th>Résultat</th><th>Créée</th></tr></thead><tbody>");
+        sb.append(Ui.tableOpen("Id", "Type", "Params", "Statut", "Livr.", "Résultat", "Créée"));
         if (actions.isEmpty()) {
-            sb.append("<tr><td colspan=\"7\" class=\"muted\">Aucune action.</td></tr>");
+            sb.append("<tr><td colspan=\"7\" class=\"muted\">Aucune action pour le moment.</td></tr>");
         } else {
             for (AgentActionRow a : actions) {
-                sb.append("<tr><td><code>").append(Http.esc(shorten(a.id(), 8))).append("</code></td>")
-                        .append("<td>").append(Http.esc(a.type())).append("</td>")
+                sb.append("<tr><td>").append(Ui.id(shorten(a.id(), 8))).append("</td>")
+                        .append("<td><code class=\"tid\">").append(Http.esc(a.type())).append("</code></td>")
                         .append("<td class=\"muted\">").append(Http.esc(renderParams(a.params()))).append("</td>")
-                        .append("<td><span class=\"pill ").append(pill(a.status())).append("\">").append(a.status()).append("</span></td>")
+                        .append("<td>").append(Ui.actionStatus(a.status())).append("</td>")
                         .append("<td>").append(a.deliverCount()).append("</td>")
                         .append("<td>").append(Http.esc(renderResult(a))).append("</td>")
                         .append("<td class=\"muted\">").append(Http.esc(a.createdAt().toString())).append("</td></tr>");
             }
         }
-        sb.append("</tbody></table><p class=\"muted poll-status\" hidden></p></div>");
+        sb.append(Ui.tableClose()).append("<p class=\"muted poll-status\" hidden></p></div>");
         sb.append("<script src=\"/assets/panel.js\" defer></script>");
         return sb.toString();
     }
@@ -465,20 +526,15 @@ public final class AgentPages {
     }
 
     private String resultLine(String label, AgentActionRow row) {
-        String cls = switch (row.status()) {
-            case SUCCESS -> "ok";
-            case PENDING, DELIVERED -> "warn";
-            default -> "err";
-        };
         String text = row.status().terminal()
                 ? (row.resultMessage() == null ? row.status().name() : row.resultMessage())
                 : "en cours…";
-        StringBuilder sb = new StringBuilder("<p class=\"resline\"><span class=\"pill ").append(cls).append("\">")
-                .append(row.status()).append("</span> <span class=\"muted\">").append(Http.esc(label)).append(" :</span> ")
-                .append(Http.esc(text));
+        StringBuilder sb = new StringBuilder("<p class=\"resline\">").append(Ui.actionStatus(row.status()))
+                .append(" <span class=\"muted\">").append(Http.esc(label)).append(" :</span> ")
+                .append(Http.esc(MiniText.prettifyTokens(text)));
         List<Object> effects = detailsOf(row).map(d -> asList(d.get("effects"))).orElse(List.of());
         if (!effects.isEmpty()) {
-            sb.append("<br><span class=\"muted\">").append(Http.esc(join(effects))).append("</span>");
+            sb.append("<br><span class=\"muted\">").append(Http.esc(MiniText.prettifyTokens(join(effects)))).append("</span>");
         }
         return sb.append("</p>").toString();
     }
@@ -542,22 +598,37 @@ public final class AgentPages {
         return t.matches("[A-Za-z0-9_\\-]{1,40}|[0-9a-fA-F\\-]{36}") ? t : "";
     }
 
-    private static String statePill(String state) {
-        String s = state == null ? "" : state;
-        String cls = switch (s) {
-            case "COMPLETED" -> "ok";
-            case "ACTIVE", "READY_TO_TURN_IN" -> "warn";
-            default -> "err";
-        };
-        return "<span class=\"pill " + cls + "\">" + Http.esc(s.isEmpty() ? "?" : s) + "</span>";
+    /** Index {@code id -> titre} à partir d'une liste de définitions (quêtes, stories). */
+    private static Map<String, String> titleIndex(List<Object> defs, String idKey, String titleKey) {
+        java.util.Map<String, String> map = new java.util.LinkedHashMap<>();
+        for (Object o : defs) {
+            Map<String, Object> d = asMap(o);
+            String id = str(d.get(idKey));
+            if (!id.isEmpty()) {
+                map.put(id, str(d.get(titleKey)));
+            }
+        }
+        return map;
     }
 
-    private static String pill(AgentActionStatus status) {
-        return switch (status) {
-            case SUCCESS -> "ok";
-            case PENDING, DELIVERED -> "warn";
-            case FAILED, REJECTED, EXPIRED -> "err";
-        };
+    /** Liste de quêtes référencées (prérequis…) : titre humain si connu, id technique discret. */
+    private String referencedQuests(List<Object> ids, Map<String, String> titles) {
+        StringBuilder sb = new StringBuilder();
+        for (Object o : ids) {
+            sb.append(sb.isEmpty() ? "" : " · ").append(questRef(str(o), titles));
+        }
+        return sb.isEmpty() ? "—" : sb.toString();
+    }
+
+    /** Référence unique à une quête : « Titre humain <id> », ou id prettifié si titre inconnu. */
+    private String questRef(String id, Map<String, String> titles) {
+        if (id == null || id.isBlank() || "null".equals(id)) {
+            return "—";
+        }
+        String title = titles == null ? null : titles.get(id);
+        String label = title != null && !title.isBlank() ? MiniText.html(title)
+                : Http.esc(MiniText.prettifyId(id));
+        return label + " " + Ui.id(id);
     }
 
     private static String renderParams(Map<String, String> params) {
@@ -573,9 +644,11 @@ public final class AgentPages {
         if (!a.status().terminal()) {
             return "—";
         }
-        String value = a.resultValue() == null ? "" : " = " + a.resultValue();
-        String message = a.resultMessage() == null ? "" : " · " + a.resultMessage();
-        return (a.resultStatus() == null ? a.status().name() : a.resultStatus()) + value + message;
+        // Statut déjà affiché par la pastille : ici, valeur + message lisibles seulement.
+        String value = a.resultValue() == null || a.resultValue().isBlank() ? "" : a.resultValue();
+        String message = a.resultMessage() == null || a.resultMessage().isBlank() ? "" : a.resultMessage();
+        String out = (value + (value.isEmpty() || message.isEmpty() ? "" : " · ") + message).trim();
+        return out.isEmpty() ? "—" : MiniText.prettifyTokens(out);
     }
 
     private static String join(List<Object> values) {

@@ -16,7 +16,13 @@ public record QuestDefinition(
         List<NamespacedKey> prerequisites,
         List<QuestStep> steps,
         List<QuestReward> rewards,
-        Map<String, String> variables
+        Map<String, String> variables,
+        /**
+         * PNJ donneur de la quête (id stable, cf. {@code /rpgadmin npc tag <id>}), ou {@code null}
+         * si la quête ne déclare pas de {@code giver:} — champ optionnel, rétrocompatible avec les
+         * YAML existants (#75).
+         */
+        String giver
 ) {
 
     public QuestDefinition {

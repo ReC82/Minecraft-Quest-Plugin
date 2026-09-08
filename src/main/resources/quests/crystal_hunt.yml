@@ -2,6 +2,7 @@ id: rpgquest:crystal_hunt
 title: "<gold>La chasse aux cristaux</gold>"
 description: "<gray>Le garde a besoin de crocs d'araignée et de cristaux raffinés pour forger un équipement digne de ce nom.</gray>"
 category: crafting
+giver: guard
 icon: AMETHYST_SHARD
 repeatable: false
 

@@ -50,6 +50,7 @@ final class QuestDefinitionParser {
         LocalizedText title = parseLocalizedText(section, "title", errors);
         LocalizedText description = parseLocalizedText(section, "description", errors);
         String category = parseCategory(section, errors);
+        String giver = parseGiver(section, errors);
         Material icon = parseIcon(section, errors);
         boolean repeatable = parseRepeatable(section, errors);
         boolean secret = parseBoolean(section, "secret", errors);
@@ -64,7 +65,8 @@ final class QuestDefinitionParser {
 
         try {
             QuestDefinition quest = new QuestDefinition(
-                    id, title, description, category, icon, repeatable, secret, prerequisites, steps, rewards, variables);
+                    id, title, description, category, icon, repeatable, secret, prerequisites, steps, rewards,
+                    variables, giver);
             return ParseResult.success(quest);
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new QuestLoadIssue(fileName, e.getMessage())));
@@ -132,6 +134,19 @@ final class QuestDefinitionParser {
             return null;
         }
         return category;
+    }
+
+    /** {@code giver:} optionnel — id stable du PNJ donneur (#75). Vide s'il est présent mais blanc. */
+    private String parseGiver(ConfigurationSection section, List<String> errors) {
+        if (!section.isSet("giver")) {
+            return null;
+        }
+        String raw = section.getString("giver");
+        if (raw == null || raw.isBlank()) {
+            errors.add("« giver » ne peut pas être vide quand il est défini.");
+            return null;
+        }
+        return raw.trim();
     }
 
     private static final Material DEFAULT_ICON = Material.BOOK;

@@ -131,15 +131,24 @@ public final class AgentActionExecutor {
                 row.put("category", q.category());
                 row.put("repeatable", q.repeatable());
                 row.put("prerequisites", q.prerequisites());
+                // #75 : PNJ donneur, seulement s'il est déclaré (giver: optionnel dans le YAML).
+                if (q.giverId() != null && !q.giverId().isBlank()) {
+                    row.put("giverId", q.giverId());
+                    if (q.giverName() != null && !q.giverName().isBlank()) {
+                        row.put("giverName", q.giverName());
+                    }
+                }
                 List<Map<String, Object>> steps = new ArrayList<>();
                 for (AgentActions.QuestStepSummary s : q.steps()) {
                     Map<String, Object> step = new LinkedHashMap<>();
                     step.put("id", s.id());
-                    step.put("objectives", s.objectives());
+                    step.put("objectives", s.objectives()); // legacy (chaînes) — compat agent déployé
+                    step.put("objectiveDetails", objectiveRows(s.objectiveDetails())); // #78 : structuré
                     steps.add(step);
                 }
                 row.put("steps", steps);
-                row.put("rewards", q.rewards());
+                row.put("rewards", q.rewards()); // legacy (chaînes) — compat agent déployé
+                row.put("rewardDetails", rewardRows(q.rewardDetails())); // #78 : structuré
                 rows.add(row);
             }
             Map<String, Object> details = new LinkedHashMap<>();
@@ -149,6 +158,36 @@ public final class AgentActionExecutor {
         } catch (RuntimeException e) {
             return done(AgentActionOutcome.failed(action.id(), "Échec : " + e.getClass().getSimpleName()));
         }
+    }
+
+    /** Objectifs structurés (#78) en lignes JSON sérialisables (Map imbriquées, jamais un record). */
+    private static List<Map<String, Object>> objectiveRows(List<AgentActions.ObjectiveSummary> objectives) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (AgentActions.ObjectiveSummary o : objectives) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("kind", o.kind());
+            m.put("target", o.target());
+            m.put("amount", o.amount());
+            m.put("raw", o.raw());
+            out.add(m);
+        }
+        return out;
+    }
+
+    /** Récompenses structurées (#78) en lignes JSON — {@code command} jamais tronquée. */
+    private static List<Map<String, Object>> rewardRows(List<AgentActions.RewardSummary> rewards) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (AgentActions.RewardSummary r : rewards) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("kind", r.kind());
+            m.put("amount", r.amount());
+            m.put("target", r.target());
+            m.put("value", r.value());
+            m.put("command", r.command());
+            m.put("raw", r.raw());
+            out.add(m);
+        }
+        return out;
     }
 
     private CompletableFuture<AgentActionOutcome> storyList(AgentAction action) {

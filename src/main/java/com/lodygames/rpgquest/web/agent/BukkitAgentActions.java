@@ -5,12 +5,19 @@ import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
 import com.lodygames.rpgquest.player.PlayerResetService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
+import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
+import com.lodygames.rpgquest.quest.model.CollectItemObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
+import com.lodygames.rpgquest.quest.model.CraftItemObjective;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
+import com.lodygames.rpgquest.quest.model.KillEntityObjective;
+import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.QuestReward;
+import com.lodygames.rpgquest.quest.model.ReachLocationObjective;
+import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
 import com.lodygames.rpgquest.quest.model.QuestState;
 import com.lodygames.rpgquest.quest.model.QuestStep;
 import com.lodygames.rpgquest.quest.model.VariableReward;
@@ -96,15 +103,20 @@ public final class BukkitAgentActions implements AgentActions {
             List<QuestStepSummary> steps = new ArrayList<>();
             for (QuestStep s : q.steps()) {
                 List<String> objectives = new ArrayList<>();
+                List<ObjectiveSummary> objectiveDetails = new ArrayList<>();
                 for (QuestObjective o : s.objectives()) {
-                    objectives.add(QuestObjective.describe(o) + " (x" + QuestObjective.requiredAmount(o) + ")");
+                    int amount = QuestObjective.requiredAmount(o);
+                    String raw = QuestObjective.describe(o) + " (x" + amount + ")";
+                    objectives.add(raw);
+                    objectiveDetails.add(new ObjectiveSummary(o.type().name(), objectiveTarget(o), amount, raw));
                 }
-                steps.add(new QuestStepSummary(s.id(), objectives));
+                steps.add(new QuestStepSummary(s.id(), objectives, objectiveDetails));
             }
             out.add(new QuestSummary(
                     q.id().toString(), q.title().base(), q.category(), q.repeatable(),
                     q.prerequisites().stream().map(NamespacedKey::toString).toList(),
-                    steps, describeRewards(q.rewards())));
+                    steps, describeRewards(q.rewards()), rewardDetails(q.rewards()),
+                    q.giver(), null));
         }
         return out;
     }
@@ -414,6 +426,41 @@ public final class BukkitAgentActions implements AgentActions {
                 case ItemReward r -> "+" + r.amount() + "x " + r.material();
                 case VariableReward r -> "variable " + r.key() + " = " + r.value();
                 case CommandReward r -> "commande console : " + truncate(r.command(), 60);
+            });
+        }
+        return out;
+    }
+
+    /** Jeton technique de la cible d'un objectif : entité, matériau, id de PNJ, ou nom de monde (#78). */
+    private static String objectiveTarget(QuestObjective objective) {
+        return switch (objective) {
+            case BreakBlockObjective o -> o.material().name();
+            case PlaceBlockObjective o -> o.material().name();
+            case KillEntityObjective o -> o.entity().name();
+            case CollectItemObjective o -> o.material().name();
+            case CraftItemObjective o -> o.material().name();
+            case TalkToNpcObjective o -> o.npcId();
+            case ReachLocationObjective o -> o.world();
+        };
+    }
+
+    /**
+     * Version <strong>structurée</strong> des récompenses (#78) : type / quantité / cible séparés,
+     * commande console <strong>complète</strong> (jamais tronquée à 60, contrairement à
+     * {@link #describeRewards}). {@code raw} garde la description héritée pour le debug.
+     */
+    private static List<RewardSummary> rewardDetails(List<QuestReward> rewards) {
+        List<RewardSummary> out = new ArrayList<>();
+        for (QuestReward reward : rewards) {
+            out.add(switch (reward) {
+                case ExperienceReward r -> new RewardSummary("EXPERIENCE", r.amount(), null, null, null,
+                        "+" + r.amount() + " XP");
+                case ItemReward r -> new RewardSummary("ITEM", r.amount(), r.material().name(), null, null,
+                        "+" + r.amount() + "x " + r.material());
+                case VariableReward r -> new RewardSummary("VARIABLE", 0, r.key(), r.value(), null,
+                        "variable " + r.key() + " = " + r.value());
+                case CommandReward r -> new RewardSummary("COMMAND", 0, null, null, r.command(),
+                        "commande console : " + r.command());
             });
         }
         return out;

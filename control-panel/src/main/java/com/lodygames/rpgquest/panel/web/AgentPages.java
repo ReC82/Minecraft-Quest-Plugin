@@ -245,6 +245,16 @@ public final class AgentPages {
         }
         sb.append(Ui.id(str(qd.get("id")))).append("</div></div>");
 
+        // #75 : PNJ donneur, si la quête le déclare (giver: optionnel côté YAML).
+        String giverId = str(qd.get("giverId"));
+        if (!giverId.isEmpty()) {
+            String giverName = str(qd.get("giverName"));
+            String label = !giverName.isEmpty() && !"null".equals(giverName)
+                    ? MiniText.html(giverName)
+                    : Http.esc(MiniText.prettifyId(giverId));
+            sb.append(Ui.metaLine("Donneur", label + " " + Ui.id(giverId)));
+        }
+
         List<Object> prereq = asList(qd.get("prerequisites"));
         if (!prereq.isEmpty()) {
             sb.append(Ui.metaLine("Prérequis", referencedQuests(prereq, questTitles)));
@@ -254,20 +264,37 @@ public final class AgentPages {
             sb.append("<ul class=\"obj-list\">");
             for (Object s : steps) {
                 Map<String, Object> st = asMap(s);
-                // #76 : noms FR des matériaux / mobs dans les objectifs (repli prettify si inconnu).
-                String objectives = MinecraftNames.humanizeTokens(join(asList(st.get("objectives"))));
-                sb.append("<li><span class=\"obj-text\">").append(Http.esc(objectives)).append("</span>")
-                        .append(Ui.id(str(st.get("id")))).append("</li>");
+                String stepId = str(st.get("id"));
+                // #78 : objectifs structurés en priorité — plus aucune regex sur une phrase métier.
+                List<Object> structured = asList(st.get("objectiveDetails"));
+                if (!structured.isEmpty()) {
+                    for (Object od : structured) {
+                        ObjectiveText.Objective o = ObjectiveText.fromSummary(asMap(od));
+                        sb.append("<li><span class=\"obj-text\">").append(Http.esc(o.label())).append("</span>");
+                        if (o.hasTarget()) {
+                            sb.append(Ui.rawValue(o.rawTarget()));
+                        }
+                        sb.append(Ui.id(stepId)).append("</li>");
+                    }
+                } else {
+                    // Repli legacy (#76) : chaînes déjà formatées, noms FR par balayage de jetons.
+                    String objectives = MinecraftNames.humanizeTokens(join(asList(st.get("objectives"))));
+                    sb.append("<li><span class=\"obj-text\">").append(Http.esc(objectives)).append("</span>")
+                            .append(Ui.id(stepId)).append("</li>");
+                }
             }
             sb.append("</ul>");
         }
+        // #78 : récompenses structurées en priorité ; repli sur les chaînes legacy (#77) sinon.
+        List<Object> rewardDetails = asList(qd.get("rewardDetails"));
         List<Object> rewards = asList(qd.get("rewards"));
-        if (!rewards.isEmpty()) {
-            // #77 : libellé fonctionnel d'abord, valeur technique brute conservée en second plan.
+        if (!rewardDetails.isEmpty() || !rewards.isEmpty()) {
             sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Récompenses</span></p>");
             sb.append("<ul class=\"reward-list\">");
-            for (Object o : rewards) {
-                RewardText.Reward rw = RewardText.parse(str(o));
+            List<Object> source = !rewardDetails.isEmpty() ? rewardDetails : rewards;
+            boolean structured = !rewardDetails.isEmpty();
+            for (Object o : source) {
+                RewardText.Reward rw = structured ? RewardText.fromSummary(asMap(o)) : RewardText.parse(str(o));
                 sb.append("<li><span class=\"obj-text\">").append(Http.esc(rw.label())).append("</span>");
                 if (rw.hasDetail()) {
                     sb.append(Ui.rawValue(rw.rawDetail()));

@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.panel.web;
 
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -48,6 +49,49 @@ public final class RewardText {
             Pattern.compile("(?:xp|experience)\\s+add\\s+\\S+\\s+(\\d+)", Pattern.CASE_INSENSITIVE);
 
     private static final java.util.Set<String> TRUTHY = java.util.Set.of("true", "1", "yes", "on", "oui");
+
+    /**
+     * Lecture d'une récompense <strong>structurée</strong> (#78) : ligne {@code rewardDetails} du
+     * payload {@code quest.list} ({@code {kind, amount, target, value, command, raw}}). Aucun reparse
+     * de chaîne libre ; la commande n'est <strong>plus tronquée</strong>. Repli sur {@link #parse}
+     * de {@code raw} si le {@code kind} est inconnu.
+     */
+    public static Reward fromSummary(Map<String, Object> summary) {
+        String kind = str(summary.get("kind")).toUpperCase(Locale.ROOT);
+        return switch (kind) {
+            case "EXPERIENCE", "XP" -> new Reward("+" + asLong(summary.get("amount")) + " XP", null);
+            case "ITEM" -> {
+                String target = str(summary.get("target"));
+                yield new Reward("Objet : " + MinecraftNames.humanize(target) + " ×" + asLong(summary.get("amount")),
+                        target);
+            }
+            case "VARIABLE" -> {
+                String key = str(summary.get("target"));
+                String value = str(summary.get("value")).trim();
+                String label = TRUTHY.contains(value.toLowerCase(Locale.ROOT))
+                        ? "Débloque : " + MiniText.prettifyId(key)
+                        : "Variable : " + MiniText.prettifyId(key) + " → " + value;
+                yield new Reward(label, "variable " + key + " = " + value);
+            }
+            case "COMMAND" -> fromCommand(str(summary.get("command")).trim());
+            default -> parse(str(summary.get("raw")));
+        };
+    }
+
+    private static String str(Object value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private static long asLong(Object value) {
+        if (value instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            return value == null ? 0 : Long.parseLong(str(value).trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
 
     public static Reward parse(String raw) {
         String s = raw == null ? "" : raw.trim();

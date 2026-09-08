@@ -2,6 +2,7 @@ id: rpgquest:premiers_pas
 title: "<gold>Premiers pas</gold>"
 description: "<gray>Va faire connaissance avec le Libraire.</gray>"
 category: intro
+giver: libraire
 icon: BOOK
 repeatable: true
 

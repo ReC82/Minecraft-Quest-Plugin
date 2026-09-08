@@ -246,8 +246,12 @@ class AgentActionExecutorTest {
         @Override
         public List<QuestSummary> questDefinitions() {
             return List.of(new QuestSummary("rpgquest:crystal_hunt", "La chasse aux cristaux", "story",
-                    false, List.of(), List.of(new QuestStepSummary("hunt_spiders", List.of("Tuer 5 araignées (x5)"))),
-                    List.of("+100 XP")));
+                    false, List.of(),
+                    List.of(new QuestStepSummary("hunt_spiders", List.of("Tuer 5 araignées (x5)"),
+                            List.of(new ObjectiveSummary("KILL_ENTITY", "SPIDER", 5, "Tuer SPIDER (x5)")))),
+                    List.of("+100 XP"),
+                    List.of(new RewardSummary("EXPERIENCE", 100, null, null, null, "+100 XP")),
+                    "guard", null));
         }
 
         @Override

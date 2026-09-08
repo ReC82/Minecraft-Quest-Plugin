@@ -32,12 +32,52 @@ public interface AgentActions {
     /**
      * Définition de quête présentée pour l'admin : titre lisible d'abord, id technique en second,
      * étapes/objectifs décrits en clair, récompenses résumées.
+     *
+     * <p>Protocole {@code quest.list} (#78) : les champs <em>legacy</em> {@code rewards} (chaînes
+     * déjà formatées) et {@link QuestStepSummary#objectives()} restent présents pour l'agent
+     * VeryGames déjà déployé ; les champs structurés {@code rewardDetails} /
+     * {@link QuestStepSummary#objectiveDetails()} sont la source à privilégier côté panel.</p>
+     *
+     * <p>{@code giverId} / {@code giverName} (#75) : PNJ donneur, {@code null} si la quête n'en
+     * déclare pas ({@code giver:} optionnel dans le YAML).</p>
      */
     record QuestSummary(String id, String title, String category, boolean repeatable,
-                        List<String> prerequisites, List<QuestStepSummary> steps, List<String> rewards) {
+                        List<String> prerequisites, List<QuestStepSummary> steps, List<String> rewards,
+                        List<RewardSummary> rewardDetails, String giverId, String giverName) {
     }
 
-    record QuestStepSummary(String id, List<String> objectives) {
+    record QuestStepSummary(String id, List<String> objectives, List<ObjectiveSummary> objectiveDetails) {
+    }
+
+    /**
+     * Objectif d'étape <strong>structuré</strong> (#78) : le panel détermine type / cible /
+     * quantité / identifiant technique sans regex.
+     *
+     * @param kind        nom de {@link com.lodygames.rpgquest.quest.model.ObjectiveType}
+     *                    ({@code KILL_ENTITY}, {@code COLLECT_ITEM}, {@code CRAFT_ITEM},
+     *                    {@code BREAK_BLOCK}, {@code PLACE_BLOCK}, {@code TALK_TO_NPC},
+     *                    {@code REACH_LOCATION})
+     * @param target      jeton technique : entité, matériau, id de PNJ, ou nom de monde
+     * @param amount      quantité requise (1 pour les objectifs binaires)
+     * @param raw         description héritée ({@code "Tuer SPIDER (x5)"}), conservée pour debug
+     */
+    record ObjectiveSummary(String kind, String target, int amount, String raw) {
+    }
+
+    /**
+     * Récompense de quête <strong>structurée</strong> (#78).
+     *
+     * @param kind     nom de {@link com.lodygames.rpgquest.quest.model.RewardType}
+     *                 ({@code EXPERIENCE}, {@code ITEM}, {@code VARIABLE}, {@code COMMAND})
+     * @param amount   quantité : XP pour {@code EXPERIENCE}, nombre d'objets pour {@code ITEM},
+     *                 {@code 0} sinon
+     * @param target   matériau pour {@code ITEM}, clé pour {@code VARIABLE}, {@code null} sinon
+     * @param value    valeur pour {@code VARIABLE}, {@code null} sinon
+     * @param command  commande console <strong>complète, jamais tronquée</strong> pour
+     *                 {@code COMMAND}, {@code null} sinon
+     * @param raw      description héritée, conservée pour debug
+     */
+    record RewardSummary(String kind, int amount, String target, String value, String command, String raw) {
     }
 
     List<QuestSummary> questDefinitions();

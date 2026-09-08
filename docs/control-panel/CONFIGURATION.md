@@ -33,6 +33,7 @@ Modèle : [`control-panel/control-panel.properties.example`](../../control-panel
 | `agent.stale-seconds` | `45` | âge du heartbeat au-delà duquel l'agent est `STALE` |
 | `agent.offline-seconds` | `150` | âge du heartbeat au-delà duquel l'agent est `OFFLINE` |
 | `agent.action-expiry-seconds` | `300` | délai sans résultat après lequel une action passe `EXPIRED` |
+| `content.repo-dir` | *(vide)* | racine du checkout **source** du contenu éditable par l'éditeur guidé #46 (typiquement `<repo>/src/main/resources`). Vide → l'éditeur de quêtes / stories s'affiche mais reste **en lecture seule**. L'écriture est strictement limitée à `<content.repo-dir>/quests/*.yml` et `<content.repo-dir>/stories/*.yml`. |
 
 ## Variables d'environnement
 
@@ -50,6 +51,7 @@ Modèle : [`control-panel/control-panel.properties.example`](../../control-panel
 | `RPGQUEST_PANEL_BASE_URL` | non | surcharge `panel.base-url` |
 | `RPGQUEST_PANEL_DB` | non | surcharge `panel.db` |
 | `RPGQUEST_PANEL_CONFIG` | non | chemin d'un `control-panel.properties` alternatif |
+| `PLUGADMIN_CONTENT_DIR` | non | surcharge `content.repo-dir` (éditeur guidé #46). Absent → éditeur en lecture seule. Pour activer l'enregistrement, le service `plugadmin` doit aussi avoir le droit d'écriture sur `<dir>/quests` et `<dir>/stories` (accordé **par le propriétaire du dépôt**, p.ex. `setfacl -m u:plugadmin:rwx …` ; aucun `chmod`/`sudo` automatique). |
 | `PANEL_DISABLED` | non | `true` → kill-switch (prioritaire sur `panel.disabled`) |
 
 ### Plugin — bridge d'administration

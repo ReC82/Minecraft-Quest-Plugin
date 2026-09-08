@@ -230,6 +230,36 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   Quêtes / Joueurs / Dialogues. Accès : authentifié, permission `DOCS_READ` (tous les rôles).
   **V2** : édition depuis le navigateur, permissions fines, indexation des `docs/` du dépôt,
   historique Git par fiche.
+- **Refonte graphique du Control Panel (issue #92)** *(branche `feat/control-panel-admin-tools`)* —
+  sortie du thème « tout noir » vers un **thème clair** : design system interne en *custom
+  properties* (`Layout.CSS`), iconographie **SVG locale** (`Icons.java`, sprite `<symbol>`/`<use>` —
+  aucun emoji comme système, aucun CDN), shell refait (topbar identité + chip environnement + chip
+  d'état serveur, sidebar en 4 groupes, **drawer mobile sans JS**), composants `Ui` réutilisables
+  (`pageHeader` / `sectionTitle` / `statCard` / `banner` / `searchToolbar` / `filterChip` / …),
+  dashboard en cartes, `/docs` restylée, recherche + filtres `data-filter-*` sur les pages
+  PNJ / Quêtes / Stories / Dialogues. Tous les noms de classes CSS et sous-chaînes HTML testées
+  conservés (migration sans casse). **Restant** : refonte de contenu des pages Agents /
+  placeholders, validation navigateur du rendu réel et du mobile.
+- **Éditeur guidé de quêtes et de stories — chemin principal (issue #46)** *(branche
+  `feat/control-panel-admin-tools`)* — depuis `/quests` (« Créer une quête ») et `/stories`
+  (« Créer une story »), ou « Modifier » sur une carte : formulaire guidé multi-sections
+  (Général / Prérequis / Objectifs / Récompenses / Variables ; Général / Chaîne de quêtes),
+  **sans JavaScript** (aller-retour serveur, boutons `_action` pour ajouter / supprimer /
+  réordonner). Les 7 types d'objectifs et 4 récompenses **réels** du moteur sont décrits par des
+  descripteurs (`Descriptors`) avec champs adaptés ; les valeurs (entité / matériau / PNJ /
+  quête / monde) sont proposées par `<datalist>` alimentées par le dernier relevé de l'agent +
+  des listes curées. `QuestValidator` / `StoryValidator` produisent des diagnostics
+  ERROR (bloquant) / WARNING (confirmable) / INFO **avant** enregistrement ; l'aperçu montre le
+  YAML généré et le diff avec la source. L'écriture passe par `ContentWorkspace` : whitelist
+  stricte `quests/*.yml` + `stories/*.yml` du **checkout source** (jamais le serveur live, jamais
+  de FTP, **aucun déploiement**), hash SHA-256 de version, refus de conflit / d'écrasement,
+  écriture atomique, garde-fou round-trip (émettre → relire → ré-émettre → égalité). Si le
+  service n'a pas les droits d'écriture (ou `content.repo-dir` absent) : éditeur en **lecture
+  seule** avec bannière explicite, sans aucun `chmod` / `sudo`. Permissions dédiées
+  `QUEST_CONTENT_WRITE` / `STORY_CONTENT_WRITE` (rôles `CONTENT_EDITOR` + `OWNER`), CSRF, audit
+  `*.content.write`. `QuestDraft` / `StoryDraft` reprennent les **mêmes champs** que le moteur
+  (pas de second modèle). **V2** : lignes guidées pour prérequis / variables, duplication de
+  ligne, rechargement des champs au changement de type, action agent `quest.definition.validate`.
 
 ## Bugs connus et corrigés
 

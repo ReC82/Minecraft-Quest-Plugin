@@ -167,6 +167,54 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       **Reste (V2)** : édition Markdown depuis le navigateur, permissions fines par rôle,
       indexation des `docs/` du dépôt, historique Git (dernier commit par fiche), favoris.
 
+## Étape 3b — refonte UX (#92) — **LIVRÉ (chemin principal ; validation navigateur en attente)**
+
+- [x] **design system interne** : tokens (couleurs / surfaces / espacement / rayons / ombres /
+      typo / breakpoints) en *custom properties* dans `Layout.CSS`. Sortie du « tout noir » →
+      thème clair (fond gris très clair, surfaces blanches, sidebar `#1d2534`, primaire bleu
+      `#2f6df6`, couleurs d'état vert / orange / rouge / bleu).
+- [x] **iconographie SVG locale** : `Icons.java` (35 icônes, sprite `<symbol>`/`<use>` inline) —
+      aucun emoji comme système, aucune dépendance CDN, conforme CSP.
+- [x] **shell** : topbar (identité PlugAdmin, chip environnement DEV, chip d'état serveur
+      synthétique, menu session) + sidebar en 4 groupes (Vue d'ensemble / RPGQuest / Ressources /
+      Administration) + **drawer mobile sans JS** (`<input checkbox>` + `<label>` + CSS `:checked`).
+- [x] composants `Ui` : `pageHeader`, `sectionTitle`, `statCard`, `banner`, `searchToolbar`,
+      `filterChip`, `countNote`, `primaryLink`, `empty(icon,msg)`, `severity`.
+- [x] Dashboard en cartes ; détails techniques (bridge local) repliés dans `<details>` ;
+      Documentation `/docs` restylée ; en-têtes standard + recherche/filtres `data-filter-*` sur
+      PNJ / Quêtes / Stories / Dialogues ; `panel.js` `initFilters()` / `initDrawer()`.
+- [x] **stratégie sans casse** : tous les noms de classes CSS et sous-chaînes HTML asserties
+      conservés → tests `:control-panel:test` verts à chaque étape.
+- [ ] refonte de contenu de la page Agents et des placeholders `/diagnostics` `/admin` `/dev` ;
+      polissage largeur / TOC / fil d'Ariane de la fiche de documentation ; **validation
+      navigateur du rendu réel et du mobile**.
+
+## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
+
+- [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +
+      `stories/*.yml` uniquement — jamais `data.db` / `.env` / config / mondes / Citizens / chemin
+      du navigateur ; hash SHA-256 de version ; écriture `tmp` + `ATOMIC_MOVE` ; refus
+      `EXISTS` / `CONFLICT` / `READONLY` ; **dégradation gracieuse en lecture seule** sans aucun
+      `chmod` / `sudo` automatique).
+- [x] `MiniYaml` (lecteur minimal), `QuestYaml` / `StoryYaml` (émetteur **déterministe** = forme
+      exacte attendue par `QuestDefinitionParser` / `StoryDefinitionParser` + garde-fou
+      **round-trip** : émettre → relire → ré-émettre → égalité, motif `DialogueDefinitionEditor`).
+- [x] `QuestDraft` / `StoryDraft` = **mêmes champs** que le moteur (pas un 2e modèle) ;
+      `Descriptors` = **7 objectifs + 4 récompenses réels** avec champs adaptés ; `RefData` (ids
+      quêtes / PNJ connus du dernier relevé agent + mondes + listes curées entités / matériaux).
+- [x] `Diagnostic` (ERROR bloque / WARNING confirme / INFO informe) + `QuestValidator` /
+      `StoryValidator` (structure calquée sur le parser + cohérence de référence) ; `TextDiff`.
+- [x] `ContentEditorPages` : formulaire guidé multi-sections **sans JS** (boutons `_action`
+      ajout / suppression / réordonnancement, selects en `<datalist>`), aperçu YAML + diff avant
+      enregistrement, mode lecture seule explicite. Routes `PanelApp` `/quests/new|edit|save` +
+      `/stories/new|edit|save` : session + **`QUEST_CONTENT_WRITE` / `STORY_CONTENT_WRITE`** +
+      CSRF sur `save` + audit `*.content.write`. **Aucun déploiement.**
+- [x] config : `content.repo-dir` / env `PLUGADMIN_CONTENT_DIR` (absent → éditeur en lecture seule).
+- [ ] **V2** : lignes guidées pour prérequis / variables (au lieu de zones de texte) ;
+      duplication d'objectif / de récompense ; rechargement des champs au changement de type de
+      `<select>` (petit JS progressif) ; action agent `quest.definition.validate` (relecture par
+      le **vrai** parser à distance) ; schéma vertical de chaîne de story.
+
 ## Étape 4 — développement (#29)
 
 - [ ] module « Développement » : GitHub (issues/branches/commits), rapports Claude, jobs Claude,

@@ -309,6 +309,32 @@ Récompenses (`rewards[].type`, hors périmètre strict de la question mais néc
 
 **Feedback de remise** (`QuestProgressEngine#turnIn`) : un Title/Subtitle bref (`quest.completed-title`/`-subtitle`, `messages.yml`) annonce la fin, puis un résumé est envoyé dans le chat (`quest.reward-summary-header` + une ligne par récompense **réellement accordée** — `quest.reward-line-experience`/`-item`/`-special`). `VARIABLE` n'a pas de ligne (état interne, pas une récompense visible du joueur) ; `COMMAND` affiche une ligne générique (« Récompense spéciale ») car le contenu d'une commande arbitraire n'est pas inspectable — jamais de nom d'objet inventé. Une quête sans `rewards` n'envoie aucun résumé chat. Le journal (`QuestJournalService`) continue d'afficher les récompenses **prévues** dans le lore de chaque quête, y compris avant complétion.
 
+### Éditeur guidé de quêtes et de stories dans PlugAdmin (issue #46)
+
+Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et des stories sans
+écrire de YAML à la main** :
+
+- **Accès** : pages `/quests` (bouton « Créer une quête »), `/stories` (« Créer une story »), ou
+  lien « Modifier » sur une carte du catalogue. Réservé aux rôles disposant de
+  `QUEST_CONTENT_WRITE` / `STORY_CONTENT_WRITE` (`content-editor` et `owner`).
+- **Formulaire guidé**, sans JavaScript : sections Général / Prérequis / Objectifs / Récompenses /
+  Variables (quête) et Général / Chaîne de quêtes (story). Chaque type d'objectif
+  (`KILL_ENTITY`, `COLLECT_ITEM`, `CRAFT_ITEM`, `BREAK_BLOCK`, `PLACE_BLOCK`, `TALK_TO_NPC`,
+  `REACH_LOCATION`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`) n'affiche que
+  ses champs utiles. Les valeurs (entité, matériau, PNJ, quête, monde) sont proposées en
+  autocomplétion à partir du dernier relevé de l'agent ; la saisie libre reste possible.
+- **Validation avant enregistrement** : diagnostics `ERREUR` (bloquants), `ATTENTION`
+  (enregistrement possible après vérification), `INFO`. Un aperçu montre le fichier YAML généré
+  et le diff avec la version actuelle de la source.
+- **Enregistrement dans la source, jamais de déploiement** : l'écriture ne se fait que dans le
+  **checkout Git** (`src/main/resources/quests/<id>.yml`, `.../stories/<id>.yml`), avec détection
+  de conflit par hash, écriture atomique et garde-fou de relecture. L'éditeur ne touche **jamais**
+  le serveur live et ne fait **aucun** transfert FTP. Le déploiement reste une opération manuelle
+  distincte (voir §1). Si le service PlugAdmin n'a pas les droits d'écriture sur ces dossiers (ou
+  si `content.repo-dir` n'est pas configuré), l'éditeur reste consultable en **lecture seule**.
+- L'autorité finale sur la validité d'un fichier reste le **chargement du plugin** au démarrage
+  du serveur : un fichier incompatible est rejeté à ce moment-là (voir `QUEST_FORMAT.md`).
+
 ---
 
 ## 4. Dialogues

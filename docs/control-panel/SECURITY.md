@@ -113,6 +113,38 @@ Wiki d'administration **privé** — jamais public. Garde-fous :
   les liens ne sont rendus que vers `/docs/…`, une ancre `#…`, ou `https://…`. Conforme à la CSP
   (`default-src 'self'` ; le bouton « Copier » réutilise `/assets/panel.js`, aucun script inline).
 
+## Éditeur guidé de quêtes et de stories (issue #46)
+
+Écrit du contenu **dans le checkout source** (jamais sur le serveur live, jamais par FTP, jamais
+de déploiement). Garde-fous :
+
+- **Accès** : session authentifiée + permission dédiée `QUEST_CONTENT_WRITE` /
+  `STORY_CONTENT_WRITE` (rôles `CONTENT_EDITOR` + `OWNER`). Aucun `if role == OWNER` dans les
+  handlers. Route d'enregistrement en `POST` uniquement, **jeton CSRF synchroniseur** obligatoire.
+- **Périmètre d'écriture fermé** (`ContentWorkspace`) : uniquement
+  `<content.repo-dir>/quests/*.yml` et `<content.repo-dir>/stories/*.yml`. Le nom de fichier est
+  dérivé de l'identifiant saisi et validé (`[a-z0-9][a-z0-9_-]{0,63}`) ; aucun chemin fourni par
+  le navigateur n'est résolu ; `normalize()` + `startsWith(dir)` vérifiés → path traversal
+  impossible (test : id `../../evil` refusé, aucun fichier hors dossier). Interdits par
+  construction : `data.db`, `.env`, secrets, `config.yml`, mondes, Citizens, plugins externes.
+- **Écriture sûre** : hash SHA-256 du fichier calculé à l'ouverture ; au `save`, recalcul et
+  **refus si le fichier a changé entre-temps** (`CONFLICT`) ou existe déjà en création
+  (`EXISTS`) — jamais d'écrasement silencieux. Écriture fichier temporaire + `ATOMIC_MOVE`.
+- **Garde-fou round-trip** (B12) : le YAML généré est relu puis ré-émis ; toute divergence
+  **bloque l'enregistrement**. L'autorité finale reste le moteur RPGQuest, qui refuse un fichier
+  invalide au chargement du serveur.
+- **Validation avant écriture** : `QuestValidator` / `StoryValidator` produisent des `ERROR`
+  (bloquants), `WARNING` (enregistrement possible après vérification) et `INFO`. Une récompense
+  « commande console » est systématiquement signalée `WARNING`.
+- **Lecture seule gracieuse** : si `content.repo-dir` est absent, ou si le service n'a pas les
+  droits d'écriture, l'éditeur reste consultable (validation / aperçu / diff) mais le bouton
+  d'enregistrement est désactivé et une bannière l'explique. **Aucun `chmod` / `chown` / `sudo`
+  n'est jamais exécuté.**
+- **Audit** : chaque écriture réussie journalise `quests.content.write` /
+  `stories.content.write` (acteur = utilisateur de session).
+- **Sans JavaScript** : le formulaire dynamique fonctionne par aller-retour serveur ; conforme à
+  la CSP (`default-src 'self'`), pas de script inline, listes de valeurs en `<datalist>`.
+
 ## Kill-switch
 
 Un moyen de **couper l'accès au panel immédiatement** sans redéploiement :

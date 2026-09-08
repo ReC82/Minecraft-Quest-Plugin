@@ -917,4 +917,39 @@ Côté Control Panel : l'entrée « PNJ » du menu (`/npcs`) n'est plus « à ve
 
 ### Exécution réelle
 
-_À compléter par la session qui déploie (voir le rapport `docs/claude-reports/` associé)._
+Déployé par cette session le 2026-09-08 (~11:46–11:50 UTC). Branche
+`feat/control-panel-admin-tools` @ `9fa57d1`, **non fusionnée**.
+
+- **AWS Control Panel** : `scripts/plugadmin/deploy.sh` → ancienne app sauvegardée
+  `/opt/plugadmin/releases/20260908-114604`, `systemctl restart` → `active` (PID 146189,
+  `event=panel_started port=8090`). JAR déployé sha256
+  `2bf90a25a949453eb37bc2ab82c2eff2d3dc50c1b01d3c14f47b251cdf8aa0d7` == build de la branche.
+  `/health` local + public `ONLINE` ×3 ; `/npcs` (anon) → 303 `/login` (route **active**) ;
+  autres vhosts (`dig.lodygames.com`, `lodylands.com`, `www.lodylands.com`) → 200 ;
+  nginx/secrets/TLS non touchés.
+- **VeryGames DEV** : `scripts/deploy-verygames.sh -y` → `./gradlew test`+`build` OK, backup auto
+  `rpgquest-20260908T114637Z-predeploy.jar` (sha256 `4fbaa3456b00534c6309b4b1fcbf789fd9c2e0bdf43e6c51180817f6ddeb9c2f`),
+  transfert FTP atomique du JAR **sha256
+  `12786cb3fc0d997e55d3f7eba2f1432cdcdcaa479ae4b6100fcf8d83fa122ba3`** (1 282 340 o, distant ==
+  local) ; puis `scripts/verygames-restart.sh` → `stop` RCON → OFFLINE → relance auto → **ONLINE**
+  en < 1 min.
+- **Vérifs VeryGames** : `/plugins` → RPGQuest **en vert** (+ Citizens) ; `rpgquest version` →
+  `v0.1.0-SNAPSHOT` ; heartbeat agent (`server_state=ONLINE`, `uptime_seconds=65` → restart pris
+  en compte) ; **aucune** ligne `ERROR` dans `journalctl -u plugadmin`.
+- **Validation `npc.list` réelle** (action `PENDING` injectée dans `agent_action`, relevée +
+  exécutée par l'agent DEV) → **SUCCESS** « 8 PNJ RPGQuest (1 avec avertissement). ».
+  `details` réel : `citizensAvailable=true`, `total=8`, `bound=7`, `unbound=1`, `withWarnings=1` ;
+  `canonicalIds = [guard, guide, help, jeff, jo, junior, libraire, woodcutter_bob]` ;
+  `rpgquest:guard` = `{displayName:"Garde", citizensNumericId:6, dialogueId:"rpgquest:guard"
+  (5 nœuds/8 choix), questsGiven:["rpgquest:crystal_hunt"],
+  questsReferenced:["rpgquest:crystal_hunt"], dialogueStartsQuests:["rpgquest:first_steps",
+  "rpgquest:crystal_hunt"], warnings:[]}` ; **anomalie réelle détectée** :
+  `woodcutter_bob` → `QUEST_REF_NO_NPC` (`warning`) — référencé par `woodcutters_request` mais
+  aucun PNJ Citizens tagué sur ce serveur.
+
+### Rollback (points exacts)
+
+- VeryGames : `scripts/rollback-verygames.sh --latest` →
+  `rpgquest-20260908T114637Z-predeploy.jar` (sha256 `4fbaa345…`), puis `scripts/verygames-restart.sh`.
+- AWS : `scripts/plugadmin/rollback.sh app` → release `20260908-114604`.
+- Rapport : `docs/claude-reports/2026-09-08_1147_npc-list-page-npcs-v1.md`.

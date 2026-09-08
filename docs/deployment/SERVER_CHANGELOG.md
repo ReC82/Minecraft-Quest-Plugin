@@ -681,3 +681,71 @@ confirmation explicite côté panel ; l'agent exige en plus `confirm=true` pour
 Non déployé par cette session (développement uniquement, sur AWS). Branche
 `feat/control-panel-admin-tools` poussée, **non fusionnée**.
 Rapport : `docs/claude-reports/2026-09-07_2159_control-panel-admin-tools.md`.
+
+---
+
+## 2026-09-08 - Déploiement VeryGames DEV : JAR RPGQuest de `feat/control-panel-admin-tools`
+
+### Changement
+
+Déploiement effectif sur **VeryGames DEV** du JAR RPGQuest bâti depuis
+`feat/control-panel-admin-tools` @ `3c3ea5a` (contenu métier = commit
+`e1ddb8c`, voir l'entrée du 2026-09-07 ci-dessus). Objectif : que l'agent
+sortant reconnaisse les 15 nouveaux types d'action déjà servis par le Control
+Panel AWS (`player.list`, `quest.list`, `quest.player.status`, `story.list`,
+`story.player.status`, `item.list`, `player.resetnew.preview|confirm`,
+`player.item.give`, `quest.start|complete|reset`, `story.advance|complete`,
+`player.variable.set`). Avant : ces types revenaient `REJECTED` « Type
+d'action non whitelisté » (agent plus ancien que le panel).
+
+### Action serveur
+
+- **Remplacement du seul JAR RPGQuest** (`rpgquest-0.1.0-SNAPSHOT.jar`).
+- Redémarrage serveur (RCON `stop` → relance automatique VeryGames).
+- Aucun autre fichier : ni `data.db`, ni `config.yml`, ni `messages.yml`, ni
+  mondes, ni `Citizens/`, ni `plugadmin-agent.properties` (déjà en place
+  depuis #51), ni autre plugin. Aucune migration. Aucune donnée joueur touchée.
+- Rien changé côté AWS/PlugAdmin (déjà déployé plus tôt le 2026-09-08).
+
+### Sauvegarde préalable
+
+- Ancien JAR : sauvegardé automatiquement par `deploy-verygames.sh` →
+  `~/.local/share/rpgquest/verygames-backups/rpgquest-20260908T075204Z-predeploy.jar`
+  (SHA-256 `2d648c0ba384494175f8eed3d23539198637a560d9dfd3e06a6ebce3500d58d1`,
+  1 220 229 o) + `.meta`.
+
+### Déploiement (exécuté)
+
+1. `scripts/deploy-verygames.sh -y` — `./gradlew test` + `build` OK, backup du
+   JAR en ligne, transfert FTP atomique du nouveau JAR
+   (SHA-256 `cd66574cf3c780e877ab815b06aa9d8cb84c94440b49b43a29151d01a9e113cb`,
+   1 256 923 o ; taille distante finale == locale).
+2. `scripts/verygames-restart.sh` — `save-all` → `stop` RCON → serveur OFFLINE
+   → relance auto VeryGames → **ONLINE** en < 1 min.
+
+### Validation (exécutée)
+
+- `/plugins` (RCON) : **RPGQuest en vert** (+ Citizens, Multiverse-Core, WorldEdit).
+- `rpgquest version` (RCON) : répond `v0.1.0-SNAPSHOT`.
+- Heartbeat agent reçu par PlugAdmin AWS après redémarrage :
+  `server_state=ONLINE`, mondes `world_hub` / `claims` / `wild` **tous
+  `loaded:true`**, `uptime_seconds≈125`. Aucune ligne `ERROR`/exception dans
+  `journalctl -u plugadmin`.
+- **Canal agent** (actions `PENDING` insérées dans la file `control-panel.db`,
+  relevées et exécutées par l'agent) :
+  - `player.list` → **SUCCESS** « 0 joueur(s) connecté(s). » (`details.players: []`) ;
+  - `quest.list` → **SUCCESS** « 10 quête(s) chargée(s). » (catalogue réel).
+  - → les deux ne sont **plus** `REJECTED` comme type inconnu. Objectif atteint.
+
+### Rollback
+
+- `scripts/rollback-verygames.sh --latest` → restaure
+  `rpgquest-20260908T075204Z-predeploy.jar`, puis `scripts/verygames-restart.sh`.
+- Aucune migration à défaire. `control-panel.db` (tables `agent_*`) sans effet
+  sur RPGQuest.
+
+### Exécution réelle
+
+Déployé par cette session le 2026-09-08 (~07:52–07:56 UTC). Branche
+`feat/control-panel-admin-tools` @ `3c3ea5a`, **non fusionnée**.
+Rapport : `docs/claude-reports/2026-09-08_0756_deploy-verygames-actions-agent.md`.

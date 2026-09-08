@@ -21,6 +21,7 @@ public final class Layout {
                 item("PNJ", "/npcs", true, activeHref),
                 item("Quêtes", "/quests", true, activeHref),
                 item("Stories", "/stories", true, activeHref),
+                item("Dialogues", "/dialogues", true, activeHref),
                 item("Diagnostics", "/diagnostics", false, activeHref),
                 item("Admin", "/admin", false, activeHref),
                 item("Développement", "/dev", false, activeHref));
@@ -218,6 +219,19 @@ public final class Layout {
             .coord-row label.coord{display:flex;flex-direction:column;gap:3px;margin:0;
             font-size:12px;color:var(--muted);flex:1 1 80px}
             .coord-row label.coord input{width:100%}
+            /* ---- graphe de dialogue (V1 /dialogues) ---- */
+            .dlg-graph{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+            .dlg-node{border:1px solid var(--line);border-left:3px solid var(--line2);
+            border-radius:8px;padding:8px 12px;background:var(--panel2)}
+            .dlg-node.start{border-left-color:var(--accent)}
+            .dlg-node.unreachable{border-left-color:var(--err);opacity:.8}
+            .dlg-node-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+            .dlg-speaker{margin:6px 0 2px;font-weight:600;font-size:13px}
+            .dlg-text{margin:0 0 6px;font-size:13px;color:var(--muted)}
+            .dlg-choices{margin:4px 0 0;padding-left:18px}
+            .dlg-choices li{margin:3px 0;font-size:12.5px}
+            .dlg-arrow{color:var(--accent);font-weight:600}
+            .dlg-choice-text{color:var(--txt)}
             .agentpicker{display:flex;gap:8px;align-items:center;margin:8px 0}
             .agentpicker label{margin:0}
             .actions-panel{margin-top:6px}

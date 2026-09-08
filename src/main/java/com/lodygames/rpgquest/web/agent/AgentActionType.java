@@ -15,7 +15,7 @@ import java.util.Optional;
  *   <li><strong>Lectures</strong> (sans effet) : {@link #PLAYER_VARIABLE_GET}, {@link #PLAYER_LIST},
  *       {@link #QUEST_LIST}, {@link #QUEST_PLAYER_STATUS}, {@link #STORY_LIST},
  *       {@link #STORY_PLAYER_STATUS}, {@link #ITEM_LIST}, {@link #NPC_LIST},
- *       {@link #NPC_CITIZENS_LIST}, {@link #PLAYER_RESETNEW_PREVIEW}.</li>
+ *       {@link #NPC_CITIZENS_LIST}, {@link #DIALOGUE_LIST}, {@link #PLAYER_RESETNEW_PREVIEW}.</li>
  *   <li><strong>Mutations</strong> (confirmation exigée côté panel) : {@link #PLAYER_ITEM_GIVE},
  *       {@link #QUEST_START}, {@link #QUEST_COMPLETE}, {@link #QUEST_RESET}, {@link #STORY_ADVANCE},
  *       {@link #STORY_COMPLETE}, {@link #PLAYER_VARIABLE_SET}, {@link #PLAYER_RESETNEW_CONFIRM},
@@ -24,7 +24,9 @@ import java.util.Optional;
  *       quêtes — jamais de YAML brut ni de chemin arbitraire), {@link #NPC_CITIZENS_LINK}
  *       (liaison définition ↔ PNJ Citizens existant, jamais de spawn/rebind — issue #81 phase 1),
  *       {@link #NPC_CITIZENS_CREATE} (crée physiquement un PNJ Citizens depuis une définition puis
- *       le lie ; rollback si la liaison échoue — issue #81 phase 2).</li>
+ *       le lie ; rollback si la liaison échoue — issue #81 phase 2),
+ *       {@link #DIALOGUE_DEFINITION_CREATE} (crée un squelette de dialogue minimal valide —
+ *       V1 {@code /dialogues}).</li>
  * </ul>
  */
 public enum AgentActionType {
@@ -52,7 +54,9 @@ public enum AgentActionType {
     QUEST_GIVER_SET("quest.giver.set"),
     NPC_CITIZENS_LIST("npc.citizens.list"),
     NPC_CITIZENS_LINK("npc.citizens.link"),
-    NPC_CITIZENS_CREATE("npc.citizens.create");
+    NPC_CITIZENS_CREATE("npc.citizens.create"),
+    DIALOGUE_LIST("dialogue.list"),
+    DIALOGUE_DEFINITION_CREATE("dialogue.definition.create");
 
     private final String wire;
 

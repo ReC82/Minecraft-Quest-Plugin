@@ -118,7 +118,7 @@ class BusinessPagesTest {
     @Test
     void businessPagesAreSessionProtected() throws Exception {
         start();
-        for (String path : List.of("/players", "/quests", "/stories", "/npcs")) {
+        for (String path : List.of("/players", "/quests", "/stories", "/npcs", "/dialogues")) {
             HttpResponse<String> res = get(path);
             assertEquals(303, res.statusCode(), path + " doit exiger une session");
             assertEquals("/login", res.headers().firstValue("Location").orElse(""));
@@ -137,6 +137,7 @@ class BusinessPagesTest {
         assertTrue(get("/quests").body().contains("name=\"type\" value=\"quest.list\""));
         assertTrue(get("/stories").body().contains("name=\"type\" value=\"story.list\""));
         assertTrue(get("/npcs").body().contains("name=\"type\" value=\"npc.list\""));
+        assertTrue(get("/dialogues").body().contains("name=\"type\" value=\"dialogue.list\""));
     }
 
     @Test

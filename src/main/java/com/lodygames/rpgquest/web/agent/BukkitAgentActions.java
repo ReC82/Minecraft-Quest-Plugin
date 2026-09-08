@@ -2,10 +2,31 @@ package com.lodygames.rpgquest.web.agent;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
+import com.lodygames.rpgquest.dialogue.DialogueCatalog;
+import com.lodygames.rpgquest.dialogue.DialogueDefinitionStore;
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
+import com.lodygames.rpgquest.dialogue.model.AdvanceQuestAction;
+import com.lodygames.rpgquest.dialogue.model.CloseAction;
+import com.lodygames.rpgquest.dialogue.model.DialogueAction;
+import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
+import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
+import com.lodygames.rpgquest.dialogue.model.DialogueDraft;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
+import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
+import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
+import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
+import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
+import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
+import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
+import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
+import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
+import com.lodygames.rpgquest.dialogue.model.RunSafeCommandAction;
+import com.lodygames.rpgquest.dialogue.model.SetVariableAction;
 import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
+import com.lodygames.rpgquest.dialogue.model.TakeItemAction;
+import com.lodygames.rpgquest.dialogue.model.TurnInQuestAction;
+import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
 import com.lodygames.rpgquest.npc.CitizensNpc;
@@ -88,6 +109,7 @@ public final class BukkitAgentActions implements AgentActions {
     private final NpcDefinitionStore npcStore;
     private final QuestGiverStore questGiverStore;
     private final Supplier<Set<String>> allowedSpawnWorlds;
+    private final DialogueDefinitionStore dialogueStore;
 
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
                               QuestProgressEngine questProgressEngine, StoryService storyService,
@@ -95,7 +117,7 @@ public final class BukkitAgentActions implements AgentActions {
                               PlayerVariableWriter variableWriter, YamlDialogueEngine dialogueEngine,
                               NpcIdentityService npcIdentityService, NpcBindingRepository npcBindingRepository,
                               YamlNpcEngine npcEngine, NpcDefinitionStore npcStore, QuestGiverStore questGiverStore,
-                              Supplier<Set<String>> allowedSpawnWorlds) {
+                              Supplier<Set<String>> allowedSpawnWorlds, DialogueDefinitionStore dialogueStore) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -110,6 +132,7 @@ public final class BukkitAgentActions implements AgentActions {
         this.npcStore = npcStore;
         this.questGiverStore = questGiverStore;
         this.allowedSpawnWorlds = allowedSpawnWorlds;
+        this.dialogueStore = dialogueStore;
     }
 
     // ---- Lectures -------------------------------------------------------------------------------
@@ -490,6 +513,183 @@ public final class BukkitAgentActions implements AgentActions {
 
     private static String fmt(float v) {
         return fmt((double) v);
+    }
+
+    // ---- Dialogues (V1 /dialogues) -----------------------------------------------------------
+
+    @Override
+    public CompletableFuture<DialogueCatalogView> dialogueDefinitions() {
+        // Extraction Bukkit -> types simples, puis dérivation pure par DialogueCatalog. Aucun accès
+        // disque hors du reload déjà fait au démarrage / après écriture.
+        Set<String> knownQuestIds = new java.util.LinkedHashSet<>();
+        for (QuestDefinition q : questEngine.quests()) {
+            knownQuestIds.add(q.id().toString().toLowerCase(Locale.ROOT));
+        }
+
+        Set<String> canonicalNpcIds = new java.util.LinkedHashSet<>();
+        List<DialogueCatalog.NpcDialogueDecl> npcDecls = new ArrayList<>();
+        for (NpcDefinition d : npcEngine.definitions()) {
+            canonicalNpcIds.add(d.id().toLowerCase(Locale.ROOT));
+            if (d.dialogueId() != null) {
+                npcDecls.add(new DialogueCatalog.NpcDialogueDecl(d.id(), d.dialogueId()));
+            }
+        }
+        for (QuestDefinition q : questEngine.quests()) {
+            if (q.giver() != null && !q.giver().isBlank()) {
+                canonicalNpcIds.add(q.giver().trim().toLowerCase(Locale.ROOT));
+            }
+            for (QuestStep step : q.steps()) {
+                for (QuestObjective objective : step.objectives()) {
+                    if (objective instanceof TalkToNpcObjective t && t.npcId() != null) {
+                        canonicalNpcIds.add(t.npcId().trim().toLowerCase(Locale.ROOT));
+                    }
+                }
+            }
+        }
+
+        List<DialogueCatalog.LogicalDialogue> logical = new ArrayList<>();
+        for (DialogueDefinition d : dialogueEngine.dialogues()) {
+            logical.add(new DialogueCatalog.LogicalDialogue(
+                    d.id().toString().toLowerCase(Locale.ROOT), d.startNodeId(), orderedNodes(d)));
+        }
+
+        List<DialogueCatalog.LoadIssue> issues = new ArrayList<>();
+        dialogueEngine.lastReport().issues().forEach(i ->
+                issues.add(new DialogueCatalog.LoadIssue(i.file(), i.message())));
+
+        DialogueCatalog.View view = DialogueCatalog.build(logical, issues, npcDecls, canonicalNpcIds, knownQuestIds);
+        return done(toView(view));
+    }
+
+    /** Nœuds ordonnés pour l'affichage : le nœud de départ d'abord, puis les autres par id. */
+    private static List<DialogueCatalog.Node> orderedNodes(DialogueDefinition d) {
+        List<DialogueNode> nodes = new ArrayList<>(d.nodes().values());
+        nodes.sort((a, b) -> {
+            boolean sa = a.id().equals(d.startNodeId());
+            boolean sb = b.id().equals(d.startNodeId());
+            return sa != sb ? (sa ? -1 : 1) : a.id().compareTo(b.id());
+        });
+        List<DialogueCatalog.Node> out = new ArrayList<>();
+        for (DialogueNode n : nodes) {
+            List<DialogueCatalog.Choice> choices = new ArrayList<>();
+            for (DialogueChoice c : n.choices()) {
+                List<DialogueCatalog.Action> actions = new ArrayList<>();
+                for (DialogueAction a : c.actions()) {
+                    actions.add(actionSummary(a));
+                }
+                List<DialogueCatalog.Condition> conditions = new ArrayList<>();
+                for (DialogueCondition cond : c.conditions()) {
+                    conditions.add(conditionSummary(cond));
+                }
+                choices.add(new DialogueCatalog.Choice(c.text().base(), c.next(), actions, conditions));
+            }
+            out.add(new DialogueCatalog.Node(n.id(), n.speaker(), n.text().base(), choices));
+        }
+        return out;
+    }
+
+    private static DialogueCatalog.Action actionSummary(DialogueAction a) {
+        return switch (a) {
+            case StartQuestAction x -> new DialogueCatalog.Action("START_QUEST", x.questId().toString(), null,
+                    "START_QUEST " + x.questId());
+            case AdvanceQuestAction x -> new DialogueCatalog.Action("ADVANCE_QUEST", x.questId().toString(), null,
+                    "ADVANCE_QUEST " + x.questId());
+            case TurnInQuestAction x -> new DialogueCatalog.Action("TURN_IN_QUEST", x.questId().toString(), null,
+                    "TURN_IN_QUEST " + x.questId());
+            case GiveItemAction x -> new DialogueCatalog.Action("GIVE_ITEM", x.material().name(),
+                    Integer.toString(x.amount()), "GIVE_ITEM " + x.amount() + "x " + x.material().name());
+            case TakeItemAction x -> new DialogueCatalog.Action("TAKE_ITEM", x.material().name(),
+                    Integer.toString(x.amount()), "TAKE_ITEM " + x.amount() + "x " + x.material().name());
+            case SetVariableAction x -> new DialogueCatalog.Action("SET_VARIABLE", x.key(), x.value(),
+                    "SET_VARIABLE " + x.key() + " = " + x.value());
+            case RunSafeCommandAction x -> new DialogueCatalog.Action("RUN_SAFE_COMMAND",
+                    x.command().strip().split("\\s+", 2)[0], x.command(), "RUN_SAFE_COMMAND " + x.command());
+            case OpenDialogueAction x -> new DialogueCatalog.Action("OPEN_DIALOGUE", x.dialogueId().toString(), null,
+                    "OPEN_DIALOGUE " + x.dialogueId());
+            case OpenMerchantAction x -> new DialogueCatalog.Action("OPEN_MERCHANT", x.merchantId().toString(), null,
+                    "OPEN_MERCHANT " + x.merchantId());
+            case CloseAction ignored -> new DialogueCatalog.Action("CLOSE", null, null, "CLOSE");
+        };
+    }
+
+    private static DialogueCatalog.Condition conditionSummary(DialogueCondition c) {
+        if (c instanceof NegatedCondition negated) {
+            DialogueCatalog.Condition inner = conditionSummary(negated.inner());
+            return new DialogueCatalog.Condition(inner.kind(), inner.target(), inner.value(),
+                    "NOT(" + inner.raw() + ")", true);
+        }
+        return switch (c) {
+            case QuestStateCondition x -> new DialogueCatalog.Condition("QUEST_STATE", x.questId().toString(),
+                    x.state().name(), "QUEST_STATE " + x.questId() + " = " + x.state(), false);
+            case HasItemCondition x -> new DialogueCatalog.Condition("HAS_ITEM", x.material().name(),
+                    Integer.toString(x.amount()), "HAS_ITEM " + x.amount() + "x " + x.material().name(), false);
+            case HasPermissionCondition x -> new DialogueCatalog.Condition("HAS_PERMISSION", x.permission(), null,
+                    "HAS_PERMISSION " + x.permission(), false);
+            case VariableEqualsCondition x -> new DialogueCatalog.Condition("VARIABLE_EQUALS", x.key(), x.value(),
+                    "VARIABLE_EQUALS " + x.key() + " = " + x.value(), false);
+            case LacksCustomItemCondition x -> new DialogueCatalog.Condition("LACKS_CUSTOM_ITEM",
+                    x.itemId().toString(), null, "LACKS_CUSTOM_ITEM " + x.itemId(), false);
+            case NegatedCondition ignored -> throw new IllegalStateException("négation déjà traitée");
+            default -> new DialogueCatalog.Condition(c.type().name(), null, null, c.type().name(), false);
+        };
+    }
+
+    private static DialogueCatalogView toView(DialogueCatalog.View v) {
+        List<DialogueSummary> dialogues = new ArrayList<>();
+        for (DialogueCatalog.DialogueSummary d : v.dialogues()) {
+            List<DialogueNodeSummary> nodes = new ArrayList<>();
+            for (DialogueCatalog.NodeSummary n : d.nodes()) {
+                List<DialogueChoiceSummary> choices = new ArrayList<>();
+                for (DialogueCatalog.ChoiceSummary c : n.choices()) {
+                    List<DialogueActionSummary> acts = new ArrayList<>();
+                    for (DialogueCatalog.ActionSummary a : c.actions()) {
+                        acts.add(new DialogueActionSummary(a.kind(), a.target(), a.value(), a.raw()));
+                    }
+                    List<DialogueConditionSummary> conds = new ArrayList<>();
+                    for (DialogueCatalog.ConditionSummary cs : c.conditions()) {
+                        conds.add(new DialogueConditionSummary(cs.kind(), cs.target(), cs.value(), cs.raw(), cs.negated()));
+                    }
+                    choices.add(new DialogueChoiceSummary(c.text(), c.nextNodeId(), acts, conds));
+                }
+                nodes.add(new DialogueNodeSummary(n.id(), n.speaker(), n.text(), n.start(), n.reachable(), choices));
+            }
+            List<DialogueWarning> warnings = new ArrayList<>();
+            for (DialogueCatalog.Warning w : d.warnings()) {
+                warnings.add(new DialogueWarning(w.code(), w.severity(), w.message()));
+            }
+            dialogues.add(new DialogueSummary(d.id(), d.key(), d.startNodeId(), d.linkedNpcIds(),
+                    d.nodeCount(), d.choiceCount(), d.referencedQuestIds(), d.startsQuestIds(),
+                    List.copyOf(nodes), List.copyOf(warnings)));
+        }
+        List<DialogueLoadIssueSummary> loadIssues = new ArrayList<>();
+        for (DialogueCatalog.LoadIssueSummary li : v.loadIssues()) {
+            loadIssues.add(new DialogueLoadIssueSummary(li.file(), li.message()));
+        }
+        List<DialogueMissingDeclared> missing = new ArrayList<>();
+        for (DialogueCatalog.MissingDeclared m : v.declaredButMissing()) {
+            missing.add(new DialogueMissingDeclared(m.npcId(), m.dialogueId()));
+        }
+        return new DialogueCatalogView(List.copyOf(dialogues), List.copyOf(loadIssues), List.copyOf(missing),
+                v.total(), v.withWarnings(), v.nodeTotal());
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> dialogueDefinitionCreate(String key, String speaker, String text) {
+        DialogueDraft draft;
+        try {
+            draft = DialogueDraft.skeleton(key, speaker, text, "Au revoir");
+        } catch (IllegalArgumentException e) {
+            return done(MutationResult.of(false, "INVALID", e.getMessage()));
+        }
+        DialogueDefinitionStore.Result r = dialogueStore.create(draft);
+        if (!r.ok()) {
+            String msg = r.issues().isEmpty() ? r.message() : r.message() + " — " + String.join(" ; ", r.issues());
+            return done(MutationResult.of(false, r.code(), msg));
+        }
+        // Rechargement en mémoire pour que le dialogue soit immédiatement ouvrable en jeu.
+        dialogueEngine.reload();
+        return done(new MutationResult(true, r.code(), r.message(),
+                List.of("dialogues/" + r.file(), "start: " + draft.startNodeId())));
     }
 
     private static String blank(String value) {

@@ -211,6 +211,59 @@ public interface AgentActions {
                                                            double x, double y, double z,
                                                            float yaw, float pitch);
 
+    // ---- Dialogues (action {@code dialogue.list}, lecture — V1 /dialogues) ---------------------
+
+    /** Action de choix de dialogue, <strong>typée</strong> (jamais une simple chaîne). */
+    record DialogueActionSummary(String kind, String target, String value, String raw) {
+    }
+
+    record DialogueConditionSummary(String kind, String target, String value, String raw, boolean negated) {
+    }
+
+    record DialogueChoiceSummary(String text, String nextNodeId, List<DialogueActionSummary> actions,
+                                 List<DialogueConditionSummary> conditions) {
+    }
+
+    /** {@code start} = nœud de départ ; {@code reachable} = atteignable depuis {@code start} par les {@code next}. */
+    record DialogueNodeSummary(String id, String speaker, String text, boolean start, boolean reachable,
+                               List<DialogueChoiceSummary> choices) {
+    }
+
+    /** {@code warnings[].severity} ∈ {@code error} / {@code warning} / {@code info}. */
+    record DialogueWarning(String code, String severity, String message) {
+    }
+
+    record DialogueSummary(String id, String key, String startNodeId, List<String> linkedNpcIds,
+                           int nodeCount, int choiceCount, List<String> referencedQuestIds,
+                           List<String> startsQuestIds, List<DialogueNodeSummary> nodes,
+                           List<DialogueWarning> warnings) {
+    }
+
+    /** Un fichier de dialogue <em>rejeté</em> au chargement (n'est jamais devenu une définition). */
+    record DialogueLoadIssueSummary(String file, String message) {
+    }
+
+    /** Une définition PNJ déclare un {@code dialogue:} qui n'est pas chargé. */
+    record DialogueMissingDeclared(String npcId, String dialogueId) {
+    }
+
+    record DialogueCatalogView(List<DialogueSummary> dialogues, List<DialogueLoadIssueSummary> loadIssues,
+                               List<DialogueMissingDeclared> declaredButMissing, int total, int withWarnings,
+                               int nodeTotal) {
+    }
+
+    /** Catalogue de dialogues structuré (nœuds / choix / actions typées / relations PNJ+quêtes / warnings). */
+    CompletableFuture<DialogueCatalogView> dialogueDefinitions();
+
+    /**
+     * Crée un <strong>squelette</strong> de dialogue minimal valide ({@code dialogues/<key>.yml} :
+     * un nœud {@code start} avec un unique choix « fermer »). Écriture whitelistée et auditée ;
+     * jamais de YAML brut ni de chemin arbitraire ; échoue si l'id existe déjà ; re-parsé après
+     * écriture (fichier supprimé si le rechargement échoue). L'édition fine des nœuds/choix viendra
+     * dans un futur éditeur (voir rapport).
+     */
+    CompletableFuture<MutationResult> dialogueDefinitionCreate(String key, String speaker, String text);
+
     /** Aperçu (dry-run, aucune écriture) de ce qu'un reset « nouveau joueur » supprimerait. */
     record ResetPreviewLine(String label, int count, String detail) {
     }

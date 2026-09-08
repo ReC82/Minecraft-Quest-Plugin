@@ -87,6 +87,17 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<DialogueCatalogView> dialogueDefinitions() {
+        return CompletableFuture.completedFuture(
+                new DialogueCatalogView(List.of(), List.of(), List.of(), 0, 0, 0));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> dialogueDefinitionCreate(String key, String speaker, String text) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<ResetPreview> resetPreview(UUID playerId) {
         return CompletableFuture.completedFuture(new ResetPreview(false, List.of()));
     }

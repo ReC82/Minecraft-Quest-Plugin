@@ -40,6 +40,7 @@ public final class AgentActionExecutor {
     private static final Pattern WORLD_NAME = Pattern.compile("[A-Za-z0-9_./-]{1,64}");
     private static final int MAX_GIVE_AMOUNT = 64;
     private static final int MAX_DISPLAY_NAME = 128;
+    private static final int MAX_DIALOGUE_TEXT = 512;
 
     private final PlayerDirectory players;
     private final PlayerVariables variables;
@@ -71,6 +72,8 @@ public final class AgentActionExecutor {
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
                 case NPC_CITIZENS_CREATE -> npcCitizensCreate(action);
+                case DIALOGUE_LIST -> dialogueList(action);
+                case DIALOGUE_DEFINITION_CREATE -> dialogueDefinitionCreate(action);
                 case QUEST_PLAYER_STATUS -> questPlayerStatus(action);
                 case STORY_PLAYER_STATUS -> storyPlayerStatus(action);
                 case PLAYER_RESETNEW_PREVIEW -> resetPreview(action);
@@ -397,6 +400,132 @@ public final class AgentActionExecutor {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    // ---- dialogue.list / dialogue.definition.create (V1 /dialogues) ---------------------------
+
+    private CompletableFuture<AgentActionOutcome> dialogueList(AgentAction action) {
+        return actions.dialogueDefinitions().thenApply(view -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (AgentActions.DialogueSummary d : view.dialogues()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", d.id());
+                row.put("key", d.key());
+                row.put("startNodeId", d.startNodeId());
+                row.put("linkedNpcIds", d.linkedNpcIds());
+                row.put("nodeCount", d.nodeCount());
+                row.put("choiceCount", d.choiceCount());
+                row.put("referencedQuestIds", d.referencedQuestIds());
+                row.put("startsQuestIds", d.startsQuestIds());
+                row.put("warnings", warningMaps(d.warnings()));
+                List<Map<String, Object>> nodes = new ArrayList<>();
+                for (AgentActions.DialogueNodeSummary n : d.nodes()) {
+                    Map<String, Object> nm = new LinkedHashMap<>();
+                    nm.put("id", n.id());
+                    nm.put("speaker", n.speaker());
+                    nm.put("text", n.text());
+                    nm.put("start", n.start());
+                    nm.put("reachable", n.reachable());
+                    List<Map<String, Object>> choices = new ArrayList<>();
+                    for (AgentActions.DialogueChoiceSummary c : n.choices()) {
+                        Map<String, Object> cm = new LinkedHashMap<>();
+                        cm.put("text", c.text());
+                        cm.put("nextNodeId", c.nextNodeId() == null ? "" : c.nextNodeId());
+                        cm.put("actions", actionMaps(c.actions()));
+                        cm.put("conditions", conditionMaps(c.conditions()));
+                        choices.add(cm);
+                    }
+                    nm.put("choices", choices);
+                    nodes.add(nm);
+                }
+                row.put("nodes", nodes);
+                rows.add(row);
+            }
+            List<Map<String, Object>> loadIssues = new ArrayList<>();
+            for (AgentActions.DialogueLoadIssueSummary li : view.loadIssues()) {
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("file", li.file());
+                m.put("message", li.message());
+                loadIssues.add(m);
+            }
+            List<Map<String, Object>> missing = new ArrayList<>();
+            for (AgentActions.DialogueMissingDeclared m : view.declaredButMissing()) {
+                Map<String, Object> mm = new LinkedHashMap<>();
+                mm.put("npcId", m.npcId());
+                mm.put("dialogueId", m.dialogueId());
+                missing.add(mm);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("dialogues", rows);
+            details.put("loadIssues", loadIssues);
+            details.put("declaredButMissing", missing);
+            details.put("total", view.total());
+            details.put("withWarnings", view.withWarnings());
+            details.put("nodeTotal", view.nodeTotal());
+            return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
+                    rows.size() + " dialogue(s) (" + view.withWarnings() + " avec avertissement, "
+                            + view.loadIssues().size() + " fichier(s) rejeté(s)).", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private static List<Map<String, Object>> warningMaps(List<AgentActions.DialogueWarning> warnings) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (AgentActions.DialogueWarning w : warnings) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("code", w.code());
+            m.put("severity", w.severity());
+            m.put("message", w.message());
+            out.add(m);
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> actionMaps(List<AgentActions.DialogueActionSummary> actions) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (AgentActions.DialogueActionSummary a : actions) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("kind", a.kind());
+            m.put("target", a.target() == null ? "" : a.target());
+            m.put("value", a.value() == null ? "" : a.value());
+            m.put("raw", a.raw());
+            out.add(m);
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> conditionMaps(List<AgentActions.DialogueConditionSummary> conditions) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (AgentActions.DialogueConditionSummary c : conditions) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("kind", c.kind());
+            m.put("target", c.target() == null ? "" : c.target());
+            m.put("value", c.value() == null ? "" : c.value());
+            m.put("raw", c.raw());
+            m.put("negated", c.negated());
+            out.add(m);
+        }
+        return out;
+    }
+
+    private CompletableFuture<AgentActionOutcome> dialogueDefinitionCreate(AgentAction action) {
+        String key = firstNonBlank(action.param("key"), action.param("id"), action.param("npc_id"));
+        if (key == null || !NPC_ID.matcher(key.toLowerCase(java.util.Locale.ROOT)).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « key » manquant ou invalide (minuscules, « . _ - »)."));
+        }
+        String speaker = trimOrNull(action.param("speaker"));
+        if (speaker == null || speaker.length() > MAX_DISPLAY_NAME || speaker.indexOf('\n') >= 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « speaker » manquant, trop long, ou multi-ligne."));
+        }
+        String text = trimOrNull(action.param("text"));
+        if (text == null || text.length() > MAX_DIALOGUE_TEXT || text.indexOf('\n') >= 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « text » manquant, trop long (max " + MAX_DIALOGUE_TEXT + "), ou multi-ligne."));
+        }
+        return actions.dialogueDefinitionCreate(key.toLowerCase(java.util.Locale.ROOT), speaker, text)
+                .thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
     // ---- Lectures avec joueur -------------------------------------------------------

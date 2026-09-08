@@ -850,6 +850,239 @@ public final class AgentPages {
     }
 
     // ================================================================================
+    //  Dialogues (V1 lecture + squelette de création — base d'un futur éditeur)
+    // ================================================================================
+
+    public String dialogues(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append("<h1>Dialogues</h1><p class=\"sub\">Lecture structurée des dialogues à embranchements "
+                + "(<code>dialogues/&lt;id&gt;.yml</code>) : nœuds, choix, <strong>actions et conditions "
+                + "typées</strong>, relations PNJ / quêtes, diagnostics de cohérence. L'édition fine viendra "
+                + "avec un éditeur dédié ; cette V1 permet seulement de créer un squelette.</p>");
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+        boolean canWrite = perms.can(session.role(), Permission.DIALOGUE_WRITE);
+        sb.append(agentPicker(agentId, "/dialogues", ""));
+
+        sb.append("<h2>Catalogue</h2>");
+        sb.append(actionButton(session, agentId, "dialogue.list", "/dialogues", "", "Rafraîchir le catalogue", ""));
+
+        Map<String, String> questTitles = titleIndex(
+                latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of()), "id", "title");
+
+        Optional<Map<String, Object>> details = latestDetails(agentId, "dialogue.list");
+        if (details.isEmpty()) {
+            sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Rafraîchir le catalogue »."));
+            if (canWrite) {
+                sb.append(dialogueCreateForm(session, agentId));
+            }
+            sb.append(actionsPanel(agentId));
+            return sb.toString();
+        }
+        Map<String, Object> d = details.get();
+        List<Object> dialogues = asList(d.get("dialogues"));
+        List<Object> loadIssues = asList(d.get("loadIssues"));
+        List<Object> missing = asList(d.get("declaredButMissing"));
+
+        if (!loadIssues.isEmpty()) {
+            sb.append("<div class=\"banner err\"><strong>").append(loadIssues.size())
+                    .append(" fichier(s) de dialogue rejeté(s) au chargement</strong> — non listés comme dialogues :<ul>");
+            for (Object o : loadIssues) {
+                Map<String, Object> m = asMap(o);
+                sb.append("<li>").append(Ui.id(str(m.get("file")))).append(" — ")
+                        .append(Http.esc(str(m.get("message")))).append("</li>");
+            }
+            sb.append("</ul></div>");
+        }
+        if (!missing.isEmpty()) {
+            sb.append("<div class=\"banner err\"><strong>Définitions PNJ pointant vers un dialogue absent :</strong><ul>");
+            for (Object o : missing) {
+                Map<String, Object> m = asMap(o);
+                sb.append("<li>").append(Ui.id(str(m.get("npcId")))).append(" → ")
+                        .append(Ui.id(str(m.get("dialogueId")))).append("</li>");
+            }
+            sb.append("</ul></div>");
+        }
+
+        sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Résumé</span> ")
+                .append(Http.esc(str(d.get("total")))).append(" dialogue(s) · ")
+                .append(Http.esc(str(d.get("nodeTotal")))).append(" nœud(s) · ")
+                .append(Http.esc(str(d.get("withWarnings")))).append(" avec avertissement · ")
+                .append(loadIssues.size()).append(" fichier(s) rejeté(s)</p>");
+
+        if (canWrite) {
+            sb.append(dialogueCreateForm(session, agentId));
+        }
+
+        if (dialogues.isEmpty()) {
+            sb.append(Ui.empty("Aucun dialogue chargé."));
+        } else {
+            for (Object o : dialogues) {
+                sb.append(renderDialogueCard(asMap(o), questTitles));
+            }
+        }
+        sb.append(actionsPanel(agentId));
+        return sb.toString();
+    }
+
+    /** Carte dialogue : entête + warnings + relations + graphe des nœuds ordonné (start en tête). */
+    private String renderDialogueCard(Map<String, Object> dg, Map<String, String> questTitles) {
+        String id = str(dg.get("id"));
+        String key = str(dg.get("key"));
+        String start = str(dg.get("startNodeId"));
+        List<Object> linked = asList(dg.get("linkedNpcIds"));
+        List<Object> warnings = asList(dg.get("warnings"));
+        List<Object> nodes = asList(dg.get("nodes"));
+        List<Object> refQuests = asList(dg.get("referencedQuestIds"));
+        List<Object> startsQuests = asList(dg.get("startsQuestIds"));
+
+        StringBuilder sb = new StringBuilder("<article class=\"entity-card\">");
+        sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
+                .append(Http.esc(MiniText.prettifyId(key.isEmpty() ? id : key))).append("</h3><div class=\"entity-meta\">")
+                .append(Ui.badge(str(dg.get("nodeCount")) + " nœud(s)"))
+                .append(Ui.badge(str(dg.get("choiceCount")) + " choix"));
+        if (linked.isEmpty()) {
+            sb.append(Ui.pill("aucun PNJ", "pending", "!"));
+        }
+        sb.append(Ui.id(id)).append("</div></div>");
+
+        if (!warnings.isEmpty()) {
+            sb.append("<ul class=\"obj-list\">");
+            for (Object w : warnings) {
+                Map<String, Object> wm = asMap(w);
+                sb.append("<li>").append(Ui.severity(str(wm.get("severity"))))
+                        .append("<span class=\"obj-text\">").append(Http.esc(str(wm.get("message"))))
+                        .append("</span>").append(Ui.id(str(wm.get("code")))).append("</li>");
+            }
+            sb.append("</ul>");
+        }
+
+        StringBuilder npcHtml = new StringBuilder();
+        if (linked.isEmpty()) {
+            npcHtml.append("<span class=\"muted\">aucun PNJ logique</span>");
+        } else {
+            for (Object n : linked) {
+                npcHtml.append(Ui.id(str(n))).append(' ');
+            }
+        }
+        sb.append(Ui.metaLine("PNJ liés", npcHtml.toString()));
+        sb.append(Ui.metaLine("Nœud de départ", Ui.id(start)));
+        if (!startsQuests.isEmpty()) {
+            sb.append(Ui.metaLine("Démarre les quêtes", referencedQuests(startsQuests, questTitles)));
+        }
+        if (!refQuests.isEmpty()) {
+            sb.append(Ui.metaLine("Quêtes référencées", referencedQuests(refQuests, questTitles)));
+        }
+
+        // Graphe : nœuds ordonnés (start d'abord), start mis en avant, inaccessibles marqués.
+        sb.append("<details open><summary>Graphe (").append(nodes.size()).append(" nœud(s))</summary>");
+        sb.append("<div class=\"dlg-graph\">");
+        for (Object o : nodes) {
+            Map<String, Object> n = asMap(o);
+            boolean isStart = Boolean.TRUE.equals(n.get("start"));
+            boolean reachable = Boolean.TRUE.equals(n.get("reachable"));
+            sb.append("<div class=\"dlg-node").append(isStart ? " start" : "")
+                    .append(reachable ? "" : " unreachable").append("\">");
+            sb.append("<div class=\"dlg-node-head\">").append(Ui.id(str(n.get("id"))));
+            if (isStart) {
+                sb.append(Ui.pill("départ", "success", "▶"));
+            }
+            if (!reachable) {
+                sb.append(Ui.pill("inaccessible", "failed", "✕"));
+            }
+            sb.append("</div>");
+            sb.append("<p class=\"dlg-speaker\">").append(Http.esc(str(n.get("speaker")))).append("</p>");
+            sb.append("<p class=\"dlg-text\">").append(MiniText.html(str(n.get("text")))).append("</p>");
+            List<Object> choices = asList(n.get("choices"));
+            if (!choices.isEmpty()) {
+                sb.append("<ul class=\"dlg-choices\">");
+                for (Object c : choices) {
+                    Map<String, Object> cm = asMap(c);
+                    String next = str(cm.get("nextNodeId"));
+                    sb.append("<li><span class=\"dlg-choice-text\">« ").append(MiniText.html(str(cm.get("text"))))
+                            .append(" »</span>");
+                    if (!next.isEmpty()) {
+                        sb.append(" <span class=\"dlg-arrow\">→ ").append(Http.esc(next)).append("</span>");
+                    }
+                    for (Object a : asList(cm.get("actions"))) {
+                        Map<String, Object> am = asMap(a);
+                        sb.append(" ").append(Ui.badge(dialogueEffectLabel(str(am.get("kind")), str(am.get("target")),
+                                str(am.get("value")), questTitles)));
+                    }
+                    for (Object cond : asList(cm.get("conditions"))) {
+                        Map<String, Object> condm = asMap(cond);
+                        String label = (Boolean.TRUE.equals(condm.get("negated")) ? "non " : "")
+                                + dialogueEffectLabel(str(condm.get("kind")), str(condm.get("target")),
+                                str(condm.get("value")), questTitles);
+                        sb.append(" ").append(Ui.pill(label, "pending", "?"));
+                    }
+                    if (next.isEmpty() && asList(cm.get("actions")).isEmpty()) {
+                        sb.append(" <span class=\"muted\">(ferme)</span>");
+                    }
+                    sb.append("</li>");
+                }
+                sb.append("</ul>");
+            }
+            sb.append("</div>");
+        }
+        sb.append("</div></details>");
+        return sb.append("</article>").toString();
+    }
+
+    /** Libellé lisible d'une action/condition typée de dialogue (titre humain de quête si connu). */
+    private static String dialogueEffectLabel(String kind, String target, String value, Map<String, String> questTitles) {
+        String t = target == null ? "" : target;
+        return switch (kind) {
+            case "START_QUEST", "ADVANCE_QUEST", "TURN_IN_QUEST", "QUEST_STATE" -> {
+                String title = questTitles.get(t.toLowerCase(java.util.Locale.ROOT));
+                String verb = switch (kind) {
+                    case "START_QUEST" -> "démarre";
+                    case "ADVANCE_QUEST" -> "avance";
+                    case "TURN_IN_QUEST" -> "rend";
+                    default -> "quête";
+                };
+                String name = title != null ? MiniText.plain(title) : MiniText.prettifyId(t);
+                yield "QUEST_STATE".equals(kind) ? "quête « " + name + " » = " + value : verb + " « " + name + " »";
+            }
+            case "GIVE_ITEM" -> "donne " + value + "× " + MiniText.prettifyId(t);
+            case "TAKE_ITEM" -> "retire " + value + "× " + MiniText.prettifyId(t);
+            case "SET_VARIABLE" -> "variable " + t + " = " + value;
+            case "VARIABLE_EQUALS" -> "variable " + t + " = " + value;
+            case "HAS_ITEM" -> "possède " + value + "× " + MiniText.prettifyId(t);
+            case "HAS_PERMISSION" -> "permission " + t;
+            case "LACKS_CUSTOM_ITEM" -> "n'a pas l'objet " + t;
+            case "RUN_SAFE_COMMAND" -> "commande « " + t + " »";
+            case "OPEN_DIALOGUE" -> "ouvre le dialogue " + t;
+            case "OPEN_MERCHANT" -> "ouvre le marchand " + t;
+            case "CLOSE" -> "ferme";
+            case "NO_MAIN_CLAIM" -> "sans claim";
+            case "HAS_MAIN_CLAIM" -> "a un claim";
+            default -> kind;
+        };
+    }
+
+    /** Formulaire de création d'un squelette de dialogue (id + locuteur + texte du nœud « start »). */
+    private String dialogueCreateForm(Session session, String agentId) {
+        StringBuilder sb = new StringBuilder("<details><summary>Créer un dialogue (squelette)</summary>");
+        sb.append("<p class=\"faint\" style=\"font-size:12px\">Crée <code>dialogues/&lt;id&gt;.yml</code> avec un "
+                + "unique nœud « start » et un choix « Au revoir » (fermeture). Aucun YAML brut ; refus si l'id "
+                + "existe déjà ; re-parsé après écriture. Les nœuds / choix / actions s'ajouteront via l'éditeur.</p>");
+        sb.append(formStart(session, agentId, "dialogue.definition.create", "/dialogues", ""));
+        sb.append("<label>ID (clé, minuscules)</label><input type=\"text\" name=\"key\" placeholder=\"woodcutter_bob\" "
+                + "pattern=\"[a-z0-9._-]{1,64}\">");
+        sb.append("<label>Locuteur</label><input type=\"text\" name=\"speaker\" placeholder=\"Bûcheron Bob\">");
+        sb.append("<label>Texte du nœud de départ (MiniMessage autorisé)</label>"
+                + "<input type=\"text\" name=\"text\" placeholder=\"&lt;white&gt;Bonjour voyageur.&lt;/white&gt;\">");
+        sb.append(confirmBox("Créer le dialogue « rpgquest:<id> » (squelette d'un nœud, aucune action de quête)."));
+        sb.append("<button class=\"btn\" type=\"submit\">Créer le dialogue</button></form>");
+        latestForPlayer(agentId, "dialogue.definition.create", "").ifPresent(row -> sb.append(resultLine("Dernière création", row)));
+        return sb.append("</details>").toString();
+    }
+
+    // ================================================================================
     //  Fragments partagés
     // ================================================================================
 

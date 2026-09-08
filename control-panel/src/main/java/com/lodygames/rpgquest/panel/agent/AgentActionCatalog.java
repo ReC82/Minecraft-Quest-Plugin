@@ -62,12 +62,14 @@ public final class AgentActionCatalog {
         add("item.list", Permission.CONTENT_READ, false, false, "Rafraîchir la liste des objets");
         add("npc.list", Permission.NPC_READ, false, false, "Rafraîchir le catalogue des PNJ");
         add("npc.citizens.list", Permission.NPC_READ, false, false, "Rafraîchir les PNJ Citizens");
+        add("dialogue.list", Permission.DIALOGUE_READ, false, false, "Rafraîchir le catalogue des dialogues");
         // Écritures de contenu (V2 déclarative des PNJ) — confirmation obligatoire, jamais de YAML brut.
         add("npc.definition.create", Permission.NPC_WRITE, true, false, "Créer une définition PNJ");
         add("npc.definition.update", Permission.NPC_WRITE, true, false, "Modifier une définition PNJ");
         add("quest.giver.set", Permission.QUEST_GIVER_WRITE, true, false, "Attribuer une quête à un PNJ");
         add("npc.citizens.link", Permission.NPC_BIND_WRITE, true, false, "Lier un PNJ Citizens existant");
         add("npc.citizens.create", Permission.NPC_SPAWN_WRITE, true, false, "Créer le PNJ Citizens");
+        add("dialogue.definition.create", Permission.DIALOGUE_WRITE, true, false, "Créer un dialogue (squelette)");
         // Mutations
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");
@@ -281,6 +283,23 @@ public final class AgentActionCatalog {
                 params.put("z", trimNumber(z));
                 params.put("yaw", trimNumber(yaw));
                 params.put("pitch", trimNumber(pitch));
+            }
+            case "dialogue.definition.create" -> {
+                String key = trim(form.get("key")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(key).matches()) {
+                    return Validation.fail("Clé de dialogue manquante ou invalide (minuscules, « . _ - »).");
+                }
+                String speaker = trim(form.get("speaker"));
+                if (speaker.isEmpty() || speaker.length() > 128 || speaker.indexOf('\n') >= 0) {
+                    return Validation.fail("Locuteur manquant, trop long, ou multi-ligne.");
+                }
+                String text = trim(form.get("text"));
+                if (text.isEmpty() || text.length() > 512 || text.indexOf('\n') >= 0) {
+                    return Validation.fail("Texte du nœud manquant, trop long (max 512), ou multi-ligne.");
+                }
+                params.put("key", key);
+                params.put("speaker", speaker);
+                params.put("text", text);
             }
             case "player.resetnew.confirm" -> params.put("confirm", "true");
             default -> {

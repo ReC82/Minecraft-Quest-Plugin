@@ -188,6 +188,36 @@ class AgentActionExecutorTest {
     }
 
     @Test
+    void dialogueListSerialisesGraphActionsAndIssues() {
+        AgentActionOutcome out = run(new AgentAction("dl0", "dialogue.list", Map.of()));
+        assertEquals(AgentActionOutcome.SUCCESS, out.status());
+        assertEquals(1, out.details().get("total"));
+        assertEquals(3, out.details().get("nodeTotal"));
+        String json = com.lodygames.rpgquest.web.Json.write(out.details());
+        assertTrue(json.contains("\"id\":\"rpgquest:guard\"") && json.contains("\"startNodeId\":\"greeting\""));
+        assertTrue(json.contains("\"kind\":\"START_QUEST\"") && json.contains("\"target\":\"rpgquest:first_steps\""));
+        assertTrue(json.contains("\"reachable\":false"), "nœud orphelin marqué");
+        assertTrue(json.contains("\"loadIssues\"") && json.contains("broken.yml"));
+        assertTrue(json.contains("\"declaredButMissing\"") && json.contains("rpgquest:ghost"));
+        assertTrue(json.contains("\"linkedNpcIds\":[\"guard\"]"));
+    }
+
+    @Test
+    void dialogueDefinitionCreateValidatesAndDelegates() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dc0", "dialogue.definition.create",
+                Map.of("speaker", "Bob", "text", "Salut"))).status(), "key obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dc1", "dialogue.definition.create",
+                Map.of("key", "Bad Key", "speaker", "Bob", "text", "Salut"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dc2", "dialogue.definition.create",
+                Map.of("key", "woodcutter_bob", "speaker", "Bob"))).status(), "text obligatoire");
+        AgentActionOutcome ok = run(new AgentAction("dc3", "dialogue.definition.create",
+                Map.of("key", "woodcutter_bob", "speaker", "Bûcheron Bob", "text", "<white>Bonjour.</white>")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("woodcutter_bob", actions.lastDialogueKey);
+        assertEquals("Bûcheron Bob", actions.lastDialogueSpeaker);
+    }
+
+    @Test
     void npcCitizensCreateBindFailureIsAReadableFailedOutcome() {
         actions.createOk = false;
         actions.createCode = "BIND_FAILED_ROLLED_BACK";
@@ -455,6 +485,42 @@ class AgentActionExecutorTest {
             return CompletableFuture.completedFuture(new CitizensCreateResult(createOk, createCode,
                     createOk ? "créé" : "liaison impossible", createOk || createRolledBack ? 31 : null,
                     npcId, createOk ? List.of("Citizens #31 spawné") : List.of(), createRolledBack));
+        }
+
+        String lastDialogueKey;
+        String lastDialogueSpeaker;
+        String lastDialogueText;
+
+        @Override
+        public CompletableFuture<DialogueCatalogView> dialogueDefinitions() {
+            DialogueActionSummary start = new DialogueActionSummary("START_QUEST", "rpgquest:first_steps", "",
+                    "START_QUEST rpgquest:first_steps");
+            DialogueConditionSummary cond = new DialogueConditionSummary("QUEST_STATE", "rpgquest:first_steps",
+                    "NOT_STARTED", "QUEST_STATE rpgquest:first_steps = NOT_STARTED", false);
+            DialogueChoiceSummary accept = new DialogueChoiceSummary("J'accepte", "accepted",
+                    List.of(start), List.of(cond));
+            DialogueChoiceSummary refuse = new DialogueChoiceSummary("Non merci", "", List.of(), List.of());
+            DialogueNodeSummary greeting = new DialogueNodeSummary("greeting", "Garde", "<white>Bonjour.</white>",
+                    true, true, List.of(accept, refuse));
+            DialogueNodeSummary accepted = new DialogueNodeSummary("accepted", "Garde", "Bien.", false, true,
+                    List.of(new DialogueChoiceSummary("OK", "", List.of(), List.of())));
+            DialogueNodeSummary orphan = new DialogueNodeSummary("orphan", "Garde", "Personne ne me voit.",
+                    false, false, List.of(new DialogueChoiceSummary("OK", "", List.of(), List.of())));
+            DialogueSummary guard = new DialogueSummary("rpgquest:guard", "guard", "greeting",
+                    List.of("guard"), 3, 4, List.of("rpgquest:first_steps"), List.of("rpgquest:first_steps"),
+                    List.of(greeting, accepted, orphan),
+                    List.of(new DialogueWarning("NODE_UNREACHABLE", "info", "le nœud « orphan » n'est atteignable…")));
+            return CompletableFuture.completedFuture(new DialogueCatalogView(List.of(guard),
+                    List.of(new DialogueLoadIssueSummary("broken.yml", "« nodes » est obligatoire.")),
+                    List.of(new DialogueMissingDeclared("ghost", "rpgquest:ghost")), 1, 1, 3));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> dialogueDefinitionCreate(String key, String speaker, String text) {
+            lastDialogueKey = key;
+            lastDialogueSpeaker = speaker;
+            lastDialogueText = text;
+            return mutation("dialogue " + key);
         }
 
         @Override

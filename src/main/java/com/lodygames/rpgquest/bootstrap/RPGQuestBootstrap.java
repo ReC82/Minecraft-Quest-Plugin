@@ -554,7 +554,10 @@ public final class RPGQuestBootstrap {
                                 new NpcBindingRepository(databaseService.databaseManager()),
                                 npcEngine, new NpcDefinitionStore(npcEngine.directory()),
                                 new QuestGiverStore(plugin.getDataFolder().toPath().resolve("quests")),
-                                this::rpgWorldWhitelist))));
+                                this::rpgWorldWhitelist,
+                                new com.lodygames.rpgquest.dialogue.DialogueDefinitionStore(
+                                        plugin.getDataFolder().toPath().resolve("dialogues"),
+                                        configService.current().dialogue().allowedCommands())))));
 
         registerCommands();
     }

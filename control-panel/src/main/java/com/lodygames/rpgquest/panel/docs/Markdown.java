@@ -138,7 +138,7 @@ public final class Markdown {
         String joined = String.join("\n", code).stripTrailing();
         out.append("<div class=\"doc-cmd\">")
                 .append("<button type=\"button\" class=\"doc-copy\" data-copy=\"").append(attr(joined))
-                .append("\" title=\"Copier\">Copier</button>")
+                .append("\" title=\"Copier\"><svg class=\"ic\" aria-hidden=\"true\"><use href=\"#i-copy\"></use></svg>Copier</button>")
                 .append("<pre><code>").append(esc(joined)).append("</code></pre></div>");
     }
 

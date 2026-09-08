@@ -234,6 +234,10 @@ public final class Ui {
                 + Http.esc(value) + "\">" + Http.esc(label) + "</button>";
     }
 
+    public static String filterChip(String value, String label) {
+        return filterChip(value, label, false);
+    }
+
     /** Petit compteur « N élément(s) » sous la barre d'outils. */
     public static String countNote(int n, String noun) {
         return "<p class=\"count-note\" data-count-note>" + n + " " + Http.esc(noun) + (n > 1 ? "s" : "") + "</p>";

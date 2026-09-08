@@ -46,9 +46,10 @@ public final class AgentPages {
     public String players(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
-        sb.append("<h1>Joueurs</h1><p class=\"sub\">Sélectionner un joueur connecté, lire/écrire ses "
-                + "variables, lui donner un objet, ou prévisualiser un reset « nouveau joueur ».</p>");
-        sb.append("<p class=\"doc-cm-link\">\uD83D\uDCD6 <a href=\"/docs/joueurs-reset\">Documentation : reset d'un joueur</a></p>");
+        sb.append(Ui.pageHeader("players", "Joueurs",
+                "Sélectionner un joueur connecté, lire/écrire ses variables, lui donner un objet, "
+                        + "ou prévisualiser un reset « nouveau joueur ».",
+                docLink("joueurs-reset", "Documentation : reset d'un joueur")));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
@@ -200,9 +201,12 @@ public final class AgentPages {
     public String quests(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
-        sb.append("<h1>Quêtes</h1><p class=\"sub\">Catalogue des quêtes, état d'un joueur, et raccourcis "
-                + "d'administration (démarrer / compléter / réinitialiser) via les services métier existants.</p>");
-        sb.append("<p class=\"doc-cm-link\">\uD83D\uDCD6 <a href=\"/docs/quetes\">Documentation : quêtes / stories</a></p>");
+        boolean canEditQuests = perms.can(session.role(), Permission.QUEST_CONTENT_WRITE);
+        sb.append(Ui.pageHeader("quests", "Quêtes",
+                "Catalogue des quêtes, état d'un joueur, et raccourcis d'administration "
+                        + "(démarrer / compléter / réinitialiser).",
+                (canEditQuests ? Ui.primaryLink("/quests/new", "plus", "Créer une quête") : "")
+                        + docLink("quetes", "Documentation : quêtes / stories")));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
@@ -217,6 +221,8 @@ public final class AgentPages {
         if (catalog.isEmpty()) {
             sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Rafraîchir le catalogue »."));
         } else {
+            sb.append(Ui.searchToolbar("quests", "Rechercher une quête\u2026", ""));
+            sb.append("<p class=\"count-note\" data-count-note data-noun=\"qu\u00eate\">" + catalog.size() + " qu\u00eate(s)</p>");
             for (Object o : catalog) {
                 sb.append(renderQuestCard(asMap(o), questTitles));
             }
@@ -239,7 +245,9 @@ public final class AgentPages {
 
     /** Carte de quête lisible : titre humain d'abord, id technique discret, objectifs/récompenses en clair. */
     private String renderQuestCard(Map<String, Object> qd, Map<String, String> questTitles) {
-        StringBuilder sb = new StringBuilder("<article class=\"entity-card\">");
+        String ft = Http.esc(str(qd.get("id")) + " " + com.lodygames.rpgquest.panel.web.MiniText.plain(str(qd.get("title")))
+                + " " + str(qd.get("category")) + " " + str(qd.get("giverId")) + " " + str(qd.get("giverName")));
+        StringBuilder sb = new StringBuilder("<article class=\"entity-card\" data-filter-item=\"quests\" data-filter-text=\"" + ft + "\">");
         sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
                 .append(MiniText.html(str(qd.get("title")))).append("</h3><div class=\"entity-meta\">");
         String category = str(qd.get("category"));
@@ -364,8 +372,11 @@ public final class AgentPages {
     public String stories(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
-        sb.append("<h1>Stories</h1><p class=\"sub\">Suites ordonnées de quêtes. Avancer d'une étape ou "
-                + "compléter toute la story — c'est le chemin rapide vers CLAIM_TIER_1 pour tester les claims.</p>");
+        boolean canEditStories = perms.can(session.role(), Permission.STORY_CONTENT_WRITE);
+        sb.append(Ui.pageHeader("stories", "Stories",
+                "Suites ordonnées de quêtes. Avancer d'une étape ou compléter toute la story.",
+                (canEditStories ? Ui.primaryLink("/stories/new", "plus", "Créer une story") : "")
+                        + docLink("quetes", "Documentation : quêtes / stories")));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
@@ -383,6 +394,8 @@ public final class AgentPages {
         if (catalog.isEmpty()) {
             sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Rafraîchir le catalogue »."));
         } else {
+            sb.append(Ui.searchToolbar("stories", "Rechercher une story\u2026", ""));
+            sb.append("<p class=\"count-note\" data-count-note data-noun=\"story\">" + catalog.size() + " story(s)</p>");
             for (Object o : catalog) {
                 sb.append(renderStoryCard(asMap(o), questTitles));
             }
@@ -405,7 +418,9 @@ public final class AgentPages {
     /** Carte de story lisible : titre humain, id discret, nombre d'étapes, quêtes ordonnées. */
     private String renderStoryCard(Map<String, Object> sd, Map<String, String> questTitles) {
         List<Object> steps = asList(sd.get("stepQuestIds"));
-        StringBuilder sb = new StringBuilder("<article class=\"entity-card\">");
+        String ft = Http.esc(str(sd.get("id")) + " " + MiniText.plain(str(sd.get("title"))));
+        StringBuilder sb = new StringBuilder("<article class=\"entity-card\" data-filter-item=\"stories\" data-filter-text=\""
+                + ft + "\">");
         sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
                 .append(MiniText.html(str(sd.get("title")))).append("</h3><div class=\"entity-meta\">")
                 .append(Ui.badge(steps.size() + (steps.size() > 1 ? " étapes" : " étape")))
@@ -453,11 +468,10 @@ public final class AgentPages {
     public String npcs(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
-        sb.append("<h1>PNJ</h1><p class=\"sub\">Un PNJ RPGQuest a une <strong>définition logique</strong> "
-                + "(fichier <code>npcs/&lt;id&gt;.yml</code>, indépendante du monde et de Citizens) et un "
-                + "<strong>binding Citizens</strong> éventuel. La définition peut exister avant même que "
-                + "le PNJ ne soit tagué en jeu. Position et monde ne sont pas suivis ici.</p>");
-        sb.append("<p class=\"doc-cm-link\">\uD83D\uDCD6 <a href=\"/docs/pnj-citizens\">Documentation : cr\u00e9er et configurer un PNJ</a></p>");
+        sb.append(Ui.pageHeader("npc", "PNJ",
+                "Un PNJ RPGQuest a une définition logique (npcs/<id>.yml) et un binding Citizens "
+                        + "éventuel. La définition peut exister avant que le PNJ ne soit tagué en jeu.",
+                docLink("pnj-citizens", "Documentation : créer et configurer un PNJ")));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
@@ -519,8 +533,15 @@ public final class AgentPages {
         }
 
         if (npcs.isEmpty()) {
-            sb.append(Ui.empty("Aucun PNJ RPGQuest connu (ni définition, ni binding, ni référence)."));
+            sb.append(Ui.empty("npc", "Aucun PNJ RPGQuest connu (ni définition, ni binding, ni référence)."));
         } else {
+            sb.append(Ui.searchToolbar("npcs", "Rechercher un PNJ…",
+                    Ui.filterChip("", "Tous", true)
+                            + Ui.filterChip("linked", "Liés")
+                            + Ui.filterChip("unlinked", "Non liés")
+                            + Ui.filterChip("warn", "Warnings")
+                            + Ui.filterChip("err", "Erreurs")));
+            sb.append("<p class=\"count-note\" data-count-note data-noun=\"PNJ\">").append(npcs.size()).append(" PNJ</p>");
             for (Object o : npcs) {
                 sb.append(renderNpcCard(session, agentId, asMap(o), questTitles, questIds,
                         citizensRoster, spawnWorlds, canWrite, canSetGiver, canLink, canSpawn));
@@ -586,7 +607,15 @@ public final class AgentPages {
         String role = str(n.get("role"));
         String state = str(n.get("state"));
 
-        StringBuilder sb = new StringBuilder("<article class=\"entity-card\">");
+        List<Object> warns = asList(n.get("warnings"));
+        boolean anyErr = warns.stream().anyMatch(w -> "error".equals(str(asMap(w).get("severity"))));
+        boolean anyWarn = !warns.isEmpty();
+        String cat = (boundCitizens ? "linked" : "unlinked")
+                + (anyWarn ? " warn" : "") + (anyErr ? " err" : "");
+        String ftext = Http.esc((hasName ? MiniText.plain(displayName) : "") + " " + id + " " + role + " " + state
+                + " " + numeric);
+        StringBuilder sb = new StringBuilder("<article class=\"entity-card\" data-filter-item=\"npcs\" data-filter-cat=\""
+                + cat + "\" data-filter-text=\"" + ftext + "\">");
         sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
                 .append(hasName ? MiniText.html(displayName) : Http.esc(MiniText.prettifyId(id)))
                 .append("</h3><div class=\"entity-meta\">");
@@ -859,11 +888,10 @@ public final class AgentPages {
     public String dialogues(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
-        sb.append("<h1>Dialogues</h1><p class=\"sub\">Lecture structurée des dialogues à embranchements "
-                + "(<code>dialogues/&lt;id&gt;.yml</code>) : nœuds, choix, <strong>actions et conditions "
-                + "typées</strong>, relations PNJ / quêtes, diagnostics de cohérence. L'édition fine viendra "
-                + "avec un éditeur dédié ; cette V1 permet seulement de créer un squelette.</p>");
-        sb.append("<p class=\"doc-cm-link\">\uD83D\uDCD6 <a href=\"/docs?q=dialogue\">Documentation : dialogues</a></p>");
+        sb.append(Ui.pageHeader("dialogues", "Dialogues",
+                "Lecture structurée des dialogues à embranchements (dialogues/<id>.yml) : nœuds, "
+                        + "choix, actions et conditions typées, relations PNJ / quêtes, diagnostics.",
+                docLink("dialogues", "Documentation : dialogues")));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
@@ -927,8 +955,10 @@ public final class AgentPages {
         }
 
         if (dialogues.isEmpty()) {
-            sb.append(Ui.empty("Aucun dialogue chargé."));
+            sb.append(Ui.empty("dialogues", "Aucun dialogue chargé."));
         } else {
+            sb.append(Ui.searchToolbar("dialogues", "Rechercher un dialogue\u2026", ""));
+            sb.append("<p class=\"count-note\" data-count-note data-noun=\"dialogue\">" + dialogues.size() + " dialogue(s)</p>");
             for (Object o : dialogues) {
                 sb.append(renderDialogueCard(asMap(o), questTitles, session, agentId, canWrite));
             }
@@ -954,7 +984,8 @@ public final class AgentPages {
         List<Object> startsQuests = asList(dg.get("startsQuestIds"));
         List<String> nodeIds = dialogueNodeIds(nodes);
 
-        StringBuilder sb = new StringBuilder("<article class=\"entity-card dlg-card\">");
+        String ft = Http.esc(id + " " + key + " " + String.join(" ", linked.stream().map(x -> str(x)).toList()));
+        StringBuilder sb = new StringBuilder("<article class=\"entity-card dlg-card\" data-filter-item=\"dialogues\" data-filter-text=\"" + ft + "\">");
 
         // ---- En-tête -------------------------------------------------------------------------
         sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
@@ -1465,7 +1496,16 @@ public final class AgentPages {
     // ---- Petits utilitaires ---------------------------------------------------------
 
     private String noAgent() {
-        return "<div class=\"banner err\">Aucun agent RPGQuest configuré. Voir <code>docs/control-panel/AGENT.md</code>.</div>";
+        return Ui.banner("err", "Aucun agent RPGQuest configuré. Voir <code>docs/control-panel/AGENT.md</code>.");
+    }
+
+    /** Petit lien contextuel vers une fiche de documentation (icône livre, jamais un emoji). */
+    static String docLink(String slugOrQuery, String label) {
+        String href = slugOrQuery.startsWith("q=") || slugOrQuery.contains("=")
+                ? "/docs?" + slugOrQuery
+                : ("dialogues".equals(slugOrQuery) ? "/docs?q=dialogue" : "/docs/" + slugOrQuery);
+        return "<a class=\"doc-cm-link\" href=\"" + Http.esc(href) + "\">" + Icons.icon("book")
+                + Http.esc(label) + "</a>";
     }
 
     private static String cleanPlayer(String raw) {

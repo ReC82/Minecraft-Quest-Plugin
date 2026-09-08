@@ -834,7 +834,9 @@ public final class PanelApp {
 
     private String loginPage(String csrf, String error) {
         return Layout.bare("Connexion", """
-                <h1>Connexion</h1><p class="muted">RPGQuest Control Panel</p>
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+                  <span class="brand-mark">PA</span><h1 style="margin:0">PlugAdmin</h1></div>
+                <p class="muted">Panneau d'administration RPGQuest</p>
                 <form method="post" action="/login">
                   <input type="hidden" name="_csrf" value="%CSRF%">
                   <label>Identifiant</label><input type="text" name="username" autocomplete="username" autofocus>

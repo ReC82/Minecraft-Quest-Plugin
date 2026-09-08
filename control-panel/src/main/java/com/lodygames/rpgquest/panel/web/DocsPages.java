@@ -21,16 +21,29 @@ public final class DocsPages {
     private final DocLibrary library;
     private final DocSearchIndex index;
 
-    /** Raccourcis « Comment faire ? » de la page d'accueil : (libellé, requête). */
+    /** Raccourcis « Comment faire ? » de la page d'accueil : (libellé, requête, icône). */
     private static final List<String[]> SHORTCUTS = List.of(
-            new String[] {"Taguer un PNJ", "tag npc"},
-            new String[] {"Mettre un skin de PNJ", "skin"},
-            new String[] {"Reset d'un joueur", "reset joueur"},
-            new String[] {"Compléter une quête", "quest complete"},
-            new String[] {"Rollback / déploiement", "rollback"},
-            new String[] {"Déployer sur VeryGames", "verygames deploiement"},
-            new String[] {"Tester les Claims", "claim test"},
-            new String[] {"Tester le Wild", "wild"});
+            new String[] {"Taguer un PNJ", "tag npc", "npc"},
+            new String[] {"Mettre un skin de PNJ", "skin", "npc"},
+            new String[] {"Reset d'un joueur", "reset joueur", "players"},
+            new String[] {"Compléter une quête", "quest complete", "quests"},
+            new String[] {"Rollback / déploiement", "rollback", "back"},
+            new String[] {"Déployer sur VeryGames", "verygames deploiement", "server"},
+            new String[] {"Tester les Claims", "claim test", "world"},
+            new String[] {"Tester le Wild", "wild", "world"});
+
+    private static String catIcon(String category) {
+        String c = category == null ? "" : category.toLowerCase(java.util.Locale.ROOT);
+        if (c.contains("pnj") || c.contains("citizens")) return "npc";
+        if (c.contains("joueur")) return "players";
+        if (c.contains("quête") || c.contains("quete") || c.contains("stor")) return "quests";
+        if (c.contains("claim")) return "world";
+        if (c.contains("wild")) return "world";
+        if (c.contains("verygames")) return "server";
+        if (c.contains("déploiement") || c.contains("deploiement") || c.contains("rollback")) return "back";
+        if (c.contains("admin")) return "admin";
+        return "book";
+    }
 
     public DocsPages(DocLibrary library) {
         this.library = library;
@@ -43,29 +56,31 @@ public final class DocsPages {
     public String home(String rawQuery) {
         String q = rawQuery == null ? "" : rawQuery.strip();
         StringBuilder sb = new StringBuilder();
-        sb.append("<h1>Documentation</h1><p class=\"sub\">Wiki d'administration privé — commandes, "
-                + "procédures et fiches opérationnelles. Source de vérité : les fichiers Markdown "
-                + "versionnés dans le dépôt.</p>");
+        sb.append(Ui.pageHeader("docs", "Documentation",
+                "Wiki d'administration privé — commandes, procédures et fiches opérationnelles. "
+                        + "Source de vérité : les fichiers Markdown versionnés dans le dépôt.", ""));
         sb.append(searchForm(q));
 
         if (library.isEmpty()) {
-            sb.append("<p class=\"empty\">Aucune fiche chargée.</p>");
+            sb.append(Ui.empty("book", "Aucune fiche chargée."));
             return sb.toString();
         }
         if (!q.isEmpty()) {
             return sb.append(searchResults(q)).toString();
         }
 
-        sb.append("<h2>Comment faire ?</h2><div class=\"doc-shortcuts\">");
+        sb.append(Ui.sectionTitle("target", "Comment faire ?")).append("<div class=\"doc-shortcuts\">");
         for (String[] s : SHORTCUTS) {
             sb.append("<a class=\"doc-chip\" href=\"/docs?q=").append(Http.esc(urlEncode(s[1]))).append("\">")
+                    .append(Icons.icon(s.length > 2 ? s[2] : "search"))
                     .append(Http.esc(s[0])).append("</a>");
         }
         sb.append("</div>");
 
-        sb.append("<h2>Catégories</h2><div class=\"doc-cats\">");
+        sb.append(Ui.sectionTitle("book", "Catégories")).append("<div class=\"doc-cats\">");
         for (Map.Entry<String, List<DocPage>> e : library.byCategory().entrySet()) {
-            sb.append("<article class=\"doc-cat\"><h3>").append(Http.esc(e.getKey())).append("</h3><ul>");
+            sb.append("<article class=\"doc-cat\"><h3>").append(Icons.icon(catIcon(e.getKey())))
+                    .append(Http.esc(e.getKey())).append("</h3><ul>");
             for (DocPage p : e.getValue()) {
                 sb.append("<li><a href=\"/docs/").append(Http.esc(p.slug())).append("\">")
                         .append(Http.esc(p.title())).append("</a></li>");
@@ -82,12 +97,13 @@ public final class DocsPages {
         StringBuilder sb = new StringBuilder();
         sb.append("<p class=\"doc-crumbs\"><a href=\"/docs\">Documentation</a> <span>›</span> Recherche</p>");
         if (hits.isEmpty()) {
-            sb.append("<p class=\"empty\">Aucune fiche ne correspond à « ").append(Http.esc(q))
+            sb.append("<div class=\"empty\">").append(Icons.icon("search"))
+                    .append("Aucune fiche ne correspond à « ").append(Http.esc(q))
                     .append(" ». Essaie un mot plus court (ex. <code>npc</code>, <code>skin</code>, "
-                            + "<code>rollback</code>).</p>");
+                            + "<code>rollback</code>).</div>");
             return sb.append(assetScript()).toString();
         }
-        sb.append("<p class=\"muted\">").append(hits.size()).append(" résultat(s) pour « ")
+        sb.append("<p class=\"count-note\">").append(hits.size()).append(" résultat(s) pour « ")
                 .append(Http.esc(q)).append(" »</p><div class=\"doc-hits\">");
         for (DocSearchIndex.Hit hit : hits) {
             DocPage p = hit.page();

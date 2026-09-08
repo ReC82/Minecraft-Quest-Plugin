@@ -18,7 +18,8 @@ public enum Role {
             Permission.DOCS_READ)),
     CONTENT_EDITOR(EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.CONTENT_READ, Permission.DIAGNOSTICS_READ,
-            Permission.AUDIT_READ, Permission.ACTION_CONTENT_RELOAD, Permission.DOCS_READ)),
+            Permission.AUDIT_READ, Permission.ACTION_CONTENT_RELOAD, Permission.DOCS_READ,
+            Permission.QUEST_CONTENT_WRITE, Permission.STORY_CONTENT_WRITE)),
     READ_ONLY(EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ,
             Permission.CONTENT_READ, Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ,

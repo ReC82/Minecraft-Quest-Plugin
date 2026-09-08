@@ -114,7 +114,9 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   Quêtes / Stories** (catalogues avec titre lisible d'abord, état par joueur, raccourcis admin),
   liste blanche `AgentActionCatalog` + validation à 3 couches, confirmation obligatoire pour les
   mutations, audit. Le tableau des actions se rafraîchit tout seul (issue #65,
-  `/assets/panel.js` + `/agents/actions.json`). Voir [control-panel/AGENT.md](control-panel/AGENT.md) §7.
+  `/assets/panel.js` + `/agents/actions.json`) : premier relevé immédiat après soumission,
+  démarrage sur le compteur serveur **ou** sur un statut non terminal encore visible, arrêt dès
+  qu'aucune action n'est en cours. Voir [control-panel/AGENT.md](control-panel/AGENT.md) §7.
 
 ## Bugs connus et corrigés
 

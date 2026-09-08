@@ -82,7 +82,9 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       `player.item.give`, `player.resetnew preview|confirm` — **actions agent whitelistées**
       (`AgentActionType` ↔ `AgentActionCatalog`), logique dans les services métier du plugin,
       audit log, `confirm` obligatoire sur les mutations, permission `ACTION_*`, validation 3 couches.
-- [x] rafraîchissement auto du résultat des actions (issue #65).
+- [x] rafraîchissement auto du résultat des actions (issue #65) — `/assets/panel.js`
+      démarre sur le compteur serveur **ou** sur un statut non terminal encore visible dans
+      le tableau, fait un premier relevé immédiat, et s'arrête dès `pending == 0`.
 - [ ] « préparer un état de test » = macro d'actions (ex. « claims: débloqué sans claim »). **(non livré)**
 
 ## Étape 3 — contenu (lecture structurée)

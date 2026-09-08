@@ -123,6 +123,11 @@ class AgentActionsRefreshTest {
         String agentsPage = get("/agents").body();
         assertTrue(agentsPage.contains("data-actions-agent=\"" + TestConfig.AGENT_ID + "\""));
         assertTrue(agentsPage.contains("<script src=\"/assets/panel.js\""));
+        // Critère #65 : l'action neuve apparaît immédiatement en PENDING, et le compteur
+        // exposé au script est strictement positif (le polling doit démarrer).
+        assertTrue(pendingAttr(agentsPage) >= 1, "data-actions-pending doit être >= 1 après création");
+        assertTrue(agentsPage.contains("<span class=\"pill warn\">PENDING</span>"),
+                "la nouvelle action doit être rendue en PENDING");
 
         // Endpoint JSON : action présente, non terminale, pending >= 1.
         HttpResponse<String> json1 = get("/agents/actions.json?agent=" + TestConfig.AGENT_ID);
@@ -169,6 +174,33 @@ class AgentActionsRefreshTest {
         assertEquals(Boolean.TRUE, row2.get("terminal"));
         assertTrue(String.valueOf(row2.get("result")).contains("true"));
         assertFalse(json1.body().contains(TestConfig.AGENT_TOKEN));
+
+        // La page rendue reflète maintenant l'état terminal : compteur à 0 (pas de polling
+        // permanent) et pastille SUCCESS.
+        String settledPage = get("/agents").body();
+        assertEquals(0, pendingAttr(settledPage), "data-actions-pending doit retomber à 0 une fois l'action terminée");
+        assertTrue(settledPage.contains("<span class=\"pill ok\">SUCCESS</span>"));
+    }
+
+    /** Premier chiffre de {@code data-actions-pending="N"} dans la page (0 si absent). */
+    private static int pendingAttr(String html) {
+        Matcher m = Pattern.compile("data-actions-pending=\"(\\d+)\"").matcher(html);
+        return m.find() ? Integer.parseInt(m.group(1)) : 0;
+    }
+
+    @Test
+    void panelScriptStartsFromServerCounterOrVisibleRowsAndDoesAnImmediatePoll() throws Exception {
+        start();
+        String js = get("/assets/panel.js").body();
+        // Double signal de départ : compteur serveur ET lecture du tableau rendu (un compteur
+        // absent ou périmé ne doit pas laisser une action bloquée en PENDING).
+        assertTrue(js.contains("data-actions-pending"));
+        assertTrue(js.contains("tableHasPending"));
+        assertTrue(js.contains("PENDING") && js.contains("DELIVERED"), "statuts non terminaux reconnus");
+        // Premier relevé immédiat (pas d'attente de l'intervalle avant la première mise à jour).
+        assertTrue(js.contains("tick(); // premier relevé immédiat"));
+        // Arrêt garanti dès qu'il n'y a plus d'action en cours.
+        assertTrue(js.contains("data.pending > 0") && js.contains("stop(null)"));
     }
 
     @Test

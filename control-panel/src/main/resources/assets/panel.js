@@ -9,14 +9,20 @@
  *   - après soumission d'une action, la page est rechargée (POST -> 303) et la nouvelle
  *     action apparaît immédiatement en PENDING dans le tableau rendu côté serveur ;
  *   - ce script repère les blocs `[data-actions-agent]` et, s'il reste au moins une action
- *     non terminale, interroge `/agents/actions.json?agent=<id>` toutes les 2 s ;
+ *     non terminale (compteur `data-actions-pending` OU statut lisible dans le tableau),
+ *     interroge `/agents/actions.json?agent=<id>` — un premier appel immédiat puis toutes
+ *     les 2 s ;
  *   - à chaque réponse il reconstruit le corps du tableau ;
  *   - dès qu'aucune action n'est plus PENDING/DELIVERED, le polling s'arrête ;
  *   - garde-fou : arrêt inconditionnel après 5 minutes.
+ *
+ * Le double signal de départ (attribut serveur + lecture du tableau) évite qu'un compteur
+ * absent ou périmé laisse une action visuellement bloquée en PENDING.
  */
 (function () {
   var INTERVAL_MS = 2000;
   var MAX_POLLS = 150; // 150 * 2 s = 5 min
+  var NON_TERMINAL = { PENDING: 1, DELIVERED: 1 };
 
   function esc(value) {
     return String(value == null ? "" : value)
@@ -41,6 +47,20 @@
     }).join("");
   }
 
+  /** Le tableau rendu côté serveur contient-il encore une action non terminale ? */
+  function tableHasPending(body) {
+    if (!body) {
+      return false;
+    }
+    var pills = body.querySelectorAll(".pill");
+    for (var i = 0; i < pills.length; i++) {
+      if (NON_TERMINAL[(pills[i].textContent || "").trim()]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function attach(block) {
     var agent = block.getAttribute("data-actions-agent");
     if (!agent) {
@@ -49,7 +69,8 @@
     var body = block.querySelector("tbody");
     var statusLine = block.querySelector(".poll-status");
     var pendingAttr = parseInt(block.getAttribute("data-actions-pending") || "0", 10);
-    if (!body || !(pendingAttr > 0)) {
+    var shouldPoll = body && (pendingAttr > 0 || tableHasPending(body));
+    if (!shouldPoll) {
       return; // rien de PENDING au chargement : ne pas poller en permanence
     }
 
@@ -119,7 +140,7 @@
       statusLine.textContent = "Rafraîchissement automatique…";
       statusLine.hidden = false;
     }
-    schedule();
+    tick(); // premier relevé immédiat : pas d'attente de 2 s avant la première mise à jour
   }
 
   function init() {

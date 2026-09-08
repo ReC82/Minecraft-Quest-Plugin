@@ -1064,3 +1064,69 @@ Session du 2026-09-08 (~12:35–12:46 UTC). Branche `feat/control-panel-admin-to
   `scripts/rollback-verygames.sh --latest` + `scripts/verygames-restart.sh` ; supprimer les
   `npcs/*.yml` créés ; restaurer un YAML de quête édité par `quest.giver.set`.
 - Rapport : `docs/claude-reports/2026-09-08_1235_npc-v2-declarative.md`.
+
+---
+
+## 2026-09-08 - Lier une définition PNJ à un PNJ Citizens existant — issue #81 (phase 1)
+
+### Changement
+
+Nouvelles actions agent :
+
+- `npc.citizens.list` (lecture) — parcourt le **registre Citizens** (`NpcIdentityService.citizensRoster`,
+  thread principal, jamais un scan d'entités/chunks) et croise avec `npc_citizens_bindings` :
+  `{numericId, uuid, name, linkedNpcId?, availableForBinding, spawned}` + compteurs. Vide si
+  Citizens inactif.
+- `npc.citizens.link` (mutation whitelistée, permission dédiée `NPC_BIND_WRITE`, `confirm`
+  obligatoire, audit) — lie une **définition logique existante** (`npc_id`) à un **PNJ Citizens
+  existant** (`citizens_id` numérique). `CitizensBindPlanner` (pur) : liaison identique → succès
+  no-op ; ce PNJ Citizens ou ce `npc_id` déjà lié → refus lisible (**jamais de rebind
+  silencieux**). Écriture atomique `NpcBindingRepository.insertIfAbsent` (`INSERT OR IGNORE`) puis
+  rafraîchissement du cache `NpcIdentityService` (l'identification en jeu prend effet **sans
+  redémarrage**).
+
+**Aucun spawn, aucun rebind, aucune suppression de PNJ Citizens.** Aucun changement de schéma SQL
+(la table `npc_citizens_bindings` de la migration V12 est réutilisée), de commande en jeu, de
+contenu YAML.
+
+### Action serveur
+
+- **Remplacement du seul JAR RPGQuest** (pour que l'agent connaisse `npc.citizens.list` /
+  `npc.citizens.link`).
+- Redémarrage serveur (RCON `stop` → relance auto VeryGames).
+- Aucun autre fichier. Aucune migration.
+- Control Panel AWS redéployé (`scripts/plugadmin/deploy.sh`).
+
+### Sauvegarde préalable
+
+- Ancien JAR : sauvegardé automatiquement par `deploy-verygames.sh`.
+- `plugins/RPGQuest/data.db` par précaution (les liaisons créées ensuite via `npc.citizens.link`
+  écrivent dans `npc_citizens_bindings` — un `INSERT` non destructif).
+
+### Déploiement
+
+1. `scripts/deploy-verygames.sh -y` (JAR seul) puis `scripts/verygames-restart.sh`.
+2. `scripts/plugadmin/deploy.sh` (AWS).
+
+### Validation
+
+- `/plugins` (RCON) : RPGQuest en vert ; `rpgquest version` répond.
+- Heartbeat agent reçu ; aucun `ERROR` dans `journalctl -u plugadmin`.
+- Action `npc.citizens.list` → **SUCCESS** ; `details.citizens[]` peuplé, `availableForBinding`
+  cohérent avec les liaisons existantes.
+- Action `npc.citizens.link` sur une définition **NOT_LINKED** + un PNJ Citizens **libre** →
+  **SUCCESS** `LINKED` ; un `npc.list` suivant montre `state: LINKED`.
+- Action `npc.citizens.link` sur un PNJ Citizens **déjà lié** → **FAILED** `CITIZENS_TAKEN`.
+- `npc.list` toujours **SUCCESS**.
+
+### Rollback
+
+- VeryGames : `scripts/rollback-verygames.sh --latest` puis `scripts/verygames-restart.sh`.
+  Une liaison créée se défait par `DELETE FROM npc_citizens_bindings WHERE citizens_uuid = ?`
+  (ou `/rpgadmin npc untag` en visant l'entité) — hors périmètre de ce lot.
+- AWS : `scripts/plugadmin/rollback.sh app`.
+- Aucune migration à défaire.
+
+### Exécution réelle
+
+_À compléter par la session qui déploie (voir le rapport `docs/claude-reports/` associé)._

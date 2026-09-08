@@ -238,6 +238,7 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 | `story.player.status` | `player` | `StoryService#info` | `stories[]` (state, étape courante/total, quête courante) |
 | `item.list` | — | `YamlCustomItemRegistry#items` | `items[]` (id, displayName, type) |
 | `npc.list` | — | `NpcCatalog` (`YamlNpcEngine` + dialogues + quêtes + `NpcBindingRepository`) | `npcs[]` + `definedIds` + `canonicalIds` — voir **Payload `npc.list`** ci-dessous |
+| `npc.citizens.list` | — | `NpcIdentityService#citizensRoster` (registre Citizens, thread principal) + `NpcBindingRepository` | `citizens[]` `{numericId, uuid, name, linkedNpcId?, availableForBinding, spawned}` + `total`/`available`/`linked`. **Catalogue physique**, séparé du catalogue logique `npc.list`. Aucune position/monde. Vide si Citizens inactif. |
 | `player.resetnew.preview` | `player` | `PlayerResetService#previewReset` | `lines[]` (label, count, detail) — **dry-run** |
 
 ### Mutations (confirmation exigée côté panel)
@@ -255,6 +256,7 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 | `npc.definition.create` | `npc_id` ; `display_name` ; `dialogue_id`? ; `role`? ; `enabled` | `NpcDefinitionStore#create` | crée `npcs/<id>.yml` — voir **Écritures de contenu PNJ** |
 | `npc.definition.update` | idem (id inchangé) | `NpcDefinitionStore#update` | réécrit une définition existante |
 | `quest.giver.set` | `quest_id` ; `npc_id` | `QuestGiverEditor` + `QuestProgressEngine#reloadQuestDefinitions` | pose `giver:` sur le YAML d'une quête |
+| `npc.citizens.link` | `npc_id` ; `citizens_id` (entier > 0) | `NpcIdentityService#bindCitizens` (`CitizensBindPlanner` + `NpcBindingRepository#insertIfAbsent`) | lie une **définition existante** à un **PNJ Citizens existant** — issue #81, phase 1 ; jamais de spawn/rebind |
 
 Validation à **trois couches** : `AgentActionCatalog` (panel, avant création) → `AgentActionExecutor`
 (agent, patterns bornés) → service métier. Quantité GIVE plafonnée à 64. `player.resetnew.confirm`
@@ -315,6 +317,31 @@ fichier (`NpcDefinitionYaml`) ou applique une édition de texte minimale (`Quest
 
 `AgentActionExecutor` re-valide les patterns (`npc_id` `[a-z0-9._-]{1,64}`, `display_name` ≤ 128
 et mono-ligne, `dialogue_id` `namespace:clé` ou clé simple, `role` `[a-z0-9_-]{1,32}`).
+
+### Liaison définition ↔ Citizens existant (`npc.citizens.link` — issue #81, phase 1)
+
+`npc.citizens.list` (lecture) : parcourt le **registre Citizens** (thread principal, jamais un
+scan d'entités/chunks) et croise avec `npc_citizens_bindings` pour marquer chaque PNJ
+`availableForBinding` (aucune liaison) ou non.
+
+`npc.citizens.link` (mutation, permission dédiée `NPC_BIND_WRITE`, `confirm` obligatoire, audit) :
+
+1. `npc_id` doit avoir une **définition logique** (`YamlNpcEngine.find`) et être `enabled` ;
+2. `citizens_id` doit **exister** dans le registre Citizens (résolu `onMain`) ;
+3. `CitizensBindPlanner` décide sur la photo `npc_citizens_bindings` : liaison identique → `NOOP`
+   (succès) ; ce PNJ Citizens déjà lié à un autre `npc_id` → `CITIZENS_TAKEN` (refus, message
+   « Citizens #N est déjà lié à npc_id=X. ») ; ce `npc_id` déjà lié ailleurs → `NPC_ID_TAKEN`
+   (refus) ; sinon `INSERT` ;
+4. écriture atomique `NpcBindingRepository.insertIfAbsent` (`INSERT OR IGNORE`), puis rafraîchit le
+   cache `NpcIdentityService` pour que l'identification en jeu prenne effet sans redémarrage.
+
+Threading : registre Citizens sur le **thread principal** (`onMain`), base **asynchrone** — jamais
+de SQLite bloquant sur le thread principal. **Aucun spawn, aucun rebind, aucune suppression** dans
+cette phase.
+
+Une fois une définition créée pour un `npc_id` qui a **déjà** une ligne `npc_citizens_bindings`
+(cas `guide`/`libraire`… sur DEV), aucune action n'est nécessaire : le prochain `npc.list`
+recroise binding + définition et passe l'état à `LINKED` automatiquement.
 
 ---
 

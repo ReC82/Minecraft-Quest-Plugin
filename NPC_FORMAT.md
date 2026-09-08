@@ -28,9 +28,11 @@ enabled: true                 # optionnel ; true par défaut
 ## Définition logique vs binding Citizens
 
 La **définition** (`npcs/*.yml`) ne crée aucune entité. Le **binding
-Citizens** (table `npc_citizens_bindings`, posé en jeu par
-`/rpgadmin npc tag <id>`) lie une entité Citizens à cet `id`. Les deux sont
-indépendants :
+Citizens** (table `npc_citizens_bindings`) lie un PNJ Citizens à cet `id`. Il
+se pose en jeu par `/rpgadmin npc tag <id>`, **ou** depuis le Control Panel
+(`/npcs` → « Lier un PNJ Citizens existant », action agent `npc.citizens.link`
+— issue #81 : lie une définition à un PNJ Citizens **déjà créé**, jamais de
+spawn, jamais de rebind d'un binding existant). Les deux sont indépendants :
 
 | Définition | Binding Citizens | État |
 |---|---|---|

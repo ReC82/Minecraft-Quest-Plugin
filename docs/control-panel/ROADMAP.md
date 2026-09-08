@@ -97,9 +97,14 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       vs `citizensBindingPresent` + `state` ; `definedIds` = source canonique. Écritures whitelistées :
       `npc.definition.create` / `npc.definition.update` (`NpcDefinitionStore`) et `quest.giver.set`
       (`QuestGiverEditor`, édition minimale du YAML). Page `/npcs` : deux blocs, création + édition
-      limitée + attribution de quête. **Reste** : spawn/binding Citizens depuis le web, éditeur de
-      dialogues, câblage `/rpgadmin npc tag` (#66), enrichissement live (position/monde,
-      PNJ Citizens non tagués).
+      limitée + attribution de quête.
+- [~] **Lier une définition à un PNJ Citizens existant** (#81, phase 1) — `npc.citizens.list`
+      (registre Citizens, thread principal) + `npc.citizens.link` (`NpcIdentityService.bindCitizens`
+      + `CitizensBindPlanner` : collisions refusées, no-op idempotent, jamais de rebind ni de spawn).
+      Page `/npcs` : « Rafraîchir les PNJ Citizens » + formulaire de liaison sur les cartes
+      `NOT_LINKED` (Citizens libres seulement). **Reste** : spawn d'un PNJ Citizens depuis le web
+      (#81 phase 2), rebind/remplacement, éditeur de dialogues, câblage `/rpgadmin npc tag` (#66),
+      enrichissement live (position/monde, PNJ Citizens non tagués).
 - [~] `quest.list` transporte des **objectifs et récompenses structurés**
       (`objectiveDetails` / `rewardDetails` = `{kind, target, amount, value, command, raw}`,
       commande non tronquée) + le **PNJ donneur** (`giverId`, champ YAML `giver:` optionnel) —

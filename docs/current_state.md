@@ -148,6 +148,18 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   Citizens), création + édition limitée (jamais l'id) + attribution de quête. **Non fait**
   (délibérément) : spawn / binding Citizens depuis le web, éditeur de dialogues, câblage
   `/rpgadmin npc tag` (#66), enrichissement live (position/monde, PNJ Citizens non tagués).
+- **Liaison définition ↔ PNJ Citizens existant** *(branche `feat/control-panel-admin-tools`,
+  issue #81 phase 1)* — nouvelles actions agent `npc.citizens.list` (lecture du registre Citizens
+  sur le thread principal — `numericId`, `uuid`, `name`, `linkedNpcId`, `availableForBinding`,
+  `spawned` ; jamais de scan d'entités/chunks) et `npc.citizens.link` (`npc_id` + `citizens_id` ;
+  permission dédiée `NPC_BIND_WRITE`, `confirm` obligatoire, audit). `NpcIdentityService.bindCitizens`
+  + `CitizensBindPlanner` (pur) : liaison identique → succès no-op ; PNJ Citizens ou `npc_id` déjà
+  lié → refus lisible (jamais de rebind silencieux) ; écriture atomique
+  `NpcBindingRepository.insertIfAbsent` + rafraîchissement du cache. Page `/npcs` : bouton
+  « Rafraîchir les PNJ Citizens » + formulaire « Lier un PNJ Citizens existant » sur les cartes
+  `NOT_LINKED` (seuls les Citizens libres sont sélectionnables) ; sur une carte `LINKED`, le
+  binding est affiché sans bouton (rebind = phase ultérieure). **Toujours hors périmètre** : spawn
+  d'un PNJ Citizens (phase 2), rebind/remplacement, suppression.
 
 ## Bugs connus et corrigés
 

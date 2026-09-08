@@ -1163,3 +1163,77 @@ Session du 2026-09-08 (~13:19–13:25 UTC). Branche `feat/control-panel-admin-to
 - Aucun PNJ Citizens créé ni supprimé ; aucune progression joueur touchée ; aucune migration.
 
 Rapport : `docs/claude-reports/2026-09-08_1325_npc-citizens-link-81.md`.
+
+## 2026-09-08 - Spawn d'un PNJ Citizens depuis une définition — issue #81 (phase 2)
+
+### Changement
+
+Nouvelle action agent **`npc.citizens.create`** (mutation whitelistée `AgentActionType` ↔
+`AgentActionCatalog`, **permission dédiée `NPC_SPAWN_WRITE`**, `confirm` obligatoire, audit,
+validation 3 couches). Crée **physiquement** un PNJ Citizens (`EntityType.PLAYER`) à partir d'une
+`NpcDefinition` existante — nom = `displayName` — puis le lie immédiatement à son `npc_id`.
+
+- Paramètres **métier uniquement** : `npc_id`, `world`, `x`/`y`/`z`, `yaw`?/`pitch`? (défaut `0`).
+  Le navigateur n'envoie jamais de nom Citizens libre, d'UUID, de commande console, de YAML ni de
+  chemin.
+- `CitizensSpawnPlanner` (pur, sans Bukkit) vérifie **toutes** les préconditions logiques avant la
+  moindre création : Citizens actif (`CITIZENS_UNAVAILABLE`), définition présente (`UNKNOWN_NPC`)
+  et `enabled` (`NPC_DISABLED`), `npc_id` pas déjà lié (`NPC_ALREADY_LINKED`), `world` dans la
+  **liste blanche RPGQuest** (hub / claims / exploration de la config — `UNKNOWN_WORLD`), position
+  **finie** et bornée (`|x|,|z| ≤ 29 999 984`, `-2048 ≤ y ≤ 2048`, `-90 ≤ pitch ≤ 90` —
+  `INVALID_POSITION`, jamais « corrigée »).
+- Thread principal : le monde doit être **chargé** et `y` dans ses limites réelles, puis
+  `createNPC` + `npc.spawn(loc, CREATE)` (`CREATE_FAILED` si Citizens refuse).
+- `CitizensSpawnCoordinator` (pur) orchestre `create → bind → success` ; si la liaison échoue
+  **après** création, `destroyCitizensNpc(numericId, uuid)` supprime **le seul PNJ créé par cette
+  action** (double clé — jamais un PNJ préexistant) → `BIND_FAILED_ROLLED_BACK`.
+- Persistance du binding : `NpcIdentityService.bindCitizens` (réutilise `CitizensBindPlanner` +
+  `NpcBindingRepository.insertIfAbsent`, anti-collision phase 1) ; cache d'identification rafraîchi
+  → identification en jeu effective **sans redémarrage**.
+
+**Aucune migration SQL** (table `npc_citizens_bindings` de la V12 réutilisée). Aucune commande en
+jeu, aucun contenu YAML modifié. Aucune suppression générale de PNJ Citizens (seul le rollback
+interne supprime — une action `npc.citizens.delete` éventuelle serait un chantier séparé).
+
+### Action serveur
+
+- **Remplacement du seul JAR RPGQuest** (pour que l'agent connaisse `npc.citizens.create`).
+- Redémarrage serveur (RCON `stop` → relance auto VeryGames).
+- Aucun autre fichier. Aucune migration.
+- Control Panel AWS redéployé (`scripts/plugadmin/deploy.sh`).
+
+### Sauvegarde préalable
+
+- Ancien JAR : sauvegardé automatiquement par `deploy-verygames.sh`.
+- `plugins/RPGQuest/data.db` par précaution (un spawn réussi écrit une ligne
+  `npc_citizens_bindings` — un `INSERT` non destructif). Les fichiers Citizens
+  (`plugins/Citizens/saves.yml` ou base) évoluent aussi dès qu'un PNJ est réellement créé.
+
+### Déploiement
+
+1. `scripts/deploy-verygames.sh -y` (JAR seul) puis `scripts/verygames-restart.sh`.
+2. `scripts/plugadmin/deploy.sh` (AWS).
+
+### Validation
+
+- `/plugins` (RCON) : RPGQuest **et Citizens** en vert ; `rpgquest version` répond.
+- Heartbeat agent reçu ; aucun `ERROR` dans `journalctl -u plugadmin`.
+- `npc.list` et `npc.citizens.list` toujours **SUCCESS**.
+- `npc.citizens.create` **sans position sûre explicite = non exécuté en réel** (consigne : ne pas
+  faire apparaître un PNJ n'importe où sur DEV). Validé sur DEV **sans spawn réel** : refus
+  `NPC_ALREADY_LINKED` / `UNKNOWN_WORLD` / `INVALID_POSITION` / `UNKNOWN_NPC`. Le chemin nominal
+  `CREATED` est couvert par les tests automatisés.
+- Premier spawn réel : `PENDING MANUAL VALIDATION` (owner, position explicite fournie).
+
+### Rollback
+
+- VeryGames : `scripts/rollback-verygames.sh --latest` puis `scripts/verygames-restart.sh`.
+  Un PNJ Citizens réellement créé se retire par `/npc select <id>` + `/npc remove` **puis**
+  `DELETE FROM npc_citizens_bindings WHERE citizens_uuid = ?` (ou `/rpgadmin npc untag` en visant
+  l'entité) — hors périmètre de ce lot.
+- AWS : `scripts/plugadmin/rollback.sh app`.
+- Aucune migration à défaire.
+
+### Exécution réelle
+
+_À compléter par la session qui déploie (voir le rapport `docs/claude-reports/` associé)._

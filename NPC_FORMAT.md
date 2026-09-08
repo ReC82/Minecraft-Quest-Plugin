@@ -29,10 +29,19 @@ enabled: true                 # optionnel ; true par défaut
 
 La **définition** (`npcs/*.yml`) ne crée aucune entité. Le **binding
 Citizens** (table `npc_citizens_bindings`) lie un PNJ Citizens à cet `id`. Il
-se pose en jeu par `/rpgadmin npc tag <id>`, **ou** depuis le Control Panel
-(`/npcs` → « Lier un PNJ Citizens existant », action agent `npc.citizens.link`
-— issue #81 : lie une définition à un PNJ Citizens **déjà créé**, jamais de
-spawn, jamais de rebind d'un binding existant). Les deux sont indépendants :
+se pose de trois façons :
+
+- en jeu par `/rpgadmin npc tag <id>` ;
+- depuis le Control Panel, en **liant un PNJ Citizens déjà créé**
+  (`/npcs` → « Lier un PNJ Citizens existant », action `npc.citizens.link` —
+  issue #81 phase 1 ; jamais de spawn ni de rebind) ;
+- depuis le Control Panel, en **créant physiquement le PNJ Citizens** à partir
+  de la définition puis en le liant (`/npcs` → « Créer le PNJ Citizens »,
+  action `npc.citizens.create` — issue #81 phase 2 ; nom = `display_name`,
+  monde de la liste blanche RPGQuest, position bornée ; rollback du PNJ créé si
+  la liaison échoue).
+
+Les deux couches restent indépendantes :
 
 | Définition | Binding Citizens | État |
 |---|---|---|

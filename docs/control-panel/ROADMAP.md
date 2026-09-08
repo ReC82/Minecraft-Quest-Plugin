@@ -102,8 +102,17 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       (registre Citizens, thread principal) + `npc.citizens.link` (`NpcIdentityService.bindCitizens`
       + `CitizensBindPlanner` : collisions refusées, no-op idempotent, jamais de rebind ni de spawn).
       Page `/npcs` : « Rafraîchir les PNJ Citizens » + formulaire de liaison sur les cartes
-      `NOT_LINKED` (Citizens libres seulement). **Reste** : spawn d'un PNJ Citizens depuis le web
-      (#81 phase 2), rebind/remplacement, éditeur de dialogues, câblage `/rpgadmin npc tag` (#66),
+      `NOT_LINKED` (Citizens libres seulement).
+- [~] **Spawn d'un PNJ Citizens depuis une définition** (#81, phase 2) — `npc.citizens.create`
+      (permission dédiée `NPC_SPAWN_WRITE`). `CitizensSpawnPlanner` (pur : Citizens actif,
+      définition présente + `enabled`, pas déjà lié, monde de la liste blanche RPGQuest, position
+      finie et bornée) → `CitizensSpawnCoordinator` (pur : `create → bind → success`, sinon
+      rollback du seul PNJ créé → `BIND_FAILED_ROLLED_BACK`). Nom = `displayName`. Thread principal
+      pour Citizens + monde, persistance async. Page `/npcs` : bloc « Créer le PNJ Citizens » sur
+      les cartes définies `NOT_LINKED` — preview + monde en liste (heartbeat) + coordonnées à
+      saisir + confirmation. **Reste** : premier spawn réel `PENDING MANUAL VALIDATION` ;
+      suppression générale (`npc.citizens.delete`), rebind/déplacement, choix de position depuis
+      une carte, téléportation admin, éditeur de dialogues, câblage `/rpgadmin npc tag` (#66),
       enrichissement live (position/monde, PNJ Citizens non tagués).
 - [~] `quest.list` transporte des **objectifs et récompenses structurés**
       (`objectiveDetails` / `rewardDetails` = `{kind, target, amount, value, command, raw}`,

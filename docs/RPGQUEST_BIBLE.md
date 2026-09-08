@@ -448,14 +448,17 @@ séparé et optionnel.
 utilisé par `giver:`, `TALK_TO_NPC` ou un dialogue sans définition
 correspondante est une **erreur de contenu** signalée dans le Control Panel
 (`/npcs`, action agent `npc.list`). Le panel permet aussi de **créer / éditer**
-une définition, d'**attribuer une quête** (pose `giver:`) et de **lier une
+une définition, d'**attribuer une quête** (pose `giver:`), de **lier une
 définition à un PNJ Citizens existant** (`npc.citizens.list` /
-`npc.citizens.link`, issue #81 phase 1 — collisions refusées, jamais de rebind,
-jamais de spawn) — actions agent `npc.definition.create` /
-`npc.definition.update` / `quest.giver.set` / `npc.citizens.link`, jamais de
-YAML brut ni de commande console. La **création physique** d'un PNJ Citizens
-depuis le web (spawn) et le câblage de `/rpgadmin npc tag` (#66) ne sont
-**pas** encore faits.
+`npc.citizens.link`, issue #81 phase 1 — collisions refusées, jamais de rebind)
+et de **créer physiquement un PNJ Citizens depuis une définition** puis de le
+lier (`npc.citizens.create`, issue #81 phase 2 — nom = `displayName`, monde de
+la liste blanche RPGQuest, position bornée, rollback du PNJ créé si la liaison
+échoue). Actions agent `npc.definition.create` / `npc.definition.update` /
+`quest.giver.set` / `npc.citizens.link` / `npc.citizens.create`, jamais de YAML
+brut ni de commande console. Le câblage de `/rpgadmin npc tag` (#66), la
+suppression générale d'un PNJ Citizens et le rebind d'un binding existant ne
+sont **pas** encore faits.
 
 ### Commandes RPGQuest — `/rpgadmin npc`
 

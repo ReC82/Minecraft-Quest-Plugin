@@ -158,8 +158,23 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `NpcBindingRepository.insertIfAbsent` + rafraîchissement du cache. Page `/npcs` : bouton
   « Rafraîchir les PNJ Citizens » + formulaire « Lier un PNJ Citizens existant » sur les cartes
   `NOT_LINKED` (seuls les Citizens libres sont sélectionnables) ; sur une carte `LINKED`, le
-  binding est affiché sans bouton (rebind = phase ultérieure). **Toujours hors périmètre** : spawn
-  d'un PNJ Citizens (phase 2), rebind/remplacement, suppression.
+  binding est affiché sans bouton (rebind = phase ultérieure). **Toujours hors périmètre** :
+  rebind/remplacement, suppression.
+- **Spawn d'un PNJ Citizens depuis une définition** *(branche `feat/control-panel-admin-tools`,
+  issue #81 phase 2)* — action agent `npc.citizens.create` (permission dédiée `NPC_SPAWN_WRITE`,
+  `confirm` obligatoire, audit). Paramètres métier stricts : `npc_id` + `world` + `x`/`y`/`z` +
+  `yaw`?/`pitch`? ; le nom vient de `NpcDefinition.displayName` (jamais du navigateur).
+  `CitizensSpawnPlanner` (pur) valide toutes les préconditions logiques **avant** création
+  (Citizens actif, définition présente + `enabled`, `npc_id` pas déjà lié, monde de la liste
+  blanche RPGQuest = hub/claims/exploration de la config, position finie et bornée — jamais
+  « corrigée »). `CitizensSpawnCoordinator` (pur) orchestre `create → bind → success`, et si la
+  liaison échoue **après** création, détruit **le seul PNJ créé** (`BIND_FAILED_ROLLED_BACK`,
+  jamais un PNJ préexistant). Threading : registre Citizens + monde sur le thread principal,
+  persistance async. Page `/npcs` : bloc « Créer le PNJ Citizens » sur les cartes définies
+  `NOT_LINKED` — preview (id, nom, « aucun Citizens lié »), monde en liste déroulante (mondes
+  chargés du heartbeat), coordonnées à saisir (jamais devinées), confirmation obligatoire. **Non
+  fait** (chantiers séparés) : suppression générale d'un PNJ Citizens, rebind/déplacement, choix
+  de position depuis une carte, téléportation admin, câblage `/rpgadmin npc tag` (#66).
 
 ## Bugs connus et corrigés
 

@@ -257,6 +257,7 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 | `npc.definition.update` | idem (id inchangé) | `NpcDefinitionStore#update` | réécrit une définition existante |
 | `quest.giver.set` | `quest_id` ; `npc_id` | `QuestGiverEditor` + `QuestProgressEngine#reloadQuestDefinitions` | pose `giver:` sur le YAML d'une quête |
 | `npc.citizens.link` | `npc_id` ; `citizens_id` (entier > 0) | `NpcIdentityService#bindCitizens` (`CitizensBindPlanner` + `NpcBindingRepository#insertIfAbsent`) | lie une **définition existante** à un **PNJ Citizens existant** — issue #81, phase 1 ; jamais de spawn/rebind |
+| `npc.citizens.create` | `npc_id` ; `world` ; `x` ; `y` ; `z` ; `yaw`? ; `pitch`? | `CitizensSpawnPlanner` (pur) → `CitizensSpawnCoordinator` (`NpcIdentityService#createCitizensNpc` + `#bindCitizens`, rollback `#destroyCitizensNpc`) | **crée physiquement** un PNJ Citizens depuis la définition (nom = `displayName`) puis le lie ; rollback du PNJ créé si la liaison échoue — issue #81, phase 2 ; permission dédiée `NPC_SPAWN_WRITE` |
 
 Validation à **trois couches** : `AgentActionCatalog` (panel, avant création) → `AgentActionExecutor`
 (agent, patterns bornés) → service métier. Quantité GIVE plafonnée à 64. `player.resetnew.confirm`
@@ -342,6 +343,38 @@ cette phase.
 Une fois une définition créée pour un `npc_id` qui a **déjà** une ligne `npc_citizens_bindings`
 (cas `guide`/`libraire`… sur DEV), aucune action n'est nécessaire : le prochain `npc.list`
 recroise binding + définition et passe l'état à `LINKED` automatiquement.
+
+### Spawn d'un PNJ Citizens depuis une définition (`npc.citizens.create` — issue #81, phase 2)
+
+`npc.citizens.create` (mutation, permission dédiée **`NPC_SPAWN_WRITE`**, `confirm` obligatoire,
+audit) crée **physiquement** un PNJ Citizens à partir d'une `NpcDefinition` puis le lie
+immédiatement. Paramètres **métier uniquement** : `npc_id`, `world`, `x`/`y`/`z`, `yaw`?/`pitch`?
+(défaut `0`). Le **nom affiché vient de `NpcDefinition.displayName`** — le navigateur n'envoie
+jamais de nom Citizens libre, d'UUID, de commande console, de YAML ni de chemin.
+
+Étapes (échec = aucun spawn) :
+
+1. **Préconditions pures** (`CitizensSpawnPlanner`, sans Bukkit) : Citizens actif
+   (`CITIZENS_UNAVAILABLE`) ; définition présente (`UNKNOWN_NPC`) et `enabled` (`NPC_DISABLED`) ;
+   `npc_id` pas déjà lié (`NPC_ALREADY_LINKED`) ; `world` dans la **liste blanche RPGQuest**
+   (`hub`/`claims`/exploration de la config — `UNKNOWN_WORLD`) ; position **finie** et bornée
+   (`|x|,|z| ≤ 29 999 984`, `-2048 ≤ y ≤ 2048`, `-90 ≤ pitch ≤ 90` — `INVALID_POSITION`, jamais
+   « corrigée »).
+2. **Thread principal** : le monde doit être **chargé** (`UNKNOWN_WORLD`) et `y` dans ses limites
+   réelles (`INVALID_POSITION`) ; puis `CitizensAPI.getNPCRegistry().createNPC(PLAYER, name)` +
+   `npc.spawn(loc, CREATE)` (`CREATE_FAILED` si Citizens refuse).
+3. **Async** : `NpcIdentityService.bindCitizens` (réutilise `CitizensBindPlanner` +
+   `insertIfAbsent`, anti-collision phase 1).
+4. **Rollback** : si la liaison échoue *après* création, `destroyCitizensNpc(numericId, uuid)`
+   supprime **le seul PNJ créé par cette action** (double clé — jamais un PNJ préexistant) →
+   `BIND_FAILED_ROLLED_BACK` (`rolled_back` indique si la suppression a réussi).
+
+Résultat structuré : `{code, npc_id, citizens_id, world, rolled_back, effects}`. Succès →
+`code=CREATED`, `value=<citizens_id>`. Un `npc.list` suivant montre `state: LINKED`.
+
+**Hors périmètre** (chantiers séparés) : suppression générale d'un PNJ Citizens
+(`npc.citizens.delete` — seul le rollback interne supprime), rebind/déplacement d'un PNJ existant,
+choix de position depuis une carte, téléportation admin vers le PNJ.
 
 ---
 

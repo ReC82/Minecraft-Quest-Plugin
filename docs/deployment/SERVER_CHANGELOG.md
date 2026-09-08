@@ -953,3 +953,75 @@ Déployé par cette session le 2026-09-08 (~11:46–11:50 UTC). Branche
   `rpgquest-20260908T114637Z-predeploy.jar` (sha256 `4fbaa345…`), puis `scripts/verygames-restart.sh`.
 - AWS : `scripts/plugadmin/rollback.sh app` → release `20260908-114604`.
 - Rapport : `docs/claude-reports/2026-09-08_1147_npc-list-page-npcs-v1.md`.
+
+---
+
+## 2026-09-08 - Système PNJ V2 déclarative : NpcDefinition + écritures de contenu — issues #66 / #75
+
+### Changement
+
+Introduit une **définition logique** de PNJ RPGQuest, indépendante de Citizens et du monde :
+un fichier par PNJ sous `plugins/RPGQuest/npcs/*.yml` (`YamlNpcEngine`, `NpcDefinition` :
+`id`, `display_name`, `dialogue?`, `role?`, `enabled`). Voir `NPC_FORMAT.md`.
+
+- `npc.list` distingue désormais `logicalDefinitionPresent` vs `citizensBindingPresent`,
+  calcule un `state`, et expose `definedIds` (source canonique, transition #66). Nouveaux codes
+  d'anomalie : `NO_DEFINITION` / `BINDING_NO_DEFINITION` / `DIALOGUE_MISSING` (err), `NOT_LINKED`
+  / `DISABLED` (info).
+- Nouvelles actions agent d'**écriture de contenu** whitelistées + auditées :
+  `npc.definition.create` / `npc.definition.update` (`NpcDefinitionStore` — écriture atomique,
+  jamais d'écrasement silencieux, jamais de YAML brut ni de chemin arbitraire) et
+  `quest.giver.set` (`QuestGiverEditor` — pose `giver:` sur le YAML d'une quête en préservant
+  commentaires et format ; recharge le moteur de quêtes).
+
+**Un exemple `npcs/guard.yml` est livré** et copié au premier démarrage (comme
+`dialogues/guard.yml`). Aucun autre changement de contenu, de schéma SQL, de commande en jeu.
+
+### Action serveur
+
+- **Remplacement du seul JAR RPGQuest.**
+- Redémarrage serveur (RCON `stop` → relance automatique VeryGames).
+- Le dossier `plugins/RPGQuest/npcs/` et `npcs/guard.yml` sont **créés automatiquement** au
+  démarrage. Aucun fichier existant n'est modifié. Aucune migration.
+- Control Panel AWS redéployé (`scripts/plugadmin/deploy.sh`).
+- Les définitions PNJ créées ensuite via le Control Panel écrivent dans `plugins/RPGQuest/npcs/`
+  (via l'agent, sur le serveur) ; `quest.giver.set` édite un fichier de `plugins/RPGQuest/quests/`.
+
+### Sauvegarde préalable
+
+- Ancien JAR : sauvegardé automatiquement par `deploy-verygames.sh` (+ `.meta`). Ne jamais
+  écraser le dernier backup.
+- `plugins/RPGQuest/quests/` : à sauvegarder si des `quest.giver.set` sont exécutés après le
+  déploiement (le script `deploy-verygames.sh --also` sauvegarde de toute façon avant tout envoi ;
+  ici c'est l'agent qui édite en place — prévoir un backup FTP du dossier `quests/` avant une
+  session d'attribution de quêtes).
+
+### Déploiement
+
+1. `scripts/deploy-verygames.sh -y` (JAR seul) puis `scripts/verygames-restart.sh`.
+2. `scripts/plugadmin/deploy.sh` (AWS).
+
+### Validation
+
+- `/plugins` (RCON) : RPGQuest en vert ; `rpgquest version` répond.
+- Log de démarrage : `Chargement des PNJ : N définition(s), 0 erreur(s).`
+- Heartbeat agent reçu ; aucun `ERROR` dans `journalctl -u plugadmin`.
+- Action `npc.list` → **SUCCESS** ; `details.npcs[].logicalDefinitionPresent` renseigné,
+  `definedIds` contient `guard`.
+- Action `npc.definition.create` (id de test, ex. `woodcutter_bob`) → **SUCCESS** ; le fichier
+  `npcs/woodcutter_bob.yml` apparaît ; `npc.list` suivant montre `state: NOT_LINKED`.
+- Action `quest.giver.set` sur une quête DEV (ex. `rpgquest:woodcutters_request` → `woodcutter_bob`)
+  → **SUCCESS** ; le YAML de la quête contient `giver: woodcutter_bob`, commentaires préservés.
+- `/npcs` du panel : deux blocs (Définition / Binding), création + édition + attribution visibles.
+
+### Rollback
+
+- VeryGames : `scripts/rollback-verygames.sh --latest` puis `scripts/verygames-restart.sh`.
+  Les fichiers `npcs/*.yml` créés restent (inertes avec l'ancien JAR) ; les supprimer si besoin.
+  Un `quest.giver.set` se défait en éditant / restaurant le YAML de la quête concernée.
+- AWS : `scripts/plugadmin/rollback.sh app`.
+- Aucune migration à défaire.
+
+### Exécution réelle
+
+_À compléter par la session qui déploie (voir le rapport `docs/claude-reports/` associé)._

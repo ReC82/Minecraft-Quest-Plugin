@@ -134,6 +134,20 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   **anomalies de configuration** (id référencé sans PNJ tagué, tag orphelin avec suggestion
   `garde`→`guard`, doublon de liaison…). Aucune lecture du monde : position, monde et PNJ Citizens
   *non tagués* sont hors périmètre de cette V1. `/rpgadmin npc tag` (#66) reste inchangé.
+- **Système PNJ V2 déclarative** *(branche `feat/control-panel-admin-tools`)* — introduit une
+  vraie **définition logique** de PNJ RPGQuest, indépendante de Citizens et du monde : un fichier
+  par PNJ sous `plugins/RPGQuest/npcs/*.yml` (`YamlNpcEngine`, `NpcDefinition` : `id`,
+  `display_name`, `dialogue?`, `role?`, `enabled`). Voir `NPC_FORMAT.md`. `NpcCatalog` / `npc.list`
+  distinguent maintenant `logicalDefinitionPresent` vs `citizensBindingPresent` et calculent un
+  `state` (`LINKED` / `NOT_LINKED` / `DISABLED` / `CITIZENS_ORPHAN` / `UNDEFINED_REFERENCE` /
+  `BROKEN`) ; `definedIds` devient la source canonique des ids (transition #66). Nouvelles actions
+  agent d'**écriture de contenu** whitelistées + auditées : `npc.definition.create` /
+  `npc.definition.update` (`NpcDefinitionStore`, jamais d'écrasement silencieux, jamais de YAML
+  brut) et `quest.giver.set` (`QuestGiverEditor` — pose `giver:` sur le YAML d'une quête en
+  préservant commentaires et format). Page `/npcs` : deux blocs (Définition RPGQuest / Binding
+  Citizens), création + édition limitée (jamais l'id) + attribution de quête. **Non fait**
+  (délibérément) : spawn / binding Citizens depuis le web, éditeur de dialogues, câblage
+  `/rpgadmin npc tag` (#66), enrichissement live (position/monde, PNJ Citizens non tagués).
 
 ## Bugs connus et corrigés
 

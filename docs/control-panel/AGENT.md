@@ -237,7 +237,7 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 | `story.list` | — | `StoryService#stories` | `stories[]` (id, titre, quêtes ordonnées) |
 | `story.player.status` | `player` | `StoryService#info` | `stories[]` (state, étape courante/total, quête courante) |
 | `item.list` | — | `YamlCustomItemRegistry#items` | `items[]` (id, displayName, type) |
-| `npc.list` | — | `NpcCatalog` (dialogues + quêtes + `NpcBindingRepository`) | `npcs[]` + `canonicalIds` — voir **Payload `npc.list`** ci-dessous |
+| `npc.list` | — | `NpcCatalog` (`YamlNpcEngine` + dialogues + quêtes + `NpcBindingRepository`) | `npcs[]` + `definedIds` + `canonicalIds` — voir **Payload `npc.list`** ci-dessous |
 | `player.resetnew.preview` | `player` | `PlayerResetService#previewReset` | `lines[]` (label, count, detail) — **dry-run** |
 
 ### Mutations (confirmation exigée côté panel)
@@ -252,6 +252,9 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 | `story.complete` | `player` ; `story_id` | `StoryService#adminComplete` | en ligne requis ; VARIABLE (CLAIM_TIER_1…) appliquées une fois |
 | `player.variable.set` | `player` ; `key` ; `value` (≤256) | `PlayerVariableRepository#set` | **outil debug** ; ne rejoue pas une progression |
 | `player.resetnew.confirm` | `player` ; `confirm=true` (garde-fou agent) | `PlayerResetService#resetToNewPlayer` | remet l'état RPGQuest « jamais joué » (jamais `data.db` entier, jamais un autre joueur) |
+| `npc.definition.create` | `npc_id` ; `display_name` ; `dialogue_id`? ; `role`? ; `enabled` | `NpcDefinitionStore#create` | crée `npcs/<id>.yml` — voir **Écritures de contenu PNJ** |
+| `npc.definition.update` | idem (id inchangé) | `NpcDefinitionStore#update` | réécrit une définition existante |
+| `quest.giver.set` | `quest_id` ; `npc_id` | `QuestGiverEditor` + `QuestProgressEngine#reloadQuestDefinitions` | pose `giver:` sur le YAML d'une quête |
 
 Validation à **trois couches** : `AgentActionCatalog` (panel, avant création) → `AgentActionExecutor`
 (agent, patterns bornés) → service métier. Quantité GIVE plafonnée à 64. `player.resetnew.confirm`
@@ -277,24 +280,41 @@ sur les chaînes legacy (`MinecraftNames.humanizeTokens` / `RewardText.parse`) t
 d'une cible n'a pas été redéployé. Les champs legacy sont **dépréciés** : à retirer une fois tous
 les agents à jour.
 
-### Payload `npc.list` (catalogue PNJ — V1, issues #66 / #75)
+### Payload `npc.list` (catalogue PNJ — V2 déclarative, issues #66 / #75)
 
-**Lecture seule.** Un « PNJ RPGQuest » est un id logique (fragment de `NamespacedKey`, ex.
-`guard`) croisé entre 4 sources : liaison Citizens (`npc_citizens_bindings`), dialogue
-`rpgquest:<id>` (convention des listeners d'interaction), champ `giver:` d'une quête (#75), et
-objectif `TALK_TO_NPC`. Dérivation dans `com.lodygames.rpgquest.npc.NpcCatalog` (pure, testable).
-**Ne lit jamais le monde** : position, monde et détection des PNJ Citizens *non tagués* sont hors
-périmètre de cette V1.
+**Lecture seule.** V2 : le modèle distingue la **définition logique** RPGQuest
+(`plugins/RPGQuest/npcs/*.yml`, `YamlNpcEngine` — indépendante du monde et de Citizens) du
+**binding physique Citizens** (`npc_citizens_bindings`). Dérivation croisée dans
+`com.lodygames.rpgquest.npc.NpcCatalog` (pure, testable) : définition ↔ binding ↔ dialogue
+`rpgquest:<id>` ↔ `giver:` d'une quête (#75) ↔ objectif `TALK_TO_NPC`. **Ne lit jamais le monde**
+(position, monde, PNJ Citizens *non tagués* = hors périmètre).
 
 `details` :
 
 | Champ | Type | Détail |
 |---|---|---|
-| `npcs[]` | `object[]` | `{id, displayName?, citizensNumericId?, bindingCount, bound, hasDialogue, dialogueId?, dialogueNodes, dialogueChoices, dialogueStartsQuests[], questsGiven[], questsReferenced[], sources[], warnings[]}`. `displayName` = `speaker` du nœud de départ du dialogue, ou `null`. Trié : erreurs, puis avertissements, puis PNJ sains. |
-| `npcs[].warnings[]` | `object[]` | `{code, severity, message}`. `severity` ∈ `error\|warning\|info`. Codes : `DUPLICATE_BINDING` (err), `QUEST_REF_NO_NPC` (warn — id référencé sans PNJ tagué), `TAGGED_UNUSED` (info — tag orphelin + suggestion d'id canonique proche, ex. `garde`→`guard`), `DIALOGUE_NO_NPC`, `GIVER_NO_DIALOGUE` (info). |
-| `canonicalIds` | `string[]` | Ids attendus par le contenu (dialogues + quêtes), triés — **jamais** les tags Citizens eux-mêmes. Source de vérité prévue pour `/rpgadmin npc tag` (#66, non encore câblée côté commande). |
-| `citizensAvailable` | `bool` | Citizens actif sur le serveur cible. Si `false`, les avertissements « aucun PNJ tagué » sont dégradés en `info`. |
-| `total`, `bound`, `unbound`, `withWarnings` | `int` | Compteurs. |
+| `npcs[]` | `object[]` | `{id, displayName?, logicalDefinitionPresent, citizensBindingPresent, citizensNumericId?, bindingCount, enabled, description?, role?, definedDialogueId?, hasDialogue, dialogueId?, dialogueNodes, dialogueChoices, dialogueStartsQuests[], questsGiven[], questsReferenced[], sources[], state, warnings[]}`. `displayName` = celui de la définition, sinon le `speaker` du dialogue, sinon `null`. Trié : erreurs, avertissements, puis PNJ sains. |
+| `npcs[].state` | `string` | `LINKED` / `NOT_LINKED` / `DISABLED` / `CITIZENS_ORPHAN` / `UNDEFINED_REFERENCE` / `BROKEN`. |
+| `npcs[].warnings[]` | `object[]` | `{code, severity, message}`. Codes : `DUPLICATE_DEFINITION` / `DUPLICATE_BINDING` / `DIALOGUE_MISSING` (err) ; `NO_DEFINITION` (err — id référencé sans définition, à migrer) ; `BINDING_NO_DEFINITION` (err — binding sans définition, + suggestion d'id défini proche `garde`→`guard`) ; `NOT_LINKED` / `DISABLED` / `GIVER_NO_DIALOGUE` (info). |
+| `definedIds` | `string[]` | Ids ayant une **définition logique** — la source de vérité (préparation #66). |
+| `canonicalIds` | `string[]` | Union `definedIds` + ids encore seulement référencés (transition). |
+| `citizensAvailable` | `bool` | Citizens actif sur le serveur cible. |
+| `total`, `withDefinition`, `withoutDefinition`, `bound`, `withWarnings` | `int` | Compteurs. |
+
+### Écritures de contenu PNJ (V2 — `npc.definition.*` / `quest.giver.set`)
+
+Mutations whitelistées, confirmation panel obligatoire, auditées. **Jamais** de YAML brut ni de
+chemin arbitraire : le navigateur n'envoie que des champs métier validés, l'agent reconstruit le
+fichier (`NpcDefinitionYaml`) ou applique une édition de texte minimale (`QuestGiverEditor`).
+
+| Type | Paramètres | Effet |
+|---|---|---|
+| `npc.definition.create` | `npc_id`, `display_name`, `dialogue_id`?, `role`?, `enabled` | Crée `npcs/<id>.yml` via `NpcDefinitionStore` — **échoue si l'id existe** (pas d'écrasement). Recharge `YamlNpcEngine`. Aucun PNJ Citizens créé. |
+| `npc.definition.update` | idem (id inchangé) | Réécrit la définition existante (échoue si absente). |
+| `quest.giver.set` | `quest_id`, `npc_id` | Pose `giver: <npc_id>` sur le fichier de la quête (`QuestGiverEditor` — commentaires préservés, ligne racine `giver:` remplacée ou insérée après `category:`). Exige que la quête **et** la définition PNJ existent. Recharge le moteur de quêtes (thread principal). |
+
+`AgentActionExecutor` re-valide les patterns (`npc_id` `[a-z0-9._-]{1,64}`, `display_name` ≤ 128
+et mono-ligne, `dialogue_id` `namespace:clé` ou clé simple, `role` `[a-z0-9_-]{1,32}`).
 
 ---
 

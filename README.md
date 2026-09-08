@@ -80,7 +80,9 @@ complet (arrêt propre, persistance entre redémarrages, tâches VS Code).
     dialogue s'ouvre aussi en cliquant sur un PNJ identifié via
     `/rpgadmin npc tag` (identifiant logique stable, indépendant de son nom
     affiché — voir [docs/RPGQUEST_BIBLE.md](docs/RPGQUEST_BIBLE.md) section 5)
-    dont l'id correspond à un dialogue chargé.
+    dont l'id correspond à un dialogue chargé. Un PNJ RPGQuest a aussi une
+    **définition logique** en données (`plugins/RPGQuest/npcs/*.yml`, voir
+    [NPC_FORMAT.md](NPC_FORMAT.md)), indépendante de Citizens.
 -   `/quests` (`rpgquest.quest`) — ouvre le journal de quêtes (menu
     paginé : actives, disponibles, terminées).
 -   `/customitem give <joueur> <id> [quantité]` (`rpgquest.admin`) — donne

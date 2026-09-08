@@ -89,13 +89,17 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
 
 ## Étape 3 — contenu (lecture structurée)
 
-- [~] **Page `/npcs` V1** (lecture) — catalogue PNJ RPGQuest via l'action agent `npc.list`
-      (`NpcCatalog` croise liaison Citizens ↔ dialogue `rpgquest:<id>` ↔ `giver:` ↔ `TALK_TO_NPC`).
-      Affiche nom lisible + id RPGQuest/Citizens copiables, dialogue associé (nœuds/choix,
-      `START_QUEST`), quêtes données / référencées, et **anomalies de configuration**
-      (`QUEST_REF_NO_NPC`, `TAGGED_UNUSED` + suggestion `garde`→`guard`, `DUPLICATE_BINDING`…).
-      Liste les **ids canoniques** connus (préparation #66). Sans lecture du monde :
-      position/monde et PNJ Citizens non tagués = évolutions séparées.
+- [~] **Page `/npcs` V1** (lecture) — catalogue PNJ via `npc.list` : croise liaison Citizens ↔
+      dialogue `rpgquest:<id>` ↔ `giver:` ↔ `TALK_TO_NPC`, anomalies de configuration, ids
+      canoniques. Sans lecture du monde.
+- [~] **Système PNJ V2 déclarative** — vraie **définition logique** (`npcs/*.yml`, `YamlNpcEngine`,
+      `NpcDefinition`), indépendante de Citizens/monde. `npc.list` distingue `logicalDefinitionPresent`
+      vs `citizensBindingPresent` + `state` ; `definedIds` = source canonique. Écritures whitelistées :
+      `npc.definition.create` / `npc.definition.update` (`NpcDefinitionStore`) et `quest.giver.set`
+      (`QuestGiverEditor`, édition minimale du YAML). Page `/npcs` : deux blocs, création + édition
+      limitée + attribution de quête. **Reste** : spawn/binding Citizens depuis le web, éditeur de
+      dialogues, câblage `/rpgadmin npc tag` (#66), enrichissement live (position/monde,
+      PNJ Citizens non tagués).
 - [~] `quest.list` transporte des **objectifs et récompenses structurés**
       (`objectiveDetails` / `rewardDetails` = `{kind, target, amount, value, command, raw}`,
       commande non tronquée) + le **PNJ donneur** (`giverId`, champ YAML `giver:` optionnel) —

@@ -432,6 +432,27 @@ Implémentation : `npc.NpcIdentityService` (façade unique), `npc.CitizensNpcBri
 absent). Page docs-site : `npc.html`. Référence complète :
 [docs/NPC_DIALOGUES_QUESTS_GUIDE.md](NPC_DIALOGUES_QUESTS_GUIDE.md) section 1.
 
+### Définition logique de PNJ — `npcs/*.yml` (V2 déclarative)
+
+Depuis la V2, un PNJ RPGQuest a une **définition logique** en données :
+un fichier par PNJ sous `plugins/RPGQuest/npcs/*.yml` (`YamlNpcEngine`,
+même pattern que `quests/`), avec `id`, `display_name`, `dialogue` (optionnel),
+`role` (optionnel), `enabled`. Format complet :
+[NPC_FORMAT.md](../NPC_FORMAT.md). Cette définition est **indépendante de
+Citizens et du monde** : on peut préparer toute la configuration d'un PNJ
+(nom, dialogue, quêtes données) avant qu'il n'existe en jeu. Le **binding
+Citizens** (`npc_citizens_bindings`, posé par `/rpgadmin npc tag`) reste
+séparé et optionnel.
+
+À terme, `NpcDefinition` devient la **source de vérité** des ids PNJ : un id
+utilisé par `giver:`, `TALK_TO_NPC` ou un dialogue sans définition
+correspondante est une **erreur de contenu** signalée dans le Control Panel
+(`/npcs`, action agent `npc.list`). Le panel permet aussi de **créer / éditer**
+une définition et d'**attribuer une quête** (pose `giver:`) — actions agent
+`npc.definition.create` / `npc.definition.update` / `quest.giver.set`, jamais
+de YAML brut. La création physique d'un PNJ Citizens depuis le web et le
+câblage de `/rpgadmin npc tag` (#66) ne sont **pas** encore faits.
+
 ### Commandes RPGQuest — `/rpgadmin npc`
 
 Documentées en détail en **section 2 (Administration)** ; résumé :

@@ -1129,4 +1129,37 @@ contenu YAML.
 
 ### Exécution réelle
 
-_À compléter par la session qui déploie (voir le rapport `docs/claude-reports/` associé)._
+Session du 2026-09-08 (~13:19–13:25 UTC). Branche `feat/control-panel-admin-tools` @ `3d1f50c`.
+
+- **AWS / PlugAdmin** : `scripts/plugadmin/deploy.sh` — OK (release `/opt/plugadmin/releases/20260908-131859`,
+  JAR `control-panel-0.1.0-SNAPSHOT.jar` SHA-256 `a52ad4d03e7752483be13a33e811ca094d115d8d2cc3ac303988313e16258f11`).
+  `/health` public **ONLINE** ; `dig.lodygames.com` / `lodylands.com` inchangés (200).
+- **VeryGames DEV** : `scripts/deploy-verygames.sh -y` — JAR `rpgquest-0.1.0-SNAPSHOT.jar`
+  1331243 o, SHA-256 `342bf808cf1b4d1bdba0981dc2c0044190ca577f38176730b699d1b08c39b165`.
+  Backup auto de l'ancien JAR : `~/.local/share/rpgquest/verygames-backups/rpgquest-20260908T131925Z-predeploy.jar`.
+- `scripts/verygames-restart.sh` — `stop` RCON → OFFLINE → relance auto → **ONLINE**.
+- `/plugins` (RCON) : `Citizens, Multiverse-Core, RPGQuest, WorldEdit` tous verts ;
+  `rpgquest version` → `v0.1.0-SNAPSHOT`.
+- Heartbeat agent reçu `2026-09-08T13:24:04Z` (`ONLINE`, plugin `0.1.0-SNAPSHOT`) ;
+  aucun `ERROR` / `WARN` dans `journalctl -u plugadmin` (fenêtre du déploiement).
+- `npc.citizens.list` → **SUCCESS** : 7 PNJ Citizens (`#0..#6`), `citizensAvailable:true`,
+  chaque entrée `{numericId, uuid, name, linkedNpcId, availableForBinding, spawned}`, **aucune
+  position ni monde**. Les 7 Citizens DEV sont **déjà liés** (`/rpgadmin npc tag` antérieur) —
+  `available: 0`. Seul `guard` possède aussi une définition logique ; `guide/help/jeff/jo/junior/libraire`
+  restent des `CITIZENS_ORPHAN` (binding sans définition) — non détournés.
+- `npc.list` → **SUCCESS** (8 PNJ, 7 avec avertissement) — inchangé.
+- `npc.citizens.link` — cas exercés en direct (aucun binding créé) :
+  - `woodcutter_bob` → Citizens `#6` (déjà lié à `guard`) → **FAILED** `CITIZENS_TAKEN`
+    (« Citizens #6 est déjà lié à npc_id=guard. Aucune réaffectation dans cette phase. »).
+  - `guard` → Citizens `#6` (liaison identique) → **SUCCESS** `NOOP`
+    (« Citizens #6 est déjà lié à « guard » — rien à faire. »).
+  - `does_not_exist_xyz` → `#6` → **FAILED** `UNKNOWN_NPC`.
+  - `woodcutter_bob` → Citizens `#9999` → **FAILED** `UNKNOWN_CITIZENS`.
+- **Chemin nominal `INSERT` / `LINKED` non exerçable en direct** : aucun PNJ Citizens libre sur
+  DEV et consigne de ne pas en créer / ne pas détourner un PNJ existant. Couvert par les tests
+  automatisés (`CitizensBindPlannerTest`, `NpcIdentityServiceTest#bindCitizens*`,
+  `NpcBindingRepositoryTest#insertIfAbsent*`, `NpcCitizensPayloadTest`, `AgentActionExecutorTest`,
+  `NpcsCatalogTest`).
+- Aucun PNJ Citizens créé ni supprimé ; aucune progression joueur touchée ; aucune migration.
+
+Rapport : `docs/claude-reports/2026-09-08_1325_npc-citizens-link-81.md`.

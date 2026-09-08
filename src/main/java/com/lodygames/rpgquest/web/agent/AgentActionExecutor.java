@@ -368,10 +368,11 @@ public final class AgentActionExecutor {
         }
         return actions.citizensCreate(npcId, world, x, y, z, yaw.floatValue(), pitch.floatValue())
                 .thenApply(r -> {
+                    // AgentActionOutcome copie les détails via Map.copyOf -> aucune valeur null.
                     Map<String, Object> details = new LinkedHashMap<>();
                     details.put("code", r.code());
                     details.put("npc_id", r.npcId());
-                    details.put("citizens_id", r.citizensNumericId());
+                    details.put("citizens_id", r.citizensNumericId() == null ? -1 : r.citizensNumericId());
                     details.put("world", world);
                     details.put("rolled_back", r.rolledBack());
                     details.put("effects", r.effects());

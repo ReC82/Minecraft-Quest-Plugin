@@ -95,6 +95,18 @@ class NpcCitizensPayloadTest {
         assertTrue(Json.write(out.details()).contains("\"rolled_back\":true"));
     }
 
+    @Test
+    void citizensCreateRejectionWithoutCitizensIdStillProducesAValidOutcome() {
+        // Régression : citizens_id null + Map.copyOf des détails -> NPE si non géré.
+        AgentActionOutcome out = run("npc.citizens.create", Map.of("npc_id", "ghost_id",
+                "world", "world_hub", "x", "1", "y", "64", "z", "2"));
+        assertEquals(AgentActionOutcome.FAILED, out.status());
+        assertEquals("UNKNOWN_NPC", out.value());
+        String json = Json.write(out.details());
+        assertTrue(json.contains("\"citizens_id\":-1"), json);
+        assertTrue(json.contains("\"rolled_back\":false"));
+    }
+
     private static final class CitizensActions extends StubAgentActions {
         @Override
         public CompletableFuture<CitizensRosterView> citizensRoster() {
@@ -126,6 +138,11 @@ class NpcCitizensPayloadTest {
                 return CompletableFuture.completedFuture(new CitizensCreateResult(false,
                         "BIND_FAILED_ROLLED_BACK", "Liaison impossible — PNJ #31 supprimé (rollback effectué).",
                         31, npcId, List.of(), true));
+            }
+            if (npcId.equals("ghost_id")) {
+                // Refus AVANT création : aucun citizens_id (null) — l'outcome ne doit pas casser.
+                return CompletableFuture.completedFuture(CitizensCreateResult.reject(npcId, "UNKNOWN_NPC",
+                        "Aucune définition logique « ghost_id »."));
             }
             return CompletableFuture.completedFuture(new CitizensCreateResult(true, "CREATED",
                     "« " + npcId + " » créé et lié à Citizens #31 — " + world + ".",

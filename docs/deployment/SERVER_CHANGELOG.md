@@ -1371,3 +1371,73 @@ Session du 2026-09-08 (~15:16–15:22 UTC). Branche `feat/control-panel-admin-to
 - Aucun dialogue existant modifié ; aucune progression joueur touchée ; aucune migration.
 
 Rapport : `docs/claude-reports/2026-09-08_1510_dialogues-page-v1.md`.
+
+---
+
+## 2026-09-08 - Nettoyage fixtures test_*.yml du dossier dialogues DEV (#83)
+
+### Changement
+
+**Contenu DEV uniquement — aucun code, aucun JAR, aucune migration.**
+
+Sept fichiers `test_*.yml` (`test_break_block`, `test_collect_item`, `test_craft_item`,
+`test_kill_entity`, `test_place_block`, `test_reach_location`, `test_talk_to_npc`) avaient été
+copiés à tort dans `plugins/RPGQuest/dialogues/` du serveur **DEV**. Ce sont des **fixtures de
+quête de test manuel** (déjà versionnées dans le dépôt à `docs/manual-tests/quests/test_*.yml`,
+emplacement non chargé par `YamlDialogueEngine`), structure de **quête**, pas de dialogue → le
+loader de dialogues les rejette correctement (« `start` obligatoire » + « `nodes` obligatoire »
+= 14 `loadIssues`). Contenu distant comparé octet à octet aux fixtures du dépôt : identique 7/7.
+
+Retrait des 7 fichiers du dossier actif `dialogues/`. Le **loader n'est pas modifié** : aucun
+filtre `test_*`, aucun `loadIssue` masqué — tout YAML invalide réellement présent continuera
+d'être signalé.
+
+`plugins/RPGQuest/quests/` **non touché** : il contient légitimement 3 fixtures `test_*.yml`
+(scénario `story_test` du `MANUAL_TEST_PLAN`, dossier lu par le moteur de quêtes).
+
+### Action serveur
+
+- Suppression FTP de `plugins/RPGQuest/dialogues/{test_break_block,test_collect_item,test_craft_item,test_kill_entity,test_place_block,test_reach_location,test_talk_to_npc}.yml`.
+- **Aucun remplacement de JAR** (aucun code modifié).
+- Redémarrage serveur (`scripts/verygames-restart.sh` — `stop` RCON → relance auto) : seul
+  mécanisme qui recharge le dossier `dialogues/` (pas de reload à chaud dédié).
+- Aucun autre fichier. Aucune migration. Control Panel AWS non redéployé.
+
+### Sauvegarde préalable
+
+Téléchargement FTPS des 7 fichiers avant retrait →
+`~/.local/share/rpgquest/verygames-backups/issue-83-dialogues-20260908T154228Z/`
+(tailles + SHA-256 dans le rapport).
+
+### Déploiement
+
+1. Backup FTPS des 7 `test_*.yml`.
+2. `DELE` FTP des 7 fichiers dans `RPGQuest/dialogues/` (garde-fou : le nom doit matcher
+   `test_*.yml`).
+3. `scripts/verygames-restart.sh`.
+
+### Validation
+
+Session du 2026-09-08 (~15:42–15:47 UTC). Branche `feat/control-panel-admin-tools` @ `ceddc30`.
+
+- `RPGQuest/dialogues/` après retrait : `guard.yml guide.yml help.yml jeff.yml jo.yml
+  junior.yml libraire.yml` (7 dialogues gameplay, 0 `test_*.yml`).
+- `/plugins` (RCON) : `Citizens, Multiverse-Core, RPGQuest, WorldEdit` verts ;
+  `rpgquest version` → `v0.1.0-SNAPSHOT`. Heartbeat agent `2026-09-08T15:46:54Z` (`ONLINE`,
+  `0.1.0-SNAPSHOT`) ; **0 `ERROR`** dans `journalctl -u plugadmin`.
+- `dialogue.list` (action agent injectée) → **SUCCESS**, `value=7` : « 7 dialogue(s)
+  (4 avec avertissement, **0 fichier(s) rejeté(s)**) », `nodeTotal=22`.
+  - **`loadIssues` : 0** (était 14) — les 14 erreurs des `test_*.yml` ont disparu.
+  - 7 dialogues gameplay chargés (`guide`, `help`, `jeff`, `jo`, `guard`, `junior`,
+    `libraire`) ; 4 × `DIALOGUE_NO_NPC` **préexistants** (PNJ Citizens sans `NpcDefinition`,
+    cohérent avec #81 phase 1) ; **aucun nouveau warning**. `declaredButMissing: []`.
+- `npc.list` → toujours **SUCCESS** (8 PNJ) — inchangé.
+- Vue navigateur authentifiée `/dialogues` : `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+Restaurer les 7 fichiers dans `plugins/RPGQuest/dialogues/` depuis
+`~/.local/share/rpgquest/verygames-backups/issue-83-dialogues-20260908T154228Z/` (upload FTPS),
+puis `scripts/verygames-restart.sh`. Aucune migration à défaire, aucun JAR à restaurer.
+
+Rapport : `docs/claude-reports/2026-09-08_1547_nettoyage-fixtures-test-dialogues-dev-83.md`.

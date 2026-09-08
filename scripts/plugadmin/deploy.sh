@@ -41,7 +41,9 @@ $SUDO chown -R root:root "$APP_DIR"
 $SUDO chmod 0755 "$APP_DIR/bin/control-panel"
 
 echo "==> rétention : 5 releases max"
-$SUDO bash -c "ls -1dt '$RELEASES_DIR'/*/ 2>/dev/null | tail -n +6 | xargs -r rm -rf" || true
+# Tri lexical décroissant sur le NOM (YYYYMMDD-HHMMSS), pas sur le mtime : un `mv` conserve le
+# mtime source et fausserait l'ordre. On ne supprime jamais un dossier `rolledback-*`.
+$SUDO bash -c "ls -1d '$RELEASES_DIR'/*/ 2>/dev/null | grep -v '/rolledback-[0-9]*/\$' | sort -r | tail -n +6 | xargs -r rm -rf" || true
 
 echo "==> systemctl restart plugadmin"
 $SUDO systemctl restart plugadmin.service

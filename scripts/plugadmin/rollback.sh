@@ -37,7 +37,10 @@ reload_nginx() {
 
 case "$MODE" in
   app)
-    PREV="$(ls -1dt "$RELEASES_DIR"/*/ 2>/dev/null | head -n1 || true)"
+    # Les releases sont nommées YYYYMMDD-HHMMSS par deploy.sh : tri lexical décroissant sur le
+    # NOM (déterministe), pas sur le mtime (un `mv` conserve le mtime source et fausse l'ordre).
+    # On ignore les dossiers `rolledback-*` créés par un rollback précédent.
+    PREV="$(ls -1d "$RELEASES_DIR"/*/ 2>/dev/null | grep -v '/rolledback-[0-9]*/$' | sort -r | head -n1 || true)"
     [ -n "$PREV" ] || { echo "aucune release précédente sous $RELEASES_DIR" >&2; exit 1; }
     echo "==> restauration de $PREV -> $APP_DIR"
     TS="$(date +%Y%m%d-%H%M%S)"

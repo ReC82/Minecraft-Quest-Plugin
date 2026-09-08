@@ -27,6 +27,11 @@ public final class NpcBindingRepository {
             VALUES (?, ?, ?, ?)
             ON CONFLICT(citizens_uuid) DO UPDATE SET citizens_numeric_id = excluded.citizens_numeric_id, npc_id = excluded.npc_id
             """;
+    /** Insertion <strong>non destructive</strong> : ne touche rien si le PNJ Citizens est déjà lié. */
+    private static final String INSERT_IF_ABSENT = """
+            INSERT OR IGNORE INTO npc_citizens_bindings (citizens_uuid, citizens_numeric_id, npc_id, created_at)
+            VALUES (?, ?, ?, ?)
+            """;
     private static final String DELETE = "DELETE FROM npc_citizens_bindings WHERE citizens_uuid = ?";
     private static final String FIND = "SELECT npc_id FROM npc_citizens_bindings WHERE citizens_uuid = ?";
     private static final String SELECT_ALL = "SELECT citizens_uuid, citizens_numeric_id, npc_id FROM npc_citizens_bindings";
@@ -49,6 +54,24 @@ public final class NpcBindingRepository {
                 statement.executeUpdate();
             }
             return null;
+        });
+    }
+
+    /**
+     * Crée la liaison {@code citizensUuid → npcId} <strong>uniquement si ce PNJ Citizens n'est pas
+     * déjà lié</strong> (clé primaire {@code citizens_uuid}). Atomique au niveau SQL.
+     *
+     * @return {@code true} si une ligne a été insérée, {@code false} si le PNJ Citizens était déjà lié.
+     */
+    public CompletableFuture<Boolean> insertIfAbsent(UUID citizensUuid, int citizensNumericId, String npcId) {
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(INSERT_IF_ABSENT))) {
+                statement.setString(1, citizensUuid.toString());
+                statement.setInt(2, citizensNumericId);
+                statement.setString(3, npcId);
+                statement.setString(4, Instant.now().toString());
+                return statement.executeUpdate() == 1;
+            }
         });
     }
 

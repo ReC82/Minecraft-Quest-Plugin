@@ -160,6 +160,28 @@ public interface AgentActions {
      */
     CompletableFuture<MutationResult> questGiverSet(String questId, String npcId);
 
+    /**
+     * Un PNJ Citizens du registre (action {@code npc.citizens.list}). {@code linkedNpcId} = id
+     * logique RPGQuest déjà lié à ce PNJ, ou {@code null}. Aucune position/monde (registre seul).
+     */
+    record CitizensNpcSummary(int numericId, String uuid, String name, String linkedNpcId,
+                              boolean availableForBinding, boolean spawned) {
+    }
+
+    record CitizensRosterView(boolean citizensAvailable, List<CitizensNpcSummary> citizens,
+                              int total, int available, int linked) {
+    }
+
+    /** Catalogue Citizens <strong>physique</strong> (séparé du catalogue logique {@code npc.list}). */
+    CompletableFuture<CitizensRosterView> citizensRoster();
+
+    /**
+     * Lie une définition PNJ existante à un PNJ Citizens existant (par son id numérique) — issue
+     * #81, phase 1. Aucune création/suppression/rebind : collision Citizens ou {@code npc_id} déjà
+     * lié → refus lisible ; liaison identique déjà présente → succès no-op.
+     */
+    CompletableFuture<MutationResult> citizensLink(String npcId, int citizensNumericId);
+
     /** Aperçu (dry-run, aucune écriture) de ce qu'un reset « nouveau joueur » supprimerait. */
     record ResetPreviewLine(String label, int count, String detail) {
     }

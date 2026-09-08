@@ -10,6 +10,7 @@ public enum Permission {
     PLAYERS_READ,
     NPC_READ,
     NPC_WRITE,
+    NPC_BIND_WRITE,
     QUEST_GIVER_WRITE,
     CONTENT_READ,
     DIAGNOSTICS_READ,

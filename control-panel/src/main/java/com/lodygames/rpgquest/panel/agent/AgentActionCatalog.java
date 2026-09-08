@@ -56,10 +56,12 @@ public final class AgentActionCatalog {
         add("story.player.status", Permission.PLAYERS_READ, false, true, "État des stories d'un joueur");
         add("item.list", Permission.CONTENT_READ, false, false, "Rafraîchir la liste des objets");
         add("npc.list", Permission.NPC_READ, false, false, "Rafraîchir le catalogue des PNJ");
+        add("npc.citizens.list", Permission.NPC_READ, false, false, "Rafraîchir les PNJ Citizens");
         // Écritures de contenu (V2 déclarative des PNJ) — confirmation obligatoire, jamais de YAML brut.
         add("npc.definition.create", Permission.NPC_WRITE, true, false, "Créer une définition PNJ");
         add("npc.definition.update", Permission.NPC_WRITE, true, false, "Modifier une définition PNJ");
         add("quest.giver.set", Permission.QUEST_GIVER_WRITE, true, false, "Attribuer une quête à un PNJ");
+        add("npc.citizens.link", Permission.NPC_BIND_WRITE, true, false, "Lier un PNJ Citizens existant");
         // Mutations
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");
@@ -219,6 +221,23 @@ public final class AgentActionCatalog {
                 }
                 params.put("quest_id", questId);
                 params.put("npc_id", npcId);
+            }
+            case "npc.citizens.link" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide.");
+                }
+                int citizensId;
+                try {
+                    citizensId = Integer.parseInt(trim(form.get("citizens_id")));
+                } catch (NumberFormatException e) {
+                    return Validation.fail("Identifiant Citizens manquant ou invalide.");
+                }
+                if (citizensId < 1 || citizensId > 10_000_000) {
+                    return Validation.fail("Identifiant Citizens hors bornes.");
+                }
+                params.put("npc_id", npcId);
+                params.put("citizens_id", Integer.toString(citizensId));
             }
             case "player.resetnew.confirm" -> params.put("confirm", "true");
             default -> {

@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.npc;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.database.NpcIdRepository;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -106,6 +107,61 @@ public final class NpcIdentityService {
     /** Id numérique Citizens de l'entité, pour affichage admin uniquement (jamais utilisé comme clé). */
     public Optional<Integer> citizensNumericId(Entity entity) {
         return citizensBridge == null ? Optional.empty() : citizensBridge.resolve(entity).map(CitizensNpcBridge.Ref::citizensNumericId);
+    }
+
+    // ---- Roster Citizens + liaison (issue #81, phase 1) ---------------------------------------
+
+    /**
+     * PNJ Citizens du registre (jamais un scan d'entités Minecraft). Vide si Citizens est inactif.
+     * <strong>À appeler sur le thread principal</strong> (API Citizens).
+     */
+    public List<CitizensNpc> citizensRoster() {
+        return citizensBridge == null ? List.of() : citizensBridge.roster();
+    }
+
+    /** Un PNJ Citizens par son id numérique, ou vide. <strong>Thread principal</strong>. */
+    public Optional<CitizensNpc> citizensByNumericId(int numericId) {
+        return citizensBridge == null ? Optional.empty() : citizensBridge.byNumericId(numericId);
+    }
+
+    /**
+     * Lie {@code npcId} au PNJ Citizens {@code ref}. Valide les collisions et l'idempotence via
+     * {@link CitizensBindPlanner}, écrit de façon atomique ({@link NpcBindingRepository#insertIfAbsent}),
+     * puis rafraîchit le cache pour que l'identification en jeu prenne effet sans redémarrage.
+     * Ne réaffecte jamais silencieusement (pas de rebind dans cette phase).
+     *
+     * <p>Le {@code ref} doit être résolu <em>en amont</em> sur le thread principal
+     * ({@link #citizensByNumericId}) — cette méthode ne touche que la base (async).</p>
+     */
+    public CompletableFuture<BindResult> bindCitizens(String npcId, CitizensNpc ref) {
+        return citizensBindingRepository.loadAll().thenCompose(existing -> {
+            CitizensBindPlanner.Plan plan =
+                    CitizensBindPlanner.plan(npcId, ref.uuid(), ref.numericId(), existing);
+            return switch (plan.action()) {
+                case NOOP -> CompletableFuture.completedFuture(
+                        new BindResult(true, "NOOP", plan.message(), ref.numericId()));
+                case REJECT -> CompletableFuture.completedFuture(
+                        new BindResult(false, plan.code(), plan.message(), ref.numericId()));
+                case INSERT -> citizensBindingRepository.insertIfAbsent(ref.uuid(), ref.numericId(), npcId)
+                        .thenApply(inserted -> {
+                            if (inserted) {
+                                citizensCache.put(ref.uuid(), npcId);
+                                return new BindResult(true, "LINKED",
+                                        "« " + npcId + " » lié à Citizens #" + ref.numericId()
+                                                + " (« " + ref.name() + " »).", ref.numericId());
+                            }
+                            // Course rarissime : une liaison est apparue entre le loadAll et l'insert.
+                            return new BindResult(false, "CITIZENS_TAKEN",
+                                    "Citizens #" + ref.numericId() + " vient d'être lié par ailleurs.",
+                                    ref.numericId());
+                        });
+            };
+        }).exceptionally(error -> new BindResult(false, "ERROR",
+                "Échec de la liaison : " + error.getClass().getSimpleName(), ref.numericId()));
+    }
+
+    /** @param code {@code LINKED} / {@code NOOP} / {@code CITIZENS_TAKEN} / {@code NPC_ID_TAKEN} / {@code ERROR} */
+    public record BindResult(boolean ok, String code, String message, int citizensNumericId) {
     }
 
     /**

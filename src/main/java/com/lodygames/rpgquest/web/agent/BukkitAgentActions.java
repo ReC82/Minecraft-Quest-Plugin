@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
+import com.lodygames.rpgquest.npc.CitizensNpc;
 import com.lodygames.rpgquest.npc.NpcCatalog;
 import com.lodygames.rpgquest.npc.NpcDefinitionStore;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
@@ -39,8 +40,10 @@ import com.lodygames.rpgquest.quest.progress.QuestStepProgressView;
 import com.lodygames.rpgquest.story.StoryService;
 import com.lodygames.rpgquest.story.model.StoryDefinition;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -341,6 +344,68 @@ public final class BukkitAgentActions implements AgentActions {
             return done(new MutationResult(true, "SET", r.message(),
                     List.of("quests/" + r.file(), "giver: " + npcId)));
         });
+    }
+
+    @Override
+    public CompletableFuture<CitizensRosterView> citizensRoster() {
+        boolean available = npcIdentityService.citizensAvailable();
+        if (!available) {
+            return done(new CitizensRosterView(false, List.of(), 0, 0, 0));
+        }
+        // Registre Citizens = API main-thread ; liaisons = base async. Croisement sans lecture du monde.
+        return npcBindingRepository.loadAll().thenCompose(bindings -> {
+            Map<UUID, String> linkedByUuid = new HashMap<>();
+            for (NpcBindingRepository.Binding b : bindings) {
+                linkedByUuid.put(b.citizensUuid(), b.npcId());
+            }
+            return onMain(() -> {
+                List<CitizensNpcSummary> rows = new ArrayList<>();
+                int available2 = 0;
+                int linked = 0;
+                for (CitizensNpc n : npcIdentityService.citizensRoster()) {
+                    String linkedNpcId = linkedByUuid.get(n.uuid());
+                    boolean free = linkedNpcId == null;
+                    if (free) {
+                        available2++;
+                    } else {
+                        linked++;
+                    }
+                    rows.add(new CitizensNpcSummary(n.numericId(), n.uuid().toString(), n.name(),
+                            linkedNpcId, free, n.spawned()));
+                }
+                rows.sort((a, b) -> Integer.compare(a.numericId(), b.numericId()));
+                return done(new CitizensRosterView(true, List.copyOf(rows), rows.size(), available2, linked));
+            });
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> citizensLink(String npcId, int citizensNumericId) {
+        var definition = npcEngine.find(npcId);
+        if (definition.isEmpty()) {
+            return done(MutationResult.of(false, "UNKNOWN_NPC",
+                    "Aucune définition logique « " + safe(npcId) + " » — créer d'abord la définition."));
+        }
+        if (!definition.get().enabled()) {
+            return done(MutationResult.of(false, "DISABLED",
+                    "La définition « " + npcId + " » est désactivée — la réactiver avant de lier."));
+        }
+        if (!npcIdentityService.citizensAvailable()) {
+            return done(MutationResult.of(false, "CITIZENS_UNAVAILABLE",
+                    "Citizens n'est pas actif sur ce serveur."));
+        }
+        // 1) Résoudre le PNJ Citizens sur le thread principal, 2) écrire la liaison en base (async).
+        return onMain(() -> done(npcIdentityService.citizensByNumericId(citizensNumericId).orElse(null)))
+                .thenCompose(ref -> {
+                    if (ref == null) {
+                        return done(MutationResult.of(false, "UNKNOWN_CITIZENS",
+                                "Aucun PNJ Citizens #" + citizensNumericId + " dans le registre."));
+                    }
+                    return npcIdentityService.bindCitizens(npcId, ref).thenApply(bind ->
+                            new MutationResult(bind.ok(), bind.code(), bind.message(),
+                                    bind.ok() ? List.of("Citizens #" + bind.citizensNumericId() + " <-> " + npcId)
+                                              : List.of()));
+                });
     }
 
     private static String blank(String value) {

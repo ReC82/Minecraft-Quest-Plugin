@@ -15,13 +15,14 @@ import java.util.Optional;
  *   <li><strong>Lectures</strong> (sans effet) : {@link #PLAYER_VARIABLE_GET}, {@link #PLAYER_LIST},
  *       {@link #QUEST_LIST}, {@link #QUEST_PLAYER_STATUS}, {@link #STORY_LIST},
  *       {@link #STORY_PLAYER_STATUS}, {@link #ITEM_LIST}, {@link #NPC_LIST},
- *       {@link #PLAYER_RESETNEW_PREVIEW}.</li>
+ *       {@link #NPC_CITIZENS_LIST}, {@link #PLAYER_RESETNEW_PREVIEW}.</li>
  *   <li><strong>Mutations</strong> (confirmation exigée côté panel) : {@link #PLAYER_ITEM_GIVE},
  *       {@link #QUEST_START}, {@link #QUEST_COMPLETE}, {@link #QUEST_RESET}, {@link #STORY_ADVANCE},
  *       {@link #STORY_COMPLETE}, {@link #PLAYER_VARIABLE_SET}, {@link #PLAYER_RESETNEW_CONFIRM},
  *       {@link #NPC_DEFINITION_CREATE}, {@link #NPC_DEFINITION_UPDATE}, {@link #QUEST_GIVER_SET}
  *       (écritures de contenu : définitions PNJ {@code npcs/*.yml} et champ {@code giver:} des
- *       quêtes — jamais de YAML brut ni de chemin arbitraire).</li>
+ *       quêtes — jamais de YAML brut ni de chemin arbitraire), {@link #NPC_CITIZENS_LINK}
+ *       (liaison définition ↔ PNJ Citizens existant, jamais de spawn/rebind — issue #81).</li>
  * </ul>
  */
 public enum AgentActionType {
@@ -46,7 +47,9 @@ public enum AgentActionType {
     PLAYER_RESETNEW_CONFIRM("player.resetnew.confirm"),
     NPC_DEFINITION_CREATE("npc.definition.create"),
     NPC_DEFINITION_UPDATE("npc.definition.update"),
-    QUEST_GIVER_SET("quest.giver.set");
+    QUEST_GIVER_SET("quest.giver.set"),
+    NPC_CITIZENS_LIST("npc.citizens.list"),
+    NPC_CITIZENS_LINK("npc.citizens.link");
 
     private final String wire;
 

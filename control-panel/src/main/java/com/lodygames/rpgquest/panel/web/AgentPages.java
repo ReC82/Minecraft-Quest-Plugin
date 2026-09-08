@@ -461,15 +461,21 @@ public final class AgentPages {
         String agentId = agent.get().id();
         boolean canWrite = perms.can(session.role(), Permission.NPC_WRITE);
         boolean canSetGiver = perms.can(session.role(), Permission.QUEST_GIVER_WRITE);
+        boolean canLink = perms.can(session.role(), Permission.NPC_BIND_WRITE);
         sb.append(agentPicker(agentId, "/npcs", ""));
 
         sb.append("<h2>Catalogue</h2>");
         sb.append(actionButton(session, agentId, "npc.list", "/npcs", "", "Rafraîchir le catalogue", ""));
+        sb.append(actionButton(session, agentId, "npc.citizens.list", "/npcs", "", "Rafraîchir les PNJ Citizens", ""));
 
         Map<String, String> questTitles = titleIndex(
                 latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of()), "id", "title");
         List<String> questIds = latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of())
                 .stream().map(o -> str(asMap(o).get("id"))).filter(s -> !s.isEmpty()).toList();
+
+        // Catalogue Citizens physique (séparé). Chargé s'il a déjà été rafraîchi.
+        Optional<Map<String, Object>> citizensCat = latestDetails(agentId, "npc.citizens.list");
+        List<Object> citizensRoster = citizensCat.map(x -> asList(x.get("citizens"))).orElse(List.of());
 
         Optional<Map<String, Object>> details = latestDetails(agentId, "npc.list");
         if (details.isEmpty()) {
@@ -493,6 +499,15 @@ public final class AgentPages {
                 .append(Http.esc(str(d.get("withoutDefinition")))).append(" sans définition · ")
                 .append(Http.esc(str(d.get("bound")))).append(" liés Citizens · ")
                 .append(Http.esc(str(d.get("withWarnings")))).append(" avec avertissement</p>");
+        if (citizensCat.isPresent()) {
+            sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Citizens</span> ")
+                    .append(Http.esc(str(citizensCat.get().get("total")))).append(" PNJ Citizens · ")
+                    .append(Http.esc(str(citizensCat.get().get("available")))).append(" libre(s) · ")
+                    .append(Http.esc(str(citizensCat.get().get("linked")))).append(" déjà lié(s)</p>");
+        } else {
+            sb.append("<p class=\"faint\" style=\"font-size:12px\">Cliquer « Rafraîchir les PNJ Citizens » "
+                    + "pour proposer une liaison sur les PNJ « à lier ».</p>");
+        }
 
         if (canWrite) {
             sb.append(createDefinitionForm(session, agentId, ""));
@@ -502,7 +517,8 @@ public final class AgentPages {
             sb.append(Ui.empty("Aucun PNJ RPGQuest connu (ni définition, ni binding, ni référence)."));
         } else {
             for (Object o : npcs) {
-                sb.append(renderNpcCard(session, agentId, asMap(o), questTitles, questIds, canWrite, canSetGiver));
+                sb.append(renderNpcCard(session, agentId, asMap(o), questTitles, questIds,
+                        citizensRoster, canWrite, canSetGiver, canLink));
             }
         }
 
@@ -553,7 +569,7 @@ public final class AgentPages {
     /** Carte PNJ V2 : deux blocs (Définition RPGQuest / Binding Citizens), anomalies, relations, actions. */
     private String renderNpcCard(Session session, String agentId, Map<String, Object> n,
                                  Map<String, String> questTitles, List<String> questIds,
-                                 boolean canWrite, boolean canSetGiver) {
+                                 List<Object> citizensRoster, boolean canWrite, boolean canSetGiver, boolean canLink) {
         String id = str(n.get("id"));
         String displayName = str(n.get("displayName"));
         boolean hasName = !displayName.isEmpty() && !"null".equals(displayName);
@@ -616,14 +632,20 @@ public final class AgentPages {
         // --- Bloc Binding Citizens ---
         sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Binding Citizens</span> ");
         if (boundCitizens && !numeric.isEmpty() && !"null".equals(numeric)) {
-            sb.append("PNJ Citizens #").append(Http.esc(numeric));
+            String citizensName = citizensNameFor(citizensRoster, numeric);
+            sb.append("#").append(Http.esc(numeric));
+            if (!citizensName.isEmpty()) {
+                sb.append(" — ").append(MiniText.html(citizensName));
+            }
+            sb.append("</p><p class=\"faint\" style=\"font-size:12px\">Pour changer ce binding, une "
+                    + "procédure de rebind sera ajoutée ultérieurement.</p>");
         } else if (boundCitizens) {
-            sb.append("lié");
+            sb.append("lié</p>");
+        } else if (hasDefinition) {
+            sb.append("<span class=\"muted\">aucun — définition prête, PNJ Citizens à lier</span></p>");
         } else {
-            sb.append("<span class=\"muted\">aucun — à créer / lier en jeu (<code>/rpgadmin npc tag ")
-                    .append(Http.esc(id)).append("</code>)</span>");
+            sb.append("<span class=\"muted\">aucun</span></p>");
         }
-        sb.append("</p>");
 
         // --- Relations ---
         String dialogueId = str(n.get("dialogueId"));
@@ -680,7 +702,56 @@ public final class AgentPages {
             }
             sb.append("</details>");
         }
+        // Liaison à un PNJ Citizens existant (#81) — seulement si définition présente et pas encore liée.
+        if (canLink && hasDefinition && !boundCitizens && enabled) {
+            sb.append("<details><summary>Lier un PNJ Citizens existant</summary>");
+            sb.append(citizensLinkForm(session, agentId, id, citizensRoster));
+            sb.append("</details>");
+        }
         return sb.append("</article>").toString();
+    }
+
+    /** Formulaire de liaison : select des PNJ Citizens, seuls les libres sont sélectionnables. */
+    private String citizensLinkForm(Session session, String agentId, String npcId, List<Object> citizensRoster) {
+        if (citizensRoster.isEmpty()) {
+            return Ui.empty("Cliquer « Rafraîchir les PNJ Citizens » en haut de page pour lister les PNJ disponibles.");
+        }
+        long free = citizensRoster.stream().filter(o -> Boolean.TRUE.equals(asMap(o).get("availableForBinding"))).count();
+        if (free == 0) {
+            return Ui.empty("Aucun PNJ Citizens libre — tous sont déjà liés à une définition.");
+        }
+        StringBuilder sb = new StringBuilder(formStart(session, agentId, "npc.citizens.link", "/npcs", ""));
+        sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
+        sb.append("<label>PNJ Citizens</label><select name=\"citizens_id\">");
+        for (Object o : citizensRoster) {
+            Map<String, Object> c = asMap(o);
+            String cid = str(c.get("numericId"));
+            String cname = MiniText.plain(str(c.get("name")));
+            boolean avail = Boolean.TRUE.equals(c.get("availableForBinding"));
+            String linked = str(c.get("linkedNpcId"));
+            sb.append("<option value=\"").append(Http.esc(cid)).append("\"").append(avail ? "" : " disabled")
+                    .append(">#").append(Http.esc(cid)).append(" — ")
+                    .append(Http.esc(cname.isEmpty() ? "(sans nom)" : cname));
+            if (!avail && !linked.isEmpty() && !"null".equals(linked)) {
+                sb.append("  ·  déjà lié à ").append(Http.esc(linked));
+            }
+            sb.append("</option>");
+        }
+        sb.append("</select>");
+        sb.append(confirmBox("Lier « " + npcId + " » au PNJ Citizens choisi (aucun spawn, aucun rebind)."));
+        sb.append("<button class=\"btn\" type=\"submit\">Lier</button></form>");
+        latestForPlayer(agentId, "npc.citizens.link", "").ifPresent(row -> sb.append(resultLine("Dernière liaison", row)));
+        return sb.toString();
+    }
+
+    private static String citizensNameFor(List<Object> roster, String numericId) {
+        for (Object o : roster) {
+            Map<String, Object> c = asMap(o);
+            if (numericId.equals(str(c.get("numericId")))) {
+                return str(c.get("name"));
+            }
+        }
+        return "";
     }
 
     private static String npcStateBadge(String state) {

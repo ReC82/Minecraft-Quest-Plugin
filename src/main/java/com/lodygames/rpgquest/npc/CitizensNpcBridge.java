@@ -1,5 +1,7 @@
 package com.lodygames.rpgquest.npc;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import net.citizensnpcs.api.CitizensAPI;
@@ -31,6 +33,28 @@ final class CitizensNpcBridge {
     Optional<Ref> resolve(Entity entity) {
         NPC npc = CitizensAPI.getNPCRegistry().getNPC(entity);
         return npc == null ? Optional.empty() : Optional.of(new Ref(npc.getUniqueId(), npc.getId()));
+    }
+
+    /**
+     * Parcourt le <strong>registre Citizens</strong> (pas les entités Minecraft, aucun chargement
+     * de monde/chunk). À appeler sur le thread principal (API Citizens).
+     */
+    List<CitizensNpc> roster() {
+        List<CitizensNpc> out = new ArrayList<>();
+        for (NPC npc : CitizensAPI.getNPCRegistry()) {
+            out.add(toSummary(npc));
+        }
+        return out;
+    }
+
+    /** Un PNJ Citizens par son id numérique ({@code NPC#getId()}), ou vide s'il n'existe pas. Thread principal. */
+    Optional<CitizensNpc> byNumericId(int numericId) {
+        NPC npc = CitizensAPI.getNPCRegistry().getById(numericId);
+        return npc == null ? Optional.empty() : Optional.of(toSummary(npc));
+    }
+
+    private static CitizensNpc toSummary(NPC npc) {
+        return new CitizensNpc(npc.getId(), npc.getUniqueId(), npc.getName(), npc.isSpawned());
     }
 
     /**

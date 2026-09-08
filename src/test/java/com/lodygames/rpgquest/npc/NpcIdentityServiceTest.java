@@ -135,6 +135,48 @@ class NpcIdentityServiceTest {
     }
 
     @Test
+    void bindCitizensCreatesTheBindingAndUpdatesTheCache() throws Exception {
+        CitizensNpc ref = new CitizensNpc(14, java.util.UUID.randomUUID(), "Bûcheron Bob", true);
+        NpcIdentityService.BindResult r =
+                service.bindCitizens("woodcutter_bob", ref).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertTrue(r.ok());
+        assertEquals("LINKED", r.code());
+        assertEquals("woodcutter_bob",
+                new NpcBindingRepository(database).find(ref.uuid()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow());
+    }
+
+    @Test
+    void bindCitizensIsIdempotentForTheExactSameBinding() throws Exception {
+        CitizensNpc ref = new CitizensNpc(6, java.util.UUID.randomUUID(), "Garde", true);
+        service.bindCitizens("guard", ref).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        NpcIdentityService.BindResult again =
+                service.bindCitizens("guard", ref).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertTrue(again.ok());
+        assertEquals("NOOP", again.code());
+    }
+
+    @Test
+    void bindCitizensRefusesToRebindAnAlreadyLinkedCitizens() throws Exception {
+        CitizensNpc ref = new CitizensNpc(6, java.util.UUID.randomUUID(), "Garde", true);
+        service.bindCitizens("guide", ref).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        NpcIdentityService.BindResult r =
+                service.bindCitizens("guard", ref).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertFalse(r.ok());
+        assertEquals("CITIZENS_TAKEN", r.code());
+    }
+
+    @Test
+    void bindCitizensRefusesWhenTheNpcIdIsAlreadyLinkedElsewhere() throws Exception {
+        service.bindCitizens("guard", new CitizensNpc(6, java.util.UUID.randomUUID(), "Garde", true))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        NpcIdentityService.BindResult r = service
+                .bindCitizens("guard", new CitizensNpc(9, java.util.UUID.randomUUID(), "Autre", true))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertFalse(r.ok());
+        assertEquals("NPC_ID_TAKEN", r.code());
+    }
+
+    @Test
     void namesWithCharactersInvalidForANamespacedKeyAreRejected() {
         assertFalse(NpcIdentityService.isValidId("Guide"));
         assertFalse(NpcIdentityService.isValidId("guide du village"));

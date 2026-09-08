@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.database;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -91,5 +92,14 @@ class NpcBindingRepositoryTest {
         assertEquals(citizensUuid, all.get(0).citizensUuid());
         assertEquals(3, all.get(0).citizensNumericId());
         assertEquals("guide", all.get(0).npcId());
+    }
+
+    @Test
+    void insertIfAbsentInsertsOnceAndRefusesToRebindTheSameCitizens() throws Exception {
+        UUID citizensUuid = UUID.randomUUID();
+        assertTrue(repository.insertIfAbsent(citizensUuid, 6, "guard").get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        // Deuxième appel : le PNJ Citizens est déjà lié -> aucune ligne insérée, aucune réaffectation.
+        assertFalse(repository.insertIfAbsent(citizensUuid, 6, "autre").get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertEquals("guard", repository.find(citizensUuid).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow());
     }
 }

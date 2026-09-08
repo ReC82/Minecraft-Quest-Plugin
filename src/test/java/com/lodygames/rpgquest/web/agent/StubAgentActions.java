@@ -69,6 +69,16 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<CitizensRosterView> citizensRoster() {
+        return CompletableFuture.completedFuture(new CitizensRosterView(false, List.of(), 0, 0, 0));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> citizensLink(String npcId, int citizensNumericId) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<ResetPreview> resetPreview(UUID playerId) {
         return CompletableFuture.completedFuture(new ResetPreview(false, List.of()));
     }

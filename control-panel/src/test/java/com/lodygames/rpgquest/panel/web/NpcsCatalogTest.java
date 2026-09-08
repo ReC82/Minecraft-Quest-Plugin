@@ -36,19 +36,19 @@ class NpcsCatalogTest {
     private HttpClient client;
     private final Map<String, String> jar = new LinkedHashMap<>();
 
-    // Payload npc.list V2 : guard (défini + lié) + woodcutter_bob (référencé, sans définition).
+    // Payload npc.list V2 : guard (défini + lié -> LINKED) + woodcutter_bob (défini, pas de binding -> NOT_LINKED).
     private static final String NPC_DETAILS = "{"
-            + "\"citizensAvailable\":true,\"total\":2,\"withDefinition\":1,\"withoutDefinition\":1,"
+            + "\"citizensAvailable\":true,\"total\":2,\"withDefinition\":2,\"withoutDefinition\":0,"
             + "\"bound\":1,\"withWarnings\":1,"
-            + "\"definedIds\":[\"guard\"],\"canonicalIds\":[\"guard\",\"woodcutter_bob\"],"
+            + "\"definedIds\":[\"guard\",\"woodcutter_bob\"],\"canonicalIds\":[\"guard\",\"woodcutter_bob\"],"
             + "\"npcs\":["
-            + "{\"id\":\"woodcutter_bob\",\"displayName\":null,\"logicalDefinitionPresent\":false,"
+            + "{\"id\":\"woodcutter_bob\",\"displayName\":\"Bûcheron Bob\",\"logicalDefinitionPresent\":true,"
             + "\"citizensBindingPresent\":false,\"citizensNumericId\":null,\"bindingCount\":0,\"enabled\":true,"
-            + "\"description\":null,\"role\":null,\"definedDialogueId\":null,\"hasDialogue\":false,\"dialogueId\":null,"
-            + "\"dialogueNodes\":0,\"dialogueChoices\":0,\"dialogueStartsQuests\":[],\"questsGiven\":[],"
-            + "\"questsReferenced\":[\"rpgquest:woodcutters_request\"],\"sources\":[\"QUEST_TALK\"],"
-            + "\"state\":\"UNDEFINED_REFERENCE\",\"warnings\":[{\"code\":\"NO_DEFINITION\",\"severity\":\"error\","
-            + "\"message\":\"Aucune définition logique RPGQuest pour « woodcutter_bob » (référencé par objectif « parler à »). À migrer : créer la définition.\"}]},"
+            + "\"description\":null,\"role\":\"quest_giver\",\"definedDialogueId\":null,\"hasDialogue\":false,\"dialogueId\":null,"
+            + "\"dialogueNodes\":0,\"dialogueChoices\":0,\"dialogueStartsQuests\":[],\"questsGiven\":[\"rpgquest:woodcutters_request\"],"
+            + "\"questsReferenced\":[\"rpgquest:woodcutters_request\"],\"sources\":[\"DEFINITION\",\"QUEST_GIVER\",\"QUEST_TALK\"],"
+            + "\"state\":\"NOT_LINKED\",\"warnings\":[{\"code\":\"NOT_LINKED\",\"severity\":\"info\","
+            + "\"message\":\"Définition prête — aucun PNJ Citizens tagué « woodcutter_bob » (à créer / lier en jeu).\"}]},"
             + "{\"id\":\"guard\",\"displayName\":\"<yellow>Garde</yellow>\",\"logicalDefinitionPresent\":true,"
             + "\"citizensBindingPresent\":true,\"citizensNumericId\":6,\"bindingCount\":1,\"enabled\":true,"
             + "\"description\":\"Garde du village\",\"role\":\"quest_giver\",\"definedDialogueId\":\"rpgquest:guard\","
@@ -56,6 +56,16 @@ class NpcsCatalogTest {
             + "\"dialogueStartsQuests\":[\"rpgquest:first_steps\"],\"questsGiven\":[\"rpgquest:crystal_hunt\"],"
             + "\"questsReferenced\":[\"rpgquest:crystal_hunt\"],\"sources\":[\"DEFINITION\",\"BINDING\",\"DIALOGUE\"],"
             + "\"state\":\"LINKED\",\"warnings\":[]}"
+            + "]}";
+
+    // Payload npc.citizens.list : #6 Garde (déjà lié à guard) + #14 Bûcheron Bob (libre).
+    private static final String CITIZENS_DETAILS = "{"
+            + "\"citizensAvailable\":true,\"total\":2,\"available\":1,\"linked\":1,"
+            + "\"citizens\":["
+            + "{\"numericId\":6,\"uuid\":\"11111111-1111-1111-1111-111111111111\",\"name\":\"Garde\","
+            + "\"linkedNpcId\":\"guard\",\"availableForBinding\":false,\"spawned\":true},"
+            + "{\"numericId\":14,\"uuid\":\"22222222-2222-2222-2222-222222222222\",\"name\":\"Bûcheron Bob\","
+            + "\"linkedNpcId\":null,\"availableForBinding\":true,\"spawned\":true}"
             + "]}";
 
     @AfterEach
@@ -79,24 +89,59 @@ class NpcsCatalogTest {
         int guardNameAt = page.lastIndexOf("class=\"entity-name\"");
         assertFalse(page.substring(guardNameAt, guardNameAt + 150).contains("&lt;yellow&gt;"), "titre sans balise brute");
         assertTrue(page.contains("data-copy=\"guard\""), "id copiable");
-        assertTrue(page.contains("PNJ Citizens #6"), "binding Citizens affiché");
+        assertTrue(page.contains("Binding Citizens</span> #6"), "binding Citizens #6 affiché (nom absent : roster non chargé)");
+        assertTrue(page.contains("procédure de rebind sera ajoutée ultérieurement"), "note rebind sur PNJ lié");
         assertTrue(page.contains("quest_giver") || page.contains("Quest Giver"), "rôle affiché");
 
-        // woodcutter_bob : sans définition -> erreur de contenu + état
-        assertTrue(page.contains("sans définition"), "PNJ sans définition marqué");
-        assertTrue(page.contains("non défini") || page.contains("UNDEFINED_REFERENCE"), "état non défini");
-        assertTrue(page.contains("data-copy=\"NO_DEFINITION\""), "code d'anomalie");
+        // woodcutter_bob : défini mais pas lié -> état à lier
+        assertTrue(page.contains("à lier") || page.contains("NOT_LINKED"), "état à lier");
         assertTrue(page.indexOf("data-copy=\"woodcutter_bob\"") < page.indexOf("data-copy=\"guard\""),
-                "PNJ en erreur listé avant le PNJ sain");
+                "PNJ avec avertissement listé avant le PNJ sain");
 
-        // écritures proposées (rôle OWNER)
-        assertTrue(page.contains("name=\"type\" value=\"npc.definition.create\""), "formulaire de création");
+        // écritures proposées (rôle OWNER) : édition sur les deux, pas de création (les deux sont définis)
         assertTrue(page.contains("name=\"type\" value=\"npc.definition.update\""), "formulaire d'édition");
-        assertTrue(page.contains("Créer la définition « woodcutter_bob »"), "création pré-remplie sur la carte non définie");
+        assertFalse(page.contains("Créer la définition « woodcutter_bob »"), "pas de création : woodcutter_bob est défini");
 
         // registre canonique : définis vs tous
         assertTrue(page.contains("Registre canonique"));
         assertTrue(page.contains("Définis"));
+    }
+
+    @Test
+    void citizensLinkFormShownOnlyWhenDefinedAndNotLinked_withFreeCitizensOnly() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        runListWithSuccess("npc.citizens.list", CITIZENS_DETAILS);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Lier un PNJ Citizens existant"), "form de liaison sur le PNJ NOT_LINKED");
+        assertTrue(page.contains("name=\"type\" value=\"npc.citizens.link\""));
+        // le PNJ Citizens libre est sélectionnable, l'occupé est désactivé
+        assertTrue(page.contains("<option value=\"14\">#14 — Bûcheron Bob</option>"), "Citizens libre proposé");
+        assertTrue(page.contains("<option value=\"6\" disabled>#6 — Garde  ·  déjà lié à guard</option>"),
+                "Citizens occupé non sélectionnable");
+        // résumé Citizens
+        assertTrue(page.contains("1 libre(s)") && page.contains("1 déjà lié(s)"));
+        // le PNJ déjà lié (guard) ne propose pas le formulaire de liaison
+        int guardCard = page.lastIndexOf("data-copy=\"guard\"");
+        assertFalse(page.substring(guardCard).contains("Lier un PNJ Citizens existant"),
+                "pas de liaison proposée sur un PNJ déjà LINKED");
+    }
+
+    @Test
+    void citizensLinkActionIsValidatedAndQueued() throws Exception {
+        start();
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+        HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.link&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&npc_id=woodcutter_bob&citizens_id=14&confirm=true");
+        assertEquals(303, ok.statusCode());
+        assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1);
+
+        HttpResponse<String> bad = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.link&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&npc_id=woodcutter_bob&citizens_id=abc&confirm=true");
+        assertTrue(bad.headers().firstValue("Location").orElse("").contains("err="));
     }
 
     @Test
@@ -157,8 +202,12 @@ class NpcsCatalogTest {
     }
 
     private void runListWithSuccess(String details) throws Exception {
+        runListWithSuccess("npc.list", details);
+    }
+
+    private void runListWithSuccess(String type, String details) throws Exception {
         String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
-        post("/agents/action", "_csrf=" + token + "&type=npc.list&agent=" + TestConfig.AGENT_ID + "&return=/npcs");
+        post("/agents/action", "_csrf=" + token + "&type=" + type + "&agent=" + TestConfig.AGENT_ID + "&return=/npcs");
         HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
                 .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(), HttpResponse.BodyHandlers.ofString());

@@ -138,6 +138,30 @@ class AgentActionExecutorTest {
     }
 
     @Test
+    void npcCitizensListReturnsRoster() {
+        AgentActionOutcome outcome = run(new AgentAction("cl0", "npc.citizens.list", Map.of()));
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertTrue(outcome.details().containsKey("citizens"));
+        assertEquals(1, outcome.details().get("available"));
+        assertEquals(Boolean.TRUE, outcome.details().get("citizensAvailable"));
+    }
+
+    @Test
+    void npcCitizensLinkValidatesAndDelegates() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("lk0", "npc.citizens.link",
+                Map.of("npc_id", "woodcutter_bob"))).status(), "citizens_id obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("lk1", "npc.citizens.link",
+                Map.of("npc_id", "Bad Id", "citizens_id", "14"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("lk2", "npc.citizens.link",
+                Map.of("npc_id", "woodcutter_bob", "citizens_id", "0"))).status(), "entier positif requis");
+        AgentActionOutcome ok = run(new AgentAction("lk3", "npc.citizens.link",
+                Map.of("npc_id", "woodcutter_bob", "citizens_id", "14")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("woodcutter_bob", actions.lastLinkNpcId);
+        assertEquals(14, actions.lastLinkCitizensId);
+    }
+
+    @Test
     void questGiverSetValidatesAndDelegates() {
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("qg0", "quest.giver.set",
                 Map.of("quest_id", "rpgquest:woodcutters_request"))).status(), "npc_id obligatoire");
@@ -354,6 +378,24 @@ class AgentActionExecutorTest {
             lastGiverQuestId = questId;
             lastGiverNpcId = npcId;
             return mutation("giver " + questId + " -> " + npcId);
+        }
+
+        String lastLinkNpcId;
+        int lastLinkCitizensId;
+
+        @Override
+        public CompletableFuture<CitizensRosterView> citizensRoster() {
+            return CompletableFuture.completedFuture(new CitizensRosterView(true, List.of(
+                    new CitizensNpcSummary(6, "11111111-1111-1111-1111-111111111111", "Garde", "guard", false, true),
+                    new CitizensNpcSummary(14, "22222222-2222-2222-2222-222222222222", "Bûcheron Bob", null, true, true)),
+                    2, 1, 1));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> citizensLink(String npcId, int citizensNumericId) {
+            lastLinkNpcId = npcId;
+            lastLinkCitizensId = citizensNumericId;
+            return mutation("link " + npcId + " <-> #" + citizensNumericId);
         }
 
         @Override

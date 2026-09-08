@@ -66,6 +66,8 @@ public final class AgentActionExecutor {
                 case STORY_LIST -> storyList(action);
                 case ITEM_LIST -> itemList(action);
                 case NPC_LIST -> npcList(action);
+                case NPC_CITIZENS_LIST -> npcCitizensList(action);
+                case NPC_CITIZENS_LINK -> npcCitizensLink(action);
                 case QUEST_PLAYER_STATUS -> questPlayerStatus(action);
                 case STORY_PLAYER_STATUS -> storyPlayerStatus(action);
                 case PLAYER_RESETNEW_PREVIEW -> resetPreview(action);
@@ -285,6 +287,57 @@ public final class AgentActionExecutor {
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " PNJ RPGQuest (" + view.withWarnings() + " avec avertissement).", details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> npcCitizensList(AgentAction action) {
+        return actions.citizensRoster().thenApply(view -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (AgentActions.CitizensNpcSummary c : view.citizens()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("numericId", c.numericId());
+                row.put("uuid", c.uuid());
+                row.put("name", c.name());
+                row.put("linkedNpcId", c.linkedNpcId());
+                row.put("availableForBinding", c.availableForBinding());
+                row.put("spawned", c.spawned());
+                rows.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("citizens", rows);
+            details.put("citizensAvailable", view.citizensAvailable());
+            details.put("total", view.total());
+            details.put("available", view.available());
+            details.put("linked", view.linked());
+            return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
+                    rows.size() + " PNJ Citizens (" + view.available() + " libre(s)).", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> npcCitizensLink(AgentAction action) {
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        String rawCitizens = firstNonBlank(action.param("citizens_id"), action.param("citizens"));
+        Integer citizensId = parsePositiveInt(rawCitizens);
+        if (citizensId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « citizens_id » manquant ou invalide (entier positif)."));
+        }
+        return actions.citizensLink(npcId, citizensId).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private static Integer parsePositiveInt(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            int value = Integer.parseInt(raw.trim());
+            return value > 0 && value <= 10_000_000 ? value : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     // ---- Lectures avec joueur -------------------------------------------------------

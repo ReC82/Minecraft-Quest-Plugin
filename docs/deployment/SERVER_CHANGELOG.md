@@ -1032,16 +1032,30 @@ Session du 2026-09-08 (~12:35–12:46 UTC). Branche `feat/control-panel-admin-to
   déployé sha256 `01f14c6071584261f932eca36cc38ff11769999bc3c1ff3d60be1c3819dd51a5` == build de
   la branche. `/health` local + public `ONLINE` ×3 ; `/npcs` + `/dashboard` (anon) → 303 ; autres
   vhosts 200 ; nginx/secrets/TLS non touchés. Rollback : `scripts/plugadmin/rollback.sh app`.
-- **VeryGames DEV — EN ATTENTE (panne FTP externe)** : `scripts/deploy-verygames.sh -y` a
-  construit le JAR (tests + build verts, sha256
-  `261d7a378c58f714a35c1bea861b2cdf69727ad73b94b2f73cf9e9c8a30c3549`, 1 317 563 o) puis a échoué à
-  la **connexion FTP** (`curl (28) timed out`, hôte `si-16041.dg.vg` injoignable — il répondait
-  ~15 min plus tôt). Le script **abandonne avant toute écriture** : serveur DEV **inchangé** (tourne
-  toujours le JAR `12786cb3…` de l'entrée précédente), aucune donnée touchée, aucun rollback requis.
-  **À faire dès que le FTP répond** (arbre Git propre) :
-  `scripts/deploy-verygames.sh -y` puis `scripts/verygames-restart.sh`, puis la validation du
-  rapport `docs/claude-reports/2026-09-08_1235_npc-v2-declarative.md` (`npc.list` V2,
-  `npc.definition.create`, `quest.giver.set`).
+- **VeryGames DEV — DÉPLOYÉ** (le FTP a eu une panne transitoire ~12:38–12:43 UTC ; deux tentatives
+  ont échoué **avant toute écriture** — `curl (28) timed out` — puis le FTP est revenu). Réussi
+  ~12:44 UTC : `scripts/deploy-verygames.sh -y` → JAR sha256
+  `261d7a378c58f714a35c1bea861b2cdf69727ad73b94b2f73cf9e9c8a30c3549` (1 317 563 o), backup
+  `rpgquest-20260908T124242Z-predeploy.jar` (sha256 `12786cb3…`) ; puis `scripts/verygames-restart.sh`
+  → `stop` RCON → OFFLINE → relance auto → **ONLINE** en < 1 min.
+- **Vérifs VeryGames** : `/plugins` → RPGQuest **en vert** (+ Citizens) ; `rpgquest version` →
+  `v0.1.0-SNAPSHOT` ; heartbeat agent (`uptime_seconds=6`) ; aucun `ERROR` `journalctl -u plugadmin`.
+- **Validation réelle** (actions injectées dans `agent_action`, exécutées par l'agent DEV) :
+  - `npc.list` → **SUCCESS** « 8 PNJ (7 avec avertissement) » ; `guard` = définition
+    (`npcs/guard.yml` auto-créé) + binding → `state: LINKED`, `role: quest_giver`, `displayName`
+    de la définition, aucune anomalie ; `definedIds = [guard]` ; `guide`/`help`/`jeff`/`jo`/`junior`/
+    `libraire` = binding sans définition → `CITIZENS_ORPHAN` + `BINDING_NO_DEFINITION` (err) ;
+    `woodcutter_bob` = référencé sans définition → `UNDEFINED_REFERENCE` + `NO_DEFINITION` (err).
+  - `npc.definition.create` (`woodcutter_bob`, `display_name=Bûcheron Bob`, `role=quest_giver`) →
+    **SUCCESS** `CREATED`, effet `npcs/woodcutter_bob.yml`.
+  - `quest.giver.set` (`rpgquest:woodcutters_request` → `woodcutter_bob`) → **SUCCESS** `SET`,
+    effets `quests/woodcutters_request.yml` + `giver: woodcutter_bob` ; RCON `quest admin validate`
+    → « 10 quête(s), 0 erreur(s) » (YAML édité valide, commentaires préservés).
+  - `npc.list` (2e) → `definedIds = [guard, woodcutter_bob]`, `withDefinition = 2` ;
+    `woodcutter_bob` porte `questsGiven: [rpgquest:woodcutters_request]` (l'attribution a pris,
+    moteur de quêtes rechargé).
+  - `npc.definition.update` (`woodcutter_bob`, sans `dialogue`) → **SUCCESS** — nettoie l'anomalie
+    `DIALOGUE_MISSING` introduite par le `dialogue_id` de test.
 
 ### Rollback (points exacts)
 

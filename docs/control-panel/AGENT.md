@@ -232,7 +232,7 @@ principal** par `BukkitAgentActions` (l'agent poll depuis un thread async).
 |---|---|---|---|
 | `player.variable.get` | `player` \| `player_uuid` ; `key` | `PlayerVariableRepository#get` | `present`, `value` |
 | `player.list` | — | `Server#getOnlinePlayers` | `players[]` (uuid, name, world, x/y/z) |
-| `quest.list` | — | `YamlQuestEngine#quests` | `quests[]` (id, titre, catégorie, étapes/objectifs, récompenses) |
+| `quest.list` | — | `YamlQuestEngine#quests` | `quests[]` — voir **Payload `quest.list`** ci-dessous |
 | `quest.player.status` | `player` | `QuestProgressEngine#allStates` / `activeStepView` | `quests[]` (state, étape, objectifs current/required) |
 | `story.list` | — | `StoryService#stories` | `stories[]` (id, titre, quêtes ordonnées) |
 | `story.player.status` | `player` | `StoryService#info` | `stories[]` (state, étape courante/total, quête courante) |
@@ -256,6 +256,25 @@ Validation à **trois couches** : `AgentActionCatalog` (panel, avant création) 
 (agent, patterns bornés) → service métier. Quantité GIVE plafonnée à 64. `player.resetnew.confirm`
 et toutes les mutations exigent une confirmation explicite dans le formulaire du panel ; l'agent
 exige en plus `confirm=true` pour le reset.
+
+### Payload `quest.list` (structuré — issues #78 / #75)
+
+Chaque entrée de `quests[]` :
+
+| Champ | Type | Détail |
+|---|---|---|
+| `id`, `title`, `category`, `repeatable`, `prerequisites` | — | inchangés |
+| `giverId` | `string` | **présent seulement si** la quête déclare `giver:` (YAML). `giverName` réservé, non rempli aujourd'hui. |
+| `steps[].id` | `string` | id d'étape |
+| `steps[].objectives` | `string[]` | **legacy** — chaînes déjà formatées (`"Tuer SPIDER (x5)"`). Conservé pour l'agent déjà déployé. |
+| `steps[].objectiveDetails` | `object[]` | **structuré** : `{kind, target, amount, raw}`. `kind` = `ObjectiveType` (`KILL_ENTITY`, `COLLECT_ITEM`, `CRAFT_ITEM`, `BREAK_BLOCK`, `PLACE_BLOCK`, `TALK_TO_NPC`, `REACH_LOCATION`) ; `target` = jeton technique (entité, matériau, id de PNJ, nom de monde). |
+| `rewards` | `string[]` | **legacy** — chaînes déjà formatées ; commande **tronquée à 60**. |
+| `rewardDetails` | `object[]` | **structuré** : `{kind, amount, target, value, command, raw}`. `kind` = `RewardType` (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`). `command` **jamais tronquée**. |
+
+Le panel privilégie les champs structurés (`ObjectiveText` / `RewardText.fromSummary`) et retombe
+sur les chaînes legacy (`MinecraftNames.humanizeTokens` / `RewardText.parse`) tant que l'agent
+d'une cible n'a pas été redéployé. Les champs legacy sont **dépréciés** : à retirer une fois tous
+les agents à jour.
 
 ---
 

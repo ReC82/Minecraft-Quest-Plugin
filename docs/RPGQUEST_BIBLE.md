@@ -303,6 +303,8 @@ Exemples minimaux (champs vérifiés dans le code, valeurs d'illustration) :
   radius: 5.0
 ```
 
+Champ `giver` (optionnel, racine de la quête) : id logique stable du **PNJ donneur** (même convention que `objectives[].npc`, posé via `/rpgadmin npc tag`), jamais le nom affiché. Purement informatif — n'affecte ni la progression ni l'acceptation ; exposé tel quel dans le catalogue du Control Panel (`quest.list` → `giverId`, issue #75). Absent = aucun donneur ; présent mais vide = erreur de chargement. Vérifié dans `QuestDefinitionParser#parseGiver` / `QuestDefinition`.
+
 Récompenses (`rewards[].type`, hors périmètre strict de la question mais nécessaires à tout exemple complet) : `EXPERIENCE` (`amount`), `ITEM`, `VARIABLE` (`key`/`value`), `COMMAND` (`command`, liste blanche via `dialogue.allowed-commands` **non requise** ici — seules les actions `RUN_SAFE_COMMAND` de dialogue sont filtrées, une récompense `COMMAND` de quête ne l'est pas, vérifié dans `QUEST_FORMAT.md`/`QuestDefinitionParser`).
 
 **Feedback de remise** (`QuestProgressEngine#turnIn`) : un Title/Subtitle bref (`quest.completed-title`/`-subtitle`, `messages.yml`) annonce la fin, puis un résumé est envoyé dans le chat (`quest.reward-summary-header` + une ligne par récompense **réellement accordée** — `quest.reward-line-experience`/`-item`/`-special`). `VARIABLE` n'a pas de ligne (état interne, pas une récompense visible du joueur) ; `COMMAND` affiche une ligne générique (« Récompense spéciale ») car le contenu d'une commande arbitraire n'est pas inspectable — jamais de nom d'objet inventé. Une quête sans `rewards` n'envoie aucun résumé chat. Le journal (`QuestJournalService`) continue d'afficher les récompenses **prévues** dans le lore de chaque quête, y compris avant complétion.

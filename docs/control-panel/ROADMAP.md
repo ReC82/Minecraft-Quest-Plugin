@@ -89,6 +89,11 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
 
 ## Étape 3 — contenu (lecture structurée)
 
+- [~] `quest.list` transporte des **objectifs et récompenses structurés**
+      (`objectiveDetails` / `rewardDetails` = `{kind, target, amount, value, command, raw}`,
+      commande non tronquée) + le **PNJ donneur** (`giverId`, champ YAML `giver:` optionnel) —
+      issues #78 / #75. Le panel consomme la structure (`ObjectiveText` / `RewardText.fromSummary`)
+      et ne reparse plus de chaîne métier ; repli legacy documenté et déprécié.
 - [ ] consultation des YAML (quêtes/dialogues/stories/marchands/items), détection de
       dépendances cassées, comparaison dépôt/serveur, **sans édition** encore.
 

@@ -117,6 +117,14 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `/assets/panel.js` + `/agents/actions.json`) : premier relevé immédiat après soumission,
   démarrage sur le compteur serveur **ou** sur un statut non terminal encore visible, arrêt dès
   qu'aucune action n'est en cours. Voir [control-panel/AGENT.md](control-panel/AGENT.md) §7.
+- **Protocole `quest.list` structuré** *(branche `feat/control-panel-admin-tools`, issues #78 /
+  #75)* — `quest.list` transporte désormais, **en plus** des chaînes legacy, des objectifs et
+  récompenses **structurés** (`steps[].objectiveDetails` = `{kind, target, amount, raw}` ;
+  `rewardDetails` = `{kind, amount, target, value, command, raw}`, commande **non tronquée**) et le
+  PNJ donneur (`giverId`, si la quête déclare `giver:` dans son YAML). Le panel consomme la
+  structure en priorité (`ObjectiveText`, `RewardText.fromSummary`) et retombe sur le reparse de
+  chaînes uniquement pour un agent pas encore redéployé. Champs legacy conservés = dépréciés. Un
+  nouveau champ optionnel `giver:` existe dans le format de quête (`QuestDefinition` / `QUEST_FORMAT.md`).
 
 ## Bugs connus et corrigés
 

@@ -9,6 +9,7 @@ id: rpgquest:woodcutters_request   # namespacé ; sans ':', le namespace par dé
 title: "<gold>La requête du bûcheron</gold>"       # MiniMessage ; ou une table de traductions (voir plus bas)
 description: "<gray>Récolte du bois...</gray>"
 category: gathering
+giver: woodcutter_bob              # optionnel : id stable du PNJ donneur (cf. /rpgadmin npc tag)
 repeatable: true
 
 prerequisites:
@@ -38,6 +39,15 @@ variables:
   wood_collected: "0"
 ```
 
+## Champ `giver` (optionnel)
+
+`giver:` déclare le PNJ **donneur** de la quête — l'id logique stable posé via
+`/rpgadmin npc tag <id>` (même convention que `objectives[].npc`), jamais le
+nom affiché. Purement informatif : il n'affecte ni la progression ni les
+conditions d'acceptation ; il est exposé tel quel dans le catalogue du
+Control Panel (`quest.list` → `giverId`). Absent = aucun donneur déclaré ;
+présent mais vide = erreur de chargement.
+
 ## Objectif `TALK_TO_NPC`
 
 `npc:` (ex. `woodcutter_bob` ci-dessus) est l'identifiant stable attribué à
@@ -61,6 +71,7 @@ title:
 ## Validation
 
 -   `id`, `title`, `description`, `category`, `steps` (≥ 1) sont obligatoires.
+-   `giver` est optionnel ; s'il est présent il ne peut pas être vide.
 -   Chaque étape a un `id` unique dans la quête et ≥ 1 `objectives`.
 -   Types d'objectif/récompense inconnus, matériaux/entités inconnus,
     nombres ≤ 0, et prérequis référençant la quête elle-même sont rejetés.

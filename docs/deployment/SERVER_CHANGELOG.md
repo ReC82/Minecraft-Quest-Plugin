@@ -749,3 +749,71 @@ d'action non whitelisté » (agent plus ancien que le panel).
 Déployé par cette session le 2026-09-08 (~07:52–07:56 UTC). Branche
 `feat/control-panel-admin-tools` @ `3c3ea5a`, **non fusionnée**.
 Rapport : `docs/claude-reports/2026-09-08_0756_deploy-verygames-actions-agent.md`.
+
+---
+
+## 2026-09-08 - Protocole `quest.list` structuré (objectifs / récompenses / donneur) — issues #78 / #75
+
+### Changement
+
+L'action agent `quest.list` transporte désormais, **en plus** des chaînes
+legacy déjà présentes, des champs **structurés** :
+
+- `steps[].objectiveDetails[]` = `{kind, target, amount, raw}` — le panel
+  détermine type / cible / quantité sans regex ;
+- `rewardDetails[]` = `{kind, amount, target, value, command, raw}` — la
+  commande console **n'est plus tronquée à 60 caractères** ;
+- `giverId` — id du PNJ donneur, **présent uniquement** si la quête déclare le
+  nouveau champ optionnel `giver:` dans son YAML.
+
+Aucun changement de gameplay, de schéma SQL, de commande en jeu. Les YAML de
+quêtes existants restent valides tels quels (`giver:` est optionnel).
+
+### Action serveur
+
+- **Remplacement du seul JAR RPGQuest.**
+- Redémarrage serveur (RCON `stop` → relance automatique VeryGames) pour
+  recharger le plugin.
+- Aucun autre fichier : ni `data.db`, ni `config.yml`, ni `messages.yml`, ni
+  mondes, ni `Citizens/`, ni `plugadmin-agent.properties`, ni autre plugin.
+  Aucune migration. Aucune donnée joueur touchée.
+- Aucune action AWS/PlugAdmin requise pour le protocole (le panel gère déjà
+  les deux formats) ; le Control Panel AWS est tout de même redéployé dans la
+  même session pour embarquer le rendu structuré.
+
+### Sauvegarde préalable
+
+- Ancien JAR : sauvegardé automatiquement par `deploy-verygames.sh` dans
+  `~/.local/share/rpgquest/verygames-backups/` (+ `.meta`). Ne jamais écraser
+  le dernier backup.
+
+### Déploiement
+
+1. `scripts/deploy-verygames.sh -y` (lance `./gradlew test` + `build`, backup
+   du JAR en ligne, transfert FTP atomique).
+2. `scripts/verygames-restart.sh` (`save-all` → `stop` RCON → relance auto).
+
+### Validation
+
+- `/plugins` (RCON) : RPGQuest en vert ; `rpgquest version` répond.
+- Heartbeat agent reçu par PlugAdmin AWS après redémarrage (aucune ligne
+  `ERROR` dans `journalctl -u plugadmin`).
+- Action `quest.list` (file `control-panel.db`) → **SUCCESS** ; le `details`
+  renvoyé contient `steps[].objectiveDetails` et `rewardDetails` non vides, et
+  `giverId` pour au moins la quête `crystal_hunt` (après ajout de `giver:` à
+  son YAML).
+- Catalogue `/quests` du panel exploitable avec ces données (noms FR par
+  jeton, commande longue non tronquée, ligne « Donneur »).
+
+### Rollback
+
+- `scripts/rollback-verygames.sh --latest` → restaure le JAR `*-predeploy.jar`
+  sauvegardé, puis `scripts/verygames-restart.sh`.
+- AWS : `scripts/plugadmin/rollback.sh app` (release précédente du Control
+  Panel).
+- Aucune migration à défaire.
+
+### Exécution réelle
+
+_À compléter par la session qui déploie (voir le rapport
+`docs/claude-reports/` associé)._

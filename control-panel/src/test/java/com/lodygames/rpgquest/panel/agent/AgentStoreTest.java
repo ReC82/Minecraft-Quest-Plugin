@@ -94,4 +94,25 @@ class AgentStoreTest {
         assertTrue(deliverable.isEmpty());
         assertEquals(AgentActionStatus.EXPIRED, store.action(id).orElseThrow().status());
     }
+
+    @Test
+    void latestSuccessfulActionOfTypeIgnoresNewerNonTerminalOnes() throws InterruptedException {
+        // Un premier story.list réussi (catalogue exploitable).
+        String ok = store.createAction("rpgquest-dev", "story.list", Map.of(), "owner");
+        store.recordResult(ok, "rpgquest-dev", AgentActionStatus.SUCCESS, "2", "2 story(s).",
+                "{\"details\":{\"stories\":[]}}", Instant.now());
+        Thread.sleep(1100); // created_at est tronqué à la seconde
+
+        // Une action « Rafraîchir » plus récente, encore PENDING.
+        String pending = store.createAction("rpgquest-dev", "story.list", Map.of(), "owner");
+
+        // latestActionOfType renvoie la plus récente (PENDING) — d'où le bug d'affichage.
+        assertEquals(pending, store.latestActionOfType("rpgquest-dev", "story.list").orElseThrow().id());
+        // latestSuccessfulActionOfType saute la PENDING et garde le dernier SUCCESS exploitable.
+        AgentActionRow row = store.latestSuccessfulActionOfType("rpgquest-dev", "story.list").orElseThrow();
+        assertEquals(ok, row.id());
+        assertEquals(AgentActionStatus.SUCCESS, row.status());
+
+        assertTrue(store.latestSuccessfulActionOfType("rpgquest-dev", "quest.list").isEmpty());
+    }
 }

@@ -503,8 +503,9 @@ public final class AgentPages {
     }
 
     private Optional<Map<String, Object>> latestDetails(String agentId, String type) {
-        return store.latestActionOfType(agentId, type)
-                .filter(r -> r.status() == AgentActionStatus.SUCCESS)
+        // Dernière action RÉUSSIE du type : une action « Rafraîchir » plus récente encore en cours
+        // (ou en échec) ne doit pas vider le catalogue déjà chargé (issue affichage /stories).
+        return store.latestSuccessfulActionOfType(agentId, type)
                 .flatMap(this::detailsOf);
     }
 

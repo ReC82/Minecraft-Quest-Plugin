@@ -163,5 +163,5 @@ non réalisable depuis l'environnement de build.
 * **Build** : `BUILD SUCCESSFUL`.
 * **Tests manuels restants** : validation navigateur/téléphone de #65 sur `player.variable.get`.
 * **Doc modifiée** : `docs/control-panel/ROADMAP.md`, `docs/current_state.md`.
-* **Commit / branche** : commit unique sur `feat/control-panel-admin-tools`, poussé. Pas de
-  merge, pas de déploiement. Issue #65 non fermée (validation manuelle en attente).
+* **Commit / branche** : `22af668` sur `feat/control-panel-admin-tools` (poussé sur origin).
+  Pas de merge, pas de déploiement. Issue #65 non fermée (validation manuelle en attente).

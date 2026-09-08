@@ -17,6 +17,7 @@ import com.lodygames.rpgquest.panel.bridge.BridgeException;
 import com.lodygames.rpgquest.panel.bridge.BridgeHealth;
 import com.lodygames.rpgquest.panel.config.PanelConfig;
 import com.lodygames.rpgquest.panel.config.Target;
+import com.lodygames.rpgquest.panel.docs.DocLibrary;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.security.AuthService;
 import com.lodygames.rpgquest.panel.security.PasswordHasher;
@@ -59,6 +60,7 @@ public final class PanelApp {
     private final AgentRegistry agentRegistry;
     private final AgentEndpoints agentEndpoints;
     private final AgentPages agentPages;
+    private final DocsPages docsPages = new DocsPages(DocLibrary.load());
 
     private HttpServer server;
 
@@ -102,6 +104,7 @@ public final class PanelApp {
                 Permission.NPC_READ, agentPages::npcs));
         route("/dialogues", exchange -> handleBusinessPage(exchange, "/dialogues", "Dialogues",
                 Permission.DIALOGUE_READ, agentPages::dialogues));
+        route("/docs", this::handleDocs);
         for (String path : new String[] {"/diagnostics", "/admin", "/dev"}) {
             route(path, exchange -> handlePlaceholder(exchange, path));
         }
@@ -349,6 +352,36 @@ public final class PanelApp {
             }
         }
         return sb.toString();
+    }
+
+    /** {@code /docs} (accueil + recherche) et {@code /docs/<slug>} (fiche). Slug résolu côté serveur. */
+    private void handleDocs(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.role(), Permission.DOCS_READ)) {
+            Http.html(exchange, 403, renderPage("Refusé", session, "/docs",
+                    "<h1>Accès refusé</h1><p class=\"muted\">Permission manquante.</p>"));
+            return;
+        }
+        String path = exchange.getRequestURI().getPath();
+        Map<String, String> query = Http.query(exchange);
+        String q = query.get("q");
+
+        if (path.equals("/docs") || path.equals("/docs/")) {
+            Http.html(exchange, 200, renderPage("Documentation", session, "/docs", docsPages.home(q)));
+            return;
+        }
+        // /docs/<slug> — jamais un chemin fichier : slug borné puis résolu contre la bibliothèque.
+        String slug = path.substring("/docs/".length());
+        if (slug.contains("/") || !slug.matches("[a-z0-9-]{1,64}")) {
+            Http.html(exchange, 404, renderPage("Introuvable", session, "/docs", docsPages.page("", q)));
+            return;
+        }
+        int status = docsPages.exists(slug) ? 200 : 404;
+        Http.html(exchange, status, renderPage("Documentation", session, "/docs", docsPages.page(slug, q)));
     }
 
     private void handlePlaceholder(HttpExchange exchange, String path) throws IOException {

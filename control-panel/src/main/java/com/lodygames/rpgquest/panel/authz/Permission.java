@@ -16,6 +16,7 @@ public enum Permission {
     DIALOGUE_READ,
     DIALOGUE_WRITE,
     CONTENT_READ,
+    DOCS_READ,
     DIAGNOSTICS_READ,
     AUDIT_READ,
     ACTION_QUEST,

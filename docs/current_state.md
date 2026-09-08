@@ -212,6 +212,24 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   par nœud, aucun JS (conforme CSP `default-src 'self'`). **Non fait** (suite de #82) : édition
   des actions/conditions riches, renommage / déplacement / suppression de nœud, réordonnancement
   des choix, rendu graphe interactif.
+- **Centre de documentation `/docs` — MVP (issue #49)** *(branche `feat/control-panel-admin-tools`)*
+  — wiki d'administration **privé** dans le Control Panel : entrée « Documentation » dans le menu,
+  page d'accueil (gros champ de recherche + catégories + raccourcis « Comment faire ? »),
+  **recherche plein texte** en mémoire (titre / tags / catégorie / commandes / corps, ET des
+  termes, extraits contextualisés), rendu **Markdown sûr** (tout échappé, aucune balise HTML
+  brute, aucun JS, liens limités à `/docs/…` / ancre / `https://` ; titres, listes, tableaux,
+  blocs de code avec bouton **Copier**, callouts). Source de vérité = fichiers Markdown
+  **versionnés** dans `control-panel/src/main/resources/docs/`, listés dans un manifeste
+  `_index.txt` qui **est** la liste blanche — **aucun contenu en base**, **aucun chemin du
+  navigateur ouvert** : les fiches sont adressées par un `slug` interne (`[a-z0-9-]`) résolu par
+  un lookup en mémoire, zéro accès disque à la requête (path traversal impossible par
+  construction). 9 fiches opérationnelles livrées : Créer/configurer un PNJ (détaillée : nom vs
+  id, tag, skin, déplacement, suppression, lien contenu, diagnostic), commandes Citizens, reset
+  d'un joueur, quêtes/stories, Claims, Wild, déploiement VeryGames (+ règle anti-auto-reboot),
+  déploiement AWS Control Panel, référence `/rpgadmin`. Liens contextuels depuis les pages PNJ /
+  Quêtes / Joueurs / Dialogues. Accès : authentifié, permission `DOCS_READ` (tous les rôles).
+  **V2** : édition depuis le navigateur, permissions fines, indexation des `docs/` du dépôt,
+  historique Git par fiche.
 
 ## Bugs connus et corrigés
 

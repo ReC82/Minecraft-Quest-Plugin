@@ -1,0 +1,14 @@
+# Manifeste du centre de documentation du Control Panel (issue #49).
+# Liste blanche : SEULS ces fichiers sont exposés par /docs. Un fichier
+# ajouté dans ce dossier mais absent d'ici n'est jamais servi.
+# Un fichier .md par ligne, nom plat (pas de chemin), commentaires avec #.
+
+pnj-citizens.md
+citizens-commandes.md
+joueurs-reset.md
+quetes.md
+claims.md
+wild.md
+verygames-deploiement.md
+aws-control-panel-deploiement.md
+rpgquest-commandes.md

@@ -22,6 +22,7 @@ public final class Layout {
                 item("Quêtes", "/quests", true, activeHref),
                 item("Stories", "/stories", true, activeHref),
                 item("Dialogues", "/dialogues", true, activeHref),
+                item("Documentation", "/docs", true, activeHref),
                 item("Diagnostics", "/diagnostics", false, activeHref),
                 item("Admin", "/admin", false, activeHref),
                 item("Développement", "/dev", false, activeHref));
@@ -262,6 +263,67 @@ public final class Layout {
             summary{cursor:pointer;color:var(--muted)}
             details[open] summary{margin-bottom:6px}
             ol,ul{margin:6px 0;padding-left:20px}
+            /* ---- centre de documentation (#49) ---- */
+            .doc-search{display:flex;gap:8px;margin:14px 0 20px}
+            .doc-search input[type=search]{flex:1;max-width:640px;padding:11px 14px;font-size:15px;
+            background:var(--panel2);border:1px solid var(--line2);border-radius:10px;color:var(--txt);font:inherit}
+            .doc-search input[type=search]:focus{outline:2px solid rgba(76,141,255,.5);border-color:var(--accent)}
+            .doc-search .btn{margin:0;white-space:nowrap}
+            .doc-shortcuts{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 4px}
+            .doc-chip{display:inline-block;padding:6px 12px;border-radius:999px;background:var(--panel2);
+            border:1px solid var(--line2);color:var(--txt);font-size:13px}
+            .doc-chip:hover{border-color:var(--accent);text-decoration:none;color:var(--accent)}
+            .doc-cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-top:8px}
+            .doc-cat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
+            .doc-cat h3{margin:0 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+            .doc-cat ul{margin:0;padding-left:16px} .doc-cat li{margin:3px 0;font-size:13.5px}
+            .doc-hits{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+            .doc-hit{display:block;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+            border-radius:8px;padding:10px 14px}
+            .doc-hit:hover{background:var(--panel2);text-decoration:none}
+            .doc-hit-cat{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+            .doc-hit-title{display:block;font-weight:650;color:var(--txt);margin:1px 0 3px}
+            .doc-hit-snip{display:block;font-size:12.5px;color:var(--muted)}
+            .doc-crumbs{font-size:12.5px;color:var(--muted);margin:2px 0 12px}
+            .doc-crumbs span{color:var(--faint);margin:0 4px}
+            .doc-layout{display:grid;grid-template-columns:210px 1fr;gap:22px;align-items:start}
+            .doc-toc{position:sticky;top:12px;font-size:13px;border-left:2px solid var(--line2);padding-left:12px}
+            .doc-toc-h{margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+            .doc-toc ul{list-style:none;margin:0 0 12px;padding:0} .doc-toc li{margin:4px 0}
+            .doc-toc li.lvl3{padding-left:12px;font-size:12.5px}
+            .doc-tags .badge{margin:2px 4px 2px 0}
+            .doc-body{min-width:0;max-width:820px}
+            .doc-body h1{font-size:22px;margin:0 0 12px}
+            .doc-body h2{font-size:15px;margin:26px 0 8px;color:var(--txt);text-transform:none;letter-spacing:0;
+            border-bottom:1px solid var(--line);padding-bottom:5px}
+            .doc-body h3{font-size:14px;margin:18px 0 6px;color:var(--muted)}
+            .doc-body p{margin:9px 0} .doc-body li{margin:4px 0}
+            .doc-body code{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;
+            font-size:12.5px;color:#d6deeb;overflow-wrap:anywhere}
+            .doc-body a{overflow-wrap:anywhere}
+            .doc-cmd{position:relative;margin:12px 0}
+            .doc-cmd pre{margin:0;background:#0c0e13;border:1px solid var(--line2);border-radius:8px;
+            padding:12px 14px;overflow-x:auto}
+            .doc-cmd pre code{background:none;border:0;padding:0;font-size:12.5px;color:#dfe6f1;white-space:pre}
+            .doc-copy{position:absolute;top:6px;right:6px;font:inherit;font-size:11px;cursor:pointer;
+            background:var(--panel3);color:var(--muted);border:1px solid var(--line2);border-radius:6px;padding:2px 8px}
+            .doc-copy:hover{color:var(--txt);border-color:var(--muted)}
+            .doc-copy.copied{color:var(--ok);border-color:var(--ok)}
+            .doc-copy.copied::after{content:" ✓"}
+            .doc-tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;margin:12px 0}
+            .doc-tablewrap table{width:100%;border-collapse:collapse;margin:0}
+            .doc-tablewrap th,.doc-tablewrap td{border-bottom:1px solid var(--line);padding:7px 10px;
+            text-align:left;font-size:13px;vertical-align:top}
+            .doc-tablewrap th{background:var(--panel);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+            .doc-callout{border:1px solid var(--line2);border-left:3px solid var(--info);border-radius:8px;
+            padding:8px 14px;margin:12px 0;background:var(--panel2)}
+            .doc-callout.doc-warn{border-left-color:var(--warn);background:rgba(210,153,34,.06)}
+            .doc-callout .doc-callout-h{display:block;font-size:11px;font-weight:700;text-transform:uppercase;
+            letter-spacing:.05em;color:var(--muted);margin-bottom:2px}
+            .doc-callout.doc-warn .doc-callout-h{color:#e0b34a}
+            .doc-callout p{margin:2px 0}
+            .doc-source{font-size:11.5px;margin-top:26px;border-top:1px solid var(--line);padding-top:8px}
+            .doc-cm-link{display:inline-block;margin:2px 0 10px;font-size:12.5px}
             /* ---- connexion ---- */
             .centered{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px}
             .login{width:340px;max-width:100%}
@@ -278,6 +340,10 @@ public final class Layout {
               .entity-head{gap:6px}
               input[type=text],input[type=password],input[type=number],input[list],select{max-width:100%}
               .meta-k{min-width:0;display:block;margin-bottom:2px}
+              .doc-layout{grid-template-columns:1fr}
+              .doc-toc{position:static;border-left:0;border-top:1px solid var(--line);padding:10px 0 0;margin-top:16px;order:2}
+              .doc-body{order:1;max-width:100%}
+              .doc-search{flex-direction:column} .doc-search .btn{width:100%}
             }
             """;
 }

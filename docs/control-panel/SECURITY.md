@@ -89,9 +89,29 @@ Rôles cibles (V1 : seul `owner` existe, mais l'énum et la table sont posées) 
 | `builder` | lectures + (futur) actions build/monde ciblées |
 | `read-only` | lectures uniquement |
 
-`Permission` : `PLAYERS_READ`, `NPC_READ`, `CONTENT_READ`, `DIAGNOSTICS_READ`,
+`Permission` : `PLAYERS_READ`, `NPC_READ`, `CONTENT_READ`, `DOCS_READ`, `DIAGNOSTICS_READ`,
 `ACTION_QUEST`, `ACTION_STORY`, `ACTION_VARIABLE_GET`, `ACTION_VARIABLE_SET`,
 `ACTION_PLAYER_RESET`, `ACTION_CONTENT_RELOAD`, `AUDIT_READ`, `DEV_MODULE`… (extensible).
+
+## Centre de documentation `/docs` (issue #49)
+
+Wiki d'administration **privé** — jamais public. Garde-fous :
+
+- **Accès** : session authentifiée + `DOCS_READ` (accordée à tous les rôles pour le MVP ;
+  restreignable ensuite sans toucher au handler). `/docs` anonyme → `303` vers `/login`.
+- **Source fermée** : le contenu vient d'un ensemble **fixe** de fichiers Markdown livrés avec le
+  jar (`control-panel/src/main/resources/docs/`), énumérés par le manifeste `_index.txt` qui
+  **est** la liste blanche. Un fichier non listé n'est jamais servi. Aucun contenu n'est copié
+  en base (Git reste la source de vérité).
+- **Pas de chemin du navigateur** : une fiche est adressée par un `slug` interne
+  (`[a-z0-9-]{1,64}`), validé puis **résolu par un lookup en mémoire** (`Map<slug, DocPage>`).
+  **Aucun accès disque au moment de la requête** → path traversal, lecture de `.env`, de clés,
+  de configs sensibles : impossibles par construction. Un slug inconnu ou malformé → `404`
+  (jamais `500`, jamais de contenu).
+- **Rendu Markdown sûr** (`docs.Markdown`) : tout le texte source est échappé HTML ; aucune
+  balise HTML brute, aucun `<script>`, aucun gestionnaire d'événement, aucune URL `javascript:` ;
+  les liens ne sont rendus que vers `/docs/…`, une ancre `#…`, ou `https://…`. Conforme à la CSP
+  (`default-src 'self'` ; le bouton « Copier » réutilise `/assets/panel.js`, aucun script inline).
 
 ## Kill-switch
 

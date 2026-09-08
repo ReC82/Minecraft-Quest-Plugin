@@ -48,6 +48,7 @@ public final class AgentPages {
         StringBuilder sb = new StringBuilder();
         sb.append("<h1>Joueurs</h1><p class=\"sub\">Sélectionner un joueur connecté, lire/écrire ses "
                 + "variables, lui donner un objet, ou prévisualiser un reset « nouveau joueur ».</p>");
+        sb.append("<p class=\"doc-cm-link\">\uD83D\uDCD6 <a href=\"/docs/joueurs-reset\">Documentation : reset d'un joueur</a></p>");
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
@@ -201,6 +202,7 @@ public final class AgentPages {
         StringBuilder sb = new StringBuilder();
         sb.append("<h1>Quêtes</h1><p class=\"sub\">Catalogue des quêtes, état d'un joueur, et raccourcis "
                 + "d'administration (démarrer / compléter / réinitialiser) via les services métier existants.</p>");
+        sb.append("<p class=\"doc-cm-link\">\uD83D\uDCD6 <a href=\"/docs/quetes\">Documentation : quêtes / stories</a></p>");
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
@@ -455,6 +457,7 @@ public final class AgentPages {
                 + "(fichier <code>npcs/&lt;id&gt;.yml</code>, indépendante du monde et de Citizens) et un "
                 + "<strong>binding Citizens</strong> éventuel. La définition peut exister avant même que "
                 + "le PNJ ne soit tagué en jeu. Position et monde ne sont pas suivis ici.</p>");
+        sb.append("<p class=\"doc-cm-link\">\uD83D\uDCD6 <a href=\"/docs/pnj-citizens\">Documentation : cr\u00e9er et configurer un PNJ</a></p>");
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
@@ -860,6 +863,7 @@ public final class AgentPages {
                 + "(<code>dialogues/&lt;id&gt;.yml</code>) : nœuds, choix, <strong>actions et conditions "
                 + "typées</strong>, relations PNJ / quêtes, diagnostics de cohérence. L'édition fine viendra "
                 + "avec un éditeur dédié ; cette V1 permet seulement de créer un squelette.</p>");
+        sb.append("<p class=\"doc-cm-link\">\uD83D\uDCD6 <a href=\"/docs?q=dialogue\">Documentation : dialogues</a></p>");
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }

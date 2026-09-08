@@ -148,6 +148,24 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       et ne reparse plus de chaîne métier ; repli legacy documenté et déprécié.
 - [ ] consultation des YAML (quêtes/dialogues/stories/marchands/items), détection de
       dépendances cassées, comparaison dépôt/serveur, **sans édition** encore.
+- [~] **Centre de documentation `/docs` (issue #49) — MVP.** Wiki d'administration **privé**
+      (accès authentifié, permission `DOCS_READ` accordée à tous les rôles). Source de vérité =
+      fichiers Markdown **versionnés** (`control-panel/src/main/resources/docs/*.md`), listés dans
+      un manifeste `_index.txt` qui **est** la liste blanche ; aucun contenu copié en base, aucun
+      chemin du navigateur ouvert (fiches adressées par `slug` interne résolu côté serveur —
+      `[a-z0-9-]`, lookup en mémoire, zéro accès disque à la requête). `DocFrontMatter` (titre /
+      catégorie / tags / order, Markdown sans front matter accepté), `Markdown` (rendu **sûr** :
+      tout échappé, aucune balise brute, aucun JS, liens limités à `/docs/…` / ancre / `https://` ;
+      titres, listes, tableaux, blocs de code avec bouton « Copier », callouts `> [!NOTE]` /
+      `[!WARNING]`), `DocLibrary` (chargement + index mémoire), `DocSearchIndex` (recherche plein
+      texte pondérée titre > tags > catégorie > commandes > corps, ET des termes, extraits
+      contextualisés), `DocsPages` (accueil : recherche + catégories + « Comment faire ? » ;
+      résultats ; fiche : fil d'Ariane + sommaire + tags + source). 9 fiches opérationnelles
+      livrées (PNJ/Citizens détaillée, commandes Citizens, reset joueur, quêtes/stories, Claims,
+      Wild, déploiement VeryGames + règle anti-auto-reboot, déploiement AWS Control Panel,
+      référence `/rpgadmin`). Liens contextuels depuis `/npcs` `/quests` `/players` `/dialogues`.
+      **Reste (V2)** : édition Markdown depuis le navigateur, permissions fines par rôle,
+      indexation des `docs/` du dépôt, historique Git (dernier commit par fiche), favoris.
 
 ## Étape 4 — développement (#29)
 

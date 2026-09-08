@@ -14,13 +14,15 @@ public enum Role {
     TESTER(EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ,
             Permission.CONTENT_READ, Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ,
-            Permission.ACTION_QUEST, Permission.ACTION_STORY, Permission.ACTION_VARIABLE_GET)),
+            Permission.ACTION_QUEST, Permission.ACTION_STORY, Permission.ACTION_VARIABLE_GET,
+            Permission.DOCS_READ)),
     CONTENT_EDITOR(EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.CONTENT_READ, Permission.DIAGNOSTICS_READ,
-            Permission.AUDIT_READ, Permission.ACTION_CONTENT_RELOAD)),
+            Permission.AUDIT_READ, Permission.ACTION_CONTENT_RELOAD, Permission.DOCS_READ)),
     READ_ONLY(EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ,
-            Permission.CONTENT_READ, Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ));
+            Permission.CONTENT_READ, Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ,
+            Permission.DOCS_READ));
 
     private final Set<Permission> permissions;
 

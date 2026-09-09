@@ -401,6 +401,33 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       conservés ; borne de la fiche `guard` corrigée) + `NpcCitizensPayloadTest` (payload agent :
       PNJ libre et homonymes conservés, aucune clé par nom). `:control-panel:test` + `test` verts.
 
+### Étape 3i — hotfix #103 : 502 Bad Gateway après connexion — **LIVRÉ**
+
+- [x] **Cause (pas une régression du code #101)** : pendant la validation live de #101, une ligne
+      `agent_action` a été insérée **directement en base** avec `created_at` sans « Z »
+      (`2026-09-09T12:51:33`). `AgentStore.readAction` faisait `Instant.parse` sans tolérance →
+      `DateTimeParseException`, remontant par `NotificationCenter.recent` → `recentActions` →
+      `readAction` jusqu'au rendu de la cloche de la topbar, donc de **toute** page authentifiée →
+      500 → 502 nginx. `/login` n'affiche pas la cloche → smoke anonyme « → 303 » aveugle.
+- [x] **Réparation de données** (immédiat, panel re-servi) : UPDATE ciblé de la ligne fautive
+      (`0cd8dd38…`, `created_by='claude-101-validation'`, `EXPIRED`) → ajout du « Z ». Aucune
+      suppression ; valeur d'origine consignée dans le rapport. 0 ligne au `created_at` sans « Z ».
+- [x] **Durcissement `AgentStore`** : `parseTimestamp` tolérant (ISO canonique + formes héritées
+      sans décalage → UTC ; illisible → `null` + WARNING) ; `created_at`/`received_at` (NOT NULL) →
+      `Instant.EPOCH` en dernier recours ; **frontière de sécurité par ligne** dans
+      `recentActions` (ligne illisible ignorée + WARNING, jamais propagée). Règle : donnée agent
+      invalide ⇒ diagnostic, jamais crash du serveur web.
+- [x] **Tests** : `PanelHardeningMalformedAgentDataTest` — connexion owner réelle + `/home`
+      `/dashboard` `/npcs` `/diagnostics` `/docs` `/actions` = 200 avec la ligne exacte de #103,
+      formes héritées variées, payload `npc.citizens.list` hérité (Stan sans `uuid`/`spawned`) ;
+      **vérifié que le test échoue sans le fix** (`EOFException` = 502) ; smoke authentifié
+      optionnel (`-DpanelProdDbCopy`) contre une **copie de la base de prod réelle** (Stan
+      toujours visible). `:control-panel:test` **241/0** ; `:test` inchangé ; `build` vert.
+- [x] **Déploiement AWS** `deploy.sh` : release `20260909-131643`, jar byte-identique
+      (`9a21828f…`), `/health` ONLINE, `plugadmin.service` `active` `NRestarts=0`, 0 `ERROR`.
+      **VeryGames non touché.** Rollback : `rollback.sh app` (⚠️ sans le durcissement, réparer
+      toute future ligne `created_at` sans « Z »).
+
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 
 - [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +

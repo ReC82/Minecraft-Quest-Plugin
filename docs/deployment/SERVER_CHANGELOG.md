@@ -2009,3 +2009,85 @@ Un relevé `npc.citizens.list` frais enfilé pour validation live est resté **D
 résultat (exécuteur de l'agent DEV VeryGames — **hors périmètre de ce changement**, agent non
 modifié). Preuve agent = payload DEV réel du 2026-09-09 11:33 (`#7 Stan`, `linkedNpcId:null`).
 Rendu `/npcs` authentifié : `PENDING MANUAL VALIDATION` (mot de passe owner non détenu).
+
+---
+
+## 2026-09-09 - Control Panel : hotfix #103 — 502 Bad Gateway après connexion (durcissement AgentStore) — AWS uniquement
+
+### Changement
+
+**Control Panel AWS uniquement. Aucun code plugin, aucun agent, aucune migration, aucun impact
+serveur Minecraft — ne pas redéployer/redémarrer VeryGames.**
+
+Après le déploiement #101 (release `20260909-125035`), `/login` fonctionnait mais toute page
+authentifiée (`/home`, `/npcs`, `/dashboard`, …) renvoyait **502 Bad Gateway**.
+
+**Cause racine — ce n'est PAS une régression du code #101.** Pendant la « validation live » de
+#101, une ligne `agent_action` a été insérée directement en base (sonde `npc.citizens.list`)
+avec `created_at = '2026-09-09T12:51:33'` — **sans « Z »**, car écrite par
+`strftime('%Y-%m-%dT%H:%M:%S','now')` au lieu du `Instant` ISO de PlugAdmin. `AgentStore.readAction`
+faisait `Instant.parse(created_at)` sans tolérance → `DateTimeParseException`. L'exception
+remontait par `NotificationCenter` (cloche de la topbar, rendue sur **toute** page authentifiée)
+→ HTTP 500 → 502 nginx. `/login` n'affiche pas la cloche, d'où l'insuffisance du smoke anonyme.
+
+**Correctif (déployé) — `AgentStore` :** analyse d'horodatage tolérante (`parseTimestamp` : ISO
+canonique + formes héritées sans décalage, interprétées UTC ; illisible → `null` + WARNING) ;
+`created_at`/`received_at` → `Instant.EPOCH` en dernier recours (jamais d'exception) ; **frontière
+de sécurité par ligne** dans `recentActions` (une ligne illisible est ignorée + WARNING, jamais
+propagée). Une donnée agent invalide ⇒ diagnostic, jamais crash du serveur web.
+
+**Correctif de données (déjà appliqué en prod avant le redéploiement) :** la ligne fautive
+(`agent_action` id `0cd8dd38…`, `created_by='claude-101-validation'`, statut `EXPIRED`) a vu son
+`created_at` réparé `'2026-09-09T12:51:33'` → `'2026-09-09T12:51:33Z'` (UPDATE ciblé, aucune
+suppression). Vérifié : 0 ligne au `created_at` sans « Z » dans `control-panel.db`.
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — release + `systemctl restart plugadmin` + check `/health`.
+Aucune autre action. Aucun changement nginx / TLS / secret. **Réparation de données déjà faite.**
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : app précédente sous `/opt/plugadmin/releases/<horodatage>`
+(rétention 5). `control-panel.db` non touché par le déploiement (réparation de la ligne faite
+séparément, UPDATE ciblé, valeur d'origine consignée dans le rapport).
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `:control-panel:test` **241** (0 échec ; 1 ignoré = smoke prod-copy, exécuté à la demande) —
+  `PanelHardeningMalformedAgentDataTest` : connexion owner réelle + `/home /dashboard /npcs
+  /diagnostics /docs /actions` = **200** avec la ligne exacte de #103 ; **vérifié que le test
+  échoue (EOFException = 502) sans le correctif**. `:test` plugin inchangé. `./gradlew build` vert.
+- **Smoke authentifié contre une COPIE de la base de prod réelle** (`-DpanelProdDbCopy`) :
+  connexion owner + `/home /dashboard /npcs /diagnostics /docs /actions /agents /players /quests
+  /stories /dialogues` = **200** ; Stan (#101) toujours visible ; ligne mal formée réinjectée →
+  `/home` reste 200.
+- Prod : `/health` ONLINE local + `https://plugadmin.lodylands.com` ; `plugadmin.service`
+  `active` `NRestarts=0` `ExecMainStatus=0` ; **0 `ERROR`** au journal depuis le redéploiement ;
+  jar déployé **byte-identique** au build (SHA-256 `9a21828f…`), `parseTimestamp` présent dans
+  le bytecode ; `control-panel.db` = 79 lignes `agent_action`, **0** au `created_at` sans « Z ».
+- Navigateur authentifié sur le service de prod : dernier point à confirmer par l'owner (mot de
+  passe non détenu) — équivalent couvert par le smoke authentifié sur copie de prod.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure `/opt/plugadmin/releases/20260909-125035` = #101
+sans le durcissement). ⚠️ Avec ce rollback, réparer aussi toute future ligne `created_at` sans
+« Z » en base, sinon le 502 revient — le durcissement est la vraie protection. Aucune migration
+à défaire.
+
+### Exécution réelle
+
+Session du 2026-09-09 (~13:16 UTC). Branche `feat/control-panel-admin-tools` @ `aa6270b`
+(fix) / `c92ae3f` (test infra). `deploy.sh --no-build` OK (release
+`/opt/plugadmin/releases/20260909-131643`, PID 480917). `/health` ONLINE local + public ;
+`/login` → 200 ; `/home` `/npcs` `/diagnostics` `/dashboard` anon → 303 ; `plugadmin.service`
+`active` `NRestarts=0` ; **0 `ERROR`** ; jar `9a21828f51e71e8784223bd2f8e549dbd0d09bf22c48e5fbc13ad0f8d608983c`.
+Réparation de la ligne `0cd8dd38…` faite à ~13:09 UTC (avant redéploiement) — panel déjà
+re-servi à ce moment ; le redéploiement apporte la protection permanente.

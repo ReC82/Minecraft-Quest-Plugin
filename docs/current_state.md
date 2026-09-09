@@ -340,6 +340,20 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   section `pnj-depannage.md` associées ; `NpcDiagnosticProvider` émet un INFO `CITIZENS_ONLY` par
   PNJ Citizens libre sur `/diagnostics`. Le compteur `/npcs` inclut les PNJ Citizens libres.
   **Control Panel uniquement — aucune modification plugin/agent.**
+- **Hotfix #103 — 502 Bad Gateway après connexion** *(branche `feat/control-panel-admin-tools`)* —
+  suite à #101 : `/login` OK mais toute page authentifiée → 502. **Pas une régression du code
+  #101.** Une ligne `agent_action` insérée directement en base pendant la validation live de #101
+  avait un `created_at` sans « Z » (`2026-09-09T12:51:33`) ; `AgentStore.readAction` faisait
+  `Instant.parse` sans tolérance → `DateTimeParseException` remontant par `NotificationCenter`
+  (cloche de la topbar, rendue sur **toute** page authentifiée) → 500 → 502 nginx. `/login`
+  n'affiche pas la cloche → le smoke anonyme « → 303 » ne l'a pas vu. **Fix** : (1) réparation de
+  la ligne en base (UPDATE ciblé, ajout du « Z ») ; (2) durcissement `AgentStore` —
+  `parseTimestamp` tolérant (formes héritées sans décalage → UTC), `created_at`/`received_at` →
+  `Instant.EPOCH` en dernier recours, **frontière de sécurité par ligne** dans `recentActions`
+  (ligne illisible ignorée + WARNING, jamais propagée). Régression
+  `PanelHardeningMalformedAgentDataTest` (connexion owner réelle ; échoue sans le fix) + smoke
+  optionnel contre une **copie de la base de prod réelle**. Règle : donnée agent invalide ⇒
+  diagnostic, jamais crash du serveur web.
 - **Éditeur guidé de quêtes et de stories — chemin principal (issue #46)** *(branche
   `feat/control-panel-admin-tools`)* — depuis `/quests` (« Créer une quête ») et `/stories`
   (« Créer une story »), ou « Modifier » sur une carte : formulaire guidé multi-sections

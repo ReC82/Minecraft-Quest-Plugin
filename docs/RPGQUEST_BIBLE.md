@@ -317,15 +317,27 @@ Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et
 - **Accès** : pages `/quests` (bouton « Créer une quête »), `/stories` (« Créer une story »), ou
   lien « Modifier » sur une carte du catalogue. Réservé aux rôles disposant de
   `QUEST_CONTENT_WRITE` / `STORY_CONTENT_WRITE` (`content-editor` et `owner`).
-- **Formulaire guidé**, sans JavaScript : sections Général / Prérequis / Objectifs / Récompenses /
+- **Formulaire guidé** : sections Général / Prérequis / Objectifs / Récompenses /
   Variables (quête) et Général / Chaîne de quêtes (story). Chaque type d'objectif
   (`KILL_ENTITY`, `COLLECT_ITEM`, `CRAFT_ITEM`, `BREAK_BLOCK`, `PLACE_BLOCK`, `TALK_TO_NPC`,
-  `REACH_LOCATION`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`) n'affiche que
-  ses champs utiles. Les valeurs (entité, matériau, PNJ, quête, monde) sont proposées en
-  autocomplétion à partir du dernier relevé de l'agent ; la saisie libre reste possible.
-- **Validation avant enregistrement** : diagnostics `ERREUR` (bloquants), `ATTENTION`
-  (enregistrement possible après vérification), `INFO`. Un aperçu montre le fichier YAML généré
-  et le diff avec la version actuelle de la source.
+  `REACH_LOCATION`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`) est décrit par
+  **un seul descripteur** (`Descriptors`) qui pilote ensemble libellé, description, champs, aide,
+  listes proposées et validation. **Choisir le type n'affiche que les champs pertinents** ; le
+  changement est immédiat (JavaScript progressif — `panel.js`) et **efface** les valeurs saisies
+  pour le type précédent (jamais de valeur d'un autre type conservée en douce). Sans JavaScript,
+  le serveur re-rend le bon jeu de champs au premier aller-retour.
+- **Construire le brouillon n'est jamais bloqué** : ajouter / supprimer / réordonner une étape,
+  un objectif ou une récompense ne déclenche **pas** la validation `required` du navigateur
+  (`formnovalidate`). Après chaque action, la page se recale sur le composant concerné (ids
+  stables `step-<i>` / `obj-<i>-<j>` / `rew-<i>` + `formaction=".../save#ancre"`), sans repartir
+  en haut.
+- **Listes recherchables** : les champs à liste longue (entité, matériau, PNJ, icône, catégorie,
+  quête) sont des champs de recherche filtrés (composant local léger, aucune dépendance externe,
+  aucun CDN), alimentés par la **bonne source** — la catégorie par une liste curée + saisie libre,
+  l'icône par les matériaux Minecraft, entités/matériaux avec libellé français.
+- **Validation métier uniquement à la fin** — sur « Vérifier » / « Aperçu » / « Enregistrer » :
+  diagnostics `ERREUR` (bloquants), `ATTENTION` (enregistrement possible après vérification),
+  `INFO`. Un aperçu montre le fichier YAML généré et le diff avec la version actuelle de la source.
 - **Enregistrement dans la source, jamais de déploiement** : l'écriture ne se fait que dans le
   **checkout Git** (`src/main/resources/quests/<id>.yml`, `.../stories/<id>.yml`), avec détection
   de conflit par hash, écriture atomique et garde-fou de relecture. L'éditeur ne touche **jamais**

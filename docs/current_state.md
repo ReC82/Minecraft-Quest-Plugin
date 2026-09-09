@@ -393,8 +393,26 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   seule** avec bannière explicite, sans aucun `chmod` / `sudo`. Permissions dédiées
   `QUEST_CONTENT_WRITE` / `STORY_CONTENT_WRITE` (rôles `CONTENT_EDITOR` + `OWNER`), CSRF, audit
   `*.content.write`. `QuestDraft` / `StoryDraft` reprennent les **mêmes champs** que le moteur
-  (pas de second modèle). **V2** : lignes guidées pour prérequis / variables, duplication de
-  ligne, rechargement des champs au changement de type, action agent `quest.definition.validate`.
+  (pas de second modèle).
+  **V3 (passe UX ciblée éditeur de quêtes, issue #46)** : (1) *un type = une source de vérité* —
+  pour chaque type d'objectif / récompense, le serveur émet le jeu de champs complet issu du même
+  `Descriptors` ; un seul est visible+actif, les autres `hidden` + `disabled` (ni soumis, ni
+  validés). `panel.js` (`initEditorForms`) bascule au changement de `<select>` sans recharger la
+  page et **vide** les champs du type précédent (jamais de valeur d'un autre type conservée en
+  douce) ; sans JavaScript le serveur re-rend le bon jeu au prochain aller-retour, et `_was`
+  garantit le nettoyage côté serveur. (2) Les actions de brouillon (ajouter / supprimer /
+  réordonner étape · objectif · récompense) portent `formnovalidate` : construire la structure
+  n'est **jamais** bloqué par la validation HTML `required` ; la validation métier complète n'a
+  lieu qu'à « Vérifier » / « Enregistrer ». (3) Chaque bloc a un id stable (`step-<i>`,
+  `obj-<i>-<j>`, `rew-<i>`, `sec-*`) et chaque bouton d'action un `formaction=".../save#<ancre>"` :
+  le scroll se recale sur le composant concerné après l'aller-retour (fallback JS
+  `sessionStorage` pour les suppressions). (4) Les champs à liste longue (entité, matériau, PNJ,
+  icône, catégorie, quête) deviennent des listes **recherchables** (`panel.js` `initCombo`,
+  progressif, aucune dépendance) alimentées par la bonne source — la catégorie vient d'une liste
+  curée `RefData.CATEGORIES` + saisie libre, l'icône des matériaux, plus jamais d'un mauvais
+  registre. Entités / matériaux portent un libellé FR (`MinecraftNames`). « Points d'expérience »
+  remplace « Montant » pour la récompense EXPERIENCE. `EditorDescriptorsTest` verrouille la
+  cohérence des types. Action agent `quest.definition.validate` : toujours à faire.
 
 ## Bugs connus et corrigés
 

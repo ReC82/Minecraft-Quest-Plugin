@@ -74,3 +74,21 @@ Page **Quêtes** / **Stories** : `quest.list`, `quest.player.status`, `story.lis
 `story.player.status` (lectures) ; `quest.start` / `quest.complete` / `quest.reset`,
 `story.advance` / `story.complete`, `player.variable.set` (mutations, confirmation obligatoire).
 Le donneur de quête (`giver:`) se pose via `quest.giver.set` depuis la page **PNJ**.
+
+## Éditeur guidé (créer / modifier une quête sans YAML)
+
+Page **Quêtes** → « Créer une quête », ou « Modifier » sur une carte. Principe :
+
+1. **Construire le brouillon d'abord.** Ajouter étapes, objectifs et récompenses ne demande
+   *aucun* champ rempli au préalable : on pose la structure, on remplit ensuite. La page reste
+   au niveau du bloc qu'on vient d'ajouter/supprimer.
+2. **Choisir le type = voir seulement les bons champs.** Un objectif `KILL_ENTITY` demande une
+   entité + une quantité ; `CRAFT_ITEM` un objet + une quantité ; `TALK_TO_NPC` un PNJ ; etc.
+   Changer le type remplace les champs immédiatement et **efface** ce qui avait été saisi pour
+   l'ancien type.
+3. **Listes recherchables.** Entité, matériau, PNJ, icône, catégorie et quête prérequise se
+   filtrent en tapant quelques lettres. La catégorie accepte aussi une valeur nouvelle.
+4. **Valider à la fin.** « Vérifier » liste les anomalies (ERREUR bloquante / ATTENTION / INFO)
+   et montre le YAML généré + le diff. « Enregistrer dans la source » écrit le fichier
+   `src/main/resources/quests/<id>.yml` du dépôt — **aucun déploiement**, le serveur le validera
+   à son prochain chargement.

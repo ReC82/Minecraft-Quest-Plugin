@@ -351,8 +351,14 @@ ol,ul{margin:6px 0;padding-left:20px}
 .doc-body h1{font-size:24px;margin:0 0 14px;font-weight:750}
 .doc-body h2{font-size:16px;margin:28px 0 10px;color:var(--txt);text-transform:none;letter-spacing:0;
   border-bottom:1px solid var(--line);padding-bottom:6px;font-weight:700}
-.doc-body h3{font-size:14.5px;margin:20px 0 7px;color:var(--txt-2)}
+.doc-body h3{font-size:15px;margin:22px 0 8px;color:var(--txt);font-weight:700;
+  padding-left:11px;border-left:3px solid var(--primary)}
+.doc-body h3 code{background:var(--surface-2);border-color:var(--line-2);color:var(--txt-2);font-weight:600}
 .doc-body p{margin:10px 0} .doc-body li{margin:5px 0}
+/* Mini-libellés « Syntaxe » / « Paramètres » / « Exemple » / « Résultat attendu » / « Attention »
+   (rendus <strong> en tête de paragraphe par la fiche de commandes) : plus lisibles, moins criards. */
+.doc-body p > strong:first-child:only-child{display:inline-block;font-size:11px;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--txt-faint);font-weight:750;margin-top:4px}
 .doc-body code{background:var(--surface-3);border:1px solid var(--line);border-radius:5px;padding:1px 5px;
   font-size:12.5px;color:#243b53;overflow-wrap:anywhere}
 .doc-body a{overflow-wrap:anywhere}

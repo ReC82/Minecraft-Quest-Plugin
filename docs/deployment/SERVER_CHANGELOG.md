@@ -2463,9 +2463,39 @@ Détail : `docs/WAYPOINTS.md` §9 et `docs/MANUAL_TEST_PLAN.md`.
 
 ### Exécution réelle
 
-Aucune. Déploiement **non effectué** cette session (voir « Déploiement » ci-dessus).
-Build vert le 2026-09-09 (`./gradlew build`, 11 min 36 s sur la box contrainte). Tests :
-root `:test` 1254/0 (29 skip = MariaDB gated), `:control-panel:test` 279/0. Branche
-`feat/control-panel-admin-tools`, non fusionnée.
+**Session initiale (2026-09-09 ~21:18)** : moteur livré, `./gradlew build` vert
+(root `:test` 1254/0, `:control-panel:test` 279/0). Déploiement **non effectué** à ce stade.
+
+**Déploiement DEV effectué (2026-09-09 ~21:32 UTC, sur demande explicite)** — DEV VeryGames
+uniquement, aucun merge, aucune modification de contenu :
+
+- Branche `feat/control-panel-admin-tools` @ `0d1c978` (contient bien `2473086` feat + `01f6839`
+  docs + `0d1c978` handoff). Working tree propre.
+- `scripts/deploy-verygames.sh -y` : `./gradlew test` **OK**, `./gradlew build` **OK** (tout
+  `UP-TO-DATE`, code inchangé depuis le build initial).
+- **JAR déployé** : `build/libs/rpgquest-0.1.0-SNAPSHOT.jar`, 1 475 924 o,
+  SHA-256 `27f427409a6d6879d4230f9efb0afc4f9b893eb6a829cd187fa048bc2ead1668` ; taille en ligne
+  après transfert atomique == locale.
+- **Backup préalable automatique** : `~/.local/share/rpgquest/verygames-backups/rpgquest-20260909T213229Z-predeploy.jar`
+  (1 437 876 o, SHA-256 `4f39e1e41e6860921a38b9c5893f5f56b95a0fac7fc1500d321ca2b64316765c`) + `.meta`.
+- Aucun `--also` : **seul le JAR** a été transféré. `data.db`, `config.yml`, `messages.yml`,
+  `spawn.yml`, Citizens, mondes et autres plugins **non touchés** (le script refuse ces chemins).
+- **Redémarrage** : `scripts/verygames-restart.sh --timeout 240` (un seul appel) — `save-all`
+  puis `stop` RCON, serveur passé **OFFLINE** puis revenu **ONLINE** (script sorti 0).
+- **Vérifications post-redémarrage (RCON — pas d'accès aux logs)** : `/rpgquest version` →
+  `RPGQuest v0.1.0-SNAPSHOT` ; `/plugins` → `RPGQuest` en **vert** (activé, non désactivé) ;
+  `/rpgquest reload` → « Configuration RPGQuest rechargée. » (la section auto-complétée
+  `travel.waypoint` passe `ConfigValidator`) ; `/rpgquest help` et `/rpgadmin` répondent
+  normalement. Le plugin étant **pleinement activé et réactif**, `SchemaMigrationRunner` a
+  appliqué **V18 sans erreur critique** (le bootstrap avorte l'activation sinon).
+- **Non vérifiable directement** : la ligne de log `Waypoints chargés : N.` et un scan `ERROR`
+  du démarrage — le compte FTP est chrooté sur le dossier des plugins (pas d'accès à `logs/`),
+  RCON n'expose pas l'historique console, pas d'identifiants du panel VeryGames. À constater
+  dans la console du panel lors de la validation manuelle (TC-210).
+- **Aucun waypoint généré par cette session**, monde non modifié : la première génération sera
+  déclenchée en jeu par l'owner (TC-210).
+
+Rollback : `scripts/rollback-verygames.sh --latest` (restaure `rpgquest-20260909T213229Z-predeploy.jar`)
+puis `scripts/verygames-restart.sh`.
 
 Rapport : `docs/claude-reports/2026-09-09_2118_waypoints-mvp-instance-biome-124.md`.

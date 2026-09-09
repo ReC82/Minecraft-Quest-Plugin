@@ -22,6 +22,8 @@ public enum Permission {
     QUEST_CONTENT_WRITE,
     STORY_CONTENT_WRITE,
     CONTENT_READ,
+    /** Exporter le contenu déclaratif en content pack versionné (issue #108). Lecture — jamais d'écriture. */
+    CONTENT_EXPORT,
     DOCS_READ,
     DIAGNOSTICS_READ,
     AUDIT_READ,

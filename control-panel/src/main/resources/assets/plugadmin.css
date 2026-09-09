@@ -802,3 +802,19 @@ tr[hidden]{display:none}
 @media(max-width:575.98px){
   .dlg-swatch{width:34px;height:34px}
 }
+
+/* Export de contenu (issue #108) — /content/export */
+.export-row{margin:6px 0 14px}
+.export-sub{margin:14px 0 6px}
+.export-fam{display:flex;flex-wrap:wrap;gap:10px}
+.export-btn-form{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 12px;border:1px solid var(--line-2);border-radius:var(--radius);background:var(--surface)}
+.export-btn-form .export-btn-label{flex:1 1 220px;min-width:0}
+.export-fam .export-btn-form{flex:0 1 auto}
+.export-select{display:flex;flex-direction:column;gap:8px;max-width:520px}
+.export-select label{display:flex;flex-direction:column;gap:4px;font-weight:600}
+.export-select input[type=text],.export-select select{width:100%}
+@media(max-width:575.98px){
+  .export-btn-form{flex-direction:column;align-items:stretch}
+  .export-btn-form .btn{width:100%}
+}

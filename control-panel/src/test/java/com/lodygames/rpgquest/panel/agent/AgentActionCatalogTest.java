@@ -194,4 +194,41 @@ class AgentActionCatalogTest {
         assertFalse(AgentActionCatalog.validate("dialogue.choice.delete", Map.of(
                 "dialogue_id", "guard", "node_id", "greeting", "choice_index", "abc", "confirm", "true")).valid());
     }
+
+    // ---- content.export (issue #108) --------------------------------------------------
+
+    @Test
+    void contentExportIsAReadNeedingContentExportPermissionAndNoConfirm() {
+        AgentActionCatalog.Spec spec = AgentActionCatalog.spec("content.export").orElseThrow();
+        assertEquals(Permission.CONTENT_EXPORT, spec.permission());
+        assertFalse(spec.mutation());
+        assertFalse(spec.sensitive());
+        assertTrue(spec.refreshTypes().isEmpty());
+        AgentActionCatalog.Validation v = AgentActionCatalog.validate("content.export", Map.of());
+        assertTrue(v.valid());
+        assertEquals("all", v.params().get("family"));
+    }
+
+    @Test
+    void contentExportValidatesFamilyAndSelection() {
+        assertFalse(AgentActionCatalog.validate("content.export", Map.of("family", "bogus")).valid());
+
+        AgentActionCatalog.Validation fam = AgentActionCatalog.validate("content.export", Map.of("family", "quests"));
+        assertTrue(fam.valid());
+        assertEquals("quests", fam.params().get("family"));
+        assertFalse(fam.params().containsKey("ids"));
+
+        AgentActionCatalog.Validation sel = AgentActionCatalog.validate("content.export",
+                Map.of("family", "quests", "ids", "rpgquest:first_steps  rpgquest:crystal_hunt"));
+        assertTrue(sel.valid());
+        assertEquals("rpgquest:first_steps,rpgquest:crystal_hunt", sel.params().get("ids"));
+
+        // Une sélection d'ids n'a pas de sens avec « all ».
+        assertFalse(AgentActionCatalog.validate("content.export",
+                Map.of("family", "all", "ids", "rpgquest:first_steps")).valid());
+
+        // Id malformé.
+        assertFalse(AgentActionCatalog.validate("content.export",
+                Map.of("family", "quests", "ids", "bad id!!")).valid());
+    }
 }

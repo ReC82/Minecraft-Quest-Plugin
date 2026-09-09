@@ -101,6 +101,23 @@ public final class Http {
         }
     }
 
+    /**
+     * Réponse « fichier à télécharger » (issue #108) : {@code Content-Disposition: attachment} avec
+     * un nom de fichier fixé côté serveur (jamais dérivé d'une saisie navigateur libre). En-têtes de
+     * sécurité + {@code no-store}. Le contenu est déjà en octets UTF-8.
+     */
+    public static void attachment(HttpExchange exchange, String filename, String contentType, byte[] bytes)
+            throws IOException {
+        securityHeaders(exchange);
+        String safeName = filename == null ? "download" : filename.replaceAll("[^A-Za-z0-9._-]", "_");
+        exchange.getResponseHeaders().set("Content-Type", contentType + "; charset=utf-8");
+        exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + safeName + "\"");
+        exchange.sendResponseHeaders(200, bytes.length);
+        try (OutputStream out = exchange.getResponseBody()) {
+            out.write(bytes);
+        }
+    }
+
     public static void redirect(HttpExchange exchange, String location) throws IOException {
         securityHeaders(exchange);
         exchange.getResponseHeaders().set("Location", location);

@@ -32,7 +32,8 @@ public final class Layout {
                         new NavItem("PNJ", "/npcs", "npc", true),
                         new NavItem("Quêtes", "/quests", "quests", true),
                         new NavItem("Stories", "/stories", "stories", true),
-                        new NavItem("Dialogues", "/dialogues", "dialogues", true))),
+                        new NavItem("Dialogues", "/dialogues", "dialogues", true),
+                        new NavItem("Export contenu", "/content/export", "export", true))),
                 new NavGroup("Ressources", List.of(
                         new NavItem("Documentation", "/docs", "docs", true),
                         new NavItem("Diagnostics", "/diagnostics", "diagnostics", true))),

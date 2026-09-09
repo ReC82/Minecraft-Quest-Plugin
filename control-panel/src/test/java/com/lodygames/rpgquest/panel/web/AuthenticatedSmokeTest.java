@@ -35,7 +35,7 @@ import org.junit.jupiter.api.io.TempDir;
 class AuthenticatedSmokeTest {
 
     private static final List<String> PROTECTED_PAGES =
-            List.of("/dashboard", "/players", "/quests", "/stories", "/npcs", "/dialogues");
+            List.of("/dashboard", "/players", "/quests", "/stories", "/npcs", "/dialogues", "/content/export");
 
     @TempDir
     Path tmp;
@@ -87,6 +87,10 @@ class AuthenticatedSmokeTest {
         assertTrue(get("/stories").body().contains("<h1>Stories</h1>"));
         assertTrue(get("/npcs").body().contains("<h1>PNJ</h1>"));
         assertTrue(get("/dialogues").body().contains("<h1>Dialogues</h1>"));
+        String exportBody = get("/content/export").body();
+        assertTrue(exportBody.contains("<h1>Export de contenu</h1>"));
+        assertTrue(exportBody.contains("Exporter tout"), "bouton d'export global présent");
+        assertTrue(exportBody.contains("name=\"type\" value=\"content.export\""), "formulaire d'action d'export");
     }
 
     // ---- infra ------------------------------------------------------------------------

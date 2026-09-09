@@ -58,6 +58,7 @@ public final class Icons {
             Map.entry("bell", "bell"),
             Map.entry("history", "clock-history"),
             Map.entry("box", "box-seam"),
+            Map.entry("export", "box-arrow-down"),
             Map.entry("refresh", "arrow-clockwise"),
             Map.entry("help", "question-circle"),
             Map.entry("wrench", "wrench-adjustable"),

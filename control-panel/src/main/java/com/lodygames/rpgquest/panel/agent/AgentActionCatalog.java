@@ -27,6 +27,10 @@ public final class AgentActionCatalog {
     private static final int MAX_DIALOGUE_TEXT = 512;
     private static final int MAX_DIALOGUE_CHOICE_INDEX = 199;
     private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
+    /** Familles de contenu exportables (issue #108) — miroir de {@code ContentFamily} côté plugin. */
+    private static final java.util.Set<String> CONTENT_FAMILIES =
+            java.util.Set.of("all", "quests", "stories", "dialogues", "npcs");
+    private static final int MAX_EXPORT_IDS = 500;
     private static final Pattern WORLD_NAME = Pattern.compile("[A-Za-z0-9_./-]{1,64}");
     /** Bornes de sécurité de position miroir de {@code CitizensSpawnPlanner} côté plugin (#81 phase 2). */
     private static final double HORIZONTAL_LIMIT = 29_999_984.0;
@@ -103,6 +107,9 @@ public final class AgentActionCatalog {
         add("npc.list", Permission.NPC_READ, false, false, "Rafraîchir le catalogue des PNJ");
         add("npc.citizens.list", Permission.NPC_READ, false, false, "Rafraîchir les PNJ Citizens");
         add("dialogue.list", Permission.DIALOGUE_READ, false, false, "Rafraîchir le catalogue des dialogues");
+        // Export versionné du contenu déclaratif (issue #108) — lecture seule, aucun effet de bord,
+        // aucun catalogue à réenfiler.
+        add("content.export", Permission.CONTENT_EXPORT, false, false, "Exporter le contenu (pack versionné)");
         // Écritures de contenu (V2 déclarative des PNJ) — réversibles, jamais de YAML brut. Chaque
         // succès ré-enfile le(s) relevé(s) de catalogue impacté(s) pour que la vue métier se
         // réconcilie sans « Rafraîchir catalogue + F5 ».
@@ -447,6 +454,36 @@ public final class AgentActionCatalog {
                 params.put("dialogue_id", dialogueId);
                 params.put("node_id", nodeId);
                 params.put("choice_index", idx.toString());
+            }
+            case "content.export" -> {
+                String family = orDefault(trim(form.get("family")).toLowerCase(java.util.Locale.ROOT), "all");
+                if (!CONTENT_FAMILIES.contains(family)) {
+                    return Validation.fail("Famille de contenu inconnue (all, quests, stories, dialogues, npcs).");
+                }
+                params.put("family", family);
+                String rawIds = trim(form.get("ids"));
+                if (!rawIds.isEmpty()) {
+                    if ("all".equals(family)) {
+                        return Validation.fail("Une sélection d'identifiants n'est possible que pour une famille précise.");
+                    }
+                    java.util.List<String> ids = new java.util.ArrayList<>();
+                    for (String piece : rawIds.split("[,\\s]+")) {
+                        String t = piece.trim();
+                        if (t.isEmpty()) {
+                            continue;
+                        }
+                        if (!RESOURCE_ID.matcher(t).matches()) {
+                            return Validation.fail("Identifiant à exporter invalide : « " + safe(t) + " ».");
+                        }
+                        ids.add(t);
+                        if (ids.size() > MAX_EXPORT_IDS) {
+                            return Validation.fail("Trop d'identifiants (max " + MAX_EXPORT_IDS + ") — exporter la famille entière.");
+                        }
+                    }
+                    if (!ids.isEmpty()) {
+                        params.put("ids", String.join(",", ids));
+                    }
+                }
             }
             case "player.resetnew.confirm" -> params.put("confirm", "true");
             case "player.ban" -> {

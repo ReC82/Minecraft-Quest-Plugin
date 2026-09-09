@@ -68,6 +68,7 @@ public final class PanelApp {
     private final NotificationCenter notifications;
     private final ContentWorkspace contentWorkspace;
     private final ContentEditorPages contentEditor;
+    private final ContentExportPages contentExportPages;
     private final com.lodygames.rpgquest.panel.diag.DiagnosticsService diagnostics;
 
     private HttpServer server;
@@ -84,6 +85,7 @@ public final class PanelApp {
                 config.contentRepoDir() == null || config.contentRepoDir().isBlank()
                         ? null : Path.of(config.contentRepoDir()));
         this.contentEditor = new ContentEditorPages(contentWorkspace);
+        this.contentExportPages = new ContentExportPages(agentStore, config.agents().defaultAgentId());
         this.diagnostics = new com.lodygames.rpgquest.panel.diag.DiagnosticsService(
                 agentStore, config.agents().thresholds());
         this.agentEndpoints = new AgentEndpoints(agentRegistry, agentStore, audit,
@@ -133,6 +135,8 @@ public final class PanelApp {
                 Permission.NPC_READ, agentPages::npcs));
         route("/dialogues", exchange -> handleBusinessPage(exchange, "/dialogues", "Dialogues",
                 Permission.DIALOGUE_READ, agentPages::dialogues));
+        route("/content/export", this::handleContentExport);
+        route("/content/export/download", this::handleContentExportDownload);
         route("/docs", this::handleDocs);
         route("/diagnostics", this::handleDiagnostics);
         route("/diagnostics/refresh", this::handleDiagnosticsRefresh);
@@ -491,6 +495,87 @@ public final class PanelApp {
         }
         int status = docsPages.exists(slug) ? 200 : 404;
         Http.html(exchange, status, renderPage("Documentation", session, "/docs", docsPages.page(slug, q)));
+    }
+
+    // ---- Export de contenu (issue #108) -------------------------------------------------
+
+    private void handleContentExport(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        String path = exchange.getRequestURI().getPath();
+        if (!path.equals("/content/export") && !path.equals("/content/export/")) {
+            Http.redirect(exchange, "/content/export");
+            return;
+        }
+        if (!permissions.can(session.role(), Permission.CONTENT_EXPORT)) {
+            Http.html(exchange, 403, renderPage("Refusé", session, "/content/export",
+                    "<h1>Accès refusé</h1><p class=\"muted\">Permission CONTENT_EXPORT requise.</p>"));
+            return;
+        }
+        Map<String, String> query = Http.query(exchange);
+        String body = contentExportPages.render(query.get("toast"), query.get("err"));
+        Http.html(exchange, 200, renderPage("Export de contenu", session, "/content/export", body,
+                Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    private void handleContentExportDownload(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.role(), Permission.CONTENT_EXPORT)) {
+            Http.html(exchange, 403, renderPage("Refusé", session, "/content/export",
+                    "<h1>Accès refusé</h1><p class=\"muted\">Permission CONTENT_EXPORT requise.</p>"));
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String actionId = Http.query(exchange).getOrDefault("action", "").trim();
+        Optional<AgentActionRow> row = agentStore.action(actionId);
+        if (row.isEmpty() || !"content.export".equals(row.get().type())) {
+            audit.record(session.username(), "content.export.download", "action=" + actionId, "DENIED",
+                    "action inconnue ou mauvais type", rid);
+            Http.redirect(exchange, "/content/export?err=" + enc("Export introuvable."));
+            return;
+        }
+        AgentActionRow action = row.get();
+        if (!"SUCCESS".equalsIgnoreCase(action.status().name())) {
+            Http.redirect(exchange, "/content/export?err=" + enc("Cet export n'est pas encore prêt (" + action.status().name() + ")."));
+            return;
+        }
+        String pack = extractPack(action.resultJson());
+        if (pack == null || pack.isBlank()) {
+            audit.record(session.username(), "content.export.download", "action=" + actionId, "FAILED",
+                    "pack absent du résultat", rid);
+            Http.redirect(exchange, "/content/export?err=" + enc("Le résultat de l'export ne contient pas de pack."));
+            return;
+        }
+        String family = action.params().getOrDefault("family", "content");
+        String filename = com.lodygames.rpgquest.panel.content.ContentExportName.forFamily(family);
+        audit.record(session.username(), "content.export.download",
+                "action=" + actionId + " family=" + family + " bytes=" + pack.getBytes(StandardCharsets.UTF_8).length,
+                "OK", filename, rid);
+        Http.attachment(exchange, filename, "application/yaml", pack.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Extrait {@code details.pack} du résultat d'action (jamais d'exception vers l'appelant). */
+    private static String extractPack(String resultJson) {
+        if (resultJson == null || resultJson.isBlank()) {
+            return null;
+        }
+        try {
+            Object parsed = com.lodygames.rpgquest.panel.json.Json.parse(resultJson);
+            if (parsed instanceof Map<?, ?> root && root.get("details") instanceof Map<?, ?> details) {
+                Object pack = details.get("pack");
+                return pack == null ? null : String.valueOf(pack);
+            }
+        } catch (RuntimeException ignored) {
+            // résultat illisible
+        }
+        return null;
     }
 
     // ---- Diagnostics (issue #38) ----------------------------------------------------------
@@ -988,7 +1073,8 @@ public final class PanelApp {
 
     private static String safeReturnPath(String requested, String fallback) {
         return switch (requested == null ? "" : requested) {
-            case "/players", "/quests", "/stories", "/npcs", "/dialogues", "/agents", "/diagnostics" -> requested;
+            case "/players", "/quests", "/stories", "/npcs", "/dialogues", "/agents", "/diagnostics",
+                 "/content/export" -> requested;
             default -> fallback;
         };
     }

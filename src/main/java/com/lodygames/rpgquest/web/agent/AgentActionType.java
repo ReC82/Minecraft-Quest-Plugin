@@ -37,6 +37,7 @@ public enum AgentActionType {
 
     PLAYER_VARIABLE_GET("player.variable.get"),
     PLAYER_LIST("player.list"),
+    PLAYER_CATALOG("player.catalog"),
     QUEST_LIST("quest.list"),
     QUEST_PLAYER_STATUS("quest.player.status"),
     STORY_LIST("story.list"),
@@ -53,6 +54,8 @@ public enum AgentActionType {
     STORY_COMPLETE("story.complete"),
     PLAYER_VARIABLE_SET("player.variable.set"),
     PLAYER_RESETNEW_CONFIRM("player.resetnew.confirm"),
+    PLAYER_BAN("player.ban"),
+    PLAYER_UNBAN("player.unban"),
     NPC_DEFINITION_CREATE("npc.definition.create"),
     NPC_DEFINITION_UPDATE("npc.definition.update"),
     QUEST_GIVER_SET("quest.giver.set"),

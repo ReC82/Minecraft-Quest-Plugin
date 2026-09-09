@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.web.agent;
 
+import com.destroystokyo.paper.profile.PlayerProfile;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.dialogue.DialogueCatalog;
@@ -63,8 +64,11 @@ import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.quest.progress.QuestStepProgressView;
 import com.lodygames.rpgquest.story.StoryService;
 import com.lodygames.rpgquest.story.model.StoryDefinition;
+import io.papermc.paper.ban.BanListType;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -73,9 +77,14 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
+import net.kyori.adventure.text.Component;
+import org.bukkit.BanEntry;
+import org.bukkit.BanList;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.World;
+import org.bukkit.ban.ProfileBanList;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
@@ -154,6 +163,98 @@ public final class BukkitAgentActions implements AgentActions {
             }
             return CompletableFuture.completedFuture(List.copyOf(list));
         });
+    }
+
+    @Override
+    public CompletableFuture<List<PlayerCatalogEntry>> playerCatalog(int limit) {
+        // 1) instantané des connectés sur le thread principal (Location = API main-thread) ;
+        // 2) parcours de getOfflinePlayers() (lecture disque) sur un thread asynchrone Bukkit —
+        //    jamais sur le thread principal. Aucune écriture, aucune commande.
+        return onMain(() -> {
+            Map<UUID, int[]> onlinePos = new HashMap<>();
+            Map<UUID, String> onlineWorld = new HashMap<>();
+            Map<UUID, String> onlineName = new HashMap<>();
+            for (Player p : plugin.getServer().getOnlinePlayers()) {
+                Location l = p.getLocation();
+                onlinePos.put(p.getUniqueId(), new int[] {l.getBlockX(), l.getBlockY(), l.getBlockZ()});
+                onlineWorld.put(p.getUniqueId(), l.getWorld() == null ? "?" : l.getWorld().getName());
+                onlineName.put(p.getUniqueId(), p.getName());
+            }
+            return done(new OnlineSnapshot(onlinePos, onlineWorld, onlineName));
+        }).thenCompose(snap -> async(() -> {
+            Map<UUID, PlayerCatalogEntry> byUuid = new LinkedHashMap<>();
+            ProfileBanList profileBans = plugin.getServer().getBanList(BanListType.PROFILE);
+
+            for (OfflinePlayer op : plugin.getServer().getOfflinePlayers()) {
+                UUID id = op.getUniqueId();
+                if (id == null || byUuid.containsKey(id)) {
+                    continue;
+                }
+                boolean online = snap.world().containsKey(id) || op.isOnline();
+                String name = op.getName() != null ? op.getName() : snap.name().get(id);
+                Long first = positiveOrNull(op.getFirstPlayed());
+                Long last = online ? System.currentTimeMillis() : positiveOrNull(lastSeenMillis(op));
+                boolean banned = op.isBanned();
+                String banReason = banned ? banReason(profileBans, op) : null;
+                int[] pos = snap.pos().get(id);
+                byUuid.put(id, new PlayerCatalogEntry(
+                        id.toString(), name, online, op.hasPlayedBefore(), first, last, banned, banReason,
+                        online ? snap.world().get(id) : null,
+                        pos == null ? null : pos[0], pos == null ? null : pos[1], pos == null ? null : pos[2]));
+            }
+            // Filet : un connecté sans fichier playerdata encore écrit (rare) ne doit pas manquer.
+            for (Map.Entry<UUID, String> e : snap.world().entrySet()) {
+                UUID id = e.getKey();
+                if (byUuid.containsKey(id)) {
+                    continue;
+                }
+                int[] pos = snap.pos().get(id);
+                OfflinePlayer op = plugin.getServer().getOfflinePlayer(id);
+                byUuid.put(id, new PlayerCatalogEntry(
+                        id.toString(), snap.name().get(id), true, true, positiveOrNull(op.getFirstPlayed()),
+                        System.currentTimeMillis(), op.isBanned(),
+                        op.isBanned() ? banReason(profileBans, op) : null,
+                        e.getValue(), pos == null ? null : pos[0], pos == null ? null : pos[1],
+                        pos == null ? null : pos[2]));
+            }
+            List<PlayerCatalogEntry> out = new ArrayList<>(byUuid.values());
+            if (limit > 0 && out.size() > limit) {
+                // Tri minimal côté agent quand on doit tronquer : garder les plus récents / connectés.
+                out.sort((a, b) -> {
+                    if (a.online() != b.online()) {
+                        return a.online() ? -1 : 1;
+                    }
+                    long la = a.lastSeen() == null ? 0L : a.lastSeen();
+                    long lb = b.lastSeen() == null ? 0L : b.lastSeen();
+                    return Long.compare(lb, la);
+                });
+                out = new ArrayList<>(out.subList(0, limit));
+            }
+            return List.copyOf(out);
+        }));
+    }
+
+    private record OnlineSnapshot(Map<UUID, int[]> pos, Map<UUID, String> world, Map<UUID, String> name) {
+    }
+
+    private static Long positiveOrNull(long millis) {
+        return millis > 0L ? millis : null;
+    }
+
+    /** Dernière présence connue : {@code getLastSeen()} (Paper), repli {@code getLastLogin()}. */
+    private static long lastSeenMillis(OfflinePlayer op) {
+        long seen = op.getLastSeen();
+        return seen > 0L ? seen : op.getLastLogin();
+    }
+
+    private static String banReason(ProfileBanList bans, OfflinePlayer op) {
+        try {
+            BanEntry<PlayerProfile> entry = bans.getBanEntry(op.getPlayerProfile());
+            String reason = entry == null ? null : entry.getReason();
+            return reason == null || reason.isBlank() ? null : reason;
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     @Override
@@ -931,7 +1032,71 @@ public final class BukkitAgentActions implements AgentActions {
                 .exceptionally(e -> MutationResult.of(false, "ERROR", "Échec de l'écriture : " + rootName(e)));
     }
 
+    @Override
+    public CompletableFuture<MutationResult> banPlayer(UUID playerId, String playerName, String reason) {
+        String cleanReason = reason == null || reason.isBlank() ? "Banni du serveur." : reason.trim();
+        String label = playerName != null && !playerName.isBlank() ? playerName : playerId.toString();
+        return onMain(() -> {
+            try {
+                OfflinePlayer op = plugin.getServer().getOfflinePlayer(playerId);
+                ProfileBanList bans = plugin.getServer().getBanList(BanListType.PROFILE);
+                PlayerProfile profile = op.getPlayerProfile();
+                boolean already = bans.isBanned(profile);
+                bans.addBan(profile, cleanReason, (Instant) null, "PlugAdmin");
+                List<String> effects = new ArrayList<>();
+                effects.add("Bannissement permanent (BanList de profil Paper).");
+                Player online = op.getPlayer();
+                if (online != null) {
+                    online.kick(Component.text("Banni : " + cleanReason));
+                    effects.add(label + " était connecté — expulsé.");
+                }
+                return done(new MutationResult(true, already ? "ALREADY_BANNED" : "BANNED",
+                        already ? label + " était déjà banni — raison mise à jour." : label + " a été banni.",
+                        List.copyOf(effects)));
+            } catch (RuntimeException e) {
+                return done(MutationResult.of(false, "ERROR", "Échec du bannissement : " + rootName(e)));
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> unbanPlayer(UUID playerId, String playerName) {
+        String label = playerName != null && !playerName.isBlank() ? playerName : playerId.toString();
+        return onMain(() -> {
+            try {
+                OfflinePlayer op = plugin.getServer().getOfflinePlayer(playerId);
+                ProfileBanList bans = plugin.getServer().getBanList(BanListType.PROFILE);
+                PlayerProfile profile = op.getPlayerProfile();
+                if (!bans.isBanned(profile)) {
+                    return done(new MutationResult(true, "NOT_BANNED", label + " n'était pas banni.", List.of()));
+                }
+                bans.pardon(profile);
+                return done(new MutationResult(true, "UNBANNED", label + " a été débanni.",
+                        List.of("Le joueur peut de nouveau rejoindre le serveur.")));
+            } catch (RuntimeException e) {
+                return done(MutationResult.of(false, "ERROR", "Échec du débannissement : " + rootName(e)));
+            }
+        });
+    }
+
     // ---- Utilitaires --------------------------------------------------------------------------
+
+    /** Exécute {@code body} sur un thread <strong>asynchrone</strong> Bukkit (lecture disque, jamais le main). */
+    private <T> CompletableFuture<T> async(Supplier<T> body) {
+        CompletableFuture<T> out = new CompletableFuture<>();
+        try {
+            plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+                try {
+                    out.complete(body.get());
+                } catch (RuntimeException e) {
+                    out.completeExceptionally(e);
+                }
+            });
+        } catch (RuntimeException e) {
+            out.completeExceptionally(e);
+        }
+        return out;
+    }
 
     /** Exécute {@code body} sur le thread principal et relaie le futur produit. */
     private <T> CompletableFuture<T> onMain(Supplier<CompletableFuture<T>> body) {

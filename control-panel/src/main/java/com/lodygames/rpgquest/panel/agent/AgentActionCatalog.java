@@ -56,6 +56,7 @@ public final class AgentActionCatalog {
     static {
         // Lectures
         add("player.list", Permission.PLAYERS_READ, false, false, "Rafraîchir les joueurs connectés");
+        add("player.catalog", Permission.PLAYERS_READ, false, false, "Rafraîchir l'annuaire des joueurs");
         add("player.variable.get", Permission.ACTION_VARIABLE_GET, false, true, "Lire une variable joueur");
         add("player.resetnew.preview", Permission.PLAYERS_READ, false, true, "Aperçu du reset « nouveau joueur »");
         add("quest.list", Permission.CONTENT_READ, false, false, "Rafraîchir le catalogue de quêtes");
@@ -82,6 +83,8 @@ public final class AgentActionCatalog {
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");
         add("player.resetnew.confirm", Permission.ACTION_PLAYER_RESET, true, true, "Reset « nouveau joueur »");
+        add("player.ban", Permission.PLAYER_MODERATE, true, true, "Bannir un joueur");
+        add("player.unban", Permission.PLAYER_MODERATE, true, true, "Débannir un joueur");
         add("quest.start", Permission.ACTION_QUEST, true, true, "Démarrer une quête");
         add("quest.complete", Permission.ACTION_QUEST, true, true, "Compléter une quête");
         add("quest.reset", Permission.ACTION_QUEST, true, true, "Réinitialiser une quête");
@@ -389,6 +392,31 @@ public final class AgentActionCatalog {
                 params.put("choice_index", idx.toString());
             }
             case "player.resetnew.confirm" -> params.put("confirm", "true");
+            case "player.ban" -> {
+                String reason = trim(form.get("reason"));
+                if (reason.isEmpty()) {
+                    return Validation.fail("Une raison de bannissement est obligatoire.");
+                }
+                if (reason.length() > 256 || reason.indexOf('\n') >= 0) {
+                    return Validation.fail("Raison trop longue (max 256) ou multi-ligne.");
+                }
+                params.put("reason", reason);
+            }
+            case "player.catalog" -> {
+                String limit = trim(form.get("limit"));
+                if (!limit.isEmpty()) {
+                    int n;
+                    try {
+                        n = Integer.parseInt(limit);
+                    } catch (NumberFormatException e) {
+                        return Validation.fail("Limite invalide.");
+                    }
+                    if (n < 1 || n > 20_000) {
+                        return Validation.fail("Limite hors bornes (1 à 20000).");
+                    }
+                    params.put("limit", Integer.toString(n));
+                }
+            }
             default -> {
                 // player.list / *.player.status / *.list / player.resetnew.preview : pas de paramètre
                 // supplémentaire au-delà de « player ».

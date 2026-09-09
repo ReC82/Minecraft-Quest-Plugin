@@ -68,6 +68,7 @@ public final class AgentActionExecutor {
             return switch (type.get()) {
                 case PLAYER_VARIABLE_GET -> playerVariableGet(action);
                 case PLAYER_LIST -> playerList(action);
+                case PLAYER_CATALOG -> playerCatalog(action);
                 case QUEST_LIST -> questList(action);
                 case STORY_LIST -> storyList(action);
                 case ITEM_LIST -> itemList(action);
@@ -93,6 +94,8 @@ public final class AgentActionExecutor {
                 case STORY_COMPLETE -> storyMutation(action, AgentActionType.STORY_COMPLETE);
                 case PLAYER_VARIABLE_SET -> variableSet(action);
                 case PLAYER_RESETNEW_CONFIRM -> resetConfirm(action);
+                case PLAYER_BAN -> playerBan(action);
+                case PLAYER_UNBAN -> playerUnban(action);
                 case NPC_DEFINITION_CREATE -> npcDefinitionWrite(action, true);
                 case NPC_DEFINITION_UPDATE -> npcDefinitionWrite(action, false);
                 case QUEST_GIVER_SET -> questGiverSet(action);
@@ -144,6 +147,70 @@ public final class AgentActionExecutor {
             return AgentActionOutcome.success(action.id(), String.valueOf(list.size()),
                     list.size() + " joueur(s) connecté(s).", details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code player.catalog} (#96) : annuaire complet (en ligne + hors ligne déjà venus). */
+    private CompletableFuture<AgentActionOutcome> playerCatalog(AgentAction action) {
+        int limit = parseAmount(firstNonBlank(action.param("limit"), action.param("max")), 0);
+        // Cap de sécurité : une demande sans limite (ou <= 0) est bornée à 5000 pour ne jamais
+        // renvoyer un payload démesuré sur un serveur à forte population — l'agent pose alors
+        // truncated=true et PlugAdmin affiche un avertissement.
+        int bounded = limit <= 0 ? 5_000 : Math.min(limit, 20_000);
+        return actions.playerCatalog(bounded).thenApply(list -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            int online = 0;
+            int banned = 0;
+            for (AgentActions.PlayerCatalogEntry p : list) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("uuid", p.uuid());
+                row.put("name", p.name());
+                row.put("online", p.online());
+                row.put("hasPlayedBefore", p.hasPlayedBefore());
+                row.put("firstPlayed", p.firstPlayed());
+                row.put("lastSeen", p.lastSeen());
+                row.put("banned", p.banned());
+                if (p.banReason() != null) {
+                    row.put("banReason", p.banReason());
+                }
+                if (p.online()) {
+                    online++;
+                    row.put("world", p.world());
+                    row.put("x", p.x());
+                    row.put("y", p.y());
+                    row.put("z", p.z());
+                }
+                if (p.banned()) {
+                    banned++;
+                }
+                rows.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("players", rows);
+            details.put("total", rows.size());
+            details.put("online", online);
+            details.put("offline", rows.size() - online);
+            details.put("banned", banned);
+            details.put("truncated", bounded > 0 && rows.size() >= bounded);
+            return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
+                    rows.size() + " joueur(s) connus (" + online + " en ligne, " + banned + " banni(s)).", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code player.ban} (#96) : bannit un joueur en ligne ou hors ligne. Raison obligatoire. */
+    private CompletableFuture<AgentActionOutcome> playerBan(AgentAction action) {
+        String reason = trimOrNull(firstNonBlank(action.param("reason"), action.param("motif")));
+        if (reason == null || reason.length() > 256) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « reason » manquant ou trop long (max 256)."));
+        }
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.banPlayer(uuid, name, reason).thenApply(r -> toOutcome(action, r)));
+    }
+
+    /** {@code player.unban} (#96) : lève le bannissement d'un joueur. */
+    private CompletableFuture<AgentActionOutcome> playerUnban(AgentAction action) {
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.unbanPlayer(uuid, name).thenApply(r -> toOutcome(action, r)));
     }
 
     private CompletableFuture<AgentActionOutcome> questList(AgentAction action) {

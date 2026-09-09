@@ -170,4 +170,19 @@ class StubAgentActions implements AgentActions {
     public CompletableFuture<MutationResult> variableSet(UUID playerId, String key, String value) {
         return unsupported();
     }
+
+    @Override
+    public CompletableFuture<List<PlayerCatalogEntry>> playerCatalog(int limit) {
+        return CompletableFuture.completedFuture(List.of());
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> banPlayer(UUID playerId, String playerName, String reason) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> unbanPlayer(UUID playerId, String playerName) {
+        return unsupported();
+    }
 }

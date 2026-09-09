@@ -5,6 +5,7 @@
 
 pnj-citizens.md
 citizens-commandes.md
+joueurs-admin.md
 joueurs-reset.md
 quetes.md
 claims.md

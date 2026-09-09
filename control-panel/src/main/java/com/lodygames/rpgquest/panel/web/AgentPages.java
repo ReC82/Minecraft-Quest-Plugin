@@ -49,120 +49,457 @@ public final class AgentPages {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("players", "Joueurs",
-                "Sélectionner un joueur connecté, lire/écrire ses variables, lui donner un objet, "
-                        + "ou prévisualiser un reset « nouveau joueur ».",
-                docLink("joueurs-reset", "Documentation : reset d'un joueur")));
+                "Annuaire des joueurs — connectés et déjà venus. Cliquez sur un joueur pour son détail "
+                        + "et les actions disponibles (chaque action indique si elle fonctionne hors ligne).",
+                docLink("joueurs-admin", "Documentation : gérer les joueurs")));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
         String agentId = agent.get().id();
-        String player = cleanPlayer(q.get("player"));
-        sb.append(agentPicker(agentId, "/players", player));
+        boolean canModerate = perms.can(session.role(), Permission.PLAYER_MODERATE);
+        boolean canVarGet = perms.can(session.role(), Permission.ACTION_VARIABLE_GET);
+        boolean canVarSet = perms.can(session.role(), Permission.ACTION_VARIABLE_SET);
+        boolean canGive = perms.can(session.role(), Permission.ACTION_ITEM_GIVE);
+        boolean canReset = perms.can(session.role(), Permission.ACTION_PLAYER_RESET);
+        String focus = cleanPlayer(q.get("player"));
 
-        // --- Roster ---
-        sb.append("<h2>Joueurs connectés</h2>");
-        sb.append(listCatbar("Relevé", compactRefresh(session, agentId, "player.list", "Joueurs connectés",
-                "btn-outline-primary", "/players")));
-        Optional<Map<String, Object>> roster = latestDetails(agentId, "player.list");
-        if (roster.isEmpty()) {
-            sb.append(Ui.empty("Aucune liste chargée — cliquer sur « Joueurs connectés »."));
-        } else {
-            List<Object> rows = asList(roster.get().get("players"));
-            if (rows.isEmpty()) {
-                sb.append(Ui.empty("Aucun joueur connecté au dernier relevé."));
-            } else {
-                if (rows.size() > 6) {
-                    sb.append(listControls("players", "Rechercher un joueur…", ""));
-                }
-                sb.append("<p class=\"count-note\" data-count-note data-noun=\"joueur\">" + rows.size() + " joueur(s)</p>");
-                sb.append(Ui.tableOpen("Nom", "UUID", "Monde", "Position", ""));
-                for (Object o : rows) {
-                    Map<String, Object> r = asMap(o);
-                    String name = str(r.get("name"));
-                    sb.append("<tr data-filter-item=\"players\" data-filter-text=\"").append(Http.esc(name + " "
-                                    + str(r.get("world")))).append("\">")
-                            .append("<td><strong>").append(Http.esc(name)).append("</strong></td>")
-                            .append("<td>").append(Ui.id(shorten(str(r.get("uuid")), 13), str(r.get("uuid")))).append("</td>")
-                            .append("<td>").append(Http.esc(str(r.get("world")))).append("</td>")
-                            .append("<td class=\"muted\">").append(Http.esc(str(r.get("x")) + " " + str(r.get("y")) + " " + str(r.get("z"))))
-                            .append("</td>")
-                            .append("<td><a href=\"/players?agent=").append(Http.esc(agentId)).append("&player=")
-                            .append(Http.esc(name)).append("\">Sélectionner</a></td></tr>");
-                }
-                sb.append(Ui.tableClose());
-            }
+        sb.append(agentPicker(agentId, "/players", ""));
+
+        // ---- Toolbar compacte -------------------------------------------------------
+        sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Annuaire</span>");
+        sb.append(compactRefresh(session, agentId, "player.catalog", "Actualiser", "btn-outline-primary", "/players"));
+        sb.append("</div>");
+
+        Optional<Map<String, Object>> catalog = latestDetails(agentId, "player.catalog");
+        if (catalog.isEmpty()) {
+            sb.append(Ui.empty("players", "Annuaire non chargé — cliquer sur « Actualiser »."));
+            return sb.toString();
+        }
+        List<PlayerCatalog.Entry> all = PlayerCatalog.parse(catalog.get().get("players"));
+
+        String query = q.getOrDefault("q", "").trim();
+        PlayerCatalog.Filter filter = PlayerCatalog.Filter.of(q.get("filter"));
+        PlayerCatalog.Sort sort = PlayerCatalog.Sort.of(q.get("sort"));
+        int page = parsePageParam(q.get("page"));
+        PlayerCatalog.Page view = PlayerCatalog.view(all, query, filter, sort, page, PlayerCatalog.DEFAULT_PAGE_SIZE);
+
+        if (Boolean.TRUE.equals(catalog.get().get("truncated"))) {
+            sb.append("<div class=\"alert alert-warning npc-alert\">").append(Icons.icon("warning"))
+                    .append("<div>L'annuaire a été tronqué par l'agent (trop de joueurs). Affinez la recherche "
+                            + "ou augmentez la limite côté serveur.</div></div>");
         }
 
-        if (!player.isEmpty()) {
-            sb.append(playerDetail(session, agentId, player));
+        sb.append("<p class=\"npc-summary\">").append(view.total()).append(" joueur(s) connus · ")
+                .append(view.online()).append(" en ligne · ").append(view.offline()).append(" hors ligne · ")
+                .append(view.banned()).append(" banni(s)</p>");
+
+        // ---- Recherche (GET) + filtres (liens) -------------------------------------
+        sb.append(playersControls(agentId, query, filter, sort));
+        sb.append("<p class=\"count-note\" data-noun=\"joueur\">").append(view.matched())
+                .append(view.matched() > 1 ? " joueurs" : " joueur")
+                .append(view.matched() != view.total() ? " (sur " + view.total() + ")" : "").append("</p>");
+
+        if (view.entries().isEmpty()) {
+            sb.append(Ui.empty("players", "Aucun joueur ne correspond à ce filtre / cette recherche."));
+            return sb.toString();
         }
 
+        List<Object> knownItems = latestDetails(agentId, "item.list").map(d -> asList(d.get("items"))).orElse(List.of());
+
+        sb.append("<div class=\"accordion npc-accordion\" id=\"players-accordion\">");
+        int idx = 0;
+        for (PlayerCatalog.Entry e : view.entries()) {
+            boolean open = !focus.isEmpty()
+                    && (focus.equalsIgnoreCase(e.uuid()) || focus.equalsIgnoreCase(e.displayName()));
+            sb.append(renderPlayerAccordionItem(session, agentId, e, idx++, open, knownItems,
+                    canModerate, canVarGet, canVarSet, canGive, canReset));
+        }
+        sb.append("</div>");
+
+        sb.append(playersPager(agentId, query, filter, sort, view));
         return sb.toString();
     }
 
-    private String playerDetail(Session session, String agentId, String player) {
+    private static int parsePageParam(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return 1;
+        }
+        try {
+            return Math.max(1, Integer.parseInt(raw.trim()));
+        } catch (NumberFormatException e) {
+            return 1;
+        }
+    }
+
+    /** Barre recherche (input-group Bootstrap, GET) + puces de filtre + tri, tout côté serveur. */
+    private String playersControls(String agentId, String query, PlayerCatalog.Filter filter,
+                                   PlayerCatalog.Sort sort) {
+        String f = filter.name().toLowerCase(java.util.Locale.ROOT);
+        String s = sort.name().toLowerCase(java.util.Locale.ROOT);
+        StringBuilder sb = new StringBuilder("<div class=\"npc-controls\">");
+        sb.append("<form method=\"get\" action=\"/players\" class=\"input-group npc-search\">")
+                .append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">")
+                .append("<input type=\"hidden\" name=\"filter\" value=\"").append(Http.esc(f)).append("\">")
+                .append("<input type=\"hidden\" name=\"sort\" value=\"").append(Http.esc(s)).append("\">")
+                .append("<span class=\"input-group-text\">").append(Icons.icon("search")).append("</span>")
+                .append("<input type=\"search\" class=\"form-control\" name=\"q\" value=\"").append(Http.esc(query))
+                .append("\" placeholder=\"Rechercher un joueur (pseudo ou UUID)…\" aria-label=\"Rechercher un joueur\">")
+                .append("<button class=\"btn btn-outline-secondary\" type=\"submit\">Rechercher</button>");
+        if (!query.isEmpty()) {
+            sb.append("<a class=\"btn btn-outline-secondary\" href=\"").append(playersUrl(agentId, "", f, s, 1))
+                    .append("\">Effacer</a>");
+        }
+        sb.append("</form>");
+        sb.append("<div class=\"npc-filters\">")
+                .append(playersChip(agentId, query, "all", "Tous", s, filter == PlayerCatalog.Filter.ALL))
+                .append(playersChip(agentId, query, "online", "En ligne", s, filter == PlayerCatalog.Filter.ONLINE))
+                .append(playersChip(agentId, query, "offline", "Hors ligne", s, filter == PlayerCatalog.Filter.OFFLINE))
+                .append(playersChip(agentId, query, "banned", "Bannis", s, filter == PlayerCatalog.Filter.BANNED))
+                .append("<span class=\"npc-catbar-t\" style=\"margin-left:auto\">Tri</span>")
+                .append(playersChip(agentId, query, f, "Plus récent", "recent", sort == PlayerCatalog.Sort.RECENT, true))
+                .append(playersChip(agentId, query, f, "Nom A-Z", "name", sort == PlayerCatalog.Sort.NAME, true))
+                .append("</div>");
+        sb.append("</div>");
+        return sb.toString();
+    }
+
+    private String playersChip(String agentId, String query, String filterVal, String label, String sortVal,
+                               boolean on) {
+        return playersChip(agentId, query, filterVal, label, sortVal, on, false);
+    }
+
+    private String playersChip(String agentId, String query, String filterVal, String label, String sortVal,
+                               boolean on, boolean sortChip) {
+        // sortChip : filterVal porte le filtre courant, sortVal la valeur de tri visée ; sinon
+        // filterVal est le filtre visé et sortVal le tri courant. Dans les deux cas : filtre puis tri.
+        String href = playersUrl(agentId, query, filterVal, sortVal, 1);
+        return "<a class=\"pa-chip" + (on ? " on" : "") + "\" href=\"" + href + "\">" + Http.esc(label) + "</a>";
+    }
+
+    private static String playersUrl(String agentId, String query, String filter, String sort, int page) {
+        StringBuilder sb = new StringBuilder("/players?agent=").append(Http.esc(agentId));
+        if (query != null && !query.isBlank()) {
+            sb.append("&q=").append(Http.esc(query));
+        }
+        if (filter != null && !filter.isBlank() && !"all".equals(filter)) {
+            sb.append("&filter=").append(Http.esc(filter));
+        }
+        if (sort != null && !sort.isBlank() && !"recent".equals(sort)) {
+            sb.append("&sort=").append(Http.esc(sort));
+        }
+        if (page > 1) {
+            sb.append("&page=").append(page);
+        }
+        return sb.toString();
+    }
+
+    private String playersPager(String agentId, String query, PlayerCatalog.Filter filter, PlayerCatalog.Sort sort,
+                                PlayerCatalog.Page view) {
+        if (view.pageCount() <= 1) {
+            return "";
+        }
+        String f = filter.name().toLowerCase(java.util.Locale.ROOT);
+        String s = sort.name().toLowerCase(java.util.Locale.ROOT);
+        StringBuilder sb = new StringBuilder("<nav class=\"npc-controls\" aria-label=\"Pagination des joueurs\">");
+        if (view.page() > 1) {
+            sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"")
+                    .append(playersUrl(agentId, query, f, s, view.page() - 1)).append("\">").append(Icons.icon("arrow-left"))
+                    .append("Précédent</a>");
+        }
+        sb.append("<span class=\"muted\">Page ").append(view.page()).append(" / ").append(view.pageCount()).append("</span>");
+        if (view.page() < view.pageCount()) {
+            sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"")
+                    .append(playersUrl(agentId, query, f, s, view.page() + 1)).append("\">Suivant")
+                    .append(Icons.icon("arrow-up")).append("</a>");
+        }
+        return sb.append("</nav>").toString();
+    }
+
+    // ================================================================================
+    //  Joueurs — une ligne d'accordion : synthèse + détail structuré
+    // ================================================================================
+
+    private String renderPlayerAccordionItem(Session session, String agentId, PlayerCatalog.Entry e, int idx,
+                                             boolean open, List<Object> knownItems, boolean canModerate,
+                                             boolean canVarGet, boolean canVarSet, boolean canGive, boolean canReset) {
+        String uuid = e.uuid();
+        String name = e.displayName();
+        String slug = "pl-" + idx + "-" + uuid.replaceAll("[^0-9a-fA-F]", "").substring(0, Math.min(12, uuid.replaceAll("[^0-9a-fA-F]", "").length()));
+        String cat = (e.online() ? "online" : "offline") + (e.banned() ? " banned" : "");
+
         StringBuilder sb = new StringBuilder();
-        sb.append("<h2>Joueur sélectionné : <strong>").append(Http.esc(player)).append("</strong></h2>");
-
-        // --- Variables ---
-        sb.append("<h3>Variables</h3>");
-        sb.append(formStart(session, agentId, "player.variable.get", "/players", player));
-        sb.append("<label>Clé</label><input list=\"varkeys\" name=\"key\" value=\"CLAIM_TIER_1\">");
-        sb.append("<datalist id=\"varkeys\">");
-        for (String k : AgentActionCatalog.KNOWN_VARIABLE_KEYS) {
-            sb.append("<option value=\"").append(Http.esc(k)).append("\">");
+        sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"players\" data-filter-cat=\"")
+                .append(cat).append("\" data-res-id=\"").append(Http.esc(uuid)).append("\">");
+        sb.append("<h3 class=\"accordion-header\">");
+        sb.append("<button class=\"accordion-button").append(open ? "" : " collapsed")
+                .append(" npc-head\" type=\"button\" data-bs-toggle=\"collapse\" data-bs-target=\"#").append(slug)
+                .append("\" aria-expanded=\"").append(open).append("\" aria-controls=\"").append(slug).append("\">");
+        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(Http.esc(name)).append("</span>")
+                .append("<span class=\"muted npc-id\">").append(playerWhenShort(e)).append("</span></span>");
+        sb.append("<span class=\"npc-head-badges\">").append(onlineBadge(e.online()));
+        if (e.banned()) {
+            sb.append("<span class=\"badge text-bg-danger\">Banni</span>");
         }
-        sb.append("</datalist>");
-        sb.append("<button class=\"btn\" type=\"submit\">Lire</button></form>");
-        latestForPlayer(agentId, "player.variable.get", player).ifPresent(row ->
-                sb.append(resultLine("Dernière lecture", row)));
+        sb.append("</span></button></h3>");
 
-        sb.append("<details><summary class=\"muted\">Écrire une variable (outil debug bas niveau)</summary>");
-        sb.append(formStart(session, agentId, "player.variable.set", "/players", player));
-        sb.append("<label>Clé</label><input list=\"varkeys\" name=\"key\" value=\"CLAIM_TIER_1\">");
-        sb.append("<label>Valeur</label><input type=\"text\" name=\"value\" value=\"true\">");
-        sb.append(confirmBox("Je comprends que c'est un outil debug et que ça ne rejoue pas une progression."));
-        sb.append("<button class=\"btn\" type=\"submit\">Écrire (debug)</button></form>");
-        latestForPlayer(agentId, "player.variable.set", player).ifPresent(row ->
-                sb.append(resultLine("Dernière écriture", row)));
-        sb.append("</details>");
+        sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse").append(open ? " show" : "")
+                .append("\" data-bs-parent=\"#players-accordion\"><div class=\"accordion-body npc-detail\">");
 
-        // --- Give ---
-        sb.append("<h3>Donner un objet</h3>");
-        sb.append(actionButton(session, agentId, "item.list", "/players", player,
-                "Rafraîchir la liste des objets", ""));
-        List<Object> items = latestDetails(agentId, "item.list").map(d -> asList(d.get("items"))).orElse(List.of());
-        sb.append(formStart(session, agentId, "player.item.give", "/players", player));
-        sb.append("<label>Objet</label>");
-        if (items.isEmpty()) {
-            sb.append("<input type=\"text\" name=\"item_id\" placeholder=\"rpgquest:rune_rappel\">");
+        // ---- IDENTITÉ ----
+        sb.append(detailSection("players", "Identité"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Pseudo", Http.esc(name));
+        dlRow(sb, "UUID", Ui.id(uuid, uuid));
+        dlRow(sb, "État", onlineBadge(e.online()) + (e.banned() ? " <span class=\"badge text-bg-danger\">Banni</span>" : ""));
+        dlRow(sb, "Première connexion", playerWhen(e.firstPlayed()));
+        dlRow(sb, "Dernière connexion", e.online() ? "maintenant (connecté)" : playerWhen(e.lastSeen()));
+        sb.append("</dl>");
+
+        // ---- ACTIVITÉ ----
+        sb.append(detailSection("activity", "Activité"));
+        sb.append("<dl class=\"npc-dl\">");
+        if (e.online()) {
+            dlRow(sb, "Monde", e.world() == null ? "<span class=\"muted\">?</span>" : Http.esc(e.world()));
+            String pos = e.x() == null ? "<span class=\"muted\">?</span>"
+                    : Http.esc(e.x() + " " + e.y() + " " + e.z());
+            dlRow(sb, "Position", pos);
         } else {
-            sb.append("<select name=\"item_id\">");
-            for (Object o : items) {
-                Map<String, Object> it = asMap(o);
-                String dn = MiniText.plain(str(it.get("displayName")));
-                sb.append("<option value=\"").append(Http.esc(str(it.get("id")))).append("\">")
-                        .append(Http.esc(dn.isEmpty() ? str(it.get("id")) : dn))
-                        .append("  ·  ").append(Http.esc(str(it.get("id"))))
-                        .append("</option>");
-            }
-            sb.append("</select>");
+            dlRow(sb, "Statut", "<span class=\"muted\">Hors ligne — dernière présence : "
+                    + Http.esc(plainWhen(e.lastSeen())) + "</span>");
         }
-        sb.append("<label>Quantité (1–64)</label><input type=\"number\" name=\"amount\" value=\"1\" min=\"1\" max=\"64\">");
-        sb.append(confirmBox("Confirmer la remise de l'objet à " + player + "."));
-        sb.append("<button class=\"btn\" type=\"submit\">Donner</button></form>");
-        latestForPlayer(agentId, "player.item.give", player).ifPresent(row ->
-                sb.append(resultLine("Dernier give", row)));
+        sb.append("</dl>");
 
-        // --- Reset new player (action sensible) ---
-        sb.append("<h3>Reset « nouveau joueur »</h3>");
-        sb.append("<p class=\"sub\">L'aperçu ne modifie rien. La confirmation remet à zéro l'état RPGQuest "
-                + "(quêtes, stories, variables/unlocks dont CLAIM_TIER_1, progression RPG, découvertes de "
-                + "Waystones, cooldowns, claim principal + objets RPGQuest de l'inventaire). Ne touche jamais "
-                + "le profil/UUID, les mondes, les autres joueurs.</p>");
-        sb.append(readForm(session, agentId, "player.resetnew.preview", "/players", player,
-                "Aperçu (aucune écriture)"));
-        latestForPlayer(agentId, "player.resetnew.preview", player).ifPresent(row -> {
+        // ---- RPGQUEST (liens, jamais un dump) ----
+        sb.append(detailSection("quests", "RPGQuest"));
+        sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">");
+        sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/quests?agent=").append(Http.esc(agentId))
+                .append("&player=").append(Http.esc(uuid)).append("\">").append(Icons.icon("open")).append("Quêtes du joueur</a>");
+        sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/stories?agent=").append(Http.esc(agentId))
+                .append("&player=").append(Http.esc(uuid)).append("\">").append(Icons.icon("open")).append("Stories du joueur</a>");
+        sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/actions?domain=players&q=")
+                .append(Http.esc(shorten(uuid, 8))).append("\">").append(Icons.icon("history"))
+                .append("Historique de ce joueur</a>");
+        sb.append("</div>");
+
+        // ---- DROITS ----
+        sb.append(detailSection("shield-lock", "Droits"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Droit de construction",
+                "<span class=\"muted\">non géré par PlugAdmin</span>");
+        sb.append("</dl>");
+        sb.append("<p class=\"muted npc-content-empty\">Accorder un droit de construction persistant à un joueur "
+                + "hors ligne nécessite un gestionnaire de permissions persistant (issue #27 + LuckPerms) — "
+                + "voir la documentation. PlugAdmin ne pose jamais un faux interrupteur qui ne contrôle rien.</p>");
+
+        // ---- MODÉRATION ----
+        sb.append(detailSection("shield-lock", "Modération"));
+        sb.append("<dl class=\"npc-dl\">");
+        if (e.banned()) {
+            dlRow(sb, "Bannissement", "<span class=\"badge text-bg-danger\">Actif</span>"
+                    + (e.banReason() == null ? "" : " <span class=\"muted\">— " + Http.esc(e.banReason()) + "</span>"));
+        } else {
+            dlRow(sb, "Bannissement", "<span class=\"muted\">aucun</span>");
+        }
+        sb.append("</dl>");
+
+        // ---- ACTIONS ----
+        List<String[]> toggles = new ArrayList<>();
+        StringBuilder forms = new StringBuilder();
+
+        if (canModerate && !e.banned()) {
+            toggles.add(new String[] {slug + "-f-ban", "Bannir", "shield-lock", "btn-danger"});
+            forms.append(actionCollapse(slug + "-f-ban", "<div class=\"card card-body npc-formcard\">"
+                    + playerBanForm(session, agentId, uuid, name) + "</div>"));
+        }
+        if (canModerate && e.banned()) {
+            toggles.add(new String[] {slug + "-f-unban", "Débannir", "shield-lock", "btn-outline-primary"});
+            forms.append(actionCollapse(slug + "-f-unban", "<div class=\"card card-body npc-formcard\">"
+                    + playerUnbanForm(session, agentId, uuid, name) + "</div>"));
+        }
+        if (canVarGet || canVarSet || canGive) {
+            toggles.add(new String[] {slug + "-f-tools", "Outils de test", "code-slash", "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-tools", "<div class=\"card card-body npc-formcard\">"
+                    + playerTestTools(session, agentId, uuid, name, e.online(), knownItems, canVarGet, canVarSet, canGive)
+                    + "</div>"));
+        }
+        if (canReset) {
+            toggles.add(new String[] {slug + "-f-reset", "Reset « nouveau joueur »", "trash", "btn-outline-danger"});
+            forms.append(actionCollapse(slug + "-f-reset", "<div class=\"card card-body npc-formcard\">"
+                    + playerResetTools(session, agentId, uuid, name) + "</div>"));
+        }
+
+        if (!toggles.isEmpty()) {
+            sb.append(detailSection("target", "Actions"));
+            sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">");
+            for (String[] t : toggles) {
+                sb.append(actionToggle(t[0], t[1], t[2], t[3]));
+            }
+            sb.append("</div>");
+        } else {
+            sb.append("<p class=\"muted npc-content-empty\">Aucune action disponible avec votre rôle.</p>");
+        }
+        sb.append(forms);
+
+        // Résultats récents pour ce joueur (compact — pas l'historique complet).
+        for (String type : new String[] {"player.ban", "player.unban", "player.resetnew.confirm"}) {
+            latestForPlayer(agentId, type, uuid).ifPresent(row -> sb.append(resultLine("Dernière action", row)));
+        }
+
+        sb.append("</div></div></div>");
+        return sb.toString();
+    }
+
+    private static String onlineBadge(boolean online) {
+        return online
+                ? "<span class=\"badge text-bg-success\">● En ligne</span>"
+                : "<span class=\"badge text-bg-secondary\">○ Hors ligne</span>";
+    }
+
+    /** « il y a 5 min » / « hier » / date courte. {@code null} → « jamais ». */
+    private static String playerWhen(Long millis) {
+        if (millis == null || millis <= 0) {
+            return "<span class=\"muted\">inconnue</span>";
+        }
+        return "<span title=\"" + Http.esc(plainWhen(millis)) + "\">" + Http.esc(relWhen(millis)) + "</span>";
+    }
+
+    private static String playerWhenShort(PlayerCatalog.Entry e) {
+        if (e.online()) {
+            return "Dernière connexion : maintenant";
+        }
+        return "Dernière connexion : " + Http.esc(relWhen(e.lastSeen()));
+    }
+
+    private static String relWhen(Long millis) {
+        if (millis == null || millis <= 0) {
+            return "jamais";
+        }
+        long delta = System.currentTimeMillis() - millis;
+        if (delta < 0) {
+            delta = 0;
+        }
+        long min = delta / 60_000;
+        if (min < 1) {
+            return "à l'instant";
+        }
+        if (min < 60) {
+            return "il y a " + min + " min";
+        }
+        long hours = min / 60;
+        if (hours < 24) {
+            return "il y a " + hours + " h";
+        }
+        long days = hours / 24;
+        if (days < 30) {
+            return "il y a " + days + " j";
+        }
+        return plainWhen(millis);
+    }
+
+    private static String plainWhen(Long millis) {
+        if (millis == null || millis <= 0) {
+            return "jamais";
+        }
+        return java.time.Instant.ofEpochMilli(millis).atZone(java.time.ZoneOffset.UTC)
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'"));
+    }
+
+    private String playerBanForm(Session session, String agentId, String uuid, String name) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("shield-lock"))
+                .append("Bannir ").append(Http.esc(name)).append("</p>");
+        sb.append("<p class=\"muted\">Ce joueur ne pourra plus rejoindre le serveur. Fonctionne "
+                + "<strong>en ligne comme hors ligne</strong> ; s'il est connecté il est expulsé immédiatement.</p>");
+        sb.append(formStart(session, agentId, "player.ban", "/players", uuid));
+        sb.append("<label class=\"form-label\">Raison <span class=\"muted\">(obligatoire)</span></label>");
+        sb.append("<input class=\"form-control\" type=\"text\" name=\"reason\" maxlength=\"256\" required "
+                + "autocomplete=\"off\" placeholder=\"Ex. : comportement toxique répété\">");
+        sb.append(confirmBox("Je confirme le bannissement de « " + name + " »."));
+        sb.append("<button class=\"btn btn-danger\" type=\"submit\">Bannir le joueur</button></form>");
+        return sb.toString();
+    }
+
+    private String playerUnbanForm(Session session, String agentId, String uuid, String name) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("shield-lock"))
+                .append("Débannir ").append(Http.esc(name)).append("</p>");
+        sb.append(formStart(session, agentId, "player.unban", "/players", uuid));
+        sb.append(confirmBox("Lever le bannissement de « " + name + " » — il pourra de nouveau se connecter."));
+        sb.append("<button class=\"btn btn-outline-primary\" type=\"submit\">Débannir</button></form>");
+        return sb.toString();
+    }
+
+    private String playerTestTools(Session session, String agentId, String uuid, String name, boolean online,
+                                   List<Object> knownItems, boolean canVarGet, boolean canVarSet, boolean canGive) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("code-slash"))
+                .append("Outils de test</p>");
+        if (canVarGet) {
+            sb.append("<p class=\"npc-fs-h\">Lire une variable <span class=\"badge text-bg-secondary\">hors ligne OK</span></p>");
+            sb.append(formStart(session, agentId, "player.variable.get", "/players", uuid));
+            sb.append("<label class=\"form-label\">Clé</label><input class=\"form-control\" list=\"varkeys-").append(Http.esc(uuid))
+                    .append("\" name=\"key\" value=\"CLAIM_TIER_1\" autocomplete=\"off\">");
+            sb.append("<datalist id=\"varkeys-").append(Http.esc(uuid)).append("\">");
+            for (String k : AgentActionCatalog.KNOWN_VARIABLE_KEYS) {
+                sb.append("<option value=\"").append(Http.esc(k)).append("\">");
+            }
+            sb.append("</datalist><button class=\"btn btn-sm\" type=\"submit\">Lire</button></form>");
+            latestForPlayer(agentId, "player.variable.get", uuid).ifPresent(row ->
+                    sb.append(resultLine("Dernière lecture", row)));
+        }
+        if (canVarSet) {
+            sb.append("<p class=\"npc-fs-h\">Écrire une variable "
+                    + "<span class=\"badge text-bg-secondary\">hors ligne OK</span> "
+                    + "<span class=\"muted\">— outil debug, ne rejoue pas une progression</span></p>");
+            sb.append(formStart(session, agentId, "player.variable.set", "/players", uuid));
+            sb.append("<label class=\"form-label\">Clé</label><input class=\"form-control\" name=\"key\" "
+                    + "value=\"CLAIM_TIER_1\" autocomplete=\"off\">");
+            sb.append("<label class=\"form-label\">Valeur</label><input class=\"form-control\" type=\"text\" name=\"value\" value=\"true\">");
+            sb.append(confirmBox("Je comprends que c'est un outil debug bas niveau."));
+            sb.append("<button class=\"btn btn-sm\" type=\"submit\">Écrire (debug)</button></form>");
+            latestForPlayer(agentId, "player.variable.set", uuid).ifPresent(row ->
+                    sb.append(resultLine("Dernière écriture", row)));
+        }
+        if (canGive) {
+            sb.append("<p class=\"npc-fs-h\">Donner un objet ");
+            if (online) {
+                sb.append("<span class=\"badge text-bg-warning\">en ligne uniquement</span></p>");
+                sb.append(formStart(session, agentId, "player.item.give", "/players", uuid));
+                sb.append("<label class=\"form-label\">Objet</label>");
+                if (knownItems.isEmpty()) {
+                    sb.append("<input class=\"form-control\" type=\"text\" name=\"item_id\" placeholder=\"rpgquest:rune_rappel\">");
+                } else {
+                    sb.append("<select class=\"form-select\" name=\"item_id\">");
+                    for (Object o : knownItems) {
+                        Map<String, Object> it = asMap(o);
+                        String dn = MiniText.plain(str(it.get("displayName")));
+                        sb.append("<option value=\"").append(Http.esc(str(it.get("id")))).append("\">")
+                                .append(Http.esc(dn.isEmpty() ? str(it.get("id")) : dn)).append("  ·  ")
+                                .append(Http.esc(str(it.get("id")))).append("</option>");
+                    }
+                    sb.append("</select>");
+                }
+                sb.append("<label class=\"form-label\">Quantité (1–64)</label>"
+                        + "<input class=\"form-control\" type=\"number\" name=\"amount\" value=\"1\" min=\"1\" max=\"64\">");
+                sb.append(confirmBox("Confirmer la remise de l'objet à « " + name + " »."));
+                sb.append("<button class=\"btn btn-sm\" type=\"submit\">Donner</button></form>");
+                latestForPlayer(agentId, "player.item.give", uuid).ifPresent(row ->
+                        sb.append(resultLine("Dernier give", row)));
+            } else {
+                sb.append("<span class=\"badge text-bg-warning\">en ligne uniquement</span></p>");
+                sb.append("<p class=\"muted npc-content-empty\">Indisponible : le joueur est hors ligne. "
+                        + "Aucun mécanisme de livraison différée n'existe pour cette action.</p>");
+            }
+        }
+        return sb.toString();
+    }
+
+    private String playerResetTools(Session session, String agentId, String uuid, String name) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("trash"))
+                .append("Reset « nouveau joueur » <span class=\"badge text-bg-secondary\">hors ligne OK</span></p>");
+        sb.append("<p class=\"muted\">L'aperçu ne modifie rien. La confirmation remet à zéro l'état RPGQuest "
+                + "(quêtes, stories, variables/unlocks dont CLAIM_TIER_1, progression RPG, Waystones, cooldowns, "
+                + "claim principal + objets RPGQuest de l'inventaire). Ne touche jamais le profil/UUID, les mondes, "
+                + "les autres joueurs.</p>");
+        sb.append(readForm(session, agentId, "player.resetnew.preview", "/players", uuid, "Aperçu (aucune écriture)"));
+        latestForPlayer(agentId, "player.resetnew.preview", uuid).ifPresent(row -> {
             sb.append(resultLine("Aperçu", row));
             detailsOf(row).map(d -> asList(d.get("lines"))).ifPresent(lines -> {
                 if (!lines.isEmpty()) {
@@ -178,14 +515,12 @@ public final class AgentPages {
             });
         });
         sb.append("<div class=\"danger-zone\"><div class=\"dz-title\">⚠ Action irréversible</div>");
-        sb.append("<details><summary>Confirmer le reset réel de ").append(Http.esc(player)).append("</summary>");
-        sb.append(formStart(session, agentId, "player.resetnew.confirm", "/players", player));
-        sb.append(confirmBox("Je confirme la remise à zéro complète de l'état RPGQuest de " + player + "."));
-        sb.append("<button class=\"btn danger\" type=\"submit\">Reset « nouveau joueur »</button></form>");
-        latestForPlayer(agentId, "player.resetnew.confirm", player).ifPresent(row ->
+        sb.append(formStart(session, agentId, "player.resetnew.confirm", "/players", uuid));
+        sb.append(confirmBox("Je confirme la remise à zéro complète de l'état RPGQuest de « " + name + " »."));
+        sb.append("<button class=\"btn btn-danger\" type=\"submit\">Reset « nouveau joueur »</button></form>");
+        latestForPlayer(agentId, "player.resetnew.confirm", uuid).ifPresent(row ->
                 sb.append(resultLine("Dernier reset", row)));
-        sb.append("</details></div>");
-
+        sb.append("</div>");
         return sb.toString();
     }
 

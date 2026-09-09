@@ -104,6 +104,60 @@ class AgentActionExecutorTest {
         assertTrue(outcome.details().containsKey("players"));
     }
 
+    // ---- #96 : annuaire + modération ----------------------------------------------------
+
+    @Test
+    void playerCatalogSerialisesOnlineAndOfflineWithCounts() {
+        AgentActionOutcome outcome = run(new AgentAction("pc1", "player.catalog", Map.of("limit", "500")));
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals(500, actions.lastCatalogLimit);
+        assertEquals("2", outcome.value());
+        assertEquals(2L, ((Number) outcome.details().get("total")).longValue());
+        assertEquals(1L, ((Number) outcome.details().get("online")).longValue());
+        assertEquals(1L, ((Number) outcome.details().get("offline")).longValue());
+        assertEquals(1L, ((Number) outcome.details().get("banned")).longValue());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) outcome.details().get("players");
+        Map<String, Object> steve = rows.stream().filter(r -> "Steve".equals(r.get("name"))).findFirst().orElseThrow();
+        assertEquals(Boolean.TRUE, steve.get("banned"));
+        assertEquals("spam", steve.get("banReason"));
+        assertEquals(Boolean.FALSE, steve.get("online"));
+        assertFalse(steve.containsKey("world"), "pas de position pour un joueur hors ligne");
+    }
+
+    @Test
+    void playerCatalogWithoutLimitAppliesSafetyCap() {
+        run(new AgentAction("pc2", "player.catalog", Map.of()));
+        assertEquals(5_000, actions.lastCatalogLimit, "cap de sécurité quand aucune limite n'est demandée");
+    }
+
+    @Test
+    void playerBanRequiresAReasonAndResolvesTheUuid() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("b0", "player.ban", Map.of("player", "Rondoudou9000"))).status());
+
+        AgentActionOutcome ok = run(new AgentAction("b1", "player.ban",
+                Map.of("player", "Rondoudou9000", "reason", "comportement toxique")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("comportement toxique", actions.lastBanReason);
+        assertEquals(RONDOUDOU, actions.lastBanUuid);
+    }
+
+    @Test
+    void playerBanOnUnknownPlayerFailsCleanly() {
+        AgentActionOutcome outcome = run(new AgentAction("b2", "player.ban",
+                Map.of("player", "GhostPlayer", "reason", "x")));
+        assertEquals(AgentActionOutcome.FAILED, outcome.status());
+        assertTrue(outcome.message().contains("Joueur inconnu"));
+    }
+
+    @Test
+    void playerUnbanResolvesAndCalls() {
+        AgentActionOutcome ok = run(new AgentAction("u1", "player.unban", Map.of("player", "Rondoudou9000")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertTrue(actions.unbanCalled);
+    }
+
     @Test
     void questListReturnsDefinitions() {
         AgentActionOutcome outcome = run(new AgentAction("q0", "quest.list", Map.of()));
@@ -425,6 +479,10 @@ class AgentActionExecutorTest {
         boolean resetConfirmCalled;
         boolean mutationOk = true;
         String mutationCode = "OK";
+        int lastCatalogLimit = -999;
+        String lastBanReason;
+        UUID lastBanUuid;
+        boolean unbanCalled;
 
         private CompletableFuture<MutationResult> mutation(String message) {
             return CompletableFuture.completedFuture(
@@ -702,6 +760,29 @@ class AgentActionExecutorTest {
         public CompletableFuture<MutationResult> variableSet(UUID playerId, String key, String value) {
             lastVariableValue = value;
             return mutation(key + "=" + value);
+        }
+
+        @Override
+        public CompletableFuture<List<PlayerCatalogEntry>> playerCatalog(int limit) {
+            lastCatalogLimit = limit;
+            return CompletableFuture.completedFuture(List.of(
+                    new PlayerCatalogEntry(RONDOUDOU.toString(), "Rondoudou9000", true, true,
+                            1_600_000_000_000L, null, false, null, "world_hub", 1, 64, 2),
+                    new PlayerCatalogEntry("11111111-1111-1111-1111-111111111111", "Steve", false, true,
+                            1_500_000_000_000L, 1_599_000_000_000L, true, "spam", null, null, null, null)));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> banPlayer(UUID playerId, String playerName, String reason) {
+            lastBanReason = reason;
+            lastBanUuid = playerId;
+            return mutation("ban " + playerName + " : " + reason);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> unbanPlayer(UUID playerId, String playerName) {
+            unbanCalled = true;
+            return mutation("unban " + playerName);
         }
     }
 }

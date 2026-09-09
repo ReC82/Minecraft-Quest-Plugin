@@ -30,6 +30,26 @@ public interface AgentActions {
     CompletableFuture<List<PlayerSummary>> onlinePlayers();
 
     /**
+     * Un joueur de l'annuaire (action {@code player.catalog}, issue #96) : <strong>tout</strong>
+     * joueur déjà venu au moins une fois (données serveur Paper {@code OfflinePlayer}) + les
+     * connectés. {@code uuid} est l'identité stable ; {@code name} le dernier pseudo connu
+     * ({@code null} si Paper ne le connaît pas). Les instants sont en millisecondes epoch
+     * ({@code null} si indisponibles). {@code world}/{@code x}/{@code y}/{@code z} ne sont
+     * renseignés que pour un joueur en ligne.
+     */
+    record PlayerCatalogEntry(String uuid, String name, boolean online, boolean hasPlayedBefore,
+                              Long firstPlayed, Long lastSeen, boolean banned, String banReason,
+                              String world, Integer x, Integer y, Integer z) {
+    }
+
+    /**
+     * Annuaire complet des joueurs (en ligne + hors ligne ayant déjà rejoint). Tri / filtre /
+     * pagination sont faits côté PlugAdmin ; l'agent renvoie tout, borné par {@code limit} (0 =
+     * pas de borne) pour éviter un payload démesuré.
+     */
+    CompletableFuture<List<PlayerCatalogEntry>> playerCatalog(int limit);
+
+    /**
      * Définition de quête présentée pour l'admin : titre lisible d'abord, id technique en second,
      * étapes/objectifs décrits en clair, récompenses résumées.
      *
@@ -326,4 +346,15 @@ public interface AgentActions {
 
     /** Écriture bas niveau d'une variable joueur (outil debug — confirmation panel + audit exigés). */
     CompletableFuture<MutationResult> variableSet(UUID playerId, String key, String value);
+
+    /**
+     * Bannit un joueur (issue #96) via l'API publique Paper ({@code BanList} de profil). Fonctionne
+     * <strong>hors ligne</strong> ; si le joueur est connecté il est expulsé. {@code reason} est
+     * stocké tel quel par le serveur (recommandé, jamais une commande). Idempotent : re-bannir un
+     * joueur déjà banni renvoie {@code ok=true} code {@code ALREADY_BANNED}.
+     */
+    CompletableFuture<MutationResult> banPlayer(UUID playerId, String playerName, String reason);
+
+    /** Lève le bannissement d'un joueur (issue #96). Idempotent : code {@code NOT_BANNED} si rien à faire. */
+    CompletableFuture<MutationResult> unbanPlayer(UUID playerId, String playerName);
 }

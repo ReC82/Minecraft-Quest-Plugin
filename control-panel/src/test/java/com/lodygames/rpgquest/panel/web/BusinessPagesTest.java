@@ -131,7 +131,7 @@ class BusinessPagesTest {
         loginOk();
         String players = get("/players").body();
         assertTrue(players.contains("<h1>Joueurs</h1>"));
-        assertTrue(players.contains("name=\"type\" value=\"player.list\""));
+        assertTrue(players.contains("name=\"type\" value=\"player.catalog\""), "toolbar Actualiser (#96)");
         assertTrue(players.contains("/assets/panel.js"));
 
         assertTrue(get("/quests").body().contains("name=\"type\" value=\"quest.list\""));

@@ -8,6 +8,10 @@ package com.lodygames.rpgquest.panel.authz;
 public enum Permission {
     DASHBOARD_VIEW,
     PLAYERS_READ,
+    /** Modération d'un joueur (ban / unban). Jamais donnée à un rôle en lecture seule. */
+    PLAYER_MODERATE,
+    /** Accorder / retirer un droit de construction persistant à un joueur (issue #96 — dépend de #27). */
+    PLAYER_BUILD_WRITE,
     NPC_READ,
     NPC_WRITE,
     NPC_BIND_WRITE,

@@ -1865,3 +1865,72 @@ client qui ferme, bénin, non lié au changement. Navigateur authentifié : `PEN
 VALIDATION`.
 
 Rapport : `docs/claude-reports/2026-09-09_1104_fiche-commandes-reference-49.md`.
+
+## 2026-09-09 - Control Panel : dashboard d'observabilité / page /diagnostics (#38) — AWS uniquement
+
+### Changement
+
+**Control Panel AWS uniquement. Aucun code plugin, aucun agent, aucune migration, aucun impact
+serveur Minecraft — ne pas redéployer/redémarrer VeryGames.**
+
+Nouvelle page **`/diagnostics`** : centralise tous les diagnostics de cohérence RPGQuest (PNJ,
+dialogues, quêtes, stories, serveur/agent, mondes) en un seul endroit trié (erreurs d'abord),
+avec pour chaque problème : titre humain, domaine + ressource, conséquence, action, boutons
+**Ouvrir** (lien profond vers la page métier qui déplie l'élément) / **Corriger maintenant**
+(action déjà offerte par le panel — aucune correction auto) / **Comment corriger ?** (ancre doc
+précise), et le code technique en dernier.
+
+Nouveau paquet `panel.diag` (modèle `DiagnosticEntry`, providers Npc/Dialogue/Quest/Story/Server,
+`DiagnosticsService` qui agrège / dédoublonne / trie). Lecture seule du dernier snapshot agent —
+**aucune requête déclenchée** au chargement. Bouton « Actualiser les diagnostics » →
+`POST /diagnostics/refresh` (CSRF, `DIAGNOSTICS_READ`) qui enqueue en **une** action les 4
+relevés `*.list` nécessaires ; feedback toast (#93). Tuile Home + section Dashboard mises à jour.
+Nouvelle fiche `/docs/serveur-depannage` + section Citizens dans `/docs/pnj-depannage`.
+`panel.js` : filtres à plusieurs groupes de puces combinables (rétro-compatible).
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — release + `systemctl restart plugadmin` + check `/health`.
+Aucune autre action. Aucun changement nginx / TLS / secret / base.
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : app précédente sous `/opt/plugadmin/releases/<horodatage>`
+(rétention 5). `control-panel.db` non touché.
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local + `https://plugadmin.lodylands.com/health` : **ONLINE**.
+- `/home` `/dashboard` `/diagnostics` `/npcs` `/dialogues` `/quests` `/stories` `/docs`
+  `/docs/serveur-depannage` anonymes → **303** vers `/login` ; `POST /diagnostics/refresh`
+  anonyme → **303**.
+- En-tête **CSP inchangé**.
+- `dig.lodygames.com` et `lodylands.com` → **200** (inchangés).
+- `plugadmin.service` `active`, `NRestarts=0` ; **aucun `ERROR`** au journal.
+- Jar déployé **byte-identique** au build (SHA-256 `c5897313…`) ; 17 classes `panel/diag/`
+  + `serveur-depannage.md` embarqués.
+- `:control-panel:test` **235/0** (`DiagnosticsServiceTest` + `DiagnosticsPageTest`) ;
+  `:test` inchangé ; `./gradlew build` vert.
+- Validation navigateur **authentifiée** (11 points de l'énoncé) : `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure `/opt/plugadmin/releases/20260909-120245`).
+Aucune migration à défaire.
+
+### Exécution réelle
+
+Session du 2026-09-09 (~12:02 UTC). Branche `feat/control-panel-admin-tools` @ `6428f82`.
+`deploy.sh` OK (release `/opt/plugadmin/releases/20260909-120245`). `/health` ONLINE (local +
+public) ; routes → **303** ; `POST /diagnostics/refresh` anon → 303 ; CSP inchangé ; `dig` /
+`lodylands` → 200 ; `plugadmin.service` `active` `NRestarts=0` ; **0 `ERROR`** ; jar
+byte-identique (`c5897313…`) ; 17 classes `panel/diag/` + fiche `serveur-depannage.md`.
+Navigateur authentifié : `PENDING MANUAL VALIDATION`.
+
+Rapport : `docs/claude-reports/2026-09-09_1139_dashboard-observabilite-diagnostics-38.md`.

@@ -38,6 +38,12 @@ application {
 tasks {
     test {
         useJUnitPlatform()
+        // Laisse passer une poignée de propriétés d'intégration optionnelles vers le worker de
+        // test (Gradle ne les propage pas par défaut). Ex. : -DpanelProdDbCopy=/chemin/copie.db
+        // pour un smoke authentifié contre une copie de la vraie base (régression #103).
+        listOf("panelProdDbCopy").forEach { key ->
+            System.getProperty(key)?.let { systemProperty(key, it) }
+        }
     }
 
     compileJava {

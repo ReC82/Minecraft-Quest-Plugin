@@ -22,7 +22,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.nio.file.Files;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -117,6 +119,40 @@ class PanelHardeningMalformedAgentDataTest {
         assertTrue(npcs.body().contains("<code class=\"tid npc-id\">Citizens #7</code>"),
                 "Stan reste visible même sans uuid/spawned dans le payload");
         assertEquals(200, get("/diagnostics").statusCode());
+    }
+
+    /**
+     * Validation authentifiée contre une <strong>copie de la vraie base de production</strong>
+     * (passer {@code -DpanelProdDbCopy=/chemin/vers/copie.db}). N'est exécuté que si la propriété
+     * est fournie — sinon ignoré. Sert à confirmer, après un correctif, que les données réelles
+     * actuelles rendent toutes les pages authentifiées en 200 (le smoke anonyme ne le prouve pas).
+     */
+    @Test
+    void authenticatedSmokeAgainstProductionDbCopyWhenProvided() throws Exception {
+        String prodCopy = System.getProperty("panelProdDbCopy");
+        Assumptions.assumeTrue(prodCopy != null && !prodCopy.isBlank(),
+                "propriété panelProdDbCopy absente — test ignoré");
+        dbPath = tmp.resolve("prod-copy.db").toString();
+        Files.copy(Path.of(prodCopy), Path.of(dbPath));
+        app = new PanelApp(TestConfig.withAgent(dbPath, "http://127.0.0.1:1/admin/v1"),
+                new InMemoryAuditLog(), new BridgeClient(Duration.ofMillis(300), Duration.ofMillis(400)),
+                new AgentStore(dbPath));
+        port = app.start();
+        client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+        jar.clear();
+        loginOwner();
+
+        for (String path : new String[] {"/home", "/dashboard", "/npcs?agent=" + TestConfig.AGENT_ID,
+                "/diagnostics", "/docs", "/actions", "/agents", "/players", "/quests", "/stories", "/dialogues"}) {
+            assertEquals(200, get(path).statusCode(), path + " (données de prod réelles)");
+        }
+        // #101 toujours vivant : Stan (Citizens #7 libre) reste visible dans /npcs.
+        assertTrue(get("/npcs?agent=" + TestConfig.AGENT_ID).body().contains("Citizens #7"),
+                "le correctif #101 (Stan libre visible) est préservé");
+        // re-injecte une ligne mal formée dans la copie -> doit rester 200 (frontière de sécurité).
+        insertRawAction("dead0000-0000-0000-0000-000000000000", "npc.citizens.list", "EXPIRED",
+                "2026-09-09T12:51:33", "regression-103", null);
+        assertEquals(200, get("/home").statusCode(), "ligne mal formée réinjectée -> /home reste 200");
     }
 
     // ---- infra ----------------------------------------------------------------------------

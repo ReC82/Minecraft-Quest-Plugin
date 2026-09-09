@@ -4,12 +4,13 @@
 * Date : 2026-09-09
 * Heure : 14:00
 * Sujet : #96 — feat(control-panel) : gérer les joueurs hors ligne depuis la page Joueurs
-* Statut : DONE (ban/unban + annuaire livrés ; droit de construction BLOQUÉ par #27 — voir plus bas)
+* Statut : DONE — annuaire + ban/unban livrés et déployés (DEV + AWS) ; droit de construction
+  BLOQUÉ par #27 (documenté) ; ban/unban en réel + navigateur owner = PENDING
 * Branche Git : `feat/control-panel-admin-tools`
-* Commit au démarrage : `35cc5ee`
+* Commit au démarrage : `35cc5ee` — commits de la tâche : `275774f` (feat), `faf87ec` (docs), `<docs2>` (changelog exécution réelle + rapport)
 * Début de la tâche : 2026-09-09 13:37:54
-* Fin de la tâche : 2026-09-09 __:__:__
-* Durée totale : __:__:__
+* Fin de la tâche : 2026-09-09 14:31:00
+* Durée totale : 00:53:06
 
 ## Demande
 
@@ -185,22 +186,49 @@ Aucune. `SchemaMigrator` version 17 inchangée. `control-panel.db` non touché.
 Aucun changement de configuration. Les bannissements sont dans `banned-players.json` géré par
 Paper — jamais édité à la main.
 
-## Tests automatiques
+## Tests automatiques (AUTOMATED)
 
-* `./gradlew test` — __ (à confirmer par le run final ; run précédent : plugin **1214/0**
-  (29 ignorés MockBukkit inchangés), control-panel **257/0**, web-api **30/0**).
-  - `AgentActionExecutorTest` +5 : `player.catalog` (compteurs online/offline/banned, cap 5000,
-    limite explicite) ; `player.ban` (REJECTED sans raison ; SUCCESS résout l'UUID + passe la
-    raison ; FAILED « Joueur inconnu ») ; `player.unban`.
-  - `PlayerCatalogTest` (8) : parse tolérant, tri « connectés puis lastSeen desc », tri Nom A-Z,
-    recherche pseudo (ci) / UUID, filtres exclusifs + combinés avec la recherche, pagination
+* `./gradlew test build` — **BUILD SUCCESSFUL**. Plugin **1214/0** (29 ignorés MockBukkit,
+  inchangés) ; control-panel **257/0** ; web-api **30/0**.
+  - `AgentActionExecutorTest` **40/0** (+5) : `player.catalog` (compteurs online/offline/banned,
+    cap 5000, limite explicite) ; `player.ban` (REJECTED sans raison ; SUCCESS résout l'UUID +
+    passe la raison ; FAILED « Joueur inconnu ») ; `player.unban`.
+  - `PlayerCatalogTest` **8/0** : parse tolérant, tri « connectés puis lastSeen desc », tri Nom
+    A-Z, recherche pseudo (ci) / UUID, filtres exclusifs + combinés avec la recherche, pagination
     (slice + clamp).
-  - `PlayersPageTest` (8, HTTP **authentifié**) : badges avec texte, nom en libellé / UUID absent
-    de l'en-tête, sections du détail, aucune saisie de commande brute, recherche serveur,
-    filtres serveur (puce active), ban validé (CSRF + `confirm` + `reason` obligatoires,
-    cible = UUID, toast), unban présent si banni, give « en ligne uniquement », `?player=`
-    pré-ouvre la fiche, pagination > 50.
-* `./gradlew build` — __ (à confirmer).
+  - `PlayersPageTest` **8/0** (HTTP **authentifié**, session owner de test) : badges avec texte,
+    nom en libellé / UUID absent de l'en-tête, sections du détail, aucune saisie de commande
+    brute (`name="command"` absent), recherche serveur, filtres serveur (puce active), ban validé
+    (CSRF + `confirm` + `reason` obligatoires, cible = UUID, toast), unban présent si banni, give
+    « en ligne uniquement » (indisponible si hors ligne), `?player=` pré-ouvre la fiche,
+    pagination > 50.
+  - `BusinessPagesTest` **9/0** (assertion toolbar `player.catalog`).
+  - `PanelHardeningMalformedAgentDataTest` (#103) : le smoke authentifié `-DpanelProdDbCopy`
+    contre une **copie de la vraie `control-panel.db`** (après le relevé `player.catalog` réel) →
+    `/players` = **200** authentifié sur le payload de production réel.
+
+## Validation live (LIVE)
+
+* **Déploiement** : plugin RPGQuest → VeryGames DEV (JAR SHA `4f39e1e4…`, backup
+  `rpgquest-20260909T142659Z-predeploy.jar`), **un seul** redémarrage RCON → serveur **ONLINE**
+  (< 180 s, aucun message anti-auto-reboot). `/plugins` : Citizens / Multiverse-Core / RPGQuest /
+  WorldEdit **verts**. Control Panel → AWS (release `20260909-141707`, jar `ee72425a…`).
+* **`player.catalog` déclenché en réel** (relevé enfilé côté PlugAdmin) → **SUCCESS** :
+  `total=3`, `online=0`, `offline=3`, `banned=0`, `truncated=false` — 3 joueurs réels déjà venus
+  (`Rondoudou9000`, `Madix666`, `LoDyMcFly`) avec UUID + `firstPlayed` / `lastSeen` **crédibles**
+  (LoDyMcFly vu le 2026-09-08, le plus récent). Personne de connecté sur DEV → pas de
+  monde/position (attendu, correct). `npc.list` baseline → **SUCCESS inchangé** (8 PNJ).
+* Rendu `/players` authentifié sur ce payload réel : **200** (via le smoke `-DpanelProdDbCopy`).
+* `journalctl -u plugadmin` depuis le redéploiement : **0 `ERROR`**.
+
+## PENDING OWNER
+
+* **ban / unban en réel** : `PENDING MANUAL VALIDATION` — aucune cible de test sûre parmi les 3
+  joueurs DEV (l'owner `LoDyMcFly` ne doit pas être banni ; `Rondoudou9000` / `Madix666` sans
+  autorisation ; ne pas créer de faux joueur — §35). Logique couverte par les tests unitaires
+  (`AgentActionExecutorTest`) et HTTP (`PlayersPageTest`).
+* **Navigateur authentifié `/players`** par l'owner (mot de passe non détenu par Claude) : les
+  5 étapes courtes de la section « Tests manuels ».
 
 ## Tests manuels à effectuer (courts, ciblés #96)
 
@@ -227,7 +255,20 @@ chaque action indiquant clairement si elle fonctionne hors ligne.
 banni pendant un test doit être débanni séparément (`player.unban` ou `/pardon <uuid>` console) —
 un rollback de JAR n'annule pas un ban Paper.
 
-## Déploiement VeryGames
+## Déploiement — effectué
+
+- **VeryGames DEV** : `scripts/deploy-verygames.sh -y` (gate `./gradlew test`+`build` OK), JAR
+  `rpgquest-0.1.0-SNAPSHOT.jar` 1 437 876 o SHA-256 `4f39e1e41e6860921a38b9c5893f5f56b95a0fac7fc1500d321ca2b64316765c` ;
+  backup `~/.local/share/rpgquest/verygames-backups/rpgquest-20260909T142659Z-predeploy.jar`
+  (SHA-256 `d9a47cf868991dae8f6a072856f1f0519e87fd201cfc63388c486e4b0ba9f7ee`). **Un seul**
+  `scripts/verygames-restart.sh` → OFFLINE → relance auto → **ONLINE**. `/plugins` verts.
+- **Control Panel AWS** : `scripts/plugadmin/deploy.sh` — release
+  `/opt/plugadmin/releases/20260909-141707`, jar SHA-256
+  `ee72425ae36d87b3a52bfc54c5f214aed7eb44580b1f240fb45060df040507dc` (byte-identique au build).
+  `/health` ONLINE local + public ; routes anon → 303 ; CSP inchangée ; service `active`
+  `NRestarts=0`.
+
+## Déploiement VeryGames — procédure de référence
 
 ### À transférer
 Le **JAR RPGQuest uniquement** (`scripts/deploy-verygames.sh -y`, backup daté auto).

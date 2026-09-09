@@ -2171,4 +2171,43 @@ scripts/plugadmin/deploy.sh
 
 ### Exécution réelle
 
-_(à compléter au déploiement)_
+Session du 2026-09-09 (~14:15–14:30 UTC). Branche `feat/control-panel-admin-tools` @ `faf87ec`.
+
+- **VeryGames DEV** : `scripts/deploy-verygames.sh -y` — `./gradlew test` + `build` **OK** (gate
+  interne), JAR `rpgquest-0.1.0-SNAPSHOT.jar` **1 437 876 o**, SHA-256
+  `4f39e1e41e6860921a38b9c5893f5f56b95a0fac7fc1500d321ca2b64316765c` ; backup auto
+  `~/.local/share/rpgquest/verygames-backups/rpgquest-20260909T142659Z-predeploy.jar`
+  (SHA-256 `d9a47cf868991dae8f6a072856f1f0519e87fd201cfc63388c486e4b0ba9f7ee`) ; téléversement
+  atomique, JAR en ligne == local.
+- **Un seul** redémarrage : `scripts/verygames-restart.sh` → save-all → stop RCON → **OFFLINE** →
+  relance auto VeryGames → **ONLINE** (< 180 s, aucun message anti-auto-reboot). `/plugins` (RCON)
+  = `Citizens, Multiverse-Core, RPGQuest, WorldEdit` **tous verts** ; `/rpgquest version` répond
+  `v0.1.0-SNAPSHOT`.
+- **Control Panel AWS** : `scripts/plugadmin/deploy.sh` — release
+  `/opt/plugadmin/releases/20260909-141707`, jar **byte-identique** au build (SHA-256
+  `ee72425ae36d87b3a52bfc54c5f214aed7eb44580b1f240fb45060df040507dc`) ; `PlayerCatalog` +
+  `joueurs-admin.md` embarqués. `/health` ONLINE local + `https://plugadmin.lodylands.com` ;
+  `/players` `/home` `/npcs` anon → **303** ; `/login` → 200 ; **CSP inchangée** ;
+  `dig.lodygames.com` + `lodylands.com` → **200** ; `plugadmin.service` `active` `NRestarts=0`
+  `ExecMainStatus=0` ; **0 `ERROR`** depuis le redéploiement (un `WARNING handler_error
+  path=/login` isolé = `curl -I` HEAD qui ferme, bénin).
+- **Validation live agent** (`player.catalog` enfilé, `created_by='claude-96-validation'`) →
+  **SUCCESS** : `total=3`, `online=0`, `offline=3`, `banned=0`, `truncated=false` — 3 joueurs
+  réels déjà venus (`Rondoudou9000`, `Madix666`, `LoDyMcFly`) avec UUID + `firstPlayed` /
+  `lastSeen` crédibles (LoDyMcFly vu le 2026-09-08, le plus récent). Aucun joueur connecté sur
+  DEV au moment du test → pas de monde/position (attendu). `npc.list` baseline → **SUCCESS
+  inchangé** (8 PNJ, 7 avec avertissement).
+- **Smoke authentifié** (`-DpanelProdDbCopy` = copie de la vraie `control-panel.db` après le
+  relevé) : `/players` (+ `/home /dashboard /npcs /diagnostics /docs /actions …`) = **200**
+  authentifié sur le payload `player.catalog` réel.
+- **ban / unban en réel** : `PENDING MANUAL VALIDATION` — les 3 joueurs DEV ne sont pas des cibles
+  de test sûres (l'owner `LoDyMcFly` ne doit pas être banni ; `Rondoudou9000` / `Madix666` sans
+  autorisation). Logique couverte par les tests unitaires + HTTP.
+- **Navigateur authentifié `/players`** par l'owner : `PENDING OWNER` (mot de passe non détenu).
+
+Rappel : `npc.list` reste **SUCCESS** (8 PNJ inchangés), aucune progression joueur touchée,
+aucune migration, `data.db` / `control-panel.db` non modifiés. Rollback plugin :
+`scripts/rollback-verygames.sh --latest` + `verygames-restart.sh` ; rollback CP :
+`scripts/plugadmin/rollback.sh app` (→ `20260909-131643`).
+
+Rapport : `docs/claude-reports/2026-09-09_1400_players-annuaire-offline-96.md`.

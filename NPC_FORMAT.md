@@ -50,7 +50,15 @@ Les deux couches restent indépendantes :
 | oui (`enabled: false`) | — | `DISABLED` |
 | non | oui | `CITIZENS_ORPHAN` (erreur : binding sans définition) |
 | non | non (mais référencé par une quête / un dialogue) | `UNDEFINED_REFERENCE` (erreur de contenu) |
+| non | non — PNJ Citizens réel, jamais tagué | `CITIZENS_ONLY` (information : PNJ d'ambiance, hors RPGQuest) |
 | — | — + dialogue manquant / doublon | `BROKEN` |
+
+L'état `CITIZENS_ONLY` n'est pas produit par `NpcCatalog` (qui ne lit pas le
+registre Citizens) : c'est le **Control Panel** qui, sur la page `/npcs`,
+raccroche chaque PNJ du registre Citizens (`npc.citizens.list`) sans binding ni
+définition, pour qu'un PNJ créé directement en jeu (`/npc create …`) reste
+**visible et rattachable** au lieu d'être silencieusement absent (issue #101).
+Un PNJ purement décoratif peut légitimement rester dans cet état.
 
 ## Références (source canonique)
 

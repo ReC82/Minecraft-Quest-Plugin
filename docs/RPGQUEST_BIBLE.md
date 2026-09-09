@@ -486,6 +486,20 @@ brut ni de commande console. Le câblage de `/rpgadmin npc tag` (#66), la
 suppression générale d'un PNJ Citizens et le rebind d'un binding existant ne
 sont **pas** encore faits.
 
+Un PNJ peut exister dans Citizens **sans** être encore géré par RPGQuest.
+`NpcCatalog` (action `npc.list`) ne lit pas le registre Citizens : un PNJ créé
+directement en jeu (`/npc create …`), sans définition **ni** binding, n'y
+produit aucune ligne. La page `/npcs` du Control Panel comble ce trou en
+raccrochant chaque PNJ du relevé `npc.citizens.list` sans liaison comme une
+**ligne d'identité physique** (nom en jeu + `Citizens #N`, badges « sans fiche
+RPGQuest » + « non lié », filtre *Non liés*, recherche par nom / id numérique /
+UUID). Trois états lisibles : **Citizens uniquement** (`CITIZENS_ONLY`,
+information — PNJ d'ambiance), **fiche RPGQuest uniquement** (`NOT_LINKED`,
+« à lier ») et **lié** (`LINKED`). Depuis sa ligne, deux actions facultatives :
+*Créer une fiche RPGQuest* (id pré-rempli = nom normalisé) et *Lier à une fiche
+existante* (liaison inverse via `npc.citizens.link`, le PNJ Citizens fixé).
+`/diagnostics` émet un INFO `CITIZENS_ONLY` par PNJ Citizens libre (issue #101).
+
 Une page **`/dialogues`** (V1) donne la **lecture structurée** des dialogues à
 embranchements (`dialogues/*.yml`) : par dialogue, les nœuds ordonnés (départ
 d'abord), les choix avec leurs **actions et conditions typées**

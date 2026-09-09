@@ -321,6 +321,25 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   ordre » ; Dashboard : section « État du contenu » (compteurs + lien). Permission
   `DIAGNOSTICS_READ` (tous rôles la possèdent). **#49** : fiche `serveur-depannage.md` +
   section Citizens dans `pnj-depannage.md`.
+- **Bug `/npcs` : PNJ Citizens réel masqué (issue #101)** *(branche
+  `feat/control-panel-admin-tools`)* — un PNJ créé directement en jeu (`/npc create …`), sans
+  fiche RPGQuest **ni** liaison, n'apparaissait dans aucune ligne de `/npcs` : la liste était
+  construite **uniquement** à partir de `npc.list` (`NpcCatalog` = définitions + liaisons +
+  références de contenu), qui ne connaît pas le registre Citizens ; le relevé `npc.citizens.list`
+  n'alimentait que la ligne de synthèse et les noms des PNJ déjà liés. La cause n'était **ni**
+  dans le registre Citizens runtime, **ni** dans l'action agent `npc.citizens.list` (qui renvoie
+  bien toutes les entrées, PNJ libres inclus), **ni** dans le stockage — uniquement dans le rendu
+  du Control Panel. Corrigé côté `AgentPages.npcs()` : chaque PNJ du registre Citizens sans
+  `linkedNpcId` est désormais raccroché à la liste comme une **ligne d'identité physique**
+  (libellé = nom en jeu, sous-titre `Citizens #N`, badges « sans fiche RPGQuest » + « non lié »,
+  catégorie de filtre `unlinked`, recherche par nom / id numérique / UUID), avec un détail
+  « Identité Citizens » (numéro, UUID, spawné) et deux actions facultatives : **Créer une fiche
+  RPGQuest** (id pré-rempli = nom normalisé) et **Lier à une fiche existante** (liaison inverse :
+  `npc.citizens.link` avec le Citizens fixé, choix de la fiche prête non liée). Nouvel état
+  d'affichage `CITIZENS_ONLY` (information, jamais une erreur) + entrée `DiagnosticHelp` /
+  section `pnj-depannage.md` associées ; `NpcDiagnosticProvider` émet un INFO `CITIZENS_ONLY` par
+  PNJ Citizens libre sur `/diagnostics`. Le compteur `/npcs` inclut les PNJ Citizens libres.
+  **Control Panel uniquement — aucune modification plugin/agent.**
 - **Éditeur guidé de quêtes et de stories — chemin principal (issue #46)** *(branche
   `feat/control-panel-admin-tools`)* — depuis `/quests` (« Créer une quête ») et `/stories`
   (« Créer une story »), ou « Modifier » sur une carte : formulaire guidé multi-sections

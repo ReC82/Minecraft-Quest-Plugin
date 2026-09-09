@@ -376,6 +376,31 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       regroupement, refresh coordonné + toast, CSRF, Home/Dashboard, sidebar). `HomeLauncherTest`
       mis à jour (tuile active). `#49` / `#89` / `#93` sans régression.
 
+### Étape 3h — bug `/npcs` : PNJ Citizens réel masqué (#101) — **LIVRÉ**
+
+- [x] **Cause** : la liste `/npcs` était construite **uniquement** depuis `npc.list`
+      (`NpcCatalog` = définitions + liaisons + références de contenu), qui ne lit pas le registre
+      Citizens. Un PNJ créé en jeu (`/npc create …`) sans fiche **ni** binding n'y produit aucune
+      ligne — invisible, alors que la ligne de synthèse « Citizens : N » le comptait. Ni le
+      registre Citizens runtime, ni l'action agent `npc.citizens.list` (qui renvoie bien tous les
+      PNJ, libres inclus — vérifié sur le payload DEV réel), ni le stockage n'étaient en cause.
+- [x] **Fix (Control Panel uniquement, aucune modif plugin/agent)** : `AgentPages.npcs()`
+      raccroche chaque PNJ de `npc.citizens.list` sans `linkedNpcId` comme **ligne d'identité
+      physique** — libellé = nom en jeu, sous-titre `Citizens #N`, badges « sans fiche RPGQuest » +
+      « non lié », `data-filter-cat="unlinked"`, `data-filter-text` = nom + id numérique + UUID
+      (recherche §14). Détail « Identité Citizens » (numéro, UUID, spawné) + explication humaine.
+- [x] **Actions facultatives par ligne** : *Créer une fiche RPGQuest* (`npcDefForm`, id pré-rempli
+      = nom normalisé) ; *Lier à une fiche existante* (liaison inverse : `npc.citizens.link` avec
+      le Citizens fixé, `<select>` des fiches prêtes non liées).
+- [x] **État d'affichage `CITIZENS_ONLY`** (information, jamais erreur) + entrée `DiagnosticHelp`
+      + section « PNJ du jeu sans fiche RPGQuest » dans `pnj-depannage.md` (ancre `slug(titre)`).
+      `NpcDiagnosticProvider` émet un INFO `CITIZENS_ONLY` par PNJ Citizens libre sur
+      `/diagnostics` (lecture de `npc.citizens.list`, sans effet si le relevé est absent).
+- [x] **Compteur `/npcs`** = lignes `npc.list` + PNJ Citizens libres.
+- [x] **Tests** : `NpcsCatalogTest` (PNJ libre listé / cherchable / rattachable ; deux homonymes
+      conservés ; borne de la fiche `guard` corrigée) + `NpcCitizensPayloadTest` (payload agent :
+      PNJ libre et homonymes conservés, aucune clé par nom). `:control-panel:test` + `test` verts.
+
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 
 - [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +

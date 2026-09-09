@@ -1934,3 +1934,66 @@ byte-identique (`c5897313…`) ; 17 classes `panel/diag/` + fiche `serveur-depan
 Navigateur authentifié : `PENDING MANUAL VALIDATION`.
 
 Rapport : `docs/claude-reports/2026-09-09_1139_dashboard-observabilite-diagnostics-38.md`.
+
+---
+
+## 2026-09-09 - Control Panel : fix /npcs — PNJ Citizens réel masqué (#101) — AWS uniquement
+
+### Changement
+
+**Control Panel AWS uniquement. Aucun code plugin, aucun agent, aucune migration, aucun impact
+serveur Minecraft — ne pas redéployer/redémarrer VeryGames.**
+
+Un PNJ créé directement dans Citizens en jeu (`/npc create …`), sans fiche RPGQuest ni liaison,
+n'apparaissait dans aucune ligne de la page **PNJ** : la liste ne venait que de `npc.list`
+(`NpcCatalog` = définitions + liaisons + références de contenu), qui ne lit pas le registre
+Citizens. La ligne de synthèse « Citizens : N » le comptait pourtant. Ni le registre Citizens
+runtime, ni l'action agent `npc.citizens.list` (qui renvoie bien tous les PNJ, libres inclus —
+vérifié sur le payload DEV réel : `#7 Stan`, `linkedNpcId=null`), ni le stockage n'étaient en
+cause — uniquement le rendu du Control Panel.
+
+`AgentPages.npcs()` raccroche désormais chaque PNJ de `npc.citizens.list` sans `linkedNpcId`
+comme une ligne d'identité physique : libellé = nom en jeu, sous-titre `Citizens #N`, badges
+« sans fiche RPGQuest » + « non lié », filtre *Non liés*, recherche par nom / id numérique /
+UUID ; détail « Identité Citizens » (numéro, UUID, spawné) ; actions facultatives *Créer une
+fiche RPGQuest* et *Lier à une fiche existante* (liaison inverse `npc.citizens.link`). Nouvel
+état d'affichage `CITIZENS_ONLY` (information, jamais erreur) + entrée `DiagnosticHelp` + section
+« PNJ du jeu sans fiche RPGQuest » dans `/docs/pnj-depannage`. `NpcDiagnosticProvider` émet un
+INFO `CITIZENS_ONLY` par PNJ Citizens libre sur `/diagnostics`. Le compteur `/npcs` inclut les
+PNJ Citizens libres.
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — release + `systemctl restart plugadmin` + check `/health`.
+Aucune autre action. Aucun changement nginx / TLS / secret / base.
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : app précédente sous `/opt/plugadmin/releases/<horodatage>`
+(rétention 5). `control-panel.db` non touché.
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local + `https://plugadmin.lodylands.com/health` : **ONLINE**.
+- `/home` `/npcs` `/diagnostics` `/docs/pnj-depannage` anonymes → **303** vers `/login`.
+- En-tête **CSP inchangé**.
+- `dig.lodygames.com` et `lodylands.com` → **200** (inchangés).
+- `plugadmin.service` `active`, `NRestarts=0` ; **aucun `ERROR`** au journal.
+- `:control-panel:test` vert (`NpcsCatalogTest` étendu #101) ; `:test` vert
+  (`NpcCitizensPayloadTest` étendu) ; `./gradlew build` vert.
+- Validation live `/npcs` (Stan visible, `Citizens #7`, non lié) + navigateur authentifié :
+  `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure la release précédente). Aucune migration à défaire.
+
+### Exécution réelle
+
+_(à compléter au déploiement)_

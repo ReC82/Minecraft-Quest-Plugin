@@ -219,6 +219,33 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       (offcanvas mobile, modales de confirmation, `nav-pills`, `input-group`, tooltips) —
       au fil des prochaines évolutions, sans réécriture de masse.
 
+### Étape 3d — toasts + centre de notifications + `/actions` (#93) — **LIVRÉ**
+
+- [x] **Fin des gros blocs « Actions récentes »** sous les pages métier (`/players`, `/npcs`,
+      `/quests`, `/stories`, `/dialogues`) : elles ne portent plus que leur contenu propre.
+      `/agents` garde une « Activité récente » compacte (3 lignes) + lien vers `/actions`.
+- [x] **Toasts Bootstrap** après une mutation : redirection `…&toast=<id>` (fin de `&ok=1`),
+      un seul toast rendu côté serveur (`ActionView.toastHtml`). SUCCESS auto-dismiss (6 s),
+      PENDING / FAILED persistants ; un toast PENDING est **mis à jour en place** par
+      `panel.js` quand l'action se résout (pas de spam). Toast d'erreur immédiat sur `&err=`.
+      `aria-live`, `role`, `btn-close`.
+- [x] **Centre de notifications** : cloche `bi-bell` dans la topbar (placeholder `%NOTIF%`,
+      rendu si `DIAGNOSTICS_READ`), dropdown Bootstrap des 8 dernières actions (icône domaine,
+      libellé humain, cible, statut, heure relative, résultat court), **badge** = actions en
+      cours + échecs de moins de 24 h, pied « Voir toutes les actions » → `/actions`.
+- [x] **Page `/actions`** (`ActionsPages`) : recherche (GET, combinable avec les filtres) +
+      `nav-pills` statut (Tous / Succès / En cours / Échec — regroupe les 6 statuts techniques)
+      + puces domaine (Joueurs / PNJ / Quêtes / Stories / Dialogues / Items / Serveur-Agents /
+      Autres, seulement ceux présents) + compteur. **Table Bootstrap desktop**
+      (`d-none d-md-block`) + **cartes mobile** (`d-md-none`). **Pagination** 25 / page.
+      Détail `/actions/<id>` (type technique, paramètres, cible, timestamps, livraisons,
+      résultat, corps brut, acteur). Permission `DIAGNOSTICS_READ`, pas de bypass OWNER.
+- [x] **`/agents/actions.json` enrichi** (`label`, `domain`, `group`, `target`, `resultShort`,
+      `age`, `notifHtml`, `badge`) ; `panel.js` `initToasts()` + `initNotifications()`
+      (polling léger 20 s, accéléré à 3 s tant qu'une action est en cours, garde-fou de durée) ;
+      suppression de l'ancien tableau pollable. **Pas de WebSocket** (MVP). Source de vérité
+      inchangée : table `agent_action`.
+
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 
 - [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +

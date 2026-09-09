@@ -253,6 +253,18 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   requête déclenchée ; place réservée pour une recherche globale future. Connexion et `/`
   redirigent vers `/home` ; le **Dashboard** reste sur `/dashboard` et devient une tuile ; la
   sidebar gagne une entrée « Accueil » en tête. Éditeur #46 et Documentation #49 non touchés.
+- **Toasts + centre de notifications + page `/actions` (issue #93)** *(branche
+  `feat/control-panel-admin-tools`)* — les gros blocs « Actions récentes » **disparaissent** des
+  pages métier (`/players`, `/npcs`, `/quests`, `/stories`, `/dialogues`) ; `/agents` garde une
+  « Activité récente » compacte + lien. Après une mutation : **toast Bootstrap** (redirection
+  `…&toast=<id>`) — SUCCESS auto-dismiss, PENDING/FAILED persistants, un toast PENDING mis à jour
+  en place par `panel.js` quand l'action se résout. **Cloche `bi-bell`** dans la topbar (visible
+  avec `DIAGNOSTICS_READ`) : dropdown des 8 dernières actions + badge (actions en cours + échecs
+  < 24 h) + lien « Voir toutes les actions ». **Page `/actions`** : recherche + filtres statut
+  (Tous/Succès/En cours/Échec) + domaine (Joueurs/PNJ/Quêtes/Stories/Dialogues/Items/Serveur/
+  Autres), table desktop + cartes mobile, pagination 25/page ; détail `/actions/<id>`. Source de
+  vérité inchangée : table `agent_action`. Polling léger via `/agents/actions.json` (enrichi),
+  pas de WebSocket.
 - **Éditeur guidé de quêtes et de stories — chemin principal (issue #46)** *(branche
   `feat/control-panel-admin-tools`)* — depuis `/quests` (« Créer une quête ») et `/stories`
   (« Créer une story »), ou « Modifier » sur une carte : formulaire guidé multi-sections

@@ -162,6 +162,23 @@ depuis un CDN — le panel ne dépend d'aucun accès Internet au runtime.
 - Les assets sont **publics** (avant authentification) — ils ne contiennent aucune donnée
   sensible (CSS/JS de framework, police d'icônes, `plugadmin.css`, `panel.js`).
 
+## Historique des actions & notifications (issue #93)
+
+- **Accès** : la page `/actions`, le détail `/actions/<id>`, la cloche de la topbar et l'endpoint
+  `/agents/actions.json` sont tous gardés par **`DIAGNOSTICS_READ`** (via
+  `PermissionService.can`, jamais `role == OWNER`). Anonyme → `303 /login` (JSON → `401`).
+- **Aucune donnée nouvelle** : lecture directe de la table `agent_action` (source de vérité,
+  déjà « sans secret » côté protocole agent #51). Les toasts et le centre de notifications ne
+  font que présenter ces lignes.
+- **Rendu** : tout passe par `Http.esc` ; les fragments HTML pré-rendus injectés dans le JSON
+  (`notifHtml`) sont construits serveur-side à partir de données déjà échappées, exactement
+  comme `typeHtml` / `statusHtml` (#65). `panel.js` insère ces fragments tels quels et
+  n'interprète jamais de texte utilisateur brut.
+- **Polling** : `panel.js` interroge `/agents/actions.json` en `same-origin`, `credentials:
+  same-origin`, 20 s au repos (3 s tant qu'une action est en cours), avec un garde-fou de durée.
+  Pas de WebSocket. `401`/`403` arrêtent le polling proprement.
+- `/actions/<id>` : l'id est validé (`[0-9a-fA-F-]{8,36}`) avant lecture ; inconnu → `404`.
+
 ## Kill-switch
 
 Un moyen de **couper l'accès au panel immédiatement** sans redéploiement :

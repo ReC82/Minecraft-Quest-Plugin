@@ -1665,3 +1665,67 @@ Session du 2026-09-08 (~20:10 UTC). Branche `feat/control-panel-admin-tools` @ `
 authentifié : `PENDING MANUAL VALIDATION`.
 
 Rapport : `docs/claude-reports/2026-09-08_2003_control-panel-centre-documentation-49.md`.
+
+## 2026-09-09 - Control Panel : refonte UX généralisée /quests /stories /dialogues + diagnostics humains (#89 / #49) — AWS uniquement
+
+### Changement
+
+**Control Panel AWS uniquement. Aucun code plugin, aucun agent, aucune migration, aucun impact
+serveur Minecraft — ne pas redéployer/redémarrer VeryGames.**
+
+La philosophie de `/npcs` (liste = synthèse, clic = détail, clic action = formulaire) est
+appliquée à `/quests`, `/stories`, `/dialogues` : chaque liste devient un accordéon Bootstrap,
+le détail est en sections repliées, le graphe des dialogues n'est plus ouvert d'office.
+Toolbars de rafraîchissement compactes (`btn-sm`) et recherche `input-group` partout.
+`/players` : toolbar compacte + recherche au-delà de 6 joueurs.
+
+Nouveau registre **`DiagnosticHelp`** : chaque avertissement/erreur (codes du moteur PNJ et
+dialogues + vérifications de référence calculées côté panel — prérequis inconnu, donneur sans
+fiche, quête absente d'une chaîne, fichier de dialogue rejeté, dialogue déclaré absent) est
+rendu en français clair (problème → conséquence → action) avec un lien vers une ancre précise
+du centre de documentation et le code technique en secondaire. Quatre nouvelles fiches
+`/docs` : `pnj-depannage`, `dialogues-depannage`, `quetes-depannage`, `stories-depannage`
+(embarquées dans le jar, whitelist `_index.txt`). `Markdown.slug` replie désormais les accents.
+
+### Action serveur
+
+- `scripts/plugadmin/deploy.sh` (AWS) — release + `systemctl restart plugadmin` + check `/health`.
+- Aucune autre action. Aucun changement nginx / TLS / secret / base.
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : l'app précédente est déplacée sous
+`/opt/plugadmin/releases/<horodatage>` (rétention 5). `control-panel.db` non touché.
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local **ONLINE** ; `https://plugadmin.lodylands.com/health` **ONLINE**.
+- `/npcs` `/dialogues` `/quests` `/stories` `/docs` `/players` anonymes → **303** vers `/login`.
+- En-tête **CSP inchangé** (`default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'
+  data:; form-action 'self'; frame-ancestors 'none'`).
+- `/assets/plugadmin.css` → **200** (nouveau hash `?v=…`).
+- `dig.lodygames.com` et `lodylands.com` → **200** (inchangés).
+- `plugadmin.service` `active`, `NRestarts=0` ; `journalctl -u plugadmin` : **aucun `ERROR`**.
+- Jar déployé : `DiagnosticHelp.class` + 4 `docs/*-depannage.md` + `_index.txt` embarqués.
+- Rendu **authentifié** des accordéons /quests /stories /dialogues : `PENDING MANUAL VALIDATION`
+  (couvert par la suite de tests `:control-panel:test`).
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (release précédente + restart). Aucune migration à défaire.
+
+### Exécution réelle
+
+Session du 2026-09-09 (~09:53 UTC). Branche `feat/control-panel-admin-tools` @ `6835c15`.
+`deploy.sh` OK (release `/opt/plugadmin/releases/20260909-095349`). `/health` ONLINE (local +
+`plugadmin.lodylands.com`) ; 6 routes → **303** ; CSP inchangé ; `plugadmin.css?v=bedb0b2d`
+→ 200 ; `dig` / `lodylands` → 200 ; `plugadmin.service` `active` `NRestarts=0` ;
+`journalctl -u plugadmin` **0 `ERROR`**. Navigateur authentifié : `PENDING MANUAL VALIDATION`.
+
+Rapport : `docs/claude-reports/2026-09-09_0930_control-panel-ux-metier-diagnostics-89-49.md`.

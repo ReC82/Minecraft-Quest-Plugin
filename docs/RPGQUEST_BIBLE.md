@@ -514,6 +514,30 @@ puis le **re-parse** et le **recharge** ; en cas d'échec le contenu d'origine e
 c'est le périmètre des phases suivantes de #82 (avec le renommage / déplacement /
 suppression de nœud et le réordonnancement des choix).
 
+### Présentation des pages métier et diagnostics contextuels (issues #89 / #49)
+
+Les pages `/npcs`, `/quests`, `/stories` et `/dialogues` suivent le même modèle :
+la **liste est une synthèse** (accordéon Bootstrap, un seul élément déplié à la
+fois), **cliquer** ouvre un **détail structuré en sections**, et **cliquer sur une
+action** déplie son **formulaire** (rien n'est affiché d'emblée). Le
+rafraîchissement des catalogues passe par une **barre d'outils compacte** de
+boutons ; la recherche est un `input-group` Bootstrap aligné à des filtres.
+
+Chaque avertissement ou erreur est rendu par le registre **`DiagnosticHelp`**
+(module `control-panel`, `panel.web`) sous une forme **actionnable** : titre en
+français clair, **conséquence**, **action recommandée**, **lien vers une ancre
+précise du centre de documentation** (`/docs/<fiche>#<section>`), et le **code
+technique** (`BINDING_NO_DEFINITION`, `NODE_UNREACHABLE`, `QUEST_PREREQ_UNKNOWN`,
+`STORY_QUEST_UNKNOWN`…) en second plan seulement. Les vérifications de référence
+propres aux quêtes et aux stories (prérequis inconnu, donneur sans fiche, quête
+absente d'une chaîne) sont calculées côté panel à partir des derniers relevés
+`quest.list` / `npc.list`. Quatre fiches de dépannage dédiées existent dans le
+centre de documentation : **`pnj-depannage`**, **`dialogues-depannage`**,
+**`quetes-depannage`**, **`stories-depannage`** (déclarées dans
+`control-panel/src/main/resources/docs/_index.txt`), chacune au format
+*Ce que cela signifie / Pourquoi il faut corriger / Comment corriger /
+Vérification / Référence technique*.
+
 ### Commandes RPGQuest — `/rpgadmin npc`
 
 Documentées en détail en **section 2 (Administration)** ; résumé :

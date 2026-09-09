@@ -282,6 +282,50 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       (`PanelApp#createAgentAction`) : si `npc_ctx` ≠ `npc_id` validé → refus, aucune action
       créée. Toasts #93 conservés (pas de gros message local).
 
+### Étape 3f — généralisation de la refonte UX + diagnostics humains (#89 suite / #49) — **LIVRÉ**
+
+- [x] **Même philosophie sur `/quests`, `/stories`, `/dialogues`** : liste = synthèse
+      (`accordion` Bootstrap, un seul élément ouvert via `data-bs-parent`), clic = détail en
+      sections repliées, clic sur une action = formulaire. `/players` (roster + actions, non
+      dense) : simple toolbar compacte + recherche `input-group` au-delà de 6 joueurs.
+- [x] **Toolbars catalogue compactes partout** (`listCatbar` + `compactRefresh`) : boutons
+      `btn-sm` (`[ ↻ Quêtes ] [ ↻ PNJ ]`, `[ ↻ Stories ] [ ↻ Quêtes ]`, `[ ↻ Dialogues ]
+      [ ↻ Quêtes ]`) — fin des grandes cartes vides « Rafraîchir le catalogue ».
+- [x] **Recherche `input-group` Bootstrap + filtres alignés** (`listControls`) sur PNJ /
+      Quêtes / Stories / Dialogues (puces Toutes / Sans alerte / À vérifier, ou Tous / Liés /
+      Non liés / À vérifier pour les dialogues).
+- [x] **Sections de détail** : Quêtes → Général / Donneur / Prérequis / Objectifs / Récompenses
+      / Diagnostics / Actions. Stories → Identité / Chaîne de quêtes / Diagnostics / Actions.
+      Dialogues → Résumé / PNJ / Quêtes / Diagnostics / **Graphe** (`<details>` **non ouvert**
+      par défaut) / Actions.
+- [x] **`DiagnosticHelp` — registre unique d'aide aux diagnostics** (`panel.web.DiagnosticHelp`).
+      Chaque code du moteur (PNJ `NpcCatalog`, dialogues `DialogueCatalog`) + les vérifications
+      de référence calculées côté panel (`QUEST_PREREQ_UNKNOWN`, `QUEST_GIVER_UNKNOWN`,
+      `STORY_QUEST_UNKNOWN`, `DIALOGUE_LOAD_ISSUE`, `DIALOGUE_DECLARED_MISSING`) →
+      **1. problème en français clair · 2. conséquence · 3. action recommandée · 4. lien vers
+      une ancre précise de `/docs` · 5. code technique en secondaire**. Rendu = `alert`
+      Bootstrap colorée selon la sévérité (`danger` / `warning` / `info`), bouton
+      « Comment corriger ? » (`bi-question-circle`) et, quand une action immédiate existe côté
+      PNJ, bouton « Corriger maintenant » qui déplie le bon formulaire.
+- [x] **Terminologie UX (§18)** : plus de `tagué` / `binding` / `giver` / `orphan` / `raw` /
+      `namespaced` dans les messages principaux — « associé », « liaison », « donneur de quête »,
+      « sans fiche correspondante », « identifiant technique ». Le jargon ne subsiste que dans
+      le `code technique` secondaire et la section avancée.
+- [x] **`Markdown.slug` replie les accents** (NFD + suppression des diacritiques) : les ancres
+      de section (`/docs/quetes-depannage#prerequis-inconnu`…) sont propres et **dérivées du
+      titre**, donc toujours cohérentes entre le registre et la fiche.
+- [x] **#49 — 4 fiches de dépannage contextuelles** : `pnj-depannage`, `dialogues-depannage`,
+      `quetes-depannage`, `stories-depannage` (whitelist `_index.txt`). Format §15 :
+      *Ce que cela signifie* / *Pourquoi il faut corriger* / *Comment corriger* (numéroté) /
+      *Vérification* / *Référence technique* (le code). Le titre de chaque section est **exactement**
+      le titre humain de l'entrée `DiagnosticHelp` correspondante (ancre garantie).
+- [x] **Tests** : `DiagnosticHelpTest` (cohérence registre ↔ fiches ↔ `_index.txt` ↔ ancres ;
+      message humain ; code secondaire ; bouton d'aide ; terminologie interdite absente ;
+      code inconnu → repli propre) ; assertions `accordion` / toolbar compacte / `input-group`
+      / diagnostic humanisé + ancre doc ajoutées à `QuestsCatalogTest`, `StoriesCatalogTest`,
+      `DialoguesCatalogTest` ; `NpcsCatalogTest` migré vers `DiagnosticHelp`. `#93` / `#49`
+      sans régression.
+
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 
 - [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +

@@ -279,6 +279,27 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (une fiche PNJ ne peut plus muter un autre PNJ à cause d'un état de formulaire périmé) :
   `npc_id` + `npc_ctx` en champs cachés = l'id de la fiche, `autocomplete="off"`, + garde-fou
   serveur qui refuse `npc_ctx` ≠ `npc_id`. Toasts #93 conservés.
+- **Généralisation de la refonte UX + diagnostics humains (issues #89 / #49)** *(branche
+  `feat/control-panel-admin-tools`)* — la philosophie `/npcs` (liste = synthèse, clic = détail,
+  clic action = formulaire) est appliquée à `/quests`, `/stories`, `/dialogues` : chaque liste est
+  un **accordion** Bootstrap (helpers partagés `listCatbar` / `compactRefresh` / `listControls`),
+  détail en sections repliées (Quêtes : Général / Donneur / Prérequis / Objectifs / Récompenses /
+  Diagnostics / Actions ; Stories : Identité / Chaîne de quêtes / Diagnostics / Actions ;
+  Dialogues : Résumé / PNJ / Quêtes / Diagnostics / **Graphe replié** / Actions). `/players` (peu
+  dense) : toolbar compacte + recherche `input-group` au-delà de 6 joueurs. Toutes les grandes
+  cartes « Rafraîchir le catalogue » sont remplacées par des boutons `btn-sm`. **`DiagnosticHelp`**
+  (`panel.web`) est un **registre unique** : à chaque code moteur (PNJ, dialogues) et à chaque
+  vérification de référence calculée côté panel (`QUEST_PREREQ_UNKNOWN`, `QUEST_GIVER_UNKNOWN`,
+  `STORY_QUEST_UNKNOWN`, `DIALOGUE_LOAD_ISSUE`, `DIALOGUE_DECLARED_MISSING`) correspond un message
+  **français clair → conséquence → action → lien vers une ancre précise de `/docs` → code
+  technique en secondaire**, rendu dans une `alert` colorée selon la sévérité avec un bouton
+  « Comment corriger ? » (et « Corriger maintenant » côté PNJ quand une action immédiate existe).
+  La terminologie technique interdite (`tagué`, `binding`, `giver`, `orphan`, `raw`, `namespaced`)
+  ne subsiste que dans le code technique secondaire. `Markdown.slug` replie les accents pour des
+  ancres propres et cohérentes. **#49** : 4 fiches de dépannage contextuelles livrées
+  (`pnj-depannage`, `dialogues-depannage`, `quetes-depannage`, `stories-depannage`, whitelist
+  `_index.txt`), au format *Ce que cela signifie / Pourquoi il faut corriger / Comment corriger /
+  Vérification / Référence technique*, titres de section alignés sur `DiagnosticHelp`.
 - **Éditeur guidé de quêtes et de stories — chemin principal (issue #46)** *(branche
   `feat/control-panel-admin-tools`)* — depuis `/quests` (« Créer une quête ») et `/stories`
   (« Créer une story »), ou « Modifier » sur une carte : formulaire guidé multi-sections

@@ -247,6 +247,14 @@ L'owner peut, depuis PlugAdmin, télécharger tout ou partie du contenu déclara
 `lodyquests-content-pack` YAML stable, versionné, sans secret, avec les références préservées —
 prêt à être archivé, partagé, donné à une IA, et réimporté par le futur #109.
 
+## Commit(s) / branche
+
+Branche `feat/control-panel-admin-tools`, poussée (`ff35b70..3940ff5`), **aucun merge** :
+
+- `36fe18d` feat(content): #108 — export versionné du contenu déclaratif (lodyquests-content-pack v1)
+- `55b7538` feat(control-panel): #108 — page /content/export + téléchargement de content pack
+- `3940ff5` docs(#108): format lodyquests-content-pack + bible/current_state/SERVER_CHANGELOG + rapport
+
 ## Reset / retour à l'état initial
 
 Rien à défaire : l'export est **lecture seule** et additif. Retirer la fonctionnalité = revenir au

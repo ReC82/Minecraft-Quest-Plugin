@@ -25,6 +25,7 @@ final class MariaDbTestSupport {
 
     /** Tables du schéma RPGQuest, ordre inverse des dépendances FK pour le DROP. */
     static final List<String> RPGQUEST_TABLES = List.of(
+            "waypoint_discoveries", "waypoints",
             "waystone_discoveries", "waystones", "item_travel_cooldowns", "story_progress",
             "npc_citizens_bindings", "npc_ids", "store_deliveries_processed",
             "backpack_audit", "backpack_overflow", "backpacks", "player_entitlements",

@@ -119,7 +119,13 @@ import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
 import com.lodygames.rpgquest.travel.model.ItemTravelDefinition;
 import com.lodygames.rpgquest.ui.QuestJournalService;
+import com.lodygames.rpgquest.database.WaypointRepository;
 import com.lodygames.rpgquest.database.WaystoneRepository;
+import com.lodygames.rpgquest.waypoint.WaypointGenerationPlanner;
+import com.lodygames.rpgquest.waypoint.WaypointIdentityResolver;
+import com.lodygames.rpgquest.waypoint.WaypointService;
+import com.lodygames.rpgquest.waypoint.render.WaypointModelRegistry;
+import com.lodygames.rpgquest.waypoint.render.WaypointModelV1;
 import com.lodygames.rpgquest.waystone.SimpleWaystoneStructurePlacer;
 import com.lodygames.rpgquest.waystone.WaystoneCellPlanner;
 import com.lodygames.rpgquest.waystone.WaystoneService;
@@ -199,6 +205,7 @@ public final class RPGQuestBootstrap {
     private ClaimTeleportService claimTeleportService;
     private ItemTravelService itemTravelService;
     private WaystoneService waystoneService;
+    private WaypointService waypointService;
     private PlayerResetService playerResetService;
     private WebSnapshotWriter webSnapshotWriter;
     private StoreClient storeClient;
@@ -498,6 +505,23 @@ public final class RPGQuestBootstrap {
         registry.start(waystoneService);
         registry.start(new PlayerListenerService(plugin, waystoneService.listener()));
 
+        // Waypoints par instance de biome (issue #124) : distincts des Waystones (réseau de voyage
+        // sur grille) — génération paresseuse et unique quand un joueur entre dans une zone de biome
+        // sans repère, découverte par clic explicite sur le bouton, rendu versionné, blocs protégés.
+        // Bâti sur la même infra (DatabaseManager, PluginService, RandomSafeLocationFinder). La
+        // garde de placement refuse toute position située dans un claim (jamais de destruction de
+        // construction joueur pour poser un waypoint).
+        WaypointModelRegistry waypointModelRegistry = new WaypointModelRegistry(
+                configService.current().travel().waypoint().modelVersion(), new WaypointModelV1());
+        waypointService = new WaypointService(plugin,
+                new WaypointRepository(databaseService.databaseManager()),
+                new WaypointIdentityResolver(), new WaypointGenerationPlanner(), waypointModelRegistry,
+                (world, x, y, z) -> claimService.claimAt(world.getName(), x, y, z).isEmpty(),
+                () -> configService.current().travel());
+        registry.start(waypointService);
+        registry.start(new PlayerListenerService(plugin, waypointService.listener()));
+        registry.start(new PlayerListenerService(plugin, waypointService.protectionListener()));
+
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
                 configService.current().dialogue().allowedCommands());
@@ -735,6 +759,10 @@ public final class RPGQuestBootstrap {
 
     public WaystoneService waystoneService() {
         return waystoneService;
+    }
+
+    public WaypointService waypointService() {
+        return waypointService;
     }
 
     public WorldService worldService() {

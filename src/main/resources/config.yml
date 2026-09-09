@@ -215,6 +215,26 @@ travel:
     minimum-spacing: 300
     safe-attempts: 16
     channel-seconds: 3
+  waypoint:
+    # Waypoints par instance de biome dans travel.wild-world (issue #124, voir
+    # waypoint.WaypointService) — repères physiques persistants et partagés, distincts des
+    # Waystones (réseau de voyage sur grille). Quand un joueur entre dans une zone de biome qui
+    # n'a pas encore de waypoint, le moteur cherche UNE seule fois un emplacement de surface
+    # approprié dans cette zone et y pose la structure ; deux entrées simultanées ne créent jamais
+    # deux waypoints. La découverte exige un clic droit explicite sur le bouton — la proximité ne
+    # découvre rien — et est persistée par UUID joueur.
+    #
+    # « instance de biome » = (monde, type de biome, tuile de « region-size » blocs) : deux zones
+    # du même biome séparées de plus de region-size ont deux waypoints distincts (jamais un simple
+    # biomeType -> waypoint). Voir docs/WAYPOINTS.md pour la stratégie complète et ses compromis.
+    enabled: true
+    region-size: 256          # côté (blocs) de la tuile qui, avec le type de biome, définit une instance
+    min-distance: 24          # le waypoint n'apparaît jamais à moins de ce rayon du joueur (>= 8)
+    max-distance: 72          # rayon max de recherche autour du point d'entrée
+    candidate-attempts: 12    # points candidats testés avant d'abandonner et de programmer un retry borné
+    move-throttle-millis: 1500 # intervalle min entre deux évaluations d'instance pour un même joueur
+    minimum-spacing: 80       # distance minimale (blocs) entre deux waypoints
+    model-version: 1          # version du modèle de rendu stampée sur les nouveaux waypoints
   random-safe-arrival:
     # Arrivée d'un portail simple (/rpgadmin worldportal) en stratégie RANDOM_SAFE — voir
     # docs-site/worlds.html, section "Portail Hub → wild". Distance autour du spawn du monde

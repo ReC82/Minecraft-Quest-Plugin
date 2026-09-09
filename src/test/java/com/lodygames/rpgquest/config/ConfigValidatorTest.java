@@ -476,6 +476,87 @@ class ConfigValidatorTest {
     }
 
     @Test
+    void waypointDefaultsWhenSectionIsMissing() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load(""));
+
+        var waypoint = config.travel().waypoint();
+        assertTrue(waypoint.enabled());
+        assertEquals(256L, waypoint.regionSize());
+        assertEquals(24, waypoint.minDistance());
+        assertEquals(72, waypoint.maxDistance());
+        assertEquals(12, waypoint.candidateAttempts());
+        assertEquals(1500L, waypoint.moveThrottleMillis());
+        assertEquals(80, waypoint.minimumSpacing());
+        assertEquals(1, waypoint.modelVersion());
+    }
+
+    @Test
+    void waypointAcceptsCustomValues() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                travel:
+                  waypoint:
+                    enabled: false
+                    region-size: 512
+                    min-distance: 16
+                    max-distance: 40
+                    candidate-attempts: 5
+                    move-throttle-millis: 3000
+                    minimum-spacing: 120
+                    model-version: 2
+                """));
+
+        var waypoint = config.travel().waypoint();
+        assertFalse(waypoint.enabled());
+        assertEquals(512L, waypoint.regionSize());
+        assertEquals(16, waypoint.minDistance());
+        assertEquals(40, waypoint.maxDistance());
+        assertEquals(5, waypoint.candidateAttempts());
+        assertEquals(3000L, waypoint.moveThrottleMillis());
+        assertEquals(120, waypoint.minimumSpacing());
+        assertEquals(2, waypoint.modelVersion());
+    }
+
+    @Test
+    void rejectsWaypointRegionSizeBelow16() {
+        ConfigurationSection section = load("""
+                travel:
+                  waypoint:
+                    region-size: 8
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("region-size"));
+    }
+
+    @Test
+    void rejectsWaypointMinDistanceBelow8() {
+        ConfigurationSection section = load("""
+                travel:
+                  waypoint:
+                    min-distance: 4
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("min-distance"));
+    }
+
+    @Test
+    void rejectsWaypointMaxDistanceBelowMinDistance() {
+        ConfigurationSection section = load("""
+                travel:
+                  waypoint:
+                    min-distance: 40
+                    max-distance: 20
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("max-distance"));
+    }
+
+    @Test
     void hubDefaultsToWorldHubWhenSectionIsMissing() throws Exception {
         PluginConfig config = ConfigValidator.validate(load(""));
 

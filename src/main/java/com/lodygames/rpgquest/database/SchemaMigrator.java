@@ -21,7 +21,7 @@ import java.util.List;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 17;
+    public static final int CURRENT_VERSION = 18;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -41,7 +41,8 @@ public final class SchemaMigrator {
             new SchemaMigration(14, "story_progress.current_index", SchemaMigrator::applyV14),
             new SchemaMigration(15, "claims land reservation columns", SchemaMigrator::applyV15),
             new SchemaMigration(16, "item_travel_cooldowns", SchemaMigrator::applyV16),
-            new SchemaMigration(17, "waystones, waystone_discoveries", SchemaMigrator::applyV17));
+            new SchemaMigration(17, "waystones, waystone_discoveries", SchemaMigrator::applyV17),
+            new SchemaMigration(18, "waypoints, waypoint_discoveries", SchemaMigrator::applyV18));
 
     private SchemaMigrator() {
     }
@@ -508,6 +509,55 @@ public final class SchemaMigrator {
                         waystone_id TEXT NOT NULL,
                         discovered_at TEXT NOT NULL,
                         PRIMARY KEY (player_uuid, waystone_id),
+                        FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """));
+        }
+    }
+
+    private static void applyV18(Connection connection, SqlDialect dialect) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Waypoints par instance de biome (issue #124), distincts des Waystones (V17, réseau de
+            // voyage sur grille). La base est la seule source de vérité : l'index unique
+            // (world, biome_instance) garantit qu'une instance de biome n'a jamais deux waypoints,
+            // même si deux joueurs entrent dans la zone en même temps (INSERT OR IGNORE côté
+            // repository). biome_instance = identité métier stable de la zone
+            // (BiomeInstanceKey#serialize(), ex. "minecraft:forest@3,-1") ; biome_key/region_x/
+            // region_z en sont les composantes dénormalisées pour la lecture Control Panel. x/y/z =
+            // ancre de la structure (colonne de surface), pas l'interacteur : celui-ci se déduit du
+            // modèle. model_version = version du rendu (WaypointModelRegistry) — changer le rendu ne
+            // change jamais id ni biome_instance. active : waypoint désactivé = ignoré.
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS waypoints (
+                        id TEXT PRIMARY KEY,
+                        world TEXT NOT NULL,
+                        biome_instance TEXT NOT NULL,
+                        biome_key TEXT NOT NULL,
+                        region_x INTEGER NOT NULL,
+                        region_z INTEGER NOT NULL,
+                        x INTEGER NOT NULL,
+                        y INTEGER NOT NULL,
+                        z INTEGER NOT NULL,
+                        facing TEXT NOT NULL,
+                        model_version INTEGER NOT NULL,
+                        active INTEGER NOT NULL DEFAULT 1,
+                        created_at TEXT NOT NULL
+                    )
+                    """));
+            statement.execute(dialect.ddl("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_waypoints_instance ON waypoints (world, biome_instance)
+                    """));
+
+            // Découverte individuelle par joueur : le waypoint est global physiquement, mais chaque
+            // joueur ne le « découvre » qu'à une interaction explicite avec le bouton (persistance
+            // player UUID + waypointId + discoveredAt). Aucune clé étrangère vers waypoints : une
+            // découverte survit à une éventuelle suppression/régénération d'id.
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS waypoint_discoveries (
+                        player_uuid TEXT NOT NULL,
+                        waypoint_id TEXT NOT NULL,
+                        discovered_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, waypoint_id),
                         FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
                     )
                     """));

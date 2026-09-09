@@ -698,7 +698,57 @@ public final class ConfigValidator {
 
         return new TravelConfig(wildWorld,
                 new TravelConfig.RuneConfig(runeChannel, runeCooldown),
-                new TravelConfig.WaystoneConfig(cellSize, chance, minimumSpacing, safeAttempts, waystoneChannel));
+                new TravelConfig.WaystoneConfig(cellSize, chance, minimumSpacing, safeAttempts, waystoneChannel),
+                validateWaypoint(travel != null ? travel.getConfigurationSection("waypoint") : null));
+    }
+
+    private static TravelConfig.WaypointConfig validateWaypoint(ConfigurationSection waypoint)
+            throws ConfigValidationException {
+        TravelConfig.WaypointConfig defaults = TravelConfig.WaypointConfig.defaults();
+        if (waypoint == null) {
+            return defaults;
+        }
+
+        boolean enabled = waypoint.getBoolean("enabled", defaults.enabled());
+
+        long regionSize = waypoint.getLong("region-size", defaults.regionSize());
+        if (regionSize < 16) {
+            throw new ConfigValidationException(
+                    "« travel.waypoint.region-size » doit être au moins 16, valeur trouvée : " + regionSize);
+        }
+
+        int minDistance = waypoint.getInt("min-distance", defaults.minDistance());
+        if (minDistance < 8) {
+            throw new ConfigValidationException(
+                    "« travel.waypoint.min-distance » doit être au moins 8 (jamais au pied du joueur), valeur trouvée : "
+                            + minDistance);
+        }
+        int maxDistance = waypoint.getInt("max-distance", defaults.maxDistance());
+        if (maxDistance < minDistance) {
+            throw new ConfigValidationException(
+                    "« travel.waypoint.max-distance » doit être supérieur ou égal à min-distance, valeurs trouvées : "
+                            + maxDistance + " < " + minDistance);
+        }
+
+        int candidateAttempts = positiveInt(waypoint, "travel.waypoint.candidate-attempts", defaults.candidateAttempts());
+
+        long moveThrottleMillis = waypoint.getLong("move-throttle-millis", defaults.moveThrottleMillis());
+        if (moveThrottleMillis < 0) {
+            throw new ConfigValidationException(
+                    "« travel.waypoint.move-throttle-millis » ne peut pas être négatif, valeur trouvée : "
+                            + moveThrottleMillis);
+        }
+
+        int minimumSpacing = waypoint.getInt("minimum-spacing", defaults.minimumSpacing());
+        if (minimumSpacing < 0) {
+            throw new ConfigValidationException(
+                    "« travel.waypoint.minimum-spacing » ne peut pas être négatif, valeur trouvée : " + minimumSpacing);
+        }
+
+        int modelVersion = positiveInt(waypoint, "travel.waypoint.model-version", defaults.modelVersion());
+
+        return new TravelConfig.WaypointConfig(enabled, regionSize, minDistance, maxDistance,
+                candidateAttempts, moveThrottleMillis, minimumSpacing, modelVersion);
     }
 
     private static int positiveInt(ConfigurationSection section, String path, int defaultValue)

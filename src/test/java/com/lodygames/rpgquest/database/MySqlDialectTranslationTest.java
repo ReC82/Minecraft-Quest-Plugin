@@ -134,6 +134,8 @@ class MySqlDialectTranslationTest {
                 dialect.ddl("CREATE INDEX IF NOT EXISTS idx_claims_owner ON claims (owner_uuid)"));
         assertEquals("ALTER TABLE waystones ADD UNIQUE INDEX IF NOT EXISTS idx_waystones_cell (world, cell_x, cell_z)",
                 dialect.ddl("CREATE UNIQUE INDEX IF NOT EXISTS idx_waystones_cell ON waystones (world, cell_x, cell_z)"));
+        assertEquals("ALTER TABLE waypoints ADD UNIQUE INDEX IF NOT EXISTS idx_waypoints_instance (world, biome_instance)",
+                dialect.ddl("CREATE UNIQUE INDEX IF NOT EXISTS idx_waypoints_instance ON waypoints (world, biome_instance)"));
     }
 
     @Test

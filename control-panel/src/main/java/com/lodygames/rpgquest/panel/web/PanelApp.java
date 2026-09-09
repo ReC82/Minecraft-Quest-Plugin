@@ -859,6 +859,17 @@ public final class PanelApp {
             Http.redirect(exchange, withError(returnPath, agentId, form.get("player"), v.error()));
             return;
         }
+        // Garde-fou de contexte (#89) : un formulaire ouvert dans la fiche d'un PNJ précis porte
+        // un champ caché « npc_ctx » ; il doit coïncider avec le « npc_id » validé. Empêche une
+        // mutation du mauvais PNJ à cause d'un état de formulaire périmé côté navigateur.
+        String npcCtx = form.getOrDefault("npc_ctx", "").trim().toLowerCase(java.util.Locale.ROOT);
+        if (!npcCtx.isEmpty() && !npcCtx.equals(v.params().getOrDefault("npc_id", ""))) {
+            audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                    "DENIED", "contexte PNJ incohérent (ctx=" + npcCtx + " id=" + v.params().get("npc_id") + ")", rid);
+            Http.redirect(exchange, withError(returnPath, agentId, null,
+                    "Contexte de PNJ incohérent — recharger la page et réessayer."));
+            return;
+        }
         String id = agentStore.createAction(agentId, type, v.params(), session.username());
         audit.record(session.username(), "agent.action.create",
                 "agent=" + agentId + " type=" + type + " action=" + id, "PENDING", safeParams(v.params()), rid);

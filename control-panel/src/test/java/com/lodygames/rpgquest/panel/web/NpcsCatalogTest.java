@@ -76,35 +76,77 @@ class NpcsCatalogTest {
     }
 
     @Test
-    void catalogSeparatesDefinitionFromCitizensBindingAndOffersWrites() throws Exception {
+    void listIsAccordionOfSyntheticRowsWithStructuredDetail() throws Exception {
         start();
         runListWithSuccess(NPC_DETAILS);
         String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("Définition RPGQuest"), "bloc définition");
-        assertTrue(page.contains("Binding Citizens"), "bloc binding");
-        assertTrue(page.contains("Garde"), "nom lisible depuis la définition");
-        assertTrue(page.contains("<span style=\"color:"), "MiniMessage interprété dans le titre");
-        // le titre de carte ne montre jamais la balise brute (l'input d'édition, lui, garde la valeur brute)
-        int guardNameAt = page.lastIndexOf("class=\"entity-name\"");
-        assertFalse(page.substring(guardNameAt, guardNameAt + 150).contains("&lt;yellow&gt;"), "titre sans balise brute");
-        assertTrue(page.contains("data-copy=\"guard\""), "id copiable");
-        assertTrue(page.contains("Binding Citizens</span> #6"), "binding Citizens #6 affiché (nom absent : roster non chargé)");
-        assertTrue(page.contains("procédure de rebind sera ajoutée ultérieurement"), "note rebind sur PNJ lié");
-        assertTrue(page.contains("quest_giver") || page.contains("Quest Giver"), "rôle affiché");
+        // Liste = accordion Bootstrap (un PNJ ouvert à la fois)
+        assertTrue(page.contains("class=\"accordion npc-accordion\" id=\"npc-accordion\""), "accordion");
+        assertTrue(page.contains("accordion-item npc-item"), "item d'accordion par PNJ");
+        assertTrue(page.contains("data-bs-toggle=\"collapse\"") && page.contains("data-bs-parent=\"#npc-accordion\""),
+                "collapse Bootstrap, un seul ouvert");
 
-        // woodcutter_bob : défini mais pas lié -> état à lier
-        assertTrue(page.contains("à lier") || page.contains("NOT_LINKED"), "état à lier");
+        // En-tête = synthèse : nom (MiniMessage rendu, pas de balise brute) + id + badges
+        assertTrue(page.contains("class=\"npc-name\"") && page.contains("<span style=\"color:"), "nom rendu");
+        int guardNameAt = page.lastIndexOf("class=\"npc-name\"");
+        assertFalse(page.substring(guardNameAt, guardNameAt + 120).contains("&lt;yellow&gt;"), "en-tête sans balise brute");
+        assertTrue(page.contains("<code class=\"tid npc-id\">guard</code>"), "id logique en en-tête");
+        assertTrue(page.contains("text-bg-secondary\">Citizens #6</span>"), "badge Citizens #6 (guard)");
+        assertTrue(page.contains("text-bg-warning\">à lier</span>"), "badge « à lier » (woodcutter_bob)");
+
+        // Sections du détail
+        for (String s : new String[] {">Identité<", ">Citizens<", ">Contenu<", ">Diagnostics<"}) {
+            assertTrue(page.contains(s), "section " + s);
+        }
+        // Labels humains : rôle affiché « Donneur de quête », valeur technique en secondaire
+        assertTrue(page.contains("Donneur de quête"), "libellé humain du rôle");
+        assertTrue(page.contains("<code class=\"tid\">quest_giver</code>"), "valeur technique du rôle conservée");
+        // id copiable dans la section Identité
+        assertTrue(page.contains("data-copy=\"guard\"") && page.contains("data-copy=\"woodcutter_bob\""));
         assertTrue(page.indexOf("data-copy=\"woodcutter_bob\"") < page.indexOf("data-copy=\"guard\""),
                 "PNJ avec avertissement listé avant le PNJ sain");
 
-        // écritures proposées (rôle OWNER) : édition sur les deux, pas de création (les deux sont définis)
-        assertTrue(page.contains("name=\"type\" value=\"npc.definition.update\""), "formulaire d'édition");
-        assertFalse(page.contains("Créer la définition « woodcutter_bob »"), "pas de création : woodcutter_bob est défini");
+        // Diagnostic dédié pour woodcutter_bob (info), section, code discret
+        assertTrue(page.contains("alert alert-info npc-diag"), "diagnostic dans une alerte différenciée");
+        assertTrue(page.contains("ID diagnostic : <code class=\"tid\">NOT_LINKED</code>"), "code technique discret");
+        assertTrue(page.contains("npc-diag-ok"), "« Aucune anomalie » pour le PNJ sain (guard)");
 
-        // registre canonique : définis vs tous
+        // Actions = boutons qui déplient un formulaire (masqué par défaut)
+        assertTrue(page.contains("class=\"npc-actions"), "zone d'actions");
+        assertTrue(page.contains(">Modifier</button>"), "bouton Modifier (définition présente)");
+        assertTrue(page.contains("class=\"collapse npc-form-collapse\""), "le formulaire est dans un collapse");
+        assertTrue(page.contains("name=\"type\" value=\"npc.definition.update\""), "formulaire d'édition");
+        assertFalse(page.contains("-f-create"), "aucun formulaire de création par fiche : les deux PNJ sont définis");
+
+        // registre canonique conservé (repli)
         assertTrue(page.contains("Registre canonique"));
-        assertTrue(page.contains("Définis"));
+    }
+
+    @Test
+    void compactToolbarAndInputGroupSearch() throws Exception {
+        start();
+        runListWithSuccess(NPC_DETAILS);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // toolbar compacte : boutons btn-sm, pas de grande carte
+        assertTrue(page.contains("class=\"npc-catbar\""));
+        assertTrue(page.contains("btn btn-sm btn-outline-primary") && page.contains(">Catalogue RPGQuest</button>"));
+        assertTrue(page.contains("btn btn-sm btn-outline-secondary") && page.contains(">Citizens</button>"));
+        assertTrue(page.contains("name=\"type\" value=\"npc.list\"") && page.contains("name=\"type\" value=\"npc.citizens.list\""));
+        // « Nouvelle définition PNJ » = bouton compact qui déplie un collapse
+        assertTrue(page.contains("data-bs-target=\"#npc-new-def\"") && page.contains(">Nouvelle définition PNJ</button>"));
+        assertTrue(page.contains("<div class=\"collapse\" id=\"npc-new-def\">"), "form de création masqué par défaut");
+
+        // recherche : input-group Bootstrap, l'icône a sa propre zone
+        assertTrue(page.contains("<div class=\"input-group npc-search\"><span class=\"input-group-text\">"), "input-group");
+        assertTrue(page.contains("<input type=\"search\" class=\"form-control\" data-filter-input=\"npcs\""), "champ Bootstrap");
+
+        // filtres conservés
+        for (String f : new String[] {">Tous<", ">Liés<", ">Non liés<", ">Warnings<", ">Erreurs<"}) {
+            assertTrue(page.contains(f), "filtre " + f);
+        }
+        assertTrue(page.contains("data-filter-chip=\"linked\"") && page.contains("data-filter-chip=\"err\""));
     }
 
     @Test
@@ -114,17 +156,17 @@ class NpcsCatalogTest {
         runListWithSuccess("npc.citizens.list", CITIZENS_DETAILS);
         String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("Lier un PNJ Citizens existant"), "form de liaison sur le PNJ NOT_LINKED");
+        assertTrue(page.contains(">Lier un PNJ Citizens</button>"), "bouton d'action de liaison sur le PNJ NOT_LINKED");
         assertTrue(page.contains("name=\"type\" value=\"npc.citizens.link\""));
         // le PNJ Citizens libre est sélectionnable, l'occupé est désactivé
         assertTrue(page.contains("<option value=\"14\">#14 — Bûcheron Bob</option>"), "Citizens libre proposé");
         assertTrue(page.contains("<option value=\"6\" disabled>#6 — Garde  ·  déjà lié à guard</option>"),
                 "Citizens occupé non sélectionnable");
         // résumé Citizens
-        assertTrue(page.contains("1 libre(s)") && page.contains("1 déjà lié(s)"));
-        // le PNJ déjà lié (guard) ne propose pas le formulaire de liaison
-        int guardCard = page.lastIndexOf("data-copy=\"guard\"");
-        assertFalse(page.substring(guardCard).contains("Lier un PNJ Citizens existant"),
+        assertTrue(page.contains("1 libre(s)") && page.contains("1 lié(s)"));
+        // le PNJ déjà lié (guard) ne propose pas la liaison
+        int guardItem = page.lastIndexOf("<code class=\"tid npc-id\">guard</code>");
+        assertFalse(page.substring(guardItem).contains("npc.citizens.link"),
                 "pas de liaison proposée sur un PNJ déjà LINKED");
     }
 
@@ -243,6 +285,79 @@ class NpcsCatalogTest {
                 + "&type=quest.giver.set&agent=" + TestConfig.AGENT_ID
                 + "&return=/npcs&quest_id=rpgquest:woodcutters_request&npc_id=woodcutter_bob&confirm=true");
         assertEquals(303, ok.statusCode());
+        assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1);
+    }
+
+    // ---- #89 : bug de contexte de formulaire (capture) --------------------------------
+
+    // Deux PNJ SANS définition : "guide" et "woodcutter_bob". La fiche de chacun doit porter
+    // un formulaire de création contextualisé à SON id, jamais à celui d'un autre.
+    private static final String NPC_TWO_UNDEFINED = "{"
+            + "\"citizensAvailable\":true,\"total\":2,\"withDefinition\":0,\"withoutDefinition\":2,"
+            + "\"bound\":0,\"withWarnings\":2,\"definedIds\":[],\"canonicalIds\":[\"guide\",\"woodcutter_bob\"],"
+            + "\"npcs\":["
+            + "{\"id\":\"guide\",\"displayName\":null,\"logicalDefinitionPresent\":false,"
+            + "\"citizensBindingPresent\":false,\"citizensNumericId\":null,\"enabled\":false,"
+            + "\"role\":null,\"definedDialogueId\":null,\"dialogueId\":null,\"dialogueNodes\":0,\"dialogueChoices\":0,"
+            + "\"dialogueStartsQuests\":[],\"questsGiven\":[],\"questsReferenced\":[],"
+            + "\"state\":\"UNDEFINED_REFERENCE\",\"warnings\":[{\"code\":\"BINDING_NO_DEFINITION\",\"severity\":\"warning\","
+            + "\"message\":\"Le PNJ Citizens est tagué « guide » mais aucune définition logique n'existe.\"}]},"
+            + "{\"id\":\"woodcutter_bob\",\"displayName\":\"Bûcheron Bob\",\"logicalDefinitionPresent\":false,"
+            + "\"citizensBindingPresent\":false,\"citizensNumericId\":null,\"enabled\":false,"
+            + "\"role\":null,\"definedDialogueId\":null,\"dialogueId\":null,\"dialogueNodes\":0,\"dialogueChoices\":0,"
+            + "\"dialogueStartsQuests\":[],\"questsGiven\":[],\"questsReferenced\":[],"
+            + "\"state\":\"UNDEFINED_REFERENCE\",\"warnings\":[{\"code\":\"BINDING_NO_DEFINITION\",\"severity\":\"warning\","
+            + "\"message\":\"tag sans définition\"}]}"
+            + "]}";
+
+    @Test
+    void perNpcCreateFormIsContextualisedAndCannotCarryAnotherNpcId() throws Exception {
+        start();
+        runListWithSuccess(NPC_TWO_UNDEFINED);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // La fiche « guide » : formulaire de création lié à guide (id caché + npc_ctx caché),
+        // AUCUN champ éditable d'id, et aucune valeur héritée d'un autre PNJ.
+        int guideForm = page.indexOf("id=\"npc-0-guide-f-create\"");
+        int bobForm = page.indexOf("id=\"npc-1-woodcutter_bob-f-create\"");
+        assertTrue(guideForm > 0 && bobForm > 0 && guideForm < bobForm, "un formulaire de création par fiche");
+        // borne au </form> du formulaire de « guide » (le contenu propre du collapse)
+        String guideBlock = page.substring(guideForm, page.indexOf("</form>", guideForm) + 7);
+        assertTrue(guideBlock.contains("<input type=\"hidden\" name=\"npc_id\" value=\"guide\">"), "npc_id caché = guide");
+        assertTrue(guideBlock.contains("<input type=\"hidden\" name=\"npc_ctx\" value=\"guide\">"), "npc_ctx caché = guide");
+        assertFalse(guideBlock.contains("name=\"npc_id\" value=\"woodcutter_bob\""), "aucun id d'un autre PNJ");
+        assertFalse(guideBlock.contains("Bûcheron Bob"), "aucun nom d'un autre PNJ pré-rempli");
+        assertFalse(guideBlock.contains("value=\"rpgquest:woodcutter_bob\""), "aucun dialogue d'un autre PNJ");
+        // l'id n'est plus un input texte éditable dans la fiche
+        assertFalse(guideBlock.contains("name=\"npc_id\"") && guideBlock.contains("type=\"text\" name=\"npc_id\""),
+                "id non éditable dans une fiche");
+        assertTrue(page.contains("autocomplete=\"off\""), "formulaire sans autocomplétion navigateur");
+    }
+
+    @Test
+    void serverRejectsMutationWhenNpcContextMismatchesId() throws Exception {
+        start();
+        runListWithSuccess(NPC_TWO_UNDEFINED);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        // État de formulaire périmé : ouvert dans la fiche « guide » (npc_ctx=guide) mais
+        // npc_id devenu « woodcutter_bob » -> le serveur refuse.
+        HttpResponse<String> stale = post("/agents/action", "_csrf=" + token
+                + "&type=npc.definition.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&npc_ctx=guide&npc_id=woodcutter_bob&display_name=" + enc("Bûcheron Bob")
+                + "&confirm=true");
+        assertEquals(303, stale.statusCode());
+        assertTrue(stale.headers().firstValue("Location").orElse("").contains("err="), "contexte incohérent -> err");
+        assertTrue(stale.headers().firstValue("Location").orElse("").toLowerCase().contains("contexte")
+                || stale.headers().firstValue("Location").orElse("").toLowerCase().contains("coh"), "message de contexte");
+        assertEquals(0, pendingFor(TestConfig.AGENT_ID), "aucune action créée");
+
+        // Contexte cohérent -> accepté.
+        HttpResponse<String> okCtx = post("/agents/action", "_csrf=" + token
+                + "&type=npc.definition.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/npcs&npc_ctx=guide&npc_id=guide&display_name=" + enc("Guide") + "&confirm=true");
+        assertEquals(303, okCtx.statusCode());
+        assertFalse(okCtx.headers().firstValue("Location").orElse("").contains("err="));
         assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1);
     }
 

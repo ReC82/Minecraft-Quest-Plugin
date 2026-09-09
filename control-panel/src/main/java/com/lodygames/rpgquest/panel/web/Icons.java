@@ -58,6 +58,7 @@ public final class Icons {
             Map.entry("bell", "bell"),
             Map.entry("history", "clock-history"),
             Map.entry("box", "box-seam"),
+            Map.entry("refresh", "arrow-clockwise"),
             // sémantique
             Map.entry("warning", "exclamation-triangle"),
             Map.entry("error", "x-circle"),

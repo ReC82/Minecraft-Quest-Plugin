@@ -230,9 +230,16 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       `panel.js` quand l'action se résout (pas de spam). Toast d'erreur immédiat sur `&err=`.
       `aria-live`, `role`, `btn-close`.
 - [x] **Centre de notifications** : cloche `bi-bell` dans la topbar (placeholder `%NOTIF%`,
-      rendu si `DIAGNOSTICS_READ`), dropdown Bootstrap des 8 dernières actions (icône domaine,
-      libellé humain, cible, statut, heure relative, résultat court), **badge** = actions en
-      cours + échecs de moins de 24 h, pied « Voir toutes les actions » → `/actions`.
+      rendu si `DIAGNOSTICS_READ`), **panneau off-canvas Bootstrap** (`offcanvas-end`, largeur
+      ≈ 420 px desktop / 92 vw mobile — corrigé d'un dropdown trop étroit) listant les 8
+      dernières actions (icône domaine, libellé humain, cible, statut, heure relative, résultat
+      court borné à 90 caractères), **badge** = actions en cours + échecs de moins de 24 h, pied
+      fixe « Voir toutes les actions » → `/actions`.
+- [x] **Cache-busting des assets** (`web/Assets`) : `Layout` ajoute `?v=<hash8 du contenu>` à
+      `bootstrap(.bundle).min.(css|js)`, `bootstrap-icons.min.css`, `plugadmin.css`, `panel.js`
+      → un déploiement qui modifie un asset change son URL, le navigateur ne sert plus une
+      version périmée depuis son cache (le handler ignore la query string). `panel.js`
+      `showToast()` a un repli d'affichage manuel si Bootstrap JS n'est pas encore prêt.
 - [x] **Page `/actions`** (`ActionsPages`) : recherche (GET, combinable avec les filtres) +
       `nav-pills` statut (Tous / Succès / En cours / Échec — regroupe les 6 statuts techniques)
       + puces domaine (Joueurs / PNJ / Quêtes / Stories / Dialogues / Items / Serveur-Agents /

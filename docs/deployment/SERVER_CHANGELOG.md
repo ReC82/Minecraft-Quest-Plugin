@@ -1729,3 +1729,75 @@ Session du 2026-09-09 (~09:53 UTC). Branche `feat/control-panel-admin-tools` @ `
 `journalctl -u plugadmin` **0 `ERROR`**. Navigateur authentifié : `PENDING MANUAL VALIDATION`.
 
 Rapport : `docs/claude-reports/2026-09-09_0930_control-panel-ux-metier-diagnostics-89-49.md`.
+
+## 2026-09-09 - Control Panel : polish #49/#89 (titres docs en double, bouton Copier, CTA dupliqué) — AWS uniquement
+
+### Changement
+
+**Control Panel AWS uniquement. Aucun code plugin, aucun agent, aucune migration, aucun impact
+serveur Minecraft — ne pas redéployer/redémarrer VeryGames.**
+
+Correctifs visuels après validation de la nouvelle UX :
+
+- **#49 — titre en double sur les fiches `/docs`** : `DocsPages` rend déjà le titre de fiche dans
+  son propre `<h1>` ; `Markdown.render` ré-affichait le `# …` d'ouverture du corps. Nouveau
+  `Markdown.stripLeadingH1()` : retire uniquement le premier titre s'il est de niveau 1 et en
+  tête ; `##`/`###` et un éventuel second `#` plus bas sont conservés. Vérifié sur les 13 fiches.
+- **#49 — bloc de code / bouton « Copier »** : le grand rectangle sombre vide venait d'un
+  `<svg class="ic"><use href="#i-copy">` (sprite retiré à la migration Bootstrap #92) sans
+  contenu, taille intrinsèque 300×150 dans le bouton. Bouton « Copier » = texte seul, compact,
+  en tête du wrapper `.doc-cmd`. CSS : `.doc-copy` en `position:absolute` coin haut-droit,
+  `.doc-cmd pre` garde `overflow-x:auto` + gouttière droite pour ne jamais passer sous le
+  bouton ; ancienne règle de positionnement en double retirée.
+- **#89 — action « Créer la définition » affichée deux fois** dans le détail d'un PNJ (diagnostic
+  + section Actions) : règle CTA — une action déjà proposée par un « Corriger maintenant » de
+  diagnostic n'est plus répétée dans « Actions » ; la section « Actions » disparaît si elle
+  devient vide. Les formulaires masqués restent rendus (le bouton du diagnostic les ouvre).
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — release + `systemctl restart plugadmin` + check `/health`.
+Aucune autre action. Aucun changement nginx / TLS / secret / base.
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : app précédente déplacée sous `/opt/plugadmin/releases/<horodatage>`
+(rétention 5). `control-panel.db` non touché.
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local **ONLINE** ; `https://plugadmin.lodylands.com/health` **ONLINE**.
+- `/docs` `/docs/pnj-citizens` `/npcs` `/quests` `/stories` `/dialogues` anonymes → **303** vers
+  `/login`.
+- En-tête **CSP inchangé**.
+- CSS déployé : `.doc-copy{position:absolute;top:7px;right:7px;z-index:2;…}`,
+  `.doc-cmd pre{…padding:14px 72px 14px 16px;overflow-x:auto}`, ancienne règle
+  `.codeblock .doc-copy,.doc-cmd .doc-copy` **retirée**.
+- `dig.lodygames.com` et `lodylands.com` → **200** (inchangés).
+- `plugadmin.service` `active`, `NRestarts=0` ; jar déployé **byte-identique** à un build frais
+  (SHA-256 `955d5055…`).
+- Rendu **authentifié** des fiches `/docs` (titre unique, bloc code propre) et du détail PNJ
+  Guide (un seul « Créer la définition ») : `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure `/opt/plugadmin/releases/20260909-101733`).
+Aucune migration à défaire.
+
+### Exécution réelle
+
+Session du 2026-09-09 (~10:17 UTC). Branche `feat/control-panel-admin-tools` @ `65cfb9a`.
+`deploy.sh` OK (release `/opt/plugadmin/releases/20260909-101733`). `/health` ONLINE (local +
+public) ; 6 routes → **303** ; CSP inchangé ; CSS `.doc-copy`/`.doc-cmd pre` corrigés servis,
+ancienne règle absente ; `dig` / `lodylands` → 200 ; `plugadmin.service` `active` `NRestarts=0` ;
+jar byte-identique au build (`955d5055…`). Un `WARNING event=handler_error path=/login
+java.io.IOException: stream closed` observé = déconnexion client d'un `curl -I` (HEAD), bénin,
+non lié au changement. Navigateur authentifié : `PENDING MANUAL VALIDATION`.
+
+Rapport : `docs/claude-reports/2026-09-09_1005_polish-docs-titres-codeblock-cta-49-89.md`.

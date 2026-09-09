@@ -326,7 +326,9 @@ public final class Markdown {
     }
 
     public static String slug(String text) {
-        String s = text.toLowerCase(Locale.ROOT)
+        String folded = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "");
+        String s = folded.toLowerCase(Locale.ROOT)
                 .replaceAll("&[a-z0-9#]+;", "")
                 .replaceAll("[^a-z0-9]+", "-")
                 .replaceAll("(^-+|-+$)", "");

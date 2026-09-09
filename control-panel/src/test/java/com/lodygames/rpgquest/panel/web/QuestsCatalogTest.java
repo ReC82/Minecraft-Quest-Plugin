@@ -83,17 +83,32 @@ class QuestsCatalogTest {
         runListWithSuccess("quest.list", "quests", QUEST_DETAILS);
         String cat = section(get("/quests?agent=" + TestConfig.AGENT_ID).body());
 
+        // liste = accordion Bootstrap (synthèse repliée, détail au clic)
+        assertTrue(cat.contains("class=\"accordion npc-accordion\" id=\"quests-accordion\""), "accordion de quêtes");
+        assertTrue(cat.contains("accordion-item npc-item") && cat.contains("data-bs-toggle=\"collapse\""),
+                "un item repliable par quête");
+        assertTrue(cat.contains("data-bs-parent=\"#quests-accordion\""), "un seul détail ouvert à la fois");
+
         // libellé humain visible, aucune balise brute
         assertTrue(cat.contains("La chasse aux cristaux"));
         assertFalse(cat.contains("<gold>") || cat.contains("&lt;gold&gt;"), "aucune balise MiniMessage brute");
         assertTrue(cat.contains("<span style=\"color:"), "couleur MiniMessage interprétée");
-        assertTrue(cat.contains("class=\"entity-name\""), "titre dans un composant nom d'entité");
+        assertTrue(cat.contains("class=\"npc-name\""), "titre dans l'en-tête de synthèse");
+        for (String s : new String[] {">Général<", ">Objectifs<", ">Récompenses<", ">Diagnostics<"}) {
+            assertTrue(cat.contains(s), "section de détail " + s);
+        }
 
         // ids techniques conservés, dans le style « second plan » (.tid) et copiables (data-copy)
         assertTrue(cat.contains("class=\"tid\"") && cat.contains("rpgquest:crystal_hunt"), "id quête conservé");
         assertTrue(cat.contains("data-copy=\"rpgquest:crystal_hunt\""), "id quête copiable");
         assertTrue(cat.contains("hunt_spiders"), "id d'étape conservé");
         assertTrue(cat.contains("rpgquest:first_steps"), "prérequis (id) conservé");
+
+        // diagnostic de référence calculé côté panel : prérequis absent du catalogue -> aide humaine
+        assertTrue(cat.contains("<span>Prérequis inconnu</span>"), "diagnostic humanisé (titre clair)");
+        assertTrue(cat.contains("href=\"/docs/quetes-depannage#prerequis-inconnu\""), "lien vers l'ancre doc précise");
+        assertTrue(cat.contains("Code technique : <code class=\"tid\">QUEST_PREREQ_UNKNOWN</code>"),
+                "code technique en secondaire");
 
         // #76 : objectifs en français quand connu, repli prettify sinon (apostrophe échappée en HTML)
         assertTrue(cat.contains("Tuer Araignée (x5)"), "objectif FR : SPIDER -> Araignée");

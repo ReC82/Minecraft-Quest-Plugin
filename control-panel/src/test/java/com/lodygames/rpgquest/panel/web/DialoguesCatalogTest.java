@@ -82,8 +82,14 @@ class DialoguesCatalogTest {
         runListWithSuccess(DIALOGUE_DETAILS);
         String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
 
+        // liste = accordion Bootstrap (synthèse repliée, détail au clic)
+        assertTrue(page.contains("class=\"accordion npc-accordion\" id=\"dialogues-accordion\""), "accordion de dialogues");
+        assertTrue(page.contains("data-bs-parent=\"#dialogues-accordion\""), "un seul détail ouvert à la fois");
         assertTrue(page.contains("data-copy=\"rpgquest:guard\""), "id copiable");
         assertTrue(page.contains("Nœud de départ"));
+        // le graphe n'est PAS ouvert par défaut : <details> sans attribut open
+        assertTrue(page.contains("<details class=\"dlg-graph-wrap\">"), "graphe replié par défaut");
+        assertFalse(page.contains("<details open class=\"dlg-graph-wrap\""), "graphe jamais ouvert d'office");
         // MiniMessage rendu dans le texte affiché du nœud (le champ d'édition, lui, porte la source brute).
         assertTrue(page.contains("<span style=\"color:"), "MiniMessage interprété");
         assertFalse(page.contains("dlg-text\">&lt;white&gt;Bonjour."), "texte affiché du nœud jamais en balises brutes");
@@ -94,14 +100,20 @@ class DialoguesCatalogTest {
         // action typée START_QUEST rendue en libellé lisible (titre humain si quest.list chargé, sinon prettify)
         assertTrue(page.contains("démarre") || page.contains("START_QUEST"));
         assertTrue(page.contains("→ accepted"), "transition next affichée");
-        // warning info
-        assertTrue(page.contains("NODE_UNREACHABLE"));
-        // bannières : fichier rejeté + définition pointant vers dialogue absent
+        // diagnostics humanisés (DiagnosticHelp) : titre clair + code technique en secondaire + lien doc
+        assertTrue(page.contains("Code technique : <code class=\"tid\">NODE_UNREACHABLE</code>"), "code discret");
+        assertTrue(page.contains("<span>Nœud jamais atteint</span>"), "message humain, pas le brut du moteur");
+        // fichier rejeté + définition PNJ pointant vers un dialogue absent : composant diagnostic, pas une bannière brute
         assertTrue(page.contains("broken.yml"));
+        assertTrue(page.contains("<span>Fichier de dialogue rejeté</span>"), "load issue humanisé");
+        assertTrue(page.contains("href=\"/docs/dialogues-depannage#fichier-de-dialogue-rejete\""), "ancre doc précise");
         assertTrue(page.contains("rpgquest:ghost"));
-        // PNJ lié
-        assertTrue(page.contains("PNJ liés"));
+        assertTrue(page.contains("<span>Dialogue déclaré mais absent</span>"), "déclaré-manquant humanisé");
+        // PNJ utilisant le dialogue
+        assertTrue(page.contains(">PNJ<"), "section PNJ du détail");
+        assertTrue(page.contains("Utilisé par"), "PNJ consommateurs listés");
         assertTrue(page.contains("data-copy=\"guard\""));
+        assertFalse(page.contains("class=\"banner err\""), "plus de bannière rouge brute pour les anomalies");
     }
 
     @Test

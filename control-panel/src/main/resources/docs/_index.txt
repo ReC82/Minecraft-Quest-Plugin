@@ -12,3 +12,7 @@ wild.md
 verygames-deploiement.md
 aws-control-panel-deploiement.md
 rpgquest-commandes.md
+pnj-depannage.md
+dialogues-depannage.md
+quetes-depannage.md
+stories-depannage.md

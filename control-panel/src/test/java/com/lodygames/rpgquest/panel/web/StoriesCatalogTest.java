@@ -154,6 +154,66 @@ class StoriesCatalogTest {
         assertEquals(200, rr.statusCode());
     }
 
+    /** Charge un quest.list minimal (utilisé pour vérifier les références de chaîne des stories). */
+    private void runQuestListWithSuccess(String questsJson) throws Exception {
+        String token = csrf(get("/stories?agent=" + TestConfig.AGENT_ID).body());
+        assertEquals(303, post("/agents/action",
+                "_csrf=" + token + "&type=quest.list&agent=" + TestConfig.AGENT_ID + "&return=/stories").statusCode());
+        HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(), HttpResponse.BodyHandlers.ofString());
+        Matcher m = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"[^}]*\"type\"\\s*:\\s*\"quest.list\"")
+                .matcher(poll.body());
+        Matcher fallback = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"").matcher(poll.body());
+        String actionId = m.find() ? m.group(1) : (fallback.find() ? fallback.group(1) : null);
+        assertTrue(actionId != null, "action quest.list non relevée");
+        String result = "{\"action_id\":\"" + actionId + "\",\"status\":\"SUCCESS\",\"value\":\"1\","
+                + "\"message\":\"quests\",\"details\":{\"quests\":" + questsJson + "}}";
+        client.send(HttpRequest.newBuilder(uri("/agent/v1/actions/" + actionId + "/result"))
+                .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
+                .header("X-Agent-Id", TestConfig.AGENT_ID)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(result)).build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void listIsACompactAccordionWithHiddenDetailAndCompactToolbar() throws Exception {
+        start();
+        runStoryListWithSuccess(STORY_DETAILS);
+        String page = get("/stories?agent=" + TestConfig.AGENT_ID).body();
+
+        // toolbar compacte (boutons btn-sm) + recherche input-group Bootstrap
+        assertTrue(page.contains("class=\"npc-catbar\""), "toolbar compacte, pas une grande carte vide");
+        assertTrue(page.contains("btn btn-sm btn-outline-primary") && page.contains(">Stories</button>"));
+        assertTrue(page.contains("<div class=\"input-group npc-search\">"), "recherche input-group");
+        assertTrue(page.contains("data-filter-input=\"stories\""));
+
+        // liste = accordion, détail replié par défaut
+        assertTrue(page.contains("class=\"accordion npc-accordion\" id=\"stories-accordion\""));
+        assertTrue(page.contains("accordion-button collapsed npc-head"), "en-tête replié par défaut");
+        assertTrue(page.contains("accordion-collapse collapse\"") && !page.contains("accordion-collapse collapse show"),
+                "aucun détail ouvert d'office");
+        for (String s : new String[] {">Identité<", ">Chaîne de quêtes<", ">Diagnostics<"}) {
+            assertTrue(page.contains(s), "section " + s);
+        }
+        // sans quest.list chargé : la chaîne est annoncée « non vérifiée », pas de fausse alerte
+        assertTrue(page.contains("Chaîne non vérifiée"), page.substring(page.indexOf(">Diagnostics<")));
+    }
+
+    @Test
+    void unknownQuestInAChainRaisesAHumanDiagnosticWithDocAnchor() throws Exception {
+        start();
+        runStoryListWithSuccess(STORY_DETAILS);
+        // Catalogue de quêtes qui ne contient AUCUNE des quêtes des stries de test.
+        runQuestListWithSuccess("[{\"id\":\"rpgquest:autre_quete\",\"title\":\"Autre\",\"steps\":[],\"rewards\":[]}]");
+
+        String page = get("/stories?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("<span>Quête inconnue dans la chaîne</span>"), "diagnostic humanisé");
+        assertTrue(page.contains("href=\"/docs/stories-depannage#quete-inconnue-dans-la-chaine\""), "ancre doc précise");
+        assertTrue(page.contains("Code technique : <code class=\"tid\">STORY_QUEST_UNKNOWN</code>"), "code en secondaire");
+        assertTrue(page.contains("text-bg-warning\">à vérifier</span>"), "badge de synthèse dans l'en-tête");
+    }
+
     private int pendingCount() throws Exception {
         Map<String, Object> body = Json.parseObject(get("/agents/actions.json?agent=" + TestConfig.AGENT_ID).body());
         return ((Number) body.get("pending")).intValue();

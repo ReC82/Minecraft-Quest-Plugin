@@ -691,3 +691,34 @@ a.home-tile:hover .home-tile-cta{opacity:1}
 .npc-form-collapse .actform,.npc-formcard .actform{margin:0;padding:0;border:0;background:transparent;box-shadow:none}
 .npc-form-collapse .actform label,.npc-formcard .actform label{margin-top:10px}
 .npc-form-collapse .actform .btn{margin-top:12px}
+
+/* ================================================================================
+   #89 / #49 — Composant diagnostic (aide humaine : problème -> conséquence -> action -> doc)
+   Réutilisé sur PNJ, Dialogues, Quêtes, Stories.
+   ================================================================================ */
+.pa-diag{margin:0 0 10px;padding:12px 14px}
+.pa-diag .pa-diag-h{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px;margin-bottom:5px}
+.pa-diag .pa-diag-h .bi{font-size:15px;flex:none}
+.pa-diag p{margin:3px 0;font-size:12.75px;line-height:1.5}
+.pa-diag .pa-diag-what{color:var(--txt)}
+.pa-diag .pa-diag-why,.pa-diag .pa-diag-do{color:var(--txt-2)}
+.pa-diag .pa-diag-btns{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0 4px}
+.pa-diag .pa-diag-btns .btn .bi{font-size:12px;vertical-align:-.1em;margin-right:3px}
+.pa-diag .pa-diag-code{font-size:11px;color:var(--txt-faint);margin-top:6px}
+.pa-diag-info{--bs-alert-border-color:#bfe1ec}
+.pa-diag-warning{--bs-alert-border-color:#eed9b0}
+.pa-diag-error{--bs-alert-border-color:#f0bcbc}
+
+/* Le pattern accordion/détail (#89) est partagé : les classes npc-* servent aussi
+   à Dialogues / Quêtes / Stories (voir renderXxxAccordionItem). */
+.npc-content .btn,.npc-actions .btn{white-space:nowrap}
+.npc-detail .obj-list,.npc-detail .reward-list,.npc-detail .step-list{margin:2px 0 4px;padding-left:20px;font-size:13px;line-height:1.6}
+.npc-detail .obj-list li,.npc-detail .reward-list li,.npc-detail .step-list li{margin:2px 0}
+.npc-detail .step-list .step-n{display:inline-block;min-width:1.4em;font-weight:700;color:var(--txt-faint)}
+.npc-detail .dlg-graph-wrap{margin:2px 0 0}
+.npc-detail .dlg-graph-wrap>summary{font-size:12.5px;color:var(--primary);cursor:pointer}
+.npc-detail .dlg-graph{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+/* Diagnostics globaux d'une page (fichiers rejetés, dialogues déclarés absents). */
+.dlg-global-diag{margin:0 0 14px}
+/* Lignes de tableau masquées par le filtre progressif (recherche /players). */
+tr[hidden]{display:none}

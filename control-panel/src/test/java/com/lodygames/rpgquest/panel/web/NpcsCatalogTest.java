@@ -107,9 +107,21 @@ class NpcsCatalogTest {
         assertTrue(page.indexOf("data-copy=\"woodcutter_bob\"") < page.indexOf("data-copy=\"guard\""),
                 "PNJ avec avertissement listé avant le PNJ sain");
 
-        // Diagnostic dédié pour woodcutter_bob (info), section, code discret
-        assertTrue(page.contains("alert alert-info npc-diag"), "diagnostic dans une alerte différenciée");
-        assertTrue(page.contains("ID diagnostic : <code class=\"tid\">NOT_LINKED</code>"), "code technique discret");
+        // Diagnostic dédié pour woodcutter_bob (info) : composant DiagnosticHelp humanisé
+        assertTrue(page.contains("alert alert-info pa-diag pa-diag-info"), "alerte Bootstrap différenciée (INFO)");
+        assertTrue(page.contains("<span>PNJ pas encore présent en jeu</span>"), "titre humain, pas le message brut du moteur");
+        assertTrue(page.contains("<strong>Conséquence :</strong>") && page.contains("<strong>À faire :</strong>"),
+                "conséquence + action affichées");
+        assertTrue(page.contains("href=\"/docs/pnj-depannage#pnj-pas-encore-present-en-jeu\""),
+                "lien vers l'ancre précise de la doc");
+        assertTrue(page.contains("Comment corriger ?</a>"), "bouton d'aide contextuelle");
+        assertTrue(page.contains("Code technique : <code class=\"tid\">NOT_LINKED</code>"), "code technique en secondaire");
+        // terminologie interdite absente du message principal (« tagué », « binding »…)
+        int diagAt = page.indexOf("pa-diag pa-diag-info");
+        String diagBlock = page.substring(diagAt, page.indexOf("</div>", page.indexOf("pa-diag-code", diagAt)));
+        for (String banned : new String[] {"tagué", "binding", "giver", "namespaced"}) {
+            assertFalse(diagBlock.contains(banned), "terme technique interdit dans l'UX : " + banned);
+        }
         assertTrue(page.contains("npc-diag-ok"), "« Aucune anomalie » pour le PNJ sain (guard)");
 
         // Actions = boutons qui déplient un formulaire (masqué par défaut)

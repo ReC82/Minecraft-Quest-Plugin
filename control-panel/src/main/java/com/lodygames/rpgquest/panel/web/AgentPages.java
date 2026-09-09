@@ -61,21 +61,27 @@ public final class AgentPages {
 
         // --- Roster ---
         sb.append("<h2>Joueurs connectés</h2>");
-        sb.append(actionButton(session, agentId, "player.list", "/players", player,
-                "Rafraîchir la liste", ""));
+        sb.append(listCatbar("Relevé", compactRefresh(session, agentId, "player.list", "Joueurs connectés",
+                "btn-outline-primary", "/players")));
         Optional<Map<String, Object>> roster = latestDetails(agentId, "player.list");
         if (roster.isEmpty()) {
-            sb.append(Ui.empty("Aucune liste chargée — cliquer sur « Rafraîchir la liste »."));
+            sb.append(Ui.empty("Aucune liste chargée — cliquer sur « Joueurs connectés »."));
         } else {
             List<Object> rows = asList(roster.get().get("players"));
             if (rows.isEmpty()) {
                 sb.append(Ui.empty("Aucun joueur connecté au dernier relevé."));
             } else {
+                if (rows.size() > 6) {
+                    sb.append(listControls("players", "Rechercher un joueur…", ""));
+                }
+                sb.append("<p class=\"count-note\" data-count-note data-noun=\"joueur\">" + rows.size() + " joueur(s)</p>");
                 sb.append(Ui.tableOpen("Nom", "UUID", "Monde", "Position", ""));
                 for (Object o : rows) {
                     Map<String, Object> r = asMap(o);
                     String name = str(r.get("name"));
-                    sb.append("<tr><td><strong>").append(Http.esc(name)).append("</strong></td>")
+                    sb.append("<tr data-filter-item=\"players\" data-filter-text=\"").append(Http.esc(name + " "
+                                    + str(r.get("world")))).append("\">")
+                            .append("<td><strong>").append(Http.esc(name)).append("</strong></td>")
                             .append("<td>").append(Ui.id(shorten(str(r.get("uuid")), 13), str(r.get("uuid")))).append("</td>")
                             .append("<td>").append(Http.esc(str(r.get("world")))).append("</td>")
                             .append("<td class=\"muted\">").append(Http.esc(str(r.get("x")) + " " + str(r.get("y")) + " " + str(r.get("z"))))
@@ -216,17 +222,29 @@ public final class AgentPages {
         sb.append(agentPicker(agentId, "/quests", player));
 
         sb.append("<h2>Catalogue</h2>");
-        sb.append(actionButton(session, agentId, "quest.list", "/quests", player, "Rafraîchir le catalogue", ""));
+        String questBar = compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-primary", "/quests");
+        if (perms.can(session.role(), Permission.NPC_READ)) {
+            questBar += compactRefresh(session, agentId, "npc.list", "PNJ", "btn-outline-secondary", "/quests");
+        }
+        sb.append(listCatbar("Catalogue", questBar));
         List<Object> catalog = latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of());
         Map<String, String> questTitles = titleIndex(catalog, "id", "title");
+        List<String> questIdList = catalog.stream().map(o -> str(asMap(o).get("id"))).toList();
+        java.util.Set<String> knownQuestKeys = idKeySet(questIdList);
+        java.util.Set<String> knownNpcKeys = npcKeySet(agentId);
         if (catalog.isEmpty()) {
             sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Rafraîchir le catalogue »."));
         } else {
-            sb.append(Ui.searchToolbar("quests", "Rechercher une quête\u2026", ""));
+            sb.append(listControls("quests", "Rechercher une quête\u2026",
+                    filterBtn("", "Toutes", true) + filterBtn("ok", "Sans alerte", false)
+                            + filterBtn("warn", "À vérifier", false)));
             sb.append("<p class=\"count-note\" data-count-note data-noun=\"qu\u00eate\">" + catalog.size() + " qu\u00eate(s)</p>");
+            sb.append("<div class=\"accordion npc-accordion\" id=\"quests-accordion\">");
+            int qi = 0;
             for (Object o : catalog) {
-                sb.append(renderQuestCard(asMap(o), questTitles, canEditQuests));
+                sb.append(renderQuestAccordionItem(asMap(o), qi++, questTitles, knownQuestKeys, knownNpcKeys, canEditQuests));
             }
+            sb.append("</div>");
         }
 
         List<String> questIds = catalog.stream().map(o -> str(asMap(o).get("id"))).toList();
@@ -243,50 +261,116 @@ public final class AgentPages {
         return sb.toString();
     }
 
-    /** Carte de quête lisible : titre humain d'abord, id technique discret, objectifs/récompenses en clair. */
-    private String renderQuestCard(Map<String, Object> qd, Map<String, String> questTitles, boolean canEdit) {
-        String ft = Http.esc(str(qd.get("id")) + " " + com.lodygames.rpgquest.panel.web.MiniText.plain(str(qd.get("title")))
-                + " " + str(qd.get("category")) + " " + str(qd.get("giverId")) + " " + str(qd.get("giverName")));
-        StringBuilder sb = new StringBuilder("<article class=\"entity-card\" data-filter-item=\"quests\" data-filter-text=\"" + ft + "\">");
-        sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
-                .append(MiniText.html(str(qd.get("title")))).append("</h3><div class=\"entity-meta\">");
-        if (canEdit) {
-            String slug = editSlug(str(qd.get("id")));
-            if (!slug.isEmpty()) {
-                sb.append("<a class=\"doc-cm-link\" href=\"/quests/edit/").append(Http.esc(slug)).append("\">")
-                        .append(Icons.icon("edit")).append("Modifier</a>");
+    /**
+     * Une ligne d'accordion de quête : en-tête = synthèse (titre humain, id technique, badges), corps
+     * = sections repliées (Général / Donneur / Prérequis / Objectifs / Récompenses / Diagnostics /
+     * Actions). Les diagnostics de référence (prérequis inconnu, donneur sans fiche) sont calculés
+     * ici, côté panel, et rendus par {@link DiagnosticHelp}.
+     */
+    private String renderQuestAccordionItem(Map<String, Object> qd, int idx, Map<String, String> questTitles,
+                                            java.util.Set<String> knownQuestKeys, java.util.Set<String> knownNpcKeys,
+                                            boolean canEdit) {
+        String id = str(qd.get("id"));
+        String title = str(qd.get("title"));
+        String category = str(qd.get("category"));
+        String giverId = str(qd.get("giverId"));
+        String giverName = str(qd.get("giverName"));
+        List<Object> prereq = asList(qd.get("prerequisites"));
+        List<Object> steps = asList(qd.get("steps"));
+        List<Object> rewardDetails = asList(qd.get("rewardDetails"));
+        List<Object> rewards = asList(qd.get("rewards"));
+        String slug = "q-" + idx + "-" + id.replaceAll("[^a-z0-9_-]", "-");
+        String human = MiniText.plain(title);
+
+        // ---- diagnostics de référence calculés côté panel : {code, détail} ----
+        List<String[]> diags = new ArrayList<>();
+        for (Object p : prereq) {
+            String pid = str(p);
+            if (!known(knownQuestKeys, pid)) {
+                diags.add(new String[] {"QUEST_PREREQ_UNKNOWN", pid});
             }
         }
-        String category = str(qd.get("category"));
+        if (!giverId.isEmpty() && knownNpcKeys != null
+                && !knownNpcKeys.contains(giverId.toLowerCase(java.util.Locale.ROOT))) {
+            diags.add(new String[] {"QUEST_GIVER_UNKNOWN", giverId});
+        }
+        boolean anyWarn = !diags.isEmpty();
+
+        String ftext = Http.esc(id + " " + human + " " + category + " " + giverId + " " + giverName);
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"quests\" data-filter-cat=\"")
+                .append(anyWarn ? "warn" : "ok").append("\" data-filter-text=\"").append(ftext).append("\">");
+        sb.append("<h3 class=\"accordion-header\">");
+        sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
+                + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")
+                .append(slug).append("\">");
+        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(MiniText.html(title))
+                .append("</span><code class=\"tid npc-id\">").append(Http.esc(id)).append("</code></span>");
+        sb.append("<span class=\"npc-head-badges\">");
         if (!category.isEmpty()) {
-            sb.append(Ui.badge(MiniText.prettifyId(category)));
+            sb.append("<span class=\"badge text-bg-secondary\">")
+                    .append(Http.esc(MiniText.prettifyId(category))).append("</span>");
+        }
+        if (!giverId.isEmpty()) {
+            sb.append("<span class=\"badge text-bg-light text-dark\">Donneur</span>");
+        }
+        sb.append("<span class=\"badge text-bg-secondary\">").append(steps.size())
+                .append(steps.size() > 1 ? " objectifs" : " objectif").append("</span>");
+        int rc = !rewardDetails.isEmpty() ? rewardDetails.size() : rewards.size();
+        if (rc > 0) {
+            sb.append("<span class=\"badge text-bg-secondary\">").append(rc)
+                    .append(rc > 1 ? " récompenses" : " récompense").append("</span>");
         }
         if (Boolean.TRUE.equals(qd.get("repeatable"))) {
-            sb.append(Ui.badge("répétable"));
+            sb.append("<span class=\"badge text-bg-secondary\">répétable</span>");
         }
-        sb.append(Ui.id(str(qd.get("id")))).append("</div></div>");
+        sb.append(anyWarn ? "<span class=\"badge text-bg-warning\">à vérifier</span>"
+                : "<span class=\"badge text-bg-success\">OK</span>");
+        sb.append("</span></button></h3>");
 
-        // #75 : PNJ donneur, si la quête le déclare (giver: optionnel côté YAML).
-        String giverId = str(qd.get("giverId"));
-        if (!giverId.isEmpty()) {
-            String giverName = str(qd.get("giverName"));
+        sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" ")
+                .append("data-bs-parent=\"#quests-accordion\"><div class=\"accordion-body npc-detail\">");
+
+        // ---- GÉNÉRAL ----
+        sb.append(detailSection("book", "Général"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Titre", MiniText.html(title));
+        dlRow(sb, "ID technique", Ui.id(id));
+        if (!category.isEmpty()) {
+            dlRow(sb, "Catégorie", Http.esc(MiniText.prettifyId(category))
+                    + " <code class=\"tid\">" + Http.esc(category) + "</code>");
+        }
+        dlRow(sb, "Répétable", Boolean.TRUE.equals(qd.get("repeatable")) ? "oui" : "non");
+        sb.append("</dl>");
+
+        // ---- DONNEUR ----
+        sb.append(detailSection("npc", "Donneur"));
+        if (giverId.isEmpty()) {
+            sb.append("<p class=\"muted npc-content-empty\">Aucun donneur de quête déclaré.</p>");
+        } else {
             String label = !giverName.isEmpty() && !"null".equals(giverName)
-                    ? MiniText.html(giverName)
-                    : Http.esc(MiniText.prettifyId(giverId));
-            sb.append(Ui.metaLine("Donneur", label + " " + Ui.id(giverId)));
+                    ? MiniText.html(giverName) : Http.esc(MiniText.prettifyId(giverId));
+            sb.append("<dl class=\"npc-dl\">");
+            dlRow(sb, "PNJ", label + " " + Ui.id(giverId));
+            sb.append("</dl>");
         }
 
-        List<Object> prereq = asList(qd.get("prerequisites"));
+        // ---- PRÉREQUIS ----
         if (!prereq.isEmpty()) {
-            sb.append(Ui.metaLine("Prérequis", referencedQuests(prereq, questTitles)));
+            sb.append(detailSection("history", "Prérequis"));
+            sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Quêtes requises</span> ")
+                    .append(referencedQuests(prereq, questTitles)).append("</p>");
         }
-        List<Object> steps = asList(qd.get("steps"));
-        if (!steps.isEmpty()) {
+
+        // ---- OBJECTIFS ----
+        sb.append(detailSection("target", "Objectifs"));
+        if (steps.isEmpty()) {
+            sb.append("<p class=\"muted npc-content-empty\">Aucun objectif.</p>");
+        } else {
             sb.append("<ul class=\"obj-list\">");
-            for (Object s : steps) {
-                Map<String, Object> st = asMap(s);
+            for (Object stObj : steps) {
+                Map<String, Object> st = asMap(stObj);
                 String stepId = str(st.get("id"));
-                // #78 : objectifs structurés en priorité — plus aucune regex sur une phrase métier.
                 List<Object> structured = asList(st.get("objectiveDetails"));
                 if (!structured.isEmpty()) {
                     for (Object od : structured) {
@@ -298,7 +382,6 @@ public final class AgentPages {
                         sb.append(Ui.id(stepId)).append("</li>");
                     }
                 } else {
-                    // Repli legacy (#76) : chaînes déjà formatées, noms FR par balayage de jetons.
                     String objectives = MinecraftNames.humanizeTokens(join(asList(st.get("objectives"))));
                     sb.append("<li><span class=\"obj-text\">").append(Http.esc(objectives)).append("</span>")
                             .append(Ui.id(stepId)).append("</li>");
@@ -306,11 +389,10 @@ public final class AgentPages {
             }
             sb.append("</ul>");
         }
-        // #78 : récompenses structurées en priorité ; repli sur les chaînes legacy (#77) sinon.
-        List<Object> rewardDetails = asList(qd.get("rewardDetails"));
-        List<Object> rewards = asList(qd.get("rewards"));
+
+        // ---- RÉCOMPENSES ----
         if (!rewardDetails.isEmpty() || !rewards.isEmpty()) {
-            sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Récompenses</span></p>");
+            sb.append(detailSection("gift", "Récompenses"));
             sb.append("<ul class=\"reward-list\">");
             List<Object> source = !rewardDetails.isEmpty() ? rewardDetails : rewards;
             boolean structured = !rewardDetails.isEmpty();
@@ -324,7 +406,32 @@ public final class AgentPages {
             }
             sb.append("</ul>");
         }
-        return sb.append("</article>").toString();
+
+        // ---- DIAGNOSTICS ----
+        sb.append(detailSection("warning", "Diagnostics"));
+        if (diags.isEmpty()) {
+            sb.append("<p class=\"muted npc-diag-ok\">").append(Icons.icon("check"))
+                    .append("Aucune anomalie de référence détectée.</p>");
+        } else {
+            for (String[] dd : diags) {
+                sb.append(DiagnosticHelp.render(dd[0], "warning", "", human, dd[1], ""));
+            }
+        }
+
+        // ---- ACTIONS ----
+        if (canEdit) {
+            String eslug = editSlug(id);
+            if (!eslug.isEmpty()) {
+                sb.append(detailSection("target", "Actions"));
+                sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">");
+                sb.append("<a class=\"btn btn-sm btn-outline-primary\" href=\"/quests/edit/").append(Http.esc(eslug))
+                        .append("\">").append(Icons.icon("edit")).append("Modifier la quête</a>");
+                sb.append("</div>");
+            }
+        }
+
+        sb.append("</div></div></div>");
+        return sb.toString();
     }
 
     private String renderQuestPlayerRow(Map<String, Object> r) {
@@ -392,20 +499,30 @@ public final class AgentPages {
         sb.append(agentPicker(agentId, "/stories", player));
 
         sb.append("<h2>Catalogue</h2>");
-        sb.append(actionButton(session, agentId, "story.list", "/stories", player, "Rafraîchir le catalogue", ""));
+        String storyBar = compactRefresh(session, agentId, "story.list", "Stories", "btn-outline-primary", "/stories")
+                + compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-secondary", "/stories");
+        sb.append(listCatbar("Catalogue", storyBar));
         List<Object> catalog = latestDetails(agentId, "story.list").map(d -> asList(d.get("stories"))).orElse(List.of());
         // Titres humains des quêtes composant les stories, si un quest.list a déjà été chargé (données
         // locales du panel — aucun appel agent supplémentaire).
+        List<String> knownQuestIds = latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of())
+                .stream().map(o -> str(asMap(o).get("id"))).toList();
         Map<String, String> questTitles = titleIndex(
                 latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of()), "id", "title");
+        java.util.Set<String> storyQuestKeys = knownQuestIds.isEmpty() ? null : idKeySet(knownQuestIds);
         if (catalog.isEmpty()) {
-            sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Rafraîchir le catalogue »."));
+            sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Stories »."));
         } else {
-            sb.append(Ui.searchToolbar("stories", "Rechercher une story\u2026", ""));
+            sb.append(listControls("stories", "Rechercher une story\u2026",
+                    filterBtn("", "Toutes", true) + filterBtn("ok", "Sans alerte", false)
+                            + filterBtn("warn", "À vérifier", false)));
             sb.append("<p class=\"count-note\" data-count-note data-noun=\"story\">" + catalog.size() + " story(s)</p>");
+            sb.append("<div class=\"accordion npc-accordion\" id=\"stories-accordion\">");
+            int si = 0;
             for (Object o : catalog) {
-                sb.append(renderStoryCard(asMap(o), questTitles, canEditStories));
+                sb.append(renderStoryAccordionItem(asMap(o), si++, questTitles, storyQuestKeys, canEditStories));
             }
+            sb.append("</div>");
         }
 
         List<String> storyIds = catalog.stream().map(o -> str(asMap(o).get("id"))).toList();
@@ -421,37 +538,109 @@ public final class AgentPages {
         return sb.toString();
     }
 
-    /** Carte de story lisible : titre humain, id discret, nombre d'étapes, quêtes ordonnées. */
-    private String renderStoryCard(Map<String, Object> sd, Map<String, String> questTitles, boolean canEdit) {
+    /**
+     * Une ligne d'accordion de story : en-tête = synthèse (titre humain, id technique, nombre
+     * d'étapes, état), corps = sections repliées (Identité / Chaîne de quêtes / Diagnostics /
+     * Actions). Le diagnostic « quête inconnue dans la chaîne » est calculé côté panel dès qu'un
+     * {@code quest.list} a été chargé.
+     */
+    private String renderStoryAccordionItem(Map<String, Object> sd, int idx, Map<String, String> questTitles,
+                                            java.util.Set<String> storyQuestKeys, boolean canEdit) {
+        String id = str(sd.get("id"));
+        String title = str(sd.get("title"));
         List<Object> steps = asList(sd.get("stepQuestIds"));
-        String ft = Http.esc(str(sd.get("id")) + " " + MiniText.plain(str(sd.get("title"))));
-        StringBuilder sb = new StringBuilder("<article class=\"entity-card\" data-filter-item=\"stories\" data-filter-text=\""
-                + ft + "\">");
-        sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
-                .append(MiniText.html(str(sd.get("title")))).append("</h3><div class=\"entity-meta\">");
-        if (canEdit) {
-            String slug = editSlug(str(sd.get("id")));
-            if (!slug.isEmpty()) {
-                sb.append("<a class=\"doc-cm-link\" href=\"/stories/edit/").append(Http.esc(slug)).append("\">")
-                        .append(Icons.icon("edit")).append("Modifier</a>");
+        String slug = "s-" + idx + "-" + id.replaceAll("[^a-z0-9_-]", "-");
+        String human = MiniText.plain(title);
+
+        List<String> unknownSteps = new ArrayList<>();
+        if (storyQuestKeys != null) {
+            for (Object qid : steps) {
+                String sid = str(qid);
+                if (!known(storyQuestKeys, sid)) {
+                    unknownSteps.add(sid);
+                }
             }
         }
-        sb.append(Ui.badge(steps.size() + (steps.size() > 1 ? " étapes" : " étape")))
-                .append(Ui.id(str(sd.get("id")))).append("</div></div>");
-        if (!steps.isEmpty()) {
+        boolean anyWarn = !unknownSteps.isEmpty();
+
+        String ftext = Http.esc(id + " " + human);
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"stories\" data-filter-cat=\"")
+                .append(anyWarn ? "warn" : "ok").append("\" data-filter-text=\"").append(ftext).append("\">");
+        sb.append("<h3 class=\"accordion-header\">");
+        sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
+                + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")
+                .append(slug).append("\">");
+        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(MiniText.html(title))
+                .append("</span><code class=\"tid npc-id\">").append(Http.esc(id)).append("</code></span>");
+        sb.append("<span class=\"npc-head-badges\">");
+        sb.append("<span class=\"badge text-bg-secondary\">").append(steps.size())
+                .append(steps.size() > 1 ? " quêtes" : " quête").append("</span>");
+        sb.append(anyWarn ? "<span class=\"badge text-bg-warning\">à vérifier</span>"
+                : "<span class=\"badge text-bg-success\">OK</span>");
+        sb.append("</span></button></h3>");
+
+        sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" ")
+                .append("data-bs-parent=\"#stories-accordion\"><div class=\"accordion-body npc-detail\">");
+
+        // ---- IDENTITÉ ----
+        sb.append(detailSection("book", "Identité"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Titre", MiniText.html(title));
+        dlRow(sb, "ID technique", Ui.id(id));
+        dlRow(sb, "Étapes", String.valueOf(steps.size()));
+        sb.append("</dl>");
+
+        // ---- CHAÎNE DE QUÊTES ----
+        sb.append(detailSection("target", "Chaîne de quêtes"));
+        if (steps.isEmpty()) {
+            sb.append("<p class=\"muted npc-content-empty\">Aucune quête dans la chaîne.</p>");
+        } else {
             sb.append("<ol class=\"step-list\">");
             int n = 1;
             for (Object qid : steps) {
-                String id = str(qid);
-                String title = questTitles.get(id);
+                String qidStr = str(qid);
+                String qtitle = questTitles.get(qidStr);
+                boolean unknown = unknownSteps.contains(qidStr);
                 sb.append("<li><span class=\"step-n\">").append(n++).append("</span>")
                         .append("<span class=\"obj-text\">")
-                        .append(title != null ? MiniText.html(title) : Http.esc(MiniText.prettifyId(id)))
-                        .append("</span>").append(Ui.id(id)).append("</li>");
+                        .append(qtitle != null ? MiniText.html(qtitle) : Http.esc(MiniText.prettifyId(qidStr)))
+                        .append("</span>").append(Ui.id(qidStr));
+                if (unknown) {
+                    sb.append(" <span class=\"badge text-bg-warning\">inconnue</span>");
+                }
+                sb.append("</li>");
             }
             sb.append("</ol>");
         }
-        return sb.append("</article>").toString();
+
+        // ---- DIAGNOSTICS ----
+        sb.append(detailSection("warning", "Diagnostics"));
+        if (!anyWarn) {
+            sb.append("<p class=\"muted npc-diag-ok\">").append(Icons.icon("check"))
+                    .append(storyQuestKeys == null
+                            ? "Chaîne non vérifiée (charger le catalogue de quêtes pour contrôler les références)."
+                            : "Aucune anomalie de référence détectée.").append("</p>");
+        } else {
+            for (String sid : unknownSteps) {
+                sb.append(DiagnosticHelp.render("STORY_QUEST_UNKNOWN", "warning", "", human, sid, ""));
+            }
+        }
+
+        // ---- ACTIONS ----
+        if (canEdit) {
+            String eslug = editSlug(id);
+            if (!eslug.isEmpty()) {
+                sb.append(detailSection("target", "Actions"));
+                sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">");
+                sb.append("<a class=\"btn btn-sm btn-outline-primary\" href=\"/stories/edit/").append(Http.esc(eslug))
+                        .append("\">").append(Icons.icon("edit")).append("Modifier la story</a>");
+                sb.append("</div>");
+            }
+        }
+
+        sb.append("</div></div></div>");
+        return sb.toString();
     }
 
     private String renderStoryPlayerRow(Map<String, Object> r) {
@@ -607,13 +796,92 @@ public final class AgentPages {
 
     /** Petit formulaire « rafraîchir » (bouton Bootstrap compact, plus de grande carte vide). */
     private String compactRefresh(Session session, String agentId, String type, String label, String btnClass) {
+        return compactRefresh(session, agentId, type, label, btnClass, "/npcs");
+    }
+
+    /** Idem, en précisant la page de retour (toolbars compactes de /quests, /stories, /dialogues…). */
+    private String compactRefresh(Session session, String agentId, String type, String label, String btnClass,
+                                  String returnPath) {
         return "<form method=\"post\" action=\"/agents/action\" class=\"d-inline\">"
                 + "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">"
                 + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
                 + "<input type=\"hidden\" name=\"type\" value=\"" + Http.esc(type) + "\">"
-                + "<input type=\"hidden\" name=\"return\" value=\"/npcs\">"
+                + "<input type=\"hidden\" name=\"return\" value=\"" + Http.esc(returnPath) + "\">"
                 + "<button class=\"btn btn-sm " + btnClass + "\" type=\"submit\">"
                 + Icons.icon("refresh") + Http.esc(label) + "</button></form>";
+    }
+
+    /** Toolbar « catalogue » compacte, partagée : libellé discret + boutons de rafraîchissement. */
+    private static String listCatbar(String title, String buttonsHtml) {
+        return "<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">" + Http.esc(title) + "</span>"
+                + buttonsHtml + "</div>";
+    }
+
+    /**
+     * Recherche (input-group Bootstrap) + puces de filtre alignées — même markup que /npcs, réutilisé
+     * pour /quests, /stories, /dialogues. Le champ pilote {@code data-filter-input="<scope>"} ; les
+     * cartes portent {@code data-filter-item="<scope>"} et {@code data-filter-cat}.
+     */
+    private static String listControls(String scope, String placeholder, String chipsHtml) {
+        StringBuilder sb = new StringBuilder("<div class=\"npc-controls\">");
+        sb.append("<div class=\"input-group npc-search\"><span class=\"input-group-text\">")
+                .append(Icons.icon("search")).append("</span>")
+                .append("<input type=\"search\" class=\"form-control\" data-filter-input=\"").append(Http.esc(scope))
+                .append("\" placeholder=\"").append(Http.esc(placeholder))
+                .append("\" aria-label=\"").append(Http.esc(placeholder)).append("\"></div>");
+        if (chipsHtml != null && !chipsHtml.isBlank()) {
+            sb.append("<div class=\"npc-filters\" data-filter-chips=\"").append(Http.esc(scope)).append("\">")
+                    .append(chipsHtml).append("</div>");
+        }
+        return sb.append("</div>").toString();
+    }
+
+    /** Ensemble d'identifiants normalisés (minuscule, avec ET sans préfixe {@code rpgquest:}). */
+    private static java.util.Set<String> idKeySet(List<String> ids) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (String raw : ids) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            String low = raw.toLowerCase(Locale.ROOT);
+            out.add(low);
+            int c = low.indexOf(':');
+            out.add(c >= 0 ? low.substring(c + 1) : "rpgquest:" + low);
+        }
+        return out;
+    }
+
+    /** {@code true} si la référence est vide (rien à vérifier) ou présente dans l'ensemble connu. */
+    private static boolean known(java.util.Set<String> keys, String ref) {
+        if (ref == null || ref.isBlank() || "null".equals(ref)) {
+            return true;
+        }
+        String low = ref.toLowerCase(Locale.ROOT);
+        if (keys.contains(low)) {
+            return true;
+        }
+        int c = low.indexOf(':');
+        return keys.contains(c >= 0 ? low.substring(c + 1) : "rpgquest:" + low);
+    }
+
+    /**
+     * Identifiants de PNJ connus (définitions + ids canoniques référencés) d'après le dernier
+     * {@code npc.list}. {@code null} si {@code npc.list} n'a jamais été chargé : on ne peut alors
+     * pas conclure qu'un donneur est inconnu.
+     */
+    private java.util.Set<String> npcKeySet(String agentId) {
+        Optional<Map<String, Object>> d = latestDetails(agentId, "npc.list");
+        if (d.isEmpty()) {
+            return null;
+        }
+        java.util.Set<String> out = new java.util.HashSet<>();
+        for (Object o : asList(d.get().get("definedIds"))) {
+            out.add(str(o).toLowerCase(Locale.ROOT));
+        }
+        for (Object o : asList(d.get().get("canonicalIds"))) {
+            out.add(str(o).toLowerCase(Locale.ROOT));
+        }
+        return out;
     }
 
     private static String filterBtn(String value, String label, boolean on) {
@@ -774,14 +1042,17 @@ public final class AgentPages {
         }
         sb.append("</div>");
 
-        // ---- DIAGNOSTICS ----
+        // ---- DIAGNOSTICS (aide humaine + lien doc + action immédiate) ----
         sb.append(detailSection("warning", "Diagnostics"));
         if (warnings.isEmpty()) {
             sb.append("<p class=\"muted npc-diag-ok\">").append(Icons.icon("check")).append("Aucune anomalie.</p>");
         } else {
+            String subject = hasName ? MiniText.plain(displayName) : MiniText.prettifyId(id);
             for (Object w : warnings) {
                 Map<String, Object> wm = asMap(w);
-                sb.append(diagAlert(str(wm.get("severity")), str(wm.get("message")), str(wm.get("code"))));
+                String code = str(wm.get("code"));
+                sb.append(DiagnosticHelp.render(code, str(wm.get("severity")), str(wm.get("message")),
+                        subject, "", npcFixButton(code, slug, canWrite, hasDefinition, canLink, boundCitizens, enabled)));
             }
         }
 
@@ -863,22 +1134,40 @@ public final class AgentPages {
         return "quest_giver".equals(role) ? "Donneur de quête" : MiniText.prettifyId(role);
     }
 
-    private static String diagAlert(String severity, String message, String code) {
-        String sev = severity == null ? "" : severity.toLowerCase(Locale.ROOT);
-        String cls = switch (sev) {
-            case "error" -> "alert-danger";
-            case "warning" -> "alert-warning";
-            default -> "alert-info";
-        };
-        String ic = switch (sev) {
-            case "error" -> "error";
-            case "warning" -> "warning";
-            default -> "info";
-        };
-        return "<div class=\"alert " + cls + " npc-diag\">" + Icons.icon(ic)
-                + "<div><div class=\"npc-diag-msg\">" + Http.esc(message) + "</div>"
-                + "<div class=\"npc-diag-code\">ID diagnostic : <code class=\"tid\">" + Http.esc(code) + "</code></div>"
-                + "</div></div>";
+    /** Bouton « Corriger maintenant » d'un diagnostic PNJ : déplie le formulaire d'action pertinent. */
+    private static String npcFixButton(String code, String slug, boolean canWrite, boolean hasDefinition,
+                                       boolean canLink, boolean boundCitizens, boolean enabled) {
+        String target;
+        String label;
+        switch (code == null ? "" : code) {
+            case "BINDING_NO_DEFINITION", "NO_DEFINITION" -> {
+                if (!canWrite || hasDefinition) {
+                    return "";
+                }
+                target = slug + "-f-create";
+                label = "Créer la définition";
+            }
+            case "DIALOGUE_MISSING", "DISABLED", "GIVER_NO_DIALOGUE" -> {
+                if (!canWrite || !hasDefinition) {
+                    return "";
+                }
+                target = slug + "-f-edit";
+                label = "Modifier la fiche";
+            }
+            case "NOT_LINKED" -> {
+                if (!canLink || !hasDefinition || boundCitizens || !enabled) {
+                    return "";
+                }
+                target = slug + "-f-link";
+                label = "Lier un PNJ Citizens";
+            }
+            default -> {
+                return "";
+            }
+        }
+        return "<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+                + "data-bs-target=\"#" + target + "\" aria-controls=\"" + target + "\">"
+                + Icons.icon("wrench") + Http.esc(label) + "</button>";
     }
 
     /**
@@ -1145,14 +1434,18 @@ public final class AgentPages {
         sb.append(agentPicker(agentId, "/dialogues", ""));
 
         sb.append("<h2>Catalogue</h2>");
-        sb.append(actionButton(session, agentId, "dialogue.list", "/dialogues", "", "Rafraîchir le catalogue", ""));
+        String dlgBar = compactRefresh(session, agentId, "dialogue.list", "Dialogues", "btn-outline-primary", "/dialogues");
+        if (perms.can(session.role(), Permission.CONTENT_READ)) {
+            dlgBar += compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-secondary", "/dialogues");
+        }
+        sb.append(listCatbar("Catalogue", dlgBar));
 
         Map<String, String> questTitles = titleIndex(
                 latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of()), "id", "title");
 
         Optional<Map<String, Object>> details = latestDetails(agentId, "dialogue.list");
         if (details.isEmpty()) {
-            sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Rafraîchir le catalogue »."));
+            sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Dialogues »."));
             if (canWrite) {
                 sb.append(dialogueCreateForm(session, agentId));
             }
@@ -1163,24 +1456,19 @@ public final class AgentPages {
         List<Object> loadIssues = asList(d.get("loadIssues"));
         List<Object> missing = asList(d.get("declaredButMissing"));
 
-        if (!loadIssues.isEmpty()) {
-            sb.append("<div class=\"banner err\"><strong>").append(loadIssues.size())
-                    .append(" fichier(s) de dialogue rejeté(s) au chargement</strong> — non listés comme dialogues :<ul>");
+        if (!loadIssues.isEmpty() || !missing.isEmpty()) {
+            sb.append("<div class=\"dlg-global-diag\">");
             for (Object o : loadIssues) {
                 Map<String, Object> m = asMap(o);
-                sb.append("<li>").append(Ui.id(str(m.get("file")))).append(" — ")
-                        .append(Http.esc(str(m.get("message")))).append("</li>");
+                sb.append(DiagnosticHelp.render("DIALOGUE_LOAD_ISSUE", "error", str(m.get("message")),
+                        str(m.get("file")), str(m.get("message")), ""));
             }
-            sb.append("</ul></div>");
-        }
-        if (!missing.isEmpty()) {
-            sb.append("<div class=\"banner err\"><strong>Définitions PNJ pointant vers un dialogue absent :</strong><ul>");
             for (Object o : missing) {
                 Map<String, Object> m = asMap(o);
-                sb.append("<li>").append(Ui.id(str(m.get("npcId")))).append(" → ")
-                        .append(Ui.id(str(m.get("dialogueId")))).append("</li>");
+                sb.append(DiagnosticHelp.render("DIALOGUE_DECLARED_MISSING", "error", "",
+                        str(m.get("npcId")), str(m.get("dialogueId")), ""));
             }
-            sb.append("</ul></div>");
+            sb.append("</div>");
         }
 
         sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Résumé</span> ")
@@ -1201,22 +1489,28 @@ public final class AgentPages {
         if (dialogues.isEmpty()) {
             sb.append(Ui.empty("dialogues", "Aucun dialogue chargé."));
         } else {
-            sb.append(Ui.searchToolbar("dialogues", "Rechercher un dialogue\u2026", ""));
+            sb.append(listControls("dialogues", "Rechercher un dialogue\u2026",
+                    filterBtn("", "Tous", true) + filterBtn("linked", "Liés", false)
+                            + filterBtn("unlinked", "Non liés", false) + filterBtn("warn", "À vérifier", false)));
             sb.append("<p class=\"count-note\" data-count-note data-noun=\"dialogue\">" + dialogues.size() + " dialogue(s)</p>");
+            sb.append("<div class=\"accordion npc-accordion\" id=\"dialogues-accordion\">");
+            int di = 0;
             for (Object o : dialogues) {
-                sb.append(renderDialogueCard(asMap(o), questTitles, session, agentId, canWrite));
+                sb.append(renderDialogueAccordionItem(asMap(o), di++, questTitles, session, agentId, canWrite));
             }
+            sb.append("</div>");
         }
         return sb.toString();
     }
 
     /**
-     * Carte dialogue en quatre blocs : en-tête (identité + compteurs + état) · résumé (départ,
-     * PNJ, quêtes) · diagnostics hiérarchisés (erreur → attention → info) · graphe des nœuds
-     * (cartes, départ accentué, inaccessibles marqués) avec l'édition guidée par nœud.
+     * Une ligne d'accordion de dialogue : en-tête = synthèse (nom lisible, id technique, compteurs,
+     * état), corps = sections repliées (Résumé / PNJ / Quêtes / Diagnostics / Graphe / Actions). Le
+     * graphe des nœuds n'est PAS ouvert par défaut. Les avertissements du moteur sont rendus par
+     * {@link DiagnosticHelp} (message humain, conséquence, action, lien doc précis).
      */
-    private String renderDialogueCard(Map<String, Object> dg, Map<String, String> questTitles,
-                                      Session session, String agentId, boolean canWrite) {
+    private String renderDialogueAccordionItem(Map<String, Object> dg, int idx, Map<String, String> questTitles,
+                                               Session session, String agentId, boolean canWrite) {
         String id = str(dg.get("id"));
         String key = str(dg.get("key"));
         String start = str(dg.get("startNodeId"));
@@ -1226,48 +1520,102 @@ public final class AgentPages {
         List<Object> refQuests = asList(dg.get("referencedQuestIds"));
         List<Object> startsQuests = asList(dg.get("startsQuestIds"));
         List<String> nodeIds = dialogueNodeIds(nodes);
+        String slug = "dlg-" + idx + "-" + id.replaceAll("[^a-z0-9_-]", "-");
+        String human = MiniText.prettifyId(key.isEmpty() ? id : key);
 
-        String ft = Http.esc(id + " " + key + " " + String.join(" ", linked.stream().map(x -> str(x)).toList()));
-        StringBuilder sb = new StringBuilder("<article class=\"entity-card dlg-card\" data-filter-item=\"dialogues\" data-filter-text=\"" + ft + "\">");
+        boolean anyErr = warnings.stream().anyMatch(w -> "error".equals(str(asMap(w).get("severity"))));
+        boolean anyWarn = !warnings.isEmpty();
+        String cat = (linked.isEmpty() ? "unlinked" : "linked") + (anyWarn ? " warn" : "") + (anyErr ? " err" : "");
+        String ftext = Http.esc(id + " " + key + " " + human + " "
+                + String.join(" ", linked.stream().map(x -> str(x)).toList()));
 
-        // ---- En-tête -------------------------------------------------------------------------
-        sb.append("<div class=\"entity-head\"><h3 class=\"entity-name\">")
-                .append(Http.esc(MiniText.prettifyId(key.isEmpty() ? id : key))).append("</h3><div class=\"entity-meta\">")
-                .append(Ui.badge(str(dg.get("nodeCount")) + " nœud(s)"))
-                .append(Ui.badge(str(dg.get("choiceCount")) + " choix"))
-                .append(dialogueHealthPill(warnings))
-                .append(Ui.id(id)).append("</div></div>");
-
-        // ---- Résumé -------------------------------------------------------------------------
-        sb.append("<div class=\"dlg-summary\">");
-        sb.append(Ui.metaLine("Nœud de départ", Ui.id(start)));
-        sb.append(Ui.metaLine("PNJ liés", linked.isEmpty()
-                ? "<span class=\"muted\">aucun PNJ logique lié</span>"
-                : linked.stream().map(n -> Ui.id(str(n))).reduce((a, b) -> a + " " + b).orElse("")));
-        if (!startsQuests.isEmpty()) {
-            sb.append(Ui.metaLine("Démarre les quêtes", referencedQuests(startsQuests, questTitles)));
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"dialogues\" data-filter-cat=\"")
+                .append(cat).append("\" data-filter-text=\"").append(ftext).append("\">");
+        sb.append("<h3 class=\"accordion-header\">");
+        sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
+                + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")
+                .append(slug).append("\">");
+        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(Http.esc(human))
+                .append("</span><code class=\"tid npc-id\">").append(Http.esc(id)).append("</code></span>");
+        sb.append("<span class=\"npc-head-badges\">");
+        sb.append("<span class=\"badge text-bg-secondary\">").append(Http.esc(str(dg.get("nodeCount"))))
+                .append(" nœuds</span>");
+        sb.append("<span class=\"badge text-bg-secondary\">").append(Http.esc(str(dg.get("choiceCount"))))
+                .append(" choix</span>");
+        if (linked.isEmpty()) {
+            sb.append("<span class=\"badge text-bg-warning\">sans PNJ</span>");
         }
-        if (!refQuests.isEmpty()) {
-            sb.append(Ui.metaLine("Quêtes référencées", referencedQuests(refQuests, questTitles)));
+        sb.append(dialogueHealthPill(warnings));
+        sb.append("</span></button></h3>");
+
+        sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" ")
+                .append("data-bs-parent=\"#dialogues-accordion\"><div class=\"accordion-body npc-detail\">");
+
+        // ---- RÉSUMÉ ----
+        sb.append(detailSection("book", "Résumé"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Nom", Http.esc(human));
+        dlRow(sb, "ID technique", Ui.id(id));
+        dlRow(sb, "Nœud de départ", Ui.id(start));
+        dlRow(sb, "Nœuds / choix", Http.esc(str(dg.get("nodeCount"))) + " / " + Http.esc(str(dg.get("choiceCount"))));
+        sb.append("</dl>");
+
+        // ---- PNJ ----
+        sb.append(detailSection("npc", "PNJ"));
+        if (linked.isEmpty()) {
+            sb.append("<p class=\"muted npc-content-empty\">Aucun PNJ RPGQuest n'utilise ce dialogue.</p>");
+        } else {
+            sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Utilisé par</span> ");
+            sb.append(linked.stream().map(n -> Ui.id(str(n))).reduce((a, b) -> a + " " + b).orElse(""));
+            sb.append(" <a class=\"btn btn-sm btn-outline-secondary\" href=\"/npcs\">")
+                    .append(Icons.icon("open")).append("PNJ</a></p>");
         }
-        sb.append("</div>");
 
-        // ---- Diagnostics (triés erreur → attention → info) ---------------------------------
-        sb.append(dialogueDiagnostics(warnings));
+        // ---- QUÊTES ----
+        if (!startsQuests.isEmpty() || !refQuests.isEmpty()) {
+            sb.append(detailSection("target", "Quêtes"));
+            if (!startsQuests.isEmpty()) {
+                sb.append(Ui.metaLine("Démarre", referencedQuests(startsQuests, questTitles)));
+            }
+            if (!refQuests.isEmpty()) {
+                sb.append(Ui.metaLine("Référencées", referencedQuests(refQuests, questTitles)));
+            }
+        }
 
-        // ---- Graphe -----------------------------------------------------------------------
-        sb.append("<details open class=\"dlg-graph-wrap\"><summary>Graphe — ").append(nodes.size())
+        // ---- DIAGNOSTICS ----
+        sb.append(detailSection("warning", "Diagnostics"));
+        if (warnings.isEmpty()) {
+            sb.append("<p class=\"muted npc-diag-ok\">").append(Icons.icon("check")).append("Aucune anomalie.</p>");
+        } else {
+            List<Map<String, Object>> sorted = new ArrayList<>();
+            for (Object w : warnings) {
+                sorted.add(asMap(w));
+            }
+            sorted.sort(java.util.Comparator.comparingInt(m -> severityRank(str(m.get("severity")))));
+            for (Map<String, Object> wm : sorted) {
+                sb.append(DiagnosticHelp.render(str(wm.get("code")), str(wm.get("severity")),
+                        str(wm.get("message")), human, "", ""));
+            }
+        }
+
+        // ---- GRAPHE (replié par défaut) ----
+        sb.append(detailSection("dialogues", "Graphe des nœuds"));
+        sb.append("<details class=\"dlg-graph-wrap\"><summary>Afficher le graphe — ").append(nodes.size())
                 .append(" nœud(s)</summary><div class=\"dlg-graph\">");
         for (Object o : nodes) {
             sb.append(dialogueNodeCard(asMap(o), id, nodeIds, questTitles, session, agentId, canWrite));
         }
         sb.append("</div></details>");
 
-        // ---- Ajouter un nœud ------------------------------------------------------------------
+        // ---- ACTIONS ----
         if (canWrite) {
+            sb.append(detailSection("target", "Actions"));
             sb.append(dialogueNodeCreateForm(session, agentId, id));
         }
-        return sb.append("</article>").toString();
+
+        sb.append("</div></div></div>");
+        return sb.toString();
     }
 
     /** Pastille d'état global d'un dialogue à partir de la sévérité la plus haute de ses warnings. */
@@ -1284,25 +1632,6 @@ public final class AgentPages {
             case 2 -> Ui.pill(warnings.size() + " avertissement(s)", "pending", "!");
             default -> Ui.pill(warnings.size() + " info(s)", "neutral", "i");
         };
-    }
-
-    /** Bloc diagnostics : message humain d'abord, code technique discret, groupé par sévérité. */
-    private String dialogueDiagnostics(List<Object> warnings) {
-        if (warnings.isEmpty()) {
-            return "";
-        }
-        List<Map<String, Object>> sorted = new java.util.ArrayList<>();
-        for (Object w : warnings) {
-            sorted.add(asMap(w));
-        }
-        sorted.sort(java.util.Comparator.comparingInt(m -> severityRank(str(m.get("severity")))));
-        StringBuilder sb = new StringBuilder("<div class=\"dlg-diag\"><p class=\"dlg-diag-h\">Diagnostics</p><ul class=\"obj-list\">");
-        for (Map<String, Object> wm : sorted) {
-            sb.append("<li>").append(Ui.severity(str(wm.get("severity"))))
-                    .append("<span class=\"obj-text\">").append(Http.esc(str(wm.get("message")))).append("</span>")
-                    .append(Ui.id(str(wm.get("code")))).append("</li>");
-        }
-        return sb.append("</ul></div>").toString();
     }
 
     private static int severityRank(String severity) {

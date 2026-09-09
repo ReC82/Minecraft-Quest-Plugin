@@ -55,6 +55,9 @@ public final class Icons {
             Map.entry("menu", "list"),
             Map.entry("close", "x-lg"),
             Map.entry("link", "link-45deg"),
+            Map.entry("bell", "bell"),
+            Map.entry("history", "clock-history"),
+            Map.entry("box", "box-seam"),
             // sémantique
             Map.entry("warning", "exclamation-triangle"),
             Map.entry("error", "x-circle"),

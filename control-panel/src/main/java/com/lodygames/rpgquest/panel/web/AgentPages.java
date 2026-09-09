@@ -89,7 +89,6 @@ public final class AgentPages {
             sb.append(playerDetail(session, agentId, player));
         }
 
-        sb.append(actionsPanel(agentId));
         return sb.toString();
     }
 
@@ -239,7 +238,6 @@ public final class AgentPages {
             sb.append(questActionForm(session, agentId, player, "quest.reset", "Réinitialiser (n'annule pas les récompenses déjà données)", questIds, false));
         }
 
-        sb.append(actionsPanel(agentId));
         return sb.toString();
     }
 
@@ -418,7 +416,6 @@ public final class AgentPages {
             sb.append(storyActionForm(session, agentId, player, "story.complete", "Compléter toute la story", storyIds));
         }
 
-        sb.append(actionsPanel(agentId));
         return sb.toString();
     }
 
@@ -516,7 +513,6 @@ public final class AgentPages {
             if (canWrite) {
                 sb.append(createDefinitionForm(session, agentId, ""));
             }
-            sb.append(actionsPanel(agentId));
             return sb.toString();
         }
         Map<String, Object> d = details.get();
@@ -583,7 +579,6 @@ public final class AgentPages {
                 + "source de vérité des ids PNJ (préparation #66 — la validation de "
                 + "<code>/rpgadmin npc tag</code> n'est pas encore câblée).</p></details>");
 
-        sb.append(actionsPanel(agentId));
         return sb.toString();
     }
 
@@ -925,7 +920,6 @@ public final class AgentPages {
             if (canWrite) {
                 sb.append(dialogueCreateForm(session, agentId));
             }
-            sb.append(actionsPanel(agentId));
             return sb.toString();
         }
         Map<String, Object> d = details.get();
@@ -977,7 +971,6 @@ public final class AgentPages {
                 sb.append(renderDialogueCard(asMap(o), questTitles, session, agentId, canWrite));
             }
         }
-        sb.append(actionsPanel(agentId));
         return sb.toString();
     }
 
@@ -1366,32 +1359,6 @@ public final class AgentPages {
         return sb.toString();
     }
 
-    /** Tableau des actions récentes, pollable par {@code /assets/panel.js}. */
-    private String actionsPanel(String agentId) {
-        List<AgentActionRow> actions = store.recentActions(agentId, 20);
-        long pending = actions.stream().filter(a -> !a.status().terminal()).count();
-        StringBuilder sb = new StringBuilder();
-        sb.append("<div class=\"actions-panel\" data-actions-agent=\"").append(Http.esc(agentId))
-                .append("\" data-actions-pending=\"").append(pending).append("\">");
-        sb.append("<h2>Actions récentes</h2>");
-        sb.append(Ui.tableOpen("Id", "Type", "Params", "Statut", "Livr.", "Résultat", "Créée"));
-        if (actions.isEmpty()) {
-            sb.append("<tr><td colspan=\"7\" class=\"muted\">Aucune action pour le moment.</td></tr>");
-        } else {
-            for (AgentActionRow a : actions) {
-                sb.append("<tr><td>").append(Ui.id(shorten(a.id(), 8))).append("</td>")
-                        .append("<td>").append(Ui.actionType(a.type())).append("</td>")
-                        .append("<td class=\"muted\">").append(Http.esc(renderParams(a.params()))).append("</td>")
-                        .append("<td>").append(Ui.actionStatus(a.status())).append("</td>")
-                        .append("<td>").append(a.deliverCount()).append("</td>")
-                        .append("<td>").append(Http.esc(renderResult(a))).append("</td>")
-                        .append("<td class=\"muted\">").append(Http.esc(a.createdAt().toString())).append("</td></tr>");
-            }
-        }
-        sb.append(Ui.tableClose()).append("<p class=\"muted poll-status\" hidden></p></div>");
-        return sb.toString();
-    }
-
     private String agentPicker(String activeAgentId, String page, String player) {
         if (registry.all().size() <= 1) {
             return "";
@@ -1633,26 +1600,6 @@ public final class AgentPages {
         String label = title != null && !title.isBlank() ? MiniText.html(title)
                 : Http.esc(MiniText.prettifyId(id));
         return label + " " + Ui.id(id);
-    }
-
-    private static String renderParams(Map<String, String> params) {
-        if (params.isEmpty()) {
-            return "—";
-        }
-        StringBuilder sb = new StringBuilder();
-        params.forEach((k, v) -> sb.append(sb.isEmpty() ? "" : ", ").append(k).append('=').append(v));
-        return sb.toString();
-    }
-
-    private static String renderResult(AgentActionRow a) {
-        if (!a.status().terminal()) {
-            return "—";
-        }
-        // Statut déjà affiché par la pastille : ici, valeur + message lisibles seulement.
-        String value = a.resultValue() == null || a.resultValue().isBlank() ? "" : a.resultValue();
-        String message = a.resultMessage() == null || a.resultMessage().isBlank() ? "" : a.resultMessage();
-        String out = (value + (value.isEmpty() || message.isEmpty() ? "" : " · ") + message).trim();
-        return out.isEmpty() ? "—" : MiniText.prettifyTokens(out);
     }
 
     private static String join(List<Object> values) {

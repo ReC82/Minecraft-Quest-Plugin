@@ -493,3 +493,98 @@ a.home-tile:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
 .home-pill.soon{background:var(--surface-3);color:var(--txt-faint);border-color:var(--line)}
 .home-tile-cta{position:absolute;right:16px;top:18px;color:var(--txt-faint);font-size:15px;opacity:0;transition:opacity .14s}
 a.home-tile:hover .home-tile-cta{opacity:1}
+
+/* ================================================================================
+   #93 — Toasts, centre de notifications, page /actions
+   ================================================================================ */
+
+/* -- Toasts (Bootstrap) -- */
+#toast-root{z-index:1090;max-width:min(380px,92vw)}
+.pa-toast .toast-header{gap:6px}
+.pa-toast .toast-ic{display:inline-flex;align-items:center}
+.pa-toast .toast-ic .bi{font-size:17px}
+.pa-toast .toast-body{font-size:13px}
+.pa-toast .toast-details{margin-left:6px;white-space:nowrap}
+.pa-toast[data-toast-group="failed"]{border-left:3px solid var(--err)}
+.pa-toast[data-toast-group="success"]{border-left:3px solid var(--ok)}
+.pa-toast[data-toast-group="pending"]{border-left:3px solid var(--primary)}
+
+/* -- Cloche + menu de notifications -- */
+.notif-center{position:relative}
+.notif-bell{position:relative}
+.notif-bell .bi{font-size:17px}
+.notif-badge{position:absolute;top:-5px;right:-5px;font-size:10px;line-height:1;padding:3px 5px;min-width:16px}
+.notif-menu{width:380px;max-width:94vw;padding:0;overflow:hidden;box-shadow:var(--shadow)}
+.notif-head{padding:10px 14px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--txt-faint);border-bottom:1px solid var(--line);background:var(--surface-2)}
+.notif-list{max-height:60vh;overflow-y:auto}
+.notif-empty{margin:0;padding:22px 14px;text-align:center;color:var(--txt-2);font-size:13px}
+.notif-item{display:flex;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);color:var(--txt)}
+.notif-item:last-child{border-bottom:0}
+.notif-item:hover{background:var(--surface-2);text-decoration:none}
+.notif-ic{flex:none;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:8px;background:var(--surface-3);color:var(--txt-2)}
+.notif-ic .bi{font-size:14px}
+.notif-body{min-width:0;display:flex;flex-direction:column;gap:2px}
+.notif-t{font-size:12.5px;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
+.notif-tgt{color:var(--txt-2);font-weight:500}
+.notif-meta{font-size:11.5px;color:var(--txt-faint);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.notif-status{display:inline-flex;align-items:center;gap:3px;font-weight:700}
+.notif-status .bi{font-size:12px}
+.notif-res{overflow-wrap:anywhere}
+.notif-foot{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;
+  font-size:12.5px;font-weight:650;border-top:1px solid var(--line);background:var(--surface-2);color:var(--primary)}
+.notif-foot:hover{text-decoration:none;background:var(--surface-3)}
+.notif-foot .bi{font-size:13px}
+
+/* -- Badges statut / domaine (icône + texte) -- */
+.badge.pa-status,.badge.pa-domain{display:inline-flex;align-items:center;gap:4px;font-weight:650}
+.badge.pa-status .bi,.badge.pa-domain .bi{font-size:.9em;vertical-align:-.1em}
+.badge.text-bg-secondary.pa-domain{background:var(--surface-3)!important;color:var(--txt-2)!important;border:1px solid var(--line)}
+
+/* -- /actions : recherche + filtres -- */
+.actions-search{max-width:560px;margin:0 0 14px}
+.actions-search .input-group-text{background:var(--surface);border-color:var(--line-2)}
+.actions-search .input-group-text .bi{font-size:15px;color:var(--txt-faint)}
+.actions-status{gap:6px;margin:0 0 12px}
+.actions-status .nav-link{padding:5px 14px;border-radius:999px;font-size:13px;color:var(--txt-2);background:var(--surface);border:1px solid var(--line-2)}
+.actions-status .nav-link.active{background:var(--primary);border-color:var(--primary);color:#fff}
+.actions-domains{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.pa-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;background:var(--surface);
+  border:1px solid var(--line-2);color:var(--txt-2);font-size:12.5px;font-weight:600}
+.pa-chip .bi{font-size:13px}
+.pa-chip:hover{border-color:var(--primary);color:var(--primary);text-decoration:none}
+.pa-chip.on{background:var(--primary);border-color:var(--primary);color:#fff}
+
+/* -- /actions : table desktop -- */
+.actions-table td,.actions-table th{font-size:13px}
+.actions-table .act-label{font-weight:600}
+.actions-table .act-res{max-width:280px;overflow-wrap:anywhere}
+.actions-table .nowrap{white-space:nowrap}
+
+/* -- /actions : cards mobile -- */
+.actions-cards{display:flex;flex-direction:column;gap:10px}
+.actions-card{color:var(--txt)}
+.actions-card:hover{text-decoration:none;border-color:var(--line-2);box-shadow:var(--shadow-s)}
+.actions-card .card-body{padding:12px 14px}
+.ac-top{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.ac-title{font-weight:650;font-size:14px}
+.ac-tgt{font-size:12.5px;color:var(--txt-2);margin-top:2px}
+.ac-res{font-size:12px;margin-top:4px;overflow-wrap:anywhere}
+.ac-meta{font-size:11.5px;margin-top:6px}
+
+.actions-pager{margin-top:16px}
+.actions-pager .page-link .bi{font-size:13px;vertical-align:-.1em}
+
+/* -- Détail d'une action -- */
+.detail-dl{margin:6px 0 0}
+.detail-dl .dl-row{display:grid;grid-template-columns:170px 1fr;gap:4px 14px;padding:6px 0;border-bottom:1px solid var(--line)}
+.detail-dl .dl-row:last-child{border-bottom:0}
+.detail-dl dt{margin:0;font-size:12px;color:var(--txt-faint);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.detail-dl dd{margin:0;font-size:13.5px;overflow-wrap:anywhere}
+@media(max-width:620px){.detail-dl .dl-row{grid-template-columns:1fr}}
+
+/* -- /agents : synthèse d'activité compacte -- */
+.mini-activity{list-style:none;margin:6px 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.mini-activity li{font-size:13px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mini-activity .ma-t{font-weight:600}

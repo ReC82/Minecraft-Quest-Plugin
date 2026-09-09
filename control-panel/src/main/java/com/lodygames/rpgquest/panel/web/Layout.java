@@ -25,7 +25,8 @@ public final class Layout {
                 new NavGroup("Vue d'ensemble", List.of(
                         new NavItem("Accueil", "/home", "home", true),
                         new NavItem("Dashboard", "/dashboard", "dashboard", true),
-                        new NavItem("Agents", "/agents", "agents", true))),
+                        new NavItem("Agents", "/agents", "agents", true),
+                        new NavItem("Historique", "/actions", "history", true))),
                 new NavGroup("RPGQuest", List.of(
                         new NavItem("Joueurs", "/players", "players", true),
                         new NavItem("PNJ", "/npcs", "npc", true),
@@ -91,13 +92,14 @@ public final class Layout {
                   <label for="nav-toggle" class="burger" aria-label="Menu">%BURGER%</label>
                   <div class="brand"><span class="brand-mark">PA</span>
                     <span class="brand-t">Plug<strong>Admin</strong></span>%ENV%</div>
-                  <div class="topbar-r">%STATUS%%USERBOX%</div>
+                  <div class="topbar-r">%NOTIF%%STATUS%%USERBOX%</div>
                 </header>
                 <div class="shell">
                   <label for="nav-toggle" class="scrim" aria-hidden="true"></label>
                   <nav class="side">%NAV%</nav>
                   <main class="main">%CONTENT%</main>
                 </div>
+                <div class="toast-container position-fixed top-0 end-0 p-3" id="toast-root" aria-live="polite" aria-atomic="true"></div>
                 %SCRIPTS%
                 </body></html>
                 """

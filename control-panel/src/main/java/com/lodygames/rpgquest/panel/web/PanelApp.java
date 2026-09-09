@@ -65,6 +65,7 @@ public final class PanelApp {
     private final AgentPages agentPages;
     private final DocsPages docsPages = new DocsPages(DocLibrary.load());
     private final HomePages homePages = new HomePages(permissions);
+    private final NotificationCenter notifications;
     private final ContentWorkspace contentWorkspace;
     private final ContentEditorPages contentEditor;
 
@@ -77,6 +78,7 @@ public final class PanelApp {
         this.agentStore = agentStore;
         this.agentRegistry = new AgentRegistry(config.agents().agents());
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(), permissions);
+        this.notifications = new NotificationCenter(agentStore, agentRegistry);
         this.contentWorkspace = new ContentWorkspace(
                 config.contentRepoDir() == null || config.contentRepoDir().isBlank()
                         ? null : Path.of(config.contentRepoDir()));
@@ -104,6 +106,7 @@ public final class PanelApp {
         route("/agents", this::handleAgents);
         route("/agents/action", this::handleActionCreate);
         route("/agents/actions.json", this::handleAgentActionsJson);
+        route("/actions", this::handleActions);
         route("/assets/", this::handleAsset);
         route("/players", exchange -> handleBusinessPage(exchange, "/players", "Joueurs",
                 Permission.PLAYERS_READ, agentPages::players));
@@ -526,6 +529,7 @@ public final class PanelApp {
             Http.json(exchange, 404, "{\"error\":\"unknown_agent\"}");
             return;
         }
+        Instant now = Instant.now();
         List<AgentActionRow> actions = agentStore.recentActions(agentId, 20);
         List<Map<String, Object>> items = new java.util.ArrayList<>();
         int pending = 0;
@@ -533,6 +537,7 @@ public final class PanelApp {
             if (!a.status().terminal()) {
                 pending++;
             }
+            ActionView.Group group = ActionView.Group.of(a.status());
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", shortId(a.id()));
             item.put("idFull", a.id());
@@ -546,13 +551,71 @@ public final class PanelApp {
             item.put("deliverCount", a.deliverCount());
             item.put("result", renderResult(a));
             item.put("createdAt", a.createdAt().toString());
+            // Enrichissement #93 : toasts + centre de notifications
+            item.put("label", ActionView.humanLabel(a.type()));
+            item.put("domain", ActionView.Domain.of(a.type()).slug());
+            item.put("group", group.slug());
+            item.put("target", ActionView.target(a));
+            item.put("resultShort", ActionView.shortResult(a));
+            item.put("age", ActionView.relativeTime(a.createdAt(), now));
+            item.put("notifHtml", ActionView.notifItemHtml(a, now));
             items.add(item);
         }
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("agent", agentId);
         root.put("pending", pending);
+        root.put("badge", notifications.badgeCount(notifications.recent(), now));
         root.put("actions", items);
         Http.json(exchange, 200, com.lodygames.rpgquest.panel.json.Json.write(root));
+    }
+
+    /**
+     * Historique des actions (issue #93) : {@code /actions} = liste filtrable/recherchable,
+     * {@code /actions/<id>} = détail. Source de vérité = table {@code agent_action}
+     * ({@link AgentStore}) ; aucune donnée nouvelle. Permission {@code DIAGNOSTICS_READ}.
+     */
+    private void handleActions(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+            Http.html(exchange, 403, renderPage("Refusé", session, "/actions",
+                    "<h1>Accès refusé</h1><p class=\"muted\">Permission " + Permission.DIAGNOSTICS_READ + " requise.</p>"));
+            return;
+        }
+        Instant now = Instant.now();
+        String path = exchange.getRequestURI().getPath();
+        Optional<String> detailId = ActionsPages.idFromPath(path);
+        if (detailId.isPresent()) {
+            Optional<AgentActionRow> row = agentStore.action(detailId.get());
+            if (row.isEmpty()) {
+                Http.html(exchange, 404, renderPage("Introuvable", session, "/actions",
+                        Ui.banner("err", "Action <code>" + Http.esc(detailId.get()) + "</code> introuvable.")));
+                return;
+            }
+            Http.html(exchange, 200, renderPage("Action", session, "/actions",
+                    ActionsPages.detail(row.get(), now)));
+            return;
+        }
+        if (!path.equals("/actions") && !path.equals("/actions/")) {
+            Http.redirect(exchange, "/actions");
+            return;
+        }
+        ActionsPages.Query query = ActionsPages.Query.parse(Http.query(exchange));
+        String body = ActionsPages.list(allRecentActions(500), query, now);
+        Http.html(exchange, 200, renderPage("Historique des actions", session, "/actions", body));
+    }
+
+    /** Les {@code capPerAgent} dernières actions de chaque agent, fusionnées et triées par date desc. */
+    private List<AgentActionRow> allRecentActions(int capPerAgent) {
+        List<AgentActionRow> all = new java.util.ArrayList<>();
+        for (AgentIdentity a : agentRegistry.all()) {
+            all.addAll(agentStore.recentActions(a.id(), capPerAgent));
+        }
+        all.sort(java.util.Comparator.comparing(AgentActionRow::createdAt).reversed());
+        return all;
     }
 
     private static final java.util.regex.Pattern ASSET_PATH =
@@ -647,15 +710,28 @@ public final class PanelApp {
         }
         Map<String, String> query = Http.query(exchange);
         StringBuilder body = new StringBuilder();
-        String err = query.get("err");
-        if (err != null && !err.isBlank()) {
-            body.append("<div class=\"banner err\">").append(Http.esc(trimTo(err, 200))).append("</div>");
-        } else if ("1".equals(query.get("ok"))) {
-            body.append("<div class=\"banner ok\">Action envoyée à l'agent — son statut apparaît "
-                    + "ci-dessous dans « Actions récentes » et se rafraîchit tout seul.</div>");
-        }
+        body.append(actionFeedback(query));
         body.append(renderer.render(session, query));
         Http.html(exchange, 200, renderPage(title, session, path, body.toString()));
+    }
+
+    /**
+     * Retour d'une mutation, en <strong>toast</strong> (issue #93) : {@code ?toast=<id>} affiche un
+     * toast pour l'action créée (mis à jour par {@code panel.js} quand elle se résout) ;
+     * {@code ?err=…} un toast d'échec immédiat. Plus de gros bloc « Actions récentes » ici.
+     */
+    private String actionFeedback(Map<String, String> query) {
+        String err = query.get("err");
+        if (err != null && !err.isBlank()) {
+            return ActionView.errorToastHtml(trimTo(err, 200));
+        }
+        String toastId = query.get("toast");
+        if (toastId != null && !toastId.isBlank()) {
+            return agentStore.action(toastId.trim())
+                    .map(a -> ActionView.toastHtml(a, Instant.now()))
+                    .orElse("");
+        }
+        return "";
     }
 
     /**
@@ -788,7 +864,7 @@ public final class PanelApp {
                 "agent=" + agentId + " type=" + type + " action=" + id, "PENDING", safeParams(v.params()), rid);
         LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + agentId
                 + " type=" + type + " action=" + id + " by=" + session.username());
-        Http.redirect(exchange, appendContext(returnPath, agentId, v.params().get("player")) + "&ok=1");
+        Http.redirect(exchange, appendContext(returnPath, agentId, v.params().get("player")) + "&toast=" + enc(id));
     }
 
     private static String safeReturnPath(String requested, String fallback) {
@@ -874,28 +950,28 @@ public final class PanelApp {
                 sb.append(Ui.empty("Envoi d'action non autorisé pour ce rôle."));
             }
 
-            List<AgentActionRow> actions = agentStore.recentActions(agent.id(), 20);
-            long pending = actions.stream().filter(a -> !a.status().terminal()).count();
-            sb.append("<div class=\"actions-panel\" data-actions-agent=\"").append(Http.esc(agent.id()))
-                    .append("\" data-actions-pending=\"").append(pending).append("\">");
-            sb.append("<h3>Actions récentes</h3>");
-            sb.append(Ui.tableOpen("Id", "Type", "Params", "Statut", "Livr.", "Résultat", "Créée"));
+            // Synthèse d'activité compacte — l'historique complet est sur /actions (issue #93).
+            List<AgentActionRow> actions = agentStore.recentActions(agent.id(), 3);
+            sb.append("<h3>Activité récente</h3>");
             if (actions.isEmpty()) {
-                sb.append("<tr><td colspan=\"7\" class=\"muted\">Aucune action pour le moment.</td></tr>");
+                sb.append(Ui.empty("Aucune action pour le moment."));
             } else {
+                sb.append("<ul class=\"mini-activity\">");
+                Instant nowA = Instant.now();
                 for (AgentActionRow a : actions) {
-                    sb.append("<tr><td>").append(Ui.id(shortId(a.id()), a.id())).append("</td>")
-                            .append("<td>").append(Ui.actionType(a.type())).append("</td>")
-                            .append("<td class=\"muted\">").append(Http.esc(renderParams(a.params()))).append("</td>")
-                            .append("<td>").append(Ui.actionStatus(a.status())).append("</td>")
-                            .append("<td>").append(a.deliverCount()).append("</td>")
-                            .append("<td>").append(Http.esc(renderResult(a))).append("</td>")
-                            .append("<td class=\"muted\">").append(Http.esc(a.createdAt().toString())).append("</td></tr>");
+                    String tgt = ActionView.target(a);
+                    sb.append("<li>").append(ActionView.statusBadge(a.status())).append(" <span class=\"ma-t\">")
+                            .append(Http.esc(ActionView.humanLabel(a.type()))).append("</span>");
+                    if (!tgt.isEmpty()) {
+                        sb.append(" <span class=\"muted\">").append(Http.esc(tgt)).append("</span>");
+                    }
+                    sb.append(" <span class=\"faint\">· ").append(Http.esc(ActionView.relativeTime(a.createdAt(), nowA)))
+                            .append("</span></li>");
                 }
+                sb.append("</ul>");
             }
-            sb.append(Ui.tableClose());
-            sb.append("<p class=\"muted poll-status\" hidden></p>");
-            sb.append("</div>");
+            sb.append("<p><a class=\"doc-cm-link\" href=\"/actions\">").append(Icons.icon("history"))
+                    .append("Voir l'historique complet des actions</a></p>");
         }
         return sb.toString();
     }
@@ -1010,13 +1086,25 @@ public final class PanelApp {
     }
 
     private String renderPage(String title, Session session, String activeHref, String content) {
-        return Layout.page(title, session.username(), activeHref, content)
-                .replace("%CSRF%", "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">");
+        return finishPage(Layout.page(title, session.username(), activeHref, content), session);
     }
 
     private String renderPage(String title, Session session, String activeHref, String content, Layout.Shell shell) {
-        return Layout.page(title, activeHref, content, shell)
+        return finishPage(Layout.page(title, activeHref, content, shell), session);
+    }
+
+    private String finishPage(String html, Session session) {
+        return html
+                .replace("%NOTIF%", notifBell(session))
                 .replace("%CSRF%", "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">");
+    }
+
+    /** Cloche + centre de notifications de la topbar — visible seulement avec {@code DIAGNOSTICS_READ}. */
+    private String notifBell(Session session) {
+        if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+            return "";
+        }
+        return notifications.bellHtml(config.agents().defaultAgentId(), Instant.now());
     }
 
     // ---- Sessions ----------------------------------------------------------------------

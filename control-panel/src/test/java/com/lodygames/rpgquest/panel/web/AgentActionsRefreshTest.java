@@ -27,8 +27,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Rafraîchissement automatique des actions agent (issue #65) : l'endpoint JSON reflète le statut
- * courant sans rechargement de page, et le script est servi en même origine (conforme CSP).
+ * Rafraîchissement des actions agent (issue #65, adapté #93) : l'endpoint {@code /agents/actions.json}
+ * reflète le cycle de vie sans rechargement, il est enrichi pour les toasts et le centre de
+ * notifications, et {@code panel.js} pilote toasts + cloche (plus de gros tableau « Actions
+ * récentes »).
  */
 class AgentActionsRefreshTest {
 
@@ -109,7 +111,7 @@ class AgentActionsRefreshTest {
     }
 
     @Test
-    void jsonEndpointReflectsActionLifecycleWithoutPageReload() throws Exception {
+    void jsonEndpointReflectsActionLifecycleAndFeedsToastsAndNotifications() throws Exception {
         start();
         loginOk();
 
@@ -118,23 +120,24 @@ class AgentActionsRefreshTest {
         HttpResponse<String> created = post("/agents",
                 "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID + "&player=LoDyMcFly&key=CLAIM_TIER_1");
         assertEquals(303, created.statusCode());
+        // Redirection avec un toast (plus de &ok=1).
+        assertTrue(created.headers().firstValue("Location").orElse("").contains("&toast="),
+                "la mutation redirige avec un toast");
 
-        // La page rend le conteneur pollable avec au moins une action PENDING.
+        // La page Agents n'a plus de gros tableau « Actions récentes » : synthèse compacte + lien.
         String agentsPage = get("/agents").body();
-        assertTrue(agentsPage.contains("data-actions-agent=\"" + TestConfig.AGENT_ID + "\""));
-        assertTrue(agentsPage.contains("<script src=\"/assets/panel.js\""));
-        // Critère #65 : l'action neuve apparaît immédiatement en PENDING, et le compteur
-        // exposé au script est strictement positif (le polling doit démarrer).
-        assertTrue(pendingAttr(agentsPage) >= 1, "data-actions-pending doit être >= 1 après création");
-        assertTrue(agentsPage.contains("pill--pending") && agentsPage.contains("PENDING</span>"),
-                "la nouvelle action doit être rendue avec la pastille PENDING");
+        assertFalse(agentsPage.contains("data-actions-agent"), "plus de conteneur de tableau pollable");
+        assertFalse(agentsPage.contains("Actions récentes"), "plus de bloc « Actions récentes »");
+        assertTrue(agentsPage.contains("Activité récente"));
+        assertTrue(agentsPage.contains("href=\"/actions\""), "lien vers l'historique complet");
 
-        // Endpoint JSON : action présente, non terminale, pending >= 1.
+        // Endpoint JSON : action présente, non terminale, enrichie pour l'UX #93.
         HttpResponse<String> json1 = get("/agents/actions.json?agent=" + TestConfig.AGENT_ID);
         assertEquals(200, json1.statusCode());
         assertEquals("application/json; charset=utf-8", json1.headers().firstValue("Content-Type").orElse(""));
         Map<String, Object> body1 = Json.parseObject(json1.body());
-        assertTrue(((Number) body1.get("pending")).intValue() >= 1, "au moins une action en cours");
+        assertTrue(((Number) body1.get("pending")).intValue() >= 1);
+        assertTrue(((Number) body1.get("badge")).intValue() >= 1, "le badge signale l'action en cours");
         @SuppressWarnings("unchecked")
         List<Object> actions1 = (List<Object>) body1.get("actions");
         assertEquals(1, actions1.size());
@@ -142,14 +145,14 @@ class AgentActionsRefreshTest {
         Map<String, Object> row1 = (Map<String, Object>) actions1.get(0);
         assertEquals("player.variable.get", row1.get("type"));
         assertEquals(Boolean.FALSE, row1.get("terminal"));
-        // Non-régression du rendu enrichi consommé par panel.js (lot UX) : le JSON porte le
-        // libellé humain du type, la pastille normalisée et l'id complet pour la copie.
-        assertTrue(String.valueOf(row1.get("typeHtml")).contains("Lire une variable joueur"), "libellé de type");
-        assertTrue(String.valueOf(row1.get("typeHtml")).contains("data-copy=\"player.variable.get\""));
-        assertTrue(String.valueOf(row1.get("statusHtml")).contains("pill--pending"));
-        assertTrue(String.valueOf(row1.get("idFull")).length() == 36, "id complet fourni pour la copie");
+        assertEquals("Lire une variable joueur", row1.get("label"));
+        assertEquals("players", row1.get("domain"));
+        assertEquals("pending", row1.get("group"));
+        assertEquals("LoDyMcFly", row1.get("target"));
+        assertTrue(String.valueOf(row1.get("notifHtml")).contains("notif-item"));
+        assertTrue(String.valueOf(row1.get("idFull")).length() == 36);
 
-        // L'agent relève l'action (id complet) puis renvoie un résultat SUCCESS.
+        // L'agent relève l'action puis renvoie un résultat SUCCESS.
         HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
                 .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(), HttpResponse.BodyHandlers.ofString());
@@ -171,46 +174,28 @@ class AgentActionsRefreshTest {
                 .POST(HttpRequest.BodyPublishers.ofString(result)).build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(200, resultRes.statusCode());
 
-        // Endpoint JSON de nouveau : action terminale, pending == 0 (le polling s'arrêtera).
+        // Endpoint JSON de nouveau : action terminale, group=success, pending == 0.
         Map<String, Object> body2 = Json.parseObject(get("/agents/actions.json?agent=" + TestConfig.AGENT_ID).body());
         assertEquals(0, ((Number) body2.get("pending")).intValue());
         @SuppressWarnings("unchecked")
         Map<String, Object> row2 = (Map<String, Object>) ((List<Object>) body2.get("actions")).get(0);
         assertEquals("SUCCESS", row2.get("status"));
         assertEquals(Boolean.TRUE, row2.get("terminal"));
-        assertTrue(String.valueOf(row2.get("result")).contains("true"));
+        assertEquals("success", row2.get("group"));
+        assertTrue(String.valueOf(row2.get("resultShort")).length() > 0);
         assertFalse(json1.body().contains(TestConfig.AGENT_TOKEN));
-
-        // La page rendue reflète maintenant l'état terminal : compteur à 0 (pas de polling
-        // permanent) et pastille SUCCESS.
-        String settledPage = get("/agents").body();
-        assertEquals(0, pendingAttr(settledPage), "data-actions-pending doit retomber à 0 une fois l'action terminée");
-        assertTrue(settledPage.contains("pill--success") && settledPage.contains("SUCCESS</span>"));
-    }
-
-    /** Premier chiffre de {@code data-actions-pending="N"} dans la page (0 si absent). */
-    private static int pendingAttr(String html) {
-        Matcher m = Pattern.compile("data-actions-pending=\"(\\d+)\"").matcher(html);
-        return m.find() ? Integer.parseInt(m.group(1)) : 0;
     }
 
     @Test
-    void panelScriptStartsFromServerCounterOrVisibleRowsAndDoesAnImmediatePoll() throws Exception {
+    void panelScriptDrivesToastsAndNotifications() throws Exception {
         start();
         String js = get("/assets/panel.js").body();
-        // Double signal de départ : compteur serveur ET lecture du tableau rendu (un compteur
-        // absent ou périmé ne doit pas laisser une action bloquée en PENDING).
-        assertTrue(js.contains("data-actions-pending"));
-        assertTrue(js.contains("tableHasPending"));
-        assertTrue(js.contains("PENDING") && js.contains("DELIVERED"), "statuts non terminaux reconnus");
-        // Premier relevé immédiat (pas d'attente de l'intervalle avant la première mise à jour).
-        assertTrue(js.contains("tick(); // premier relevé immédiat"));
-        // Arrêt garanti dès qu'il n'y a plus d'action en cours.
-        assertTrue(js.contains("data.pending > 0") && js.contains("stop(null)"));
-        // Lot UX : rendu enrichi (typeHtml/statusHtml) + copie d'identifiant, sans casser le polling.
-        assertTrue(js.contains("a.typeHtml") && js.contains("a.statusHtml"), "cellules serveur réutilisées");
-        assertTrue(js.contains("navigator.clipboard") && js.contains("execCommand"), "copie + repli");
-        assertTrue(js.contains("data-copy"));
+        assertTrue(js.contains("initToasts") && js.contains("initNotifications"));
+        assertTrue(js.contains("/agents/actions.json"));
+        assertTrue(js.contains("data-notif-badge") && js.contains("data-notif-list"));
+        assertTrue(js.contains("data-toast-action") && js.contains(".pa-toast"));
+        assertTrue(js.contains("navigator.clipboard") && js.contains("execCommand"), "copie + repli conservés");
+        assertFalse(js.contains("tableHasPending"), "l'ancien tableau pollable a disparu");
     }
 
     @Test

@@ -1,27 +1,23 @@
 "use strict";
 /*
- * RPGQuest Control Panel — rafraîchissement automatique des actions agent (issue #65).
+ * RPGQuest Control Panel — script progressif (même origine, conforme CSP `default-src 'self'`,
+ * aucune dépendance externe autre que Bootstrap déjà chargé).
  *
- * Chargé en `<script src="/assets/panel.js" defer>` (même origine : conforme à la CSP
- * `default-src 'self'`, aucun script inline). Aucune dépendance externe.
+ * Modules :
+ *   - initToasts()        : affiche les toasts Bootstrap (feedback d'action) et met à jour
+ *                           en place un toast d'action « en cours » quand elle se résout ;
+ *   - initNotifications() : rafraîchit la cloche de la topbar (badge + liste) par un polling
+ *                           léger de /agents/actions.json — accéléré tant qu'une action est en cours ;
+ *   - initCopy()          : copie d'un identifiant technique ([data-copy]) ;
+ *   - initFilters()       : filtrage progressif des listes de cartes ;
+ *   - initDrawer()        : ferme le tiroir mobile au clic sur un lien.
  *
- * Principe :
- *   - après soumission d'une action, la page est rechargée (POST -> 303) et la nouvelle
- *     action apparaît immédiatement en PENDING dans le tableau rendu côté serveur ;
- *   - ce script repère les blocs `[data-actions-agent]` et, s'il reste au moins une action
- *     non terminale (compteur `data-actions-pending` OU statut lisible dans le tableau),
- *     interroge `/agents/actions.json?agent=<id>` — un premier appel immédiat puis toutes
- *     les 2 s ;
- *   - à chaque réponse il reconstruit le corps du tableau ;
- *   - dès qu'aucune action n'est plus PENDING/DELIVERED, le polling s'arrête ;
- *   - garde-fou : arrêt inconditionnel après 5 minutes.
- *
- * Le double signal de départ (attribut serveur + lecture du tableau) évite qu'un compteur
- * absent ou périmé laisse une action visuellement bloquée en PENDING.
+ * Pas de WebSocket (MVP #93). Le polling s'arrête tout seul (garde-fou de durée).
  */
 (function () {
-  var INTERVAL_MS = 2000;
-  var MAX_POLLS = 150; // 150 * 2 s = 5 min
+  var SLOW_MS = 20000;   // rythme de repos du centre de notifications
+  var FAST_MS = 3000;    // rythme tant qu'une action est « en cours »
+  var MAX_TICKS = 400;   // garde-fou : ~ 2 h au rythme lent
 
   function esc(value) {
     return String(value == null ? "" : value)
@@ -29,133 +25,144 @@
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
-  function renderRows(actions) {
-    if (!actions || actions.length === 0) {
-      return '<tr><td colspan="7" class="muted">Aucune action.</td></tr>';
+  function bsToast(el, opts) {
+    if (window.bootstrap && window.bootstrap.Toast) {
+      return new window.bootstrap.Toast(el, opts);
     }
-    return actions.map(function (a) {
-      // a.statusHtml / a.typeHtml sont produits cote serveur (Ui.actionStatus / Ui.actionType) :
-      // aucune donnee utilisateur, inseres tels quels pour un rendu identique au serveur.
-      var statusCell = a.statusHtml
-        || ('<span class="pill pill--' + esc(a.pill) + '">' + esc(a.status) + '</span>');
-      var idCell = '<code class="tid" role="button" tabindex="0" data-copy="'
-        + esc(a.idFull || a.id) + '" title="Cliquer pour copier : ' + esc(a.idFull || a.id) + '">'
-        + esc(a.id) + '</code>';
-      var typeCell = a.typeHtml || ('<code class="tid">' + esc(a.type) + '</code>');
-      return '<tr>'
-        + '<td>' + idCell + '</td>'
-        + '<td>' + typeCell + '</td>'
-        + '<td class="muted">' + esc(a.params) + '</td>'
-        + '<td>' + statusCell + '</td>'
-        + '<td>' + esc(a.deliverCount) + '</td>'
-        + '<td>' + esc(a.result) + '</td>'
-        + '<td class="muted">' + esc(a.createdAt) + '</td>'
-        + '</tr>';
-    }).join("");
+    return null; // Bootstrap absent : le toast reste caché, aucune régression bloquante
   }
 
-  /** Le tableau rendu côté serveur contient-il encore une action non terminale ? */
-  function tableHasPending(body) {
-    if (!body) {
-      return false;
-    }
-    var pills = body.querySelectorAll(".pill");
-    for (var i = 0; i < pills.length; i++) {
-      var t = (pills[i].textContent || "").toUpperCase();
-      if (t.indexOf("PENDING") !== -1 || t.indexOf("DELIVERED") !== -1) {
-        return true;
+  /* ---- Toasts ------------------------------------------------------------------------- */
+
+  var pendingToasts = []; // { el, actionId }
+
+  function initToasts() {
+    var root = document.getElementById("toast-root");
+    if (!root) { return; }
+    var seeds = document.querySelectorAll(".pa-toast");
+    for (var i = 0; i < seeds.length; i++) {
+      var el = seeds[i];
+      if (el.parentNode === root) { continue; }
+      root.appendChild(el);
+      var group = el.getAttribute("data-toast-group");
+      var autohide = el.getAttribute("data-bs-autohide") === "true";
+      var t = bsToast(el, { autohide: autohide, delay: parseInt(el.getAttribute("data-bs-delay") || "6000", 10) });
+      if (t) { t.show(); }
+      var actionId = el.getAttribute("data-toast-action");
+      if (actionId && group === "pending") {
+        pendingToasts.push({ el: el, actionId: actionId });
       }
     }
-    return false;
   }
 
-  function attach(block) {
-    var agent = block.getAttribute("data-actions-agent");
-    if (!agent) {
-      return;
+  function updateToast(entry, item) {
+    var el = entry.el;
+    el.setAttribute("data-toast-group", item.group);
+    var icon = el.querySelector(".toast-ic");
+    if (icon) {
+      icon.className = "toast-ic " + (item.group === "success" ? "text-success"
+        : item.group === "failed" ? "text-danger" : "text-primary");
+      var use = biClass(item.group);
+      var i = icon.querySelector("i.bi");
+      if (i) { i.className = "bi " + use; }
     }
-    var body = block.querySelector("tbody");
-    var statusLine = block.querySelector(".poll-status");
-    var pendingAttr = parseInt(block.getAttribute("data-actions-pending") || "0", 10);
-    var shouldPoll = body && (pendingAttr > 0 || tableHasPending(body));
-    if (!shouldPoll) {
-      return; // rien de PENDING au chargement : ne pas poller en permanence
+    var body = el.querySelector("[data-toast-body]");
+    if (body) {
+      var txt = item.resultShort || (item.group === "success" ? "Action terminée." : "Action en échec.");
+      if (item.target) { txt = item.target + " — " + txt; }
+      body.textContent = txt;
     }
+    var time = el.querySelector("[data-toast-time]");
+    if (time && item.age) { time.textContent = item.age; }
+    // Une fois résolue : succès -> auto-fermeture douce ; échec -> reste jusqu'à fermeture.
+    if (item.group === "success") {
+      window.setTimeout(function () {
+        var t = window.bootstrap && window.bootstrap.Toast ? window.bootstrap.Toast.getOrCreateInstance(el) : null;
+        if (t) { t.hide(); }
+      }, 5000);
+    }
+  }
 
-    var polls = 0;
+  function biClass(group) {
+    return group === "success" ? "bi-check-circle"
+      : group === "failed" ? "bi-x-circle" : "bi-clock";
+  }
+
+  /* ---- Centre de notifications ------------------------------------------------------- */
+
+  function initNotifications() {
+    var center = document.getElementById("notif-center");
+    var agent = center ? center.getAttribute("data-notif-agent") : null;
+    if (!agent && pendingToasts.length === 0) { return; }
+    if (!agent && center) { agent = center.getAttribute("data-notif-agent"); }
+    if (!agent) { return; }
+
+    var ticks = 0;
     var timer = null;
 
-    function stop(message) {
-      if (timer) {
-        window.clearTimeout(timer);
-        timer = null;
-      }
-      if (statusLine) {
-        if (message) {
-          statusLine.textContent = message;
-          statusLine.hidden = false;
-        } else {
-          statusLine.hidden = true;
-        }
-      }
+    function schedule(ms) {
+      if (timer) { window.clearTimeout(timer); }
+      timer = window.setTimeout(tick, ms);
     }
 
-    function schedule() {
-      timer = window.setTimeout(tick, INTERVAL_MS);
+    function applyBadge(n) {
+      var badge = document.querySelector("[data-notif-badge]");
+      if (!badge) { return; }
+      badge.textContent = String(n);
+      badge.hidden = !(n > 0);
+    }
+
+    function applyList(actions) {
+      var list = document.querySelector("[data-notif-list]");
+      if (!list || !actions) { return; }
+      if (actions.length === 0) {
+        list.innerHTML = '<p class="notif-empty">Aucune action pour le moment.</p>';
+        return;
+      }
+      list.innerHTML = actions.slice(0, 8).map(function (a) {
+        return a.notifHtml || ('<span class="notif-item">' + esc(a.label || a.type) + "</span>");
+      }).join("");
     }
 
     function tick() {
-      polls += 1;
-      if (polls > MAX_POLLS) {
-        stop("Rafraîchissement automatique interrompu (délai dépassé). Recharger la page pour reprendre.");
-        return;
-      }
+      ticks += 1;
+      if (ticks > MAX_TICKS) { return; }
       fetch("/agents/actions.json?agent=" + encodeURIComponent(agent), {
-        headers: { "Accept": "application/json" },
-        credentials: "same-origin"
+        headers: { "Accept": "application/json" }, credentials: "same-origin"
       }).then(function (res) {
-        if (res.status === 401 || res.status === 403) {
-          stop("Session expirée — recharger la page.");
-          return null;
-        }
-        if (!res.ok) {
-          throw new Error("HTTP " + res.status);
-        }
+        if (res.status === 401 || res.status === 403) { return null; }
+        if (!res.ok) { throw new Error("HTTP " + res.status); }
         return res.json();
       }).then(function (data) {
-        if (!data) {
-          return;
-        }
-        if (data.actions) {
-          body.innerHTML = renderRows(data.actions);
-        }
-        if (data.pending > 0) {
-          if (statusLine) {
-            statusLine.textContent = "Rafraîchissement automatique… (" + data.pending + " action(s) en cours)";
-            statusLine.hidden = false;
+        if (!data) { return; }
+        if (typeof data.badge === "number") { applyBadge(data.badge); }
+        if (data.actions) { applyList(data.actions); }
+
+        var stillPending = false;
+        for (var i = pendingToasts.length - 1; i >= 0; i--) {
+          var entry = pendingToasts[i];
+          var match = null;
+          for (var k = 0; data.actions && k < data.actions.length; k++) {
+            if (data.actions[k].idFull === entry.actionId) { match = data.actions[k]; break; }
           }
-          schedule();
-        } else {
-          stop(null);
+          if (match && match.group !== "pending") {
+            updateToast(entry, match);
+            pendingToasts.splice(i, 1);
+          } else if (match) {
+            stillPending = true;
+          }
         }
+        schedule(stillPending ? FAST_MS : SLOW_MS);
       }).catch(function () {
-        // Erreur réseau transitoire : on retente au prochain intervalle.
-        schedule();
+        schedule(SLOW_MS);
       });
     }
 
-    if (statusLine) {
-      statusLine.textContent = "Rafraîchissement automatique…";
-      statusLine.hidden = false;
-    }
-    tick(); // premier relevé immédiat : pas d'attente de 2 s avant la première mise à jour
+    tick();
   }
 
-  /* ---- Copie d'un identifiant technique (issue #75/#76 lot UX) --------------------------
-   * Délégation sur le document : tout élément [data-copy] (rendu par Ui.id / Ui.rawValue)
-   * copie sa valeur complète au clic ou à Entrée/Espace. Repli execCommand si l'API
-   * Clipboard est absente ou refusée ; sans JS, l'infobulle title reste consultable.
-   */
+  /* ---- Copie d'un identifiant technique -------------------------------------------- */
+
   function flashCopied(el) {
     el.classList.add("copied");
     window.setTimeout(function () { el.classList.remove("copied"); }, 1200);
@@ -168,7 +175,7 @@
         navigator.clipboard.writeText(text).then(done, function () { legacyCopy(text, done); });
         return;
       }
-    } catch (e) { /* tombe dans le repli */ }
+    } catch (e) { /* repli */ }
     legacyCopy(text, done);
   }
 
@@ -184,7 +191,7 @@
       document.execCommand("copy");
       document.body.removeChild(ta);
       done();
-    } catch (e) { /* rien de mieux à faire : l'infobulle reste dispo */ }
+    } catch (e) { /* l'infobulle title reste dispo */ }
   }
 
   function initCopy() {
@@ -199,11 +206,8 @@
     });
   }
 
-  /* ---- Filtrage progressif des listes de cartes (refonte #92) --------------------------
-   * Un champ [data-filter-input="scope"] filtre par texte les éléments [data-filter-item="scope"].
-   * Des puces [data-filter-chip="value"] (dans [data-filter-chips="scope"]) filtrent en plus par
-   * [data-filter-cat] (liste séparée par des espaces). Sans JS, tout reste visible.
-   */
+  /* ---- Filtrage progressif des listes de cartes ---------------------------------- */
+
   function initFilters() {
     var inputs = document.querySelectorAll("[data-filter-input]");
     for (var i = 0; i < inputs.length; i++) {
@@ -258,7 +262,6 @@
     return String(s).replace(/["\\\]]/g, "\\$&");
   }
 
-  /* Fermer le tiroir mobile quand on suit un lien de navigation. */
   function initDrawer() {
     var toggle = document.getElementById("nav-toggle");
     if (!toggle) { return; }
@@ -269,10 +272,8 @@
   }
 
   function init() {
-    var blocks = document.querySelectorAll("[data-actions-agent]");
-    for (var i = 0; i < blocks.length; i++) {
-      attach(blocks[i]);
-    }
+    initToasts();
+    initNotifications();
     initCopy();
     initFilters();
     initDrawer();

@@ -568,6 +568,34 @@ tuile Diagnostics de l'accueil et le Dashboard affichent une synthèse
 (compteurs). Fiche `/docs/serveur-depannage` pour les diagnostics
 serveur/agent/mondes.
 
+### Annuaire des joueurs dans PlugAdmin (issue #96)
+
+La page **`/players`** est un **annuaire d'administration** : joueurs **connectés**
+et joueurs **hors ligne déjà venus au moins une fois**. La source de vérité est le
+**serveur Paper** (`OfflinePlayer` + connectés) via l'action agent
+`player.catalog` — PlugAdmin ne tient **aucune base de joueurs propre**. Identité
+stable = **UUID** ; identité d'affichage = **pseudo** (dernier connu). Chaque
+joueur porte : `online`, `firstPlayed`, `lastSeen`, `banned` (+ raison), monde /
+position si en ligne. Tri par défaut : connectés d'abord, puis dernière connexion
+décroissante ; recherche pseudo / UUID ; filtres Tous / En ligne / Hors ligne /
+Bannis ; pagination (tout côté serveur).
+
+**Modération** — actions agent `player.ban` / `player.unban` via l'API `BanList`
+de profil Paper : fonctionnent **en ligne comme hors ligne** (expulsion si
+connecté), **raison obligatoire** pour le ban, idempotentes, auditées (acteur
+PlugAdmin, UUID + pseudo, raison, résultat). Permission Control Panel dédiée
+`PLAYER_MODERATE` (jamais un rôle en lecture seule). Aucune commande console
+libre ; toute mutation résout d'abord l'UUID canonique. Bans temporaires : hors
+périmètre.
+
+Chaque action de la fiche déclare sa compatibilité **hors ligne** :
+ban/unban/variables/reset fonctionnent hors ligne ; « donner un objet » est **en
+ligne uniquement** (indisponible expliqué, jamais de faux succès). Le **droit de
+construction** persistant pour un joueur hors ligne n'est **pas** géré : il exige
+un gestionnaire de permissions persistant (permissions granulaires *issue #27* +
+LuckPerms), non intégré à cette branche — la fiche affiche « non géré » sans faux
+interrupteur. Fiche `/docs/joueurs-admin`.
+
 ### Commandes RPGQuest — `/rpgadmin npc`
 
 Documentées en détail en **section 2 (Administration)** ; résumé :

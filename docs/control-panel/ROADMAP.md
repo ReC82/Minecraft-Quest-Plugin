@@ -428,6 +428,55 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       **VeryGames non touché.** Rollback : `rollback.sh app` (⚠️ sans le durcissement, réparer
       toute future ligne `created_at` sans « Z »).
 
+### Étape 3j — `/players` : annuaire d'administration des joueurs (#96) — **LIVRÉ (ban/unban + catalogue ; build BLOQUÉ par #27)**
+
+- [x] **Source de vérité** = serveur Paper (`OfflinePlayer` + connectés). Aucune base joueurs
+      propre à PlugAdmin ; le passage MariaDB #42 n'est pas rendu plus difficile.
+- [x] **Agent** : `player.catalog` (tous les joueurs déjà venus + connectés : `uuid`, `name`,
+      `online`, `hasPlayedBefore`, `firstPlayed`, `lastSeen`, `banned` + raison, monde/pos si en
+      ligne ; instantané des connectés sur le thread principal puis `getOfflinePlayers()` sur un
+      thread **asynchrone**). `player.ban` / `player.unban` via `BanList` de profil Paper —
+      **hors ligne OK**, expulsion si connecté, **raison obligatoire**, idempotents. Résolution
+      nom↔UUID par le `PlayerDirectory` existant (déjà offline-aware) ; toute mutation résout
+      d'abord l'UUID canonique.
+- [x] **Modèle pur** `PlayerCatalog` (parse tolérant + recherche pseudo/UUID + filtres
+      Tous/En ligne/Hors ligne/Bannis + tri « récent »=connectés puis `lastSeen` desc / « nom »
+      A-Z + pagination 50) — **tri/filtre/recherche/pagination côté serveur** (§28 volume).
+- [x] **Page réécrite** : LISTE = synthèse (accordion), CLIC = détail, ACTION = formulaire.
+      Badges **● En ligne** / **○ Hors ligne** / **Banni** (texte, pas que la couleur).
+      Sections **Identité / Activité / RPGQuest (liens vers `/quests` `/stories` `/actions`
+      filtrés) / Droits / Modération / Actions**. Toolbar compacte « Actualiser » (toast #93),
+      recherche `input-group` GET, puces de filtre = liens serveur, pager Précédent/Suivant.
+- [x] **Capacité par action** : ban/unban/variables/reset = **hors ligne OK** (badge) ;
+      « donner un objet » = **en ligne uniquement** (indisponible expliqué si hors ligne, jamais
+      de faux succès — §23). Reset : workflow existant (aperçu → confirmation, zone danger).
+- [x] **Permissions** : `PLAYER_MODERATE` (ban/unban) + `PLAYER_BUILD_WRITE` — OWNER seul ;
+      `READ_ONLY` / `TESTER` ne voient pas et ne peuvent pas appeler ban/unban. CSRF + confirmation
+      forte + raison obligatoire pour le ban. Audit : acteur, UUID + pseudo cible, raison,
+      résultat, `rid`.
+- [x] **Historique** : les actions joueur apparaissent dans `/actions` (domaine Joueurs, déjà
+      mappé par préfixe `player.`). La fiche ne duplique pas l'historique complet — juste un lien
+      « Historique de ce joueur » + le résultat de la dernière action.
+- [x] **Doc** : fiche `/docs/joueurs-admin` (annuaire, états, recherche, ban/unban, actions
+      impossibles hors ligne, droit de construction bloqué, reset, sécurité) + lien depuis
+      `/players`.
+- [ ] **`PLAYER_BUILD_WRITE` — BLOQUÉ par #27.** Accorder un droit de construction *persistant*
+      à un joueur hors ligne exige un gestionnaire de permissions persistant. #27 (permissions
+      granulaires `rpgquest.build.*`) **n'est pas fusionnée sur cette branche** (elle vit sur
+      `feature/27-granular-permissions`), et même #27 délègue la persistance à LuckPerms — RPGQuest
+      n'a aucun store propre pour « le joueur X peut construire dans le Hub ». Décision (§19) :
+      livrer l'architecture de capacité + le catalogue + ban/unban ; la fiche affiche « non géré »
+      sans faux interrupteur. À reprendre quand #27 est intégrée + un mécanisme de grant persistant
+      existe.
+- [x] **Tests** : `PlayerCatalogTest` (8 — parse/tri/recherche/filtres/pagination),
+      `PlayersPageTest` (8 — HTTP authentifié : badges, recherche serveur, filtres, ban validé
+      CSRF+confirm+raison, unban, give en-ligne-uniquement, focus `?player=`, pagination),
+      `AgentActionExecutorTest` (+5 — `player.catalog` compteurs, `player.ban` exige la raison +
+      résout l'UUID, `player.unban`). `:control-panel:test` + `:test` + `build` verts.
+- [x] **Hors périmètre** (non fait) : mute, sanctions temporaires, notes admin, inventaire
+      offline, économie, claims management, RCON, OP management, permissions globales #27,
+      migration MariaDB #42.
+
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 
 - [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +

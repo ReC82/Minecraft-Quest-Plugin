@@ -2091,3 +2091,84 @@ Session du 2026-09-09 (~13:16 UTC). Branche `feat/control-panel-admin-tools` @ `
 `active` `NRestarts=0` ; **0 `ERROR`** ; jar `9a21828f51e71e8784223bd2f8e549dbd0d09bf22c48e5fbc13ad0f8d608983c`.
 Réparation de la ligne `0cd8dd38…` faite à ~13:09 UTC (avant redéploiement) — panel déjà
 re-servi à ce moment ; le redéploiement apporte la protection permanente.
+
+---
+
+## 2026-09-09 - #96 : annuaire des joueurs /players (player.catalog + ban/unban) — plugin VeryGames + Control Panel AWS
+
+### Changement
+
+**Ce changement touche le plugin RPGQuest (agent) ET le Control Panel.**
+
+- **Plugin/agent** : trois nouvelles actions agent, aucune commande console, aucun SQL, aucune
+  migration :
+  - `player.catalog` — annuaire complet : joueurs **connectés** + joueurs **hors ligne déjà
+    venus** (source = serveur Paper `OfflinePlayer` ; instantané des connectés sur le thread
+    principal puis `getOfflinePlayers()` sur un thread **asynchrone** Bukkit — jamais de lecture
+    disque sur le main). Champs : `uuid`, `name`, `online`, `hasPlayedBefore`, `firstPlayed`,
+    `lastSeen`, `banned` (+ `banReason`), `world`/`x`/`y`/`z` si en ligne. Cap de sécurité 5000
+    (demande sans limite → `truncated=true`).
+  - `player.ban` / `player.unban` — via l'API publique `BanList` de **profil** Paper. Fonctionnent
+    **en ligne comme hors ligne** ; expulsion (`kick`) si le joueur est connecté ; **raison
+    obligatoire** pour le ban (stockée telle quelle, jamais une commande) ; idempotents
+    (`ALREADY_BANNED` / `NOT_BANNED`). Cible résolue en **UUID canonique** par le
+    `PlayerDirectory` existant avant toute écriture.
+- **Control Panel** : page `/players` réécrite en annuaire (recherche pseudo/UUID, filtres
+  Tous/En ligne/Hors ligne/Bannis, tri, pagination 50 — tout côté serveur), détail en accordion
+  (Identité / Activité / RPGQuest / Droits / Modération / Actions), ban/unban avec confirmation
+  forte + raison obligatoire, permission `PLAYER_MODERATE`. « Donner un objet » reste **en ligne
+  uniquement** (indisponible expliqué hors ligne). Fiche `/docs/joueurs-admin`.
+- **Droit de construction persistant : NON livré** — bloqué par #27 (permissions granulaires
+  non fusionnées sur cette branche + pas de store de grant persistant). La fiche affiche
+  « non géré », sans faux interrupteur.
+
+### Action serveur
+
+1. **VeryGames DEV** : remplacer **uniquement le JAR RPGQuest** (`scripts/deploy-verygames.sh -y`,
+   backup daté auto). Aucun autre fichier. **Ne pas** toucher `data.db`, config, mondes, Citizens.
+2. **Un seul** redémarrage : `scripts/verygames-restart.sh` (stop RCON → relance auto VeryGames).
+   Vérifier le retour **ONLINE**. Respecter la règle anti-auto-reboot (10 reboots / 30 min → STOP,
+   pas de retry, attendre relance manuelle).
+3. **Control Panel AWS** : `scripts/plugadmin/deploy.sh` (release + `systemctl restart plugadmin`
+   + `/health`).
+
+### Sauvegarde préalable
+
+- VeryGames : backup JAR daté automatique par `deploy-verygames.sh`
+  (`~/.local/share/rpgquest/verygames-backups/…-predeploy.jar`).
+- AWS : release précédente sous `/opt/plugadmin/releases/<horodatage>` (rétention 5).
+- Aucune donnée (`data.db`, `control-panel.db`) touchée.
+
+### Déploiement
+
+```
+scripts/deploy-verygames.sh -y
+scripts/verygames-restart.sh
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `:test` **1214/0** (29 ignorés MockBukkit, inchangés) — `AgentActionExecutorTest` +5
+  (`player.catalog` compteurs + cap ; `player.ban` exige la raison + résout l'UUID ;
+  `player.unban`). `:control-panel:test` **257/0** — `PlayerCatalogTest` (8),
+  `PlayersPageTest` (8, HTTP authentifié). `./gradlew build` vert.
+- VeryGames : `/plugins` (RCON) verts après restart ; heartbeat agent **ONLINE** ;
+  `player.catalog` déclenché depuis PlugAdmin → **SUCCESS** avec au moins le joueur de test
+  connecté + des joueurs hors ligne ; `journalctl -u plugadmin` **0 `ERROR`**.
+- AWS : `/health` ONLINE local + public ; `/players` (session de test) rend l'annuaire ;
+  `plugadmin.service` `active` `NRestarts=0`.
+- **ban/unban en réel** : uniquement sur une cible de test sûre si disponible ; sinon
+  `PENDING MANUAL VALIDATION` (ne jamais bannir l'owner sans rollback sûr).
+- Navigateur authentifié `/players` par l'owner : `PENDING OWNER`.
+
+### Rollback
+
+- Plugin : `scripts/rollback-verygames.sh --latest` puis `scripts/verygames-restart.sh`.
+- Control Panel : `scripts/plugadmin/rollback.sh app`.
+- Aucune migration à défaire. Un joueur banni pendant la validation doit être débanni
+  (`player.unban` ou `/pardon <uuid>` console) — les bans ne sont pas annulés par le rollback JAR.
+
+### Exécution réelle
+
+_(à compléter au déploiement)_

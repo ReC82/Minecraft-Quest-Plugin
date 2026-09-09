@@ -354,6 +354,27 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `PanelHardeningMalformedAgentDataTest` (connexion owner réelle ; échoue sans le fix) + smoke
   optionnel contre une **copie de la base de prod réelle**. Règle : donnée agent invalide ⇒
   diagnostic, jamais crash du serveur web.
+- **`/players` — annuaire d'administration des joueurs (issue #96)** *(branche
+  `feat/control-panel-admin-tools`)* — la page passe d'un simple relevé « joueurs connectés » à un
+  **annuaire** : connectés **+** joueurs hors ligne déjà venus. **Côté plugin/agent** : nouvelle
+  action `player.catalog` (source de vérité = serveur Paper `OfflinePlayer` — aucune base joueurs
+  propre à PlugAdmin ; `uuid`, `name`, `online`, `hasPlayedBefore`, `firstPlayed`, `lastSeen`,
+  `banned` + raison, monde/position si en ligne), lecture disque sur thread asynchrone Bukkit ;
+  actions `player.ban` / `player.unban` via l'API `BanList` de profil Paper (fonctionnent **hors
+  ligne** ; expulsion si connecté ; raison obligatoire). Résolution nom↔UUID par le
+  `PlayerDirectory` existant (déjà offline-aware). **Côté Control Panel** : modèle pur
+  `PlayerCatalog` (parse + recherche pseudo/UUID + filtres Tous/En ligne/Hors ligne/Bannis + tri
+  « récent »/« nom » + pagination 50, **tout côté serveur** pour tenir le volume). Page réécrite
+  au pattern LISTE = synthèse / CLIC = détail (accordion) : badges **● En ligne** / **○ Hors
+  ligne** / **Banni** (texte, pas que la couleur), sections **Identité / Activité / RPGQuest
+  (liens) / Droits / Modération / Actions**. Chaque action déclare sa compatibilité hors ligne ;
+  « donner un objet » est **en ligne uniquement** (indisponible expliqué, jamais de faux succès).
+  Nouvelles permissions `PLAYER_MODERATE` (ban/unban) et `PLAYER_BUILD_WRITE` (OWNER seul). Toasts
+  #93, historique dans `/actions` domaine Joueurs, fiche `/docs/joueurs-admin`.
+  **`PLAYER_BUILD_WRITE` = livré comme permission mais fonctionnalité BLOQUÉE** : accorder un droit
+  de construction *persistant* à un joueur hors ligne exige un gestionnaire de permissions
+  persistant (permissions granulaires #27 — **non fusionnées sur cette branche** — + LuckPerms).
+  La fiche affiche « non géré », sans faux interrupteur. Bans temporaires : hors périmètre.
 - **Éditeur guidé de quêtes et de stories — chemin principal (issue #46)** *(branche
   `feat/control-panel-admin-tools`)* — depuis `/quests` (« Créer une quête ») et `/stories`
   (« Créer une story »), ou « Modifier » sur une carte : formulaire guidé multi-sections

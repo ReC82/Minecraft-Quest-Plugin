@@ -538,6 +538,22 @@ centre de documentation : **`pnj-depannage`**, **`dialogues-depannage`**,
 *Ce que cela signifie / Pourquoi il faut corriger / Comment corriger /
 Vérification / Référence technique*.
 
+La page **`/diagnostics`** (issue #38) centralise tous ces diagnostics — PNJ,
+dialogues, quêtes, stories, serveur/agent, mondes — en **un seul endroit trié**
+(erreurs d'abord), pour répondre à « que dois-je corriger maintenant ? » sans
+ouvrir chaque page. Elle agrège des `DiagnosticProvider` (paquet
+`control-panel` `panel.diag`) qui lisent le **dernier relevé de l'agent**
+(catalogues + heartbeat) — aucune requête n'est déclenchée au chargement. Chaque
+carte donne : titre humain, domaine et ressource concernée, conséquence, action,
+un bouton **Ouvrir** (lien profond vers la page métier, qui déplie l'élément
+ciblé), un éventuel **Corriger maintenant** (uniquement une action déjà offerte
+par le panel — jamais de correction automatique), **Comment corriger ?** (ancre
+doc précise), et le code technique en dernier. Le bouton **Actualiser les
+diagnostics** enqueue en une fois les quelques relevés `*.list` nécessaires. La
+tuile Diagnostics de l'accueil et le Dashboard affichent une synthèse
+(compteurs). Fiche `/docs/serveur-depannage` pour les diagnostics
+serveur/agent/mondes.
+
 ### Commandes RPGQuest — `/rpgadmin npc`
 
 Documentées en détail en **section 2 (Administration)** ; résumé :

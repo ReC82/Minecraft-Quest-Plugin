@@ -73,8 +73,7 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
 - [x] module **Stories** : catalogue ordonné + état par joueur.
 - [ ] module **PNJ** : bindings + « PNJ attendus mais non liés » (aurait signalé le `guard`
       manquant de la session #21). Comparaison contenu chargé ↔ bindings. **(P1, non livré)**
-- [ ] module **Diagnostics** : contenu dépôt ↔ contenu chargé ↔ runtime (dépendances cassées,
-      quête référencée inconnue, story sans PNJ de rendu…). **(P1, non livré)**
+- [x] module **Diagnostics** — page `/diagnostics` (issue #38) : voir « Étape 3g » ci-dessous.
 
 ## Étape 2 — actions sûres (#36 via le panel) — **LIVRÉ** (via l'agent sortant #51, pas le bridge)
 
@@ -325,6 +324,57 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       / diagnostic humanisé + ancre doc ajoutées à `QuestsCatalogTest`, `StoriesCatalogTest`,
       `DialoguesCatalogTest` ; `NpcsCatalogTest` migré vers `DiagnosticHelp`. `#93` / `#49`
       sans régression.
+
+### Étape 3g — dashboard d'observabilité / page `/diagnostics` (#38) — **LIVRÉ**
+
+- [x] **Modèle unique** `panel.diag.DiagnosticEntry` (code stable, `Severity` ERROR/WARNING/INFO,
+      `Domain` humain, ressource + label, titre/message/conséquence/action humains, `docHref`
+      d'ancre précise, `resourceHref` « Ouvrir », `QuickAction` optionnelle, `source`,
+      `observedAt`). Wording repris de `DiagnosticHelp` quand le code est connu — **jamais
+      dupliqué**.
+- [x] **Architecture extensible** : interface `DiagnosticProvider` + `DiagnosticContext` (lecture
+      seule du dernier snapshot agent, **aucune requête déclenchée**). Providers : `Npc`,
+      `Dialogue`, `Quest`, `Story`, `Server`. Ajouter une source = ajouter un provider (pas de
+      `switch` géant).
+- [x] **`DiagnosticsService`** agrège, **dédoublonne** (code + ressource), **trie**
+      (ERROR → WARNING → INFO, puis domaine, ressource, code), calcule compteurs, domaines
+      présents, fraîcheur (`oldestSnapshot`).
+- [x] **Codes couverts** : PNJ `BINDING_NO_DEFINITION` / `NO_DEFINITION` / `DIALOGUE_MISSING` /
+      `DUPLICATE_DEFINITION` / `DUPLICATE_BINDING` / `DISABLED` / `NOT_LINKED` /
+      `GIVER_NO_DIALOGUE` + `CITIZENS_UNAVAILABLE` ; Dialogues `NEXT_MISSING` /
+      `QUEST_REF_UNKNOWN` / `NODE_UNREACHABLE` / `DIALOGUE_NO_NPC` / `MULTIPLE_NPCS` /
+      `DEFINITION_DIALOGUE_DIVERGES` / `DIALOGUE_LOAD_ISSUE` / `DIALOGUE_DECLARED_MISSING` ;
+      Quêtes/Stories `QUEST_PREREQ_UNKNOWN` / `QUEST_GIVER_UNKNOWN` / `STORY_QUEST_UNKNOWN`
+      (calcul de référence côté panel, `RefKeys` partagé avec `/quests` `/stories`) ; Serveur/Agent
+      `AGENT_NOT_CONFIGURED` / `AGENT_NO_HEARTBEAT` / `AGENT_OFFLINE` / `AGENT_HEARTBEAT_STALE` /
+      `SERVER_NOT_ONLINE` / `PLUGIN_VERSION_UNKNOWN` ; Mondes `WORLD_NOT_LOADED`.
+- [x] **Page `/diagnostics`** (`DiagnosticsPages`, `Permission.DIAGNOSTICS_READ`, tous rôles) :
+      en-tête + cartes synthétiques (Erreurs / Avertissements / Infos / Total), barre de filtres
+      **combinables** (gravité + domaine + recherche plein texte via `data-filter-*` ;
+      `panel.js` gère désormais **plusieurs groupes de puces** pour un même scope, rétro-compatible),
+      cartes compactes (icône + titre humain · domaine · ressource · conséquence · **Ouvrir** /
+      **Corriger maintenant** / **Comment corriger ?** · code technique en dernier), regroupement
+      au-delà de 4 diagnostics identiques (`<details>` « Voir les N »), **état vide positif**
+      (« Aucun problème détecté »), fraîcheur « Dernière vérification : il y a … ».
+- [x] **« Ouvrir »** = lien profond `/<page>?agent=…&focus=<id>` ; `panel.js#initFocus()` déplie
+      l'élément d'accordéon ciblé (attribut `data-res-id` ajouté aux 4 pages) + scroll + surbrillance
+      ; **« Corriger maintenant »** = même lien profond avec `&fix=create|edit|link` qui déplie en
+      plus le bon formulaire — **aucune correction automatique générique**, uniquement des actions
+      déjà offertes par le panel.
+- [x] **Refresh coordonné** : bouton `[ ↻ Actualiser les diagnostics ]` → `POST /diagnostics/refresh`
+      (CSRF, `DIAGNOSTICS_READ`) enqueue **les 4** relevés `*.list` nécessaires (jamais dix) en une
+      seule action opérateur ; feedback **toast** (#93).
+- [x] **Home** : tuile Diagnostics active (« 2 erreurs · 7 avertissements » ou « Tout est en
+      ordre ») ; **Dashboard** : section « État du contenu » (compteurs + « Voir les diagnostics »).
+      Sidebar : entrée Diagnostics active.
+- [x] **#49** : nouvelle fiche `serveur-depannage.md` (whitelist `_index.txt`) + section
+      « Citizens inactif sur le serveur cible » dans `pnj-depannage.md` ; chaque diagnostic
+      actionnable pointe vers une **ancre précise**.
+- [x] **Tests** : `DiagnosticsServiceTest` (agrégation multi-domaines, un de chaque gravité, tri,
+      dédoublonnage, heartbeat manquant → ERROR, monde non chargé, ancres doc ↔ fiches) +
+      `DiagnosticsPageTest` (auth, cartes humaines, code secondaire, filtres combinables + panel.js,
+      regroupement, refresh coordonné + toast, CSRF, Home/Dashboard, sidebar). `HomeLauncherTest`
+      mis à jour (tuile active). `#49` / `#89` / `#93` sans régression.
 
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 

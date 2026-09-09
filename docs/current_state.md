@@ -300,6 +300,27 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`pnj-depannage`, `dialogues-depannage`, `quetes-depannage`, `stories-depannage`, whitelist
   `_index.txt`), au format *Ce que cela signifie / Pourquoi il faut corriger / Comment corriger /
   Vérification / Référence technique*, titres de section alignés sur `DiagnosticHelp`.
+- **Dashboard d'observabilité — page `/diagnostics` (issue #38)** *(branche
+  `feat/control-panel-admin-tools`)* — répond à « qu'est-ce qui ne va pas actuellement sur
+  RPGQuest ? » sans ouvrir PNJ / Dialogues / Quêtes / Stories une par une. Nouveau paquet
+  `panel.diag` : modèle unique `DiagnosticEntry` (code stable, `Severity` ERROR/WARNING/INFO,
+  `Domain` humain, ressource, titre/message/conséquence/action humains, ancre `/docs` précise,
+  lien « Ouvrir », `QuickAction` optionnelle, `source`, `observedAt`), interface
+  `DiagnosticProvider` (Npc / Dialogue / Quest / Story / Server) + `DiagnosticContext` **lecture
+  seule du dernier snapshot agent (aucune requête déclenchée)**, `DiagnosticsService` qui agrège,
+  dédoublonne (code + ressource) et trie (ERROR → WARNING → INFO puis domaine). Le wording humain
+  vient de `DiagnosticHelp` — jamais dupliqué ; `RefKeys` partagé avec `/quests` `/stories` pour
+  les vérifications de référence. La page `DiagnosticsPages` : cartes synthétiques, filtres
+  **combinables** gravité + domaine + recherche (`panel.js` gère maintenant plusieurs groupes de
+  puces pour un même scope, rétro-compatible), cartes compactes humain-d'abord, regroupement
+  au-delà de 4 diagnostics identiques, état vide positif, fraîcheur. « Ouvrir » = lien profond
+  `?focus=<id>` que `panel.js#initFocus()` déplie sur les 4 pages (`data-res-id`) ; « Corriger
+  maintenant » ajoute `&fix=` pour déplier le bon formulaire — aucune correction automatique.
+  Refresh **coordonné** : `POST /diagnostics/refresh` enqueue les 4 relevés `*.list` en une
+  action, feedback toast (#93). Home : tuile Diagnostics active avec compteurs ou « Tout est en
+  ordre » ; Dashboard : section « État du contenu » (compteurs + lien). Permission
+  `DIAGNOSTICS_READ` (tous rôles la possèdent). **#49** : fiche `serveur-depannage.md` +
+  section Citizens dans `pnj-depannage.md`.
 - **Éditeur guidé de quêtes et de stories — chemin principal (issue #46)** *(branche
   `feat/control-panel-admin-tools`)* — depuis `/quests` (« Créer une quête ») et `/stories`
   (« Créer une story »), ou « Modifier » sur une carte : formulaire guidé multi-sections

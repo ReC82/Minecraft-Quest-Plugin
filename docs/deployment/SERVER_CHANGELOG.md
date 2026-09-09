@@ -1985,8 +1985,8 @@ scripts/plugadmin/deploy.sh
 - En-tête **CSP inchangé**.
 - `dig.lodygames.com` et `lodylands.com` → **200** (inchangés).
 - `plugadmin.service` `active`, `NRestarts=0` ; **aucun `ERROR`** au journal.
-- `:control-panel:test` vert (`NpcsCatalogTest` étendu #101) ; `:test` vert
-  (`NpcCitizensPayloadTest` étendu) ; `./gradlew build` vert.
+- `:control-panel:test` **237/0** (`NpcsCatalogTest` 14, `DiagnosticHelpTest` 7) ; `:test`
+  **0 échec / 0 erreur** (`NpcCitizensPayloadTest` 7) ; `./gradlew build` vert.
 - Validation live `/npcs` (Stan visible, `Citizens #7`, non lié) + navigateur authentifié :
   `PENDING MANUAL VALIDATION`.
 
@@ -1996,4 +1996,16 @@ scripts/plugadmin/deploy.sh
 
 ### Exécution réelle
 
-_(à compléter au déploiement)_
+Session du 2026-09-09 (~12:50 UTC). Branche `feat/control-panel-admin-tools` @ `5c7d333`.
+`deploy.sh --no-build` OK (release `/opt/plugadmin/releases/20260909-125035`). Jar déployé
+**byte-identique** au build (SHA-256 `553004d4…`) ; `renderFreeCitizensAccordionItem` +
+`citizensInverseLinkForm` présents dans le bytecode, `pnj-depannage.md` (section « PNJ du jeu
+sans fiche RPGQuest ») embarquée. `/health` ONLINE local + `https://plugadmin.lodylands.com` ;
+`/home` `/npcs` `/diagnostics` `/docs/pnj-depannage` anon → **303** ; **CSP inchangée**
+(`default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action
+'self'; frame-ancestors 'none'`) ; `dig.lodygames.com` + `lodylands.com` → **200** ;
+`plugadmin.service` `active` `NRestarts=0` ; **0 `ERROR`** au journal.
+Un relevé `npc.citizens.list` frais enfilé pour validation live est resté **DELIVERED** sans
+résultat (exécuteur de l'agent DEV VeryGames — **hors périmètre de ce changement**, agent non
+modifié). Preuve agent = payload DEV réel du 2026-09-09 11:33 (`#7 Stan`, `linkedNpcId:null`).
+Rendu `/npcs` authentifié : `PENDING MANUAL VALIDATION` (mot de passe owner non détenu).

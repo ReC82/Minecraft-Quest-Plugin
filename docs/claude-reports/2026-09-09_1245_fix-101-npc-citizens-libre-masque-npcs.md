@@ -4,12 +4,12 @@
 * Date : 2026-09-09
 * Heure : 12:45
 * Sujet : #101 — bug(control-panel) : un PNJ Citizens réel (« Stan ») n'apparaît pas dans `/npcs`
-* Statut : DONE (déploiement + validation live : voir sections dédiées)
+* Statut : DONE (déployé AWS ; validation live `/npcs` authentifiée = `PENDING MANUAL VALIDATION`)
 * Branche Git : `feat/control-panel-admin-tools`
-* Commit actuel au démarrage : `d039303`
+* Commit au démarrage : `d039303` — commits de la tâche : `c894156` (fix), `5c7d333` (docs)
 * Début de la tâche : 2026-09-09 12:25:19
-* Fin de la tâche : 2026-09-09 __:__:__
-* Durée totale : __:__:__
+* Fin de la tâche : 2026-09-09 12:56:00
+* Durée totale : 00:30:41
 
 ## Demande
 
@@ -143,16 +143,42 @@ aucune définition `npcs/*.yml` modifiés — investigation en lecture seule.
 
 ## Tests automatiques
 
-* `./gradlew :control-panel:test` — __ /0 (à confirmer ; `NpcsCatalogTest` étendu :
-  `freeCitizensNpcWithoutDefinitionIsListedSearchableAndAttachable`,
-  `twoFreeCitizensWithSameNameBothAppear` ; `DiagnosticHelpTest` valide l'ancre doc de
-  `CITIZENS_ONLY`).
-* `./gradlew test` — __ (à confirmer ; `NpcCitizensPayloadTest` étendu).
-* `./gradlew build` — __ (à confirmer).
+* `./gradlew test` — **BUILD SUCCESSFUL** (9 min 53). `:test` + `:control-panel:test` +
+  `:web-api:test` : **0 échec, 0 erreur** (29 skipped MockBukkit, hérités, inchangés).
+  - `NpcsCatalogTest` : **14** (0 échec) — +2 : `freeCitizensNpcWithoutDefinitionIsListedSearchableAndAttachable`,
+    `twoFreeCitizensWithSameNameBothAppear` ; borne de la fiche `guard` resserrée dans
+    `citizensLinkFormShownOnlyWhenDefinedAndNotLinked_withFreeCitizensOnly`.
+  - `NpcCitizensPayloadTest` : **7** (0 échec) — +1 :
+    `citizensListKeepsEveryRegistryEntry_freeOnes_andHomonyms`.
+  - `DiagnosticHelpTest` : **7** (0 échec) — valide que l'entrée `CITIZENS_ONLY` pointe vers
+    une ancre `slug(titre)` réellement présente dans `pnj-depannage.md`.
+* `./gradlew build` — **BUILD SUCCESSFUL**.
+
+## Déploiement réellement effectué
+
+`scripts/plugadmin/deploy.sh --no-build` le 2026-09-09 ~12:50 UTC (après
+`./gradlew :control-panel:installDist`). Release sauvegardée
+`/opt/plugadmin/releases/20260909-125035`. Jar déployé **byte-identique** au build
+(SHA-256 `553004d4f0a3fc00c8f474a48d73e7fc29aa167a4089da76353ceb00ef612ad5`) ;
+`renderFreeCitizensAccordionItem` + `citizensInverseLinkForm` présents dans le bytecode,
+section « PNJ du jeu sans fiche RPGQuest » embarquée dans `pnj-depannage.md`.
+
+Vérifications post-déploiement (anonymes) : `/health` ONLINE local + `https://plugadmin.lodylands.com` ;
+`/home` `/npcs` `/diagnostics` `/docs/pnj-depannage` → **303** vers `/login` ; **CSP inchangée** ;
+`dig.lodygames.com` + `lodylands.com` → **200** ; `plugadmin.service` `active` `NRestarts=0` ;
+**0 `ERROR`** au journal. **VeryGames non touché.**
+
+Un relevé `npc.citizens.list` frais a été enfilé (insertion directe d'une action `PENDING` en
+base, mécanisme agent normal) pour une preuve live : l'agent l'a passé `DELIVERED` mais n'a
+renvoyé aucun résultat en ~5 min (les relevés owner précédents répondaient en ~11 s). Cet
+exécuteur d'agent DEV VeryGames est **hors périmètre de ce changement** (agent non modifié). La
+preuve agent reste le payload DEV réel du **2026-09-09 11:33** (action `7d394d2d…`), qui montre
+déjà `#7 Stan` `linkedNpcId:null` `availableForBinding:true` — structurellement identique au
+fixture de test qui prouve le rendu.
 
 ## Tests manuels à effectuer
 
-`PENDING MANUAL VALIDATION` — après déploiement AWS :
+`PENDING MANUAL VALIDATION` — navigateur authentifié (mot de passe owner non détenu par Claude) :
 
 1. `/npcs` → « ↻ Citizens » puis « ↻ Catalogue RPGQuest ».
 2. Vérifier que **Stan** apparaît, libellé « Stan », sous-titre `Citizens #7`, badges

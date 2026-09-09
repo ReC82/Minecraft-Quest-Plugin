@@ -1801,3 +1801,67 @@ java.io.IOException: stream closed` observé = déconnexion client d'un `curl -I
 non lié au changement. Navigateur authentifié : `PENDING MANUAL VALIDATION`.
 
 Rapport : `docs/claude-reports/2026-09-09_1005_polish-docs-titres-codeblock-cta-49-89.md`.
+
+## 2026-09-09 - Control Panel : fiche /docs des commandes réécrite (une section par commande) — AWS uniquement
+
+### Changement
+
+**Control Panel AWS uniquement. Aucun code plugin, aucun agent, aucune migration, aucun impact
+serveur Minecraft — ne pas redéployer/redémarrer VeryGames.**
+
+`control-panel/src/main/resources/docs/rpgquest-commandes.md` est réécrite : le gros bloc
+fourre-tout (plusieurs familles de commandes derrière un seul bouton « Copier ») est remplacé
+par une fiche structurée — table « En un coup d'œil » (Je veux… → commande), catégories `##`
+(Joueurs / PNJ / Quêtes / Stories / Mondes / Portails & Waystones / Administration serveur /
+Outils builder & avancés), puis **une section `###` par commande** : nom humain d'abord,
+description, Syntaxe, Paramètres, Exemple(s), Résultat attendu, Permission / Attention.
+
+**Chaque bloc de code = une seule commande exécutable → son propre bouton « Copier »** (78
+blocs, 78 boutons). Contenu audité sur le code réel (`RpgAdminCommand`, `RPGQuestCommand`,
+`QuestCommand`, `DialogueCommand`, `CustomItemCommand`). CSS : sections `###` en cartes légères
+(bord gauche accent) + mini-libellés discrets. **Aucune modification du renderer Markdown.**
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — release + `systemctl restart plugadmin` + check `/health`.
+Aucune autre action. Aucun changement nginx / TLS / secret / base.
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : app précédente sous `/opt/plugadmin/releases/<horodatage>`
+(rétention 5). `control-panel.db` non touché.
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local **ONLINE** ; `https://plugadmin.lodylands.com/health` **ONLINE**.
+- `/docs` `/docs/rpgquest-commandes` `/npcs` `/docs?q=npc+tag` anonymes → **303** vers `/login`.
+- En-tête **CSP inchangé**.
+- `dig.lodygames.com` et `lodylands.com` → **200** (inchangés).
+- `plugadmin.service` `active`, `NRestarts=0` ; jar déployé **byte-identique** au build
+  (SHA-256 `f25c5633…`) ; `docs/rpgquest-commandes.md` embarqué (156 marqueurs ``` = 78 blocs).
+- `:control-panel:test` **221/0** (dont `CommandReferenceSheetTest`) ; `DocSearchIndexTest`
+  inchangé (fiches de tête #49 conservées).
+- Rendu navigateur **authentifié** de la fiche : `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure `/opt/plugadmin/releases/20260909-111244`).
+Aucune migration à défaire.
+
+### Exécution réelle
+
+Session du 2026-09-09 (~11:12 UTC). Branche `feat/control-panel-admin-tools` @ `577c4cd`.
+`deploy.sh` OK (release `/opt/plugadmin/releases/20260909-111244`). `/health` ONLINE (local +
+public) ; routes → **303** ; CSP inchangé ; `dig` / `lodylands` → 200 ; `plugadmin.service`
+`active` `NRestarts=0` ; jar byte-identique (`f25c5633…`) ; fiche embarquée (78 blocs). Un
+`WARNING event=handler_error path=/login java.io.IOException: stream closed` = `curl -I` (HEAD)
+client qui ferme, bénin, non lié au changement. Navigateur authentifié : `PENDING MANUAL
+VALIDATION`.
+
+Rapport : `docs/claude-reports/2026-09-09_1104_fiche-commandes-reference-49.md`.

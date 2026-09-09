@@ -9,6 +9,9 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,6 +31,8 @@ import java.util.UUID;
  * de fermeture.</p>
  */
 public final class AgentStore {
+
+    private static final System.Logger LOG = System.getLogger("rpgquest.panel.agent");
 
     private static final String CREATE_HEARTBEAT = """
             CREATE TABLE IF NOT EXISTS agent_heartbeat (
@@ -282,13 +287,29 @@ public final class AgentStore {
             ps.setInt(2, Math.max(1, limit));
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    rows.add(readAction(rs));
+                    // Frontière de sécurité par ligne : une ligne illisible (données héritées /
+                    // incomplètes / horodatage mal formé) est ignorée avec un WARNING — elle ne
+                    // doit jamais faire échouer tout l'historique, donc toute page qui l'affiche.
+                    try {
+                        rows.add(readAction(rs));
+                    } catch (RuntimeException e) {
+                        LOG.log(System.Logger.Level.WARNING, "event=agent_action_row_skipped agent=" + agentId
+                                + " id=" + safeString(rs, "id") + " cause=" + e.getClass().getSimpleName());
+                    }
                 }
             }
         } catch (SQLException e) {
             throw new IllegalStateException("Lecture de l'historique d'actions impossible (" + agentId + ")", e);
         }
         return rows;
+    }
+
+    private static String safeString(ResultSet rs, String column) {
+        try {
+            return rs.getString(column);
+        } catch (SQLException e) {
+            return "?";
+        }
     }
 
     private void expireStale(String agentId, Instant now, Duration expiry) {
@@ -312,7 +333,7 @@ public final class AgentStore {
         return new HeartbeatRecord(
                 rs.getString("agent_id"),
                 rs.getString("environment"),
-                Instant.parse(rs.getString("received_at")),
+                instantOrEpoch(rs.getString("received_at"), "heartbeat.received_at"),
                 rs.getString("generated_at"),
                 rs.getString("protocol"),
                 rs.getString("plugin_name"),
@@ -332,7 +353,7 @@ public final class AgentStore {
                 rs.getString("type"),
                 parseParams(rs.getString("params_json")),
                 parseStatus(rs.getString("status")),
-                Instant.parse(rs.getString("created_at")),
+                instantOrEpoch(rs.getString("created_at"), "agent_action.created_at"),
                 rs.getString("created_by"),
                 instantOrNull(rs.getString("delivered_at")),
                 rs.getInt("deliver_count"),
@@ -370,12 +391,55 @@ public final class AgentStore {
     }
 
     private static Instant instantOrNull(String raw) {
+        return parseTimestamp(raw, null);
+    }
+
+    /**
+     * Comme {@link #instantOrNull} mais renvoie {@link Instant#EPOCH} plutôt que {@code null} pour
+     * les colonnes horodatées <strong>non nulles</strong> ({@code created_at}, {@code received_at}) :
+     * l'appelant s'attend à un {@code Instant} (tri, comparaison), un {@code null} déplacerait
+     * simplement le crash. Une valeur illisible est journalisée (WARNING) puis neutralisée.
+     */
+    private static Instant instantOrEpoch(String raw, String context) {
+        Instant parsed = parseTimestamp(raw, context);
+        return parsed != null ? parsed : Instant.EPOCH;
+    }
+
+    /**
+     * Analyse tolérante d'un horodatage stocké. Accepte la forme ISO-8601 canonique
+     * ({@code 2026-09-09T12:51:33Z}, avec fuseau ou fraction de seconde) écrite par PlugAdmin, mais
+     * aussi les formes héritées / mal formées sans décalage ({@code 2026-09-09T12:51:33},
+     * {@code 2026-09-09 12:51:33}) — interprétées en UTC. {@code null}/blanc → {@code null} ;
+     * valeur non analysable → {@code null} + WARNING si {@code context} est fourni.
+     *
+     * <p>Motivation (#103) : une seule ligne {@code agent_action} au {@code created_at} sans « Z »
+     * (issue d'une écriture externe) faisait lever {@code DateTimeParseException} dans
+     * {@code readAction}, ce qui remontait jusqu'au rendu de la cloche de notifications et
+     * renvoyait 500 sur <em>toute</em> page authentifiée (502 nginx).</p>
+     */
+    static Instant parseTimestamp(String raw, String context) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
+        String value = raw.trim();
         try {
-            return Instant.parse(raw);
-        } catch (RuntimeException e) {
+            return Instant.parse(value);
+        } catch (DateTimeParseException ignored) {
+            // formes héritées ci-dessous
+        }
+        String isoLocal = value.replace(' ', 'T');
+        try {
+            return LocalDateTime.parse(isoLocal).toInstant(ZoneOffset.UTC);
+        } catch (DateTimeParseException ignored) {
+            // dernière tentative : date seule
+        }
+        try {
+            return LocalDateTime.parse(isoLocal + "T00:00:00").toInstant(ZoneOffset.UTC);
+        } catch (DateTimeParseException e) {
+            if (context != null) {
+                LOG.log(System.Logger.Level.WARNING,
+                        "event=timestamp_unparseable context=" + context + " value=" + value);
+            }
             return null;
         }
     }

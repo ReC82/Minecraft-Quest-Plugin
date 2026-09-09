@@ -649,6 +649,38 @@ un gestionnaire de permissions persistant (permissions granulaires *issue #27* +
 LuckPerms), non intégré à cette branche — la fiche affiche « non géré » sans faux
 interrupteur. Fiche `/docs/joueurs-admin`.
 
+### Export versionné du contenu — `/content/export` (issue #108)
+
+Phase 1 du pipeline de contenus LodyQuests (export → import #109 → génération IA #110). La page
+**`/content/export`** permet d'exporter **quêtes, stories, dialogues et PNJ logiques** dans un
+**format public versionné** `lodyquests-content-pack` (`schemaVersion: 1`, YAML déterministe) —
+pour sauvegarder, archiver ou fournir à une IA. Granularités : *tout le contenu*, *une famille*,
+*une sélection d'identifiants d'une même famille*.
+
+- **Couche d'export = plugin** (`com.lodygames.rpgquest.content.pack`) : DTO sans Bukkit,
+  `ContentPackMapper` (modèle runtime → DTO ; jamais de sérialisation runtime directe, aucun accès
+  disque, aucune donnée joueur/secret atteignable), `ContentPackSerializer` (YAML canonique écrit
+  à la main — ordre de clés fixe, familles triées par id, textes entre guillemets, reproductible
+  octet-pour-octet), `ContentPackAssembler` (`exportAll`/`exportFamily`/`exportElement`/
+  `exportSelection`, manifest + `counts`).
+- **Vocabulaire du pack = le schéma YAML RPGQuest existant** (contrat stable versionné par
+  `schemaVersion`), pas une 2ᵉ représentation métier → re-parsable par les parseurs réels (round-trip
+  visé pour #109). Ajouter une famille (items, recettes…) = 1 constante `ContentFamily` + 1
+  `*PackEntry` + 1 cas de mapper/serializer + 1 `Supplier`.
+- **Transport** : action agent **lecture seule** `content.export` (`AgentActionType.CONTENT_EXPORT`,
+  params `family` ∈ `all|quests|stories|dialogues|npcs` et `ids` optionnel). Le pack revient sous
+  `details.pack`, borné à **~56 Kio** (plafond du dépôt de résultat d'action = 64 Kio) ; au-delà,
+  échec lisible → exporter par famille ou par élément. Aucun effet de bord, aucun catalogue à
+  réenfiler.
+- **Control Panel** : permission `CONTENT_EXPORT` (tous les rôles en lecture) ; téléchargement via
+  `GET /content/export/download?action=<id>` (`Content-Disposition: attachment`, nom
+  `lodyquests-<famille>-<AAAA-MM-JJ>.yaml`) ; audit à l'enfilement et au téléchargement.
+- Le contenu `secret: true` **est** exporté (un backup ne doit pas perdre de contenu), avec son
+  flag conservé.
+- Format complet + exemple + stratégie d'évolution `schemaVersion` : [docs/CONTENT_PACK.md](CONTENT_PACK.md).
+- **Hors périmètre #108** : import/écriture (#109), génération IA (#110), familles items/recettes,
+  découpage/compression du transport.
+
 ### Commandes RPGQuest — `/rpgadmin npc`
 
 Documentées en détail en **section 2 (Administration)** ; résumé :

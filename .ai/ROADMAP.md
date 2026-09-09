@@ -218,6 +218,18 @@ Première étape à reprendre:
 ```text
 Date: 2026-09-09
 Branche de départ: feat/control-panel-admin-tools
+Étape de départ: issue #108 (export versionné des contenus déclaratifs — phase 1 du pipeline de contenus) — hors étapes 1-23
+Étapes terminées: #108 — format lodyquests-content-pack v1, couche d'export plugin (content.pack), action agent content.export, page Control Panel /content/export + téléchargement
+Branche finale: feat/control-panel-admin-tools (rester sur la branche courante, ne rien merger)
+Dernier commit: (voir git log — commits feat(content)/feat(control-panel)/docs #108)
+Build: vert — ./gradlew build BUILD SUCCESSFUL 11m23s (root :test 1282/0/29skip, control-panel 283/0/1skip, web-api 30/0)
+Tests: verts en ciblé — plugin content.pack.* (22) + AgentActionExecutorTest (+6) ; control-panel AgentActionCatalogTest (+2), ContentExportNameTest (3), AuthenticatedSmokeTest (/content/export)
+Tests manuels en attente: validation navigateur authentifiée de /content/export (mot de passe owner non détenu) : boutons, sélection, téléchargement du .yaml, rendu mobile
+Blocages: aucun
+Première étape à reprendre: #109 (import sécurisé d'un content pack : validation + diff + brouillon), qui consomme le même contrat lodyquests-content-pack
+
+Date: 2026-09-09
+Branche de départ: feat/control-panel-admin-tools
 Étape de départ: issue #124 (MVP waypoints par instance de biome) — hors étapes 1-23
 Étapes terminées: #124 MVP moteur (génération/persistance/découverte/protection/rendu versionné)
 Branche finale: feat/control-panel-admin-tools (consigne : rester sur la branche courante, ne rien merger)

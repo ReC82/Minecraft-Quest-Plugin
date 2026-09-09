@@ -461,6 +461,34 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `NpcsCatalogTest` / `DialoguesCatalogTest` mis à jour. **Non traité (délibéré)** : #114
   (sélecteur Citizens recherchable/paginé), #118 (sélecteur de locuteur alimenté par les PNJ),
   #113 (modale de liaison dédiée).
+- **Export versionné du contenu déclaratif — phase 1 du pipeline de contenus (issue #108)**
+  *(branche `feat/control-panel-admin-tools`)* — le Control Panel peut exporter quêtes, stories,
+  dialogues et PNJ logiques dans un **format public versionné** `lodyquests-content-pack`
+  (`schemaVersion: 1`, YAML déterministe), destiné à sauvegarder / archiver / fournir à une IA,
+  et à alimenter l'import #109 puis la génération IA #110. **Couche d'export dans le plugin**
+  (`com.lodygames.rpgquest.content.pack`) : DTO sans Bukkit (`ContentPack`, `*PackEntry`,
+  `PackText`), `ContentPackMapper` (modèle runtime → DTO, jamais de sérialisation runtime directe,
+  aucun accès disque), `ContentPackSerializer` (YAML canonique écrit à la main, ordre de clés
+  fixe, familles triées par id, textes entre guillemets — octet-pour-octet reproductible),
+  `ContentFamily` + `ContentPackAssembler` (`exportAll` / `exportFamily` / `exportElement` /
+  `exportSelection`, manifest + counts, `exportedAt` injecté). **Vocabulaire = le schéma YAML
+  RPGQuest existant** (contrat stable, pas une 2ᵉ représentation métier), donc re-parsable par les
+  parseurs réels — round-trip visé pour #109. **Action agent lecture seule** `content.export`
+  (`AgentActionType.CONTENT_EXPORT`, params `family` + `ids`), résultat sous `details.pack`, borné
+  à ~56 Kio (plafond transport 64 Kio — au-delà : échec lisible, exporter par famille/élément).
+  **Control Panel** : `Permission.CONTENT_EXPORT` (rôles en lecture), page `/content/export`
+  (« Exporter tout » / par famille / sélection d'ids), route de téléchargement
+  `GET /content/export/download?action=<id>` (`Content-Disposition: attachment`,
+  `lodyquests-<famille>-<AAAA-MM-JJ>.yaml`), audit à l'enfilement et au téléchargement, entrée de
+  menu. **Sécurité** : par construction le pack ne contient aucune donnée joueur / secret / chemin
+  système / état runtime (les modèles source ne portent que du contenu éditorial) — vérifié par
+  test. Le contenu `secret: true` **est** exporté (backup fidèle) avec son flag. Format documenté
+  dans [docs/CONTENT_PACK.md](CONTENT_PACK.md) (exemple complet + stratégie `schemaVersion` +
+  lien #109/#110). Tests : plugin `content.pack.*` (22) + `AgentActionExecutorTest` (+6) ;
+  control-panel `AgentActionCatalogTest` (+2), `ContentExportNameTest` (3), `AuthenticatedSmokeTest`
+  (`/content/export`). **Hors périmètre** (assumé) : import (#109), génération IA (#110), familles
+  items/recettes, découpage/compression du transport, boutons d'export par ligne sur les 4 pages
+  métier (la page dédiée couvre tous les critères #108).
 
 ## Bugs connus et corrigés
 

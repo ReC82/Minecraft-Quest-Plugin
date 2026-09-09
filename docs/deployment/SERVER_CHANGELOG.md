@@ -2499,3 +2499,60 @@ Rollback : `scripts/rollback-verygames.sh --latest` (restaure `rpgquest-20260909
 puis `scripts/verygames-restart.sh`.
 
 Rapport : `docs/claude-reports/2026-09-09_2118_waypoints-mvp-instance-biome-124.md`.
+
+---
+
+## 2026-09-09 - Export versionné du contenu déclaratif — phase 1 (issue #108)
+
+### Changement
+
+Phase 1 du pipeline de contenus LodyQuests : **export** de quêtes / stories / dialogues / PNJ
+logiques dans un format public versionné `lodyquests-content-pack` (`schemaVersion: 1`).
+
+- **Plugin RPGQuest** : nouveau package `com.lodygames.rpgquest.content.pack` (DTO + mapper +
+  serializer + assembler) et **nouvelle action agent lecture seule** `content.export`
+  (`AgentActionType.CONTENT_EXPORT`). Aucune migration de schéma, aucune nouvelle donnée
+  persistante, aucun changement `config.yml` / `messages.yml`, aucun effet de bord runtime
+  (l'action lit l'état en mémoire des moteurs et renvoie un YAML).
+- **Control Panel (AWS)** : permission `CONTENT_EXPORT`, page `/content/export`, route de
+  téléchargement `GET /content/export/download`. Nouvelle entrée de menu. CSP inchangée
+  (`default-src 'self'`), aucun CDN. `control-panel.db` non touché (aucune migration agent).
+
+### Action serveur
+
+**Aucune pour l'instant.** Rien n'est déployé cette session (consigne : pas de déploiement).
+Au prochain déploiement de la branche `feat/control-panel-admin-tools` :
+
+- **Control Panel AWS** : `scripts/plugadmin/deploy.sh` (build + release + `systemctl restart
+  plugadmin` + `/health`). C'est ce qui active réellement la page `/content/export`.
+- **JAR RPGQuest DEV** (optionnel, seulement si on veut exporter depuis DEV) : remplacer
+  `plugins/RPGQuest-*.jar` par le nouveau JAR (contient l'action `content.export`). Migration :
+  aucune. Redémarrage : oui (remplacement de JAR).
+
+**VeryGames / Minecraft / `data.db` / mondes / Citizens : non concernés par ce changement.**
+
+### Sauvegarde préalable
+
+Standard (backup daté automatique des scripts). Rien de spécifique — aucune donnée modifiée.
+
+### Déploiement
+
+Non exécuté. Voir « Action serveur ».
+
+### Validation
+
+- `./gradlew build` vert (voir rapport).
+- Après déploiement AWS : `/content/export` rendu (auth), bouton « Exporter tout », téléchargement
+  d'un `.yaml` conforme (`format: lodyquests-content-pack`, `schemaVersion: 1`). `PENDING MANUAL
+  VALIDATION` (navigateur owner).
+
+### Rollback
+
+Control Panel : `scripts/plugadmin/rollback.sh app`. Plugin : ancien JAR + restart. L'action
+`content.export` étant lecture seule et additive, aucun état à défaire.
+
+### Exécution réelle
+
+Aucune. Développement seul, branche `feat/control-panel-admin-tools`, non fusionnée, non déployée.
+
+Rapport : `docs/claude-reports/2026-09-09_2215_export-versionne-contenu-108.md`.

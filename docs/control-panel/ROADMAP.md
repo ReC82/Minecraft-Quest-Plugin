@@ -477,6 +477,40 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       offline, économie, claims management, RCON, OP management, permissions globales #27,
       migration MariaDB #42.
 
+### Étape 3k — passe UX ciblée éditeur de quêtes (#46) — **LIVRÉ (chemin principal ; validation navigateur en attente)**
+
+- [x] **Un type = une source de vérité** : `ContentEditorPages#renderRow` émet, pour **chaque**
+      type d'objectif / récompense du catalogue, le jeu de champs complet issu du même
+      `Descriptors.Descriptor` ; un seul visible + actif, les autres `hidden` + `disabled` (ni
+      soumis, ni validés). `panel.js` `initEditorForms` / `applyType` bascule au `change` du
+      `<select data-type-select>` **sans recharger** et **vide** les champs du type précédent ;
+      sans JS, le serveur re-rend le bon jeu au 1er aller-retour ; nettoyage serveur de secours
+      (`normaliseRow` : liste blanche `Descriptors.fieldNames` + champ caché `_was`).
+      `Descriptors.any` / `.fieldNames` ajoutés ; récompense `EXPERIENCE` → « Points d'expérience ».
+- [x] **Brouillon jamais bloqué** : tous les boutons `_action` (`add/del/mv` étape · objectif ·
+      récompense, `refresh`, `validate`, `save`) portent `formnovalidate` ; la validation métier
+      (`QuestValidator`, ERREUR / ATTENTION / INFO) n'a lieu qu'à « Vérifier » / « Enregistrer ».
+      Bouton `submit` par défaut caché (`refresh`) → « Entrée » ne déclenche plus la 1re action
+      destructive.
+- [x] **Scroll / contexte** : ids stables (`step-<i>`, `obj-<i>-<j>`, `rew-<i>`, `q-<i>`,
+      `sec-*`) + `formaction=".../save#ancre"` sur chaque action ; filet JS `sessionStorage`.
+- [x] **Listes recherchables** : `panel.js` `initCombo` transforme tout `<input list>` de
+      l'éditeur en liste filtrée (valeur **ou** libellé humain), largeur alignée, hauteur bornée,
+      clavier ↑/↓/Entrée/Échap, repli au-dessus, fermeture au clic extérieur — **aucune
+      dépendance, aucun CDN** (CSP `default-src 'self'`) ; sans JS l'`<input list>` natif reste.
+      `RefData.CATEGORIES` (curée + saisie libre) pour la catégorie ; icône = matériaux ;
+      entités / matériaux avec libellé FR (`MinecraftNames`, `<option label=…>`).
+- [x] **Tests** : `EditorDescriptorsTest` (6 — cohérence descripteurs ↔ moteur, aucun
+      débordement de champ entre types, `fieldNames` liste blanche) + `ContentEditorPagesTest`
+      (+9 — `formnovalidate`, actions structurelles avec formulaire vide, ancre de scroll, type →
+      champs + aide cohérents, ITEM = objet + quantité jamais XP, changement de type efface,
+      catégorie ≠ liste PNJ, combos). `:control-panel:test` 271/0 ; `./gradlew build` vert.
+- [x] Déploiement AWS `scripts/plugadmin/deploy.sh` (release `20260909-161744`) ; **VeryGames
+      non touché**.
+- [ ] Validation navigateur authentifiée (scénario §28) — `PENDING MANUAL VALIDATION`.
+- [ ] Non fait (délibéré) : libellé humain du PNJ donneur (pas exposé par `npc.list`) ;
+      distinction item vanilla / item custom RPGQuest (le moteur ne lit qu'un `Material` vanilla).
+
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 
 - [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +
@@ -498,10 +532,18 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       `/stories/new|edit|save` : session + **`QUEST_CONTENT_WRITE` / `STORY_CONTENT_WRITE`** +
       CSRF sur `save` + audit `*.content.write`. **Aucun déploiement.**
 - [x] config : `content.repo-dir` / env `PLUGADMIN_CONTENT_DIR` (absent → éditeur en lecture seule).
-- [ ] **V2** : lignes guidées pour prérequis / variables (au lieu de zones de texte) ;
-      duplication d'objectif / de récompense ; rechargement des champs au changement de type de
-      `<select>` (petit JS progressif) ; action agent `quest.definition.validate` (relecture par
-      le **vrai** parser à distance) ; schéma vertical de chaîne de story.
+- [x] **V3 — passe UX ciblée éditeur de quêtes (#46, voir « Étape 3k »)** : un type =
+      une source de vérité (jeux de champs rendus par le même `Descriptors`, bascule JS
+      progressive au changement de `<select>` **sans recharger** + effacement du type
+      précédent) ; actions de brouillon `formnovalidate` (validation métier seulement à
+      la fin) ; ids stables + `formaction=".../save#ancre"` (recentrage du scroll) ;
+      listes **recherchables** (`panel.js` `initCombo`, aucun CDN) alimentées par la
+      bonne source (catégorie curée + saisie libre, icône = matériaux, libellés FR).
+- [ ] **V2 restant** : lignes guidées pour prérequis / variables (au lieu de zones de
+      texte) ; duplication d'objectif / de récompense ; action agent
+      `quest.definition.validate` (relecture par le **vrai** parser à distance) ; schéma
+      vertical de chaîne de story ; libellé humain pour le PNJ donneur (dépend d'un
+      libellé exposé par `npc.list`).
 
 ## Étape 4 — développement (#29)
 

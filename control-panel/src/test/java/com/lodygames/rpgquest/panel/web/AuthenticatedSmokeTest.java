@@ -71,7 +71,7 @@ class AuthenticatedSmokeTest {
                 + "&password=" + URLEncoder.encode(TestConfig.OWNER_PASSWORD, StandardCharsets.UTF_8)
                 + "&_csrf=" + token);
         assertEquals(303, login.statusCode(), "login valide -> redirection");
-        assertEquals("/dashboard", login.headers().firstValue("Location").orElse(""));
+        assertEquals("/home", login.headers().firstValue("Location").orElse(""));
         assertTrue(jar.containsKey("panel_session"), "cookie de session posé");
 
         for (String path : PROTECTED_PAGES) {

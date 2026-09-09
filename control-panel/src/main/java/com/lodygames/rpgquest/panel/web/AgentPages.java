@@ -1389,7 +1389,6 @@ public final class AgentPages {
             }
         }
         sb.append(Ui.tableClose()).append("<p class=\"muted poll-status\" hidden></p></div>");
-        sb.append("<script src=\"/assets/panel.js\" defer></script>");
         return sb.toString();
     }
 
@@ -1526,6 +1525,49 @@ public final class AgentPages {
         List<String> worlds = loadedWorldNames(agentId);
         return new com.lodygames.rpgquest.panel.content.RefData(
                 quests, npcs, worlds, questDet.isPresent(), npcDet.isPresent(), !worlds.isEmpty());
+    }
+
+    /**
+     * Comptes synthétiques pour les tuiles de la Home (issue #92, lot Bootstrap) — <strong>lecture
+     * du dernier relevé agent uniquement</strong>, aucune requête déclenchée. Un champ à {@code -1}
+     * = donnée non encore chargée.
+     */
+    public HomeSummary homeSummary(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return HomeSummary.UNKNOWN;
+        }
+        int players = countOf(agentId, "player.list", "players");
+        Optional<Map<String, Object>> npcDet = latestDetails(agentId, "npc.list");
+        int npc = npcDet.map(d -> asList(d.get("npcs")).size()).orElse(-1);
+        int npcWarn = npcDet.map(d -> intOr(d.get("withWarnings"), 0)).orElse(-1);
+        int quests = countOf(agentId, "quest.list", "quests");
+        int stories = countOf(agentId, "story.list", "stories");
+        Optional<Map<String, Object>> dlgDet = latestDetails(agentId, "dialogue.list");
+        int dialogues = dlgDet.map(d -> asList(d.get("dialogues")).size()).orElse(-1);
+        int dlgWarn = dlgDet.map(d -> intOr(d.get("withWarnings"), 0)
+                + asList(d.get("loadIssues")).size()).orElse(-1);
+        return new HomeSummary(players, npc, npcWarn, quests, stories, dialogues, dlgWarn);
+    }
+
+    /** @param n valeur, ou -1 si le relevé correspondant n'a jamais été chargé */
+    public record HomeSummary(int playersOnline, int npcTotal, int npcWarnings, int quests,
+                              int stories, int dialogues, int dialogueWarnings) {
+        public static final HomeSummary UNKNOWN = new HomeSummary(-1, -1, -1, -1, -1, -1, -1);
+    }
+
+    private int countOf(String agentId, String type, String arrayKey) {
+        return latestDetails(agentId, type).map(d -> asList(d.get(arrayKey)).size()).orElse(-1);
+    }
+
+    private static int intOr(Object v, int dflt) {
+        if (v instanceof Number n) {
+            return n.intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(v).trim());
+        } catch (NumberFormatException e) {
+            return dflt;
+        }
     }
 
     // ---- Petits utilitaires ---------------------------------------------------------

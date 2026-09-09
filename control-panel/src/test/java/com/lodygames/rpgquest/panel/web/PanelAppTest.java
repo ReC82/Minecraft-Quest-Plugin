@@ -105,7 +105,7 @@ class PanelAppTest {
                         + "&password=" + URLEncoder.encode(TestConfig.OWNER_PASSWORD, StandardCharsets.UTF_8)
                         + "&_csrf=" + token);
         assertEquals(303, res.statusCode(), "connexion valide -> redirection");
-        assertEquals("/dashboard", res.headers().firstValue("Location").orElse(""));
+        assertEquals("/home", res.headers().firstValue("Location").orElse(""));
     }
 
     // ---- Tests -------------------------------------------------------------------------

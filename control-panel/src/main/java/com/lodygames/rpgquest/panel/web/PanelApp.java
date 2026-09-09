@@ -64,6 +64,7 @@ public final class PanelApp {
     private final AgentEndpoints agentEndpoints;
     private final AgentPages agentPages;
     private final DocsPages docsPages = new DocsPages(DocLibrary.load());
+    private final HomePages homePages = new HomePages(permissions);
     private final ContentWorkspace contentWorkspace;
     private final ContentEditorPages contentEditor;
 
@@ -98,11 +99,12 @@ public final class PanelApp {
         route("/health", this::handleLiveness);
         route("/login", this::handleLogin);
         route("/logout", this::handleLogout);
+        route("/home", this::handleHome);
         route("/dashboard", this::handleDashboard);
         route("/agents", this::handleAgents);
         route("/agents/action", this::handleActionCreate);
         route("/agents/actions.json", this::handleAgentActionsJson);
-        route("/assets/panel.js", this::handleAssetPanelJs);
+        route("/assets/", this::handleAsset);
         route("/players", exchange -> handleBusinessPage(exchange, "/players", "Joueurs",
                 Permission.PLAYERS_READ, agentPages::players));
         route("/quests", exchange -> handleBusinessPage(exchange, "/quests", "Quêtes",
@@ -199,7 +201,7 @@ public final class PanelApp {
     // ---- Handlers -----------------------------------------------------------------------
 
     private void handleRoot(HttpExchange exchange) throws IOException {
-        Http.redirect(exchange, "/dashboard");
+        Http.redirect(exchange, "/home");
     }
 
     /** Liveness du panel lui-même — jamais authentifié, jamais bloqué par le kill-switch. */
@@ -217,7 +219,7 @@ public final class PanelApp {
     private void handleLogin(HttpExchange exchange) throws IOException {
         if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
             if (currentSession(exchange).isPresent()) {
-                Http.redirect(exchange, "/dashboard");
+                Http.redirect(exchange, "/home");
                 return;
             }
             String csrf = UUID.randomUUID().toString();
@@ -252,7 +254,7 @@ public final class PanelApp {
                 config.cookieSecure(), "Lax", config.sessionTtlMinutes() * 60);
         Http.clearCookie(exchange, LOGIN_CSRF_COOKIE, config.cookieSecure());
         audit.record(session.username(), "login.success", "env=" + config.defaultTargetId(), "OK", null, rid);
-        Http.redirect(exchange, "/dashboard");
+        Http.redirect(exchange, "/home");
     }
 
     private void handleLogout(HttpExchange exchange) throws IOException {
@@ -275,6 +277,26 @@ public final class PanelApp {
         Http.clearCookie(exchange, SESSION_COOKIE, config.cookieSecure());
         audit.record(session.get().username(), "logout", "env=" + config.defaultTargetId(), "OK", null, rid);
         Http.redirect(exchange, "/login");
+    }
+
+    /**
+     * Home = launcher à tuiles (issue #92, lot Bootstrap). Page d'arrivée après connexion ;
+     * accessible à toute session (chaque tuile est filtrée par sa propre permission).
+     */
+    private void handleHome(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        Target target = config.defaultTarget();
+        String agentId = config.agents().defaultAgentId();
+        String serverState = agentId == null ? "UNKNOWN"
+                : AgentLiveness.of(agentStore.latestHeartbeat(agentId), config.agents().thresholds(), Instant.now()).name();
+        AgentPages.HomeSummary summary = agentPages.homeSummary(agentId);
+        String body = homePages.render(session.role(), serverState, summary);
+        Http.html(exchange, 200, renderPage("Accueil", session, "/home", body,
+                Layout.Shell.of(target.label(), serverState, session.username())));
     }
 
     private void handleDashboard(HttpExchange exchange) throws IOException {
@@ -533,25 +555,75 @@ public final class PanelApp {
         Http.json(exchange, 200, com.lodygames.rpgquest.panel.json.Json.write(root));
     }
 
-    /** Sert le script de rafraîchissement automatique (même origine, conforme CSP). */
-    private void handleAssetPanelJs(HttpExchange exchange) throws IOException {
+    private static final java.util.regex.Pattern ASSET_PATH =
+            java.util.regex.Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*");
+
+    /**
+     * Sert les fichiers statiques embarqués sous {@code classpath:/assets/} : {@code panel.js},
+     * Bootstrap ({@code /assets/bootstrap/…}), Bootstrap Icons ({@code /assets/bootstrap-icons/…}),
+     * {@code plugadmin.css}. Tout est <strong>local</strong> — aucun CDN, cohérent avec la CSP
+     * {@code default-src 'self'}. Chemin strictement validé (pas de {@code ..}, pas de chemin
+     * absolu) ; ETag + {@code 304} ; cache court.
+     */
+    private void handleAsset(HttpExchange exchange) throws IOException {
         if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
             Http.text(exchange, 405, "GET requis");
             return;
         }
-        byte[] js;
-        try (var in = PanelApp.class.getResourceAsStream("/assets/panel.js")) {
+        String path = exchange.getRequestURI().getPath();
+        String rel = path.startsWith("/assets/") ? path.substring("/assets/".length()) : "";
+        if (rel.isEmpty() || rel.contains("..") || !ASSET_PATH.matcher(rel).matches()) {
+            Http.text(exchange, 404, "asset introuvable");
+            return;
+        }
+        byte[] bytes;
+        try (var in = PanelApp.class.getResourceAsStream("/assets/" + rel)) {
             if (in == null) {
                 Http.text(exchange, 404, "asset introuvable");
                 return;
             }
-            js = in.readAllBytes();
+            bytes = in.readAllBytes();
         }
-        Http.securityHeaders(exchange);
-        exchange.getResponseHeaders().set("Content-Type", "application/javascript; charset=utf-8");
-        exchange.sendResponseHeaders(200, js.length);
+        String etag = "\"" + sha256Hex(bytes).substring(0, 16) + "\"";
+        var h = exchange.getResponseHeaders();
+        h.set("X-Content-Type-Options", "nosniff");
+        h.set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'");
+        h.set("Cache-Control", "public, max-age=3600");
+        h.set("ETag", etag);
+        if (etag.equals(exchange.getRequestHeaders().getFirst("If-None-Match"))) {
+            exchange.sendResponseHeaders(304, -1);
+            exchange.close();
+            return;
+        }
+        h.set("Content-Type", assetContentType(rel));
+        exchange.sendResponseHeaders(200, bytes.length);
         try (var out = exchange.getResponseBody()) {
-            out.write(js);
+            out.write(bytes);
+        }
+    }
+
+    private static String assetContentType(String rel) {
+        int dot = rel.lastIndexOf('.');
+        String ext = dot < 0 ? "" : rel.substring(dot + 1).toLowerCase(java.util.Locale.ROOT);
+        return switch (ext) {
+            case "css" -> "text/css; charset=utf-8";
+            case "js" -> "application/javascript; charset=utf-8";
+            case "woff2" -> "font/woff2";
+            case "woff" -> "font/woff";
+            case "ttf" -> "font/ttf";
+            case "svg" -> "image/svg+xml";
+            case "map", "json" -> "application/json; charset=utf-8";
+            case "png" -> "image/png";
+            case "ico" -> "image/x-icon";
+            default -> "application/octet-stream";
+        };
+    }
+
+    private static String sha256Hex(byte[] bytes) {
+        try {
+            return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (Exception e) {
+            return Integer.toHexString(java.util.Arrays.hashCode(bytes));
         }
     }
 
@@ -825,7 +897,6 @@ public final class PanelApp {
             sb.append("<p class=\"muted poll-status\" hidden></p>");
             sb.append("</div>");
         }
-        sb.append("<script src=\"/assets/panel.js\" defer></script>");
         return sb.toString();
     }
 

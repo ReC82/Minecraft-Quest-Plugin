@@ -189,9 +189,12 @@ public final class DocsPages {
                 + "<button class=\"btn\" type=\"submit\">Rechercher</button></form>";
     }
 
-    /** {@code <script src=\"/assets/panel.js\">} — active le bouton « Copier » (délégation [data-copy]). */
+    /**
+     * Le script progressif ({@code /assets/panel.js}, bouton « Copier ») est désormais chargé
+     * globalement par {@link Layout} — plus rien à ajouter au niveau de la page.
+     */
     private static String assetScript() {
-        return "<script src=\"/assets/panel.js\" defer></script>";
+        return "";
     }
 
     /** Extrait un sommaire (titres ## et ###) du Markdown, avec les mêmes ancres que {@link Markdown}. */

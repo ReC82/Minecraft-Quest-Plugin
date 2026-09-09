@@ -467,6 +467,59 @@ class AgentActionExecutorTest {
         assertEquals("true", actions.lastVariableValue);
     }
 
+    // ---- content.export (issue #108) --------------------------------------------------
+
+    @Test
+    void contentExportDefaultsToAllAndReturnsThePackInDetails() {
+        AgentActionOutcome outcome = run(new AgentAction("ce1", "content.export", Map.of()));
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals("all", actions.lastExportFamily);
+        assertEquals("lodyquests-content-pack", outcome.details().get("format"));
+        assertEquals(1, outcome.details().get("schemaVersion"));
+        assertEquals("all", outcome.details().get("family"));
+        assertTrue(String.valueOf(outcome.details().get("pack")).startsWith("format: lodyquests-content-pack"));
+        assertTrue(((Number) outcome.details().get("bytes")).intValue() > 0);
+    }
+
+    @Test
+    void contentExportForwardsFamilyAndIdSelection() {
+        AgentActionOutcome outcome = run(new AgentAction("ce2", "content.export",
+                Map.of("family", "quests", "ids", "rpgquest:first_steps, rpgquest:crystal_hunt")));
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals("quests", actions.lastExportFamily);
+        assertEquals(List.of("rpgquest:first_steps", "rpgquest:crystal_hunt"), actions.lastExportIds);
+    }
+
+    @Test
+    void contentExportRejectsUnknownFamily() {
+        AgentActionOutcome outcome = run(new AgentAction("ce3", "content.export", Map.of("family", "bogus")));
+        assertEquals(AgentActionOutcome.REJECTED, outcome.status());
+        assertTrue(outcome.message().contains("family"));
+    }
+
+    @Test
+    void contentExportRejectsIdsWithFamilyAll() {
+        AgentActionOutcome outcome = run(new AgentAction("ce4", "content.export",
+                Map.of("family", "all", "ids", "rpgquest:first_steps")));
+        assertEquals(AgentActionOutcome.REJECTED, outcome.status());
+    }
+
+    @Test
+    void contentExportRejectsMalformedId() {
+        AgentActionOutcome outcome = run(new AgentAction("ce5", "content.export",
+                Map.of("family", "quests", "ids", "not a valid id!!")));
+        assertEquals(AgentActionOutcome.REJECTED, outcome.status());
+    }
+
+    @Test
+    void contentExportFailsCleanlyWhenPackExceedsTransportLimit() {
+        actions.exportOversize = true;
+        AgentActionOutcome outcome = run(new AgentAction("ce6", "content.export", Map.of()));
+        assertEquals(AgentActionOutcome.FAILED, outcome.status());
+        assertTrue(outcome.message().contains("volumineux"));
+        actions.exportOversize = false;
+    }
+
     // ---- Fake façade métier -----------------------------------------------------------
 
     private static final class FakeAgentActions implements AgentActions {
@@ -527,6 +580,23 @@ class AgentActionExecutorTest {
         @Override
         public List<ItemSummary> itemDefinitions() {
             return List.of(new ItemSummary("rpgquest:rune_rappel", "Rune de rappel", "TOOL"));
+        }
+
+        String lastExportFamily;
+        List<String> lastExportIds;
+        boolean exportOversize;
+
+        @Override
+        public ContentExportResult exportContent(String family, List<String> ids) {
+            lastExportFamily = family;
+            lastExportIds = ids;
+            String pack = "format: lodyquests-content-pack\nschemaVersion: 1\ncontent:\n"
+                    + "  quests: []\n  stories: []\n  dialogues: []\n  npcs: []\n";
+            if (exportOversize) {
+                pack = pack + "# " + "x".repeat(60_000) + "\n";
+            }
+            return new ContentExportResult(true, "OK", "lodyquests-content-pack", 1,
+                    family == null ? "all" : family, java.util.Map.of("quests", 0), 0, pack);
         }
 
         String lastNpcCreateId;

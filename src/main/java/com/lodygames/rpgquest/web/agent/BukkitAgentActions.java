@@ -2,6 +2,11 @@ package com.lodygames.rpgquest.web.agent;
 
 import com.destroystokyo.paper.profile.PlayerProfile;
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.content.pack.ContentFamily;
+import com.lodygames.rpgquest.content.pack.ContentPack;
+import com.lodygames.rpgquest.content.pack.ContentPackAssembler;
+import com.lodygames.rpgquest.content.pack.ContentPackMapper;
+import com.lodygames.rpgquest.content.pack.ContentPackSerializer;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.dialogue.DialogueCatalog;
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
@@ -351,6 +356,35 @@ public final class BukkitAgentActions implements AgentActions {
             out.add(new ItemSummary(d.id().toString(), d.displayName(), d.type().name()));
         }
         return out;
+    }
+
+    @Override
+    public ContentExportResult exportContent(String family, List<String> ids) {
+        String f = family == null || family.isBlank() ? "all" : family.trim().toLowerCase(Locale.ROOT);
+        ContentPackAssembler assembler = new ContentPackAssembler(
+                () -> questEngine.quests().stream().map(ContentPackMapper::toQuestEntry).toList(),
+                () -> storyService.stories().stream().map(ContentPackMapper::toStoryEntry).toList(),
+                () -> dialogueEngine.dialogues().stream().map(ContentPackMapper::toDialogueEntry).toList(),
+                () -> npcEngine.definitions().stream().map(ContentPackMapper::toNpcEntry).toList(),
+                () -> plugin.getPluginMeta().getVersion());
+
+        Instant now = Instant.now();
+        ContentPack pack;
+        if ("all".equals(f)) {
+            pack = assembler.exportAll(now);
+        } else {
+            Optional<ContentFamily> resolved = ContentFamily.fromWire(f);
+            if (resolved.isEmpty()) {
+                return ContentExportResult.failure("Famille de contenu inconnue : « " + f + " ».");
+            }
+            List<String> wanted = ids == null ? List.of() : ids.stream().filter(s -> s != null && !s.isBlank()).toList();
+            pack = wanted.isEmpty()
+                    ? assembler.exportFamily(resolved.get(), now)
+                    : assembler.exportSelection(resolved.get(), Set.copyOf(wanted), now);
+        }
+        String yaml = ContentPackSerializer.toYaml(pack);
+        return new ContentExportResult(true, "OK", pack.format(), pack.schemaVersion(), f,
+                pack.metadata().counts(), pack.totalElements(), yaml);
     }
 
     @Override

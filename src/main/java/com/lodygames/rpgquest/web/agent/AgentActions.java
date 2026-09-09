@@ -131,6 +131,34 @@ public interface AgentActions {
     List<ItemSummary> itemDefinitions();
 
     /**
+     * Résultat d'un export {@code content.export} (issue #108) : un pack {@code lodyquests-content-pack}
+     * sérialisé en YAML déterministe, plus des métadonnées non sensibles.
+     *
+     * @param ok            {@code false} = famille inconnue / erreur de construction (message lisible)
+     * @param message       message humain (surtout utile si {@code !ok})
+     * @param format        {@code lodyquests-content-pack}
+     * @param schemaVersion version de schéma (1 pour cette phase)
+     * @param family        {@code all} ou la famille exportée
+     * @param counts        nombre d'éléments par famille (clés triées)
+     * @param elements      total d'éléments exportés
+     * @param yaml          le pack sérialisé — <strong>aucune donnée joueur / runtime / secret</strong>
+     */
+    record ContentExportResult(boolean ok, String message, String format, int schemaVersion, String family,
+                               java.util.Map<String, Integer> counts, int elements, String yaml) {
+        static ContentExportResult failure(String message) {
+            return new ContentExportResult(false, message, null, 0, null, java.util.Map.of(), 0, null);
+        }
+    }
+
+    /**
+     * Construit un content pack (issue #108). {@code family} vaut {@code all} ou une clé de famille
+     * ({@code quests|stories|dialogues|npcs}) ; {@code ids} restreint à une sélection (vide = toute
+     * la famille ; ignoré si {@code family=all}). Lecture seule : lit l'état en mémoire des moteurs,
+     * aucun accès disque, aucun effet de bord.
+     */
+    ContentExportResult exportContent(String family, List<String> ids);
+
+    /**
      * Catalogue PNJ (action {@code npc.list}) — <strong>lecture seule</strong>. Distingue la
      * <strong>définition logique</strong> RPGQuest ({@code npcs/*.yml}, indépendante de Citizens et
      * du monde) du <strong>binding physique Citizens</strong> éventuel. Voir

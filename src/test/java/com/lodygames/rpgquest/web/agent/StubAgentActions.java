@@ -46,6 +46,14 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public ContentExportResult exportContent(String family, List<String> ids) {
+        String yaml = "format: lodyquests-content-pack\nschemaVersion: 1\ncontent:\n"
+                + "  quests: []\n  stories: []\n  dialogues: []\n  npcs: []\n";
+        return new ContentExportResult(true, "OK", "lodyquests-content-pack", 1,
+                family == null ? "all" : family, java.util.Map.of(), 0, yaml);
+    }
+
+    @Override
     public CompletableFuture<NpcCatalogView> npcDefinitions() {
         return CompletableFuture.completedFuture(
                 new NpcCatalogView(List.of(), List.of(), List.of(), false, 0, 0, 0, 0, 0));

@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.web.agent;
 
+import com.lodygames.rpgquest.content.pack.ContentFamily;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,6 +45,11 @@ public final class AgentActionExecutor {
     private static final int MAX_GIVE_AMOUNT = 64;
     private static final int MAX_DISPLAY_NAME = 128;
     private static final int MAX_DIALOGUE_TEXT = 512;
+    /**
+     * Taille maximale d'un content pack transporté dans un résultat d'action (issue #108). Sous le
+     * plafond de 64 Kio de {@code POST /agent/v1/actions/{id}/result}, marge pour l'enveloppe JSON.
+     */
+    private static final int MAX_EXPORT_BYTES = 56 * 1024;
 
     private final PlayerDirectory players;
     private final PlayerVariables variables;
@@ -73,6 +79,7 @@ public final class AgentActionExecutor {
                 case STORY_LIST -> storyList(action);
                 case ITEM_LIST -> itemList(action);
                 case NPC_LIST -> npcList(action);
+                case CONTENT_EXPORT -> contentExport(action);
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
                 case NPC_CITIZENS_CREATE -> npcCitizensCreate(action);
@@ -280,6 +287,76 @@ public final class AgentActionExecutor {
             out.add(m);
         }
         return out;
+    }
+
+    /**
+     * {@code content.export} (issue #108) — construit un content pack versionné. Lecture seule.
+     * Paramètres : {@code family} ({@code all} par défaut, ou {@code quests|stories|dialogues|npcs})
+     * et {@code ids} (liste séparée par des virgules, uniquement pour une famille précise). Le pack
+     * est renvoyé sous {@code details.pack} ; borné à {@value #MAX_EXPORT_BYTES} octets pour rester
+     * sous le plafond de 64 Kio du dépôt de résultat d'action (au-delà : échec lisible, exporter par
+     * famille ou par élément — découpage/compression = évolution future, cf. #110).
+     */
+    private CompletableFuture<AgentActionOutcome> contentExport(AgentAction action) {
+        String family = firstNonBlank(action.param("family"), action.param("scope"), "all")
+                .trim().toLowerCase(java.util.Locale.ROOT);
+        boolean known = "all".equals(family) || ContentFamily.fromWire(family).isPresent();
+        if (!known) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « family » inconnu : « " + safe(family) + " » (attendu : all, "
+                            + String.join(", ", ContentFamily.allWire()) + ")."));
+        }
+
+        List<String> ids = new ArrayList<>();
+        String rawIds = firstNonBlank(action.param("ids"), action.param("id"));
+        if (rawIds != null && !rawIds.isBlank()) {
+            if ("all".equals(family)) {
+                return done(AgentActionOutcome.rejected(action.id(),
+                        "« ids » n'est pas accepté avec « family=all »."));
+            }
+            for (String piece : rawIds.split(",")) {
+                String t = piece.trim();
+                if (t.isEmpty()) {
+                    continue;
+                }
+                if (!RESOURCE_ID.matcher(t).matches()) {
+                    return done(AgentActionOutcome.rejected(action.id(),
+                            "« ids » contient un identifiant invalide : « " + safe(t) + " »."));
+                }
+                ids.add(t);
+                if (ids.size() > 500) {
+                    return done(AgentActionOutcome.rejected(action.id(),
+                            "Trop d'identifiants dans « ids » (max 500) — exporter la famille entière."));
+                }
+            }
+        }
+
+        try {
+            AgentActions.ContentExportResult result = actions.exportContent(family, ids);
+            if (!result.ok()) {
+                return done(AgentActionOutcome.failed(action.id(), result.message()));
+            }
+            byte[] bytes = result.yaml().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            if (bytes.length > MAX_EXPORT_BYTES) {
+                return done(AgentActionOutcome.failed(action.id(),
+                        "Pack trop volumineux pour le transport actuel (" + bytes.length + " o > "
+                                + MAX_EXPORT_BYTES + " o). Exporter par famille ou par élément."));
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("format", result.format());
+            details.put("schemaVersion", result.schemaVersion());
+            details.put("family", family);
+            details.put("elements", result.elements());
+            details.put("counts", result.counts());
+            details.put("bytes", bytes.length);
+            details.put("pack", result.yaml());
+            return done(AgentActionOutcome.success(action.id(),
+                    result.format() + " v" + result.schemaVersion(),
+                    result.elements() + " élément(s) exporté(s) (" + bytes.length + " o).", details));
+        } catch (RuntimeException e) {
+            return done(AgentActionOutcome.failed(action.id(),
+                    "Export impossible : " + e.getClass().getSimpleName()));
+        }
     }
 
     private CompletableFuture<AgentActionOutcome> storyList(AgentAction action) {

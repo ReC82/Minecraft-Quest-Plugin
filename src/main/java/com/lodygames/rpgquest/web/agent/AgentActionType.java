@@ -44,6 +44,8 @@ public enum AgentActionType {
     STORY_PLAYER_STATUS("story.player.status"),
     ITEM_LIST("item.list"),
     NPC_LIST("npc.list"),
+    /** Export versionné du contenu déclaratif (issue #108) — lecture seule, aucun effet de bord. */
+    CONTENT_EXPORT("content.export"),
     PLAYER_RESETNEW_PREVIEW("player.resetnew.preview"),
 
     PLAYER_ITEM_GIVE("player.item.give"),

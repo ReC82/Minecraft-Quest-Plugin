@@ -50,7 +50,8 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
     public List<String> options(String source) {
         return switch (source == null ? "" : source) {
             case "entity" -> ENTITIES;
-            case "material" -> MATERIALS;
+            case "material", "icon" -> MATERIALS;
+            case "category" -> CATEGORIES;
             case "npc" -> npcs;
             case "quest" -> quests;
             case "world" -> worlds;
@@ -64,6 +65,9 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             case "npc" -> npcsKnown;
             case "quest" -> questsKnown;
             case "world" -> worldsKnown;
+            // « category » et « icon » : saisie libre légitime (nouvelle catégorie, n'importe quel
+            // matériau vanilla) — on ne prétend jamais « connaître » la liste, donc jamais de
+            // WARNING sur ces champs (au pire un INFO côté validateur).
             default -> false;
         };
     }
@@ -96,6 +100,15 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
     }
 
     // ---- listes curées (les plus courantes ; saisie libre toujours possible) ----------------
+
+    /**
+     * Catégories de quête <strong>proposées</strong> (le champ reste en saisie libre : le moteur
+     * RPGQuest n'impose aucune énumération de catégories). Sert uniquement à alimenter la liste
+     * déroulante — jamais à rejeter une catégorie inédite (#46, point 8).
+     */
+    public static final List<String> CATEGORIES = List.of(
+            "tutorial", "combat", "crafting", "mining", "farming", "fishing", "exploration",
+            "gathering", "story", "side", "event", "reputation");
 
     public static final List<String> ENTITIES = List.of(
             "ZOMBIE", "SKELETON", "SPIDER", "CAVE_SPIDER", "CREEPER", "ENDERMAN", "WITCH", "SLIME",

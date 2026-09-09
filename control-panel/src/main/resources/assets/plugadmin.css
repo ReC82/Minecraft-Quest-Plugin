@@ -268,6 +268,24 @@ label.inline.confirm{color:var(--warn);font-weight:600}
 .rowitem-actions{margin-left:auto;display:flex;gap:4px}
 .rowitem-actions .iconbtn{width:28px;height:28px}
 .rowitem-actions .iconbtn .ic{font-size:15px}
+.rowitem-h select[data-type-select]{max-width:220px;padding:6px 9px;font-size:12.5px}
+.type-fields[hidden]{display:none}
+.default-submit{position:absolute;width:1px;height:1px;padding:0;margin:-1px;border:0;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap}
+/* ---- éditeur : liste recherchable (#46) ---- */
+.combo{position:relative;max-width:460px}
+.combo .combo-input{width:100%}
+.combo-menu{position:absolute;left:0;right:0;top:calc(100% + 3px);z-index:40;margin:0;padding:4px;
+  list-style:none;background:var(--surface);border:1px solid var(--line-2);border-radius:9px;
+  box-shadow:var(--shadow-m,0 8px 24px rgba(15,23,41,.14));max-height:240px;overflow-y:auto}
+.combo-menu.up{top:auto;bottom:calc(100% + 3px)}
+.combo-menu li{display:flex;align-items:baseline;gap:8px;padding:7px 9px;border-radius:6px;
+  font-size:12.5px;cursor:pointer}
+.combo-menu li.on,.combo-menu li:hover{background:var(--surface-2)}
+.combo-menu li.combo-empty{color:var(--txt-faint);cursor:default}
+.combo-menu .combo-v{font-family:var(--mono,ui-monospace,SFMono-Regular,Menlo,monospace);color:var(--txt)}
+.combo-menu .combo-l{color:var(--txt-2)}
+@media (max-width:560px){.combo,.rowitem-h select[data-type-select]{max-width:none}}
 /* ---- graphe de dialogue (#82) ---- */
 .dlg-summary{margin:4px 0 2px}
 .dlg-diag{margin:10px 0 2px;border-left:3px solid var(--line-2);padding:2px 0 2px 10px}

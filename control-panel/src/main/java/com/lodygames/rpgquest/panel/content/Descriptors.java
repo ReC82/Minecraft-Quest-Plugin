@@ -90,7 +90,7 @@ public final class Descriptors {
     public static final List<Descriptor> REWARDS = List.of(
             new Descriptor("EXPERIENCE", "Expérience", "uptime",
                     "Points d'XP RPGQuest accordés une fois la quête terminée.",
-                    List.of(Field.integer("amount", "Montant", "Points d'XP (entier > 0)."))),
+                    List.of(Field.integer("amount", "Points d'expérience", "Nombre de points d'XP RPGQuest (entier > 0)."))),
             new Descriptor("ITEM", "Objet", "gift",
                     "Donne N exemplaires d'un objet vanilla.",
                     List.of(Field.select("material", "Objet", "material", "Matériau Minecraft (ex. IRON_SWORD).", true), AMOUNT)),
@@ -102,6 +102,23 @@ public final class Descriptors {
             new Descriptor("COMMAND", "Commande console", "admin",
                     "Exécute une commande console à la fin de la quête. Sensible : validée strictement côté serveur au chargement.",
                     List.of(Field.text("command", "Commande", "Commande sans le « / » initial (ex. give %player% diamond 1).", true))));
+
+    /** Descripteur d'un {@code kind}, qu'il soit objectif ou récompense. */
+    public static Optional<Descriptor> any(String kind) {
+        return objective(kind).or(() -> reward(kind));
+    }
+
+    /**
+     * Noms techniques des champs valides pour un {@code kind} (objectif ou récompense), plus la clé
+     * {@code kind} elle-même. Sert de liste blanche pour nettoyer une ligne quand l'utilisateur
+     * change de type (#46, point 17 : ne jamais conserver une valeur d'un type précédent).
+     */
+    public static java.util.Set<String> fieldNames(String kind) {
+        java.util.Set<String> names = new java.util.LinkedHashSet<>();
+        names.add("kind");
+        any(kind).ifPresent(d -> d.fields().forEach(f -> names.add(f.name())));
+        return names;
+    }
 
     public static Optional<Descriptor> objective(String kind) {
         return find(OBJECTIVES, kind);

@@ -83,6 +83,114 @@ class ContentEditorPagesTest {
         assertTrue(body.contains("obj.0.1.kind"), "un second objectif a été ajouté");
     }
 
+    // ---- #46 : validation de brouillon vs validation finale ------------------------------
+
+    @Test
+    void draftActionButtonsBypassHtmlRequiredValidation() throws Exception {
+        start(true);
+        String body = get("/quests/new").body();
+        // Chaque bouton porteur d'une action de brouillon désactive la validation HTML.
+        Matcher m = Pattern.compile("<button[^>]*name=\"_action\"[^>]*>").matcher(body);
+        int seen = 0;
+        while (m.find()) {
+            seen++;
+            assertTrue(m.group().contains("formnovalidate"),
+                    "bouton d'action sans formnovalidate : " + m.group());
+        }
+        assertTrue(seen >= 4, "plusieurs boutons _action attendus");
+    }
+
+    @Test
+    void structuralActionsWorkWithAnEmptyForm() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        // formulaire quasi vide (aucun champ requis rempli) + action structurelle
+        String base = "id=&title=&description=&category=&icon=&step.0.id=&obj.0.0.kind=KILL_ENTITY&_csrf=" + token;
+        for (String act : new String[] {"add_step", "add_obj:0", "add_reward", "del_reward:0",
+                "del_obj:0:0", "del_step:0"}) {
+            HttpResponse<String> res = post("/quests/save", base + "&rew.0.kind=EXPERIENCE&_action=" + act);
+            assertEquals(200, res.statusCode(), "action " + act + " doit aboutir même formulaire incomplet");
+            assertFalse(res.body().contains("class=\"diag-list\""),
+                    "action " + act + " ne déclenche pas la validation métier finale");
+            assertFalse(res.body().contains("Aucune anomalie détectée"),
+                    "action " + act + " n'exécute pas le bloc de vérification");
+        }
+    }
+
+    @Test
+    void actionButtonsCarryAScrollAnchor() throws Exception {
+        start(true);
+        String body = get("/quests/new").body();
+        assertTrue(body.contains("formaction=\"/quests/save#"), "ancre de scroll sur les actions");
+        assertTrue(body.contains("id=\"step-0\""), "id stable d'étape");
+        assertTrue(body.contains("id=\"sec-rewards\""), "id stable de section récompenses");
+    }
+
+    @Test
+    void objectiveTypeDrivesVisibleFieldsAndHelp() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        // On bascule l'objectif 0 sur CRAFT_ITEM sans rien remplir d'autre.
+        String form = "id=&title=&description=&category=&icon=&step.0.id=step_1"
+                + "&obj.0.0.kind=CRAFT_ITEM&obj.0.0._was=KILL_ENTITY&_csrf=" + token + "&_action=refresh";
+        String body = post("/quests/save", form).body();
+        // Le jeu de champs CRAFT_ITEM est visible et actif ; celui de KILL_ENTITY est présent mais masqué.
+        assertTrue(body.contains("data-kind=\"CRAFT_ITEM\">"), "fieldset CRAFT_ITEM visible");
+        assertTrue(body.contains("data-kind=\"KILL_ENTITY\" hidden>"), "fieldset KILL_ENTITY masqué");
+        assertTrue(body.contains("name=\"obj.0.0.material\""), "champ matériau propre à CRAFT_ITEM");
+        assertTrue(body.contains("Fabriquer N exemplaires"), "aide cohérente avec CRAFT_ITEM");
+        // L'input entité de KILL_ENTITY existe mais est désactivé (non soumis, non validé).
+        assertTrue(Pattern.compile("name=\"obj\\.0\\.0\\.entity\"[^>]*disabled").matcher(body).find(),
+                "champ entité de l'autre type désactivé");
+    }
+
+    @Test
+    void rewardItemShowsItemAndQuantityNeverXpAmount() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        String form = baseQuestForm(token)
+                + "&rew.0.kind=ITEM&rew.0._was=EXPERIENCE&_action=refresh";
+        String body = post("/quests/save", form).body();
+        assertTrue(body.contains("data-kind=\"ITEM\">"), "fieldset ITEM visible");
+        assertTrue(body.contains("data-kind=\"EXPERIENCE\" hidden>"), "fieldset EXPERIENCE masqué");
+        assertTrue(body.contains("name=\"rew.0.material\""), "récompense ITEM = objet");
+        assertTrue(body.contains("name=\"rew.0.amount\""), "récompense ITEM = quantité");
+        // Le champ entier XP de EXPERIENCE est présent mais désactivé (bloc masqué), jamais soumis
+        // comme quantité d'objet.
+        assertTrue(Pattern.compile("data-kind=\"EXPERIENCE\" hidden>.*?name=\"rew\\.0\\.amount\"[^>]*disabled",
+                Pattern.DOTALL).matcher(body).find(), "le champ XP du bloc EXPERIENCE est désactivé");
+    }
+
+    @Test
+    void changingRewardTypeDropsPreviousTypeValues() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        // EXPERIENCE amount=100 puis bascule ITEM : 100 ne doit pas ressortir en quantité d'objet.
+        String form = baseQuestForm(token)
+                + "&rew.0.kind=ITEM&rew.0.amount=100&rew.0._was=EXPERIENCE&_action=validate";
+        String body = post("/quests/save", form).body();
+        assertTrue(body.contains("type: ITEM"), "aperçu YAML de la récompense ITEM");
+        assertFalse(body.contains("amount: 100"), "la valeur XP précédente n'est pas conservée en douce");
+    }
+
+    @Test
+    void categoryFieldUsesCategoryListNotNpcList() throws Exception {
+        start(true);
+        String body = get("/quests/new").body();
+        assertTrue(body.contains("<datalist id=\"dl-category\">"), "datalist des catégories présente");
+        assertTrue(body.contains("<option value=\"tutorial\">"), "catégorie curée proposée");
+        assertTrue(Pattern.compile("name=\"category\"[^>]*list=\"dl-category\"").matcher(body).find(),
+                "le champ catégorie pointe sur dl-category");
+    }
+
+    @Test
+    void lookupFieldsAreSearchableCombos() throws Exception {
+        start(true);
+        String body = get("/quests/new").body();
+        assertTrue(body.contains("class=\"combo\" data-combo"), "champ enveloppé pour la recherche");
+        assertTrue(body.contains("<option value=\"ZOMBIE\" label=\"Zombie\">"), "libellé humain sur l'entité");
+    }
+
     @Test
     void validObjectiveAndRewardSaveToSource() throws Exception {
         start(true);

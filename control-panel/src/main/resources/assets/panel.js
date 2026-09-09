@@ -313,12 +313,181 @@
     item.classList.add("res-focused");
   }
 
+  /* ---- Éditeur guidé de quêtes / stories (#46) ------------------------------------- */
+
+  /**
+   * Liste déroulante RECHERCHABLE (progressive) pour les champs à <datalist> de l'éditeur.
+   * Sans JavaScript, l'<input list> natif reste utilisable ; avec, on remplace la datalist
+   * native par un panneau filtré au clavier / à la souris, largeur alignée sur le champ,
+   * hauteur bornée, repli au-dessus si le bas du viewport manque de place.
+   */
+  function initCombo() {
+    var combos = document.querySelectorAll(".combo[data-combo]");
+    for (var i = 0; i < combos.length; i++) {
+      setupCombo(combos[i]);
+    }
+  }
+
+  function setupCombo(box) {
+    var input = box.querySelector("input.combo-input");
+    if (!input || input.getAttribute("data-combo-ready") === "1") { return; }
+    var listId = input.getAttribute("list");
+    var dl = listId ? document.getElementById(listId) : null;
+    if (!dl) { return; }
+    input.setAttribute("data-combo-ready", "1");
+
+    var options = [];
+    var opts = dl.querySelectorAll("option");
+    for (var k = 0; k < opts.length; k++) {
+      var v = opts[k].getAttribute("value") || "";
+      if (!v) { continue; }
+      var lbl = opts[k].getAttribute("label") || opts[k].textContent || "";
+      options.push({ value: v, label: lbl && lbl !== v ? lbl : "" });
+    }
+    // On retire la datalist native pour ne pas cumuler deux menus ; les données restent ici.
+    input.removeAttribute("list");
+
+    var menu = document.createElement("ul");
+    menu.className = "combo-menu";
+    menu.setAttribute("role", "listbox");
+    menu.hidden = true;
+    box.appendChild(menu);
+
+    var active = -1;
+    var visible = [];
+
+    function render() {
+      var q = (input.value || "").trim().toLowerCase();
+      visible = [];
+      for (var n = 0; n < options.length && visible.length < 60; n++) {
+        var o = options[n];
+        if (!q || o.value.toLowerCase().indexOf(q) !== -1
+            || (o.label && o.label.toLowerCase().indexOf(q) !== -1)) {
+          visible.push(o);
+        }
+      }
+      if (visible.length === 0) {
+        menu.innerHTML = '<li class="combo-empty" aria-disabled="true">Aucune correspondance</li>';
+      } else {
+        var html = "";
+        for (var m = 0; m < visible.length; m++) {
+          html += '<li role="option" data-idx="' + m + '"><span class="combo-v">'
+            + esc(visible[m].value) + "</span>"
+            + (visible[m].label ? '<span class="combo-l">' + esc(visible[m].label) + "</span>" : "")
+            + "</li>";
+        }
+        menu.innerHTML = html;
+      }
+      active = -1;
+      place();
+    }
+
+    function place() {
+      menu.hidden = false;
+      menu.classList.remove("up");
+      var r = input.getBoundingClientRect();
+      var below = window.innerHeight - r.bottom;
+      if (below < 240 && r.top > below) { menu.classList.add("up"); }
+      input.setAttribute("aria-expanded", "true");
+    }
+
+    function close() {
+      menu.hidden = true;
+      active = -1;
+      input.setAttribute("aria-expanded", "false");
+    }
+
+    function choose(idx) {
+      if (idx < 0 || idx >= visible.length) { return; }
+      input.value = visible[idx].value;
+      // « change » d'abord (aucun écouteur ne rouvre le menu), puis fermeture — on ne redéclenche
+      // pas « input », qui relancerait render() et rouvrirait la liste juste après la sélection.
+      try { input.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) { /* ignore */ }
+      close();
+    }
+
+    function highlight(next) {
+      var lis = menu.querySelectorAll("li[role=option]");
+      if (lis.length === 0) { return; }
+      active = (next + lis.length) % lis.length;
+      for (var a = 0; a < lis.length; a++) { lis[a].classList.toggle("on", a === active); }
+      lis[active].scrollIntoView({ block: "nearest" });
+    }
+
+    input.addEventListener("focus", render);
+    input.addEventListener("input", render);
+    input.addEventListener("keydown", function (ev) {
+      if (menu.hidden && (ev.key === "ArrowDown" || ev.key === "ArrowUp")) { render(); return; }
+      if (ev.key === "ArrowDown") { ev.preventDefault(); highlight(active + 1); }
+      else if (ev.key === "ArrowUp") { ev.preventDefault(); highlight(active - 1); }
+      else if (ev.key === "Enter" && active >= 0) { ev.preventDefault(); choose(active); }
+      else if (ev.key === "Escape") { close(); }
+    });
+    menu.addEventListener("mousedown", function (ev) {
+      var li = ev.target.closest ? ev.target.closest("li[role=option]") : null;
+      if (li) { ev.preventDefault(); choose(parseInt(li.getAttribute("data-idx"), 10)); }
+    });
+    input.addEventListener("blur", function () { window.setTimeout(close, 120); });
+  }
+
+  /**
+   * Un type d'objectif / récompense = un seul jeu de champs visible. Le serveur émet tous les
+   * jeux (chacun issu du même descripteur) ; ici on bascule au changement de <select>, sans
+   * recharger la page. Les champs masqués sont désactivés (jamais soumis) et vidés (jamais de
+   * valeur d'un type précédent conservée en douce).
+   */
+  function initEditorForms() {
+    var selects = document.querySelectorAll("select[data-type-select]");
+    for (var i = 0; i < selects.length; i++) {
+      (function (sel) {
+        sel.addEventListener("change", function () { applyType(sel); });
+      })(selects[i]);
+    }
+    // Filet anti « retour en haut de page » : si l'ancre de destination a disparu (suppression),
+    // on restaure au moins la position de défilement précédente.
+    var form = document.querySelector("form.editor");
+    if (form) {
+      var key = "pa-editor-scroll:" + window.location.pathname;
+      form.addEventListener("submit", function () {
+        try { window.sessionStorage.setItem(key, String(window.scrollY)); } catch (e) { /* ignore */ }
+      });
+      if (!window.location.hash) {
+        try {
+          var y = window.sessionStorage.getItem(key);
+          if (y !== null) { window.scrollTo(0, parseInt(y, 10) || 0); }
+        } catch (e) { /* ignore */ }
+      }
+      try { window.sessionStorage.removeItem(key); } catch (e) { /* ignore */ }
+    }
+  }
+
+  function applyType(sel) {
+    var row = sel.closest ? sel.closest(".rowitem") : null;
+    if (!row) { return; }
+    var chosen = sel.value;
+    var groups = row.querySelectorAll(".type-fields[data-kind]");
+    for (var g = 0; g < groups.length; g++) {
+      var grp = groups[g];
+      var on = grp.getAttribute("data-kind") === chosen;
+      grp.hidden = !on;
+      var fields = grp.querySelectorAll("input, select, textarea");
+      for (var f = 0; f < fields.length; f++) {
+        fields[f].disabled = !on;
+        if (!on) { fields[f].value = ""; }
+      }
+    }
+    var was = row.querySelector("input[data-was]");
+    if (was) { was.value = chosen; }
+  }
+
   function init() {
     initToasts();       // affiche les toasts (repli manuel si Bootstrap JS pas encore là)
     initNotifications();
     initCopy();
     initFilters();
     initFocus();
+    initCombo();
+    initEditorForms();
     initDrawer();
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.

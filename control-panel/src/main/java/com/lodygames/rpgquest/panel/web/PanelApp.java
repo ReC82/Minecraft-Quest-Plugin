@@ -646,6 +646,9 @@ public final class PanelApp {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", shortId(a.id()));
             item.put("idFull", a.id());
+            // Relevé de catalogue ré-enfilé automatiquement après une mutation (#112/#115/#116/#119/#120) :
+            // panel.js le compte pour savoir quand la file est au repos, mais ne l'affiche pas dans la cloche.
+            item.put("auto", "auto".equals(a.createdBy()));
             item.put("type", a.type());
             item.put("typeHtml", Ui.actionType(a.type())); // libellé humain + fil technique copiable
             item.put("params", renderParams(a.params()));

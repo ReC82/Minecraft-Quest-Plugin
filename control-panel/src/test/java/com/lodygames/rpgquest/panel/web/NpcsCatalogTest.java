@@ -351,16 +351,18 @@ class NpcsCatalogTest {
     void createDefinitionActionIsValidatedAndQueued() throws Exception {
         start();
         String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
-        // sans confirm -> refusé
+        // Édition de contenu réversible (#111) : plus de case à cocher cachée — accepté sans « confirm ».
         HttpResponse<String> noConfirm = post("/agents/action", "_csrf=" + token
                 + "&type=npc.definition.create&agent=" + TestConfig.AGENT_ID
                 + "&return=/npcs&npc_id=woodcutter_bob&display_name=" + enc("Bûcheron Bob"));
-        assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "confirm obligatoire");
+        assertEquals(303, noConfirm.statusCode());
+        assertFalse(noConfirm.headers().firstValue("Location").orElse("").contains("err="),
+                "aucune confirmation requise pour une création réversible");
 
         HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
                 + "&type=npc.definition.create&agent=" + TestConfig.AGENT_ID
                 + "&return=/npcs&npc_id=woodcutter_bob&display_name=" + enc("Bûcheron Bob")
-                + "&dialogue_id=rpgquest:woodcutter_bob&enabled=true&confirm=true");
+                + "&dialogue_id=rpgquest:woodcutter_bob&enabled=true");
         assertEquals(303, ok.statusCode());
         assertTrue(ok.headers().firstValue("Location").orElse("").startsWith("/npcs?agent="));
         assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1, "une action npc.definition.create en attente");

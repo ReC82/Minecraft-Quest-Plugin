@@ -187,6 +187,11 @@ public final class AgentEndpoints {
         String value = str(json.get("value"));
         String message = truncate(str(json.get("message")), 500);
 
+        // État AVANT écriture : sert à ne ré-enfiler les relevés de catalogue qu'à la première
+        // transition vers SUCCESS (un renvoi de résultat idempotent après timeout ne doit rien
+        // ré-enfiler).
+        java.util.Optional<AgentActionRow> before = store.action(actionId);
+
         // Le corps brut (détails structurés non secrets : listes de quêtes/stories/joueurs pour les
         // pages du Control Panel) est conservé dans la base PROPRE du panel — borne large mais finie.
         boolean accepted = store.recordResult(actionId, agent.id(), status, value, message,
@@ -194,11 +199,36 @@ public final class AgentEndpoints {
         if (!accepted) {
             return send(exchange, 404, error("unknown_action", "Action inconnue ou destinée à un autre agent."));
         }
+        if (status == AgentActionStatus.SUCCESS && before.isPresent() && !before.get().status().terminal()) {
+            enqueueCatalogRefreshes(agent.id(), before.get().type(), rid);
+        }
         audit.record("agent:" + agent.id(), "agent.action.result", "action=" + actionId,
                 status.name(), message, rid);
         LOG.log(System.Logger.Level.INFO, "event=agent_action_result rid=" + rid + " agent="
                 + agent.id() + " action=" + actionId + " status=" + status);
         return send(exchange, 200, Map.of("ok", true));
+    }
+
+    /**
+     * Réconciliation mutualisée (issues #112 / #115 / #116 / #119 / #120) : après le succès d'une
+     * mutation, ré-enfile automatiquement les relevés {@code *.list} déclarés périmés par sa
+     * {@link AgentActionCatalog.Spec}. Ces actions portent {@code created_by = "auto"} : le centre
+     * de notifications les ignore, mais {@code panel.js} les voit se résoudre puis recharge la page
+     * une fois la file au repos — plus jamais « Rafraîchir catalogue + F5 » à la main.
+     */
+    private void enqueueCatalogRefreshes(String agentId, String type, String rid) {
+        var spec = AgentActionCatalog.spec(type);
+        if (spec.isEmpty() || spec.get().refreshTypes().isEmpty()) {
+            return;
+        }
+        for (String refreshType : spec.get().refreshTypes()) {
+            if (store.hasOpenActionOfType(agentId, refreshType)) {
+                continue;
+            }
+            String id = store.createAction(agentId, refreshType, Map.of(), "auto");
+            LOG.log(System.Logger.Level.INFO, "event=agent_action_autorefresh rid=" + rid + " agent=" + agentId
+                    + " after=" + type + " type=" + refreshType + " action=" + id);
+        }
     }
 
     // ---- Auth + IO -----------------------------------------------------

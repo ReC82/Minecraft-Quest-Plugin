@@ -219,3 +219,45 @@ L'alerte disparaît après rafraîchissement des catalogues.
 ### Référence technique
 
 `DIALOGUE_DECLARED_MISSING`
+
+---
+
+## Comprendre l'éditeur de dialogues
+
+### Ce que l'éditeur guidé permet
+
+- créer un dialogue (bouton **+ Nouveau dialogue**) : identifiant, locuteur affiché,
+  couleur du texte et réplique de départ ;
+- modifier le **locuteur** et le **texte** d'un nœud ;
+- ajouter un **nœud simple** ;
+- ajouter, modifier ou supprimer un **choix simple** (sans condition ni action de quête).
+
+Les conditions, les actions de quête (`START_QUEST`, `QUEST_STATE`…) et le renommage de
+nœud ne sont **pas encore éditables** : elles restent intactes dans le fichier, mais se
+modifient à la main pour l'instant.
+
+### Choisir une couleur sans écrire de balise
+
+Le formulaire de création propose une **palette de couleurs** : cliquer une pastille suffit,
+le panel génère le MiniMessage correct (`<yellow>…</yellow>`). Pour un rendu avancé
+(dégradés, gras, plusieurs couleurs), écrire directement du MiniMessage dans le champ
+texte : le panel **ne le modifie pas**.
+
+### Format canonique
+
+Chaque écriture réécrit le fichier `dialogues/<id>.yml` au **format canonique** du panel :
+les commentaires et la mise en forme d'origine ne sont pas conservés. Le fichier est ensuite
+re-lu et rechargé ; si quelque chose échoue, le contenu d'origine est **restauré**.
+
+### « Enregistré » ne veut pas dire « chargé en jeu »
+
+Le panel distingue trois choses :
+
+1. le **fichier** écrit sur le serveur ;
+2. le **catalogue** que le panel a relu (ce que montrent les pages) ;
+3. ce que le serveur Minecraft a effectivement **rechargé en jeu**.
+
+Après un **Enregistrer**, la fiche, la liste et les diagnostics se remettent à jour
+**automatiquement** — inutile de cliquer « Rafraîchir le catalogue » ni de recharger la
+page (F5). Un dialogue marqué **« pas encore chargé en jeu »** est bien écrit dans les
+fichiers, mais le serveur ne l'a pas encore pris en compte pour les joueurs connectés.

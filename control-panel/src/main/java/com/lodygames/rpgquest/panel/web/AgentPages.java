@@ -1625,9 +1625,10 @@ public final class AgentPages {
         sb.append(formStart(session, agentId, "npc.citizens.link", "/npcs", ""));
         sb.append("<input type=\"hidden\" name=\"citizens_id\" value=\"").append(Http.esc(numericId)).append("\">");
         sb.append("<label>Fiche RPGQuest</label>").append(idSelect("npc_id", definedUnlinkedIds, "woodcutter_bob"));
-        sb.append(confirmBox("Associer le PNJ Citizens #" + numericId + " à la fiche choisie "
-                + "(aucun spawn, aucun déplacement)."));
-        sb.append("<button class=\"btn\" type=\"submit\">Lier</button></form>");
+        sb.append("<p class=\"form-text\">Associe le PNJ Citizens #" + Http.esc(numericId) + " à la fiche RPGQuest "
+                + "choisie. Le PNJ n'est ni créé, ni déplacé. L'association peut être défaite.</p>");
+        sb.append(mutationConsent("npc.citizens.link", "", ""));
+        sb.append("<button class=\"btn\" type=\"submit\">Associer cette fiche</button></form>");
         latestForPlayer(agentId, "npc.citizens.link", "").ifPresent(row -> sb.append(resultLine("Dernière liaison", row)));
         return sb.toString();
     }
@@ -1710,18 +1711,21 @@ public final class AgentPages {
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid)
                 .append("-name\">Nom du PNJ</label>")
                 .append("<input class=\"form-control\" id=\"").append(uid).append("-name\" type=\"text\" name=\"display_name\" "
-                        + "autocomplete=\"off\" maxlength=\"128\" value=\"").append(Http.esc(displayName)).append("\" required></div>");
+                        + "autocomplete=\"off\" maxlength=\"128\" placeholder=\"Exemple : Bob le bûcheron\" value=\"")
+                .append(Http.esc(displayName)).append("\" required>")
+                .append("<div class=\"form-text\">Nom affiché aux joueurs dans le jeu.</div></div>");
         if (contextual) {
             sb.append("<div class=\"mb-2\"><label class=\"form-label\">ID technique</label>"
                     + "<input class=\"form-control\" type=\"text\" value=\"").append(Http.esc(npcId))
-                    .append("\" readonly><div class=\"form-text\">Utilisé par RPGQuest. Non modifiable ")
-                    .append(update ? "" : "après création").append(".</div></div>");
+                    .append("\" readonly><div class=\"form-text\">Identifiant interne utilisé par RPGQuest. Non modifiable ")
+                    .append(update ? "." : "après création.").append("</div></div>");
         } else {
             sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid)
                     .append("-id\">ID technique</label>"
                     + "<input class=\"form-control\" id=\"").append(uid).append("-id\" type=\"text\" name=\"npc_id\" "
-                    + "autocomplete=\"off\" pattern=\"[a-z0-9._-]{1,64}\" placeholder=\"woodcutter_bob\" required>"
-                    + "<div class=\"form-text\">Minuscules, chiffres, « . _ - ». À ne pas modifier après création.</div></div>");
+                    + "autocomplete=\"off\" pattern=\"[a-z0-9._-]{1,64}\" placeholder=\"Exemple : woodcutter_bob\" required>"
+                    + "<div class=\"form-text\">Identifiant interne unique. Minuscules, chiffres, « . _ - ». "
+                    + "Il ne pourra plus être modifié après création.</div></div>");
         }
         sb.append("</div>");
 
@@ -1729,12 +1733,14 @@ public final class AgentPages {
         sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Contenu</p>");
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid)
                 .append("-dlg\">Dialogue</label>").append(dlgSelect(uid + "-dlg", dialogueId, dialogueOptions))
-                .append("<div class=\"form-text\">Optionnel.</div></div>");
+                .append("<div class=\"form-text\">Dialogue déclenché quand un joueur interagit avec ce PNJ. "
+                        + "Peut être ajouté plus tard.</div></div>");
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid)
                 .append("-role\">Rôle</label><select class=\"form-select\" id=\"").append(uid)
                 .append("-role\" name=\"role\"><option value=\"\">Aucun</option>")
                 .append("<option value=\"quest_giver\"").append("quest_giver".equals(role) ? " selected" : "")
-                .append(">Donneur de quête</option></select><div class=\"form-text\">Optionnel.</div></div>");
+                .append(">Donneur de quête</option></select><div class=\"form-text\">Fonction particulière du PNJ. "
+                        + "Laisser « Aucun » pour un PNJ standard.</div></div>");
         sb.append("</div>");
 
         // -- État --
@@ -1742,16 +1748,17 @@ public final class AgentPages {
         sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" role=\"switch\" ")
                 .append("id=\"").append(uid).append("-en\" name=\"enabled\" value=\"true\"")
                 .append(enabled ? " checked" : "").append("><label class=\"form-check-label\" for=\"").append(uid)
-                .append("-en\">PNJ actif</label></div></div>");
+                .append("-en\">PNJ actif</label></div>")
+                .append("<div class=\"form-text\">Si désactivé, la fiche reste enregistrée mais le PNJ n'est pas "
+                        + "utilisable par le gameplay.</div></div>");
 
-        // -- Confirmation + boutons --
-        sb.append("<div class=\"form-check npc-confirm\"><input class=\"form-check-input\" type=\"checkbox\" ")
-                .append("id=\"").append(uid).append("-cf\" name=\"confirm\" value=\"true\" required>")
-                .append("<label class=\"form-check-label\" for=\"").append(uid).append("-cf\">")
-                .append(update
-                        ? "Remplacer les champs de la définition « " + Http.esc(npcId) + " » (id inchangé)."
-                        : "Créer la définition logique (fichier npcs/&lt;id&gt;.yml) — aucun PNJ Citizens créé.")
-                .append("</label></div>");
+        // -- Consentement + boutons -- (issue #111 : plus de case à cocher cachée pour une édition réversible)
+        sb.append(mutationConsent("npc.definition." + (update ? "update" : "create"), "",
+                update
+                        ? "Les champs nom, dialogue, rôle et état de « " + npcId + " » seront remplacés. "
+                                + "L'identifiant technique ne change pas. Modification réversible."
+                        : "La fiche RPGQuest sera créée (fichier npcs/<id>.yml). "
+                                + "Aucun PNJ physique Citizens n'est créé à cette étape."));
         sb.append("<div class=\"d-flex flex-wrap gap-2 mt-2\">");
         sb.append("<button class=\"btn btn-outline-secondary\" type=\"button\" data-bs-toggle=\"collapse\" ")
                 .append("data-bs-target=\"#").append(uid).append("\">Annuler</button>");
@@ -1789,7 +1796,8 @@ public final class AgentPages {
         sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
         sb.append("<input type=\"hidden\" name=\"npc_ctx\" value=\"").append(Http.esc(npcId)).append("\">");
         sb.append("<label>Quête</label>").append(idSelect("quest_id", questIds, "rpgquest:woodcutters_request"));
-        sb.append(confirmBox("Poser giver: " + npcId + " sur la quête choisie (édition minimale du YAML)."));
+        sb.append(mutationConsent("quest.giver.set", "",
+                "La quête choisie sera donnée par « " + npcId + " ». Réversible en la réattribuant à un autre PNJ."));
         sb.append("<button class=\"btn\" type=\"submit\">Attribuer</button></form>");
         return sb.toString();
     }
@@ -1889,8 +1897,10 @@ public final class AgentPages {
             sb.append("</option>");
         }
         sb.append("</select>");
-        sb.append(confirmBox("Lier « " + npcId + " » au PNJ Citizens choisi (aucun spawn, aucun rebind)."));
-        sb.append("<button class=\"btn\" type=\"submit\">Lier</button></form>");
+        sb.append("<p class=\"form-text\">Associe la fiche RPGQuest « " + Http.esc(npcId) + " » au PNJ Citizens "
+                + "sélectionné. Le PNJ n'est ni créé, ni déplacé. L'association peut être défaite.</p>");
+        sb.append(mutationConsent("npc.citizens.link", "", ""));
+        sb.append("<button class=\"btn\" type=\"submit\">Associer ce PNJ Citizens</button></form>");
         latestForPlayer(agentId, "npc.citizens.link", "").ifPresent(row -> sb.append(resultLine("Dernière liaison", row)));
         return sb.toString();
     }
@@ -1951,12 +1961,13 @@ public final class AgentPages {
         Map<String, String> questTitles = titleIndex(
                 latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of()), "id", "title");
 
+        if (canWrite) {
+            sb.append(dialogueCreateBlock(session, agentId));
+        }
+
         Optional<Map<String, Object>> details = latestDetails(agentId, "dialogue.list");
         if (details.isEmpty()) {
             sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Dialogues »."));
-            if (canWrite) {
-                sb.append(dialogueCreateForm(session, agentId));
-            }
             return sb.toString();
         }
         Map<String, Object> d = details.get();
@@ -1986,12 +1997,14 @@ public final class AgentPages {
                 .append(loadIssues.size()).append(" fichier(s) rejeté(s)</p>");
 
         if (canWrite) {
-            sb.append("<div class=\"banner info\">Édition guidée <strong>phase 1</strong> : locuteur / texte d'un nœud, "
-                    + "ajout d'un nœud simple, ajout / modification / suppression d'un <strong>choix simple</strong> "
-                    + "(sans condition ni action de quête). Chaque écriture réécrit le fichier au <strong>format "
-                    + "canonique</strong> du panel (commentaires et mise en forme d'origine non conservés), puis le "
-                    + "re-parse et le recharge — en cas d'échec le contenu d'origine est restauré.</div>");
-            sb.append(dialogueCreateForm(session, agentId));
+            sb.append("<p class=\"form-text dlg-editnote\">Édition guidée disponible pour les nœuds, les textes et "
+                    + "les choix simples. Les opérations avancées (conditions, actions de quête) restent limitées. ")
+                    .append(docLink("dialogues", "En savoir plus sur les limites de l'éditeur")).append("</p>");
+            sb.append("<details class=\"tech-detail\"><summary>Détails techniques de l'éditeur</summary>"
+                    + "<p class=\"muted\">Chaque écriture réécrit le fichier <code>dialogues/&lt;id&gt;.yml</code> au "
+                    + "<strong>format canonique</strong> du panel (les commentaires et la mise en forme d'origine ne "
+                    + "sont pas conservés), puis le re-parse et le recharge. En cas d'échec, le contenu d'origine est "
+                    + "restauré.</p></details>");
         }
 
         if (dialogues.isEmpty()) {
@@ -2273,7 +2286,8 @@ public final class AgentPages {
                 .append(Http.esc(speaker)).append("\" maxlength=\"128\">");
         sb.append("<label>Texte (MiniMessage autorisé)</label><input type=\"text\" name=\"text\" value=\"")
                 .append(Http.esc(text)).append("\" maxlength=\"512\">");
-        sb.append(confirmBox("Réécrire le fichier au format canonique (les choix du nœud sont conservés)."));
+        sb.append(mutationConsent("dialogue.node.update", "",
+                "Met à jour le locuteur et le texte de ce nœud. Les choix du nœud sont conservés. Modification réversible."));
         sb.append("<button class=\"btn\" type=\"submit\">Enregistrer le nœud</button></form>");
         return sb.append("</details>").toString();
     }
@@ -2289,7 +2303,8 @@ public final class AgentPages {
         sb.append("<label>Nœud cible</label>").append(nodeTargetSelect(nodeIds, ""));
         sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"close\" value=\"true\"> "
                 + "ou : ce choix termine le dialogue (laisser « nœud cible » vide)</label>");
-        sb.append(confirmBox("Ajouter ce choix simple (sans condition ni action de quête)."));
+        sb.append(mutationConsent("dialogue.choice.add", "",
+                "Ajoute un choix simple (sans condition ni action de quête). Réversible : le choix peut être supprimé."));
         sb.append("<button class=\"btn\" type=\"submit\">Ajouter le choix</button></form>");
         return sb.append("</details>").toString();
     }
@@ -2313,14 +2328,16 @@ public final class AgentPages {
         sb.append("<label>Nœud cible</label>").append(nodeTargetSelect(nodeIds, next));
         sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"close\" value=\"true\"")
                 .append(next.isEmpty() ? " checked" : "").append("> ce choix termine le dialogue</label>");
-        sb.append(confirmBox("Réécrire ce choix (format canonique)."));
+        sb.append(mutationConsent("dialogue.choice.update", "",
+                "Met à jour le texte et la cible de ce choix. Modification réversible."));
         sb.append("<button class=\"btn\" type=\"submit\">Enregistrer le choix</button></form>");
         // Supprimer
         sb.append(formStart(session, agentId, "dialogue.choice.delete", "/dialogues", ""));
         sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
         sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
         sb.append("<input type=\"hidden\" name=\"choice_index\" value=\"").append(index).append("\">");
-        sb.append(confirmBox("Supprimer ce choix (impossible si c'est le dernier choix du nœud)."));
+        sb.append(mutationConsent("dialogue.choice.delete",
+                "Supprimer définitivement ce choix (impossible si c'est le dernier choix du nœud).", ""));
         sb.append("<button class=\"btn secondary\" type=\"submit\">Supprimer ce choix</button></form>");
         return sb.append("</details>").toString();
     }
@@ -2337,7 +2354,8 @@ public final class AgentPages {
         sb.append("<label>Locuteur</label><input type=\"text\" name=\"speaker\" maxlength=\"128\" placeholder=\"Garde\">");
         sb.append("<label>Texte du nœud (MiniMessage autorisé)</label><input type=\"text\" name=\"text\" "
                 + "maxlength=\"512\" placeholder=\"&lt;gray&gt;À bientôt.&lt;/gray&gt;\">");
-        sb.append(confirmBox("Ajouter ce nœud (réécriture canonique du fichier)."));
+        sb.append(mutationConsent("dialogue.node.create", "",
+                "Ajoute un nœud simple au dialogue. Réversible."));
         sb.append("<button class=\"btn\" type=\"submit\">Ajouter le nœud</button></form>");
         return sb.append("</details>").toString();
     }
@@ -2374,22 +2392,96 @@ public final class AgentPages {
         };
     }
 
-    /** Formulaire de création d'un squelette de dialogue (id + locuteur + texte du nœud « start »). */
+    /** Noms français des couleurs MiniMessage de la palette du formulaire de dialogue (issue #118). */
+    private static final Map<String, String> COLOR_LABELS_FR = Map.ofEntries(
+            Map.entry("white", "Blanc"), Map.entry("gray", "Gris"), Map.entry("yellow", "Jaune"),
+            Map.entry("gold", "Or"), Map.entry("green", "Vert"), Map.entry("dark_green", "Vert foncé"),
+            Map.entry("aqua", "Cyan"), Map.entry("dark_aqua", "Cyan foncé"), Map.entry("blue", "Bleu"),
+            Map.entry("dark_blue", "Bleu foncé"), Map.entry("red", "Rouge"), Map.entry("dark_red", "Rouge foncé"),
+            Map.entry("light_purple", "Rose"), Map.entry("dark_purple", "Violet"));
+
+    /**
+     * Palette de couleurs MiniMessage (issue #118) : pastilles avec aperçu réel de la teinte, plus un
+     * champ caché {@code text_color}. Le panel génère ensuite {@code <couleur>…</couleur>} côté
+     * validation ; l'utilisateur n'écrit jamais de balise pour un cas simple. Progressif :
+     * {@code panel.js} pilote la sélection et l'aperçu ; sans JS, la couleur par défaut s'applique et
+     * le MiniMessage manuel reste possible.
+     */
+    private String colorPaletteField() {
+        StringBuilder sb = new StringBuilder("<div class=\"mb-2 dlg-color\">");
+        sb.append("<label class=\"form-label\">Couleur du texte</label>");
+        sb.append("<input type=\"hidden\" name=\"text_color\" value=\"\" data-dlg-color>");
+        sb.append("<div class=\"dlg-palette\" role=\"group\" aria-label=\"Couleur du texte\" data-dlg-palette>");
+        sb.append("<button type=\"button\" class=\"dlg-swatch on\" data-color=\"\" style=\"--sw:")
+                .append(nzHex(MiniText.colorHex("white"))).append("\" title=\"Par défaut\" aria-pressed=\"true\">A</button>");
+        for (String c : AgentActionCatalog.PALETTE_COLORS) {
+            String label = COLOR_LABELS_FR.getOrDefault(c, MiniText.prettifyId(c));
+            sb.append("<button type=\"button\" class=\"dlg-swatch\" data-color=\"").append(Http.esc(c))
+                    .append("\" style=\"--sw:").append(nzHex(MiniText.colorHex(c))).append("\" title=\"")
+                    .append(Http.esc(label)).append("\" aria-pressed=\"false\">A</button>");
+        }
+        sb.append("</div>");
+        sb.append("<div class=\"form-text\">Choisir une pastille — le panel génère le MiniMessage. "
+                + "Pour un rendu avancé, écrire directement du MiniMessage dans le texte.</div>");
+        return sb.append("</div>").toString();
+    }
+
+    private static String nzHex(String hex) {
+        return hex == null || hex.isBlank() ? "#888888" : hex;
+    }
+
+    /**
+     * Bloc « Nouveau dialogue » (issue #118) : action principale clairement identifiable — un bouton
+     * primaire dans une barre dédiée qui déplie le formulaire, plus un accordéon discret.
+     */
+    private String dialogueCreateBlock(Session session, String agentId) {
+        return "<div class=\"npc-catbar dlg-newbar\"><span class=\"npc-catbar-t\">Créer</span>"
+                + "<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+                + "data-bs-target=\"#dlg-new\" aria-expanded=\"false\" aria-controls=\"dlg-new\">"
+                + Icons.icon("plus") + "Nouveau dialogue</button></div>"
+                + "<div class=\"collapse\" id=\"dlg-new\"><div class=\"card card-body npc-formcard\">"
+                + dialogueCreateForm(session, agentId) + "</div></div>";
+    }
+
+    /** Formulaire de création d'un dialogue (id + locuteur + couleur + texte du nœud « start »). */
     private String dialogueCreateForm(Session session, String agentId) {
-        StringBuilder sb = new StringBuilder("<details><summary>Créer un dialogue (squelette)</summary>");
-        sb.append("<p class=\"faint\" style=\"font-size:12px\">Crée <code>dialogues/&lt;id&gt;.yml</code> avec un "
-                + "unique nœud « start » et un choix « Au revoir » (fermeture). Aucun YAML brut ; refus si l'id "
-                + "existe déjà ; re-parsé après écriture. Les nœuds / choix / actions s'ajouteront via l'éditeur.</p>");
-        sb.append(formStart(session, agentId, "dialogue.definition.create", "/dialogues", ""));
-        sb.append("<label>ID (clé, minuscules)</label><input type=\"text\" name=\"key\" placeholder=\"woodcutter_bob\" "
-                + "pattern=\"[a-z0-9._-]{1,64}\">");
-        sb.append("<label>Locuteur</label><input type=\"text\" name=\"speaker\" placeholder=\"Bûcheron Bob\">");
-        sb.append("<label>Texte du nœud de départ (MiniMessage autorisé)</label>"
-                + "<input type=\"text\" name=\"text\" placeholder=\"&lt;white&gt;Bonjour voyageur.&lt;/white&gt;\">");
-        sb.append(confirmBox("Créer le dialogue « rpgquest:<id> » (squelette d'un nœud, aucune action de quête)."));
-        sb.append("<button class=\"btn\" type=\"submit\">Créer le dialogue</button></form>");
+        StringBuilder sb = new StringBuilder();
+        sb.append("<p class=\"fs-h\">").append(Icons.icon("dialogues")).append("Nouveau dialogue</p>");
+        sb.append("<form method=\"post\" action=\"/agents/action\" autocomplete=\"off\" class=\"actform\">");
+        sb.append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken())).append("\">");
+        sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"type\" value=\"dialogue.definition.create\">");
+        sb.append("<input type=\"hidden\" name=\"return\" value=\"/dialogues\">");
+
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\">ID du dialogue</label>"
+                + "<input class=\"form-control\" type=\"text\" name=\"key\" autocomplete=\"off\" "
+                + "pattern=\"[a-z0-9._-]{1,64}\" placeholder=\"Exemple : iron_specialist_intro\" required>"
+                + "<div class=\"form-text\">Identifiant interne unique. Minuscules, chiffres, « . _ - ». "
+                + "Il sera exposé comme <code>rpgquest:&lt;id&gt;</code>.</div></div>");
+
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\">Locuteur affiché</label>"
+                + "<input class=\"form-control\" type=\"text\" name=\"speaker\" autocomplete=\"off\" maxlength=\"128\" "
+                + "placeholder=\"Exemple : Robert\" required>"
+                + "<div class=\"form-text\">Nom affiché devant la réplique. Le rattachement à un PNJ se fait "
+                + "sur la fiche du PNJ (champ « Dialogue »), pas ici.</div></div>");
+
+        sb.append(colorPaletteField());
+
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\">Texte du nœud de départ</label>"
+                + "<input class=\"form-control\" type=\"text\" name=\"text\" autocomplete=\"off\" maxlength=\"512\" "
+                + "placeholder=\"Exemple : Bonjour voyageur.\" data-dlg-text required>"
+                + "<div class=\"form-text\">Réplique d'ouverture. Choisir une couleur ci-dessus, ou saisir du "
+                + "MiniMessage (<code>&lt;yellow&gt;…&lt;/yellow&gt;</code>) pour un rendu avancé.</div></div>");
+
+        sb.append("<p class=\"form-text\">Aperçu : <span class=\"dlg-preview\" data-dlg-preview>—</span> "
+                + "<noscript>(activez JavaScript pour l'aperçu et la palette de couleurs)</noscript></p>");
+
+        sb.append(mutationConsent("dialogue.definition.create", "",
+                "Crée dialogues/<id>.yml avec un premier nœud de départ. Les choix et les actions "
+                        + "s'ajoutent ensuite. Réversible (suppression du fichier)."));
+        sb.append("<button class=\"btn btn-primary\" type=\"submit\">Créer le dialogue</button></form>");
         latestForPlayer(agentId, "dialogue.definition.create", "").ifPresent(row -> sb.append(resultLine("Dernière création", row)));
-        return sb.append("</details>").toString();
+        return sb.toString();
     }
 
     // ================================================================================
@@ -2474,6 +2566,24 @@ public final class AgentPages {
     private String confirmBox(String text) {
         return "<label class=\"inline confirm\"><input type=\"checkbox\" name=\"confirm\" value=\"true\" required> "
                 + Http.esc(text) + "</label>";
+    }
+
+    /**
+     * Consentement d'une mutation (issues #111 / #113 / #118). Pour une action réellement sensible
+     * ou difficilement réversible (bannissement, reset, spawn d'un PNJ physique, suppression), une
+     * vraie case à cocher explicite. Pour une édition de contenu normale et réversible, aucune case
+     * cachée : une phrase d'information et un {@code confirm} implicite — le bouton reste
+     * l'engagement explicite. La distinction vient de {@link AgentActionCatalog.Spec#sensitive()},
+     * jamais d'un choix local à l'écran.
+     */
+    private String mutationConsent(String type, String sensitiveCheckboxText, String reversibleNote) {
+        boolean sensitive = AgentActionCatalog.spec(type).map(AgentActionCatalog.Spec::sensitive).orElse(true);
+        if (sensitive) {
+            return confirmBox(sensitiveCheckboxText);
+        }
+        return "<input type=\"hidden\" name=\"confirm\" value=\"true\">"
+                + (reversibleNote == null || reversibleNote.isBlank() ? ""
+                        : "<p class=\"form-text confirm-note\">" + Http.esc(reversibleNote) + "</p>");
     }
 
     private String idSelect(String name, List<String> ids, String placeholder) {
@@ -2617,13 +2727,17 @@ public final class AgentPages {
         return Ui.banner("err", "Aucun agent RPGQuest configuré. Voir <code>docs/control-panel/AGENT.md</code>.");
     }
 
-    /** Petit lien contextuel vers une fiche de documentation (icône livre, jamais un emoji). */
+    /**
+     * Petit lien contextuel vers une fiche de documentation (icône livre, jamais un emoji). Ouvre un
+     * nouvel onglet ({@code rel=noopener}) pour ne jamais perdre un formulaire en cours de saisie
+     * (issue #111).
+     */
     static String docLink(String slugOrQuery, String label) {
         String href = slugOrQuery.startsWith("q=") || slugOrQuery.contains("=")
                 ? "/docs?" + slugOrQuery
                 : ("dialogues".equals(slugOrQuery) ? "/docs?q=dialogue" : "/docs/" + slugOrQuery);
-        return "<a class=\"doc-cm-link\" href=\"" + Http.esc(href) + "\">" + Icons.icon("book")
-                + Http.esc(label) + "</a>";
+        return "<a class=\"doc-cm-link\" href=\"" + Http.esc(href) + "\" target=\"_blank\" rel=\"noopener\">"
+                + Icons.icon("book") + Http.esc(label) + "</a>";
     }
 
     /** Id de quête/story → slug de fichier pour {@code /quests/edit/…} (vide si non représentable). */

@@ -34,11 +34,20 @@ public final class NotificationCenter {
         this.registry = registry;
     }
 
-    /** Les {@code SCAN} dernières actions, tous agents confondus, triées de la plus récente à la plus ancienne. */
+    /**
+     * Les {@code SCAN} dernières actions <strong>opérateur</strong>, tous agents confondus, triées de
+     * la plus récente à la plus ancienne. Les relevés de catalogue ré-enfilés automatiquement après
+     * une mutation ({@code created_by = "auto"}, issues #112 / #115 / #116 / #119 / #120) sont exclus :
+     * ils sont un rouage interne de resynchronisation, pas une action à signaler.
+     */
     public List<AgentActionRow> recent() {
         List<AgentActionRow> all = new ArrayList<>();
         for (AgentIdentity a : registry.all()) {
-            all.addAll(store.recentActions(a.id(), SCAN));
+            for (AgentActionRow row : store.recentActions(a.id(), SCAN)) {
+                if (!"auto".equals(row.createdBy())) {
+                    all.add(row);
+                }
+            }
         }
         all.sort(Comparator.comparing(AgentActionRow::createdAt).reversed());
         return all.size() > SCAN ? all.subList(0, SCAN) : all;

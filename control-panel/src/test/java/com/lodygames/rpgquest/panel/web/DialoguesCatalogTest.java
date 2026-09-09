@@ -121,22 +121,31 @@ class DialoguesCatalogTest {
         start();
         String token = csrf(get("/dialogues?agent=" + TestConfig.AGENT_ID).body());
 
+        // Création de contenu réversible (#118) : aucune case à cocher cachée — acceptée sans « confirm ».
         HttpResponse<String> noConfirm = post("/agents/action", "_csrf=" + token
                 + "&type=dialogue.definition.create&agent=" + TestConfig.AGENT_ID
                 + "&return=/dialogues&key=woodcutter_bob&speaker=" + enc("Bûcheron Bob") + "&text=" + enc("Bonjour"));
-        assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "confirm obligatoire");
-
-        HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
-                + "&type=dialogue.definition.create&agent=" + TestConfig.AGENT_ID
-                + "&return=/dialogues&key=woodcutter_bob&speaker=" + enc("Bûcheron Bob")
-                + "&text=" + enc("<white>Bonjour.</white>") + "&confirm=true");
-        assertEquals(303, ok.statusCode());
+        assertEquals(303, noConfirm.statusCode());
+        assertFalse(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "aucune confirmation requise");
         assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1);
+
+        // La palette de couleurs (#118) : un text_color connu enrobe le texte simple en MiniMessage.
+        HttpResponse<String> colored = post("/agents/action", "_csrf=" + token
+                + "&type=dialogue.definition.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/dialogues&key=iron_specialist_intro&speaker=Robert"
+                + "&text_color=yellow&text=" + enc("Bonjour voyageur."));
+        assertEquals(303, colored.statusCode());
+        assertFalse(colored.headers().firstValue("Location").orElse("").contains("err="));
 
         HttpResponse<String> bad = post("/agents/action", "_csrf=" + token
                 + "&type=dialogue.definition.create&agent=" + TestConfig.AGENT_ID
-                + "&return=/dialogues&key=" + enc("Bad Key") + "&speaker=X&text=Y&confirm=true");
+                + "&return=/dialogues&key=" + enc("Bad Key") + "&speaker=X&text=Y");
         assertTrue(bad.headers().firstValue("Location").orElse("").contains("err="));
+
+        HttpResponse<String> badColor = post("/agents/action", "_csrf=" + token
+                + "&type=dialogue.definition.create&agent=" + TestConfig.AGENT_ID
+                + "&return=/dialogues&key=other_intro&speaker=X&text_color=chartreuse&text=Y");
+        assertTrue(badColor.headers().firstValue("Location").orElse("").contains("err="), "couleur hors palette refusée");
     }
 
     @Test
@@ -165,15 +174,12 @@ class DialoguesCatalogTest {
         runListWithSuccess(DIALOGUE_DETAILS);
         String token = csrf(get("/dialogues?agent=" + TestConfig.AGENT_ID).body());
 
-        HttpResponse<String> noConfirm = post("/agents/action", "_csrf=" + token
-                + "&type=dialogue.node.update&agent=" + TestConfig.AGENT_ID + "&return=/dialogues"
-                + "&dialogue_id=rpgquest:guard&node_id=greeting&speaker=Capitaine&text=" + enc("<y>Salut</y>"));
-        assertTrue(noConfirm.headers().firstValue("Location").orElse("").contains("err="), "confirm obligatoire");
-
+        // Édition réversible : plus de confirmation cachée (#111 / #118).
         HttpResponse<String> ok = post("/agents/action", "_csrf=" + token
                 + "&type=dialogue.node.update&agent=" + TestConfig.AGENT_ID + "&return=/dialogues"
-                + "&dialogue_id=guard&node_id=greeting&speaker=Capitaine&text=" + enc("<y>Salut</y>") + "&confirm=true");
+                + "&dialogue_id=guard&node_id=greeting&speaker=Capitaine&text=" + enc("<y>Salut</y>"));
         assertEquals(303, ok.statusCode());
+        assertFalse(ok.headers().firstValue("Location").orElse("").contains("err="));
         assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1);
 
         HttpResponse<String> badNode = post("/agents/action", "_csrf=" + token

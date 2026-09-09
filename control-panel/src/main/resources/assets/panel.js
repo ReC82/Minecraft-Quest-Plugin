@@ -27,7 +27,38 @@
 
   /* ---- Toasts ------------------------------------------------------------------------- */
 
-  var pendingToasts = []; // { el, actionId }
+  var pendingToasts = []; // { el, actionId, sawPending }
+
+  /**
+   * Réconciliation mutualisée après mutation (issues #112 / #115 / #116 / #119 / #120).
+   * Quand une action suivie qu'on a VUE s'exécuter (pending -> succès) pendant la vie de la page
+   * se termine, la vue métier rendue par le serveur peut être périmée (catalogue PNJ / dialogues).
+   * On programme alors UN rechargement, déclenché dès que la file d'actions est retombée au repos
+   * (les relevés `*.list` ré-enfilés côté serveur sont donc pris en compte). Aucun `location.reload()`
+   * dispersé par bouton : un seul mécanisme, pour toutes les pages métier.
+   */
+  var reloadPlan = { armed: false, deadline: 0, ids: [] };
+
+  function reloadedActionIds() {
+    try { return (window.sessionStorage.getItem("pa-reloaded-actions") || "").split(",").filter(Boolean); }
+    catch (e) { return []; }
+  }
+  function markReloadedFor(ids) {
+    try {
+      var arr = reloadedActionIds();
+      for (var i = 0; i < ids.length; i++) { if (arr.indexOf(ids[i]) === -1) { arr.push(ids[i]); } }
+      while (arr.length > 30) { arr.shift(); }
+      window.sessionStorage.setItem("pa-reloaded-actions", arr.join(","));
+    } catch (e) { /* pas de sessionStorage : le garde `sawPending` suffit à éviter une boucle */ }
+  }
+  function alreadyReloadedFor(id) {
+    return reloadedActionIds().indexOf(id) !== -1;
+  }
+  function runReload() {
+    if (reloadPlan.ids.length) { markReloadedFor(reloadPlan.ids); }
+    reloadPlan.armed = false;
+    try { window.location.reload(); } catch (e) { window.location.href = window.location.href; }
+  }
 
   /**
    * Affiche un toast. Utilise le composant Bootstrap Toast s'il est disponible ; sinon, repli
@@ -61,7 +92,7 @@
       showToast(el);
       var actionId = el.getAttribute("data-toast-action");
       if (actionId && el.getAttribute("data-toast-group") === "pending") {
-        pendingToasts.push({ el: el, actionId: actionId });
+        pendingToasts.push({ el: el, actionId: actionId, sawPending: false });
       }
     }
   }
@@ -130,7 +161,7 @@
         list.innerHTML = '<p class="notif-empty">Aucune action pour le moment.</p>';
         return;
       }
-      list.innerHTML = actions.slice(0, 8).map(function (a) {
+      list.innerHTML = actions.filter(function (a) { return !a.auto; }).slice(0, 8).map(function (a) {
         return a.notifHtml || ('<span class="notif-item">' + esc(a.label || a.type) + "</span>");
       }).join("");
     }
@@ -156,12 +187,26 @@
           for (var k = 0; data.actions && k < data.actions.length; k++) {
             if (data.actions[k].idFull === entry.actionId) { match = data.actions[k]; break; }
           }
-          if (match && match.group !== "pending") {
-            updateToast(entry, match);
-            pendingToasts.splice(i, 1);
-          } else if (match) {
+          if (match && match.group === "pending") {
+            entry.sawPending = true;
             stillPending = true;
+          } else if (match) {
+            updateToast(entry, match);
+            // Vue pending -> succès pendant cette page : la vue serveur peut être périmée.
+            if (entry.sawPending && match.group === "success" && !alreadyReloadedFor(entry.actionId)) {
+              reloadPlan.armed = true;
+              reloadPlan.deadline = Date.now() + 30000;
+              if (reloadPlan.ids.indexOf(entry.actionId) === -1) { reloadPlan.ids.push(entry.actionId); }
+            }
+            pendingToasts.splice(i, 1);
           }
+        }
+
+        if (reloadPlan.armed) {
+          var idle = typeof data.pending === "number" ? data.pending === 0 : !stillPending;
+          if (idle || Date.now() > reloadPlan.deadline) { runReload(); return; }
+          schedule(FAST_MS);
+          return;
         }
         schedule(stillPending ? FAST_MS : SLOW_MS);
       }).catch(function () {
@@ -461,6 +506,56 @@
     }
   }
 
+  /* ---- Palette de couleurs MiniMessage + aperçu (formulaire de dialogue, #118) ------ */
+
+  function initColorPalette() {
+    var palettes = document.querySelectorAll("[data-dlg-palette]");
+    for (var i = 0; i < palettes.length; i++) {
+      (function (palette) {
+        var wrap = palette.closest ? palette.closest("form") : null;
+        var hidden = wrap ? wrap.querySelector("[data-dlg-color]") : null;
+        var preview = wrap ? wrap.querySelector("[data-dlg-preview]") : null;
+        var textInput = wrap ? wrap.querySelector("[data-dlg-text]") : null;
+        var speakerInput = wrap ? wrap.querySelector("[name='speaker']") : null;
+        var swatches = palette.querySelectorAll(".dlg-swatch");
+        var current = "";
+        var currentHex = swatchHex(swatches[0]);
+
+        function swatchHex(sw) {
+          if (!sw) { return ""; }
+          var m = (sw.getAttribute("style") || "").match(/--sw:\s*([^;]+)/);
+          return m ? m[1].trim() : "";
+        }
+        function refreshPreview() {
+          if (!preview) { return; }
+          var speaker = speakerInput && speakerInput.value ? speakerInput.value.trim() : "";
+          var text = textInput && textInput.value ? textInput.value : "";
+          // Un aperçu simple : on retire les balises MiniMessage pour n'afficher que le texte.
+          var plain = text.replace(/<[^>]*>/g, "");
+          preview.textContent = (speaker ? speaker + " : " : "") + (plain || "—");
+          preview.style.color = currentHex || "";
+        }
+        function select(sw) {
+          current = sw.getAttribute("data-color") || "";
+          currentHex = swatchHex(sw);
+          if (hidden) { hidden.value = current; }
+          for (var k = 0; k < swatches.length; k++) {
+            var on = swatches[k] === sw;
+            swatches[k].classList.toggle("on", on);
+            swatches[k].setAttribute("aria-pressed", on ? "true" : "false");
+          }
+          refreshPreview();
+        }
+        for (var s = 0; s < swatches.length; s++) {
+          (function (sw) { sw.addEventListener("click", function () { select(sw); }); })(swatches[s]);
+        }
+        if (textInput) { textInput.addEventListener("input", refreshPreview); }
+        if (speakerInput) { speakerInput.addEventListener("input", refreshPreview); }
+        refreshPreview();
+      })(palettes[i]);
+    }
+  }
+
   function applyType(sel) {
     var row = sel.closest ? sel.closest(".rowitem") : null;
     if (!row) { return; }
@@ -488,6 +583,7 @@
     initFocus();
     initCombo();
     initEditorForms();
+    initColorPalette();
     initDrawer();
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.

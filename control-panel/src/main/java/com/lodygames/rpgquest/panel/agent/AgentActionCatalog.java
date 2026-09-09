@@ -38,19 +38,55 @@ public final class AgentActionCatalog {
             "CLAIM_TIER_1", "tutorial_started", "crystal_hunt_started", "RUNE_RAPPEL_GRANTED");
 
     /**
-     * @param type        nom du fil (ex. {@code quest.start})
-     * @param permission  permission requise
-     * @param mutation    {@code true} = effet de bord (confirmation obligatoire côté panel)
-     * @param needsPlayer {@code true} = paramètre {@code player} obligatoire
-     * @param label       libellé humain court
+     * Couleurs MiniMessage proposées par la palette du formulaire de dialogue (issue #118) : l'ordre
+     * est l'ordre d'affichage. Le panel enrobe le texte avec {@code <couleur>…</couleur>} — jamais de
+     * couleur hors de cette liste, jamais de balise si l'utilisateur a déjà écrit du MiniMessage.
      */
-    public record Spec(String type, Permission permission, boolean mutation, boolean needsPlayer, String label) {
+    public static final List<String> PALETTE_COLORS = List.of(
+            "white", "gray", "yellow", "gold", "green", "dark_green", "aqua", "dark_aqua",
+            "blue", "dark_blue", "red", "dark_red", "light_purple", "dark_purple");
+
+    /**
+     * @param type         nom du fil (ex. {@code quest.start})
+     * @param permission   permission requise
+     * @param mutation     {@code true} = effet de bord
+     * @param needsPlayer  {@code true} = paramètre {@code player} obligatoire
+     * @param sensitive    {@code true} = action réellement sensible / difficilement réversible
+     *                     (bannissement, reset, spawn d'entité, suppression…) → confirmation
+     *                     explicite obligatoire. {@code false} = édition de contenu normale et
+     *                     réversible → aucune case à cocher cachée (issues #111 / #113 / #118).
+     * @param label        libellé humain court
+     * @param refreshTypes relevés {@code *.list} dont l'instantané du Control Panel devient périmé
+     *                     quand cette action réussit — ré-enfilés automatiquement (issues #112 /
+     *                     #115 / #116 / #119 / #120). Jamais de refresh ad hoc par écran.
+     */
+    public record Spec(String type, Permission permission, boolean mutation, boolean needsPlayer,
+                       boolean sensitive, String label, List<String> refreshTypes) {
+        public Spec {
+            refreshTypes = refreshTypes == null ? List.of() : List.copyOf(refreshTypes);
+        }
     }
 
     private static final Map<String, Spec> SPECS = new LinkedHashMap<>();
 
+    /** Lecture ou mutation « classique » : une mutation non annotée reste sensible (comportement historique). */
     private static void add(String type, Permission p, boolean mutation, boolean needsPlayer, String label) {
-        SPECS.put(type, new Spec(type, p, mutation, needsPlayer, label));
+        SPECS.put(type, new Spec(type, p, mutation, needsPlayer, mutation, label, List.of()));
+    }
+
+    /**
+     * Édition de contenu réversible (création / modification d'une définition, d'un nœud, d'un
+     * choix, d'une liaison logique) : pas de confirmation cachée, mais invalidation des catalogues
+     * cités dès le succès.
+     */
+    private static void addContentWrite(String type, Permission p, String label, String... refresh) {
+        SPECS.put(type, new Spec(type, p, true, false, false, label, List.of(refresh)));
+    }
+
+    /** Mutation sensible qui invalide malgré tout des catalogues (spawn d'entité, bannissement…). */
+    private static void addSensitiveWrite(String type, Permission p, boolean needsPlayer, String label,
+                                          String... refresh) {
+        SPECS.put(type, new Spec(type, p, true, needsPlayer, true, label, List.of(refresh)));
     }
 
     static {
@@ -67,24 +103,31 @@ public final class AgentActionCatalog {
         add("npc.list", Permission.NPC_READ, false, false, "Rafraîchir le catalogue des PNJ");
         add("npc.citizens.list", Permission.NPC_READ, false, false, "Rafraîchir les PNJ Citizens");
         add("dialogue.list", Permission.DIALOGUE_READ, false, false, "Rafraîchir le catalogue des dialogues");
-        // Écritures de contenu (V2 déclarative des PNJ) — confirmation obligatoire, jamais de YAML brut.
-        add("npc.definition.create", Permission.NPC_WRITE, true, false, "Créer une définition PNJ");
-        add("npc.definition.update", Permission.NPC_WRITE, true, false, "Modifier une définition PNJ");
-        add("quest.giver.set", Permission.QUEST_GIVER_WRITE, true, false, "Attribuer une quête à un PNJ");
-        add("npc.citizens.link", Permission.NPC_BIND_WRITE, true, false, "Lier un PNJ Citizens existant");
-        add("npc.citizens.create", Permission.NPC_SPAWN_WRITE, true, false, "Créer le PNJ Citizens");
-        add("dialogue.definition.create", Permission.DIALOGUE_WRITE, true, false, "Créer un dialogue (squelette)");
-        add("dialogue.node.create", Permission.DIALOGUE_WRITE, true, false, "Ajouter un nœud");
-        add("dialogue.node.update", Permission.DIALOGUE_WRITE, true, false, "Modifier un nœud");
-        add("dialogue.choice.add", Permission.DIALOGUE_WRITE, true, false, "Ajouter un choix");
-        add("dialogue.choice.update", Permission.DIALOGUE_WRITE, true, false, "Modifier un choix");
-        add("dialogue.choice.delete", Permission.DIALOGUE_WRITE, true, false, "Supprimer un choix");
+        // Écritures de contenu (V2 déclarative des PNJ) — réversibles, jamais de YAML brut. Chaque
+        // succès ré-enfile le(s) relevé(s) de catalogue impacté(s) pour que la vue métier se
+        // réconcilie sans « Rafraîchir catalogue + F5 ».
+        addContentWrite("npc.definition.create", Permission.NPC_WRITE, "Créer une définition PNJ", "npc.list");
+        addContentWrite("npc.definition.update", Permission.NPC_WRITE, "Modifier une définition PNJ", "npc.list");
+        addContentWrite("quest.giver.set", Permission.QUEST_GIVER_WRITE, "Attribuer une quête à un PNJ",
+                "npc.list", "quest.list");
+        addContentWrite("npc.citizens.link", Permission.NPC_BIND_WRITE, "Lier un PNJ Citizens existant",
+                "npc.list", "npc.citizens.list");
+        addSensitiveWrite("npc.citizens.create", Permission.NPC_SPAWN_WRITE, false, "Créer le PNJ Citizens",
+                "npc.list", "npc.citizens.list");
+        addContentWrite("dialogue.definition.create", Permission.DIALOGUE_WRITE, "Créer un dialogue (squelette)",
+                "dialogue.list");
+        addContentWrite("dialogue.node.create", Permission.DIALOGUE_WRITE, "Ajouter un nœud", "dialogue.list");
+        addContentWrite("dialogue.node.update", Permission.DIALOGUE_WRITE, "Modifier un nœud", "dialogue.list");
+        addContentWrite("dialogue.choice.add", Permission.DIALOGUE_WRITE, "Ajouter un choix", "dialogue.list");
+        addContentWrite("dialogue.choice.update", Permission.DIALOGUE_WRITE, "Modifier un choix", "dialogue.list");
+        addSensitiveWrite("dialogue.choice.delete", Permission.DIALOGUE_WRITE, false, "Supprimer un choix",
+                "dialogue.list");
         // Mutations
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");
         add("player.resetnew.confirm", Permission.ACTION_PLAYER_RESET, true, true, "Reset « nouveau joueur »");
-        add("player.ban", Permission.PLAYER_MODERATE, true, true, "Bannir un joueur");
-        add("player.unban", Permission.PLAYER_MODERATE, true, true, "Débannir un joueur");
+        addSensitiveWrite("player.ban", Permission.PLAYER_MODERATE, true, "Bannir un joueur", "player.catalog");
+        addSensitiveWrite("player.unban", Permission.PLAYER_MODERATE, true, "Débannir un joueur", "player.catalog");
         add("quest.start", Permission.ACTION_QUEST, true, true, "Démarrer une quête");
         add("quest.complete", Permission.ACTION_QUEST, true, true, "Compléter une quête");
         add("quest.reset", Permission.ACTION_QUEST, true, true, "Réinitialiser une quête");
@@ -137,7 +180,7 @@ public final class AgentActionCatalog {
             }
             params.put("player", player);
         }
-        if (spec.mutation() && !"true".equals(trim(form.get("confirm")))) {
+        if (spec.mutation() && spec.sensitive() && !"true".equals(trim(form.get("confirm")))) {
             return Validation.fail("Confirmation obligatoire pour « " + spec.label() + " ».");
         }
 
@@ -307,6 +350,20 @@ public final class AgentActionCatalog {
                 String text = trim(form.get("text"));
                 if (text.isEmpty() || text.length() > 512 || text.indexOf('\n') >= 0) {
                     return Validation.fail("Texte du nœud manquant, trop long (max 512), ou multi-ligne.");
+                }
+                // Palette de couleurs (issue #118) : on n'enrobe que si l'utilisateur n'a pas déjà
+                // saisi du MiniMessage — son texte avancé reste intact.
+                String color = trim(form.get("text_color")).toLowerCase(java.util.Locale.ROOT);
+                if (!color.isEmpty()) {
+                    if (!PALETTE_COLORS.contains(color)) {
+                        return Validation.fail("Couleur de texte non reconnue.");
+                    }
+                    if (text.indexOf('<') < 0) {
+                        text = "<" + color + ">" + text + "</" + color + ">";
+                        if (text.length() > 512) {
+                            return Validation.fail("Texte trop long une fois la couleur appliquée (max 512).");
+                        }
+                    }
                 }
                 params.put("key", key);
                 params.put("speaker", speaker);

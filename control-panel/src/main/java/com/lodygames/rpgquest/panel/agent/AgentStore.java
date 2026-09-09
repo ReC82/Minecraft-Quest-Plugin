@@ -279,6 +279,25 @@ public final class AgentStore {
         }
     }
 
+    /**
+     * {@code true} si une action de ce type est déjà en vol pour l'agent (PENDING ou DELIVERED, sans
+     * résultat). Sert à ne pas empiler plusieurs relevés de catalogue identiques quand plusieurs
+     * mutations se suivent (auto-refresh, issues #112 / #115 / #116 / #119 / #120).
+     */
+    public boolean hasOpenActionOfType(String agentId, String type) {
+        String sql = "SELECT 1 FROM agent_action WHERE agent_id = ? AND type = ? "
+                + "AND status IN ('PENDING','DELIVERED') AND completed_at IS NULL LIMIT 1";
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, agentId);
+            ps.setString(2, type);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Lecture d'une action ouverte « " + type + " » impossible (" + agentId + ")", e);
+        }
+    }
+
     public List<AgentActionRow> recentActions(String agentId, int limit) {
         String sql = "SELECT * FROM agent_action WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?";
         List<AgentActionRow> rows = new ArrayList<>();

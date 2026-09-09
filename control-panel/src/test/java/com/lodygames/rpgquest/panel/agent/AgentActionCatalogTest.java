@@ -88,14 +88,62 @@ class AgentActionCatalogTest {
     // ---- Éditeur guidé de dialogue (issue #82 phase 1) --------------------------------------
 
     @Test
-    void dialogueEditActionsRequireDialogueWriteAndConfirm() {
+    void dialogueEditActionsRequireDialogueWrite() {
         for (String type : new String[] {"dialogue.node.create", "dialogue.node.update",
                 "dialogue.choice.add", "dialogue.choice.update", "dialogue.choice.delete"}) {
             assertEquals(Permission.DIALOGUE_WRITE, AgentActionCatalog.spec(type).orElseThrow().permission());
             assertTrue(AgentActionCatalog.spec(type).orElseThrow().mutation());
         }
-        assertFalse(AgentActionCatalog.validate("dialogue.node.update", Map.of(
-                "dialogue_id", "guard", "node_id", "greeting", "speaker", "G", "text", "T")).valid(), "confirm requis");
+    }
+
+    @Test
+    void reversibleContentEditsNeedNoHiddenConfirmButDestructiveOnesDo() {
+        // Édition de contenu normale et réversible (issues #111 / #113 / #118) : aucune case cachée.
+        for (String type : new String[] {"npc.definition.create", "npc.definition.update", "quest.giver.set",
+                "npc.citizens.link", "dialogue.definition.create", "dialogue.node.create", "dialogue.node.update",
+                "dialogue.choice.add", "dialogue.choice.update"}) {
+            assertFalse(AgentActionCatalog.spec(type).orElseThrow().sensitive(), type + " ne doit pas être « sensible »");
+        }
+        assertTrue(AgentActionCatalog.validate("dialogue.node.update", Map.of(
+                "dialogue_id", "guard", "node_id", "greeting", "speaker", "G", "text", "T")).valid(),
+                "aucune confirmation cachée pour une édition réversible");
+
+        // Actions réellement sensibles / destructrices : confirmation explicite conservée.
+        for (String type : new String[] {"dialogue.choice.delete", "npc.citizens.create", "player.ban",
+                "player.unban", "player.resetnew.confirm", "quest.reset"}) {
+            assertTrue(AgentActionCatalog.spec(type).orElseThrow().sensitive(), type + " doit rester « sensible »");
+        }
+        assertFalse(AgentActionCatalog.validate("dialogue.choice.delete", Map.of(
+                "dialogue_id", "guard", "node_id", "greeting", "choice_index", "0")).valid(), "confirm requis");
+    }
+
+    @Test
+    void contentMutationsDeclareTheCatalogsTheyInvalidate() {
+        assertEquals(java.util.List.of("npc.list"),
+                AgentActionCatalog.spec("npc.definition.update").orElseThrow().refreshTypes());
+        assertEquals(java.util.List.of("npc.list", "npc.citizens.list"),
+                AgentActionCatalog.spec("npc.citizens.link").orElseThrow().refreshTypes());
+        assertEquals(java.util.List.of("dialogue.list"),
+                AgentActionCatalog.spec("dialogue.definition.create").orElseThrow().refreshTypes());
+        assertTrue(AgentActionCatalog.spec("player.variable.get").orElseThrow().refreshTypes().isEmpty(),
+                "une lecture n'invalide aucun catalogue");
+    }
+
+    @Test
+    void dialogueColorPaletteWrapsSimpleTextAndRejectsUnknownColor() {
+        AgentActionCatalog.Validation wrapped = AgentActionCatalog.validate("dialogue.definition.create", Map.of(
+                "key", "intro", "speaker", "Robert", "text_color", "yellow", "text", "Bonjour."));
+        assertTrue(wrapped.valid());
+        assertEquals("<yellow>Bonjour.</yellow>", wrapped.params().get("text"));
+
+        // MiniMessage déjà présent : on n'enrobe pas, le texte avancé reste intact.
+        AgentActionCatalog.Validation manual = AgentActionCatalog.validate("dialogue.definition.create", Map.of(
+                "key", "intro", "speaker", "Robert", "text_color", "yellow", "text", "<red>Halte !</red>"));
+        assertTrue(manual.valid());
+        assertEquals("<red>Halte !</red>", manual.params().get("text"));
+
+        assertFalse(AgentActionCatalog.validate("dialogue.definition.create", Map.of(
+                "key", "intro", "speaker", "Robert", "text_color", "turquoise", "text", "Bonjour.")).valid());
     }
 
     @Test

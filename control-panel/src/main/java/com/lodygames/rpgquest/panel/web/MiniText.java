@@ -48,6 +48,15 @@ public final class MiniText {
             Map.entry("yellow", "#e3c33b"),
             Map.entry("white", "#e6e8ec"));
 
+    /**
+     * Hex d'aperçu d'une couleur MiniMessage nommée, ou {@code null} si inconnue. Sert à la palette
+     * de couleurs du formulaire de dialogue (issue #118) : l'aperçu du panel utilise exactement les
+     * mêmes teintes que le rendu des textes déjà chargés.
+     */
+    public static String colorHex(String name) {
+        return name == null ? null : NAMED_COLORS.get(name.toLowerCase(java.util.Locale.ROOT));
+    }
+
     private static final Map<String, String> DECORATIONS = Map.ofEntries(
             Map.entry("bold", "b"), Map.entry("b", "b"),
             Map.entry("italic", "i"), Map.entry("i", "i"), Map.entry("em", "i"),

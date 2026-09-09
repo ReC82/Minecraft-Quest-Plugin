@@ -6,10 +6,11 @@
 * Sujet : Passe UX ciblée sur l'éditeur guidé de quêtes du Control Panel (issue #46)
 * Statut : DONE
 * Branche Git : `feat/control-panel-admin-tools`
-* Commit actuel si disponible : (voir section « Commits » — ajouté en fin de tâche)
+* Commits : `dbb1420` (feat — code + tests), `3c5228c` (docs — bible / current_state / fiche
+  `/docs` / rapport), + un commit `docs(#46)` « Exécution réelle » ajouté en fin de tâche.
 * Début de la tâche : 2026-09-09 15:47:11
-* Fin de la tâche : 2026-09-09 HH:MM:SS
-* Durée totale : HH:MM:SS
+* Fin de la tâche : 2026-09-09 16:19:00
+* Durée totale : 00:31:49
 
 ## Demande
 
@@ -178,12 +179,14 @@ Aucune nouvelle clé de configuration. Aucun fichier de contenu écrit par la t�
   `categoryFieldUsesCategoryListNotNpcList`, `lookupFieldsAreSearchableCombos`) + le corpus
   existant (rendu, auth, ajout de ligne, save whitelisté, conflit de hash, id traversant, CSRF,
   lecture seule, story) inchangé et vert.
-- Commandes exécutées (AWS, `GRADLE_OPTS` / `RPGQUEST_TEST_MAX_HEAP` plafonnés pour la RAM de la
-  box) :
-  - `./gradlew :control-panel:test` → **272 / 0** (VERT).
+- Commandes exécutées (AWS, `GRADLE_OPTS=-Dorg.gradle.jvmargs=-Xmx800m` /
+  `RPGQUEST_TEST_MAX_HEAP=640m` plafonnés pour la RAM de la box) :
+  - `./gradlew :control-panel:test` → **271 exécutés / 0 échec** (1 ignoré = smoke prod-copy
+    `-DpanelProdDbCopy`, inchangé).
   - `./gradlew :control-panel:build` → **BUILD SUCCESSFUL**.
-  - `./gradlew test` → __À COMPLÉTER__.
-  - `./gradlew build` → __À COMPLÉTER__.
+  - `./gradlew build` (⇒ `test` inclus) → **BUILD SUCCESSFUL** (exit 0). Détail JUnit :
+    **plugin 1214 / 0** (29 ignorés MockBukkit préexistants), **control-panel 271 / 0**,
+    **web-api 30 / 0**.
 
 ## Tests manuels à effectuer
 
@@ -215,7 +218,33 @@ bloqué par la validation avant la fin, et on ne perd pas sa position après une
 `git revert` / `git checkout` des 9 fichiers modifiés + suppression des 2 fichiers créés.
 Aucune donnée, aucun fichier de contenu, aucun schéma à défaire.
 
-## Déploiement VeryGames
+## Déploiement
+
+### Exécuté — Control Panel AWS (2026-09-09 ~16:17 UTC)
+
+`scripts/plugadmin/deploy.sh` lancé depuis la branche `feat/control-panel-admin-tools` @
+`3c5228c`. Résultat :
+
+- `:control-panel:installDist` → **BUILD SUCCESSFUL** (`compileJava` / `jar` **UP-TO-DATE** →
+  distribution issue du build déjà testé) ;
+- release précédente sauvegardée sous `/opt/plugadmin/releases/20260909-161744` ;
+- `systemctl restart plugadmin` → `plugadmin.service` **active (running)**, `NRestarts=0`,
+  `Memory ~53M` ;
+- `/health` local **ONLINE** ; `https://plugadmin.lodylands.com/health` **ONLINE** ;
+- `/quests/new`, `/quests/save`, `/stories/new`, `/home` (anonyme) → **303** vers `/login` ;
+- en-tête **CSP inchangé** :
+  `default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'`
+  (`form-action 'self'` couvre les `formaction=".../save#…"` — même origine) ;
+- jar déployé **byte-identique** au build local — SHA-256
+  `24c141993222c066e32e1e2de4e4220f7597c3bbb2f0cec0302b420917f95e5e` ;
+- `panel.js` servi contient `initCombo` / `initEditorForms` / `type-fields` ;
+  `plugadmin.css?v=22a51c4f` (nouveau hash) servi ;
+- `journalctl` depuis le redéploiement : **0 ERROR**. Un seul
+  `WARNING event=handler_error path=/login java.io.IOException: stream closed` = client `curl -I`
+  (HEAD) qui ferme la connexion — bénin, non lié au changement (déjà vu dans les sessions
+  précédentes).
+
+### Déploiement VeryGames
 
 ### À transférer
 

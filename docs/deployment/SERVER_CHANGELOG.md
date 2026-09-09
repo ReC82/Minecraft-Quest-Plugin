@@ -2211,3 +2211,80 @@ aucune migration, `data.db` / `control-panel.db` non modifiés. Rollback plugin 
 `scripts/plugadmin/rollback.sh app` (→ `20260909-131643`).
 
 Rapport : `docs/claude-reports/2026-09-09_1400_players-annuaire-offline-96.md`.
+
+## 2026-09-09 - Control Panel : passe UX éditeur de quêtes (#46) — AWS uniquement
+
+### Changement
+
+**Control Panel AWS uniquement. Aucun code plugin, aucun code agent, aucune migration,
+aucun impact serveur Minecraft — ne pas redéployer/redémarrer VeryGames.**
+
+Passe UX ciblée sur l'éditeur guidé `/quests/new` (issue #46) :
+
+- un type d'objectif / récompense pilote seul ses champs (descripteur unique) ; le
+  changement de type est immédiat (JS progressif) et efface les valeurs du type
+  précédent ; sans JavaScript, le serveur re-rend au premier aller-retour ;
+- les actions de brouillon (ajouter / supprimer / réordonner) ne déclenchent plus la
+  validation HTML `required` (`formnovalidate`) ; la validation métier n'a lieu qu'à
+  « Vérifier » / « Enregistrer » ;
+- ids stables + `formaction=".../save#ancre"` → la page se recale sur le composant
+  concerné après chaque action ;
+- listes recherchables (`panel.js`, composant local, aucun CDN) pour entité / matériau /
+  PNJ / icône / catégorie ; la catégorie vient d'une liste curée + saisie libre.
+
+Fichiers : `panel/content/{Descriptors,RefData}.java`, `panel/web/ContentEditorPages.java`,
+`assets/panel.js`, `assets/plugadmin.css`, `resources/docs/quetes.md`. **CSP inchangée**
+(`default-src 'self'`).
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — build + release sous
+`/opt/plugadmin/releases/<horodatage>` + `systemctl restart plugadmin` + check `/health`.
+Aucune autre action. Aucun changement nginx / TLS / secret / base. `control-panel.db`
+non touché.
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : app précédente sous `/opt/plugadmin/releases/<horodatage>`
+(rétention 5).
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local **ONLINE** ; `https://plugadmin.lodylands.com/health` **ONLINE** ;
+- `/quests/new`, `/quests/edit/<slug>`, `/stories/new`, `/quests/save` anonymes → **303**
+  vers `/login` ;
+- en-tête **CSP inchangée** ;
+- `plugadmin.service` `active`, `NRestarts=0` ; jar déployé **byte-identique** au build ;
+- `:control-panel:test` **271/0** ; `./gradlew build` vert (plugin 1214/0, web-api 30/0) ;
+- rendu navigateur **authentifié** de l'éditeur : `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure la release précédente). Aucune migration à
+défaire.
+
+### Exécution réelle
+
+Session du 2026-09-09 (~16:17 UTC). Branche `feat/control-panel-admin-tools` @ `3c5228c`.
+`scripts/plugadmin/deploy.sh` OK : `:control-panel:installDist` **BUILD SUCCESSFUL**
+(`compileJava`/`jar` **UP-TO-DATE** — distribution issue du build déjà testé), release
+précédente sous `/opt/plugadmin/releases/20260909-161744`, `systemctl restart plugadmin` →
+`active (running)` `NRestarts=0`. `/health` **ONLINE** local + public
+(`https://plugadmin.lodylands.com/health`). `/quests/new` `/quests/save` `/stories/new` `/home`
+anonymes → **303** `/login`. **CSP inchangée**
+(`default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'`).
+Jar déployé **byte-identique** au build local (SHA-256 `24c141993222c066…`). `panel.js` servi
+contient `initCombo`/`initEditorForms` ; `plugadmin.css?v=22a51c4f`. **0 ERROR** au journal
+depuis le redéploiement ; un `WARNING handler_error path=/login stream closed` = `curl -I`
+(HEAD) client qui ferme, bénin. **VeryGames / Minecraft non touchés.** Navigateur authentifié :
+`PENDING MANUAL VALIDATION`.
+
+Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260909-161744`).
+
+Rapport : `docs/claude-reports/2026-09-09_1607_editeur-quetes-passe-ux-46.md`.

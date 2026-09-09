@@ -253,6 +253,35 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       suppression de l'ancien tableau pollable. **Pas de WebSocket** (MVP). Source de vérité
       inchangée : table `agent_action`.
 
+### Étape 3e — refonte ciblée de `/npcs` (#89) — **LIVRÉ**
+
+- [x] **Philosophie** : la liste est une **synthèse** ; un clic sur un PNJ ouvre son **détail** ;
+      un clic sur une action ouvre le **formulaire**. Plus de « détails + diagnostics +
+      formulaires + actions » affichés d'emblée.
+- [x] **Toolbar catalogue compacte** : boutons Bootstrap `btn-sm` (« ↻ Catalogue RPGQuest »
+      `btn-outline-primary`, « ↻ Citizens » `btn-outline-secondary`, « + Nouvelle définition PNJ »
+      qui déplie un `collapse`). Fin des grandes cartes vides pour un bouton.
+- [x] **Recherche** = vrai `input-group` Bootstrap (icône dans son propre `.input-group-text`,
+      plus aucun chevauchement). Recherche + filtres (Tous / Liés / Non liés / Warnings / Erreurs)
+      alignés ; wrap/scroll propre sur mobile.
+- [x] **Liste = `accordion` Bootstrap** (`data-bs-parent` → un seul PNJ ouvert à la fois).
+      En-tête synthétique : nom affiché + id logique (discret) + 2-3 badges d'état + chevron.
+- [x] **Détail structuré** : sections **Identité / Citizens / Contenu / Diagnostics / Actions**.
+      Labels humains (« Donneur de quête » ; `quest_giver` en secondaire). Diagnostics dans des
+      `alert` différenciées (danger / warning / info), code technique discret.
+- [x] **Actions = boutons** qui déplient chacun un `collapse` contenant leur formulaire (Créer la
+      définition / Modifier / Attribuer une quête / Lier un PNJ Citizens / Créer le PNJ Citizens).
+      Liens « Ouvrir le dialogue » / « Ouvrir la quête ».
+- [x] **Formulaire de définition repensé** : sections Identité / Contenu / État, `form-label` +
+      `form-text`, select Dialogue alimenté par `dialogue.list`, select Rôle, `form-switch`
+      « PNJ actif », boutons Annuler / Créer.
+- [x] **Bug de contexte de formulaire corrigé** (capture : fiche « Guide » mais valeurs
+      « Bûcheron Bob » créant `woodcutter_bob`) : dans une fiche, `npc_id` **et** `npc_ctx` sont
+      des champs **cachés** = l'id de la fiche (jamais un input éditable), `autocomplete="off"`,
+      pré-remplissage avec les valeurs du PNJ courant. **Garde-fou serveur**
+      (`PanelApp#createAgentAction`) : si `npc_ctx` ≠ `npc_id` validé → refus, aucune action
+      créée. Toasts #93 conservés (pas de gros message local).
+
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 
 - [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +

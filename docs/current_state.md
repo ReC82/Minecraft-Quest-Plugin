@@ -265,6 +265,20 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   Autres), table desktop + cartes mobile, pagination 25/page ; détail `/actions/<id>`. Source de
   vérité inchangée : table `agent_action`. Polling léger via `/agents/actions.json` (enrichi),
   pas de WebSocket.
+- **Refonte ciblée de la page `/npcs` (issue #89)** *(branche `feat/control-panel-admin-tools`)* —
+  principe : liste = synthèse rapide, clic sur un PNJ = détail, clic sur une action = formulaire.
+  Toolbar catalogue **compacte** (boutons `btn-sm`, plus de grandes cartes vides) ; recherche en
+  vrai `input-group` Bootstrap (icône dans sa propre zone) alignée aux filtres. La liste est un
+  **accordion** Bootstrap (un seul PNJ ouvert à la fois) : en-tête = nom + id logique discret +
+  2-3 badges d'état. Le détail est structuré en sections **Identité / Citizens / Contenu /
+  Diagnostics / Actions** ; labels humains (« Donneur de quête », `quest_giver` en secondaire) ;
+  diagnostics dans des `alert` différenciées avec code technique discret. Les actions sont des
+  **boutons** qui déplient chacun un `collapse` avec leur formulaire (rien affiché d'emblée). Le
+  formulaire « Créer / Modifier la définition » est repensé (sections, `form-label`/`form-text`,
+  select Dialogue depuis `dialogue.list`, select Rôle, `form-switch`). **Bug de contexte corrigé**
+  (une fiche PNJ ne peut plus muter un autre PNJ à cause d'un état de formulaire périmé) :
+  `npc_id` + `npc_ctx` en champs cachés = l'id de la fiche, `autocomplete="off"`, + garde-fou
+  serveur qui refuse `npc_ctx` ≠ `npc_id`. Toasts #93 conservés.
 - **Éditeur guidé de quêtes et de stories — chemin principal (issue #46)** *(branche
   `feat/control-panel-admin-tools`)* — depuis `/quests` (« Créer une quête ») et `/stories`
   (« Créer une story »), ou « Modifier » sur une carte : formulaire guidé multi-sections

@@ -300,6 +300,51 @@ class NpcsCatalogTest {
         assertTrue(pendingFor(TestConfig.AGENT_ID) >= 1);
     }
 
+    @Test
+    void bindingNoDefinitionExposesOneCreateCtaAndHidesTheEmptyActionsSection() throws Exception {
+        start();
+        runListWithSuccess(NPC_TWO_UNDEFINED);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // Détail de la fiche « guide » (idx 0) uniquement.
+        int a = page.indexOf("data-bs-target=\"#npc-0-guide\"");
+        int b = page.indexOf("accordion-item npc-item", a); // début de la fiche suivante
+        String guide = page.substring(a, b < 0 ? page.length() : b);
+
+        // 1) le diagnostic « Fiche RPGQuest manquante » porte le CTA « Corriger maintenant » ...
+        assertTrue(guide.contains("<span>Fiche RPGQuest manquante</span>"), "diagnostic humanisé");
+        assertTrue(guide.contains("Comment corriger ?</a>"), "lien d'aide contextuelle");
+        // ... qui déplie le formulaire de création, une SEULE fois (plus de doublon dans « Actions »)
+        // (le bouton « Annuler » interne au formulaire cible aussi ce collapse mais sans aria-controls)
+        assertEquals(1, count(guide, "aria-controls=\"npc-0-guide-f-create\""),
+                "un seul bouton d'ouverture du formulaire de création (plus de doublon Actions)");
+        assertTrue(guide.contains(">Créer la définition</button>"), "le CTA du diagnostic est « Créer la définition »");
+        // le bouton unique est bien celui du diagnostic (btn-primary, wrench), pas un toggle de la section Actions
+        assertTrue(guide.contains("btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+                + "data-bs-target=\"#npc-0-guide-f-create\""), "CTA « Corriger maintenant » du diagnostic");
+
+        // 2) la section « Actions » n'apparaît pas : elle ne contiendrait que ce même bouton
+        assertFalse(guide.contains(">Actions</p>"), "section Actions masquée car vide après déduplication");
+
+        // 3) le formulaire caché reste présent (le CTA du diagnostic doit pouvoir l'ouvrir)
+        assertTrue(page.contains("id=\"npc-0-guide-f-create\""), "formulaire de création toujours rendu (collapse)");
+
+        // 4) terminologie : le message principal du diagnostic n'a pas de jargon
+        int diagAt = guide.indexOf("pa-diag pa-diag");
+        String diagBlock = guide.substring(diagAt, guide.indexOf("pa-diag-code", diagAt));
+        for (String banned : new String[] {"tagué", "binding", "namespaced"}) {
+            assertFalse(diagBlock.contains(banned), "terme interdit dans l'UX : " + banned);
+        }
+    }
+
+    private static int count(String haystack, String needle) {
+        int n = 0;
+        for (int i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + needle.length())) {
+            n++;
+        }
+        return n;
+    }
+
     // ---- #89 : bug de contexte de formulaire (capture) --------------------------------
 
     // Deux PNJ SANS définition : "guide" et "woodcutter_bob". La fiche de chacun doit porter

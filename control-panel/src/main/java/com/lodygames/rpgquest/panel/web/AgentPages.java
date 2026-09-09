@@ -1043,6 +1043,9 @@ public final class AgentPages {
         sb.append("</div>");
 
         // ---- DIAGNOSTICS (aide humaine + lien doc + action immédiate) ----
+        // On mémorise les cibles de formulaire déjà proposées par un « Corriger maintenant » de
+        // diagnostic : la section Actions ne réaffichera pas ces mêmes boutons (règle CTA #89 polish).
+        java.util.Set<String> diagFixTargets = new java.util.HashSet<>();
         sb.append(detailSection("warning", "Diagnostics"));
         if (warnings.isEmpty()) {
             sb.append("<p class=\"muted npc-diag-ok\">").append(Icons.icon("check")).append("Aucune anomalie.</p>");
@@ -1051,61 +1054,70 @@ public final class AgentPages {
             for (Object w : warnings) {
                 Map<String, Object> wm = asMap(w);
                 String code = str(wm.get("code"));
+                String[] fix = npcFixTarget(code, slug, canWrite, hasDefinition, canLink, boundCitizens, enabled);
+                String fixBtn = "";
+                if (fix != null) {
+                    diagFixTargets.add(fix[0]);
+                    fixBtn = "<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+                            + "data-bs-target=\"#" + fix[0] + "\" aria-controls=\"" + fix[0] + "\">"
+                            + Icons.icon("wrench") + Http.esc(fix[1]) + "</button>";
+                }
                 sb.append(DiagnosticHelp.render(code, str(wm.get("severity")), str(wm.get("message")),
-                        subject, "", npcFixButton(code, slug, canWrite, hasDefinition, canLink, boundCitizens, enabled)));
+                        subject, "", fixBtn));
             }
         }
 
         // ---- ACTIONS ----
-        boolean anyAction = (canWrite) || (canSetGiver && hasDefinition)
-                || (canLink && hasDefinition && !boundCitizens && enabled)
-                || (canSpawn && hasDefinition && !boundCitizens && enabled);
-        if (anyAction) {
-            sb.append(detailSection("target", "Actions"));
-            sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">");
-            if (canWrite && !hasDefinition) {
-                sb.append(actionToggle(slug + "-f-create", "Créer la définition", "plus", "btn-primary"));
-            }
-            if (canWrite && hasDefinition) {
-                sb.append(actionToggle(slug + "-f-edit", "Modifier", "edit", "btn-outline-primary"));
-            }
-            if (canSetGiver && hasDefinition) {
-                sb.append(actionToggle(slug + "-f-giver", "Attribuer une quête", "gift", "btn-outline-secondary"));
-            }
-            if (canLink && hasDefinition && !boundCitizens && enabled) {
-                sb.append(actionToggle(slug + "-f-link", "Lier un PNJ Citizens", "link", "btn-outline-secondary"));
-            }
-            if (canSpawn && hasDefinition && !boundCitizens && enabled) {
-                sb.append(actionToggle(slug + "-f-spawn", "Créer le PNJ Citizens", "server", "btn-outline-secondary"));
-            }
-            sb.append("</div>");
+        // Les formulaires masqués (collapse) sont TOUJOURS rendus si la permission le permet : un
+        // « Corriger maintenant » de diagnostic peut les cibler même quand la section Actions les masque.
+        List<String[]> toggles = new ArrayList<>(); // {target, label, icon, btnClass}
+        StringBuilder forms = new StringBuilder();
+        if (canWrite && !hasDefinition) {
+            toggles.add(new String[] {slug + "-f-create", "Créer la définition", "plus", "btn-primary"});
+            forms.append(actionCollapse(slug + "-f-create", "<div class=\"card card-body npc-formcard\">"
+                    + npcDefForm(session, agentId, "create", id, hasName ? displayName : MiniText.prettifyId(id),
+                            "", "", true, dialogueOptions, slug + "-f-create")
+                    + "</div>"));
+        }
+        if (canWrite && hasDefinition) {
+            toggles.add(new String[] {slug + "-f-edit", "Modifier", "edit", "btn-outline-primary"});
+            forms.append(actionCollapse(slug + "-f-edit", "<div class=\"card card-body npc-formcard\">"
+                    + npcDefForm(session, agentId, "update", id, hasName ? displayName : "",
+                            definedDialogue, role, enabled, dialogueOptions, slug + "-f-edit")
+                    + "</div>"));
+        }
+        if (canSetGiver && hasDefinition) {
+            toggles.add(new String[] {slug + "-f-giver", "Attribuer une quête", "gift", "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-giver", "<div class=\"card card-body npc-formcard\">"
+                    + giverForm(session, agentId, id, questIds) + "</div>"));
+        }
+        if (canLink && hasDefinition && !boundCitizens && enabled) {
+            toggles.add(new String[] {slug + "-f-link", "Lier un PNJ Citizens", "link", "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-link", "<div class=\"card card-body npc-formcard\">"
+                    + citizensLinkForm(session, agentId, id, citizensRoster) + "</div>"));
+        }
+        if (canSpawn && hasDefinition && !boundCitizens && enabled) {
+            toggles.add(new String[] {slug + "-f-spawn", "Créer le PNJ Citizens", "server", "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-spawn", "<div class=\"card card-body npc-formcard\">"
+                    + citizensCreateForm(session, agentId, id, hasName ? displayName : MiniText.prettifyId(id),
+                            spawnWorlds) + "</div>"));
+        }
 
-            if (canWrite && !hasDefinition) {
-                sb.append(actionCollapse(slug + "-f-create", "<div class=\"card card-body npc-formcard\">"
-                        + npcDefForm(session, agentId, "create", id, hasName ? displayName : MiniText.prettifyId(id),
-                                "", "", true, dialogueOptions, slug + "-f-create")
-                        + "</div>"));
-            }
-            if (canWrite && hasDefinition) {
-                sb.append(actionCollapse(slug + "-f-edit", "<div class=\"card card-body npc-formcard\">"
-                        + npcDefForm(session, agentId, "update", id, hasName ? displayName : "",
-                                definedDialogue, role, enabled, dialogueOptions, slug + "-f-edit")
-                        + "</div>"));
-            }
-            if (canSetGiver && hasDefinition) {
-                sb.append(actionCollapse(slug + "-f-giver", "<div class=\"card card-body npc-formcard\">"
-                        + giverForm(session, agentId, id, questIds) + "</div>"));
-            }
-            if (canLink && hasDefinition && !boundCitizens && enabled) {
-                sb.append(actionCollapse(slug + "-f-link", "<div class=\"card card-body npc-formcard\">"
-                        + citizensLinkForm(session, agentId, id, citizensRoster) + "</div>"));
-            }
-            if (canSpawn && hasDefinition && !boundCitizens && enabled) {
-                sb.append(actionCollapse(slug + "-f-spawn", "<div class=\"card card-body npc-formcard\">"
-                        + citizensCreateForm(session, agentId, id, hasName ? displayName : MiniText.prettifyId(id),
-                                spawnWorlds) + "</div>"));
+        List<String[]> shownToggles = new ArrayList<>();
+        for (String[] t : toggles) {
+            if (!diagFixTargets.contains(t[0])) {
+                shownToggles.add(t);
             }
         }
+        if (!shownToggles.isEmpty()) {
+            sb.append(detailSection("target", "Actions"));
+            sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">");
+            for (String[] t : shownToggles) {
+                sb.append(actionToggle(t[0], t[1], t[2], t[3]));
+            }
+            sb.append("</div>");
+        }
+        sb.append(forms);
 
         sb.append("</div></div></div>");
         return sb.toString();
@@ -1134,40 +1146,26 @@ public final class AgentPages {
         return "quest_giver".equals(role) ? "Donneur de quête" : MiniText.prettifyId(role);
     }
 
-    /** Bouton « Corriger maintenant » d'un diagnostic PNJ : déplie le formulaire d'action pertinent. */
-    private static String npcFixButton(String code, String slug, boolean canWrite, boolean hasDefinition,
-                                       boolean canLink, boolean boundCitizens, boolean enabled) {
-        String target;
-        String label;
-        switch (code == null ? "" : code) {
-            case "BINDING_NO_DEFINITION", "NO_DEFINITION" -> {
-                if (!canWrite || hasDefinition) {
-                    return "";
-                }
-                target = slug + "-f-create";
-                label = "Créer la définition";
-            }
-            case "DIALOGUE_MISSING", "DISABLED", "GIVER_NO_DIALOGUE" -> {
-                if (!canWrite || !hasDefinition) {
-                    return "";
-                }
-                target = slug + "-f-edit";
-                label = "Modifier la fiche";
-            }
-            case "NOT_LINKED" -> {
-                if (!canLink || !hasDefinition || boundCitizens || !enabled) {
-                    return "";
-                }
-                target = slug + "-f-link";
-                label = "Lier un PNJ Citizens";
-            }
-            default -> {
-                return "";
-            }
-        }
-        return "<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
-                + "data-bs-target=\"#" + target + "\" aria-controls=\"" + target + "\">"
-                + Icons.icon("wrench") + Http.esc(label) + "</button>";
+    /**
+     * Cible du bouton « Corriger maintenant » d'un diagnostic PNJ : {@code {targetId, libellé}} du
+     * formulaire d'action à déplier, ou {@code null} si aucune action immédiate n'est pertinente
+     * (permission absente, précondition non remplie). Le libellé reprend celui de l'action pour que
+     * la section Actions puisse dédupliquer.
+     */
+    private static String[] npcFixTarget(String code, String slug, boolean canWrite, boolean hasDefinition,
+                                         boolean canLink, boolean boundCitizens, boolean enabled) {
+        return switch (code == null ? "" : code) {
+            case "BINDING_NO_DEFINITION", "NO_DEFINITION" ->
+                    (!canWrite || hasDefinition) ? null
+                            : new String[] {slug + "-f-create", "Créer la définition"};
+            case "DIALOGUE_MISSING", "DISABLED", "GIVER_NO_DIALOGUE" ->
+                    (!canWrite || !hasDefinition) ? null
+                            : new String[] {slug + "-f-edit", "Modifier"};
+            case "NOT_LINKED" ->
+                    (!canLink || !hasDefinition || boundCitizens || !enabled) ? null
+                            : new String[] {slug + "-f-link", "Lier un PNJ Citizens"};
+            default -> null;
+        };
     }
 
     /**

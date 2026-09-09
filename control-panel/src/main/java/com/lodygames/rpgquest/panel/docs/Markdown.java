@@ -37,6 +37,7 @@ public final class Markdown {
     public static String render(String markdown) {
         String src = markdown == null ? "" : markdown.replace("\r\n", "\n").replace('\r', '\n')
                 .replace('\u0001', ' ');
+        src = stripLeadingH1(src);
         List<String> lines = new ArrayList<>(List.of(src.split("\n", -1)));
         StringBuilder out = new StringBuilder();
 
@@ -132,13 +133,36 @@ public final class Markdown {
         return out.toString();
     }
 
+    /**
+     * Retire un unique titre de niveau 1 ({@code # …}) en tête de document. Le centre de
+     * documentation rend déjà le titre de la fiche dans un {@code <h1>} propre
+     * ({@code DocsPages}) ; un {@code # …} d'ouverture dans le corps Markdown ferait double
+     * emploi. Seul le PREMIER titre, et seulement s'il est le premier contenu non vide et de
+     * niveau 1, est retiré — les {@code ##} / {@code ###} ne sont jamais touchés.
+     */
+    static String stripLeadingH1(String markdown) {
+        if (markdown == null || markdown.isBlank()) {
+            return markdown == null ? "" : markdown;
+        }
+        List<String> lines = new ArrayList<>(List.of(markdown.split("\n", -1)));
+        int i = 0;
+        while (i < lines.size() && lines.get(i).strip().isEmpty()) {
+            i++;
+        }
+        if (i >= lines.size() || !lines.get(i).strip().matches("#\\s+\\S.*")) {
+            return markdown; // premier contenu absent ou != titre H1 : rien à faire
+        }
+        lines.remove(i);
+        return String.join("\n", lines).stripLeading();
+    }
+
     // ---- blocs -----------------------------------------------------------------------------
 
     private static void renderCodeBlock(StringBuilder out, List<String> code) {
         String joined = String.join("\n", code).stripTrailing();
         out.append("<div class=\"doc-cmd\">")
                 .append("<button type=\"button\" class=\"doc-copy\" data-copy=\"").append(attr(joined))
-                .append("\" title=\"Copier\"><svg class=\"ic\" aria-hidden=\"true\"><use href=\"#i-copy\"></use></svg>Copier</button>")
+                .append("\" title=\"Copier dans le presse-papiers\">Copier</button>")
                 .append("<pre><code>").append(esc(joined)).append("</code></pre></div>");
     }
 

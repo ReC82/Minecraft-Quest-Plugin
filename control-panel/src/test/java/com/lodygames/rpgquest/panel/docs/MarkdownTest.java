@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.panel.docs;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -40,6 +41,43 @@ class MarkdownTest {
         assertTrue(html.contains("class=\"doc-cmd\""), html);
         assertTrue(html.contains("data-copy=\"/rpgadmin npc tag guard\""), html);
         assertTrue(html.contains("<pre><code>/rpgadmin npc tag guard</code></pre>"), html);
+    }
+
+    @Test
+    void copyButtonIsCompactTextInsideTheCodeWrapperWithNoBrokenIcon() {
+        String html = Markdown.render("```\n/npc create Garde --type player\n```");
+        // bouton = texte seul « Copier », DANS le wrapper .doc-cmd, juste avant <pre>
+        assertTrue(html.startsWith("<div class=\"doc-cmd\"><button type=\"button\" class=\"doc-copy\" data-copy=\""), html);
+        assertTrue(html.contains("\">Copier</button><pre><code>"), html);
+        // plus aucun SVG / référence de sprite morte (cause du grand rectangle sombre vide)
+        assertFalse(html.contains("<svg"), html);
+        assertFalse(html.contains("#i-copy") || html.contains("<use "), html);
+    }
+
+    @Test
+    void leadingH1IsStrippedButHeadingsAndSecondH1AreKept() {
+        // Le centre de doc rend déjà le titre de fiche dans son propre <h1> : le # d'ouverture ferait doublon.
+        String html = Markdown.render("# Résoudre les problèmes de PNJ\n\nTexte.\n\n## Une section\n\ncontenu");
+        assertFalse(html.contains("<h1"), html);
+        assertTrue(html.contains("<h2 id=\"une-section\">Une section</h2>"), html);
+        assertTrue(html.contains("<p>Texte.</p>"), html);
+
+        // rien à retirer si le corps ne commence pas par un H1
+        assertTrue(Markdown.render("## Direct\n\nx").contains("<h2 id=\"direct\">Direct</h2>"));
+        // un H1 plus bas dans le document n'est PAS retiré
+        String two = Markdown.render("# Titre\n\ntexte\n\n# Autre titre\n\nx");
+        assertFalse(two.contains(">Titre<"), two);
+        assertTrue(two.contains("<h1 id=\"autre-titre\">Autre titre</h1>"), two);
+    }
+
+    @Test
+    void stripLeadingH1IsNullSafeAndConservative() {
+        assertEquals("", Markdown.stripLeadingH1(null));
+        assertEquals("   ", Markdown.stripLeadingH1("   "));
+        // pas un vrai ATX H1 (pas d'espace) -> intact
+        assertTrue(Markdown.stripLeadingH1("#pas-un-titre\nx").startsWith("#pas-un-titre"));
+        // H2 en tête -> intact
+        assertTrue(Markdown.stripLeadingH1("## sous-titre\nx").startsWith("## sous-titre"));
     }
 
     @Test

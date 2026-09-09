@@ -123,6 +123,60 @@ class DocsPagesTest {
     }
 
     @Test
+    void everySheetShowsItsMainTitleExactlyOnce() throws Exception {
+        start();
+        login();
+        // Toutes les fiches embarquées, pas seulement quelques-unes.
+        for (com.lodygames.rpgquest.panel.docs.DocPage p :
+                com.lodygames.rpgquest.panel.docs.DocLibrary.load().all()) {
+            String page = get("/docs/" + p.slug()).body();
+            int bodyAt = page.indexOf("<article class=\"doc-body\">");
+            assertTrue(bodyAt >= 0, p.slug() + " : corps de fiche présent");
+            int bodyEnd = page.indexOf("</article>", bodyAt);
+            String body = page.substring(bodyAt, bodyEnd < 0 ? page.length() : bodyEnd);
+
+            // 1) le header de page rend UN <h1> (sans id) = la seule source de titre visible
+            assertEquals(1, countOccurrences(body, "<h1>"), p.slug() + " : un seul <h1> de header");
+            // 2) le H1 d'ouverture du Markdown (rendu par Markdown en <h1 id="...">) a disparu
+            assertFalse(body.contains("<h1 id="), p.slug() + " : plus de second titre principal issu du Markdown");
+            // 3) le premier bloc de contenu après le titre n'est pas une répétition du titre
+            String afterTitle = body.substring(body.indexOf("</h1>") + 5).stripLeading();
+            assertFalse(afterTitle.startsWith("<h1"), p.slug() + " : pas de titre en double juste sous le header");
+            // 4) les H2/H3 normaux restent rendus (au moins un sur toutes ces fiches)
+        }
+    }
+
+    @Test
+    void codeBlockCopyButtonStaysInsideItsBlockWithNoBrokenIconOverlay() throws Exception {
+        start();
+        login();
+        String sheet = get("/docs/pnj-citizens").body();
+
+        // bouton compact, texte seul, DANS le même wrapper .doc-cmd, juste avant le <pre>
+        assertTrue(sheet.contains("<div class=\"doc-cmd\"><button type=\"button\" class=\"doc-copy\" data-copy=\""),
+                "bouton Copier au début du wrapper de bloc de code");
+        assertTrue(sheet.contains("\">Copier</button><pre><code>"), "bouton Copier suivi immédiatement du <pre><code>");
+        // plus de sprite SVG cassé (source du grand rectangle vide) nulle part
+        assertFalse(sheet.contains("<svg class=\"ic\""), "aucun <svg class=ic> parasite");
+        assertFalse(sheet.contains("#i-copy") || sheet.contains("<use href="), "aucune référence de sprite morte");
+
+        // CSS : bouton positionné dans l'angle, bloc scrollable horizontalement, ancienne règle conflictuelle retirée
+        String css = get("/assets/plugadmin.css").body();
+        assertTrue(css.contains(".doc-copy{position:absolute;top:7px;right:7px"), "bouton en absolute dans l'angle");
+        assertTrue(css.contains(".doc-cmd pre{") && css.contains("overflow-x:auto"), "bloc code scrollable");
+        assertFalse(css.contains(".codeblock .doc-copy,.doc-cmd .doc-copy{position:absolute;top:8px"),
+                "ancienne règle de positionnement en double retirée");
+    }
+
+    private static int countOccurrences(String haystack, String needle) {
+        int n = 0;
+        for (int i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + needle.length())) {
+            n++;
+        }
+        return n;
+    }
+
+    @Test
     void unknownSlugIs404NotError() throws Exception {
         start();
         login();

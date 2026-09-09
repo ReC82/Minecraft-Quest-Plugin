@@ -258,7 +258,6 @@ label.inline.confirm{color:var(--warn);font-weight:600}
 .codeblock{position:relative;margin:12px 0}
 .codeblock pre{margin:0;background:#0f1729;border:1px solid #1e2b45;border-radius:10px;
   padding:14px 16px;overflow-x:auto;color:#dbe4f3;font-size:12.5px;line-height:1.55;white-space:pre}
-.codeblock .doc-copy,.doc-cmd .doc-copy{position:absolute;top:8px;right:8px}
 .diff pre{background:#0f1729}
 .diff .di-add{color:#7ee0a1} .diff .di-del{color:#ff9d9d} .diff .di-ctx{color:#9fb0cc}
 /* ---- éditeur : liste d'items (objectifs / quêtes de story) ---- */
@@ -359,11 +358,11 @@ ol,ul{margin:6px 0;padding-left:20px}
 .doc-body a{overflow-wrap:anywhere}
 .doc-cmd{position:relative;margin:14px 0}
 .doc-cmd pre{margin:0;background:#0f1729;border:1px solid #1e2b45;border-radius:10px;
-  padding:14px 16px;overflow-x:auto}
-.doc-cmd pre code{background:none;border:0;padding:0;font-size:12.5px;color:#dbe4f3;white-space:pre}
-.doc-copy{font:inherit;font-size:11px;font-weight:600;cursor:pointer;background:#1e2b45;color:#aab8d4;
-  border:1px solid #2c3d5e;border-radius:6px;padding:3px 9px;display:inline-flex;align-items:center;gap:5px}
-.doc-copy .ic{font-size:12px}
+  padding:14px 72px 14px 16px;overflow-x:auto}
+.doc-cmd pre code{background:none;border:0;padding:0;font-size:12.5px;line-height:1.55;color:#dbe4f3;white-space:pre}
+.doc-copy{position:absolute;top:7px;right:7px;z-index:2;font:inherit;font-size:11px;font-weight:600;
+  line-height:1;cursor:pointer;background:#1e2b45;color:#aab8d4;border:1px solid #2c3d5e;border-radius:6px;
+  padding:4px 9px;white-space:nowrap}
 .doc-copy:hover{color:#fff;border-color:#3a4e74}
 .doc-copy.copied{color:#7ee0a1;border-color:#7ee0a1}
 .doc-tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin:14px 0}

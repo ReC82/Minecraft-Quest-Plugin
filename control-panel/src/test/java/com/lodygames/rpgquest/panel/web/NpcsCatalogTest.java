@@ -68,6 +68,24 @@ class NpcsCatalogTest {
             + "\"linkedNpcId\":null,\"availableForBinding\":true,\"spawned\":true}"
             + "]}";
 
+    // #101 — npc.list ne contient que la fiche « woodcutter_bob » (prête, non liée) : aucune ligne
+    // pour Stan, qui n'a ni fiche ni liaison.
+    private static final String NPC_ONLY_GUARD = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"withDefinition\":1,\"withoutDefinition\":0,"
+            + "\"bound\":0,\"withWarnings\":1,\"definedIds\":[\"woodcutter_bob\"],\"canonicalIds\":[\"woodcutter_bob\"],"
+            + "\"npcs\":[{\"id\":\"woodcutter_bob\",\"displayName\":\"Bûcheron Bob\",\"logicalDefinitionPresent\":true,"
+            + "\"citizensBindingPresent\":false,\"citizensNumericId\":null,\"bindingCount\":0,\"enabled\":true,"
+            + "\"description\":null,\"role\":null,\"definedDialogueId\":null,\"hasDialogue\":false,\"dialogueId\":null,"
+            + "\"dialogueNodes\":0,\"dialogueChoices\":0,\"dialogueStartsQuests\":[],\"questsGiven\":[],"
+            + "\"questsReferenced\":[],\"sources\":[\"DEFINITION\"],\"state\":\"NOT_LINKED\","
+            + "\"warnings\":[{\"code\":\"NOT_LINKED\",\"severity\":\"info\",\"message\":\"à lier\"}]}]}";
+
+    // #101 — Stan (#7) présent dans le registre Citizens, aucun linkedNpcId : PNJ Citizens libre.
+    private static final String CITIZENS_WITH_STAN = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"available\":1,\"linked\":0,"
+            + "\"citizens\":[{\"numericId\":7,\"uuid\":\"5e081a06-6596-47a3-b769-aef5fcd9e676\",\"name\":\"Stan\","
+            + "\"linkedNpcId\":null,\"availableForBinding\":true,\"spawned\":false}]}";
+
     @AfterEach
     void tearDown() {
         if (app != null) {
@@ -176,10 +194,75 @@ class NpcsCatalogTest {
                 "Citizens occupé non sélectionnable");
         // résumé Citizens
         assertTrue(page.contains("1 libre(s)") && page.contains("1 lié(s)"));
-        // le PNJ déjà lié (guard) ne propose pas la liaison
+        // le PNJ déjà lié (guard) ne propose pas la liaison — on borne à SA fiche (la ligne
+        // suivante est le PNJ Citizens libre #14, qui lui propose bien une liaison inverse, #101).
         int guardItem = page.lastIndexOf("<code class=\"tid npc-id\">guard</code>");
-        assertFalse(page.substring(guardItem).contains("npc.citizens.link"),
+        int nextItem = page.indexOf("accordion-item npc-item", guardItem);
+        String guardCard = nextItem < 0 ? page.substring(guardItem) : page.substring(guardItem, nextItem);
+        assertFalse(guardCard.contains("npc.citizens.link"),
                 "pas de liaison proposée sur un PNJ déjà LINKED");
+    }
+
+    /**
+     * #101 : un PNJ Citizens réel qui n'a NI fiche RPGQuest NI liaison doit apparaître dans
+     * {@code /npcs} — son nom en jeu comme libellé, « Citizens #N » en sous-titre, filtrable
+     * « Non liés », cherchable par nom / id numérique / UUID.
+     */
+    @Test
+    void freeCitizensNpcWithoutDefinitionIsListedSearchableAndAttachable() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_ONLY_GUARD);
+        runListWithSuccess("npc.citizens.list", CITIZENS_WITH_STAN);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // Stan est visible : libellé = nom Citizens, sous-titre = Citizens #7
+        assertTrue(page.contains("<span class=\"npc-name\">Stan</span>"), "nom Citizens comme libellé principal");
+        assertTrue(page.contains("<code class=\"tid npc-id\">Citizens #7</code>"), "sous-titre « Citizens #7 »");
+        assertFalse(page.contains(">undefined<") || page.contains(">unknown<"), "jamais un id technique à la place du nom");
+        // badges : sans fiche + non lié, catégorie de filtre « unlinked »
+        assertTrue(page.contains("text-bg-danger\">sans fiche RPGQuest</span>"));
+        assertTrue(page.contains("text-bg-warning\">non lié</span>"));
+        assertTrue(page.contains("data-filter-cat=\"unlinked\" data-filter-text=\"Stan citizens #7 7 "
+                + "5e081a06-6596-47a3-b769-aef5fcd9e676 sans fiche rpgquest non lie libre\""), "recherche : nom + id + UUID");
+        assertTrue(page.contains("data-res-id=\"citizens-7\""));
+        // détail : identité Citizens (numéro + UUID), pas de fiche
+        assertTrue(page.contains(">Identité Citizens<") && page.contains("<dd>#7</dd>"));
+        assertTrue(page.contains("<code class=\"tid\">5e081a06-6596-47a3-b769-aef5fcd9e676</code>"));
+        // diagnostic INFO humanisé (jamais une erreur)
+        assertTrue(page.contains("alert alert-info pa-diag pa-diag-info"), "diagnostic INFO");
+        assertTrue(page.contains("<span>PNJ du jeu sans fiche RPGQuest</span>"));
+        assertTrue(page.contains("Code technique : <code class=\"tid\">CITIZENS_ONLY</code>"));
+        // actions : créer une fiche (id pré-rempli = slug du nom) + lier à une fiche existante
+        assertTrue(page.contains(">Créer une fiche RPGQuest</button>"));
+        assertTrue(page.contains("<input type=\"hidden\" name=\"npc_id\" value=\"stan\">"), "id pré-rempli = slug(nom)");
+        assertTrue(page.contains(">Lier à une fiche existante</button>"));
+        assertTrue(page.contains("<input type=\"hidden\" name=\"citizens_id\" value=\"7\">"), "liaison inverse : Citizens fixé");
+        assertTrue(page.contains("<option value=\"woodcutter_bob\">woodcutter_bob</option>"), "fiche prête non liée proposée");
+        // le compteur inclut le PNJ Citizens libre (1 npc.list + 1 libre = 2)
+        assertTrue(page.contains("data-count-note data-noun=\"PNJ\">2 PNJ</p>"));
+    }
+
+    /**
+     * #101 : deux PNJ Citizens libres portant le MÊME nom affiché doivent apparaître tous les deux
+     * (clé d'identité = id numérique Citizens, jamais le nom).
+     */
+    @Test
+    void twoFreeCitizensWithSameNameBothAppear() throws Exception {
+        start();
+        runListWithSuccess("npc.list", "{\"citizensAvailable\":true,\"total\":0,\"withDefinition\":0,"
+                + "\"withoutDefinition\":0,\"bound\":0,\"withWarnings\":0,\"definedIds\":[],\"canonicalIds\":[],\"npcs\":[]}");
+        runListWithSuccess("npc.citizens.list", "{\"citizensAvailable\":true,\"total\":2,\"available\":2,\"linked\":0,"
+                + "\"citizens\":["
+                + "{\"numericId\":7,\"uuid\":\"aaaaaaaa-0000-0000-0000-000000000007\",\"name\":\"Stan\","
+                + "\"linkedNpcId\":null,\"availableForBinding\":true,\"spawned\":true},"
+                + "{\"numericId\":8,\"uuid\":\"aaaaaaaa-0000-0000-0000-000000000008\",\"name\":\"Stan\","
+                + "\"linkedNpcId\":null,\"availableForBinding\":true,\"spawned\":true}]}");
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("<code class=\"tid npc-id\">Citizens #7</code>"), "le premier Stan (#7)");
+        assertTrue(page.contains("<code class=\"tid npc-id\">Citizens #8</code>"), "le second Stan (#8)");
+        assertTrue(page.contains("data-res-id=\"citizens-7\"") && page.contains("data-res-id=\"citizens-8\""));
+        assertTrue(page.contains("data-count-note data-noun=\"PNJ\">2 PNJ</p>"));
     }
 
     @Test

@@ -72,6 +72,31 @@ public final class NpcDiagnosticProvider implements DiagnosticProvider {
                         "", href, quick, "npc.list", seen));
             }
         }
+
+        // #101 : PNJ Citizens présents en jeu mais sans fiche RPGQuest ni liaison. Ils n'apparaissent
+        // dans aucun warning de npc.list (qui ne connaît que définitions + liaisons + références) :
+        // on les lit directement dans le registre Citizens. Information, jamais une erreur — un
+        // figurant décoratif n'a pas besoin de fiche.
+        Optional<Map<String, Object>> roster = ctx.details("npc.citizens.list");
+        if (roster.isPresent()) {
+            Instant rosterSeen = ctx.freshnessOf("npc.citizens.list").orElse(null);
+            for (Object o : DiagnosticContext.list(roster.get().get("citizens"))) {
+                Map<String, Object> cz = DiagnosticContext.map(o);
+                String linked = DiagnosticContext.str(cz.get("linkedNpcId"));
+                if (!linked.isBlank() && !"null".equals(linked)) {
+                    continue;
+                }
+                String num = DiagnosticContext.str(cz.get("numericId"));
+                String czName = DiagnosticContext.str(cz.get("name"));
+                String czLabel = czName.isBlank() || "null".equals(czName)
+                        ? "Citizens #" + num : MiniText.plain(czName);
+                String href = ctx.hasAgent()
+                        ? "/npcs?agent=" + Http.esc(ctx.agentId()) + "&focus=citizens-" + Http.esc(num) : "";
+                out.add(DiagnosticEntry.of("CITIZENS_ONLY", Domain.PNJ, "npc", "citizens-" + num, czLabel,
+                        "", "PNJ du jeu sans fiche RPGQuest.", "info", "", href, null,
+                        "npc.citizens.list", rosterSeen));
+            }
+        }
         return out;
     }
 }

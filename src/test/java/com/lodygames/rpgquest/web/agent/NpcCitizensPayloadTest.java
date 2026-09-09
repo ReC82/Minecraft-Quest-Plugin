@@ -40,6 +40,34 @@ class NpcCitizensPayloadTest {
     }
 
     @Test
+    void citizensListKeepsEveryRegistryEntry_freeOnes_andHomonyms() {
+        // #101 : la sérialisation est une LISTE 1:1 du registre — aucune clé par nom, aucun
+        // dédoublonnage. Un PNJ libre et deux homonymes doivent tous survivre au payload.
+        AgentActionExecutor exec = new AgentActionExecutor(
+                ref -> CompletableFuture.completedFuture(Optional.empty()),
+                (uuid, key) -> CompletableFuture.completedFuture(Optional.empty()),
+                new StubAgentActions() {
+                    @Override
+                    public CompletableFuture<CitizensRosterView> citizensRoster() {
+                        return CompletableFuture.completedFuture(new CitizensRosterView(true, List.of(
+                                new CitizensNpcSummary(0, "00000000-0000-0000-0000-000000000000", "Guide", "guide", false, true),
+                                new CitizensNpcSummary(7, "77777777-7777-7777-7777-777777777777", "Stan", null, true, false),
+                                new CitizensNpcSummary(8, "88888888-8888-8888-8888-888888888888", "Stan", null, true, true)),
+                                3, 2, 1));
+                    }
+                });
+        AgentActionOutcome outcome = exec.execute(new AgentAction("a", "npc.citizens.list", Map.of())).join();
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        @SuppressWarnings("unchecked")
+        List<Object> rows = (List<Object>) outcome.details().get("citizens");
+        assertEquals(3, rows.size(), "les 3 entrées du registre sont conservées");
+        String json = Json.write(outcome.details());
+        assertTrue(json.contains("\"numericId\":7") && json.contains("\"numericId\":8"), "les deux homonymes « Stan »");
+        assertTrue(json.contains("\"linkedNpcId\":null"), "le PNJ libre garde linkedNpcId=null");
+        assertTrue(json.contains("\"total\":3"));
+    }
+
+    @Test
     void citizensLinkWhitelistedAndValidated() {
         assertEquals(AgentActionOutcome.REJECTED, run("npc.citizens.link",
                 Map.of("npc_id", "woodcutter_bob")).status());

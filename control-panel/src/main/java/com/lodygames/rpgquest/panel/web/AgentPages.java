@@ -714,6 +714,20 @@ public final class AgentPages {
         Optional<Map<String, Object>> citizensCat = latestDetails(agentId, "npc.citizens.list");
         List<Object> citizensRoster = citizensCat.map(x -> asList(x.get("citizens"))).orElse(List.of());
 
+        // #101 : un PNJ Citizens réel qui n'a NI fiche RPGQuest NI liaison n'apparaît dans aucune
+        // ligne de npc.list — ce dernier ne connaît que les définitions, les liaisons et les
+        // références de contenu. On le raccroche ici depuis le registre Citizens pour qu'il soit
+        // visible, cherchable et rattachable ; jamais masqué au seul motif qu'il n'est pas (encore)
+        // intégré à RPGQuest. Clé d'identité = id numérique Citizens, jamais le nom affiché.
+        List<Map<String, Object>> freeCitizens = new ArrayList<>();
+        for (Object o : citizensRoster) {
+            Map<String, Object> c = asMap(o);
+            String linked = str(c.get("linkedNpcId"));
+            if (linked.isEmpty() || "null".equals(linked)) {
+                freeCitizens.add(c);
+            }
+        }
+
         Optional<Map<String, Object>> details = latestDetails(agentId, "npc.list");
         if (details.isEmpty()) {
             sb.append(Ui.empty("npc", "Aucun catalogue chargé — cliquer sur « Catalogue RPGQuest »."));
@@ -743,9 +757,22 @@ public final class AgentPages {
         }
         sb.append("</p>");
 
-        if (npcs.isEmpty()) {
-            sb.append(Ui.empty("npc", "Aucun PNJ RPGQuest connu (ni définition, ni binding, ni référence)."));
+        if (npcs.isEmpty() && freeCitizens.isEmpty()) {
+            sb.append(Ui.empty("npc", "Aucun PNJ : ni fiche RPGQuest (définition, liaison, référence), "
+                    + "ni PNJ Citizens dans le jeu."));
             return sb.toString();
+        }
+
+        // Fiches RPGQuest prêtes mais non liées : cibles proposées quand on veut rattacher un PNJ
+        // Citizens libre à une fiche existante (liaison inverse, #101).
+        List<String> definedUnlinkedIds = new ArrayList<>();
+        for (Object o : npcs) {
+            Map<String, Object> n = asMap(o);
+            if (Boolean.TRUE.equals(n.get("logicalDefinitionPresent"))
+                    && !Boolean.TRUE.equals(n.get("citizensBindingPresent"))
+                    && Boolean.TRUE.equals(n.get("enabled"))) {
+                definedUnlinkedIds.add(str(n.get("id")));
+            }
         }
 
         // ---- Recherche + filtres (input-group Bootstrap) -----------------------------
@@ -762,7 +789,8 @@ public final class AgentPages {
                 .append(filterBtn("err", "Erreurs", false))
                 .append("</div>");
         sb.append("</div>");
-        sb.append("<p class=\"count-note\" data-count-note data-noun=\"PNJ\">").append(npcs.size()).append(" PNJ</p>");
+        sb.append("<p class=\"count-note\" data-count-note data-noun=\"PNJ\">")
+                .append(npcs.size() + freeCitizens.size()).append(" PNJ</p>");
 
         // ---- Liste = accordion (un seul PNJ ouvert à la fois) ----------------------
         sb.append("<div class=\"accordion npc-accordion\" id=\"npc-accordion\">");
@@ -770,6 +798,12 @@ public final class AgentPages {
         for (Object o : npcs) {
             sb.append(renderNpcAccordionItem(session, agentId, asMap(o), i++, questTitles, questIds,
                     dialogueOptions, citizensRoster, spawnWorlds, canWrite, canSetGiver, canLink, canSpawn));
+        }
+        // #101 : PNJ Citizens présents en jeu mais sans fiche RPGQuest ni liaison.
+        int fci = 0;
+        for (Map<String, Object> c : freeCitizens) {
+            sb.append(renderFreeCitizensAccordionItem(session, agentId, c, fci++, dialogueOptions,
+                    definedUnlinkedIds, canWrite, canLink));
         }
         sb.append("</div>");
 
@@ -1126,6 +1160,143 @@ public final class AgentPages {
         return sb.toString();
     }
 
+    // ================================================================================
+    //  PNJ — ligne d'un PNJ Citizens présent en jeu mais SANS fiche RPGQuest ni liaison
+    //  (#101). L'identité affichée vient du registre Citizens (id numérique + UUID + nom
+    //  en jeu) ; jamais d'une fiche logique, qui n'existe pas ici.
+    // ================================================================================
+
+    private String renderFreeCitizensAccordionItem(Session session, String agentId, Map<String, Object> c,
+                                                   int idx, List<String[]> dialogueOptions,
+                                                   List<String> definedUnlinkedIds, boolean canWrite,
+                                                   boolean canLink) {
+        String numeric = str(c.get("numericId"));
+        String digits = numeric.replaceAll("[^0-9]", "");
+        String rawName = str(c.get("name"));
+        boolean hasName = !rawName.isEmpty() && !"null".equals(rawName);
+        String uuid = str(c.get("uuid"));
+        boolean hasUuid = !uuid.isEmpty() && !"null".equals(uuid);
+        boolean spawned = Boolean.TRUE.equals(c.get("spawned"));
+        String label = hasName ? MiniText.plain(rawName) : "PNJ Citizens #" + numeric;
+        String slug = "fc-" + idx + "-" + digits;
+        String resId = "citizens-" + digits;
+
+        // Recherche (#101 §14) : nom Citizens + id numérique + UUID + libellés d'état.
+        String ftext = Http.esc(label + " citizens #" + numeric + " " + numeric + " " + uuid
+                + " sans fiche rpgquest non lie libre");
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"npcs\" data-filter-cat=\"unlinked\" ")
+                .append("data-filter-text=\"").append(ftext).append("\" data-res-id=\"").append(Http.esc(resId))
+                .append("\">");
+        sb.append("<h3 class=\"accordion-header\">");
+        sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
+                + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")
+                .append(slug).append("\">");
+        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">")
+                .append(hasName ? MiniText.html(rawName) : Http.esc(label))
+                .append("</span><code class=\"tid npc-id\">Citizens #").append(Http.esc(numeric))
+                .append("</code></span>");
+        sb.append("<span class=\"npc-head-badges\">");
+        sb.append("<span class=\"badge text-bg-danger\">sans fiche RPGQuest</span>");
+        sb.append("<span class=\"badge text-bg-warning\">non lié</span>");
+        sb.append("</span></button></h3>");
+
+        sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" ")
+                .append("data-bs-parent=\"#npc-accordion\"><div class=\"accordion-body npc-detail\">");
+
+        // ---- IDENTITÉ CITIZENS ----
+        sb.append(detailSection("server", "Identité Citizens"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Nom en jeu", hasName ? MiniText.html(rawName) : "<span class=\"muted\">(sans nom)</span>");
+        dlRow(sb, "Numéro Citizens", "#" + Http.esc(numeric));
+        if (hasUuid) {
+            dlRow(sb, "UUID Citizens", "<code class=\"tid\">" + Http.esc(uuid) + "</code>");
+        }
+        dlRow(sb, "Présent en jeu", spawned ? "oui" : "non (non spawné actuellement)");
+        sb.append("</dl>");
+
+        // ---- FICHE RPGQUEST (absente) ----
+        sb.append(detailSection("npc", "Fiche RPGQuest"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Fiche", "<span class=\"muted\">aucune</span>");
+        dlRow(sb, "Liaison", "<span class=\"muted\">aucune</span>");
+        dlRow(sb, "État", npcStateBadge("CITIZENS_ONLY"));
+        sb.append("</dl>");
+        sb.append("<p class=\"muted npc-content-empty\">Ce PNJ a été créé directement dans Citizens. "
+                + "Il apparaît en jeu, mais RPGQuest ne gère ni ses dialogues, ni ses quêtes, ni son rôle "
+                + "tant qu'aucune fiche ne lui est associée.</p>");
+
+        // ---- DIAGNOSTICS ----
+        sb.append(detailSection("warning", "Diagnostics"));
+        sb.append(DiagnosticHelp.render("CITIZENS_ONLY", "info", "", label, "", ""));
+
+        // ---- ACTIONS ----
+        List<String[]> toggles = new ArrayList<>();
+        StringBuilder forms = new StringBuilder();
+        if (canWrite) {
+            String defId = citizensNameToId(rawName, digits);
+            toggles.add(new String[] {slug + "-f-create", "Créer une fiche RPGQuest", "plus", "btn-primary"});
+            forms.append(actionCollapse(slug + "-f-create", "<div class=\"card card-body npc-formcard\">"
+                    + npcDefForm(session, agentId, "create", defId, hasName ? rawName : MiniText.prettifyId(defId),
+                            "", "", true, dialogueOptions, slug + "-f-create")
+                    + "</div>"));
+        }
+        if (canLink && !definedUnlinkedIds.isEmpty()) {
+            toggles.add(new String[] {slug + "-f-link", "Lier à une fiche existante", "link",
+                    "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-link", "<div class=\"card card-body npc-formcard\">"
+                    + citizensInverseLinkForm(session, agentId, numeric, label, definedUnlinkedIds) + "</div>"));
+        }
+        if (!toggles.isEmpty()) {
+            sb.append(detailSection("target", "Actions"));
+            sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">");
+            for (String[] t : toggles) {
+                sb.append(actionToggle(t[0], t[1], t[2], t[3]));
+            }
+            sb.append("</div>");
+        }
+        sb.append(forms);
+
+        sb.append("</div></div></div>");
+        return sb.toString();
+    }
+
+    /**
+     * Id RPGQuest proposé par défaut pour une fiche créée depuis un PNJ Citizens libre : nom en jeu
+     * normalisé (minuscules, sans accent, {@code [a-z0-9._-]}), repli {@code citizens_<id numérique>}.
+     */
+    private static String citizensNameToId(String name, String numericDigits) {
+        String base = java.text.Normalizer.normalize(name == null ? "" : name, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^a-z0-9._-]+", "_")
+                .replaceAll("(^[._-]+|[._-]+$)", "");
+        if (base.length() > 64) {
+            base = base.substring(0, 64);
+        }
+        return base.isEmpty() ? "citizens_" + (numericDigits.isEmpty() ? "0" : numericDigits) : base;
+    }
+
+    /**
+     * Liaison inverse (#101) : le PNJ Citizens est fixé (id numérique), l'admin choisit la fiche
+     * RPGQuest existante — prête et non liée — à lui associer. Réutilise l'action
+     * {@code npc.citizens.link} (aucun spawn, aucun déplacement, aucun rebind).
+     */
+    private String citizensInverseLinkForm(Session session, String agentId, String numericId,
+                                           String citizensLabel, List<String> definedUnlinkedIds) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("link"))
+                .append("Lier « ").append(Http.esc(citizensLabel)).append(" » à une fiche RPGQuest</p>");
+        sb.append(formStart(session, agentId, "npc.citizens.link", "/npcs", ""));
+        sb.append("<input type=\"hidden\" name=\"citizens_id\" value=\"").append(Http.esc(numericId)).append("\">");
+        sb.append("<label>Fiche RPGQuest</label>").append(idSelect("npc_id", definedUnlinkedIds, "woodcutter_bob"));
+        sb.append(confirmBox("Associer le PNJ Citizens #" + numericId + " à la fiche choisie "
+                + "(aucun spawn, aucun déplacement)."));
+        sb.append("<button class=\"btn\" type=\"submit\">Lier</button></form>");
+        latestForPlayer(agentId, "npc.citizens.link", "").ifPresent(row -> sb.append(resultLine("Dernière liaison", row)));
+        return sb.toString();
+    }
+
     private static String detailSection(String icon, String title) {
         return "<p class=\"npc-section\">" + Icons.icon(icon) + Http.esc(title) + "</p>";
     }
@@ -1406,6 +1577,7 @@ public final class AgentPages {
             case "NOT_LINKED" -> Ui.pill("à lier", "pending", "○");
             case "DISABLED" -> Ui.pill("désactivé", "expired", "⧖");
             case "CITIZENS_ORPHAN" -> Ui.pill("Citizens orphelin", "failed", "✕");
+            case "CITIZENS_ONLY" -> Ui.pill("Citizens seul", "pending", "○");
             case "UNDEFINED_REFERENCE" -> Ui.pill("non défini", "failed", "✕");
             case "BROKEN" -> Ui.pill("cassé", "failed", "✕");
             default -> Ui.badge(s.isEmpty() ? "?" : s);

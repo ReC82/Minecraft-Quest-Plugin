@@ -237,3 +237,43 @@ s'affichent.
 ### Référence technique
 
 `CITIZENS_UNAVAILABLE`
+
+---
+
+## PNJ du jeu sans fiche RPGQuest
+
+### Ce que cela signifie
+
+Le PNJ a été créé **directement dans Citizens** (par exemple `/npc create Stan`) et n'a jamais
+été rattaché à RPGQuest. Il apparaît dans la liste **PNJ** avec son nom en jeu, le badge
+**« sans fiche RPGQuest »** et le badge **« non lié »**, sous les filtres **Tous** et
+**Non liés**.
+
+C'est une **information**, pas une erreur : un PNJ purement décoratif (figurant, garde
+d'ambiance…) n'a pas besoin de fiche.
+
+### Les trois états possibles d'un PNJ
+
+| Situation | Ce que RPGQuest en fait |
+|---|---|
+| **Citizens uniquement** (ce cas) | Le PNJ existe en jeu ; RPGQuest ne gère ni ses dialogues, ni ses quêtes, ni son rôle. |
+| **Fiche RPGQuest uniquement** | La configuration est prête (`npcs/<id>.yml`) mais aucun PNJ du jeu ne la porte encore → badge « à lier ». |
+| **Lié** | Un PNJ du jeu porte une fiche RPGQuest → dialogues, quêtes et rôle sont actifs. |
+
+### Comment le rattacher (facultatif)
+
+Depuis PlugAdmin : **PNJ** → ouvrir le PNJ (son nom en jeu) → section **Actions** :
+
+- **« Créer une fiche RPGQuest »** : crée `npcs/<id>.yml` (identifiant pré-rempli à partir du
+  nom, modifiable ensuite côté serveur). Le PNJ reste à lier après création.
+- **« Lier à une fiche existante »** : associe ce PNJ Citizens à une fiche RPGQuest déjà prête
+  et non liée (aucun spawn, aucun déplacement).
+
+### Vérification
+
+Après rafraîchissement du catalogue, le PNJ passe de **« non lié »** à **« Citizens #… »**
+et affiche l'état **Lié** (ou **à lier** si seule la fiche a été créée).
+
+### Référence technique
+
+`CITIZENS_ONLY`

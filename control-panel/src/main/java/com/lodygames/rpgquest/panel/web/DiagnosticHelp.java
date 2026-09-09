@@ -108,6 +108,13 @@ public final class DiagnosticHelp {
                 "{name} est déclaré donneur de quête, mais il n'a pas de dialogue associé.",
                 "La quête ne pourra pas être proposée au joueur au cours d'une conversation.",
                 "Associez un dialogue à {name}.", "pnj-depannage");
+        add("CITIZENS_ONLY", Level.INFO, "PNJ du jeu sans fiche RPGQuest",
+                "Le PNJ {name} existe dans le jeu (créé dans Citizens) mais aucune fiche RPGQuest ne "
+                        + "lui est associée.",
+                "RPGQuest ne gère ni ses dialogues, ni ses quêtes, ni son rôle : il reste un simple "
+                        + "PNJ d'ambiance.",
+                "Créez une fiche RPGQuest pour {name}, ou associez-le à une fiche existante. Si c'est "
+                        + "un figurant décoratif, aucune action n'est nécessaire.", "pnj-depannage");
 
         // ---- Dialogues (dialogue.DialogueCatalog) -----------------------------------
         add("DIALOGUE_NO_NPC", Level.INFO, "Dialogue non associé à un PNJ",

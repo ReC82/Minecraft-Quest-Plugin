@@ -642,6 +642,15 @@
 -   [x] Mod client prototype (Fabric, séparé)
 
 ## Plus tard
+-   [ ] **Waypoints #124 — suites** : lecture `/waypoints` (lecture seule) ou action agent
+    `list` dans PlugAdmin ; identité « instance de biome » par vrai flood-fill borné de blob
+    contigu (le MVP utilise une tuile spatiale biome-typée, cf. `docs/WAYPOINTS.md` §1) ;
+    passe de re-rendu des waypoints existants lors d'un changement de `model-version`.
+-   [ ] **Waypoints #122** : protection *fonctionnelle* anti-enfermement de proximité
+    (noyau strict + zone tampon + chemin praticable garanti + signal vertical repérable de
+    loin + auto-heal/watchdog). L'architecture du MVP #124 (`WaypointService` propriétaire d'un
+    ensemble de positions protégées, découplé du rendu) est compatible.
+-   [ ] Waypoints : téléportation / réseau de voyage entre waypoints découverts (ticket futur).
 -   [ ] Corriger `plugin.yml` : le texte d'usage de `/rpgadmin`
     (`commands.rpgadmin.usage`) omet la sous-commande `mob`
     (`spawn|list|inspect|reload|metrics`), qui existe pourtant réellement

@@ -2374,3 +2374,98 @@ migration de schéma agent). **VeryGames / Minecraft non touchés.** Navigateur 
 Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260909-203227`).
 
 Rapport : `docs/claude-reports/2026-09-09_2016_resync-mutations-ux-formulaires-controlpanel-111-120.md`.
+
+---
+
+## 2026-09-09 - Waypoints par instance de biome — MVP moteur (issue #124)
+
+### Changement
+
+Nouveau système **plugin RPGQuest** : package `com.lodygames.rpgquest.waypoint`. Repères
+physiques persistants et partagés, générés **par instance réelle de biome** dans
+`travel.wild-world` (par défaut `wild`), à découvrir par interaction explicite. **Distinct des
+Waystones** (V17, réseau de voyage sur grille) — les deux systèmes cohabitent, waystone inchangé.
+
+- **Nouvelle migration de schéma V18** : tables `waypoints` et `waypoint_discoveries` (+ index
+  unique `idx_waypoints_instance (world, biome_instance)`). **Additive et idempotente** : aucun
+  `ALTER` sur une table existante, `CREATE TABLE IF NOT EXISTS`. `SchemaMigrator.CURRENT_VERSION`
+  passe de 17 à 18 ; appliquée automatiquement au démarrage par `SchemaMigrationRunner`.
+- **Nouvelle section de configuration** `travel.waypoint.*` dans `config.yml`
+  (`enabled`, `region-size`, `min-distance`, `max-distance`, `candidate-attempts`,
+  `move-throttle-millis`, `minimum-spacing`, `model-version`). Ajoutée automatiquement au
+  `config.yml` du serveur par `ConfigFileCompleter` au prochain démarrage (les valeurs
+  personnalisées ne sont jamais écrasées). Section absente → tous les défauts, comportement sûr.
+- **Nouveau comportement runtime** : à l'entrée d'un joueur dans une zone de biome sans waypoint
+  (dans `wild` uniquement), le plugin **pose une petite structure** (barrière de pierre + bloc
+  d'or + bouton) à 24-72 blocs, sur terrain naturel, **hors claim**, **sans écraser de
+  construction joueur**. Non destructif par conception. Blocs du waypoint protégés (casse,
+  explosion, piston, feu, fluide, gravité) sauf `rpgquest.admin.world`.
+- Fichiers : `src/main/java/com/lodygames/rpgquest/waypoint/**`,
+  `database/WaypointRepository.java`, `database/SchemaMigrator.java` (V18),
+  `config/TravelConfig.java`, `config/ConfigValidator.java`, `bootstrap/RPGQuestBootstrap.java`,
+  `src/main/resources/config.yml`.
+
+### Action serveur
+
+**Remplacer uniquement le JAR RPGQuest** (`plugins/RPGQuest-*.jar`) sur le serveur **DEV**.
+Aucun autre fichier à copier : la migration V18 et la section `travel.waypoint` sont appliquées
+automatiquement au démarrage. Aucun plugin externe, aucune version Java, aucun monde à créer.
+**Cible : DEV uniquement.** Production non concernée par cette session.
+
+### Sauvegarde préalable
+
+Via `scripts/deploy-verygames.sh` (backup daté automatique : JAR courant + `data.db` + config).
+Ne jamais écraser le dernier backup. Sauvegarder en plus, par sécurité, le dossier du monde
+`wild` (`world_wild/` côté serveur) : le nouveau comportement y **ajoute** des blocs (structures
+de waypoint) — additif, mais un backup permet un retour à l'état « aucun waypoint ».
+
+### Déploiement
+
+Non exécuté par la session (pas de `scripts/verygames.env` sur la box de build ; règle CLAUDE.md
+« aucun déploiement automatique » ; première mise en service d'un comportement de pose de blocs
+autonome = validation humaine souhaitable sur la première génération en jeu).
+
+À lancer demain, depuis `/srv/rpgquest/repo`, après avoir renseigné `scripts/verygames.env`
+(voir `scripts/verygames.env.example`) :
+
+```
+./gradlew build                       # déjà vert ce jour ; re-vérifier
+scripts/deploy-verygames.sh           # upload FTP du JAR + backup daté
+scripts/verygames-restart.sh          # redémarrage RCON (stop -> attente retour)
+```
+
+### Validation
+
+Après redémarrage, au journal serveur : ligne `Waypoints chargés : N.` (N=0 au premier
+démarrage). Puis en jeu (compte **non-op**, monde `wild`) :
+
+1. marcher ~1-2 min dans un biome jamais visité → au journal : `Waypoint « wp_wild_… » généré
+   en wild (x,y,z) [biome …, modèle v1]` ; trouver la structure (barrière de pierre + bloc d'or
+   + bouton) à quelques dizaines de blocs, **pas sous ses pieds** ;
+2. **passer à côté sans cliquer** → rien ;
+3. **clic droit sur le bouton** → message « Waypoint découvert — <biome> » + son ; re-cliquer →
+   silencieux ;
+4. casser un bloc du waypoint (non-op) → refusé ; en `rpgquest.admin.world` → autorisé ;
+5. relancer le serveur → même waypoint, même découverte, aucun doublon (`Waypoints chargés : 1`).
+
+Détail : `docs/WAYPOINTS.md` §9 et `docs/MANUAL_TEST_PLAN.md`.
+
+### Rollback
+
+- Remettre l'ancien JAR RPGQuest (`scripts/rollback-verygames.sh`) + redémarrage RCON.
+- La migration V18 (tables `waypoints`, `waypoint_discoveries`) reste en base : **inerte** sans
+  le code, aucune action requise. Un ancien JAR (schéma attendu 17) démarre sans souci, les
+  tables surnuméraires sont ignorées.
+- Structures de waypoint déjà posées dans le monde : retirées manuellement si besoin (pas de
+  script), ou restauration du backup `world_wild/`. Non urgent (blocs vanilla inoffensifs).
+- `mettre travel.waypoint.enabled: false` dans `config.yml` + `/rpgquest reload` désactive la
+  génération et la découverte sans rollback de JAR.
+
+### Exécution réelle
+
+Aucune. Déploiement **non effectué** cette session (voir « Déploiement » ci-dessus).
+Build vert le 2026-09-09 (`./gradlew build`, 11 min 36 s sur la box contrainte). Tests :
+root `:test` 1254/0 (29 skip = MariaDB gated), `:control-panel:test` 279/0. Branche
+`feat/control-panel-admin-tools`, non fusionnée.
+
+Rapport : `docs/claude-reports/2026-09-09_2118_waypoints-mvp-instance-biome-124.md`.

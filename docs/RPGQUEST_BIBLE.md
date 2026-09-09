@@ -835,6 +835,42 @@ Son absence après un redémarrage signale que `world_hub` n'a pas été détect
 
 Aucune trace dans le code actuel (`RpgAdminCommand`, `WorldService`) d'un monde `wild` prédéfini ou d'un traitement spécial par nom de monde autre que `hub.world` : `/rpgadmin world create <name>` crée un monde générique en environnement `NORMAL`, sans distinction. Un monde `wild` mentionné dans `docs-site/worlds.html` (exemple d'usage avec `worldportal`) est un **exemple d'utilisation de la fonctionnalité générique**, pas un monde livré ou codé en dur — à traiter comme *Prévu / exemple*, pas comme une fonctionnalité dédiée implémentée.
 
+### Waypoints par instance de biome (issue #124)
+
+Vérifié dans `src/main/java/com/lodygames/rpgquest/waypoint/` et `docs/WAYPOINTS.md`. **Distinct des
+Waystones** (`waystone.WaystoneService` — réseau de voyage sur grille, retour au Hub) : les waypoints
+sont des repères physiques persistants, partagés, générés **par instance réelle de biome** dans
+`travel.wild-world`, à découvrir par interaction explicite.
+
+- **Instance de biome** = `(monde, type de biome, tuile de `region-size` blocs)` — voir
+  `waypoint.model.BiomeInstanceKey`. Deux zones du même biome séparées de plus de `region-size` ont
+  deux waypoints distincts ; jamais un simple `biomeType -> waypoint`. Compromis MVP documenté dans
+  `docs/WAYPOINTS.md` (approximation par tuile, pas de flood-fill de blob de biome contigu).
+- **Génération paresseuse et unique** : à l'entrée d'un joueur dans une instance sans waypoint
+  (`PlayerMoveEvent` throttlé, `travel.waypoint.move-throttle-millis`), le moteur cherche **une
+  seule fois** un emplacement de surface à `min-distance..max-distance` blocs (jamais au pied du
+  joueur), qui reste dans la même instance, sur un sol sûr (`RandomSafeLocationFinder`), hors claim
+  et sans écraser de construction. Verrou mémoire + index unique `(world, biome_instance)` : deux
+  entrées simultanées ne créent jamais deux waypoints. Échec → retry borné (30 s → 1 h), pas de
+  boucle.
+- **Rendu versionné** (`waypoint.render.WaypointModelRegistry`) : la logique ne stocke qu'un numéro
+  de version (`waypoints.model_version`). V1 = support en `COBBLESTONE_WALL` + `GOLD_BLOCK` +
+  `STONE_BUTTON` latéral. L'identité (`id`, `biome_instance`) est **indépendante du rendu** : un
+  futur modèle v2 ne change ni l'identité ni les découvertes.
+- **Découverte** : la proximité ne découvre rien. Seul un **clic droit sur le bouton** valide la
+  découverte, persistée par UUID (`waypoint_discoveries`). Retour joueur : message + son.
+- **Protection MVP** (`WaypointProtectionListener`, même esprit que `ClaimProtectionListener`) :
+  blocs constitutifs protégés contre casse joueur, explosion, piston, feu (burn/ignite), fluide
+  entrant, entités (sable/gravier/enderman). Bypass `rpgquest.admin.world`. La protection
+  fonctionnelle anti-enfermement de proximité est **hors périmètre** → issue #122.
+- **Config** : `travel.waypoint.*` dans `config.yml` (`enabled`, `region-size`, `min-distance`,
+  `max-distance`, `candidate-attempts`, `move-throttle-millis`, `minimum-spacing`, `model-version`).
+- **Persistance** : tables `waypoints` (définition monde) et `waypoint_discoveries` (progression
+  joueur) — migration V18, séparation stricte, aucun couplage MariaDB supplémentaire.
+- **Hors périmètre MVP** : téléportation / fast travel, coût, menus, waypoint de quête, éditeur
+  PlugAdmin complet, lecture `/waypoints` (une lecture Control Panel est prévue par #124 mais non
+  livrée dans ce MVP — `WaypointService` expose déjà `all()` / `byId()` / `discoveryCount()`).
+
 ---
 
 ## 8. Claims
@@ -1258,7 +1294,7 @@ database:
 - **Migration des données `data.db` → MariaDB et bascule de production = issue #42** (non faite).
 - Détail complet : [PERSISTENCE.md](PERSISTENCE.md).
 
-### Tables SQLite par migration (catalogue `SchemaMigrator.ALL`, version courante = 17)
+### Tables SQLite par migration (catalogue `SchemaMigrator.ALL`, version courante = 18)
 
 | Version | Tables créées | Domaine |
 |---|---|---|
@@ -1279,6 +1315,7 @@ database:
 | V15 | colonnes `claims.reserved_*` (ALTER) | Claims — réservation foncière |
 | V16 | `item_travel_cooldowns` | Voyage — cooldown Rune de rappel |
 | V17 | `waystones`, `waystone_discoveries` | Voyage — Waystones Wild |
+| V18 | `waypoints`, `waypoint_discoveries` | Waypoints par instance de biome (#124) |
 
 Suivi de version : `PRAGMA user_version` en SQLite (natif, inchangé) ; table portable
 `rpgquest_schema_migrations` en MySQL (#41). `SchemaMigrationRunner` applique les étapes en
@@ -1288,7 +1325,7 @@ l'étape. Migrations idempotentes (`CREATE TABLE IF NOT EXISTS`, `ALTER` gardé 
 ### Classification des données
 
 -   **Configuration pure (YAML, éditable/versionnable en dehors du dépôt Git)** : `config.yml`, `messages.yml`, `spawn.yml`, `quests/`, `dialogues/`, `items/`, `recipes/`, `resource-nodes/`, `merchants/`, `mobs/`, `zones/`, `portals/`, `destinations/`, `world-portals/`, `store-products/`.
--   **Données joueurs (jamais régénérables)** : `data.db` en intégralité — profils, progression de quêtes, variables, portefeuilles/transactions, offres de marché, cooldowns de portails, claims + membres, compétences/XP/anti-farm, entitlements, backpacks + surplus + audit, livraisons boutique traitées, identités PNJ.
+-   **Données joueurs (jamais régénérables)** : `data.db` en intégralité — profils, progression de quêtes, variables, portefeuilles/transactions, offres de marché, cooldowns de portails, claims + membres, compétences/XP/anti-farm, entitlements, backpacks + surplus + audit, livraisons boutique traitées, identités PNJ, Waystones + découvertes, waypoints + découvertes.
 -   **Mondes** : `world_hub/` (et tout autre monde géré) — dossier binaire à la racine du serveur, jamais dans `/plugins/`.
 -   **PNJ Citizens** : `plugins/Citizens/saves.yml` — à traiter **avec** `data.db` (règle d'or ci-dessus).
 
@@ -1403,6 +1440,9 @@ FAQ basée sur des problèmes réellement documentés dans le projet (code, `VER
 16. Fichiers importants
 17. Persistance / Migration
 18. Dépannage
+
+Section 7 — **Waypoints par instance de biome (#124)** : aucune page docs-site (comme les
+Waystones). Référence : `docs/WAYPOINTS.md`.
 
 Si une future modification concerne une page **existante** du docs-site, cette page doit être mise à jour dans la même branche/PR (voir section 20). Créer les pages manquantes ci-dessus reste un travail futur, hors périmètre de cette tâche (documentation uniquement, aucune page HTML modifiée ici).
 

@@ -64,6 +64,25 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`waystone.WaystoneService`), découverte individuelle par joueur, retour au Hub par canalisation
   courte. Système **soulbound générique** (`item.SoulboundItemService`) : un seul écouteur anti-perte
   pour tous les objets permanents (Acte, Pierre de retour, Journal, Rune).
+- **Waypoints par instance de biome** *(issue #124, MVP)* — `com.lodygames.rpgquest.waypoint`,
+  **distinct des Waystones**. Repères physiques persistants et partagés générés **par instance
+  réelle de biome** dans `travel.wild-world` : à l'entrée d'un joueur dans une zone de biome sans
+  waypoint (`PlayerMoveEvent` throttlé), le moteur cherche **une seule fois** un emplacement de
+  surface à `min-distance..max-distance` blocs (jamais au pied du joueur), dans la même instance,
+  hors claim, sans écraser de construction ; verrou mémoire + index unique `(world, biome_instance)`
+  → deux entrées simultanées ne créent jamais deux waypoints ; échec → retry borné, pas de boucle.
+  **Instance de biome** = `(monde, type de biome, tuile de `region-size` blocs)` (`region-size`
+  défaut 256) — jamais un simple `biomeType -> waypoint`, deux forêts éloignées → deux waypoints
+  (compromis documentés dans `docs/WAYPOINTS.md`). **Rendu versionné** (`waypoint.render`,
+  `WaypointModelRegistry`) : V1 = `COBBLESTONE_WALL` + `GOLD_BLOCK` + `STONE_BUTTON` latéral ;
+  l'identité (`id`, `biome_instance`) est indépendante du rendu. **Découverte** : la proximité ne
+  découvre rien, seul un clic droit sur le **bouton** valide la découverte, persistée par UUID
+  (`waypoint_discoveries`). **Protection MVP** (`WaypointProtectionListener`) : casse joueur,
+  explosion, piston, feu, fluide, entités — bypass `rpgquest.admin.world` ; la protection
+  fonctionnelle anti-enfermement est hors périmètre → issue #122. Migration **V18** (`waypoints`,
+  `waypoint_discoveries`), config `travel.waypoint.*`. Hors périmètre MVP : téléportation, coût,
+  menus, waypoint de quête, éditeur/lecture PlugAdmin (`WaypointService` expose déjà `all()` /
+  `byId()` / `discoveryCount()`). Validation en jeu : `PENDING MANUAL VALIDATION`.
 - **Reset admin « nouveau joueur »** — `/rpgadmin player resetnew <joueur> confirm`
   (permission `rpgquest.admin.world`, console OK, online **ou** offline) : remet l'état RPGQuest
   d'un seul joueur à l'équivalent « jamais joué » (quêtes, Stories, variables/unlocks dont

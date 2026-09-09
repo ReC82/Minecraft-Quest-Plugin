@@ -385,6 +385,36 @@ découverte », non implémenté.
 `generatehere` ignore le tirage de probabilité mais respecte l'unicité par cellule et la recherche
 de surface sûre. Aucune commande joueur.
 
+## Waypoints par instance de biome (`waypoint.WaypointService`, issue #124)
+
+**À ne pas confondre avec les Waystones ci-dessus.** Les Waystones = réseau de voyage sur grille
+fixe avec retour au Hub. Les waypoints = repères physiques persistants **par instance réelle de
+biome**, sans téléportation dans ce MVP. Documentation complète et compromis de conception :
+[docs/WAYPOINTS.md](WAYPOINTS.md).
+
+En résumé :
+
+- **Instance de biome** = `(monde, type de biome, tuile `travel.waypoint.region-size` blocs)` —
+  `waypoint.WaypointIdentityResolver` / `BiomeInstanceKey`. Deux forêts éloignées → deux waypoints.
+- **Génération** : à l'entrée d'un joueur (`PlayerMoveEvent` throttlé par
+  `travel.waypoint.move-throttle-millis`) dans une instance sans waypoint, recherche **unique** d'un
+  emplacement de surface à `min-distance..max-distance` blocs (jamais au pied du joueur), dans la
+  même instance, hors claim, sans écraser de construction ; `RandomSafeLocationFinder#findAtColumn`
+  réutilisé. Verrou mémoire + index unique `(world, biome_instance)` → jamais deux waypoints en
+  concurrence. Échec → retry borné 30 s → 1 h, jamais de boucle. Persistance : table `waypoints`
+  (migration V18).
+- **Rendu versionné** : `waypoint.render.WaypointModelRegistry` ; la logique ne stocke qu'un
+  `model_version`. V1 = `COBBLESTONE_WALL` (support) + `GOLD_BLOCK` + `STONE_BUTTON` latéral.
+  L'identité du waypoint ne dépend jamais du rendu.
+- **Découverte** : la proximité ne découvre rien ; **seul un clic droit sur le bouton** valide la
+  découverte, persistée par UUID dans `waypoint_discoveries`. Message + son à la première découverte.
+- **Protection MVP** (`WaypointProtectionListener`) : casse joueur, explosion, piston, feu, fluide
+  entrant, entités (sable/gravier/enderman) ; bypass `rpgquest.admin.world`. Protection
+  fonctionnelle anti-enfermement → issue #122.
+- **Config** : `travel.waypoint.{enabled,region-size,min-distance,max-distance,candidate-attempts,move-throttle-millis,minimum-spacing,model-version}`.
+- **Pas de commande** dédiée dans ce MVP (`WaypointService` expose `all()` / `byId()` /
+  `discoveryCount()` pour une future lecture PlugAdmin).
+
 ## Tests
 
 Automatisés : `DestinationTest`, `PortalDefinitionTest` (invariants),

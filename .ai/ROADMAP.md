@@ -216,6 +216,20 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-09-09
+Branche de départ: feat/control-panel-admin-tools
+Étape de départ: issue #124 (MVP waypoints par instance de biome) — hors étapes 1-23
+Étapes terminées: #124 MVP moteur (génération/persistance/découverte/protection/rendu versionné)
+Branche finale: feat/control-panel-admin-tools (consigne : rester sur la branche courante, ne rien merger)
+Dernier commit: (voir git log — commit feat(waypoints): #124)
+Build: vert (./gradlew build, 11m36s sur la box contrainte)
+Tests: verts — root :test 1254 (0 échec, 29 skip = MariaDB gated), control-panel 279 ; +33 tests waypoint
+Tests manuels en attente: validation en jeu du rendu réel / biomes réels / physique fluides-pistons-gravité / suppression redstone du bouton (PENDING MANUAL VALIDATION, voir docs/MANUAL_TEST_PLAN.md)
+Blocages: aucun
+Première étape à reprendre: si #124 poursuivi → lecture /waypoints dans PlugAdmin (ou action agent list) ; sinon issue #122 (protection fonctionnelle anti-enfermement de proximité)
+```
+
+```text
 Date: 2026-08-07
 Branche de départ: feature/13-safe-zone
 Étape de départ: 14 (Économie et marchands PNJ), TODO

@@ -324,6 +324,22 @@ aucun débit, aucun déplacement, juste un message d'erreur. Le cooldown par
 joueur/portail est persisté et survit à une reconnexion. Voir
 [docs/TRAVEL.md](docs/TRAVEL.md) pour le détail complet.
 
+## Waypoints par instance de biome (issue #124, MVP)
+
+Dans le monde d'exploration, quand un joueur entre dans une zone de biome
+qui n'a pas encore de repère, le serveur génère **une seule fois** un
+waypoint physique persistant et partagé (barrière de pierre + bloc d'or +
+bouton), à quelques dizaines de blocs — jamais sous les pieds du joueur, ni
+dans une construction existante. Une « instance de biome » est
+`(monde, type de biome, tuile de blocs)` : deux forêts éloignées ont deux
+waypoints distincts, jamais un seul par type de biome. La **découverte**
+exige un clic droit explicite sur le **bouton** (la proximité ne découvre
+rien) et est mémorisée par joueur. Les blocs du waypoint sont protégés
+(casse, explosion, piston, feu…). Le modèle visuel est **versionné**
+(remplaçable plus tard sans changer l'identité des waypoints existants).
+**Distinct des Waystones** (réseau de voyage). Pas de téléportation dans ce
+MVP. Voir [docs/WAYPOINTS.md](docs/WAYPOINTS.md).
+
 ## Claims de terrain
 
 `/claim wand` puis `/claim create <id>` réclame un terrain cuboïde

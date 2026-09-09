@@ -1443,6 +1443,68 @@ le résumé de récompenses de TC-014).
 
 ---
 
+## 20. Waypoints par instance de biome (`travel.waypoint.*`) — issue #124
+
+### TC-210 — Waypoint : génération, découverte au bouton, protection, persistance (PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `waypoint.WaypointService`, `WaypointListener`,
+    `WaypointProtectionListener`, `waypoint.render.WaypointModelV1`, migration V18
+    (`waypoints`, `waypoint_discoveries`), section config `travel.waypoint.*`. Détail :
+    `docs/WAYPOINTS.md`.
+-   **Préconditions :**
+    1.  JAR RPGQuest de cette session déployé sur DEV, serveur redémarré.
+    2.  Un monde d'exploration nommé comme `travel.wild-world` (défaut `wild`) accessible.
+    3.  Compte de test **non-op** + un compte `rpgquest.admin.world` pour l'étape protection.
+    4.  Au journal de démarrage : `Waypoints chargés : N.` (N=0 au tout premier démarrage).
+-   **Actions JOUEUR (non-op), dans `wild` :**
+    1.  Rejoindre `wild` et **marcher 1 à 2 minutes en ligne droite** dans un biome jamais
+        visité (traverser une frontière de biome aide). Au journal serveur doit apparaître
+        `Waypoint « wp_wild_<biome>_<rx>_<rz> » généré en wild (x,y,z) [biome …, modèle v1]`.
+    2.  Repérer la structure : **barrière de pierre (cobblestone wall) surmontée d'un bloc
+        d'or, avec un bouton en pierre sur un côté**, posée en surface à **quelques dizaines
+        de blocs** — jamais sous les pieds du joueur, jamais dans une construction existante.
+    3.  **Passer à 1-3 blocs du waypoint sans rien cliquer** → aucun message, rien n'est
+        enregistré (la proximité ne découvre rien).
+    4.  **Clic droit sur le bouton** → message « Waypoint découvert — <biome> » + son.
+        Re-cliquer le bouton → aucun nouveau message (déjà découvert).
+    5.  **Clic droit sur le bloc d'or ou sur la barrière** (pas le bouton) → aucune découverte.
+    6.  Essayer de **casser** le bloc d'or / la barrière / le bouton → **refusé** (le bloc ne
+        casse pas). Poser un bloc à la place d'un bloc du waypoint → refusé.
+    7.  (si possible) amorcer une **TNT / un creeper** à côté → les blocs du waypoint ne sont
+        pas détruits ; les autres blocs autour explosent normalement.
+    8.  (si possible) pousser un bloc avec un **piston** vers un bloc du waypoint → piston
+        bloqué. Poser de la **lave/eau** juste à côté pour qu'elle coule vers le waypoint →
+        le fluide ne recouvre pas les blocs du waypoint.
+-   **Actions ADMIN (`rpgquest.admin.world`) :**
+    9.  Casser un bloc du waypoint → **autorisé** (bypass maintenance).
+-   **Persistance / concurrence :**
+    10. Avec un **second joueur**, entrer en même temps que le premier dans un **autre** biome
+        neuf → **un seul** waypoint est créé pour cette zone (pas de doublon), visible par les
+        deux.
+    11. Deux zones **séparées** du même type de biome (par ex. deux forêts à plus de
+        `region-size` blocs, défaut 256) → **deux** waypoints distincts.
+    12. **Redémarrer le serveur** → au journal `Waypoints chargés : <n>` avec le bon compte ;
+        les waypoints sont au même endroit, les découvertes du joueur sont conservées, **aucun
+        doublon** n'est généré en repassant dessus.
+-   **Reset :** `travel.waypoint.enabled: false` + `/rpgquest reload` désactive tout sans
+    toucher aux données. Retirer une structure = casser ses blocs en `rpgquest.admin.world`
+    (ou restaurer un backup `world_wild/`). Les tables `waypoints`/`waypoint_discoveries`
+    peuvent être vidées à froid si besoin d'un test « from scratch ».
+-   **Couverture automatisée :** `WaypointIdentityResolverTest`, `WaypointGenerationPlannerTest`,
+    `WaypointModelRegistryTest`, `WaypointServiceTest` (11 cas : génération unique, biome
+    correct, jamais au pied du joueur, concurrence 2 joueurs → 1 waypoint, `insertIfAbsent`
+    idempotent, 2 zones même biome → 2 waypoints, proximité sans découverte, découverte bouton
+    uniquement, découvertes A/B indépendantes, reload sans doublon, changement de version de
+    rendu sans changement d'identité, échec propre + retry borné), `WaypointProtectionListenerTest`
+    (casse joueur refusée, bypass admin, explosion, piston, feu), `SchemaMigratorTest` (V18 +
+    idempotence), `ConfigValidatorTest` (défauts + bornes `travel.waypoint.*`).
+-   **Limites MockBukkit (à couvrir uniquement en jeu) :** distribution réelle des biomes du
+    monde `wild` et emplacement effectivement dans le bon biome ; physique réelle des fluides,
+    pistons et blocs à gravité contre la structure ; suppression réelle du signal redstone du
+    bouton au clic ; rendu visuel ; comportement du throttle sous déplacement réel.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -1492,3 +1554,4 @@ le résumé de récompenses de TC-014).
 | TC-183 | Mod client : contenu (bloc/objet) | | | |
 | TC-190 | Diagnostic WorldPortal (`here`/`debug`, TP-TRACE) | | | |
 | TC-200 | Storyline : progression automatique de bout en bout | | | |
+| TC-210 | Waypoints #124 : génération, découverte bouton, protection, persistance (PENDING) | | | |

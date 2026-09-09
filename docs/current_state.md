@@ -240,6 +240,19 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   PNJ / Quêtes / Stories / Dialogues. Tous les noms de classes CSS et sous-chaînes HTML testées
   conservés (migration sans casse). **Restant** : refonte de contenu des pages Agents /
   placeholders, validation navigateur du rendu réel et du mobile.
+- **Socle Bootstrap 5 + Home à tuiles (issue #92)** *(branche `feat/control-panel-admin-tools`)* —
+  Bootstrap 5.3.8 et Bootstrap Icons 1.13.1 **embarqués et servis localement** par PlugAdmin
+  (`/assets/bootstrap/`, `/assets/bootstrap-icons/` ; aucun CDN, CSP inchangée). Couche
+  `plugadmin.css` = design system #92 + pont `--bs-*` vers les tokens PlugAdmin (Bootstrap prend
+  l'identité du panel, pas de bleu/blanc par défaut). `Icons.icon()` rend maintenant un
+  `<i class="bi bi-…">` (signature inchangée). **Nouvelle page d'accueil `/home`** : un *launcher*
+  à grandes tuiles groupées (Vue d'ensemble / Gestion du jeu / Ressources / Administration),
+  grille Bootstrap responsive, chaque tuile activée = vrai lien `<a>` (toute la carte cliquable,
+  focus clavier), tuiles « à venir » non cliquables ; badges synthétiques (joueurs en ligne,
+  nombres PNJ/quêtes/stories/dialogues, état serveur) tirés du **dernier relevé agent** sans
+  requête déclenchée ; place réservée pour une recherche globale future. Connexion et `/`
+  redirigent vers `/home` ; le **Dashboard** reste sur `/dashboard` et devient une tuile ; la
+  sidebar gagne une entrée « Accueil » en tête. Éditeur #46 et Documentation #49 non touchés.
 - **Éditeur guidé de quêtes et de stories — chemin principal (issue #46)** *(branche
   `feat/control-panel-admin-tools`)* — depuis `/quests` (« Créer une quête ») et `/stories`
   (« Créer une story »), ou « Modifier » sur une carte : formulaire guidé multi-sections

@@ -145,6 +145,23 @@ de déploiement). Garde-fous :
 - **Sans JavaScript** : le formulaire dynamique fonctionne par aller-retour serveur ; conforme à
   la CSP (`default-src 'self'`), pas de script inline, listes de valeurs en `<datalist>`.
 
+## Assets statiques & Bootstrap (lot Bootstrap)
+
+Bootstrap 5 + Bootstrap Icons sont **embarqués et servis par PlugAdmin** (`/assets/…`), jamais
+depuis un CDN — le panel ne dépend d'aucun accès Internet au runtime.
+
+- **CSP inchangée** : `default-src 'self'` couvre déjà script / style / police de même origine ;
+  aucun assouplissement. Le bundle Bootstrap ne contient ni `eval` ni `new Function` ; Popper
+  manipule le CSSOM (`.style`), ce que la CSP ne restreint pas. Les `data:` SVG de
+  `bootstrap.min.css` relèvent de `img-src 'self' data:` déjà autorisé.
+- **Handler `PanelApp#handleAsset`** (contexte `/assets/`) : `GET` seul ; chemin relatif validé
+  par une regex stricte (`[A-Za-z0-9]…`, refus de `..`, d'un chemin absolu, d'un segment vide) ;
+  ressource lue **uniquement** sous `classpath:/assets/` ; `ETag` + `304` ; `Cache-Control:
+  public, max-age=3600` ; en-tête CSP minimal sur la réponse. Un chemin traversant → `404`,
+  jamais de contenu système.
+- Les assets sont **publics** (avant authentification) — ils ne contiennent aucune donnée
+  sensible (CSS/JS de framework, police d'icônes, `plugadmin.css`, `panel.js`).
+
 ## Kill-switch
 
 Un moyen de **couper l'accès au panel immédiatement** sans redéploiement :

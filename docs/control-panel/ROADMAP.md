@@ -189,6 +189,36 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
       polissage largeur / TOC / fil d'Ariane de la fiche de documentation ; **validation
       navigateur du rendu réel et du mobile**.
 
+### Étape 3b bis — socle Bootstrap + Home à tuiles — **LIVRÉ**
+
+- [x] **Bootstrap 5.3.8 + Bootstrap Icons 1.13.1**, servis **100 % localement** sous
+      `/assets/bootstrap/` et `/assets/bootstrap-icons/` (fichiers vendored dans
+      `control-panel/src/main/resources/assets/`, voir
+      [VENDOR_ASSETS.md](VENDOR_ASSETS.md)). Aucun CDN au runtime, **CSP inchangée**
+      (`default-src 'self'` couvre script/style/font de même origine). Handler générique
+      `PanelApp#handleAsset` : chemin validé (anti-traversal), content-type par extension,
+      `ETag` + `304`, cache court.
+- [x] **`plugadmin.css`** = design system #92 (extrait de `Layout`, verbatim) + **pont
+      `--bs-*`** vers les tokens PlugAdmin (Bootstrap adopte l'identité, pas de bleu/blanc
+      par défaut) + styles de la Home. `Layout` charge `bootstrap.min.css` +
+      `bootstrap-icons.min.css` + `plugadmin.css`, et `bootstrap.bundle.min.js` + `panel.js`
+      globalement.
+- [x] **Iconographie = Bootstrap Icons** : `Icons.icon()` rend un `<i class="bi bi-…">`
+      (signature inchangée → tous les appels existants fonctionnent ; ancien sprite SVG
+      neutralisé). Pas d'emoji.
+- [x] **Home = launcher à tuiles** (`/home`) : page d'arrivée après connexion (redirections
+      `/` et post-login → `/home`). Grandes tuiles groupées (Vue d'ensemble / Gestion du jeu
+      / Ressources / Administration), grille Bootstrap `row-cols-1/md-2/lg-3/xl-4`, chaque
+      tuile activée = vrai `<a>` (toute la carte cliquable, focus clavier), tuiles « à venir »
+      non cliquables (`aria-disabled`). Badges synthétiques depuis le **dernier relevé agent**
+      (`AgentPages#homeSummary`, aucune requête déclenchée). Emplacement réservé pour une
+      recherche globale (`input` désactivé).
+- [x] **Dashboard** reste une page dédiée (`/dashboard`, 200) et devient une tuile.
+      Sidebar : entrée **« Accueil »** en tête.
+- [ ] migration progressive des formulaires / tableaux vers les composants Bootstrap
+      (offcanvas mobile, modales de confirmation, `nav-pills`, `input-group`, tooltips) —
+      au fil des prochaines évolutions, sans réécriture de masse.
+
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 
 - [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +

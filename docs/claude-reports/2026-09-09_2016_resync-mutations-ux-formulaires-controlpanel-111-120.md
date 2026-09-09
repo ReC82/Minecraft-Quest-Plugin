@@ -8,8 +8,8 @@
 * Branche Git : `feat/control-panel-admin-tools` (inchangée — aucun merge)
 * Commit actuel au démarrage : `57ff093`
 * Début de la tâche : 2026-09-09 19:52:15
-* Fin de la tâche : 2026-09-09 20:__:__  _(renseigné à la clôture)_
-* Durée totale : __:__:__
+* Fin de la tâche : 2026-09-09 20:34:00
+* Durée totale : 00:41:45
 
 ## Demande
 
@@ -194,8 +194,10 @@ connue, non liée à cette tâche). Nouveaux / adaptés :
   (`createSkeletonActionIsValidatedAndQueued`, `nodeUpdateActionIsValidatedAndQueued`) : la
   création / modification réversible est acceptée **sans** `confirm`.
 
-`./gradlew build` (plugin + web-api + control-panel) : _(résultat renseigné à la clôture)_.
-Aucun fichier du plugin RPGQuest ni de `web-api` n'a été modifié.
+`./gradlew build` (plugin + web-api + control-panel) : **BUILD SUCCESSFUL** en 10 min 31 s —
+plugin **1214 / 0** (29 ignorés MockBukkit pré-existants), web-api **30 / 0**, control-panel
+**279 / 0** (1 ignoré pré-existant). Aucun fichier du plugin RPGQuest ni de `web-api` n'a été
+modifié (`:compileJava` / `:compileTestJava` **UP-TO-DATE**).
 
 ## Tests manuels à effectuer — `PENDING MANUAL VALIDATION`
 

@@ -2356,4 +2356,21 @@ défaire.
 
 ### Exécution réelle
 
-_(à compléter au déploiement)_
+Session du 2026-09-09 (~20:32 UTC). Branche `feat/control-panel-admin-tools` @ `dc17f23`.
+`scripts/plugadmin/deploy.sh` OK : `:control-panel:installDist` **BUILD SUCCESSFUL**
+(`compileJava`/`jar` **UP-TO-DATE** — distribution issue du build déjà testé), release précédente
+sauvegardée sous `/opt/plugadmin/releases/20260909-203227`, `systemctl restart plugadmin` →
+`active (running)`, `NRestarts=0`, drop-in `10-content-workspace.conf` toujours chargé, `Memory`
+~52 M. `/health` **ONLINE** local + public (`https://plugadmin.lodylands.com/health`).
+`/home` `/npcs` `/dialogues` anonymes → **303** `/login`. **CSP inchangée**
+(`default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'`).
+Jar déployé **byte-identique** au build local (SHA-256 `d3a2f34fbbfcf390…`). `panel.js` servi
+publiquement contient `reloadPlan` / `sawPending` / `initColorPalette` ; le jar embarque le
+`panel.js` à jour et la section « Comprendre l'éditeur de dialogues » de `dialogues-depannage.md`.
+**0 `ERROR`/`SEVERE`** au journal depuis le redéploiement. `control-panel.db` non touché (aucune
+migration de schéma agent). **VeryGames / Minecraft non touchés.** Navigateur authentifié
+(mutation PNJ + dialogue, liaison Citizens, absence de F5, mobile) : `PENDING MANUAL VALIDATION`.
+
+Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260909-203227`).
+
+Rapport : `docs/claude-reports/2026-09-09_2016_resync-mutations-ux-formulaires-controlpanel-111-120.md`.

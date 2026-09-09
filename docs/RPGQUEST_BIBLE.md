@@ -526,8 +526,8 @@ L'action `dialogue.definition.create` (permission dédiée `DIALOGUE_WRITE`) cr�
 un **squelette** de dialogue minimal (`id` + `start` + un nœud avec
 locuteur/texte + un choix « fermer »).
 
-Un **éditeur guidé** (issue #82, phase 1) permet en plus, toujours sous
-`DIALOGUE_WRITE` et confirmation : modifier le **locuteur / texte** d'un nœud
+Un **éditeur guidé** (issue #82, phase 1) permet en plus, sous
+`DIALOGUE_WRITE` : modifier le **locuteur / texte** d'un nœud
 (`dialogue.node.update`), **ajouter un nœud simple** (`dialogue.node.create`,
 nœud orphelin à relier ensuite), et **ajouter / modifier / supprimer un choix
 simple** (`dialogue.choice.add` / `.update` / `.delete`) — un choix « simple »
@@ -579,6 +579,47 @@ diagnostics** enqueue en une fois les quelques relevés `*.list` nécessaires. L
 tuile Diagnostics de l'accueil et le Dashboard affichent une synthèse
 (compteurs). Fiche `/docs/serveur-depannage` pour les diagnostics
 serveur/agent/mondes.
+
+### Resynchronisation automatique après une mutation (issues #111 → #120)
+
+PlugAdmin distingue trois états : **A.** le contenu écrit dans la source de
+vérité (`npcs/*.yml`, `dialogues/*.yml`…) ; **B.** l'instantané du catalogue que
+le panel a relu (dernier relevé `npc.list` / `dialogue.list` / `npc.citizens.list`
+réussi de l'agent) ; **C.** ce que le serveur Minecraft a effectivement rechargé
+en jeu. Le panel n'affiche jamais **C** comme acquis : « Dialogue déclaré … (pas
+encore chargé en jeu) » reste tel quel tant qu'un relevé ne le confirme pas.
+
+Chaque mutation de contenu **déclare les catalogues qu'elle périme**
+(`AgentActionCatalog.Spec#refreshTypes()`). Dès qu'elle **réussit**,
+`AgentEndpoints` ré-enfile automatiquement ces relevés `*.list`
+(`created_by = "auto"`, dédupliqués, jamais sur un échec ni un renvoi
+idempotent) ; le centre de notifications les masque. Côté navigateur,
+`panel.js` recharge **une seule fois** la page métier quand la file d'actions
+est retombée au repos. Résultat : après « Enregistrer » (fiche PNJ, dialogue,
+liaison Citizens…), la fiche, la liste générale et les diagnostics reflètent
+le nouvel état **sans F5 et sans clic manuel sur « Rafraîchir catalogue »**.
+Correspondances : `npc.definition.*` → `npc.list` ; `npc.citizens.link/create`
+→ `npc.list` + `npc.citizens.list` ; `dialogue.*` → `dialogue.list` ;
+`quest.giver.set` → `npc.list` + `quest.list` ; `player.ban/unban` →
+`player.catalog`.
+
+### Confirmations et saisie des formulaires PlugAdmin (issues #111 / #113 / #117 / #118)
+
+Une **édition de contenu réversible** (créer / modifier une fiche PNJ, un nœud,
+un choix, une liaison logique, attribuer une quête) **ne demande plus de case à
+cocher** : une phrase d'information suffit, le bouton reste l'engagement
+explicite. Seules les actions **réellement sensibles** (bannissement, reset
+« nouveau joueur », spawn d'un PNJ Citizens, suppression d'un choix) gardent une
+confirmation explicite. La distinction est portée par
+`AgentActionCatalog.Spec#sensitive()`.
+
+Les formulaires affichent les exemples en `placeholder` (jamais en valeur par
+défaut), une aide métier sous chaque champ, et ouvrent la documentation dans un
+nouvel onglet. Le formulaire **« Nouveau dialogue »** est une action primaire
+visible ; l'ID technique est distinct du **locuteur affiché** ; une **palette de
+couleurs MiniMessage** (14 teintes, pastilles + aperçu réel) génère le
+`<couleur>…</couleur>` — le MiniMessage saisi à la main reste possible et n'est
+jamais ré-enrobé.
 
 ### Annuaire des joueurs dans PlugAdmin (issue #96)
 

@@ -413,6 +413,35 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   registre. Entités / matériaux portent un libellé FR (`MinecraftNames`). « Points d'expérience »
   remplace « Montant » pour la récompense EXPERIENCE. `EditorDescriptorsTest` verrouille la
   cohérence des types. Action agent `quest.definition.validate` : toujours à faire.
+- **Resynchronisation après mutation + UX formulaires PNJ / Dialogues (issues #111 → #120)**
+  *(branche `feat/control-panel-admin-tools`)* — plusieurs mutations réussissaient côté backend
+  (notification SUCCESS) mais la page métier restait périmée : seule la séquence « Rafraîchir
+  catalogue **puis** F5 » montrait le nouvel état. **Cause** : les pages lisent le **dernier
+  relevé `*.list` réussi** stocké (`AgentPages#latestDetails` → `AgentStore`), et rien ne
+  ré-enfilait ce relevé après une mutation. **Correctif mutualisé** : `AgentActionCatalog.Spec`
+  gagne `refreshTypes()` (catalogues périmés par l'action) et `sensitive()` (action réellement
+  sensible). `AgentEndpoints#handleActionResult` ré-enfile les relevés à la **première**
+  transition SUCCESS (`created_by = "auto"`, dédup `AgentStore#hasOpenActionOfType`, jamais sur
+  échec ni renvoi idempotent) ; `NotificationCenter` masque ces lignes `auto`,
+  `/agents/actions.json` les expose (`auto:true`) et les compte dans `pending`. `panel.js` :
+  un **unique** plan de rechargement s'arme quand une action **vue s'exécuter** (pending →
+  succès) se termine, et se déclenche dès que `pending == 0` (garde `sawPending` +
+  `sessionStorage`, repli 30 s) — plus aucun `location.reload()` par bouton. Correspondances :
+  `npc.definition.*`→`npc.list` ; `npc.citizens.link/create`→`npc.list`+`npc.citizens.list` ;
+  `dialogue.*`→`dialogue.list` ; `quest.giver.set`→`npc.list`+`quest.list` ;
+  `player.ban/unban`→`player.catalog`. **UX** : `AgentPages#mutationConsent` supprime la case à
+  cocher cachée des éditions réversibles (création/modif de définition, nœud, choix, liaison
+  logique, `quest.giver.set`) — une phrase d'info suffit ; la confirmation explicite ne reste que
+  pour `player.ban/unban`, `player.resetnew.confirm`, `npc.citizens.create`, `dialogue.choice.delete`.
+  Aide métier sous chaque champ du formulaire PNJ, exemples en `placeholder` uniquement, lien doc
+  `target=_blank`. Page `/dialogues` : bouton primaire `+ Nouveau dialogue` (fin de l'accordéon
+  discret), bandeau « phase 1 / format canonique » réduit à une phrase + `<details>`, **palette
+  de couleurs MiniMessage** (`AgentActionCatalog.PALETTE_COLORS`, 14 teintes, pastilles + aperçu
+  `panel.js#initColorPalette`) qui génère `<couleur>…</couleur>` sans ré-enrober un MiniMessage
+  déjà saisi. Tests : `CatalogResyncTest` (5), `AgentActionCatalogTest` (+3),
+  `NpcsCatalogTest` / `DialoguesCatalogTest` mis à jour. **Non traité (délibéré)** : #114
+  (sélecteur Citizens recherchable/paginé), #118 (sélecteur de locuteur alimenté par les PNJ),
+  #113 (modale de liaison dédiée).
 
 ## Bugs connus et corrigés
 

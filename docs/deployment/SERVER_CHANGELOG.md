@@ -2288,3 +2288,72 @@ depuis le redéploiement ; un `WARNING handler_error path=/login stream closed` 
 Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260909-161744`).
 
 Rapport : `docs/claude-reports/2026-09-09_1607_editeur-quetes-passe-ux-46.md`.
+
+---
+
+## 2026-09-09 - PlugAdmin : resynchronisation auto après mutation + UX formulaires PNJ/Dialogues (issues #111 → #120)
+
+### Changement
+
+Control Panel uniquement — **aucun changement du plugin RPGQuest, du serveur Minecraft, de la
+base ou de la configuration**.
+
+- **Resynchronisation mutualisée après une mutation** (#112/#115/#116/#119/#120) : une
+  mutation de contenu qui réussit (`npc.definition.*`, `npc.citizens.link/create`,
+  `dialogue.*`, `quest.giver.set`, `player.ban/unban`) ré-enfile **automatiquement** les
+  relevés `*.list` qu'elle périme (`AgentActionCatalog.Spec#refreshTypes()` →
+  `AgentEndpoints`), `created_by = "auto"`, dédupliqués, jamais sur échec ni renvoi
+  idempotent. Le centre de notifications masque ces lignes ; `panel.js` recharge **une seule
+  fois** la page métier quand la file d'actions est retombée au repos. Plus besoin de
+  « Rafraîchir catalogue + F5 ».
+- **Confirmations** (#111/#113/#118) : `Spec#sensitive()` — l'édition de contenu réversible
+  n'a plus de case à cocher cachée (phrase d'information + `confirm` implicite) ; la
+  confirmation explicite ne reste que pour `player.ban/unban`, `player.resetnew.confirm`,
+  `npc.citizens.create`, `dialogue.choice.delete`.
+- **Formulaires** : aide métier sous chaque champ PNJ, exemples en `placeholder`, lien doc
+  `target=_blank`. Page Dialogues : bouton primaire **+ Nouveau dialogue**, bandeau technique
+  réduit à une phrase + `<details>`, **palette de couleurs MiniMessage** (14 teintes,
+  pastilles + aperçu) qui génère `<couleur>…</couleur>` sans ré-enrober un MiniMessage saisi
+  à la main.
+
+Fichiers : `panel/agent/{AgentActionCatalog,AgentStore,AgentEndpoints}.java`,
+`panel/web/{AgentPages,NotificationCenter,PanelApp,MiniText}.java`, `assets/panel.js`,
+`assets/plugadmin.css`, `resources/docs/dialogues-depannage.md`. **CSP inchangée**
+(`default-src 'self'`). `control-panel.db` non touché (aucune migration de schéma agent).
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — build + release sous
+`/opt/plugadmin/releases/<horodatage>` + `systemctl restart plugadmin` + check `/health`.
+Aucune autre action. Aucun changement nginx / TLS / secret / base. **VeryGames / Minecraft
+non touchés.**
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : app précédente sous `/opt/plugadmin/releases/<horodatage>`
+(rétention 5).
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local **ONLINE** ; `https://plugadmin.lodylands.com/health` **ONLINE** ;
+- `/npcs`, `/dialogues`, `/home` anonymes → **303** vers `/login` ;
+- en-tête **CSP inchangée** ;
+- `plugadmin.service` `active`, `NRestarts=0` ;
+- `:control-panel:test` **279/0** (1 skip pré-existant) ; `./gradlew build` vert ;
+- rendu navigateur **authentifié** (mutation PNJ + dialogue, liaison Citizens, absence de F5,
+  mobile) : `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure la release précédente). Aucune migration à
+défaire.
+
+### Exécution réelle
+
+_(à compléter au déploiement)_

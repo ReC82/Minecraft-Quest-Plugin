@@ -511,6 +511,47 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
 - [ ] Non fait (délibéré) : libellé humain du PNJ donneur (pas exposé par `npc.list`) ;
       distinction item vanilla / item custom RPGQuest (le moteur ne lit qu'un `Material` vanilla).
 
+### Étape 3l — resynchronisation après mutation + UX formulaires PNJ/Dialogues (#111 → #120) — **LIVRÉ (chemin principal ; validation navigateur en attente)**
+
+- [x] **Réconciliation mutualisée après mutation** (#112 / #115 / #116 / #119 / #120) : chaque
+      mutation de contenu déclare, dans `AgentActionCatalog.Spec#refreshTypes()`, les relevés
+      `*.list` que son succès rend périmés (`npc.definition.*` → `npc.list` ;
+      `npc.citizens.link/create` → `npc.list` + `npc.citizens.list` ; `dialogue.*` → `dialogue.list` ;
+      `quest.giver.set` → `npc.list` + `quest.list` ; `player.ban/unban` → `player.catalog`).
+      `AgentEndpoints#handleActionResult` ré-enfile ces relevés **à la première transition vers
+      SUCCESS** (`created_by = "auto"`, dédup via `AgentStore#hasOpenActionOfType`, jamais sur un
+      renvoi idempotent ni sur un échec). Le centre de notifications ignore ces lignes `auto`
+      (`NotificationCenter#recent`), mais `/agents/actions.json` les compte (`auto:true`).
+      `panel.js` : quand une action **suivie et vue s'exécuter** (pending → succès) se termine, un
+      **unique** plan de rechargement s'arme et se déclenche dès que `pending == 0` (garde
+      `sawPending` + marqueur `sessionStorage` anti-boucle, repli délai 30 s). Plus de
+      « Rafraîchir catalogue + F5 » : la fiche, la liste et les diagnostics se réconcilient seuls.
+- [x] **Confirmations** (#111 / #113 / #118) : `Spec#sensitive()` sépare l'édition de contenu
+      réversible (création / modification de définition, de nœud, de choix, liaison logique,
+      `quest.giver.set`) — **aucune case à cocher cachée**, juste une phrase d'information et un
+      `confirm` implicite — des actions réellement sensibles (bannissement, reset, spawn d'un PNJ
+      Citizens, suppression de choix) qui gardent une confirmation explicite.
+      `AgentPages#mutationConsent` centralise ce choix (jamais décidé à l'écran).
+- [x] **Formulaire PNJ** (#111) : exemples en `placeholder` (jamais en valeur par défaut), aide
+      métier sous chaque champ (nom / ID technique / dialogue / rôle / actif), lien documentation
+      en `target=_blank rel=noopener` (formulaire jamais perdu).
+- [x] **Formulaire dialogue** (#117 / #118) : bouton primaire `+ Nouveau dialogue` (fin de
+      l'accordéon discret) ; champs expliqués ; ID technique distinct du locuteur affiché ;
+      **palette de couleurs MiniMessage** (`AgentActionCatalog.PALETTE_COLORS`, 14 teintes) avec
+      pastilles + aperçu réel (`panel.js#initColorPalette`) — le panel génère
+      `<couleur>…</couleur>`, le MiniMessage manuel reste possible et n'est jamais ré-enrobé ;
+      bandeau technique « phase 1 / format canonique » réduit à une phrase + `<details>` repliés.
+- [x] **Tests** : `CatalogResyncTest` (+5 — auto-refresh après succès, double catalogue Citizens,
+      dédup, renvoi idempotent, échec sans refresh, mécanisme `panel.js`) ;
+      `AgentActionCatalogTest` (+3 — `sensitive` / `refreshTypes` / palette de couleurs) ;
+      `NpcsCatalogTest` / `DialoguesCatalogTest` mis à jour (création réversible sans `confirm`).
+      `:control-panel:test` vert ; `:control-panel:build` vert.
+- [ ] Non traité (délibéré, à planifier) : `#114` sélecteur Citizens recherchable/paginé ;
+      `#118` sélecteur de locuteur alimenté par les PNJ logiques ; `#113` modale de liaison
+      dédiée (le formulaire inline mis en évidence reste).
+- [ ] Validation navigateur authentifiée (mutation PNJ + dialogue, liaison Citizens, absence de
+      F5 / refresh manuel, mobile) — `PENDING MANUAL VALIDATION`.
+
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 
 - [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +

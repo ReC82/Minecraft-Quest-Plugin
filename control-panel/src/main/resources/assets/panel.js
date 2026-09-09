@@ -225,9 +225,11 @@
       (function (input) {
         var scope = input.getAttribute("data-filter-input");
         var items = document.querySelectorAll('[data-filter-item="' + cssEsc(scope) + '"]');
-        var chipBox = document.querySelector('[data-filter-chips="' + cssEsc(scope) + '"]');
+        // Plusieurs groupes de puces possibles pour un même scope (ex. gravité + domaine),
+        // combinés en ET. Rétro-compatible : un seul groupe = comportement historique.
+        var chipBoxes = document.querySelectorAll('[data-filter-chips="' + cssEsc(scope) + '"]');
         var note = document.querySelector("[data-count-note]");
-        var activeCat = null;
+        var active = [];
 
         function apply() {
           var q = (input.value || "").trim().toLowerCase();
@@ -237,7 +239,10 @@
             var hay = (el.getAttribute("data-filter-text") || el.textContent || "").toLowerCase();
             var cats = (" " + (el.getAttribute("data-filter-cat") || "") + " ");
             var okText = !q || hay.indexOf(q) !== -1;
-            var okCat = !activeCat || cats.indexOf(" " + activeCat + " ") !== -1;
+            var okCat = true;
+            for (var a = 0; a < active.length; a++) {
+              if (active[a] && cats.indexOf(" " + active[a] + " ") === -1) { okCat = false; break; }
+            }
             var show = okText && okCat;
             el.hidden = !show;
             if (show) { shown++; }
@@ -248,21 +253,26 @@
           }
         }
         input.addEventListener("input", apply);
-        if (chipBox) {
-          chipBox.addEventListener("click", function (ev) {
-            var chip = ev.target.closest ? ev.target.closest("[data-filter-chip]") : null;
-            if (!chip) { return; }
-            var val = chip.getAttribute("data-filter-chip");
-            var chips = chipBox.querySelectorAll("[data-filter-chip]");
-            if (activeCat === val) {
-              activeCat = null;
-              chip.classList.remove("on");
-            } else {
-              activeCat = val;
-              for (var c = 0; c < chips.length; c++) { chips[c].classList.toggle("on", chips[c] === chip); }
-            }
-            apply();
-          });
+        for (var b = 0; b < chipBoxes.length; b++) {
+          (function (box, bi) {
+            active[bi] = null;
+            box.addEventListener("click", function (ev) {
+              var chip = ev.target.closest ? ev.target.closest("[data-filter-chip]") : null;
+              if (!chip) { return; }
+              var val = chip.getAttribute("data-filter-chip");
+              var chips = box.querySelectorAll("[data-filter-chip]");
+              if (active[bi] === val || val === "") {
+                active[bi] = null;
+                for (var c = 0; c < chips.length; c++) {
+                  chips[c].classList.toggle("on", chips[c].getAttribute("data-filter-chip") === "");
+                }
+              } else {
+                active[bi] = val;
+                for (var c2 = 0; c2 < chips.length; c2++) { chips[c2].classList.toggle("on", chips[c2] === chip); }
+              }
+              apply();
+            });
+          })(chipBoxes[b], b);
         }
         apply();
       })(inputs[i]);
@@ -282,11 +292,33 @@
     }
   }
 
+  /* ---- Ouverture ciblée depuis /diagnostics (?focus=<id>&fix=<create|edit|link>) ---- */
+  function initFocus() {
+    var params;
+    try { params = new URLSearchParams(window.location.search); } catch (e) { return; }
+    var focus = params.get("focus");
+    if (!focus) { return; }
+    var item = document.querySelector('[data-res-id="' + cssEsc(focus) + '"]');
+    if (!item) { return; }
+    var body = item.querySelector(".accordion-collapse");
+    if (body) { body.classList.add("show"); }
+    var head = item.querySelector(".accordion-button");
+    if (head) { head.classList.remove("collapsed"); head.setAttribute("aria-expanded", "true"); }
+    var fix = params.get("fix");
+    if (fix) {
+      var form = item.querySelector('.collapse[id$="-f-' + fix.replace(/[^a-z]/gi, "") + '"]');
+      if (form) { form.classList.add("show"); }
+    }
+    if (item.scrollIntoView) { item.scrollIntoView({ block: "center" }); }
+    item.classList.add("res-focused");
+  }
+
   function init() {
     initToasts();       // affiche les toasts (repli manuel si Bootstrap JS pas encore là)
     initNotifications();
     initCopy();
     initFilters();
+    initFocus();
     initDrawer();
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.

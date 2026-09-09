@@ -35,7 +35,7 @@ public final class Layout {
                         new NavItem("Dialogues", "/dialogues", "dialogues", true))),
                 new NavGroup("Ressources", List.of(
                         new NavItem("Documentation", "/docs", "docs", true),
-                        new NavItem("Diagnostics", "/diagnostics", "diagnostics", false))),
+                        new NavItem("Diagnostics", "/diagnostics", "diagnostics", true))),
                 new NavGroup("Administration", List.of(
                         new NavItem("Admin", "/admin", "admin", false),
                         new NavItem("Développement", "/dev", "dev", false))));

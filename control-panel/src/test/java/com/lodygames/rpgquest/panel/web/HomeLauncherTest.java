@@ -91,11 +91,11 @@ class HomeLauncherTest {
         assertTrue(home.contains("Gestion du jeu"));
         assertTrue(home.contains("Vue d&#39;ensemble") || home.contains("Vue d'ensemble"));
 
-        // Diagnostics = tuile « à venir » non cliquable
+        // Diagnostics = tuile active (issue #38) : lien cliquable vers /diagnostics
         assertTrue(home.contains(">Diagnostics<"));
-        assertTrue(home.contains("home-tile is-disabled"));
-        assertTrue(home.contains("À venir"));
-        assertFalse(home.contains("class=\"home-tile\" href=\"/diagnostics\""), "Diagnostics pas un lien");
+        assertTrue(home.contains("class=\"home-tile\" href=\"/diagnostics\""), "Diagnostics est un lien actif");
+        // il reste au moins une tuile « à venir » (Admin / Développement)
+        assertTrue(home.contains("home-tile is-disabled") && home.contains("À venir"));
 
         // recherche globale future : présente mais désactivée
         assertTrue(home.contains("home-search"));

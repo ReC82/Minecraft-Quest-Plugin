@@ -299,7 +299,8 @@ public final class AgentPages {
         String ftext = Http.esc(id + " " + human + " " + category + " " + giverId + " " + giverName);
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"quests\" data-filter-cat=\"")
-                .append(anyWarn ? "warn" : "ok").append("\" data-filter-text=\"").append(ftext).append("\">");
+                .append(anyWarn ? "warn" : "ok").append("\" data-filter-text=\"").append(ftext)
+                .append("\" data-res-id=\"").append(Http.esc(id)).append("\">");
         sb.append("<h3 class=\"accordion-header\">");
         sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
                 + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")
@@ -566,7 +567,8 @@ public final class AgentPages {
         String ftext = Http.esc(id + " " + human);
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"stories\" data-filter-cat=\"")
-                .append(anyWarn ? "warn" : "ok").append("\" data-filter-text=\"").append(ftext).append("\">");
+                .append(anyWarn ? "warn" : "ok").append("\" data-filter-text=\"").append(ftext)
+                .append("\" data-res-id=\"").append(Http.esc(id)).append("\">");
         sb.append("<h3 class=\"accordion-header\">");
         sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
                 + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")
@@ -937,7 +939,8 @@ public final class AgentPages {
 
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"npcs\" data-filter-cat=\"")
-                .append(cat).append("\" data-filter-text=\"").append(ftext).append("\">");
+                .append(cat).append("\" data-filter-text=\"").append(ftext)
+                .append("\" data-res-id=\"").append(Http.esc(id)).append("\">");
         sb.append("<h3 class=\"accordion-header\">");
         sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
                 + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")
@@ -1529,7 +1532,8 @@ public final class AgentPages {
 
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"dialogues\" data-filter-cat=\"")
-                .append(cat).append("\" data-filter-text=\"").append(ftext).append("\">");
+                .append(cat).append("\" data-filter-text=\"").append(ftext)
+                .append("\" data-res-id=\"").append(Http.esc(id)).append("\">");
         sb.append("<h3 class=\"accordion-header\">");
         sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
                 + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")

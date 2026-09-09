@@ -68,6 +68,7 @@ public final class PanelApp {
     private final NotificationCenter notifications;
     private final ContentWorkspace contentWorkspace;
     private final ContentEditorPages contentEditor;
+    private final com.lodygames.rpgquest.panel.diag.DiagnosticsService diagnostics;
 
     private HttpServer server;
 
@@ -83,6 +84,8 @@ public final class PanelApp {
                 config.contentRepoDir() == null || config.contentRepoDir().isBlank()
                         ? null : Path.of(config.contentRepoDir()));
         this.contentEditor = new ContentEditorPages(contentWorkspace);
+        this.diagnostics = new com.lodygames.rpgquest.panel.diag.DiagnosticsService(
+                agentStore, config.agents().thresholds());
         this.agentEndpoints = new AgentEndpoints(agentRegistry, agentStore, audit,
                 config.agents().actionExpiry(), config::disabled);
         this.authService = new AuthService(config.ownerUsername(), config.ownerPasswordHash(), new PasswordHasher());
@@ -131,7 +134,9 @@ public final class PanelApp {
         route("/dialogues", exchange -> handleBusinessPage(exchange, "/dialogues", "Dialogues",
                 Permission.DIALOGUE_READ, agentPages::dialogues));
         route("/docs", this::handleDocs);
-        for (String path : new String[] {"/diagnostics", "/admin", "/dev"}) {
+        route("/diagnostics", this::handleDiagnostics);
+        route("/diagnostics/refresh", this::handleDiagnosticsRefresh);
+        for (String path : new String[] {"/admin", "/dev"}) {
             route(path, exchange -> handlePlaceholder(exchange, path));
         }
         agentEndpoints.register(server);
@@ -297,7 +302,9 @@ public final class PanelApp {
         String serverState = agentId == null ? "UNKNOWN"
                 : AgentLiveness.of(agentStore.latestHeartbeat(agentId), config.agents().thresholds(), Instant.now()).name();
         AgentPages.HomeSummary summary = agentPages.homeSummary(agentId);
-        String body = homePages.render(session.role(), serverState, summary);
+        com.lodygames.rpgquest.panel.diag.DiagnosticsReport diag = diagnostics.collect(agentId);
+        String body = homePages.render(session.role(), serverState, summary,
+                new HomePages.DiagSummary(diag.errors(), diag.warnings(), diag.anyDataLoaded()));
         Http.html(exchange, 200, renderPage("Accueil", session, "/home", body,
                 Layout.Shell.of(target.label(), serverState, session.username())));
     }
@@ -327,6 +334,9 @@ public final class PanelApp {
             serverState = d.state();
             body.append(d.html());
         }
+        if (permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+            body.append(diagnosticsSummarySection(diagnostics.collect(agentId)));
+        }
         body.append(localBridgeSection(target, !agentIsPrimary));
 
         Http.html(exchange, 200, renderPage("Dashboard", session, "/dashboard", body.toString(),
@@ -334,6 +344,24 @@ public final class PanelApp {
     }
 
     private record AgentDash(String html, String state) {
+    }
+
+    /** Synthèse Diagnostics du Dashboard (#38, §15) : compteurs + lien, jamais la liste complète. */
+    private static String diagnosticsSummarySection(com.lodygames.rpgquest.panel.diag.DiagnosticsReport r) {
+        StringBuilder sb = new StringBuilder("<h2>État du contenu</h2>");
+        if (!r.anyDataLoaded()) {
+            return sb.append("<p class=\"muted\">Aucun relevé chargé — ouvrir <a href=\"/diagnostics\">Diagnostics</a> "
+                    + "puis « Actualiser les diagnostics ».</p>").toString();
+        }
+        sb.append("<div class=\"cards\">");
+        sb.append(Ui.statCard("error", String.valueOf(r.errors()), r.errors() <= 1 ? "Erreur" : "Erreurs",
+                r.errors() > 0 ? "err" : "", null));
+        sb.append(Ui.statCard("warning", String.valueOf(r.warnings()),
+                r.warnings() <= 1 ? "Avertissement" : "Avertissements", r.warnings() > 0 ? "warn" : "", null));
+        sb.append("</div>");
+        sb.append("<p><a class=\"btn btn-sm btn-outline-primary\" href=\"/diagnostics\">")
+                .append(Icons.icon("diagnostics")).append("Voir les diagnostics</a></p>");
+        return sb.toString();
     }
 
     /** Section « agent distant » : l'état pris en compte quand une cible a un agent (issue #51). */
@@ -463,6 +491,83 @@ public final class PanelApp {
         }
         int status = docsPages.exists(slug) ? 200 : 404;
         Http.html(exchange, status, renderPage("Documentation", session, "/docs", docsPages.page(slug, q)));
+    }
+
+    // ---- Diagnostics (issue #38) ----------------------------------------------------------
+
+    private void handleDiagnostics(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+            Http.html(exchange, 403, renderPage("Refusé", session, "/diagnostics",
+                    "<h1>Accès refusé</h1><p class=\"muted\">Permission manquante.</p>"));
+            return;
+        }
+        Map<String, String> query = Http.query(exchange);
+        String agentId = config.agents().defaultAgentId();
+        com.lodygames.rpgquest.panel.diag.DiagnosticsReport report = diagnostics.collect(agentId);
+        StringBuilder body = new StringBuilder();
+        body.append(actionFeedback(query));
+        body.append(DiagnosticsPages.render(session, agentId, report, Instant.now()));
+        Http.html(exchange, 200, renderPage("Diagnostics", session, "/diagnostics", body.toString()));
+    }
+
+    /**
+     * Rafraîchissement <strong>coordonné</strong> (#38, §18) : une seule action opérateur enqueue
+     * les quelques relevés {@code *.list} dont dépendent les diagnostics (jamais dix). Feedback via
+     * toast (#93). Aucun recalcul serveur ici : l'agent renverra les catalogues à jour.
+     */
+    private void handleDiagnosticsRefresh(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "POST requis");
+            return;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF", "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+            Http.html(exchange, 403, renderPage("Refusé", session, "/diagnostics",
+                    "<h1>Accès refusé</h1><p class=\"muted\">Permission manquante.</p>"));
+            return;
+        }
+        String agentId = config.agents().defaultAgentId();
+        Optional<AgentIdentity> agent = agentRegistry.byId(agentId == null ? "" : agentId);
+        if (agent.isEmpty()) {
+            Http.redirect(exchange, withError("/diagnostics", agentId, null,
+                    "Aucun agent configuré : rafraîchissement impossible."));
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String firstId = null;
+        int enqueued = 0;
+        for (String type : com.lodygames.rpgquest.panel.diag.DiagnosticsService.REFRESH_TYPES) {
+            var spec = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.spec(type);
+            if (spec.isEmpty() || !permissions.can(session.role(), spec.get().permission())) {
+                continue;
+            }
+            String id = agentStore.createAction(agentId, type, Map.of(), session.username());
+            if (firstId == null) {
+                firstId = id;
+            }
+            enqueued++;
+        }
+        audit.record(session.username(), "diagnostics.refresh", "agent=" + agentId,
+                "PENDING", enqueued + " relevé(s)", rid);
+        LOG.log(System.Logger.Level.INFO, "event=diagnostics_refresh rid=" + rid + " agent=" + agentId
+                + " enqueued=" + enqueued + " by=" + session.username());
+        String back = "/diagnostics?agent=" + enc(agentId);
+        Http.redirect(exchange, firstId == null ? back + "&err=" + enc("Aucun relevé autorisé pour votre rôle.")
+                : back + "&toast=" + enc(firstId));
     }
 
     private void handlePlaceholder(HttpExchange exchange, String path) throws IOException {
@@ -880,7 +985,7 @@ public final class PanelApp {
 
     private static String safeReturnPath(String requested, String fallback) {
         return switch (requested == null ? "" : requested) {
-            case "/players", "/quests", "/stories", "/npcs", "/dialogues", "/agents" -> requested;
+            case "/players", "/quests", "/stories", "/npcs", "/dialogues", "/agents", "/diagnostics" -> requested;
             default -> fallback;
         };
     }

@@ -36,6 +36,11 @@ public final class HomePages {
                 Permission permission, boolean enabled) {
     }
 
+    /** Synthèse Diagnostics pour la tuile (issue #38, §14). {@code known=false} = pas encore de relevé. */
+    public record DiagSummary(int errors, int warnings, boolean known) {
+        public static final DiagSummary UNKNOWN = new DiagSummary(0, 0, false);
+    }
+
     private static final List<Group> GROUPS = List.of(
             new Group("Vue d'ensemble", List.of(
                     new Tile("dashboard", "/dashboard", "dashboard", "Dashboard",
@@ -45,8 +50,8 @@ public final class HomePages {
                             "Canal d'administration distant : heartbeat, actions récentes, protocole.",
                             Permission.DIAGNOSTICS_READ, true),
                     new Tile("diagnostics", "/diagnostics", "diagnostics", "Diagnostics",
-                            "Santé détaillée et anomalies de configuration regroupées.",
-                            Permission.DIAGNOSTICS_READ, false))),
+                            "Ce qui ne va pas actuellement sur RPGQuest, regroupé et priorisé.",
+                            Permission.DIAGNOSTICS_READ, true))),
             new Group("Gestion du jeu", List.of(
                     new Tile("players", "/players", "players", "Joueurs",
                             "Voir les joueurs connectés, leur état et leur progression.",
@@ -87,6 +92,10 @@ public final class HomePages {
      * @param summary      comptes synthétiques (voir {@link AgentPages#homeSummary})
      */
     public String render(String role, String serverState, AgentPages.HomeSummary summary) {
+        return render(role, serverState, summary, DiagSummary.UNKNOWN);
+    }
+
+    public String render(String role, String serverState, AgentPages.HomeSummary summary, DiagSummary diag) {
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"home-head\">");
         sb.append("<h1>PlugAdmin</h1>");
@@ -108,15 +117,15 @@ public final class HomePages {
             sb.append("<h2 class=\"home-group-t\">").append(Http.esc(g.title())).append("</h2>");
             sb.append("<div class=\"row row-cols-1 row-cols-md-2 row-cols-lg-3 row-cols-xl-4 g-3\">");
             for (Tile t : visible) {
-                sb.append("<div class=\"col\">").append(tile(t, serverState, summary)).append("</div>");
+                sb.append("<div class=\"col\">").append(tile(t, serverState, summary, diag)).append("</div>");
             }
             sb.append("</div></section>");
         }
         return sb.toString();
     }
 
-    private static String tile(Tile t, String serverState, AgentPages.HomeSummary s) {
-        String meta = metaFor(t.key(), serverState, s);
+    private static String tile(Tile t, String serverState, AgentPages.HomeSummary s, DiagSummary diag) {
+        String meta = metaFor(t.key(), serverState, s, diag);
         if (!t.enabled()) {
             return "<div class=\"home-tile is-disabled\" aria-disabled=\"true\">"
                     + "<span class=\"home-tile-ic\">" + Icons.icon(t.icon(), "") + "</span>"
@@ -135,9 +144,26 @@ public final class HomePages {
     }
 
     /** Badge synthétique d'une tuile — vide si la donnée n'est pas déjà disponible. */
-    private static String metaFor(String key, String serverState, AgentPages.HomeSummary s) {
+    private static String metaFor(String key, String serverState, AgentPages.HomeSummary s, DiagSummary diag) {
         return switch (key) {
             case "dashboard", "agents" -> statePill(serverState);
+            case "diagnostics" -> {
+                if (!diag.known()) {
+                    yield "";
+                }
+                if (diag.errors() == 0 && diag.warnings() == 0) {
+                    yield pill("ok", "Tout est en ordre");
+                }
+                StringBuilder p = new StringBuilder();
+                if (diag.errors() > 0) {
+                    p.append(pill("err", diag.errors() + " erreur" + plural(diag.errors())));
+                }
+                if (diag.warnings() > 0) {
+                    p.append(p.length() > 0 ? " " : "")
+                            .append(pill("warn", diag.warnings() + " avertissement" + plural(diag.warnings())));
+                }
+                yield p.toString();
+            }
             case "players" -> s.playersOnline() < 0 ? ""
                     : pill("neutral", s.playersOnline() + " en ligne");
             case "npc" -> s.npcTotal() < 0 ? "" : pill("neutral", s.npcTotal() + " PNJ")

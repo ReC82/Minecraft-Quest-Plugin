@@ -727,3 +727,43 @@ a.home-tile:hover .home-tile-cta{opacity:1}
 .dlg-global-diag{margin:0 0 14px}
 /* Lignes de tableau masquées par le filtre progressif (recherche /players). */
 tr[hidden]{display:none}
+
+/* ================================================================================
+   #38 — Page /diagnostics : « Que dois-je corriger maintenant ? »
+   ================================================================================ */
+.diag-fresh{display:flex;align-items:center;gap:6px;font-size:12px;margin:-4px 0 12px}
+.diag-fresh .bi{font-size:13px}
+.diag-summary{margin:0 0 16px}
+.diag-clean{display:flex;align-items:flex-start;gap:12px;padding:16px 18px;margin:0 0 16px;
+  border:1px solid var(--line);border-left:3px solid var(--ok,#2e9e5b);border-radius:var(--radius);
+  background:var(--surface)}
+.diag-clean .bi{font-size:22px;color:var(--ok,#2e9e5b);flex:none;margin-top:1px}
+.diag-clean-t{margin:0 0 3px;font-weight:700;font-size:15px}
+.diag-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 8px}
+.diag-search{flex:1 1 320px;max-width:520px}
+.diag-search .input-group-text{background:var(--surface);border-color:var(--line-2)}
+.diag-search .input-group-text .bi{font-size:15px;color:var(--txt-faint)}
+.diag-search .form-control{border-color:var(--line-2)}
+.diag-chips{display:flex;flex-wrap:wrap;gap:6px}
+.diag-list{display:flex;flex-direction:column;gap:10px}
+.diag-card{margin:0}
+.diag-card .diag-loc{margin:2px 0 6px;font-size:11.5px}
+.diag-dom{display:inline-block;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+  font-size:10.5px;color:var(--txt-faint)}
+.diag-res{color:var(--txt-2);font-weight:600}
+.diag-nested{margin-top:8px}
+.diag-group{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:12px 14px}
+.diag-group-h{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px}
+.diag-group-h .bi{font-size:15px;flex:none}
+.diag-group-t{flex:1 1 auto}
+.diag-group .diag-what{margin:5px 0 2px;font-size:12.75px;color:var(--txt-2)}
+.diag-group-more>summary{font-size:12px;color:var(--primary);cursor:pointer;margin-top:6px}
+.diag-group-more[open]>summary{margin-bottom:8px}
+@media(max-width:575.98px){
+  .diag-search{flex:1 1 100%;max-width:100%}
+  .diag-controls .diag-chips{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}
+  .diag-card .pa-diag-btns{flex-direction:column;align-items:stretch}
+  .diag-card .pa-diag-btns .btn{width:100%;justify-content:center}
+}
+/* Élément ouvert via un lien « Ouvrir » de /diagnostics (?focus=…). */
+.res-focused{outline:2px solid var(--primary);outline-offset:2px;border-radius:var(--radius)}

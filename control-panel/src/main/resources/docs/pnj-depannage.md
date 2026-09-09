@@ -208,3 +208,32 @@ L'alerte disparaît après rafraîchissement du catalogue.
 ### Référence technique
 
 `GIVER_NO_DIALOGUE`
+
+---
+
+## Citizens inactif sur le serveur cible
+
+### Ce que cela signifie
+
+Le plugin **Citizens** n'est pas actif sur le serveur RPGQuest. Les liaisons entre les PNJ du
+jeu et les fiches RPGQuest ne peuvent donc pas être vérifiées.
+
+### Pourquoi il faut corriger
+
+Les fiches RPGQuest restent créables et modifiables, mais PlugAdmin ne peut pas contrôler leur
+présence réelle en jeu (aucun PNJ visible, aucune position).
+
+### Comment corriger
+
+1. Installer / activer **Citizens** sur le serveur cible (version supportée par RPGQuest).
+2. Redémarrer le serveur.
+3. Rafraîchir le catalogue PNJ depuis PlugAdmin.
+
+### Vérification
+
+La page **PNJ** ne montre plus le bandeau « Citizens inactif » ; les liaisons Citizens
+s'affichent.
+
+### Référence technique
+
+`CITIZENS_UNAVAILABLE`

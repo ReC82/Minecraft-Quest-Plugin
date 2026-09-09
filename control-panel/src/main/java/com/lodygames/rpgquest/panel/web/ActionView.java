@@ -251,14 +251,19 @@ public final class ActionView {
         return s == null ? "" : s.trim();
     }
 
+    private static String clamp(String s, int max) {
+        return s.length() > max ? s.substring(0, max - 1) + "…" : s;
+    }
+
     // ---- fragments rendus (partagés serveur / JSON) ----------------------------------
 
-    /** Une ligne du centre de notifications. HTML déjà sûr (échappé). */
+    /** Une ligne du centre de notifications. HTML déjà sûr (échappé). Résultat volontairement bref
+     *  (le détail complet est sur {@code /actions}). */
     public static String notifItemHtml(AgentActionRow a, Instant now) {
         Domain d = Domain.of(a.type());
         Group g = Group.of(a.status());
         String tgt = target(a);
-        String res = shortResult(a);
+        String res = clamp(shortResult(a), 90);
         StringBuilder sb = new StringBuilder();
         sb.append("<a class=\"notif-item\" href=\"/actions/").append(Http.esc(a.id())).append("\">");
         sb.append("<span class=\"notif-ic\">").append(Icons.icon(d.icon())).append("</span>");

@@ -131,7 +131,7 @@ class ActionsCenterTest {
         String html = get("/home").body();
         assertTrue(html.contains("id=\"notif-center\""), "centre de notifications dans la topbar");
         assertTrue(html.contains("class=\"iconbtn notif-bell\"") && html.contains("bi-bell"));
-        assertTrue(html.contains("data-bs-toggle=\"dropdown\""), "menu Bootstrap");
+        assertTrue(html.contains("data-bs-toggle=\"offcanvas\"") && html.contains("id=\"notif-panel\""), "panneau off-canvas Bootstrap");
         assertTrue(html.contains("data-notif-list"), "liste rafraîchissable");
         assertTrue(html.contains("aria-label=\"Notifications\""), "accessibilité cloche");
         assertTrue(html.contains("notif-item"), "au moins une action listée");

@@ -61,7 +61,12 @@ public final class NotificationCenter {
         return n;
     }
 
-    /** Cloche + menu déroulant, prêt à insérer dans {@code .topbar-r}. {@code defaultAgentId} pilote le polling. */
+    /**
+     * Cloche + <strong>panneau off-canvas</strong> (fix #93 bug 1 : le dropdown était trop
+     * étroit sur desktop, texte cassé mot par mot). L'off-canvas offre une largeur confortable
+     * (≈ 420 px desktop, ≈ 92 vw mobile), un scroll vertical naturel et un pied de panneau
+     * toujours visible. À insérer dans {@code .topbar-r} ; {@code defaultAgentId} pilote le polling.
+     */
     public String bellHtml(String defaultAgentId, Instant now) {
         List<AgentActionRow> recent = recent();
         int badge = badgeCount(recent, now);
@@ -81,16 +86,27 @@ public final class NotificationCenter {
         String badgeHtml = "<span class=\"notif-badge badge rounded-pill text-bg-danger\" data-notif-badge"
                 + (badge == 0 ? " hidden" : "") + ">" + badge + "</span>";
 
-        return "<div class=\"dropdown notif-center\" id=\"notif-center\" data-notif-agent=\""
+        return "<div class=\"notif-center\" id=\"notif-center\" data-notif-agent=\""
                 + Http.esc(defaultAgentId == null ? "" : defaultAgentId) + "\">"
-                + "<button class=\"iconbtn notif-bell\" type=\"button\" data-bs-toggle=\"dropdown\" "
-                + "data-bs-auto-close=\"outside\" aria-expanded=\"false\" aria-label=\"Notifications\" "
-                + "aria-haspopup=\"true\" title=\"Notifications\">"
+                + "<button class=\"iconbtn notif-bell\" type=\"button\" data-bs-toggle=\"offcanvas\" "
+                + "data-bs-target=\"#notif-panel\" aria-controls=\"notif-panel\" "
+                + "aria-label=\"Notifications\" title=\"Notifications\">"
                 + Icons.icon("bell") + badgeHtml + "</button>"
-                + "<div class=\"dropdown-menu dropdown-menu-end notif-menu\">"
-                + "<div class=\"notif-head\">Dernières actions</div>"
+                + "</div>"
+                + "<aside class=\"offcanvas offcanvas-end notif-panel\" tabindex=\"-1\" id=\"notif-panel\" "
+                + "aria-labelledby=\"notif-panel-title\">"
+                + "<div class=\"offcanvas-header\">"
+                + "<h2 class=\"offcanvas-title notif-panel-t\" id=\"notif-panel-title\">"
+                + Icons.icon("bell") + "<span>Dernières actions</span></h2>"
+                + "<button type=\"button\" class=\"btn-close\" data-bs-dismiss=\"offcanvas\" aria-label=\"Fermer\"></button>"
+                + "</div>"
+                + "<div class=\"offcanvas-body notif-body-wrap\">"
                 + "<div class=\"notif-list\" data-notif-list>" + items + "</div>"
-                + "<a class=\"notif-foot\" href=\"/actions\">Voir toutes les actions " + Icons.icon("chevron") + "</a>"
-                + "</div></div>";
+                + "</div>"
+                + "<div class=\"notif-foot-wrap\">"
+                + "<a class=\"notif-foot\" href=\"/actions\">" + Icons.icon("history")
+                + "<span>Voir toutes les actions</span>" + Icons.icon("chevron") + "</a>"
+                + "</div>"
+                + "</aside>";
     }
 }

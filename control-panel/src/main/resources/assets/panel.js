@@ -25,16 +25,29 @@
       .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
-  function bsToast(el, opts) {
-    if (window.bootstrap && window.bootstrap.Toast) {
-      return new window.bootstrap.Toast(el, opts);
-    }
-    return null; // Bootstrap absent : le toast reste caché, aucune régression bloquante
-  }
-
   /* ---- Toasts ------------------------------------------------------------------------- */
 
   var pendingToasts = []; // { el, actionId }
+
+  /**
+   * Affiche un toast. Utilise le composant Bootstrap Toast s'il est disponible ; sinon, repli
+   * manuel (classe .show + auto-dismiss) pour ne jamais avaler le feedback (fix #93 bug 2).
+   */
+  function showToast(el) {
+    var autohide = el.getAttribute("data-bs-autohide") === "true";
+    var delay = parseInt(el.getAttribute("data-bs-delay") || "6000", 10);
+    if (window.bootstrap && window.bootstrap.Toast) {
+      var t = window.bootstrap.Toast.getOrCreateInstance(el, { autohide: autohide, delay: delay });
+      t.show();
+      return;
+    }
+    // Repli sans Bootstrap JS.
+    el.classList.add("show");
+    el.style.opacity = "1";
+    if (autohide) {
+      window.setTimeout(function () { el.classList.remove("show"); }, delay);
+    }
+  }
 
   function initToasts() {
     var root = document.getElementById("toast-root");
@@ -42,14 +55,12 @@
     var seeds = document.querySelectorAll(".pa-toast");
     for (var i = 0; i < seeds.length; i++) {
       var el = seeds[i];
-      if (el.parentNode === root) { continue; }
-      root.appendChild(el);
-      var group = el.getAttribute("data-toast-group");
-      var autohide = el.getAttribute("data-bs-autohide") === "true";
-      var t = bsToast(el, { autohide: autohide, delay: parseInt(el.getAttribute("data-bs-delay") || "6000", 10) });
-      if (t) { t.show(); }
+      if (el.getAttribute("data-toast-ready") === "1") { continue; }
+      el.setAttribute("data-toast-ready", "1");
+      if (el.parentNode !== root) { root.appendChild(el); }
+      showToast(el);
       var actionId = el.getAttribute("data-toast-action");
-      if (actionId && group === "pending") {
+      if (actionId && el.getAttribute("data-toast-group") === "pending") {
         pendingToasts.push({ el: el, actionId: actionId });
       }
     }
@@ -272,11 +283,24 @@
   }
 
   function init() {
-    initToasts();
+    initToasts();       // affiche les toasts (repli manuel si Bootstrap JS pas encore là)
     initNotifications();
     initCopy();
     initFilters();
     initDrawer();
+    // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
+    // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.
+    window.addEventListener("load", upgradeToasts);
+  }
+
+  function upgradeToasts() {
+    if (!(window.bootstrap && window.bootstrap.Toast)) { return; }
+    var root = document.getElementById("toast-root");
+    if (!root) { return; }
+    var live = root.querySelectorAll(".pa-toast.show");
+    for (var i = 0; i < live.length; i++) {
+      window.bootstrap.Toast.getOrCreateInstance(live[i]);
+    }
   }
 
   if (document.readyState === "loading") {

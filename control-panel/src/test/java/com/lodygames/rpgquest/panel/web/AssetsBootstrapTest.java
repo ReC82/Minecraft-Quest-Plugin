@@ -66,9 +66,10 @@ class AssetsBootstrapTest {
         start();
         HttpResponse<String> login = get("/login");
         String html = login.body();
-        assertTrue(html.contains("href=\"/assets/bootstrap/bootstrap.min.css\""));
-        assertTrue(html.contains("href=\"/assets/bootstrap-icons/bootstrap-icons.min.css\""));
-        assertTrue(html.contains("href=\"/assets/plugadmin.css\""));
+        // URLs locales + cache-busting ?v=<hash> (fix #93)
+        assertTrue(html.contains("href=\"/assets/bootstrap/bootstrap.min.css?v="));
+        assertTrue(html.contains("href=\"/assets/bootstrap-icons/bootstrap-icons.min.css?v="));
+        assertTrue(html.contains("href=\"/assets/plugadmin.css?v="));
         assertFalse(html.contains("cdn.jsdelivr"), "aucun CDN");
         assertFalse(html.contains("https://cdn"), "aucun CDN");
         assertFalse(html.contains("unpkg.com"));

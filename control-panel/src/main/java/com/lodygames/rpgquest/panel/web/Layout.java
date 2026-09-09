@@ -117,17 +117,19 @@ public final class Layout {
     /**
      * Feuilles de style servies par PlugAdmin lui-même (aucun CDN, cohérent CSP
      * {@code default-src 'self'}) : Bootstrap 5 (fondation) + Bootstrap Icons (police d'icônes)
-     * + {@code plugadmin.css} (tokens et composants #92 par-dessus Bootstrap).
+     * + {@code plugadmin.css} (tokens et composants #92 par-dessus Bootstrap). Chaque URL porte
+     * un {@code ?v=<hash>} du contenu réel : un asset modifié = nouvelle URL, jamais de version
+     * en cache périmée après un déploiement (fix #93).
      */
     static final String HEAD_LINKS =
-            "<link rel=\"stylesheet\" href=\"/assets/bootstrap/bootstrap.min.css\">"
-            + "<link rel=\"stylesheet\" href=\"/assets/bootstrap-icons/bootstrap-icons.min.css\">"
-            + "<link rel=\"stylesheet\" href=\"/assets/plugadmin.css\">";
+            "<link rel=\"stylesheet\" href=\"" + Assets.v("bootstrap/bootstrap.min.css") + "\">"
+            + "<link rel=\"stylesheet\" href=\"" + Assets.v("bootstrap-icons/bootstrap-icons.min.css") + "\">"
+            + "<link rel=\"stylesheet\" href=\"" + Assets.v("plugadmin.css") + "\">";
 
-    /** Bootstrap JS (bundle Popper inclus) + script progressif du panel. Locaux, {@code defer}. */
+    /** Bootstrap JS (bundle Popper inclus) + script progressif du panel. Locaux, {@code defer}, versionnés. */
     static final String SCRIPTS =
-            "<script src=\"/assets/bootstrap/bootstrap.bundle.min.js\" defer></script>"
-            + "<script src=\"/assets/panel.js\" defer></script>";
+            "<script src=\"" + Assets.v("bootstrap/bootstrap.bundle.min.js") + "\" defer></script>"
+            + "<script src=\"" + Assets.v("panel.js") + "\" defer></script>";
 
     private static String serverChip(String state) {
         String s = state == null ? "" : state.trim().toUpperCase(java.util.Locale.ROOT);

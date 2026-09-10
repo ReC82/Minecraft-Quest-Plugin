@@ -216,6 +216,18 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-09-10
+Branche de départ: feat/control-panel-admin-tools
+Étape de départ: issue #46 (éditeur guidé Quêtes/Stories) — passe UX ciblée sur bugs navigateur confirmés — hors étapes 1-23
+Étapes terminées: #46 V4 — form novalidate + retrait de required HTML, conservation du scroll (panel.js), bascule de type immédiate + robustesse panel.js, combos PNJ « Nom + id »
+Branche finale: feat/control-panel-admin-tools (rester sur la branche courante, ne rien merger)
+Dernier commit: (voir git log — commits feat(control-panel)/docs #46)
+Build: (à confirmer — ./gradlew build lancé)
+Tests: verts en ciblé — control-panel ContentEditorPagesTest 28, EditorDescriptorsTest 8, ContentYamlRoundTripTest 4, AuthenticatedSmokeTest 2 ; panel.js node --check OK
+Tests manuels en attente: validation navigateur owner de /quests/new et /quests/edit (ajout/suppression sur formulaire incomplet, changement de type, combos entité/PNJ/material, conservation du scroll) — mot de passe owner non détenu -> validé par tests HTTP authentifiés
+Blocages: aucun
+Première étape à reprendre: #46 reste ouverte (action agent quest.definition.validate à faire) ; sinon poursuivre le pipeline de contenus avec #109 (import content pack)
+
 Date: 2026-09-09
 Branche de départ: feat/control-panel-admin-tools
 Étape de départ: issue #108 (export versionné des contenus déclaratifs — phase 1 du pipeline de contenus) — hors étapes 1-23

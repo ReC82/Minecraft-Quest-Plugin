@@ -326,15 +326,22 @@ Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et
   changement est immédiat (JavaScript progressif — `panel.js`) et **efface** les valeurs saisies
   pour le type précédent (jamais de valeur d'un autre type conservée en douce). Sans JavaScript,
   le serveur re-rend le bon jeu de champs au premier aller-retour.
-- **Construire le brouillon n'est jamais bloqué** : ajouter / supprimer / réordonner une étape,
-  un objectif ou une récompense ne déclenche **pas** la validation `required` du navigateur
-  (`formnovalidate`). Après chaque action, la page se recale sur le composant concerné (ids
-  stables `step-<i>` / `obj-<i>-<j>` / `rew-<i>` + `formaction=".../save#ancre"`), sans repartir
-  en haut.
+- **Construire le brouillon n'est jamais bloqué** : le `<form>` de l'éditeur porte `novalidate`
+  **et** aucun champ ne reçoit l'attribut HTML `required` (seul le marqueur visuel « * » reste ;
+  les boutons d'action portent en plus `formnovalidate`). Ajouter / supprimer / réordonner une
+  étape, un objectif ou une récompense ne peut donc jamais déclencher « Veuillez renseigner ce
+  champ », quel que soit le mode de soumission. Après chaque action, la page se recale sur le
+  composant concerné : ids stables `step-<i>` / `obj-<i>-<j>` / `rew-<i>` / `sec-*`,
+  `formaction=".../save#ancre"`, et `panel.js` restaure explicitement la position au chargement
+  (cible du hash via `scrollIntoView` + focus, sinon position mémorisée) — un POST HTML 200
+  n'applique pas de façon fiable un fragment de `formaction`.
 - **Listes recherchables** : les champs à liste longue (entité, matériau, PNJ, icône, catégorie,
-  quête) sont des champs de recherche filtrés (composant local léger, aucune dépendance externe,
-  aucun CDN), alimentés par la **bonne source** — la catégorie par une liste curée + saisie libre,
-  l'icône par les matériaux Minecraft, entités/matériaux avec libellé français.
+  quête) sont des champs de recherche filtrés (composant local léger `panel.js` `initCombo`,
+  aucune dépendance externe, aucun CDN), alimentés par la **bonne source** — la catégorie par une
+  liste curée `RefData.CATEGORIES` + saisie libre, l'icône par les matériaux Minecraft. Entités,
+  matériaux **et PNJ** portent un libellé humain (`<option value="guard" label="Garde">`) : la
+  recherche filtre sur le nom **et** l'id. La récompense `ITEM` accepte uniquement un `Material`
+  vanilla (le moteur ne gère pas un objet personnalisé RPGQuest à cet endroit — l'aide le précise).
 - **Validation métier uniquement à la fin** — sur « Vérifier » / « Aperçu » / « Enregistrer » :
   diagnostics `ERREUR` (bloquants), `ATTENTION` (enregistrement possible après vérification),
   `INFO`. Un aperçu montre le fichier YAML généré et le diff avec la version actuelle de la source.

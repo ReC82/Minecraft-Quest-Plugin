@@ -2556,3 +2556,64 @@ Control Panel : `scripts/plugadmin/rollback.sh app`. Plugin : ancien JAR + resta
 Aucune. Développement seul, branche `feat/control-panel-admin-tools`, non fusionnée, non déployée.
 
 Rapport : `docs/claude-reports/2026-09-09_2215_export-versionne-contenu-108.md`.
+
+---
+
+## 2026-09-10 - Éditeur guidé Quêtes/Stories — passe UX (issue #46) — AWS uniquement
+
+### Changement
+
+Control Panel uniquement. **Aucun changement du plugin RPGQuest, du serveur Minecraft, de la
+base ou de la configuration.** Corrige des bugs navigateur confirmés manuellement sur
+`/quests/new` et `/quests/edit/...` :
+
+- Le `<form class="editor">` porte `novalidate` et l'attribut HTML `required` n'est plus émis
+  (marqueur visuel « * » conservé) : construire / supprimer / réordonner un brouillon ne peut
+  plus déclencher « Veuillez renseigner ce champ ». La validation métier reste 100 % serveur
+  (`QuestValidator` / `StoryValidator`) aux seuls « Vérifier » / « Aperçu » / « Enregistrer ».
+- Conservation du scroll après une action de brouillon : `panel.js` restaure explicitement la
+  position au chargement (cible du hash via `scrollIntoView` + focus, sinon position mémorisée) —
+  un POST HTML 200 n'applique pas de façon fiable le fragment d'un `formaction`.
+- Bascule de type d'objectif / récompense immédiate : `applyType` appliqué une fois à l'init par
+  `<select>` ; chaque module `panel.js` isolé en `try/catch`.
+- Listes déroulantes des PNJ (`dl-npc`) avec libellé humain (`<option value="guard" label="Garde">`) ;
+  `RefData` transporte `id -> displayName` depuis `npc.list`.
+- Aide de la récompense `ITEM` : précise « objet vanilla, pas un objet personnalisé RPGQuest ».
+
+Fichiers : `panel/web/ContentEditorPages.java`, `panel/content/Descriptors.java`,
+`panel/content/RefData.java`, `panel/web/AgentPages.java`, `assets/panel.js`. CSP inchangée
+(`default-src 'self'`), aucun CDN. `control-panel.db` non touché (aucune migration).
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — build + release sous `/opt/plugadmin/releases/<horodatage>`
++ `systemctl restart plugadmin` + check `/health`. Aucune autre action. Aucun changement nginx /
+TLS / secret / base. **VeryGames / Minecraft non touchés.**
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : app précédente sous `/opt/plugadmin/releases/<horodatage>`
+(rétention 5).
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local **et** public ONLINE ; `/quests/new` et `/quests/edit/<slug>` rendus (auth).
+- `:control-panel:test` vert ; `./gradlew build` vert.
+- Rendu navigateur authentifié (ajout/suppression sur formulaire incomplet, changement de type,
+  combos entité/PNJ/material, conservation du scroll) : `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure la release précédente). Aucune migration à défaire.
+
+### Exécution réelle
+
+_(à compléter après exécution de deploy.sh)_
+
+Rapport : `docs/claude-reports/2026-09-10_0949_editeur-quetes-passe-ux-46.md`.

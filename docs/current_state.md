@@ -432,6 +432,27 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   registre. Entités / matériaux portent un libellé FR (`MinecraftNames`). « Points d'expérience »
   remplace « Montant » pour la récompense EXPERIENCE. `EditorDescriptorsTest` verrouille la
   cohérence des types. Action agent `quest.definition.validate` : toujours à faire.
+  **V4 (passe UX ciblée, issue #46 — bugs navigateur confirmés)** : (a) le `<form class="editor">`
+  porte `novalidate` **et** l'attribut HTML `required` n'est **plus émis** (le marqueur visuel
+  « * » reste) — construire / supprimer / réordonner un brouillon ne peut plus déclencher
+  « Veuillez renseigner ce champ », quel que soit le chemin de soumission (bouton, Entrée) ; la
+  validation métier reste 100 % serveur, aux seuls « Vérifier » / « Aperçu » / « Enregistrer ».
+  (b) **Conservation du scroll** : un POST qui renvoie du HTML 200 n'applique pas de façon fiable
+  le fragment d'un `formaction`, et une ancre disparue (suppression) laissait la page en haut ;
+  `panel.js` restaure désormais explicitement au chargement — cible du hash via
+  `scrollIntoView({block:'center'})` + focus du premier champ, sinon position mémorisée. (c)
+  **Bascule de type immédiate** : `applyType` est appliqué une fois à l'initialisation par
+  `<select>` (sync défensive) puis à chaque changement ; chaque module `panel.js` est isolé
+  (`try/catch`) — un module qui échoue n'empêche plus la bascule de type ni les combos. (d) La
+  liste **PNJ** (`dl-npc`, champs *PNJ donneur* et objectif `TALK_TO_NPC`) porte un libellé
+  humain : `<option value="guard" label="Garde">`, `RefData` transporte `id -> displayName`
+  depuis `npc.list`, la recherche filtre sur le nom **et** l'id. (e) L'aide de la récompense
+  `ITEM` précise « objet vanilla, pas un objet personnalisé RPGQuest » (le moteur ne lit qu'un
+  `Material`), et la quantité d'une récompense n'affiche plus une aide d'objectif. Tests :
+  `ContentEditorPagesTest` (+10 : `novalidate` + aucun `required`, ancre de scroll sur chaque
+  bouton structurel, suppression d'une ligne à champs vides, isolation des 7 objectifs / 4
+  récompenses, changement de type qui efface l'incompatible, libellés de PNJ, validation finale
+  qui bloque toujours + aperçu conservé), `EditorDescriptorsTest` (+2).
 - **Resynchronisation après mutation + UX formulaires PNJ / Dialogues (issues #111 → #120)**
   *(branche `feat/control-panel-admin-tools`)* — plusieurs mutations réussissaient côté backend
   (notification SUCCESS) mais la page métier restait périmée : seule la séquence « Rafraîchir

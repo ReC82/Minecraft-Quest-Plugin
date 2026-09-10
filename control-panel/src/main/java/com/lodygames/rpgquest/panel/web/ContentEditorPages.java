@@ -615,23 +615,13 @@ public final class ContentEditorPages {
         sb.append(sectionClose());
 
         sb.append(sectionOpen("target", "Chaîne de quêtes",
-                "Ordre d'enchaînement présenté au joueur. Utiliser les flèches pour réordonner.", "sec-chain"));
+                "Ordre d'enchaînement présenté au joueur. Chaque ligne montre le titre humain "
+                        + "au-dessus de l'identifiant technique ; utiliser les flèches pour réordonner. "
+                        + "Rien n'est vérifié tant qu'on n'a pas cliqué « Vérifier » ou « Enregistrer ».",
+                "sec-chain"));
         sb.append("<div class=\"rowlist\">");
         for (int i = 0; i < d.questIds.size(); i++) {
-            sb.append("<div class=\"rowitem\" id=\"q-").append(i).append("\"><div class=\"rowitem-h\"><span class=\"grip\">")
-                    .append(Icons.icon("chevron")).append("</span><span>").append(i + 1).append(".</span>");
-            sb.append("<span class=\"rowitem-actions\">");
-            if (i > 0) {
-                sb.append(iconBtn("mv_q:" + i + ":up", "up", "Monter", S_SAVE, "q-" + (i - 1)));
-            }
-            if (i < d.questIds.size() - 1) {
-                sb.append(iconBtn("mv_q:" + i + ":down", "down", "Descendre", S_SAVE, "q-" + (i + 1)));
-            }
-            sb.append(iconBtn("del_q:" + i, "trash", "Retirer", S_SAVE, "sec-chain"));
-            sb.append("</span></div><div class=\"form-grid\">");
-            sb.append(text("q." + i, "Quête", "Identifiant de quête (namespace optionnel).", d.questIds.get(i),
-                    true, false, null, "dl-quest"));
-            sb.append("</div></div>");
+            sb.append(renderStoryQuestRow(ref, d.questIds.get(i), i, d.questIds.size()));
         }
         sb.append("</div>");
         sb.append("<div class=\"btnrow\">").append(actBtn("btn sm", "add_q", "plus", "Ajouter une quête",
@@ -642,8 +632,11 @@ public final class ContentEditorPages {
         sb.append(sectionClose());
 
         sb.append(sectionOpen("check", "Validation & aperçu",
-                "« Vérifier » liste les anomalies et montre le fichier généré.", "sec-validation"));
+                "La validation métier complète n'a lieu qu'ici : « Vérifier » liste les anomalies "
+                        + "(id, nom, chaîne vide, quête inconnue, doublon) et montre le fichier généré ; "
+                        + "« Enregistrer » l'écrit dans la source si aucune erreur ne subsiste.", "sec-validation"));
         sb.append("<div class=\"btnrow\">");
+        sb.append(actBtn("btn secondary", "refresh", "filter", "Actualiser le formulaire", S_SAVE, "sec-validation"));
         sb.append(actBtn("btn secondary", "validate", "check", "Vérifier", S_SAVE, "sec-validation"));
         sb.append("<button class=\"btn\" type=\"submit\" formnovalidate name=\"_action\" value=\"save\"")
                 .append(writable ? "" : " disabled").append(">")
@@ -657,6 +650,41 @@ public final class ContentEditorPages {
 
         sb.append(sharedDatalists(ref));
         sb.append("</form>");
+        return sb.toString();
+    }
+
+    /**
+     * Une ligne de la chaîne de quêtes d'une story (#46, §5). En-tête : rang « N. » + <strong>titre
+     * humain</strong> de la quête (« Premiers pas ») quand un relevé {@code quest.list} le connaît,
+     * sinon un badge « quête inconnue » (uniquement si le catalogue de quêtes est chargé — sans
+     * relevé on ne présume rien). Le champ éditable en dessous porte l'identifiant technique et la
+     * liste recherchable {@code dl-quest} (titre + id). Aucun {@code required} HTML : réordonner ou
+     * retirer une ligne ne déclenche jamais la validation métier.
+     */
+    private String renderStoryQuestRow(RefData ref, String questId, int i, int total) {
+        String id = questId == null ? "" : questId.trim();
+        String label = ref.questLabel(id);
+        StringBuilder sb = new StringBuilder("<div class=\"rowitem\" id=\"q-").append(i).append("\">");
+        sb.append("<div class=\"rowitem-h\"><span class=\"grip\">").append(Icons.icon("chevron")).append("</span>");
+        sb.append("<span class=\"row-n\">").append(i + 1).append(".</span>");
+        if (!id.isBlank() && !label.equals(id)) {
+            sb.append("<span class=\"row-title\">").append(Http.esc(label)).append("</span>");
+        } else if (!id.isBlank() && ref.questsKnown() && !ref.isQuestKnown(id)) {
+            sb.append("<span class=\"badge text-bg-warning\">quête inconnue</span>");
+        }
+        sb.append("<span class=\"rowitem-actions\">");
+        if (i > 0) {
+            sb.append(iconBtn("mv_q:" + i + ":up", "up", "Monter", S_SAVE, "q-" + (i - 1)));
+        }
+        if (i < total - 1) {
+            sb.append(iconBtn("mv_q:" + i + ":down", "down", "Descendre", S_SAVE, "q-" + (i + 1)));
+        }
+        sb.append(iconBtn("del_q:" + i, "trash", "Retirer", S_SAVE, "sec-chain"));
+        sb.append("</span></div><div class=\"form-grid\">");
+        sb.append(text("q." + i, "Identifiant de quête", "Namespace « rpgquest: » optionnel — "
+                + "chercher par titre (« Premiers pas ») ou par id (« first_steps »).", id,
+                true, false, null, "dl-quest"));
+        sb.append("</div></div>");
         return sb.toString();
     }
 
@@ -935,8 +963,27 @@ public final class ContentEditorPages {
                 + labelledDatalist("dl-material", RefData.MATERIALS)
                 + datalist("dl-category", RefData.CATEGORIES)
                 + npcDatalist("dl-npc", r)
-                + datalist("dl-quest", r.quests())
+                + questDatalist("dl-quest", r)
                 + datalist("dl-world", r.worlds());
+    }
+
+    /**
+     * Datalist des quêtes : {@code value} = id technique (ce que le moteur RPGQuest attend),
+     * {@code label} = titre humain (« Premiers pas ») quand un relevé {@code quest.list} le connaît.
+     * La liste recherchable de {@code panel.js} filtre sur les deux — taper « premiers » ou
+     * « first_steps » suffit (#46, §3/§7).
+     */
+    private static String questDatalist(String id, RefData ref) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"").append(id).append("\">");
+        for (String quest : ref.quests()) {
+            String label = ref.questLabel(quest);
+            sb.append("<option value=\"").append(Http.esc(quest)).append("\"");
+            if (!label.equals(quest)) {
+                sb.append(" label=\"").append(Http.esc(label)).append("\"");
+            }
+            sb.append(">");
+        }
+        return sb.append("</datalist>").toString();
     }
 
     /**

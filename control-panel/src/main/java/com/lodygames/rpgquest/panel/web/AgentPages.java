@@ -2683,9 +2683,21 @@ public final class AgentPages {
                 npcNames.putIfAbsent(id, name);
             }
         }
+        // Titre humain -> id de quête pour la sélection recherchable de l'éditeur de story
+        // (#46, §3/§5 : « Premiers pas / first_steps »). Source : le dernier « quest.list » réussi.
+        Map<String, String> questNames = new java.util.LinkedHashMap<>();
+        for (Object o : questDet.map(d -> asList(d.get("quests"))).orElse(List.of())) {
+            Map<String, Object> m = asMap(o);
+            String id = str(m.get("id"));
+            String title = MiniText.plain(str(m.get("title"))).trim();
+            if (!id.isEmpty() && !title.isEmpty()) {
+                questNames.putIfAbsent(id, title);
+            }
+        }
         List<String> worlds = loadedWorldNames(agentId);
         return new com.lodygames.rpgquest.panel.content.RefData(
-                quests, npcs, worlds, questDet.isPresent(), npcDet.isPresent(), !worlds.isEmpty(), npcNames);
+                quests, npcs, worlds, questDet.isPresent(), npcDet.isPresent(), !worlds.isEmpty(),
+                npcNames, questNames);
     }
 
     /**

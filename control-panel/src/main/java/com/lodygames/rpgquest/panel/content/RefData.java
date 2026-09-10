@@ -21,12 +21,19 @@ import java.util.Set;
  */
 public record RefData(List<String> quests, List<String> npcs, List<String> worlds,
                       boolean questsKnown, boolean npcsKnown, boolean worldsKnown,
-                      Map<String, String> npcNames) {
+                      Map<String, String> npcNames, Map<String, String> questNames) {
 
-    /** Constructeur historique (6 composantes) : aucun libellé de PNJ. */
+    /** Constructeur historique (6 composantes) : aucun libellé de PNJ ni de quête. */
     public RefData(List<String> quests, List<String> npcs, List<String> worlds,
                    boolean questsKnown, boolean npcsKnown, boolean worldsKnown) {
-        this(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown, Map.of());
+        this(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown, Map.of(), Map.of());
+    }
+
+    /** Constructeur historique (7 composantes) : libellés de PNJ, mais pas de quête. */
+    public RefData(List<String> quests, List<String> npcs, List<String> worlds,
+                   boolean questsKnown, boolean npcsKnown, boolean worldsKnown,
+                   Map<String, String> npcNames) {
+        this(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown, npcNames, Map.of());
     }
 
     public RefData {
@@ -34,6 +41,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
         npcs = List.copyOf(npcs == null ? List.of() : npcs);
         worlds = List.copyOf(worlds == null ? List.of() : worlds);
         npcNames = Map.copyOf(npcNames == null ? Map.of() : npcNames);
+        questNames = Map.copyOf(questNames == null ? Map.of() : questNames);
     }
 
     public static RefData empty() {
@@ -44,6 +52,17 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
     public String npcLabel(String id) {
         String s = id == null ? "" : id.trim();
         String name = npcNames.get(s);
+        return name == null || name.isBlank() || name.equals(s) ? s : name;
+    }
+
+    /**
+     * Titre humain d'une quête (« Premiers pas ») à partir de son id technique, ou l'id lui-même
+     * si aucun relevé {@code quest.list} ne le connaît. Comparaison sur l'id « nu » (namespace
+     * {@code rpgquest:} retiré) — l'éditeur de story affiche le titre au-dessus de l'id (#46, §3/§5).
+     */
+    public String questLabel(String id) {
+        String s = QuestYaml.plainId(id);
+        String name = questNames.get(s);
         return name == null || name.isBlank() || name.equals(s) ? s : name;
     }
 
@@ -112,7 +131,8 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
                 merged.add(QuestYaml.plainId(e));
             }
         }
-        return new RefData(List.copyOf(merged), npcs, worlds, questsKnown, npcsKnown, worldsKnown, npcNames);
+        return new RefData(List.copyOf(merged), npcs, worlds, questsKnown, npcsKnown, worldsKnown,
+                npcNames, questNames);
     }
 
     // ---- listes curées (les plus courantes ; saisie libre toujours possible) ----------------

@@ -265,6 +265,8 @@ label.inline.confirm{color:var(--warn);font-weight:600}
 .rowitem{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
 .rowitem-h{display:flex;align-items:center;gap:8px;font-weight:650;font-size:13.5px}
 .rowitem-h .grip{color:var(--txt-faint)}
+.rowitem-h .row-n{color:var(--txt-faint);font-variant-numeric:tabular-nums;flex:none}
+.rowitem-h .row-title{font-weight:650;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rowitem-actions{margin-left:auto;display:flex;gap:4px}
 .rowitem-actions .iconbtn{width:28px;height:28px}
 .rowitem-actions .iconbtn .ic{font-size:15px}

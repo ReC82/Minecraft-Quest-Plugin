@@ -25,6 +25,10 @@ import com.lodygames.rpgquest.panel.security.AuthService;
 import com.lodygames.rpgquest.panel.security.PasswordHasher;
 import com.lodygames.rpgquest.panel.security.Session;
 import com.lodygames.rpgquest.panel.security.SessionStore;
+import com.lodygames.rpgquest.panel.users.PanelUser;
+import com.lodygames.rpgquest.panel.users.SqliteUserRepository;
+import com.lodygames.rpgquest.panel.users.UserDirectory;
+import com.lodygames.rpgquest.panel.users.UserRepository;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -58,6 +62,7 @@ public final class PanelApp {
     private final BridgeClient bridge;
     private final AuthService authService;
     private final SessionStore sessions;
+    private final UserDirectory users;
     private final PermissionService permissions = new PermissionService();
     private final AgentStore agentStore;
     private final AgentRegistry agentRegistry;
@@ -74,6 +79,16 @@ public final class PanelApp {
     private HttpServer server;
 
     public PanelApp(PanelConfig config, AuditLog audit, BridgeClient bridge, AgentStore agentStore) {
+        this(config, audit, bridge, agentStore, new SqliteUserRepository(config.panelDbPath()));
+    }
+
+    /**
+     * Variante avec un {@link UserRepository} injecté (tests, ou stockage alternatif). Le compte
+     * OWNER d'environnement est toujours réamorcé — c'est le chemin de récupération anti-verrouillage
+     * (issue #50).
+     */
+    public PanelApp(PanelConfig config, AuditLog audit, BridgeClient bridge, AgentStore agentStore,
+                    UserRepository userRepository) {
         this.config = config;
         this.audit = audit;
         this.bridge = bridge;
@@ -90,7 +105,10 @@ public final class PanelApp {
                 agentStore, config.agents().thresholds());
         this.agentEndpoints = new AgentEndpoints(agentRegistry, agentStore, audit,
                 config.agents().actionExpiry(), config::disabled);
-        this.authService = new AuthService(config.ownerUsername(), config.ownerPasswordHash(), new PasswordHasher());
+        PasswordHasher hasher = new PasswordHasher();
+        this.users = new UserDirectory(userRepository, hasher);
+        this.users.ensureBootstrapOwner(config.ownerUsername(), config.ownerPasswordHash());
+        this.authService = new AuthService(userRepository, hasher);
         this.sessions = new SessionStore(config.sessionSecret(),
                 Duration.ofMinutes(config.sessionTtlMinutes()), Duration.ofMinutes(config.sessionIdleMinutes()));
     }
@@ -140,6 +158,8 @@ public final class PanelApp {
         route("/docs", this::handleDocs);
         route("/diagnostics", this::handleDiagnostics);
         route("/diagnostics/refresh", this::handleDiagnosticsRefresh);
+        route("/users", this::handleUsers);
+        route("/users/create", this::handleUserCreate);
         for (String path : new String[] {"/admin", "/dev"}) {
             route(path, exchange -> handlePlaceholder(exchange, path));
         }
@@ -251,21 +271,25 @@ public final class PanelApp {
             return;
         }
         String username = form.getOrDefault("username", "");
-        Optional<Role> role = authService.authenticate(username, form.getOrDefault("password", ""));
+        AuthService.Result auth = authService.authenticate(username, form.getOrDefault("password", ""));
         String rid = UUID.randomUUID().toString().substring(0, 8);
-        if (role.isEmpty()) {
+        if (!auth.ok()) {
+            boolean disabled = auth.outcome() == AuthService.Outcome.DISABLED;
             audit.record(safeActor(username), "login.failure", "env=" + config.defaultTargetId(),
-                    "DENIED", "identifiants invalides", rid);
+                    "DENIED", disabled ? "compte désactivé" : "identifiants invalides", rid);
             String csrf = UUID.randomUUID().toString();
             Http.setCookie(exchange, LOGIN_CSRF_COOKIE, csrf, config.cookieSecure(), "Lax", 600);
-            Http.html(exchange, 401, loginPage(csrf, "Identifiants invalides."));
+            Http.html(exchange, 401, loginPage(csrf,
+                    disabled ? "Ce compte est désactivé — contactez un propriétaire du Control Panel."
+                            : "Identifiants invalides."));
             return;
         }
-        Session session = sessions.create(config.ownerUsername(), role.get().name());
+        Session session = sessions.create(auth.userId(), auth.username(), auth.role().name());
         Http.setCookie(exchange, SESSION_COOKIE, sessions.signedCookieValue(session),
                 config.cookieSecure(), "Lax", config.sessionTtlMinutes() * 60);
         Http.clearCookie(exchange, LOGIN_CSRF_COOKIE, config.cookieSecure());
-        audit.record(session.username(), "login.success", "env=" + config.defaultTargetId(), "OK", null, rid);
+        audit.record(session.username(), "login.success", "env=" + config.defaultTargetId(), "OK",
+                "role=" + auth.role().name(), rid);
         Http.redirect(exchange, "/home");
     }
 
@@ -320,8 +344,7 @@ public final class PanelApp {
         }
         Session session = maybe.get();
         if (!permissions.can(session.role(), Permission.DASHBOARD_VIEW)) {
-            Http.html(exchange, 403, renderPage("Refusé", session, "/dashboard",
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission manquante.</p>"));
+            forbidden(exchange, session, "/dashboard");
             return;
         }
         Target target = config.defaultTarget();
@@ -475,8 +498,7 @@ public final class PanelApp {
         }
         Session session = maybe.get();
         if (!permissions.can(session.role(), Permission.DOCS_READ)) {
-            Http.html(exchange, 403, renderPage("Refusé", session, "/docs",
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission manquante.</p>"));
+            forbidden(exchange, session, "/docs");
             return;
         }
         String path = exchange.getRequestURI().getPath();
@@ -511,8 +533,7 @@ public final class PanelApp {
             return;
         }
         if (!permissions.can(session.role(), Permission.CONTENT_EXPORT)) {
-            Http.html(exchange, 403, renderPage("Refusé", session, "/content/export",
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission CONTENT_EXPORT requise.</p>"));
+            forbidden(exchange, session, "/content/export");
             return;
         }
         Map<String, String> query = Http.query(exchange);
@@ -528,8 +549,7 @@ public final class PanelApp {
         }
         Session session = maybe.get();
         if (!permissions.can(session.role(), Permission.CONTENT_EXPORT)) {
-            Http.html(exchange, 403, renderPage("Refusé", session, "/content/export",
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission CONTENT_EXPORT requise.</p>"));
+            forbidden(exchange, session, "/content/export");
             return;
         }
         String rid = UUID.randomUUID().toString().substring(0, 8);
@@ -587,8 +607,7 @@ public final class PanelApp {
         }
         Session session = maybe.get();
         if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
-            Http.html(exchange, 403, renderPage("Refusé", session, "/diagnostics",
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission manquante.</p>"));
+            forbidden(exchange, session, "/diagnostics");
             return;
         }
         Map<String, String> query = Http.query(exchange);
@@ -621,8 +640,7 @@ public final class PanelApp {
             return;
         }
         if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
-            Http.html(exchange, 403, renderPage("Refusé", session, "/diagnostics",
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission manquante.</p>"));
+            forbidden(exchange, session, "/diagnostics");
             return;
         }
         String agentId = config.agents().defaultAgentId();
@@ -655,6 +673,177 @@ public final class PanelApp {
                 : back + "&toast=" + enc(firstId));
     }
 
+    // ---- Gestion des utilisateurs (issue #50) --------------------------------------------
+
+    private static final java.util.regex.Pattern USER_ID = java.util.regex.Pattern.compile("[0-9a-fA-F-]{8,36}");
+
+    /**
+     * {@code /users} (liste + création), {@code /users/<id>} (détail), {@code /users/<id>/role} et
+     * {@code /users/<id>/active} (mutations POST). Tout est gardé par {@link Permission#USER_MANAGE} —
+     * jamais un test {@code role == OWNER}. Le contexte {@code /users/create} est routé à part.
+     */
+    private void handleUsers(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.role(), Permission.USER_MANAGE)) {
+            forbidden(exchange, session, "/users");
+            return;
+        }
+        String path = exchange.getRequestURI().getPath();
+        if (path.equals("/users") || path.equals("/users/")) {
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                Http.text(exchange, 405, "GET requis");
+                return;
+            }
+            Map<String, String> q = Http.query(exchange);
+            String err = q.get("err");
+            String ok = q.get("ok");
+            String flash = err != null ? trimTo(err, 200) : ok != null ? trimTo(ok, 200) : null;
+            String body = UsersPages.list(users.list(), currentPanelUser(session), flash, err != null);
+            Http.html(exchange, 200, renderPage("Utilisateurs", session, "/users", body));
+            return;
+        }
+        String rest = path.substring("/users/".length());
+        int slash = rest.indexOf('/');
+        String id = slash < 0 ? rest : rest.substring(0, slash);
+        String action = slash < 0 ? "" : rest.substring(slash + 1);
+        if (id.isEmpty() || !USER_ID.matcher(id).matches()) {
+            Http.redirect(exchange, "/users");
+            return;
+        }
+        Optional<PanelUser> target = users.byId(id);
+        if (target.isEmpty()) {
+            Http.html(exchange, 404, renderPage("Introuvable", session, "/users",
+                    Ui.banner("err", "Compte introuvable.")));
+            return;
+        }
+        switch (action) {
+            case "" -> {
+                if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    Http.text(exchange, 405, "GET requis");
+                    return;
+                }
+                Map<String, String> q = Http.query(exchange);
+                String okMsg = q.get("ok");
+                String errMsg = q.get("err");
+                String body = (okMsg == null ? "" : Ui.banner("ok", Http.esc(trimTo(okMsg, 200))))
+                        + UsersPages.detail(target.get(), currentPanelUser(session), users.activeOwnerCount(),
+                        errMsg == null ? null : trimTo(errMsg, 200));
+                Http.html(exchange, 200, renderPage("Compte", session, "/users", body));
+            }
+            case "role" -> handleUserRole(exchange, session, target.get());
+            case "active" -> handleUserActive(exchange, session, target.get());
+            default -> Http.redirect(exchange, "/users/" + enc(id));
+        }
+    }
+
+    /** {@code POST /users/create} — routé à part car {@code /users/create} est un contexte plus long. */
+    private void handleUserCreate(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!exchange.getRequestURI().getPath().equals("/users/create")) {
+            Http.redirect(exchange, "/users");
+            return;
+        }
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "POST requis");
+            return;
+        }
+        if (!permissions.can(session.role(), Permission.USER_MANAGE)) {
+            forbidden(exchange, session, "/users");
+            return;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF",
+                    "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String username = form.getOrDefault("username", "").trim();
+        com.lodygames.rpgquest.panel.authz.Role role = Role.byNameOrNull(form.get("role"));
+        UserDirectory.Outcome outcome = users.create(username, form.getOrDefault("password", ""), role);
+        if (!outcome.ok()) {
+            audit.record(session.username(), "user.create", "username=" + safeActor(username),
+                    "DENIED", outcome.error(), rid);
+            Http.redirect(exchange, "/users?err=" + enc(outcome.error()));
+            return;
+        }
+        PanelUser created = outcome.after();
+        audit.record(session.username(), "user.create", "username=" + created.username(),
+                "OK", "role=" + created.role().name(), rid);
+        LOG.log(System.Logger.Level.INFO, "event=user_created rid=" + rid + " username=" + created.username()
+                + " role=" + created.role().name() + " by=" + session.username());
+        Http.redirect(exchange, "/users?ok=" + enc("Compte « " + created.username() + " » créé ("
+                + created.role().label() + ")."));
+    }
+
+    private void handleUserRole(HttpExchange exchange, Session session, PanelUser target) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "POST requis");
+            return;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF",
+                    "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        com.lodygames.rpgquest.panel.authz.Role newRole = Role.byNameOrNull(form.get("role"));
+        UserDirectory.Outcome o = users.changeRole(target.id(), newRole);
+        if (!o.ok()) {
+            audit.record(session.username(), "user.role.change", "username=" + target.username(),
+                    "DENIED", o.error(), rid);
+            Http.redirect(exchange, "/users/" + enc(target.id()) + "?err=" + enc(o.error()));
+            return;
+        }
+        if (o.before() != null && o.after() != null && o.before().role() != o.after().role()) {
+            audit.record(session.username(), "user.role.change", "username=" + target.username(), "OK",
+                    "from=" + o.before().role().name() + " to=" + o.after().role().name(), rid);
+            LOG.log(System.Logger.Level.INFO, "event=user_role_change rid=" + rid + " username=" + target.username()
+                    + " from=" + o.before().role().name() + " to=" + o.after().role().name() + " by=" + session.username());
+        }
+        Http.redirect(exchange, "/users/" + enc(target.id()) + "?ok=" + enc("Rôle enregistré : "
+                + o.after().role().label() + "."));
+    }
+
+    private void handleUserActive(HttpExchange exchange, Session session, PanelUser target) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "POST requis");
+            return;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF",
+                    "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        boolean active = "true".equals(form.getOrDefault("active", "").trim());
+        UserDirectory.Outcome o = users.setActive(target.id(), active, session.userId());
+        if (!o.ok()) {
+            audit.record(session.username(), "user.active.change", "username=" + target.username(),
+                    "DENIED", o.error(), rid);
+            Http.redirect(exchange, "/users/" + enc(target.id()) + "?err=" + enc(o.error()));
+            return;
+        }
+        if (o.before() != null && o.after() != null && o.before().active() != o.after().active()) {
+            audit.record(session.username(), "user.active.change", "username=" + target.username(), "OK",
+                    "from=" + o.before().active() + " to=" + o.after().active(), rid);
+            LOG.log(System.Logger.Level.INFO, "event=user_active_change rid=" + rid + " username=" + target.username()
+                    + " active=" + o.after().active() + " by=" + session.username());
+        }
+        Http.redirect(exchange, "/users/" + enc(target.id()) + "?ok=" + enc(
+                o.after().active() ? "Compte réactivé." : "Compte désactivé."));
+    }
+
     private void handlePlaceholder(HttpExchange exchange, String path) throws IOException {
         Optional<Session> session = requireSession(exchange);
         if (session.isEmpty()) {
@@ -678,8 +867,7 @@ public final class PanelApp {
         }
         Session session = maybe.get();
         if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
-            Http.html(exchange, 403, renderPage("Refusé", session, "/agents",
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission manquante.</p>"));
+            forbidden(exchange, session, "/agents");
             return;
         }
         if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
@@ -774,8 +962,7 @@ public final class PanelApp {
         }
         Session session = maybe.get();
         if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
-            Http.html(exchange, 403, renderPage("Refusé", session, "/actions",
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission " + Permission.DIAGNOSTICS_READ + " requise.</p>"));
+            forbidden(exchange, session, "/actions");
             return;
         }
         Instant now = Instant.now();
@@ -897,8 +1084,7 @@ public final class PanelApp {
         }
         Session session = maybe.get();
         if (!permissions.can(session.role(), permission)) {
-            Http.html(exchange, 403, renderPage("Refusé", session, path,
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission manquante.</p>"));
+            forbidden(exchange, session, path);
             return;
         }
         Map<String, String> query = Http.query(exchange);
@@ -940,8 +1126,7 @@ public final class PanelApp {
         }
         Session session = maybe.get();
         if (!permissions.can(session.role(), permission)) {
-            Http.html(exchange, 403, renderPage("Refusé", session, base,
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission d'édition de contenu manquante.</p>"));
+            forbidden(exchange, session, base);
             return;
         }
 
@@ -1034,8 +1219,7 @@ public final class PanelApp {
         }
         if (!permissions.can(session.role(), spec.get().permission())) {
             audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED", "permission manquante", rid);
-            Http.html(exchange, 403, renderPage("Refusé", session, returnPath,
-                    "<h1>Accès refusé</h1><p class=\"muted\">Permission " + spec.get().permission() + " requise.</p>"));
+            forbidden(exchange, session, returnPath);
             return;
         }
         Optional<AgentIdentity> agent = agentRegistry.byId(agentId);
@@ -1291,11 +1475,33 @@ public final class PanelApp {
     }
 
     private String renderPage(String title, Session session, String activeHref, String content) {
-        return finishPage(Layout.page(title, session.username(), activeHref, content), session);
+        return finishPage(Layout.page(title, activeHref, content,
+                Layout.Shell.of(null, null, session.username(), roleLabel(session)), navFilter(session)), session);
     }
 
     private String renderPage(String title, Session session, String activeHref, String content, Layout.Shell shell) {
-        return finishPage(Layout.page(title, activeHref, content, shell), session);
+        Layout.Shell withRole = Layout.Shell.of(shell.envLabel(), shell.serverState(),
+                shell.username(), roleLabel(session));
+        return finishPage(Layout.page(title, activeHref, content, withRole, navFilter(session)), session);
+    }
+
+    /** Filtre de navigation : un lien n'est rendu que si sa permission est accordée au rôle (#50). */
+    private java.util.function.Predicate<Layout.NavItem> navFilter(Session session) {
+        return it -> it.permission() == null || permissions.can(session.role(), it.permission());
+    }
+
+    private static String roleLabel(Session session) {
+        Role r = Role.byNameOrNull(session.role());
+        return r == null ? session.role() : r.label();
+    }
+
+    /** Page 403 cohérente et humaine (#50, §11) — jamais de détail de permission sensible. */
+    private void forbidden(HttpExchange exchange, Session session, String activeHref) throws IOException {
+        Http.html(exchange, 403, renderPage("Accès refusé", session, activeHref,
+                "<h1>Accès refusé</h1>"
+                        + "<p class=\"sub\">Vous n'avez pas l'autorisation d'accéder à cette fonction.</p>"
+                        + "<p class=\"muted\">Si vous pensez que c'est une erreur, demandez à un propriétaire "
+                        + "du Control Panel de vérifier votre rôle.</p>"));
     }
 
     private String finishPage(String html, Session session) {
@@ -1315,7 +1521,27 @@ public final class PanelApp {
     // ---- Sessions ----------------------------------------------------------------------
 
     private Optional<Session> currentSession(HttpExchange exchange) {
-        return sessions.resolve(Http.cookies(exchange).get(SESSION_COOKIE));
+        Optional<Session> maybe = sessions.resolve(Http.cookies(exchange).get(SESSION_COOKIE));
+        if (maybe.isEmpty()) {
+            return maybe;
+        }
+        Session session = maybe.get();
+        // Re-contrôle par requête (#50) : un compte supprimé ou désactivé perd sa session en cours,
+        // et un changement de rôle prend effet sans reconnexion.
+        Optional<PanelUser> user = users.byId(session.userId());
+        if (user.isEmpty() || !user.get().active()) {
+            sessions.invalidate(session.id());
+            return Optional.empty();
+        }
+        if (!user.get().role().name().equals(session.role())) {
+            session.refreshRole(user.get().role().name());
+        }
+        return maybe;
+    }
+
+    /** Le compte {@link PanelUser} de la session, ou {@code null} (défensif). */
+    private PanelUser currentPanelUser(Session session) {
+        return users.byId(session.userId()).orElse(null);
     }
 
     private Optional<Session> requireSession(HttpExchange exchange) throws IOException {

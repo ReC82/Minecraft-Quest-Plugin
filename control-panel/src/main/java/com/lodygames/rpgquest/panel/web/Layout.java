@@ -1,7 +1,10 @@
 package com.lodygames.rpgquest.panel.web;
 
+import com.lodygames.rpgquest.panel.authz.Permission;
 import com.lodygames.rpgquest.panel.http.Http;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * Gabarit HTML unique du Control Panel. Refonte graphique #92 : thème clair, design system par
@@ -9,11 +12,21 @@ import java.util.List;
  * sans JS). CSS et sprite d'icônes en ligne (aucun asset externe, cohérent avec la CSP
  * {@code default-src 'self'}). Un outil d'administration professionnel, pas une interface
  * Minecraft décorative.
+ *
+ * <p>Issue #50 : la navigation est filtrée par permission — un lien dont la permission n'est pas
+ * accordée n'est pas rendu, et un groupe entièrement filtré disparaît. Le contrôle backend reste
+ * la seule vraie barrière : masquer un lien n'est jamais une sécurité.</p>
  */
 public final class Layout {
 
-    /** Un lien de navigation. {@code icon} = nom d'icône {@link Icons} ; {@code enabled=false} = « à venir ». */
-    public record NavItem(String label, String href, String icon, boolean enabled) {
+    /**
+     * Un lien de navigation.
+     *
+     * @param permission permission requise pour voir le lien ({@code null} = visible par toute
+     *                   session authentifiée)
+     * @param enabled    {@code false} = « à venir », non cliquable
+     */
+    public record NavItem(String label, String href, String icon, Permission permission, boolean enabled) {
     }
 
     /** Un groupe de navigation dans la sidebar. */
@@ -23,41 +36,69 @@ public final class Layout {
     public static List<NavGroup> nav() {
         return List.of(
                 new NavGroup("Vue d'ensemble", List.of(
-                        new NavItem("Accueil", "/home", "home", true),
-                        new NavItem("Dashboard", "/dashboard", "dashboard", true),
-                        new NavItem("Agents", "/agents", "agents", true),
-                        new NavItem("Historique", "/actions", "history", true))),
+                        new NavItem("Accueil", "/home", "home", null, true),
+                        new NavItem("Dashboard", "/dashboard", "dashboard", Permission.DASHBOARD_VIEW, true),
+                        new NavItem("Agents", "/agents", "agents", Permission.DIAGNOSTICS_READ, true),
+                        new NavItem("Historique", "/actions", "history", Permission.DIAGNOSTICS_READ, true))),
                 new NavGroup("RPGQuest", List.of(
-                        new NavItem("Joueurs", "/players", "players", true),
-                        new NavItem("PNJ", "/npcs", "npc", true),
-                        new NavItem("Quêtes", "/quests", "quests", true),
-                        new NavItem("Stories", "/stories", "stories", true),
-                        new NavItem("Dialogues", "/dialogues", "dialogues", true),
-                        new NavItem("Export contenu", "/content/export", "export", true))),
+                        new NavItem("Joueurs", "/players", "players", Permission.PLAYERS_READ, true),
+                        new NavItem("PNJ", "/npcs", "npc", Permission.NPC_READ, true),
+                        new NavItem("Quêtes", "/quests", "quests", Permission.CONTENT_READ, true),
+                        new NavItem("Stories", "/stories", "stories", Permission.CONTENT_READ, true),
+                        new NavItem("Dialogues", "/dialogues", "dialogues", Permission.DIALOGUE_READ, true),
+                        new NavItem("Export contenu", "/content/export", "export", Permission.CONTENT_EXPORT, true))),
                 new NavGroup("Ressources", List.of(
-                        new NavItem("Documentation", "/docs", "docs", true),
-                        new NavItem("Diagnostics", "/diagnostics", "diagnostics", true))),
+                        new NavItem("Documentation", "/docs", "docs", Permission.DOCS_READ, true),
+                        new NavItem("Diagnostics", "/diagnostics", "diagnostics", Permission.DIAGNOSTICS_READ, true))),
                 new NavGroup("Administration", List.of(
-                        new NavItem("Admin", "/admin", "admin", false),
-                        new NavItem("Développement", "/dev", "dev", false))));
+                        new NavItem("Utilisateurs", "/users", "users", Permission.USER_MANAGE, true),
+                        new NavItem("Développement", "/dev", "dev", Permission.DEV_MODULE, false))));
     }
 
-    /** Contexte du shell : cible/env, état serveur synthétique, utilisateur. Champs {@code null} = masqués. */
-    public record Shell(String envLabel, String serverState, String username) {
+    /**
+     * Contexte du shell : cible/env, état serveur synthétique, utilisateur et son rôle. Champs
+     * {@code null} = masqués.
+     */
+    public record Shell(String envLabel, String serverState, String username, String roleLabel) {
         public static Shell of(String envLabel, String serverState, String username) {
-            return new Shell(envLabel, serverState, username);
+            return new Shell(envLabel, serverState, username, null);
+        }
+
+        public static Shell of(String envLabel, String serverState, String username, String roleLabel) {
+            return new Shell(envLabel, serverState, username, roleLabel);
         }
     }
 
+    /** Filtre de navigation : {@code true} = le lien est visible. */
+    @FunctionalInterface
+    public interface NavVisibility extends Predicate<NavItem> {
+    }
+
+    private static final NavVisibility ALL_VISIBLE = it -> true;
+
     public static String page(String title, String username, String activeHref, String content) {
-        return page(title, activeHref, content, new Shell(null, null, username));
+        return page(title, activeHref, content, new Shell(null, null, username, null), ALL_VISIBLE);
     }
 
     public static String page(String title, String activeHref, String content, Shell shell) {
+        return page(title, activeHref, content, shell, ALL_VISIBLE);
+    }
+
+    public static String page(String title, String activeHref, String content, Shell shell, Predicate<NavItem> visible) {
+        Predicate<NavItem> canSee = visible == null ? ALL_VISIBLE : visible;
         StringBuilder side = new StringBuilder();
         for (NavGroup g : nav()) {
-            side.append("<div class=\"nav-group\"><p class=\"nav-group-t\">").append(Http.esc(g.title())).append("</p>");
+            List<NavItem> shown = new ArrayList<>();
             for (NavItem it : g.items()) {
+                if (canSee.test(it)) {
+                    shown.add(it);
+                }
+            }
+            if (shown.isEmpty()) {
+                continue;
+            }
+            side.append("<div class=\"nav-group\"><p class=\"nav-group-t\">").append(Http.esc(g.title())).append("</p>");
+            for (NavItem it : shown) {
                 boolean active = it.href().equals(activeHref)
                         || (activeHref != null && activeHref.startsWith(it.href() + "/"));
                 if (it.enabled()) {
@@ -78,6 +119,8 @@ public final class Layout {
         String statusChip = shell.serverState() == null ? "" : serverChip(shell.serverState());
         String userBox = shell.username() == null ? ""
                 : "<div class=\"userbox\"><span class=\"userbox-n\">" + Http.esc(shell.username()) + "</span>"
+                + (shell.roleLabel() == null ? ""
+                        : "<span class=\"userbox-r\">" + Http.esc(shell.roleLabel()) + "</span>")
                 + "<form method=\"post\" action=\"/logout\">%CSRF%"
                 + "<button class=\"iconbtn\" type=\"submit\" aria-label=\"Se déconnecter\" title=\"Se déconnecter\">"
                 + Icons.icon("open") + "</button></form></div>";

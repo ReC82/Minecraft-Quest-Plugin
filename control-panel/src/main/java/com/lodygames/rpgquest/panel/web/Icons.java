@@ -31,6 +31,7 @@ public final class Icons {
             Map.entry("docs", "file-earmark-text"),
             Map.entry("diagnostics", "activity"),
             Map.entry("admin", "shield-lock"),
+            Map.entry("users", "people-fill"),
             Map.entry("dev", "code-slash"),
             // état serveur / infra
             Map.entry("server", "hdd-rack"),

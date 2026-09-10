@@ -149,6 +149,11 @@ public final class AgentActionCatalog {
         return Optional.ofNullable(SPECS.get(type == null ? "" : type.trim()));
     }
 
+    /** Toutes les specs whitelistées (lecture seule) — pour l'introspection et les tests RBAC (#50). */
+    public static java.util.Collection<Spec> all() {
+        return java.util.Collections.unmodifiableCollection(SPECS.values());
+    }
+
     public static boolean isWhitelisted(String type) {
         return SPECS.containsKey(type == null ? "" : type.trim());
     }

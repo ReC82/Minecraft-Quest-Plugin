@@ -820,3 +820,20 @@ tr[hidden]{display:none}
   .export-btn-form{flex-direction:column;align-items:stretch}
   .export-btn-form .btn{width:100%}
 }
+
+/* Gestion des utilisateurs (issue #50) — /users */
+.usr-list{list-style:none;margin:8px 0 20px;padding:0;display:flex;flex-direction:column;gap:6px}
+.usr-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:6px 14px;
+  padding:10px 12px;border:1px solid var(--line-2);border-radius:var(--radius);background:var(--surface);
+  text-decoration:none;color:inherit;transition:border-color .12s,background .12s}
+.usr-row:hover{border-color:var(--primary);background:var(--surface-2,var(--surface))}
+.usr-name{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.usr-tags{display:flex;gap:6px;flex-wrap:wrap;justify-self:end}
+.usr-meta{grid-column:1/-2;font-size:.86em}
+.usr-chev{grid-row:1/2;grid-column:3/4;justify-self:end;opacity:.5}
+@media(max-width:575.98px){
+  .usr-row{grid-template-columns:1fr auto}
+  .usr-chev{grid-column:2/3}
+  .usr-tags{grid-column:1/-1;justify-self:start}
+  .usr-meta{grid-column:1/-1}
+}

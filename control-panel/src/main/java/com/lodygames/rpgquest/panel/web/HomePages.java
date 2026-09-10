@@ -73,9 +73,9 @@ public final class HomePages {
                             "Fiches d'administration : PNJ, reset joueur, déploiement, Claims, Wild…",
                             Permission.DOCS_READ, true))),
             new Group("Administration", List.of(
-                    new Tile("admin", "/admin", "admin", "Administration",
-                            "Comptes, rôles et journal d'audit.",
-                            Permission.AUDIT_READ, false),
+                    new Tile("users", "/users", "users", "Utilisateurs",
+                            "Comptes PlugAdmin, rôles et activation — accès réservé au propriétaire.",
+                            Permission.USER_MANAGE, true),
                     new Tile("dev", "/dev", "dev", "Développement",
                             "GitHub, rapports Claude, tests, build et déploiements.",
                             Permission.DEV_MODULE, false))));

@@ -1,9 +1,13 @@
 package com.lodygames.rpgquest.panel.authz;
 
 /**
- * Permissions du Control Panel. La V1 n'en applique presque aucune (un seul rôle {@code OWNER} qui
- * a tout), mais l'énumération est posée dès maintenant : les modules futurs demandent une
- * permission explicite via {@link PermissionService#can}, jamais un test {@code if role == …}.
+ * Permissions du Control Panel. Chaque module demande une permission explicite via
+ * {@link PermissionService#can} — jamais un test {@code if role == …} dispersé. {@code OWNER}
+ * obtient automatiquement toutes les valeurs de cette énumération ({@code EnumSet.allOf}), donc
+ * aucune liste à maintenir permission par permission (issue #50).
+ *
+ * <p>Les permissions PlugAdmin sont <strong>totalement distinctes</strong> des permissions
+ * Minecraft / Paper / LuckPerms : aucune correspondance automatique.</p>
  */
 public enum Permission {
     DASHBOARD_VIEW,
@@ -34,5 +38,11 @@ public enum Permission {
     ACTION_PLAYER_RESET,
     ACTION_ITEM_GIVE,
     ACTION_CONTENT_RELOAD,
-    DEV_MODULE
+    DEV_MODULE,
+    /**
+     * Gérer les comptes PlugAdmin : créer un utilisateur, changer son rôle, l'activer / le
+     * désactiver, consulter la page {@code /users} (issue #50). Réservée à {@code OWNER} par
+     * défaut ; jamais accordée à {@code ADMIN} sans décision explicite.
+     */
+    USER_MANAGE
 }

@@ -34,9 +34,9 @@ public final class SessionStore {
         this.idle = idle;
     }
 
-    public Session create(String username, String role) {
+    public Session create(String userId, String username, String role) {
         Instant now = Instant.now();
-        Session session = new Session(randomToken(), username, role, randomToken(), now);
+        Session session = new Session(randomToken(), userId, username, role, randomToken(), now);
         sessions.put(session.id(), session);
         return session;
     }

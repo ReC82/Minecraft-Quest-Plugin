@@ -10,14 +10,16 @@ import java.time.Instant;
 public final class Session {
 
     private final String id;
+    private final String userId;
     private final String username;
-    private final String role;
+    private volatile String role;
     private final String csrfToken;
     private final Instant createdAt;
     private volatile Instant lastSeenAt;
 
-    Session(String id, String username, String role, String csrfToken, Instant now) {
+    Session(String id, String userId, String username, String role, String csrfToken, Instant now) {
         this.id = id;
+        this.userId = userId;
         this.username = username;
         this.role = role;
         this.csrfToken = csrfToken;
@@ -29,12 +31,25 @@ public final class Session {
         return id;
     }
 
+    /** Identifiant interne du compte {@code panel_user} — stable, sert au re-contrôle par requête. */
+    public String userId() {
+        return userId;
+    }
+
     public String username() {
         return username;
     }
 
     public String role() {
         return role;
+    }
+
+    /**
+     * Réaligne le rôle porté par la session sur celui du compte en base : un changement de rôle
+     * prend effet à la requête suivante, sans reconnexion (issue #50).
+     */
+    public void refreshRole(String currentRole) {
+        this.role = currentRole;
     }
 
     public String csrfToken() {

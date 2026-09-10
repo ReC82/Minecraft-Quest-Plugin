@@ -216,6 +216,20 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-09-10 (nuit tardive)
+Branche de départ: feat/control-panel-admin-tools
+Étape de départ: issue #144 — une quête créée dans la source n'apparaît pas dans /quests après refresh (bloquant workflow d'édition PlugAdmin) — hors étapes 1-23, Control Panel uniquement
+Étapes terminées: #144 — catalogue /quests et /stories fusionné SOURCE (checkout src/main/resources, nouveau SourceCatalog lecture seule via QuestYaml/StoryYaml) + RUNTIME (quest.list/story.list). État explicite par entrée : SYNCED (aucun badge) / SOURCE_ONLY (badge « Source uniquement » + note « pas encore chargée en jeu » — jamais présentée comme active) / RUNTIME_ONLY (badge « Hors source »). Source relue à chaque affichage ; « Rafraîchir » = toujours le serveur. AgentPages.referenceData() fusionne aussi les quêtes source dans les lookups (prérequis, chaîne de story) + diagnostic « quête inconnue dans la chaîne ». Actions admin (quest.start/story.advance) restent limitées au runtime. Sans content.repo-dir : aucun badge d'origine. AUCUN changement plugin, aucune action agent, aucun content.reload.
+Branche finale: feat/control-panel-admin-tools (y rester, ne rien merger, #144 laissée ouverte — l'utilisateur gère GitHub)
+Dernier commit: (voir git log — commits feat(control-panel)/docs #144)
+Build: control-panel:test vert 368/0 (+15 : SourceCatalogTest 4, MergedCatalogTest 11) ; :control-panel:build vert ; ./gradlew build lancé avec RPGQUEST_TEST_MAX_HEAP=768m (voir rapport).
+Tests: verts — MergedCatalogTest couvre runtime-only, source-only, fusion en une entrée, création éditeur visible sans appel agent, lookup /stories/new, lookup prérequis, refresh runtime préservant une source-only, aucune confusion « actif en jeu », édition source reflétée, story source-only.
+Tests manuels en attente: checklist navigateur owner — /quests → lily_pumpkin visible + badge « Source uniquement » ; /stories/new → lily_pumpkin recherchable ; « Rafraîchir Quêtes » → reste visible. Mot de passe owner non détenu → couvert par tests HTTP.
+Blocages: aucun
+Première étape à reprendre: #144 reste ouverte (l'utilisateur gère GitHub) ; sinon poursuivre le pipeline de contenus #109 (import content pack), ou #46 action agent quest.definition.validate
+```
+
+```text
 Date: 2026-09-10 (nuit)
 Branche de départ: feat/control-panel-admin-tools
 Étape de départ: issue #50 — socle RBAC PlugAdmin (rôles / permissions / gestion des comptes) — hors étapes 1-23, Control Panel uniquement

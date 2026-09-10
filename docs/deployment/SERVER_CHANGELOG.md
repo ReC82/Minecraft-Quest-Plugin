@@ -2842,3 +2842,95 @@ Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260910-155250`) ; base :
 `/opt/plugadmin/backups/control-panel.db.20260910-155247`.
 
 Rapport : `docs/claude-reports/2026-09-10_1553_rbac-plugadmin-50.md`.
+
+---
+
+## 2026-09-10 - Control Panel : catalogue fusionné source + runtime pour /quests et /stories (issue #144) — AWS uniquement
+
+### Changement
+
+Control Panel uniquement. **Aucun changement du plugin RPGQuest, du serveur Minecraft, de la
+base ou de la configuration.**
+
+Symptôme (#144) : une quête créée depuis `/quests/new` était bien écrite dans la source
+(`src/main/resources/quests/<id>.yml` via `ContentWorkspace`) mais n'apparaissait **jamais** dans
+`/quests` — même après « Rafraîchir le catalogue » — parce que la page n'affichait **que** le
+dernier relevé runtime `quest.list` de l'agent. Elle ne pouvait pas non plus servir de prérequis
+ni composer une story sans redémarrage Minecraft.
+
+Correctif : `/quests` et `/stories` **fusionnent** désormais deux origines — le dernier relevé
+runtime **et** la source éditable relue à chaque affichage (nouveau `SourceCatalog`, module
+`control-panel` `panel.content`, lecture seule via `QuestYaml`/`StoryYaml`). Chaque entrée porte
+un état explicite : **Source + serveur** (aucun badge), **« Source uniquement »** (badge `info` +
+note : enregistrée mais pas encore chargée en jeu — jamais présentée comme active),
+**« Hors source »** (chargée par le serveur, absente de la source). `AgentPages.referenceData()`
+fusionne aussi les quêtes de la source dans les lookups d'édition (prérequis, chaîne de story) et
+le diagnostic « quête inconnue dans la chaîne ». Les listes d'actions admin (`quest.start`,
+`story.advance`…) restent limitées au runtime. **Aucun rechargement Minecraft déclenché** :
+édition et activation en jeu restent deux étapes distinctes.
+
+Fichiers : `panel/content/SourceCatalog.java` (nouveau), `panel/web/AgentPages.java` (fusion
+`quests()` / `stories()` / `referenceData()` + rendu des badges/notes d'état),
+`panel/web/PanelApp.java` (câblage `SourceCatalog`). CSP inchangée, aucun CDN, `control-panel.db`
+non touché (aucune migration), aucune permission ajoutée.
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — build + release sous `/opt/plugadmin/releases/<horodatage>`
++ `systemctl restart plugadmin` + check `/health`. Aucune autre action. Aucun changement nginx /
+TLS / secret / base. **VeryGames / Minecraft non touchés, aucun redémarrage Minecraft.**
+
+Le drop-in `10-content-workspace.conf` (`PLUGADMIN_CONTENT_DIR=/srv/rpgquest/repo/src/main/resources`)
+doit rester chargé : sans lui, la page fonctionne mais n'affiche aucun badge d'origine.
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : app précédente sous `/opt/plugadmin/releases/<horodatage>`
+(rétention 5). Pas de sauvegarde base (aucune migration).
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local **et** public ONLINE ; `/quests`, `/quests/new`, `/stories`, `/stories/new`
+  rendus (auth).
+- `:control-panel:test` vert (`SourceCatalogTest` +4, `MergedCatalogTest` +11) ;
+  `./gradlew build` vert.
+- Checklist navigateur owner : `/quests` → une quête « source uniquement » visible avec son badge ;
+  `/stories/new` → cette quête recherchable ; « Rafraîchir Quêtes » → elle reste visible.
+  `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure la release précédente). Aucune migration à défaire.
+
+### Exécution réelle
+
+Déploiement AWS effectué le **2026-09-10 ~19:58 UTC** depuis `feat/control-panel-admin-tools`.
+
+- `scripts/plugadmin/deploy.sh` : `:control-panel:installDist` **BUILD SUCCESSFUL** (issue du
+  build déjà testé — `compileJava` / `jar` **UP-TO-DATE**), app précédente sauvegardée sous
+  `/opt/plugadmin/releases/20260910-195741`, `systemctl restart plugadmin` → `active (running)`
+  (PID 860171, `Memory` ~69 M), drop-in `10-content-workspace.conf` toujours chargé.
+- Vérifications live : `/health` **ONLINE** local **et** public
+  (`https://plugadmin.lodylands.com/health`) ; `/quests`, `/quests/new`, `/stories`, `/stories/new`
+  anonymes → **303** vers `/login` (routes vivantes, auth appliquée) ; le JAR déployé contient
+  `com/.../panel/content/SourceCatalog.class`, `AgentPages$CatalogState`, `AgentPages$MergedRow` ;
+  `journalctl -u plugadmin` depuis le redémarrage : **0** `ERROR` / `SEVERE` / `Exception` / `WARN`.
+  `control-panel.db` non touché. **VeryGames / Minecraft non touchés, aucun redémarrage Minecraft.**
+
+Validation navigateur **authentifiée** : couverte par `MergedCatalogTest` (11, `PanelApp` réel +
+sessions HTTP + login owner) et `SourceCatalogTest` (4). Session owner navigateur réelle
+(checklist du rapport) : `PENDING MANUAL VALIDATION` (mot de passe owner non détenu).
+
+Build : `./gradlew build` **BUILD SUCCESSFUL in 14m 36s** (2e essai, `--no-daemon`
+`RPGQUEST_TEST_MAX_HEAP=640m` — le 1er essai a été tué par l'OOM connu de la box, cf. `.ai/`
+mémoire) ; root `:test` vert, `:control-panel:test` **368/0**, `:web-api` up-to-date.
+
+Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260910-195741`).
+
+Rapport : `docs/claude-reports/2026-09-10_1958_catalogue-fusionne-source-runtime-144.md`.

@@ -474,6 +474,31 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   au-dessus de l'id dans la ligne, badge quête inconnue, add/del/reorder sur brouillon
   incomplet, ancres de scroll, aucun `required`, id/nom/chaîne vide à la vérification, doublon +
   référence inconnue, aperçu = YAML écrit + round-trip, diff, conflit de hash).
+- **Catalogue fusionné source + runtime pour `/quests` et `/stories` (issue #144)**
+  *(branche `feat/control-panel-admin-tools`)* — jusqu'ici les pages `/quests` et `/stories` du
+  Control Panel n'affichaient **que** le dernier relevé runtime de l'agent (`quest.list` /
+  `story.list`). Une quête enregistrée depuis `/quests/new` (écrite dans le checkout source par
+  `ContentWorkspace`) n'apparaissait donc **jamais** avant un rechargement RPGQuest côté serveur —
+  et ne pouvait pas servir de prérequis ni composer une story. Nouveau `SourceCatalog`
+  (`panel.content`, lecture seule) qui relit `quests/*.yml` + `stories/*.yml` via les mêmes
+  `QuestYaml.read` / `StoryYaml.read` que l'éditeur. `AgentPages` **fusionne** les deux origines
+  sur l'id « nu » et calcule un état par entrée : `SYNCED` (source + serveur), `SOURCE_ONLY`
+  (enregistrée mais pas encore chargée en jeu → badge **« Source uniquement »** + note explicite),
+  `RUNTIME_ONLY` (chargée par le serveur mais absente de la source → badge **« Hors source »**).
+  La source est relue **à chaque affichage** ; « Rafraîchir » continue d'interroger le serveur.
+  Jamais de fusion silencieuse : une entrée `SOURCE_ONLY` n'est **jamais** présentée comme active
+  en jeu. `AgentPages.referenceData()` (lookups de l'éditeur : prérequis de quête, chaîne de
+  story) fusionne aussi les quêtes de la source → une quête tout juste créée est immédiatement
+  sélectionnable sans redémarrage Minecraft. Le diagnostic « quête inconnue dans la chaîne »
+  d'une story tient compte des quêtes source. Les listes déroulantes d'**actions admin**
+  (`quest.start` / `story.advance`…) restent limitées au runtime (une entrée source-only
+  échouerait côté agent). Sans `content.repo-dir` configuré, aucun badge d'origine n'est affiché
+  (aucune comparaison possible). **Aucun changement plugin, aucune action agent nouvelle, aucun
+  `content.reload` déclenché** — édition et activation en jeu restent deux étapes distinctes.
+  Tests : `SourceCatalogTest` (4), `MergedCatalogTest` (11 : runtime-only, source-only, fusion en
+  une entrée, création éditeur visible sans appel agent, lookup story, lookup prérequis, refresh
+  runtime qui préserve une source-only, aucune confusion « actif en jeu », édition source
+  reflétée, story source-only).
 - **Resynchronisation après mutation + UX formulaires PNJ / Dialogues (issues #111 → #120)**
   *(branche `feat/control-panel-admin-tools`)* — plusieurs mutations réussissaient côté backend
   (notification SUCCESS) mais la page métier restait périmée : seule la séquence « Rafraîchir

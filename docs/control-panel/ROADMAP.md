@@ -552,6 +552,31 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
 - [ ] Validation navigateur authentifiée (mutation PNJ + dialogue, liaison Citizens, absence de
       F5 / refresh manuel, mobile) — `PENDING MANUAL VALIDATION`.
 
+### Étape 3m — catalogue fusionné source + runtime pour `/quests` et `/stories` (#144) — **LIVRÉ (chemin principal ; validation navigateur en attente)**
+
+- [x] **Cause** : `/quests` et `/stories` n'affichaient **que** le dernier relevé runtime de
+      l'agent (`quest.list` / `story.list`). Une quête écrite dans la source par `ContentWorkspace`
+      (`/quests/new`) restait invisible jusqu'à un rechargement RPGQuest côté serveur, et
+      inutilisable comme prérequis ou étape de story.
+- [x] **`SourceCatalog`** (`panel.content`, lecture seule) : relit `quests/*.yml` + `stories/*.yml`
+      du checkout via `QuestYaml.read` / `StoryYaml.read` (mêmes relecteurs que l'éditeur). Jamais
+      d'écriture, jamais de FTP, jamais de `content.reload`.
+- [x] **Fusion dans `AgentPages`** (`quests()` / `stories()`) sur l'id « nu », avec un état
+      explicite par entrée : `SYNCED` (aucun badge), `SOURCE_ONLY` (badge « Source uniquement » +
+      note : pas encore chargée en jeu — **jamais** présentée comme active), `RUNTIME_ONLY` (badge
+      « Hors source »). Source relue à chaque affichage ; « Rafraîchir » interroge toujours le
+      serveur. Sans `content.repo-dir`, aucun badge d'origine.
+- [x] **Lookups d'édition** : `AgentPages.referenceData()` fusionne les quêtes de la source
+      (prérequis, chaîne de story) ; le diagnostic « quête inconnue dans la chaîne » en tient
+      compte. Les listes d'**actions admin** restent limitées au runtime.
+- [x] **Tests** : `SourceCatalogTest` (4), `MergedCatalogTest` (11 : runtime-only, source-only,
+      fusion en une entrée, création éditeur visible sans appel agent, lookup story, lookup
+      prérequis, refresh runtime préservant une source-only, aucune confusion « actif en jeu »,
+      édition source reflétée, story source-only). `:control-panel:test` vert ; `./gradlew build`
+      vert.
+- [ ] Validation navigateur authentifiée (créer `lily_pumpkin`, retour `/quests`, badge, lookup
+      `/stories/new`, refresh Quêtes) — `PENDING MANUAL VALIDATION`.
+
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 
 - [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +

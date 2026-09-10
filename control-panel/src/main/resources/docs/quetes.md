@@ -92,3 +92,23 @@ Page **Quêtes** → « Créer une quête », ou « Modifier » sur une carte. P
    et montre le YAML généré + le diff. « Enregistrer dans la source » écrit le fichier
    `src/main/resources/quests/<id>.yml` du dépôt — **aucun déploiement**, le serveur le validera
    à son prochain chargement.
+
+## Catalogue : « source » et « serveur » (badges d'origine)
+
+Les pages **Quêtes** et **Stories** montrent **deux origines fusionnées** :
+
+- la **source éditable** — les fichiers `src/main/resources/quests/*.yml` et `stories/*.yml`,
+  relus à chaque affichage de la page ;
+- le **serveur DEV** — ce que le serveur a réellement chargé (dernier « Rafraîchir le catalogue »).
+
+Chaque entrée porte un badge quand les deux ne coïncident pas :
+
+| Badge | Sens | Ce qu'il faut faire |
+|---|---|---|
+| *(aucun)* | La quête est dans la source **et** chargée par le serveur. | Rien. |
+| **Source uniquement** | Enregistrée dans la source (par ex. tout juste créée) mais **pas encore chargée en jeu**. | Elle est utilisable comme prérequis / étape de story dès maintenant. Pour la rendre active en jeu : recharger le contenu RPGQuest côté serveur (`/quest admin reload` ou redémarrage), puis « Rafraîchir le catalogue ». |
+| **Hors source** | Chargée par le serveur mais **introuvable** dans la source éditable (fichier absent, renommé, ou source non montée sur PlugAdmin). | Vérifier le fichier dans le dépôt ; si c'est normal (quête livrée autrement), aucune action. |
+
+« Source uniquement » **n'est pas une erreur** : c'est le fonctionnement normal du flux
+« créer → enregistrer → utiliser ». La création dans l'éditeur et l'activation en jeu restent
+**deux étapes séparées** — enregistrer ne redémarre jamais Minecraft.

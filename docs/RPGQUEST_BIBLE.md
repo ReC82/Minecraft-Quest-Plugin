@@ -616,6 +616,39 @@ action** déplie son **formulaire** (rien n'est affiché d'emblée). Le
 rafraîchissement des catalogues passe par une **barre d'outils compacte** de
 boutons ; la recherche est un `input-group` Bootstrap aligné à des filtres.
 
+#### Catalogue fusionné source + runtime pour `/quests` et `/stories` (issue #144)
+
+Les pages `/quests` et `/stories` **fusionnent deux origines** : le dernier relevé
+runtime de l'agent (`quest.list` / `story.list`, ce que le serveur DEV a
+réellement chargé) **et** la **source éditable** relue à chaque affichage
+(`SourceCatalog`, module `control-panel` `panel.content` : les fichiers
+`src/main/resources/quests/*.yml` + `stories/*.yml` du checkout, via les mêmes
+relecteurs `QuestYaml` / `StoryYaml` que l'éditeur #46). La clé de fusion est
+l'identifiant « nu » (sans préfixe `rpgquest:`). Chaque entrée porte un **état
+explicite** :
+
+- **Source + serveur** (`SYNCED`) — présente des deux côtés ; aucun badge.
+- **« Source uniquement »** (`SOURCE_ONLY`) — enregistrée dans la source (par
+  exemple juste créée depuis `/quests/new`) mais **pas encore chargée en jeu**.
+  Badge `info` + note : elle sera prise en compte au prochain rechargement du
+  contenu RPGQuest côté serveur. **Jamais** présentée comme active.
+- **« Hors source »** (`RUNTIME_ONLY`) — chargée par le serveur mais **absente**
+  de la source éditable (fichier supprimé, renommé, ou source non montée).
+
+L'édition et l'activation en jeu **restent deux étapes distinctes** : enregistrer
+depuis l'éditeur n'appelle **aucun** rechargement Minecraft. « Rafraîchir le
+catalogue » interroge toujours le serveur ; la source, elle, est relue à chaque
+affichage — aucun bouton n'est nécessaire pour la voir. Les listes déroulantes
+des **actions admin** (`quest.start`, `story.advance`…) restent limitées aux
+entrées runtime (une entrée source-only échouerait côté agent). Sans
+`content.repo-dir` configuré, aucun badge d'origine n'est affiché.
+
+Corollaire pour l'éditeur #46 : `AgentPages.referenceData()` fusionne aussi les
+quêtes de la source dans les lookups de construction de contenu (prérequis de
+quête, chaîne de story) — une quête tout juste créée est immédiatement
+sélectionnable, et le diagnostic « quête inconnue dans la chaîne » d'une story en
+tient compte, **sans redémarrage Minecraft**.
+
 Chaque avertissement ou erreur est rendu par le registre **`DiagnosticHelp`**
 (module `control-panel`, `panel.web`) sous une forme **actionnable** : titre en
 français clair, **conséquence**, **action recommandée**, **lien vers une ancre
@@ -624,7 +657,9 @@ technique** (`BINDING_NO_DEFINITION`, `NODE_UNREACHABLE`, `QUEST_PREREQ_UNKNOWN`
 `STORY_QUEST_UNKNOWN`…) en second plan seulement. Les vérifications de référence
 propres aux quêtes et aux stories (prérequis inconnu, donneur sans fiche, quête
 absente d'une chaîne) sont calculées côté panel à partir des derniers relevés
-`quest.list` / `npc.list`. Quatre fiches de dépannage dédiées existent dans le
+`quest.list` / `npc.list`, **complétés par les quêtes de la source éditable**
+(issue #144) : une quête « source uniquement » n'est jamais signalée comme
+prérequis ou étape « inconnu ». Quatre fiches de dépannage dédiées existent dans le
 centre de documentation : **`pnj-depannage`**, **`dialogues-depannage`**,
 **`quetes-depannage`**, **`stories-depannage`** (déclarées dans
 `control-panel/src/main/resources/docs/_index.txt`), chacune au format

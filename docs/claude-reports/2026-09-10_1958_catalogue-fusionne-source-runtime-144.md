@@ -8,8 +8,8 @@
 * Branche Git : `feat/control-panel-admin-tools`
 * Commit actuel si disponible : `592d0bd` au démarrage (commits de la tâche ajoutés ensuite)
 * Début de la tâche : 2026-09-10 19:01:14 (heure locale réelle)
-* Fin de la tâche : 2026-09-10 20:04:00 (heure locale réelle)
-* Durée totale : 01:02:46
+* Fin de la tâche : 2026-09-10 20:02:00 (heure locale réelle)
+* Durée totale : 01:00:46
 
 ## Demande
 

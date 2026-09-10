@@ -342,6 +342,16 @@ Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et
   matériaux **et PNJ** portent un libellé humain (`<option value="guard" label="Garde">`) : la
   recherche filtre sur le nom **et** l'id. La récompense `ITEM` accepte uniquement un `Material`
   vanilla (le moteur ne gère pas un objet personnalisé RPGQuest à cet endroit — l'aide le précise).
+- **Chaîne de quêtes d'une story** : une story est une liste **ordonnée** de quêtes existantes
+  (modèle moteur : `id`, `name`, `secret`, `questIds` — rien d'autre). La sélection d'une quête
+  est recherchable **par titre humain (« Premiers pas ») ou par id technique (« first_steps »)** :
+  la datalist `dl-quest` porte le titre en `label`, alimenté par le dernier relevé `quest.list`.
+  Chaque ligne de la chaîne affiche le rang `N.` et le titre humain **au-dessus** de
+  l'identifiant technique, avec les contrôles monter / descendre / retirer ; une quête absente du
+  catalogue chargé est signalée « quête inconnue » dès la saisie. Ajouter / retirer / réordonner
+  une quête ne déclenche jamais la validation ; `StoryValidator` (id, nom, chaîne non vide,
+  référence inconnue, doublon — **autorisé** par le moteur, donc simple avertissement) ne
+  s'exécute qu'à « Vérifier » / « Enregistrer ».
 - **Validation métier uniquement à la fin** — sur « Vérifier » / « Aperçu » / « Enregistrer » :
   diagnostics `ERREUR` (bloquants), `ATTENTION` (enregistrement possible après vérification),
   `INFO`. Un aperçu montre le fichier YAML généré et le diff avec la version actuelle de la source.

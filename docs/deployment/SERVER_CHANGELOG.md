@@ -2636,3 +2636,93 @@ Validation navigateur **authentifiée** de l'éditeur : couverte par `ContentEdi
 Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260910-095149`).
 
 Rapport : `docs/claude-reports/2026-09-10_0949_editeur-quetes-passe-ux-46.md`.
+
+---
+
+## 2026-09-10 - Éditeur guidé de Stories — passe UX (issue #46) — AWS uniquement
+
+### Changement
+
+Control Panel uniquement. **Aucun changement du plugin RPGQuest, du serveur Minecraft, de la
+base ou de la configuration.** Passe UX ciblée sur l'éditeur guidé de **stories**
+(`/stories/new`, `/stories/edit/<slug>`), pour lui donner la même ergonomie que l'éditeur de
+quêtes déjà validé :
+
+- **Sélection recherchable des quêtes par titre humain OU id technique.** La datalist `dl-quest`
+  porte désormais un `label` humain (`<option value="first_steps" label="Premiers pas">`) ;
+  `RefData` transporte `id -> titre` depuis le dernier relevé `quest.list`, `RefData.questLabel()`
+  le résout (namespace `rpgquest:` toléré). Le combo `panel.js` (déjà) filtre sur le libellé
+  **et** la valeur.
+- **Ordre clair** : chaque ligne de la chaîne affiche le rang `N.` + le titre humain **au-dessus**
+  de l'identifiant technique éditable, avec monter / descendre / retirer. Une quête absente du
+  catalogue chargé porte un badge « quête inconnue » dès la saisie.
+- Bouton **« Actualiser le formulaire »** ajouté à la section Validation (parité avec l'éditeur de
+  quêtes). `<form novalidate>`, aucun `required`, conservation du scroll : déjà en place (V4),
+  inchangés.
+- Modèle **strictement** celui du moteur (`StoryDefinition` : `id`, `name`, `secret`, liste
+  ordonnée de `questIds`) — aucun champ ajouté. `StoryValidator` inchangé (doublon = avertissement
+  car le moteur l'autorise ; référence inconnue = avertissement ; round-trip).
+
+Fichiers : `panel/content/RefData.java` (+`questNames` / `questLabel`), `panel/web/AgentPages.java`
+(`referenceData` remplit `questNames` depuis `quest.list`), `panel/web/ContentEditorPages.java`
+(datalist `dl-quest` labellisée, ligne de chaîne `renderStoryQuestRow`, bouton « Actualiser »),
+`assets/plugadmin.css` (`.row-n` / `.row-title`). `panel.js` **non modifié**. CSP inchangée
+(`default-src 'self'`), aucun CDN. `control-panel.db` non touché (aucune migration).
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — build + release sous `/opt/plugadmin/releases/<horodatage>`
++ `systemctl restart plugadmin` + check `/health`. Aucune autre action. Aucun changement nginx /
+TLS / secret / base. **VeryGames / Minecraft non touchés.**
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : app précédente sous `/opt/plugadmin/releases/<horodatage>`
+(rétention 5).
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local **et** public ONLINE ; `/stories`, `/stories/new`, `/stories/edit/<slug>`
+  rendus (auth).
+- `:control-panel:test` vert (`StoryEditorPassTest` +17) ; `./gradlew build` vert.
+- Rendu navigateur owner (créer une story, recherche quête par titre puis par id, ajout multiple,
+  monter/descendre, retirer, scroll conservé, Vérifier/Aperçu, YAML + ordre, mobile) :
+  `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure la release précédente). Aucune migration à défaire.
+
+### Exécution réelle
+
+Déploiement AWS effectué le **2026-09-10 ~11:14 UTC** depuis `feat/control-panel-admin-tools`
+@ `007a419`. `scripts/plugadmin/deploy.sh` : `:control-panel:installDist` **BUILD SUCCESSFUL**
+(`compileJava` / `jar` **UP-TO-DATE** — distribution issue du build déjà testé), release
+précédente sauvegardée sous `/opt/plugadmin/releases/20260910-111417`,
+`systemctl restart plugadmin` → `active (running)`, drop-in `10-content-workspace.conf` toujours
+chargé, `Memory` ~51 M.
+
+Vérifications live : `/health` **ONLINE** local **et** public
+(`https://plugadmin.lodylands.com/health`). `/stories`, `/stories/new` et
+`/stories/edit/<slug>` anonymes → **303** vers `/login` (routes vivantes, auth appliquée).
+`assets/plugadmin.css` servi publiquement contient bien `.row-title{ … }` (titre de la ligne de
+chaîne) ; le JAR déployé contient `questDatalist`, `renderStoryQuestRow` et
+« Actualiser le formulaire ». **0 `ERROR` / `SEVERE` / `Exception`** au journal depuis le
+redéploiement. `control-panel.db` non touché. **VeryGames / Minecraft non touchés, aucun
+redémarrage Minecraft.**
+
+Validation navigateur : `StoryEditorPassTest` (17, rendu direct de `ContentEditorPages` avec un
+`RefData` porteur de titres) + `ContentEditorPagesTest` (`storyEditorCreatesOrderedChain`,
+`storyEditorFormAlsoDisablesNativeValidation`, `PanelApp` réel + login owner). Session owner
+navigateur réelle (10 scénarios manuels du rapport) : `PENDING MANUAL VALIDATION` (mot de passe
+owner non détenu).
+
+Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260910-111417`).
+
+Rapport : `docs/claude-reports/2026-09-10_1032_editeur-stories-passe-ux-46.md`.

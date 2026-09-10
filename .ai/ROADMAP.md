@@ -216,6 +216,18 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-09-10 (soir)
+Branche de départ: feat/control-panel-admin-tools
+Étape de départ: issue #46 — passe UX ciblée sur l'éditeur guidé de STORIES (/stories/new, /stories/edit) — hors étapes 1-23
+Étapes terminées: #46 V5 (stories) — datalist dl-quest « titre humain + id » (RefData.questNames/questLabel, source quest.list), ligne de chaîne = rang N. + titre au-dessus de l'id + badge « quête inconnue », bouton « Actualiser le formulaire » (parité), rien de nouveau côté modèle (StoryDefinition inchangé), catalogue /stories déjà cohérent (inchangé)
+Branche finale: feat/control-panel-admin-tools (rester sur la branche courante, ne rien merger)
+Dernier commit: (voir git log — commits feat(control-panel)/docs #46)
+Build: vert — ./gradlew build BUILD SUCCESSFUL 9m16s (2e essai, RPGQUEST_TEST_MAX_HEAP=768m après OOM du 1er) ; root :test 1282/0/29skip, control-panel 311/0/1skip (+17 StoryEditorPassTest), web-api 30/0. Déploiement AWS Control Panel effectué (release préc. 20260910-111417).
+Tests: verts — control-panel StoryEditorPassTest 17 (rendu new/edit, datalist titre+id, questLabel, titre au-dessus de l'id, badge quête inconnue, add/del/reorder brouillon incomplet, ancres scroll, aucun required, validation id/nom/chaîne vide, doublon + référence inconnue, aperçu = YAML écrit + round-trip, diff, conflit de hash)
+Tests manuels en attente: validation navigateur owner de /stories/new et /stories/edit (créer une story, recherche quête par titre puis par id, ajout multiple, monter/descendre, retirer, scroll conservé, Vérifier/Aperçu, YAML + ordre, rendu mobile) — mot de passe owner non détenu -> couvert par tests HTTP/rendu
+Blocages: aucun
+Première étape à reprendre: #46 reste ouverte (action agent quest.definition.validate à faire) ; sinon poursuivre le pipeline de contenus avec #109 (import content pack)
+
 Date: 2026-09-10
 Branche de départ: feat/control-panel-admin-tools
 Étape de départ: issue #46 (éditeur guidé Quêtes/Stories) — passe UX ciblée sur bugs navigateur confirmés — hors étapes 1-23

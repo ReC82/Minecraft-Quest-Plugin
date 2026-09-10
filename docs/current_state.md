@@ -453,6 +453,27 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   bouton structurel, suppression d'une ligne à champs vides, isolation des 7 objectifs / 4
   récompenses, changement de type qui efface l'incompatible, libellés de PNJ, validation finale
   qui bloque toujours + aperçu conservé), `EditorDescriptorsTest` (+2).
+  **V5 (passe UX ciblée éditeur de *stories*, issue #46)** : l'éditeur de story reçoit la même
+  logique validée que l'éditeur de quêtes (construire le brouillon sans blocage → « Vérifier »
+  → « Aperçu » YAML + diff → « Enregistrer » si valide ; `<form novalidate>`, aucun `required`,
+  conservation du scroll, bouton « Actualiser le formulaire » ajouté pour la parité). Le modèle
+  reste **strictement** celui du moteur (`StoryDefinition` : `id`, `name`, `secret`, liste
+  ordonnée de `questIds`) — aucun champ inventé. **Sélection recherchable des quêtes** : la
+  datalist `dl-quest` porte désormais le **titre humain** en plus de l'id
+  (`<option value="first_steps" label="Premiers pas">`) ; `RefData` transporte `id -> titre`
+  depuis le dernier `quest.list`, `questLabel()` le résout (namespace `rpgquest:` toléré), le
+  combo `panel.js` filtre sur le **titre et l'id**. **Ordre clair** : chaque ligne de la chaîne
+  affiche le rang `N.` + le titre humain au-dessus de l'identifiant technique éditable, avec les
+  contrôles monter / descendre / retirer ; une référence absente du catalogue chargé est marquée
+  d'un badge « quête inconnue » dès la construction. Ajout / suppression / réordonnancement
+  ne déclenchent jamais la validation métier ; `StoryValidator` (id, nom, chaîne non vide,
+  référence inconnue → WARNING, doublon → WARNING car le moteur l'autorise, round-trip) ne
+  s'exécute qu'à « Vérifier » / « Enregistrer ». Le catalogue `/stories` (liste, détail
+  accordéon, « Modifier la story », « Créer une story ») était déjà cohérent — inchangé. Tests :
+  `StoryEditorPassTest` (nouveau, 17 : rendu new/edit, datalist titre+id, `questLabel`, titre
+  au-dessus de l'id dans la ligne, badge quête inconnue, add/del/reorder sur brouillon
+  incomplet, ancres de scroll, aucun `required`, id/nom/chaîne vide à la vérification, doublon +
+  référence inconnue, aperçu = YAML écrit + round-trip, diff, conflit de hash).
 - **Resynchronisation après mutation + UX formulaires PNJ / Dialogues (issues #111 → #120)**
   *(branche `feat/control-panel-admin-tools`)* — plusieurs mutations réussissaient côté backend
   (notification SUCCESS) mais la page métier restait périmée : seule la séquence « Rafraîchir

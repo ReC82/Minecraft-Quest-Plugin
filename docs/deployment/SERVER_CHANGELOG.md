@@ -2726,3 +2726,119 @@ owner non détenu).
 Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260910-111417`).
 
 Rapport : `docs/claude-reports/2026-09-10_1032_editeur-stories-passe-ux-46.md`.
+
+---
+
+## 2026-09-10 - Control Panel : socle RBAC — rôles, permissions et comptes /users (issue #50) — AWS uniquement
+
+### Changement
+
+Control Panel uniquement. **Aucun changement du plugin RPGQuest, du serveur Minecraft, des
+mondes, ou de `data.db`. Aucune migration MariaDB (#42).** Consolide le contrôle d'accès de
+PlugAdmin autour du modèle **utilisateur → rôle → `Set<Permission>` → contrôle backend → UI
+filtrée** (issue #50).
+
+- **Rôles** (`authz.Role`) : `OWNER` (= `EnumSet.allOf(Permission.class)`), `ADMIN`, `TESTER`,
+  `BUILDER`, `CONTENT_EDITOR`, `READ_ONLY`. Nouvelle permission `USER_MANAGE` (OWNER par défaut).
+  Rôles propres à PlugAdmin — aucune correspondance avec OP / Paper / LuckPerms.
+- **Comptes** : nouvelle table `panel_user` dans `control-panel.db` (`CREATE TABLE IF NOT EXISTS`
+  additif et idempotent). `users.PanelUser` / `UserRepository` (`SqliteUserRepository`) /
+  `UserDirectory`. Le compte `owner` défini par `RPGQUEST_PANEL_OWNER_USERNAME` /
+  `RPGQUEST_PANEL_OWNER_HASH` est **réamorcé au démarrage** (créé s'il manque, sinon forcé actif
+  + `OWNER` + hash réaligné) : chemin de récupération anti-verrouillage. Ces variables sont déjà
+  requises pour que le service démarre — pas de risque de perte d'accès.
+- **Auth** (`AuthService`) : identifiants vérifiés contre `panel_user` (casse ignorée), coût
+  PBKDF2 payé même compte absent / inactif, un compte **désactivé** ne peut plus se connecter,
+  `last_login_at` posé à la réussite. Hachage inchangé (`PasswordHasher` PBKDF2-HMAC-SHA256
+  210k) — audité, conservé.
+- **Session** : re-contrôle par requête — un compte désactivé perd sa session en cours (→ `303
+  /login`), un changement de rôle prend effet sans reconnexion. Le `SessionStore` reste en
+  mémoire : le redémarrage déconnecte les sessions en cours (comportement habituel d'un déploiement
+  PlugAdmin).
+- **Page `/users`** (`USER_MANAGE`) : liste + création (identifiant, mot de passe ≥ 12, rôle),
+  détail `/users/<id>`, `POST /users/create` / `/users/<id>/role` / `/users/<id>/active`. CSRF
+  synchroniseur sur chaque POST, permission vérifiée côté backend (403 « Vous n'avez pas
+  l'autorisation… » même en appel direct). Dernier OWNER actif protégé (ni rétrogradation ni
+  désactivation) ; désactivation de son propre compte interdite. Pas de suppression
+  (désactivation seulement).
+- **Navigation** : `Layout.nav()` + tuiles `HomePages` filtrées par permission ; la topbar
+  affiche l'utilisateur **et** son rôle.
+- **Audit** : `user.create`, `user.role.change` (`from=… to=…`), `user.active.change`,
+  `login.failure` motif `compte désactivé`, `login.success` porte `role=…`. Jamais de mot de
+  passe / hash.
+
+Fichiers principaux : `authz/Permission.java`, `authz/Role.java`, `users/*` (nouveau paquet),
+`security/AuthService.java`, `security/Session.java`, `security/SessionStore.java`,
+`web/PanelApp.java`, `web/Layout.java`, `web/HomePages.java`, `web/UsersPages.java` (nouveau),
+`web/Icons.java`, `agent/AgentActionCatalog.java` (+ `all()`), `assets/plugadmin.css`. CSP
+inchangée (`default-src 'self'`), aucun CDN, aucun script inline.
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — `:control-panel:installDist` + release sous
+`/opt/plugadmin/releases/<horodatage>` + `systemctl restart plugadmin` + check `/health`. Aucune
+autre action. Aucun changement nginx / TLS / secret. **VeryGames / Minecraft non touchés, aucun
+redémarrage Minecraft.**
+
+### Sauvegarde préalable
+
+- **`control-panel.db`** (migration = nouvelle table `panel_user`) : copie datée avant le
+  redémarrage, p. ex. `cp /opt/plugadmin/shared/control-panel.db
+  /opt/plugadmin/backups/control-panel.db.$(date +%Y%m%d-%H%M%S)` (chemin réel à confirmer via le
+  drop-in systemd / `RPGQUEST_PANEL_DB`).
+- App précédente : automatique via `deploy.sh` (`/opt/plugadmin/releases/<horodatage>`,
+  rétention 5).
+
+### Déploiement
+
+```
+# sauvegarde de la base du Control Panel (migration additive)
+cp <chemin>/control-panel.db <chemin>/control-panel.db.$(date +%Y%m%d-%H%M%S)
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local **et** public ONLINE ; `systemctl status plugadmin` = `active (running)`.
+- `/login` rendu ; connexion owner OK ; `/users` rendu (auth owner) et **403** pour un rôle sans
+  `USER_MANAGE` ; URL `/users` anonyme → `303 /login`.
+- Journal sans `ERROR` / `SEVERE` / `Exception` depuis le redémarrage.
+- `:control-panel:test` vert (354 tests, +43) ; `./gradlew test` + `./gradlew build` verts.
+- Checklist navigateur owner (créer un compte TESTER, se connecter avec lui, menus visibles,
+  URL interdite → 403, revenir OWNER, désactiver le compte de test) : `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+1. `scripts/plugadmin/rollback.sh app` (restaure la release précédente).
+2. La table `panel_user` peut rester en place sans effet sur l'ancienne version (elle l'ignore).
+   Pour un retour strictement à l'identique : restaurer la copie datée de `control-panel.db`.
+
+### Exécution réelle
+
+Déploiement AWS effectué le **2026-09-10 ~15:52 UTC** depuis `feat/control-panel-admin-tools`
+@ `ea34d73`.
+
+- Sauvegarde préalable : `sudo cp -a /var/lib/plugadmin/control-panel.db
+  /opt/plugadmin/backups/control-panel.db.20260910-155247` (migration = nouvelle table
+  `panel_user`).
+- `scripts/plugadmin/deploy.sh` : `:control-panel:installDist` **BUILD SUCCESSFUL** (`compileJava`
+  / `jar` **UP-TO-DATE**), app précédente sauvegardée sous
+  `/opt/plugadmin/releases/20260910-155250`, `systemctl restart plugadmin` → `active (running)`
+  (PID 756465, `Memory` ~69 M), drop-in `10-content-workspace.conf` toujours chargé.
+- Vérifications live : `/health` **ONLINE** local **et** public
+  (`https://plugadmin.lodylands.com/health`) ; `/login` local → **200** ; `/users` anonyme →
+  **303** vers `/login` (`USER_MANAGE` appliqué avant tout) ; `control-panel.db` : table
+  **`panel_user`** créée, ligne `owner | OWNER | active=1 | last_login_at=NULL` (amorçage OK,
+  `data.db` non touché) ; `journalctl -u plugadmin` depuis le redémarrage : **0**
+  `ERROR` / `SEVERE` / `Exception` / `WARN`. **VeryGames / Minecraft non touchés, aucun
+  redémarrage Minecraft.**
+
+Validation navigateur **authentifiée** de `/users` : couverte par `UserManagementTest` (11,
+`PanelApp` réel + sessions HTTP, dont 403 backend en appel direct, CSRF, audit, dernier OWNER,
+session d'un compte désactivé, navigation filtrée). Session owner navigateur réelle (checklist du
+rapport) : `PENDING MANUAL VALIDATION` (mot de passe owner non détenu).
+
+Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260910-155250`) ; base :
+`/opt/plugadmin/backups/control-panel.db.20260910-155247`.
+
+Rapport : `docs/claude-reports/2026-09-10_1553_rbac-plugadmin-50.md`.

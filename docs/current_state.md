@@ -531,6 +531,49 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`/content/export`). **Hors périmètre** (assumé) : import (#109), génération IA (#110), familles
   items/recettes, découpage/compression du transport, boutons d'export par ligne sur les 4 pages
   métier (la page dédiée couvre tous les critères #108).
+- **Socle RBAC PlugAdmin — rôles, permissions et gestion des comptes (issue #50)**
+  *(branche `feat/control-panel-admin-tools`)* — consolidation du contrôle d'accès du Control
+  Panel autour d'un modèle **utilisateur → rôle → `Set<Permission>` → contrôle backend → UI
+  filtrée**. Ces droits sont **propres à PlugAdmin**, sans aucune correspondance automatique avec
+  OP / Paper / LuckPerms. **Rôles** (`authz.Role`) : `OWNER` (= `EnumSet.allOf(Permission.class)`,
+  aucune liste à maintenir), `ADMIN` (exploitation serveur : joueurs, PNJ, dialogues,
+  diagnostics, contenu, actions admin — **pas** de gestion des comptes ni du module dev/déploiement),
+  `TESTER` (lectures + `ACTION_QUEST`/`ACTION_STORY`/`ACTION_VARIABLE_GET` — pas d'écriture de
+  contenu, pas de reset, pas de modération), `BUILDER` (docs + infos PNJ/contenu — **pas** de
+  données joueurs, pas d'action serveur), `CONTENT_EDITOR` (lecture + édition guidée quêtes /
+  stories / dialogues / PNJ logiques — pas de modération, pas de spawn), `READ_ONLY` (aucune
+  permission qui pilote une mutation d'`AgentActionCatalog`). Nouvelle permission `USER_MANAGE`
+  (OWNER par défaut). Les rôles portent un libellé FR (`Role.label()`). **Comptes** stockés dans
+  `control-panel.db`, table `panel_user` (migration additive idempotente `CREATE TABLE IF NOT
+  EXISTS`, aucun rapport avec `data.db` ni MariaDB #42) : `users.PanelUser`,
+  `users.UserRepository` (`SqliteUserRepository` / `InMemoryUserRepository`), `users.UserDirectory`
+  (validation + garde-fous). Le compte `owner` d'environnement
+  (`RPGQUEST_PANEL_OWNER_USERNAME` / `RPGQUEST_PANEL_OWNER_HASH`) est **réamorcé** au démarrage
+  (créé s'il manque, sinon forcé actif + `OWNER` + hash réaligné) — chemin de récupération
+  anti-verrouillage. **Auth** : `AuthService.authenticate` consulte `panel_user` (casse ignorée),
+  coût PBKDF2 payé même compte absent / inactif, un compte **désactivé** ne peut pas se connecter
+  (`Outcome.DISABLED`), `last_login_at` posé à la réussite. Hachage inchangé : `PasswordHasher`
+  PBKDF2-HMAC-SHA256 210k itérations, sel 16 o, comparaison temps constant — audité, conservé.
+  **Session** : re-contrôle par requête (`currentSession`) — un compte supprimé/désactivé perd sa
+  session en cours, un changement de rôle prend effet sans reconnexion (`Session.refreshRole`).
+  **Page `/users`** (`USER_MANAGE`, motif liste compacte → clic → détail) : `/users` (liste +
+  formulaire de création : identifiant, mot de passe ≥ 12, rôle), `/users/<id>` (détail),
+  `POST /users/create`, `POST /users/<id>/role`, `POST /users/<id>/active`. **Garde-fous** : le
+  dernier OWNER actif ne peut être ni rétrogradé ni désactivé ; on ne peut pas désactiver son
+  propre compte. **Sécurité** : chaque route et mutation exige la permission côté backend (403
+  cohérent « Vous n'avez pas l'autorisation… » même en appel direct — masquer un bouton n'est pas
+  une sécurité), CSRF synchroniseur sur tous les POST, aucune élévation via paramètre client,
+  mot de passe jamais réaffiché ni journalisé. **Audit** : `user.create`, `user.role.change`
+  (`from=…/to=…`), `user.active.change`, `login.failure` avec motif `compte désactivé` ;
+  `login.success` porte `role=…`. **Navigation** : `Layout.nav()` et les tuiles `HomePages` sont
+  filtrées par permission (groupe entièrement masqué s'il est vide) ; la topbar affiche
+  l'utilisateur **et** son rôle (`userbox-r`). **Hors périmètre** (assumé, prévu plus tard sans
+  bloquer l'architecture) : multi-rôles par compte, permissions par environnement/serveur, droits
+  temporaires, approbation à deux niveaux, groupes/équipes, 2FA, SSO/OAuth, invitations, reset de
+  mot de passe en self-service, suppression de compte (désactivation seulement). Tests :
+  `RolePermissionMatrixTest`, `UserDirectoryTest`, `SqliteUserRepositoryTest`, `AuthServiceTest`,
+  `UserManagementTest` (bout-en-bout : 403 backend, CSRF, audit, dernier OWNER, session d'un
+  compte désactivé, navigation filtrée).
 
 ## Bugs connus et corrigés
 

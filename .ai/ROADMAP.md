@@ -216,6 +216,20 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-09-10 (nuit)
+Branche de départ: feat/control-panel-admin-tools
+Étape de départ: issue #50 — socle RBAC PlugAdmin (rôles / permissions / gestion des comptes) — hors étapes 1-23, Control Panel uniquement
+Étapes terminées: #50 — rôles ADMIN + BUILDER ajoutés (matrice complète OWNER/ADMIN/TESTER/BUILDER/CONTENT_EDITOR/READ_ONLY à partir des permissions réelles), permission USER_MANAGE, nouveau paquet panel.users (PanelUser, UserRepository + SqliteUserRepository (table panel_user, migration additive idempotente) + InMemoryUserRepository, UserDirectory avec garde-fous dernier-OWNER), AuthService adossé au stockage (compte désactivé -> refus, last_login_at), Session.refreshRole + re-contrôle par requête (compte désactivé perd sa session), page /users (liste compacte -> détail, création / changement de rôle / activation, CSRF + audit + 403 humain unique), nav Layout filtrée par permission + rôle affiché en topbar, tuile /users. Compte OWNER d'environnement réamorcé au démarrage (anti-verrouillage).
+Branche finale: feat/control-panel-admin-tools (y rester, ne rien merger, #50 laissée ouverte)
+Dernier commit: (voir git log — commits feat(control-panel)/docs #50)
+Build: (à confirmer — ./gradlew test build lancé avec RPGQUEST_TEST_MAX_HEAP=768m) ; :control-panel:test vert 354/0/1skip (+43 : RolePermissionMatrixTest 10, AuthServiceTest 6, UserDirectoryTest 11, SqliteUserRepositoryTest 5, UserManagementTest 11)
+Tests: verts en ciblé — voir ci-dessus ; UserManagementTest couvre 403 backend en appel direct, CSRF, audit, dernier OWNER protégé, session d'un compte désactivé invalidée, navigation filtrée
+Tests manuels en attente: validation navigateur owner de /users (créer un compte TESTER, se connecter, menus visibles, URL /users interdite -> 403, changer le rôle, désactiver) — mot de passe owner non détenu -> couvert par tests HTTP/rendu
+Blocages: aucun
+Première étape à reprendre: #50 reste ouverte (évolutions « plus tard » : changement de mot de passe self-service, comptes temporaires, permissions par environnement) ; sinon poursuivre le pipeline de contenus #109 (import content pack)
+```
+
+```text
 Date: 2026-09-10 (soir)
 Branche de départ: feat/control-panel-admin-tools
 Étape de départ: issue #46 — passe UX ciblée sur l'éditeur guidé de STORIES (/stories/new, /stories/edit) — hors étapes 1-23

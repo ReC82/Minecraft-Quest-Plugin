@@ -23,7 +23,7 @@ progression, reload de contenu, plus tard édition et déploiement). La sécurit
 | Agent : HTTPS validé (aucun `trustAll`), aucun secret dans logs/`toString`/réponses, kill-switch → 503 | ✅ |
 | Rate limiting login / backoff | ⏳ à ajouter (délai constant PBKDF2 déjà payé sur échec ; nginx devant) |
 | HTTPS + reverse proxy | ✅ #44 — `https://plugadmin.lodylands.com`, TLS Let's Encrypt, 80→443, backend `127.0.0.1:8090` non exposé ([DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md)) |
-| RBAC multi-rôles | ⏳ énum posée, un seul rôle `owner` actif |
+| RBAC multi-rôles | ✅ #50 — `Role` (OWNER/ADMIN/TESTER/BUILDER/CONTENT_EDITOR/READ_ONLY) → `Set<Permission>`, `PermissionService.can`, comptes `panel_user` dans `control-panel.db`, page `/users` (voir « Rôles et permissions #50 » plus bas) |
 
 ## Modèle de menace (V1)
 
@@ -75,23 +75,80 @@ Table append-only `audit_log` dans `control-panel.db` :
 - Consultable dans le module « Admin » (lecture seule, filtrable).
 - Jamais purgé automatiquement en V1.
 
-## Permissions (RBAC minimal, extensible — ne pas tout implémenter)
+## Rôles et permissions #50 (implémenté)
 
-`PermissionService.can(session, Permission)` — jamais de check ad hoc.
+`PermissionService.can(roleName, Permission)` — **jamais** de test `if role == OWNER` dans un
+handler. Toute route et toute mutation vérifie une permission côté backend ; masquer un bouton
+n'est jamais une sécurité (une requête directe sans permission → `403` avec la page « Vous n'avez
+pas l'autorisation d'accéder à cette fonction. »).
 
-Rôles cibles (V1 : seul `owner` existe, mais l'énum et la table sont posées) :
+**Ces rôles sont propres à PlugAdmin** — aucune correspondance automatique avec OP Minecraft,
+Paper ou LuckPerms. Toute correspondance future devra être explicite et documentée.
 
-| Rôle | Peut |
+| Rôle | Portée |
 |---|---|
-| `owner` | tout |
-| `tester` | lectures + actions #36 (quest/story/variable) sur DEV |
-| `content-editor` | lectures + reload contenu + (futur) édition YAML guidée |
-| `builder` | lectures + (futur) actions build/monde ciblées |
-| `read-only` | lectures uniquement |
+| `OWNER` | tout — `EnumSet.allOf(Permission.class)`, aucune liste à maintenir. Seul à gérer les comptes (`USER_MANAGE`) et le module dev/déploiement (`DEV_MODULE`). |
+| `ADMIN` | exploitation serveur : joueurs (dont modération), PNJ, dialogues, diagnostics, contenu, actions admin (quest/story/variable/reset/item/reload). **Pas** `USER_MANAGE`, **pas** `DEV_MODULE`. |
+| `TESTER` | lectures utiles au test + `ACTION_QUEST`/`ACTION_STORY`/`ACTION_VARIABLE_GET`. **Pas** d'écriture de contenu, pas de reset, pas de modération, pas de gestion des comptes. |
+| `BUILDER` | documentation + infos PNJ / contenu nécessaires. **Pas** de données joueurs (`PLAYERS_READ` non accordé), **pas** d'action serveur. |
+| `CONTENT_EDITOR` | lecture + édition guidée quêtes / stories / dialogues / PNJ logiques, brouillons, validation, reload contenu. **Pas** de modération, pas de spawn d'entité. Le déploiement dépendrait d'une permission dédiée (aucune n'existe encore). |
+| `READ_ONLY` | lecture seule des modules explicitement autorisés. Aucune permission détenue ne pilote une mutation d'`AgentActionCatalog`. |
 
-`Permission` : `PLAYERS_READ`, `NPC_READ`, `CONTENT_READ`, `DOCS_READ`, `DIAGNOSTICS_READ`,
-`ACTION_QUEST`, `ACTION_STORY`, `ACTION_VARIABLE_GET`, `ACTION_VARIABLE_SET`,
-`ACTION_PLAYER_RESET`, `ACTION_CONTENT_RELOAD`, `AUDIT_READ`, `DEV_MODULE`… (extensible).
+`Permission` (extensible) : `DASHBOARD_VIEW`, `PLAYERS_READ`, `PLAYER_MODERATE`,
+`PLAYER_BUILD_WRITE`, `NPC_READ`, `NPC_WRITE`, `NPC_BIND_WRITE`, `NPC_SPAWN_WRITE`,
+`QUEST_GIVER_WRITE`, `DIALOGUE_READ`, `DIALOGUE_WRITE`, `QUEST_CONTENT_WRITE`,
+`STORY_CONTENT_WRITE`, `CONTENT_READ`, `CONTENT_EXPORT`, `DOCS_READ`, `DIAGNOSTICS_READ`,
+`AUDIT_READ`, `ACTION_QUEST`, `ACTION_STORY`, `ACTION_VARIABLE_GET`, `ACTION_VARIABLE_SET`,
+`ACTION_PLAYER_RESET`, `ACTION_ITEM_GIVE`, `ACTION_CONTENT_RELOAD`, `DEV_MODULE`, `USER_MANAGE`.
+
+### Comptes PlugAdmin (`panel_user`)
+
+- Stockage **propre au Control Panel** : table `panel_user` dans `control-panel.db` (jamais
+  `data.db`, jamais `store.db`, aucun rapport avec MariaDB #42). Migration = un seul
+  `CREATE TABLE IF NOT EXISTS` additif et idempotent.
+- Champs : `id` (UUID), `username` (+ `username_lower` unique, casse ignorée), `password_hash`
+  (PBKDF2-HMAC-SHA256 — jamais en clair, jamais rendu, jamais journalisé), `role` (un seul rôle
+  par compte au MVP), `active`, `created_at`, `last_login_at`.
+- **Amorçage du OWNER** : au démarrage, `UserDirectory.ensureBootstrapOwner` garantit qu'un compte
+  correspondant à `RPGQUEST_PANEL_OWNER_USERNAME` / `RPGQUEST_PANEL_OWNER_HASH` existe, est
+  **actif** et `OWNER`, avec le hash réaligné sur l'environnement. C'est le **chemin de
+  récupération** anti-verrouillage : tant que ces variables sont définies, l'accès ne peut pas
+  être perdu.
+- **Authentification** : `AuthService.authenticate` cherche le compte (casse ignorée), paie le
+  coût PBKDF2 même si le compte est absent ou inactif (pas de fuite de temps), refuse un compte
+  `active = false` (`Outcome.DISABLED` → message « Ce compte est désactivé »), pose
+  `last_login_at` à la réussite.
+- **Session** : re-contrôle à **chaque** requête (`PanelApp.currentSession`) — un compte
+  supprimé ou désactivé perd sa session en cours (invalidée, `303 /login`), et un changement de
+  rôle prend effet à la requête suivante sans reconnexion.
+
+### Page `/users` (gestion, `USER_MANAGE`)
+
+- `GET /users` — liste compacte + formulaire de création (identifiant `[A-Za-z0-9][A-Za-z0-9._-]{2,31}`,
+  mot de passe ≥ 12 caractères jamais réaffiché, rôle).
+- `GET /users/<id>` — détail (rôle, statut, dates) + actions.
+- `POST /users/create`, `POST /users/<id>/role`, `POST /users/<id>/active` — **CSRF synchroniseur
+  obligatoire**, permission `USER_MANAGE` vérifiée côté backend, validation serveur stricte,
+  aucune élévation possible via un paramètre client.
+- **Protection du OWNER** : impossible de retirer le rôle `OWNER` au **dernier OWNER actif**, de le
+  désactiver, ou de désactiver son propre compte. Dès qu'un second OWNER actif existe, la
+  modification du premier redevient possible.
+- **Pas de suppression** : le modèle préfère la **désactivation** (réversible, traçable).
+- **Audit** : `user.create` (acteur, `username=…`, `role=…`), `user.role.change`
+  (`from=… to=…`), `user.active.change` (`from=… to=…`), refus sensibles en `DENIED`. Jamais de
+  mot de passe / hash.
+
+### Navigation
+
+`Layout.nav()` et les tuiles `HomePages` portent la permission requise et sont filtrées par
+`PermissionService.can` ; un groupe entièrement filtré disparaît. La topbar affiche l'utilisateur
+courant **et** son rôle. Le backend reste la seule barrière réelle.
+
+### Plus tard (architecture à ne pas bloquer, hors #50)
+
+Multi-rôles par compte, permissions par environnement (DEV/PROD) / serveur / module, droits
+temporaires, approbation à deux niveaux pour la prod, groupes/équipes, 2FA pour actions
+critiques, SSO/OAuth, invitations, reset de mot de passe self-service.
 
 ## Centre de documentation `/docs` (issue #49)
 

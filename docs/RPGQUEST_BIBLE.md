@@ -364,6 +364,56 @@ Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et
 - L'autorité finale sur la validité d'un fichier reste le **chargement du plugin** au démarrage
   du serveur : un fichier incompatible est rejeté à ce moment-là (voir `QUEST_FORMAT.md`).
 
+### Rôles, permissions et comptes PlugAdmin (issue #50)
+
+Le contrôle d'accès du Control Panel repose sur un modèle **utilisateur → rôle →
+`Set<Permission>` → contrôle backend → interface filtrée**. Ces droits sont **propres à
+PlugAdmin** : aucune correspondance automatique avec OP Minecraft, Paper ou LuckPerms. Un
+`tester` PlugAdmin peut préparer une story par une action contrôlée sans jamais être OP en jeu.
+
+- **Rôles** (`authz.Role`, libellé FR via `Role.label()`) :
+  - `OWNER` — accès total (`EnumSet.allOf(Permission.class)` : toute permission ajoutée lui
+    revient automatiquement). Seul à gérer les comptes (`USER_MANAGE`) et le module
+    dev/déploiement (`DEV_MODULE`) par défaut.
+  - `ADMIN` — exploitation serveur : joueurs (dont modération), PNJ, dialogues, diagnostics,
+    contenu, actions admin (quest / story / variable / reset / item / reload). **Pas** de gestion
+    des comptes ni du module dev.
+  - `TESTER` — lectures utiles au test + `ACTION_QUEST` / `ACTION_STORY` / `ACTION_VARIABLE_GET`.
+    Pas d'écriture de contenu, pas de reset, pas de modération.
+  - `BUILDER` — documentation + infos PNJ / contenu. **Pas** de données joueurs, pas d'action
+    serveur.
+  - `CONTENT_EDITOR` — lecture + édition guidée quêtes / stories / dialogues / PNJ logiques,
+    brouillons, validation, reload contenu. Pas de modération, pas de spawn.
+  - `READ_ONLY` — lecture seule ; aucune permission détenue ne pilote une mutation.
+- **Contrôle centralisé** : `PermissionService.can(roleName, Permission)` — **jamais** un test
+  `if role == OWNER` dans un handler. Chaque route et chaque mutation vérifie la permission
+  côté backend ; une requête directe sans droit renvoie un **403** cohérent (« Vous n'avez pas
+  l'autorisation d'accéder à cette fonction. »). Masquer un bouton dans l'UI n'est jamais une
+  sécurité.
+- **Comptes** dans `control-panel.db`, table `panel_user` (migration additive idempotente ;
+  aucun rapport avec `data.db` ni MariaDB #42). Mot de passe haché PBKDF2-HMAC-SHA256
+  (`PasswordHasher`, 210k itérations) — jamais en clair, jamais réaffiché, jamais journalisé. Un
+  compte peut être **actif ou désactivé** ; un compte désactivé ne peut plus se connecter et
+  perd sa session en cours à la requête suivante. Un changement de rôle prend effet sans
+  reconnexion.
+- **Compte OWNER d'amorçage** : au démarrage, PlugAdmin garantit qu'un compte correspondant à
+  `RPGQUEST_PANEL_OWNER_USERNAME` / `RPGQUEST_PANEL_OWNER_HASH` existe, est actif et `OWNER`
+  (hash réaligné sur l'environnement). C'est le **chemin de récupération** : tant que ces
+  variables sont définies, l'accès ne peut pas être perdu.
+- **Page `/users`** (permission `USER_MANAGE`, motif liste compacte → clic → détail) : voir les
+  comptes (identifiant, rôle, statut, dates), **créer** un compte (mot de passe ≥ 12 caractères,
+  jamais réaffiché après création), **changer un rôle**, **activer / désactiver**. Pas de
+  suppression (désactivation seulement). Formulaires par aller-retour serveur, **CSRF
+  synchroniseur** sur chaque POST.
+- **Protection du dernier OWNER** : impossible de retirer `OWNER` au dernier OWNER actif, de le
+  désactiver, ou de désactiver son propre compte.
+- **Audit** : `user.create`, `user.role.change` (`from=… to=…`), `user.active.change`, refus
+  sensibles en `DENIED`, `login.failure` avec motif `compte désactivé`. Jamais de mot de passe
+  ni de hash.
+
+Détails et modèle de menace complet : [docs/control-panel/SECURITY.md](control-panel/SECURITY.md),
+section « Rôles et permissions #50 ».
+
 ---
 
 ## 4. Dialogues

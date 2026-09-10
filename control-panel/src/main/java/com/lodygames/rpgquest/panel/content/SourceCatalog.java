@@ -43,6 +43,16 @@ public final class SourceCatalog {
         }
     }
 
+    /** Un dialogue vu dans la source : slug de fichier + brouillon relu + succès de relecture (#145). */
+    public record DialogueSource(String slug, DialogueDraft draft, boolean parseOk) {
+
+        /** Id « nu » (sans préfixe {@code rpgquest:}) servant de clé de fusion avec le runtime. */
+        public String plainId() {
+            String id = draft != null && draft.id != null && !draft.id.isBlank() ? draft.id : slug;
+            return DialogueYaml.plainId(id);
+        }
+    }
+
     public boolean available() {
         return workspace != null && workspace.configured();
     }
@@ -89,6 +99,29 @@ public final class SourceCatalog {
                 d.id = f.slug();
             }
             out.add(new StorySource(f.slug(), d, r.draft() != null && r.problems().isEmpty()));
+        }
+        return out;
+    }
+
+    /** Tous les dialogues présents dans {@code <root>/dialogues/*.yml}, triés par slug. Jamais {@code null}. */
+    public List<DialogueSource> dialogues() {
+        List<DialogueSource> out = new ArrayList<>();
+        if (!available()) {
+            return out;
+        }
+        List<ContentWorkspace.ContentFile> files;
+        try {
+            files = workspace.list("dialogues");
+        } catch (RuntimeException e) {
+            return out;
+        }
+        for (ContentWorkspace.ContentFile f : files) {
+            DialogueYaml.ReadResult r = DialogueYaml.read(f.text());
+            DialogueDraft d = r.draft() != null ? r.draft() : new DialogueDraft();
+            if (d.id == null || d.id.isBlank()) {
+                d.id = f.slug();
+            }
+            out.add(new DialogueSource(f.slug(), d, r.draft() != null && r.problems().isEmpty()));
         }
         return out;
     }

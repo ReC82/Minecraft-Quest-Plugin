@@ -1,8 +1,12 @@
 package com.lodygames.rpgquest.panel.web;
 
+import com.lodygames.rpgquest.panel.agent.AgentActionCatalog;
 import com.lodygames.rpgquest.panel.content.ContentWorkspace;
 import com.lodygames.rpgquest.panel.content.Descriptors;
 import com.lodygames.rpgquest.panel.content.Diagnostic;
+import com.lodygames.rpgquest.panel.content.DialogueDraft;
+import com.lodygames.rpgquest.panel.content.DialogueValidator;
+import com.lodygames.rpgquest.panel.content.DialogueYaml;
 import com.lodygames.rpgquest.panel.content.QuestDraft;
 import com.lodygames.rpgquest.panel.content.QuestValidator;
 import com.lodygames.rpgquest.panel.content.QuestYaml;
@@ -45,6 +49,7 @@ public final class ContentEditorPages {
     /** Cibles POST des formulaires — servent aussi de base aux {@code formaction=".../save#ancre"}. */
     private static final String Q_SAVE = "/quests/save";
     private static final String S_SAVE = "/stories/save";
+    private static final Pattern NPC_REF = Pattern.compile("[a-z0-9._-]{1,64}");
 
     private final ContentWorkspace workspace;
 
@@ -686,6 +691,211 @@ public final class ContentEditorPages {
                 true, false, null, "dl-quest"));
         sb.append("</div></div>");
         return sb.toString();
+    }
+
+    // ================================================================================
+    //  Dialogues (issue #145 — création dans la source, squelette minimal)
+    // ================================================================================
+
+    private static final String D_SAVE = "/dialogues/save";
+
+    /**
+     * GET {@code /dialogues/new} ({@code slug == null}, {@code npcPrefill} = id de PNJ optionnel
+     * venu de la fiche PNJ) ou {@code /dialogues/edit/<slug>}. Périmètre volontairement réduit
+     * (issue #145) : identité, locuteur, couleur, réplique de départ. L'éditeur avancé (nœuds,
+     * choix conditionnels, actions) reste #82 et se fait sur un dialogue déjà chargé par le serveur.
+     */
+    public Result dialoguePage(RefData ref, String slug, boolean saved, String npcPrefill) {
+        DialogueDraft draft;
+        String expectedSha = "";
+        String speaker = "";
+        if (slug == null) {
+            draft = DialogueDraft.blank();
+        } else {
+            Optional<ContentWorkspace.ContentFile> cf = workspace.read("dialogues", slug);
+            if (cf.isEmpty()) {
+                return new Result.Html(missing("dialogues", slug));
+            }
+            DialogueYaml.ReadResult rr = DialogueYaml.read(cf.get().text());
+            draft = rr.draft() != null ? rr.draft() : DialogueDraft.blank();
+            if (draft.id == null || draft.id.isBlank()) {
+                draft.id = slug;
+            }
+            DialogueDraft.Node start = draft.startNode();
+            speaker = start != null ? start.speaker : "";
+            expectedSha = cf.get().sha256();
+        }
+        RefData r = ref == null ? RefData.empty() : ref;
+        String npc = npcPrefill == null ? "" : npcPrefill.trim();
+        if (slug == null && !npc.isEmpty() && speaker.isBlank()) {
+            speaker = r.npcLabel(npc);
+        }
+        String note = saved ? Ui.banner("ok", "Dialogue enregistré dans la source. Il apparaît dans "
+                + "« Dialogues » avec le badge « Source uniquement » ; le moteur RPGQuest le validera au "
+                + "prochain rechargement du serveur.") : "";
+        return new Result.Html(note + renderDialogue(r, draft, slug, expectedSha, speaker, "", npc,
+                List.of(), false, null));
+    }
+
+    /** POST {@code /dialogues/save} — porte toutes les actions du formulaire de dialogue. */
+    public Result dialoguePost(RefData ref, Map<String, String> form) {
+        RefData r = ref == null ? RefData.empty() : ref;
+        String slug = blankToNull(form.get("slug"));
+        String expectedSha = form.getOrDefault("expectedSha", "");
+        String action = form.getOrDefault("_action", "refresh");
+        String rawId = form.getOrDefault("id", "").trim();
+        String speaker = form.getOrDefault("speaker", "").trim();
+        String textRaw = form.getOrDefault("start_text", "").trim();
+        String color = form.getOrDefault("text_color", "").trim().toLowerCase(Locale.ROOT);
+        String npc = form.getOrDefault("npc", "").trim();
+        String text = applyColor(textRaw, color);
+
+        DialogueDraft draft = new DialogueDraft();
+        draft.id = DialogueYaml.plainId(rawId);
+        draft.start = "start";
+        DialogueDraft.Node start = new DialogueDraft.Node("start");
+        start.speaker = speaker;
+        start.text = text;
+        start.choices.add(new DialogueDraft.Choice("Au revoir", "", true));
+        draft.nodes.add(start);
+
+        boolean wantSave = action.equals("save");
+        boolean showChecks = wantSave || action.equals("validate");
+
+        if (wantSave) {
+            List<Diagnostic> diags = DialogueValidator.validate(draft);
+            String yaml = DialogueYaml.write(draft);
+            List<String> rtp = DialogueYaml.roundTripProblems(yaml);
+            String targetSlug = DialogueYaml.plainId(draft.id);
+            String blocker = saveBlocker("dialogues", diags, rtp, targetSlug);
+            if (blocker != null) {
+                return new Result.Html(Ui.banner("err", blocker)
+                        + renderDialogue(r, draft, slug, expectedSha, speaker, color, npc, diags, true, rtp));
+            }
+            ContentWorkspace.WriteResult wr =
+                    workspace.write("dialogues", targetSlug, yaml, slug == null ? "" : expectedSha);
+            if (!wr.ok()) {
+                return new Result.Html(Ui.banner("err", Http.esc(wr.message()))
+                        + renderDialogue(r, draft, slug, expectedSha, speaker, color, npc, diags, true, rtp));
+            }
+            String dest = "/dialogues/edit/" + targetSlug + "?saved=1";
+            if (NPC_REF.matcher(npc.toLowerCase(Locale.ROOT)).matches()) {
+                dest += "&npc=" + npc.toLowerCase(Locale.ROOT);
+            }
+            return new Result.Redirect(dest);
+        }
+
+        List<Diagnostic> diags = showChecks ? DialogueValidator.validate(draft) : List.of();
+        List<String> rtp = showChecks ? DialogueYaml.roundTripProblems(DialogueYaml.write(draft)) : null;
+        return new Result.Html(renderDialogue(r, draft, slug, expectedSha, speaker, color, npc, diags, showChecks, rtp));
+    }
+
+    /** Enrobe {@code text} de {@code <color>…</color>} si {@code color} est dans la palette et que le texte n'a pas déjà de balise. */
+    private static String applyColor(String text, String color) {
+        if (color.isEmpty() || !AgentActionCatalog.PALETTE_COLORS.contains(color) || text.indexOf('<') >= 0) {
+            return text;
+        }
+        return "<" + color + ">" + text + "</" + color + ">";
+    }
+
+    private String renderDialogue(RefData ref, DialogueDraft d, String slug, String expectedSha, String speaker,
+                                  String color, String npc, List<Diagnostic> diags, boolean showChecks, List<String> rtp) {
+        boolean editing = slug != null;
+        boolean writable = workspace.writable("dialogues");
+        DialogueDraft.Node start = d.startNode();
+        String startText = start != null ? start.text : "";
+        StringBuilder sb = new StringBuilder();
+
+        sb.append(Ui.pageHeader("dialogues", editing ? "Modifier un dialogue" : "Créer un dialogue",
+                editing ? "Dialogue « " + Http.esc(slug) + " »"
+                        : "Un dialogue minimal : identité, locuteur, couleur et réplique de départ. "
+                        + "L'ajout de nœuds et de choix se fait ensuite sur le dialogue chargé par le serveur.",
+                "<a class=\"btn secondary\" href=\"/dialogues\">" + Icons.icon("back") + "Retour au catalogue</a>"));
+
+        if (!writable) {
+            sb.append(readOnlyBanner("dialogues"));
+        }
+
+        sb.append("<form method=\"post\" action=\"/dialogues/save\" class=\"editor\" novalidate>%CSRF%");
+        sb.append(hidden("slug", slug == null ? "" : slug));
+        sb.append(hidden("expectedSha", expectedSha == null ? "" : expectedSha));
+        sb.append("<button type=\"submit\" formnovalidate name=\"_action\" value=\"refresh\" "
+                + "class=\"default-submit\" tabindex=\"-1\" aria-hidden=\"true\"></button>");
+
+        sb.append(sectionOpen("book", "Général", "Identité du dialogue. L'identifiant sert de nom de fichier "
+                + "et est exposé comme « rpgquest:<id> »."));
+        sb.append("<div class=\"form-grid\">");
+        sb.append(text("id", "Identifiant", "Minuscules, chiffres, « _ - » (max 64).",
+                DialogueYaml.plainId(d.id), true, editing));
+        sb.append(text("npc", "PNJ à rattacher (optionnel)",
+                "PNJ logique qui portera ce dialogue — chercher par nom (« Lily ») ou par id (« lily »). "
+                        + "Après l'enregistrement, la définition du PNJ est mise à jour pour pointer vers ce dialogue.",
+                npc, false, false, null, "dl-npc"));
+        sb.append(text("speaker", "Locuteur affiché",
+                "Nom affiché devant la réplique (prérempli avec le nom du PNJ si vide).", speaker, true, false));
+        sb.append(colorSelect(color));
+        sb.append("</div>");
+        sb.append(sectionClose());
+
+        sb.append(sectionOpen("dialogues", "Réplique de départ",
+                "Texte du nœud « start ». Choisir une couleur ci-dessus, ou saisir directement du "
+                        + "MiniMessage (« <yellow>…</yellow> ») pour un rendu avancé — dans ce cas la couleur est ignorée."));
+        sb.append("<div class=\"form-grid\">");
+        sb.append(textarea("start_text", "Texte", "Réplique d'ouverture (max 512).", startTextForField(startText, color), "full"));
+        sb.append("</div>");
+        sb.append(sectionClose());
+
+        sb.append(sectionOpen("check", "Validation & aperçu",
+                "« Vérifier » liste les anomalies et montre le fichier généré ; « Enregistrer » l'écrit "
+                        + "dans la source si aucune erreur ne subsiste.", "sec-validation"));
+        sb.append("<div class=\"btnrow\">");
+        sb.append(actBtn("btn secondary", "refresh", "filter", "Actualiser le formulaire", D_SAVE, "sec-validation"));
+        sb.append(actBtn("btn secondary", "validate", "check", "Vérifier", D_SAVE, "sec-validation"));
+        sb.append("<button class=\"btn\" type=\"submit\" formnovalidate name=\"_action\" value=\"save\"")
+                .append(writable ? "" : " disabled").append(">")
+                .append(Icons.icon("save")).append("Enregistrer dans la source</button>");
+        sb.append("</div>");
+        if (showChecks) {
+            sb.append(renderChecks(diags, rtp));
+            sb.append(renderPreview("dialogues", slug, DialogueYaml.write(d)));
+        }
+        sb.append(sectionClose());
+
+        sb.append(sharedDatalists(ref));
+        sb.append("</form>");
+        return sb.toString();
+    }
+
+    /**
+     * Valeur à réafficher dans le champ texte : si l'enrobage couleur a été appliqué (texte simple +
+     * couleur choisie), on remontre le texte <em>nu</em> pour ne pas empiler les balises à chaque
+     * aller-retour ; sinon la valeur telle quelle (MiniMessage manuel conservé).
+     */
+    private static String startTextForField(String storedText, String color) {
+        if (color == null || color.isEmpty() || storedText == null) {
+            return storedText == null ? "" : storedText;
+        }
+        String open = "<" + color + ">";
+        String close = "</" + color + ">";
+        if (storedText.startsWith(open) && storedText.endsWith(close)) {
+            return storedText.substring(open.length(), storedText.length() - close.length());
+        }
+        return storedText;
+    }
+
+    private static String colorSelect(String selected) {
+        StringBuilder sb = new StringBuilder("<div class=\"field\"><label for=\"f-text_color\">Couleur du texte</label>");
+        sb.append("<select id=\"f-text_color\" name=\"text_color\">");
+        sb.append("<option value=\"\"").append(selected == null || selected.isBlank() ? " selected" : "")
+                .append(">Par défaut</option>");
+        for (String c : AgentActionCatalog.PALETTE_COLORS) {
+            sb.append("<option value=\"").append(c).append("\"")
+                    .append(c.equals(selected) ? " selected" : "").append(">")
+                    .append(Http.esc(MinecraftNames.humanize(c))).append("</option>");
+        }
+        sb.append("</select>");
+        sb.append("<p class=\"field-help\">Ignorée si le texte contient déjà du MiniMessage.</p>");
+        return sb.append("</div>").toString();
     }
 
     // ================================================================================

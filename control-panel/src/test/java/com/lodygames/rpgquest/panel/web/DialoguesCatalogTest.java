@@ -65,13 +65,14 @@ class DialoguesCatalogTest {
     }
 
     @Test
-    void emptyStateOffersRefreshAndSkeletonCreation() throws Exception {
+    void emptyStateOffersRefreshAndSourceCreation() throws Exception {
         start();
         String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
         assertTrue(page.contains("<h1>Dialogues</h1>"));
         assertTrue(page.contains("Aucun catalogue chargé"));
         assertTrue(page.contains("name=\"type\" value=\"dialogue.list\""));
-        assertTrue(page.contains("name=\"type\" value=\"dialogue.definition.create\""));
+        // #145 : la création passe désormais par l'éditeur source /dialogues/new (comme /quests/new).
+        assertTrue(page.contains("href=\"/dialogues/new\""));
         // nav : entrée Dialogues active
         assertTrue(page.contains("href=\"/dialogues\""));
     }

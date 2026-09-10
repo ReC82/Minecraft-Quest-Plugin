@@ -22,6 +22,32 @@ class SourceCatalogTest {
         assertFalse(cat.available());
         assertTrue(cat.quests().isEmpty());
         assertTrue(cat.stories().isEmpty());
+        assertTrue(cat.dialogues().isEmpty());
+    }
+
+    @Test
+    void readsDialogueFilesAndExposesPlainId() throws Exception {
+        Files.createDirectories(root.resolve("dialogues"));
+        Files.writeString(root.resolve("dialogues/lily_intro.yml"), DialogueYaml.write(seedDialogue()));
+        List<SourceCatalog.DialogueSource> dialogues = new SourceCatalog(new ContentWorkspace(root)).dialogues();
+        assertEquals(1, dialogues.size());
+        SourceCatalog.DialogueSource ds = dialogues.get(0);
+        assertEquals("lily_intro", ds.plainId());
+        assertEquals("start", ds.draft().start);
+        assertEquals("Lily", ds.draft().startNode().speaker);
+        assertTrue(ds.parseOk(), "le squelette canonique se relit fidèlement");
+    }
+
+    private static DialogueDraft seedDialogue() {
+        DialogueDraft d = new DialogueDraft();
+        d.id = "lily_intro";
+        d.start = "start";
+        DialogueDraft.Node n = new DialogueDraft.Node("start");
+        n.speaker = "Lily";
+        n.text = "<yellow>Bonjour.</yellow>";
+        n.choices.add(new DialogueDraft.Choice("Au revoir", "", true));
+        d.nodes.add(n);
+        return d;
     }
 
     @Test

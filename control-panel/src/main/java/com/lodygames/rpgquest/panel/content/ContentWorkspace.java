@@ -33,8 +33,8 @@ import java.util.regex.Pattern;
  */
 public final class ContentWorkspace {
 
-    /** Types de contenu éditables via #46 — rien d'autre n'est jamais exposé. */
-    public static final List<String> KINDS = List.of("quests", "stories");
+    /** Types de contenu éditables via #46 / #145 — rien d'autre n'est jamais exposé. */
+    public static final List<String> KINDS = List.of("quests", "stories", "dialogues");
     private static final Pattern SLUG = Pattern.compile("[a-z0-9][a-z0-9_-]{0,63}");
 
     private final Path root;

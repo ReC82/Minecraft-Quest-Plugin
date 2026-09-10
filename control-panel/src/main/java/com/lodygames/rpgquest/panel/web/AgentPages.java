@@ -1287,6 +1287,7 @@ public final class AgentPages {
         boolean canSetGiver = perms.can(session.role(), Permission.QUEST_GIVER_WRITE);
         boolean canLink = perms.can(session.role(), Permission.NPC_BIND_WRITE);
         boolean canSpawn = perms.can(session.role(), Permission.NPC_SPAWN_WRITE);
+        boolean canWriteDialogue = perms.can(session.role(), Permission.DIALOGUE_WRITE);
         List<String> spawnWorlds = loadedWorldNames(agentId);
         sb.append(agentPicker(agentId, "/npcs", ""));
 
@@ -1400,7 +1401,8 @@ public final class AgentPages {
         int i = 0;
         for (Object o : npcs) {
             sb.append(renderNpcAccordionItem(session, agentId, asMap(o), i++, questTitles, questIds,
-                    dialogueOptions, citizensRoster, spawnWorlds, canWrite, canSetGiver, canLink, canSpawn));
+                    dialogueOptions, citizensRoster, spawnWorlds, canWrite, canSetGiver, canLink, canSpawn,
+                    canWriteDialogue));
         }
         // #101 : PNJ Citizens présents en jeu mais sans fiche RPGQuest ni liaison.
         int fci = 0;
@@ -1528,9 +1530,14 @@ public final class AgentPages {
                 + Http.esc(value) + "\">" + Http.esc(label) + "</button>";
     }
 
-    /** Options du select Dialogue : [id namespacé, libellé lisible], depuis le dernier {@code dialogue.list}. */
+    /**
+     * Options du select Dialogue : [id namespacé, libellé lisible]. Fusionne le dernier
+     * {@code dialogue.list} du serveur avec les dialogues de la <strong>source éditable</strong>
+     * (issue #145) : un dialogue tout juste créé depuis {@code /dialogues/new} est immédiatement
+     * sélectionnable sur la fiche d'un PNJ, sans redémarrage Minecraft.
+     */
     private List<String[]> dialogueSelectOptions(String agentId) {
-        List<String[]> out = new ArrayList<>();
+        java.util.LinkedHashMap<String, String[]> byId = new java.util.LinkedHashMap<>();
         for (Object o : latestDetails(agentId, "dialogue.list").map(x -> asList(x.get("dialogues"))).orElse(List.of())) {
             Map<String, Object> dg = asMap(o);
             String id = str(dg.get("id"));
@@ -1538,9 +1545,15 @@ public final class AgentPages {
                 continue;
             }
             String key = str(dg.get("key"));
-            out.add(new String[] {id, MiniText.prettifyId(key.isEmpty() ? id : key)});
+            byId.put(dialoguePlainKey(id), new String[] {id, MiniText.prettifyId(key.isEmpty() ? id : key)});
         }
-        return out;
+        for (SourceCatalog.DialogueSource ds : sourceCatalog.dialogues()) {
+            String plain = ds.plainId();
+            if (!plain.isEmpty()) {
+                byId.putIfAbsent(plain, new String[] {"rpgquest:" + plain, MiniText.prettifyId(plain)});
+            }
+        }
+        return new ArrayList<>(byId.values());
     }
 
     // ================================================================================
@@ -1551,7 +1564,7 @@ public final class AgentPages {
                                           Map<String, String> questTitles, List<String> questIds,
                                           List<String[]> dialogueOptions, List<Object> citizensRoster,
                                           List<String> spawnWorlds, boolean canWrite, boolean canSetGiver,
-                                          boolean canLink, boolean canSpawn) {
+                                          boolean canLink, boolean canSpawn, boolean canWriteDialogue) {
         String id = str(n.get("id"));
         String displayName = str(n.get("displayName"));
         boolean hasName = !displayName.isEmpty() && !"null".equals(displayName);
@@ -1659,9 +1672,22 @@ public final class AgentPages {
             sb.append("<div class=\"npc-content-row\"><div><span class=\"npc-ck\">Dialogue déclaré</span>"
                     + "<div class=\"npc-cv\">").append(Http.esc(MiniText.prettifyId(definedDialogue)))
                     .append(" <code class=\"tid\">").append(Http.esc(definedDialogue)).append("</code>")
-                    .append(" <span class=\"faint\">(pas encore chargé en jeu)</span></div></div></div>");
+                    .append(" <span class=\"faint\">(pas encore chargé en jeu)</span></div></div>");
+            if (canWriteDialogue) {
+                sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/dialogues/new?npc=")
+                        .append(Http.esc(id)).append("\">").append(Icons.icon("plus"))
+                        .append("Créer un dialogue pour ce PNJ</a>");
+            }
+            sb.append("</div>");
         } else {
-            sb.append("<p class=\"muted npc-content-empty\">Aucun dialogue.</p>");
+            sb.append("<div class=\"npc-content-row\"><div><span class=\"npc-ck\">Dialogue</span>"
+                    + "<div class=\"npc-cv\"><span class=\"muted\">Aucun dialogue.</span></div></div>");
+            if (canWriteDialogue) {
+                sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/dialogues/new?npc=")
+                        .append(Http.esc(id)).append("\">").append(Icons.icon("plus"))
+                        .append("Créer un dialogue pour ce PNJ</a>");
+            }
+            sb.append("</div>");
         }
         List<Object> given = asList(n.get("questsGiven"));
         List<Object> referenced = asList(n.get("questsReferenced"));
@@ -2208,15 +2234,16 @@ public final class AgentPages {
     public String dialogues(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
+        boolean canWrite = perms.can(session.role(), Permission.DIALOGUE_WRITE);
         sb.append(Ui.pageHeader("dialogues", "Dialogues",
                 "Lecture structurée des dialogues à embranchements (dialogues/<id>.yml) : nœuds, "
                         + "choix, actions et conditions typées, relations PNJ / quêtes, diagnostics.",
-                docLink("dialogues", "Documentation : dialogues")));
+                (canWrite ? Ui.primaryLink("/dialogues/new", "plus", "Créer un dialogue") : "")
+                        + docLink("dialogues", "Documentation : dialogues")));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
         String agentId = agent.get().id();
-        boolean canWrite = perms.can(session.role(), Permission.DIALOGUE_WRITE);
         sb.append(agentPicker(agentId, "/dialogues", ""));
 
         sb.append("<h2>Catalogue</h2>");
@@ -2224,24 +2251,28 @@ public final class AgentPages {
         if (perms.can(session.role(), Permission.CONTENT_READ)) {
             dlgBar += compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-secondary", "/dialogues");
         }
+        if (perms.can(session.role(), Permission.NPC_READ)) {
+            dlgBar += compactRefresh(session, agentId, "npc.list", "PNJ", "btn-outline-secondary", "/dialogues");
+        }
         sb.append(listCatbar("Catalogue", dlgBar));
 
         Map<String, String> questTitles = titleIndex(
                 latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of()), "id", "title");
 
-        if (canWrite) {
-            sb.append(dialogueCreateBlock(session, agentId));
-        }
-
         Optional<Map<String, Object>> details = latestDetails(agentId, "dialogue.list");
-        if (details.isEmpty()) {
-            sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Dialogues »."));
-            return sb.toString();
+        List<Object> runtimeDialogues = details.map(x -> asList(x.get("dialogues"))).orElse(List.of());
+        List<Object> loadIssues = details.map(x -> asList(x.get("loadIssues"))).orElse(List.of());
+        List<Object> missing = details.map(x -> asList(x.get("declaredButMissing"))).orElse(List.of());
+        List<MergedRow> merged = mergeDialogueRows(agentId, runtimeDialogues);
+
+        // Un dialogue « déclaré mais absent » côté serveur qui existe déjà dans la source éditable
+        // n'est pas une erreur : il est en attente de rechargement (comme « Source uniquement »).
+        java.util.Set<String> sourceKeys = new java.util.HashSet<>();
+        for (SourceCatalog.DialogueSource ds : sourceCatalog.dialogues()) {
+            if (!ds.plainId().isEmpty()) {
+                sourceKeys.add(ds.plainId());
+            }
         }
-        Map<String, Object> d = details.get();
-        List<Object> dialogues = asList(d.get("dialogues"));
-        List<Object> loadIssues = asList(d.get("loadIssues"));
-        List<Object> missing = asList(d.get("declaredButMissing"));
 
         if (!loadIssues.isEmpty() || !missing.isEmpty()) {
             sb.append("<div class=\"dlg-global-diag\">");
@@ -2252,44 +2283,182 @@ public final class AgentPages {
             }
             for (Object o : missing) {
                 Map<String, Object> m = asMap(o);
-                sb.append(DiagnosticHelp.render("DIALOGUE_DECLARED_MISSING", "error", "",
-                        str(m.get("npcId")), str(m.get("dialogueId")), ""));
+                boolean inSource = sourceKeys.contains(dialoguePlainKey(str(m.get("dialogueId"))));
+                if (inSource) {
+                    sb.append(DiagnosticHelp.render("DIALOGUE_DECLARED_MISSING", "info",
+                            "Le dialogue « " + Http.esc(str(m.get("dialogueId"))) + " » est enregistré dans la source "
+                                    + "mais pas encore chargé par le serveur DEV — rechargement en attente.",
+                            str(m.get("npcId")), str(m.get("dialogueId")), ""));
+                } else {
+                    sb.append(DiagnosticHelp.render("DIALOGUE_DECLARED_MISSING", "error", "",
+                            str(m.get("npcId")), str(m.get("dialogueId")), ""));
+                }
             }
             sb.append("</div>");
         }
 
-        sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Résumé</span> ")
-                .append(Http.esc(str(d.get("total")))).append(" dialogue(s) · ")
-                .append(Http.esc(str(d.get("nodeTotal")))).append(" nœud(s) · ")
-                .append(Http.esc(str(d.get("withWarnings")))).append(" avec avertissement · ")
-                .append(loadIssues.size()).append(" fichier(s) rejeté(s)</p>");
+        if (details.isPresent()) {
+            Map<String, Object> d = details.get();
+            sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Résumé serveur</span> ")
+                    .append(Http.esc(str(d.get("total")))).append(" dialogue(s) chargé(s) · ")
+                    .append(Http.esc(str(d.get("nodeTotal")))).append(" nœud(s) · ")
+                    .append(Http.esc(str(d.get("withWarnings")))).append(" avec avertissement · ")
+                    .append(loadIssues.size()).append(" fichier(s) rejeté(s)</p>");
+        }
 
         if (canWrite) {
             sb.append("<p class=\"form-text dlg-editnote\">Édition guidée disponible pour les nœuds, les textes et "
-                    + "les choix simples. Les opérations avancées (conditions, actions de quête) restent limitées. ")
+                    + "les choix simples des dialogues chargés par le serveur. Les opérations avancées (conditions, "
+                    + "actions de quête) restent limitées. ")
                     .append(docLink("dialogues", "En savoir plus sur les limites de l'éditeur")).append("</p>");
             sb.append("<details class=\"tech-detail\"><summary>Détails techniques de l'éditeur</summary>"
-                    + "<p class=\"muted\">Chaque écriture réécrit le fichier <code>dialogues/&lt;id&gt;.yml</code> au "
+                    + "<p class=\"muted\">La création écrit <code>dialogues/&lt;id&gt;.yml</code> dans la source au "
                     + "<strong>format canonique</strong> du panel (les commentaires et la mise en forme d'origine ne "
-                    + "sont pas conservés), puis le re-parse et le recharge. En cas d'échec, le contenu d'origine est "
-                    + "restauré.</p></details>");
+                    + "sont pas conservés). L'édition guidée d'un dialogue déjà chargé le re-parse et le recharge ; "
+                    + "en cas d'échec, le contenu d'origine est restauré.</p></details>");
         }
 
-        if (dialogues.isEmpty()) {
-            sb.append(Ui.empty("dialogues", "Aucun dialogue chargé."));
+        if (merged.isEmpty()) {
+            sb.append(Ui.empty("Aucun catalogue chargé — aucun dialogue dans la source éditable ni dans le dernier "
+                    + "relevé du serveur. Créer un dialogue, ou cliquer sur « Rafraîchir »."));
         } else {
+            if (sourceCatalog.available()) {
+                sb.append(catalogOriginLegend("dialogue"));
+            }
             sb.append(listControls("dialogues", "Rechercher un dialogue\u2026",
                     filterBtn("", "Tous", true) + filterBtn("linked", "Liés", false)
                             + filterBtn("unlinked", "Non liés", false) + filterBtn("warn", "À vérifier", false)));
-            sb.append("<p class=\"count-note\" data-count-note data-noun=\"dialogue\">" + dialogues.size() + " dialogue(s)</p>");
+            sb.append("<p class=\"count-note\" data-count-note data-noun=\"dialogue\">" + merged.size() + " dialogue(s)</p>");
             sb.append("<div class=\"accordion npc-accordion\" id=\"dialogues-accordion\">");
             int di = 0;
-            for (Object o : dialogues) {
-                sb.append(renderDialogueAccordionItem(asMap(o), di++, questTitles, session, agentId, canWrite));
+            for (MergedRow mr : merged) {
+                sb.append(renderDialogueAccordionItem(mr.data(), di++, questTitles, session, agentId, canWrite, mr.state()));
             }
             sb.append("</div>");
         }
         return sb.toString();
+    }
+
+    /** Clé « nue » d'un dialogue (namespace {@code rpgquest:} retiré) — clé de fusion source ↔ runtime. */
+    private static String dialoguePlainKey(String raw) {
+        String s = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        return s.startsWith("rpgquest:") ? s.substring("rpgquest:".length()) : s;
+    }
+
+    /**
+     * Fusionne le dernier relevé {@code dialogue.list} du serveur avec les fichiers
+     * {@code dialogues/*.yml} de la source éditable (issue #145, même principe que {@link #mergeQuestRows}).
+     * Clé de fusion : l'id « nu ». Ordre : dialogues runtime puis dialogues « source uniquement ».
+     */
+    private List<MergedRow> mergeDialogueRows(String agentId, List<Object> runtimeDialogues) {
+        Map<String, Map<String, Object>> runtimeById = new LinkedHashMap<>();
+        for (Object o : runtimeDialogues) {
+            Map<String, Object> m = asMap(o);
+            String key = dialoguePlainKey(str(m.get("id")));
+            if (key.isEmpty()) {
+                key = dialoguePlainKey(str(m.get("key")));
+            }
+            if (!key.isEmpty()) {
+                runtimeById.putIfAbsent(key, m);
+            }
+        }
+        Map<String, SourceCatalog.DialogueSource> sourceById = new LinkedHashMap<>();
+        for (SourceCatalog.DialogueSource ds : sourceCatalog.dialogues()) {
+            if (!ds.plainId().isEmpty()) {
+                sourceById.putIfAbsent(ds.plainId(), ds);
+            }
+        }
+        boolean srcKnown = sourceCatalog.available();
+        List<MergedRow> out = new ArrayList<>();
+        for (Map.Entry<String, Map<String, Object>> e : runtimeById.entrySet()) {
+            CatalogState st = !srcKnown ? CatalogState.SYNCED
+                    : sourceById.containsKey(e.getKey()) ? CatalogState.SYNCED : CatalogState.RUNTIME_ONLY;
+            out.add(new MergedRow(e.getValue(), st));
+        }
+        for (Map.Entry<String, SourceCatalog.DialogueSource> e : sourceById.entrySet()) {
+            if (!runtimeById.containsKey(e.getKey())) {
+                out.add(new MergedRow(sourceDialogueRow(agentId, e.getValue()), CatalogState.SOURCE_ONLY));
+            }
+        }
+        return out;
+    }
+
+    /** Projette un dialogue relu de la source dans la forme d'une ligne {@code dialogue.list} structurée. */
+    private Map<String, Object> sourceDialogueRow(String agentId, SourceCatalog.DialogueSource ds) {
+        com.lodygames.rpgquest.panel.content.DialogueDraft d = ds.draft();
+        String plain = ds.plainId();
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", "rpgquest:" + plain);
+        m.put("key", plain);
+        m.put("startNodeId", d.start == null ? "" : d.start);
+        m.put("linkedNpcIds", npcIdsUsingDialogue(agentId, plain));
+        m.put("nodeCount", d.nodes.size());
+        m.put("choiceCount", d.choiceCount());
+        m.put("referencedQuestIds", List.of());
+        m.put("startsQuestIds", List.of());
+        List<Object> warnings = new ArrayList<>();
+        for (com.lodygames.rpgquest.panel.content.Diagnostic diag
+                : com.lodygames.rpgquest.panel.content.DialogueValidator.validate(d)) {
+            Map<String, Object> wm = new LinkedHashMap<>();
+            wm.put("code", "DIALOGUE_SOURCE_ISSUE");
+            wm.put("severity", diag.level() == com.lodygames.rpgquest.panel.content.Diagnostic.Level.ERROR
+                    ? "error" : diag.level() == com.lodygames.rpgquest.panel.content.Diagnostic.Level.WARNING
+                    ? "warning" : "info");
+            wm.put("message", (diag.field() == null || diag.field().isBlank() ? "" : diag.field() + " : ") + diag.message());
+            warnings.add(wm);
+        }
+        if (!ds.parseOk()) {
+            Map<String, Object> wm = new LinkedHashMap<>();
+            wm.put("code", "DIALOGUE_SOURCE_ISSUE");
+            wm.put("severity", "warning");
+            wm.put("message", "Le fichier source ne se relit pas entièrement — vérifier sa syntaxe.");
+            warnings.add(wm);
+        }
+        m.put("warnings", warnings);
+        List<Object> nodes = new ArrayList<>();
+        for (com.lodygames.rpgquest.panel.content.DialogueDraft.Node n : d.nodes) {
+            Map<String, Object> nm = new LinkedHashMap<>();
+            nm.put("id", n.id);
+            nm.put("speaker", n.speaker);
+            nm.put("text", n.text);
+            nm.put("start", n.id != null && n.id.equals(d.start));
+            nm.put("reachable", true);
+            List<Object> choices = new ArrayList<>();
+            for (com.lodygames.rpgquest.panel.content.DialogueDraft.Choice c : n.choices) {
+                Map<String, Object> cm = new LinkedHashMap<>();
+                cm.put("text", c.text);
+                cm.put("nextNodeId", c.next == null ? "" : c.next);
+                List<Object> acts = new ArrayList<>();
+                if (c.close) {
+                    Map<String, Object> a = new LinkedHashMap<>();
+                    a.put("kind", "CLOSE");
+                    a.put("target", "");
+                    a.put("value", "");
+                    a.put("raw", "CLOSE");
+                    acts.add(a);
+                }
+                cm.put("actions", acts);
+                cm.put("conditions", List.of());
+                choices.add(cm);
+            }
+            nm.put("choices", choices);
+            nodes.add(nm);
+        }
+        m.put("nodes", nodes);
+        return m;
+    }
+
+    /** Ids de PNJ (dernier {@code npc.list}) dont la définition déclare ce dialogue (id nu). */
+    private List<Object> npcIdsUsingDialogue(String agentId, String plainDialogueId) {
+        List<Object> out = new ArrayList<>();
+        for (Object o : latestDetails(agentId, "npc.list").map(d -> asList(d.get("npcs"))).orElse(List.of())) {
+            Map<String, Object> n = asMap(o);
+            if (dialoguePlainKey(str(n.get("definedDialogueId"))).equals(plainDialogueId)
+                    || dialoguePlainKey(str(n.get("dialogueId"))).equals(plainDialogueId)) {
+                out.add(str(n.get("id")));
+            }
+        }
+        return out;
     }
 
     /**
@@ -2299,7 +2468,7 @@ public final class AgentPages {
      * {@link DiagnosticHelp} (message humain, conséquence, action, lien doc précis).
      */
     private String renderDialogueAccordionItem(Map<String, Object> dg, int idx, Map<String, String> questTitles,
-                                               Session session, String agentId, boolean canWrite) {
+                                               Session session, String agentId, boolean canWrite, CatalogState state) {
         String id = str(dg.get("id"));
         String key = str(dg.get("key"));
         String start = str(dg.get("startNodeId"));
@@ -2311,11 +2480,15 @@ public final class AgentPages {
         List<String> nodeIds = dialogueNodeIds(nodes);
         String slug = "dlg-" + idx + "-" + id.replaceAll("[^a-z0-9_-]", "-");
         String human = MiniText.prettifyId(key.isEmpty() ? id : key);
+        boolean sourceOnly = state == CatalogState.SOURCE_ONLY;
+        // L'édition guidée (nœuds / choix) passe par des actions agent qui ciblent un dialogue
+        // *chargé* par le serveur : elle n'a pas de sens pour un dialogue « Source uniquement ».
+        boolean canEdit = canWrite && !sourceOnly;
 
         boolean anyErr = warnings.stream().anyMatch(w -> "error".equals(str(asMap(w).get("severity"))));
         boolean anyWarn = !warnings.isEmpty();
         String cat = (linked.isEmpty() ? "unlinked" : "linked") + (anyWarn ? " warn" : "") + (anyErr ? " err" : "");
-        String ftext = Http.esc(id + " " + key + " " + human + " "
+        String ftext = Http.esc(id + " " + key + " " + human + " " + catalogStateKeywords(state) + " "
                 + String.join(" ", linked.stream().map(x -> str(x)).toList()));
 
         StringBuilder sb = new StringBuilder();
@@ -2336,11 +2509,30 @@ public final class AgentPages {
         if (linked.isEmpty()) {
             sb.append("<span class=\"badge text-bg-warning\">sans PNJ</span>");
         }
+        String stateBadge = switch (state) {
+            case SOURCE_ONLY -> "<span class=\"badge text-bg-info\" title=\"Ce dialogue est enregistré dans la "
+                    + "source mais pas encore chargé par le serveur DEV.\">Source uniquement</span>";
+            case RUNTIME_ONLY -> "<span class=\"badge text-bg-warning\" title=\"Ce dialogue est chargé par le "
+                    + "serveur mais absent de la source éditable du Control Panel.\">Hors source</span>";
+            case SYNCED -> "";
+        };
+        sb.append(stateBadge);
         sb.append(dialogueHealthPill(warnings));
         sb.append("</span></button></h3>");
 
         sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" ")
                 .append("data-bs-parent=\"#dialogues-accordion\"><div class=\"accordion-body npc-detail\">");
+
+        if (sourceOnly) {
+            sb.append("<p class=\"muted\">").append(Icons.icon("history"))
+                    .append("Dialogue enregistré dans la source mais pas encore chargé par le serveur DEV. "
+                            + "Il sera pris en compte en jeu au prochain rechargement du contenu RPGQuest — "
+                            + "l'édition et l'activation en jeu restent deux étapes distinctes.</p>");
+        } else if (state == CatalogState.RUNTIME_ONLY) {
+            sb.append("<p class=\"muted\">").append(Icons.icon("warning"))
+                    .append("Chargé par le serveur mais introuvable dans la source éditable "
+                            + "(fichier absent, supprimé ou renommé).</p>");
+        }
 
         // ---- RÉSUMÉ ----
         sb.append(detailSection("book", "Résumé"));
@@ -2394,14 +2586,19 @@ public final class AgentPages {
         sb.append("<details class=\"dlg-graph-wrap\"><summary>Afficher le graphe — ").append(nodes.size())
                 .append(" nœud(s)</summary><div class=\"dlg-graph\">");
         for (Object o : nodes) {
-            sb.append(dialogueNodeCard(asMap(o), id, nodeIds, questTitles, session, agentId, canWrite));
+            sb.append(dialogueNodeCard(asMap(o), id, nodeIds, questTitles, session, agentId, canEdit));
         }
         sb.append("</div></details>");
 
         // ---- ACTIONS ----
-        if (canWrite) {
+        if (canEdit) {
             sb.append(detailSection("target", "Actions"));
             sb.append(dialogueNodeCreateForm(session, agentId, id));
+        } else if (canWrite && sourceOnly) {
+            sb.append(detailSection("target", "Actions"));
+            sb.append("<p class=\"muted\">L'édition guidée des nœuds et des choix sera disponible une fois ce "
+                    + "dialogue chargé par le serveur DEV. En attendant, le fichier <code>dialogues/")
+                    .append(Http.esc(key)).append(".yml</code> reste modifiable à la main dans la source.</p>");
         }
 
         sb.append("</div></div></div>");
@@ -2660,98 +2857,6 @@ public final class AgentPages {
         };
     }
 
-    /** Noms français des couleurs MiniMessage de la palette du formulaire de dialogue (issue #118). */
-    private static final Map<String, String> COLOR_LABELS_FR = Map.ofEntries(
-            Map.entry("white", "Blanc"), Map.entry("gray", "Gris"), Map.entry("yellow", "Jaune"),
-            Map.entry("gold", "Or"), Map.entry("green", "Vert"), Map.entry("dark_green", "Vert foncé"),
-            Map.entry("aqua", "Cyan"), Map.entry("dark_aqua", "Cyan foncé"), Map.entry("blue", "Bleu"),
-            Map.entry("dark_blue", "Bleu foncé"), Map.entry("red", "Rouge"), Map.entry("dark_red", "Rouge foncé"),
-            Map.entry("light_purple", "Rose"), Map.entry("dark_purple", "Violet"));
-
-    /**
-     * Palette de couleurs MiniMessage (issue #118) : pastilles avec aperçu réel de la teinte, plus un
-     * champ caché {@code text_color}. Le panel génère ensuite {@code <couleur>…</couleur>} côté
-     * validation ; l'utilisateur n'écrit jamais de balise pour un cas simple. Progressif :
-     * {@code panel.js} pilote la sélection et l'aperçu ; sans JS, la couleur par défaut s'applique et
-     * le MiniMessage manuel reste possible.
-     */
-    private String colorPaletteField() {
-        StringBuilder sb = new StringBuilder("<div class=\"mb-2 dlg-color\">");
-        sb.append("<label class=\"form-label\">Couleur du texte</label>");
-        sb.append("<input type=\"hidden\" name=\"text_color\" value=\"\" data-dlg-color>");
-        sb.append("<div class=\"dlg-palette\" role=\"group\" aria-label=\"Couleur du texte\" data-dlg-palette>");
-        sb.append("<button type=\"button\" class=\"dlg-swatch on\" data-color=\"\" style=\"--sw:")
-                .append(nzHex(MiniText.colorHex("white"))).append("\" title=\"Par défaut\" aria-pressed=\"true\">A</button>");
-        for (String c : AgentActionCatalog.PALETTE_COLORS) {
-            String label = COLOR_LABELS_FR.getOrDefault(c, MiniText.prettifyId(c));
-            sb.append("<button type=\"button\" class=\"dlg-swatch\" data-color=\"").append(Http.esc(c))
-                    .append("\" style=\"--sw:").append(nzHex(MiniText.colorHex(c))).append("\" title=\"")
-                    .append(Http.esc(label)).append("\" aria-pressed=\"false\">A</button>");
-        }
-        sb.append("</div>");
-        sb.append("<div class=\"form-text\">Choisir une pastille — le panel génère le MiniMessage. "
-                + "Pour un rendu avancé, écrire directement du MiniMessage dans le texte.</div>");
-        return sb.append("</div>").toString();
-    }
-
-    private static String nzHex(String hex) {
-        return hex == null || hex.isBlank() ? "#888888" : hex;
-    }
-
-    /**
-     * Bloc « Nouveau dialogue » (issue #118) : action principale clairement identifiable — un bouton
-     * primaire dans une barre dédiée qui déplie le formulaire, plus un accordéon discret.
-     */
-    private String dialogueCreateBlock(Session session, String agentId) {
-        return "<div class=\"npc-catbar dlg-newbar\"><span class=\"npc-catbar-t\">Créer</span>"
-                + "<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
-                + "data-bs-target=\"#dlg-new\" aria-expanded=\"false\" aria-controls=\"dlg-new\">"
-                + Icons.icon("plus") + "Nouveau dialogue</button></div>"
-                + "<div class=\"collapse\" id=\"dlg-new\"><div class=\"card card-body npc-formcard\">"
-                + dialogueCreateForm(session, agentId) + "</div></div>";
-    }
-
-    /** Formulaire de création d'un dialogue (id + locuteur + couleur + texte du nœud « start »). */
-    private String dialogueCreateForm(Session session, String agentId) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("<p class=\"fs-h\">").append(Icons.icon("dialogues")).append("Nouveau dialogue</p>");
-        sb.append("<form method=\"post\" action=\"/agents/action\" autocomplete=\"off\" class=\"actform\">");
-        sb.append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken())).append("\">");
-        sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">");
-        sb.append("<input type=\"hidden\" name=\"type\" value=\"dialogue.definition.create\">");
-        sb.append("<input type=\"hidden\" name=\"return\" value=\"/dialogues\">");
-
-        sb.append("<div class=\"mb-2\"><label class=\"form-label\">ID du dialogue</label>"
-                + "<input class=\"form-control\" type=\"text\" name=\"key\" autocomplete=\"off\" "
-                + "pattern=\"[a-z0-9._-]{1,64}\" placeholder=\"Exemple : iron_specialist_intro\" required>"
-                + "<div class=\"form-text\">Identifiant interne unique. Minuscules, chiffres, « . _ - ». "
-                + "Il sera exposé comme <code>rpgquest:&lt;id&gt;</code>.</div></div>");
-
-        sb.append("<div class=\"mb-2\"><label class=\"form-label\">Locuteur affiché</label>"
-                + "<input class=\"form-control\" type=\"text\" name=\"speaker\" autocomplete=\"off\" maxlength=\"128\" "
-                + "placeholder=\"Exemple : Robert\" required>"
-                + "<div class=\"form-text\">Nom affiché devant la réplique. Le rattachement à un PNJ se fait "
-                + "sur la fiche du PNJ (champ « Dialogue »), pas ici.</div></div>");
-
-        sb.append(colorPaletteField());
-
-        sb.append("<div class=\"mb-2\"><label class=\"form-label\">Texte du nœud de départ</label>"
-                + "<input class=\"form-control\" type=\"text\" name=\"text\" autocomplete=\"off\" maxlength=\"512\" "
-                + "placeholder=\"Exemple : Bonjour voyageur.\" data-dlg-text required>"
-                + "<div class=\"form-text\">Réplique d'ouverture. Choisir une couleur ci-dessus, ou saisir du "
-                + "MiniMessage (<code>&lt;yellow&gt;…&lt;/yellow&gt;</code>) pour un rendu avancé.</div></div>");
-
-        sb.append("<p class=\"form-text\">Aperçu : <span class=\"dlg-preview\" data-dlg-preview>—</span> "
-                + "<noscript>(activez JavaScript pour l'aperçu et la palette de couleurs)</noscript></p>");
-
-        sb.append(mutationConsent("dialogue.definition.create", "",
-                "Crée dialogues/<id>.yml avec un premier nœud de départ. Les choix et les actions "
-                        + "s'ajoutent ensuite. Réversible (suppression du fichier)."));
-        sb.append("<button class=\"btn btn-primary\" type=\"submit\">Créer le dialogue</button></form>");
-        latestForPlayer(agentId, "dialogue.definition.create", "").ifPresent(row -> sb.append(resultLine("Dernière création", row)));
-        return sb.toString();
-    }
-
     // ================================================================================
     //  Fragments partagés
     // ================================================================================
@@ -2931,6 +3036,37 @@ public final class AgentPages {
      * heartbeat). Si un relevé manque, la partie correspondante est marquée « inconnue » et la
      * validation dégrade ses contrôles en {@code INFO}.
      */
+    /**
+     * Champs actuels ({@code display_name} / {@code role} / {@code enabled}) de la définition d'un PNJ
+     * au dernier {@code npc.list}, prêts pour un formulaire {@code npc.definition.update} (issue #145,
+     * rattachement d'un dialogue). {@code Optional.empty()} si le PNJ est inconnu du relevé ou n'a pas
+     * encore de définition logique ({@code npc.definition.update} échouerait côté serveur).
+     */
+    public Optional<Map<String, String>> npcDefinitionFields(String agentId, String npcId) {
+        String target = npcId == null ? "" : npcId.trim().toLowerCase(Locale.ROOT);
+        if (target.isEmpty()) {
+            return Optional.empty();
+        }
+        for (Object o : latestDetails(agentId, "npc.list").map(d -> asList(d.get("npcs"))).orElse(List.of())) {
+            Map<String, Object> n = asMap(o);
+            if (!target.equals(str(n.get("id")).toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            if (!Boolean.TRUE.equals(n.get("logicalDefinitionPresent"))) {
+                return Optional.empty();
+            }
+            Map<String, String> fields = new LinkedHashMap<>();
+            fields.put("display_name", cleanNull(str(n.get("displayName"))));
+            String role = cleanNull(str(n.get("role")));
+            if (!role.isEmpty()) {
+                fields.put("role", role);
+            }
+            fields.put("enabled", Boolean.TRUE.equals(n.get("enabled")) ? "true" : "false");
+            return Optional.of(fields);
+        }
+        return Optional.empty();
+    }
+
     public com.lodygames.rpgquest.panel.content.RefData referenceData(String agentId) {
         if (agentId == null || agentId.isBlank()) {
             return com.lodygames.rpgquest.panel.content.RefData.empty();

@@ -154,6 +154,12 @@ public final class PanelApp {
                 Permission.NPC_READ, agentPages::npcs));
         route("/dialogues", exchange -> handleBusinessPage(exchange, "/dialogues", "Dialogues",
                 Permission.DIALOGUE_READ, agentPages::dialogues));
+        route("/dialogues/new", exchange -> handleContentEditor(exchange, "dialogues", "/dialogues",
+                Permission.DIALOGUE_WRITE, "NEW"));
+        route("/dialogues/edit", exchange -> handleContentEditor(exchange, "dialogues", "/dialogues",
+                Permission.DIALOGUE_WRITE, "EDIT"));
+        route("/dialogues/save", exchange -> handleContentEditor(exchange, "dialogues", "/dialogues",
+                Permission.DIALOGUE_WRITE, "SAVE"));
         route("/content/export", this::handleContentExport);
         route("/content/export/download", this::handleContentExportDownload);
         route("/docs", this::handleDocs);
@@ -1145,12 +1151,20 @@ public final class PanelApp {
                         "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
                 return;
             }
-            result = kind.equals("quests") ? contentEditor.questPost(ref, form) : contentEditor.storyPost(ref, form);
+            result = switch (kind) {
+                case "quests" -> contentEditor.questPost(ref, form);
+                case "stories" -> contentEditor.storyPost(ref, form);
+                default -> contentEditor.dialoguePost(ref, form);
+            };
             String actor = session.username();
             String act = form.getOrDefault("_action", "");
             if ("save".equals(act) && result instanceof ContentEditorPages.Result.Redirect rd) {
                 audit.record(actor, kind + ".content.write", rd.location(), "OK", null,
                         UUID.randomUUID().toString().substring(0, 8));
+                if ("dialogues".equals(kind)) {
+                    result = new ContentEditorPages.Result.Redirect(
+                            linkDialogueToNpc(session, form, rd.location()));
+                }
             }
         } else {
             String slug = null;
@@ -1166,10 +1180,13 @@ public final class PanelApp {
                     slug = slug.substring(0, slug.length() - 1);
                 }
             }
-            boolean saved = "1".equals(Http.query(exchange).get("saved"));
-            result = kind.equals("quests")
-                    ? contentEditor.questPage(ref, slug, saved)
-                    : contentEditor.storyPage(ref, slug, saved);
+            Map<String, String> query = Http.query(exchange);
+            boolean saved = "1".equals(query.get("saved"));
+            result = switch (kind) {
+                case "quests" -> contentEditor.questPage(ref, slug, saved);
+                case "stories" -> contentEditor.storyPage(ref, slug, saved);
+                default -> contentEditor.dialoguePage(ref, slug, saved, query.get("npc"));
+            };
         }
 
         if (result instanceof ContentEditorPages.Result.Redirect rd) {
@@ -1177,8 +1194,57 @@ public final class PanelApp {
             return;
         }
         String body = ((ContentEditorPages.Result.Html) result).body();
-        String title = kind.equals("quests") ? "Éditeur de quête" : "Éditeur de story";
+        String title = switch (kind) {
+            case "quests" -> "Éditeur de quête";
+            case "stories" -> "Éditeur de story";
+            default -> "Éditeur de dialogue";
+        };
         Http.html(exchange, 200, renderPage(title, session, base, body));
+    }
+
+    /**
+     * Deuxième écriture du workflow #145 (§5) : après l'enregistrement <em>source</em> d'un dialogue
+     * créé avec un PNJ sélectionné, met à jour la <strong>définition du PNJ</strong> pour qu'elle
+     * pointe vers ce dialogue, via l'action agent existante {@code npc.definition.update} (jamais de
+     * stockage parallèle). Le dialogue source est déjà écrit : si le rattachement ne peut pas être
+     * préparé (PNJ absent du dernier relevé), on le signale sans défaire l'écriture — demi-état
+     * explicite plutôt que silencieux.
+     *
+     * @return la {@code Location} de redirection à utiliser (avec {@code toast=} ou {@code err=})
+     */
+    private String linkDialogueToNpc(Session session, Map<String, String> form, String savedLocation) {
+        String npc = form.getOrDefault("npc", "").trim().toLowerCase(java.util.Locale.ROOT);
+        if (npc.isEmpty()) {
+            return savedLocation;
+        }
+        String agentId = config.agents().defaultAgentId();
+        String dialogueId = "rpgquest:" + com.lodygames.rpgquest.panel.content.DialogueYaml.plainId(
+                form.getOrDefault("id", ""));
+        Optional<Map<String, String>> cur = agentPages.npcDefinitionFields(agentId, npc);
+        if (cur.isEmpty()) {
+            return "/dialogues?agent=" + enc(agentId) + "&err=" + enc("Dialogue enregistré dans la source. "
+                    + "Le PNJ « " + npc + " » est absent du dernier relevé — rafraîchir « PNJ » puis rattacher "
+                    + "le dialogue depuis la fiche du PNJ.");
+        }
+        Map<String, String> npcForm = new java.util.LinkedHashMap<>(cur.get());
+        npcForm.put("npc_id", npc);
+        npcForm.put("dialogue_id", dialogueId);
+        npcForm.put("confirm", "true");
+        com.lodygames.rpgquest.panel.agent.AgentActionCatalog.Validation v =
+                com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("npc.definition.update", npcForm);
+        if (!v.valid()) {
+            return "/dialogues?agent=" + enc(agentId) + "&err=" + enc("Dialogue enregistré dans la source, mais "
+                    + "le rattachement au PNJ n'a pas pu être préparé : " + v.error());
+        }
+        Optional<AgentIdentity> agent = agentRegistry.byId(agentId);
+        if (agent.isEmpty()) {
+            return savedLocation;
+        }
+        String id = agentStore.createAction(agentId, "npc.definition.update", v.params(), session.username());
+        audit.record(session.username(), "agent.action.create",
+                "agent=" + agentId + " type=npc.definition.update action=" + id, "PENDING",
+                "dialogue=" + dialogueId + " npc=" + npc, UUID.randomUUID().toString().substring(0, 8));
+        return "/dialogues?agent=" + enc(agentId) + "&toast=" + enc(id);
     }
 
     /** {@code POST /agents/action} : création générique d'une action whitelistée depuis n'importe quelle page. */

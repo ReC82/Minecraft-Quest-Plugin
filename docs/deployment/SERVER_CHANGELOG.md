@@ -2614,6 +2614,25 @@ scripts/plugadmin/deploy.sh
 
 ### Exécution réelle
 
-_(à compléter après exécution de deploy.sh)_
+Déploiement AWS effectué le **2026-09-10 ~09:51 UTC** depuis `feat/control-panel-admin-tools`
+@ `4cb278c`. `scripts/plugadmin/deploy.sh` : `:control-panel:installDist` **BUILD SUCCESSFUL**
+(`compileJava`/`jar` **UP-TO-DATE** — distribution issue du build déjà testé), release précédente
+sauvegardée sous `/opt/plugadmin/releases/20260910-095149`, `systemctl restart plugadmin` →
+`active (running)`, drop-in `10-content-workspace.conf` toujours chargé, `Memory` ~51 M.
+
+Vérifications live : `/health` **ONLINE** local **et** public
+(`https://plugadmin.lodylands.com/health`). `/quests/new` et `/quests/edit/x` anonymes → **303**
+vers `/login` (routes vivantes, auth appliquée). `panel.js` servi publiquement contient bien
+`function run(name, fn)` (isolation des modules) et `scrollIntoView({ block: "center" })`
+(restauration du scroll de l'éditeur). **0 `ERROR` / `SEVERE` / `Exception`** au journal depuis le
+redéploiement. `control-panel.db` non touché. **VeryGames / Minecraft non touchés, aucun
+redémarrage Minecraft.**
+
+Validation navigateur **authentifiée** de l'éditeur : couverte par `ContentEditorPagesTest` (28,
+`PanelApp` réel + login owner + POST des actions sur `/quests/new` et `/quests/edit/<slug>`) et
+`AuthenticatedSmokeTest`. Session owner navigateur réelle (8 scénarios manuels du rapport) :
+`PENDING MANUAL VALIDATION` (mot de passe owner non détenu).
+
+Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260910-095149`).
 
 Rapport : `docs/claude-reports/2026-09-10_0949_editeur-quetes-passe-ux-46.md`.

@@ -222,7 +222,13 @@ VeryGames, Minecraft, `data.db`, mondes, Citizens, le JAR du plugin. **Aucun red
 
 ### Déploiement effectué ?
 
-_(voir section « Exécution du déploiement » ci-dessous, complétée après `deploy.sh`)_
+**Oui — AWS Control Panel uniquement**, le 2026-09-10 ~09:51 UTC (`scripts/plugadmin/deploy.sh`
+depuis `4cb278c`). Release précédente sauvegardée sous `/opt/plugadmin/releases/20260910-095149`,
+`systemctl restart plugadmin` → `active (running)`. Live : `/health` ONLINE local + public ;
+`/quests/new` et `/quests/edit/x` anonymes → 303 `/login` ; `panel.js` public contient
+`function run(name, fn)` + `scrollIntoView({ block: "center" })` ; **0 ERROR** au journal depuis le
+redéploiement. `control-panel.db` non touché. **VeryGames / Minecraft non touchés, aucun
+redémarrage Minecraft.** Détail : `docs/deployment/SERVER_CHANGELOG.md` (entrée 2026-09-10).
 
 ## Rollback
 

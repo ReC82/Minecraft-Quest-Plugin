@@ -649,6 +649,47 @@ quête, chaîne de story) — une quête tout juste créée est immédiatement
 sélectionnable, et le diagnostic « quête inconnue dans la chaîne » d'une story en
 tient compte, **sans redémarrage Minecraft**.
 
+#### Catalogue de dialogues fusionné source + runtime, et création avec PNJ (issue #145)
+
+Le même principe s'applique à **`/dialogues`** : `"dialogues"` est un `KIND` de
+`ContentWorkspace` (fichiers `src/main/resources/dialogues/*.yml`),
+`SourceCatalog.dialogues()` les relit via `DialogueYaml` (module `control-panel`,
+`panel.content`), et `AgentPages` fusionne `dialogue.list` (runtime) avec la
+source sur l'id « nu », avec les **mêmes trois états** que #144
+(`SYNCED` / **« Source uniquement »** / **« Hors source »**), la source relue à
+chaque affichage.
+
+La **création** d'un dialogue passe désormais par l'éditeur source
+**`/dialogues/new`** (`ContentEditorPages`, page server-rendered sans JavaScript,
+comme `/quests/new`) et non plus par l'action agent : identité, **PNJ à rattacher**
+(champ recherchable par nom humain ou par id, alimenté par le dernier `npc.list`),
+locuteur affiché, couleur du texte (palette), et réplique du nœud `start`.
+`DialogueYaml.write` produit le fichier au **format canonique du moteur** —
+identique octet pour octet au squelette de `dialogue.definition.create`, donc
+re-lisible et rechargeable sans surprise. Un dialogue tout juste enregistré
+apparaît immédiatement dans `/dialogues` avec le badge **« Source uniquement »**
+et **jamais** comme actif en jeu.
+
+Si un PNJ est sélectionné à la création, une **seconde écriture** met à jour sa
+**définition** pour qu'elle pointe vers ce dialogue, via l'action agent
+**existante** `npc.definition.update` (jamais de stockage parallèle) : les champs
+`display_name` / `role` / `enabled` sont repris du dernier `npc.list` pour ne rien
+écraser, et seul `dialogue_id` change. Si le PNJ est absent du dernier relevé, le
+dialogue est **quand même** enregistré dans la source et le rattachement est
+signalé comme à refaire depuis la fiche du PNJ (demi-état explicite, jamais
+silencieux). La fiche PNJ (`/npcs`) porte un bouton **« Créer un dialogue pour ce
+PNJ »** → `/dialogues/new?npc=<id>` avec locuteur prérempli, et le `<select>`
+Dialogue de la fiche PNJ propose aussi les dialogues **de la source** (un dialogue
+créé à l'instant est sélectionnable sans redémarrage Minecraft).
+
+Un diagnostic `DIALOGUE_DECLARED_MISSING` (une fiche PNJ pointe vers un dialogue
+que le serveur n'a pas chargé) est **rétrogradé en info** — « rechargement en
+attente » — quand ce dialogue existe dans la source ; les incohérences réelles
+(dialogue vraiment introuvable, fichier rejeté, choix vers un nœud inexistant)
+restent des erreurs. L'édition guidée des nœuds et des choix (#82) reste réservée
+aux dialogues **chargés par le serveur** (elle repose sur des actions agent qui
+ciblent un dialogue runtime).
+
 Chaque avertissement ou erreur est rendu par le registre **`DiagnosticHelp`**
 (module `control-panel`, `panel.web`) sous une forme **actionnable** : titre en
 français clair, **conséquence**, **action recommandée**, **lien vers une ancre

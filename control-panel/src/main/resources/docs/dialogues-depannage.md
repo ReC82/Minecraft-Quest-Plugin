@@ -222,15 +222,52 @@ L'alerte disparaît après rafraîchissement des catalogues.
 
 ---
 
+## Catalogue : « source » et « serveur » (badges d'origine)
+
+La page **Dialogues** montre **deux origines fusionnées** :
+
+- la **source éditable** — les fichiers `src/main/resources/dialogues/*.yml`, relus à chaque
+  affichage de la page ;
+- le **serveur DEV** — ce que le serveur a réellement chargé (dernier « Rafraîchir »).
+
+| Badge | Sens | Ce qu'il faut faire |
+|---|---|---|
+| *(aucun)* | Le dialogue est dans la source **et** chargé par le serveur. | Rien. |
+| **Source uniquement** | Enregistré dans la source (par ex. tout juste créé) mais **pas encore chargé en jeu**. | Il est sélectionnable sur une fiche PNJ dès maintenant. Pour le rendre actif en jeu : recharger le contenu RPGQuest côté serveur, puis « Rafraîchir ». |
+| **Hors source** | Chargé par le serveur mais **introuvable** dans la source éditable (fichier absent, renommé, ou source non montée sur PlugAdmin). | Vérifier le fichier dans le dépôt ; si c'est normal, aucune action. |
+
+« Source uniquement » **n'est pas une erreur**. Si une fiche PNJ pointe vers un dialogue « Source
+uniquement », l'alerte « Dialogue déclaré mais absent » devient une simple **info** (« rechargement
+en attente »).
+
+---
+
 ## Comprendre l'éditeur de dialogues
 
-### Ce que l'éditeur guidé permet
+### Créer un dialogue
 
-- créer un dialogue (bouton **+ Nouveau dialogue**) : identifiant, locuteur affiché,
-  couleur du texte et réplique de départ ;
+Le bouton **« Créer un dialogue »** ouvre `/dialogues/new` (même mécanique que « Créer une
+quête ») : identifiant, **PNJ à rattacher** (recherche par nom ou par id — optionnel), locuteur
+affiché, couleur du texte et réplique de départ. « Enregistrer dans la source » écrit
+`src/main/resources/dialogues/<id>.yml` — **aucun déploiement**, le serveur le validera au
+prochain rechargement.
+
+Si un PNJ est choisi, sa **définition** est mise à jour dans la foulée pour pointer vers ce
+dialogue (une seconde action, visible dans les notifications). Si le PNJ n'est pas dans le dernier
+relevé, le dialogue est quand même enregistré et un message invite à faire le rattachement depuis
+la fiche du PNJ (**PNJ → Modifier → Dialogue**).
+
+Depuis la fiche d'un PNJ, le bouton **« Créer un dialogue pour ce PNJ »** ouvre le même
+formulaire avec le PNJ déjà sélectionné et le locuteur prérempli.
+
+### Ce que l'éditeur guidé permet (dialogue déjà chargé par le serveur)
+
 - modifier le **locuteur** et le **texte** d'un nœud ;
 - ajouter un **nœud simple** ;
 - ajouter, modifier ou supprimer un **choix simple** (sans condition ni action de quête).
+
+Ces opérations ne sont proposées que pour un dialogue **chargé par le serveur** (pas « Source
+uniquement »).
 
 Les conditions, les actions de quête (`START_QUEST`, `QUEST_STATE`…) et le renommage de
 nœud ne sont **pas encore éditables** : elles restent intactes dans le fichier, mais se

@@ -499,6 +499,33 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   une entrée, création éditeur visible sans appel agent, lookup story, lookup prérequis, refresh
   runtime qui préserve une source-only, aucune confusion « actif en jeu », édition source
   reflétée, story source-only).
+- **Catalogue de dialogues fusionné source + runtime + création avec PNJ (issue #145)**
+  *(branche `feat/control-panel-admin-tools`)* — même problème que #144 mais pour `/dialogues` :
+  la page n'affichait que le relevé runtime `dialogue.list`, et la création passait par l'action
+  agent `dialogue.definition.create` (écriture côté serveur DEV) — un dialogue créé restait
+  invisible tant que le serveur ne l'avait pas rechargé. Désormais : `"dialogues"` est un `KIND`
+  de `ContentWorkspace` ; nouveaux `DialogueDraft` / `DialogueYaml` (écriture au **format
+  canonique du moteur**, identique octet pour octet au squelette `DialogueDefinitionYaml`) /
+  `DialogueValidator` (`panel.content`). `SourceCatalog.dialogues()` relit `dialogues/*.yml`.
+  `AgentPages` fusionne `dialogue.list` (runtime) et la source sur l'id « nu » avec le même
+  triptyque d'états que #144 (`SYNCED` / `SOURCE_ONLY` badge **« Source uniquement »** /
+  `RUNTIME_ONLY` badge **« Hors source »**), source relue à chaque affichage. La création se fait
+  maintenant par l'éditeur source **`/dialogues/new`** (`ContentEditorPages`, comme `/quests/new`)
+  — identité, PNJ à rattacher (recherche par nom ou id), locuteur, couleur, réplique de départ —
+  qui écrit `dialogues/<id>.yml` dans le checkout. Si un PNJ est sélectionné, une **seconde**
+  écriture met à jour sa définition via l'action agent existante `npc.definition.update`
+  (`dialogue_id` = le nouveau dialogue ; champs `display_name` / `role` / `enabled` repris du
+  dernier `npc.list` pour ne rien écraser) ; PNJ absent du relevé → dialogue enregistré quand
+  même, rattachement signalé comme à refaire depuis la fiche PNJ (demi-état explicite).
+  `dialogueSelectOptions` (select Dialogue de la fiche PNJ) fusionne aussi la source → un
+  dialogue tout juste créé est immédiatement sélectionnable. Fiche PNJ : bouton **« Créer un
+  dialogue pour ce PNJ »** → `/dialogues/new?npc=<id>` (locuteur prérempli). Un
+  `DIALOGUE_DECLARED_MISSING` dont le dialogue existe dans la source est rétrogradé en **info**
+  (« rechargement en attente »), pas une erreur. L'édition guidée des nœuds/choix (#82) reste
+  réservée aux dialogues chargés par le serveur. L'action `dialogue.definition.create` reste
+  whitelistée (compat) mais n'a plus de formulaire dédié. **Aucun changement plugin, aucun
+  `content.reload`.** Tests : `DialogueYamlTest` (6), `SourceCatalogTest` (+1),
+  `DialogueSourceMergeTest` (10 : A→J).
 - **Resynchronisation après mutation + UX formulaires PNJ / Dialogues (issues #111 → #120)**
   *(branche `feat/control-panel-admin-tools`)* — plusieurs mutations réussissaient côté backend
   (notification SUCCESS) mais la page métier restait périmée : seule la séquence « Rafraîchir

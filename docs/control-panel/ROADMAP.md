@@ -577,6 +577,34 @@ Chaque étape doit laisser `./gradlew build` **vert** et être testable. Aucune 
 - [ ] Validation navigateur authentifiée (créer `lily_pumpkin`, retour `/quests`, badge, lookup
       `/stories/new`, refresh Quêtes) — `PENDING MANUAL VALIDATION`.
 
+### Étape 3n — catalogue de dialogues fusionné source + runtime + création avec PNJ (#145) — **LIVRÉ (chemin principal ; validation navigateur en attente)**
+
+- [x] **Cause** : `/dialogues` n'affichait que le relevé runtime `dialogue.list`, et la création
+      passait par l'action agent `dialogue.definition.create` (écriture côté serveur DEV). Un
+      dialogue créé restait invisible tant que le serveur ne l'avait pas rechargé.
+- [x] **`"dialogues"` devient un `KIND` de `ContentWorkspace`** ; nouveaux `DialogueDraft`,
+      `DialogueYaml` (écriture = **format canonique du moteur**, identique au squelette
+      `DialogueDefinitionYaml` ; relecture best-effort des fichiers écrits à la main),
+      `DialogueValidator` (`panel.content`). `SourceCatalog.dialogues()`.
+- [x] **Fusion dans `AgentPages.dialogues()`** sur l'id « nu », mêmes états que #144 (`SYNCED` /
+      `SOURCE_ONLY` « Source uniquement » / `RUNTIME_ONLY` « Hors source »), source relue à chaque
+      affichage. Rendu quand le relevé runtime est vide. `DIALOGUE_DECLARED_MISSING` rétrogradé en
+      info quand le dialogue existe dans la source.
+- [x] **Création par `/dialogues/new`** (`ContentEditorPages`, comme `/quests/new`) : identité, PNJ
+      à rattacher (recherche nom/id), locuteur, couleur, réplique de départ → écrit
+      `dialogues/<id>.yml`. Si un PNJ est choisi : **seconde écriture** via `npc.definition.update`
+      (champs `display_name`/`role`/`enabled` repris du dernier `npc.list`) ; PNJ absent du relevé
+      → dialogue enregistré, rattachement signalé comme à refaire (demi-état explicite).
+- [x] **Lookups** : `dialogueSelectOptions` (select Dialogue de la fiche PNJ) fusionne la source.
+      Fiche PNJ : bouton « Créer un dialogue pour ce PNJ » → `/dialogues/new?npc=<id>`.
+- [x] **Hors périmètre respecté** : pas d'éditeur de graphe complet (#82), pas de `content.reload`,
+      aucun changement plugin. `dialogue.definition.create` reste whitelistée (compat) mais sans
+      formulaire dédié.
+- [x] **Tests** : `DialogueYamlTest` (6), `SourceCatalogTest` (+1), `DialogueSourceMergeTest`
+      (10 : A→J). `:control-panel:test` vert ; `./gradlew build` vert.
+- [ ] Validation navigateur authentifiée (créer `lily_intro` avec PNJ Lily, retour `/dialogues`,
+      badge, refresh, fiche Lily) — `PENDING MANUAL VALIDATION`.
+
 ## Étape 3c — éditeur guidé de quêtes et de stories (#46) — **LIVRÉ (chemin principal ; V2 restant)**
 
 - [x] paquet `panel.content` : `ContentWorkspace` (accès FS **whitelisté** `quests/*.yml` +

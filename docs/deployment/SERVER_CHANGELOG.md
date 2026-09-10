@@ -2934,3 +2934,84 @@ mémoire) ; root `:test` vert, `:control-panel:test` **368/0**, `:web-api` up-to
 Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260910-195741`).
 
 Rapport : `docs/claude-reports/2026-09-10_1958_catalogue-fusionne-source-runtime-144.md`.
+
+## 2026-09-10 - Control Panel : catalogue de dialogues fusionné source + runtime + création avec PNJ (issue #145) — AWS uniquement
+
+### Changement
+
+Control Panel uniquement. **Aucun changement du plugin RPGQuest, du serveur Minecraft, de la
+base ou de la configuration.**
+
+Symptôme (#145) : un dialogue créé depuis `/dialogues` terminait en `SUCCESS` mais `/dialogues`
+restait vide (« Aucun catalogue chargé »), le rafraîchissement n'y changeait rien, et le
+formulaire de création ne permettait pas de choisir le PNJ logique existant.
+
+Cause : `/dialogues` n'affichait **que** le relevé runtime `dialogue.list`, et la création
+passait par l'action agent `dialogue.definition.create` (écriture côté serveur DEV) — invisible
+tant que le serveur ne l'avait pas rechargé.
+
+Correctif (même principe que #144) : `"dialogues"` devient un `KIND` de `ContentWorkspace` ;
+nouveaux `DialogueDraft` / `DialogueYaml` (écriture au **format canonique du moteur**, identique
+octet pour octet au squelette `DialogueDefinitionYaml`) / `DialogueValidator` (module
+`control-panel` `panel.content`). `SourceCatalog.dialogues()` relit `src/main/resources/dialogues/*.yml`.
+`AgentPages.dialogues()` **fusionne** `dialogue.list` et la source sur l'id « nu » avec les
+trois états de #144 (**Source + serveur** / **« Source uniquement »** / **« Hors source »**), la
+source relue à chaque affichage, la page rendue même quand le relevé runtime est vide. La
+création passe désormais par l'éditeur source **`/dialogues/new`** (`ContentEditorPages`, comme
+`/quests/new`) : identité, **PNJ à rattacher** (recherche nom/id), locuteur, couleur, réplique de
+départ → écrit `dialogues/<id>.yml`. Si un PNJ est choisi, une **seconde écriture** met à jour sa
+définition via l'action agent **existante** `npc.definition.update` (`display_name` / `role` /
+`enabled` repris du dernier `npc.list` pour ne rien écraser) ; PNJ absent du relevé → dialogue
+enregistré quand même, rattachement signalé comme à refaire depuis la fiche PNJ. `/npcs` : bouton
+« Créer un dialogue pour ce PNJ » et `<select>` Dialogue qui propose aussi les dialogues de la
+source. `DIALOGUE_DECLARED_MISSING` rétrogradé en info quand le dialogue existe dans la source.
+L'action `dialogue.definition.create` reste whitelistée (compat) mais n'a plus de formulaire.
+**Aucun rechargement Minecraft déclenché.**
+
+Fichiers : `panel/content/DialogueDraft.java`, `DialogueYaml.java`, `DialogueValidator.java`
+(nouveaux) ; `panel/content/ContentWorkspace.java` (KIND `dialogues`), `SourceCatalog.java`
+(`dialogues()`) ; `panel/web/AgentPages.java` (fusion `dialogues()`, `dialogueSelectOptions`,
+bouton fiche PNJ, `npcDefinitionFields`) ; `panel/web/ContentEditorPages.java` (éditeur
+`/dialogues/new` · `/dialogues/save`) ; `panel/web/PanelApp.java` (routes + orchestration
+`npc.definition.update`). CSP inchangée, aucun CDN, `control-panel.db` non touché (aucune
+migration), aucune permission ajoutée (`DIALOGUE_WRITE` / `DIALOGUE_READ` existants).
+
+### Action serveur
+
+`scripts/plugadmin/deploy.sh` (AWS) — build + release sous `/opt/plugadmin/releases/<horodatage>`
++ `systemctl restart plugadmin` + check `/health`. Aucune autre action. Aucun changement nginx /
+TLS / secret / base. **VeryGames / Minecraft non touchés, aucun redémarrage Minecraft.**
+
+Le drop-in `10-content-workspace.conf` (`PLUGADMIN_CONTENT_DIR=/srv/rpgquest/repo/src/main/resources`)
+doit rester chargé : sans lui, `/dialogues` fonctionne mais n'affiche aucun badge d'origine et
+`/dialogues/new` est en lecture seule.
+
+### Sauvegarde préalable
+
+Automatique via `deploy.sh` : app précédente sous `/opt/plugadmin/releases/<horodatage>`
+(rétention 5). Pas de sauvegarde base (aucune migration).
+
+### Déploiement
+
+```
+scripts/plugadmin/deploy.sh
+```
+
+### Validation
+
+- `/health` local **et** public ONLINE ; `/dialogues`, `/dialogues/new`, `/npcs` rendus (auth).
+- `:control-panel:test` vert (`DialogueYamlTest` +6, `SourceCatalogTest` +1,
+  `DialogueSourceMergeTest` +10) ; `./gradlew build` vert.
+- Checklist navigateur owner : `/dialogues` → `lily_intro` visible « Source uniquement » ;
+  refresh → reste visible ; `/dialogues/new` → PNJ Lily recherchable ; fiche Lily → `lily_intro`
+  rattaché / sélectionnable. `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure la release précédente). Aucune migration à défaire.
+
+### Exécution réelle
+
+`PENDING` — à compléter après `scripts/plugadmin/deploy.sh`.
+
+Rapport : `docs/claude-reports/2026-09-10_2047_dialogues-fusion-source-runtime-npc-145.md`.

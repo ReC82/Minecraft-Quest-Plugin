@@ -216,6 +216,20 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-09-10 (soir)
+Branche de départ: feat/control-panel-admin-tools
+Étape de départ: issue #145 — fusionner les dialogues source + runtime + choisir le PNJ à la création (bloquant test réel « Les souvenirs de Lily ») — Control Panel uniquement
+Étapes terminées: #145 — même principe que #144 pour /dialogues. "dialogues" devient un KIND de ContentWorkspace ; nouveaux DialogueDraft / DialogueYaml (écriture = format canonique du moteur, identique au squelette DialogueDefinitionYaml) / DialogueValidator (panel.content). SourceCatalog.dialogues(). AgentPages.dialogues() fusionne dialogue.list (runtime) + source sur l'id nu, mêmes 3 états que #144 (SYNCED / SOURCE_ONLY « Source uniquement » / RUNTIME_ONLY « Hors source »), source relue à chaque affichage, page rendue même sans relevé runtime. Création via /dialogues/new (ContentEditorPages, comme /quests/new) : identité + PNJ à rattacher (recherche nom/id) + locuteur + couleur + réplique start → écrit dialogues/<id>.yml. Si PNJ choisi : 2e écriture via npc.definition.update (champs display_name/role/enabled repris du dernier npc.list) ; PNJ absent du relevé → dialogue enregistré quand même, rattachement à refaire depuis la fiche PNJ (demi-état explicite). dialogueSelectOptions (select Dialogue fiche PNJ) fusionne la source ; fiche PNJ : bouton « Créer un dialogue pour ce PNJ » → /dialogues/new?npc=<id>. DIALOGUE_DECLARED_MISSING rétrogradé en info si le dialogue existe en source. dialogue.definition.create reste whitelistée (compat) sans formulaire. AUCUN changement plugin, aucun content.reload.
+Branche finale: feat/control-panel-admin-tools (y rester, ne rien merger, #145 laissée ouverte — l'utilisateur gère GitHub)
+Dernier commit: (voir git log — commits feat(control-panel)/docs #145)
+Build: control-panel:test vert (+17 : DialogueYamlTest 6, SourceCatalogTest +1, DialogueSourceMergeTest 10) ; ./gradlew build vert (RPGQUEST_TEST_MAX_HEAP si OOM).
+Tests: verts — DialogueSourceMergeTest couvre A→J (runtime-only visible « Hors source », source-only visible « Source uniquement » + note, fusion une entrée, création /dialogues/new visible sans appel agent + YAML canonique, refresh runtime préserve source-only, formulaire propose Lily nom+id, npc pré-sélectionné → locuteur prérempli, création avec Lily → npc.definition.update enfilée avec dialogue_id, source-only sélectionnable dans la fiche PNJ, aucun faux « actif en jeu »).
+Tests manuels en attente: checklist navigateur owner — /dialogues → lily_intro « Source uniquement » ; refresh → reste visible ; création → Lily recherchable ; fiche Lily → lily_intro rattaché/sélectionnable. Mot de passe owner non détenu → couvert par tests HTTP.
+Blocages: aucun
+Première étape à reprendre: #145 reste ouverte (l'utilisateur gère GitHub) ; poursuite du test réel « Les souvenirs de Lily », ou #109 import content pack.
+```
+
+```text
 Date: 2026-09-10 (nuit tardive)
 Branche de départ: feat/control-panel-admin-tools
 Étape de départ: issue #144 — une quête créée dans la source n'apparaît pas dans /quests après refresh (bloquant workflow d'édition PlugAdmin) — hors étapes 1-23, Control Panel uniquement

@@ -8,10 +8,15 @@ import com.lodygames.rpgquest.panel.agent.AgentRegistry;
 import com.lodygames.rpgquest.panel.agent.AgentStore;
 import com.lodygames.rpgquest.panel.authz.Permission;
 import com.lodygames.rpgquest.panel.authz.PermissionService;
+import com.lodygames.rpgquest.panel.content.QuestDraft;
+import com.lodygames.rpgquest.panel.content.QuestYaml;
+import com.lodygames.rpgquest.panel.content.SourceCatalog;
+import com.lodygames.rpgquest.panel.content.StoryDraft;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.json.Json;
 import com.lodygames.rpgquest.panel.security.Session;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -33,12 +38,243 @@ public final class AgentPages {
     private final AgentRegistry registry;
     private final String defaultAgentId;
     private final PermissionService perms;
+    private final SourceCatalog sourceCatalog;
 
     public AgentPages(AgentStore store, AgentRegistry registry, String defaultAgentId, PermissionService perms) {
+        this(store, registry, defaultAgentId, perms, new SourceCatalog(null));
+    }
+
+    public AgentPages(AgentStore store, AgentRegistry registry, String defaultAgentId, PermissionService perms,
+                      SourceCatalog sourceCatalog) {
         this.store = store;
         this.registry = registry;
         this.defaultAgentId = defaultAgentId;
         this.perms = perms;
+        this.sourceCatalog = sourceCatalog;
+    }
+
+    /**
+     * État d'une entrée du catalogue fusionné source + runtime (issue #144). Voir aussi le libellé
+     * humain rendu dans l'en-tête d'accordion.
+     */
+    enum CatalogState {
+        /** Présente à la fois dans la source éditable et dans le dernier relevé du serveur. */
+        SYNCED,
+        /** Enregistrée dans la source mais pas encore chargée par le serveur DEV. */
+        SOURCE_ONLY,
+        /** Chargée par le serveur mais absente de la source éditable du Control Panel. */
+        RUNTIME_ONLY
+    }
+
+    /** Une entrée du catalogue fusionné : la donnée déjà mise en forme « comme un relevé runtime ». */
+    private record MergedRow(Map<String, Object> data, CatalogState state) {
+    }
+
+    // ================================================================================
+    //  Catalogue fusionné source + runtime (issue #144)
+    // ================================================================================
+
+    /**
+     * Fusionne le dernier relevé {@code quest.list} du serveur avec les fichiers
+     * {@code quests/*.yml} de la source éditable. Clé de fusion : l'id « nu ». Ordre : d'abord les
+     * quêtes du relevé runtime (dans leur ordre), puis les quêtes « source uniquement » (triées par
+     * slug). Chaque ligne porte un {@link CatalogState} explicite : jamais de fusion silencieuse qui
+     * ferait croire qu'un contenu source est déjà actif en jeu.
+     */
+    private List<MergedRow> mergeQuestRows(List<Object> runtimeQuests) {
+        Map<String, Map<String, Object>> runtimeById = new LinkedHashMap<>();
+        for (Object o : runtimeQuests) {
+            Map<String, Object> m = asMap(o);
+            String key = QuestYaml.plainId(str(m.get("id")));
+            if (!key.isEmpty()) {
+                runtimeById.putIfAbsent(key, m);
+            }
+        }
+        Map<String, SourceCatalog.QuestSource> sourceById = new LinkedHashMap<>();
+        for (SourceCatalog.QuestSource qs : sourceCatalog.quests()) {
+            if (!qs.plainId().isEmpty()) {
+                sourceById.putIfAbsent(qs.plainId(), qs);
+            }
+        }
+        // Sans espace de travail source configuré, aucune comparaison n'est possible : on n'affiche
+        // aucun badge d'origine plutôt que de qualifier à tort toutes les quêtes de « hors source ».
+        boolean srcKnown = sourceCatalog.available();
+        List<MergedRow> out = new ArrayList<>();
+        for (Map.Entry<String, Map<String, Object>> e : runtimeById.entrySet()) {
+            CatalogState st = !srcKnown ? CatalogState.SYNCED
+                    : sourceById.containsKey(e.getKey()) ? CatalogState.SYNCED : CatalogState.RUNTIME_ONLY;
+            out.add(new MergedRow(e.getValue(), st));
+        }
+        for (Map.Entry<String, SourceCatalog.QuestSource> e : sourceById.entrySet()) {
+            if (!runtimeById.containsKey(e.getKey())) {
+                out.add(new MergedRow(sourceQuestRow(e.getValue()), CatalogState.SOURCE_ONLY));
+            }
+        }
+        return out;
+    }
+
+    /** Idem {@link #mergeQuestRows} pour {@code story.list} + {@code stories/*.yml}. */
+    private List<MergedRow> mergeStoryRows(List<Object> runtimeStories) {
+        Map<String, Map<String, Object>> runtimeById = new LinkedHashMap<>();
+        for (Object o : runtimeStories) {
+            Map<String, Object> m = asMap(o);
+            String key = str(m.get("id")).trim().toLowerCase(Locale.ROOT);
+            key = key.startsWith("rpgquest:") ? key.substring("rpgquest:".length()) : key;
+            if (!key.isEmpty()) {
+                runtimeById.putIfAbsent(key, m);
+            }
+        }
+        Map<String, SourceCatalog.StorySource> sourceById = new LinkedHashMap<>();
+        for (SourceCatalog.StorySource ss : sourceCatalog.stories()) {
+            if (!ss.plainId().isEmpty()) {
+                sourceById.putIfAbsent(ss.plainId(), ss);
+            }
+        }
+        boolean srcKnown = sourceCatalog.available();
+        List<MergedRow> out = new ArrayList<>();
+        for (Map.Entry<String, Map<String, Object>> e : runtimeById.entrySet()) {
+            CatalogState st = !srcKnown ? CatalogState.SYNCED
+                    : sourceById.containsKey(e.getKey()) ? CatalogState.SYNCED : CatalogState.RUNTIME_ONLY;
+            out.add(new MergedRow(e.getValue(), st));
+        }
+        for (Map.Entry<String, SourceCatalog.StorySource> e : sourceById.entrySet()) {
+            if (!runtimeById.containsKey(e.getKey())) {
+                out.add(new MergedRow(sourceStoryRow(e.getValue()), CatalogState.SOURCE_ONLY));
+            }
+        }
+        return out;
+    }
+
+    /** Projette une quête relue de la source dans la forme d'une ligne {@code quest.list} (structurée). */
+    private static Map<String, Object> sourceQuestRow(SourceCatalog.QuestSource qs) {
+        QuestDraft d = qs.draft();
+        Map<String, Object> m = new LinkedHashMap<>();
+        String plain = qs.plainId();
+        m.put("id", "rpgquest:" + plain);
+        m.put("title", d.title == null || d.title.isBlank() ? plain : d.title);
+        m.put("category", d.category == null ? "" : d.category);
+        m.put("repeatable", d.repeatable);
+        m.put("giverId", d.giver == null ? "" : d.giver.trim());
+        m.put("giverName", "");
+        List<Object> prereq = new ArrayList<>();
+        for (String p : d.prerequisites) {
+            if (p != null && !p.isBlank()) {
+                prereq.add("rpgquest:" + QuestYaml.plainId(p));
+            }
+        }
+        m.put("prerequisites", prereq);
+        List<Object> steps = new ArrayList<>();
+        for (QuestDraft.Step s : d.steps) {
+            Map<String, Object> sm = new LinkedHashMap<>();
+            sm.put("id", s.id == null ? "" : s.id);
+            List<Object> od = new ArrayList<>();
+            for (Map<String, String> obj : s.objectives) {
+                od.add(objectiveDetail(obj));
+            }
+            sm.put("objectiveDetails", od);
+            steps.add(sm);
+        }
+        m.put("steps", steps);
+        List<Object> rd = new ArrayList<>();
+        for (Map<String, String> r : d.rewards) {
+            rd.add(rewardDetail(r));
+        }
+        m.put("rewardDetails", rd);
+        m.put("rewards", List.of());
+        return m;
+    }
+
+    /** Projette une story relue de la source dans la forme d'une ligne {@code story.list}. */
+    private static Map<String, Object> sourceStoryRow(SourceCatalog.StorySource ss) {
+        StoryDraft d = ss.draft();
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", ss.plainId());
+        m.put("title", d.name == null || d.name.isBlank() ? ss.plainId() : d.name);
+        List<Object> steps = new ArrayList<>();
+        for (String q : d.questIds) {
+            if (q != null && !q.isBlank()) {
+                steps.add("rpgquest:" + QuestYaml.plainId(q));
+            }
+        }
+        m.put("stepQuestIds", steps);
+        return m;
+    }
+
+    private static Map<String, Object> objectiveDetail(Map<String, String> obj) {
+        Map<String, Object> o = new LinkedHashMap<>();
+        String kind = obj.getOrDefault("kind", "").trim().toUpperCase(Locale.ROOT);
+        o.put("kind", kind);
+        o.put("target", firstNonBlank(obj.get("entity"), obj.get("material"), obj.get("npc"), obj.get("world")));
+        o.put("amount", intOr(obj.get("amount"), 0));
+        o.put("raw", "");
+        return o;
+    }
+
+    private static Map<String, Object> rewardDetail(Map<String, String> r) {
+        Map<String, Object> o = new LinkedHashMap<>();
+        String kind = r.getOrDefault("kind", "").trim().toUpperCase(Locale.ROOT);
+        o.put("kind", kind);
+        o.put("amount", intOr(r.get("amount"), 0));
+        o.put("target", "VARIABLE".equals(kind) ? nz(r.get("key")) : nz(r.get("material")));
+        o.put("value", nz(r.get("value")));
+        o.put("command", nz(r.get("command")));
+        o.put("raw", "");
+        return o;
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String v : values) {
+            if (v != null && !v.isBlank()) {
+                return v.trim();
+            }
+        }
+        return "";
+    }
+
+    private static String nz(String v) {
+        return v == null ? "" : v;
+    }
+
+    /** Légende courte des origines, affichée une fois sous la barre du catalogue (issue #144). */
+    private static String catalogOriginLegend(String noun) {
+        boolean f = "story".equals(noun);
+        return "<p class=\"muted\" style=\"margin:.35rem 0 .1rem\">"
+                + "Ce catalogue fusionne la <strong>source éditable</strong> et le dernier relevé du "
+                + "<strong>serveur DEV</strong>. Le badge « Source uniquement » marque un" + (f ? "e " : " ") + noun
+                + " enregistré" + (f ? "e" : "") + " dans la source mais pas encore chargé" + (f ? "e" : "")
+                + " en jeu ; « Rafraîchir » interroge le serveur, tandis que la source est relue à chaque affichage.</p>";
+    }
+
+    /** Badge d'état court et humain dans l'en-tête d'accordion. Vide pour {@link CatalogState#SYNCED}. */
+    private static String catalogStateBadge(CatalogState state, String noun) {
+        return switch (state) {
+            case SOURCE_ONLY -> "<span class=\"badge text-bg-info\" title=\"Cette " + noun + " est enregistrée dans "
+                    + "la source mais n'est pas encore chargée par le serveur DEV.\">Source uniquement</span>";
+            case RUNTIME_ONLY -> "<span class=\"badge text-bg-warning\" title=\"Cette " + noun + " est chargée par le "
+                    + "serveur mais absente de la source éditable du Control Panel.\">Hors source</span>";
+            case SYNCED -> "";
+        };
+    }
+
+    /** Ligne d'explication en tête du corps d'accordion pour les états non synchronisés. */
+    private static String catalogStateNote(CatalogState state, String noun) {
+        return switch (state) {
+            case SOURCE_ONLY -> "<p class=\"muted\">" + Icons.icon("history") + "Enregistrée dans la source. "
+                    + "Elle sera prise en compte en jeu au prochain rechargement du contenu RPGQuest sur le serveur "
+                    + "DEV — l'édition et l'activation en jeu restent deux étapes distinctes.</p>";
+            case RUNTIME_ONLY -> "<p class=\"muted\">" + Icons.icon("warning") + "Chargée par le serveur mais "
+                    + "introuvable dans la source éditable (fichier absent, supprimé ou renommé).</p>";
+            case SYNCED -> "";
+        };
+    }
+
+    /** Mots-clés ajoutés au texte de recherche pour retrouver une ligne par son état. */
+    private static String catalogStateKeywords(CatalogState state) {
+        return switch (state) {
+            case SOURCE_ONLY -> "source uniquement non chargée en attente";
+            case RUNTIME_ONLY -> "hors source runtime";
+            case SYNCED -> "";
+        };
     }
 
     // ================================================================================
@@ -562,27 +798,36 @@ public final class AgentPages {
             questBar += compactRefresh(session, agentId, "npc.list", "PNJ", "btn-outline-secondary", "/quests");
         }
         sb.append(listCatbar("Catalogue", questBar));
-        List<Object> catalog = latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of());
-        Map<String, String> questTitles = titleIndex(catalog, "id", "title");
-        List<String> questIdList = catalog.stream().map(o -> str(asMap(o).get("id"))).toList();
+        List<Object> runtimeQuests = latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of());
+        List<MergedRow> merged = mergeQuestRows(runtimeQuests);
+        List<Object> rowData = merged.stream().map(m -> (Object) m.data()).toList();
+        Map<String, String> questTitles = titleIndex(rowData, "id", "title");
+        List<String> questIdList = rowData.stream().map(o -> str(asMap(o).get("id"))).toList();
         java.util.Set<String> knownQuestKeys = idKeySet(questIdList);
         java.util.Set<String> knownNpcKeys = npcKeySet(agentId);
-        if (catalog.isEmpty()) {
-            sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Rafraîchir le catalogue »."));
+        if (merged.isEmpty()) {
+            sb.append(Ui.empty("Aucun catalogue chargé — aucune quête dans la source éditable ni dans le dernier "
+                    + "relevé du serveur. Créer une quête, ou cliquer sur « Rafraîchir le catalogue »."));
         } else {
+            if (sourceCatalog.available()) {
+                sb.append(catalogOriginLegend("quête"));
+            }
             sb.append(listControls("quests", "Rechercher une quête\u2026",
                     filterBtn("", "Toutes", true) + filterBtn("ok", "Sans alerte", false)
                             + filterBtn("warn", "À vérifier", false)));
-            sb.append("<p class=\"count-note\" data-count-note data-noun=\"qu\u00eate\">" + catalog.size() + " qu\u00eate(s)</p>");
+            sb.append("<p class=\"count-note\" data-count-note data-noun=\"qu\u00eate\">" + merged.size() + " qu\u00eate(s)</p>");
             sb.append("<div class=\"accordion npc-accordion\" id=\"quests-accordion\">");
             int qi = 0;
-            for (Object o : catalog) {
-                sb.append(renderQuestAccordionItem(asMap(o), qi++, questTitles, knownQuestKeys, knownNpcKeys, canEditQuests));
+            for (MergedRow mr : merged) {
+                sb.append(renderQuestAccordionItem(mr.data(), qi++, questTitles, knownQuestKeys, knownNpcKeys,
+                        canEditQuests, mr.state()));
             }
             sb.append("</div>");
         }
 
-        List<String> questIds = catalog.stream().map(o -> str(asMap(o).get("id"))).toList();
+        // Les actions admin s'ex\u00e9cutent contre le runtime : on ne propose que les qu\u00eates r\u00e9ellement
+        // charg\u00e9es par le serveur (une qu\u00eate \u00ab source uniquement \u00bb \u00e9chouerait c\u00f4t\u00e9 agent).
+        List<String> questIds = runtimeQuests.stream().map(o -> str(asMap(o).get("id"))).toList();
         sb.append(playerStatusSection(session, agentId, player, "/quests", "quest.player.status", "quests",
                 this::renderQuestPlayerRow));
 
@@ -604,7 +849,7 @@ public final class AgentPages {
      */
     private String renderQuestAccordionItem(Map<String, Object> qd, int idx, Map<String, String> questTitles,
                                             java.util.Set<String> knownQuestKeys, java.util.Set<String> knownNpcKeys,
-                                            boolean canEdit) {
+                                            boolean canEdit, CatalogState state) {
         String id = str(qd.get("id"));
         String title = str(qd.get("title"));
         String category = str(qd.get("category"));
@@ -631,7 +876,8 @@ public final class AgentPages {
         }
         boolean anyWarn = !diags.isEmpty();
 
-        String ftext = Http.esc(id + " " + human + " " + category + " " + giverId + " " + giverName);
+        String ftext = Http.esc(id + " " + human + " " + category + " " + giverId + " " + giverName
+                + " " + catalogStateKeywords(state));
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"quests\" data-filter-cat=\"")
                 .append(anyWarn ? "warn" : "ok").append("\" data-filter-text=\"").append(ftext)
@@ -660,12 +906,14 @@ public final class AgentPages {
         if (Boolean.TRUE.equals(qd.get("repeatable"))) {
             sb.append("<span class=\"badge text-bg-secondary\">répétable</span>");
         }
+        sb.append(catalogStateBadge(state, "quête"));
         sb.append(anyWarn ? "<span class=\"badge text-bg-warning\">à vérifier</span>"
                 : "<span class=\"badge text-bg-success\">OK</span>");
         sb.append("</span></button></h3>");
 
         sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" ")
                 .append("data-bs-parent=\"#quests-accordion\"><div class=\"accordion-body npc-detail\">");
+        sb.append(catalogStateNote(state, "quête"));
 
         // ---- GÉNÉRAL ----
         sb.append(detailSection("book", "Général"));
@@ -838,30 +1086,48 @@ public final class AgentPages {
         String storyBar = compactRefresh(session, agentId, "story.list", "Stories", "btn-outline-primary", "/stories")
                 + compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-secondary", "/stories");
         sb.append(listCatbar("Catalogue", storyBar));
-        List<Object> catalog = latestDetails(agentId, "story.list").map(d -> asList(d.get("stories"))).orElse(List.of());
+        List<Object> runtimeStories = latestDetails(agentId, "story.list").map(d -> asList(d.get("stories"))).orElse(List.of());
+        List<MergedRow> merged = mergeStoryRows(runtimeStories);
         // Titres humains des quêtes composant les stories, si un quest.list a déjà été chargé (données
         // locales du panel — aucun appel agent supplémentaire).
-        List<String> knownQuestIds = latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of())
-                .stream().map(o -> str(asMap(o).get("id"))).toList();
-        Map<String, String> questTitles = titleIndex(
-                latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of()), "id", "title");
+        List<Object> runtimeQuestDefs = latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of());
+        List<String> knownQuestIds = new ArrayList<>(runtimeQuestDefs.stream()
+                .map(o -> str(asMap(o).get("id"))).filter(s -> !s.isEmpty()).toList());
+        Map<String, String> questTitles = new LinkedHashMap<>(titleIndex(runtimeQuestDefs, "id", "title"));
+        // Fusion des quêtes « source uniquement » : une quête tout juste enregistrée doit pouvoir
+        // composer une story sans redémarrage Minecraft (issue #144). Aucun appel agent.
+        for (SourceCatalog.QuestSource qs : sourceCatalog.quests()) {
+            if (qs.plainId().isEmpty()) {
+                continue;
+            }
+            String nsId = "rpgquest:" + qs.plainId();
+            if (knownQuestIds.stream().noneMatch(k -> QuestYaml.plainId(k).equals(qs.plainId()))) {
+                knownQuestIds.add(nsId);
+            }
+            String t = qs.draft().title == null || qs.draft().title.isBlank() ? qs.plainId() : qs.draft().title;
+            questTitles.putIfAbsent(nsId, t);
+        }
         java.util.Set<String> storyQuestKeys = knownQuestIds.isEmpty() ? null : idKeySet(knownQuestIds);
-        if (catalog.isEmpty()) {
-            sb.append(Ui.empty("Aucun catalogue chargé — cliquer sur « Stories »."));
+        if (merged.isEmpty()) {
+            sb.append(Ui.empty("Aucun catalogue chargé — aucune story dans la source éditable ni dans le dernier "
+                    + "relevé du serveur. Créer une story, ou cliquer sur « Stories »."));
         } else {
+            if (sourceCatalog.available()) {
+                sb.append(catalogOriginLegend("story"));
+            }
             sb.append(listControls("stories", "Rechercher une story\u2026",
                     filterBtn("", "Toutes", true) + filterBtn("ok", "Sans alerte", false)
                             + filterBtn("warn", "À vérifier", false)));
-            sb.append("<p class=\"count-note\" data-count-note data-noun=\"story\">" + catalog.size() + " story(s)</p>");
+            sb.append("<p class=\"count-note\" data-count-note data-noun=\"story\">" + merged.size() + " story(s)</p>");
             sb.append("<div class=\"accordion npc-accordion\" id=\"stories-accordion\">");
             int si = 0;
-            for (Object o : catalog) {
-                sb.append(renderStoryAccordionItem(asMap(o), si++, questTitles, storyQuestKeys, canEditStories));
+            for (MergedRow mr : merged) {
+                sb.append(renderStoryAccordionItem(mr.data(), si++, questTitles, storyQuestKeys, canEditStories, mr.state()));
             }
             sb.append("</div>");
         }
 
-        List<String> storyIds = catalog.stream().map(o -> str(asMap(o).get("id"))).toList();
+        List<String> storyIds = runtimeStories.stream().map(o -> str(asMap(o).get("id"))).toList();
         sb.append(playerStatusSection(session, agentId, player, "/stories", "story.player.status", "stories",
                 this::renderStoryPlayerRow));
 
@@ -881,7 +1147,7 @@ public final class AgentPages {
      * {@code quest.list} a été chargé.
      */
     private String renderStoryAccordionItem(Map<String, Object> sd, int idx, Map<String, String> questTitles,
-                                            java.util.Set<String> storyQuestKeys, boolean canEdit) {
+                                            java.util.Set<String> storyQuestKeys, boolean canEdit, CatalogState state) {
         String id = str(sd.get("id"));
         String title = str(sd.get("title"));
         List<Object> steps = asList(sd.get("stepQuestIds"));
@@ -899,7 +1165,7 @@ public final class AgentPages {
         }
         boolean anyWarn = !unknownSteps.isEmpty();
 
-        String ftext = Http.esc(id + " " + human);
+        String ftext = Http.esc(id + " " + human + " " + catalogStateKeywords(state));
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"stories\" data-filter-cat=\"")
                 .append(anyWarn ? "warn" : "ok").append("\" data-filter-text=\"").append(ftext)
@@ -913,12 +1179,14 @@ public final class AgentPages {
         sb.append("<span class=\"npc-head-badges\">");
         sb.append("<span class=\"badge text-bg-secondary\">").append(steps.size())
                 .append(steps.size() > 1 ? " quêtes" : " quête").append("</span>");
+        sb.append(catalogStateBadge(state, "story"));
         sb.append(anyWarn ? "<span class=\"badge text-bg-warning\">à vérifier</span>"
                 : "<span class=\"badge text-bg-success\">OK</span>");
         sb.append("</span></button></h3>");
 
         sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" ")
                 .append("data-bs-parent=\"#stories-accordion\"><div class=\"accordion-body npc-detail\">");
+        sb.append(catalogStateNote(state, "story"));
 
         // ---- IDENTITÉ ----
         sb.append(detailSection("book", "Identité"));
@@ -2669,8 +2937,8 @@ public final class AgentPages {
         }
         Optional<Map<String, Object>> questDet = latestDetails(agentId, "quest.list");
         Optional<Map<String, Object>> npcDet = latestDetails(agentId, "npc.list");
-        List<String> quests = questDet.map(d -> asList(d.get("quests"))).orElse(List.of())
-                .stream().map(o -> str(asMap(o).get("id"))).filter(s -> !s.isEmpty()).toList();
+        List<String> quests = new ArrayList<>(questDet.map(d -> asList(d.get("quests"))).orElse(List.of())
+                .stream().map(o -> str(asMap(o).get("id"))).filter(s -> !s.isEmpty()).toList());
         List<String> npcs = npcDet.map(d -> asList(d.get("npcs"))).orElse(List.of())
                 .stream().map(o -> str(asMap(o).get("id"))).filter(s -> !s.isEmpty()).toList();
         // Libellé humain -> id pour les listes déroulantes de l'éditeur (#46, §10 : « Garde / guard »).
@@ -2694,9 +2962,28 @@ public final class AgentPages {
                 questNames.putIfAbsent(id, title);
             }
         }
+        // Fusion des quêtes de la SOURCE éditable (issue #144) : une quête tout juste enregistrée
+        // depuis /quests/new doit être immédiatement disponible dans les lookups d'édition (prérequis,
+        // chaîne de story) sans redémarrage Minecraft. Id « nu » pour rester cohérent avec la
+        // convention de RefData (comparaison via QuestYaml.plainId).
+        List<SourceCatalog.QuestSource> sourceQuests = sourceCatalog.quests();
+        for (SourceCatalog.QuestSource qs : sourceQuests) {
+            String plain = qs.plainId();
+            if (plain.isEmpty()) {
+                continue;
+            }
+            if (quests.stream().noneMatch(q -> QuestYaml.plainId(q).equals(plain))) {
+                quests.add(plain);
+            }
+            String title = qs.draft().title == null ? "" : MiniText.plain(qs.draft().title).trim();
+            if (!title.isEmpty()) {
+                questNames.putIfAbsent(plain, title);
+            }
+        }
+        boolean questsKnown = questDet.isPresent() || !sourceQuests.isEmpty();
         List<String> worlds = loadedWorldNames(agentId);
         return new com.lodygames.rpgquest.panel.content.RefData(
-                quests, npcs, worlds, questDet.isPresent(), npcDet.isPresent(), !worlds.isEmpty(),
+                quests, npcs, worlds, questsKnown, npcDet.isPresent(), !worlds.isEmpty(),
                 npcNames, questNames);
     }
 

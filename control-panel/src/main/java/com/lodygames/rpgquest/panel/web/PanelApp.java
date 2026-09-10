@@ -94,11 +94,12 @@ public final class PanelApp {
         this.bridge = bridge;
         this.agentStore = agentStore;
         this.agentRegistry = new AgentRegistry(config.agents().agents());
-        this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(), permissions);
-        this.notifications = new NotificationCenter(agentStore, agentRegistry);
         this.contentWorkspace = new ContentWorkspace(
                 config.contentRepoDir() == null || config.contentRepoDir().isBlank()
                         ? null : Path.of(config.contentRepoDir()));
+        this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
+                permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
+        this.notifications = new NotificationCenter(agentStore, agentRegistry);
         this.contentEditor = new ContentEditorPages(contentWorkspace);
         this.contentExportPages = new ContentExportPages(agentStore, config.agents().defaultAgentId());
         this.diagnostics = new com.lodygames.rpgquest.panel.diag.DiagnosticsService(

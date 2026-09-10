@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.panel.content;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -19,16 +20,31 @@ import java.util.Set;
  * parser RPGQuest tranchera au chargement côté serveur.</p>
  */
 public record RefData(List<String> quests, List<String> npcs, List<String> worlds,
-                      boolean questsKnown, boolean npcsKnown, boolean worldsKnown) {
+                      boolean questsKnown, boolean npcsKnown, boolean worldsKnown,
+                      Map<String, String> npcNames) {
+
+    /** Constructeur historique (6 composantes) : aucun libellé de PNJ. */
+    public RefData(List<String> quests, List<String> npcs, List<String> worlds,
+                   boolean questsKnown, boolean npcsKnown, boolean worldsKnown) {
+        this(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown, Map.of());
+    }
 
     public RefData {
         quests = List.copyOf(quests == null ? List.of() : quests);
         npcs = List.copyOf(npcs == null ? List.of() : npcs);
         worlds = List.copyOf(worlds == null ? List.of() : worlds);
+        npcNames = Map.copyOf(npcNames == null ? Map.of() : npcNames);
     }
 
     public static RefData empty() {
         return new RefData(List.of(), List.of(), List.of(), false, false, false);
+    }
+
+    /** Nom d'affichage d'un PNJ (« Garde »), ou son id s'il n'en a pas / est inconnu. */
+    public String npcLabel(String id) {
+        String s = id == null ? "" : id.trim();
+        String name = npcNames.get(s);
+        return name == null || name.isBlank() || name.equals(s) ? s : name;
     }
 
     public boolean isQuestKnown(String id) {
@@ -96,7 +112,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
                 merged.add(QuestYaml.plainId(e));
             }
         }
-        return new RefData(List.copyOf(merged), npcs, worlds, questsKnown, npcsKnown, worldsKnown);
+        return new RefData(List.copyOf(merged), npcs, worlds, questsKnown, npcsKnown, worldsKnown, npcNames);
     }
 
     // ---- listes curées (les plus courantes ; saisie libre toujours possible) ----------------

@@ -56,6 +56,8 @@ public final class Descriptors {
     // ---- Objectifs (calqués sur ObjectiveType) ---------------------------------------------
 
     private static final Field AMOUNT = Field.integer("amount", "Quantité", "Nombre à atteindre (entier > 0).");
+    private static final Field GIVE_AMOUNT =
+            Field.integer("amount", "Quantité", "Nombre d'exemplaires à donner (entier > 0).");
 
     public static final List<Descriptor> OBJECTIVES = List.of(
             new Descriptor("KILL_ENTITY", "Tuer une entité", "target",
@@ -75,7 +77,8 @@ public final class Descriptors {
                     List.of(Field.select("material", "Bloc", "material", "Matériau Minecraft (ex. DIRT).", true), AMOUNT)),
             new Descriptor("TALK_TO_NPC", "Parler à un PNJ", "npc",
                     "Interagir avec un PNJ identifié RPGQuest (id posé via /rpgadmin npc tag).",
-                    List.of(Field.select("npc", "PNJ", "npc", "Identifiant logique du PNJ (ex. guard).", true))),
+                    List.of(Field.select("npc", "PNJ", "npc",
+                            "PNJ logique RPGQuest — chercher par nom (« Garde ») ou par id (« guard »).", true))),
             new Descriptor("REACH_LOCATION", "Atteindre une zone", "world",
                     "S'approcher d'un point du monde à moins de « radius » blocs.",
                     List.of(
@@ -92,8 +95,10 @@ public final class Descriptors {
                     "Points d'XP RPGQuest accordés une fois la quête terminée.",
                     List.of(Field.integer("amount", "Points d'expérience", "Nombre de points d'XP RPGQuest (entier > 0)."))),
             new Descriptor("ITEM", "Objet", "gift",
-                    "Donne N exemplaires d'un objet vanilla.",
-                    List.of(Field.select("material", "Objet", "material", "Matériau Minecraft (ex. IRON_SWORD).", true), AMOUNT)),
+                    "Donne N exemplaires d'un objet vanilla (le moteur ne gère qu'un Material Minecraft ici, "
+                            + "pas un objet personnalisé RPGQuest).",
+                    List.of(Field.select("material", "Objet", "material",
+                            "Matériau Minecraft vanilla (ex. IRON_SWORD).", true), GIVE_AMOUNT)),
             new Descriptor("VARIABLE", "Variable / déblocage", "check",
                     "Pose une variable persistante du joueur (ex. CLAIM_TIER_1 = true).",
                     List.of(

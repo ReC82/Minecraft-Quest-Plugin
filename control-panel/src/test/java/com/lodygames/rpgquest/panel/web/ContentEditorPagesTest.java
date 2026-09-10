@@ -10,6 +10,7 @@ import com.lodygames.rpgquest.panel.authz.Permission;
 import com.lodygames.rpgquest.panel.authz.PermissionService;
 import com.lodygames.rpgquest.panel.authz.Role;
 import com.lodygames.rpgquest.panel.bridge.BridgeClient;
+import com.lodygames.rpgquest.panel.content.RefData;
 import com.lodygames.rpgquest.panel.support.TestConfig;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -310,6 +311,141 @@ class ContentEditorPagesTest {
         assertFalse(p.can(Role.READ_ONLY.name(), Permission.QUEST_CONTENT_WRITE));
         assertTrue(p.can(Role.OWNER.name(), Permission.QUEST_CONTENT_WRITE));
         assertTrue(p.can(Role.CONTENT_EDITOR.name(), Permission.STORY_CONTENT_WRITE));
+    }
+
+    // ---- #46 passe UX : brouillon jamais bloqué, scroll, combos ---------------------------
+
+    /** Slice du seul {@code <form class="editor" ...>...</form>} de la page (là où « required » nuirait). */
+    private static String editorForm(String html) {
+        int a = html.indexOf("<form method=\"post\" action=\"/quests/save\" class=\"editor\"");
+        if (a < 0) {
+            a = html.indexOf("<form method=\"post\" action=\"/stories/save\" class=\"editor\"");
+        }
+        int b = html.indexOf("</form>", a);
+        return a < 0 || b < 0 ? html : html.substring(a, b);
+    }
+
+    @Test
+    void editorFormDisablesNativeValidationAndEmitsNoRequiredAttribute() throws Exception {
+        start(true);
+        String form = editorForm(get("/quests/new").body());
+        assertTrue(form.contains("class=\"editor\" novalidate"), "le <form> de l'éditeur porte novalidate");
+        assertFalse(Pattern.compile("<(input|select|textarea)\\b[^>]*\\brequired\\b").matcher(form).find(),
+                "aucun contrôle du formulaire éditeur ne porte l'attribut HTML required");
+        // Le marqueur visuel d'obligation reste (accessibilité / lisibilité).
+        assertTrue(form.contains("<span aria-hidden=\"true\">*</span>"), "le marqueur « * » reste affiché");
+    }
+
+    @Test
+    void storyEditorFormAlsoDisablesNativeValidation() throws Exception {
+        start(true);
+        String form = editorForm(get("/stories/new").body());
+        assertTrue(form.contains("class=\"editor\" novalidate"));
+        assertFalse(Pattern.compile("<(input|select|textarea)\\b[^>]*\\brequired\\b").matcher(form).find());
+    }
+
+    @Test
+    void everyStructuralActionButtonCarriesANonEmptyScrollAnchor() throws Exception {
+        start(true);
+        String body = post("/quests/save", baseQuestForm(csrf(get("/quests/new").body()))
+                + "&rew.0.kind=EXPERIENCE&_action=add_step").body();
+        Matcher m = Pattern.compile(
+                "<button[^>]*name=\"_action\" value=\"(add_step|add_obj:0|add_reward|del_step:0|del_obj:0:0|del_reward:0|mv_[a-z]+:0:(?:up|down))\"[^>]*>")
+                .matcher(body);
+        int seen = 0;
+        while (m.find()) {
+            seen++;
+            assertTrue(m.group().contains("formaction=\"/quests/save#") && !m.group().contains("save#\""),
+                    "action structurelle sans ancre de scroll : " + m.group());
+        }
+        assertTrue(seen >= 4, "plusieurs boutons structurels attendus (" + seen + ")");
+    }
+
+    @Test
+    void deletingARowWorksEvenWhenItsRequiredMarkedFieldsAreEmpty() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        // 2 récompenses, la seconde totalement vide -> corbeille sur la seconde.
+        String form = baseQuestForm(token)
+                + "&rew.0.kind=EXPERIENCE&rew.0.amount=10"
+                + "&rew.1.kind=VARIABLE&rew.1.key=&rew.1.value="
+                + "&_action=del_reward:1";
+        HttpResponse<String> res = post("/quests/save", form);
+        assertEquals(200, res.statusCode());
+        assertFalse(res.body().contains("name=\"rew.1.kind\""), "la 2e récompense (vide) a été supprimée");
+        assertTrue(res.body().contains("name=\"rew.0.kind\""), "la 1re récompense est conservée");
+        assertFalse(res.body().contains("class=\"diag-list\""), "aucune validation métier déclenchée par la suppression");
+    }
+
+    @Test
+    void eachObjectiveTypeRendersOnlyItsOwnFieldSetVisible() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        for (String kind : new String[] {"KILL_ENTITY", "COLLECT_ITEM", "CRAFT_ITEM", "BREAK_BLOCK",
+                "PLACE_BLOCK", "TALK_TO_NPC", "REACH_LOCATION"}) {
+            String form = "id=&title=&description=&category=&icon=&step.0.id=step_1"
+                    + "&obj.0.0.kind=" + kind + "&obj.0.0._was=KILL_ENTITY&_csrf=" + token + "&_action=refresh";
+            String body = post("/quests/save", form).body();
+            assertTrue(body.contains("data-kind=\"" + kind + "\">"), kind + " : jeu de champs visible");
+            for (String other : new String[] {"KILL_ENTITY", "REACH_LOCATION", "TALK_TO_NPC"}) {
+                if (!other.equals(kind)) {
+                    assertTrue(body.contains("data-kind=\"" + other + "\" hidden>"),
+                            kind + " : le jeu de champs " + other + " est masqué");
+                }
+            }
+        }
+    }
+
+    @Test
+    void eachRewardTypeRendersOnlyItsOwnFieldSetVisible() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        for (String kind : new String[] {"EXPERIENCE", "ITEM", "VARIABLE", "COMMAND"}) {
+            String body = post("/quests/save", baseQuestForm(token)
+                    + "&rew.0.kind=" + kind + "&rew.0._was=EXPERIENCE&_action=refresh").body();
+            assertTrue(body.contains("data-kind=\"" + kind + "\">"), kind + " visible");
+            for (String other : new String[] {"EXPERIENCE", "ITEM", "VARIABLE", "COMMAND"}) {
+                if (!other.equals(kind)) {
+                    assertTrue(body.contains("data-kind=\"" + other + "\" hidden>"), kind + " : " + other + " masqué");
+                }
+            }
+        }
+    }
+
+    @Test
+    void changingObjectiveTypeClearsTheIncompatiblePreviousValues() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        // KILL_ENTITY entity=SPIDER amount=5 -> bascule COLLECT_ITEM : SPIDER (entité) doit disparaître.
+        String form = "id=&title=&description=&category=&icon=&step.0.id=step_1"
+                + "&obj.0.0.kind=COLLECT_ITEM&obj.0.0.entity=SPIDER&obj.0.0.amount=5"
+                + "&obj.0.0._was=KILL_ENTITY&_csrf=" + token + "&_action=validate";
+        String body = post("/quests/save", form).body();
+        assertTrue(body.contains("type: COLLECT_ITEM"), "aperçu YAML du nouveau type");
+        assertFalse(body.contains("entity: SPIDER"), "la valeur entité de l'ancien type n'est pas conservée");
+    }
+
+    @Test
+    void npcDatalistCarriesHumanLabelsWhenKnown() {
+        RefData ref = new RefData(java.util.List.of(), java.util.List.of("guard", "jo"), java.util.List.of(),
+                true, true, false, java.util.Map.of("guard", "Garde"));
+        String dl = ContentEditorPages.sharedDatalists(ref);
+        assertTrue(dl.contains("<datalist id=\"dl-npc\">"), "datalist PNJ présente");
+        assertTrue(dl.contains("<option value=\"guard\" label=\"Garde\">"), "libellé humain sur le PNJ « guard »");
+        assertTrue(dl.contains("<option value=\"jo\">"), "PNJ sans nom connu = id seul, sans label vide");
+    }
+
+    @Test
+    void finalValidationStillRejectsInvalidAmountAndShowsPreview() throws Exception {
+        start(true);
+        String token = csrf(get("/quests/new").body());
+        String form = "id=amount_zero&title=T&description=d&category=tutorial&icon=BOOK&step.0.id=step_1"
+                + "&obj.0.0.kind=KILL_ENTITY&obj.0.0.entity=SPIDER&obj.0.0.amount=0"
+                + "&_csrf=" + token + "&_action=validate";
+        String body = post("/quests/save", form).body();
+        assertTrue(body.contains("class=\"diag-list\""), "la validation finale s'exécute sur « Vérifier »");
+        assertTrue(body.toLowerCase().contains("erreur") || body.contains("ERREUR"), "amount=0 signalé");
+        assertTrue(body.contains("Fichier généré"), "l'aperçu YAML reste affiché");
     }
 
     // ---- helpers ----------------------------------------------------------------------

@@ -284,7 +284,7 @@ public final class ContentEditorPages {
             sb.append(readOnlyBanner("quests"));
         }
 
-        sb.append("<form method=\"post\" action=\"/quests/save\" class=\"editor\">%CSRF%");
+        sb.append("<form method=\"post\" action=\"/quests/save\" class=\"editor\" novalidate>%CSRF%");
         sb.append(hidden("slug", slug == null ? "" : slug));
         sb.append(hidden("expectedSha", expectedSha == null ? "" : expectedSha));
         // Bouton de soumission par défaut : « Entrée » dans un champ déclenche « Actualiser »
@@ -301,9 +301,10 @@ public final class ContentEditorPages {
                 d.category, true, false, null, "dl-category"));
         sb.append(text("title", "Titre affiché", "Peut contenir du MiniMessage (ex. <gold>…</gold>).", d.title, true, false, "full"));
         sb.append(textarea("description", "Description", "Texte présenté au joueur. MiniMessage accepté.", d.description, "full"));
-        sb.append(text("icon", "Icône", "Matériau Minecraft servant d'icône (BOOK par défaut).",
+        sb.append(text("icon", "Icône", "Matériau Minecraft servant d'icône (BOOK par défaut) — chercher par nom ou par id.",
                 d.icon, false, false, null, "dl-material"));
-        sb.append(text("giver", "PNJ donneur", "Identifiant logique du PNJ qui remet la quête (optionnel).",
+        sb.append(text("giver", "PNJ donneur",
+                "PNJ logique qui remet la quête (optionnel) — chercher par nom (« Garde ») ou par id (« guard »).",
                 d.giver, false, false, null, "dl-npc"));
         sb.append("<div class=\"full\">");
         sb.append(checkbox("repeatable", "Quête répétable", d.repeatable));
@@ -597,7 +598,7 @@ public final class ContentEditorPages {
             sb.append(readOnlyBanner("stories"));
         }
 
-        sb.append("<form method=\"post\" action=\"/stories/save\" class=\"editor\">%CSRF%");
+        sb.append("<form method=\"post\" action=\"/stories/save\" class=\"editor\" novalidate>%CSRF%");
         sb.append(hidden("slug", slug == null ? "" : slug));
         sb.append(hidden("expectedSha", expectedSha == null ? "" : expectedSha));
         // Bouton de soumission par défaut : « Entrée » dans un champ déclenche « Actualiser »
@@ -813,9 +814,10 @@ public final class ContentEditorPages {
         if (readOnly) {
             sb.append(" readonly");
         }
-        if (required) {
-            sb.append(" required");
-        }
+        // Pas d'attribut HTML « required » (#46, §7) : construire le brouillon ne doit jamais être
+        // bloqué par la validation native du navigateur. Le marqueur visuel « * » reste ; la
+        // validation métier (obligatoire, amount > 0, référence connue…) est faite côté serveur par
+        // QuestValidator uniquement à « Vérifier » / « Aperçu » / « Enregistrer ».
         if (!enabled) {
             sb.append(" disabled");
         }
@@ -839,7 +841,7 @@ public final class ContentEditorPages {
         return "<div class=\"field\"><label for=\"" + id + "\">" + Http.esc(label)
                 + (required ? " <span aria-hidden=\"true\">*</span>" : "") + "</label>"
                 + "<input type=\"number\" id=\"" + id + "\" name=\"" + Http.esc(name) + "\" value=\"" + Http.esc(value)
-                + "\"" + (integer ? " step=\"1\"" : " step=\"any\"") + (required ? " required" : "")
+                + "\"" + (integer ? " step=\"1\" inputmode=\"numeric\"" : " step=\"any\"")
                 + (enabled ? "" : " disabled") + ">"
                 + (help == null || help.isBlank() ? "" : "<p class=\"field-help\">" + Http.esc(help) + "</p>")
                 + "</div>";
@@ -932,9 +934,27 @@ public final class ContentEditorPages {
         return labelledDatalist("dl-entity", RefData.ENTITIES)
                 + labelledDatalist("dl-material", RefData.MATERIALS)
                 + datalist("dl-category", RefData.CATEGORIES)
-                + datalist("dl-npc", r.npcs())
+                + npcDatalist("dl-npc", r)
                 + datalist("dl-quest", r.quests())
                 + datalist("dl-world", r.worlds());
+    }
+
+    /**
+     * Datalist des PNJ : {@code value} = id technique (ce que le moteur RPGQuest attend),
+     * {@code label} = nom d'affichage (« Garde ») quand il est connu. La liste recherchable de
+     * {@code panel.js} filtre sur les deux — taper « garde » ou « guard » suffit (#46, §10).
+     */
+    private static String npcDatalist(String id, RefData ref) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"").append(id).append("\">");
+        for (String npc : ref.npcs()) {
+            String label = ref.npcLabel(npc);
+            sb.append("<option value=\"").append(Http.esc(npc)).append("\"");
+            if (!label.equals(npc)) {
+                sb.append(" label=\"").append(Http.esc(label)).append("\"");
+            }
+            sb.append(">");
+        }
+        return sb.append("</datalist>").toString();
     }
 
     private static Map<String, String> blankRow(String kind) {

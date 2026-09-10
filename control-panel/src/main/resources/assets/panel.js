@@ -485,25 +485,46 @@
     var selects = document.querySelectorAll("select[data-type-select]");
     for (var i = 0; i < selects.length; i++) {
       (function (sel) {
+        // Sync défensive : aligne l'affichage sur la valeur courante dès le chargement, puis à
+        // chaque changement — l'utilisateur voit immédiatement les bons champs (#46, §5/§17).
+        applyType(sel);
         sel.addEventListener("change", function () { applyType(sel); });
       })(selects[i]);
     }
-    // Filet anti « retour en haut de page » : si l'ancre de destination a disparu (suppression),
-    // on restaure au moins la position de défilement précédente.
+
     var form = document.querySelector("form.editor");
-    if (form) {
-      var key = "pa-editor-scroll:" + window.location.pathname;
-      form.addEventListener("submit", function () {
-        try { window.sessionStorage.setItem(key, String(window.scrollY)); } catch (e) { /* ignore */ }
-      });
-      if (!window.location.hash) {
-        try {
-          var y = window.sessionStorage.getItem(key);
-          if (y !== null) { window.scrollTo(0, parseInt(y, 10) || 0); }
-        } catch (e) { /* ignore */ }
+    if (!form) { return; }
+
+    // Conservation de la position après une action de brouillon (#46, §9). Le POST renvoie du HTML
+    // 200 : la plupart des navigateurs n'appliquent PAS le fragment d'un formaction dans ce cas, et
+    // l'ancre disparue (suppression) laisserait la page en haut. On restaure donc explicitement,
+    // au chargement : d'abord la cible du hash si elle existe, sinon la position mémorisée.
+    var key = "pa-editor-scroll:" + window.location.pathname;
+    form.addEventListener("submit", function () {
+      try { window.sessionStorage.setItem(key, String(window.scrollY)); } catch (e) { /* ignore */ }
+    });
+
+    var restored = false;
+    var hash = (window.location.hash || "").replace(/^#/, "");
+    if (hash) {
+      var target = null;
+      try { target = document.getElementById(hash); } catch (e) { target = null; }
+      if (target) {
+        try { target.scrollIntoView({ block: "center" }); } catch (e) { target.scrollIntoView(); }
+        var focusable = target.querySelector
+          ? target.querySelector("input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])")
+          : null;
+        if (focusable) { try { focusable.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }
+        restored = true;
       }
-      try { window.sessionStorage.removeItem(key); } catch (e) { /* ignore */ }
     }
+    if (!restored) {
+      try {
+        var y = window.sessionStorage.getItem(key);
+        if (y !== null) { window.scrollTo(0, parseInt(y, 10) || 0); }
+      } catch (e) { /* ignore */ }
+    }
+    try { window.sessionStorage.removeItem(key); } catch (e) { /* ignore */ }
   }
 
   /* ---- Palette de couleurs MiniMessage + aperçu (formulaire de dialogue, #118) ------ */
@@ -575,16 +596,23 @@
     if (was) { was.value = chosen; }
   }
 
+  /** Exécute un module en isolant sa panne : un module qui échoue n'empêche pas les autres. */
+  function run(name, fn) {
+    try { fn(); } catch (e) {
+      if (window.console && window.console.warn) { window.console.warn("panel.js: " + name + " a échoué", e); }
+    }
+  }
+
   function init() {
-    initToasts();       // affiche les toasts (repli manuel si Bootstrap JS pas encore là)
-    initNotifications();
-    initCopy();
-    initFilters();
-    initFocus();
-    initCombo();
-    initEditorForms();
-    initColorPalette();
-    initDrawer();
+    run("initToasts", initToasts);       // affiche les toasts (repli manuel si Bootstrap JS pas encore là)
+    run("initNotifications", initNotifications);
+    run("initCopy", initCopy);
+    run("initFilters", initFilters);
+    run("initFocus", initFocus);
+    run("initCombo", initCombo);
+    run("initEditorForms", initEditorForms);
+    run("initColorPalette", initColorPalette);
+    run("initDrawer", initDrawer);
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.
     window.addEventListener("load", upgradeToasts);

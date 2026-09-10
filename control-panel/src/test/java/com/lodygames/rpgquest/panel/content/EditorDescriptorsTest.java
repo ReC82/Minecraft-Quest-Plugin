@@ -73,6 +73,31 @@ class EditorDescriptorsTest {
     }
 
     @Test
+    void itemRewardHelpMakesClearItIsVanillaMaterialNotCustomItem() {
+        // #46, §11 : ne pas laisser croire qu'un objet personnalisé RPGQuest est accepté ici.
+        Descriptors.Descriptor item = Descriptors.reward("ITEM").orElseThrow();
+        String help = (item.hint() + " " + field("ITEM", "material").help()).toLowerCase(java.util.Locale.ROOT);
+        assertTrue(help.contains("vanilla"), "l'aide ITEM doit préciser « vanilla »");
+        assertEquals("Quantité", field("ITEM", "amount").label());
+        assertFalse(field("ITEM", "amount").help().toLowerCase(java.util.Locale.ROOT).contains("atteindre"),
+                "l'aide de la quantité d'une récompense ITEM ne parle pas d'un objectif à atteindre");
+    }
+
+    @Test
+    void everySelectFieldPointsAtAKnownRefDataSource() {
+        for (Descriptors.Descriptor d : concat()) {
+            for (Descriptors.Field f : d.fields()) {
+                if (f.type() != Descriptors.FieldType.SELECT) {
+                    continue;
+                }
+                String src = f.selectSource();
+                assertTrue(Set.of("entity", "material", "icon", "npc", "quest", "world").contains(src),
+                        d.kind() + "/" + f.name() + " : source de liste inconnue « " + src + " »");
+            }
+        }
+    }
+
+    @Test
     void fieldNamesHelperWhitelistsOnlyTheTypesOwnFields() {
         Set<String> allowed = Descriptors.fieldNames("KILL_ENTITY");
         assertTrue(allowed.contains("kind") && allowed.contains("entity") && allowed.contains("amount"));

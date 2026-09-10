@@ -2673,9 +2673,19 @@ public final class AgentPages {
                 .stream().map(o -> str(asMap(o).get("id"))).filter(s -> !s.isEmpty()).toList();
         List<String> npcs = npcDet.map(d -> asList(d.get("npcs"))).orElse(List.of())
                 .stream().map(o -> str(asMap(o).get("id"))).filter(s -> !s.isEmpty()).toList();
+        // Libellé humain -> id pour les listes déroulantes de l'éditeur (#46, §10 : « Garde / guard »).
+        Map<String, String> npcNames = new java.util.LinkedHashMap<>();
+        for (Object o : npcDet.map(d -> asList(d.get("npcs"))).orElse(List.of())) {
+            Map<String, Object> m = asMap(o);
+            String id = str(m.get("id"));
+            String name = str(m.get("displayName"));
+            if (!id.isEmpty() && !name.isEmpty()) {
+                npcNames.putIfAbsent(id, name);
+            }
+        }
         List<String> worlds = loadedWorldNames(agentId);
         return new com.lodygames.rpgquest.panel.content.RefData(
-                quests, npcs, worlds, questDet.isPresent(), npcDet.isPresent(), !worlds.isEmpty());
+                quests, npcs, worlds, questDet.isPresent(), npcDet.isPresent(), !worlds.isEmpty(), npcNames);
     }
 
     /**

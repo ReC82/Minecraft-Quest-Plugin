@@ -8,8 +8,8 @@
 * Branche Git : `feat/control-panel-admin-tools`
 * Commit actuel si disponible : `8cb3ffa` au démarrage (commits de la tâche ajoutés ensuite)
 * Début de la tâche : 2026-09-10 20:47:16 (heure locale réelle)
-* Fin de la tâche : 2026-09-10 22:__:__ (heure locale réelle — voir « Exécution réelle »)
-* Durée totale : voir « Exécution réelle »
+* Fin de la tâche : 2026-09-10 21:32:58 (heure locale réelle)
+* Durée totale : 00:45:42
 
 ## Demande
 
@@ -186,8 +186,11 @@ Trois fichiers de contenu non suivis restent dans le working tree
   J aucun faux « actif en jeu » (le tooltip dit « pas encore chargé par le serveur DEV »).
 - `DialoguesCatalogTest` : inchangé sauf l'état vide (le formulaire agent a été remplacé par le
   CTA `/dialogues/new`).
-- `:control-panel:test` : voir « Exécution réelle ».
-- `./gradlew test` + `./gradlew build` : voir « Exécution réelle ».
+- `:control-panel:test` : **384 / 0** (1 ignoré pré-existant — limitation MockBukkit
+  antérieure, aucune occurrence nouvelle). `BUILD SUCCESSFUL in 5m 39s`.
+- `./gradlew build` (`RPGQUEST_TEST_MAX_HEAP=640m --no-daemon`) : **BUILD SUCCESSFUL in 14m 46s**.
+  Root `:test` exécuté et vert, `:control-panel:test` + `:control-panel:check` verts,
+  `:web-api:*` up-to-date.
 
 ## Tests manuels à effectuer
 
@@ -259,5 +262,26 @@ contenus (#109 import).
 
 ## Exécution réelle (déploiement)
 
-`PENDING` — à compléter après `scripts/plugadmin/deploy.sh` (build, restart, `/health`,
-`/dialogues`, `/dialogues/new`, `/npcs`).
+Déploiement AWS Control Panel effectué le **2026-09-10 ~21:32 UTC** depuis
+`feat/control-panel-admin-tools` (commits `e80b459` code + `ac7db40` docs, poussés) via
+`scripts/plugadmin/deploy.sh` :
+
+- `:control-panel:installDist` **BUILD SUCCESSFUL** (`compileJava` / `jar` UP-TO-DATE — issus du
+  build déjà vert), app précédente sauvegardée sous `/opt/plugadmin/releases/20260910-213241`
+  (rétention 5), `systemctl restart plugadmin` → `active (running)` (PID 905914, `Memory` ~69,6 M),
+  drop-in `10-content-workspace.conf` toujours chargé.
+- Vérifications live : `/health` **ONLINE** local **et** public
+  (`https://plugadmin.lodylands.com/health` → `{"panel":"ONLINE","disabled":false,…}`) ;
+  `/dialogues`, `/dialogues/new`, `/npcs` anonymes → **303** vers `/login` (routes vivantes, auth
+  appliquée) ; le JAR déployé contient
+  `com/lodygames/rpgquest/panel/content/DialogueDraft.class`, `DialogueValidator.class`,
+  `DialogueYaml.class` ; `journalctl -u plugadmin` depuis le redémarrage : **0**
+  `ERROR` / `SEVERE` / `Exception` / `WARN`.
+- `control-panel.db` non touché. **VeryGames / Minecraft non touchés, aucun redémarrage Minecraft.**
+
+Validation navigateur **authentifiée** : couverte par `DialogueSourceMergeTest` (10, `PanelApp`
+réel + sessions HTTP + login owner) et `DialogueYamlTest` / `SourceCatalogTest`. Session owner
+navigateur réelle (checklist ci-dessus) : `PENDING MANUAL VALIDATION` (mot de passe owner non
+détenu).
+
+Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260910-213241`).

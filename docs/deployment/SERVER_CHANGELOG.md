@@ -3012,6 +3012,23 @@ scripts/plugadmin/deploy.sh
 
 ### Exécution réelle
 
-`PENDING` — à compléter après `scripts/plugadmin/deploy.sh`.
+Déploiement AWS effectué le **2026-09-10 ~21:32 UTC** depuis `feat/control-panel-admin-tools`
+(commits `e80b459` + `ac7db40`) via `scripts/plugadmin/deploy.sh` :
+
+- `:control-panel:installDist` **BUILD SUCCESSFUL** (issu du build déjà vert — `compileJava` /
+  `jar` UP-TO-DATE), app précédente sauvegardée sous `/opt/plugadmin/releases/20260910-213241`,
+  `systemctl restart plugadmin` → `active (running)` (PID 905914, `Memory` ~69,6 M), drop-in
+  `10-content-workspace.conf` toujours chargé.
+- `/health` **ONLINE** local **et** public ; `/dialogues`, `/dialogues/new`, `/npcs` anonymes →
+  **303** `/login` ; JAR déployé contient `panel/content/DialogueDraft.class` /
+  `DialogueValidator.class` / `DialogueYaml.class` ; `journalctl -u plugadmin` depuis le
+  redémarrage : **0** `ERROR` / `SEVERE` / `Exception` / `WARN`. `control-panel.db` non touché.
+  **VeryGames / Minecraft non touchés, aucun redémarrage Minecraft.**
+
+Build : `./gradlew build` **BUILD SUCCESSFUL in 14m 46s** (`--no-daemon`,
+`RPGQUEST_TEST_MAX_HEAP=640m`) ; root `:test` vert, `:control-panel:test` **384/0** (1 ignoré
+pré-existant), `:web-api` up-to-date.
+
+Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260910-213241`).
 
 Rapport : `docs/claude-reports/2026-09-10_2047_dialogues-fusion-source-runtime-npc-145.md`.

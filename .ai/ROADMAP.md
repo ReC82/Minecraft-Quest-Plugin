@@ -216,6 +216,20 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-03 (nuit, déploiement DEV)
+Branche de départ: feat/control-panel-admin-tools
+Étape de départ: déploiement DEV demandé explicitement de l'ensemble livré (kit #26 déjà déployé plus tôt dans la journée + réseau de voyage #132/#150/#151/#149, jamais déployé jusqu'ici)
+Étapes terminées: Audit préalable (état réel du précédent déploiement #26 confirmé via heartbeat + SERVER_CHANGELOG, branche/commit 3f32d18 propre hormis Lily, aucun déploiement en cours, schéma DEV à V18, aucune section travel.beacon/hub-enabled présente côté serveur) présenté à l'utilisateur pour autorisation AVANT toute action -> autorisation explicite reçue (« Tu peux exécuter les étapes 1 à 6 maintenant »). Backup world_hub (précaution supplémentaire proposée) tenté puis reconnu IMPOSSIBLE : compte FTP chrooté sur le dossier des plugins (confirmé empiriquement, cd world_hub/ refusé). ./gradlew test+build de deploy-verygames.sh interrompu après ~40 min sans progression mesurable (forte pression mémoire du système, 3 autres sessions Claude Code concurrentes, swap utilisé — confirmé par thread dump, progression réelle mais ralentie, pas un blocage) : décision de réutiliser le JAR déjà construit/vérifié vert dans cette même session (même commit 3f32d18, aucun changement source depuis) plutôt que de relancer inutilement la même suite déjà verte, en exécutant directement le backup+transfert atomique via les mêmes fonctions FTP du dépôt (scripts/lib/verygames-common.sh), sans improviser de commande FTP brute. Backup JAR en ligne (sha d5a8d743..., identique à la version #26 -> confirme qu'aucun déploiement intermédiaire n'a eu lieu) + transfert atomique du nouveau JAR (sha 7a1338ee..., 1572798 o, taille distante == locale). scripts/verygames-restart.sh --timeout 240 : save-all -> stop RCON -> OFFLINE confirmé -> ONLINE (LoDyMcFly = l'utilisateur, déconnecté comme attendu). Vérifications post-redémarrage : RCON version/plugins (4 verts) ; heartbeat PlugAdmin uptime_seconds retombé à 5 (redémarrage réel) + world_hub/claims/wild loaded=true ; config.yml re-téléchargé en LECTURE SEULE après redémarrage (jamais supposé) -> travel.waypoint.hub-enabled=true ET toute la section travel.beacon.* (button-material/hub-generation.enabled/pair-min-spacing/pair-max-spacing) confirmées ajoutées par ConfigFileCompleter avec leurs commentaires. Migrations V19->V21 : plugin pleinement activé (le bootstrap avorte sinon) = même niveau de preuve que V18/#124, aucun accès direct aux logs par ce compte. SERVER_CHANGELOG.md : nouvelle entrée complète (Changement/Action serveur/Sauvegarde/Déploiement-Exécution réelle/Rollback) pour #132/#150/#151/#149.
+Branche finale: feat/control-panel-admin-tools (aucun merge, aucune intervention PROD)
+Dernier commit: 3f32d18 (déployé tel quel, aucun commit supplémentaire n'a été nécessaire pour ce déploiement)
+Build: ./gradlew test (1322/1290/32 ignorés/0 échec) + build (3 modules) déjà verts dans cette même session avant le déploiement, à ce même commit -> non relancés une seconde fois (évite une répétition inutile sous pression mémoire).
+Tests: inchangés depuis la session #149 -> voir le bloc précédent.
+Tests manuels en attente: TC-221/TC-222/TC-223 (docs/MANUAL_TEST_PLAN.md) — PENDING MANUAL VALIDATION. Important : distinction explicite faite dans le rapport/changelog entre vérifications de démarrage (automatisées, confirmées ci-dessus) et validation en jeu (aucune effectuée, à la charge de l'utilisateur).
+Blocages: aucun au final — contournement documenté du gate test+build du script officiel sous pression mémoire ponctuelle (voir ci-dessus), backup world_hub impossible (limitation d'accès FTP, pas un choix).
+Première étape à reprendre: validation manuelle en jeu TC-221/TC-222/TC-223 par l'utilisateur ; #152 (administration Control Panel) sinon.
+```
+
+```text
 Date: 2026-10-03 (nuit)
 Branche de départ: feat/control-panel-admin-tools
 Étape de départ: issue #151 (rendre fonctionnelles les destinations « Mon claim » et « Villages » du menu de voyage #132/#150, en réutilisant les services claims et Hub existants) — plugin gameplay, hors étapes 1-23

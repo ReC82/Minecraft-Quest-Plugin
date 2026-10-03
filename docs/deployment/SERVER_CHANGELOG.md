@@ -3169,3 +3169,102 @@ préservés tels quels (`--allow-dirty`, aucun autre fichier non commité).
   session.
 - **Aucun merge vers `main`, aucune intervention sur un environnement de production.** #26 reste
   ouvert.
+
+---
+
+## 2026-10-03 - Réseau de voyage : bornes, Mon claim, Villages, génération Hub (issues #132/#150/#151/#149)
+
+### Changement
+
+Premier déploiement du réseau de voyage complet, livré en 4 sessions successives sur
+`feat/control-panel-admin-tools` sans déploiement intermédiaire :
+
+- **#132/#150** : borne de voyage (`DIAMOND_BLOCK` + bouton), menu graphique paginé/cherchable vers
+  les waypoints découverts par le joueur courant, placement administré
+  (`/rpgadmin travel beacon set`). Table `travel_beacons` (migration **V19**).
+- **#151** : catégories « Mon claim » (`ClaimService#mainClaimOf`) et « Villages » (`VillageCenter`,
+  table `village_centers`, migration **V20**) du même menu, commande
+  `/rpgadmin travel village sethub|set|remove|enable|disable|list`.
+- **#149** : génération **automatique** d'un waypoint **et** d'une borne distincte par instance de
+  biome du monde Hub (`world_hub`), réutilisant le moteur de #124. Colonne
+  `travel_beacons.biome_instance` (migration **V21**). Nouvelles clés `config.yml` :
+  `travel.waypoint.hub-enabled` (étend le Hub, défaut `true`) et `travel.beacon.*`
+  (`button-material`, `hub-generation.enabled/pair-min-spacing/pair-max-spacing`).
+
+Détail complet : [docs/TRAVEL.md](../TRAVEL.md) et les rapports de session correspondants
+(`docs/claude-reports/2026-10-03_1924_reseau-voyage-bornes-132-150.md`,
+`2026-10-03_2026_reseau-voyage-claim-villages-151.md`,
+`2026-10-03_2116_hub-generation-waypoint-beacon-149.md`).
+
+### Action serveur
+
+**Remplacer uniquement le JAR RPGQuest.** `config.yml` **non transféré** : les trois migrations
+(V19→V21) et les nouvelles clés sont appliquées/ajoutées automatiquement au démarrage
+(`SchemaMigrationRunner` + `ConfigFileCompleter`), schéma DEV de départ = V18 (#124). Aucun
+dialogue modifié par ce lot de travail.
+
+### Sauvegarde préalable
+
+Backup JAR automatique (version en ligne téléchargée avant remplacement). Précaution
+supplémentaire envisagée (backup FTP de `world_hub/`, puisque #149 y pose désormais des blocs
+automatiquement) : **non réalisable** — le compte FTP est chrooté sur le dossier des plugins
+(confirmé empiriquement : `cd world_hub/` → « Server denied you to change to the given
+directory »), aucun accès aux mondes par ce canal.
+
+### Déploiement / Exécution réelle
+
+Déployé sur **VeryGames DEV** le 2026-10-03 (~19:47–19:51 UTC), sur autorisation explicite.
+Branche `feat/control-panel-admin-tools` @ **`3f32d18`**, working tree propre hormis les 3 fichiers
+locaux non suivis de Lily (`lily_pumpkin.yml`, `st0_meet_people.yml`, `lily_memories.yml`,
+préservés).
+
+- **Build** : suite complète `:test` (1322 tests, 1290 exécutés verts, 32 ignorés — limitation
+  MockBukkit `teleportAsync` déjà documentée, 0 échec) et `./gradlew build` (3 modules) **déjà
+  verts dans cette même session, à ce même commit**, avant le déploiement. `RPGQUEST_TEST_MAX_HEAP=
+  768m scripts/deploy-verygames.sh -y --allow-dirty` a été lancé pour le transfert, mais son
+  passage interne `./gradlew test`+`build` s'est heurté à une **forte pression mémoire du système**
+  (3 autres sessions Claude Code actives en parallèle sur cette même machine, RAM quasi saturée,
+  swap utilisé) : après ~40 minutes sans qu'une seule classe de test ne termine (confirmé par
+  thread dump — progression réelle mais extrêmement ralentie par la contention mémoire, pas un
+  blocage), le script a été interrompu. **Décision** : réutiliser directement le JAR déjà construit
+  et déjà vérifié vert dans cette session (même commit, aucun changement source depuis), avec un
+  backup + transfert atomique exécutés directement via les mêmes fonctions FTP vetées du dépôt
+  (`scripts/lib/verygames-common.sh`), plutôt que de relancer inutilement la même suite de tests
+  déjà verte.
+- **JAR déployé** : `rpgquest-0.1.0-SNAPSHOT.jar`, 1 572 798 o,
+  SHA-256 `7a1338eeb9dadb326e2edcdc1662e8a9a5cdfe5a7f7766928d443c1d54ba5c16`.
+- **Backup préalable** : `~/.local/share/rpgquest/verygames-backups/rpgquest-20261003T194955Z-predeploy.jar`
+  (1 528 065 o, SHA-256 `d5a8d7438e1b72ada010cfad7318197601b5b156aaacf8c710f2fc59ed2cec69` — identique
+  à la version déployée pour #26, confirmant qu'aucun déploiement intermédiaire n'a eu lieu) + `.meta`.
+  Taille distante finale après transfert == taille locale.
+- **Redémarrage** : `scripts/verygames-restart.sh --timeout 240` — `save-all` → `stop` RCON →
+  OFFLINE confirmé → **ONLINE** (1 joueur, `LoDyMcFly` = l'utilisateur, déconnecté par le
+  redémarrage comme attendu ; 0 joueur juste après).
+- **Vérifications post-redémarrage** :
+  - RCON `/rpgquest version` → `RPGQuest v0.1.0-SNAPSHOT` ; `/plugins` → **Citizens,
+    Multiverse-Core, RPGQuest, WorldEdit** tous verts.
+  - Heartbeat agent PlugAdmin : `server_state=ONLINE`, `uptime_seconds` retombé à **5** (preuve
+    d'un redémarrage réel), `worlds_json` → `world_hub`/`claims`/`wild` tous `loaded=true`.
+  - **`config.yml` re-téléchargé en lecture seule (FTP) après redémarrage** pour vérifier
+    l'activation effective, jamais supposée : confirmé présent et actif —
+    `travel.waypoint.hub-enabled: true`, `travel.beacon.button-material: OAK_BUTTON`,
+    `travel.beacon.hub-generation.{enabled: true, pair-min-spacing: 6, pair-max-spacing: 16}`,
+    `config-version: 1`. Les commentaires du gabarit embarqué sont bien présents (copie de
+    sous-arbre complète par `ConfigFileCompleter`, comme attendu pour une section entièrement
+    nouvelle).
+  - Le plugin s'étant activé pleinement (le bootstrap avorte l'activation sinon) : les migrations
+    **V19 → V21 ont été appliquées sans erreur critique** — même niveau de preuve que pour V18
+    lors du déploiement #124 (aucun accès direct aux logs serveur par ce compte FTP/RCON).
+- **Distinction explicite** : tout ce qui précède est une vérification **de démarrage**
+  (configuration, migrations, plugins, mondes). **Aucune validation en jeu n'a été effectuée** —
+  la génération réelle d'un waypoint+borne dans `world_hub`, leur découverte, et le menu de voyage
+  (« Mon claim »/« Villages ») restent `PENDING MANUAL VALIDATION` (TC-221/TC-222/TC-223,
+  `docs/MANUAL_TEST_PLAN.md`), à la charge de l'utilisateur.
+- **Aucun merge vers `main`, aucune intervention sur un environnement de production.** #132/#150/
+  #151/#149 restent ouverts.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` (restaure `rpgquest-20261003T194955Z-predeploy.jar`) +
+`scripts/verygames-restart.sh`. Les tables V19-V21 restent inertes en base pour cet ancien JAR
+(même garantie que V18/#124).

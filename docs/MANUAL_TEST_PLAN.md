@@ -1522,19 +1522,24 @@ le résumé de récompenses de TC-014).
         1 `WOODEN_AXE`, rien d'autre (pas de nourriture/armure/rune).
     3.  Redemander immédiatement (sans mourir) → message « déjà reçu », aucun outil
         supplémentaire.
-    4.  Remplir l'inventaire principal pour ne laisser **0 à 3** emplacements libres, demander
-        → message « pas assez de place », **aucun** objet donné, rien jeté au sol/remplacé.
-    5.  Libérer au moins 4 emplacements, redemander → réussite.
-    6.  Mourir, puis redemander **sans** avoir encore rien reçu de nouveau → réussite (nouveau
+    4.  **Mourir** pour rouvrir le droit (sans redemander tout de suite) — nécessaire avant
+        l'étape suivante : après une remise réussie, le droit reste indisponible tant que le
+        joueur n'est pas mort, donc tester un refus « pas assez de place » juste après l'étape 3
+        obtiendrait à tort le message « déjà reçu ».
+    5.  Remplir l'inventaire principal pour ne laisser **0 à 3** emplacements libres, demander
+        → message « pas assez de place », **aucun** objet donné, rien jeté au sol/remplacé (le
+        droit rouvert par l'étape 4 reste intact — un refus ne le consomme jamais).
+    6.  Libérer au moins 4 emplacements, redemander → réussite.
+    7.  Mourir, puis redemander **sans** avoir encore rien reçu de nouveau → réussite (nouveau
         cycle). Répéter mort → demande 2-3 fois : chaque cycle redonne le kit complet, jamais
         plus d'une fois entre deux morts.
-    7.  (si un compte neuf est disponible) Mourir **avant** toute première demande → le droit
+    8.  (si un compte neuf est disponible) Mourir **avant** toute première demande → le droit
         initial reste disponible (la demande suivante réussit normalement).
-    8.  Double-cliquer très vite sur le choix (ou redemander deux fois de suite sans attendre)
+    9.  Double-cliquer très vite sur le choix (ou redemander deux fois de suite sans attendre)
         → une seule remise, jamais deux.
-    9.  Se déconnecter/reconnecter (ou redémarrer le serveur) après une remise réussie → le
+    10. Se déconnecter/reconnecter (ou redémarrer le serveur) après une remise réussie → le
         droit reste « déjà reçu » jusqu'à la prochaine mort (persistance).
-    10. `/rpgadmin player resetnew <joueur>` → le droit initial est restauré (nouvelle demande
+    11. `/rpgadmin player resetnew <joueur>` → le droit initial est restauré (nouvelle demande
         immédiate possible), **non-op** testé identique à **op**.
 -   **Reset :** `starter-tool-kit.enabled: false` + `/rpgquest reload` désactive l'option sans
     toucher aux données déjà écrites. `/rpgadmin player resetnew` efface aussi la variable

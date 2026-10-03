@@ -78,8 +78,13 @@ connexion FTP déjà établie vers la racine du serveur VeryGames.
 d'anciennes notes indiquaient). Il permet d'automatiser le redémarrage après un
 déploiement, sans passer par le panel VeryGames.
 
--   **Host / port :** onglet du panel VeryGames (DEV : `51.68.57.28:7469` ;
-    Minecraft : `51.68.57.28:28257`).
+-   **Host / port :** onglet du panel VeryGames (DEV : `54.37.115.223:5918` ;
+    Minecraft : `54.37.115.223:22956`). **VeryGames change ces valeurs** (migration/maintenance
+    d'instance) — toujours se fier à l'onglet du panel, jamais à une valeur figée ici. Historique :
+    `51.68.57.28:7469`/`51.68.57.28:28257` jusqu'au 2026-10-03 (changement constaté lors du
+    déploiement de l'issue #26 : « No route to host » au niveau IP, pas seulement du port — l'IP
+    avait changé en plus des deux ports). En cas d'échec RCON avec ce message précis, vérifier
+    d'abord le panel avant de suspecter autre chose.
 -   **Mot de passe RCON :** panel VeryGames. **Jamais dans Git / logs / rapports.**
     Le conserver dans `~/.config/rpgquest/verygames.env` (le **même** fichier
     que le FTP), clés `RCON_HOST` / `RCON_PORT` / `RCON_PASSWORD`, `chmod 600`.

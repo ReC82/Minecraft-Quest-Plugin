@@ -3109,3 +3109,63 @@ ci-dessus), sans toucher aux clés déjà présentes.
 
 Remettre l'ancien JAR (le `.bak` de `config.yml` n'a pas besoin d'être restauré : la section
 ajoutée est rétrocompatible, un ancien JAR l'ignore simplement).
+
+### Exécution réelle
+
+Déployé sur **VeryGames DEV** le 2026-10-03 (~16:49–17:01 UTC), sur autorisation explicite.
+Branche `feat/control-panel-admin-tools` @ `2a9972a` (commits `191afe9` + `2a9972a` poussés vers
+`origin/feat/control-panel-admin-tools` au préalable, `c3c88e7..2a9972a`). Working tree avec les 3
+fichiers locaux non suivis (`lily_pumpkin.yml`, `st0_meet_people.yml`, `lily_memories.yml`)
+préservés tels quels (`--allow-dirty`, aucun autre fichier non commité).
+
+- **Build** : `RPGQUEST_TEST_MAX_HEAP=768m scripts/deploy-verygames.sh -y --allow-dirty --also
+  src/main/resources/dialogues/guide.yml:RPGQuest/dialogues/guide.yml` → `./gradlew test`+`build`
+  **BUILD SUCCESSFUL** (9m46s ; un premier essai sans `RPGQUEST_TEST_MAX_HEAP` a échoué sur OOM
+  Java heap — limite mémoire connue de cette machine AWS, voir `.ai/`, aucun rapport avec le code).
+- **Backup + transfert JAR** : ancien JAR sauvegardé
+  (`rpgquest-20261003T164923Z-predeploy.jar`, 1 475 924 o, sha256 `27f427409a6d6879d4230f9efb0afc4f9b893eb6a829cd187fa048bc2ead1668`) ;
+  nouveau JAR transféré atomiquement, **sha256 `d5a8d7438e1b72ada010cfad7318197601b5b156aaacf8c710f2fc59ed2cec69`**
+  (1 528 065 o, taille distante == locale).
+- **Backup + transfert `dialogues/guide.yml`** : ancien sauvegardé (5 986 o, sha256
+  `6459eb899afcf334d14aedf7faaee77f28cfdc3a6bc9342054d4dd6610b7a03e`) ; nouveau transféré, **sha256
+  `4b86a69d7337806c07bc15a0e3f806f757712e0be52e362fa5b82749114df1b1`** (6 571 o) — vérifié
+  identique octet pour octet au fichier local du dépôt après transfert.
+- **`config.yml` non transféré** (comme prévu) : la section `starter-tool-kit` sera ajoutée
+  automatiquement par `ConfigFileCompleter` au premier démarrage sur ce nouveau JAR.
+- **Incident réseau en cours de route** : le premier essai de redémarrage RCON a échoué
+  (`No route to host` au niveau IP — confirmé par `ping`/TCP brut vers `51.68.57.28`, aucun port ne
+  répondait). **Cause réelle : l'hôte ET les ports RCON/jeu de VeryGames avaient changé**
+  (`51.68.57.28:7469`/`:28257` → `54.37.115.223:5918`/`:22956`, information retrouvée par
+  l'utilisateur dans le panel VeryGames pendant la session). Aucune tentative de contournement :
+  simple mise à jour de `~/.config/rpgquest/verygames.env` (host + port RCON) hors dépôt, puis
+  nouvel essai. `docs/deployment/VERYGAMES.md` mis à jour avec les valeurs actuelles + un
+  avertissement explicite (VeryGames peut rechanger ces valeurs, toujours vérifier le panel).
+  **Le serveur n'a jamais été affecté par cet incident** : JAR/dialogue déjà transférés et intacts,
+  l'ancien JAR est resté actif sans interruption pendant toute la durée du diagnostic (heartbeat
+  agent PlugAdmin continu, `uptime_seconds` croissant normalement).
+- **Redémarrage** : `scripts/verygames-restart.sh` → `save-all` → `stop` RCON → OFFLINE confirmé →
+  relance automatique VeryGames → **ONLINE** en quelques dizaines de secondes (0 joueur après
+  redémarrage ; 1 joueur — `LoDyMcFly`, l'utilisateur en test — déconnecté par le redémarrage comme
+  attendu).
+- **Vérifications post-redémarrage** :
+  - `rpgquest version` (RCON) → `RPGQuest v0.1.0-SNAPSHOT`.
+  - `plugins` (RCON) → **Citizens, Multiverse-Core, RPGQuest, WorldEdit** tous listés (verts),
+    aucun plugin absent/désactivé.
+  - Heartbeat agent PlugAdmin (`control-panel.db` → `agent_heartbeat`) : `server_state=ONLINE`,
+    `uptime_seconds` retombé à **5** (preuve d'un redémarrage réel, pas d'un faux positif),
+    `worlds_json` → `world_hub`/`claims`/`wild` tous `loaded=true` (mondes intacts).
+  - `data.db`, `Citizens/saves.yml`, les autres mondes et plugins : **jamais touchés** par le
+    déploiement (liste blanche du script, aucune exception).
+- **Limite assumée de cette vérification à distance** : aucun accès direct aux logs serveur
+  Minecraft (`logs/latest.log`) n'est possible depuis ce compte FTP (restreint à `plugins/`) ni via
+  RCON (pas de commande de lecture de log) — l'absence d'erreur **spécifique au chargement de
+  `guide.yml`** (ligne « Chargement des dialogues : N chargé(s), 0 erreur(s). ») n'a donc pas pu
+  être lue en direct. Confiance basée sur : (a) le fichier déployé est **identique octet pour
+  octet** au fichier local déjà validé par `BundledDialoguesValidityTest` (parseur 100% déterministe,
+  sans dépendance Bukkit) ; (b) les 4 plugins restent chargés sans erreur visible ; (c) le reste du
+  plugin (quêtes, économie, etc., qui dépendent du même `YamlDialogueEngine`) fonctionne
+  normalement. **La validation en jeu du nouveau choix « Demander mon kit de départ » reste à
+  faire par l'utilisateur** (voir TC-220, `docs/MANUAL_TEST_PLAN.md`) — non effectuée dans cette
+  session.
+- **Aucun merge vers `main`, aucune intervention sur un environnement de production.** #26 reste
+  ouvert.

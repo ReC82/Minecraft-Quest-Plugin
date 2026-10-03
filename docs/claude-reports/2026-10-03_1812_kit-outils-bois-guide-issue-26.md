@@ -316,3 +316,82 @@ n'était demandée par le ticket ; aucune n'a été ajoutée.
 
 Partie B de #26 (avertissement de préparation avant le Wild), ou validation manuelle en jeu de
 cette partie A avant de clore ce volet du ticket.
+
+---
+
+## Addendum — push + déploiement VeryGames DEV (autorisation explicite ultérieure)
+
+* Horodatage de cet addendum : 2026-10-03, ~18:12 à 19:02 (même session, suite directe de ce qui
+  précède, après une instruction explicite de l'utilisateur autorisant le push et le déploiement).
+* Statut de cet addendum : DONE (déploiement effectué et vérifié) — **#26 reste ouvert**, validation
+  en jeu toujours à faire par l'utilisateur.
+
+Instruction reçue : pousser les commits `191afe9`/`2a9972a`, déployer le kit sur **VeryGames DEV**
+uniquement (aucun merge, aucune intervention PROD), en préservant les 3 fichiers locaux non
+suivis, les données joueurs/mondes/PNJ Citizens, et en vérifiant le résultat — sans fermer #26.
+Egalement demandé : corriger l'ordre du test manuel TC-220 (mourir avant de tester le refus
+0-3 places, pour que le droit soit bien disponible à ce moment-là).
+
+### Ce qui a été fait
+
+1. **Vérification Git préalable** : branche `feat/control-panel-admin-tools`, en avance de 2
+   commits sur `origin`, aucun autre changement non commité que les 3 fichiers Lily déjà connus.
+2. **Push** : `git push origin feat/control-panel-admin-tools` → `c3c88e7..2a9972a`, réussi.
+3. **Correction documentaire demandée** : `docs/MANUAL_TEST_PLAN.md` TC-220 — insertion d'une
+   étape « mourir » entre « redemander sans mourir → déjà reçu » et « tester le refus 0-3 places »
+   (renumérotation 1→11, note explicative ajoutée).
+4. **Déploiement VeryGames DEV** (`scripts/deploy-verygames.sh -y --allow-dirty --also
+   src/main/resources/dialogues/guide.yml:RPGQuest/dialogues/guide.yml`) :
+   - 1er essai : échec `./gradlew test` (OOM Java heap, machine AWS contrainte en RAM — aucun
+     rapport avec le code). Relancé avec `RPGQUEST_TEST_MAX_HEAP=768m` → `./gradlew test`+`build`
+     **BUILD SUCCESSFUL** (9m46s).
+   - JAR transféré atomiquement (sha256 `d5a8d7438e1b72ada010cfad7318197601b5b156aaacf8c710f2fc59ed2cec69`,
+     1 528 065 o), ancien JAR sauvegardé (sha256 `27f427409a6d6879d4230f9efb0afc4f9b893eb6a829cd187fa048bc2ead1668`).
+   - `dialogues/guide.yml` transféré (sha256 `4b86a69d7337806c07bc15a0e3f806f757712e0be52e362fa5b82749114df1b1`,
+     6 571 o — **identique octet pour octet** au fichier local), ancien sauvegardé (sha256
+     `6459eb899afcf334d14aedf7faaee77f28cfdc3a6bc9342054d4dd6610b7a03e`).
+   - `config.yml` **non transféré** (comportement voulu — complété automatiquement par le plugin
+     au démarrage, sans écraser la configuration serveur existante).
+5. **Incident réseau transitoire** : le premier essai de `scripts/verygames-restart.sh` a échoué
+   (`No route to host` vers `51.68.57.28`, confirmé au niveau IP par `ping` — pas seulement un port
+   fermé). Diagnostic : routage local AWS normal (`ip route`/`iptables` sains), FTP (hôte différent)
+   et heartbeat sortant du plugin vers PlugAdmin toujours fonctionnels pendant l'incident → le
+   problème venait de VeryGames, pas de cette machine. **Cause confirmée par l'utilisateur** : le
+   panel VeryGames avait changé l'hôte **et** les ports (`51.68.57.28:7469`/`:28257` →
+   `54.37.115.223:5918`/`:22956`). Fichier de configuration local hors dépôt
+   (`~/.config/rpgquest/verygames.env`) mis à jour avec les nouvelles valeurs ; `docs/deployment/VERYGAMES.md`
+   mis à jour (valeurs actuelles + avertissement que VeryGames peut les rechanger). Aucun secret
+   affiché dans les sorties de commande visibles de cette session.
+6. **Redémarrage réussi** : `scripts/verygames-restart.sh` → `save-all` → `stop` RCON → OFFLINE
+   confirmé → relance automatique VeryGames → **ONLINE**. Le joueur connecté (`LoDyMcFly`,
+   l'utilisateur en test) a été déconnecté par le redémarrage, comme attendu et déjà autorisé.
+7. **Vérifications post-redémarrage** (détail complet dans `docs/deployment/SERVER_CHANGELOG.md`,
+   section « Exécution réelle » de l'entrée #26) :
+   - `rpgquest version` (RCON) → `v0.1.0-SNAPSHOT`.
+   - `plugins` (RCON) → Citizens, Multiverse-Core, RPGQuest, WorldEdit tous chargés.
+   - Heartbeat agent PlugAdmin : `uptime_seconds` retombé à **5** (preuve d'un redémarrage réel),
+     `world_hub`/`claims`/`wild` tous `loaded=true`.
+   - `data.db`, `Citizens/saves.yml`, les autres mondes : jamais touchés (liste blanche du script
+     de déploiement, aucune exception demandée).
+
+### Limite assumée de cette vérification
+
+Aucun accès direct aux logs serveur Minecraft (`logs/latest.log`) n'est possible depuis le compte
+FTP utilisé (restreint à `plugins/`) ni via RCON : l'absence d'erreur **spécifique au chargement
+de `guide.yml`** n'a donc pas pu être lue en direct dans la console. Confiance basée sur le fichier
+déployé identique octet pour octet au fichier local déjà validé par `BundledDialoguesValidityTest`
+(parseur déterministe, sans dépendance Bukkit), combinée aux 4 plugins chargés sans erreur visible.
+
+### Ce qui reste à faire
+
+- **Validation manuelle en jeu** du nouveau choix « Demander mon kit de départ » chez le Guide
+  (TC-220) — **non effectuée dans cette session**, à faire par l'utilisateur. **#26 n'est pas
+  fermé.**
+- Aucun merge vers `main`, aucune intervention sur un environnement de production.
+
+### Fichiers modifiés par cet addendum
+
+`docs/MANUAL_TEST_PLAN.md` (ordre TC-220), `docs/deployment/VERYGAMES.md` (host/ports RCON à
+jour), `docs/deployment/SERVER_CHANGELOG.md` (section « Exécution réelle » de l'entrée #26), ce
+rapport (addendum). Fichier hors dépôt modifié : `~/.config/rpgquest/verygames.env` (host/port
+RCON, aucun secret changé).

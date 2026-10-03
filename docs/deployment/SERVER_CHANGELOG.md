@@ -3268,3 +3268,31 @@ préservés).
 `scripts/rollback-verygames.sh --latest` (restaure `rpgquest-20261003T194955Z-predeploy.jar`) +
 `scripts/verygames-restart.sh`. Les tables V19-V21 restent inertes en base pour cet ancien JAR
 (même garantie que V18/#124).
+
+---
+
+## 2026-10-03 - Correctifs menu de bornes (clics, mondes) + noms de waypoints uniques (#132/#150/#133/#135)
+
+### Déploiement / Exécution réelle
+
+Déployé sur **VeryGames DEV** le 2026-10-03 (~21:09-21:11 UTC), session autonome autorisée
+explicitement (déploiement DEV + redémarrage sans confirmation supplémentaire par demande).
+Branche `feat/control-panel-admin-tools` @ **`7c50802`**. `./gradlew test`+`build` (interne au
+script officiel) **OK**.
+
+- **JAR déployé** : 1 579 732 o, SHA-256 `90e50fb26d60b9d4fa769b4be3a7ef3a14fb2304a6155b1de9f3c053b31b0550`.
+- **Backup préalable** : `rpgquest-20261003T210929Z-predeploy.jar`.
+- **Redémarrage** : `scripts/verygames-restart.sh --timeout 240` — 0 joueur connecté avant l'arrêt
+  (l'utilisateur, seul joueur habituel sur DEV, était déjà déconnecté), OFFLINE confirmé puis
+  **ONLINE**.
+- **Vérifications post-redémarrage** : `/rpgquest version` → `v0.1.0-SNAPSHOT` ; `/plugins` → 4
+  plugins verts ; heartbeat PlugAdmin `uptime_seconds=5` (redémarrage réel), `world_hub`/`claims`/
+  `wild` tous `loaded=true`. Plugin pleinement activé → migration **V22**
+  (`waypoints.display_name`) appliquée sans erreur critique (même niveau de preuve que les
+  migrations précédentes, aucun accès direct aux logs par ce compte FTP/RCON).
+- **Distinction explicite** : contrôles de démarrage uniquement. **Les clics du menu, la
+  recherche et la téléportation restent à valider réellement en jeu** — non déclarés validés sur
+  la seule base des tests automatisés.
+- Aucun merge, aucune intervention PROD.
+
+Rollback : `scripts/rollback-verygames.sh --latest` (restaure `rpgquest-20261003T210929Z-predeploy.jar`).

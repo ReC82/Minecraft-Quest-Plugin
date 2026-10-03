@@ -213,7 +213,7 @@ Page docs-site : `hub-safe-zone.html`.
 
 À savoir : voir « Spawn Minecraft vs Multiverse vs RPGQuest » en section 7 — c'est **cette** commande, jamais `/mv setspawn`, qui définit le spawn gameplay réel.
 
-### Bornes et villages du réseau de voyage — `/rpgadmin travel` (issues #132/#150/#151/#149)
+### Bornes et villages du réseau de voyage — `/rpgadmin travel` (issues #132/#150/#151/#149/#133/#135)
 Voir aussi `docs/TRAVEL.md` section « Réseau de voyage / bornes » pour le détail complet.
 
 | Commande | Effet | Persistance |
@@ -1106,7 +1106,7 @@ sont des repères physiques persistants, partagés, générés **par instance r�
   PlugAdmin complet, lecture `/waypoints` (une lecture Control Panel est prévue par #124 mais non
   livrée dans ce MVP — `WaypointService` expose déjà `all()` / `byId()` / `discoveryCount()`).
 
-### Réseau de voyage / bornes (issues #132/#150/#151/#149)
+### Réseau de voyage / bornes (issues #132/#150/#151/#149/#133/#135)
 
 Vérifié dans `src/main/java/com/lodygames/rpgquest/travel/beacon/` et `docs/TRAVEL.md` (section
 dédiée, détail complet). Fournit le fast travel que les waypoints eux-mêmes n'apportent pas :
@@ -1114,16 +1114,33 @@ dédiée, détail complet). Fournit le fast travel que les waypoints eux-mêmes 
 jamais fusionnée avec les tables waypoint/waystone) dont le bouton ouvre un **menu graphique** à
 trois catégories, toutes revalidées fraîchement à chaque clic :
 
-- **Waypoints découverts** : uniquement ceux du joueur courant. Pagination (45/page), recherche
+- **Waypoints découverts** : ouvre d'abord un **choix du monde** (Hub/Wild toujours proposés même à
+  0 découverte, tout autre monde extensible dès qu'une découverte active y existe), puis la liste —
+  uniquement celle du joueur courant, **filtrée au monde choisi**. Pagination (45/page), recherche
   graphique via une enclume virtuelle (`InventoryType.ANVIL`, aucun coût XP, insensible
-  casse/accents), revalidation stricte (`hasActivelyDiscovered`) et arrivée sûre
-  (`RandomSafeLocationFinder#findAtColumn`).
+  casse/accents, filtre sur le **nom d'affichage** — voir ci-dessous), revalidation stricte
+  (`hasActivelyDiscovered`) et arrivée sûre (`RandomSafeLocationFinder#findAtColumn`).
 - **Mon claim** (#151) : résout le claim courant via `ClaimService#mainClaimOf` (jamais une
   coordonnée copiée) ; absent → icône grisée + message, jamais un bouton muet. Arrivée au centre du
   claim, vérifiée **dans** son cuboïde actif.
 - **Villages** (#151) : centres administrés (`VillageCenter`, table `village_centers`, identité
   **indépendante du monde** — plusieurs centres possibles dans `world_hub`). Arrivée à la position
   et orientation exactes administrées (même confiance qu'un spawn).
+
+**Noms de waypoints (#133/#135)** : chaque waypoint a un **nom d'affichage** unique et persistant
+(`waypoint.display_name`), identité lisible principale — le biome reste une métadonnée secondaire
+(deux waypoints du même biome n'affichent plus jamais le même libellé). Réserve statique bundlée
+(`waypoint-names.txt`, lue par `WaypointNameCatalog`, **jamais un appel IA au runtime** — l'issue
+#148 l'enrichira plus tard) ; dédoublonnage à l'import (casse/accents/espaces) ; attribution
+synchrone sans doublon à la génération (+ index SQL unique en défense) ; nom de secours
+(`"Avant-poste N"`) si la réserve est épuisée ; migration **V22** attribue un nom aux waypoints déjà
+existants (id et découvertes joueurs inchangés).
+
+**Correction d'un bug de clics (validation en jeu)** : destination, retour et recherche restaient
+silencieux une fois le menu ouvert — l'état du menu (`BeaconMenuSession`) était posé **avant**
+l'ouverture de l'inventaire, effacé aussitôt par la fermeture synchrone de l'ancien menu (même
+classe de bug que la navigation du journal de quêtes, #11). Corrigé en posant la session **après**
+l'ouverture partout.
 
 Placement/administration : `/rpgadmin travel beacon set` (borne **Wild**, position réelle,
 idempotent), `/rpgadmin travel village sethub|set|remove|enable|disable|list` (centres, `sethub`
@@ -1587,6 +1604,7 @@ database:
 | V19 | `travel_beacons` | Bornes du réseau de voyage (#132/#150) |
 | V20 | `village_centers` | Centres de village du réseau de voyage (#151) |
 | V21 | `travel_beacons.biome_instance` (ALTER) | Appariement borne↔waypoint du Hub (#149), idempotence uniquement |
+| V22 | `waypoints.display_name` (ALTER + backfill + index unique) | Nom d'affichage humain unique par waypoint (#133/#135) |
 
 Suivi de version : `PRAGMA user_version` en SQLite (natif, inchangé) ; table portable
 `rpgquest_schema_migrations` en MySQL (#41). `SchemaMigrationRunner` applique les étapes en

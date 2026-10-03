@@ -417,7 +417,7 @@ En résumé :
 - **Pas de commande** dédiée dans ce MVP (`WaypointService` expose `all()` / `byId()` /
   `discoveryCount()` pour une future lecture PlugAdmin).
 
-## Réseau de voyage / bornes (`travel.beacon.TravelBeaconService`, issues #132/#150)
+## Réseau de voyage / bornes (`travel.beacon.TravelBeaconService`, issues #132/#150/#151/#149/#133/#135)
 
 **Priorité gameplay après #26.** Parcours livré : un joueur découvre un waypoint dans le Wild,
 meurt (ou se déplace simplement — rien dans ce système ne dépend de la mort elle-même, seules les
@@ -455,7 +455,8 @@ destination, jamais fusionnée dans leurs tables/identités — `TravelBeaconSer
   que `ui.QuestJournalService` — tout clic/drag dans le menu est systématiquement annulé) :
   - Racine : trois catégories, revalidées à **chaque clic** (jamais l'état figé au moment de
     l'ouverture) :
-    - **« Waypoints découverts »** : voir ci-dessous.
+    - **« Waypoints découverts »** : ouvre d'abord un **choix du monde** (voir ci-dessous), jamais
+      directement une liste globale.
     - **« Mon claim »** (issue #151) : résout le claim courant du joueur via
       `ClaimService#mainClaimOf` (jamais une coordonnée copiée) ; icône grisée + message si aucun
       claim. Arrivée au **centre** du claim (`RandomSafeLocationFinder#findAtColumn`, position
@@ -468,19 +469,62 @@ destination, jamais fusionnée dans leurs tables/identités — `TravelBeaconSer
       Arrivée à la position **et orientation exactes** enregistrées par l'administrateur (même
       confiance qu'un spawn — `spawn.SpawnService`) ; centre désactivé/supprimé entre l'ouverture
       du menu et le clic → revalidation stricte, aucune téléportation.
-  - Liste des waypoints **actifs réellement découverts par ce joueur** (jamais ceux d'un autre
-    joueur ni un waypoint désactivé), triée par biome, paginée (45/écran), navigation
-    page précédente/suivante, retour, fermeture.
-  - **Recherche graphique** (waypoints uniquement) : enclume virtuelle (`InventoryType.ANVIL` créée
-    sans bloc réel, pattern standard des GUI Paper/Bukkit), coût de réparation forcé à **0** à
-    chaque `PrepareAnvilEvent` (aucun coût XP), aucun objet du menu réellement récupérable (clic sur
-    le résultat toujours annulé, le texte est lu puis l'objet jeté). Filtrage **insensible à la
-    casse et aux accents** (`Normalizer` NFD + suppression des marques combinantes).
+  - **Choix du monde** (`Kind.WORLDS`, issue #149-suite) : étape intermédiaire entre la racine et la
+    liste des waypoints — `world_hub` (Hub) et `travel.wild-world` (Wild) ont **toujours** leur
+    propre page, même à 0 découverte ; tout autre monde est **extensible**, affiché uniquement dès
+    qu'au moins une découverte active du joueur courant y existe (jamais codé en dur). L'ordre
+    affiché est figé dans la session au moment du rendu (`BeaconMenuSession#worldsShown`) : un clic
+    référence toujours le même monde qu'au moment de l'affichage, jamais recalculé.
+  - Liste des waypoints **actifs réellement découverts par ce joueur, filtrés au monde choisi**
+    (jamais ceux d'un autre joueur, d'un autre monde, ni un waypoint désactivé), triée par
+    **nom d'affichage** (voir « Noms de waypoints » ci-dessous), paginée (45/écran), navigation
+    page précédente/suivante, retour (vers le choix du monde, jamais directement la racine),
+    fermeture.
+  - **Recherche graphique** (waypoints uniquement, **dans le monde choisi** — jamais un résultat
+    d'un autre monde) : enclume virtuelle (`InventoryType.ANVIL` créée sans bloc réel, pattern
+    standard des GUI Paper/Bukkit), coût de réparation forcé à **0** à chaque `PrepareAnvilEvent`
+    (aucun coût XP), aucun objet du menu réellement récupérable (clic sur le résultat toujours
+    annulé, le texte est lu puis l'objet jeté). Filtrage **insensible à la casse et aux accents**
+    (`Normalizer` NFD + suppression des marques combinantes) sur le nom d'affichage et le biome. Le
+    monde reste mémorisé pendant tout le détour par l'enclume (jamais perdu).
   - **Revalidation stricte au départ** (`hasActivelyDiscovered` pour les waypoints, résolution
     fraîche pour claim/village) : un clic périmé échoue proprement, sans téléportation. Arrivée sûre
     via `RandomSafeLocationFinder#findAtColumn` (waypoints/claim) ou position administrée exacte
     (villages) ; monde non chargé ou colonne dangereuse → message d'erreur, aucun déplacement.
   - Aucun chemin de ce service ne crée jamais de waypoint (jamais de génération pendant un voyage).
+  - **Bug corrigé (validation en jeu) : tous les clics (destination, retour, recherche) restaient
+    silencieux une fois le menu ouvert.** Cause : l'état du menu (`BeaconMenuSession`) était
+    enregistré **avant** `player.openInventory(...)`, qui ferme d'abord l'ancien menu de façon
+    **synchrone** — ce `InventoryCloseEvent` effaçait aussitôt la session tout juste posée (même
+    classe de bug que la navigation du journal de quêtes, issue #11). Correctif : la session est
+    désormais posée **après** l'ouverture, dans toutes les méthodes `open*` — couvert par des tests
+    qui routent un vrai `InventoryClickEvent` à travers le listener réel (jamais un appel direct aux
+    méthodes de gestion de clic, qui aurait masqué ce bug comme précédemment).
+
+### Noms de waypoints (issues #133/#135)
+
+Chaque waypoint a désormais un **nom d'affichage** (`waypoint.display_name`) humain, unique et
+persistant — l'identité **lisible** principale pour le joueur. Le biome reste une **métadonnée
+secondaire** (deux waypoints du même biome n'affichent donc plus jamais le même libellé, ex. deux
+« beach » indiscernables avant ce correctif).
+
+- **Réserve statique bundlée** (`src/main/resources/waypoint-names.txt`, un nom par ligne) chargée
+  par `waypoint.model.WaypointNameCatalog` — **jamais un appel IA au runtime** ; l'issue #148
+  enrichira cette réserve plus tard, sans toucher ce mécanisme.
+- **Dédoublonnage à l'import** : lignes vides/commentaires (`#`) ignorés, doublons détectés
+  insensibles à la casse/accents/espaces (`WaypointNameCatalog#normalize`), seule la première
+  occurrence est gardée.
+- **Attribution sans doublon** : un nom est réservé **de façon synchrone**, sur le thread principal,
+  au moment même de la génération du waypoint (`WaypointService#attemptGeneration`) — Bukkit traite
+  les événements séquentiellement, donc deux générations ne peuvent jamais se chevaucher dans ce
+  processus ; un ensemble en mémoire (`usedDisplayNames`, rechargé au démarrage depuis tous les
+  waypoints existants) empêche toute réutilisation. Index unique SQL (`idx_waypoints_display_name`)
+  en défense supplémentaire.
+- **Réserve épuisée** : nom de secours unique généré (`"Avant-poste N"`, N incrémenté jusqu'à
+  trouver un nom libre) — jamais un échec de génération.
+- **Waypoints déjà existants** : migration **V22** (voir plus bas) attribue un nom à chaud à chaque
+  ligne déjà en base, dans un ordre stable (par `id`), sans jamais toucher l'`id` ni les découvertes
+  joueurs déjà enregistrées.
 - **Administration des centres de village** : `/rpgadmin travel village sethub <id> <nom...>` (pose
   le centre **sur le spawn du Hub déjà configuré**, `spawn.SpawnService#resolve` — jamais une
   coordonnée inventée) ; `/rpgadmin travel village set <id> <nom...>` (position réelle de

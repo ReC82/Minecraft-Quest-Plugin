@@ -1449,8 +1449,8 @@ le résumé de récompenses de TC-014).
 
 -   **Fonctionnalité testée :** `waypoint.WaypointService`, `WaypointListener`,
     `WaypointProtectionListener`, `waypoint.render.WaypointModelV1`, migration V18
-    (`waypoints`, `waypoint_discoveries`), section config `travel.waypoint.*`. Détail :
-    `docs/WAYPOINTS.md`.
+    (`waypoints`, `waypoint_discoveries`), migration V22 (`waypoints.display_name`, issues
+    #133/#135), section config `travel.waypoint.*`. Détail : `docs/WAYPOINTS.md`.
 -   **Préconditions :**
     1.  JAR RPGQuest de cette session déployé sur DEV, serveur redémarré.
     2.  Un monde d'exploration nommé comme `travel.wild-world` (défaut `wild`) accessible.
@@ -1466,7 +1466,11 @@ le résumé de récompenses de TC-014).
     3.  **Passer à 1-3 blocs du waypoint sans rien cliquer** → aucun message, rien n'est
         enregistré (la proximité ne découvre rien).
     4.  **Clic droit sur le bouton** → message « Waypoint découvert — <biome> » + son.
-        Re-cliquer le bouton → aucun nouveau message (déjà découvert).
+        Re-cliquer le bouton → aucun nouveau message (déjà découvert). Dans le menu de la
+        borne (issue #149-suite), ce waypoint doit apparaître avec un **nom propre unique**
+        (ex. « Rochebrune »), jamais seulement son biome — vérifier qu'un **second** waypoint
+        du **même biome** (deux forêts éloignées, étape 11) reçoit bien un nom **différent**,
+        jamais « Forêt »/« Forêt » en double.
     5.  **Clic droit sur le bloc d'or ou sur la barrière** (pas le bouton) → aucune découverte.
     6.  Essayer de **casser** le bloc d'or / la barrière / le bouton → **refusé** (le bloc ne
         casse pas). Poser un bloc à la place d'un bloc du waypoint → refusé.
@@ -1496,8 +1500,11 @@ le résumé de récompenses de TC-014).
     idempotent, 2 zones même biome → 2 waypoints, proximité sans découverte, découverte bouton
     uniquement, découvertes A/B indépendantes, reload sans doublon, changement de version de
     rendu sans changement d'identité, échec propre + retry borné), `WaypointProtectionListenerTest`
-    (casse joueur refusée, bypass admin, explosion, piston, feu), `SchemaMigratorTest` (V18 +
-    idempotence), `ConfigValidatorTest` (défauts + bornes `travel.waypoint.*`).
+    (casse joueur refusée, bypass admin, explosion, piston, feu), `SchemaMigratorTest` (V18 + V22 +
+    idempotence, dont le backfill de noms uniques sur des waypoints déjà existants du même biome),
+    `WaypointNameCatalogTest` (dédoublonnage à l'import, attribution sans doublon y compris sous la
+    même seed, nom de secours une fois la réserve épuisée), `ConfigValidatorTest` (défauts + bornes
+    `travel.waypoint.*`).
 -   **Limites MockBukkit (à couvrir uniquement en jeu) :** distribution réelle des biomes du
     monde `wild` et emplacement effectivement dans le bon biome ; physique réelle des fluides,
     pistons et blocs à gravité contre la structure ; suppression réelle du signal redstone du
@@ -1576,34 +1583,43 @@ le résumé de récompenses de TC-014).
     3.  Dans `wild`, découvrir un waypoint (clic droit sur son bouton, voir TC-210).
     4.  Mourir (ou simplement revenir au Hub par un autre moyen) puis se rendre à la borne.
     5.  Clic droit sur le bouton de la borne → menu graphique, **sans aucune commande**.
-    6.  Catégorie « Waypoints découverts » → le waypoint découvert à l'étape 3 apparaît, avec un
-        nom lisible (biome).
+    6.  Catégorie « Waypoints découverts » → un **choix du monde** s'affiche d'abord (« Hub » et
+        « Wild » toujours proposés, même à 0 découverte) ; choisir le monde du waypoint découvert à
+        l'étape 3 → la liste apparaît, avec un **nom lisible propre** (ex. « Rochebrune »), le biome
+        affiché en information secondaire — jamais deux destinations avec le même nom.
     7.  Catégories « Mon claim » / « Villages » → voir **TC-222** (issue #151) pour leur test dédié.
     8.  Cliquer le waypoint découvert → fermeture du menu, téléportation **sûre** tout près de ce
         waypoint (même zone que la quête en cours).
-    9.  Tenter la borne avec un **second compte non-op** n'ayant rien découvert → catégorie
-        Waypoints vide, message explicite, aucun accès aux waypoints du premier joueur.
+    9.  Tenter la borne avec un **second compte non-op** n'ayant rien découvert → dans le monde
+        choisi, catégorie Waypoints vide, message explicite, aucun accès aux waypoints du premier
+        joueur.
 -   **Recherche et pagination (si plusieurs waypoints découverts) :**
     10. Bouton « Rechercher » → une **enclume s'ouvre** (pas de commande, pas de saisie chat) ;
         taper un nom (ou un fragment, casse/accents quelconques) puis cliquer le résultat → liste
-        filtrée en conséquence ; aucun objet n'est récupérable depuis cette enclume, aucun coût
-        d'expérience prélevé.
+        filtrée en conséquence, **toujours dans le même monde** qu'au moment d'ouvrir la recherche ;
+        aucun objet n'est récupérable depuis cette enclume, aucun coût d'expérience prélevé.
     11. Avec plus de 45 waypoints découverts (si atteignable) : pagination page suivante/précédente
         fonctionnelle.
+    12. Bouton « Retour » depuis la liste de waypoints → ramène au **choix du monde** (pas
+        directement la racine) ; « Retour » depuis le choix du monde → ramène à la racine.
 -   **Revalidation / erreurs :**
-    12. Si un waypoint affiché est supprimé/désactivé entre l'ouverture du menu et le clic (ou en
+    13. Si un waypoint affiché est supprimé/désactivé entre l'ouverture du menu et le clic (ou en
         rouvrant le menu après une désactivation côté admin) : message propre, aucune
         téléportation, jamais de crash.
-    13. Couper/décharger le monde de destination (si testable) : message « monde non chargé »,
+    14. Couper/décharger le monde de destination (si testable) : message « monde non chargé »,
         aucun déplacement.
 -   **Reset :** aucune donnée joueur à réinitialiser spécifiquement ; `travel_beacons` est une
     table purement administrative, sans impact sur `/rpgadmin player resetnew`.
--   **Couverture automatisée :** `TravelBeaconServiceTest` (9 cas sur cette partie #132/#150 :
-    placement + structure + idempotence, protection anti-casse, ouverture du menu racine au clic
-    bouton, état vide sans découverte, isolation des découvertes entre deux joueurs, parcours
-    complet découverte→borne→menu→retour sûr au même waypoint, clic périmé/destination inconnue
-    sans téléportation, pagination au-delà de 45 entrées, recherche insensible casse/accents ; +3
-    cas dédiés à #151, voir TC-222).
+-   **Couverture automatisée :** `TravelBeaconServiceTest` (26 cas au total, dont 9 sur le socle
+    #132/#150 : placement + structure + idempotence, protection anti-casse, ouverture du menu
+    racine au clic bouton, état vide sans découverte, isolation des découvertes entre deux joueurs,
+    parcours complet découverte→borne→menu→retour sûr au même waypoint, clic périmé/destination
+    inconnue sans téléportation, pagination au-delà de 45 entrées, recherche insensible
+    casse/accents ; +3 cas dédiés à #151, voir TC-222 ; +6 cas dédiés à #149, voir TC-223 ; **+8 cas
+    de régression routant un vrai `InventoryClickEvent` à travers le listener réel** — correction
+    du bug « tous les clics restaient silencieux » (destination, retour, recherche, pagination,
+    fermeture, à travers la nouvelle étape « choix du monde », Hub/Wild toujours proposés, monde
+    tiers extensible uniquement dès une découverte réelle).
 -   **Limites MockBukkit (à couvrir uniquement en jeu) :** rendu réel de l'enclume virtuelle côté
     client (apparence, clavier de saisie), ressenti de la pagination/recherche avec un très grand
     nombre réel de waypoints, physique réelle de protection des blocs (explosion/piston en

@@ -94,23 +94,25 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `waypoint_discoveries`), config `travel.waypoint.*`. Hors périmètre MVP : téléportation, coût,
   menus, waypoint de quête, éditeur/lecture PlugAdmin (`WaypointService` expose déjà `all()` /
   `byId()` / `discoveryCount()`). Validation en jeu : `PENDING MANUAL VALIDATION`.
-- **Réseau de voyage / bornes** *(issues #132/#150/#151/#149)* — `com.lodygames.rpgquest.travel.beacon`,
+- **Réseau de voyage / bornes** *(issues #132/#150/#151/#149/#133/#135)* — `com.lodygames.rpgquest.travel.beacon`,
   **strictement distinct** des waypoints/waystones (aucune fusion d'identité/table, lecture seule
   de `WaypointService#discoveredBy`/`#hasActivelyDiscovered`). Borne = même support qu'un waypoint
   mais `DIAMOND_BLOCK` + bouton en bois configurable (`OAK_BUTTON` par défaut) ; son bouton ouvre un
   **menu graphique** (`BeaconMenuHolder`, anti-vol/duplication comme `ui.QuestJournalService`) à
   trois catégories, **toutes revalidées fraîchement à chaque clic** : « Waypoints découverts »
-  (actifs du joueur courant uniquement, pagination 45/page, **recherche graphique par enclume
-  virtuelle** `InventoryType.ANVIL` sans bloc réel ni coût XP, insensible casse/accents) ; « Mon
-  claim » (résout `ClaimService#mainClaimOf`, jamais une coordonnée copiée — icône grisée + message
-  si absent, arrivée revérifiée **dans** le cuboïde actif du claim) ; « Villages » (centres
-  administrés `VillageCenter`, table `village_centers`, identité **indépendante du monde** —
-  plusieurs centres possibles dans `world_hub`, arrivée à la position/orientation exacte
-  administrée). Sélection toujours revalidée côté serveur (jamais un clic périmé), arrivée sûre
-  (`RandomSafeLocationFinder#findAtColumn` pour waypoints/claim). Placement administré :
-  `/rpgadmin travel beacon set` (borne **Wild**, position réelle, idempotent) et
-  `/rpgadmin travel village sethub|set|remove|enable|disable|list` (centres — `sethub` réutilise le
-  spawn du Hub déjà configuré, jamais une coordonnée inventée). **Génération automatique Hub
+  (ouvre d'abord un **choix du monde** — Hub/Wild toujours proposés même à 0 découverte, tout autre
+  monde extensible dès qu'une découverte y existe — puis la liste filtrée à ce monde, triée par
+  **nom d'affichage**, pagination 45/page, **recherche graphique par enclume virtuelle**
+  `InventoryType.ANVIL` sans bloc réel ni coût XP, insensible casse/accents, monde mémorisé pendant
+  le détour par l'enclume) ; « Mon claim » (résout `ClaimService#mainClaimOf`, jamais une coordonnée
+  copiée — icône grisée + message si absent, arrivée revérifiée **dans** le cuboïde actif du claim) ;
+  « Villages » (centres administrés `VillageCenter`, table `village_centers`, identité
+  **indépendante du monde** — plusieurs centres possibles dans `world_hub`, arrivée à la
+  position/orientation exacte administrée). Sélection toujours revalidée côté serveur (jamais un
+  clic périmé), arrivée sûre (`RandomSafeLocationFinder#findAtColumn` pour waypoints/claim).
+  Placement administré : `/rpgadmin travel beacon set` (borne **Wild**, position réelle, idempotent)
+  et `/rpgadmin travel village sethub|set|remove|enable|disable|list` (centres — `sethub` réutilise
+  le spawn du Hub déjà configuré, jamais une coordonnée inventée). **Génération automatique Hub
   (#149)** : à l'entrée d'un joueur dans une instance de biome du Hub sans waypoint,
   `WaypointService#ensureGenerated` (même mécanisme exact que #124, réutilisé tel quel — le Wild
   continue de passer exclusivement par `handleMovement`, jamais touché) génère le waypoint, puis
@@ -118,12 +120,21 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   réellement persisté (anneau configurable, verrou mono-vol + retry borné — jamais de doublon même
   avec plusieurs joueurs/après redémarrage) ; gating indépendant `travel.waypoint.hub-enabled` /
   `travel.beacon.hub-generation.enabled` ; jamais dans le Wild ; les claims restent exclus ; les
-  waypoints/découvertes déjà existants du Wild ne sont jamais affectés. Migrations **V19**
-  (`travel_beacons`), **V20** (`village_centers`) et **V21** (`travel_beacons.biome_instance`, ALTER
-  idempotent). Hors périmètre : administration PlugAdmin (#152). Validation en jeu :
-  `PENDING MANUAL VALIDATION` (couverture automatisée détaillée dans le rapport #149 — tout ce qui
-  précède l'appel `teleportAsync` est testé, l'appel lui-même ne l'est jamais dans cet
-  environnement).
+  waypoints/découvertes déjà existants du Wild ne sont jamais affectés. **Noms de waypoints
+  (#133/#135)** : nom d'affichage humain unique et persistant (`waypoints.display_name`), biome
+  relégué en métadonnée secondaire — réserve statique bundlée (`waypoint-names.txt` via
+  `WaypointNameCatalog`, jamais d'appel IA au runtime, dédoublonnée à l'import), attribution
+  synchrone sans doublon à la génération (+ index SQL unique), nom de secours si la réserve est
+  épuisée, backfill des waypoints déjà existants (migration V22, id/découvertes inchangés). **Bug de
+  clics corrigé** : la session du menu était posée avant l'ouverture de l'inventaire, effacée par la
+  fermeture synchrone de l'ancien menu (même classe que le bug #11 du journal de quêtes) — tous les
+  clics (destination/retour/recherche) restaient silencieux ; corrigé en posant la session après
+  l'ouverture partout, couvert par des tests routant un vrai `InventoryClickEvent`. Migrations
+  **V19** (`travel_beacons`), **V20** (`village_centers`), **V21** (`travel_beacons.biome_instance`,
+  ALTER idempotent) et **V22** (`waypoints.display_name`, ALTER + backfill + index unique). Hors
+  périmètre : administration PlugAdmin (#152). Validation en jeu : `PENDING MANUAL VALIDATION`
+  (couverture automatisée détaillée dans le rapport de session — tout ce qui précède l'appel
+  `teleportAsync` est testé, l'appel lui-même ne l'est jamais dans cet environnement).
 - **Reset admin « nouveau joueur »** — `/rpgadmin player resetnew <joueur> confirm`
   (permission `rpgquest.admin.world`, console OK, online **ou** offline) : remet l'état RPGQuest
   d'un seul joueur à l'équivalent « jamais joué » (quêtes, Stories, variables/unlocks dont

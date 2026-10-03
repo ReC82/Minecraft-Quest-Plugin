@@ -34,6 +34,8 @@ public final class WaypointRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
     private static final String SELECT_ALL = "SELECT * FROM waypoints";
+    private static final String UPDATE_POSITION =
+            "UPDATE waypoints SET x = ?, y = ?, z = ?, facing = ? WHERE id = ?";
     private static final String SELECT_BY_INSTANCE = "SELECT * FROM waypoints WHERE world = ? AND biome_instance = ?";
     private static final String INSERT_DISCOVERY = """
             INSERT OR IGNORE INTO waypoint_discoveries (player_uuid, waypoint_id, discovered_at) VALUES (?, ?, ?)
@@ -96,6 +98,24 @@ public final class WaypointRepository {
                 statement.setInt(12, waypoint.modelVersion());
                 statement.setInt(13, waypoint.active() ? 1 : 0);
                 statement.setString(14, waypoint.createdAt().toString());
+                return statement.executeUpdate() > 0;
+            }
+        });
+    }
+
+    /**
+     * Réparation d'un waypoint déjà posé mais inaccessible (issue #153) : met à jour uniquement sa
+     * position/orientation. {@code id}, nom d'affichage, instance de biome et découvertes joueurs
+     * restent strictement inchangés — jamais une nouvelle ligne, jamais un recalcul d'identité.
+     */
+    public CompletableFuture<Boolean> updatePosition(Waypoint waypoint) {
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPDATE_POSITION))) {
+                statement.setInt(1, waypoint.x());
+                statement.setInt(2, waypoint.y());
+                statement.setInt(3, waypoint.z());
+                statement.setString(4, waypoint.facing());
+                statement.setString(5, waypoint.id());
                 return statement.executeUpdate() > 0;
             }
         });

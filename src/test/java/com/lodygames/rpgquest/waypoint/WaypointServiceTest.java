@@ -343,6 +343,55 @@ class WaypointServiceTest {
         assertNotNull(service); // pas de crash, pas de boucle : le test se termine.
     }
 
+    // ---- Diagnostic et réparation (issue #153) ---------------------------------------------
+
+    @Test
+    void inaccessibleDetectsAWaypointWhoseGroundBecameALeafCanopy() throws Exception {
+        Waypoint wp = generateAround(384, 384, Biome.FOREST);
+        assertTrue(service.inaccessible().isEmpty(), "sol de pierre normal : accessible");
+
+        // Simule le cas réel #153 : le sol porteur devient du feuillage (ex. un arbre a poussé /
+        // le terrain a changé depuis la génération).
+        wild.getBlockAt(wp.x(), wp.y() - 1, wp.z()).setType(Material.ACACIA_LEAVES);
+
+        var inaccessible = service.inaccessible();
+        assertEquals(1, inaccessible.size());
+        assertEquals(wp.id(), inaccessible.get(0).id());
+    }
+
+    @Test
+    void repairMovesAnInaccessibleWaypointPreservingIdNameAndDiscoveries() throws Exception {
+        Waypoint wp = generateAround(384, 384, Biome.FOREST);
+        PlayerMock player = addPlayer();
+        service.handleInteract(player, interactorBlockOf(wp));
+        await(() -> service.hasActivelyDiscovered(player.getUniqueId(), wp.id()));
+
+        wild.getBlockAt(wp.x(), wp.y() - 1, wp.z()).setType(Material.ACACIA_LEAVES);
+        assertEquals(1, service.inaccessible().size());
+
+        var error = service.repair(wp.id());
+        assertTrue(error.isEmpty(), () -> "réparation attendue en succès : " + error);
+
+        Waypoint repaired = service.byId(wp.id()).orElseThrow();
+        assertEquals(wp.id(), repaired.id(), "id jamais recalculé");
+        assertEquals(wp.displayName(), repaired.displayName(), "nom jamais changé par une réparation");
+        assertEquals(wp.biomeInstance(), repaired.biomeInstance(), "instance de biome jamais changée");
+        assertTrue(repaired.x() != wp.x() || repaired.z() != wp.z(), "la position doit réellement changer");
+        assertTrue(service.inaccessible().isEmpty(), "la nouvelle position doit être accessible");
+        assertTrue(service.hasActivelyDiscovered(player.getUniqueId(), wp.id()), "la découverte survit à la réparation");
+
+        // Persistance réelle en base (pas seulement en mémoire).
+        Waypoint reloaded = repository.loadAll().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).stream()
+                .filter(w -> w.id().equals(wp.id())).findFirst().orElseThrow();
+        assertEquals(repaired.x(), reloaded.x());
+        assertEquals(repaired.z(), reloaded.z());
+    }
+
+    @Test
+    void repairFailsCleanlyWhenWaypointDoesNotExist() {
+        assertTrue(service.repair("does_not_exist").isPresent());
+    }
+
     /** Modèle de rendu factice v2 pour prouver la stabilité de l'identité (pose sans effet). */
     private static final class FakeV2Model implements WaypointModel {
         @Override

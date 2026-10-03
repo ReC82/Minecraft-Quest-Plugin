@@ -23,6 +23,8 @@ public final class TravelBeaconRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
     private static final String SELECT_ALL = "SELECT * FROM travel_beacons";
+    private static final String UPDATE_POSITION =
+            "UPDATE travel_beacons SET x = ?, y = ?, z = ?, facing = ? WHERE id = ?";
     private static final String SELECT_BY_INSTANCE =
             "SELECT * FROM travel_beacons WHERE world = ? AND biome_instance = ? AND biome_instance != ''";
 
@@ -61,6 +63,20 @@ public final class TravelBeaconRepository {
                 statement.setInt(8, beacon.active() ? 1 : 0);
                 statement.setString(9, beacon.biomeInstance());
                 statement.setString(10, beacon.createdAt().toString());
+                return statement.executeUpdate() > 0;
+            }
+        });
+    }
+
+    /** Réparation d'une borne déjà posée mais inaccessible (issue #153) : position/orientation seules. */
+    public CompletableFuture<Boolean> updatePosition(TravelBeacon beacon) {
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPDATE_POSITION))) {
+                statement.setInt(1, beacon.x());
+                statement.setInt(2, beacon.y());
+                statement.setInt(3, beacon.z());
+                statement.setString(4, beacon.facing());
+                statement.setString(5, beacon.id());
                 return statement.executeUpdate() > 0;
             }
         });

@@ -278,7 +278,8 @@ public final class WaypointService implements PluginService {
                             instance.biomeKey(), cx, cz).equals(instance)) {
                 continue;
             }
-            Optional<Location> safe = RandomSafeLocationFinder.findAtColumn(world, cx, cz);
+            // #153 : jamais une structure flottant au sommet d'un arbre ni sur un surplomb isolé.
+            Optional<Location> safe = RandomSafeLocationFinder.findAccessibleColumn(world, cx, cz);
             if (safe.isEmpty()) {
                 continue;
             }
@@ -340,6 +341,132 @@ public final class WaypointService implements PluginService {
             logger.error("Impossible de persister le waypoint {}", waypoint.id(), error);
             return null;
         });
+    }
+
+    // ---- Diagnostic et réparation (issue #153) -----------------------------------------------
+
+    /** Waypoints dont l'ancre actuelle échoue désormais le contrôle d'accessibilité (#153). */
+    public List<Waypoint> inaccessible() {
+        List<Waypoint> result = new ArrayList<>();
+        for (Waypoint waypoint : byId.values()) {
+            World world = plugin.getServer().getWorld(waypoint.world());
+            if (world == null) {
+                continue; // monde non chargé : ni confirmé accessible, ni confirmé inaccessible.
+            }
+            if (!RandomSafeLocationFinder.isAccessibleGround(world, waypoint.x(), waypoint.y() - 1, waypoint.z())) {
+                result.add(waypoint);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Cherche un nouvel emplacement accessible <strong>dans la même instance de biome</strong>,
+     * autour de la position actuelle (l'entrée originale du joueur n'est pas conservée) ; déplace
+     * uniquement les blocs ajoutés par la structure (jamais le terrain/la végétation environnante) ;
+     * {@code id}, nom d'affichage, instance de biome et découvertes joueurs restent inchangés.
+     *
+     * @return {@link Optional#empty()} en cas de succès, sinon un message d'erreur.
+     */
+    public Optional<String> repair(String waypointId) {
+        Waypoint existing = byId.get(waypointId);
+        if (existing == null) {
+            return Optional.of("Waypoint introuvable : " + waypointId);
+        }
+        World world = plugin.getServer().getWorld(existing.world());
+        if (world == null) {
+            return Optional.of("Monde non chargé : " + existing.world());
+        }
+        WaypointConfig wc = config.get().waypoint();
+        BiomeInstanceKey instance = new BiomeInstanceKey(existing.world(), existing.biomeKey(),
+                existing.regionX(), existing.regionZ());
+        long seed = ("repair:" + waypointId).hashCode();
+        int ring = Math.max(16, wc.minimumSpacing() / 4);
+        List<WaypointGenerationPlanner.Candidate> candidates = planner.candidates(
+                existing.x(), existing.z(), seed, 8, ring, wc.candidateAttempts());
+        WaypointModel model = modelRegistry.resolveOrCurrent(existing.modelVersion());
+        Location entry = new Location(world, existing.x() + 0.5, existing.y(), existing.z() + 0.5);
+
+        for (WaypointGenerationPlanner.Candidate candidate : candidates) {
+            int cx = candidate.blockX();
+            int cz = candidate.blockZ();
+            if (!identityResolver.resolve(wc.regionSize(), existing.world(), existing.biomeKey(), cx, cz)
+                    .equals(instance)) {
+                continue;
+            }
+            Optional<Location> safe = RandomSafeLocationFinder.findAccessibleColumn(world, cx, cz);
+            if (safe.isEmpty()) {
+                continue;
+            }
+            int anchorX = safe.get().getBlockX();
+            int anchorY = safe.get().getBlockY();
+            int anchorZ = safe.get().getBlockZ();
+            BlockFace facing = facingToward(entry, anchorX, anchorZ);
+            if (!areaFreeForWaypoint(world, anchorX, anchorY, anchorZ, facing, model)) {
+                continue;
+            }
+            if (violatesSpacingExcluding(waypointId, existing.world(), anchorX, anchorZ, wc.minimumSpacing())) {
+                continue;
+            }
+
+            deindexPositionalBlocks(existing);
+            removeStructureBlocks(world, existing.x(), existing.y(), existing.z(),
+                    parseFacing(existing.facing()), modelRegistry.resolveOrCurrent(existing.modelVersion()));
+            model.place(world, anchorX, anchorY, anchorZ, facing);
+            Waypoint repaired = new Waypoint(existing.id(), existing.displayName(), existing.world(),
+                    existing.biomeInstance(), existing.biomeKey(), existing.regionX(), existing.regionZ(),
+                    anchorX, anchorY, anchorZ, facing.name(), model.version(), existing.active(), existing.createdAt());
+            index(repaired);
+            repository.updatePosition(repaired).exceptionally(error -> {
+                logger.error("Impossible de persister la réparation du waypoint {}", waypointId, error);
+                return null;
+            });
+            logger.info("Waypoint « {} » réparé : {},{},{} -> {},{},{}.", waypointId,
+                    existing.x(), existing.y(), existing.z(), anchorX, anchorY, anchorZ);
+            return Optional.empty();
+        }
+        return Optional.of("Aucun emplacement accessible trouvé près de l'ancien — réessaie plus tard.");
+    }
+
+    private void deindexPositionalBlocks(Waypoint waypoint) {
+        BlockFace facing = parseFacing(waypoint.facing());
+        WaypointModel model = modelRegistry.resolveOrCurrent(waypoint.modelVersion());
+        BlockOffset interactor = model.interactor(facing);
+        byInteractorBlock.remove(blockKey(waypoint.world(), waypoint.x() + interactor.dx(),
+                waypoint.y() + interactor.dy(), waypoint.z() + interactor.dz()));
+        for (BlockOffset offset : model.protectedBlocks(facing)) {
+            protectedBlocks.remove(blockKey(waypoint.world(),
+                    waypoint.x() + offset.dx(), waypoint.y() + offset.dy(), waypoint.z() + offset.dz()));
+        }
+    }
+
+    /** Ne retire jamais le sol (offset {@code dy == -1}) — seulement les blocs ajoutés par la structure. */
+    private static void removeStructureBlocks(World world, int x, int y, int z, BlockFace facing, WaypointModel model) {
+        for (BlockOffset offset : model.protectedBlocks(facing)) {
+            if (offset.dy() == -1) {
+                continue;
+            }
+            world.getBlockAt(x + offset.dx(), y + offset.dy(), z + offset.dz())
+                    .setType(org.bukkit.Material.AIR, false);
+        }
+    }
+
+    private boolean violatesSpacingExcluding(String excludeId, String world, int x, int z, int minSpacing) {
+        if (minSpacing <= 0) {
+            return false;
+        }
+        long minSq = (long) minSpacing * minSpacing;
+        for (Waypoint existing : byId.values()) {
+            if (existing.id().equals(excludeId) || !existing.world().equals(world)) {
+                continue;
+            }
+            long dx = existing.x() - x;
+            long dz = existing.z() - z;
+            if (dx * dx + dz * dz < minSq) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ---- Découverte -----------------------------------------------------------------------------

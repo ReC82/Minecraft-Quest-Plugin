@@ -66,6 +66,7 @@ import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
 import com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry;
 import com.lodygames.rpgquest.entitlement.EntitlementService;
 import com.lodygames.rpgquest.hub.HubGuideRegistry;
+import com.lodygames.rpgquest.hub.HubComfortService;
 import com.lodygames.rpgquest.hub.HubWorldProtectionListener;
 import com.lodygames.rpgquest.hub.HubWorldRulesService;
 import com.lodygames.rpgquest.item.RpgItemKeys;
@@ -291,7 +292,18 @@ public final class RPGQuestBootstrap {
                 worldService, () -> configService.current().hub(), plugin.getSLF4JLogger());
         registry.start(hubWorldRulesService);
         registry.start(new PlayerListenerService(plugin, hubWorldRulesService.listener()));
-        registry.start(new PlayerListenerService(plugin, new HubWorldProtectionListener(() -> configService.current().hub())));
+        HubWorldProtectionListener hubWorldProtectionListener =
+                new HubWorldProtectionListener(() -> configService.current().hub(), npcIdentityService);
+        registry.start(new PlayerListenerService(plugin, hubWorldProtectionListener));
+        // Nettoyage ciblé (issues #121/#155) des mobs indésirables déjà présents dans les chunks
+        // déjà chargés au démarrage (ex. spawn) — jamais un chargement forcé de tout le monde.
+        worldService.find(configService.current().hub().world())
+                .ifPresent(hubWorldProtectionListener::sweepAlreadyLoaded);
+
+        HubComfortService hubComfortService = new HubComfortService(
+                plugin, () -> configService.current().hub(), plugin.getSLF4JLogger());
+        registry.start(hubComfortService);
+        registry.start(new PlayerListenerService(plugin, hubComfortService.listener()));
 
         registry.start(questEngine);
         registry.start(questMessagesService);
@@ -893,7 +905,7 @@ public final class RPGQuestBootstrap {
                 flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
                 worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry,
-                questProgressEngine, questEngine, variableRepository, travelBeaconService, plugin);
+                questProgressEngine, questEngine, variableRepository, travelBeaconService, waypointService, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

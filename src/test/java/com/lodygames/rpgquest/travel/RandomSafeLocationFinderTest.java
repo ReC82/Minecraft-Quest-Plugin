@@ -192,6 +192,61 @@ class RandomSafeLocationFinderTest {
         assertTrue(RandomSafeLocationFinder.findAtColumn(world, 500, 0).isEmpty());
     }
 
+    // ---- findAccessibleColumn (issue #153 : jamais une structure au sommet d'un arbre/surplomb) ---
+
+    @Test
+    void findAccessibleColumnAcceptsAnOrdinaryFlatColumn() {
+        setGround(40, 64, 40, Material.STONE);
+        for (int[] offset : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+            setGround(40 + offset[0], 64, 40 + offset[1], Material.STONE);
+        }
+
+        Optional<Location> found = RandomSafeLocationFinder.findAccessibleColumn(world, 40, 40);
+
+        assertTrue(found.isPresent(), "un sol plat ordinaire, entouré de voisins praticables, doit être accepté");
+    }
+
+    @Test
+    void findAccessibleColumnRejectsLeafCanopyGround() {
+        // Reproduit le cas réel #153 : un waypoint posé au sommet du feuillage d'un acacia.
+        world.getBlockAt(50, 70, 50).setType(Material.ACACIA_LEAVES);
+        world.getBlockAt(50, 71, 50).setType(Material.AIR);
+        world.getBlockAt(50, 72, 50).setType(Material.AIR);
+
+        assertTrue(RandomSafeLocationFinder.findAccessibleColumn(world, 50, 50).isEmpty(),
+                "un sol de feuillage ne doit jamais être accepté comme ancre de structure");
+    }
+
+    @Test
+    void findAccessibleColumnRejectsAnIsolatedColumnWithNoWalkableNeighbor() {
+        // Colonne cible sûre en elle-même, mais ses 4 voisins sont totalement vides (surplomb/îlot) :
+        // aucune approche à pied n'est possible sans tomber dans le vide.
+        setGround(60, 64, 60, Material.STONE);
+        for (int[] offset : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+            for (int y = world.getMinHeight(); y <= 70; y++) {
+                world.getBlockAt(60 + offset[0], y, 60 + offset[1]).setType(Material.AIR);
+            }
+        }
+
+        assertTrue(RandomSafeLocationFinder.findAccessibleColumn(world, 60, 60).isEmpty(),
+                "une colonne isolée sans voisin praticable (surplomb/îlot) doit être refusée");
+    }
+
+    @Test
+    void findAccessibleColumnAcceptsAStepUpOrDownOfOneBlock() {
+        // Un seul voisin praticable, à ±1 bloc de hauteur (marche normale) : doit suffire.
+        setGround(70, 64, 70, Material.STONE);
+        for (int[] offset : new int[][] {{1, 0}, {0, 1}, {0, -1}}) {
+            for (int y = world.getMinHeight(); y <= 70; y++) {
+                world.getBlockAt(70 + offset[0], y, 70 + offset[1]).setType(Material.AIR);
+            }
+        }
+        setGround(69, 65, 70, Material.STONE); // voisin restant, un bloc plus haut : marche normale.
+
+        assertTrue(RandomSafeLocationFinder.findAccessibleColumn(world, 70, 70).isPresent(),
+                "un seul voisin praticable à un bloc d'écart doit suffire à valider l'accès");
+    }
+
     /** Retourne une séquence fixe de valeurs à chaque appel de {@code nextDouble()} (0.0 au-delà de la séquence). */
     private static final class FixedDoubleRandom extends Random {
         private final Deque<Double> values;

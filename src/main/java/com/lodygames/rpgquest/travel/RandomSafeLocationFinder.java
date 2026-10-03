@@ -115,6 +115,68 @@ public final class RandomSafeLocationFinder {
         return !feet.getType().isSolid() && !head.getType().isSolid(); // assez de place pour le joueur.
     }
 
+    /**
+     * Comme {@link #findAtColumn}, mais pour la <strong>pose</strong> d'une structure persistante
+     * (waypoint/borne, issue #153) plutôt qu'une arrivée de téléportation : {@code
+     * World#getHighestBlockYAt} traite le feuillage comme un sol solide, ce qui posait des
+     * structures flottant au sommet de la canopée, inaccessibles à pied sans casser/poser — interdit
+     * dans le Hub. Rejette donc en plus :
+     * <ul>
+     *   <li>un sol de feuillage (tout bloc {@code *_LEAVES}) ;</li>
+     *   <li>une colonne isolée (surplomb/îlot) : au moins une des 4 colonnes voisines doit être,
+     *       elle aussi, un sol solide non-feuillage à au plus un bloc de hauteur d'écart — une
+     *       vérification locale bornée (4 voisins), jamais un vrai pathfinding, qui élimine les
+     *       sommets d'arbre et les surplombs sans scanner le terrain.</li>
+     * </ul>
+     */
+    public static Optional<Location> findAccessibleColumn(World world, int x, int z) {
+        int groundY = world.getHighestBlockYAt(x, z);
+        if (groundY <= world.getMinHeight()) {
+            return Optional.empty();
+        }
+        if (!isAccessibleGround(world, x, groundY, z)) {
+            return Optional.empty();
+        }
+        return findAtColumn(world, x, z);
+    }
+
+    /**
+     * Même règle que {@link #findAccessibleColumn}, mais pour un sol déjà connu (diagnostic d'une
+     * structure déjà posée, issues #153/#156) — {@code groundY} est le dernier bloc du support
+     * (ex. {@code waypoint.y() - 1}), jamais recalculé via {@code getHighestBlockYAt} qui
+     * retournerait la structure elle-même une fois posée.
+     */
+    public static boolean isAccessibleGround(World world, int x, int groundY, int z) {
+        if (isLeafCanopy(world.getBlockAt(x, groundY, z).getType())) {
+            return false;
+        }
+        return hasWalkableApproach(world, x, groundY, z);
+    }
+
+    private static boolean hasWalkableApproach(World world, int x, int groundY, int z) {
+        int[][] offsets = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int[] offset : offsets) {
+            int nx = x + offset[0];
+            int nz = z + offset[1];
+            int neighborGroundY = world.getHighestBlockYAt(nx, nz);
+            if (neighborGroundY <= world.getMinHeight()) {
+                continue;
+            }
+            Material neighborGround = world.getBlockAt(nx, neighborGroundY, nz).getType();
+            if (isLeafCanopy(neighborGround) || !neighborGround.isSolid()) {
+                continue;
+            }
+            if (Math.abs(neighborGroundY - groundY) <= 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isLeafCanopy(Material type) {
+        return type.name().endsWith("_LEAVES");
+    }
+
     private static boolean isDangerous(Material type) {
         return type == Material.LAVA
                 || type == Material.FIRE

@@ -831,4 +831,57 @@ class TravelBeaconServiceTest {
         assertEquals(20, player.getLocation().getBlockX(),
                 "le clic réel sur la destination Villages doit réellement déclencher le voyage");
     }
+
+    // ---- Diagnostic et réparation (issues #153/#156) -----------------------------------------
+
+    @Test
+    void hubWaypointsWithoutBeaconListsAnUnpairedInstanceAndEmptiesOnceBeaconPairs() throws Exception {
+        waypointService.start();
+        service.start();
+        prepareHubArea(7000, 7000, Biome.PLAINS);
+        Location entry = new Location(hub, 7000.5, 65, 7000.5);
+        waypointService.ensureGenerated(hub, entry);
+        await(() -> waypointNear(7000, 7000).isPresent());
+
+        var unpaired = service.hubWaypointsWithoutBeacon();
+        assertEquals(1, unpaired.size());
+        assertEquals(waypointNear(7000, 7000).orElseThrow().id(), unpaired.get(0).id());
+
+        service.handleHubMovement(addPlayer(), entry);
+        await(() -> beaconNear(7000, 7000).isPresent());
+
+        assertTrue(service.hubWaypointsWithoutBeacon().isEmpty(),
+                "une fois la borne appariée, l'instance ne doit plus apparaître comme manquante");
+    }
+
+    @Test
+    void inaccessibleDetectsABeaconOnALeafCanopyAndRepairMovesItPreservingId() throws Exception {
+        waypointService.start();
+        service.start();
+        prepareHubArea(8000, 8000, Biome.PLAINS);
+        Location entry = new Location(hub, 8000.5, 65, 8000.5);
+        waypointService.ensureGenerated(hub, entry);
+        await(() -> waypointNear(8000, 8000).isPresent());
+        service.handleHubMovement(addPlayer(), entry);
+        await(() -> beaconNear(8000, 8000).isPresent());
+
+        TravelBeacon beacon = beaconNear(8000, 8000).orElseThrow();
+        assertTrue(service.inaccessible().isEmpty());
+        hub.getBlockAt(beacon.x(), beacon.y() - 1, beacon.z()).setType(Material.ACACIA_LEAVES);
+        assertEquals(1, service.inaccessible().size());
+
+        var error = service.repairBeacon(beacon.id());
+        assertTrue(error.isEmpty(), () -> "réparation de borne attendue en succès : " + error);
+
+        TravelBeacon repaired = service.all().stream().filter(b -> b.id().equals(beacon.id())).findFirst().orElseThrow();
+        assertEquals(beacon.id(), repaired.id());
+        assertEquals(beacon.biomeInstance(), repaired.biomeInstance());
+        assertTrue(repaired.x() != beacon.x() || repaired.z() != beacon.z(), "la position doit réellement changer");
+        assertTrue(service.inaccessible().isEmpty());
+    }
+
+    @Test
+    void repairBeaconFailsCleanlyWhenBeaconDoesNotExist() {
+        assertTrue(service.repairBeacon("does_not_exist").isPresent());
+    }
 }

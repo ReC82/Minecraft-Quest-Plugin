@@ -177,6 +177,150 @@ public final class TravelBeaconService implements PluginService {
         return List.copyOf(byId.values());
     }
 
+    // ---- Diagnostic (issue #156) : waypoints Hub sans borne appariée --------------------------
+
+    /**
+     * Instances de biome du Hub qui ont déjà un waypoint mais <strong>aucune</strong> borne
+     * appariée, à partir des données persistées/indexées — jamais une dépendance à la découverte
+     * d'un joueur. Permet de distinguer « jamais essayé », « en attente de réessai » et « jamais
+     * généré » sans parcours joueur par commandes.
+     */
+    public List<Waypoint> hubWaypointsWithoutBeacon() {
+        String hub = hubWorld.get();
+        if (hub == null || hub.isBlank()) {
+            return List.of();
+        }
+        List<Waypoint> result = new ArrayList<>();
+        for (Waypoint waypoint : waypointService.all()) {
+            if (!waypoint.world().equals(hub)) {
+                continue;
+            }
+            if (!byBiomeInstance.containsKey(instanceKey(waypoint.world(), waypoint.biomeInstance()))) {
+                result.add(waypoint);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * État de réessai borné (en mémoire, remis à zéro à chaque redémarrage) pour une instance de
+     * biome dont l'appariement a déjà échoué au moins une fois — {@link Optional#empty()} si jamais
+     * tenté, en cours, ou en attente d'un prochain passage du joueur plutôt qu'un délai écoulé.
+     */
+    public Optional<Long> pairingRetryRemainingMillis(String world, String biomeInstance) {
+        Long notBefore = pairRetryNotBefore.get(instanceKey(world, biomeInstance));
+        if (notBefore == null) {
+            return Optional.empty();
+        }
+        return Optional.of(Math.max(0L, notBefore - System.currentTimeMillis()));
+    }
+
+    // ---- Diagnostic et réparation (issue #153) : bornes inaccessibles -------------------------
+
+    /** Bornes dont l'ancre actuelle échoue désormais le contrôle d'accessibilité (#153). */
+    public List<TravelBeacon> inaccessible() {
+        List<TravelBeacon> result = new ArrayList<>();
+        for (TravelBeacon beacon : byId.values()) {
+            World world = plugin.getServer().getWorld(beacon.world());
+            if (world == null) {
+                continue;
+            }
+            if (!RandomSafeLocationFinder.isAccessibleGround(world, beacon.x(), beacon.y() - 1, beacon.z())) {
+                result.add(beacon);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Même principe que {@code WaypointService#repair} : cherche un nouvel emplacement accessible
+     * autour de la position actuelle, déplace uniquement les blocs de la structure, conserve
+     * {@code id}/{@code biomeInstance}.
+     */
+    public Optional<String> repairBeacon(String beaconId) {
+        TravelBeacon existing = byId.get(beaconId);
+        if (existing == null) {
+            return Optional.of("Borne introuvable : " + beaconId);
+        }
+        World world = plugin.getServer().getWorld(existing.world());
+        if (world == null) {
+            return Optional.of("Monde non chargé : " + existing.world());
+        }
+        long seed = ("repair-beacon:" + beaconId).hashCode();
+        TravelConfig.BeaconConfig bc = travelConfig.get().beacon();
+        int ring = Math.max(16, bc.pairMaxSpacing());
+        List<WaypointGenerationPlanner.Candidate> candidates = planner.candidates(
+                existing.x(), existing.z(), seed, 4, ring, travelConfig.get().waypoint().candidateAttempts());
+
+        for (WaypointGenerationPlanner.Candidate candidate : candidates) {
+            Optional<Location> safe = RandomSafeLocationFinder.findAccessibleColumn(world, candidate.blockX(), candidate.blockZ());
+            if (safe.isEmpty()) {
+                continue;
+            }
+            int anchorX = safe.get().getBlockX();
+            int anchorY = safe.get().getBlockY();
+            int anchorZ = safe.get().getBlockZ();
+            BlockFace facing = facingAwayFrom(existing.x(), existing.z(), anchorX, anchorZ);
+            if (!areaFree(world, anchorX, anchorY, anchorZ, facing)
+                    || waypointService.isProtectedBlock(world.getName(), anchorX, anchorY, anchorZ)
+                    || violatesBeaconSpacingExcluding(beaconId, world.getName(), anchorX, anchorZ,
+                            travelConfig.get().waypoint().minimumSpacing())) {
+                continue;
+            }
+
+            deindexPositionalBlocks(existing);
+            removeStructureBlocks(world, existing.x(), existing.y(), existing.z(), parseFacing(existing.facing()));
+            place(world, anchorX, anchorY, anchorZ, facing);
+            TravelBeacon repaired = new TravelBeacon(existing.id(), existing.world(), anchorX, anchorY, anchorZ,
+                    facing.name(), existing.modelVersion(), existing.active(), existing.biomeInstance(), existing.createdAt());
+            index(repaired);
+            repository.updatePosition(repaired).exceptionally(error -> {
+                logger.error("Impossible de persister la réparation de la borne {}", beaconId, error);
+                return null;
+            });
+            logger.info("Borne « {} » réparée : {},{},{} -> {},{},{}.", beaconId,
+                    existing.x(), existing.y(), existing.z(), anchorX, anchorY, anchorZ);
+            return Optional.empty();
+        }
+        return Optional.of("Aucun emplacement accessible trouvé près de l'ancienne — réessaie plus tard.");
+    }
+
+    private void deindexPositionalBlocks(TravelBeacon beacon) {
+        BlockFace facing = parseFacing(beacon.facing());
+        int ix = beacon.x() + facing.getModX();
+        int iz = beacon.z() + facing.getModZ();
+        byInteractorBlock.remove(blockKey(beacon.world(), ix, beacon.y() + 1, iz));
+        protectedBlocks.remove(blockKey(beacon.world(), beacon.x(), beacon.y() - 1, beacon.z()));
+        protectedBlocks.remove(blockKey(beacon.world(), beacon.x(), beacon.y(), beacon.z()));
+        protectedBlocks.remove(blockKey(beacon.world(), beacon.x(), beacon.y() + 1, beacon.z()));
+        protectedBlocks.remove(blockKey(beacon.world(), ix, beacon.y() + 1, iz));
+    }
+
+    /** Ne retire jamais le sol — seulement le support, le bloc de diamant et le bouton. */
+    private static void removeStructureBlocks(World world, int x, int y, int z, BlockFace facing) {
+        world.getBlockAt(x, y, z).setType(Material.AIR, false);
+        world.getBlockAt(x, y + 1, z).setType(Material.AIR, false);
+        world.getBlockAt(x + facing.getModX(), y + 1, z + facing.getModZ()).setType(Material.AIR, false);
+    }
+
+    private boolean violatesBeaconSpacingExcluding(String excludeId, String world, int x, int z, int minSpacing) {
+        if (minSpacing <= 0) {
+            return false;
+        }
+        long minSq = (long) minSpacing * minSpacing;
+        for (TravelBeacon existing : byId.values()) {
+            if (existing.id().equals(excludeId) || !existing.world().equals(world)) {
+                continue;
+            }
+            long dx = existing.x() - x;
+            long dz = existing.z() - z;
+            if (dx * dx + dz * dz < minSq) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // ---- Placement administrateur ------------------------------------------------------------
 
     /**
@@ -312,7 +456,8 @@ public final class TravelBeaconService implements PluginService {
                 waypoint.x(), waypoint.z(), seed, bc.pairMinSpacing(), bc.pairMaxSpacing(), attempts);
 
         for (WaypointGenerationPlanner.Candidate candidate : candidates) {
-            Optional<Location> safe = RandomSafeLocationFinder.findAtColumn(world, candidate.blockX(), candidate.blockZ());
+            // #153 : jamais une borne flottant au sommet d'un arbre ni sur un surplomb isolé.
+            Optional<Location> safe = RandomSafeLocationFinder.findAccessibleColumn(world, candidate.blockX(), candidate.blockZ());
             if (safe.isEmpty()) {
                 continue;
             }

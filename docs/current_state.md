@@ -94,26 +94,36 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `waypoint_discoveries`), config `travel.waypoint.*`. Hors périmètre MVP : téléportation, coût,
   menus, waypoint de quête, éditeur/lecture PlugAdmin (`WaypointService` expose déjà `all()` /
   `byId()` / `discoveryCount()`). Validation en jeu : `PENDING MANUAL VALIDATION`.
-- **Réseau de voyage / bornes** *(issues #132/#150/#151)* — `com.lodygames.rpgquest.travel.beacon`,
+- **Réseau de voyage / bornes** *(issues #132/#150/#151/#149)* — `com.lodygames.rpgquest.travel.beacon`,
   **strictement distinct** des waypoints/waystones (aucune fusion d'identité/table, lecture seule
   de `WaypointService#discoveredBy`/`#hasActivelyDiscovered`). Borne = même support qu'un waypoint
-  mais `DIAMOND_BLOCK` + `OAK_BUTTON` ; son bouton ouvre un **menu graphique** (`BeaconMenuHolder`,
-  anti-vol/duplication comme `ui.QuestJournalService`) à trois catégories, **toutes revalidées
-  fraîchement à chaque clic** : « Waypoints découverts » (actifs du joueur courant uniquement,
-  pagination 45/page, **recherche graphique par enclume virtuelle** `InventoryType.ANVIL` sans
-  bloc réel ni coût XP, insensible casse/accents) ; « Mon claim » (résout `ClaimService#mainClaimOf`,
-  jamais une coordonnée copiée — icône grisée + message si absent, arrivée revérifiée **dans** le
-  cuboïde actif du claim) ; « Villages » (centres administrés `VillageCenter`, table
-  `village_centers`, identité **indépendante du monde** — plusieurs centres possibles dans
-  `world_hub`, arrivée à la position/orientation exacte administrée). Sélection toujours revalidée
-  côté serveur (jamais un clic périmé), arrivée sûre (`RandomSafeLocationFinder#findAtColumn` pour
-  waypoints/claim). Administration : **uniquement** via `/rpgadmin travel beacon set` (borne,
-  position réelle, idempotent) et `/rpgadmin travel village sethub|set|remove|enable|disable|list`
-  (centres — `sethub` réutilise le spawn du Hub déjà configuré, jamais une coordonnée inventée) —
-  génération automatique par biome du Hub = issue #149, **non traitée**. Migrations **V19**
-  (`travel_beacons`) et **V20** (`village_centers`). Hors périmètre de cette livraison : génération
-  Hub (#149), administration PlugAdmin (#152). Validation en jeu :
-  `PENDING MANUAL VALIDATION`.
+  mais `DIAMOND_BLOCK` + bouton en bois configurable (`OAK_BUTTON` par défaut) ; son bouton ouvre un
+  **menu graphique** (`BeaconMenuHolder`, anti-vol/duplication comme `ui.QuestJournalService`) à
+  trois catégories, **toutes revalidées fraîchement à chaque clic** : « Waypoints découverts »
+  (actifs du joueur courant uniquement, pagination 45/page, **recherche graphique par enclume
+  virtuelle** `InventoryType.ANVIL` sans bloc réel ni coût XP, insensible casse/accents) ; « Mon
+  claim » (résout `ClaimService#mainClaimOf`, jamais une coordonnée copiée — icône grisée + message
+  si absent, arrivée revérifiée **dans** le cuboïde actif du claim) ; « Villages » (centres
+  administrés `VillageCenter`, table `village_centers`, identité **indépendante du monde** —
+  plusieurs centres possibles dans `world_hub`, arrivée à la position/orientation exacte
+  administrée). Sélection toujours revalidée côté serveur (jamais un clic périmé), arrivée sûre
+  (`RandomSafeLocationFinder#findAtColumn` pour waypoints/claim). Placement administré :
+  `/rpgadmin travel beacon set` (borne **Wild**, position réelle, idempotent) et
+  `/rpgadmin travel village sethub|set|remove|enable|disable|list` (centres — `sethub` réutilise le
+  spawn du Hub déjà configuré, jamais une coordonnée inventée). **Génération automatique Hub
+  (#149)** : à l'entrée d'un joueur dans une instance de biome du Hub sans waypoint,
+  `WaypointService#ensureGenerated` (même mécanisme exact que #124, réutilisé tel quel — le Wild
+  continue de passer exclusivement par `handleMovement`, jamais touché) génère le waypoint, puis
+  une borne **distincte** (jamais à la même position) est appariée à proximité une fois ce waypoint
+  réellement persisté (anneau configurable, verrou mono-vol + retry borné — jamais de doublon même
+  avec plusieurs joueurs/après redémarrage) ; gating indépendant `travel.waypoint.hub-enabled` /
+  `travel.beacon.hub-generation.enabled` ; jamais dans le Wild ; les claims restent exclus ; les
+  waypoints/découvertes déjà existants du Wild ne sont jamais affectés. Migrations **V19**
+  (`travel_beacons`), **V20** (`village_centers`) et **V21** (`travel_beacons.biome_instance`, ALTER
+  idempotent). Hors périmètre : administration PlugAdmin (#152). Validation en jeu :
+  `PENDING MANUAL VALIDATION` (couverture automatisée détaillée dans le rapport #149 — tout ce qui
+  précède l'appel `teleportAsync` est testé, l'appel lui-même ne l'est jamais dans cet
+  environnement).
 - **Reset admin « nouveau joueur »** — `/rpgadmin player resetnew <joueur> confirm`
   (permission `rpgquest.admin.world`, console OK, online **ou** offline) : remet l'état RPGQuest
   d'un seul joueur à l'équivalent « jamais joué » (quêtes, Stories, variables/unlocks dont

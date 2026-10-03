@@ -1655,6 +1655,46 @@ le résumé de récompenses de TC-014).
 -   **Limites MockBukkit :** mêmes limites que TC-221 (`teleportAsync` non implémenté — les cas qui
     atteignent la téléportation sont ignorés, pas échoués, par les tests automatisés).
 
+### TC-223 — Génération automatique Hub : waypoint + borne appariée (issue #149, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** à l'entrée d'une instance de biome du Hub sans waypoint, un
+    waypoint (modèle or) **et** une borne distincte s'y génèrent automatiquement. Détail :
+    [TRAVEL.md](TRAVEL.md) §« Réseau de voyage / bornes ».
+-   **Préconditions :** JAR de cette session déployé **et redémarré**, `travel.waypoint.hub-enabled`
+    et `travel.beacon.hub-generation.enabled` à `true` dans `config.yml` (défauts de livraison).
+-   **Génération progressive :**
+    1.  Se déplacer dans `world_hub`, dans une zone de biome où aucun waypoint n'existe encore
+        (loin de toute zone déjà explorée par une session précédente).
+    2.  Attendre quelques secondes (génération asynchrone) : un waypoint (support +
+        `GOLD_BLOCK` + bouton) apparaît à distance raisonnable, jamais au pied du joueur.
+    3.  Continuer à se déplacer dans la même zone : une **borne** distincte (support +
+        `DIAMOND_BLOCK` + bouton en bois) apparaît à proximité du waypoint, **jamais à la même
+        position**, une fois le waypoint réellement généré.
+    4.  Cliquer le bouton du waypoint → découverte (message + son). Cliquer le bouton de la borne →
+        menu de voyage s'ouvre ; le waypoint tout juste découvert apparaît dans « Waypoints
+        découverts ».
+-   **Idempotence / plusieurs joueurs :**
+    5.  Revenir dans la même instance (ou y faire entrer un second joueur) : aucun second waypoint
+        ni seconde borne n'apparaît (même emplacement exact qu'à la première génération).
+    6.  Redémarrer le serveur, revenir sur place : waypoint et borne toujours présents, à la même
+        position (persistance, pas de régénération).
+-   **Non-régression Wild :** les waypoints et découvertes déjà existants dans le monde Wild
+    restent inchangés (positions, découvertes par joueur) ; `/rpgadmin travel beacon set` continue
+    de fonctionner normalement dans le Wild (placement administré, jamais auto-généré).
+-   **Protection :** tenter de casser le bloc d'or du waypoint et le bloc de diamant de la borne
+    générés dans le Hub (sans bypass) → refusé, comme pour une structure administrée.
+-   **Couverture automatisée :** `TravelBeaconServiceTest` (6 cas dédiés #149 — voir le rapport de
+    session pour le détail exact : génération progressive puis appariement distinct avec plusieurs
+    joueurs, deux instances distinctes du Hub chacune avec sa propre paire, gating
+    `hub-enabled`/`hub-generation.enabled` désactivés séparément, séparation stricte Wild/Hub
+    (placement administré jamais marqué auto-généré), protection des deux structures auto-générées).
+-   **Limites MockBukkit :** aucun des 6 nouveaux cas #149 n'atteint `teleportAsync` (ils
+    s'arrêtent à la génération/l'appariement/la protection) — **aucun n'est ignoré**, tous sont
+    réellement exécutés et vérifiés par l'automatisation. Seule la **découverte en jeu du bouton
+    et l'ouverture du menu** (étapes 4 et suivantes ci-dessus) restent `PENDING MANUAL VALIDATION` :
+    le placement physique des blocs et la logique de génération/appariement sont couverts
+    automatiquement, mais aucun trajet réel en jeu n'a été effectué dans cette session.
+
 ---
 
 ## Table de recette
@@ -1710,3 +1750,4 @@ le résumé de récompenses de TC-014).
 | TC-220 | Kit d'outils en bois #26 : demande explicite, tout ou rien, droit par mort (PENDING) | | | |
 | TC-221 | Réseau de voyage #132/#150 : découverte → mort → borne → menu → retour sûr (PENDING) | | | |
 | TC-222 | Réseau de voyage #151 : Mon claim et Villages (PENDING) | | | |
+| TC-223 | Réseau de voyage #149 : génération Hub waypoint + borne appariée (PENDING) | | | |

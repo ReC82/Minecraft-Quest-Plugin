@@ -411,7 +411,9 @@ En résumé :
 - **Protection MVP** (`WaypointProtectionListener`) : casse joueur, explosion, piston, feu, fluide
   entrant, entités (sable/gravier/enderman) ; bypass `rpgquest.admin.world`. Protection
   fonctionnelle anti-enfermement → issue #122.
-- **Config** : `travel.waypoint.{enabled,region-size,min-distance,max-distance,candidate-attempts,move-throttle-millis,minimum-spacing,model-version}`.
+- **Config** : `travel.waypoint.{enabled,region-size,min-distance,max-distance,candidate-attempts,move-throttle-millis,minimum-spacing,model-version,hub-enabled}`
+  (`hub-enabled`, issue #149, étend ce même mécanisme au monde Hub configuré — voir
+  « Réseau de voyage / bornes » ci-dessous).
 - **Pas de commande** dédiée dans ce MVP (`WaypointService` expose `all()` / `byId()` /
   `discoveryCount()` pour une future lecture PlugAdmin).
 
@@ -426,13 +428,29 @@ destination, jamais fusionnée dans leurs tables/identités — `TravelBeaconSer
 *lire* `WaypointService#discoveredBy`/`#hasActivelyDiscovered`, jamais écrire dedans.
 
 - **Structure physique** : même support qu'un waypoint (`COBBLESTONE_WALL`), mais `DIAMOND_BLOCK`
-  au lieu de `GOLD_BLOCK` et `OAK_BUTTON` au lieu de `STONE_BUTTON`. Le bouton ouvre le menu — il
-  ne découvre **jamais** le waypoint voisin. Table dédiée `travel_beacons` (migration V19),
+  au lieu de `GOLD_BLOCK` et un bouton en bois (essence configurable, `OAK_BUTTON` par défaut) au
+  lieu de `STONE_BUTTON`. Le bouton ouvre le menu — il ne découvre **jamais** le waypoint voisin.
+  Table dédiée `travel_beacons` (migration V19, colonne `biome_instance` ajoutée en V20→V21),
   protection des blocs identique à celle des waypoints (bypass `rpgquest.admin.world`).
-- **Placement** : **administrateur uniquement** dans cette livraison (issue #149 — génération
-  automatique par biome du Hub — non traitée). `/rpgadmin travel beacon set` pose une borne à la
-  position réelle de l'administrateur (jamais de coordonnée inventée), orientée selon son regard ;
-  idempotent (rejouer à la même colonne est refusé, pas de doublon).
+- **Placement administré** : `/rpgadmin travel beacon set` pose une borne à la position réelle de
+  l'administrateur (jamais de coordonnée inventée), orientée selon son regard ; idempotent (rejouer
+  à la même colonne est refusé, pas de doublon). Reste la **seule** voie de placement dans le
+  **Wild** — jamais de génération automatique en dehors du Hub.
+- **Génération automatique dans le Hub** (issue #149, réutilise le mécanisme exact de #124) :
+  à l'entrée d'un joueur dans une instance de biome du Hub (`hub.world`) sans waypoint,
+  `WaypointService#ensureGenerated` (même recherche de candidat/aire libre/espacement/verrou
+  mono-vol/retry borné que le Wild, exposée publiquement pour cet appel externe — `handleMovement`
+  du Wild reste strictement inchangé) génère d'abord le waypoint (modèle or, découverte par clic
+  comme partout ailleurs) ; une fois ce waypoint réellement persisté, `TravelBeaconService`
+  appaire une borne **distincte** (jamais à la même position) dans un anneau configurable autour de
+  lui (`travel.beacon.hub-generation.pair-min-spacing`/`pair-max-spacing`, par défaut 6..16 blocs),
+  en respectant les constructions et les blocs déjà protégés. Décision actée remplaçant
+  l'exclusion historique du Hub (#136/#137) ; les claims restent exclus. Persistant et idempotent
+  (verrou mono-vol + index unique par instance, même garantie qu'un waypoint du Wild : deux joueurs
+  ou un redémarrage ne créent jamais de doublon) ; les waypoints et découvertes déjà existants du
+  Wild ne sont jamais affectés. Gating : `travel.waypoint.hub-enabled` (coupe uniquement la
+  génération Hub, jamais le Wild) et `travel.beacon.hub-generation.enabled` (coupe uniquement
+  l'appariement de la borne, le waypoint continue de se générer seul).
 - **Menu graphique** (`InventoryHolder` dédié `BeaconMenuHolder`, même patron anti-vol/duplication
   que `ui.QuestJournalService` — tout clic/drag dans le menu est systématiquement annulé) :
   - Racine : trois catégories, revalidées à **chaque clic** (jamais l'état figé au moment de
@@ -469,9 +487,8 @@ destination, jamais fusionnée dans leurs tables/identités — `TravelBeaconSer
   l'administrateur, pour un centre secondaire ailleurs dans `world_hub`) ; `remove` / `enable` /
   `disable <id>` (déplacement/désactivation **sans jamais changer l'id**, donc sans casser une
   référence déjà exposée dans le menu) ; `list`.
-- **Hors périmètre de cette livraison** (voir le rapport de session pour le détail) : génération
-  automatique borne+waypoint par biome du Hub (#149), administration PlugAdmin des
-  bornes/villages/politiques (#152).
+- **Hors périmètre de cette livraison** (voir le rapport de session pour le détail) :
+  administration PlugAdmin des bornes/villages/politiques (#152).
 
 ## Tests
 

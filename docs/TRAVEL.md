@@ -415,6 +415,45 @@ En résumé :
 - **Pas de commande** dédiée dans ce MVP (`WaypointService` expose `all()` / `byId()` /
   `discoveryCount()` pour une future lecture PlugAdmin).
 
+## Réseau de voyage / bornes (`travel.beacon.TravelBeaconService`, issues #132/#150)
+
+**Priorité gameplay après #26.** Parcours livré : un joueur découvre un waypoint dans le Wild,
+meurt (ou se déplace simplement — rien dans ce système ne dépend de la mort elle-même, seules les
+découvertes persistées comptent), revient au Hub, actionne une **borne de voyage**, choisit son
+waypoint dans un menu graphique paginé/cherchable, et revient en sécurité exactement au même
+repère. **Strictement distinct** de Waystones/Waypoints ci-dessus : une borne n'est **jamais** une
+destination, jamais fusionnée dans leurs tables/identités — `TravelBeaconService` ne fait que
+*lire* `WaypointService#discoveredBy`/`#hasActivelyDiscovered`, jamais écrire dedans.
+
+- **Structure physique** : même support qu'un waypoint (`COBBLESTONE_WALL`), mais `DIAMOND_BLOCK`
+  au lieu de `GOLD_BLOCK` et `OAK_BUTTON` au lieu de `STONE_BUTTON`. Le bouton ouvre le menu — il
+  ne découvre **jamais** le waypoint voisin. Table dédiée `travel_beacons` (migration V19),
+  protection des blocs identique à celle des waypoints (bypass `rpgquest.admin.world`).
+- **Placement** : **administrateur uniquement** dans cette livraison (issue #149 — génération
+  automatique par biome du Hub — non traitée). `/rpgadmin travel beacon set` pose une borne à la
+  position réelle de l'administrateur (jamais de coordonnée inventée), orientée selon son regard ;
+  idempotent (rejouer à la même colonne est refusé, pas de doublon).
+- **Menu graphique** (`InventoryHolder` dédié `BeaconMenuHolder`, même patron anti-vol/duplication
+  que `ui.QuestJournalService` — tout clic/drag dans le menu est systématiquement annulé) :
+  - Racine : « Waypoints découverts » (câblé), « Mon claim » et « Villages » (issue #151, **affichés
+    mais non câblés** — message explicite au clic, jamais un bouton muet).
+  - Liste des waypoints **actifs réellement découverts par ce joueur** (jamais ceux d'un autre
+    joueur ni un waypoint désactivé), triée par biome, paginée (45/écran), navigation
+    page précédente/suivante, retour, fermeture.
+  - **Recherche graphique** : enclume virtuelle (`InventoryType.ANVIL` créée sans bloc réel, pattern
+    standard des GUI Paper/Bukkit), coût de réparation forcé à **0** à chaque `PrepareAnvilEvent`
+    (aucun coût XP), aucun objet du menu réellement récupérable (clic sur le résultat toujours
+    annulé, le texte est lu puis l'objet jeté). Filtrage **insensible à la casse et aux accents**
+    (`Normalizer` NFD + suppression des marques combinantes).
+  - **Revalidation stricte au départ** (`hasActivelyDiscovered`) : un clic périmé sur un waypoint
+    désactivé/supprimé/jamais découvert échoue proprement, sans téléportation. Arrivée sûre via
+    `RandomSafeLocationFinder#findAtColumn` (même mécanisme que la génération de waypoints) ; monde
+    non chargé ou colonne dangereuse → message d'erreur, aucun déplacement.
+  - Aucun chemin de ce service ne crée jamais de waypoint (jamais de génération pendant un voyage).
+- **Hors périmètre de cette livraison** (voir le rapport de session pour le détail) : « Mon claim »
+  et « Villages » fonctionnels (#151), génération automatique borne+waypoint par biome du Hub
+  (#149), administration PlugAdmin des bornes/politiques (#152).
+
 ## Tests
 
 Automatisés : `DestinationTest`, `PortalDefinitionTest` (invariants),

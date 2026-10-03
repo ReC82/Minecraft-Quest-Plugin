@@ -213,6 +213,16 @@ Page docs-site : `hub-safe-zone.html`.
 
 À savoir : voir « Spawn Minecraft vs Multiverse vs RPGQuest » en section 7 — c'est **cette** commande, jamais `/mv setspawn`, qui définit le spawn gameplay réel.
 
+### Bornes du réseau de voyage — `/rpgadmin travel` (issues #132/#150)
+Voir aussi `docs/TRAVEL.md` section « Réseau de voyage / bornes » pour le détail complet.
+
+| Commande | Effet | Persistance |
+|---|---|---|
+| `/rpgadmin travel beacon set` | Pose une borne de voyage (support waypoint + `DIAMOND_BLOCK` + `OAK_BUTTON`) à la position **réelle** du joueur, orientée selon son regard. Idempotent (rejouer à la même colonne est refusé). | oui — SQLite (`travel_beacons`, migration V19) |
+
+À savoir : seul moyen de créer une borne dans cette livraison — aucune génération automatique
+(issue #149, non traitée). Son bouton ouvre le menu de voyage pour **tout** joueur, sans commande.
+
 ### Mondes supplémentaires — `/rpgadmin world`
 Voir section 7 (Mondes) pour le détail complet — non dupliqué ici.
 
@@ -1086,6 +1096,21 @@ sont des repères physiques persistants, partagés, générés **par instance r�
   PlugAdmin complet, lecture `/waypoints` (une lecture Control Panel est prévue par #124 mais non
   livrée dans ce MVP — `WaypointService` expose déjà `all()` / `byId()` / `discoveryCount()`).
 
+### Réseau de voyage / bornes (issues #132/#150)
+
+Vérifié dans `src/main/java/com/lodygames/rpgquest/travel/beacon/` et `docs/TRAVEL.md` (section
+dédiée, détail complet). Fournit le fast travel que les waypoints eux-mêmes n'apportent pas :
+**borne** physique (même support qu'un waypoint, `DIAMOND_BLOCK` + `OAK_BUTTON`, jamais fusionnée
+avec les tables waypoint/waystone) dont le bouton ouvre un **menu graphique** vers les waypoints
+**déjà découverts par ce joueur** (`Waypoints découverts` câblé ; `Mon claim`/`Villages` affichés
+mais renvoyés à l'issue #151, non câblés ici). Pagination (45/page), recherche graphique via une
+enclume virtuelle (`InventoryType.ANVIL`, aucun coût XP, insensible casse/accents), revalidation
+stricte de la découverte/de l'état du waypoint au départ, arrivée sûre
+(`RandomSafeLocationFinder#findAtColumn`). Placement d'une borne : **administrateur uniquement**
+dans cette livraison, `/rpgadmin travel beacon set` (position réelle de l'exécutant, idempotent) —
+la génération automatique par biome du Hub est l'issue #149, non traitée ici. Table dédiée
+`travel_beacons` (migration V19).
+
 ---
 
 ## 8. Claims
@@ -1531,6 +1556,7 @@ database:
 | V16 | `item_travel_cooldowns` | Voyage — cooldown Rune de rappel |
 | V17 | `waystones`, `waystone_discoveries` | Voyage — Waystones Wild |
 | V18 | `waypoints`, `waypoint_discoveries` | Waypoints par instance de biome (#124) |
+| V19 | `travel_beacons` | Bornes du réseau de voyage (#132/#150) |
 
 Suivi de version : `PRAGMA user_version` en SQLite (natif, inchangé) ; table portable
 `rpgquest_schema_migrations` en MySQL (#41). `SchemaMigrationRunner` applique les étapes en

@@ -1558,6 +1558,59 @@ le résumé de récompenses de TC-014).
 
 ---
 
+## 22. Réseau de voyage / bornes (issues #132/#150)
+
+### TC-221 — Parcours complet découverte → mort → borne → menu → retour sûr (PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `travel.beacon.TravelBeaconService`, `/rpgadmin travel beacon set`.
+    Détail : [TRAVEL.md](TRAVEL.md) §« Réseau de voyage / bornes ».
+-   **Préconditions :** JAR de cette session déployé **et redémarré** (non fait dans cette session —
+    aucune autorisation de déploiement reçue pour ce chantier), au moins un waypoint déjà généré et
+    découvert dans `wild` (voir TC-210).
+-   **Placement de la première borne (admin) :**
+    1.  Se rendre près du village actuel du Hub, `/rpgadmin travel beacon set` → message de
+        succès, structure visible (support pierre + **bloc de diamant** + **bouton en bois**).
+    2.  Rejouer la commande exactement au même endroit → refusée (« une borne existe déjà »),
+        aucune deuxième structure posée.
+-   **Parcours joueur (non-op) :**
+    3.  Dans `wild`, découvrir un waypoint (clic droit sur son bouton, voir TC-210).
+    4.  Mourir (ou simplement revenir au Hub par un autre moyen) puis se rendre à la borne.
+    5.  Clic droit sur le bouton de la borne → menu graphique, **sans aucune commande**.
+    6.  Catégorie « Waypoints découverts » → le waypoint découvert à l'étape 3 apparaît, avec un
+        nom lisible (biome).
+    7.  Catégories « Mon claim » / « Villages » → message clair indiquant qu'elles ne sont pas
+        encore disponibles (pas un bouton qui ne fait rien silencieusement).
+    8.  Cliquer le waypoint découvert → fermeture du menu, téléportation **sûre** tout près de ce
+        waypoint (même zone que la quête en cours).
+    9.  Tenter la borne avec un **second compte non-op** n'ayant rien découvert → catégorie
+        Waypoints vide, message explicite, aucun accès aux waypoints du premier joueur.
+-   **Recherche et pagination (si plusieurs waypoints découverts) :**
+    10. Bouton « Rechercher » → une **enclume s'ouvre** (pas de commande, pas de saisie chat) ;
+        taper un nom (ou un fragment, casse/accents quelconques) puis cliquer le résultat → liste
+        filtrée en conséquence ; aucun objet n'est récupérable depuis cette enclume, aucun coût
+        d'expérience prélevé.
+    11. Avec plus de 45 waypoints découverts (si atteignable) : pagination page suivante/précédente
+        fonctionnelle.
+-   **Revalidation / erreurs :**
+    12. Si un waypoint affiché est supprimé/désactivé entre l'ouverture du menu et le clic (ou en
+        rouvrant le menu après une désactivation côté admin) : message propre, aucune
+        téléportation, jamais de crash.
+    13. Couper/décharger le monde de destination (si testable) : message « monde non chargé »,
+        aucun déplacement.
+-   **Reset :** aucune donnée joueur à réinitialiser spécifiquement ; `travel_beacons` est une
+    table purement administrative, sans impact sur `/rpgadmin player resetnew`.
+-   **Couverture automatisée :** `TravelBeaconServiceTest` (9 cas : placement + structure +
+    idempotence, protection anti-casse, ouverture du menu racine au clic bouton, état vide sans
+    découverte, isolation des découvertes entre deux joueurs, parcours complet
+    découverte→borne→menu→retour sûr au même waypoint, clic périmé/destination inconnue sans
+    téléportation, pagination au-delà de 45 entrées, recherche insensible casse/accents).
+-   **Limites MockBukkit (à couvrir uniquement en jeu) :** rendu réel de l'enclume virtuelle côté
+    client (apparence, clavier de saisie), ressenti de la pagination/recherche avec un très grand
+    nombre réel de waypoints, physique réelle de protection des blocs (explosion/piston en
+    conditions réelles), plusieurs joueurs réels cliquant la borne simultanément.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -1609,3 +1662,4 @@ le résumé de récompenses de TC-014).
 | TC-200 | Storyline : progression automatique de bout en bout | | | |
 | TC-210 | Waypoints #124 : génération, découverte bouton, protection, persistance (PENDING) | | | |
 | TC-220 | Kit d'outils en bois #26 : demande explicite, tout ou rien, droit par mort (PENDING) | | | |
+| TC-221 | Réseau de voyage #132/#150 : découverte → mort → borne → menu → retour sûr (PENDING) | | | |

@@ -94,6 +94,22 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `waypoint_discoveries`), config `travel.waypoint.*`. Hors périmètre MVP : téléportation, coût,
   menus, waypoint de quête, éditeur/lecture PlugAdmin (`WaypointService` expose déjà `all()` /
   `byId()` / `discoveryCount()`). Validation en jeu : `PENDING MANUAL VALIDATION`.
+- **Réseau de voyage / bornes** *(issues #132/#150)* — `com.lodygames.rpgquest.travel.beacon`,
+  **strictement distinct** des waypoints/waystones (aucune fusion d'identité/table, lecture seule
+  de `WaypointService#discoveredBy`/`#hasActivelyDiscovered`). Borne = même support qu'un waypoint
+  mais `DIAMOND_BLOCK` + `OAK_BUTTON` ; son bouton ouvre un **menu graphique** (`BeaconMenuHolder`,
+  anti-vol/duplication comme `ui.QuestJournalService`) vers les waypoints **actifs réellement
+  découverts par le joueur qui clique**, catégorie « Waypoints découverts » câblée, « Mon claim » /
+  « Villages » affichées mais renvoyées à l'issue #151 (message explicite, pas un bouton muet).
+  Pagination 45/page, **recherche graphique par enclume virtuelle** (`InventoryType.ANVIL` sans
+  bloc réel, coût de réparation forcé à 0, insensible casse/accents). Sélection revalidée côté
+  serveur (jamais un clic périmé sur un waypoint désactivé/supprimé/non découvert), arrivée sûre
+  (`RandomSafeLocationFinder#findAtColumn`). Placement d'une borne : **administrateur uniquement**
+  dans cette livraison (`/rpgadmin travel beacon set`, position réelle de l'exécutant, idempotent)
+  — génération automatique par biome du Hub = issue #149, **non traitée**. Migration **V19**
+  (`travel_beacons`). Hors périmètre de cette livraison : « Mon claim »/« Villages » fonctionnels
+  (#151), génération Hub (#149), administration PlugAdmin (#152). Validation en jeu :
+  `PENDING MANUAL VALIDATION`.
 - **Reset admin « nouveau joueur »** — `/rpgadmin player resetnew <joueur> confirm`
   (permission `rpgquest.admin.world`, console OK, online **ou** offline) : remet l'état RPGQuest
   d'un seul joueur à l'équivalent « jamais joué » (quêtes, Stories, variables/unlocks dont

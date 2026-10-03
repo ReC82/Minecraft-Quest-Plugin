@@ -216,6 +216,20 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-03 (soir)
+Branche de départ: feat/control-panel-admin-tools
+Étape de départ: issues #132 + #150 (réseau de voyage / bornes, priorité gameplay après #26, cahier des charges détaillé reçu en conversation : budget 60-90 min, décision actée que world_hub devient explorable) — plugin gameplay, hors étapes 1-23
+Étapes terminées: #132 + #150 PARTIAL — socle testé : parcours complet waypoint découvert (Wild) → mort → borne (Hub) → menu graphique → retour sûr au même waypoint. Nouveau travel.beacon.TravelBeaconService (+TravelBeaconListener/TravelBeaconProtectionListener/BeaconMenuHolder/BeaconMenuSession), table travel_beacons (migration V19, CURRENT_VERSION 18->19) strictement distincte de waypoints/waystones (WaypointService.discoveredBy/hasActivelyDiscovered ajoutées en lecture seule, aucun changement de comportement existant). Menu : « Waypoints découverts » câblé (pagination 45/page, recherche graphique par enclume virtuelle InventoryType.ANVIL sans coût XP ni objet récupérable, insensible casse/accents via Normalizer NFD, revalidation stricte hasActivelyDiscovered au départ, arrivée sûre RandomSafeLocationFinder#findAtColumn) ; « Mon claim »/« Villages » affichées mais explicitement renvoyées à #151 (message clair, jamais un bouton muet). Placement de borne : /rpgadmin travel beacon set (admin uniquement, position réelle, idempotent — génération automatique Hub = #149 non traitée). Structure borne = même support qu'un waypoint (COBBLESTONE_WALL) mais DIAMOND_BLOCK + OAK_BUTTON, jamais de découverte du waypoint voisin. #151 (Mon claim/Villages), #149 (génération Hub), #152 (admin Control Panel) non commencés — hors budget de cette session, prochaines étapes dans cet ordre.
+Branche finale: feat/control-panel-admin-tools (y rester, ne rien merger/déployer/redémarrer pour ce chantier — seule l'autorisation du kit #26 avait été donnée, jamais étendue à celui-ci)
+Dernier commit: (voir git log — commit feat(travel): #132 #150)
+Build: ./gradlew compileJava/compileTestJava verts ; ./gradlew build à confirmer dans le commit (RPGQUEST_TEST_MAX_HEAP=768m)
+Tests: verts en ciblé — nouveau TravelBeaconServiceTest (9 cas : placement+structure+idempotence, protection anti-casse, ouverture menu racine au clic bouton, état vide, isolation des découvertes entre 2 joueurs, parcours complet découverte->borne->menu->retour sûr, clic périmé/destination inconnue sans téléportation, pagination >45, recherche insensible casse/accents) ; SchemaMigratorTest (version 19 + table travel_beacons) ; RpgAdminTestShortcutsCommandTest (constructeur mis à jour) ; waypoint.* inchangés et toujours verts. Suite complète :test lancée pour confirmer l'absence de régression ailleurs (voir commit suivant si le résultat n'était pas encore revenu à la rédaction de cette entrée).
+Tests manuels en attente: TC-221 (docs/MANUAL_TEST_PLAN.md) — PENDING MANUAL VALIDATION, aucun déploiement effectué pour ce chantier donc rien de testable en jeu pour l'instant.
+Blocages: aucun — deux bugs internes trouvés et corrigés pendant l'écriture des tests (décalage d'ancre d'un bloc dans placeAt ; idempotence cassée par le recalcul de hauteur de sol après une première pose), voir le rapport de session pour le détail.
+Première étape à reprendre: #151 (Mon claim / Villages) puis #149 (génération Hub) puis #152 (admin Control Panel), dans cet ordre annoncé par le découpage du ticket ; validation manuelle TC-221 dès qu'un déploiement est autorisé.
+```
+
+```text
 Date: 2026-10-03
 Branche de départ: feat/control-panel-admin-tools
 Étape de départ: issue #26 (partie « kit de départ » uniquement, cahier des charges détaillé reçu en conversation dans ce chat : kit d'outils en bois demandé explicitement au Guide, remise tout ou rien, droit renouvelé à chaque mort — remplace l'ancienne règle de remise unique à vie) — plugin gameplay, hors étapes 1-23, sans rapport avec le travail Control Panel de cette branche

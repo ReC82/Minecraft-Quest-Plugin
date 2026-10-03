@@ -22,6 +22,7 @@ import com.lodygames.rpgquest.story.StoryService;
 import com.lodygames.rpgquest.story.model.StoryDefinition;
 import com.lodygames.rpgquest.story.model.StoryState;
 import com.lodygames.rpgquest.travel.WorldPortalDebugService;
+import com.lodygames.rpgquest.travel.beacon.TravelBeaconService;
 import com.lodygames.rpgquest.travel.WorldPortalRegistry;
 import com.lodygames.rpgquest.travel.WorldPortalTeleportListener;
 import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
@@ -85,7 +86,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String DEBUG_PERMISSION = "rpgquest.admin.debug";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide");
+            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel");
+    private static final List<String> TRAVEL_SUBCOMMANDS = List.of("beacon");
+    private static final List<String> TRAVEL_BEACON_SUBCOMMANDS = List.of("set");
     private static final List<String> GUIDE_SUBCOMMANDS = List.of("list", "info");
     private static final List<String> WAYSTONE_SUBCOMMANDS =
             List.of("list", "here", "tp", "generatehere", "reset");
@@ -129,6 +132,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final QuestProgressEngine questProgressEngine;
     private final YamlQuestEngine questEngine;
     private final PlayerVariableRepository variableRepository;
+    private final TravelBeaconService travelBeaconService;
     private final RPGQuestPlugin plugin;
 
     public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService,
@@ -139,7 +143,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             StoryService storyService, WaystoneService waystoneService,
                             PlayerResetService playerResetService, HubGuideRegistry hubGuideRegistry,
                             QuestProgressEngine questProgressEngine, YamlQuestEngine questEngine,
-                            PlayerVariableRepository variableRepository, RPGQuestPlugin plugin) {
+                            PlayerVariableRepository variableRepository, TravelBeaconService travelBeaconService,
+                            RPGQuestPlugin plugin) {
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
@@ -159,6 +164,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         this.questProgressEngine = questProgressEngine;
         this.questEngine = questEngine;
         this.variableRepository = variableRepository;
+        this.travelBeaconService = travelBeaconService;
         this.plugin = plugin;
     }
 
@@ -223,6 +229,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handleWorldPortal(player, args);
         } else if (args[0].equalsIgnoreCase("waystone")) {
             handleWaystone(player, args);
+        } else if (args[0].equalsIgnoreCase("travel")) {
+            handleTravel(player, args);
         } else {
             sendUsage(player);
         }
@@ -863,6 +871,32 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         // superflu et incohérent de dupliquer un log spécifique à cette seule commande.
         player.teleportAsync(location.get());
         player.sendMessage(MM.deserialize("<green>Téléporté au spawn du village.</green>"));
+    }
+
+    // ---- Réseau de voyage (issues #132/#150) ------------------------------------
+
+    private void handleTravel(Player player, String[] args) {
+        if (args.length < 2 || !args[1].equalsIgnoreCase("beacon")) {
+            sendTravelUsage(player);
+            return;
+        }
+        if (args.length < 3 || !args[2].equalsIgnoreCase("set")) {
+            sendTravelUsage(player);
+            return;
+        }
+        var error = travelBeaconService.placeAt(player, player.getLocation());
+        if (error.isPresent()) {
+            player.sendMessage(MM.deserialize("<red><msg></red>", Placeholder.unparsed("msg", error.get())));
+            return;
+        }
+        player.sendMessage(MM.deserialize(
+                "<green>Borne de voyage placée à ta position.</green> "
+                        + "<gray>Un clic sur son bouton ouvre le menu de voyage.</gray>"));
+    }
+
+    private void sendTravelUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin travel beacon set</yellow> <gray>- place une borne de voyage à ta position actuelle</gray>"));
     }
 
     private void sendSpawnUsage(CommandSender sender) {
@@ -2246,6 +2280,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         sendMobUsage(sender);
         sendNpcUsage(sender);
         sendSpawnUsage(sender);
+        sendTravelUsage(sender);
         sendWorldUsage(sender);
         sendWorldPortalUsage(sender);
         sendStoryUsage(sender);
@@ -2298,6 +2333,12 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("spawn")) {
             return SPAWN_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("travel")) {
+            return TRAVEL_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("travel") && args[1].equalsIgnoreCase("beacon")) {
+            return TRAVEL_BEACON_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("world")) {
             return WORLD_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();

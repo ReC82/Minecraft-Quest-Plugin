@@ -343,6 +343,37 @@ public final class WaypointService implements PluginService {
         return repository.discoveryCountForWaypoint(waypointId);
     }
 
+    /**
+     * Waypoints <strong>actifs</strong> déjà découverts par ce joueur (issue #132/#150 — menu de
+     * voyage), toujours à partir de l'état mémoire tenu à jour par {@link #handleJoin}/
+     * {@link #handleInteract} — jamais un snapshot figé. Un waypoint désactivé après coup
+     * disparaît de cette liste sans que la ligne de découverte elle-même soit effacée.
+     */
+    public List<Waypoint> discoveredBy(UUID playerId) {
+        Set<String> discovered = discoveriesByPlayer.get(playerId);
+        if (discovered == null || discovered.isEmpty()) {
+            return List.of();
+        }
+        List<Waypoint> result = new ArrayList<>();
+        for (String id : discovered) {
+            Waypoint waypoint = byId.get(id);
+            if (waypoint != null && waypoint.active()) {
+                result.add(waypoint);
+            }
+        }
+        return result;
+    }
+
+    /** Revalidation stricte au moment du départ (issue #150) : jamais un waypoint non découvert via un clic périmé. */
+    public boolean hasActivelyDiscovered(UUID playerId, String waypointId) {
+        Waypoint waypoint = byId.get(waypointId);
+        if (waypoint == null || !waypoint.active()) {
+            return false;
+        }
+        Set<String> discovered = discoveriesByPlayer.get(playerId);
+        return discovered != null && discovered.contains(waypointId);
+    }
+
     // ---- Interne ----------------------------------------------------------------------------
 
     private void index(Waypoint waypoint) {

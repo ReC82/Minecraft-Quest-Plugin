@@ -21,7 +21,7 @@ import java.util.List;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 18;
+    public static final int CURRENT_VERSION = 19;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -42,7 +42,8 @@ public final class SchemaMigrator {
             new SchemaMigration(15, "claims land reservation columns", SchemaMigrator::applyV15),
             new SchemaMigration(16, "item_travel_cooldowns", SchemaMigrator::applyV16),
             new SchemaMigration(17, "waystones, waystone_discoveries", SchemaMigrator::applyV17),
-            new SchemaMigration(18, "waypoints, waypoint_discoveries", SchemaMigrator::applyV18));
+            new SchemaMigration(18, "waypoints, waypoint_discoveries", SchemaMigrator::applyV18),
+            new SchemaMigration(19, "travel_beacons", SchemaMigrator::applyV19));
 
     private SchemaMigrator() {
     }
@@ -559,6 +560,28 @@ public final class SchemaMigrator {
                         discovered_at TEXT NOT NULL,
                         PRIMARY KEY (player_uuid, waypoint_id),
                         FOREIGN KEY (player_uuid) REFERENCES player_profiles (uuid) ON DELETE CASCADE
+                    )
+                    """));
+        }
+    }
+
+    private static void applyV19(Connection connection, SqlDialect dialect) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Bornes du réseau de voyage (issues #132/#150) : point d'accès au menu de voyage,
+            // jamais une destination en soi — table strictement séparée de waypoints/waystones
+            // (ne jamais fusionner les identités). x/y/z = ancre (colonne de surface), pas
+            // l'interacteur, comme pour waypoints. active : borne désactivée = bouton inerte.
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS travel_beacons (
+                        id TEXT PRIMARY KEY,
+                        world TEXT NOT NULL,
+                        x INTEGER NOT NULL,
+                        y INTEGER NOT NULL,
+                        z INTEGER NOT NULL,
+                        facing TEXT NOT NULL,
+                        model_version INTEGER NOT NULL,
+                        active INTEGER NOT NULL DEFAULT 1,
+                        created_at TEXT NOT NULL
                     )
                     """));
         }

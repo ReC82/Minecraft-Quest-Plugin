@@ -43,6 +43,7 @@ import com.lodygames.rpgquest.database.NpcIdRepository;
 import com.lodygames.rpgquest.database.PlacedBlockRepository;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
+import com.lodygames.rpgquest.database.TravelBeaconRepository;
 import com.lodygames.rpgquest.database.ClaimRepository;
 import com.lodygames.rpgquest.database.MarketRepository;
 import com.lodygames.rpgquest.database.PortalCooldownRepository;
@@ -118,6 +119,7 @@ import com.lodygames.rpgquest.travel.WildEntryWarningService;
 import com.lodygames.rpgquest.travel.WorldPortalTeleportListener;
 import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
+import com.lodygames.rpgquest.travel.beacon.TravelBeaconService;
 import com.lodygames.rpgquest.travel.model.ItemTravelDefinition;
 import com.lodygames.rpgquest.ui.QuestJournalService;
 import com.lodygames.rpgquest.database.WaypointRepository;
@@ -207,6 +209,7 @@ public final class RPGQuestBootstrap {
     private ItemTravelService itemTravelService;
     private WaystoneService waystoneService;
     private WaypointService waypointService;
+    private TravelBeaconService travelBeaconService;
     private PlayerResetService playerResetService;
     private WebSnapshotWriter webSnapshotWriter;
     private StoreClient storeClient;
@@ -522,6 +525,16 @@ public final class RPGQuestBootstrap {
         registry.start(waypointService);
         registry.start(new PlayerListenerService(plugin, waypointService.listener()));
         registry.start(new PlayerListenerService(plugin, waypointService.protectionListener()));
+
+        // Réseau de voyage (issues #132/#150) : borne physique (bouton bois + bloc diamant, même
+        // support qu'un waypoint) ouvrant un menu graphique vers les waypoints déjà découverts par
+        // le joueur. Strictement distinct de waypoint/waystone (aucune fusion d'identité/table) ;
+        // aucune génération automatique ici (#149) — placement manuel via /rpgadmin travel beacon set.
+        travelBeaconService = new TravelBeaconService(
+                plugin, new TravelBeaconRepository(databaseService.databaseManager()), waypointService);
+        registry.start(travelBeaconService);
+        registry.start(new PlayerListenerService(plugin, travelBeaconService.listener()));
+        registry.start(new PlayerListenerService(plugin, travelBeaconService.protectionListener()));
 
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
@@ -877,7 +890,7 @@ public final class RPGQuestBootstrap {
                 flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
                 worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry,
-                questProgressEngine, questEngine, variableRepository, plugin);
+                questProgressEngine, questEngine, variableRepository, travelBeaconService, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

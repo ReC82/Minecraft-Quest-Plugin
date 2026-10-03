@@ -484,8 +484,48 @@ clic, pas seulement à l'affichage.
 `amount`) ; `SET_VARIABLE` (`key`, `value`) ; `RUN_SAFE_COMMAND`
 (`command` — le **nom** de la commande doit être dans `config.yml` →
 `dialogue.allowed-commands`, vérifié au chargement) ; `OPEN_DIALOGUE`
-(`dialogue`) ; `OPEN_MERCHANT` (`merchant`, voir section 12) ; `CLOSE`.
-`OPEN_DIALOGUE`/`CLOSE` prennent le pas sur `next`.
+(`dialogue`) ; `OPEN_MERCHANT` (`merchant`, voir section 12) ;
+`GIVE_STARTER_KIT` (aucun paramètre — remet le kit d'outils en bois de
+départ si le joueur y a droit, voir « Kit d'outils en bois » ci-dessous) ;
+`CLOSE`. `OPEN_DIALOGUE`/`CLOSE` prennent le pas sur `next`.
+
+### Kit d'outils en bois (issue #26, partie A)
+
+`dialogues/guide.yml` propose « Demander mon kit de départ » (action
+`GIVE_STARTER_KIT`, sans condition de dialogue — toujours affiché). Géré
+entièrement par `player.StarterToolKitService`, jamais le moteur de
+dialogue lui-même :
+
+- **Aucune remise automatique** : ni clic simple sur un PNJ, ni connexion,
+  ni réapparition — seule cette demande explicite déclenche quoi que ce
+  soit.
+- **Contenu** : un exemplaire de chaque matériau de `config.yml` →
+  `starter-tool-kit.items` (par défaut `WOODEN_SWORD`/`WOODEN_PICKAXE`/
+  `WOODEN_SHOVEL`/`WOODEN_AXE`) — configurable, jamais codé en dur dans le
+  dialogue.
+- **Droit renouvelé à chaque mort** : persisté par joueur (variable
+  `player_variables` → `STARTER_TOOL_KIT_AVAILABLE`, absente = droit
+  disponible — un nouveau joueur l'a donc dès le début). Une remise
+  réussie le consomme (`"false"`) ; chaque mort le restaure (`"true"`),
+  y compris une mort avant toute première remise (droit initial jamais
+  perdu). Aucune limite totale de récupérations après des morts
+  successives.
+- **Tout ou rien** : les emplacements libres du stockage normal (`
+  PlayerInventory#getStorageContents`, donc hors armure/main secondaire)
+  sont comptés **avant** toute écriture ; en dessous du nombre d'objets du
+  kit, aucun objet n'est distribué, rien n'est jeté/remplacé, et le droit
+  n'est jamais consommé (message : « Tu n'as pas assez de place dans ton
+  inventaire. Libère 4 emplacements pour recevoir ton kit de départ. »).
+  Déjà reçu depuis la dernière mort → message dédié, aucune remise.
+- **Anti double-clic** : un ensemble en mémoire (`Set<UUID>`) empêche deux
+  demandes concurrentes du même joueur de passer toutes les deux la
+  vérification avant que l'une n'ait consommé le droit.
+- **`/rpgadmin player resetnew`** restaure le droit initial gratuitement
+  (`PlayerResetService` efface déjà **toutes** les variables du joueur —
+  aucun code dédié au kit n'était nécessaire).
+- Distinct de `player.StarterKitListener` (Rune de rappel, remise unique
+  à vie, automatique à la connexion) — même motif de nommage « kit de
+  départ », mécanismes et objets totalement indépendants.
 
 **Renderer** : `config.yml` → `dialogue.renderer`, défaut réel
 **`paper-dialog`** (API Dialog native Paper, marquée expérimentale par

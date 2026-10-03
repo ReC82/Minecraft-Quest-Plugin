@@ -1505,6 +1505,54 @@ le résumé de récompenses de TC-014).
 
 ---
 
+## 21. Kit d'outils en bois demandé au Guide (issue #26, partie A)
+
+### TC-220 — Demande explicite, tout ou rien, droit renouvelé à chaque mort (PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `player.StarterToolKitService`, action de dialogue
+    `GIVE_STARTER_KIT` (`dialogues/guide.yml`), section config `starter-tool-kit`. Détail :
+    [RPGQUEST_BIBLE.md](RPGQUEST_BIBLE.md) §4 « Kit d'outils en bois ».
+-   **Préconditions :** JAR de cette session déployé, compte de test **non-op**, PNJ Citizens
+    `guide` existant (voir `docs/NPC_DIALOGUES_QUESTS_GUIDE.md`).
+-   **Actions :**
+    1.  Parler au Guide **sans** cliquer sur « Demander mon kit de départ » → aucun outil reçu
+        (pas de remise au simple clic/connexion/réapparition).
+    2.  Choisir « Demander mon kit de départ » avec l'inventaire principal vide → message de
+        réussite, exactement 1 `WOODEN_SWORD` + 1 `WOODEN_PICKAXE` + 1 `WOODEN_SHOVEL` +
+        1 `WOODEN_AXE`, rien d'autre (pas de nourriture/armure/rune).
+    3.  Redemander immédiatement (sans mourir) → message « déjà reçu », aucun outil
+        supplémentaire.
+    4.  Remplir l'inventaire principal pour ne laisser **0 à 3** emplacements libres, demander
+        → message « pas assez de place », **aucun** objet donné, rien jeté au sol/remplacé.
+    5.  Libérer au moins 4 emplacements, redemander → réussite.
+    6.  Mourir, puis redemander **sans** avoir encore rien reçu de nouveau → réussite (nouveau
+        cycle). Répéter mort → demande 2-3 fois : chaque cycle redonne le kit complet, jamais
+        plus d'une fois entre deux morts.
+    7.  (si un compte neuf est disponible) Mourir **avant** toute première demande → le droit
+        initial reste disponible (la demande suivante réussit normalement).
+    8.  Double-cliquer très vite sur le choix (ou redemander deux fois de suite sans attendre)
+        → une seule remise, jamais deux.
+    9.  Se déconnecter/reconnecter (ou redémarrer le serveur) après une remise réussie → le
+        droit reste « déjà reçu » jusqu'à la prochaine mort (persistance).
+    10. `/rpgadmin player resetnew <joueur>` → le droit initial est restauré (nouvelle demande
+        immédiate possible), **non-op** testé identique à **op**.
+-   **Reset :** `starter-tool-kit.enabled: false` + `/rpgquest reload` désactive l'option sans
+    toucher aux données déjà écrites. `/rpgadmin player resetnew` efface aussi la variable
+    `STARTER_TOOL_KIT_AVAILABLE` (comme toute autre variable joueur).
+-   **Couverture automatisée :** `StarterToolKitServiceTest` (12 cas : première demande, contenu
+    exact, refus 0-3 places avec droit conservé, réussite à 4 places, nouvel essai après
+    libération, refus sans nouvelle mort, nouvelle demande après mort sans remise automatique,
+    plusieurs cycles mort/remise, mort avant première remise, clics rapides, variable restaurée
+    comme `resetnew`, kit désactivé), `DialogueDefinitionParserTest`/`DialogueSessionEngineTest`
+    (câblage `GIVE_STARTER_KIT`), `ConfigValidatorTest` (section `starter-tool-kit`).
+-   **Limites MockBukkit (à couvrir uniquement en jeu) :** rendu réel du choix de dialogue
+    (Paper Dialog natif vs repli chat), ressenti des messages en jeu, un vrai redémarrage complet
+    du serveur (le service ne garde aucun cache mémoire — seule la variable persistée fait foi —
+    mais ceci reste à confirmer en conditions réelles), deux clients réels cliquant
+    simultanément sur le même compte (le verrou anti-double-clic n'est testé qu'en mono-thread).
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -1555,3 +1603,4 @@ le résumé de récompenses de TC-014).
 | TC-190 | Diagnostic WorldPortal (`here`/`debug`, TP-TRACE) | | | |
 | TC-200 | Storyline : progression automatique de bout en bout | | | |
 | TC-210 | Waypoints #124 : génération, découverte bouton, protection, persistance (PENDING) | | | |
+| TC-220 | Kit d'outils en bois #26 : demande explicite, tout ou rien, droit par mort (PENDING) | | | |

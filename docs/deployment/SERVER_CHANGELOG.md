@@ -3032,3 +3032,80 @@ pré-existant), `:web-api` up-to-date.
 Rollback : `scripts/plugadmin/rollback.sh app` (→ `20260910-213241`).
 
 Rapport : `docs/claude-reports/2026-09-10_2047_dialogues-fusion-source-runtime-npc-145.md`.
+
+---
+
+## 2026-10-03 - Kit d'outils en bois demandé au Guide (issue #26, partie A)
+
+### Changement
+
+Plugin RPGQuest (gameplay) uniquement. **Aucun changement Control Panel.**
+
+Ajout de l'action de dialogue `GIVE_STARTER_KIT` : `dialogues/guide.yml` propose « Demander mon
+kit de départ » (toujours affiché, sans condition). Remplace la règle précédemment prévue de
+remise unique à vie — le kit est désormais **demandé explicitement**, jamais donné
+automatiquement (ni clic simple sur le PNJ, ni connexion, ni réapparition), et le droit de le
+redemander **se renouvelle à chaque mort** du joueur (sans limite totale de récupérations ; une
+mort avant la toute première remise ne retire jamais le droit initial).
+
+Contenu configurable (`config.yml` → `starter-tool-kit`, nouvelle section), par défaut un
+exemplaire de chaque `WOODEN_SWORD`/`WOODEN_PICKAXE`/`WOODEN_SHOVEL`/`WOODEN_AXE` — aucun autre
+objet. Remise **tout ou rien** : les emplacements libres du stockage normal (hors armure/main
+secondaire) sont comptés avant toute écriture ; en dessous du nombre d'objets du kit, aucun objet
+n'est distribué, rien n'est jeté/remplacé, et le droit n'est jamais consommé (message dédié).
+Anti double-clic (verrou mémoire par joueur). Droit persisté par joueur dans `player_variables`
+(clé `STARTER_TOOL_KIT_AVAILABLE`, **aucune migration de schéma** — réutilise la table
+existante) ; `/rpgadmin player resetnew` restaure le droit initial sans code dédié (il efface déjà
+toutes les variables du joueur).
+
+Nouveaux fichiers : `config.StarterToolKitConfig`, `dialogue.model.GiveStarterKitAction`,
+`player.StarterToolKitService` (écouteur `PlayerDeathEvent` + logique de remise, **distinct** de
+`player.StarterKitListener` — Rune de rappel, remise unique à vie, automatique à la connexion,
+non modifié). Fichiers modifiés : `ConfigValidator`/`PluginConfig` (section `starter-tool-kit`),
+`ActionType`/`DialogueAction`/`DialogueDefinitionParser`/`DialogueDefinitionWriter` (nouveau type
+d'action), `ContentPackMapper`/`DialoguePackEntry` (export), `BukkitAgentActions` (résumé Control
+Panel du catalogue de dialogues — lecture seule, pas d'action agent nouvelle),
+`DialogueSessionEngine` (dispatch), `RPGQuestBootstrap` (câblage), `dialogues/guide.yml`,
+`config.yml`.
+
+Partie B du ticket (#26 — avertissement avant l'entrée dans le Wild) **non livrée** : #26 reste
+ouvert.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement — aucune action manuelle autre que remplacement du JAR.
+`config.yml` n'a **pas besoin d'être modifié manuellement** : la section `starter-tool-kit` est
+ajoutée automatiquement au démarrage par `ConfigFileCompleter` si absente (valeurs par défaut
+ci-dessus), sans toucher aux clés déjà présentes.
+
+### Sauvegarde préalable
+
+- Ancien JAR `plugins/RPGQuest-<ancienne_version>.jar`.
+- `plugins/RPGQuest/data.db` (aucune migration de schéma, mais suivre la procédure standard de
+  [mise à jour du seul JAR](VERYGAMES.md#mise-à-jour-du-seul-jar-rpgquest-scénario-2)) et
+  `plugins/RPGQuest/config.yml` (complété automatiquement au premier démarrage, un `.bak` est créé
+  par `ConfigFileCompleter`).
+
+### Déploiement
+
+1. Compiler (`./gradlew clean build`).
+2. Arrêter le serveur.
+3. Remplacer uniquement `plugins/RPGQuest-*.jar` par le nouveau JAR (FTP). Ne toucher à aucun
+   autre fichier.
+4. Redémarrage complet requis (le dialogue `guide.yml` et `config.yml` ne sont lus qu'au
+   démarrage, pas de rechargement à chaud du dialogue).
+
+### Validation
+
+- `./gradlew test` et `./gradlew build` verts (racine + `control-panel` + `web-api`).
+- `DialogueDefinitionParserTest`, `ContentPackMapperTest`, `ConfigValidatorTest`,
+  `DialogueSessionEngineTest`, nouveau `StarterToolKitServiceTest` (12 tests : première demande,
+  contenu exact, refus 0-3 places, réussite à 4 places, nouvel essai après libération, refus sans
+  nouvelle mort, nouvelle demande après mort, plusieurs cycles mort/remise, mort avant première
+  remise, clics rapides, variable restaurée comme `resetnew`, kit désactivé) — tous verts.
+- Checklist manuelle en jeu : voir le rapport de session. **PENDING MANUAL VALIDATION.**
+
+### Rollback
+
+Remettre l'ancien JAR (le `.bak` de `config.yml` n'a pas besoin d'être restauré : la section
+ajoutée est rétrocompatible, un ancien JAR l'ignore simplement).

@@ -64,6 +64,17 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`waystone.WaystoneService`), découverte individuelle par joueur, retour au Hub par canalisation
   courte. Système **soulbound générique** (`item.SoulboundItemService`) : un seul écouteur anti-perte
   pour tous les objets permanents (Acte, Pierre de retour, Journal, Rune).
+- **Kit d'outils en bois** *(issue #26, partie A)* — demandé explicitement au Guide (« Demander mon
+  kit de départ », action de dialogue `GIVE_STARTER_KIT`), jamais de remise automatique (ni clic
+  simple, ni connexion, ni réapparition). Un exemplaire de chaque matériau de `config.yml` →
+  `starter-tool-kit.items` (par défaut `WOODEN_SWORD`/`WOODEN_PICKAXE`/`WOODEN_SHOVEL`/`WOODEN_AXE`).
+  Droit persistant par joueur (`player.StarterToolKitService`, variable
+  `STARTER_TOOL_KIT_AVAILABLE`), renouvelé à chaque mort, sans limite de récupérations ; une mort
+  avant la première remise ne retire jamais le droit initial. Remise tout ou rien (emplacements
+  libres du stockage normal vérifiés avant toute écriture, hors armure/main secondaire) ; anti
+  double-clic. `/rpgadmin player resetnew` restaure le droit initial (variables déjà toutes
+  effacées — aucun code dédié). Distinct de la Rune de rappel (`player.StarterKitListener`, remise
+  unique à vie, automatique à la connexion).
 - **Waypoints par instance de biome** *(issue #124, MVP)* — `com.lodygames.rpgquest.waypoint`,
   **distinct des Waystones**. Repères physiques persistants et partagés générés **par instance
   réelle de biome** dans `travel.wild-world` : à l'entrée d'un joueur dans une zone de biome sans

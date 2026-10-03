@@ -216,6 +216,20 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-03
+Branche de départ: feat/control-panel-admin-tools
+Étape de départ: issue #26 (partie « kit de départ » uniquement, cahier des charges détaillé reçu en conversation dans ce chat : kit d'outils en bois demandé explicitement au Guide, remise tout ou rien, droit renouvelé à chaque mort — remplace l'ancienne règle de remise unique à vie) — plugin gameplay, hors étapes 1-23, sans rapport avec le travail Control Panel de cette branche
+Étapes terminées: #26 partie A (kit) — nouvelle action de dialogue GIVE_STARTER_KIT (dialogues/guide.yml : « Demander mon kit de départ », toujours affichée, aucune remise automatique ni au clic simple, ni connexion, ni réapparition). player.StarterToolKitService (nouveau, distinct de player.StarterKitListener/Rune de rappel) : droit persisté par joueur via player_variables (clé STARTER_TOOL_KIT_AVAILABLE, absence = droit disponible — zéro migration de schéma, réutilise la table existante), consommé à la réussite, restauré à chaque PlayerDeathEvent (y compris avant toute première remise — idempotent). Contenu configurable config.yml → starter-tool-kit.items (défaut WOODEN_SWORD/PICKAXE/SHOVEL/AXE, un exemplaire chacun). Remise tout ou rien : emplacements libres du stockage normal (PlayerInventory#getStorageContents, hors armure/main secondaire) comptés avant toute écriture ; refus → aucun objet donné/jeté/remplacé, droit conservé, message dédié. Anti double-clic (Set<UUID> en mémoire). /rpgadmin player resetnew restaure le droit initial sans code dédié (efface déjà toutes les variables). Nouveau ActionType.GIVE_STARTER_KIT + GiveStarterKitAction (sealed interface DialogueAction) : parser/writer/ContentPackMapper/BukkitAgentActions mis à jour (switch exhaustifs). Fichiers locaux non suivis (lily_pumpkin.yml, st0_meet_people.yml, lily_memories.yml) préservés, Lily non modifiée. Partie B du ticket (avertissement avant le Wild) non livrée, #26 reste ouvert.
+Branche finale: feat/control-panel-admin-tools (y rester, ne rien merger/déployer/redémarrer sans instruction explicite — aucune n'a été donnée pour cette tâche)
+Dernier commit: (voir git log — commit feat(player): #26)
+Build: ./gradlew build BUILD SUCCESSFUL (racine + control-panel + web-api), RPGQUEST_TEST_MAX_HEAP=768m
+Tests: verts — nouveau StarterToolKitServiceTest (12 cas : première demande, contenu exact, refus 0-3 places/droit conservé, réussite à 4 places, nouvel essai après libération, refus sans nouvelle mort, nouvelle demande après mort sans remise automatique, plusieurs cycles mort/remise, mort avant première remise ne retire pas le droit, clics rapides sans double remise, variable restaurée comme resetnew, kit désactivé) ; DialogueDefinitionParserTest/DialogueDefinitionWriter/ContentPackMapperTest/BukkitAgentActions (câblage GIVE_STARTER_KIT) ; ConfigValidatorTest (section starter-tool-kit, défauts + rejets) ; DialogueSessionEngineTest (nouveau test bout en bout via le moteur de dialogue) — tous verts, aucune régression.
+Tests manuels en attente: TC-220 (docs/MANUAL_TEST_PLAN.md) — PENDING MANUAL VALIDATION, voir aussi la procédure dans le rapport de session.
+Blocages: aucun
+Première étape à reprendre: #26 reste ouvert (partie B — avertissement non bloquant avant l'entrée dans le Wild, cohérent avec #24) ; sinon poursuivre #109 (import content pack) ou toute autre piste de TODO.md
+```
+
+```text
 Date: 2026-09-10 (soir)
 Branche de départ: feat/control-panel-admin-tools
 Étape de départ: issue #145 — fusionner les dialogues source + runtime + choisir le PNJ à la création (bloquant test réel « Les souvenirs de Lily ») — Control Panel uniquement

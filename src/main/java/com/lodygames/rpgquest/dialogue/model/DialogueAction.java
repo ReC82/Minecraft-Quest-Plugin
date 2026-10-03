@@ -2,7 +2,8 @@ package com.lodygames.rpgquest.dialogue.model;
 
 public sealed interface DialogueAction
         permits StartQuestAction, AdvanceQuestAction, TurnInQuestAction, GiveItemAction, TakeItemAction,
-                SetVariableAction, RunSafeCommandAction, OpenDialogueAction, OpenMerchantAction, CloseAction {
+                SetVariableAction, RunSafeCommandAction, OpenDialogueAction, OpenMerchantAction, GiveStarterKitAction,
+                CloseAction {
 
     ActionType type();
 }

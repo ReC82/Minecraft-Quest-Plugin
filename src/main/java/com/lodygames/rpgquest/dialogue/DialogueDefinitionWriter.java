@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
+import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
@@ -161,6 +162,7 @@ public final class DialogueDefinitionWriter {
                 line(sb, "type: OPEN_MERCHANT");
                 line(sb, "merchant: " + a.merchantId());
             }
+            case GiveStarterKitAction ignored -> line(sb, "type: GIVE_STARTER_KIT");
             case CloseAction ignored -> line(sb, "type: CLOSE");
         }
     }

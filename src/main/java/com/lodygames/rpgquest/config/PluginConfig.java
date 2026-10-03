@@ -18,7 +18,8 @@ public record PluginConfig(
         ModCompatConfig clientMod,
         RandomSafeArrivalConfig randomSafeArrival,
         HubConfig hub,
-        TravelConfig travel
+        TravelConfig travel,
+        StarterToolKitConfig starterToolKit
 ) {
 
     /**

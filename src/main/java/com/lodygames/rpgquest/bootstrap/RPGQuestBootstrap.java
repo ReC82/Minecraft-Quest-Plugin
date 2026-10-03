@@ -88,6 +88,7 @@ import com.lodygames.rpgquest.player.NewPlayerResetJoinListener;
 import com.lodygames.rpgquest.player.PlayerResetService;
 import com.lodygames.rpgquest.player.ResourcePackListener;
 import com.lodygames.rpgquest.player.StarterKitListener;
+import com.lodygames.rpgquest.player.StarterToolKitService;
 import com.lodygames.rpgquest.progression.PlacedBlockTracker;
 import com.lodygames.rpgquest.progression.ProgressionService;
 import com.lodygames.rpgquest.progression.listener.CombatXpListener;
@@ -535,9 +536,15 @@ public final class RPGQuestBootstrap {
                 plugin.getDataFolder().toPath().resolve("hub-guides"), plugin.getSLF4JLogger());
         registry.start(hubGuideRegistry);
 
+        // Kit d'outils en bois (issue #26, partie A) : demandé explicitement au Guide, droit
+        // renouvelé à chaque mort — distinct de StarterKitListener (Rune de rappel, remise unique).
+        StarterToolKitService starterToolKitService = new StarterToolKitService(
+                plugin, variableRepository, () -> configService.current().starterToolKit());
+        registry.start(new PlayerListenerService(plugin, starterToolKitService));
+
         dialogueSessionEngine = new DialogueSessionEngine(
                 plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService, npcIdentityService,
-                claimService, customItemRegistry);
+                claimService, customItemRegistry, starterToolKitService);
         registry.start(dialogueSessionEngine);
         dialogueSessionEngine.setRenderer(createRenderer(dialogueSessionEngine));
         registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));

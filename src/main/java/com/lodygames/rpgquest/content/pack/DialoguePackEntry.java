@@ -34,7 +34,8 @@ public record DialoguePackEntry(String id, String start, List<Node> nodes) {
     /**
      * Action de choix. {@code type} ∈ {@code START_QUEST}, {@code ADVANCE_QUEST},
      * {@code TURN_IN_QUEST}, {@code GIVE_ITEM}, {@code TAKE_ITEM}, {@code SET_VARIABLE},
-     * {@code RUN_SAFE_COMMAND}, {@code OPEN_DIALOGUE}, {@code OPEN_MERCHANT}, {@code CLOSE}.
+     * {@code RUN_SAFE_COMMAND}, {@code OPEN_DIALOGUE}, {@code OPEN_MERCHANT}, {@code GIVE_STARTER_KIT},
+     * {@code CLOSE}.
      */
     public record Action(String type, String quest, String dialogue, String merchant, String material,
                          Integer amount, String key, String value, String command) {
@@ -65,6 +66,10 @@ public record DialoguePackEntry(String id, String start, List<Node> nodes) {
 
         public static Action close() {
             return new Action("CLOSE", null, null, null, null, null, null, null, null);
+        }
+
+        public static Action giveStarterKit() {
+            return new Action("GIVE_STARTER_KIT", null, null, null, null, null, null, null, null);
         }
     }
 

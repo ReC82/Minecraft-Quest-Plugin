@@ -21,6 +21,7 @@ import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDraft;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
+import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
 import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
@@ -747,6 +748,8 @@ public final class BukkitAgentActions implements AgentActions {
                     "OPEN_DIALOGUE " + x.dialogueId());
             case OpenMerchantAction x -> new DialogueCatalog.Action("OPEN_MERCHANT", x.merchantId().toString(), null,
                     "OPEN_MERCHANT " + x.merchantId());
+            case GiveStarterKitAction ignored ->
+                    new DialogueCatalog.Action("GIVE_STARTER_KIT", null, null, "GIVE_STARTER_KIT");
             case CloseAction ignored -> new DialogueCatalog.Action("CLOSE", null, null, "CLOSE");
         };
     }

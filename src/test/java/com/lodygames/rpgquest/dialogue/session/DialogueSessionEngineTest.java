@@ -30,6 +30,9 @@ import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
 import com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.config.StarterToolKitConfig;
+import com.lodygames.rpgquest.player.StarterToolKitService;
+import org.bukkit.Material;
 import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.QuestState;
@@ -70,6 +73,7 @@ class DialogueSessionEngineTest {
     private Path dialoguesDir;
     private PlayerVariableRepository variableRepository;
     private YamlCustomItemRegistry customItemRegistry;
+    private StarterToolKitService starterToolKitService;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -174,9 +178,12 @@ class DialogueSessionEngineTest {
                 progressionService, variableRepository);
         claimService.start();
 
+        starterToolKitService = new StarterToolKitService(plugin, variableRepository, () -> new StarterToolKitConfig(
+                true, List.of(Material.WOODEN_SWORD, Material.WOODEN_PICKAXE, Material.WOODEN_SHOVEL, Material.WOODEN_AXE)));
+
         sessionEngine = new DialogueSessionEngine(
                 plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService, npcIdentityService,
-                claimService, customItemRegistry);
+                claimService, customItemRegistry, starterToolKitService);
         sessionEngine.start();
         renderer = new RecordingRenderer();
         sessionEngine.setRenderer(renderer);
@@ -268,6 +275,48 @@ class DialogueSessionEngineTest {
 
         assertNull(renderer.lastNode, "le dialogue ne doit pas se re-rendre après l'ouverture d'un marchand");
         assertEquals(expectedShopSize, currentTopInventorySize(player), "la vitrine du marchand doit être ouverte");
+    }
+
+    /**
+     * Couvre le câblage de bout en bout {@code GIVE_STARTER_KIT} (issue #26, partie A) : le choix de
+     * dialogue délègue bien à {@link StarterToolKitService#requestKit}, qui remet les quatre outils
+     * en bois configurés quand l'inventaire a la place.
+     */
+    @Test
+    void giveStarterKitActionGrantsTheConfiguredKit() throws Exception {
+        Files.writeString(dialoguesDir.resolve("kit_npc.yml"), """
+                id: rpgquest:kit_npc
+                start: greeting
+                nodes:
+                  greeting:
+                    speaker: "PNJ"
+                    text: "Bonjour."
+                    choices:
+                      - text: "Demander mon kit de départ"
+                        actions:
+                          - type: GIVE_STARTER_KIT
+                          - type: CLOSE
+                """);
+        dialogueEngine.reload();
+        NamespacedKey kitNpcId = new NamespacedKey("rpgquest", "kit_npc");
+        PlayerMock player = addPlayer();
+
+        sessionEngine.open(player, kitNpcId);
+        awaitRendered();
+        int kitIndex = renderer.lastVisibleChoices.stream()
+                .filter(c -> c.label().equals("Demander mon kit de départ")).findFirst().orElseThrow().index();
+        sessionEngine.onChoiceSelected(player, kitNpcId, "greeting", kitIndex);
+
+        long deadline = System.currentTimeMillis() + TIMEOUT_SECONDS * 1000;
+        while (!player.getInventory().contains(Material.WOODEN_AXE) && System.currentTimeMillis() < deadline) {
+            server.getScheduler().performTicks(1);
+            Thread.sleep(10);
+        }
+
+        assertTrue(player.getInventory().contains(Material.WOODEN_SWORD));
+        assertTrue(player.getInventory().contains(Material.WOODEN_PICKAXE));
+        assertTrue(player.getInventory().contains(Material.WOODEN_SHOVEL));
+        assertTrue(player.getInventory().contains(Material.WOODEN_AXE));
     }
 
     @Test

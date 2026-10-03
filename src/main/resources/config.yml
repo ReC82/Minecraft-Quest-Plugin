@@ -244,6 +244,22 @@ travel:
     max-radius: 5000
     max-attempts: 20
 
+starter-tool-kit:
+  # Kit d'outils en bois (issue #26, partie A) : demandé explicitement au Guide (« Demander mon kit
+  # de départ »), jamais remis automatiquement (ni connexion, ni réapparition, ni simple clic sur le
+  # PNJ). Le droit de le demander se renouvelle à chaque mort du joueur (voir
+  # player.StarterToolKitService) ; une mort avant la toute première remise ne retire jamais le
+  # droit initial, et il n'y a aucune limite au nombre total de récupérations après des morts
+  # successives. Remise tout ou rien : les emplacements libres du stockage normal (hors armure et
+  # main secondaire) sont vérifiés avant toute remise ; en cas de refus, aucun objet n'est distribué
+  # et le droit reste intact. /rpgadmin player resetnew restaure ce droit initial.
+  enabled: true
+  items:
+    - WOODEN_SWORD
+    - WOODEN_PICKAXE
+    - WOODEN_SHOVEL
+    - WOODEN_AXE
+
 admin:
   flatten:
     # /rpgadmin flatten <rayon> [hauteur] — voir docs/ADMIN_FLATTEN.md.

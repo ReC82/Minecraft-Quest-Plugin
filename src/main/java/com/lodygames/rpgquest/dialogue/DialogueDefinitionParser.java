@@ -10,6 +10,7 @@ import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
+import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
@@ -359,6 +360,7 @@ final class DialogueDefinitionParser {
                 }
                 yield new OpenMerchantAction(merchantId);
             }
+            case GIVE_STARTER_KIT -> new GiveStarterKitAction();
             case CLOSE -> new CloseAction();
         };
     }

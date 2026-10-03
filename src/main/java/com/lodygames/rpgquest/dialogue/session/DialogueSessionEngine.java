@@ -13,6 +13,7 @@ import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
+import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
@@ -34,6 +35,7 @@ import com.lodygames.rpgquest.dialogue.render.VisibleChoice;
 import com.lodygames.rpgquest.economy.merchant.MerchantTradeService;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.player.StarterToolKitService;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.util.ArrayList;
 import java.util.List;
@@ -72,6 +74,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     private final NpcIdentityService npcIdentityService;
     private final ClaimService claimService;
     private final YamlCustomItemRegistry customItemRegistry;
+    private final StarterToolKitService starterToolKitService;
     private final Logger logger;
 
     private final Map<UUID, DialogueSession> sessions = new ConcurrentHashMap<>();
@@ -80,7 +83,8 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     public DialogueSessionEngine(RPGQuestPlugin plugin, YamlDialogueEngine dialogueEngine,
                                   QuestProgressEngine questProgressEngine, PlayerVariableRepository variableRepository,
                                   MerchantTradeService merchantTradeService, NpcIdentityService npcIdentityService,
-                                  ClaimService claimService, YamlCustomItemRegistry customItemRegistry) {
+                                  ClaimService claimService, YamlCustomItemRegistry customItemRegistry,
+                                  StarterToolKitService starterToolKitService) {
         this.plugin = plugin;
         this.dialogueEngine = dialogueEngine;
         this.questProgressEngine = questProgressEngine;
@@ -89,6 +93,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         this.npcIdentityService = npcIdentityService;
         this.claimService = claimService;
         this.customItemRegistry = customItemRegistry;
+        this.starterToolKitService = starterToolKitService;
         this.logger = plugin.getSLF4JLogger();
     }
 
@@ -224,6 +229,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
                         return null;
                     });
             case RunSafeCommandAction a -> runSafeCommand(player, a.command());
+            case GiveStarterKitAction ignored -> starterToolKitService.requestKit(player);
             case OpenDialogueAction ignored -> {
                 // Géré par l'appelant (transition, arrêt anticipé) : jamais atteint ici.
             }

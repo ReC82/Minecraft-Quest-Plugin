@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
+import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
@@ -199,6 +200,19 @@ class DialogueDefinitionParserTest {
 
         assertFalse(result.isSuccess());
         assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("merchant")));
+    }
+
+    @Test
+    void giveStarterKitActionIsParsed() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("give-starter-kit.yml", load(minimalDialogueWithChoice("""
+                      - text: "Demander mon kit de départ"
+                        actions:
+                          - type: GIVE_STARTER_KIT
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        var action = result.dialogue().nodes().get("greeting").choices().get(0).actions().get(0);
+        assertTrue(action instanceof GiveStarterKitAction);
     }
 
     @Test

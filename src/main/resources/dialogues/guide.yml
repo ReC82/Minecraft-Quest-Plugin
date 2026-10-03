@@ -14,6 +14,12 @@
 # - « Récupérer une rune de rappel » (re)donne rpgquest:rune_rappel gratuitement dès qu'elle manque
 #   (garde LACKS_CUSTOM_ITEM) ; objet permanent, lié au joueur, jamais consommé (voir
 #   travel.ItemTravelService, cooldown). Chaque nouveau joueur en reçoit déjà une automatiquement.
+#
+# Règle (issue #26, partie A — kit d'outils en bois) :
+# - « Demander mon kit de départ » appelle GIVE_STARTER_KIT (voir player.StarterToolKitService) :
+#   aucune remise automatique, le droit se renouvelle à chaque mort du joueur, remise tout ou rien
+#   (voir config.yml → starter-tool-kit). Le service gère lui-même tous les messages (déjà reçu,
+#   pas assez de place, réussite) — ce choix est toujours proposé, sans condition de dialogue.
 id: rpgquest:guide
 start: greeting
 
@@ -41,6 +47,11 @@ nodes:
         actions:
           - type: RUN_SAFE_COMMAND
             command: "customitem give %player% rpgquest:rune_rappel 1"
+          - type: CLOSE
+
+      - text: "Demander mon kit de départ"
+        actions:
+          - type: GIVE_STARTER_KIT
           - type: CLOSE
 
       - text: "D'accord !"

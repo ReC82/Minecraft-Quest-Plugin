@@ -693,6 +693,56 @@ class ConfigValidatorTest {
         assertEquals(com.lodygames.rpgquest.database.DatabaseType.MYSQL, config.database().type());
     }
 
+    @Test
+    void starterToolKitDefaultsToTheFourWoodenToolsWhenSectionIsAbsent() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load(""));
+
+        var kit = config.starterToolKit();
+        assertTrue(kit.enabled());
+        assertEquals(List.of(org.bukkit.Material.WOODEN_SWORD, org.bukkit.Material.WOODEN_PICKAXE,
+                org.bukkit.Material.WOODEN_SHOVEL, org.bukkit.Material.WOODEN_AXE), kit.items());
+    }
+
+    @Test
+    void acceptsAFullyCustomStarterToolKitConfig() throws Exception {
+        PluginConfig config = ConfigValidator.validate(load("""
+                starter-tool-kit:
+                  enabled: false
+                  items:
+                    - STONE_SWORD
+                    - STONE_AXE
+                """));
+
+        var kit = config.starterToolKit();
+        assertFalse(kit.enabled());
+        assertEquals(List.of(org.bukkit.Material.STONE_SWORD, org.bukkit.Material.STONE_AXE), kit.items());
+    }
+
+    @Test
+    void rejectsEmptyStarterToolKitItems() {
+        ConfigurationSection section = load("""
+                starter-tool-kit:
+                  items: []
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("starter-tool-kit.items"));
+    }
+
+    @Test
+    void rejectsUnknownStarterToolKitMaterial() {
+        ConfigurationSection section = load("""
+                starter-tool-kit:
+                  items:
+                    - NOT_A_REAL_MATERIAL
+                """);
+
+        ConfigValidationException exception =
+                assertThrows(ConfigValidationException.class, () -> ConfigValidator.validate(section));
+        assertTrue(exception.getMessage().contains("matériau inconnu"));
+    }
+
     private ConfigurationSection load(String yaml) {
         return YamlConfiguration.loadConfiguration(new StringReader(yaml));
     }

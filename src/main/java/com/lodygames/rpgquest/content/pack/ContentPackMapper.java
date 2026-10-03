@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
+import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
@@ -157,6 +158,7 @@ public final class ContentPackMapper {
             case RunSafeCommandAction a -> DialoguePackEntry.Action.command(a.command());
             case OpenDialogueAction a -> DialoguePackEntry.Action.openDialogue(a.dialogueId().toString());
             case OpenMerchantAction a -> DialoguePackEntry.Action.openMerchant(a.merchantId().toString());
+            case GiveStarterKitAction ignored -> DialoguePackEntry.Action.giveStarterKit();
             case CloseAction ignored -> DialoguePackEntry.Action.close();
         };
     }

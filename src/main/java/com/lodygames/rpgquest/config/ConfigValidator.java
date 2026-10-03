@@ -46,9 +46,10 @@ public final class ConfigValidator {
         RandomSafeArrivalConfig randomSafeArrival = validateRandomSafeArrival(section);
         HubConfig hub = validateHub(section);
         TravelConfig travel = validateTravel(section);
+        StarterToolKitConfig starterToolKit = validateStarterToolKit(section);
         return new PluginConfig(
                 debug, locale, database, resourcePack, dialogue, journal, adminFlatten, claims, progression,
-                backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel);
+                backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel, starterToolKit);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -749,6 +750,42 @@ public final class ConfigValidator {
 
         return new TravelConfig.WaypointConfig(enabled, regionSize, minDistance, maxDistance,
                 candidateAttempts, moveThrottleMillis, minimumSpacing, modelVersion);
+    }
+
+    private static final List<Material> DEFAULT_STARTER_TOOL_KIT_ITEMS = List.of(
+            Material.WOODEN_SWORD, Material.WOODEN_PICKAXE, Material.WOODEN_SHOVEL, Material.WOODEN_AXE);
+
+    private static StarterToolKitConfig validateStarterToolKit(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection kit = section.getConfigurationSection("starter-tool-kit");
+        if (kit == null) {
+            return defaultStarterToolKit();
+        }
+
+        boolean enabled = kit.getBoolean("enabled", true);
+
+        List<String> rawItems = kit.getStringList("items");
+        if (rawItems.isEmpty()) {
+            throw new ConfigValidationException(
+                    "« starter-tool-kit.items » ne peut pas être vide : au moins un objet doit composer le kit.");
+        }
+        List<Material> items = new ArrayList<>();
+        for (String raw : rawItems) {
+            if (raw == null || raw.isBlank()) {
+                throw new ConfigValidationException("« starter-tool-kit.items » contient une entrée vide.");
+            }
+            Material material = Material.matchMaterial(raw);
+            if (material == null) {
+                throw new ConfigValidationException(
+                        "« starter-tool-kit.items » contient un matériau inconnu : \"" + raw + "\".");
+            }
+            items.add(material);
+        }
+
+        return new StarterToolKitConfig(enabled, List.copyOf(items));
+    }
+
+    private static StarterToolKitConfig defaultStarterToolKit() {
+        return new StarterToolKitConfig(true, DEFAULT_STARTER_TOOL_KIT_ITEMS);
     }
 
     private static int positiveInt(ConfigurationSection section, String path, int defaultValue)

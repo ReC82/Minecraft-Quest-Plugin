@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.dialogue.model.CloseAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
+import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
 import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
@@ -113,7 +114,7 @@ class ContentPackMapperTest {
         DialogueChoice choice = new DialogueChoice(
                 LocalizedText.of("Partir"),
                 List.of(new NegatedCondition(new QuestStateCondition(key("rpgquest:a"), QuestState.COMPLETED))),
-                List.of(new StartQuestAction(key("rpgquest:a")), new CloseAction()),
+                List.of(new StartQuestAction(key("rpgquest:a")), new GiveStarterKitAction(), new CloseAction()),
                 null);
         DialogueDefinition def = new DialogueDefinition(key("rpgquest:g"), "start",
                 Map.of("start", new DialogueNode("start", "Guide", LocalizedText.of("Salut"), List.of(choice))));
@@ -128,7 +129,8 @@ class ContentPackMapperTest {
         assertTrue(c.conditions().get(0).negate());
         assertEquals("START_QUEST", c.actions().get(0).type());
         assertEquals("rpgquest:a", c.actions().get(0).quest());
-        assertEquals("CLOSE", c.actions().get(1).type());
+        assertEquals("GIVE_STARTER_KIT", c.actions().get(1).type());
+        assertEquals("CLOSE", c.actions().get(2).type());
         assertNull(c.next());
     }
 

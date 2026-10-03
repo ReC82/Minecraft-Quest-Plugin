@@ -10,5 +10,6 @@ public enum ActionType {
     RUN_SAFE_COMMAND,
     OPEN_DIALOGUE,
     OPEN_MERCHANT,
+    GIVE_STARTER_KIT,
     CLOSE
 }

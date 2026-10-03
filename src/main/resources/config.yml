@@ -235,6 +235,24 @@ travel:
     move-throttle-millis: 1500 # intervalle min entre deux évaluations d'instance pour un même joueur
     minimum-spacing: 80       # distance minimale (blocs) entre deux waypoints
     model-version: 1          # version du modèle de rendu stampée sur les nouveaux waypoints
+    # Étend ce même mécanisme au monde Hub (hub.world) — décision actée du 2026-10-03 remplaçant
+    # l'exclusion historique du Hub (issue #149, voir aussi #136/#137). false désactive uniquement
+    # la génération Hub, jamais celle de travel.wild-world. Les claims restent exclus (le monde
+    # dédié claims.world n'est jamais éligible, qu'il s'agisse du Wild ou du Hub).
+    hub-enabled: true
+  beacon:
+    # Bornes du réseau de voyage (issues #132/#150/#149, voir travel.beacon.TravelBeaconService) :
+    # même support qu'un waypoint, mais bloc de diamant + bouton en bois (essence configurable).
+    button-material: OAK_BUTTON
+    hub-generation:
+      # Génération automatique d'une borne appariée à chaque waypoint généré dans le Hub (issue
+      # #149) — jamais dans le Wild, où seul /rpgadmin travel beacon set existe. La borne ne
+      # découvre jamais le waypoint voisin. pair-min/max-spacing = anneau (blocs, même mécanisme
+      # que travel.waypoint) autour du waypoint où la borne est cherchée : jamais superposée,
+      # jamais à l'autre bout de l'instance.
+      enabled: true
+      pair-min-spacing: 6
+      pair-max-spacing: 16
   random-safe-arrival:
     # Arrivée d'un portail simple (/rpgadmin worldportal) en stratégie RANDOM_SAFE — voir
     # docs-site/worlds.html, section "Portail Hub → wild". Distance autour du spawn du monde

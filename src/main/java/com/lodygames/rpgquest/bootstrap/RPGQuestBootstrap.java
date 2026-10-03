@@ -533,7 +533,8 @@ public final class RPGQuestBootstrap {
         // aucune génération automatique ici (#149) — placement manuel via /rpgadmin travel beacon set.
         travelBeaconService = new TravelBeaconService(
                 plugin, new TravelBeaconRepository(databaseService.databaseManager()), waypointService,
-                claimService, new VillageCenterRepository(databaseService.databaseManager()));
+                claimService, new VillageCenterRepository(databaseService.databaseManager()),
+                () -> configService.current().travel(), () -> configService.current().hub().world());
         registry.start(travelBeaconService);
         registry.start(new PlayerListenerService(plugin, travelBeaconService.listener()));
         registry.start(new PlayerListenerService(plugin, travelBeaconService.protectionListener()));

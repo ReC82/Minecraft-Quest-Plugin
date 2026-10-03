@@ -4,12 +4,16 @@ import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.claim.ClaimService;
 import com.lodygames.rpgquest.claim.model.Claim;
+import com.lodygames.rpgquest.config.TravelConfig;
 import com.lodygames.rpgquest.database.TravelBeaconRepository;
 import com.lodygames.rpgquest.database.VillageCenterRepository;
 import com.lodygames.rpgquest.travel.RandomSafeLocationFinder;
 import com.lodygames.rpgquest.travel.beacon.model.TravelBeacon;
 import com.lodygames.rpgquest.travel.beacon.model.VillageCenter;
+import com.lodygames.rpgquest.waypoint.WaypointGenerationPlanner;
+import com.lodygames.rpgquest.waypoint.WaypointIdentityResolver;
 import com.lodygames.rpgquest.waypoint.WaypointService;
+import com.lodygames.rpgquest.waypoint.model.BiomeInstanceKey;
 import com.lodygames.rpgquest.waypoint.model.Waypoint;
 import java.text.Normalizer;
 import java.time.Instant;
@@ -18,8 +22,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -54,36 +60,59 @@ import org.slf4j.Logger;
  * dans {@code world_hub}). Aucune des deux catégories n'ajoute de condition de découverte : un
  * claim existant ou un centre actif est toujours proposé tel quel.</p>
  *
- * <p>Génération automatique de bornes/waypoints dans le Hub (issue #149) hors périmètre : la seule
- * façon de créer une borne ici est {@link #placeAt(Player, Location)}, déclenchée par
- * {@code /rpgadmin travel beacon set}. Aucun chemin de ce service ne crée jamais de waypoint.</p>
+ * <p><strong>Génération automatique Hub (issue #149)</strong> : à l'entrée d'un joueur dans une
+ * instance de biome du Hub ({@code hub.world}) sans waypoint, {@link #handleHubMovement} demande
+ * à {@link WaypointService#ensureGenerated} de le générer (même mécanisme exact que le Wild,
+ * #124 — réutilisé, jamais réécrit), puis appaire une borne distincte à proximité
+ * ({@link #ensureBeaconPaired}) une fois ce waypoint réellement présent. Jamais dans le Wild, où
+ * seul {@link #placeAt(Player, Location)} (placement administré, {@code /rpgadmin travel beacon
+ * set}) existe. Les deux structures restent protégées, versionnées et strictement séparées des
+ * waypoints en base ({@code biome_instance} sur {@code travel_beacons} ne sert qu'à l'idempotence
+ * de l'appariement, jamais une fusion de table).</p>
  */
 public final class TravelBeaconService implements PluginService {
 
     static final int VERSION = 1;
     private static final MiniMessage MM = MiniMessage.miniMessage();
     private static final int PAGE_SIZE = 45;
+    /** Même paliers que {@code waypoint.WaypointService} : réessai borné, jamais de boucle de scan coûteuse. */
+    private static final long[] RETRY_BACKOFF_MILLIS = {30_000L, 120_000L, 600_000L, 3_600_000L};
 
     private final RPGQuestPlugin plugin;
     private final TravelBeaconRepository repository;
     private final WaypointService waypointService;
     private final ClaimService claimService;
     private final VillageCenterRepository villageCenterRepository;
+    private final Supplier<TravelConfig> travelConfig;
+    private final Supplier<String> hubWorld;
+    private final WaypointIdentityResolver identityResolver = new WaypointIdentityResolver();
+    private final WaypointGenerationPlanner planner = new WaypointGenerationPlanner();
     private final Logger logger;
 
     private final ConcurrentHashMap<String, TravelBeacon> byId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, TravelBeacon> byInteractorBlock = new ConcurrentHashMap<>();
-    private final java.util.Set<String> protectedBlocks = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, TravelBeacon> byBiomeInstance = new ConcurrentHashMap<>();
+    private final Set<String> protectedBlocks = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<UUID, BeaconMenuSession> sessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, VillageCenter> villagesById = new ConcurrentHashMap<>();
 
+    // ---- Appariement Hub (issue #149) : verrou mono-vol + réessai borné, par instance de biome.
+    private final Set<String> pairing = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, Long> pairRetryNotBefore = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Integer> pairRetryCount = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, String> lastHubInstanceByPlayer = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Long> lastHubCheckByPlayer = new ConcurrentHashMap<>();
+
     public TravelBeaconService(RPGQuestPlugin plugin, TravelBeaconRepository repository, WaypointService waypointService,
-                                ClaimService claimService, VillageCenterRepository villageCenterRepository) {
+                                ClaimService claimService, VillageCenterRepository villageCenterRepository,
+                                Supplier<TravelConfig> travelConfig, Supplier<String> hubWorld) {
         this.plugin = plugin;
         this.repository = repository;
         this.waypointService = waypointService;
         this.claimService = claimService;
         this.villageCenterRepository = villageCenterRepository;
+        this.travelConfig = travelConfig;
+        this.hubWorld = hubWorld;
         this.logger = plugin.getSLF4JLogger();
     }
 
@@ -113,9 +142,15 @@ public final class TravelBeaconService implements PluginService {
     public void stop() {
         byId.clear();
         byInteractorBlock.clear();
+        byBiomeInstance.clear();
         protectedBlocks.clear();
         sessions.clear();
         villagesById.clear();
+        pairing.clear();
+        pairRetryNotBefore.clear();
+        pairRetryCount.clear();
+        lastHubInstanceByPlayer.clear();
+        lastHubCheckByPlayer.clear();
     }
 
     public Listener listener() {
@@ -174,7 +209,7 @@ public final class TravelBeaconService implements PluginService {
 
         place(world, anchorX, anchorY, anchorZ, facing);
         TravelBeacon beacon = new TravelBeacon(id, world.getName(), anchorX, anchorY, anchorZ,
-                facing.name(), VERSION, true, Instant.now());
+                facing.name(), VERSION, true, "", Instant.now());
         repository.insertIfAbsent(beacon).thenAccept(inserted -> runSync(() -> {
             if (inserted) {
                 index(beacon);
@@ -186,6 +221,191 @@ public final class TravelBeaconService implements PluginService {
             return null;
         });
         return Optional.empty();
+    }
+
+    // ---- Génération automatique Hub (issue #149) : waypoint + borne appariés, emplacements distincts ----
+
+    /**
+     * Appelé par {@link TravelBeaconListener} sur {@code PlayerMoveEvent} (changement de bloc
+     * horizontal seulement, comme {@code waypoint.WaypointListener}). Limité au monde Hub
+     * configuré — le Wild continue de passer exclusivement par
+     * {@code WaypointService#handleMovement}, jamais touché ici.
+     */
+    void handleHubMovement(Player player, Location to) {
+        TravelConfig cfg = travelConfig.get();
+        TravelConfig.WaypointConfig wc = cfg.waypoint();
+        if (!wc.enabled() || !wc.hubEnabled() || to.getWorld() == null) {
+            return;
+        }
+        String hub = hubWorld.get();
+        if (hub == null || !to.getWorld().getName().equals(hub)) {
+            return;
+        }
+        UUID playerId = player.getUniqueId();
+        long now = System.currentTimeMillis();
+        Long last = lastHubCheckByPlayer.get(playerId);
+        if (last != null && now - last < wc.moveThrottleMillis()) {
+            return;
+        }
+        lastHubCheckByPlayer.put(playerId, now);
+
+        World world = to.getWorld();
+        int bx = to.getBlockX();
+        int by = to.getBlockY();
+        int bz = to.getBlockZ();
+        String biomeKey = biomeKeyAt(world, bx, by, bz);
+        BiomeInstanceKey instance = identityResolver.resolve(wc.regionSize(), hub, biomeKey, bx, bz);
+        String instanceKey = instanceKey(hub, instance.serialize());
+        if (instanceKey.equals(lastHubInstanceByPlayer.get(playerId))) {
+            return;
+        }
+        lastHubInstanceByPlayer.put(playerId, instanceKey);
+
+        // 1) même mécanisme exact que le Wild (#124), réutilisé tel quel — jamais réécrit ici.
+        waypointService.ensureGenerated(world, to);
+
+        // 2) une fois ce waypoint réellement présent (peut-être déjà le cas, ou généré à l'instant
+        //    par l'appel ci-dessus — la persistance est asynchrone, donc souvent pas encore prêt au
+        //    tout premier passage : l'appariement réessaiera au prochain déplacement du joueur dans
+        //    cette instance, sans scan supplémentaire), apparier une borne distincte.
+        Waypoint waypoint = waypointService.byId(instance.waypointId()).orElse(null);
+        if (waypoint == null) {
+            return;
+        }
+        ensureBeaconPaired(world, instance, instanceKey, waypoint, cfg.beacon());
+    }
+
+    private void ensureBeaconPaired(World world, BiomeInstanceKey instance, String instanceKey,
+                                     Waypoint waypoint, TravelConfig.BeaconConfig bc) {
+        if (!bc.hubGenerationEnabled() || byBiomeInstance.containsKey(instanceKey)) {
+            return;
+        }
+        Long notBefore = pairRetryNotBefore.get(instanceKey);
+        if (notBefore != null && System.currentTimeMillis() < notBefore) {
+            return;
+        }
+        if (!pairing.add(instanceKey)) {
+            return; // appariement déjà en cours pour cette instance.
+        }
+        try {
+            attemptPairBeacon(world, instance, instanceKey, waypoint, bc);
+        } catch (RuntimeException error) {
+            pairing.remove(instanceKey);
+            logger.error("Échec inattendu d'appariement de borne pour {}", instanceKey, error);
+        }
+    }
+
+    /** Recherche un emplacement <strong>distinct</strong> du waypoint (anneau min/max-spacing autour de lui, jamais au même endroit). */
+    private void attemptPairBeacon(World world, BiomeInstanceKey instance, String instanceKey,
+                                    Waypoint waypoint, TravelConfig.BeaconConfig bc) {
+        long seed = (instanceKey + "#beacon").hashCode();
+        int attempts = travelConfig.get().waypoint().candidateAttempts();
+        List<WaypointGenerationPlanner.Candidate> candidates = planner.candidates(
+                waypoint.x(), waypoint.z(), seed, bc.pairMinSpacing(), bc.pairMaxSpacing(), attempts);
+
+        for (WaypointGenerationPlanner.Candidate candidate : candidates) {
+            Optional<Location> safe = RandomSafeLocationFinder.findAtColumn(world, candidate.blockX(), candidate.blockZ());
+            if (safe.isEmpty()) {
+                continue;
+            }
+            int anchorX = safe.get().getBlockX();
+            int anchorY = safe.get().getBlockY();
+            int anchorZ = safe.get().getBlockZ();
+            BlockFace facing = facingAwayFrom(waypoint.x(), waypoint.z(), anchorX, anchorZ);
+
+            if (!areaFree(world, anchorX, anchorY, anchorZ, facing)
+                    || waypointService.isProtectedBlock(world.getName(), anchorX, anchorY, anchorZ)
+                    || violatesBeaconSpacing(world.getName(), anchorX, anchorZ, travelConfig.get().waypoint().minimumSpacing())) {
+                continue;
+            }
+
+            String id = "beacon_auto_" + sanitize(world.getName()) + "_"
+                    + sanitize(stripNamespace(waypoint.biomeKey())) + "_" + waypoint.regionX() + "_" + waypoint.regionZ();
+            place(world, anchorX, anchorY, anchorZ, facing);
+            TravelBeacon beacon = new TravelBeacon(id, world.getName(), anchorX, anchorY, anchorZ,
+                    facing.name(), VERSION, true, instance.serialize(), Instant.now());
+            persistPairedBeacon(beacon, instanceKey);
+            return;
+        }
+
+        // Aucun candidat valable : retry borné, jamais de boucle lourde (même esprit que WaypointService).
+        pairing.remove(instanceKey);
+        int attempt = pairRetryCount.merge(instanceKey, 1, Integer::sum);
+        long backoff = RETRY_BACKOFF_MILLIS[Math.min(attempt - 1, RETRY_BACKOFF_MILLIS.length - 1)];
+        pairRetryNotBefore.put(instanceKey, System.currentTimeMillis() + backoff);
+        logger.info("Aucun emplacement de borne trouvé pour {} (essai {}), nouvel essai dans {} s.",
+                instanceKey, attempt, backoff / 1000);
+    }
+
+    private void persistPairedBeacon(TravelBeacon beacon, String instanceKey) {
+        repository.insertIfAbsent(beacon).thenAccept(inserted -> runSync(() -> {
+            pairing.remove(instanceKey);
+            pairRetryCount.remove(instanceKey);
+            pairRetryNotBefore.remove(instanceKey);
+            if (inserted) {
+                index(beacon);
+                logger.info("Borne de voyage « {} » appariée en {} ({},{},{}) [instance {}].",
+                        beacon.id(), beacon.world(), beacon.x(), beacon.y(), beacon.z(), instanceKey);
+            } else {
+                // Course perdue (autre nœud/thread) : réaligner l'état mémoire depuis la base.
+                repository.findByInstance(beacon.world(), beacon.biomeInstance())
+                        .thenAccept(opt -> runSync(() -> opt.ifPresent(this::index)))
+                        .exceptionally(error -> {
+                            logger.error("Impossible de recharger la borne appariée {}", beacon.id(), error);
+                            return null;
+                        });
+            }
+        })).exceptionally(error -> {
+            pairing.remove(instanceKey);
+            logger.error("Impossible de persister la borne appariée {}", beacon.id(), error);
+            return null;
+        });
+    }
+
+    /** Même esprit que {@code WaypointService#violatesSpacing} — jamais deux bornes trop proches, toutes origines confondues. */
+    private boolean violatesBeaconSpacing(String world, int x, int z, int minSpacing) {
+        if (minSpacing <= 0) {
+            return false;
+        }
+        long minSq = (long) minSpacing * minSpacing;
+        for (TravelBeacon existing : byId.values()) {
+            if (!existing.world().equals(world)) {
+                continue;
+            }
+            long dx = existing.x() - x;
+            long dz = existing.z() - z;
+            if (dx * dx + dz * dz < minSq) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String biomeKeyAt(World world, int x, int y, int z) {
+        try {
+            return world.getBiome(x, y, z).getKey().toString();
+        } catch (RuntimeException error) {
+            return "minecraft:the_void";
+        }
+    }
+
+    /** Oriente le bouton à l'opposé du waypoint (ne pointe jamais vers lui) — purement cosmétique. */
+    private static BlockFace facingAwayFrom(int fromX, int fromZ, int anchorX, int anchorZ) {
+        double dx = anchorX - fromX;
+        double dz = anchorZ - fromZ;
+        if (Math.abs(dx) >= Math.abs(dz)) {
+            return dx >= 0 ? BlockFace.EAST : BlockFace.WEST;
+        }
+        return dz >= 0 ? BlockFace.SOUTH : BlockFace.NORTH;
+    }
+
+    private static String stripNamespace(String key) {
+        int colon = key.indexOf(':');
+        return colon >= 0 ? key.substring(colon + 1) : key;
+    }
+
+    private static String sanitize(String raw) {
+        return raw.replaceAll("[^A-Za-z0-9]", "_");
     }
 
     // ---- Interaction bouton -------------------------------------------------------------------
@@ -597,7 +817,8 @@ public final class TravelBeaconService implements PluginService {
         int bx = anchorX + facing.getModX();
         int bz = anchorZ + facing.getModZ();
         Block button = world.getBlockAt(bx, anchorY + 1, bz);
-        button.setType(Material.OAK_BUTTON, false);
+        Material buttonMaterial = travelConfig.get().beacon().buttonMaterial();
+        button.setType(buttonMaterial, false);
         try {
             BlockData data = button.getBlockData();
             if (data instanceof Switch sw) {
@@ -606,8 +827,8 @@ public final class TravelBeaconService implements PluginService {
                 button.setBlockData(sw, false);
             }
         } catch (RuntimeException ignored) {
-            // BlockData non simulé (tests) : le type OAK_BUTTON suffit, l'identité de l'interacteur
-            // est purement positionnelle côté service (comme WaypointModelV1).
+            // BlockData non simulé (tests) : le type de bouton configuré suffit, l'identité de
+            // l'interacteur est purement positionnelle côté service (comme WaypointModelV1).
         }
         set(world, bx, anchorY + 2, bz, Material.AIR);
     }
@@ -652,6 +873,9 @@ public final class TravelBeaconService implements PluginService {
 
     private void index(TravelBeacon beacon) {
         byId.put(beacon.id(), beacon);
+        if (beacon.isAutoGenerated()) {
+            byBiomeInstance.put(instanceKey(beacon.world(), beacon.biomeInstance()), beacon);
+        }
         BlockFace facing = parseFacing(beacon.facing());
         int ix = beacon.x() + facing.getModX();
         int iy = beacon.y() + 1;
@@ -673,6 +897,10 @@ public final class TravelBeaconService implements PluginService {
         } catch (IllegalArgumentException error) {
             return BlockFace.NORTH;
         }
+    }
+
+    private static String instanceKey(String world, String biomeInstance) {
+        return world + "#" + biomeInstance;
     }
 
     private static String blockKey(String world, int x, int y, int z) {

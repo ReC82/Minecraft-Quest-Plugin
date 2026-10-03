@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -17,10 +18,13 @@ import java.util.concurrent.CompletableFuture;
 public final class TravelBeaconRepository {
 
     private static final String INSERT_IGNORE = """
-            INSERT OR IGNORE INTO travel_beacons (id, world, x, y, z, facing, model_version, active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR IGNORE INTO travel_beacons
+                (id, world, x, y, z, facing, model_version, active, biome_instance, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
     private static final String SELECT_ALL = "SELECT * FROM travel_beacons";
+    private static final String SELECT_BY_INSTANCE =
+            "SELECT * FROM travel_beacons WHERE world = ? AND biome_instance = ? AND biome_instance != ''";
 
     private final DatabaseManager database;
     private final SqlDialect dialect;
@@ -55,8 +59,22 @@ public final class TravelBeaconRepository {
                 statement.setString(6, beacon.facing());
                 statement.setInt(7, beacon.modelVersion());
                 statement.setInt(8, beacon.active() ? 1 : 0);
-                statement.setString(9, beacon.createdAt().toString());
+                statement.setString(9, beacon.biomeInstance());
+                statement.setString(10, beacon.createdAt().toString());
                 return statement.executeUpdate() > 0;
+            }
+        });
+    }
+
+    /** Course perdue à l'appariement (issue #149) : relit la borne déjà posée pour cette instance par un autre nœud/thread. */
+    public CompletableFuture<Optional<TravelBeacon>> findByInstance(String world, String biomeInstance) {
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(SELECT_BY_INSTANCE)) {
+                statement.setString(1, world);
+                statement.setString(2, biomeInstance);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    return resultSet.next() ? Optional.of(map(resultSet)) : Optional.<TravelBeacon>empty();
+                }
             }
         });
     }
@@ -71,6 +89,7 @@ public final class TravelBeaconRepository {
                 resultSet.getString("facing"),
                 resultSet.getInt("model_version"),
                 resultSet.getInt("active") != 0,
+                resultSet.getString("biome_instance"),
                 Instant.parse(resultSet.getString("created_at")));
     }
 }

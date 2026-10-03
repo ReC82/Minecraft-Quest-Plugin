@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.travel.beacon;
 
+import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -10,6 +11,7 @@ import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 
@@ -25,6 +27,21 @@ final class TravelBeaconListener implements Listener {
 
     TravelBeaconListener(TravelBeaconService service) {
         this.service = service;
+    }
+
+    /**
+     * Génération automatique Hub (issue #149) — même garde-fou que {@code waypoint.WaypointListener}
+     * : n'évalue l'instance qu'au changement de bloc horizontal, jamais à chaque micro-mouvement.
+     * Sans effet hors du monde Hub configuré ({@link TravelBeaconService#handleHubMovement} filtre).
+     */
+    @EventHandler(ignoreCancelled = true)
+    public void onMove(PlayerMoveEvent event) {
+        Location to = event.getTo();
+        Location from = event.getFrom();
+        if (to == null || (from.getBlockX() == to.getBlockX() && from.getBlockZ() == to.getBlockZ())) {
+            return;
+        }
+        service.handleHubMovement(event.getPlayer(), to);
     }
 
     @EventHandler(ignoreCancelled = true)

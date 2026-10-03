@@ -21,7 +21,7 @@ import java.util.List;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 20;
+    public static final int CURRENT_VERSION = 21;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -44,7 +44,8 @@ public final class SchemaMigrator {
             new SchemaMigration(17, "waystones, waystone_discoveries", SchemaMigrator::applyV17),
             new SchemaMigration(18, "waypoints, waypoint_discoveries", SchemaMigrator::applyV18),
             new SchemaMigration(19, "travel_beacons", SchemaMigrator::applyV19),
-            new SchemaMigration(20, "village_centers", SchemaMigrator::applyV20));
+            new SchemaMigration(20, "village_centers", SchemaMigrator::applyV20),
+            new SchemaMigration(21, "travel_beacons.biome_instance", SchemaMigrator::applyV21));
 
     private SchemaMigrator() {
     }
@@ -609,6 +610,19 @@ public final class SchemaMigrator {
                         created_at TEXT NOT NULL
                     )
                     """));
+        }
+    }
+
+    private static void applyV21(Connection connection, SqlDialect dialect) throws SQLException {
+        // Appariement automatique borne+waypoint par instance de biome du Hub (issue #149) : ""
+        // (défaut) pour une borne placée à la main (#132, jamais liée à une instance précise),
+        // sinon BiomeInstanceKey#serialize() de l'instance à laquelle la borne est appariée — sert
+        // uniquement à l'idempotence de l'appariement, jamais une fusion avec la table waypoints.
+        if (dialect.columnExists(connection, "travel_beacons", "biome_instance")) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("ALTER TABLE travel_beacons ADD COLUMN biome_instance TEXT NOT NULL DEFAULT ''"));
         }
     }
 }

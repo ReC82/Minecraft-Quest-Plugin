@@ -162,6 +162,46 @@ public final class WaypointService implements PluginService {
         lastCheckByPlayer.remove(player.getUniqueId());
     }
 
+    // ---- Génération à la demande pour un monde arbitraire (issue #149 — Hub) -----------------
+
+    /**
+     * Même mécanisme exact que {@link #handleMovement} (recherche de candidat, aire libre,
+     * espacement, verrou mono-vol, réessai borné) mais piloté depuis l'extérieur — par
+     * {@code travel.beacon.TravelBeaconService} pour la génération automatique du Hub (issue
+     * #149) — plutôt que par le throttle interne lié à {@code travel.wild-world}.
+     * {@link #handleMovement} reste <strong>strictement inchangé</strong> : le Wild continue de
+     * passer exclusivement par lui, cette méthode ne change rien à son comportement.
+     */
+    public void ensureGenerated(World world, Location entry) {
+        WaypointConfig wc = config.get().waypoint();
+        if (!wc.enabled() || world == null) {
+            return;
+        }
+        int bx = entry.getBlockX();
+        int by = entry.getBlockY();
+        int bz = entry.getBlockZ();
+        String biomeKey = biomeKeyAt(world, bx, by, bz);
+        BiomeInstanceKey instance = identityResolver.resolve(wc.regionSize(), world.getName(), biomeKey, bx, bz);
+        String instanceKey = instanceKey(world.getName(), instance.serialize());
+
+        if (byInstance.containsKey(instanceKey)) {
+            return;
+        }
+        Long notBefore = retryNotBefore.get(instanceKey);
+        if (notBefore != null && System.currentTimeMillis() < notBefore) {
+            return;
+        }
+        if (!generating.add(instanceKey)) {
+            return;
+        }
+        try {
+            attemptGeneration(world, instance, instanceKey, entry, wc);
+        } catch (RuntimeException error) {
+            generating.remove(instanceKey);
+            logger.error("Échec inattendu de génération de waypoint pour {}", instanceKey, error);
+        }
+    }
+
     // ---- Entrée dans une instance de biome ---------------------------------------------------
 
     void handleMovement(Player player, Location to) {

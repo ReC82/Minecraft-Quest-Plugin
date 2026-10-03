@@ -21,7 +21,7 @@ class SchemaMigratorTest {
     void migrateSetsUserVersionToCurrentSchemaVersion() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(20, userVersion(connection));
+            assertEquals(21, userVersion(connection));
         }
     }
 
@@ -30,7 +30,7 @@ class SchemaMigratorTest {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema2.db"))) {
             SchemaMigrator.migrate(connection);
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(20, userVersion(connection));
+            assertEquals(21, userVersion(connection));
         }
     }
 
@@ -46,7 +46,7 @@ class SchemaMigratorTest {
 
             SchemaMigrator.migrate(connection);
 
-            assertEquals(20, userVersion(connection));
+            assertEquals(21, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='quest_objective_progress'")) {
@@ -243,7 +243,7 @@ class SchemaMigratorTest {
                 assertTrue(resultSet.next(), "les données déjà présentes avant la migration V14 doivent survivre telles quelles");
                 assertEquals("Steve", resultSet.getString("last_name"));
             }
-            assertEquals(20, userVersion(connection));
+            assertEquals(21, userVersion(connection));
         }
     }
 
@@ -309,7 +309,7 @@ class SchemaMigratorTest {
 
             SchemaMigrator.migrate(connection);
 
-            assertEquals(20, userVersion(connection));
+            assertEquals(21, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT min_x, max_x, reserved_min_x, reserved_max_x FROM claims WHERE id = 'legacy'")) {
@@ -378,7 +378,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 17");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(20, userVersion(connection));
+            assertEquals(21, userVersion(connection));
         }
     }
 
@@ -390,7 +390,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 15");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(20, userVersion(connection));
+            assertEquals(21, userVersion(connection));
         }
     }
 
@@ -398,7 +398,7 @@ class SchemaMigratorTest {
     void migrateCreatesTravelBeaconsTable() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema19.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(20, userVersion(connection));
+            assertEquals(21, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='travel_beacons'")) {
@@ -415,7 +415,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 18");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(20, userVersion(connection));
+            assertEquals(21, userVersion(connection));
         }
     }
 
@@ -423,7 +423,7 @@ class SchemaMigratorTest {
     void migrateCreatesVillageCentersTable() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema20.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(20, userVersion(connection));
+            assertEquals(21, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='village_centers'")) {
@@ -440,7 +440,37 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 19");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(20, userVersion(connection));
+            assertEquals(21, userVersion(connection));
+        }
+    }
+
+    @Test
+    void migrateAddsBiomeInstanceColumnToTravelBeacons() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema21.db"))) {
+            SchemaMigrator.migrate(connection);
+            assertEquals(21, userVersion(connection));
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate(
+                        "INSERT INTO travel_beacons (id, world, x, y, z, facing, model_version, active, created_at) "
+                                + "VALUES ('b1', 'world_hub', 1, 2, 3, 'NORTH', 1, 1, '2026-01-01T00:00:00Z')");
+                try (ResultSet resultSet = statement.executeQuery(
+                        "SELECT biome_instance FROM travel_beacons WHERE id = 'b1'")) {
+                    assertTrue(resultSet.next());
+                    assertEquals("", resultSet.getString("biome_instance"));
+                }
+            }
+        }
+    }
+
+    @Test
+    void reRunningV21IsIdempotent() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schemaV21.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA user_version = 20");
+            }
+            assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
+            assertEquals(21, userVersion(connection));
         }
     }
 

@@ -700,7 +700,8 @@ public final class ConfigValidator {
         return new TravelConfig(wildWorld,
                 new TravelConfig.RuneConfig(runeChannel, runeCooldown),
                 new TravelConfig.WaystoneConfig(cellSize, chance, minimumSpacing, safeAttempts, waystoneChannel),
-                validateWaypoint(travel != null ? travel.getConfigurationSection("waypoint") : null));
+                validateWaypoint(travel != null ? travel.getConfigurationSection("waypoint") : null),
+                validateBeacon(travel != null ? travel.getConfigurationSection("beacon") : null));
     }
 
     private static TravelConfig.WaypointConfig validateWaypoint(ConfigurationSection waypoint)
@@ -748,8 +749,40 @@ public final class ConfigValidator {
 
         int modelVersion = positiveInt(waypoint, "travel.waypoint.model-version", defaults.modelVersion());
 
+        boolean hubEnabled = waypoint.getBoolean("hub-enabled", defaults.hubEnabled());
+
         return new TravelConfig.WaypointConfig(enabled, regionSize, minDistance, maxDistance,
-                candidateAttempts, moveThrottleMillis, minimumSpacing, modelVersion);
+                candidateAttempts, moveThrottleMillis, minimumSpacing, modelVersion, hubEnabled);
+    }
+
+    private static TravelConfig.BeaconConfig validateBeacon(ConfigurationSection beacon) throws ConfigValidationException {
+        TravelConfig.BeaconConfig defaults = TravelConfig.BeaconConfig.defaults();
+        if (beacon == null) {
+            return defaults;
+        }
+
+        String rawButton = beacon.getString("button-material", defaults.buttonMaterial().name());
+        Material buttonMaterial = Material.matchMaterial(rawButton);
+        if (buttonMaterial == null || !buttonMaterial.name().endsWith("_BUTTON")) {
+            throw new ConfigValidationException(
+                    "« travel.beacon.button-material » doit être un bouton valide (ex. OAK_BUTTON), valeur trouvée : " + rawButton);
+        }
+
+        ConfigurationSection hubGeneration = beacon.getConfigurationSection("hub-generation");
+        boolean hubGenerationEnabled = hubGeneration != null
+                ? hubGeneration.getBoolean("enabled", defaults.hubGenerationEnabled()) : defaults.hubGenerationEnabled();
+        int pairMinSpacing = hubGeneration != null
+                ? positiveInt(hubGeneration, "travel.beacon.hub-generation.pair-min-spacing", defaults.pairMinSpacing())
+                : defaults.pairMinSpacing();
+        int pairMaxSpacing = hubGeneration != null
+                ? hubGeneration.getInt("pair-max-spacing", defaults.pairMaxSpacing()) : defaults.pairMaxSpacing();
+        if (pairMaxSpacing < pairMinSpacing) {
+            throw new ConfigValidationException(
+                    "« travel.beacon.hub-generation.pair-max-spacing » doit être supérieur ou égal à pair-min-spacing, "
+                            + "valeurs trouvées : " + pairMaxSpacing + " < " + pairMinSpacing);
+        }
+
+        return new TravelConfig.BeaconConfig(buttonMaterial, hubGenerationEnabled, pairMinSpacing, pairMaxSpacing);
     }
 
     private static final List<Material> DEFAULT_STARTER_TOOL_KIT_ITEMS = List.of(

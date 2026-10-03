@@ -1,5 +1,7 @@
 package com.lodygames.rpgquest.config;
 
+import org.bukkit.Material;
+
 /**
  * Paramètres de la boucle joueur Hub ↔ Wild (mission « boucle joueur ») :
  *
@@ -16,7 +18,16 @@ package com.lodygames.rpgquest.config;
  *       Waystones (réseau de voyage sur grille).</li>
  * </ul>
  */
-public record TravelConfig(String wildWorld, RuneConfig rune, WaystoneConfig waystone, WaypointConfig waypoint) {
+public record TravelConfig(String wildWorld, RuneConfig rune, WaystoneConfig waystone, WaypointConfig waypoint,
+                            BeaconConfig beacon) {
+
+    /**
+     * Constructeur historique à 4 composantes : conserve la compatibilité des sites d'appel
+     * antérieurs à l'issue #149 en appliquant les valeurs par défaut des bornes.
+     */
+    public TravelConfig(String wildWorld, RuneConfig rune, WaystoneConfig waystone, WaypointConfig waypoint) {
+        this(wildWorld, rune, waystone, waypoint, BeaconConfig.defaults());
+    }
 
     /**
      * Constructeur historique à 3 composantes : conserve la compatibilité des sites d'appel
@@ -45,15 +56,44 @@ public record TravelConfig(String wildWorld, RuneConfig rune, WaystoneConfig way
      *   <li>{@code moveThrottleMillis} : intervalle minimal entre deux évaluations de l'instance de
      *       biome pour un même joueur (jamais de scan à chaque {@code PlayerMoveEvent}) ;</li>
      *   <li>{@code minimumSpacing} : distance minimale (blocs) entre deux waypoints ;</li>
-     *   <li>{@code modelVersion} : version du modèle de rendu stampée sur les nouveaux waypoints.</li>
+     *   <li>{@code modelVersion} : version du modèle de rendu stampée sur les nouveaux waypoints ;</li>
+     *   <li>{@code hubEnabled} (issue #149) : étend ce même mécanisme au monde Hub configuré
+     *       ({@code hub.world}) — décision actée remplaçant l'exclusion historique du Hub
+     *       (#136/#137). {@code false} désactive uniquement la génération Hub, jamais celle du
+     *       Wild.</li>
      * </ul>
      */
     public record WaypointConfig(boolean enabled, long regionSize, int minDistance, int maxDistance,
                                  int candidateAttempts, long moveThrottleMillis, int minimumSpacing,
-                                 int modelVersion) {
+                                 int modelVersion, boolean hubEnabled) {
+
+        /** Compatibilité des sites d'appel antérieurs à l'issue #149 (hubEnabled par défaut true, décision actée). */
+        public WaypointConfig(boolean enabled, long regionSize, int minDistance, int maxDistance,
+                               int candidateAttempts, long moveThrottleMillis, int minimumSpacing, int modelVersion) {
+            this(enabled, regionSize, minDistance, maxDistance, candidateAttempts, moveThrottleMillis,
+                    minimumSpacing, modelVersion, true);
+        }
 
         public static WaypointConfig defaults() {
-            return new WaypointConfig(true, 256L, 24, 72, 12, 1500L, 80, 1);
+            return new WaypointConfig(true, 256L, 24, 72, 12, 1500L, 80, 1, true);
+        }
+    }
+
+    /**
+     * Bornes du réseau de voyage (issues #132/#150/#149) : {@code buttonMaterial} doit être un
+     * bouton en bois (essence configurable, {@code OAK_BUTTON} par défaut).
+     * {@code hubGenerationEnabled}/{@code pairMinSpacing}/{@code pairMaxSpacing} pilotent la
+     * génération automatique d'une borne appariée à chaque waypoint du Hub (issue #149) — jamais
+     * dans le Wild, où seul un placement administré existe. {@code pairMinSpacing}/
+     * {@code pairMaxSpacing} forment l'anneau (autour du waypoint, même mécanisme que
+     * {@code waypoint.WaypointGenerationPlanner}) dans lequel la borne est cherchée : jamais au
+     * même endroit que le waypoint (séparation minimale), jamais à l'autre bout de l'instance.
+     */
+    public record BeaconConfig(Material buttonMaterial, boolean hubGenerationEnabled,
+                                int pairMinSpacing, int pairMaxSpacing) {
+
+        public static BeaconConfig defaults() {
+            return new BeaconConfig(Material.OAK_BUTTON, true, 6, 16);
         }
     }
 

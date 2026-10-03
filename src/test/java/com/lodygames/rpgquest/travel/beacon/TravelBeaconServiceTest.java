@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.travel.beacon;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
@@ -9,6 +10,7 @@ import com.lodygames.rpgquest.claim.model.Claim;
 import com.lodygames.rpgquest.claim.model.ClaimFlags;
 import com.lodygames.rpgquest.config.ConfigService;
 import com.lodygames.rpgquest.config.TravelConfig;
+import com.lodygames.rpgquest.config.TravelConfig.BeaconConfig;
 import com.lodygames.rpgquest.config.TravelConfig.RuneConfig;
 import com.lodygames.rpgquest.config.TravelConfig.WaypointConfig;
 import com.lodygames.rpgquest.config.TravelConfig.WaystoneConfig;
@@ -22,6 +24,7 @@ import com.lodygames.rpgquest.database.VillageCenterRepository;
 import com.lodygames.rpgquest.database.WaypointRepository;
 import com.lodygames.rpgquest.progression.ProgressionService;
 import com.lodygames.rpgquest.travel.YamlPortalRegistry;
+import com.lodygames.rpgquest.travel.beacon.model.TravelBeacon;
 import com.lodygames.rpgquest.travel.beacon.model.VillageCenter;
 import com.lodygames.rpgquest.waypoint.WaypointGenerationPlanner;
 import com.lodygames.rpgquest.waypoint.WaypointIdentityResolver;
@@ -33,6 +36,7 @@ import com.lodygames.rpgquest.waypoint.render.WaypointModelRegistry;
 import com.lodygames.rpgquest.waypoint.render.WaypointModelV1;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.time.Instant;
@@ -41,6 +45,7 @@ import java.util.concurrent.TimeUnit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Biome;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.event.block.Action;
@@ -93,9 +98,12 @@ class TravelBeaconServiceTest {
     private PlayerVariableRepository variableRepository;
     private ClaimService claimService;
     private TravelBeaconService service;
+    /** Mutable : certains tests #149 modifient la configuration (gating) sans reconstruire les services. */
+    private TravelConfig currentConfig;
 
     @BeforeEach
     void setUp() throws Exception {
+        currentConfig = defaultTravelConfig();
         server = MockBukkit.mock();
         plugin = MockBukkit.load(RPGQuestPlugin.class);
         wild = server.addSimpleWorld("wild");
@@ -124,7 +132,8 @@ class TravelBeaconServiceTest {
 
         beaconRepository = new TravelBeaconRepository(database);
         villageCenterRepository = new VillageCenterRepository(database);
-        service = new TravelBeaconService(plugin, beaconRepository, waypointService, claimService, villageCenterRepository);
+        service = new TravelBeaconService(plugin, beaconRepository, waypointService, claimService, villageCenterRepository,
+                this::travelConfig, () -> "world_hub");
     }
 
     @AfterEach
@@ -137,8 +146,13 @@ class TravelBeaconServiceTest {
     }
 
     private TravelConfig travelConfig() {
+        return currentConfig;
+    }
+
+    private TravelConfig defaultTravelConfig() {
         return new TravelConfig("wild", new RuneConfig(10, 1800), new WaystoneConfig(1000L, 1.0, 300, 16, 1),
-                new WaypointConfig(true, 256L, 16, 40, 24, 0L, 8, 1));
+                new WaypointConfig(true, 256L, 16, 40, 24, 0L, 8, 1, true),
+                new BeaconConfig(Material.OAK_BUTTON, true, 6, 16));
     }
 
     private PlayerMock addPlayer() throws Exception {
@@ -456,5 +470,164 @@ class TravelBeaconServiceTest {
         assertEquals(before.getWorld(), player.getLocation().getWorld());
 
         assertTrue(service.removeVillage("does_not_exist").isPresent());
+    }
+
+    // ---- Issue #149 : génération progressive waypoint + borne appariée dans le Hub -----------
+
+    private static final int HUB_RADIUS = 64;
+
+    /** Plateforme de pierre + biome imposé, assez large pour couvrir waypoint (40) + appariement borne (16). */
+    private void prepareHubArea(int centerX, int centerZ, Biome biome) {
+        for (int x = centerX - HUB_RADIUS; x <= centerX + HUB_RADIUS; x++) {
+            for (int z = centerZ - HUB_RADIUS; z <= centerZ + HUB_RADIUS; z++) {
+                hub.getBlockAt(x, 64, z).setType(Material.STONE);
+                hub.getBlockAt(x, 65, z).setType(Material.AIR);
+                hub.getBlockAt(x, 66, z).setType(Material.AIR);
+                hub.getBlockAt(x, 67, z).setType(Material.AIR);
+                hub.setBiome(x, z, biome);
+            }
+        }
+    }
+
+    private Optional<Waypoint> waypointNear(int centerX, int centerZ) {
+        return waypointService.all().stream()
+                .filter(w -> w.world().equals("world_hub"))
+                .filter(w -> Math.abs(w.x() - centerX) <= HUB_RADIUS && Math.abs(w.z() - centerZ) <= HUB_RADIUS)
+                .findFirst();
+    }
+
+    private Optional<TravelBeacon> beaconNear(int centerX, int centerZ) {
+        return service.all().stream()
+                .filter(b -> b.world().equals("world_hub"))
+                .filter(b -> Math.abs(b.x() - centerX) <= HUB_RADIUS && Math.abs(b.z() - centerZ) <= HUB_RADIUS)
+                .findFirst();
+    }
+
+    @Test
+    void hubMovementProgressivelyGeneratesAWaypointThenAPairedBeaconAtDistinctPositionsForTwoPlayers() throws Exception {
+        waypointService.start();
+        service.start();
+        prepareHubArea(1000, 1000, Biome.PLAINS);
+        Location entry = new Location(hub, 1000.5, 65, 1000.5);
+
+        PlayerMock first = addPlayer();
+        service.handleHubMovement(first, entry); // déclenche la génération du waypoint (asynchrone).
+        await(() -> waypointNear(1000, 1000).isPresent());
+        assertTrue(beaconNear(1000, 1000).isEmpty(), "pas encore de borne : le waypoint vient tout juste d'apparaître");
+
+        PlayerMock second = addPlayer();
+        service.handleHubMovement(second, entry); // waypoint désormais prêt : la borne s'apparie.
+        await(() -> beaconNear(1000, 1000).isPresent());
+
+        Waypoint waypoint = waypointNear(1000, 1000).orElseThrow();
+        TravelBeacon beacon = beaconNear(1000, 1000).orElseThrow();
+        assertTrue(beacon.isAutoGenerated(), "une borne appariée au Hub porte une biome_instance");
+        assertTrue(beacon.id().startsWith("beacon_auto_"));
+        assertTrue(beacon.x() != waypoint.x() || beacon.z() != waypoint.z(),
+                "la borne doit être à une position distincte du waypoint");
+
+        // Rejouer (autres joueurs, mouvements répétés) ne crée jamais de doublon.
+        PlayerMock third = addPlayer();
+        service.handleHubMovement(third, entry);
+        service.handleHubMovement(third, entry);
+        server.getScheduler().performTicks(10);
+        assertEquals(1, waypointService.all().size());
+        assertEquals(1, service.all().size());
+    }
+
+    @Test
+    void twoDistinctHubBiomeInstancesEachGetTheirOwnDistinctWaypointAndBeaconPair() throws Exception {
+        waypointService.start();
+        service.start();
+        prepareHubArea(2000, 2000, Biome.PLAINS);
+        prepareHubArea(2000 + 4 * 256, 2000, Biome.PLAINS);
+
+        PlayerMock player = addPlayer();
+        waypointService.ensureGenerated(hub, new Location(hub, 2000.5, 65, 2000.5));
+        waypointService.ensureGenerated(hub, new Location(hub, 2000.5 + 4 * 256, 65, 2000.5));
+        await(() -> waypointNear(2000, 2000).isPresent());
+        await(() -> waypointNear(2000 + 4 * 256, 2000).isPresent());
+
+        service.handleHubMovement(player, new Location(hub, 2000.5, 65, 2000.5));
+        await(() -> beaconNear(2000, 2000).isPresent());
+        service.handleHubMovement(player, new Location(hub, 2000.5 + 4 * 256, 65, 2000.5));
+        await(() -> beaconNear(2000 + 4 * 256, 2000).isPresent());
+
+        assertEquals(2, waypointService.all().size());
+        assertEquals(2, service.all().size());
+        Waypoint firstWaypoint = waypointNear(2000, 2000).orElseThrow();
+        Waypoint secondWaypoint = waypointNear(2000 + 4 * 256, 2000).orElseThrow();
+        assertFalse(firstWaypoint.biomeInstance().equals(secondWaypoint.biomeInstance()));
+    }
+
+    @Test
+    void hubWaypointGenerationIsSkippedWhenWaypointHubEnabledIsFalse() throws Exception {
+        currentConfig = new TravelConfig("wild", new RuneConfig(10, 1800), new WaystoneConfig(1000L, 1.0, 300, 16, 1),
+                new WaypointConfig(true, 256L, 16, 40, 24, 0L, 8, 1, false),
+                new BeaconConfig(Material.OAK_BUTTON, true, 6, 16));
+        waypointService.start();
+        service.start();
+        prepareHubArea(3000, 3000, Biome.PLAINS);
+
+        service.handleHubMovement(addPlayer(), new Location(hub, 3000.5, 65, 3000.5));
+        server.getScheduler().performTicks(10);
+
+        assertTrue(waypointService.all().isEmpty(), "hub-enabled=false : aucune génération, même dans le Hub");
+        assertTrue(service.all().isEmpty());
+    }
+
+    @Test
+    void beaconPairingIsSkippedWhenBeaconHubGenerationEnabledIsFalseButWaypointStillGenerates() throws Exception {
+        currentConfig = new TravelConfig("wild", new RuneConfig(10, 1800), new WaystoneConfig(1000L, 1.0, 300, 16, 1),
+                new WaypointConfig(true, 256L, 16, 40, 24, 0L, 8, 1, true),
+                new BeaconConfig(Material.OAK_BUTTON, false, 6, 16));
+        waypointService.start();
+        service.start();
+        prepareHubArea(4000, 4000, Biome.PLAINS);
+
+        service.handleHubMovement(addPlayer(), new Location(hub, 4000.5, 65, 4000.5));
+        await(() -> waypointNear(4000, 4000).isPresent());
+        server.getScheduler().performTicks(10);
+
+        assertTrue(service.all().isEmpty(), "borne appariée désactivée : le waypoint existe seul");
+    }
+
+    @Test
+    void hubMovementHasNoEffectOutsideTheHubWorldAndAdministeredBeaconsAreNeverMarkedAutoGenerated() throws Exception {
+        waypointService.start();
+        service.start();
+        PlayerMock player = addPlayer();
+        player.teleport(new Location(wild, 5000.5, 65, 5000.5, 0f, 0f));
+        wild.getBlockAt(5000, 64, 5000).setType(Material.STONE);
+
+        service.handleHubMovement(player, new Location(wild, 5000.5, 65, 5000.5)); // monde Wild, pas Hub.
+        server.getScheduler().performTicks(5);
+        assertTrue(waypointService.all().isEmpty());
+        assertTrue(service.all().isEmpty());
+
+        var error = service.placeAt(player, player.getLocation());
+        assertTrue(error.isEmpty());
+        await(() -> !service.all().isEmpty());
+        assertFalse(service.all().get(0).isAutoGenerated(), "placement administré : jamais marqué auto-généré");
+    }
+
+    @Test
+    void bothAutoGeneratedStructuresAreProtectedAfterHubPairing() throws Exception {
+        waypointService.start();
+        service.start();
+        prepareHubArea(6000, 6000, Biome.PLAINS);
+        Location entry = new Location(hub, 6000.5, 65, 6000.5);
+        waypointService.ensureGenerated(hub, entry);
+        await(() -> waypointNear(6000, 6000).isPresent());
+
+        service.handleHubMovement(addPlayer(), entry);
+        await(() -> beaconNear(6000, 6000).isPresent());
+
+        Waypoint waypoint = waypointNear(6000, 6000).orElseThrow();
+        TravelBeacon beacon = beaconNear(6000, 6000).orElseThrow();
+        assertTrue(waypointService.isProtectedBlock("world_hub", waypoint.x(), waypoint.y() + 1, waypoint.z()),
+                "le waypoint auto-généré du Hub reste protégé");
+        assertTrue(service.isProtectedBlock("world_hub", beacon.x(), beacon.y() + 1, beacon.z()),
+                "la borne appariée du Hub reste protégée");
     }
 }

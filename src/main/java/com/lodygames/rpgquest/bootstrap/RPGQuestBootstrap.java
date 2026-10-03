@@ -44,6 +44,7 @@ import com.lodygames.rpgquest.database.PlacedBlockRepository;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.TravelBeaconRepository;
+import com.lodygames.rpgquest.database.VillageCenterRepository;
 import com.lodygames.rpgquest.database.ClaimRepository;
 import com.lodygames.rpgquest.database.MarketRepository;
 import com.lodygames.rpgquest.database.PortalCooldownRepository;
@@ -531,7 +532,8 @@ public final class RPGQuestBootstrap {
         // le joueur. Strictement distinct de waypoint/waystone (aucune fusion d'identité/table) ;
         // aucune génération automatique ici (#149) — placement manuel via /rpgadmin travel beacon set.
         travelBeaconService = new TravelBeaconService(
-                plugin, new TravelBeaconRepository(databaseService.databaseManager()), waypointService);
+                plugin, new TravelBeaconRepository(databaseService.databaseManager()), waypointService,
+                claimService, new VillageCenterRepository(databaseService.databaseManager()));
         registry.start(travelBeaconService);
         registry.start(new PlayerListenerService(plugin, travelBeaconService.listener()));
         registry.start(new PlayerListenerService(plugin, travelBeaconService.protectionListener()));

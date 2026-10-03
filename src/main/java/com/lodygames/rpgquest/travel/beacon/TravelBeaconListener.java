@@ -66,14 +66,11 @@ final class TravelBeaconListener implements Listener {
             return;
         }
         if (holder.kind() == BeaconMenuHolder.Kind.ROOT) {
-            switch (event.getSlot()) {
-                case 2 -> service.openWaypoints(player, 0, "");
-                case 4, 6 -> player.sendMessage(net.kyori.adventure.text.minimessage.MiniMessage.miniMessage()
-                        .deserialize("<yellow>Pas encore disponible dans cette version.</yellow>"));
-                default -> { }
-            }
+            service.handleRootCategoryClick(player, event.getSlot());
         } else if (holder.kind() == BeaconMenuHolder.Kind.WAYPOINTS) {
             service.handleWaypointsClick(player, event.getSlot(), session);
+        } else if (holder.kind() == BeaconMenuHolder.Kind.VILLAGES) {
+            service.handleVillagesClick(player, event.getSlot(), session);
         }
     }
 

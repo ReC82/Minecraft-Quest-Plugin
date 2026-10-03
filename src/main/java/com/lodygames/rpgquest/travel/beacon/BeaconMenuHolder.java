@@ -7,7 +7,7 @@ import org.jetbrains.annotations.NotNull;
 /** Marqueur d'un inventaire du menu de voyage (issues #132/#150) — jamais un inventaire réel du monde. */
 final class BeaconMenuHolder implements InventoryHolder {
 
-    enum Kind { ROOT, WAYPOINTS, SEARCH }
+    enum Kind { ROOT, WAYPOINTS, SEARCH, VILLAGES }
 
     private final Kind kind;
     private Inventory inventory;

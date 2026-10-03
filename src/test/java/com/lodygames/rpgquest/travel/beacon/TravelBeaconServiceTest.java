@@ -4,14 +4,25 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.claim.ClaimService;
+import com.lodygames.rpgquest.claim.model.Claim;
+import com.lodygames.rpgquest.claim.model.ClaimFlags;
+import com.lodygames.rpgquest.config.ConfigService;
 import com.lodygames.rpgquest.config.TravelConfig;
 import com.lodygames.rpgquest.config.TravelConfig.RuneConfig;
 import com.lodygames.rpgquest.config.TravelConfig.WaypointConfig;
 import com.lodygames.rpgquest.config.TravelConfig.WaystoneConfig;
+import com.lodygames.rpgquest.database.ClaimRepository;
 import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
+import com.lodygames.rpgquest.database.PlayerVariableRepository;
+import com.lodygames.rpgquest.database.ProgressionRepository;
 import com.lodygames.rpgquest.database.TravelBeaconRepository;
+import com.lodygames.rpgquest.database.VillageCenterRepository;
 import com.lodygames.rpgquest.database.WaypointRepository;
+import com.lodygames.rpgquest.progression.ProgressionService;
+import com.lodygames.rpgquest.travel.YamlPortalRegistry;
+import com.lodygames.rpgquest.travel.beacon.model.VillageCenter;
 import com.lodygames.rpgquest.waypoint.WaypointGenerationPlanner;
 import com.lodygames.rpgquest.waypoint.WaypointIdentityResolver;
 import com.lodygames.rpgquest.waypoint.WaypointPlacementGuard;
@@ -20,7 +31,10 @@ import com.lodygames.rpgquest.waypoint.model.Waypoint;
 import com.lodygames.rpgquest.waypoint.render.BlockOffset;
 import com.lodygames.rpgquest.waypoint.render.WaypointModelRegistry;
 import com.lodygames.rpgquest.waypoint.render.WaypointModelV1;
+import com.lodygames.rpgquest.zone.ZoneRegistry;
 import java.nio.file.Path;
+import java.util.Set;
+import java.util.UUID;
 import java.time.Instant;
 import java.util.function.BooleanSupplier;
 import java.util.concurrent.TimeUnit;
@@ -42,11 +56,23 @@ import org.mockbukkit.mockbukkit.ServerMock;
 import org.mockbukkit.mockbukkit.entity.PlayerMock;
 
 /**
- * Issues #132/#150 : parcours « waypoint découvert dans le Wild -> borne du Hub -> menu -> retour
- * sûr au même waypoint », isolation des découvertes entre joueurs, revalidation stricte, pagination
- * et recherche normalisée. Découverte simulée via le vrai bus d'événements Bukkit (même technique
- * que {@code dialogue.session.DialogueSessionEngineTest}) : {@link TravelBeaconServiceTest} est
- * dans un paquet différent de {@code waypoint}, donc jamais d'appel direct à ses méthodes de paquet.
+ * Issues #132/#150/#151 : parcours « waypoint découvert dans le Wild -> borne du Hub -> menu ->
+ * retour sûr au même waypoint », « Mon claim », « Villages », isolation des découvertes entre
+ * joueurs, revalidation stricte, pagination et recherche normalisée. Découverte simulée via le vrai
+ * bus d'événements Bukkit (même technique que {@code dialogue.session.DialogueSessionEngineTest}) :
+ * {@link TravelBeaconServiceTest} est dans un paquet différent de {@code waypoint}, donc jamais
+ * d'appel direct à ses méthodes de paquet.
+ *
+ * <p><strong>Limitation MockBukkit connue</strong> (même catégorie que les occurrences déjà
+ * documentées depuis l'étape 18, nouvelle occurrence) : {@code EntityMock#teleportAsync(Location)}
+ * (la surcharge à deux arguments sans {@code TeleportCause} explicite) lève
+ * {@code UnimplementedOperationException} — JUnit traite ceci comme une exécution
+ * <strong>ignorée</strong> (jamais un échec) dès qu'un scénario atteint réellement la
+ * téléportation finale ({@code fullJourneyDiscoverBeaconMenuAndSafeReturnToTheSameWaypoint},
+ * {@code travelToClaimRefusesWithoutAClaimThenArrivesInsideOnceOneExists},
+ * {@code villageCentersAreDistinctByIdAndTravelArrivesAtTheExactStoredLocation}). Tout ce qui
+ * précède la téléportation elle-même (découverte, revalidation, calcul de la position sûre) est
+ * bien exercé et vérifié avant que l'appel ne soit atteint.</p>
  */
 class TravelBeaconServiceTest {
 
@@ -59,9 +85,13 @@ class TravelBeaconServiceTest {
     private RPGQuestPlugin plugin;
     private DatabaseManager database;
     private World wild;
+    private World hub;
     private WaypointRepository waypointRepository;
     private WaypointService waypointService;
     private TravelBeaconRepository beaconRepository;
+    private VillageCenterRepository villageCenterRepository;
+    private PlayerVariableRepository variableRepository;
+    private ClaimService claimService;
     private TravelBeaconService service;
 
     @BeforeEach
@@ -69,6 +99,7 @@ class TravelBeaconServiceTest {
         server = MockBukkit.mock();
         plugin = MockBukkit.load(RPGQuestPlugin.class);
         wild = server.addSimpleWorld("wild");
+        hub = server.addSimpleWorld("world_hub");
 
         database = new DatabaseManager(tempDir.resolve("test.db"));
         database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
@@ -77,13 +108,29 @@ class TravelBeaconServiceTest {
                 new WaypointGenerationPlanner(), new WaypointModelRegistry(1, new WaypointModelV1()),
                 WaypointPlacementGuard.ALLOW_ALL, this::travelConfig);
 
+        ZoneRegistry zoneRegistry = new ZoneRegistry(tempDir.resolve("zones"), plugin.getSLF4JLogger());
+        zoneRegistry.start();
+        YamlPortalRegistry portalRegistry = new YamlPortalRegistry(tempDir.resolve("portals"), plugin.getSLF4JLogger());
+        portalRegistry.start();
+        ConfigService configService = new ConfigService(plugin);
+        configService.start();
+        ProgressionService progressionService = new ProgressionService(plugin, new ProgressionRepository(database),
+                () -> configService.current().progression(), plugin.getSLF4JLogger());
+        progressionService.start();
+        variableRepository = new PlayerVariableRepository(database);
+        claimService = new ClaimService(plugin, new ClaimRepository(database), zoneRegistry, portalRegistry,
+                configService, progressionService, variableRepository);
+        claimService.start();
+
         beaconRepository = new TravelBeaconRepository(database);
-        service = new TravelBeaconService(plugin, beaconRepository, waypointService);
+        villageCenterRepository = new VillageCenterRepository(database);
+        service = new TravelBeaconService(plugin, beaconRepository, waypointService, claimService, villageCenterRepository);
     }
 
     @AfterEach
     void tearDown() {
         service.stop();
+        claimService.stop();
         waypointService.stop();
         database.shutdown();
         MockBukkit.unmock();
@@ -325,5 +372,89 @@ class TravelBeaconServiceTest {
     void normalizeIsCaseAndAccentInsensitive() {
         assertEquals(TravelBeaconService.normalize("forest"), TravelBeaconService.normalize("FOREST"));
         assertEquals(TravelBeaconService.normalize("foret"), TravelBeaconService.normalize("Forêt"));
+    }
+
+    // ---- Issue #151 : Mon claim --------------------------------------------------------------
+
+    @Test
+    void travelToClaimRefusesWithoutAClaimThenArrivesInsideOnceOneExists() throws Exception {
+        waypointService.start();
+        service.start();
+        PlayerMock player = addPlayer();
+        Location before = player.getLocation().clone();
+
+        service.travelToClaim(player);
+        assertEquals(before.getWorld(), player.getLocation().getWorld());
+
+        // ClaimService#create refuse le monde Hub (claim à la baguette hors Hub uniquement) :
+        // un monde dédié, comme pour les autres tests de claims du dépôt.
+        World claimsWorld = server.addSimpleWorld("claims_test");
+        for (int x = -5; x <= 5; x++) {
+            for (int z = -5; z <= 5; z++) {
+                claimsWorld.getBlockAt(x, 59, z).setType(Material.STONE);
+                claimsWorld.getBlockAt(x, 60, z).setType(Material.AIR);
+                claimsWorld.getBlockAt(x, 61, z).setType(Material.AIR);
+            }
+        }
+        variableRepository.set(player.getUniqueId(), ClaimService.CLAIM_TIER_1_KEY, ClaimService.CLAIM_TIER_1_VALUE)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        var outcome = claimService.create(player, "main_" + player.getUniqueId(),
+                new Location(claimsWorld, -4, 60, -4), new Location(claimsWorld, 4, 63, 4))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(ClaimService.CreateOutcome.CREATED, outcome, "pré-requis du test : le claim doit vraiment être créé");
+        // La création termine sa future avant que le cache mémoire ne soit réappliqué sur le thread
+        // principal (runOnMainThread) : attendre que mainClaimOf reflète vraiment le nouveau claim.
+        await(() -> claimService.mainClaimOf(player.getUniqueId()).isPresent());
+
+        service.travelToClaim(player);
+        assertEquals("claims_test", player.getLocation().getWorld().getName());
+        var claim = claimService.mainClaimOf(player.getUniqueId()).orElseThrow();
+        assertTrue(claim.contains("claims_test", player.getLocation().getBlockX(),
+                player.getLocation().getBlockY(), player.getLocation().getBlockZ()),
+                "l'arrivée doit rester DANS le claim du joueur");
+    }
+
+    // ---- Issue #151 : Villages -------------------------------------------------------------
+
+    @Test
+    void villageCentersAreDistinctByIdAndTravelArrivesAtTheExactStoredLocation() throws Exception {
+        waypointService.start();
+        service.start();
+        service.setVillage("hub_main", "Hub principal", new Location(hub, 10.5, 70, 10.5, 90f, 0f));
+        service.setVillage("hub_east", "Quartier Est", new Location(hub, 50.5, 70, 50.5, 0f, 0f));
+        await(() -> service.villages().size() == 2);
+
+        PlayerMock player = addPlayer();
+        service.travelToVillage(player, "hub_east");
+
+        assertEquals("world_hub", player.getLocation().getWorld().getName());
+        assertEquals(50, player.getLocation().getBlockX());
+        assertEquals(50, player.getLocation().getBlockZ());
+
+        service.travelToVillage(player, "hub_main");
+        assertEquals(10, player.getLocation().getBlockX());
+    }
+
+    @Test
+    void disabledOrRemovedVillageIsRejectedWithoutTeleporting() throws Exception {
+        waypointService.start();
+        service.start();
+        service.setVillage("hub_main", "Hub principal", new Location(hub, 10.5, 70, 10.5, 0f, 0f));
+        await(() -> service.villages().size() == 1);
+        PlayerMock player = addPlayer();
+        Location before = player.getLocation().clone();
+
+        var disableError = service.setVillageActive("hub_main", false);
+        assertTrue(disableError.isEmpty());
+        await(() -> !service.villages().get(0).active());
+        service.travelToVillage(player, "hub_main");
+        assertEquals(before.getWorld(), player.getLocation().getWorld());
+
+        var removeError = service.removeVillage("hub_main");
+        assertTrue(removeError.isEmpty());
+        service.travelToVillage(player, "hub_main");
+        assertEquals(before.getWorld(), player.getLocation().getWorld());
+
+        assertTrue(service.removeVillage("does_not_exist").isPresent());
     }
 }

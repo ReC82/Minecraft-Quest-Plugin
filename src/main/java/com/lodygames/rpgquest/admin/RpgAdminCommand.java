@@ -87,8 +87,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
             List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel");
-    private static final List<String> TRAVEL_SUBCOMMANDS = List.of("beacon");
+    private static final List<String> TRAVEL_SUBCOMMANDS = List.of("beacon", "village");
     private static final List<String> TRAVEL_BEACON_SUBCOMMANDS = List.of("set");
+    private static final List<String> TRAVEL_VILLAGE_SUBCOMMANDS =
+            List.of("set", "sethub", "remove", "enable", "disable", "list");
     private static final List<String> GUIDE_SUBCOMMANDS = List.of("list", "info");
     private static final List<String> WAYSTONE_SUBCOMMANDS =
             List.of("list", "here", "tp", "generatehere", "reset");
@@ -873,13 +875,23 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         player.sendMessage(MM.deserialize("<green>Téléporté au spawn du village.</green>"));
     }
 
-    // ---- Réseau de voyage (issues #132/#150) ------------------------------------
+    // ---- Réseau de voyage (issues #132/#150/#151) --------------------------------
 
     private void handleTravel(Player player, String[] args) {
-        if (args.length < 2 || !args[1].equalsIgnoreCase("beacon")) {
+        if (args.length < 2) {
             sendTravelUsage(player);
             return;
         }
+        if (args[1].equalsIgnoreCase("beacon")) {
+            handleTravelBeacon(player, args);
+        } else if (args[1].equalsIgnoreCase("village")) {
+            handleTravelVillage(player, args);
+        } else {
+            sendTravelUsage(player);
+        }
+    }
+
+    private void handleTravelBeacon(Player player, String[] args) {
         if (args.length < 3 || !args[2].equalsIgnoreCase("set")) {
             sendTravelUsage(player);
             return;
@@ -894,9 +906,90 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                         + "<gray>Un clic sur son bouton ouvre le menu de voyage.</gray>"));
     }
 
+    /** Centres de village administrables (issue #151) — voir {@code TravelBeaconService}. */
+    private void handleTravelVillage(Player player, String[] args) {
+        if (args.length < 3) {
+            sendTravelUsage(player);
+            return;
+        }
+        String sub = args[2].toLowerCase(Locale.ROOT);
+        if (sub.equals("list")) {
+            var villages = travelBeaconService.villages();
+            if (villages.isEmpty()) {
+                player.sendMessage(MM.deserialize("<gray>Aucun centre de village configuré.</gray>"));
+                return;
+            }
+            for (var village : villages) {
+                player.sendMessage(MM.deserialize(
+                        "<yellow><id></yellow> <white><name></white> <gray>(<world>, actif=<active>)</gray>",
+                        Placeholder.unparsed("id", village.id()), Placeholder.unparsed("name", village.name()),
+                        Placeholder.unparsed("world", village.world()),
+                        Placeholder.unparsed("active", Boolean.toString(village.active()))));
+            }
+            return;
+        }
+        if (args.length < 4) {
+            sendTravelUsage(player);
+            return;
+        }
+        String id = args[3];
+        switch (sub) {
+            case "sethub" -> {
+                if (args.length < 5) {
+                    sendTravelUsage(player);
+                    return;
+                }
+                var spawn = spawnService.resolve();
+                if (spawn.isEmpty()) {
+                    player.sendMessage(MM.deserialize(
+                            "<red>Aucun spawn défini. Utilise d'abord</red> <yellow>/rpgadmin spawn set</yellow>."));
+                    return;
+                }
+                String name = String.join(" ", java.util.Arrays.asList(args).subList(4, args.length));
+                travelBeaconService.setVillage(id, name, spawn.get());
+                player.sendMessage(MM.deserialize(
+                        "<green>Centre de village « <id> » créé/déplacé sur le spawn du Hub.</green>",
+                        Placeholder.unparsed("id", id)));
+            }
+            case "set" -> {
+                if (args.length < 5) {
+                    sendTravelUsage(player);
+                    return;
+                }
+                String name = String.join(" ", java.util.Arrays.asList(args).subList(4, args.length));
+                travelBeaconService.setVillage(id, name, player.getLocation());
+                player.sendMessage(MM.deserialize(
+                        "<green>Centre de village « <id> » créé/déplacé à ta position.</green>",
+                        Placeholder.unparsed("id", id)));
+            }
+            case "remove" -> sendTravelVillageOutcome(player, travelBeaconService.removeVillage(id),
+                    "Centre « " + id + " » supprimé.");
+            case "enable" -> sendTravelVillageOutcome(player, travelBeaconService.setVillageActive(id, true),
+                    "Centre « " + id + " » activé.");
+            case "disable" -> sendTravelVillageOutcome(player, travelBeaconService.setVillageActive(id, false),
+                    "Centre « " + id + " » désactivé.");
+            default -> sendTravelUsage(player);
+        }
+    }
+
+    private void sendTravelVillageOutcome(Player player, Optional<String> error, String successMessage) {
+        if (error.isPresent()) {
+            player.sendMessage(MM.deserialize("<red><msg></red>", Placeholder.unparsed("msg", error.get())));
+        } else {
+            player.sendMessage(MM.deserialize("<green><msg></green>", Placeholder.unparsed("msg", successMessage)));
+        }
+    }
+
     private void sendTravelUsage(CommandSender sender) {
         sender.sendMessage(MM.deserialize(
                 "<yellow>/rpgadmin travel beacon set</yellow> <gray>- place une borne de voyage à ta position actuelle</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin travel village sethub <id> <nom...></yellow> <gray>- crée/déplace un centre sur le spawn du Hub</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin travel village set <id> <nom...></yellow> <gray>- crée/déplace un centre à ta position</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin travel village remove|enable|disable <id></yellow> <gray>- gère un centre existant</gray>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin travel village list</yellow> <gray>- liste les centres configurés</gray>"));
     }
 
     private void sendSpawnUsage(CommandSender sender) {
@@ -2339,6 +2432,16 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("travel") && args[1].equalsIgnoreCase("beacon")) {
             return TRAVEL_BEACON_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("travel") && args[1].equalsIgnoreCase("village")) {
+            return TRAVEL_VILLAGE_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 4 && args[0].equalsIgnoreCase("travel") && args[1].equalsIgnoreCase("village")
+                && (args[2].equalsIgnoreCase("remove") || args[2].equalsIgnoreCase("enable")
+                        || args[2].equalsIgnoreCase("disable") || args[2].equalsIgnoreCase("set")
+                        || args[2].equalsIgnoreCase("sethub"))) {
+            return travelBeaconService.villages().stream().map(v -> v.id())
+                    .filter(id -> id.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("world")) {
             return WORLD_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();

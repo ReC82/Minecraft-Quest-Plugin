@@ -21,7 +21,7 @@ import java.util.List;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 19;
+    public static final int CURRENT_VERSION = 20;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -43,7 +43,8 @@ public final class SchemaMigrator {
             new SchemaMigration(16, "item_travel_cooldowns", SchemaMigrator::applyV16),
             new SchemaMigration(17, "waystones, waystone_discoveries", SchemaMigrator::applyV17),
             new SchemaMigration(18, "waypoints, waypoint_discoveries", SchemaMigrator::applyV18),
-            new SchemaMigration(19, "travel_beacons", SchemaMigrator::applyV19));
+            new SchemaMigration(19, "travel_beacons", SchemaMigrator::applyV19),
+            new SchemaMigration(20, "village_centers", SchemaMigrator::applyV20));
 
     private SchemaMigrator() {
     }
@@ -580,6 +581,30 @@ public final class SchemaMigrator {
                         z INTEGER NOT NULL,
                         facing TEXT NOT NULL,
                         model_version INTEGER NOT NULL,
+                        active INTEGER NOT NULL DEFAULT 1,
+                        created_at TEXT NOT NULL
+                    )
+                    """));
+        }
+    }
+
+    private static void applyV20(Connection connection, SqlDialect dialect) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Centres de village administrables (issue #151), destination de la catégorie
+            // « Villages » du menu de voyage. id = seule identité stable (jamais recalculée depuis
+            // la position) : déplacer/renommer/désactiver un centre réutilise le même id, sans
+            // jamais casser une référence existante. Indépendant du monde Hub lui-même : plusieurs
+            // centres peuvent coexister dans le même monde.
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS village_centers (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        world TEXT NOT NULL,
+                        x REAL NOT NULL,
+                        y REAL NOT NULL,
+                        z REAL NOT NULL,
+                        yaw REAL NOT NULL,
+                        pitch REAL NOT NULL,
                         active INTEGER NOT NULL DEFAULT 1,
                         created_at TEXT NOT NULL
                     )

@@ -1711,6 +1711,73 @@ le résumé de récompenses de TC-014).
     le placement physique des blocs et la logique de génération/appariement sont couverts
     automatiquement, mais aucun trajet réel en jeu n'a été effectué dans cette session.
 
+### TC-224 — Accessibilité des structures Hub + diagnostic/réparation (issues #153/#156, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `RandomSafeLocationFinder#findAccessibleColumn`, `/rpgadmin travel
+    diagnose`, `/rpgadmin travel repair`. Détail : [TRAVEL.md](TRAVEL.md).
+-   **Préconditions :** JAR de cette session déployé et redémarré.
+-   **Actions :**
+    1.  Explorer `world_hub` dans une zone boisée (canopée dense) suffisamment longtemps pour
+        déclencher une génération de waypoint/borne — vérifier qu'**aucune** structure n'apparaît
+        au sommet d'un arbre ; si une structure se pose, elle doit être atteignable à pied depuis
+        le sol sans casser/poser de bloc.
+    2.  `/rpgadmin travel diagnose` → vérifie le nombre de waypoints/bornes, liste les instances
+        Hub sans borne appariée (si présentes) et les structures inaccessibles (si présentes).
+    3.  Si une structure inaccessible est signalée : `/rpgadmin travel repair waypoint <id>
+        confirm` (ou `beacon`) → la structure se déplace vers un emplacement proche accessible ;
+        revérifier son id, son nom et ses découvertes inchangés, et qu'elle est désormais
+        atteignable à pied.
+-   **Couverture automatisée :** `RandomSafeLocationFinderTest` (+4 cas `findAccessibleColumn` :
+    sol plat ordinaire, feuillage rejeté, colonne isolée sans voisin praticable rejetée, marche
+    d'un bloc acceptée), `WaypointServiceTest` (+3 cas : détection d'un waypoint devenu
+    inaccessible, réparation conservant id/nom/découvertes avec persistance réelle en base, échec
+    propre si l'id est inconnu), `TravelBeaconServiceTest` (+3 cas : waypoints Hub sans borne
+    appariée listés puis vidés une fois la paire créée, détection+réparation d'une borne
+    inaccessible, échec propre si l'id est inconnu).
+-   **Limites MockBukkit :** aucun des nouveaux cas n'atteint `teleportAsync` — tous réellement
+    exécutés et vérifiés, aucun ignoré. Le rendu visuel réel du déplacement (le joueur voit-il la
+    structure disparaître/réapparaître correctement) reste `PENDING MANUAL VALIDATION`.
+
+### TC-225 — Hub sûr : faim/saturation, animaux protégés, aucun mob indésirable (issues #33/#30/#31/#121/#155, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `hub.HubComfortService`, `hub.HubWorldProtectionListener`
+    (protection des entités + spawns). Détail : section 7 de [RPGQUEST_BIBLE.md](RPGQUEST_BIBLE.md).
+-   **Préconditions :** JAR de cette session déployé et redémarré ; compte de test **non-op**.
+-   **Faim/saturation (#33) :**
+    1.  Dans `world_hub`, sprinter et sauter en continu pendant plusieurs minutes → la barre de
+        faim et la saturation ne bougent jamais.
+    2.  Entrer dans `world_hub` depuis `wild` avec de la vie/faim réduites (ou se reconnecter alors
+        qu'on y est déjà) → vie, faim et saturation remises au maximum sans commande ni PNJ.
+    3.  Dans `wild`, vérifier que la faim continue de baisser normalement (aucune régression).
+-   **Protection des animaux (#30/#31) :**
+    4.  En tant que joueur non-OP, attaquer un mouton/une vache dans `world_hub` (mêlée puis à
+        l'arc) → aucun dégât, aucune mort, aucune laine/viande obtenue.
+    5.  Répéter sur plusieurs biomes du Hub explorés.
+    6.  (si un bypass `rpgquest.admin.hub.combat` est accordé explicitement à un compte de test) →
+        le dégât doit alors passer ; sans ce bypass, même un OP avec seulement
+        `rpgquest.admin.world` ne doit **pas** pouvoir tuer l'animal.
+    7.  Dans `wild`, vérifier que le combat contre les animaux reste normal.
+-   **Mobs indésirables (#121/#155) :**
+    8.  Explorer plusieurs biomes/chunks de `world_hub`, y compris des zones déjà visitées avant ce
+        correctif → aucun creeper, enderman, marchand ambulant ni lama de commerce ne doit être
+        trouvé ni apparaître au fil de l'exploration.
+    9.  Vérifier qu'un PNJ Citizens existant reste intact et fonctionnel après le redémarrage
+        (le nettoyage ne doit jamais l'affecter).
+    10. Dans `wild`, vérifier que les spawns hostiles restent normaux (aucune régression).
+-   **Reset :** aucune donnée joueur à réinitialiser ; ces protections sont purement comportementales.
+-   **Couverture automatisée :** `HubComfortServiceTest` (9 cas : épuisement annulé dans le Hub,
+    augmentation jamais bloquée, Wild non affecté, restauration à la connexion/au changement de
+    monde/à la réapparition dans le Hub, garde périodique anti-épuisement silencieux, Wild jamais
+    touché par la garde), `HubWorldProtectionListenerTest` (22 cas, dont les nouveaux : dégât mêlée
+    et projectile sur un animal annulé, bypass combat explicite fonctionnel, le seul droit de
+    construire ne donne jamais le droit de tuer, spawn hostile annulé quelle que soit la raison
+    (pas seulement `NATURAL`), enderman annulé même neutre, marchand ambulant/lama annulés,
+    animal passif jamais concerné, nettoyage ciblé des entités déjà présentes préservant les
+    animaux passifs et scoped au seul Hub).
+-   **Limites MockBukkit :** aucun des nouveaux cas n'atteint `teleportAsync` — tous réellement
+    exécutés et vérifiés, aucun ignoré. Le ressenti réel en jeu (fluidité de la barre de faim,
+    disparition visible des mobs nettoyés) reste `PENDING MANUAL VALIDATION`.
+
 ---
 
 ## Table de recette
@@ -1767,3 +1834,5 @@ le résumé de récompenses de TC-014).
 | TC-221 | Réseau de voyage #132/#150 : découverte → mort → borne → menu → retour sûr (PENDING) | | | |
 | TC-222 | Réseau de voyage #151 : Mon claim et Villages (PENDING) | | | |
 | TC-223 | Réseau de voyage #149 : génération Hub waypoint + borne appariée (PENDING) | | | |
+| TC-224 | Accessibilité Hub + diagnostic/réparation #153/#156 (PENDING) | | | |
+| TC-225 | Hub sûr : faim/saturation, animaux protégés, mobs indésirables #33/#30/#121/#155 (PENDING) | | | |

@@ -224,6 +224,8 @@ Voir aussi `docs/TRAVEL.md` section « Réseau de voyage / bornes » pour le dé
 | `/rpgadmin travel village remove <id>` | Supprime définitivement un centre. | oui |
 | `/rpgadmin travel village enable\|disable <id>` | (Dés)active un centre sans changer son `id` ni ses coordonnées — une désactivation ne casse jamais une référence déjà exposée dans le menu. | oui |
 | `/rpgadmin travel village list` | Liste les centres configurés (id, nom, monde, actif). | non |
+| `/rpgadmin travel diagnose [monde]` | Diagnostic lecture seule (#153/#156) : comptes waypoints/bornes, instances Hub sans borne appariée, structures inaccessibles. | non |
+| `/rpgadmin travel repair waypoint\|beacon <id> confirm` | Déplace une structure inaccessible (#153) vers un emplacement accessible proche ; id/nom/découvertes conservés. | oui |
 
 À savoir : dans le **Hub**, un waypoint (modèle or) **et** une borne distincte s'y génèrent
 désormais automatiquement par instance de biome (issue #149, réutilise #124) — ces commandes
@@ -1052,7 +1054,21 @@ Règles appliquées (idempotentes) :
 -   dégâts joueurs **toujours annulés** (aucune exception, même admin) → PvP bloqué de fait ;
 -   casse/pose de bloc bloquée sauf bypass `rpgquest.admin.world` ;
 -   explosions sans destruction de bloc (`blockList()` vidée) ;
--   aucun spawn naturel de mob hostile ;
+-   **aucun spawn de mob indésirable, quelle que soit la raison** (issues #121/#155) : tout mob
+    hostile (`Monster`), `ENDERMAN` (même neutre), `WANDERING_TRADER`/`TRADER_LLAMA` — plus seulement
+    les spawns `NATURAL` (un spawn `CHUNK_GEN`/`SPAWNER` est aussi bloqué). Nettoyage ciblé des
+    entités déjà présentes au démarrage (chunks déjà chargés, `sweepAlreadyLoaded`) et à chaque
+    nouveau chargement de chunk (`EntitiesLoadEvent`) — jamais Citizens/PNJ, jamais un animal
+    passif, jamais un chargement forcé de tout le monde.
+-   **dégâts à une entité protégée toujours annulés** (issues #30/#31) : tout dégât **causé par un
+    joueur** (mêlée ou projectile) à une entité vivante non-joueur (animal, mob décoratif...) est
+    annulé — sauf un PNJ Citizens. Bypass **explicite et distinct** de la construction :
+    `rpgquest.admin.hub.combat` (jamais accordé implicitement par `rpgquest.admin.world`).
+-   **faim/saturation jamais réduites** (issue #33, `hub.HubComfortService`) : `FoodLevelChangeEvent`
+    annulé pour toute diminution (sprint/sauts/épuisement) ; une garde périodique (1 s) neutralise
+    aussi l'épuisement silencieux (`exhaustion`/`saturation` internes, sans événement dédié). Vie,
+    faim et saturation restaurées au maximum à la connexion, à tout changement de monde vers le Hub
+    et à une réapparition dans le Hub — jamais dans les autres mondes.
 -   claims interdits (`ClaimService` refuse toute création dans le monde exact de `hub.world`, voir section 8).
 
 Log attendu au démarrage/chargement :

@@ -31,7 +31,12 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 - **Portails** — `/rpgadmin portal` (canalisation, coût, cooldown, conditions quête/niveau) et
   `/rpgadmin worldportal` (téléportation instantanée entre mondes, sans coût).
 - **Mondes** — création/chargement de mondes supplémentaires, règles du monde Hub (jour/météo
-  permanents), séparation Hub/wild.
+  permanents), séparation Hub/wild. Hub également : aucun mob indésirable quelle que soit la
+  raison de spawn (hostiles, enderman même neutre, marchand ambulant/lama — issues #121/#155,
+  nettoyage ciblé des entités déjà présentes) ; dégâts joueur causés à une entité protégée
+  (animaux...) toujours annulés sauf bypass explicite `rpgquest.admin.hub.combat` (issues #30/#31,
+  distinct de la construction) ; faim/saturation jamais réduites, restaurées au maximum à
+  l'arrivée (connexion/changement de monde/réapparition) — issue #33, `hub.HubComfortService`.
 - **Claims** — terrains protégés créés par les joueurs eux-mêmes, confiance par UUID ; monde
   résidentiel `claims` réellement pacifique (tout dégât joueur annulé, tout mob hostile empêché et
   nettoyé, Nether bloqué en sortie) ; frontière visualisée par particules (propriétaire uniquement,

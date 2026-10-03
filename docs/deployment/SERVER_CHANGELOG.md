@@ -3296,3 +3296,33 @@ script officiel) **OK**.
 - Aucun merge, aucune intervention PROD.
 
 Rollback : `scripts/rollback-verygames.sh --latest` (restaure `rpgquest-20261003T210929Z-predeploy.jar`).
+
+---
+
+## 2026-10-04 - Accessibilité/diagnostic du réseau de voyage + confort et sécurité du Hub (#153/#156/#33/#30/#31/#121/#155)
+
+### Déploiement / Exécution réelle
+
+Déployé sur **VeryGames DEV** le 2026-10-04 (~22:00-22:01 UTC), session autonome autorisée
+explicitement (overnight, sans reconfirmation par demande). Branche
+`feat/control-panel-admin-tools` @ **`aa554c9`**. `./gradlew test`+`build` (interne au script
+officiel) **OK** — suite complète 1368 tests, 1334 exécutés verts, 34 ignorés (limitation
+MockBukkit `teleportAsync` déjà documentée), 0 échec.
+
+- **JAR déployé** : 1 591 958 o, SHA-256 `1fd721626aee10269bacb42b7f31a06129f311ad7b8fea5aa185c9c0575bf60d`.
+- **Backup préalable** : `rpgquest-20261003T220039Z-predeploy.jar` (1 579 732 o, SHA-256
+  `90e50fb26d60b9d4fa769b4be3a7ef3a14fb2304a6155b1de9f3c053b31b0550` — JAR du déploiement
+  précédent, confirmé identique, aucun déploiement intermédiaire).
+- **Redémarrage** : `scripts/verygames-restart.sh --timeout 240` — 0 joueur connecté, OFFLINE
+  confirmé puis **ONLINE**.
+- **Vérifications post-redémarrage** : `/rpgquest version` → `v0.1.0-SNAPSHOT` ; `/plugins` → 4
+  plugins verts ; heartbeat PlugAdmin `uptime_seconds=5` (redémarrage réel), `world_hub`/`claims`/
+  `wild` tous `loaded=true`. Plugin pleinement activé → nouveau câblage bootstrap
+  (`HubComfortService`, `HubWorldProtectionListener` + `NpcIdentityService`) sans erreur critique
+  au démarrage.
+- **Distinction explicite** : contrôles de démarrage uniquement. **Clics du menu, recherche,
+  téléportation, faim/saturation, protection des animaux et absence de mobs indésirables restent
+  à valider réellement en jeu** — non déclarés validés sur la seule base des tests automatisés.
+- Aucun merge, aucune intervention PROD.
+
+Rollback : `scripts/rollback-verygames.sh --latest` (restaure `rpgquest-20261003T220039Z-predeploy.jar`).

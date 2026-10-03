@@ -531,6 +531,20 @@ secondaire** (deux waypoints du même biome n'affichent donc plus jamais le mêm
   l'administrateur, pour un centre secondaire ailleurs dans `world_hub`) ; `remove` / `enable` /
   `disable <id>` (déplacement/désactivation **sans jamais changer l'id**, donc sans casser une
   référence déjà exposée dans le menu) ; `list`.
+- **Accessibilité à la génération (issue #153)** : `RandomSafeLocationFinder#findAccessibleColumn`
+  rejette désormais un sol de feuillage (tout bloc `*_LEAVES`) et toute colonne isolée (surplomb,
+  îlot) sans voisin praticable à ±1 bloc — utilisé par `WaypointService#attemptGeneration` et
+  `TravelBeaconService#attemptPairBeacon`. Un waypoint/une borne ne peut donc plus se poser au
+  sommet d'un arbre ou sur un surplomb inaccessible à pied, sans jamais autoriser la casse/pose
+  joueur dans le Hub.
+- **Diagnostic et réparation (issues #153/#156)** : `/rpgadmin travel diagnose [monde]` (lecture
+  seule, à partir des données persistées/indexées) liste le nombre de waypoints/bornes, les
+  instances de biome du Hub avec un waypoint mais **sans** borne appariée (jamais dépendant d'une
+  découverte joueur), et les structures déjà posées devenues inaccessibles.
+  `/rpgadmin travel repair waypoint|beacon <id> confirm` déplace la structure concernée vers un
+  emplacement accessible proche de sa position actuelle — `id`/nom d'affichage/instance de
+  biome/découvertes **jamais** modifiés, seuls les blocs ajoutés par la structure sont déplacés
+  (jamais le sol/la végétation environnante).
 - **Hors périmètre de cette livraison** (voir le rapport de session pour le détail) :
   administration PlugAdmin des bornes/villages/politiques (#152).
 

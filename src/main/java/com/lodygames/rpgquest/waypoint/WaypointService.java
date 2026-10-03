@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.database.WaypointRepository;
 import com.lodygames.rpgquest.travel.RandomSafeLocationFinder;
 import com.lodygames.rpgquest.waypoint.model.BiomeInstanceKey;
 import com.lodygames.rpgquest.waypoint.model.Waypoint;
+import com.lodygames.rpgquest.waypoint.model.WaypointNameCatalog;
 import com.lodygames.rpgquest.waypoint.render.BlockOffset;
 import com.lodygames.rpgquest.waypoint.render.WaypointModel;
 import com.lodygames.rpgquest.waypoint.render.WaypointModelRegistry;
@@ -56,6 +57,8 @@ public final class WaypointService implements PluginService {
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
     private static final long[] RETRY_BACKOFF_MILLIS = {30_000L, 120_000L, 600_000L, 3_600_000L};
+    /** Réserve statique de noms d'affichage (issues #133/#135) — jamais un appel IA au runtime. */
+    private static final WaypointNameCatalog NAME_CATALOG = WaypointNameCatalog.loadBundled();
 
     private final RPGQuestPlugin plugin;
     private final WaypointRepository repository;
@@ -79,6 +82,9 @@ public final class WaypointService implements PluginService {
     /** Clé d'instance → epoch ms avant lequel aucun nouvel essai de génération. */
     private final ConcurrentHashMap<String, Long> retryNotBefore = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Integer> retryCount = new ConcurrentHashMap<>();
+
+    /** Noms d'affichage déjà attribués, normalisés (casse/accents) — jamais deux waypoints avec le même nom. */
+    private final Set<String> usedDisplayNames = ConcurrentHashMap.newKeySet();
 
     private final ConcurrentHashMap<UUID, Set<String>> discoveriesByPlayer = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, String> lastInstanceByPlayer = new ConcurrentHashMap<>();
@@ -114,6 +120,7 @@ public final class WaypointService implements PluginService {
     @Override
     public void stop() {
         byId.clear();
+        usedDisplayNames.clear();
         byInstance.clear();
         byInteractorBlock.clear();
         protectedBlocks.clear();
@@ -287,7 +294,11 @@ public final class WaypointService implements PluginService {
                 continue;
             }
 
-            Waypoint waypoint = new Waypoint(instance.waypointId(), world.getName(),
+            // Attribution synchrone, sur le thread principal : jamais deux générations concurrentes
+            // de ce processus (Bukkit traite les événements séquentiellement), donc jamais un même
+            // nom réservé deux fois ici — voir usedDisplayNames.
+            String displayName = NAME_CATALOG.reserveName(seed, usedDisplayNames);
+            Waypoint waypoint = new Waypoint(instance.waypointId(), displayName, world.getName(),
                     instance.serialize(), instance.biomeKey(), instance.regionX(), instance.regionZ(),
                     anchorX, anchorY, anchorZ, facing.name(), model.version(), true, Instant.now());
             persist(world, waypoint, instanceKey, model);
@@ -418,6 +429,7 @@ public final class WaypointService implements PluginService {
 
     private void index(Waypoint waypoint) {
         byId.put(waypoint.id(), waypoint);
+        usedDisplayNames.add(WaypointNameCatalog.normalize(waypoint.displayName()));
         byInstance.put(instanceKey(waypoint.world(), waypoint.biomeInstance()), waypoint);
         BlockFace facing = parseFacing(waypoint.facing());
         WaypointModel model = modelRegistry.resolveOrCurrent(waypoint.modelVersion());

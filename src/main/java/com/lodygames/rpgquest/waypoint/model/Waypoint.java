@@ -9,6 +9,10 @@ import java.time.Instant;
  * <ul>
  *   <li>{@code id} : identifiant technique déterministe de l'instance de biome
  *       ({@link BiomeInstanceKey#waypointId()}) — <strong>jamais fonction du rendu</strong> ;</li>
+ *   <li>{@code displayName} : nom d'affichage humain, unique et persistant (issues #133/#135),
+ *       attribué une seule fois depuis {@link WaypointNameCatalog} — l'identité <strong>lisible</strong>
+ *       principale pour le joueur. Le biome reste une métadonnée secondaire : jamais le nom
+ *       principal (deux waypoints du même biome n'affichent donc jamais le même libellé) ;</li>
  *   <li>{@code biomeInstance} : {@link BiomeInstanceKey#serialize()} — l'identité métier de la zone,
  *       {@code (world, biomeInstance)} est unique en base ;</li>
  *   <li>{@code biomeKey}/{@code regionX}/{@code regionZ} : composantes dénormalisées de l'instance,
@@ -21,7 +25,7 @@ import java.time.Instant;
  *   <li>{@code createdAt} : horodatage de première génération.</li>
  * </ul>
  */
-public record Waypoint(String id, String world, String biomeInstance, String biomeKey,
+public record Waypoint(String id, String displayName, String world, String biomeInstance, String biomeKey,
                        long regionX, long regionZ, int x, int y, int z, String facing,
                        int modelVersion, boolean active, Instant createdAt) {
 }

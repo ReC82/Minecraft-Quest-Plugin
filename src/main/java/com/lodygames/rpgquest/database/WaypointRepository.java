@@ -30,8 +30,8 @@ public final class WaypointRepository {
 
     private static final String INSERT_WAYPOINT = """
             INSERT OR IGNORE INTO waypoints
-                (id, world, biome_instance, biome_key, region_x, region_z, x, y, z, facing, model_version, active, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, display_name, world, biome_instance, biome_key, region_x, region_z, x, y, z, facing, model_version, active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
     private static final String SELECT_ALL = "SELECT * FROM waypoints";
     private static final String SELECT_BY_INSTANCE = "SELECT * FROM waypoints WHERE world = ? AND biome_instance = ?";
@@ -83,18 +83,19 @@ public final class WaypointRepository {
         return database.execute(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(INSERT_WAYPOINT))) {
                 statement.setString(1, waypoint.id());
-                statement.setString(2, waypoint.world());
-                statement.setString(3, waypoint.biomeInstance());
-                statement.setString(4, waypoint.biomeKey());
-                statement.setLong(5, waypoint.regionX());
-                statement.setLong(6, waypoint.regionZ());
-                statement.setInt(7, waypoint.x());
-                statement.setInt(8, waypoint.y());
-                statement.setInt(9, waypoint.z());
-                statement.setString(10, waypoint.facing());
-                statement.setInt(11, waypoint.modelVersion());
-                statement.setInt(12, waypoint.active() ? 1 : 0);
-                statement.setString(13, waypoint.createdAt().toString());
+                statement.setString(2, waypoint.displayName());
+                statement.setString(3, waypoint.world());
+                statement.setString(4, waypoint.biomeInstance());
+                statement.setString(5, waypoint.biomeKey());
+                statement.setLong(6, waypoint.regionX());
+                statement.setLong(7, waypoint.regionZ());
+                statement.setInt(8, waypoint.x());
+                statement.setInt(9, waypoint.y());
+                statement.setInt(10, waypoint.z());
+                statement.setString(11, waypoint.facing());
+                statement.setInt(12, waypoint.modelVersion());
+                statement.setInt(13, waypoint.active() ? 1 : 0);
+                statement.setString(14, waypoint.createdAt().toString());
                 return statement.executeUpdate() > 0;
             }
         });
@@ -151,6 +152,7 @@ public final class WaypointRepository {
     private Waypoint map(ResultSet resultSet) throws SQLException {
         return new Waypoint(
                 resultSet.getString("id"),
+                resultSet.getString("display_name"),
                 resultSet.getString("world"),
                 resultSet.getString("biome_instance"),
                 resultSet.getString("biome_key"),

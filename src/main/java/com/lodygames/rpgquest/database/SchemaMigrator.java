@@ -1,9 +1,15 @@
 package com.lodygames.rpgquest.database;
 
+import com.lodygames.rpgquest.waypoint.model.WaypointNameCatalog;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Catalogue des migrations de schéma RPGQuest, dans l'ordre (issue #40).
@@ -21,7 +27,7 @@ import java.util.List;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 21;
+    public static final int CURRENT_VERSION = 22;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -45,7 +51,8 @@ public final class SchemaMigrator {
             new SchemaMigration(18, "waypoints, waypoint_discoveries", SchemaMigrator::applyV18),
             new SchemaMigration(19, "travel_beacons", SchemaMigrator::applyV19),
             new SchemaMigration(20, "village_centers", SchemaMigrator::applyV20),
-            new SchemaMigration(21, "travel_beacons.biome_instance", SchemaMigrator::applyV21));
+            new SchemaMigration(21, "travel_beacons.biome_instance", SchemaMigrator::applyV21),
+            new SchemaMigration(22, "waypoints.display_name", SchemaMigrator::applyV22));
 
     private SchemaMigrator() {
     }
@@ -623,6 +630,48 @@ public final class SchemaMigrator {
         }
         try (Statement statement = connection.createStatement()) {
             statement.execute(dialect.ddl("ALTER TABLE travel_beacons ADD COLUMN biome_instance TEXT NOT NULL DEFAULT ''"));
+        }
+    }
+
+    /**
+     * Nom d'affichage humain, unique et persistant par waypoint (issues #133/#135) — le biome reste
+     * une métadonnée secondaire, jamais le nom principal (plusieurs waypoints du même biome
+     * affichaient jusqu'ici le même libellé, ex. « beach » en double, sans moyen de les distinguer
+     * dans le menu de voyage). Rempli ici pour les waypoints déjà existants (identifiant et
+     * découvertes joueurs inchangés) à partir du même catalogue statique
+     * ({@link com.lodygames.rpgquest.waypoint.model.WaypointNameCatalog}) que l'attribution à la
+     * génération — traitement des lignes dans un ordre stable (par {@code id}) pour un résultat
+     * déterministe et reproductible en cas de ré-exécution manuelle sur un clone de la base.
+     */
+    private static void applyV22(Connection connection, SqlDialect dialect) throws SQLException {
+        if (dialect.columnExists(connection, "waypoints", "display_name")) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("ALTER TABLE waypoints ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"));
+        }
+
+        WaypointNameCatalog catalog = WaypointNameCatalog.loadBundled();
+        Set<String> usedNormalized = new HashSet<>();
+        List<String> ids = new ArrayList<>();
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery("SELECT id FROM waypoints ORDER BY id")) {
+            while (resultSet.next()) {
+                ids.add(resultSet.getString("id"));
+            }
+        }
+        try (PreparedStatement update = connection.prepareStatement("UPDATE waypoints SET display_name = ? WHERE id = ?")) {
+            for (String id : ids) {
+                String displayName = catalog.reserveName(id.hashCode(), usedNormalized);
+                update.setString(1, displayName);
+                update.setString(2, id);
+                update.executeUpdate();
+            }
+        }
+
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_waypoints_display_name ON waypoints (display_name)"));
         }
     }
 }

@@ -19,6 +19,7 @@ import java.text.Normalizer;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -93,6 +94,13 @@ public final class TravelBeaconService implements PluginService {
     private final ConcurrentHashMap<String, TravelBeacon> byInteractorBlock = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, TravelBeacon> byBiomeInstance = new ConcurrentHashMap<>();
     private final Set<String> protectedBlocks = ConcurrentHashMap.newKeySet();
+    /**
+     * État du menu actuellement ouvert, par joueur. <strong>Toujours</strong> {@code put} après
+     * {@code player.openInventory(...)}, jamais avant : ouvrir une inventory ferme d'abord
+     * l'ancienne de façon <em>synchrone</em>, ce qui déclenche {@link #handleClose} et effacerait
+     * aussitôt une session déjà posée (même classe de bug que la navigation du journal de quêtes,
+     * issue #11 — ne pas la réintroduire ici).
+     */
     private final ConcurrentHashMap<UUID, BeaconMenuSession> sessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, VillageCenter> villagesById = new ConcurrentHashMap<>();
 
@@ -433,14 +441,14 @@ public final class TravelBeaconService implements PluginService {
                 : icon(Material.BARRIER, "<yellow>Mon claim</yellow>", "<gray>Tu n'as pas encore de claim.</gray>"));
         inventory.setItem(6, icon(Material.BELL, "<yellow>Villages</yellow>",
                 "<gray>Centres de village configurés.</gray>"));
-        sessions.put(player.getUniqueId(), new BeaconMenuSession(0, ""));
         player.openInventory(inventory);
+        sessions.put(player.getUniqueId(), new BeaconMenuSession(0, "", ""));
     }
 
     /** Revalidation fraîche à chaque clic (jamais l'état de l'icône au moment de l'ouverture). */
     void handleRootCategoryClick(Player player, int slot) {
         switch (slot) {
-            case 2 -> openWaypoints(player, 0, "");
+            case 2 -> openWorldSelection(player);
             case 4 -> travelToClaim(player);
             case 6 -> openVillages(player, 0);
             default -> { }
@@ -511,8 +519,8 @@ public final class TravelBeaconService implements PluginService {
         }
         inventory.setItem(53, icon(Material.BARRIER, "<red>Fermer</red>", ""));
 
-        sessions.put(player.getUniqueId(), new BeaconMenuSession(clampedPage, ""));
         player.openInventory(inventory);
+        sessions.put(player.getUniqueId(), new BeaconMenuSession(clampedPage, "", ""));
     }
 
     void handleVillagesClick(Player player, int slot, BeaconMenuSession session) {
@@ -608,15 +616,76 @@ public final class TravelBeaconService implements PluginService {
         return List.copyOf(villagesById.values());
     }
 
-    // ---- Menu : waypoints découverts ------------------------------------------------------
+    // ---- Menu : choix du monde (issue #149-suite) -----------------------------------------
 
-    void openWaypoints(Player player, int page, String filter) {
-        List<Waypoint> all = waypointService.discoveredBy(player.getUniqueId());
-        List<Waypoint> filtered = filter.isEmpty() ? all : all.stream()
-                .filter(w -> normalize(prettyBiome(w.biomeKey()) + " " + w.world()).contains(filter))
+    /**
+     * Étape intermédiaire entre la racine et la liste des waypoints : le Hub et le Wild
+     * ({@code travel.wild-world}) ont toujours leur propre page, même à 0 découverte — les autres
+     * mondes sont <strong>extensibles</strong>, affichés uniquement s'il existe au moins une
+     * découverte active du joueur courant dans ce monde. Ordre figé dans la session
+     * ({@code worldsShown}) : jamais recalculé au clic, un clic sur un slot référence toujours le
+     * même monde qu'au moment du rendu.
+     */
+    void openWorldSelection(Player player) {
+        List<Waypoint> discovered = waypointService.discoveredBy(player.getUniqueId());
+        LinkedHashSet<String> worlds = new LinkedHashSet<>();
+        worlds.add(travelConfig.get().wildWorld());
+        String hub = hubWorld.get();
+        if (hub != null && !hub.isBlank()) {
+            worlds.add(hub);
+        }
+        for (Waypoint waypoint : discovered) {
+            worlds.add(waypoint.world());
+        }
+        List<String> ordered = List.copyOf(worlds);
+
+        Inventory inventory = createMenu(BeaconMenuHolder.Kind.WORLDS, 54, "Choisir un monde");
+        for (int i = 0; i < ordered.size() && i < PAGE_SIZE; i++) {
+            String world = ordered.get(i);
+            long count = discovered.stream().filter(w -> w.world().equals(world)).count();
+            inventory.setItem(i, icon(Material.MAP, "<gold>" + prettyWorldName(world) + "</gold>",
+                    "<gray>" + count + " waypoint(s) découvert(s)</gray>",
+                    "<gray>Clique pour explorer.</gray>"));
+        }
+        inventory.setItem(45, icon(Material.ARROW, "<yellow>Retour</yellow>", ""));
+        inventory.setItem(53, icon(Material.BARRIER, "<red>Fermer</red>", ""));
+
+        player.openInventory(inventory);
+        sessions.put(player.getUniqueId(), new BeaconMenuSession(0, "", "", ordered));
+    }
+
+    void handleWorldsClick(Player player, int slot, BeaconMenuSession session) {
+        switch (slot) {
+            case 45 -> openRoot(player);
+            case 53 -> player.closeInventory();
+            default -> {
+                if (slot >= 0 && slot < session.worldsShown().size()) {
+                    openWaypoints(player, 0, "", session.worldsShown().get(slot));
+                }
+                // sinon : clic périmé (slot hors de la liste affichée) — ignoré.
+            }
+        }
+    }
+
+    private static String prettyWorldName(String world) {
+        return switch (world) {
+            case "wild" -> "Wild";
+            case "world_hub" -> "Hub";
+            default -> world;
+        };
+    }
+
+    // ---- Menu : waypoints découverts (d'un monde donné) -----------------------------------
+
+    void openWaypoints(Player player, int page, String filter, String world) {
+        List<Waypoint> inWorld = waypointService.discoveredBy(player.getUniqueId()).stream()
+                .filter(w -> w.world().equals(world))
+                .toList();
+        List<Waypoint> filtered = filter.isEmpty() ? inWorld : inWorld.stream()
+                .filter(w -> normalize(w.displayName() + " " + prettyBiome(w.biomeKey())).contains(filter))
                 .toList();
         List<Waypoint> sorted = filtered.stream()
-                .sorted(Comparator.comparing(Waypoint::biomeKey).thenComparing(Waypoint::id))
+                .sorted(Comparator.comparing(Waypoint::displayName).thenComparing(Waypoint::id))
                 .toList();
 
         int pageCount = Math.max(1, (int) Math.ceil(sorted.size() / (double) PAGE_SIZE));
@@ -625,11 +694,11 @@ public final class TravelBeaconService implements PluginService {
         int to = Math.min(sorted.size(), from + PAGE_SIZE);
         List<Waypoint> pageItems = sorted.subList(from, to);
 
-        Inventory inventory = createMenu(BeaconMenuHolder.Kind.WAYPOINTS, 54, "Waypoints découverts");
+        Inventory inventory = createMenu(BeaconMenuHolder.Kind.WAYPOINTS, 54, prettyWorldName(world));
         if (pageItems.isEmpty()) {
             inventory.setItem(22, icon(Material.BARRIER, "<red>Aucun waypoint</red>",
                     filter.isEmpty()
-                            ? "<gray>Tu n'as encore rien découvert.</gray>"
+                            ? "<gray>Rien d'encore découvert dans ce monde.</gray>"
                             : "<gray>Aucun résultat pour cette recherche.</gray>"));
         } else {
             for (int i = 0; i < pageItems.size(); i++) {
@@ -649,16 +718,16 @@ public final class TravelBeaconService implements PluginService {
         }
         inventory.setItem(53, icon(Material.BARRIER, "<red>Fermer</red>", ""));
 
-        sessions.put(player.getUniqueId(), new BeaconMenuSession(clampedPage, filter));
         player.openInventory(inventory);
+        sessions.put(player.getUniqueId(), new BeaconMenuSession(clampedPage, filter, world));
     }
 
     void handleWaypointsClick(Player player, int slot, BeaconMenuSession session) {
         switch (slot) {
-            case 45 -> openRoot(player);
-            case 47 -> openSearch(player);
-            case 48 -> openWaypoints(player, session.page() - 1, session.filter());
-            case 50 -> openWaypoints(player, session.page() + 1, session.filter());
+            case 45 -> openWorldSelection(player);
+            case 47 -> openSearch(player, session.world());
+            case 48 -> openWaypoints(player, session.page() - 1, session.filter(), session.world());
+            case 50 -> openWaypoints(player, session.page() + 1, session.filter(), session.world());
             case 53 -> player.closeInventory();
             default -> {
                 if (slot >= 0 && slot < PAGE_SIZE) {
@@ -669,12 +738,14 @@ public final class TravelBeaconService implements PluginService {
     }
 
     private void selectWaypointAtSlot(Player player, BeaconMenuSession session, int slot) {
-        List<Waypoint> all = waypointService.discoveredBy(player.getUniqueId());
-        List<Waypoint> filtered = session.filter().isEmpty() ? all : all.stream()
-                .filter(w -> normalize(prettyBiome(w.biomeKey()) + " " + w.world()).contains(session.filter()))
+        List<Waypoint> inWorld = waypointService.discoveredBy(player.getUniqueId()).stream()
+                .filter(w -> w.world().equals(session.world()))
+                .toList();
+        List<Waypoint> filtered = session.filter().isEmpty() ? inWorld : inWorld.stream()
+                .filter(w -> normalize(w.displayName() + " " + prettyBiome(w.biomeKey())).contains(session.filter()))
                 .toList();
         List<Waypoint> sorted = filtered.stream()
-                .sorted(Comparator.comparing(Waypoint::biomeKey).thenComparing(Waypoint::id))
+                .sorted(Comparator.comparing(Waypoint::displayName).thenComparing(Waypoint::id))
                 .toList();
         int index = session.page() * PAGE_SIZE + slot;
         if (index < 0 || index >= sorted.size()) {
@@ -709,13 +780,15 @@ public final class TravelBeaconService implements PluginService {
         player.closeInventory();
         player.teleportAsync(safe.get());
         player.sendMessage(MM.deserialize(
-                "<gold>Voyage vers</gold> <white><biome></white><gray>.</gray>",
-                Placeholder.parsed("biome", prettyBiome(waypoint.biomeKey()))));
+                "<gold>Voyage vers</gold> <white><name></white><gray>.</gray>",
+                Placeholder.unparsed("name", waypoint.displayName())));
     }
 
     // ---- Recherche graphique (enclume virtuelle) -------------------------------------------
 
-    void openSearch(Player player) {
+    /** {@code world} : monde dans lequel le résultat de recherche rouvrira la liste — jamais perdu
+     * pendant le détour par l'enclume (voir le commentaire de {@link #sessions}). */
+    void openSearch(Player player, String world) {
         BeaconMenuHolder holder = new BeaconMenuHolder(BeaconMenuHolder.Kind.SEARCH);
         Inventory inventory = plugin.getServer().createInventory(holder, org.bukkit.event.inventory.InventoryType.ANVIL,
                 MM.deserialize("<dark_gray>Rechercher un waypoint</dark_gray>"));
@@ -726,6 +799,7 @@ public final class TravelBeaconService implements PluginService {
         input.setItemMeta(meta);
         inventory.setItem(0, input);
         player.openInventory(inventory);
+        sessions.put(player.getUniqueId(), new BeaconMenuSession(0, "", world));
     }
 
     /** Appelé par {@link TravelBeaconListener} sur {@code PrepareAnvilEvent} : jamais de coût XP. */
@@ -751,7 +825,9 @@ public final class TravelBeaconService implements PluginService {
         if (resultItem != null && resultItem.getItemMeta() != null && resultItem.getItemMeta().hasDisplayName()) {
             typed = PlainTextComponentSerializer.plainText().serialize(resultItem.getItemMeta().displayName());
         }
-        openWaypoints(player, 0, normalize(typed));
+        BeaconMenuSession session = sessionOf(player);
+        String world = session != null && !session.world().isBlank() ? session.world() : travelConfig.get().wildWorld();
+        openWaypoints(player, 0, normalize(typed), world);
     }
 
     void handleClose(Player player) {
@@ -765,8 +841,8 @@ public final class TravelBeaconService implements PluginService {
     // ---- Rendu --------------------------------------------------------------------------
 
     private ItemStack waypointIcon(Waypoint waypoint) {
-        return icon(Material.FILLED_MAP, "<gold>" + prettyBiome(waypoint.biomeKey()) + "</gold>",
-                "<gray>Monde :</gray> <white>" + waypoint.world() + "</white>",
+        return icon(Material.FILLED_MAP, "<gold>" + waypoint.displayName() + "</gold>",
+                "<gray>" + prettyBiome(waypoint.biomeKey()) + "</gray>",
                 "<gray>Clique pour voyager.</gray>");
     }
 

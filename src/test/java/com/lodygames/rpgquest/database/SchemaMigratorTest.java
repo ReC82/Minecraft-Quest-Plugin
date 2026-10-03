@@ -2,6 +2,8 @@ package com.lodygames.rpgquest.database;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -21,7 +23,7 @@ class SchemaMigratorTest {
     void migrateSetsUserVersionToCurrentSchemaVersion() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
         }
     }
 
@@ -30,7 +32,7 @@ class SchemaMigratorTest {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema2.db"))) {
             SchemaMigrator.migrate(connection);
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
         }
     }
 
@@ -46,7 +48,7 @@ class SchemaMigratorTest {
 
             SchemaMigrator.migrate(connection);
 
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='quest_objective_progress'")) {
@@ -243,7 +245,7 @@ class SchemaMigratorTest {
                 assertTrue(resultSet.next(), "les données déjà présentes avant la migration V14 doivent survivre telles quelles");
                 assertEquals("Steve", resultSet.getString("last_name"));
             }
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
         }
     }
 
@@ -309,7 +311,7 @@ class SchemaMigratorTest {
 
             SchemaMigrator.migrate(connection);
 
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT min_x, max_x, reserved_min_x, reserved_max_x FROM claims WHERE id = 'legacy'")) {
@@ -378,7 +380,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 17");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
         }
     }
 
@@ -390,7 +392,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 15");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
         }
     }
 
@@ -398,7 +400,7 @@ class SchemaMigratorTest {
     void migrateCreatesTravelBeaconsTable() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema19.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='travel_beacons'")) {
@@ -415,7 +417,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 18");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
         }
     }
 
@@ -423,7 +425,7 @@ class SchemaMigratorTest {
     void migrateCreatesVillageCentersTable() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema20.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='village_centers'")) {
@@ -440,7 +442,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 19");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
         }
     }
 
@@ -448,7 +450,7 @@ class SchemaMigratorTest {
     void migrateAddsBiomeInstanceColumnToTravelBeacons() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema21.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
             try (Statement statement = connection.createStatement()) {
                 statement.executeUpdate(
                         "INSERT INTO travel_beacons (id, world, x, y, z, facing, model_version, active, created_at) "
@@ -470,7 +472,101 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 20");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(21, userVersion(connection));
+            assertEquals(22, userVersion(connection));
+        }
+    }
+
+    /**
+     * Issues #133/#135 : les waypoints déjà existants (créés avant cette migration, donc sans
+     * {@code display_name}) reçoivent chacun un nom unique au backfill — jamais le même nom pour
+     * deux waypoints, même si leur biome est identique (reproduit le cas réel « beach » en double).
+     * {@code id} et les découvertes joueurs ne sont jamais touchés par cette migration.
+     */
+    @Test
+    void migrateBackfillsDisplayNameForExistingWaypointsWithoutDuplicates() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema22.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                // Simule une base créée avant V22 : colonne absente, deux waypoints du même biome
+                // (le cas réel rapporté : deux destinations « beach » indiscernables dans le menu).
+                statement.execute("DROP INDEX idx_waypoints_display_name");
+                statement.execute("ALTER TABLE waypoints DROP COLUMN display_name");
+                statement.executeUpdate(
+                        "INSERT INTO waypoints (id, world, biome_instance, biome_key, region_x, region_z, x, y, z, "
+                                + "facing, model_version, active, created_at) VALUES "
+                                + "('wp_beach_1', 'wild', 'minecraft:beach@0,0', 'minecraft:beach', 0, 0, 10, 65, 10, "
+                                + "'NORTH', 1, 1, '2026-01-01T00:00:00Z')");
+                statement.executeUpdate(
+                        "INSERT INTO waypoints (id, world, biome_instance, biome_key, region_x, region_z, x, y, z, "
+                                + "facing, model_version, active, created_at) VALUES "
+                                + "('wp_beach_2', 'wild', 'minecraft:beach@1,0', 'minecraft:beach', 1, 0, 300, 65, 10, "
+                                + "'NORTH', 1, 1, '2026-01-01T00:00:00Z')");
+                statement.executeUpdate(
+                        "INSERT INTO waypoint_discoveries (player_uuid, waypoint_id, discovered_at) VALUES "
+                                + "('p1', 'wp_beach_1', '2026-01-01T00:00:00Z')");
+                statement.execute("PRAGMA user_version = 21");
+            }
+
+            SchemaMigrator.migrate(connection);
+            assertEquals(22, userVersion(connection));
+
+            String name1, name2;
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT id, display_name FROM waypoints ORDER BY id")) {
+                assertTrue(resultSet.next());
+                assertEquals("wp_beach_1", resultSet.getString("id"));
+                name1 = resultSet.getString("display_name");
+                assertTrue(resultSet.next());
+                assertEquals("wp_beach_2", resultSet.getString("id"));
+                name2 = resultSet.getString("display_name");
+                assertFalse(resultSet.next());
+            }
+            assertFalse(name1.isBlank(), "chaque waypoint existant reçoit un nom non vide");
+            assertFalse(name2.isBlank());
+            assertFalse(name1.equalsIgnoreCase(name2),
+                    "deux waypoints du même biome ne doivent jamais recevoir le même nom au backfill");
+
+            // id et découvertes joueurs inchangés par la migration.
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT waypoint_id FROM waypoint_discoveries WHERE player_uuid = 'p1'")) {
+                assertTrue(resultSet.next());
+                assertEquals("wp_beach_1", resultSet.getString("waypoint_id"));
+            }
+        }
+    }
+
+    /** L'index unique posé par V22 refuse bien un doublon de nom à l'attribution (pas seulement en mémoire). */
+    @Test
+    void migrateCreatesAUniqueIndexOnDisplayNameRejectingDuplicateAttribution() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema22b.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate(
+                        "INSERT INTO waypoints (id, display_name, world, biome_instance, biome_key, region_x, "
+                                + "region_z, x, y, z, facing, model_version, active, created_at) VALUES "
+                                + "('wp_a', 'Rochebrune', 'wild', 'minecraft:forest@0,0', 'minecraft:forest', 0, 0, "
+                                + "1, 65, 1, 'NORTH', 1, 1, '2026-01-01T00:00:00Z')");
+                assertThrows(java.sql.SQLException.class, () -> statement.executeUpdate(
+                        "INSERT INTO waypoints (id, display_name, world, biome_instance, biome_key, region_x, "
+                                + "region_z, x, y, z, facing, model_version, active, created_at) VALUES "
+                                + "('wp_b', 'Rochebrune', 'wild', 'minecraft:forest@1,0', 'minecraft:forest', 1, 0, "
+                                + "2, 65, 2, 'NORTH', 1, 1, '2026-01-01T00:00:00Z')"),
+                        "un second waypoint avec le même display_name doit être refusé par l'index unique");
+            }
+        }
+    }
+
+    @Test
+    void reRunningV22IsIdempotent() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schemaV22.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA user_version = 21");
+            }
+            assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
+            assertEquals(22, userVersion(connection));
         }
     }
 

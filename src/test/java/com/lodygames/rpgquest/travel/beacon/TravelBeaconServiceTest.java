@@ -49,8 +49,13 @@ import org.bukkit.block.Biome;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.inventory.ClickType;
+import org.bukkit.event.inventory.InventoryAction;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -177,7 +182,7 @@ class TravelBeaconServiceTest {
 
     /** {@code biome_instance} doit être unique par (world, biome_instance) — jamais le même pour deux appels. */
     private Waypoint seedWaypoint(String id, String biomeKey, int x, int y, int z) throws Exception {
-        Waypoint waypoint = new Waypoint(id, "wild", biomeKey + "@" + x + "," + z, biomeKey, x, z, x, y, z,
+        Waypoint waypoint = new Waypoint(id, "Nom " + id, "wild", biomeKey + "@" + x + "," + z, biomeKey, x, z, x, y, z,
                 "NORTH", 1, true, Instant.now());
         boolean inserted = waypointRepository.insertIfAbsent(waypoint).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertTrue(inserted, () -> "pré-requis du test : l'insertion de " + id + " a échoué (doublon ?)");
@@ -193,13 +198,21 @@ class TravelBeaconServiceTest {
     }
 
     private Block interactorBlockOf(Waypoint wp) {
+        return interactorBlockOf(wp, wild);
+    }
+
+    private Block interactorBlockOf(Waypoint wp, World world) {
         BlockOffset off = new WaypointModelV1().interactor(BlockFace.valueOf(wp.facing()));
-        return wild.getBlockAt(wp.x() + off.dx(), wp.y() + off.dy(), wp.z() + off.dz());
+        return world.getBlockAt(wp.x() + off.dx(), wp.y() + off.dy(), wp.z() + off.dz());
     }
 
     /** Simule un clic droit réel sur le bouton d'un waypoint, via le vrai bus d'événements. */
     private void discover(PlayerMock player, Waypoint waypoint) {
-        Block button = interactorBlockOf(waypoint);
+        discover(player, waypoint, wild);
+    }
+
+    private void discover(PlayerMock player, Waypoint waypoint, World world) {
+        Block button = interactorBlockOf(waypoint, world);
         PlayerInteractEvent event = new PlayerInteractEvent(player, Action.RIGHT_CLICK_BLOCK,
                 new ItemStack(Material.AIR), button, BlockFace.valueOf(waypoint.facing()), EquipmentSlot.HAND);
         server.getPluginManager().callEvent(event);
@@ -286,7 +299,7 @@ class TravelBeaconServiceTest {
         service.start();
         PlayerMock player = addPlayer();
 
-        service.openWaypoints(player, 0, "");
+        service.openWaypoints(player, 0, "", "wild");
 
         assertEquals(Material.BARRIER, player.getOpenInventory().getTopInventory().getItem(22).getType());
     }
@@ -327,7 +340,7 @@ class TravelBeaconServiceTest {
         discover(player, wp); // découverte dans le Wild
 
         player.teleport(new Location(wild, 0.5, 65, 0.5)); // "mort -> retour au Hub" simulé par un déplacement
-        service.openWaypoints(player, 0, "");
+        service.openWaypoints(player, 0, "", "wild");
         BeaconMenuSession session = service.sessionOf(player);
         service.handleWaypointsClick(player, 0, session); // choisit l'unique waypoint découvert
 
@@ -365,10 +378,10 @@ class TravelBeaconServiceTest {
             discover(player, wp);
         }
 
-        service.openWaypoints(player, 0, "");
+        service.openWaypoints(player, 0, "", "wild");
         assertEquals(45, countFilledMaps(player));
 
-        service.openWaypoints(player, 1, "");
+        service.openWaypoints(player, 1, "", "wild");
         assertEquals(1, countFilledMaps(player));
     }
 
@@ -629,5 +642,193 @@ class TravelBeaconServiceTest {
                 "le waypoint auto-généré du Hub reste protégé");
         assertTrue(service.isProtectedBlock("world_hub", beacon.x(), beacon.y() + 1, beacon.z()),
                 "la borne appariée du Hub reste protégée");
+    }
+
+    // ---- Régression : routage réel des clics (menu racine -> waypoints / villages) -----------
+
+    /**
+     * Clic réel sur un slot du haut du menu actuellement ouvert, routé par le vrai listener (comme
+     * sur un serveur Paper) — jamais un appel direct à {@code handleWaypointsClick}/etc., qui
+     * masquerait exactement le bug de perte de session rencontré en jeu (le {@code session} utilisé
+     * par un appel direct est capturé AVANT la transition, jamais réellement relu par
+     * {@code onInventoryClick}).
+     */
+    private void click(PlayerMock player, int rawSlot) {
+        TravelBeaconListener listener = (TravelBeaconListener) service.listener();
+        InventoryView view = player.getOpenInventory();
+        InventoryClickEvent event = new InventoryClickEvent(
+                view, InventoryType.SlotType.CONTAINER, rawSlot, ClickType.LEFT, InventoryAction.PICKUP_ALL);
+        listener.onInventoryClick(event);
+    }
+
+    private BeaconMenuHolder.Kind openMenuKind(PlayerMock player) {
+        return player.getOpenInventory().getTopInventory().getHolder() instanceof BeaconMenuHolder holder
+                ? holder.kind() : null;
+    }
+
+    @Test
+    void realClickFromRootThroughWorldsThroughWaypointsOntoADestinationActuallyTravels() throws Exception {
+        server.getPluginManager().registerEvents(waypointService.listener(), plugin);
+        waypointService.start();
+        Waypoint wp = seedWaypoint("wp_forest_click", "minecraft:forest", 400, 65, 400);
+        reloadAndAwaitIndexed(wp);
+        service.start();
+        PlayerMock player = addPlayer();
+        discover(player, wp);
+        player.teleport(new Location(wild, 0.5, 65, 0.5));
+
+        service.openRoot(player);
+        click(player, 2); // "Waypoints découverts" — transition réelle qui écrasait la session
+        assertEquals(BeaconMenuHolder.Kind.WORLDS, openMenuKind(player),
+                "le choix du monde doit bien s'ouvrir après le clic sur la catégorie");
+
+        click(player, 0); // "Wild" — toujours en première position
+        assertEquals(BeaconMenuHolder.Kind.WAYPOINTS, openMenuKind(player),
+                "choisir le monde doit réellement ouvrir sa liste de waypoints");
+
+        click(player, 0); // seule destination listée
+        assertEquals("wild", player.getLocation().getWorld().getName());
+        double distance = Math.hypot(player.getLocation().getX() - wp.x(), player.getLocation().getZ() - wp.z());
+        assertTrue(distance < 2.0, "le clic réel sur la destination doit réellement déclencher le voyage");
+    }
+
+    @Test
+    void realClickOnBackButtonsNavigateWaypointsThenWorldsThenRoot() throws Exception {
+        server.getPluginManager().registerEvents(waypointService.listener(), plugin);
+        waypointService.start();
+        Waypoint wp = seedWaypoint("wp_forest_back", "minecraft:forest", 410, 65, 410);
+        reloadAndAwaitIndexed(wp);
+        service.start();
+        PlayerMock player = addPlayer();
+        discover(player, wp);
+
+        service.openRoot(player);
+        click(player, 2);
+        click(player, 0); // "Wild"
+        assertEquals(BeaconMenuHolder.Kind.WAYPOINTS, openMenuKind(player));
+
+        click(player, 45); // "Retour" depuis Waypoints -> choix du monde
+        assertEquals(BeaconMenuHolder.Kind.WORLDS, openMenuKind(player),
+                "le bouton Retour depuis une liste de waypoints doit ramener au choix du monde");
+
+        click(player, 45); // "Retour" depuis le choix du monde -> racine
+        assertEquals(BeaconMenuHolder.Kind.ROOT, openMenuKind(player),
+                "le bouton Retour depuis le choix du monde doit ramener au menu racine");
+    }
+
+    @Test
+    void realClickOnSearchButtonOpensTheAnvilAndResultReopensTheSameWorld() throws Exception {
+        server.getPluginManager().registerEvents(waypointService.listener(), plugin);
+        waypointService.start();
+        Waypoint wp = seedWaypoint("wp_forest_search", "minecraft:forest", 420, 65, 420);
+        reloadAndAwaitIndexed(wp);
+        service.start();
+        PlayerMock player = addPlayer();
+        discover(player, wp);
+
+        service.openRoot(player);
+        click(player, 2);
+        click(player, 0); // "Wild"
+        click(player, 47); // "Rechercher"
+        assertEquals(BeaconMenuHolder.Kind.SEARCH, openMenuKind(player),
+                "le bouton Rechercher doit réellement ouvrir l'enclume de recherche");
+
+        service.handleSearchResultClick(player, null); // équivaut à une saisie vide (aucun filtre)
+        assertEquals(BeaconMenuHolder.Kind.WAYPOINTS, openMenuKind(player),
+                "le résultat de recherche doit rouvrir la liste de waypoints du MÊME monde, jamais perdu");
+        assertEquals(1, countFilledMaps(player));
+    }
+
+    @Test
+    void realClickOnNextPageShowsTheRemainingDiscoveries() throws Exception {
+        server.getPluginManager().registerEvents(waypointService.listener(), plugin);
+        waypointService.start();
+        java.util.List<Waypoint> seeded = new java.util.ArrayList<>();
+        for (int i = 0; i < 46; i++) {
+            seeded.add(seedWaypoint("wp_page_" + i, "minecraft:plains", 1000 + i, 65, 0));
+        }
+        reloadAndAwaitIndexed(seeded.toArray(new Waypoint[0]));
+        service.start();
+        PlayerMock player = addPlayer();
+        for (Waypoint wp : seeded) {
+            discover(player, wp);
+        }
+
+        service.openRoot(player);
+        click(player, 2);
+        click(player, 0); // "Wild"
+        assertEquals(45, countFilledMaps(player));
+
+        click(player, 50); // page suivante
+        assertEquals(BeaconMenuHolder.Kind.WAYPOINTS, openMenuKind(player));
+        assertEquals(1, countFilledMaps(player), "le clic réel sur page suivante doit afficher le reste des découvertes");
+    }
+
+    @Test
+    void realClickOnCloseButtonClosesTheMenuWithoutError() throws Exception {
+        waypointService.start();
+        service.start();
+        PlayerMock player = addPlayer();
+
+        service.openRoot(player);
+        click(player, 2); // choix du monde
+        click(player, 0); // "Wild" (vide)
+        click(player, 53); // Fermer
+
+        var top = player.getOpenInventory().getTopInventory();
+        assertFalse(top != null && top.getHolder() instanceof BeaconMenuHolder,
+                "le bouton Fermer doit réellement fermer le menu");
+    }
+
+    @Test
+    void worldSelectionAlwaysOffersHubAndWildEvenWithoutAnyDiscoveryThere() throws Exception {
+        waypointService.start();
+        service.start();
+        PlayerMock player = addPlayer();
+
+        service.openRoot(player);
+        click(player, 2);
+        assertEquals(BeaconMenuHolder.Kind.WORLDS, openMenuKind(player));
+        BeaconMenuSession session = service.sessionOf(player);
+        assertEquals(java.util.List.of("wild", "world_hub"), session.worldsShown(),
+                "Hub et Wild doivent toujours avoir leur propre page, même à 0 découverte");
+    }
+
+    @Test
+    void worldSelectionListsAnExtraWorldOnlyWhenAWaypointIsDiscoveredThere() throws Exception {
+        server.getPluginManager().registerEvents(waypointService.listener(), plugin);
+        waypointService.start();
+        World claimsExtra = server.addSimpleWorld("claims_extra");
+        Waypoint extra = new Waypoint("wp_claims_extra", "Nom extra", "claims_extra",
+                "minecraft:plains@0,0", "minecraft:plains", 0, 0, 5, 65, 5, "NORTH", 1, true, Instant.now());
+        waypointRepository.insertIfAbsent(extra).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        reloadAndAwaitIndexed(extra);
+        service.start();
+        PlayerMock player = addPlayer();
+        discover(player, extra, claimsExtra); // monde tiers (extensible), jamais pré-listé en dur
+
+        service.openRoot(player);
+        click(player, 2);
+        BeaconMenuSession session = service.sessionOf(player);
+        assertTrue(session.worldsShown().contains("claims_extra"),
+                "un monde tiers doit apparaître dès qu'une découverte y existe (extensible, jamais codé en dur)");
+    }
+
+    @Test
+    void realClickFromRootThroughVillagesOntoADestinationActuallyTravels() throws Exception {
+        waypointService.start();
+        service.start();
+        service.setVillage("hub_click", "Village du clic", new Location(hub, 20.5, 70, 20.5, 0f, 0f));
+        await(() -> service.villages().size() == 1);
+        PlayerMock player = addPlayer();
+
+        service.openRoot(player);
+        click(player, 6); // "Villages" — même transition root -> catégorie que pour les waypoints
+        assertEquals(BeaconMenuHolder.Kind.VILLAGES, openMenuKind(player));
+
+        click(player, 0); // seul village listé
+        assertEquals("world_hub", player.getLocation().getWorld().getName());
+        assertEquals(20, player.getLocation().getBlockX(),
+                "le clic réel sur la destination Villages doit réellement déclencher le voyage");
     }
 }

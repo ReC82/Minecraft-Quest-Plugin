@@ -84,6 +84,8 @@ final class TravelBeaconListener implements Listener {
         }
         if (holder.kind() == BeaconMenuHolder.Kind.ROOT) {
             service.handleRootCategoryClick(player, event.getSlot());
+        } else if (holder.kind() == BeaconMenuHolder.Kind.WORLDS) {
+            service.handleWorldsClick(player, event.getSlot(), session);
         } else if (holder.kind() == BeaconMenuHolder.Kind.WAYPOINTS) {
             service.handleWaypointsClick(player, event.getSlot(), session);
         } else if (holder.kind() == BeaconMenuHolder.Kind.VILLAGES) {

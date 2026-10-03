@@ -1578,8 +1578,7 @@ le résumé de récompenses de TC-014).
     5.  Clic droit sur le bouton de la borne → menu graphique, **sans aucune commande**.
     6.  Catégorie « Waypoints découverts » → le waypoint découvert à l'étape 3 apparaît, avec un
         nom lisible (biome).
-    7.  Catégories « Mon claim » / « Villages » → message clair indiquant qu'elles ne sont pas
-        encore disponibles (pas un bouton qui ne fait rien silencieusement).
+    7.  Catégories « Mon claim » / « Villages » → voir **TC-222** (issue #151) pour leur test dédié.
     8.  Cliquer le waypoint découvert → fermeture du menu, téléportation **sûre** tout près de ce
         waypoint (même zone que la quête en cours).
     9.  Tenter la borne avec un **second compte non-op** n'ayant rien découvert → catégorie
@@ -1599,15 +1598,62 @@ le résumé de récompenses de TC-014).
         aucun déplacement.
 -   **Reset :** aucune donnée joueur à réinitialiser spécifiquement ; `travel_beacons` est une
     table purement administrative, sans impact sur `/rpgadmin player resetnew`.
--   **Couverture automatisée :** `TravelBeaconServiceTest` (9 cas : placement + structure +
-    idempotence, protection anti-casse, ouverture du menu racine au clic bouton, état vide sans
-    découverte, isolation des découvertes entre deux joueurs, parcours complet
-    découverte→borne→menu→retour sûr au même waypoint, clic périmé/destination inconnue sans
-    téléportation, pagination au-delà de 45 entrées, recherche insensible casse/accents).
+-   **Couverture automatisée :** `TravelBeaconServiceTest` (9 cas sur cette partie #132/#150 :
+    placement + structure + idempotence, protection anti-casse, ouverture du menu racine au clic
+    bouton, état vide sans découverte, isolation des découvertes entre deux joueurs, parcours
+    complet découverte→borne→menu→retour sûr au même waypoint, clic périmé/destination inconnue
+    sans téléportation, pagination au-delà de 45 entrées, recherche insensible casse/accents ; +3
+    cas dédiés à #151, voir TC-222).
 -   **Limites MockBukkit (à couvrir uniquement en jeu) :** rendu réel de l'enclume virtuelle côté
     client (apparence, clavier de saisie), ressenti de la pagination/recherche avec un très grand
     nombre réel de waypoints, physique réelle de protection des blocs (explosion/piston en
-    conditions réelles), plusieurs joueurs réels cliquant la borne simultanément.
+    conditions réelles), plusieurs joueurs réels cliquant la borne simultanément. `EntityMock
+    #teleportAsync(Location)` n'étant pas implémenté par MockBukkit (`UnimplementedOperationException`),
+    les tests automatisés qui atteignent réellement la téléportation finale sont **ignorés** (pas
+    échoués) par JUnit — tout ce qui précède (découverte, revalidation, calcul de la position) est
+    bien vérifié ; seule la téléportation elle-même reste `PENDING MANUAL VALIDATION`.
+
+### TC-222 — « Mon claim » et « Villages » (issue #151, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** catégories « Mon claim » / « Villages » du menu de la borne de
+    voyage, `/rpgadmin travel village sethub|set|remove|enable|disable|list`. Détail :
+    [TRAVEL.md](TRAVEL.md) §« Réseau de voyage / bornes ».
+-   **Préconditions :** JAR de cette session déployé **et redémarré**, borne de voyage accessible
+    (voir TC-221), spawn du Hub déjà défini (`/rpgadmin spawn set`, voir TC-221 du Hub).
+-   **Mon claim :**
+    1.  Sans claim : borne → « Mon claim » → icône grisée + message clair (pas un bouton muet).
+    2.  Obtenir un claim (parcours normal du jeu). Réessayer → téléportation **à l'intérieur** du
+        claim (pas à l'extérieur, pas à une position aléatoire).
+    3.  Supprimer son claim (ex. `/claim delete` depuis dessus) puis réessayer sans rouvrir le
+        menu si possible, sinon rouvrir : message propre « tu n'as pas (ou plus) de claim »,
+        aucune téléportation.
+-   **Villages — création admin :**
+    4.  `/rpgadmin spawn set` (si pas déjà fait), puis `/rpgadmin travel village sethub hub_main
+        "Hub principal"` → confirmation.
+    5.  Se déplacer ailleurs dans `world_hub`, `/rpgadmin travel village set hub_est "Quartier
+        Est"` → confirmation.
+    6.  `/rpgadmin travel village list` → les deux centres apparaissent, avec leur monde et leur
+        état actif.
+-   **Villages — parcours joueur :**
+    7.  Borne → « Villages » → les deux centres apparaissent, noms distincts.
+    8.  Cliquer chacun → arrivée à la position **et orientation** exactes de sa création (vérifier
+        qu'on arrive bien aux deux endroits différents, pas toujours au même).
+-   **Villages — administration :**
+    9.  `/rpgadmin travel village disable hub_est` → ce centre disparaît du menu joueur ; cliquer
+        dessus via un clic resté en mémoire (si possible) → refusé proprement.
+    10. `/rpgadmin travel village enable hub_est` → réapparaît, accessible de nouveau.
+    11. `/rpgadmin travel village set hub_est "Quartier Est (déplacé)"` (même id, nouvelle
+        position) → l'ancienne référence continue de fonctionner, arrivée à la **nouvelle**
+        position.
+    12. `/rpgadmin travel village remove hub_est` → disparaît du menu et de `list`.
+-   **Reset :** aucune donnée joueur (`village_centers` est purement administratif, sans lien avec
+    `/rpgadmin player resetnew`).
+-   **Couverture automatisée :** `TravelBeaconServiceTest` (3 cas dédiés : refus sans claim puis
+    arrivée vérifiée **dans** le cuboïde une fois un claim réel créé ; deux centres distincts par
+    id avec arrivée à la position exacte de chacun ; centre désactivé/supprimé rejeté sans
+    téléportation).
+-   **Limites MockBukkit :** mêmes limites que TC-221 (`teleportAsync` non implémenté — les cas qui
+    atteignent la téléportation sont ignorés, pas échoués, par les tests automatisés).
 
 ---
 
@@ -1663,3 +1709,4 @@ le résumé de récompenses de TC-014).
 | TC-210 | Waypoints #124 : génération, découverte bouton, protection, persistance (PENDING) | | | |
 | TC-220 | Kit d'outils en bois #26 : demande explicite, tout ou rien, droit par mort (PENDING) | | | |
 | TC-221 | Réseau de voyage #132/#150 : découverte → mort → borne → menu → retour sûr (PENDING) | | | |
+| TC-222 | Réseau de voyage #151 : Mon claim et Villages (PENDING) | | | |

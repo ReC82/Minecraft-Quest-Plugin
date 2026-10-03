@@ -435,24 +435,43 @@ destination, jamais fusionnée dans leurs tables/identités — `TravelBeaconSer
   idempotent (rejouer à la même colonne est refusé, pas de doublon).
 - **Menu graphique** (`InventoryHolder` dédié `BeaconMenuHolder`, même patron anti-vol/duplication
   que `ui.QuestJournalService` — tout clic/drag dans le menu est systématiquement annulé) :
-  - Racine : « Waypoints découverts » (câblé), « Mon claim » et « Villages » (issue #151, **affichés
-    mais non câblés** — message explicite au clic, jamais un bouton muet).
+  - Racine : trois catégories, revalidées à **chaque clic** (jamais l'état figé au moment de
+    l'ouverture) :
+    - **« Waypoints découverts »** : voir ci-dessous.
+    - **« Mon claim »** (issue #151) : résout le claim courant du joueur via
+      `ClaimService#mainClaimOf` (jamais une coordonnée copiée) ; icône grisée + message si aucun
+      claim. Arrivée au **centre** du claim (`RandomSafeLocationFinder#findAtColumn`, position
+      vérifiée **dans** le cuboïde actif avant tout déplacement) ; claim disparu entre-temps →
+      message propre, aucune téléportation. Jamais d'accès au claim d'un tiers (toujours
+      `mainClaimOf(joueur courant)`).
+    - **« Villages »** (issue #151) : liste des centres administrés (`VillageCenter`, table dédiée
+      `village_centers`, migration V20), paginée comme les waypoints. Identité **indépendante du
+      monde** : plusieurs centres peuvent coexister dans `world_hub`, distingués par `id`/nom.
+      Arrivée à la position **et orientation exactes** enregistrées par l'administrateur (même
+      confiance qu'un spawn — `spawn.SpawnService`) ; centre désactivé/supprimé entre l'ouverture
+      du menu et le clic → revalidation stricte, aucune téléportation.
   - Liste des waypoints **actifs réellement découverts par ce joueur** (jamais ceux d'un autre
     joueur ni un waypoint désactivé), triée par biome, paginée (45/écran), navigation
     page précédente/suivante, retour, fermeture.
-  - **Recherche graphique** : enclume virtuelle (`InventoryType.ANVIL` créée sans bloc réel, pattern
-    standard des GUI Paper/Bukkit), coût de réparation forcé à **0** à chaque `PrepareAnvilEvent`
-    (aucun coût XP), aucun objet du menu réellement récupérable (clic sur le résultat toujours
-    annulé, le texte est lu puis l'objet jeté). Filtrage **insensible à la casse et aux accents**
-    (`Normalizer` NFD + suppression des marques combinantes).
-  - **Revalidation stricte au départ** (`hasActivelyDiscovered`) : un clic périmé sur un waypoint
-    désactivé/supprimé/jamais découvert échoue proprement, sans téléportation. Arrivée sûre via
-    `RandomSafeLocationFinder#findAtColumn` (même mécanisme que la génération de waypoints) ; monde
-    non chargé ou colonne dangereuse → message d'erreur, aucun déplacement.
+  - **Recherche graphique** (waypoints uniquement) : enclume virtuelle (`InventoryType.ANVIL` créée
+    sans bloc réel, pattern standard des GUI Paper/Bukkit), coût de réparation forcé à **0** à
+    chaque `PrepareAnvilEvent` (aucun coût XP), aucun objet du menu réellement récupérable (clic sur
+    le résultat toujours annulé, le texte est lu puis l'objet jeté). Filtrage **insensible à la
+    casse et aux accents** (`Normalizer` NFD + suppression des marques combinantes).
+  - **Revalidation stricte au départ** (`hasActivelyDiscovered` pour les waypoints, résolution
+    fraîche pour claim/village) : un clic périmé échoue proprement, sans téléportation. Arrivée sûre
+    via `RandomSafeLocationFinder#findAtColumn` (waypoints/claim) ou position administrée exacte
+    (villages) ; monde non chargé ou colonne dangereuse → message d'erreur, aucun déplacement.
   - Aucun chemin de ce service ne crée jamais de waypoint (jamais de génération pendant un voyage).
-- **Hors périmètre de cette livraison** (voir le rapport de session pour le détail) : « Mon claim »
-  et « Villages » fonctionnels (#151), génération automatique borne+waypoint par biome du Hub
-  (#149), administration PlugAdmin des bornes/politiques (#152).
+- **Administration des centres de village** : `/rpgadmin travel village sethub <id> <nom...>` (pose
+  le centre **sur le spawn du Hub déjà configuré**, `spawn.SpawnService#resolve` — jamais une
+  coordonnée inventée) ; `/rpgadmin travel village set <id> <nom...>` (position réelle de
+  l'administrateur, pour un centre secondaire ailleurs dans `world_hub`) ; `remove` / `enable` /
+  `disable <id>` (déplacement/désactivation **sans jamais changer l'id**, donc sans casser une
+  référence déjà exposée dans le menu) ; `list`.
+- **Hors périmètre de cette livraison** (voir le rapport de session pour le détail) : génération
+  automatique borne+waypoint par biome du Hub (#149), administration PlugAdmin des
+  bornes/villages/politiques (#152).
 
 ## Tests
 

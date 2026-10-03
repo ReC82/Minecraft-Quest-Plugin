@@ -216,6 +216,20 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-03 (nuit)
+Branche de départ: feat/control-panel-admin-tools
+Étape de départ: issue #151 (rendre fonctionnelles les destinations « Mon claim » et « Villages » du menu de voyage #132/#150, en réutilisant les services claims et Hub existants) — plugin gameplay, hors étapes 1-23
+Étapes terminées: #151 DONE — « Mon claim » résout ClaimService#mainClaimOf (jamais une coordonnée copiée), icône grisée + message si absent, arrivée revérifiée DANS le cuboïde actif du claim (RandomSafeLocationFinder#findAtColumn). Nouveau VillageCenter (+VillageCenterRepository, table village_centers, migration V20, 19->20) : identité id indépendante du monde (plusieurs centres possibles dans world_hub), déplacement/désactivation sans jamais casser l'id (vrai UPSERT ON CONFLICT). Catégorie « Villages » paginée, arrivée à la position/orientation exactes administrées (même confiance qu'un spawn, aucun recalcul de sécurité). Toutes les catégories du menu racine revalidées fraîchement à chaque clic (jamais l'état figé à l'ouverture). Nouvelle commande /rpgadmin travel village sethub|set|remove|enable|disable|list (sethub réutilise SpawnService#resolve, set utilise la position réelle de l'admin). Limitation MockBukkit découverte en écrivant les tests (EntityMock#teleportAsync(Location) non implémenté, UnimplementedOperationException) : 3 tests qui atteignent réellement la téléportation sont ignorés par JUnit (pas échoués) — concerne aussi rétroactivement le test « parcours complet » de #132/#150 (non remarqué à l'époque, build restait SUCCESSFUL). #149 (génération Hub) et #152 (admin Control Panel) toujours non commencés.
+Branche finale: feat/control-panel-admin-tools (y rester, ne rien merger/déployer/redémarrer — aucune autorisation reçue pour ce chantier)
+Dernier commit: (voir git log — commit feat(travel): #151)
+Build: ./gradlew compileJava/compileTestJava verts ; ./gradlew build à confirmer dans le commit (RPGQUEST_TEST_MAX_HEAP=768m)
+Tests: verts en ciblé — TravelBeaconServiceTest passé de 9 à 12 cas (+3 : refus puis arrivée dans le claim une fois créé, deux centres de village distincts par id avec arrivée à la position exacte de chacun, centre désactivé/supprimé rejeté sans téléportation) ; SchemaMigratorTest (version 20 + table village_centers) ; waypoint.*/claim.*/RpgAdminTestShortcutsCommandTest inchangés et toujours verts. Suite complète :test + ./gradlew build lancés pour confirmer l'absence de régression ailleurs.
+Tests manuels en attente: TC-222 (docs/MANUAL_TEST_PLAN.md) — PENDING MANUAL VALIDATION, aucun déploiement effectué pour ce chantier donc rien de testable en jeu pour l'instant.
+Blocages: aucun — limitation de test MockBukkit documentée (teleportAsync non implémenté), sans impact sur la logique elle-même (vérifiée jusqu'à l'appel).
+Première étape à reprendre: #149 (génération automatique borne+waypoint par biome du Hub) ou #152 (administration Control Panel), selon la priorité choisie par l'utilisateur ; validation manuelle TC-221/TC-222 dès qu'un déploiement est autorisé.
+```
+
+```text
 Date: 2026-10-03 (soir)
 Branche de départ: feat/control-panel-admin-tools
 Étape de départ: issues #132 + #150 (réseau de voyage / bornes, priorité gameplay après #26, cahier des charges détaillé reçu en conversation : budget 60-90 min, décision actée que world_hub devient explorable) — plugin gameplay, hors étapes 1-23

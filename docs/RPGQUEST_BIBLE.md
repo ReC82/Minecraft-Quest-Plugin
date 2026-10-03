@@ -213,15 +213,22 @@ Page docs-site : `hub-safe-zone.html`.
 
 À savoir : voir « Spawn Minecraft vs Multiverse vs RPGQuest » en section 7 — c'est **cette** commande, jamais `/mv setspawn`, qui définit le spawn gameplay réel.
 
-### Bornes du réseau de voyage — `/rpgadmin travel` (issues #132/#150)
+### Bornes et villages du réseau de voyage — `/rpgadmin travel` (issues #132/#150/#151)
 Voir aussi `docs/TRAVEL.md` section « Réseau de voyage / bornes » pour le détail complet.
 
 | Commande | Effet | Persistance |
 |---|---|---|
 | `/rpgadmin travel beacon set` | Pose une borne de voyage (support waypoint + `DIAMOND_BLOCK` + `OAK_BUTTON`) à la position **réelle** du joueur, orientée selon son regard. Idempotent (rejouer à la même colonne est refusé). | oui — SQLite (`travel_beacons`, migration V19) |
+| `/rpgadmin travel village sethub <id> <nom...>` | Crée/déplace un centre de village **sur le spawn du Hub déjà configuré** (`SpawnService#resolve`, jamais une coordonnée inventée). Refusé si aucun spawn n'est défini. | oui — SQLite (`village_centers`, migration V20) |
+| `/rpgadmin travel village set <id> <nom...>` | Crée/déplace un centre de village à la position **réelle** du joueur (orientation incluse) — pour un centre secondaire ailleurs dans `world_hub`. | oui |
+| `/rpgadmin travel village remove <id>` | Supprime définitivement un centre. | oui |
+| `/rpgadmin travel village enable\|disable <id>` | (Dés)active un centre sans changer son `id` ni ses coordonnées — une désactivation ne casse jamais une référence déjà exposée dans le menu. | oui |
+| `/rpgadmin travel village list` | Liste les centres configurés (id, nom, monde, actif). | non |
 
-À savoir : seul moyen de créer une borne dans cette livraison — aucune génération automatique
-(issue #149, non traitée). Son bouton ouvre le menu de voyage pour **tout** joueur, sans commande.
+À savoir : seul moyen de créer une borne ou un centre dans cette livraison — aucune génération
+automatique (issue #149, non traitée). Le bouton d'une borne ouvre le menu de voyage pour **tout**
+joueur, sans commande ; l'identité d'un centre de village (`id`) est **indépendante du monde** :
+plusieurs centres peuvent coexister dans `world_hub`, distingués par id/nom.
 
 ### Mondes supplémentaires — `/rpgadmin world`
 Voir section 7 (Mondes) pour le détail complet — non dupliqué ici.
@@ -1096,20 +1103,31 @@ sont des repères physiques persistants, partagés, générés **par instance r�
   PlugAdmin complet, lecture `/waypoints` (une lecture Control Panel est prévue par #124 mais non
   livrée dans ce MVP — `WaypointService` expose déjà `all()` / `byId()` / `discoveryCount()`).
 
-### Réseau de voyage / bornes (issues #132/#150)
+### Réseau de voyage / bornes (issues #132/#150/#151)
 
 Vérifié dans `src/main/java/com/lodygames/rpgquest/travel/beacon/` et `docs/TRAVEL.md` (section
 dédiée, détail complet). Fournit le fast travel que les waypoints eux-mêmes n'apportent pas :
 **borne** physique (même support qu'un waypoint, `DIAMOND_BLOCK` + `OAK_BUTTON`, jamais fusionnée
-avec les tables waypoint/waystone) dont le bouton ouvre un **menu graphique** vers les waypoints
-**déjà découverts par ce joueur** (`Waypoints découverts` câblé ; `Mon claim`/`Villages` affichés
-mais renvoyés à l'issue #151, non câblés ici). Pagination (45/page), recherche graphique via une
-enclume virtuelle (`InventoryType.ANVIL`, aucun coût XP, insensible casse/accents), revalidation
-stricte de la découverte/de l'état du waypoint au départ, arrivée sûre
-(`RandomSafeLocationFinder#findAtColumn`). Placement d'une borne : **administrateur uniquement**
-dans cette livraison, `/rpgadmin travel beacon set` (position réelle de l'exécutant, idempotent) —
-la génération automatique par biome du Hub est l'issue #149, non traitée ici. Table dédiée
-`travel_beacons` (migration V19).
+avec les tables waypoint/waystone) dont le bouton ouvre un **menu graphique** à trois catégories,
+toutes revalidées fraîchement à chaque clic :
+
+- **Waypoints découverts** : uniquement ceux du joueur courant. Pagination (45/page), recherche
+  graphique via une enclume virtuelle (`InventoryType.ANVIL`, aucun coût XP, insensible
+  casse/accents), revalidation stricte (`hasActivelyDiscovered`) et arrivée sûre
+  (`RandomSafeLocationFinder#findAtColumn`).
+- **Mon claim** (#151) : résout le claim courant via `ClaimService#mainClaimOf` (jamais une
+  coordonnée copiée) ; absent → icône grisée + message, jamais un bouton muet. Arrivée au centre du
+  claim, vérifiée **dans** son cuboïde actif.
+- **Villages** (#151) : centres administrés (`VillageCenter`, table `village_centers`, identité
+  **indépendante du monde** — plusieurs centres possibles dans `world_hub`). Arrivée à la position
+  et orientation exactes administrées (même confiance qu'un spawn).
+
+Placement/administration : **administrateur uniquement** dans cette livraison —
+`/rpgadmin travel beacon set` (borne, position réelle, idempotent),
+`/rpgadmin travel village sethub|set|remove|enable|disable|list` (centres, `sethub` réutilise le
+spawn du Hub déjà configuré, jamais une coordonnée inventée). La génération automatique par biome
+du Hub est l'issue #149, non traitée ici. Tables dédiées `travel_beacons` (migration V19) et
+`village_centers` (migration V20).
 
 ---
 
@@ -1557,6 +1575,7 @@ database:
 | V17 | `waystones`, `waystone_discoveries` | Voyage — Waystones Wild |
 | V18 | `waypoints`, `waypoint_discoveries` | Waypoints par instance de biome (#124) |
 | V19 | `travel_beacons` | Bornes du réseau de voyage (#132/#150) |
+| V20 | `village_centers` | Centres de village du réseau de voyage (#151) |
 
 Suivi de version : `PRAGMA user_version` en SQLite (natif, inchangé) ; table portable
 `rpgquest_schema_migrations` en MySQL (#41). `SchemaMigrationRunner` applique les étapes en

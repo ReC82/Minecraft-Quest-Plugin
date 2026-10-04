@@ -45,9 +45,9 @@ class TravelCatalogTest {
             + "\"unpairedHubWaypointIds\":[\"clairiere_perdue\"],\"generatedAtEpochMs\":" + System.currentTimeMillis() + ","
             + "\"waypoints\":["
             + "{\"id\":\"foret_du_hub\",\"displayName\":\"Forêt du Hub\",\"world\":\"hub\",\"biomeKey\":\"FOREST\","
-            + "\"biomeInstance\":\"0,0\",\"x\":12,\"y\":64,\"z\":-8,\"active\":true,\"modelVersion\":1,\"beaconPaired\":true},"
+            + "\"biomeInstance\":\"0,0\",\"x\":12,\"y\":64,\"z\":-8,\"active\":true,\"modelVersion\":1,\"pairedBeaconId\":\"beacon-1\"},"
             + "{\"id\":\"clairiere_perdue\",\"displayName\":\"Clairière perdue\",\"world\":\"hub\",\"biomeKey\":\"PLAINS\","
-            + "\"biomeInstance\":\"1,0\",\"x\":150,\"y\":70,\"z\":30,\"active\":true,\"modelVersion\":1,\"beaconPaired\":false}"
+            + "\"biomeInstance\":\"1,0\",\"x\":150,\"y\":70,\"z\":30,\"active\":true,\"modelVersion\":1,\"pairedBeaconId\":null}"
             + "],"
             + "\"beacons\":["
             + "{\"id\":\"beacon-1\",\"world\":\"hub\",\"x\":12,\"y\":64,\"z\":-8,\"active\":true,\"modelVersion\":1,"
@@ -88,12 +88,16 @@ class TravelCatalogTest {
         assertTrue(page.contains("<code>beacon-1</code>"), "borne auto listée");
         assertTrue(page.contains("<code>beacon-admin-1</code>"), "borne administrée listée");
 
-        // badges de pairage : une borne auto-générée appariée, un waypoint sans borne en warning
-        assertTrue(page.contains("badge text-bg-success\">oui</span>"), "waypoint apparié marqué oui");
-        assertTrue(page.contains("badge text-bg-warning\">non</span>"), "waypoint non apparié marqué non");
+        // Retour joueur 2026-10-04 : « Apparié » (oui/non) remplacé par « Borne associée »
+        // affichant directement l'id de la borne associée, jamais un simple booléen.
+        assertTrue(page.contains("Borne associée") && page.contains("Waypoint associé"),
+                "libellés explicites, plus de « Apparié » ambigu");
+        assertTrue(page.contains("<code>beacon-1</code>"), "l'id de la borne associée doit apparaître dans la table des waypoints");
+        assertTrue(page.contains("badge text-bg-warning\">aucune</span>"), "waypoint non associé marqué explicitement");
         assertTrue(page.contains("badge text-bg-info\">auto (Hub)</span>"), "borne auto-générée identifiée");
         assertTrue(page.contains("badge text-bg-secondary\">administrée</span>"), "borne administrée identifiée");
-        assertTrue(page.contains("<code>foret_du_hub</code>") , "waypoint apparié référencé depuis la table des bornes");
+        assertTrue(page.contains("<code>foret_du_hub</code>") , "waypoint associé référencé depuis la table des bornes");
+        assertTrue(page.contains("badge text-bg-warning\">aucun</span>"), "borne sans waypoint associé marquée explicitement");
 
         // distinction explicite "enregistré" vs "vérifié physiquement" demandée par le ticket
         // (apostrophe HTML-échappée par Http.esc dans le sous-titre, voir Ui#pageHeader)

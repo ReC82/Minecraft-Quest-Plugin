@@ -1146,9 +1146,9 @@ public final class BukkitAgentActions implements AgentActions {
 
             List<WaypointSummary> waypointSummaries = new ArrayList<>();
             for (Waypoint w : waypoints) {
-                boolean paired = beaconIdByInstance.containsKey(instanceKey(w.world(), w.biomeInstance()));
+                String pairedBeaconId = beaconIdByInstance.get(instanceKey(w.world(), w.biomeInstance()));
                 waypointSummaries.add(new WaypointSummary(w.id(), w.displayName(), w.world(), w.biomeKey(),
-                        w.biomeInstance(), w.x(), w.y(), w.z(), w.active(), w.modelVersion(), paired));
+                        w.biomeInstance(), w.x(), w.y(), w.z(), w.active(), w.modelVersion(), pairedBeaconId));
             }
 
             List<BeaconSummary> beaconSummaries = new ArrayList<>();

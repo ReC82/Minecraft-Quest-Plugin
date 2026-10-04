@@ -394,8 +394,13 @@ public interface AgentActions {
      * {@code waypoint.WaypointService#inaccessible()}/{@code #repair} côté `/rpgadmin`, hors
      * périmètre de cette simple consultation).
      */
+    /**
+     * {@code pairedBeaconId} : identifiant de la borne associée à ce waypoint ({@code null} =
+     * aucune) -- retour joueur 2026-10-04 : afficher laquelle, pas seulement un booléen « apparié »
+     * facilement confondu avec un statut de découverte joueur (voir Control Panel {@code /travel}).
+     */
     record WaypointSummary(String id, String displayName, String world, String biomeKey, String biomeInstance,
-                           int x, int y, int z, boolean active, int modelVersion, boolean beaconPaired) {
+                           int x, int y, int z, boolean active, int modelVersion, String pairedBeaconId) {
     }
 
     /** Une borne <strong>persistée</strong> (table {@code travel_beacons}) — même réserve que {@link WaypointSummary}. */

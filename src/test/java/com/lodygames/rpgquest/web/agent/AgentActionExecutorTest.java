@@ -189,8 +189,8 @@ class AgentActionExecutorTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> waypoints = (List<Map<String, Object>>) outcome.details().get("waypoints");
         assertEquals(2, waypoints.size());
-        assertEquals(Boolean.TRUE, waypoints.get(0).get("beaconPaired"));
-        assertEquals(Boolean.FALSE, waypoints.get(1).get("beaconPaired"));
+        assertEquals("beacon_auto_world_hub_plains_0_0", waypoints.get(0).get("pairedBeaconId"));
+        assertNull(waypoints.get(1).get("pairedBeaconId"));
     }
 
     @Test
@@ -873,9 +873,9 @@ class AgentActionExecutorTest {
         @Override
         public CompletableFuture<TravelCatalogView> travelCatalog() {
             WaypointSummary paired = new WaypointSummary("wp_hub_plains_0_0", "Rochebrune", "world_hub",
-                    "minecraft:plains", "minecraft:plains@0,0", 10, 65, 10, true, 1, true);
+                    "minecraft:plains", "minecraft:plains@0,0", 10, 65, 10, true, 1, "beacon_auto_world_hub_plains_0_0");
             WaypointSummary unpaired = new WaypointSummary("wp_hub_forest_1_0", "Clairval", "world_hub",
-                    "minecraft:forest", "minecraft:forest@1,0", 300, 65, 10, true, 1, false);
+                    "minecraft:forest", "minecraft:forest@1,0", 300, 65, 10, true, 1, null);
             BeaconSummary autoBeacon = new BeaconSummary("beacon_auto_world_hub_plains_0_0", "world_hub",
                     15, 65, 10, true, 1, true, "minecraft:plains@0,0", "wp_hub_plains_0_0");
             BeaconSummary adminBeacon = new BeaconSummary("beacon_wild_1_65_1", "wild", 1, 65, 1, true, 1,

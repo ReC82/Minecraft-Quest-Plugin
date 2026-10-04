@@ -413,7 +413,7 @@ public final class AgentActionExecutor {
                 row.put("z", w.z());
                 row.put("active", w.active());
                 row.put("modelVersion", w.modelVersion());
-                row.put("beaconPaired", w.beaconPaired());
+                row.put("pairedBeaconId", w.pairedBeaconId());
                 waypointRows.add(row);
             }
             List<Map<String, Object>> beaconRows = new ArrayList<>();

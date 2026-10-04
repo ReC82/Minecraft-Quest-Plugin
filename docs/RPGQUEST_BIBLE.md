@@ -1444,7 +1444,7 @@ Cinq `abilities` réellement implémentées (enum `MobAbilityType`, vérifié da
 |---|---|---|
 | `STRONGER_EXPLOSION` | `radius-multiplier` (> 0) | multiplie le rayon d'une explosion vanilla qui prime |
 | `EXPLOSIVE_ON_ATTACK` | `power` (> 0), `set-fire`, `trigger-range-blocks` (> 0) | rend une entité passive agressive : explosion réelle en approche, puis mort de l'entité |
-| `SPLIT_ON_HIT` | `max-depth` (≥ 1), `max-children-per-hit` (≥ 1) | fait apparaître des enfants à chaque coup non mortel, profondeur/nombre strictement bornés |
+| `SPLIT_ON_HIT` | `max-depth` (≥ 1), `max-children-per-hit` (≥ 1), `max-alive-per-parent` (≥ 1, optionnel, défaut 2 — issue #190) | fait apparaître des enfants à chaque coup non mortel ; `max-alive-per-parent` plafonne séparément le nombre d'enfants vivants d'un même parent, pour que des coups répétés sur la même entité avant sa mort ne produisent pas plus de descendants que ce plafond |
 | `ENRAGED` | `health-fraction` (0 < x < 1), `speed-multiplier` (> 0), `damage-multiplier` (> 0) | sous le seuil de vie, signal visuel (particule + son) puis bascule en rage une seule fois (jamais réappliqué/cumulé) |
 | `SUMMON_ON_DAMAGE` | `summon-entity-type`, `amount` (> 0), `chance` (0 < x ≤ 1), `cooldown-seconds` (≥ 0), `max-alive` (> 0) | invoque des renforts sur dégâts effectifs, cooldown + plafond de renforts vivants ; jamais de cascade (les renforts invoqués sont de simples mobs vanilla, jamais eux-mêmes des mobs spéciaux) |
 

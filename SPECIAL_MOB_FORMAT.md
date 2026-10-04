@@ -78,12 +78,24 @@ max-population: 2      # limite le nombre d'individus vivants simultanément
     0) — rend agressive une entité normalement passive : un balayage
     périodique (1 s) détecte un joueur à portée et déclenche une explosion
     réelle (`World#createExplosion`, respecte les zones/claims comme toute
-    explosion), puis l'entité meurt.
--   `SPLIT_ON_HIT` (`max-depth` ≥ 1, `max-children-per-hit` ≥ 1) — fait
-    apparaître des enfants à chaque coup non mortel. La profondeur de
-    génération est suivie en PDC (jamais dans le nom affiché) ; combinée à
-    `max-children-per-hit` et à `max-population`, elle borne strictement
-    toute chaîne de division.
+    explosion), puis l'entité meurt. **Poursuite (issue #190)** : tant qu'un
+    joueur éligible est à moins de 16 blocs (hors de `trigger-range-blocks`),
+    l'entité se met en chemin vers lui via
+    `org.bukkit.entity.Mob#getPathfinder()` (API publique Paper, aucun NMS) —
+    changer les statistiques d'une base passive ne lui donne aucune IA de
+    poursuite par elle-même, ce chemin est recalculé à chaque balayage.
+    N'affecte jamais les animaux ordinaires (uniquement les entités taguées
+    avec cette capacité).
+-   `SPLIT_ON_HIT` (`max-depth` ≥ 1, `max-children-per-hit` ≥ 1,
+    `max-alive-per-parent` ≥ 1 optionnel défaut 2) — fait apparaître des
+    enfants à chaque coup non mortel. La profondeur de génération est suivie
+    en PDC (jamais dans le nom affiché) ; `max-children-per-hit` borne le
+    nombre créé par déclenchement, `max-population` borne la population
+    globale, et **`max-alive-per-parent` (issue #190) borne séparément le
+    nombre d'enfants vivants d'un même parent** — sans cette troisième borne,
+    des coups répétés sur la même entité avant sa mort relançaient une
+    division complète à chaque coup, produisant bien plus que
+    `max-children-per-hit` descendants directs pour un seul parent.
 -   `ENRAGED` (`health-fraction` strictement entre 0 et 1, `speed-multiplier`
     > 0, `damage-multiplier` > 0) — sous `health-fraction` de vie max, signal
     visuel (particule + son) puis bascule en rage (vitesse/dégâts

@@ -9,6 +9,7 @@ import com.lodygames.rpgquest.config.ProgressionConfig;
 import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.ProgressionRepository;
+import com.lodygames.rpgquest.mob.MobSpawnSettingsStore;
 import com.lodygames.rpgquest.mob.SpecialMobRegistry;
 import com.lodygames.rpgquest.mob.SpecialMobService;
 import com.lodygames.rpgquest.progression.ProgressionService;
@@ -67,7 +68,8 @@ class CombatXpListenerTest {
         mobRegistry.reload(); // pas de start() : aucun exemple bundlé nécessaire ici.
         SpecialMobService mobService = new SpecialMobService(
                 plugin, mobRegistry, zoneRegistry, new com.lodygames.rpgquest.item.YamlCustomItemRegistry(
-                        tempDir.resolve("items"), plugin.getSLF4JLogger()), plugin.getSLF4JLogger());
+                        tempDir.resolve("items"), plugin.getSLF4JLogger()), plugin.getSLF4JLogger(),
+                new MobSpawnSettingsStore(tempDir.resolve("mobs"), plugin.getSLF4JLogger()));
 
         listener = new CombatXpListener(plugin, progression, mobService, () -> config);
 

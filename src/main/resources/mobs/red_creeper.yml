@@ -1,4 +1,5 @@
 id: rpgquest:red_creeper
+category: SPECIAL
 entity-type: CREEPER
 name: "<red><bold>Creeper Rouge</bold></red>"
 

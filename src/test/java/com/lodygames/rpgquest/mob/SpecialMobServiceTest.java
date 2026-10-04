@@ -50,6 +50,7 @@ class SpecialMobServiceTest {
     private SpecialMobRegistry registry;
     private YamlCustomItemRegistry itemRegistry;
     private ZoneRegistry zoneRegistry;
+    private MobSpawnSettingsStore spawnSettingsStore;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -93,6 +94,7 @@ class SpecialMobServiceTest {
         // (red_creeper, splitting_zombie...) qui pollueraient les tests basés sur registry.definitions().
         registry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
         registry.reload();
+        spawnSettingsStore = new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger());
     }
 
     @AfterEach
@@ -101,7 +103,7 @@ class SpecialMobServiceTest {
     }
 
     private SpecialMobService newService(RandomGenerator random) {
-        return new SpecialMobService(plugin, registry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), random);
+        return new SpecialMobService(plugin, registry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), random, spawnSettingsStore);
     }
 
     private static EntityDeathEvent deathEvent(LivingEntity entity, List<org.bukkit.inventory.ItemStack> drops) {
@@ -188,6 +190,121 @@ class SpecialMobServiceTest {
         assertTrue(service.rollDefinition(pig).isEmpty(), "aucune définition ne cible PIG dans ce fixture");
     }
 
+    // ---- Issue #169 (lot 1) : throttle global, exclusion BOSS, tirage pondéré -----------------
+
+    private static RandomGenerator sequenceRandom(double... values) {
+        return new RandomGenerator() {
+            private int index = 0;
+
+            @Override
+            public long nextLong() {
+                return 0L;
+            }
+
+            @Override
+            public double nextDouble() {
+                double value = values[Math.min(index, values.length - 1)];
+                index++;
+                return value;
+            }
+        };
+    }
+
+    @Test
+    void bossCategoryIsNeverEligibleForTheAutomaticRoll() throws Exception {
+        Path mobsDir = tempDir.resolve("boss-mobs");
+        Files.createDirectories(mobsDir);
+        Files.writeString(mobsDir.resolve("boss_zombie.yml"), """
+                id: rpgquest:boss_zombie
+                category: BOSS
+                entity-type: ZOMBIE
+                name: "Boss Zombie"
+                spawn-chance: 1.0
+                """);
+        SpecialMobRegistry bossRegistry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
+        bossRegistry.reload();
+        SpecialMobService service = new SpecialMobService(
+                plugin, bossRegistry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), fixedRandom(0.0), spawnSettingsStore);
+
+        LivingEntity zombie = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.ZOMBIE);
+        assertTrue(service.rollDefinition(zombie).isEmpty(), "une définition BOSS ne doit jamais sortir du tirage aléatoire");
+    }
+
+    @Test
+    void globalThrottleBlocksTheRollEvenWhenEveryDefinitionWouldHit() throws Exception {
+        Path mobsDir = tempDir.resolve("throttled-mobs");
+        Files.writeString(Files.createDirectories(mobsDir).resolve("always_hits.yml"), """
+                id: rpgquest:always_hits
+                entity-type: ZOMBIE
+                name: "Always Hits"
+                spawn-chance: 1.0
+                """);
+        SpecialMobRegistry throttledRegistry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
+        throttledRegistry.reload();
+        MobSpawnSettingsStore throttledSettings = new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger());
+        throttledSettings.save(new MobSpawnSettings(true, 0.3, null));
+        SpecialMobService service = new SpecialMobService(
+                plugin, throttledRegistry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(),
+                fixedRandom(0.5), throttledSettings); // 0.5 >= 0.3 (throttle global) : jamais examiné plus loin.
+
+        LivingEntity zombie = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.ZOMBIE);
+        assertTrue(service.rollDefinition(zombie).isEmpty(),
+                "le throttle global doit bloquer le tirage avant même d'examiner les définitions");
+    }
+
+    @Test
+    void simultaneousHitsAreResolvedByExplicitWeightedPickNeverTheFirstFound() throws Exception {
+        Path mobsDir = tempDir.resolve("weighted-mobs");
+        Files.createDirectories(mobsDir);
+        Files.writeString(mobsDir.resolve("weight_a.yml"), """
+                id: rpgquest:weight_a
+                entity-type: ZOMBIE
+                name: "Weight A"
+                spawn-chance: 0.5
+                """);
+        Files.writeString(mobsDir.resolve("weight_b.yml"), """
+                id: rpgquest:weight_b
+                entity-type: ZOMBIE
+                name: "Weight B"
+                spawn-chance: 0.5
+                """);
+        SpecialMobRegistry weightedRegistry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
+        weightedRegistry.reload();
+        MobSpawnSettingsStore defaultSettings = new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger());
+
+        // throttle(0.0) passe ; weight_a(0.0<0.5) touche ; weight_b(0.0<0.5) touche ; tirage pondéré(0.9) -> weight_b.
+        SpecialMobService serviceB = new SpecialMobService(plugin, weightedRegistry, zoneRegistry, itemRegistry,
+                plugin.getSLF4JLogger(), sequenceRandom(0.0, 0.0, 0.0, 0.9), defaultSettings);
+        LivingEntity zombieB = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.ZOMBIE);
+        assertEquals("rpgquest:weight_b", serviceB.rollDefinition(zombieB).orElseThrow().id().toString());
+
+        // Même tirage mais pondéré(0.1) -> weight_a : prouve que la sélection dépend du tirage pondéré,
+        // jamais simplement de la première définition trouvée dans le registre.
+        SpecialMobService serviceA = new SpecialMobService(plugin, weightedRegistry, zoneRegistry, itemRegistry,
+                plugin.getSLF4JLogger(), sequenceRandom(0.0, 0.0, 0.0, 0.1), defaultSettings);
+        LivingEntity zombieA = (LivingEntity) world.spawnEntity(new Location(world, 1, 64, 1), EntityType.ZOMBIE);
+        assertEquals("rpgquest:weight_a", serviceA.rollDefinition(zombieA).orElseThrow().id().toString());
+    }
+
+    @Test
+    void disabledDefinitionIsNeverRolled() throws Exception {
+        Path mobsDir = tempDir.resolve("disabled-mobs");
+        Files.writeString(Files.createDirectories(mobsDir).resolve("disabled.yml"), """
+                id: rpgquest:disabled_zombie
+                enabled: false
+                entity-type: ZOMBIE
+                name: "Disabled"
+                spawn-chance: 1.0
+                """);
+        SpecialMobRegistry disabledRegistry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
+        disabledRegistry.reload();
+        SpecialMobService service = new SpecialMobService(plugin, disabledRegistry, zoneRegistry, itemRegistry,
+                plugin.getSLF4JLogger(), fixedRandom(0.0), new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger()));
+
+        LivingEntity zombie = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), EntityType.ZOMBIE);
+        assertTrue(service.rollDefinition(zombie).isEmpty(), "une définition désactivée ne doit jamais être tirée");
+    }
+
     // ---- Zone interdite -----------------------------------------------------------------------
 
     @Test
@@ -205,7 +322,7 @@ class SpecialMobServiceTest {
         SpecialMobRegistry zonedRegistry = new SpecialMobRegistry(mobsDir, plugin.getSLF4JLogger());
         zonedRegistry.reload();
         SpecialMobService service = new SpecialMobService(
-                plugin, zonedRegistry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), fixedRandom(0.0));
+                plugin, zonedRegistry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), fixedRandom(0.0), spawnSettingsStore);
 
         LivingEntity outside = (LivingEntity) world.spawnEntity(new Location(world, 100, 64, 100), EntityType.ZOMBIE);
         assertTrue(service.rollDefinition(outside).isEmpty(), "hors de toute zone nommée « arena », le spawn est refusé");

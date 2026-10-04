@@ -1,4 +1,5 @@
 id: rpgquest:creeper_pig
+category: SPECIAL
 entity-type: PIG
 name: "<dark_green><bold>Cochon Creeper</bold></dark_green>"
 

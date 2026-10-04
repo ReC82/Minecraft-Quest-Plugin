@@ -27,6 +27,10 @@ import org.bukkit.entity.EntityType;
  */
 public record SpecialMobDefinition(
         NamespacedKey id,
+        /** Issue #172 : SPECIAL (tirage aléatoire Wild) ou BOSS (jamais tiré au hasard). */
+        MobCategory category,
+        /** Issue #172 : désactivé = ignoré par le tirage aléatoire ET par le spawn de test ; jamais supprimé. */
+        boolean enabled,
         EntityType entityType,
         String displayName,
         double spawnChance,
@@ -37,6 +41,13 @@ public record SpecialMobDefinition(
         Double damage,
         Double speed,
         Double armor,
+        /** Issue #172 : résistance au recul (0..1, comme l'attribut vanilla {@code KNOCKBACK_RESISTANCE}). */
+        Double knockbackResistance,
+        /** Issue #172 : taille relative (attribut vanilla {@code SCALE}, 1.0 = taille normale). */
+        Double scale,
+        /** Issue #172 : rayon d'explosion si {@code entityType == CREEPER}, sinon doit rester {@code null}
+         * (validé par le parseur -- jamais une option silencieusement ignorée pour un autre type). */
+        Double creeperExplosionRadius,
         Particle particle,
         Sound sound,
         List<MobAbility> abilities,
@@ -48,6 +59,9 @@ public record SpecialMobDefinition(
     public SpecialMobDefinition {
         if (id == null) {
             throw new IllegalArgumentException("id est obligatoire.");
+        }
+        if (category == null) {
+            throw new IllegalArgumentException("category est obligatoire.");
         }
         if (entityType == null || !entityType.isAlive()) {
             throw new IllegalArgumentException("entityType doit être un type d'entité vivante valide.");
@@ -72,6 +86,23 @@ public record SpecialMobDefinition(
         }
         if (armor != null && armor < 0) {
             throw new IllegalArgumentException("armor ne peut pas être négative si présente : " + armor);
+        }
+        if (knockbackResistance != null && (knockbackResistance < 0 || knockbackResistance > 1)) {
+            throw new IllegalArgumentException(
+                    "knockbackResistance doit être compris entre 0 et 1 si présente : " + knockbackResistance);
+        }
+        if (scale != null && scale <= 0) {
+            throw new IllegalArgumentException("scale doit être strictement positive si présente : " + scale);
+        }
+        if (creeperExplosionRadius != null) {
+            if (entityType != EntityType.CREEPER) {
+                throw new IllegalArgumentException(
+                        "creeperExplosionRadius n'a de sens que pour entity-type: CREEPER (incompatible avec " + entityType + ").");
+            }
+            if (creeperExplosionRadius <= 0) {
+                throw new IllegalArgumentException(
+                        "creeperExplosionRadius doit être strictement positif si présent : " + creeperExplosionRadius);
+            }
         }
         abilities = abilities == null ? List.of() : List.copyOf(abilities);
         drops = drops == null ? List.of() : List.copyOf(drops);

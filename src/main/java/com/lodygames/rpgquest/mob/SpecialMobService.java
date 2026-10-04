@@ -2,11 +2,13 @@ package com.lodygames.rpgquest.mob;
 
 import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.mob.model.MobCategory;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
 import com.lodygames.rpgquest.resource.model.CustomItemDrop;
 import com.lodygames.rpgquest.resource.model.ResourceDrop;
 import com.lodygames.rpgquest.resource.model.VanillaItemDrop;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -18,14 +20,18 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.random.RandomGenerator;
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
+import org.bukkit.Particle;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeInstance;
+import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
@@ -36,6 +42,7 @@ import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.scheduler.BukkitTask;
 import org.slf4j.Logger;
 
 /**
@@ -61,6 +68,10 @@ public final class SpecialMobService implements PluginService, Listener {
 
     public static final String PDC_KEY_NAME = "special-mob-id";
     public static final String SPLIT_DEPTH_KEY_NAME = "special-mob-split-depth";
+    public static final String TEST_INSTANCE_KEY_NAME = "special-mob-test-instance";
+
+    private static final long BOSS_BAR_PERIOD_TICKS = 20L; // 1 s : aura + rafraîchissement de la barre de vie.
+    private static final double BOSS_BAR_RANGE_SQUARED = 48.0 * 48.0;
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
@@ -70,38 +81,66 @@ public final class SpecialMobService implements PluginService, Listener {
     private final YamlCustomItemRegistry customItemRegistry;
     private final Logger logger;
     private final RandomGenerator random;
+    private final MobSpawnSettingsStore spawnSettingsStore;
     private final NamespacedKey pdcKey;
     private final NamespacedKey splitDepthKey;
+    private final NamespacedKey testInstanceKey;
 
     private final Map<NamespacedKey, Set<UUID>> population = new ConcurrentHashMap<>();
     private final Map<NamespacedKey, LongAdder> spawnCounts = new ConcurrentHashMap<>();
     private final Map<String, LongAdder> abilityTriggerCounts = new ConcurrentHashMap<>();
+    private final Map<UUID, BossBar> bossBars = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<UUID>> bossBarViewers = new ConcurrentHashMap<>();
+    private BukkitTask bossBarTask;
 
     public SpecialMobService(Plugin plugin, SpecialMobRegistry registry, ZoneRegistry zoneRegistry,
-                              YamlCustomItemRegistry customItemRegistry, Logger logger) {
-        this(plugin, registry, zoneRegistry, customItemRegistry, logger, ThreadLocalRandom.current());
+                              YamlCustomItemRegistry customItemRegistry, Logger logger,
+                              MobSpawnSettingsStore spawnSettingsStore) {
+        this(plugin, registry, zoneRegistry, customItemRegistry, logger, ThreadLocalRandom.current(), spawnSettingsStore);
     }
 
     SpecialMobService(Plugin plugin, SpecialMobRegistry registry, ZoneRegistry zoneRegistry,
-                       YamlCustomItemRegistry customItemRegistry, Logger logger, RandomGenerator random) {
+                       YamlCustomItemRegistry customItemRegistry, Logger logger, RandomGenerator random,
+                       MobSpawnSettingsStore spawnSettingsStore) {
         this.plugin = plugin;
         this.registry = registry;
         this.zoneRegistry = zoneRegistry;
         this.customItemRegistry = customItemRegistry;
         this.logger = logger;
         this.random = random;
+        this.spawnSettingsStore = spawnSettingsStore;
         this.pdcKey = new NamespacedKey(plugin, PDC_KEY_NAME);
         this.splitDepthKey = new NamespacedKey(plugin, SPLIT_DEPTH_KEY_NAME);
+        this.testInstanceKey = new NamespacedKey(plugin, TEST_INSTANCE_KEY_NAME);
     }
 
     @Override
     public void start() {
         Bukkit.getPluginManager().registerEvents(this, plugin);
+        bossBarTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tickBossBars, BOSS_BAR_PERIOD_TICKS, BOSS_BAR_PERIOD_TICKS);
     }
 
     @Override
     public void stop() {
         HandlerList.unregisterAll(this);
+        if (bossBarTask != null) {
+            bossBarTask.cancel();
+            bossBarTask = null;
+        }
+        for (var entry : bossBarViewers.entrySet()) {
+            BossBar bar = bossBars.get(entry.getKey());
+            if (bar == null) {
+                continue;
+            }
+            for (UUID viewerId : entry.getValue()) {
+                Player viewer = Bukkit.getPlayer(viewerId);
+                if (viewer != null) {
+                    viewer.hideBossBar(bar);
+                }
+            }
+        }
+        bossBars.clear();
+        bossBarViewers.clear();
         population.clear();
     }
 
@@ -155,7 +194,12 @@ public final class SpecialMobService implements PluginService, Listener {
     @EventHandler
     public void onChunkLoad(ChunkLoadEvent event) {
         for (Entity entity : event.getChunk().getEntities()) {
-            specialMobId(entity).ifPresent(id -> trackAlive(id, entity.getUniqueId()));
+            specialMobId(entity).ifPresent(id -> {
+                trackAlive(id, entity.getUniqueId());
+                registry.find(id)
+                        .filter(def -> def.category() == MobCategory.BOSS)
+                        .ifPresent(def -> ensureBossBar((LivingEntity) entity, def));
+            });
         }
     }
 
@@ -170,6 +214,7 @@ public final class SpecialMobService implements PluginService, Listener {
         }
         SpecialMobDefinition def = defOpt.get();
         untrack(def.id(), event.getEntity().getUniqueId());
+        removeBossBar(event.getEntity().getUniqueId());
 
         if (!def.drops().isEmpty()) {
             event.getDrops().clear();
@@ -180,8 +225,38 @@ public final class SpecialMobService implements PluginService, Listener {
         }
     }
 
+    /**
+     * Résout la ou les transformations possibles d'un spawn naturel éligible (issue #174) :
+     *
+     * <ol>
+     *   <li>throttle global ({@link MobSpawnSettings#chance()}) -- un seul tirage, évalué une fois,
+     *       <i>avant</i> d'examiner les définitions individuelles ;</li>
+     *   <li>plafond global de {@code SPECIAL} vivants simultanés ({@link MobSpawnSettings#maxSimultaneousSpecial()}) ;</li>
+     *   <li>pour chaque définition {@code SPECIAL} (jamais {@code BOSS} -- exclues du tirage
+     *       automatique), activée, compatible (type/monde/biome/zone) et sous son propre plafond,
+     *       tirage indépendant de son {@code spawnChance} ;</li>
+     *   <li>zéro résultat -> aucune transformation ; un résultat -> appliqué ; plusieurs résultats
+     *       simultanés -> tirage pondéré explicite entre eux (poids = {@code spawnChance} de chacune),
+     *       jamais la première trouvée dans le registre.</li>
+     * </ol>
+     */
     Optional<SpecialMobDefinition> rollDefinition(LivingEntity entity) {
+        MobSpawnSettings settings = spawnSettingsStore.current();
+        if (!settings.enabled()) {
+            return Optional.empty();
+        }
+        if (random.nextDouble() >= settings.chance()) {
+            return Optional.empty();
+        }
+        if (atGlobalSpecialCap(settings)) {
+            return Optional.empty();
+        }
+
+        List<SpecialMobDefinition> hits = new ArrayList<>();
         for (SpecialMobDefinition def : registry.definitions()) {
+            if (def.category() != MobCategory.SPECIAL || !def.enabled()) {
+                continue;
+            }
             if (def.entityType() != entity.getType()) {
                 continue;
             }
@@ -192,10 +267,45 @@ public final class SpecialMobService implements PluginService, Listener {
                 continue;
             }
             if (random.nextDouble() < def.spawnChance()) {
-                return Optional.of(def);
+                hits.add(def);
             }
         }
-        return Optional.empty();
+        if (hits.isEmpty()) {
+            return Optional.empty();
+        }
+        if (hits.size() == 1) {
+            return Optional.of(hits.get(0));
+        }
+        return Optional.of(weightedPick(hits));
+    }
+
+    private SpecialMobDefinition weightedPick(List<SpecialMobDefinition> hits) {
+        double totalWeight = hits.stream().mapToDouble(SpecialMobDefinition::spawnChance).sum();
+        if (totalWeight <= 0) {
+            return hits.get(random.nextInt(hits.size()));
+        }
+        double roll = random.nextDouble() * totalWeight;
+        double cumulative = 0;
+        for (SpecialMobDefinition def : hits) {
+            cumulative += def.spawnChance();
+            if (roll < cumulative) {
+                return def;
+            }
+        }
+        return hits.get(hits.size() - 1);
+    }
+
+    private boolean atGlobalSpecialCap(MobSpawnSettings settings) {
+        if (settings.maxSimultaneousSpecial() == null) {
+            return false;
+        }
+        int aliveSpecial = 0;
+        for (SpecialMobDefinition def : registry.definitions()) {
+            if (def.category() == MobCategory.SPECIAL) {
+                aliveSpecial += populationOf(def.id());
+            }
+        }
+        return aliveSpecial >= settings.maxSimultaneousSpecial();
     }
 
     private boolean locationAllowed(SpecialMobDefinition def, Location location) {
@@ -221,6 +331,48 @@ public final class SpecialMobService implements PluginService, Listener {
         return true;
     }
 
+    // ---- Spawn / nettoyage de test depuis le panel (issue #172) ----------------------
+
+    /**
+     * Fait apparaître une instance de test de {@code def} à une position sûre à proximité de
+     * {@code player} (voir {@link com.lodygames.rpgquest.travel.RandomSafeLocationFinder}),
+     * marquée distinctement (PDC {@link #TEST_INSTANCE_KEY_NAME}) pour que {@link #clearTestInstances}
+     * ne supprime jamais un mob ordinaire. Le monde/la zone Wild sont du ressort de l'appelant
+     * (résolution du joueur choisi) ; ici on ne fait que chercher une position sûre autour de lui.
+     */
+    public Optional<Location> findTestSpawnLocation(Player player) {
+        return new com.lodygames.rpgquest.travel.RandomSafeLocationFinder(3, 10, 20)
+                .find(player.getWorld(), player.getLocation());
+    }
+
+    public void applyTestInstance(LivingEntity entity, SpecialMobDefinition def) {
+        apply(entity, def);
+        entity.getPersistentDataContainer().set(testInstanceKey, PersistentDataType.BYTE, (byte) 1);
+    }
+
+    public boolean isTestInstance(Entity entity) {
+        Byte flag = entity.getPersistentDataContainer().get(testInstanceKey, PersistentDataType.BYTE);
+        return flag != null && flag == (byte) 1;
+    }
+
+    /** Supprime uniquement les instances de test encore vivantes (toutes définitions). Jamais un mob ordinaire. */
+    public int clearTestInstances() {
+        int removed = 0;
+        for (SpecialMobDefinition def : registry.definitions()) {
+            for (UUID entityId : aliveEntityIds(def.id())) {
+                Entity entity = Bukkit.getEntity(entityId);
+                if (entity == null || !isTestInstance(entity)) {
+                    continue;
+                }
+                untrack(def.id(), entityId);
+                removeBossBar(entityId);
+                entity.remove();
+                removed++;
+            }
+        }
+        return removed;
+    }
+
     public boolean atPopulationLimit(SpecialMobDefinition def) {
         if (def.maxPopulation() == null) {
             return false;
@@ -243,6 +395,12 @@ public final class SpecialMobService implements PluginService, Listener {
         applyAttribute(entity, Attribute.ATTACK_DAMAGE, def.damage());
         applyAttribute(entity, Attribute.MOVEMENT_SPEED, def.speed());
         applyAttribute(entity, Attribute.ARMOR, def.armor());
+        applyAttribute(entity, Attribute.KNOCKBACK_RESISTANCE, def.knockbackResistance());
+        applyAttribute(entity, Attribute.SCALE, def.scale());
+
+        if (def.creeperExplosionRadius() != null && entity instanceof Creeper creeper) {
+            creeper.setExplosionRadius(def.creeperExplosionRadius().intValue());
+        }
 
         if (def.particle() != null) {
             entity.getWorld().spawnParticle(def.particle(), entity.getLocation().add(0, 1, 0), 10);
@@ -256,6 +414,74 @@ public final class SpecialMobService implements PluginService, Listener {
         trackAlive(def.id(), entity.getUniqueId());
         spawnCounts.computeIfAbsent(def.id(), k -> new LongAdder()).increment();
         logger.debug("Mob spécial « {} » appliqué à {} en {}.", def.id(), entity.getType(), entity.getLocation());
+
+        if (def.category() == MobCategory.BOSS) {
+            ensureBossBar(entity, def);
+        }
+    }
+
+    // ---- Visuels de boss (issue #172) -------------------------------------------------
+
+    private void ensureBossBar(LivingEntity entity, SpecialMobDefinition def) {
+        bossBars.computeIfAbsent(entity.getUniqueId(), id -> {
+            BossBar bar = BossBar.bossBar(MM.deserialize(def.displayName()), 1.0f,
+                    BossBar.Color.RED, BossBar.Overlay.NOTCHED_10);
+            bossBarViewers.put(id, ConcurrentHashMap.newKeySet());
+            return bar;
+        });
+    }
+
+    private void removeBossBar(UUID entityId) {
+        BossBar bar = bossBars.remove(entityId);
+        Set<UUID> viewers = bossBarViewers.remove(entityId);
+        if (bar == null || viewers == null) {
+            return;
+        }
+        for (UUID viewerId : viewers) {
+            Player viewer = Bukkit.getPlayer(viewerId);
+            if (viewer != null) {
+                viewer.hideBossBar(bar);
+            }
+        }
+    }
+
+    /** Rafraîchit la barre de vie + l'aura de particules de chaque boss vivant, borné à la population BOSS réelle. */
+    private void tickBossBars() {
+        for (var entry : bossBars.entrySet()) {
+            UUID entityId = entry.getKey();
+            Entity entity = Bukkit.getEntity(entityId);
+            if (!(entity instanceof LivingEntity living) || living.isDead()) {
+                continue; // nettoyage réel délégué à onDeath ; ignoré ici en défense.
+            }
+            BossBar bar = entry.getValue();
+            AttributeInstance maxHealthAttr = living.getAttribute(Attribute.MAX_HEALTH);
+            double maxHealth = maxHealthAttr != null ? maxHealthAttr.getValue() : living.getHealth();
+            float progress = maxHealth <= 0 ? 0f : (float) Math.max(0, Math.min(1, living.getHealth() / maxHealth));
+            bar.progress(progress);
+
+            living.getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME, living.getLocation().add(0, living.getHeight() + 0.5, 0), 4);
+
+            Set<UUID> viewers = bossBarViewers.computeIfAbsent(entityId, id -> ConcurrentHashMap.newKeySet());
+            Set<UUID> inRange = new java.util.HashSet<>();
+            for (Player player : living.getWorld().getPlayers()) {
+                if (player.getLocation().distanceSquared(living.getLocation()) <= BOSS_BAR_RANGE_SQUARED) {
+                    inRange.add(player.getUniqueId());
+                    if (viewers.add(player.getUniqueId())) {
+                        player.showBossBar(bar);
+                    }
+                }
+            }
+            viewers.removeIf(viewerId -> {
+                if (inRange.contains(viewerId)) {
+                    return false;
+                }
+                Player viewer = Bukkit.getPlayer(viewerId);
+                if (viewer != null) {
+                    viewer.hideBossBar(bar);
+                }
+                return true;
+            });
+        }
     }
 
     private void applyAttribute(LivingEntity entity, Attribute attribute, Double value) {

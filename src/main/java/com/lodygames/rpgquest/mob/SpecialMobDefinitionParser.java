@@ -1,11 +1,14 @@
 package com.lodygames.rpgquest.mob;
 
+import com.lodygames.rpgquest.mob.model.EnragedAbility;
 import com.lodygames.rpgquest.mob.model.ExplosiveOnAttackAbility;
 import com.lodygames.rpgquest.mob.model.MobAbility;
 import com.lodygames.rpgquest.mob.model.MobAbilityType;
+import com.lodygames.rpgquest.mob.model.MobCategory;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
 import com.lodygames.rpgquest.mob.model.SplitOnHitAbility;
 import com.lodygames.rpgquest.mob.model.StrongerExplosionAbility;
+import com.lodygames.rpgquest.mob.model.SummonOnDamageAbility;
 import com.lodygames.rpgquest.resource.model.CustomItemDrop;
 import com.lodygames.rpgquest.resource.model.ResourceDrop;
 import com.lodygames.rpgquest.resource.model.VanillaItemDrop;
@@ -39,6 +42,8 @@ final class SpecialMobDefinitionParser {
         List<String> errors = new ArrayList<>();
 
         NamespacedKey id = parseId(section, errors);
+        MobCategory category = parseCategory(section, errors);
+        boolean enabled = section.getBoolean("enabled", true);
         EntityType entityType = parseEntityType(section, errors);
         String displayName = parseDisplayName(section, errors);
         double spawnChance = parseSpawnChance(section, errors);
@@ -49,6 +54,13 @@ final class SpecialMobDefinitionParser {
         Double damage = parseOptionalNonNegativeDouble(section, "damage", errors);
         Double speed = parseOptionalPositiveDouble(section, "speed", errors);
         Double armor = parseOptionalNonNegativeDouble(section, "armor", errors);
+        Double knockbackResistance = parseOptionalFraction(section, "knockback-resistance", errors);
+        Double scale = parseOptionalPositiveDouble(section, "scale", errors);
+        Double creeperExplosionRadius = parseOptionalPositiveDouble(section, "creeper-explosion-radius", errors);
+        if (creeperExplosionRadius != null && entityType != null && entityType != EntityType.CREEPER) {
+            errors.add("« creeper-explosion-radius » n'a de sens que pour entity-type: CREEPER (trouvé : "
+                    + entityType + ").");
+        }
         Particle particle = parseOptionalParticle(section, errors);
         Sound sound = parseOptionalSound(section, errors);
         List<MobAbility> abilities = parseAbilities(section, errors);
@@ -61,13 +73,47 @@ final class SpecialMobDefinitionParser {
         }
 
         try {
-            SpecialMobDefinition definition = new SpecialMobDefinition(id, entityType, displayName, spawnChance,
-                    worlds, biomes, zones, health, damage, speed, armor, particle, sound, abilities, drops,
+            SpecialMobDefinition definition = new SpecialMobDefinition(id, category, enabled, entityType,
+                    displayName, spawnChance, worlds, biomes, zones, health, damage, speed, armor,
+                    knockbackResistance, scale, creeperExplosionRadius, particle, sound, abilities, drops,
                     xpReward, maxPopulation);
             return ParseResult.success(definition);
         } catch (IllegalArgumentException e) {
             return ParseResult.failure(List.of(new SpecialMobLoadIssue(fileName, e.getMessage())));
         }
+    }
+
+    /**
+     * Optionnelle : les profils antérieurs à l'issue #172 n'ont pas de « category » et restent
+     * valides en se comportant comme avant (éligibles au tirage aléatoire) -- défaut {@code SPECIAL}.
+     */
+    private MobCategory parseCategory(ConfigurationSection section, List<String> errors) {
+        String raw = section.getString("category");
+        if (raw == null || raw.isBlank()) {
+            return MobCategory.SPECIAL;
+        }
+        try {
+            return MobCategory.valueOf(raw.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            errors.add("« category » invalide : \"" + raw + "\" (valides : " + List.of(MobCategory.values()) + ").");
+            return null;
+        }
+    }
+
+    private Double parseOptionalFraction(ConfigurationSection section, String key, List<String> errors) {
+        if (!section.isSet(key)) {
+            return null;
+        }
+        if (!(section.isDouble(key) || section.isInt(key))) {
+            errors.add("« " + key + " » doit être un nombre.");
+            return null;
+        }
+        double value = section.getDouble(key);
+        if (value < 0 || value > 1) {
+            errors.add("« " + key + " » doit être compris entre 0 et 1, valeur trouvée : " + value);
+            return null;
+        }
+        return value;
     }
 
     private NamespacedKey parseId(ConfigurationSection section, List<String> errors) {
@@ -262,7 +308,77 @@ final class SpecialMobDefinitionParser {
                 Integer maxChildren = parsePositiveIntRequired(section, "max-children-per-hit", context, errors);
                 yield (maxDepth == null || maxChildren == null) ? null : new SplitOnHitAbility(maxDepth, maxChildren);
             }
+            case ENRAGED -> {
+                Double healthFraction = parseExclusiveFractionRequired(section, "health-fraction", context, errors);
+                Double speedMultiplier = parsePositiveDoubleRequired(section, "speed-multiplier", context, errors);
+                Double damageMultiplier = parsePositiveDoubleRequired(section, "damage-multiplier", context, errors);
+                yield (healthFraction == null || speedMultiplier == null || damageMultiplier == null) ? null
+                        : new EnragedAbility(healthFraction, speedMultiplier, damageMultiplier);
+            }
+            case SUMMON_ON_DAMAGE -> {
+                EntityType summonedEntityType = parseEntityTypeRequired(section, "summon-entity-type", context, errors);
+                Integer amount = parsePositiveIntRequired(section, "amount", context, errors);
+                Double chance = parseChanceRequired(section, "chance", context, errors);
+                Integer cooldownSeconds = parseNonNegativeIntRequired(section, "cooldown-seconds", context, errors);
+                Integer maxAlive = parsePositiveIntRequired(section, "max-alive", context, errors);
+                yield (summonedEntityType == null || amount == null || chance == null || cooldownSeconds == null
+                        || maxAlive == null) ? null
+                        : new SummonOnDamageAbility(summonedEntityType, amount, chance, cooldownSeconds, maxAlive);
+            }
         };
+    }
+
+    private Double parseExclusiveFractionRequired(ConfigurationSection section, String key, String context, List<String> errors) {
+        if (!section.isSet(key) || !(section.isDouble(key) || section.isInt(key))) {
+            errors.add(context + ": « " + key + " » est obligatoire et doit être un nombre.");
+            return null;
+        }
+        double value = section.getDouble(key);
+        if (value <= 0 || value >= 1) {
+            errors.add(context + ": « " + key + " » doit être strictement compris entre 0 et 1, valeur trouvée : " + value);
+            return null;
+        }
+        return value;
+    }
+
+    private Double parseChanceRequired(ConfigurationSection section, String key, String context, List<String> errors) {
+        if (!section.isSet(key) || !(section.isDouble(key) || section.isInt(key))) {
+            errors.add(context + ": « " + key + " » est obligatoire et doit être un nombre.");
+            return null;
+        }
+        double value = section.getDouble(key);
+        if (value <= 0 || value > 1) {
+            errors.add(context + ": « " + key + " » doit être compris entre 0 (exclu) et 1, valeur trouvée : " + value);
+            return null;
+        }
+        return value;
+    }
+
+    private Integer parseNonNegativeIntRequired(ConfigurationSection section, String key, String context, List<String> errors) {
+        if (!section.isSet(key) || !section.isInt(key)) {
+            errors.add(context + ": « " + key + " » est obligatoire et doit être un entier.");
+            return null;
+        }
+        int value = section.getInt(key);
+        if (value < 0) {
+            errors.add(context + ": « " + key + " » ne peut pas être négatif, valeur trouvée : " + value);
+            return null;
+        }
+        return value;
+    }
+
+    private EntityType parseEntityTypeRequired(ConfigurationSection section, String key, String context, List<String> errors) {
+        String raw = section.getString(key);
+        if (raw == null || raw.isBlank()) {
+            errors.add(context + ": « " + key + " » est obligatoire.");
+            return null;
+        }
+        EntityType entityType = EntityType.fromName(raw.toLowerCase(Locale.ROOT));
+        if (entityType == null || !entityType.isAlive()) {
+            errors.add(context + ": « " + key + " » invalide ou non vivant : \"" + raw + "\".");
+            return null;
+        }
+        return entityType;
     }
 
     private Double parsePositiveDoubleRequired(ConfigurationSection section, String key, String context, List<String> errors) {

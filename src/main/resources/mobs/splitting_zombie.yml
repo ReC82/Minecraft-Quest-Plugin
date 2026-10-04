@@ -1,4 +1,5 @@
 id: rpgquest:splitting_zombie
+category: SPECIAL
 entity-type: ZOMBIE
 name: "<dark_purple><bold>Zombie Fissible</bold></dark_purple>"
 

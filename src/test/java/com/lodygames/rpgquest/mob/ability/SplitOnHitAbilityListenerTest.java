@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.mob.MobSpawnSettingsStore;
 import com.lodygames.rpgquest.mob.SpecialMobRegistry;
 import com.lodygames.rpgquest.mob.SpecialMobService;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
@@ -79,7 +80,8 @@ class SplitOnHitAbilityListenerTest {
         registry.reload();
         definition = registry.find(SPLIT_ID).orElseThrow();
 
-        service = new SpecialMobService(plugin, registry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger());
+        MobSpawnSettingsStore spawnSettingsStore = new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger());
+        service = new SpecialMobService(plugin, registry, zoneRegistry, itemRegistry, plugin.getSLF4JLogger(), spawnSettingsStore);
         listener = new SplitOnHitAbilityListener(service);
     }
 

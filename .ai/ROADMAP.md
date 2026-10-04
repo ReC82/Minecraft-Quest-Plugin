@@ -216,6 +216,58 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-04 (suite overnight — round 2, retours joueur après déploiement #152/#154)
+Branche de départ: feat/control-panel-admin-tools @ 22d4ed2/fdb0926 (entrée précédente)
+Étape de départ: validations reçues (faim Wild OK, Rune Hub OK, noms avec espaces OK, reclic
+  déjà-découvert OK, listes/filtres panel OK) + nouveau lot à corriger dans l'ordre : #157 (bossbar
+  </gray> littéral + id technique brut), #150 (recherche de waypoints toujours défectueuse malgré
+  le correctif précédent), #160 (première découverte sans nom), #167 (panneaux latéraux de nom,
+  nouveau), clarté du libellé « Apparié » du panel Voyage. Mêmes autorisations overnight.
+Étapes terminées:
+(1) DONE — #157 : gabarit de la bossbar réparé (balise </gray> en trop supprimée), libellé humain
+  de l'objectif affiché au lieu de l'id technique brut (repli sur l'id seulement si aucune
+  description). Nouveau TrackedQuestDisplayTest (5 cas) vérifie la vraie BossBar envoyée.
+(2) DONE — #150 (cause racine, pas seulement l'indicateur déjà ajouté) : le clic sur le slot
+  résultat d'une enclume suit un chemin vanilla spécial qui ne garantit pas que l'ItemStack lu par
+  le clic porte encore le texte tapé. handlePrepareAnvil mémorise désormais le texte à chaque
+  frappe dans la session ; handleSearchResultClick le lit depuis la session, jamais relu sur l'objet
+  cliqué. Vérifié par un vrai PrepareAnvilEvent + un vrai InventoryClickEvent (nouveau FakeAnvilView,
+  double de test pour l'AnvilView que MockBukkit ne fournit pas), y compris un test qui vide le slot
+  2 avant le clic pour prouver l'indépendance vis-à-vis de l'objet cliqué.
+(3) DONE — #160 : message de première découverte aligné sur celui du reclic
+  (« Waypoint découvert : <nom> — <biome> »), nom canonique jamais remplacé par le seul biome.
+(4) DONE — #167 (nouveau) : WaypointModelV1 pose deux OAK_WALL_SIGN sur les faces latérales du
+  bouton (jamais la face opposée), nom canonique réparti sur les lignes (wrapSignLines, jamais un
+  mot coupé). Inclus dans protectedBlocks() (protection automatique, y compris pour les waypoints
+  déjà en base). Nouvelle commande /rpgadmin travel signs upgrade [monde] : mise à niveau idempotente
+  des waypoints existants (id/position/découvertes inchangés). Bug trouvé et corrigé en écrivant le
+  test : un BlockState obtenu puis validé après une mutation de BlockData séparée écrasait
+  l'orientation posée (capturé avant la mutation) — orientation et texte sont désormais posés et
+  validés via le même BlockState.
+(5) DONE — Clarté du panel Voyage : « Apparié » (oui/non) remplacé par « Borne associée »/
+  « Waypoint associé » affichant l'id réel de l'association, avec une phrase explicative au-dessus
+  de chaque tableau (jamais confondu avec un statut de découverte joueur).
+(6) DONE — trace temporaire [HUNGER-TRACE] (#159) retirée, la faim dans le Wild étant validée OK.
+Tests : suite complète ./gradlew test (3 modules) : 1812 tests, 1777 exécutés verts, 35 ignorés
+  (limitation MockBukkit teleportAsync déjà documentée), 0 échec — confirmé par les XML de résultat.
+  ./gradlew build (3 modules) vert aussi (RPGQUEST_TEST_MAX_HEAP=768m obligatoire sur cette box).
+  Un échec intermédiaire a été diagnostiqué et corrigé avant ce résultat final (le test de panneau
+  #167 avait révélé le bug BlockState ci-dessus) ; jamais présenté comme validé avant correction.
+Branche finale: feat/control-panel-admin-tools (aucun merge — déploiement DEV/AWS autorisé
+  explicitement pour cette session)
+Dernier commit: (voir git log — 3ac5fcf #157, 88471a6 #150, d2cf012 #160, 1c6e434 #167, 1116965
+  libellés panel ; docs à committer séparément ensuite)
+Build: vert, voir Tests ci-dessus.
+Tests manuels en attente: TC-227 (recherche, round 2 — à revalider précisément malgré la correction
+  de cause racine), nouveaux TC pour #157/#160/#167 à ajouter dans docs/MANUAL_TEST_PLAN.md avec le
+  rapport de session ; le coût XP affiché côté client reste non vérifiable automatiquement
+  (PrepareAnvilEvent/AnvilView partiellement simulés par FakeAnvilView, pas le rendu client réel).
+Blocages: aucun.
+Première étape à reprendre: déploiement DEV (plugin) + AWS (Control Panel) de ce round, puis
+  validation manuelle en jeu des 5 points ci-dessus ; #161/#162/#163 restent en file (non commencés).
+```
+
+```text
 Date: 2026-10-04 (suite overnight — #152/#154 puis retours joueur)
 Branche de départ: feat/control-panel-admin-tools @ aa554c9 (entrée précédente)
 Étape de départ: instruction explicite « continue to #152 and #154 », mêmes autorisations

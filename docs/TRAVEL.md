@@ -505,24 +505,29 @@ destination, jamais fusionnée dans leurs tables/identités — `TravelBeaconSer
   - **Recherche graphique** (waypoints uniquement, **dans le monde choisi** — jamais un résultat
     d'un autre monde) : enclume virtuelle (`InventoryType.ANVIL` créée sans bloc réel, pattern
     standard des GUI Paper/Bukkit), coût de réparation forcé à **0** à chaque `PrepareAnvilEvent`,
-    sur **`repairCost` et `repairCostAmount`** (retour joueur 2026-10-04 : un « Coût : 1 » résiduel
-    restait visible en jeu malgré `repairCost` déjà à 0 — `repairCostAmount` est un second champ
-    vanilla distinct, documenté comme la cause la plus probable ; **le zéro de ces deux champs
-    reste `PENDING MANUAL VALIDATION`** : `PrepareAnvilEvent` exige un `AnvilView` que la version
-    actuelle de MockBukkit ne simule pas, donc seul le filtrage qui *suivrait* une vraie saisie est
-    vérifié automatiquement, jamais la saisie elle-même ni l'affichage du coût), aucun objet du menu
-    réellement récupérable (clic sur le résultat toujours annulé, le texte est lu puis l'objet
-    jeté). L'objet de saisie porte désormais une astuce explicite (« Clique sur l'étiquette à droite
-    pour rechercher » — Entrée ne valide jamais une recherche dans cette interface Minecraft).
-    Filtrage **insensible à la casse et aux accents** (`Normalizer` NFD + suppression des marques
-    combinantes) sur le nom d'affichage et le biome — vérifié de bout en bout via un vrai
-    `InventoryClickEvent` sur le résultat (slot 2), **le résultat lui-même étant construit dans le
-    test** comme le ferait `handlePrepareAnvil` pour une saisie donnée (même limitation MockBukkit
-    que ci-dessus). **Indicateur de recherche active** (retour joueur 2026-10-04) : une fois
-    filtré, la liste affiche désormais le texte recherché, le nombre de résultats, et un bouton
-    dédié pour effacer le filtre (slot 46) — jusqu'ici, un filtre actif restait invisible au retour
-    sur la liste, donnant l'impression qu'il n'avait eu aucun effet. Le monde reste mémorisé
-    pendant tout le détour par l'enclume (jamais perdu).
+    sur **`repairCost` et `repairCostAmount`** (un « Coût : 1 » résiduel avait été rapporté malgré
+    `repairCost` déjà à 0 — `repairCostAmount` est un second champ vanilla distinct). Aucun objet du
+    menu réellement récupérable (clic sur le résultat toujours annulé). L'objet de saisie porte une
+    astuce explicite (« Clique sur l'étiquette à droite pour rechercher » — Entrée ne valide jamais
+    une recherche dans cette interface Minecraft). Filtrage **insensible à la casse et aux accents**
+    (`Normalizer` NFD + suppression des marques combinantes) sur le nom d'affichage et le biome.
+    **Indicateur de recherche active** : une fois filtré, la liste affiche le texte recherché, le
+    nombre de résultats, et un bouton dédié pour effacer le filtre (slot 46).
+    **Cause racine du filtrage resté vide malgré un clic réel (retour joueur 2026-10-04, round 2)**
+    : le slot « résultat » d'une enclume suit un chemin vanilla spécial (consommation des entrées à
+    la prise) qui ne garantit pas que l'`ItemStack` lu par `InventoryClickEvent#getCurrentItem()`
+    porte encore le texte tapé au moment où le clic est traité. `handlePrepareAnvil` mémorise
+    désormais le texte tapé **dans la session**, à chaque frappe (chaque `PrepareAnvilEvent`), et
+    `handleSearchResultClick` lit ce texte depuis la session plutôt que de le relire sur l'objet
+    cliqué — repli sur l'ancienne lecture uniquement si la session n'a mémorisé aucune frappe
+    (compatibilité directe, ex. appel sans simulation de saisie). Vérifié par un test routant un
+    vrai `PrepareAnvilEvent` **et** un vrai `InventoryClickEvent` (`FakeAnvilView`, double de test
+    pour l'`AnvilView` que MockBukkit ne fournit pas) qui vide en plus délibérément le slot 2 avant
+    le clic, pour prouver que le filtrage ne dépend plus de l'objet cliqué ; ce même test confirme
+    aussi que `repairCost`/`repairCostAmount` sont bien mis à 0 par le code. Seul le **rendu visuel
+    réel côté client** (le coût affiché, la saisie clavier elle-même) reste `PENDING MANUAL
+    VALIDATION` — MockBukkit ne simule pas le paquet client, seulement l'appel serveur. Le monde
+    reste mémorisé pendant tout le détour par l'enclume (jamais perdu).
   - **Revalidation stricte au départ** (`hasActivelyDiscovered` pour les waypoints, résolution
     fraîche pour claim/village) : un clic périmé échoue proprement, sans téléportation. Arrivée sûre
     via `RandomSafeLocationFinder#findAtColumn` (waypoints/claim) ou position administrée exacte
@@ -567,6 +572,17 @@ secondaire** (deux waypoints du même biome n'affichent donc plus jamais le mêm
   (`SchemaMigrator#RENAMED_DISPLAY_NAMES`, comparaison normalisée insensible casse/accents) : `id`
   et découvertes **jamais** modifiés, unicité revérifiée par l'index SQL existant (aucune
   collision possible, la correspondance est injective sur les 220 entrées du catalogue).
+- **Panneaux latéraux de nom (issue #167)** : `WaypointModelV1` pose désormais un
+  `OAK_WALL_SIGN` sur **chacune** des deux faces latérales adjacentes à la face du bouton (jamais
+  la face opposée) — affiche le nom canonique, réparti sur ses lignes par `WaypointModelV1#wrapSignLines`
+  (découpage sur des frontières de mots, jamais une troncature ambiguë, 4 lignes max). Posés à la
+  génération et à la réparation (`WaypointService#repair`) ; **mise à niveau idempotente** des
+  waypoints déjà existants via `/rpgadmin travel signs upgrade [monde]` (rejoue `model.place(...)`
+  à la position/orientation déjà persistées — id/position/découvertes **jamais** modifiés, les
+  blocs déjà corrects du support ne sont jamais réécrits). Les deux offsets de panneau sont inclus
+  dans `protectedBlocks()` : protection automatique (casse/édition/explosion) identique au reste de
+  la structure, y compris pour les waypoints déjà en base dès cette version déployée. Rejouable
+  après un renommage pour rafraîchir le texte affiché.
 - **Waypoints déjà existants** : migration **V22** (voir plus bas) attribue un nom à chaud à chaque
   ligne déjà en base, dans un ordre stable (par `id`), sans jamais toucher l'`id` ni les découvertes
   joueurs déjà enregistrées.
@@ -642,6 +658,27 @@ inchangé partout ailleurs). `StarterKitListenerTest` (nouveau) : distribution �
 connexion, aucune duplication si déjà possédée, et surtout **inventaire plein à la première
 connexion ne marque plus jamais la Rune distribuée** (retenté à la connexion suivante).
 
+Recherche de waypoints, round 2 (issue #150) : `TravelBeaconServiceTest` —
+`realTypingThenClickingTheResultFindsLacDeGivreCaseAndAccentInsensitivelyWithActiveFilterIndicator`
+(vraie saisie via un vrai `PrepareAnvilEvent`, construit avec `FakeAnvilView` -- double de test pour
+l'`AnvilView` que MockBukkit ne fournit pas -- puis vrai clic sur le résultat) et
+`searchStillFiltersEvenWhenTheResultSlotItemIsGoneByTheTimeTheClickIsHandled` (le slot résultat est
+délibérément laissé vide avant le clic : le filtrage doit malgré tout fonctionner, preuve que la
+session porte le filtre, jamais l'objet cliqué).
+
+Panneaux de nom des waypoints (issue #167) : `WaypointModelV1Test` (répartition du nom sur les
+lignes, pur, sans Bukkit -- jamais un mot coupé, jamais plus de 4 lignes, rejoindre les lignes
+reconstruit exactement le nom d'origine) ; `WaypointServiceTest` —
+`waypointGenerationPlacesTwoLateralNameSignsWithTheCanonicalNameAndKeepsTheButtonAccessible` (type,
+orientation et texte réels des deux panneaux, bouton resté l'interacteur, panneaux protégés) et
+`upgradeSignsRetrofitsAnExistingWaypointWithoutChangingItsIdentity` (mise à niveau idempotente d'un
+waypoint simulé « pré-#167 », id/position/nom inchangés, rejouable sans risque).
+
+Bossbar de suivi (issue #157) : `TrackedQuestDisplayTest` (nouveau, package `ui`) — vérifie la
+`BossBar` réellement envoyée au joueur (MockBukkit), pas une fonction utilitaire isolée :
+aucune balise résiduelle, libellé humain de l'objectif plutôt que l'id technique, repli sur l'id
+uniquement si aucune description n'existe, une seule bossbar jamais dupliquée, retrait propre.
+
 Système soulbound générique : `SoulboundItemListenerTest` (remplace `ReturnStoneGuardListenerTest`) —
 tout objet soulbound enregistré est intombable au drop et à la mort, restauré tel quel à la
 réapparition sans jamais dupliquer, un objet quelconque jamais concerné.
@@ -672,14 +709,30 @@ immédiate, aucun résidu type « 98% »**, **refus propre et bref hors du
 monde `claims`**, **impossible à jeter (touche Q)**, **jamais perdue à la
 mort, redonnée automatiquement à la réapparition**).
 
-`PENDING MANUAL VALIDATION`, retours joueur 2026-10-04 (issues #154/#156-recherche/#159) :
-- Secours Hub : clic droit sur la Rune dans un trou du Hub → retour immédiat au spawn, sans message
-  « Cet objet ne fonctionne pas ici » ; vérifier aussi inventaire plein (le filet graphique doit
-  apparaître dans la minute) et après mort/reconnexion/reset.
-- Recherche de waypoints : taper un nom dans l'enclume puis cliquer l'étiquette de résultat
-  retrouve bien la destination attendue sans distinction de casse/accents ; l'indicateur de
-  recherche active + son bouton d'effacement sont visibles ; **le coût XP affiché (`Coût : …`) doit
-  être absent** — seul point non vérifiable automatiquement dans cet environnement de test.
-- Faim dans le Wild (issue #159) : après une exploration prolongée (plusieurs minutes de sprint sans
-  manger), la faim doit baisser normalement ; si elle reste bloquée, chercher `[HUNGER-TRACE]` dans
-  les logs serveur et vérifier le monde qui y apparaît (voir `docs/current_state.md`).
+**Validé en jeu le 2026-10-04** : secours Hub via la Rune de rappel (#154), noms lisibles avec
+espaces (#133/#135), retour « déjà découvert » avec le nom (partiel, voir #160 ci-dessous), listes
+et filtres de la page Control Panel `/travel` (#152), faim redevenue normale dans le Wild (#159).
+
+`PENDING MANUAL VALIDATION`, retours joueur 2026-10-04, round 2 (issues #157/#150/#160/#167) :
+- **Recherche de waypoints (#150)** : le joueur a confirmé que le filtrage restait vide malgré un
+  clic réel sur le résultat. Cause identifiée : le clic sur le slot « résultat » d'une enclume suit
+  un chemin vanilla spécial qui ne garantit pas que l'objet lu par le clic porte encore le texte
+  tapé. Corrigé en mémorisant le texte tapé en continu dans la session (à chaque frappe, voir
+  `TravelBeaconService#handlePrepareAnvil`), jamais relu sur l'objet cliqué. Reste à revalider :
+  taper « lac » puis cliquer l'étiquette retrouve bien « Lac de Givre » ; l'indicateur de recherche
+  active et son bouton d'effacement restent visibles ; **le coût XP affiché doit être absent** —
+  le code zérote bien `repairCost`/`repairCostAmount` (vérifié par test), seul le rendu visuel
+  client reste à confirmer en jeu.
+- **Bossbar de suivi (#157)** : `</gray>` littéral + id technique brut (`kill_spiders`) corrigés
+  (gabarit réparé, libellé humain de l'objectif affiché). À revérifier avec « Premiers pas » et un
+  changement de progression.
+- **Première découverte sans nom (#160)** : le message de première découverte affichait seulement
+  le biome ; affiche désormais `Waypoint découvert : <nom> — <biome>`, comme le reclic. À revérifier
+  sur une destination jamais découverte.
+- **Panneaux latéraux de nom (#167, nouveau)** : deux panneaux (faces latérales du bouton) affichant
+  le nom canonique, posés à la génération ; `/rpgadmin travel signs upgrade [monde]` pose/rafraîchit
+  ceux des waypoints déjà existants (idempotent, id/position/découvertes inchangés). À valider : lisibilité
+  réelle en jeu (répartition des noms longs sur les lignes), orientation des panneaux, bouton resté
+  cliquable.
+- **Libellés du panel Voyage** : « Apparié » remplacé par « Borne associée »/« Waypoint associé »,
+  affichant l'id réel plutôt qu'un simple oui/non. À revérifier visuellement sur `/travel`.

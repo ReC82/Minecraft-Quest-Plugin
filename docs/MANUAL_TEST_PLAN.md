@@ -1777,19 +1777,12 @@ le résumé de récompenses de TC-014).
 -   **Limites MockBukkit :** aucun des nouveaux cas n'atteint `teleportAsync` — tous réellement
     exécutés et vérifiés, aucun ignoré. Le ressenti réel en jeu (fluidité de la barre de faim,
     disparition visible des mobs nettoyés) reste `PENDING MANUAL VALIDATION`.
--   **Addendum — signalement #159 (04/10/2026) : faim bloquée aussi dans le Wild.** Audit complet
-    du code (`HubComfortService` strictement scopé par `isHub()`) et de la config déployée
-    (`hub.world=world_hub` ≠ `travel.wild-world=wild`) : aucune cause trouvée, les 3 tests Wild
-    existants (`foodLevelDecreaseInTheWildIsNeverCancelled`,
-    `periodicSweepNeverTouchesPlayersInTheWild`, `changingWorldIntoTheWildNeverRestoresAnything`)
-    passent déjà. Trace temporaire `[HUNGER-TRACE]` ajoutée sur toute annulation réelle (world +
-    joueur). **À retester explicitement** : rester dans `wild` **plusieurs minutes** en sprintant
-    sans manger (la saturation posée au maximum en sortant du Hub retarde normalement, en vanilla,
-    la baisse de faim le temps qu'elle s'épuise — pas nécessairement un bug) ; si la faim reste
-    bloquée au-delà de ça, chercher `[HUNGER-TRACE]` dans les logs serveur et noter le `world`
-    affiché.
+-   **Addendum — signalement #159 : faim bloquée aussi dans le Wild.** `VALIDÉ EN JEU le
+    2026-10-04` : la faim baisse normalement dans le Wild. Confirme l'audit (aucune cause
+    code/config trouvée — la saturation posée au maximum en sortant du Hub retardait simplement la
+    baisse de faim le temps qu'elle s'épuise). Trace temporaire `[HUNGER-TRACE]` retirée.
 
-### TC-226 — Secours Hub via la Rune de rappel (issue #154, PENDING MANUAL VALIDATION)
+### TC-226 — Secours Hub via la Rune de rappel (issue #154, scénario principal VALIDÉ EN JEU 2026-10-04)
 
 -   **Fonctionnalité testée :** `travel.ItemTravelService#performFreeRescue`,
     `hub.HubRescueFallbackService`, `player.StarterKitListener`.
@@ -1817,41 +1810,45 @@ le résumé de récompenses de TC-014).
 -   **Limites MockBukkit :** la téléportation elle-même (`teleportAsync`) n'est jamais exécutée
     dans les tests automatisés (exception attendue et vérifiée) ; le menu graphique de secours et
     son déclenchement par balayage périodique ne sont pas couverts par un test automatisé dédié
-    (service neuf, voir le rapport de session) — `PENDING MANUAL VALIDATION` pour ces deux points.
+    (service neuf, voir le rapport de session) — `PENDING MANUAL VALIDATION` pour ces deux points
+    (point 4/5 ci-dessus), le scénario principal (points 1-3) est validé en jeu.
 
-### TC-227 — Recherche de waypoints, noms lisibles, retour « déjà découvert » (issues #133/#135/#156-suite, PENDING MANUAL VALIDATION)
+### TC-227 — Recherche de waypoints (issue #150, round 2), noms lisibles et retour « déjà découvert » (VALIDÉS 2026-10-04)
 
 -   **Fonctionnalité testée :** `travel.beacon.TravelBeaconService` (recherche par enclume),
     `waypoint.model.WaypointNameCatalog` (noms lisibles), `waypoint.WaypointService#handleInteract`
     (retour déjà découvert).
--   **Préconditions :** JAR de cette session déployé et redémarré ; au moins deux waypoints
-    découverts dans un même monde, dont un avec un nom contenant un mot recherchable (ex. « Lac »).
--   **Scénario principal :**
+-   **Noms lisibles et retour « déjà découvert » : `VALIDÉ EN JEU le 2026-10-04`** (noms avec
+    espaces confirmés ; message « déjà découvert : <nom> » confirmé au reclic).
+-   **Recherche (issue #150, round 2) : encore `PENDING MANUAL VALIDATION`** — un premier correctif
+    (indicateur de filtre) n'avait pas résolu le signalement : le joueur a confirmé en jeu que
+    taper « lac » puis cliquer l'étiquette de résultat revenait à la liste complète, sans filtrage.
+    Cause identifiée et corrigée (voir TRAVEL.md « Recherche graphique ») : le texte tapé est
+    maintenant mémorisé dans la session à chaque frappe, jamais relu sur l'objet cliqué. **À
+    revalider précisément :**
     1.  Ouvrir une borne → « Waypoints découverts » → un monde → « Rechercher ». Taper un mot
         (ex. « lac ») en majuscules ou minuscules, avec ou sans accent.
-    2.  Cliquer sur l'étiquette de résultat (**pas** la touche Entrée, qui ne doit visiblement rien
-        faire dans cette interface) → la liste filtrée ne contient que les destinations dont le nom
-        ou le biome correspond, sans distinction de casse/accents.
-    3.  Vérifier l'indicateur « Recherche active : « … » · N résultat(s) » et son bouton d'effacement
-        (slot dédié) → cliquer l'efface et réaffiche tout.
-    4.  **Vérifier qu'aucun coût XP (`Coût : …`) n'apparaît** sur l'enclume, à l'ouverture comme
-        après la saisie — point explicitement non couvert par les tests automatisés dans cet
-        environnement, à confirmer en jeu.
-    5.  Noter les noms affichés (ex. « Lac de Givre ») : plus aucun nom ne doit être deux mots
-        collés sans espace (ex. l'ancien « Lacgivre »).
-    6.  Cliquer une seconde fois sur le bouton physique d'un waypoint déjà découvert → message
-        « Waypoint déjà découvert : <nom> » visible, aucune nouvelle récompense.
+    2.  Cliquer sur l'étiquette de résultat (**pas** la touche Entrée) → la liste filtrée ne
+        contient que les destinations correspondantes, sans distinction de casse/accents.
+    3.  Vérifier l'indicateur « Recherche active : « … » · N résultat(s) » et son bouton
+        d'effacement (slot dédié) → cliquer l'efface et réaffiche tout.
+    4.  **Vérifier qu'aucun coût XP (`Coût : …`) n'apparaît** sur l'enclume — point non couvert par
+        les tests automatisés dans cet environnement, à confirmer en jeu.
+    5.  Essayer un terme sans correspondance → retour clair (« Aucun résultat pour « … » »), jamais
+        un écran vide sans explication.
 -   **Reset :** aucun ; les découvertes/noms existants ne sont jamais réinitialisés par ce correctif.
--   **Couverture automatisée :** `TravelBeaconServiceTest` (filtrage insensible casse/accents via un
-    vrai clic sur le résultat, indicateur de filtre, effacement — **le résultat de l'enclume est
-    construit dans le test, pas saisi réellement**, voir la limite ci-dessous),
-    `WaypointServiceTest` (message « déjà découvert » avec le nom), `WaypointNameCatalogTest`
-    (chaque nom bundlé contient un séparateur), `SchemaMigratorTest` (migration V23 renomme les
-    noms existants en préservant id/découvertes).
--   **Limites MockBukkit :** `PrepareAnvilEvent` exige un `AnvilView` que cette version de
-    MockBukkit ne simule pas — **la saisie réelle dans l'enclume et l'affichage du coût XP ne sont
-    donc jamais vérifiés automatiquement**, uniquement le filtrage qui en découlerait. Ne jamais
-    présenter ce point comme validé sans un test en jeu réel.
+-   **Couverture automatisée :** `TravelBeaconServiceTest` —
+    `realTypingThenClickingTheResultFindsLacDeGivreCaseAndAccentInsensitivelyWithActiveFilterIndicator`
+    (vraie saisie via un vrai `PrepareAnvilEvent`, construit avec `FakeAnvilView`, puis vrai clic)
+    et `searchStillFiltersEvenWhenTheResultSlotItemIsGoneByTheTimeTheClickIsHandled` (slot résultat
+    délibérément vide avant le clic — preuve que la session porte le filtre, pas l'objet cliqué) ;
+    `WaypointServiceTest` (message « déjà découvert » et « découvert » avec le nom) ;
+    `WaypointNameCatalogTest` (chaque nom bundlé contient un séparateur) ; `SchemaMigratorTest`
+    (migration V23 renomme les noms existants en préservant id/découvertes).
+-   **Limites MockBukkit :** le test vérifie que le code appelle bien `setRepairCost(0)` **et**
+    `setRepairCostAmount(0)` sur l'inventaire enclume simulé — mais pas le rendu visuel réel côté
+    client (paquet/affichage), que MockBukkit ne simule pas. Ne jamais présenter l'absence de coût
+    visible en jeu comme validée sans un test en jeu réel.
 
 ### TC-228 — Control Panel : réseau de voyage en lecture seule (issue #152, PENDING MANUAL VALIDATION)
 
@@ -1875,6 +1872,52 @@ le résumé de récompenses de TC-014).
     (`travel.catalog`), `RolePermissionMatrixTest` (générique sur toutes les permissions).
 -   **Limites :** aucune (page HTML pure, entièrement exerçable par un test HTTP) — seul le rendu
     visuel final (CSS/alignement) reste `PENDING MANUAL VALIDATION`.
+-   **Libellés clarifiés (retour joueur 2026-10-04)** : « Apparié » remplacé par « Borne
+    associée »/« Waypoint associé », affichant l'id réel plutôt qu'un oui/non, avec une phrase
+    explicative au-dessus de chaque tableau précisant que ce n'est pas un statut de découverte
+    joueur. À revérifier visuellement.
+
+### TC-229 — Bossbar de suivi de quête (issue #157, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `ui.TrackedQuestDisplay`.
+-   **Préconditions :** JAR de cette session déployé et redémarré ; quête « Premiers pas » avec
+    l'étape `kill_spiders` active et suivie.
+-   **Scénario principal :**
+    1.  Suivre la quête « Premiers pas » à l'étape `kill_spiders` → la bossbar affiche le titre et
+        un libellé humain de l'objectif (ex. « Tuer SPIDER »), jamais `kill_spiders` ni une balise
+        `</gray>` littérale.
+    2.  Faire progresser l'objectif (tuer une araignée) → la barre de progression avance sans
+        réapparition de balise résiduelle.
+    3.  Suivre une autre quête/étape → même rendu propre.
+-   **Reset :** aucun ; correction d'affichage uniquement, ids internes inchangés.
+-   **Couverture automatisée :** `TrackedQuestDisplayTest` (5 cas : aucune balise résiduelle +
+    libellé humain, mise à jour sans duplication de bossbar, retrait propre, repli sur l'id si
+    aucune description, aucune bossbar si `tracker-enabled=false`).
+-   **Limites MockBukkit :** aucune — la `BossBar` réellement envoyée au joueur est inspectée
+    directement ; seul le rendu visuel final en jeu reste `PENDING MANUAL VALIDATION`.
+
+### TC-230 — Panneaux latéraux de nom des waypoints (issue #167, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `waypoint.render.WaypointModelV1`, `WaypointService#upgradeSigns`,
+    `/rpgadmin travel signs upgrade`.
+-   **Préconditions :** JAR de cette session déployé et redémarré ; compte de test **non-op**.
+-   **Scénario principal :**
+    1.  Découvrir un nouveau waypoint dans `wild` → un panneau est visible sur chacune des deux
+        faces latérales du bouton (jamais la face opposée), affichant le nom canonique (espaces et
+        accents conservés), réparti lisiblement si le nom est long.
+    2.  Le bouton reste cliquable normalement.
+    3.  Essayer de casser/éditer un panneau sans le bypass → refusé, comme le reste de la structure.
+    4.  Exécuter `/rpgadmin travel signs upgrade wild` sur un waypoint généré **avant** cette
+        version → les panneaux apparaissent sans déplacer la structure ni toucher la découverte.
+    5.  Réparer un waypoint inaccessible (`/rpgadmin travel repair`) → les panneaux réapparaissent
+        à la nouvelle position avec le même nom.
+-   **Reset :** aucun ; id/position/découvertes jamais modifiés par cette fonctionnalité.
+-   **Couverture automatisée :** `WaypointModelV1Test` (répartition du nom sur les lignes, pur) ;
+    `WaypointServiceTest` (type/orientation/texte réels des deux panneaux, bouton resté
+    l'interacteur, protection, mise à niveau idempotente d'un waypoint simulé « pré-#167 »).
+-   **Limites MockBukkit :** aucune constatée — type, orientation (`Directional#getFacing()`) et
+    texte réel (`Sign#getSide(Side.FRONT).lines()`) sont tous vérifiés directement par les tests.
+    Seule la lisibilité visuelle réelle en jeu reste `PENDING MANUAL VALIDATION`.
 
 ---
 
@@ -1937,3 +1980,5 @@ le résumé de récompenses de TC-014).
 | TC-226 | Secours Hub via la Rune de rappel #154 (PENDING) | | | |
 | TC-227 | Recherche waypoints, noms lisibles, retour « déjà découvert » #133/#135/#156 (PENDING) | | | |
 | TC-228 | Control Panel : réseau de voyage en lecture seule #152 (PENDING) | | | |
+| TC-229 | Bossbar de suivi de quête, balise/id corrigés #157 (PENDING) | | | |
+| TC-230 | Panneaux latéraux de nom des waypoints #167 (PENDING) | | | |

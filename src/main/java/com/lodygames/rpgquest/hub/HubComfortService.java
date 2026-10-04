@@ -117,11 +117,6 @@ public final class HubComfortService implements PluginService {
         public void onFoodLevelChange(FoodLevelChangeEvent event) {
             if (event.getEntity() instanceof Player player && service.isHub(player) && event.getFoodLevel() < player.getFoodLevel()) {
                 event.setCancelled(true);
-                // Diagnostic temporaire (issue #159) : prouver sans ambiguïté, depuis les logs
-                // serveur, que cette annulation ne se produit JAMAIS hors du monde Hub configuré.
-                // À retirer une fois la cause du signalement (faim bloquée dans le Wild) confirmée.
-                service.logger.info("[HUNGER-TRACE] cancel_food_decrease player={} world={} hub_world={}",
-                        player.getUniqueId(), player.getWorld().getName(), service.config.get().world());
             }
         }
 

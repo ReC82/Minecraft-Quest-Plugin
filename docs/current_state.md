@@ -39,12 +39,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   l'arrivée (connexion/changement de monde/réapparition) — issue #33, `hub.HubComfortService`,
   strictement scopé au monde `hub.world` (`isHub()` par joueur, le Wild garde sa survie normale,
   couvert par `foodLevelDecreaseInTheWildIsNeverCancelled`/`periodicSweepNeverTouchesPlayersInTheWild`).
-  **Signalement #159** (faim bloquée dans le Wild après les correctifs #33) : audit code + config
-  déployée (`hub.world=world_hub`, `travel.wild-world=wild`, distincts) n'a trouvé aucune cause —
-  trace temporaire `[HUNGER-TRACE]` ajoutée sur toute annulation réelle pour confirmer/infirmer
-  depuis les logs serveur si le signalement persiste après un test prolongé (la saturation posée au
-  maximum dans le Hub retarde naturellement, en vanilla, la baisse de faim dans le Wild le temps
-  qu'elle s'épuise — comportement attendu, pas nécessairement un bug).
+  **Signalement #159** (faim bloquée dans le Wild après les correctifs #33), **validé en jeu le
+  2026-10-04** : la faim baisse normalement dans le Wild — comportement confirmé correct (la
+  saturation posée au maximum en sortant du Hub retardait simplement, en vanilla, la baisse de
+  faim le temps qu'elle s'épuise, pas un bug). Trace de diagnostic temporaire `[HUNGER-TRACE]`
+  retirée une fois la validation confirmée.
   **Secours Hub (#154)** : la Rune de rappel téléporte désormais aussi, gratuitement et sans
   canalisation/cooldown, vers le spawn configuré **quand elle est utilisée dans le Hub**
   (`ItemTravelDefinition#freeRescueWorld`, indépendant de sa restriction `requiredWorld` au Wild) ;

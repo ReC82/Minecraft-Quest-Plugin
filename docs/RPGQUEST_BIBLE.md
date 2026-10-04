@@ -275,6 +275,15 @@ Effet : ouvre un inventaire GUI (voir `docs/ARCHITECTURE.md` pour le détail : c
 Persistance : le suivi (quête « trackée ») persiste (`player_variables`), pas la simple ouverture du menu.
 Bouton « Fermer » (slot `CLOSE_SLOT`/`DETAIL_CLOSE_SLOT`) : la fermeture est différée d'un tick serveur (`QuestJournalService#closeNextTick`) plutôt qu'appelée directement dans le gestionnaire de `InventoryClickEvent` — fermer une fenêtre pendant le traitement de son propre clic annulé pouvait laisser le client avec une fenêtre visuellement toujours ouverte (paquet de resynchronisation du clic annulé arrivant après le paquet de fermeture).
 
+**Bossbar de suivi (`ui.TrackedQuestDisplay`)** — retour joueur 2026-10-04 (issue #157) : le gabarit
+du titre comportait une balise `</gray>` de fermeture en trop (sans ouverture correspondante),
+rendue littéralement par MiniMessage au lieu d'être interprétée, et affichait l'id technique brut
+de l'étape (ex. `kill_spiders`) plutôt qu'un libellé humain. Corrigé : gabarit réparé, libellé
+construit à partir des descriptions déjà humanisées de chaque objectif de l'étape
+(`ObjectiveProgressView#description()`, même source que `/quest progress`), avec repli sur l'id
+technique seulement si aucune description n'est disponible. Les ids internes ne sont jamais
+modifiés — correction d'affichage uniquement.
+
 ### Commandes admin — `/quest admin`
 
 Permission : `rpgquest.admin` (toutes), sauf `/quest complete` qui est aussi `rpgquest.admin`.
@@ -1197,7 +1206,10 @@ waypoints/bornes réellement persistés (action agent `travel.catalog`, réutili
 pairage waypoint↔borne visible (y compris les waypoints du Hub sans borne), recherche/filtre par
 monde, pagination, horodatage de fraîcheur, distinction explicite **enregistré** (dernier relevé)
 vs **vérifié physiquement** (`/rpgadmin travel diagnose`). Permission dédiée `TRAVEL_READ` ; aucun
-éditeur (hors périmètre explicite du ticket).
+éditeur (hors périmètre explicite du ticket). **Libellés clarifiés** (retour joueur 2026-10-04) :
+« Apparié » (oui/non ambigu, confondu avec un statut de découverte joueur) remplacé par « Borne
+associée »/« Waypoint associé », affichant directement l'id réel de l'association plutôt qu'un
+simple booléen, avec une phrase explicative au-dessus de chaque tableau.
 
 ---
 

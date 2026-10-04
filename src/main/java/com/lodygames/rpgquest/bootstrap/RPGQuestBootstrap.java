@@ -75,11 +75,15 @@ import com.lodygames.rpgquest.item.SoulboundItemService;
 import com.lodygames.rpgquest.item.SpiderFangDropListener;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.behavior.EquipmentBehaviorService;
+import com.lodygames.rpgquest.mob.MobSpawnSettingsStore;
+import com.lodygames.rpgquest.mob.SpecialMobDefinitionStore;
 import com.lodygames.rpgquest.mob.SpecialMobRegistry;
 import com.lodygames.rpgquest.mob.SpecialMobService;
+import com.lodygames.rpgquest.mob.ability.EnragedAbilityService;
 import com.lodygames.rpgquest.mob.ability.ExplosiveOnAttackAbilityService;
 import com.lodygames.rpgquest.mob.ability.SplitOnHitAbilityListener;
 import com.lodygames.rpgquest.mob.ability.StrongerExplosionAbilityListener;
+import com.lodygames.rpgquest.mob.ability.SummonOnDamageAbilityListener;
 import com.lodygames.rpgquest.mod.ModCompatService;
 import com.lodygames.rpgquest.npc.NpcDefinitionStore;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
@@ -188,6 +192,8 @@ public final class RPGQuestBootstrap {
     private final StoryRegistry storyRegistry;
     private final ClaimSelectionService claimSelectionService;
     private final SpecialMobRegistry mobRegistry;
+    private final MobSpawnSettingsStore mobSpawnSettingsStore;
+    private final SpecialMobDefinitionStore mobDefinitionStore;
     private final StoreProductRegistry storeProductRegistry;
     private EquipmentBehaviorService equipmentBehaviorService;
     private PlayerProfileService playerProfileService;
@@ -257,6 +263,10 @@ public final class RPGQuestBootstrap {
         this.claimSelectionService = new ClaimSelectionService();
         this.mobRegistry = new SpecialMobRegistry(
                 plugin.getDataFolder().toPath().resolve("mobs"), plugin.getSLF4JLogger());
+        this.mobSpawnSettingsStore = new MobSpawnSettingsStore(
+                plugin.getDataFolder().toPath().resolve("mobs"), plugin.getSLF4JLogger());
+        this.mobDefinitionStore = new SpecialMobDefinitionStore(
+                plugin.getDataFolder().toPath().resolve("mobs"));
         this.storeProductRegistry = new StoreProductRegistry(
                 plugin.getDataFolder().toPath().resolve("store-products"), plugin.getSLF4JLogger());
         this.spawnService = new SpawnService(
@@ -330,11 +340,14 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, new ResourceNodeBreakListener(resourceNodeService)));
 
         registry.start(mobRegistry);
-        mobService = new SpecialMobService(plugin, mobRegistry, zoneRegistry, customItemRegistry, plugin.getSLF4JLogger());
+        mobService = new SpecialMobService(
+                plugin, mobRegistry, zoneRegistry, customItemRegistry, plugin.getSLF4JLogger(), mobSpawnSettingsStore);
         registry.start(mobService);
         registry.start(new PlayerListenerService(plugin, new StrongerExplosionAbilityListener(mobService)));
         registry.start(new PlayerListenerService(plugin, new SplitOnHitAbilityListener(mobService)));
         registry.start(new ExplosiveOnAttackAbilityService(plugin, mobRegistry, mobService));
+        registry.start(new EnragedAbilityService(plugin, mobRegistry, mobService));
+        registry.start(new PlayerListenerService(plugin, new SummonOnDamageAbilityListener(plugin, mobService)));
 
         equipmentBehaviorService = new EquipmentBehaviorService(plugin, customItemRegistry, configService);
         registry.start(equipmentBehaviorService);
@@ -635,7 +648,8 @@ public final class RPGQuestBootstrap {
                                 new com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor(
                                         plugin.getDataFolder().toPath().resolve("dialogues"),
                                         configService.current().dialogue().allowedCommands()),
-                                waypointService, travelBeaconService))));
+                                waypointService, travelBeaconService, mobRegistry, mobService, mobDefinitionStore,
+                                mobSpawnSettingsStore, () -> configService.current().travel().wildWorld()))));
 
         registerCommands();
     }
@@ -737,6 +751,14 @@ public final class RPGQuestBootstrap {
 
     public SpecialMobService mobService() {
         return mobService;
+    }
+
+    public MobSpawnSettingsStore mobSpawnSettingsStore() {
+        return mobSpawnSettingsStore;
+    }
+
+    public SpecialMobDefinitionStore mobDefinitionStore() {
+        return mobDefinitionStore;
     }
 
     public ProgressionService progressionService() {

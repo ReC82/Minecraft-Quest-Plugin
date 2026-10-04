@@ -3370,3 +3370,47 @@ obligatoire sur cette box) **OK** — suite complète 1799 tests, 1764 exécuté
 Rollback : `scripts/rollback-verygames.sh --latest` (restaure
 `rpgquest-20261004T102126Z-predeploy.jar`) ; `scripts/plugadmin/rollback.sh app` pour le Control
 Panel (restaure `/opt/plugadmin/releases/20261004-122329`).
+
+---
+
+## 2026-10-04 (EPIC #169, lot 1) - Mobs spéciaux/boss configurables, tirage Wild, Enragé/Invocation
+
+### Déploiement / Exécution réelle
+
+Déployé sur **VeryGames DEV** (plugin) et **AWS** (Control Panel) le 2026-10-04 (~16:30-16:35
+CEST), livraison autorisée explicitement en amont (coder/tester/committer/pousser/déployer/
+redémarrer sans reconfirmation, aucun merge/PROD). Branche `feature/169-special-mobs-boss` (5
+commits, dernier `2c171b2`), travail réalisé dans un worktree isolé pour ne jamais toucher aux
+brouillons locaux du panel (`crystal_hunt.yml`, Lily/Jeff). `./gradlew test`+`build` (internes au
+script officiel, `RPGQUEST_TEST_MAX_HEAP=768m`) **OK** sur les 3 modules — 1829 tests, 1794
+exécutés verts, 35 ignorés (limitation MockBukkit déjà documentée), 0 échec.
+
+- **Plugin (VeryGames DEV)** :
+  - **JAR déployé** : 1 659 532 o, SHA-256 `d43e6b2d350d23dbf24feb4533a12d6b73b6ac0b3e8655432b04d2fa63c449f3`.
+  - **Backup préalable** : `rpgquest-20261004T143202Z-predeploy.jar` (1 615 984 o, SHA-256
+    `96927defa0ab6b4a605ac35a4e908259ed45b4daa2ff722aeab5354840ec0e61` — JAR du déploiement
+    précédent, confirmé identique).
+  - **Redémarrage** : `scripts/verygames-restart.sh --timeout 240` — 1 joueur connecté avant
+    l'arrêt (déconnecté par le redémarrage, attendu et accepté explicitement). OFFLINE confirmé
+    puis **ONLINE**.
+  - **Vérifications post-redémarrage** : `/rpgquest version` → `v0.1.0-SNAPSHOT` ; `/plugins` → 4
+    plugins verts (Citizens, Multiverse-Core, RPGQuest, WorldEdit) ; `/mv list` → `claims`/`world`/
+    `world_hub` tous chargés (`NORMAL`). Plugin pleinement activé (aucune migration de schéma dans
+    ce lot — les nouveaux fichiers `mobs/<id>.yml`/`mobs/spawn-settings.yml` sont de simples YAML
+    hors base de données).
+- **Control Panel (AWS, service `plugadmin`)** :
+  - `scripts/plugadmin/deploy.sh` : `./gradlew :control-panel:installDist` → sauvegarde de la
+    release précédente (`/opt/plugadmin/releases/20261004-163442`) → redémarrage
+    `systemctl restart plugadmin` → `/health` → `{"panel":"ONLINE","disabled":false,...}`.
+  - Vérification supplémentaire : `GET /mobs` (non authentifié) → `303` (redirection login, jamais
+    une erreur 500) — la nouvelle page est bien câblée.
+- **Distinction explicite** : contrôles de démarrage/santé uniquement. **Création/édition d'un
+  profil, spawn de test (nom/particules/barre de vie boss), capacités Enragé et Invocation de
+  renforts, exclusion des BOSS du tirage automatique, et réglage du throttle Wild restent à valider
+  réellement en jeu/en navigateur** — non déclarés validés sur la seule base des tests automatisés
+  (voir `docs/MANUAL_TEST_PLAN.md` TC-231).
+- Aucun merge, aucune intervention PROD.
+
+Rollback : `scripts/rollback-verygames.sh --latest` (restaure
+`rpgquest-20261004T143202Z-predeploy.jar`) ; `scripts/plugadmin/rollback.sh app` pour le Control
+Panel (restaure `/opt/plugadmin/releases/20261004-163442`).

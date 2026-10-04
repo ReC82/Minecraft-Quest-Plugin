@@ -22,7 +22,11 @@ public final class AgentActionCatalog {
     private static final Pattern RESOURCE_ID = Pattern.compile("[a-zA-Z0-9_.:\\-/]{1,128}");
     private static final Pattern STORY_ID = Pattern.compile("[a-z0-9_-]{1,64}");
     private static final Pattern NPC_ID = Pattern.compile("[a-z0-9._-]{1,64}");
-    private static final Pattern MOB_ID = Pattern.compile("[a-z0-9._-]{1,64}");
+    /** Clé courte (auto-préfixée {@code rpgquest:} à la création) OU identifiant namespacé complet
+     * ({@code NamespacedKey#asString()}, ex. {@code rpgquest:creeper_pig}) tel que renvoyé par
+     * {@code mob.list} et réinjecté par les formulaires d'édition/bascule/spawn de test -- le « : »
+     * doit être accepté, sinon tout profil existant est rejeté « identifiant invalide ». */
+    private static final Pattern MOB_ID = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,64})?");
     private static final java.util.Set<String> MOB_CATEGORIES = java.util.Set.of("SPECIAL", "BOSS");
     private static final Pattern DIALOGUE_REF = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,128})?");
     private static final Pattern DIALOGUE_NODE_ID = Pattern.compile("[a-z0-9_][a-z0-9_-]{0,63}");

@@ -207,6 +207,23 @@ class AgentActionExecutorTest {
     }
 
     @Test
+    void mobDefinitionToggleAndTestSpawnAcceptTheFullNamespacedId() {
+        // mob.list renvoie toujours l'id namespacé complet (NamespacedKey#asString(), ex.
+        // "rpgquest:creeper_pig") et les formulaires d'édition/bascule/spawn de test le
+        // réinjectent tel quel -- doit être accepté, pas seulement la forme courte sans ":".
+        AgentActionOutcome toggle = run(new AgentAction("mt0", "mob.definition.toggle",
+                Map.of("mob_id", "rpgquest:creeper_pig", "enabled", "false")));
+        assertEquals(AgentActionOutcome.SUCCESS, toggle.status(), toggle.message());
+
+        AgentActionOutcome spawn = run(new AgentAction("mt1", "mob.test.spawn",
+                Map.of("mob_id", "rpgquest:creeper_pig", "player", "Steve")));
+        assertEquals(AgentActionOutcome.SUCCESS, spawn.status(), spawn.message());
+
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("mt2", "mob.definition.toggle",
+                Map.of("mob_id", "bad id!!", "enabled", "false"))).status(), "id invalide toujours rejeté");
+    }
+
+    @Test
     void npcCitizensListReturnsRoster() {
         AgentActionOutcome outcome = run(new AgentAction("cl0", "npc.citizens.list", Map.of()));
         assertEquals(AgentActionOutcome.SUCCESS, outcome.status());

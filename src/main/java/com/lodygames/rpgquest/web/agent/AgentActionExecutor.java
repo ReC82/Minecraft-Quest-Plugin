@@ -42,7 +42,9 @@ public final class AgentActionExecutor {
     private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
     /** Nom de monde : jamais un chemin, jamais une commande — caractères sûrs, longueur bornée. */
     private static final Pattern WORLD_NAME = Pattern.compile("[A-Za-z0-9_./-]{1,64}");
-    private static final Pattern MOB_ID = Pattern.compile("[a-z0-9._-]{1,64}");
+    /** Clé courte OU identifiant namespacé complet ({@code NamespacedKey#asString()}, ex.
+     * {@code rpgquest:creeper_pig}) -- le « : » doit être accepté (même bornes que côté panel). */
+    private static final Pattern MOB_ID = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,64})?");
     private static final int MAX_GIVE_AMOUNT = 64;
     private static final int MAX_DISPLAY_NAME = 128;
     private static final int MAX_DIALOGUE_TEXT = 512;

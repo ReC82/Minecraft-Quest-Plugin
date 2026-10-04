@@ -312,6 +312,31 @@ class AgentActionCatalogTest {
     }
 
     @Test
+    void mobIdAcceptsTheFullNamespacedFormReturnedByMobList() {
+        // Reproduit le blocage réel #169 : mob.list renvoie toujours l'id namespacé complet
+        // (NamespacedKey#asString(), ex. "rpgquest:creeper_pig") et les formulaires d'édition,
+        // de bascule et de spawn de test le réinjectent tel quel -- jamais seulement la forme
+        // courte tapée à la création. Le "." pattern doit accepter le ":" ou TOUT profil existant
+        // est rejeté "Identifiant de profil manquant ou invalide", alors même que le catalogue le
+        // liste bien.
+        AgentActionCatalog.Validation toggle = AgentActionCatalog.validate("mob.definition.toggle",
+                Map.of("mob_id", "rpgquest:creeper_pig", "enabled", "false"));
+        assertTrue(toggle.valid(), toggle.error());
+        assertEquals("rpgquest:creeper_pig", toggle.params().get("mob_id"));
+
+        AgentActionCatalog.Validation spawn = AgentActionCatalog.validate("mob.test.spawn",
+                Map.of("player", "Steve", "mob_id", "rpgquest:creeper_pig", "confirm", "true"));
+        assertTrue(spawn.valid(), spawn.error());
+        assertEquals("rpgquest:creeper_pig", spawn.params().get("mob_id"));
+
+        AgentActionCatalog.Validation update = AgentActionCatalog.validate("mob.definition.update", Map.of(
+                "mob_id", "rpgquest:creeper_pig", "category", "SPECIAL", "entity_type", "PIG",
+                "display_name", "Cochon Creeper", "spawn_chance", "0.015"));
+        assertTrue(update.valid(), update.error());
+        assertEquals("rpgquest:creeper_pig", update.params().get("mob_id"));
+    }
+
+    @Test
     void mobPermissionsAreMappedPerType() {
         assertEquals(Permission.MOB_READ, AgentActionCatalog.spec("mob.list").orElseThrow().permission());
         assertEquals(Permission.MOB_WRITE, AgentActionCatalog.spec("mob.definition.create").orElseThrow().permission());

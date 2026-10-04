@@ -268,6 +268,66 @@ Première étape à reprendre: déploiement DEV (plugin) + AWS (Control Panel) d
 ```
 
 ```text
+Date: 2026-10-04 (issue #190 — équilibrage Zombie fissile, poursuite Cochon Creeper, formulaire)
+Branche de départ: feature/169-special-mobs-boss @ 3470436 (entrée précédente, lot 1 déployé)
+Étape de départ: retours de test en jeu du lot #169 : Cochon Creeper explose bien mais ne
+  poursuit pas ; Zombie fissile naturel beaucoup trop rapide et se multiplie excessivement ;
+  demande de bases passives (cochon/poule/grenouille) généralisées ; parcours « Nouveau profil »
+  pensé non fonctionnel par l'utilisateur. Consigne explicite d'identifier le mécanisme réel avant
+  de corriger, d'appliquer le correctif au profil déjà déployé (pas seulement au gabarit), et de
+  traiter #190 avant de reprendre #179.
+Étapes terminées:
+(1) DONE — Cause du Zombie fissile tracée dans le code (pas supposée) : `speed: 1.0` valait ~4x la
+  vitesse vanilla du zombie (attribut brut, pas un multiplicateur) ; `SplitOnHitAbilityListener`
+  relançait une division complète à CHAQUE coup non mortel reçu par un même parent (tant que sa
+  profondeur restait sous max-depth), sans aucun plafond propre à ce parent -- seul un plafond
+  global partagé existait. Corrigé : `speed: 0.25` ; nouveau champ `max-alive-per-parent`
+  (optionnel, défaut 2) plafonnant les enfants vivants d'un même parent via une PDC dédiée +
+  comptage borné des entités proches, indépendamment du nombre de coups reçus. Appliqué au profil
+  déjà déployé via `deploy-verygames.sh --also` (pas seulement au gabarit des futurs profils),
+  avec backup préalable vérifié identique au gabarit par défaut (aucune personnalisation perdue).
+(2) DONE — Cochon Creeper (et toute base passive avec `EXPLOSIVE_ON_ATTACK`) poursuit désormais un
+  joueur à portée de perception (16 blocs) via `org.bukkit.entity.Mob#getPathfinder()` -- API
+  publique Paper, aucun NMS (changer les statistiques seules ne donne aucune IA de poursuite à une
+  base passive, qui n'a simplement pas ce goal d'IA). Les animaux ordinaires ne sont jamais
+  affectés (uniquement les entités taguées comme mob spécial).
+(3) DONE — Bases passives (PIG/CHICKEN/FROG) confirmées déjà pleinement supportées côté backend
+  (aucune restriction n'existait) via un nouveau test direct de `BukkitAgentActions` ; aide
+  contextuelle du formulaire mise à jour pour le dire explicitement (les capacités offensives type
+  explosif au contact restent non éditables depuis le panel -- scope #170, pas de ce lot).
+(4) DONE — Audit du « Nouveau profil » : le journal d'actions réel (agent_action/audit_log, lu
+  directement en base sur l'hôte AWS) a montré ZÉRO tentative mob.definition.create jamais reçue,
+  alors que mob.list/mob.test.spawn fonctionnaient -- et un nouveau test direct de
+  `BukkitAgentActions.mobDefinitionCreate` (jamais testé directement jusqu'ici) a confirmé que la
+  logique serveur est correcte, y compris sur bases passives. Cause la plus probable identifiée :
+  formulaire de ~25 champs sur 5 sections, bouton d'enregistrement uniquement tout en bas --
+  facile à manquer, surtout sur mobile. Corrigé : bouton dupliqué juste après la section Identité ;
+  capacités Enragé/Invocation repliées par défaut (`<details>` natif, sans JS).
+Tests: SpecialMobDefinitionParserTest (+1), SpecialMobDefinitionYamlTest (+1, round-trip),
+  SplitOnHitAbilityListenerTest (réécrit pour taguer l'identité en PDC plutôt que via
+  SpecialMobService#apply -- 2 tests de plus s'exécutent réellement au lieu d'être ignorés ; +1
+  nouveau test reproduisant exactement 4 coups répétés sur le même parent, plafonné à 2 enfants),
+  ExplosiveOnAttackAbilityServiceTest (nouveau, premiers tests de cette classe : déclenchement de
+  l'explosion et absence de déclenchement hors portée vérifiés réellement ; la poursuite elle-même
+  échoue sur Mob#getPathfinder(), non implémenté par MockBukkit -- documenté, pas ignoré
+  silencieusement), BukkitAgentActionsMobTest (nouveau, premiers tests directs de
+  BukkitAgentActions plutôt que seulement son double de test). Suite complète 3 modules : 1841
+  tests, 1806 exécutés verts, 35 ignorés, 0 échec.
+Branche finale: feature/169-special-mobs-boss (aucun merge).
+Dernier commit: `3470436` docs: document max-alive-per-parent and Explosive-on-attack pursuit.
+Build: vert (voir Tests).
+Tests manuels en attente: TC-232 (voir docs/MANUAL_TEST_PLAN.md) -- vitesse/plafond du Zombie
+  fissile en situation réelle, poursuite du Cochon Creeper (aucune couverture automatisée possible
+  pour ce point précis, limitation MockBukkit), parcours complet de création d'un nouveau profil.
+Blocages: aucun. Incident mineur auto-résolu pendant le déploiement : le contrôle de santé du
+  script plugadmin/deploy.sh a échoué une fois juste après systemctl restart (JVM pas encore liée
+  au port, ~2 s) -- confirmé résolu en moins de 30 s via journalctl + vérification manuelle,
+  aucun rollback nécessaire ; amélioration (attente/retry dans le script) notée pour plus tard,
+  hors périmètre de cette tâche.
+Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcours du Garde).
+```
+
+```text
 Date: 2026-10-04 (démarrage EPIC #169 — mobs spéciaux et boss configurables, lot 1)
 Branche de départ: feat/control-panel-admin-tools (entrée précédente) — travail réalisé dans un
   worktree isolé /srv/rpgquest/worktree-169 (branche feature/169-special-mobs-boss) pour ne jamais

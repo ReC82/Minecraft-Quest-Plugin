@@ -1980,6 +1980,51 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-232 — Zombie fissile équilibré, poursuite Cochon Creeper, création de profil (issue #190, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `splitting_zombie.yml` (vitesse + `max-alive-per-parent`),
+    `SplitOnHitAbilityListener` (plafond par parent), `ExplosiveOnAttackAbilityService` (poursuite
+    via `Mob#getPathfinder()`), formulaire « Nouveau profil » de `/mobs` (bouton dupliqué,
+    sections de capacités repliées).
+-   **Préconditions :** JAR + Control Panel de cette session déployés et redémarrés ; un Zombie
+    Fissible rencontré naturellement dans le Wild, OU une instance de test apparue via `/mobs`.
+-   **Scénario principal :**
+    1.  Rencontrer/faire apparaître un Zombie Fissible → sa vitesse doit paraître proche d'un
+        zombie normal, jamais un sprint démesuré.
+    2.  Le frapper à plusieurs reprises sans le tuer (coups non mortels successifs) → au plus 2
+        enfants vivants directs doivent apparaître pour ce parent précis, jamais plus, même après
+        de nombreux coups.
+    3.  Faire apparaître une instance de test de `rpgquest:creeper_pig` (ou un profil équivalent) à
+        proximité, puis s'éloigner à portée de perception (quelques blocs au-delà de la portée de
+        déclenchement de l'explosion, dans un rayon d'environ 16 blocs) → le cochon doit se
+        déplacer vers le joueur ; en se rapprochant à portée de déclenchement, l'explosion doit se
+        produire normalement.
+    4.  Vérifier qu'un animal ordinaire (cochon/poule/grenouille non tagué) ne poursuit jamais le
+        joueur.
+    5.  Depuis `/mobs`, cliquer « Nouveau profil », remplir ID technique/Type d'entité/Nom affiché,
+        puis cliquer le bouton « Créer » situé juste après la section Identité (sans faire défiler
+        plus bas) → le profil doit apparaître dans la liste après rafraîchissement.
+    6.  En modification d'un profil existant disposant déjà d'Enragé ou d'Invocation de renforts,
+        vérifier que la section correspondante s'ouvre automatiquement (pas besoin de cliquer pour
+        la déplier).
+-   **Reset :** aucun ; `mob.test.clear` pour les instances de test, suppression manuelle des
+    fichiers `mobs/<id>.yml` créés pour le test si besoin.
+-   **Couverture automatisée :** `SpecialMobDefinitionParserTest`/`SpecialMobDefinitionYamlTest`
+    (nouveau champ `max-alive-per-parent`, round-trip) ; `SplitOnHitAbilityListenerTest` (2 tests
+    supplémentaires exécutés réellement — identité posée en PDC plutôt que via `apply()` — dont un
+    nouveau test reproduisant exactement 4 coups répétés sur le même parent, plafonné à 2 enfants) ;
+    `ExplosiveOnAttackAbilityServiceTest` (nouveau, déclenchement de l'explosion et absence de
+    déclenchement hors portée vérifiés réellement) ; `BukkitAgentActionsMobTest` (nouveau, teste
+    directement `mobDefinitionCreate`/`Update`/`Toggle`, y compris sur bases PIG/CHICKEN/FROG —
+    jamais seulement le double de test).
+-   **Limites MockBukkit :** `Mob#getPathfinder()` n'est pas implémenté par cette version de
+    MockBukkit (confirmé en écrivant le test, qui échoue précisément sur cet appel) : la poursuite
+    elle-même (point 3 ci-dessus) est **sans couverture automatisée exécutable**, entièrement
+    `PENDING MANUAL VALIDATION`. Le mécanisme de plafond par parent (point 2) est vérifié
+    automatiquement avec certitude.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -2042,3 +2087,4 @@ le résumé de récompenses de TC-014).
 | TC-229 | Bossbar de suivi de quête, balise/id corrigés #157 (PENDING) | | | |
 | TC-230 | Panneaux latéraux de nom des waypoints #167 (PENDING) | | | |
 | TC-231 | Mobs spéciaux/boss : éditeur panel, tirage Wild, capacités #169/#171 (PENDING) | | | |
+| TC-232 | Zombie fissile équilibré, poursuite Cochon Creeper, création de profil #190 (PENDING) | | | |

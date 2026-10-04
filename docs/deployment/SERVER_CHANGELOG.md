@@ -3461,3 +3461,71 @@ tests, 1796 exécutés verts, 35 ignorés (limitation MockBukkit déjà document
 Rollback : `scripts/rollback-verygames.sh --latest` (restaure
 `rpgquest-20261004T152036Z-predeploy.jar`) ; `scripts/plugadmin/rollback.sh app` pour le Control
 Panel (restaure `/opt/plugadmin/releases/20261004-172300`).
+
+---
+
+## 2026-10-04 (issue #190) - Zombie fissile (vitesse + plafond), poursuite Cochon Creeper, formulaire `/mobs`
+
+### Déploiement / Exécution réelle
+
+Déployé sur **VeryGames DEV** (plugin + fichier de contenu) et **AWS** (Control Panel) le
+2026-10-04 (~18:38-18:41 CEST). Branche `feature/169-special-mobs-boss`, commit `3470436`.
+`./gradlew test`+`build` (interne au script officiel) **OK** sur les 3 modules — 1841 tests, 1806
+exécutés verts, 35 ignorés (limitation MockBukkit documentée), 0 échec.
+
+- **Cause du Zombie fissile identifiée avant correction** (pas supposée) : `speed: 1.0` dans le
+  profil valait ~4x la vitesse vanilla du zombie (attribut brut, pas un multiplicateur « 1.0 =
+  normal ») ; et `SplitOnHitAbilityListener` relançait une division complète à **chaque** coup non
+  mortel reçu par un même parent tant que sa profondeur restait sous `max-depth`, sans aucun
+  plafond lié à ce parent précis (seul un plafond global partagé existait) — des coups répétés au
+  combat (le cas normal) produisaient donc bien plus que `max-children-per-hit` descendants directs.
+- **Correctifs** : `speed: 0.25` (profil `splitting_zombie.yml`, désormais proche du zombie
+  vanilla) ; nouveau champ `max-alive-per-parent` (optionnel, défaut 2) plafonnant les enfants
+  vivants d'un même parent indépendamment du nombre de coups reçus (PDC dédiée, comptage borné des
+  entités proches). **Appliqué au profil déjà déployé** (`--also`, pas seulement au gabarit par
+  défaut des futurs profils) : voir backup ci-dessous.
+- **Cochon Creeper** : poursuit désormais un joueur à portée de perception (16 blocs) via
+  `org.bukkit.entity.Mob#getPathfinder()` (API publique Paper, sans NMS) — les animaux ordinaires
+  ne sont jamais affectés (uniquement les entités taguées comme mob spécial avec cette capacité).
+- **Formulaire `/mobs` « Nouveau profil »** : audit du journal d'actions réel côté Control Panel
+  (`agent_action`/`audit_log`) a montré **aucune tentative `mob.definition.create` jamais reçue**
+  (ni succès ni échec), alors que `mob.list`/`mob.test.spawn` fonctionnaient — et un nouveau test
+  direct de `BukkitAgentActions.mobDefinitionCreate` (jamais testé directement jusqu'ici, y compris
+  sur bases passives PIG/CHICKEN/FROG) a confirmé que la logique serveur est correcte. Cause la
+  plus probable : formulaire de ~25 champs sur 5 sections, bouton d'enregistrement uniquement tout
+  en bas. Corrigé : bouton dupliqué juste après la section Identité, capacités Enragé/Invocation
+  repliées par défaut (`<details>` natif).
+- **Plugin (VeryGames DEV)** :
+  - **JAR déployé** : 1 660 945 o, SHA-256 `0a56cbcf75d31417b9904aaf348efb0bd14138e2ef47a9ba1fdbb9fc4c75140f`.
+  - **Backup JAR préalable** : `rpgquest-20261004T163803Z-predeploy.jar` (1 659 537 o, SHA-256
+    `881b9eff451589e76851de41b6af4585f9830cd9e340cf7a5dc3e1c5aaba4ae9`).
+  - **Fichier de contenu mis à jour** : `RPGQuest/mobs/splitting_zombie.yml` (1065 o, SHA-256
+    `79c34fcefe18f7c37607c1f4c44b96ed7c3190c6f4603d6ac0b0369effbefc63`), backup préalable dans
+    `/home/ubuntu/.local/share/rpgquest/verygames-backups/extra-20261004T163803Z/` (638 o, SHA-256
+    `93678176f43b961ed14428b4be646d6be91e2625238e4d19dd37e515e1043ccf` — contenu identique au
+    gabarit par défaut, aucune personnalisation admin perdue).
+  - **Redémarrage** : `scripts/verygames-restart.sh --timeout 240` — 1 joueur connecté avant
+    l'arrêt (déconnecté, attendu). OFFLINE confirmé puis **ONLINE**. `/plugins` → 4 verts.
+- **Control Panel (AWS, service `plugadmin`)** :
+  - `scripts/plugadmin/deploy.sh` : sauvegarde de la release précédente
+    (`/opt/plugadmin/releases/20261004-184100`) → redémarrage → **`/health` a échoué une première
+    fois immédiatement après `systemctl restart`** (`curl: Couldn't connect`, le script vérifie la
+    santé ~1 à 2 s après le redémarrage, avant que la JVM n'ait fini de se lier au port — course
+    transitoire déjà connue de l'outil, pas un défaut du code livré) ; confirmé **résolu en moins de
+    30 s** via `journalctl` (`event=panel_started port=8090` à 18:41:06, `path=/health status=200`
+    dès 18:41:30) et une vérification manuelle immédiate. Aucun rollback nécessaire. **À améliorer
+    plus tard** : ajouter une attente/retry au script `deploy.sh` avant son propre contrôle de
+    santé (hors périmètre de cette tâche).
+  - `GET /mobs` (non authentifié) → `303` (jamais une erreur 500) — re-confirmé après la
+    résolution de la course ci-dessus.
+- **Distinction explicite** : la poursuite du Cochon Creeper (dépend de
+  `Mob#getPathfinder()`, non simulable par MockBukkit) et le parcours complet de création d'un
+  nouveau profil depuis le panel restent `PENDING MANUAL VALIDATION` — non déclarés validés sur la
+  seule base des tests automatisés et des contrôles de démarrage/santé.
+- Aucun merge, aucune intervention PROD.
+
+Rollback : `scripts/rollback-verygames.sh --latest` (restaure
+`rpgquest-20261004T163803Z-predeploy.jar`) ; pour `splitting_zombie.yml` seul,
+`scripts/rollback-verygames.sh --also /home/ubuntu/.local/share/rpgquest/verygames-backups/extra-20261004T163803Z/RPGQuest/mobs/splitting_zombie.yml:RPGQuest/mobs/splitting_zombie.yml`
+(voir le `MANIFEST.txt` du dossier de backup) ; `scripts/plugadmin/rollback.sh app` pour le Control
+Panel (restaure `/opt/plugadmin/releases/20261004-184100`).

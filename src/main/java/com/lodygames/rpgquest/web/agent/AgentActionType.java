@@ -49,6 +49,8 @@ public enum AgentActionType {
     PLAYER_RESETNEW_PREVIEW("player.resetnew.preview"),
     /** Catalogue waypoints/bornes (issue #152) — lecture seule, aucun effet de bord. */
     TRAVEL_CATALOG("travel.catalog"),
+    /** Catalogue des profils de mobs spéciaux/boss + throttle Wild (issue #169) — lecture seule. */
+    MOB_LIST("mob.list"),
 
     PLAYER_ITEM_GIVE("player.item.give"),
     QUEST_START("quest.start"),
@@ -72,7 +74,17 @@ public enum AgentActionType {
     DIALOGUE_NODE_UPDATE("dialogue.node.update"),
     DIALOGUE_CHOICE_ADD("dialogue.choice.add"),
     DIALOGUE_CHOICE_UPDATE("dialogue.choice.update"),
-    DIALOGUE_CHOICE_DELETE("dialogue.choice.delete");
+    DIALOGUE_CHOICE_DELETE("dialogue.choice.delete"),
+
+    /** Écriture/toggle d'un profil de mob spécial/boss ({@code mobs/<id>.yml}, issue #169 lot 1). */
+    MOB_DEFINITION_CREATE("mob.definition.create"),
+    MOB_DEFINITION_UPDATE("mob.definition.update"),
+    MOB_DEFINITION_TOGGLE("mob.definition.toggle"),
+    /** Throttle global du tirage aléatoire Wild (issue #169 lot 1). */
+    MOB_SPAWN_SETTINGS_SET("mob.spawn-settings.set"),
+    /** Spawn/suppression d'instances de test, distinctes des mobs ordinaires (issue #169 lot 1). */
+    MOB_TEST_SPAWN("mob.test.spawn"),
+    MOB_TEST_CLEAR("mob.test.clear");
 
     private final String wire;
 

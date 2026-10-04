@@ -37,6 +37,18 @@ import com.lodygames.rpgquest.dialogue.model.TurnInQuestAction;
 import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
+import com.lodygames.rpgquest.mob.MobSpawnSettings;
+import com.lodygames.rpgquest.mob.MobSpawnSettingsStore;
+import com.lodygames.rpgquest.mob.SpecialMobDefinitionStore;
+import com.lodygames.rpgquest.mob.SpecialMobLoadIssue;
+import com.lodygames.rpgquest.mob.SpecialMobLoadReport;
+import com.lodygames.rpgquest.mob.SpecialMobRegistry;
+import com.lodygames.rpgquest.mob.SpecialMobService;
+import com.lodygames.rpgquest.mob.model.EnragedAbility;
+import com.lodygames.rpgquest.mob.model.MobAbility;
+import com.lodygames.rpgquest.mob.model.MobCategory;
+import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
+import com.lodygames.rpgquest.mob.model.SummonOnDamageAbility;
 import com.lodygames.rpgquest.npc.CitizensNpc;
 import com.lodygames.rpgquest.npc.CitizensSpawnCoordinator;
 import com.lodygames.rpgquest.npc.CitizensSpawnPlanner;
@@ -133,6 +145,11 @@ public final class BukkitAgentActions implements AgentActions {
     private final DialogueDefinitionEditor dialogueEditor;
     private final WaypointService waypointService;
     private final TravelBeaconService travelBeaconService;
+    private final SpecialMobRegistry mobRegistry;
+    private final SpecialMobService mobService;
+    private final SpecialMobDefinitionStore mobDefinitionStore;
+    private final MobSpawnSettingsStore mobSpawnSettingsStore;
+    private final Supplier<String> wildWorldSupplier;
 
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
                               QuestProgressEngine questProgressEngine, StoryService storyService,
@@ -142,7 +159,9 @@ public final class BukkitAgentActions implements AgentActions {
                               YamlNpcEngine npcEngine, NpcDefinitionStore npcStore, QuestGiverStore questGiverStore,
                               Supplier<Set<String>> allowedSpawnWorlds, DialogueDefinitionStore dialogueStore,
                               DialogueDefinitionEditor dialogueEditor, WaypointService waypointService,
-                              TravelBeaconService travelBeaconService) {
+                              TravelBeaconService travelBeaconService, SpecialMobRegistry mobRegistry,
+                              SpecialMobService mobService, SpecialMobDefinitionStore mobDefinitionStore,
+                              MobSpawnSettingsStore mobSpawnSettingsStore, Supplier<String> wildWorldSupplier) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -161,6 +180,11 @@ public final class BukkitAgentActions implements AgentActions {
         this.dialogueEditor = dialogueEditor;
         this.waypointService = waypointService;
         this.travelBeaconService = travelBeaconService;
+        this.mobRegistry = mobRegistry;
+        this.mobService = mobService;
+        this.mobDefinitionStore = mobDefinitionStore;
+        this.mobSpawnSettingsStore = mobSpawnSettingsStore;
+        this.wildWorldSupplier = wildWorldSupplier;
     }
 
     // ---- Lectures -------------------------------------------------------------------------------
@@ -1177,6 +1201,226 @@ public final class BukkitAgentActions implements AgentActions {
 
     private static String instanceKey(String world, String biomeInstance) {
         return world + "#" + biomeInstance;
+    }
+
+    // ---- Mobs spéciaux / boss (issue #169, lot 1) ----------------------------------------------
+
+    @Override
+    public CompletableFuture<MobCatalogView> mobDefinitions() {
+        return onMain(() -> {
+            SpecialMobLoadReport report = mobRegistry.lastReport();
+            List<MobProfileSummary> profiles = new ArrayList<>();
+            for (SpecialMobDefinition def : report.loaded()) {
+                profiles.add(toSummary(def));
+            }
+            MobSpawnSettings settings = mobSpawnSettingsStore.current();
+            List<String> issues = new ArrayList<>();
+            for (SpecialMobLoadIssue issue : report.issues()) {
+                issues.add(issue.file() + " : " + issue.message());
+            }
+            return done(new MobCatalogView(List.copyOf(profiles),
+                    new MobSpawnSettingsView(settings.enabled(), settings.chance(), settings.maxSimultaneousSpecial()),
+                    !issues.isEmpty(), List.copyOf(issues)));
+        });
+    }
+
+    private MobProfileSummary toSummary(SpecialMobDefinition def) {
+        Double enragedHealthFraction = null;
+        Double enragedSpeedMultiplier = null;
+        Double enragedDamageMultiplier = null;
+        String summonEntityType = null;
+        Integer summonAmount = null;
+        Double summonChance = null;
+        Integer summonCooldownSeconds = null;
+        Integer summonMaxAlive = null;
+        List<String> abilitiesSummary = new ArrayList<>();
+        for (MobAbility ability : def.abilities()) {
+            switch (ability) {
+                case EnragedAbility a -> {
+                    enragedHealthFraction = a.healthFraction();
+                    enragedSpeedMultiplier = a.speedMultiplier();
+                    enragedDamageMultiplier = a.damageMultiplier();
+                    abilitiesSummary.add("Enragé sous " + Math.round(a.healthFraction() * 100) + "% PV (x"
+                            + a.speedMultiplier() + " vitesse, x" + a.damageMultiplier() + " dégâts)");
+                }
+                case SummonOnDamageAbility a -> {
+                    summonEntityType = a.summonedEntityType().name();
+                    summonAmount = a.amount();
+                    summonChance = a.chance();
+                    summonCooldownSeconds = a.cooldownSeconds();
+                    summonMaxAlive = a.maxAlive();
+                    abilitiesSummary.add("Invoque " + a.amount() + "x " + a.summonedEntityType()
+                            + " (" + Math.round(a.chance() * 100) + "%, cooldown " + a.cooldownSeconds()
+                            + "s, max " + a.maxAlive() + ")");
+                }
+                case com.lodygames.rpgquest.mob.model.StrongerExplosionAbility a ->
+                        abilitiesSummary.add("Explosion x" + a.radiusMultiplier());
+                case com.lodygames.rpgquest.mob.model.ExplosiveOnAttackAbility a ->
+                        abilitiesSummary.add("Explosif au contact (portée " + a.triggerRangeBlocks() + ")");
+                case com.lodygames.rpgquest.mob.model.SplitOnHitAbility a ->
+                        abilitiesSummary.add("Se divise (profondeur " + a.maxDepth() + ", x" + a.maxChildrenPerHit() + ")");
+            }
+        }
+        return new MobProfileSummary(def.id().asString(), def.category().name(), def.enabled(),
+                def.entityType().name(), def.displayName(), def.spawnChance(),
+                List.copyOf(def.allowedWorlds()), List.copyOf(def.allowedBiomes()), List.copyOf(def.allowedZones()),
+                def.health(), def.damage(), def.speed(), def.armor(), def.knockbackResistance(), def.scale(),
+                def.creeperExplosionRadius(), def.particle() == null ? null : def.particle().name(),
+                def.sound() == null ? null : def.sound().name(), def.xpReward(), def.maxPopulation(),
+                mobService.populationOf(def.id()), enragedHealthFraction, enragedSpeedMultiplier,
+                enragedDamageMultiplier, summonEntityType, summonAmount, summonChance, summonCooldownSeconds,
+                summonMaxAlive, List.copyOf(abilitiesSummary));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobDefinitionCreate(String id, String category, boolean enabled,
+            String entityType, String displayName, double spawnChance, List<String> worlds, List<String> biomes,
+            List<String> zones, Double health, Double damage, Double speed, Double armor,
+            Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
+            Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+            Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
+            Integer summonCooldownSeconds, Integer summonMaxAlive) {
+        return writeMobDefinition(id, category, enabled, entityType, displayName, spawnChance, worlds, biomes, zones,
+                health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius, particle, sound,
+                xpReward, maxPopulation, enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier,
+                summonEntityType, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive, true);
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobDefinitionUpdate(String id, String category, boolean enabled,
+            String entityType, String displayName, double spawnChance, List<String> worlds, List<String> biomes,
+            List<String> zones, Double health, Double damage, Double speed, Double armor,
+            Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
+            Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+            Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
+            Integer summonCooldownSeconds, Integer summonMaxAlive) {
+        return writeMobDefinition(id, category, enabled, entityType, displayName, spawnChance, worlds, biomes, zones,
+                health, damage, speed, armor, knockbackResistance, scale, creeperExplosionRadius, particle, sound,
+                xpReward, maxPopulation, enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier,
+                summonEntityType, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive, false);
+    }
+
+    @SuppressWarnings("removal") // Particle/Sound#valueOf : voir la justification dans SpecialMobDefinitionParser.
+    private CompletableFuture<MutationResult> writeMobDefinition(String id, String category, boolean enabled,
+            String entityType, String displayName, double spawnChance, List<String> worlds, List<String> biomes,
+            List<String> zones, Double health, Double damage, Double speed, Double armor,
+            Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
+            Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+            Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
+            Integer summonCooldownSeconds, Integer summonMaxAlive, boolean create) {
+        List<MobAbility> abilities = new ArrayList<>();
+        try {
+            if (enragedHealthFraction != null || enragedSpeedMultiplier != null || enragedDamageMultiplier != null) {
+                abilities.add(new EnragedAbility(enragedHealthFraction, enragedSpeedMultiplier, enragedDamageMultiplier));
+            }
+            if (summonEntityType != null || summonAmount != null || summonChance != null
+                    || summonCooldownSeconds != null || summonMaxAlive != null) {
+                org.bukkit.entity.EntityType type = org.bukkit.entity.EntityType.fromName(
+                        summonEntityType == null ? "" : summonEntityType.toLowerCase(Locale.ROOT));
+                abilities.add(new SummonOnDamageAbility(type, summonAmount, summonChance, summonCooldownSeconds, summonMaxAlive));
+            }
+
+            SpecialMobDefinition definition = new SpecialMobDefinition(
+                    resolveKey(id), MobCategory.valueOf(category.toUpperCase(Locale.ROOT)), enabled,
+                    org.bukkit.entity.EntityType.fromName(entityType.toLowerCase(Locale.ROOT)), displayName, spawnChance,
+                    Set.copyOf(worlds), Set.copyOf(biomes), Set.copyOf(zones), health, damage, speed, armor,
+                    knockbackResistance, scale, creeperExplosionRadius,
+                    particle == null ? null : org.bukkit.Particle.valueOf(particle.toUpperCase(Locale.ROOT)),
+                    sound == null ? null : org.bukkit.Sound.valueOf(sound.toUpperCase(Locale.ROOT)),
+                    abilities, List.of(), xpReward, maxPopulation);
+
+            SpecialMobDefinitionStore.Result r = create
+                    ? mobDefinitionStore.create(definition) : mobDefinitionStore.update(definition);
+            mobRegistry.reload();
+            List<String> effects = new ArrayList<>();
+            if (r.file() != null) {
+                effects.add("mobs/" + r.file());
+            }
+            if (r.report() != null) {
+                for (SpecialMobLoadIssue issue : r.report().issues()) {
+                    effects.add("⚠ " + issue.file() + " : " + issue.message());
+                }
+            }
+            return done(new MutationResult(r.ok(), r.code(), r.message(), List.copyOf(effects)));
+        } catch (IllegalArgumentException | NullPointerException e) {
+            return done(MutationResult.of(false, "INVALID", e.getMessage()));
+        }
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobDefinitionToggle(String id, boolean enabled) {
+        NamespacedKey key = resolveKey(id);
+        if (key == null) {
+            return done(MutationResult.of(false, "INVALID", "Identifiant de profil invalide : " + safe(id)));
+        }
+        Optional<SpecialMobDefinition> existing = mobDefinitionStore.find(key);
+        if (existing.isEmpty()) {
+            return done(MutationResult.of(false, "NOT_FOUND", "Aucun profil « " + key + " » à basculer."));
+        }
+        SpecialMobDefinition current = existing.get();
+        SpecialMobDefinition toggled = new SpecialMobDefinition(current.id(), current.category(), enabled,
+                current.entityType(), current.displayName(), current.spawnChance(), current.allowedWorlds(),
+                current.allowedBiomes(), current.allowedZones(), current.health(), current.damage(), current.speed(),
+                current.armor(), current.knockbackResistance(), current.scale(), current.creeperExplosionRadius(),
+                current.particle(), current.sound(), current.abilities(), current.drops(), current.xpReward(),
+                current.maxPopulation());
+        SpecialMobDefinitionStore.Result r = mobDefinitionStore.update(toggled);
+        mobRegistry.reload();
+        return done(new MutationResult(r.ok(), r.code(), r.message(), List.of()));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobSpawnSettingsSet(boolean enabled, double chance, Integer maxSimultaneousSpecial) {
+        try {
+            MobSpawnSettings settings = new MobSpawnSettings(enabled, chance, maxSimultaneousSpecial);
+            mobSpawnSettingsStore.save(settings);
+            return done(MutationResult.of(true, "UPDATED", "Throttle Wild mis à jour."));
+        } catch (IllegalArgumentException e) {
+            return done(MutationResult.of(false, "INVALID", e.getMessage()));
+        } catch (java.io.IOException e) {
+            return done(MutationResult.of(false, "ERROR", "Écriture impossible : " + e.getMessage()));
+        }
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobTestSpawn(String definitionId, String playerName) {
+        NamespacedKey key = resolveKey(definitionId);
+        if (key == null) {
+            return done(MutationResult.of(false, "INVALID", "Identifiant de profil invalide : " + safe(definitionId)));
+        }
+        Optional<SpecialMobDefinition> def = mobRegistry.find(key);
+        if (def.isEmpty()) {
+            return done(MutationResult.of(false, "UNKNOWN_MOB", "Profil inconnu : " + key));
+        }
+        return onMain(() -> {
+            Player player = plugin.getServer().getPlayerExact(playerName);
+            if (player == null) {
+                return done(MutationResult.of(false, "OFFLINE", "Joueur hors ligne : " + safe(playerName)));
+            }
+            String wildWorld = wildWorldSupplier.get();
+            if (wildWorld == null || !wildWorld.equalsIgnoreCase(player.getWorld().getName())) {
+                return done(MutationResult.of(false, "NOT_IN_WILD",
+                        player.getName() + " doit être dans le monde Wild (" + wildWorld + ") pour ce test."));
+            }
+            Optional<Location> safeLocation = mobService.findTestSpawnLocation(player);
+            if (safeLocation.isEmpty()) {
+                return done(MutationResult.of(false, "NO_SAFE_LOCATION",
+                        "Aucune position sûre trouvée près de " + player.getName() + "."));
+            }
+            org.bukkit.entity.LivingEntity entity = (org.bukkit.entity.LivingEntity)
+                    player.getWorld().spawnEntity(safeLocation.get(), def.get().entityType());
+            mobService.applyTestInstance(entity, def.get());
+            return done(new MutationResult(true, "SPAWNED",
+                    "Instance de test « " + key + " » apparue près de " + player.getName() + ".", List.of()));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobTestClear() {
+        return onMain(() -> {
+            int removed = mobService.clearTestInstances();
+            return done(new MutationResult(true, "CLEARED", removed + " instance(s) de test supprimée(s).", List.of()));
+        });
     }
 
     // ---- Utilitaires --------------------------------------------------------------------------

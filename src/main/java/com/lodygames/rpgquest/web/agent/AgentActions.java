@@ -422,4 +422,75 @@ public interface AgentActions {
     }
 
     CompletableFuture<TravelCatalogView> travelCatalog();
+
+    // ---- Mobs spéciaux / boss (action {@code mob.list}, issue #169 lot 1) -----------------------
+
+    /**
+     * Profil de mob spécial présenté pour l'admin (action {@code mob.list}). {@code category} ∈
+     * {@code SPECIAL|BOSS}. Les champs d'ability « premier lot » (Enragé / invocation de renforts)
+     * sont exposés à plat -- {@code null} = capacité absente de ce profil -- pour que le formulaire
+     * du panel reste un simple formulaire, jamais un éditeur générique de liste hétérogène (ce dernier
+     * est laissé à une itération ultérieure de l'EPIC #169).
+     */
+    record MobProfileSummary(String id, String category, boolean enabled, String entityType, String displayName,
+                             double spawnChance, List<String> worlds, List<String> biomes, List<String> zones,
+                             Double health, Double damage, Double speed, Double armor,
+                             Double knockbackResistance, Double scale, Double creeperExplosionRadius,
+                             String particle, String sound, Integer xpReward, Integer maxPopulation,
+                             int alivePopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+                             Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount,
+                             Double summonChance, Integer summonCooldownSeconds, Integer summonMaxAlive,
+                             List<String> abilitiesSummary) {
+    }
+
+    /** Throttle global du tirage aléatoire Wild (voir {@code mob.MobSpawnSettings}). */
+    record MobSpawnSettingsView(boolean enabled, double chance, Integer maxSimultaneousSpecial) {
+    }
+
+    record MobCatalogView(List<MobProfileSummary> profiles, MobSpawnSettingsView spawnSettings,
+                          boolean hasIssues, List<String> issues) {
+    }
+
+    CompletableFuture<MobCatalogView> mobDefinitions();
+
+    /**
+     * Crée/modifie un profil de mob spécial ({@code mobs/<id>.yml}) -- action {@code mob.definition.create}
+     * / {@code mob.definition.update}. Jamais de YAML brut, jamais de chemin arbitraire ; échoue sans
+     * écraser si l'id existe déjà (create) ou n'existe pas (update). Les 9 derniers paramètres portent
+     * les deux capacités du premier lot ({@code null} = capacité absente) ; les autres champs
+     * d'ability restent hors périmètre de ce formulaire (voir {@link MobProfileSummary}).
+     */
+    CompletableFuture<MutationResult> mobDefinitionCreate(String id, String category, boolean enabled,
+            String entityType, String displayName, double spawnChance, List<String> worlds, List<String> biomes,
+            List<String> zones, Double health, Double damage, Double speed, Double armor,
+            Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
+            Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+            Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
+            Integer summonCooldownSeconds, Integer summonMaxAlive);
+
+    CompletableFuture<MutationResult> mobDefinitionUpdate(String id, String category, boolean enabled,
+            String entityType, String displayName, double spawnChance, List<String> worlds, List<String> biomes,
+            List<String> zones, Double health, Double damage, Double speed, Double armor,
+            Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
+            Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+            Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
+            Integer summonCooldownSeconds, Integer summonMaxAlive);
+
+    /** Bascule {@code enabled} sans toucher au reste du profil -- action {@code mob.definition.toggle}. */
+    CompletableFuture<MutationResult> mobDefinitionToggle(String id, boolean enabled);
+
+    /** Règle le throttle global (voir {@code MobSpawnSettings}) -- action {@code mob.spawn-settings.set}. */
+    CompletableFuture<MutationResult> mobSpawnSettingsSet(boolean enabled, double chance, Integer maxSimultaneousSpecial);
+
+    /**
+     * Fait apparaître une instance de test d'un profil à une position sûre à proximité immédiate
+     * d'un joueur connecté <strong>déjà présent dans le monde Wild configuré</strong> -- action
+     * {@code mob.test.spawn}. Marquée distinctement (PDC dédiée) pour que {@link #mobTestClear} ne
+     * supprime jamais un mob ordinaire. Échoue (lisible) si le joueur est hors ligne, hors du Wild,
+     * ou si aucune position sûre n'a été trouvée à proximité.
+     */
+    CompletableFuture<MutationResult> mobTestSpawn(String definitionId, String playerName);
+
+    /** Supprime uniquement les instances de test encore vivantes (toutes définitions) -- {@code mob.test.clear}. */
+    CompletableFuture<MutationResult> mobTestClear();
 }

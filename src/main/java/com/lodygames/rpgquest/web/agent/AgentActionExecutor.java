@@ -42,6 +42,7 @@ public final class AgentActionExecutor {
     private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
     /** Nom de monde : jamais un chemin, jamais une commande — caractères sûrs, longueur bornée. */
     private static final Pattern WORLD_NAME = Pattern.compile("[A-Za-z0-9_./-]{1,64}");
+    private static final Pattern MOB_ID = Pattern.compile("[a-z0-9._-]{1,64}");
     private static final int MAX_GIVE_AMOUNT = 64;
     private static final int MAX_DISPLAY_NAME = 128;
     private static final int MAX_DIALOGUE_TEXT = 512;
@@ -94,6 +95,13 @@ public final class AgentActionExecutor {
                 case STORY_PLAYER_STATUS -> storyPlayerStatus(action);
                 case PLAYER_RESETNEW_PREVIEW -> resetPreview(action);
                 case TRAVEL_CATALOG -> travelCatalog(action);
+                case MOB_LIST -> mobList(action);
+                case MOB_DEFINITION_CREATE -> mobDefinitionWrite(action, true);
+                case MOB_DEFINITION_UPDATE -> mobDefinitionWrite(action, false);
+                case MOB_DEFINITION_TOGGLE -> mobDefinitionToggle(action);
+                case MOB_SPAWN_SETTINGS_SET -> mobSpawnSettingsSet(action);
+                case MOB_TEST_SPAWN -> mobTestSpawn(action);
+                case MOB_TEST_CLEAR -> mobTestClear(action);
                 case PLAYER_ITEM_GIVE -> itemGive(action);
                 case QUEST_START -> questStart(action);
                 case QUEST_COMPLETE -> questMutation(action, AgentActionType.QUEST_COMPLETE);
@@ -444,6 +452,188 @@ public final class AgentActionExecutor {
                             + view.unpairedHubWaypointIds().size() + " sans borne appariée dans le Hub).",
                     details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Mobs spéciaux / boss (issue #169, lot 1) ---------------------------------------------
+
+    private CompletableFuture<AgentActionOutcome> mobList(AgentAction action) {
+        return actions.mobDefinitions().thenApply(view -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (AgentActions.MobProfileSummary p : view.profiles()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", p.id());
+                row.put("category", p.category());
+                row.put("enabled", p.enabled());
+                row.put("entityType", p.entityType());
+                row.put("displayName", p.displayName());
+                row.put("spawnChance", p.spawnChance());
+                row.put("worlds", p.worlds());
+                row.put("biomes", p.biomes());
+                row.put("zones", p.zones());
+                row.put("health", p.health());
+                row.put("damage", p.damage());
+                row.put("speed", p.speed());
+                row.put("armor", p.armor());
+                row.put("knockbackResistance", p.knockbackResistance());
+                row.put("scale", p.scale());
+                row.put("creeperExplosionRadius", p.creeperExplosionRadius());
+                row.put("particle", p.particle());
+                row.put("sound", p.sound());
+                row.put("xpReward", p.xpReward());
+                row.put("maxPopulation", p.maxPopulation());
+                row.put("alivePopulation", p.alivePopulation());
+                row.put("enragedHealthFraction", p.enragedHealthFraction());
+                row.put("enragedSpeedMultiplier", p.enragedSpeedMultiplier());
+                row.put("enragedDamageMultiplier", p.enragedDamageMultiplier());
+                row.put("summonEntityType", p.summonEntityType());
+                row.put("summonAmount", p.summonAmount());
+                row.put("summonChance", p.summonChance());
+                row.put("summonCooldownSeconds", p.summonCooldownSeconds());
+                row.put("summonMaxAlive", p.summonMaxAlive());
+                row.put("abilitiesSummary", p.abilitiesSummary());
+                rows.add(row);
+            }
+            Map<String, Object> settings = new LinkedHashMap<>();
+            settings.put("enabled", view.spawnSettings().enabled());
+            settings.put("chance", view.spawnSettings().chance());
+            settings.put("maxSimultaneousSpecial", view.spawnSettings().maxSimultaneousSpecial());
+
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("profiles", rows);
+            details.put("spawnSettings", settings);
+            details.put("hasIssues", view.hasIssues());
+            details.put("issues", view.issues());
+            return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
+                    rows.size() + " profil(s) de mob spécial/boss.", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> mobDefinitionWrite(AgentAction action, boolean create) {
+        String id = firstNonBlank(action.param("mob_id"), action.param("id"));
+        if (id == null || !MOB_ID.matcher(id).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « mob_id » manquant ou invalide."));
+        }
+        String category = firstNonBlank(action.param("category"));
+        if (category == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « category » manquant (SPECIAL ou BOSS)."));
+        }
+        String entityType = firstNonBlank(action.param("entity_type"));
+        if (entityType == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « entity_type » manquant."));
+        }
+        String displayName = trimOrNull(action.param("display_name"));
+        if (displayName == null || displayName.length() > MAX_DISPLAY_NAME || displayName.indexOf('\n') >= 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « display_name » manquant, trop long, ou multi-ligne."));
+        }
+        Double spawnChance = parseDouble(action.param("spawn_chance"));
+        if (spawnChance == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « spawn_chance » manquant ou invalide."));
+        }
+        boolean enabled = !"false".equalsIgnoreCase(trimOrNull(action.param("enabled")));
+
+        CompletableFuture<AgentActions.MutationResult> future = (create ? actions.mobDefinitionCreate(
+                id, category, enabled, entityType, displayName, spawnChance,
+                splitList(action.param("worlds")), splitList(action.param("biomes")), splitList(action.param("zones")),
+                parseDouble(action.param("health")), parseDouble(action.param("damage")),
+                parseDouble(action.param("speed")), parseDouble(action.param("armor")),
+                parseDouble(action.param("knockback_resistance")), parseDouble(action.param("scale")),
+                parseDouble(action.param("creeper_explosion_radius")),
+                trimOrNull(action.param("particle")), trimOrNull(action.param("sound")),
+                parseOptionalInt(action.param("xp_reward")), parseOptionalInt(action.param("max_population")),
+                parseDouble(action.param("enraged_health_fraction")), parseDouble(action.param("enraged_speed_multiplier")),
+                parseDouble(action.param("enraged_damage_multiplier")), trimOrNull(action.param("summon_entity_type")),
+                parseOptionalInt(action.param("summon_amount")), parseDouble(action.param("summon_chance")),
+                parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive")))
+                : actions.mobDefinitionUpdate(
+                id, category, enabled, entityType, displayName, spawnChance,
+                splitList(action.param("worlds")), splitList(action.param("biomes")), splitList(action.param("zones")),
+                parseDouble(action.param("health")), parseDouble(action.param("damage")),
+                parseDouble(action.param("speed")), parseDouble(action.param("armor")),
+                parseDouble(action.param("knockback_resistance")), parseDouble(action.param("scale")),
+                parseDouble(action.param("creeper_explosion_radius")),
+                trimOrNull(action.param("particle")), trimOrNull(action.param("sound")),
+                parseOptionalInt(action.param("xp_reward")), parseOptionalInt(action.param("max_population")),
+                parseDouble(action.param("enraged_health_fraction")), parseDouble(action.param("enraged_speed_multiplier")),
+                parseDouble(action.param("enraged_damage_multiplier")), trimOrNull(action.param("summon_entity_type")),
+                parseOptionalInt(action.param("summon_amount")), parseDouble(action.param("summon_chance")),
+                parseOptionalInt(action.param("summon_cooldown_seconds")), parseOptionalInt(action.param("summon_max_alive"))));
+        return future.thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> mobDefinitionToggle(AgentAction action) {
+        String id = firstNonBlank(action.param("mob_id"), action.param("id"));
+        if (id == null || !MOB_ID.matcher(id).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « mob_id » manquant ou invalide."));
+        }
+        boolean enabled = isTrue(action.param("enabled"));
+        return actions.mobDefinitionToggle(id, enabled).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> mobSpawnSettingsSet(AgentAction action) {
+        boolean enabled = !"false".equalsIgnoreCase(trimOrNull(action.param("enabled")));
+        Double chance = parseDouble(action.param("chance"));
+        if (chance == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « chance » manquant ou invalide."));
+        }
+        Integer max = parseOptionalInt(action.param("max_simultaneous_special"));
+        return actions.mobSpawnSettingsSet(enabled, chance, max).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> mobTestSpawn(AgentAction action) {
+        String definitionId = firstNonBlank(action.param("mob_id"), action.param("id"));
+        if (definitionId == null || !MOB_ID.matcher(definitionId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « mob_id » manquant ou invalide."));
+        }
+        String player = firstNonBlank(action.param("player"), action.param("player_name"));
+        if (player == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « player » manquant."));
+        }
+        return actions.mobTestSpawn(definitionId, player).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> mobTestClear(AgentAction action) {
+        return actions.mobTestClear().thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private static Double parseDouble(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static Integer parseOptionalInt(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static List<String> splitList(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (String piece : raw.split(",")) {
+            if (!piece.isBlank()) {
+                out.add(piece.trim());
+            }
+        }
+        return out;
     }
 
     private CompletableFuture<AgentActionOutcome> npcList(AgentAction action) {

@@ -199,4 +199,52 @@ class StubAgentActions implements AgentActions {
         return CompletableFuture.completedFuture(
                 new TravelCatalogView(List.of(), List.of(), 0, 0, 0, List.of(), 0L));
     }
+
+    @Override
+    public CompletableFuture<MobCatalogView> mobDefinitions() {
+        return CompletableFuture.completedFuture(
+                new MobCatalogView(List.of(), new MobSpawnSettingsView(true, 1.0, null), false, List.of()));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobDefinitionCreate(String id, String category, boolean enabled,
+            String entityType, String displayName, double spawnChance, List<String> worlds, List<String> biomes,
+            List<String> zones, Double health, Double damage, Double speed, Double armor,
+            Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
+            Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+            Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
+            Integer summonCooldownSeconds, Integer summonMaxAlive) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobDefinitionUpdate(String id, String category, boolean enabled,
+            String entityType, String displayName, double spawnChance, List<String> worlds, List<String> biomes,
+            List<String> zones, Double health, Double damage, Double speed, Double armor,
+            Double knockbackResistance, Double scale, Double creeperExplosionRadius, String particle, String sound,
+            Integer xpReward, Integer maxPopulation, Double enragedHealthFraction, Double enragedSpeedMultiplier,
+            Double enragedDamageMultiplier, String summonEntityType, Integer summonAmount, Double summonChance,
+            Integer summonCooldownSeconds, Integer summonMaxAlive) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobDefinitionToggle(String id, boolean enabled) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobSpawnSettingsSet(boolean enabled, double chance, Integer maxSimultaneousSpecial) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobTestSpawn(String definitionId, String playerName) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> mobTestClear() {
+        return unsupported();
+    }
 }

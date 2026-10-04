@@ -3326,3 +3326,47 @@ MockBukkit `teleportAsync` déjà documentée), 0 échec.
 - Aucun merge, aucune intervention PROD.
 
 Rollback : `scripts/rollback-verygames.sh --latest` (restaure `rpgquest-20261003T220039Z-predeploy.jar`).
+
+---
+
+## 2026-10-04 (suite) - Control Panel /travel (#152) + secours Hub (#154) + noms/recherche/retour "déjà découvert" + diagnostic #159
+
+### Déploiement / Exécution réelle
+
+Déployé sur **VeryGames DEV** (plugin) et **AWS** (Control Panel) le 2026-10-04 (~10:21-12:24
+UTC), session autorisée explicitement (« Termine les corrections déjà engagées et déploie pour que
+je puisse tester », mêmes autorisations overnight). Branche `feat/control-panel-admin-tools` @
+**`22d4ed2`**. `./gradlew test`+`build` (interne au script officiel, `RPGQUEST_TEST_MAX_HEAP=768m`
+obligatoire sur cette box) **OK** — suite complète 1799 tests, 1764 exécutés verts, 35 ignorés
+(limitation MockBukkit `teleportAsync` déjà documentée), 0 échec.
+
+- **Plugin (VeryGames DEV)** :
+  - **JAR déployé** : 1 613 115 o, SHA-256 `be5baa54b13c55afb0e6838eee1bd1d73866854a5b903b959c944e32a568dab4`.
+  - **Backup préalable** : `rpgquest-20261004T102126Z-predeploy.jar` (1 591 958 o, SHA-256
+    `1fd721626aee10269bacb42b7f31a06129f311ad7b8fea5aa185c9c0575bf60d` — JAR du déploiement
+    précédent, confirmé identique).
+  - **Redémarrage** : `scripts/verygames-restart.sh --timeout 240` — 1 joueur connecté avant
+    l'arrêt (déconnecté par le redémarrage, attendu et accepté explicitement par l'utilisateur) ;
+    OFFLINE confirmé puis **ONLINE**.
+  - **Vérifications post-redémarrage** : `/rpgquest version` → `v0.1.0-SNAPSHOT` ; `/plugins` → 4
+    plugins verts (Citizens, Multiverse-Core, RPGQuest, WorldEdit). Plugin pleinement activé →
+    nouvelle migration **V23** (renommage des noms de waypoints) appliquée sans erreur critique
+    (même niveau de preuve que les migrations précédentes, aucun accès direct aux logs par ce
+    compte FTP/RCON ; `/rpgadmin travel diagnose` non vérifiable depuis la console — exige un
+    joueur en jeu).
+- **Control Panel (AWS, service `plugadmin`)** :
+  - `scripts/plugadmin/deploy.sh` : `./gradlew :control-panel:installDist` → sauvegarde de la
+    release précédente (`/opt/plugadmin/releases/20261004-122329`) → redémarrage
+    `systemctl restart plugadmin` → `/health` → `{"panel":"ONLINE","disabled":false,...}`.
+  - Vérification supplémentaire : `GET /travel` (non authentifié) → `303` (redirection login,
+    jamais une erreur 500) — la nouvelle page est bien câblée.
+- **Distinction explicite** : contrôles de démarrage/santé uniquement. **Recherche de waypoints
+  (saisie réelle + absence de coût XP), secours Hub via la Rune, filet graphique de secours, retour
+  « déjà découvert », noms lisibles affichés en jeu, et la page `/travel` du Control Panel restent à
+  valider réellement en jeu/en navigateur** — non déclarés validés sur la seule base des tests
+  automatisés (voir `docs/MANUAL_TEST_PLAN.md` TC-226/227/228).
+- Aucun merge, aucune intervention PROD.
+
+Rollback : `scripts/rollback-verygames.sh --latest` (restaure
+`rpgquest-20261004T102126Z-predeploy.jar`) ; `scripts/plugadmin/rollback.sh app` pour le Control
+Panel (restaure `/opt/plugadmin/releases/20261004-122329`).

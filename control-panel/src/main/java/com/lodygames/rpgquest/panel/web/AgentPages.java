@@ -3690,8 +3690,12 @@ public final class AgentPages {
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-et\">Type d'entité Minecraft</label>")
                 .append("<input class=\"form-control\" id=\"").append(uid).append("-et\" type=\"text\" name=\"entity_type\" "
                         + "value=\"").append(Http.esc(str(existing == null ? null : existing.get("entityType"))))
-                .append("\" placeholder=\"Exemple : ZOMBIE, CREEPER, SKELETON\" required>"
-                        + "<div class=\"form-text\">Nom technique vanilla en majuscules.</div></div>");
+                .append("\" placeholder=\"Exemple : ZOMBIE, CREEPER, SKELETON, PIG, CHICKEN, FROG\" required>"
+                        + "<div class=\"form-text\">Nom technique vanilla en majuscules. Les bases passives "
+                        + "(PIG, CHICKEN, FROG…) fonctionnent aussi — sans capacité agressive ajoutée, un tel "
+                        + "profil reste aussi passif que la base vanilla (voir Enragé/Invocation de renforts "
+                        + "ci-dessous ; les capacités offensives type « explosif au contact » arrivent avec "
+                        + "l'issue #170, pas encore éditables ici).</div></div>");
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-name\">Nom affiché</label>")
                 .append("<input class=\"form-control\" id=\"").append(uid).append("-name\" type=\"text\" name=\"display_name\" "
                         + "maxlength=\"128\" value=\"").append(Http.esc(str(existing == null ? null : existing.get("displayName"))))
@@ -3702,6 +3706,14 @@ public final class AgentPages {
                 .append(!update || Boolean.TRUE.equals(existing.get("enabled")) ? " checked" : "")
                 .append("><label class=\"form-check-label\" for=\"").append(uid).append("-en\">Profil actif</label></div>");
         sb.append("</div>");
+
+        // #190 : bouton dupliqué tôt dans le formulaire -- le reste (tirage/statistiques/capacités)
+        // a des valeurs par défaut raisonnables ou est optionnel ; un profil minimal peut être
+        // enregistré sans faire défiler tout le formulaire jusqu'en bas.
+        sb.append("<p class=\"form-text\">Les champs ci-dessous ont des valeurs par défaut : vous pouvez "
+                + "enregistrer dès maintenant, ou continuer les réglages plus bas.</p>");
+        sb.append("<button class=\"btn btn-primary\" type=\"submit\">")
+                .append(Icons.icon("save")).append(update ? "Enregistrer" : "Créer").append("</button>");
 
         sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Tirage aléatoire (Wild)</p>");
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-sc\">Chance individuelle (0 à 1)</label>")
@@ -3737,18 +3749,23 @@ public final class AgentPages {
         sb.append(numField(uid, "xp_reward", "XP à la mort", existing, "1", null));
         sb.append("</div>");
 
+        // #190 : repliées par défaut (<details> natif, sans JS) pour raccourcir le formulaire par
+        // défaut -- ouvertes automatiquement en modification si la capacité est déjà active.
         boolean hasEnraged = existing != null && existing.get("enragedHealthFraction") != null;
-        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Capacité : Enragé</p>");
+        sb.append("<details").append(hasEnraged ? " open" : "").append("><summary class=\"npc-fs-h\">Capacité : Enragé</summary>");
+        sb.append("<div class=\"npc-fs\">");
         sb.append("<div class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" id=\"").append(uid)
                 .append("-rg-en\" name=\"enraged_enabled\" value=\"true\"").append(hasEnraged ? " checked" : "")
                 .append("><label class=\"form-check-label\" for=\"").append(uid).append("-rg-en\">Activer cette capacité</label></div>");
         sb.append(numField(uid, "enraged_health_fraction", "Seuil de vie (0 à 1, ex. 0.3 = sous 30%)", existing, "0.01", null));
         sb.append(numField(uid, "enraged_speed_multiplier", "Multiplicateur de vitesse", existing, "0.1", null));
         sb.append(numField(uid, "enraged_damage_multiplier", "Multiplicateur de dégâts", existing, "0.1", null));
-        sb.append("</div>");
+        sb.append("</div></details>");
 
         boolean hasSummon = existing != null && existing.get("summonEntityType") != null;
-        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Capacité : Invocation de renforts</p>");
+        sb.append("<details").append(hasSummon ? " open" : "")
+                .append("><summary class=\"npc-fs-h\">Capacité : Invocation de renforts</summary>");
+        sb.append("<div class=\"npc-fs\">");
         sb.append("<div class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" id=\"").append(uid)
                 .append("-sm-en\" name=\"summon_enabled\" value=\"true\"").append(hasSummon ? " checked" : "")
                 .append("><label class=\"form-check-label\" for=\"").append(uid).append("-sm-en\">Activer cette capacité</label></div>");
@@ -3762,7 +3779,7 @@ public final class AgentPages {
         sb.append(numField(uid, "summon_max_alive", "Renforts vivants max", existing, "1", null));
         sb.append("<div class=\"form-text\">Ne se déclenche que sur des dégâts effectifs ; jamais de cascade "
                 + "(les renforts eux-mêmes n'invoquent jamais).</div>");
-        sb.append("</div>");
+        sb.append("</div></details>");
 
         sb.append("<button class=\"btn btn-primary\" type=\"submit\">")
                 .append(Icons.icon("save")).append(update ? "Enregistrer" : "Créer").append("</button>");

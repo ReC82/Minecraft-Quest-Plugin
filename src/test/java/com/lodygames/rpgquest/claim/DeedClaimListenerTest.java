@@ -233,6 +233,29 @@ class DeedClaimListenerTest {
                 .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
+    // ---- Issue #179 : pose directement au palier le plus haut déjà obtenu ---------------------
+
+    @Test
+    void firstPoseGoesDirectlyToTheHighestEntitledTierWhenAboveTierOne() throws Exception {
+        PlayerMock player = addPlayer();
+        grantClaimTierOne(player);
+        // Palier 2 obtenu (ex. quête du Garde) avant même la toute première pose de l'Acte.
+        variableRepository.set(player.getUniqueId(), "CLAIM_TIER_2", "true").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        Block block = claimsWorld.getBlockAt(100, 64, 100);
+        ItemStack item = deed();
+        player.getInventory().setItemInMainHand(item);
+
+        rightClick(player, item, block); // aperçu
+        rightClick(player, item, block); // confirmation
+
+        var claims = claimService.claimsOwnedBy(player.getUniqueId());
+        assertEquals(1, claims.size());
+        Claim claim = claims.get(0);
+        assertEquals(10, claim.width(), "doit poser directement à TIER_2 (10×10), jamais TIER_1 par défaut");
+        assertEquals(10, claim.depth());
+        assertEquals(100, claim.reservedMaxX() - claim.reservedMinX() + 1, "réservation toujours 100×100");
+    }
+
     // ---- Double usage de l'Acte : outil de visualisation une fois le claim posé ----------------
 
     @Test

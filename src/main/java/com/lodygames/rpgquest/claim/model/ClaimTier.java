@@ -6,14 +6,22 @@ package com.lodygames.rpgquest.claim.model;
  * #reservationSize()}) pour permettre une extension future sans jamais risquer de collision avec un
  * claim voisin posé entre-temps — voir {@link Claim#overlapsReservation}.
  *
- * <p>Seul {@link #TIER_1} est réellement joignable aujourd'hui (mission « premier claim 5×5 »). Les
- * autres valeurs n'existent que pour que le modèle (cette énumération, {@link Claim}, {@code
- * ClaimRepository}) n'ait pas besoin d'être retouché quand un futur palier sera implémenté — aucune
- * logique d'amélioration/upgrade n'existe encore, volontairement (hors périmètre de cette étape).</p>
+ * <p><strong>Issue #179</strong> : {@code TIER_2}..{@code TIER_5} implémentent désormais la montée
+ * de palier réelle (voir {@code ClaimService#upgradeTier}), pas seulement le modèle. La réservation
+ * reste volontairement <strong>constante à 100</strong> pour les cinq paliers — exactement la valeur
+ * déjà réservée dès la création d'un claim {@code TIER_1} (jamais changée pour les claims déjà posés
+ * avant cette issue). Comme chaque {@code activeSize} ≤ 100, toute montée de palier reste à
+ * l'intérieur de l'espace déjà exclusivement réservé pour ce claim depuis sa création — aucune
+ * collision avec un claim voisin n'est donc possible par construction, même si la vérification
+ * explicite ({@link Claim#overlapsReservation}) reste faite par prudence.</p>
  */
 public enum ClaimTier {
 
-    TIER_1(5, 100);
+    TIER_1(5, 100),
+    TIER_2(10, 100),
+    TIER_3(20, 100),
+    TIER_4(40, 100),
+    TIER_5(80, 100);
 
     private final int activeSize;
     private final int reservationSize;

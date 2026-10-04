@@ -1,6 +1,8 @@
 package com.lodygames.rpgquest.admin;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.claim.ClaimService;
+import com.lodygames.rpgquest.claim.model.ClaimTier;
 import com.lodygames.rpgquest.hub.HubGuideDefinition;
 import com.lodygames.rpgquest.hub.HubGuideReferral;
 import com.lodygames.rpgquest.hub.HubGuideRegistry;
@@ -76,9 +78,9 @@ import org.jetbrains.annotations.Nullable;
  * {@code /rpgadmin player variable set} exige <strong>en plus</strong>
  * {@code rpgquest.admin.debug} (écriture bas niveau). La plupart des branches
  * exigent un joueur en jeu (elles utilisent sa position/sélection, jamais de
- * coordonnée explicite) ; {@code quest}, {@code story}, {@code player} et
- * {@code guide} ciblent au contraire un joueur passé en argument et sont
- * utilisables depuis la console.</p>
+ * coordonnée explicite) ; {@code quest}, {@code story}, {@code player},
+ * {@code guide} et {@code claim} ciblent au contraire un joueur passé en
+ * argument et sont utilisables depuis la console.</p>
  */
 public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
@@ -87,7 +89,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String DEBUG_PERMISSION = "rpgquest.admin.debug";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel");
+            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim");
     private static final List<String> TRAVEL_SUBCOMMANDS = List.of("beacon", "village", "diagnose", "repair", "signs");
     private static final List<String> TRAVEL_REPAIR_KINDS = List.of("waypoint", "beacon");
     private static final List<String> TRAVEL_SIGNS_SUBCOMMANDS = List.of("upgrade");
@@ -100,6 +102,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final List<String> PLAYER_SUBCOMMANDS = List.of("resetnew", "variable");
     private static final List<String> PLAYER_VARIABLE_SUBCOMMANDS = List.of("get", "set");
     private static final List<String> QUEST_SUBCOMMANDS = List.of("start", "complete", "reset");
+    /** Issue #179 : raccourci admin pour poser/monter directement un claim à un palier donné. */
+    private static final List<String> CLAIM_SUBCOMMANDS = List.of("grant-tier");
+    private static final List<String> CLAIM_TIER_NAMES =
+            List.of("TIER_1", "TIER_2", "TIER_3", "TIER_4", "TIER_5");
     /** Clés proposées en tab-complétion pour {@code /rpgadmin player variable} — jamais une liste blanche, la saisie libre reste acceptée. */
     private static final List<String> KNOWN_VARIABLE_KEYS =
             List.of("CLAIM_TIER_1", "tutorial_started", "crystal_hunt_started", "woodcutter_reputation", "RUNE_RAPPEL_GRANTED");
@@ -139,6 +145,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final PlayerVariableRepository variableRepository;
     private final TravelBeaconService travelBeaconService;
     private final WaypointService waypointService;
+    private final ClaimService claimService;
     private final RPGQuestPlugin plugin;
 
     public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService,
@@ -150,7 +157,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             PlayerResetService playerResetService, HubGuideRegistry hubGuideRegistry,
                             QuestProgressEngine questProgressEngine, YamlQuestEngine questEngine,
                             PlayerVariableRepository variableRepository, TravelBeaconService travelBeaconService,
-                            WaypointService waypointService, RPGQuestPlugin plugin) {
+                            WaypointService waypointService, ClaimService claimService, RPGQuestPlugin plugin) {
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
@@ -172,6 +179,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         this.variableRepository = variableRepository;
         this.travelBeaconService = travelBeaconService;
         this.waypointService = waypointService;
+        this.claimService = claimService;
         this.plugin = plugin;
     }
 
@@ -206,6 +214,12 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         // position requise, utilisable depuis la console comme "story"/"player".
         if (args.length > 0 && args[0].equalsIgnoreCase("guide")) {
             handleGuide(sender, args);
+            return true;
+        }
+        // "claim" : raccourci admin (issue #179) — cible un joueur passé en argument, utilisable
+        // depuis la console comme "story"/"player"/"quest"/"guide".
+        if (args.length > 0 && args[0].equalsIgnoreCase("claim")) {
+            handleClaimAdmin(sender, args);
             return true;
         }
         if (!(sender instanceof Player player)) {
@@ -1993,6 +2007,75 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                 "<yellow>/rpgadmin quest reset <joueur> <quest-id></yellow> <gray>- rend la quête rejouable (n'annule pas les récompenses déjà données)</gray>"));
     }
 
+    // ---- Claims (issue #179) -----------------------------------------------------------------
+
+    /**
+     * {@code /rpgadmin claim grant-tier <joueur> <TIER_n>} — déclenché par la récompense {@code
+     * COMMAND} des quêtes de palier du Garde ({@code rpgquest:guard_tier2}..{@code guard_tier5}),
+     * jamais {@code guard_tier1} (l'entitlement {@code CLAIM_TIER_1} seul suffit à la toute première
+     * pose, via {@link ClaimService#highestEntitledTier} côté {@code DeedClaimListener}). Fait
+     * grandir le claim principal déjà posé via {@link ClaimService#upgradeTier} ; si {@code joueur}
+     * n'a pas encore posé de claim, l'entitlement {@code CLAIM_TIER_n} reste malgré tout acquis par
+     * la récompense {@code VARIABLE} de la même quête — {@link ClaimService#highestEntitledTier}
+     * posera directement le bon palier dès la première pose de l'Acte.
+     */
+    private void handleClaimAdmin(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sendClaimAdminUsage(sender);
+            return;
+        }
+        if (!args[1].equalsIgnoreCase("grant-tier")) {
+            sendClaimAdminUsage(sender);
+            return;
+        }
+        if (args.length < 4) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin claim grant-tier <joueur> <TIER_n></yellow>"));
+            return;
+        }
+        Player target = resolveOnlineTarget(sender, args[2]);
+        if (target == null) {
+            return;
+        }
+        ClaimTier tier;
+        try {
+            tier = ClaimTier.valueOf(args[3].toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            sender.sendMessage(MM.deserialize(
+                    "<red>Palier inconnu :</red> <white><t></white> <gray>(attendu : " + String.join(", ", CLAIM_TIER_NAMES) + ")</gray>",
+                    Placeholder.unparsed("t", args[3])));
+            return;
+        }
+        plugin.getSLF4JLogger().info("[admin] {} : /rpgadmin claim grant-tier {} {}",
+                senderName(sender), target.getName(), tier);
+        claimService.upgradeTier(target.getUniqueId(), tier).thenAccept(outcome -> runOnMainThread(() -> {
+            switch (outcome) {
+                case UPGRADED -> sender.sendMessage(MM.deserialize(
+                        "<green>Claim de</green> <white><p></white> <green>agrandi à</green> <white><t></white>",
+                        Placeholder.unparsed("p", target.getName()), Placeholder.unparsed("t", tier.name())));
+                case NO_CLAIM_YET -> sender.sendMessage(MM.deserialize(
+                        "<yellow><p> n'a pas encore posé de claim :</yellow> <gray>le droit reste acquis, "
+                                + "l'Acte posera directement au bon palier.</gray>",
+                        Placeholder.unparsed("p", target.getName())));
+                case ALREADY_AT_TIER_OR_HIGHER -> sender.sendMessage(MM.deserialize(
+                        "<yellow>Claim de <p> déjà à ce palier ou plus grand :</yellow> <white><t></white> "
+                                + "<gray>— rien à faire (idempotent).</gray>",
+                        Placeholder.unparsed("p", target.getName()), Placeholder.unparsed("t", tier.name())));
+                case NOT_SQUARE -> sender.sendMessage(MM.deserialize(
+                        "<red>Le claim de <p> n'est pas carré, impossible de calculer une montée de palier.</red>",
+                        Placeholder.unparsed("p", target.getName())));
+                case OVERLAPS_CLAIM, OVERLAPS_RESERVATION -> sender.sendMessage(MM.deserialize(
+                        "<red>Montée de palier impossible pour <p> : chevauche un claim voisin (<reason>).</red>",
+                        Placeholder.unparsed("p", target.getName()), Placeholder.unparsed("reason", outcome.name())));
+            }
+        }));
+    }
+
+    private void sendClaimAdminUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin claim grant-tier <joueur> <TIER_n></yellow> <gray>- agrandit le claim principal "
+                        + "déjà posé (TIER_1..TIER_5) ; sans claim posé, le droit reste acquis pour la prochaine pose</gray>"));
+    }
+
     // ---- Story advance / complete ----------------------------------------------------------------
 
     private void handleStoryAdvance(CommandSender sender, String[] args) {
@@ -2603,6 +2686,15 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 5 && args[0].equalsIgnoreCase("quest") && args[1].equalsIgnoreCase("start")) {
             return List.of("force").stream().filter(s -> s.startsWith(args[4].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("claim")) {
+            return CLAIM_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("claim") && args[1].equalsIgnoreCase("grant-tier")) {
+            return onlinePlayerNames(args[2]);
+        }
+        if (args.length == 4 && args[0].equalsIgnoreCase("claim") && args[1].equalsIgnoreCase("grant-tier")) {
+            return CLAIM_TIER_NAMES.stream().filter(s -> s.startsWith(args[3].toUpperCase(Locale.ROOT))).toList();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("story")) {
             return STORY_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();

@@ -140,8 +140,8 @@ public final class DeedClaimListener implements Listener {
     }
 
     private void preview(Player player, World world, int centerX, int centerZ) {
-        claimService.hasClaimTierOne(player.getUniqueId()).thenAccept(hasTier -> runOnMainThread(() -> {
-            if (!hasTier) {
+        claimService.highestEntitledTier(player.getUniqueId()).thenAccept(maybeTier -> runOnMainThread(() -> {
+            if (maybeTier.isEmpty()) {
                 player.sendMessage(MM.deserialize(
                         "<red>Tu n'as pas encore le droit de poser un claim ici.</red>"));
                 return;
@@ -151,15 +151,19 @@ public final class DeedClaimListener implements Listener {
                 return;
             }
 
-            int size = ClaimTier.TIER_1.activeSize();
+            // Issue #179 : pose directement au palier le plus haut déjà obtenu (ex. un joueur ayant
+            // complété les quêtes de palier 1 à 3 du Garde sans jamais avoir encore posé son Acte).
+            ClaimTier tier = maybeTier.get();
+            int size = tier.activeSize();
             int minOffset = ClaimTier.minOffset(size);
             int maxOffset = ClaimTier.maxOffset(size);
             pending.put(player.getUniqueId(), new PendingPreview(
                     world.getName(), centerX, centerZ, System.currentTimeMillis() + PREVIEW_TIMEOUT_MILLIS));
 
             player.sendMessage(MM.deserialize(
-                    "<gold>Aperçu du claim :</gold> <white><size>x<size></white> "
+                    "<gold>Aperçu du claim</gold> <gray>(<tier>)</gray> <gold>:</gold> <white><size>x<size></white> "
                             + "<gray>(<minx>,<minz>) → (<maxx>,<maxz>)</gray>",
+                    Placeholder.unparsed("tier", tier.name()),
                     Placeholder.unparsed("size", String.valueOf(size)),
                     Placeholder.unparsed("minx", String.valueOf(centerX + minOffset)),
                     Placeholder.unparsed("minz", String.valueOf(centerZ + minOffset)),
@@ -167,7 +171,7 @@ public final class DeedClaimListener implements Listener {
                     Placeholder.unparsed("maxz", String.valueOf(centerZ + maxOffset))));
             player.sendMessage(MM.deserialize(
                     "<gray>Réservation future :</gray> <white><size>x<size></white>",
-                    Placeholder.unparsed("size", String.valueOf(ClaimTier.TIER_1.reservationSize()))));
+                    Placeholder.unparsed("size", String.valueOf(tier.reservationSize()))));
             player.sendMessage(MM.deserialize(
                     "<yellow>Clique à nouveau au même endroit avec l'Acte pour confirmer.</yellow>"));
         })).exceptionally(error -> null);
@@ -176,36 +180,44 @@ public final class DeedClaimListener implements Listener {
     private void confirm(Player player, World world, int centerX, int centerZ, ItemStack deed) {
         pending.remove(player.getUniqueId());
 
-        int activeSize = ClaimTier.TIER_1.activeSize();
-        int activeMin = ClaimTier.minOffset(activeSize);
-        int activeMax = ClaimTier.maxOffset(activeSize);
-        int reservedSize = ClaimTier.TIER_1.reservationSize();
-        int reservedMin = ClaimTier.minOffset(reservedSize);
-        int reservedMax = ClaimTier.maxOffset(reservedSize);
-        int minY = world.getMinHeight();
-        // Toujours borné par effectiveMaxHeight (config claims.max-height) : la hauteur totale du
-        // monde peut dépasser cette limite, auquel cas ClaimService#create refuserait TOO_LARGE.
-        int maxY = Math.min(world.getMaxHeight() - 1, minY + claimService.effectiveMaxHeight(player) - 1);
+        claimService.highestEntitledTier(player.getUniqueId()).thenAccept(maybeTier -> runOnMainThread(() -> {
+            if (maybeTier.isEmpty()) {
+                player.sendMessage(MM.deserialize(
+                        "<red>Tu n'as pas (ou plus) le droit de poser un claim ici.</red>"));
+                return;
+            }
+            ClaimTier tier = maybeTier.get();
+            int activeSize = tier.activeSize();
+            int activeMin = ClaimTier.minOffset(activeSize);
+            int activeMax = ClaimTier.maxOffset(activeSize);
+            int reservedSize = tier.reservationSize();
+            int reservedMin = ClaimTier.minOffset(reservedSize);
+            int reservedMax = ClaimTier.maxOffset(reservedSize);
+            int minY = world.getMinHeight();
+            // Toujours borné par effectiveMaxHeight (config claims.max-height) : la hauteur totale du
+            // monde peut dépasser cette limite, auquel cas ClaimService#create refuserait TOO_LARGE.
+            int maxY = Math.min(world.getMaxHeight() - 1, minY + claimService.effectiveMaxHeight(player) - 1);
 
-        Location activePos1 = new Location(world, centerX + activeMin, minY, centerZ + activeMin);
-        Location activePos2 = new Location(world, centerX + activeMax, maxY, centerZ + activeMax);
-        Location reservedPos1 = new Location(world, centerX + reservedMin, minY, centerZ + reservedMin);
-        Location reservedPos2 = new Location(world, centerX + reservedMax, maxY, centerZ + reservedMax);
+            Location activePos1 = new Location(world, centerX + activeMin, minY, centerZ + activeMin);
+            Location activePos2 = new Location(world, centerX + activeMax, maxY, centerZ + activeMax);
+            Location reservedPos1 = new Location(world, centerX + reservedMin, minY, centerZ + reservedMin);
+            Location reservedPos2 = new Location(world, centerX + reservedMax, maxY, centerZ + reservedMax);
 
-        String id = "main_" + player.getUniqueId();
-        claimService.create(player, id, activePos1, activePos2, reservedPos1, reservedPos2)
-                .thenAccept(outcome -> runOnMainThread(() -> {
-                    if (outcome == ClaimService.CreateOutcome.CREATED) {
-                        consumeOne(player, deed);
-                        player.sendMessage(MM.deserialize(
-                                "<green>Ton claim principal a été créé :</green> <white><id></white>",
-                                Placeholder.unparsed("id", id)));
-                    } else {
-                        player.sendMessage(MM.deserialize(
-                                "<red>Impossible de créer le claim ici :</red> <white><reason></white>",
-                                Placeholder.unparsed("reason", outcome.name())));
-                    }
-                })).exceptionally(error -> null);
+            String id = "main_" + player.getUniqueId();
+            claimService.create(player, id, activePos1, activePos2, reservedPos1, reservedPos2)
+                    .thenAccept(outcome -> runOnMainThread(() -> {
+                        if (outcome == ClaimService.CreateOutcome.CREATED) {
+                            consumeOne(player, deed);
+                            player.sendMessage(MM.deserialize(
+                                    "<green>Ton claim principal a été créé :</green> <white><id></white>",
+                                    Placeholder.unparsed("id", id)));
+                        } else {
+                            player.sendMessage(MM.deserialize(
+                                    "<red>Impossible de créer le claim ici :</red> <white><reason></white>",
+                                    Placeholder.unparsed("reason", outcome.name())));
+                        }
+                    })).exceptionally(error -> null);
+        })).exceptionally(error -> null);
     }
 
     private void consumeOne(Player player, ItemStack deed) {

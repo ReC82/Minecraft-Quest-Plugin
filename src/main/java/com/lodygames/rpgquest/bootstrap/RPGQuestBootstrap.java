@@ -942,7 +942,8 @@ public final class RPGQuestBootstrap {
                 flattenService, zoneRegistry, zoneSelectionService, portalRegistry, destinationRegistry,
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
                 worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry,
-                questProgressEngine, questEngine, variableRepository, travelBeaconService, waypointService, plugin);
+                questProgressEngine, questEngine, variableRepository, travelBeaconService, waypointService,
+                claimService, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

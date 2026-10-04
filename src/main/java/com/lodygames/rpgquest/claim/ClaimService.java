@@ -4,6 +4,7 @@ import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.claim.model.Claim;
 import com.lodygames.rpgquest.claim.model.ClaimFlags;
+import com.lodygames.rpgquest.claim.model.ClaimTier;
 import com.lodygames.rpgquest.config.ClaimConfig;
 import com.lodygames.rpgquest.config.ConfigService;
 import com.lodygames.rpgquest.database.ClaimActionOutcome;
@@ -59,6 +60,16 @@ public final class ClaimService implements PluginService {
      */
     public static final String CLAIM_TIER_1_KEY = "CLAIM_TIER_1";
     public static final String CLAIM_TIER_1_VALUE = "true";
+
+    /**
+     * Issue #179 : une variable {@code CLAIM_TIER_<n>} par palier (même convention que {@link
+     * #CLAIM_TIER_1_KEY}), posée par la récompense {@code VARIABLE} de la quête de palier
+     * correspondante — jamais réévaluée à partir d'un claim existant : c'est l'<strong>entitlement</strong>
+     * du joueur, indépendant du fait qu'il ait déjà posé son claim principal ou non.
+     */
+    public static String tierKey(ClaimTier tier) {
+        return "CLAIM_TIER_" + (tier.ordinal() + 1);
+    }
 
     private final RPGQuestPlugin plugin;
     private final ClaimRepository claimRepository;
@@ -275,6 +286,110 @@ public final class ClaimService implements PluginService {
     public CompletableFuture<Boolean> hasClaimTierOne(UUID playerId) {
         return variableRepository.get(playerId, CLAIM_TIER_1_KEY)
                 .thenApply(opt -> opt.map(CLAIM_TIER_1_VALUE::equals).orElse(false));
+    }
+
+    /**
+     * Issue #179 : le palier le plus haut auquel {@code playerId} a droit (variables {@code
+     * CLAIM_TIER_1}..{@code CLAIM_TIER_5}), ou vide s'il n'a encore aucun droit. Utilisé par {@code
+     * DeedClaimListener} pour poser directement un claim au bon palier si le joueur a déjà complété
+     * des quêtes de palier supérieur avant d'avoir posé son claim principal — jamais recalculé à
+     * partir d'un claim existant, uniquement de l'entitlement déclaratif.
+     */
+    public CompletableFuture<Optional<ClaimTier>> highestEntitledTier(UUID playerId) {
+        ClaimTier[] tiers = ClaimTier.values();
+        CompletableFuture<Optional<ClaimTier>> result = CompletableFuture.completedFuture(Optional.empty());
+        for (int i = tiers.length - 1; i >= 0; i--) {
+            ClaimTier tier = tiers[i];
+            result = result.thenCompose(found -> found.isPresent()
+                    ? CompletableFuture.completedFuture(found)
+                    : variableRepository.get(playerId, tierKey(tier))
+                            .thenApply(opt -> opt.filter(CLAIM_TIER_1_VALUE::equals).isPresent()
+                                    ? Optional.of(tier) : Optional.empty()));
+        }
+        return result;
+    }
+
+    public enum UpgradeOutcome {
+        UPGRADED, NO_CLAIM_YET, ALREADY_AT_TIER_OR_HIGHER, NOT_SQUARE, OVERLAPS_CLAIM, OVERLAPS_RESERVATION
+    }
+
+    /**
+     * Issue #179 : fait grandir le claim principal déjà posé par {@code owner} jusqu'à {@code
+     * newTier}, centré sur le <strong>même point</strong> que son claim actuel (jamais une nouvelle
+     * position) — seules les bornes actives/réservation changent, jamais l'id, le monde, les
+     * membres ou les drapeaux. {@link #NO_CLAIM_YET} si {@code owner} n'a pas encore posé de claim
+     * principal (l'entitlement reste malgré tout acquis via la variable {@code CLAIM_TIER_n} — voir
+     * {@link #highestEntitledTier}, qui posera le bon palier dès la première pose). Jamais de
+     * rétrogradation : {@link #ALREADY_AT_TIER_OR_HIGHER} si le claim est déjà à ce palier ou plus
+     * grand (idempotent, protège contre un double déclenchement de la récompense).
+     */
+    public CompletableFuture<UpgradeOutcome> upgradeTier(UUID owner, ClaimTier newTier) {
+        Optional<Claim> maybeClaim = mainClaimOf(owner);
+        if (maybeClaim.isEmpty()) {
+            return CompletableFuture.completedFuture(UpgradeOutcome.NO_CLAIM_YET);
+        }
+        Claim claim = maybeClaim.get();
+        if (claim.width() != claim.depth()) {
+            return CompletableFuture.completedFuture(UpgradeOutcome.NOT_SQUARE);
+        }
+        if (claim.width() >= newTier.activeSize()) {
+            return CompletableFuture.completedFuture(UpgradeOutcome.ALREADY_AT_TIER_OR_HIGHER);
+        }
+
+        int currentActiveSize = claim.width();
+        int centerX = claim.minX() - ClaimTier.minOffset(currentActiveSize);
+        int centerZ = claim.minZ() - ClaimTier.minOffset(currentActiveSize);
+
+        int activeMin = ClaimTier.minOffset(newTier.activeSize());
+        int activeMax = ClaimTier.maxOffset(newTier.activeSize());
+        int reservedMin = ClaimTier.minOffset(newTier.reservationSize());
+        int reservedMax = ClaimTier.maxOffset(newTier.reservationSize());
+
+        int newMinX = centerX + activeMin;
+        int newMaxX = centerX + activeMax;
+        int newMinZ = centerZ + activeMin;
+        int newMaxZ = centerZ + activeMax;
+        int newReservedMinX = centerX + reservedMin;
+        int newReservedMaxX = centerX + reservedMax;
+        int newReservedMinZ = centerZ + reservedMin;
+        int newReservedMaxZ = centerZ + reservedMax;
+
+        Claim upgraded;
+        try {
+            upgraded = new Claim(claim.id(), claim.owner(), claim.world(),
+                    newMinX, claim.minY(), newMinZ, newMaxX, claim.maxY(), newMaxZ,
+                    newReservedMinX, claim.reservedMinY(), newReservedMinZ,
+                    newReservedMaxX, claim.reservedMaxY(), newReservedMaxZ,
+                    claim.members(), claim.flags());
+        } catch (IllegalArgumentException e) {
+            return CompletableFuture.completedFuture(UpgradeOutcome.NOT_SQUARE);
+        }
+
+        for (Claim existing : claimsInWorld(claim.world())) {
+            if (existing.id().equals(claim.id())) {
+                continue;
+            }
+            if (upgraded.overlaps(existing)) {
+                return CompletableFuture.completedFuture(UpgradeOutcome.OVERLAPS_CLAIM);
+            }
+            if (upgraded.overlapsReservation(existing)) {
+                return CompletableFuture.completedFuture(UpgradeOutcome.OVERLAPS_RESERVATION);
+            }
+        }
+
+        return claimRepository.updateBounds(claim.id(), owner,
+                        newMinX, claim.minY(), newMinZ, newMaxX, claim.maxY(), newMaxZ,
+                        newReservedMinX, claim.reservedMinY(), newReservedMinZ,
+                        newReservedMaxX, claim.reservedMaxY(), newReservedMaxZ)
+                .thenCompose(outcome -> {
+                    if (outcome != ClaimActionOutcome.SUCCESS) {
+                        return CompletableFuture.completedFuture(UpgradeOutcome.NO_CLAIM_YET);
+                    }
+                    return claimRepository.allClaims().thenApply(list -> {
+                        runOnMainThread(() -> applyLoaded(list));
+                        return UpgradeOutcome.UPGRADED;
+                    });
+                });
     }
 
     /**

@@ -45,6 +45,13 @@ public final class ClaimRepository {
     private static final String DELETE_MEMBER = "DELETE FROM claim_members WHERE claim_id = ? AND member_uuid = ?";
     private static final String UPDATE_REDSTONE_FLAG =
             "UPDATE claims SET allow_public_redstone = ? WHERE id = ? AND owner_uuid = ?";
+    /** Issue #179 : montée de palier — redimensionne un claim existant, jamais sa position/monde/id/membres/drapeaux. */
+    private static final String UPDATE_BOUNDS = """
+            UPDATE claims SET min_x = ?, min_y = ?, min_z = ?, max_x = ?, max_y = ?, max_z = ?,
+                               reserved_min_x = ?, reserved_min_y = ?, reserved_min_z = ?,
+                               reserved_max_x = ?, reserved_max_y = ?, reserved_max_z = ?
+            WHERE id = ? AND owner_uuid = ?
+            """;
 
     private final DatabaseManager database;
     private final SqlDialect dialect;
@@ -185,6 +192,41 @@ public final class ClaimRepository {
                 }
             }
             return checkOwner(connection, id, requester);
+        });
+    }
+
+    /**
+     * Issue #179 : persiste de nouvelles bornes (actives + réservation) pour un claim déjà existant
+     * — jamais sa position (centre inchangé par l'appelant), jamais son monde/id/membres/drapeaux.
+     * Même discipline que {@link #setAllowPublicRedstone} : la vérification de propriétaire est
+     * intégrée à la requête, un seul aller-retour.
+     */
+    public CompletableFuture<ClaimActionOutcome> updateBounds(String id, UUID owner,
+            int minX, int minY, int minZ, int maxX, int maxY, int maxZ,
+            int reservedMinX, int reservedMinY, int reservedMinZ,
+            int reservedMaxX, int reservedMaxY, int reservedMaxZ) {
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(UPDATE_BOUNDS)) {
+                statement.setInt(1, minX);
+                statement.setInt(2, minY);
+                statement.setInt(3, minZ);
+                statement.setInt(4, maxX);
+                statement.setInt(5, maxY);
+                statement.setInt(6, maxZ);
+                statement.setInt(7, reservedMinX);
+                statement.setInt(8, reservedMinY);
+                statement.setInt(9, reservedMinZ);
+                statement.setInt(10, reservedMaxX);
+                statement.setInt(11, reservedMaxY);
+                statement.setInt(12, reservedMaxZ);
+                statement.setString(13, id);
+                statement.setString(14, owner.toString());
+                int updated = statement.executeUpdate();
+                if (updated == 1) {
+                    return ClaimActionOutcome.SUCCESS;
+                }
+            }
+            return checkOwner(connection, id, owner);
         });
     }
 

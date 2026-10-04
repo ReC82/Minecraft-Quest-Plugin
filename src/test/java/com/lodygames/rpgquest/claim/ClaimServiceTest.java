@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.claim.model.Claim;
+import com.lodygames.rpgquest.claim.model.ClaimTier;
 import com.lodygames.rpgquest.config.ConfigService;
 import com.lodygames.rpgquest.database.ClaimActionOutcome;
 import com.lodygames.rpgquest.database.ClaimRepository;
@@ -358,5 +359,90 @@ class ClaimServiceTest {
                 loc(748, 60, 748), loc(752, 63, 752), loc(700, 60, 700), loc(800, 63, 800)));
 
         assertEquals(ClaimService.CreateOutcome.CREATED, outcome);
+    }
+
+    // ---- highestEntitledTier (issue #179) ------------------------------------------------------
+
+    @Test
+    void highestEntitledTierIsEmptyWithoutAnyEntitlement() throws Exception {
+        PlayerMock player = server.addPlayer();
+        profileRepository.findOrCreate(player.getUniqueId(), player.getName()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        var tier = claimService.highestEntitledTier(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertTrue(tier.isEmpty());
+    }
+
+    @Test
+    void highestEntitledTierReturnsTheHighestGrantedTierRegardlessOfOrder() throws Exception {
+        PlayerMock player = addPlayer(); // CLAIM_TIER_1 déjà accordé.
+        PlayerVariableRepository variableRepository = new PlayerVariableRepository(database);
+        variableRepository.set(player.getUniqueId(), "CLAIM_TIER_3", "true").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        var tier = claimService.highestEntitledTier(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(java.util.Optional.of(ClaimTier.TIER_3), tier);
+    }
+
+    // ---- upgradeTier (issue #179) ---------------------------------------------------------------
+
+    @Test
+    void upgradeTierFailsWithoutAMainClaimYet() throws Exception {
+        PlayerMock owner = addPlayer();
+
+        ClaimService.UpgradeOutcome outcome = claimService.upgradeTier(owner.getUniqueId(), ClaimTier.TIER_2)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(ClaimService.UpgradeOutcome.NO_CLAIM_YET, outcome);
+    }
+
+    @Test
+    void upgradeTierIsIdempotentWhenAlreadyAtTierOrHigher() throws Exception {
+        PlayerMock owner = addPlayer();
+        // Claim 10×10 (TIER_2) posé directement, réservation complète 100×100.
+        await(claimService.create(owner, "home", loc(1097, 60, 1097), loc(1106, 63, 1106),
+                loc(1050, 60, 1050), loc(1149, 63, 1149)));
+
+        ClaimService.UpgradeOutcome outcome = claimService.upgradeTier(owner.getUniqueId(), ClaimTier.TIER_1)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(ClaimService.UpgradeOutcome.ALREADY_AT_TIER_OR_HIGHER, outcome);
+        assertEquals(10, claimService.find("home").get().width(), "jamais de rétrogradation");
+    }
+
+    @Test
+    void upgradeTierGrowsTheClaimCenteredOnTheSamePoint() throws Exception {
+        PlayerMock owner = addPlayer();
+        // TIER_1 (5×5) centré sur (2002,2002) : 2000..2004.
+        await(claimService.create(owner, "home", loc(2000, 60, 2000), loc(2004, 63, 2004)));
+
+        ClaimService.UpgradeOutcome outcome = claimService.upgradeTier(owner.getUniqueId(), ClaimTier.TIER_2)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+
+        assertEquals(ClaimService.UpgradeOutcome.UPGRADED, outcome);
+        Claim upgraded = claimService.find("home").orElseThrow();
+        assertEquals(10, upgraded.width(), "TIER_2 doit être 10×10");
+        assertEquals(10, upgraded.depth());
+        assertEquals(100, upgraded.reservedMaxX() - upgraded.reservedMinX() + 1, "réservation toujours 100×100");
+        assertTrue(upgraded.minX() <= 2002 && upgraded.maxX() >= 2002
+                        && upgraded.minZ() <= 2002 && upgraded.maxZ() >= 2002,
+                "le centre (2002,2002) doit rester inclus après la montée de palier : " + upgraded);
+    }
+
+    @Test
+    void upgradeTierRejectsOverlapWithANeighboringClaim() throws Exception {
+        PlayerMock owner = addPlayer();
+        PlayerMock neighbour = addPlayer();
+        // TIER_1 (5×5, réservation = actif, comme un claim posé avant l'issue #179) à (3002,3002).
+        await(claimService.create(owner, "home", loc(3000, 60, 3000), loc(3004, 63, 3004)));
+        // Voisin à 30 blocs : hors du 5×5 actuel, mais dans le 80×80 d'un futur TIER_5.
+        await(claimService.create(neighbour, "neighbour", loc(3030, 60, 3030), loc(3034, 63, 3034)));
+
+        ClaimService.UpgradeOutcome outcome = claimService.upgradeTier(owner.getUniqueId(), ClaimTier.TIER_5)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(ClaimService.UpgradeOutcome.OVERLAPS_CLAIM, outcome);
+        assertEquals(5, claimService.find("home").get().width(), "le claim ne doit pas changer en cas de refus");
     }
 }

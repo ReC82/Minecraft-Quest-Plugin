@@ -107,7 +107,7 @@ class RpgAdminTestShortcutsCommandTest {
         command = new RpgAdminCommand(
                 null, null, null, null, null, null, null, null, null, null, null, null,
                 storyService, null, null, null,
-                questProgressEngine, questEngine, variableRepository, null, null, plugin);
+                questProgressEngine, questEngine, variableRepository, null, null, null, plugin);
     }
 
     @AfterEach

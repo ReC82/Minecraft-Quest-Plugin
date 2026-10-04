@@ -332,6 +332,28 @@ travel.rune.channel-seconds` (défaut 10), `cooldownSeconds = travel.rune.cooldo
 Les valeurs de canalisation/cooldown sont lues **au démarrage** du plugin (comme le `3` littéral de
 la Pierre de retour) — un changement de config nécessite un redémarrage pour ces deux champs.
 
+### Secours Hub (issue #154)
+
+Un joueur peut rester coincé dans le Hub (trou sans sortie — pose/casse interdites). Décision
+produit explicite : réutiliser **cette même Rune** comme point d'accès au secours, jamais un second
+objet. `ItemTravelDefinition#freeRescueWorld` (nouveau champ, optionnel, vide pour tout autre objet
+dont la Pierre de retour) déclare un monde où l'objet téléporte **immédiatement et gratuitement**
+vers `destination` — **avant** toute évaluation de `requiredWorld`/cooldown, donc entièrement
+indépendant de la restriction au Wild ci-dessus. La Rune est enregistrée avec `freeRescueWorld =
+hub.world` : dans le Hub, clic droit → retour instantané au spawn configuré, sans canalisation (donc
+jamais annulé par un petit dégât/chute — non pertinent puisqu'il n'y a plus de canalisation à
+annuler), sans cooldown, sans consommation (déjà le cas partout). Hors Hub, le comportement normal
+(restriction Wild + canalisation + cooldown) est strictement inchangé.
+
+**Disponibilité garantie** : `player.StarterKitListener` ne marque plus `RUNE_RAPPEL_GRANTED` que si
+la Rune a réellement pu être ajoutée à l'inventaire — avant ce correctif, un inventaire plein à la
+toute première connexion faisait perdre l'objet pour toujours (le marqueur était posé même en cas
+d'échec de `addItem`). `hub.HubRescueFallbackService` (balayage périodique, 5 s, coût négligeable)
+redonne silencieusement la Rune à tout joueur du Hub qui en serait dépourvu dès qu'une place se
+libère ; si l'inventaire reste plein, il ouvre un **accès de secours purement graphique** (inventaire
+vanilla 1 bouton « Retour au spawn du Hub », aucun mod/resource pack) — jamais une commande requise
+pour le parcours normal.
+
 ## Avertissement avant entrée dans le Wild
 
 `travel.WildEntryWarningService` implémente `travel.WorldPortalEntryGuard`, une politique
@@ -482,11 +504,25 @@ destination, jamais fusionnée dans leurs tables/identités — `TravelBeaconSer
     fermeture.
   - **Recherche graphique** (waypoints uniquement, **dans le monde choisi** — jamais un résultat
     d'un autre monde) : enclume virtuelle (`InventoryType.ANVIL` créée sans bloc réel, pattern
-    standard des GUI Paper/Bukkit), coût de réparation forcé à **0** à chaque `PrepareAnvilEvent`
-    (aucun coût XP), aucun objet du menu réellement récupérable (clic sur le résultat toujours
-    annulé, le texte est lu puis l'objet jeté). Filtrage **insensible à la casse et aux accents**
-    (`Normalizer` NFD + suppression des marques combinantes) sur le nom d'affichage et le biome. Le
-    monde reste mémorisé pendant tout le détour par l'enclume (jamais perdu).
+    standard des GUI Paper/Bukkit), coût de réparation forcé à **0** à chaque `PrepareAnvilEvent`,
+    sur **`repairCost` et `repairCostAmount`** (retour joueur 2026-10-04 : un « Coût : 1 » résiduel
+    restait visible en jeu malgré `repairCost` déjà à 0 — `repairCostAmount` est un second champ
+    vanilla distinct, documenté comme la cause la plus probable ; **le zéro de ces deux champs
+    reste `PENDING MANUAL VALIDATION`** : `PrepareAnvilEvent` exige un `AnvilView` que la version
+    actuelle de MockBukkit ne simule pas, donc seul le filtrage qui *suivrait* une vraie saisie est
+    vérifié automatiquement, jamais la saisie elle-même ni l'affichage du coût), aucun objet du menu
+    réellement récupérable (clic sur le résultat toujours annulé, le texte est lu puis l'objet
+    jeté). L'objet de saisie porte désormais une astuce explicite (« Clique sur l'étiquette à droite
+    pour rechercher » — Entrée ne valide jamais une recherche dans cette interface Minecraft).
+    Filtrage **insensible à la casse et aux accents** (`Normalizer` NFD + suppression des marques
+    combinantes) sur le nom d'affichage et le biome — vérifié de bout en bout via un vrai
+    `InventoryClickEvent` sur le résultat (slot 2), **le résultat lui-même étant construit dans le
+    test** comme le ferait `handlePrepareAnvil` pour une saisie donnée (même limitation MockBukkit
+    que ci-dessus). **Indicateur de recherche active** (retour joueur 2026-10-04) : une fois
+    filtré, la liste affiche désormais le texte recherché, le nombre de résultats, et un bouton
+    dédié pour effacer le filtre (slot 46) — jusqu'ici, un filtre actif restait invisible au retour
+    sur la liste, donnant l'impression qu'il n'avait eu aucun effet. Le monde reste mémorisé
+    pendant tout le détour par l'enclume (jamais perdu).
   - **Revalidation stricte au départ** (`hasActivelyDiscovered` pour les waypoints, résolution
     fraîche pour claim/village) : un clic périmé échoue proprement, sans téléportation. Arrivée sûre
     via `RandomSafeLocationFinder#findAtColumn` (waypoints/claim) ou position administrée exacte
@@ -522,6 +558,15 @@ secondaire** (deux waypoints du même biome n'affichent donc plus jamais le mêm
   en défense supplémentaire.
 - **Réserve épuisée** : nom de secours unique généré (`"Avant-poste N"`, N incrémenté jusqu'à
   trouver un nom libre) — jamais un échec de génération.
+- **Noms lisibles** (retour joueur 2026-10-04) : la réserve bundlée (`waypoint-names.txt`) ne
+  concatène plus deux mots sans séparateur (ex. l'ancien `Lacgivre`) — grammaire générée
+  automatiquement `<nom> de <nom>` (ex. `Lac de Givre`, `Lac d'Or` avec élision devant voyelle) ou
+  `<adjectif accordé en genre> <nom>` (ex. `Lac Gris`, `Haute Source`), sans jamais insérer un
+  espace arbitraire au milieu d'un mot. Les noms déjà attribués par la migration V22 sont renommés
+  par la migration **V23** via une table de correspondance figée ancien→nouveau nom
+  (`SchemaMigrator#RENAMED_DISPLAY_NAMES`, comparaison normalisée insensible casse/accents) : `id`
+  et découvertes **jamais** modifiés, unicité revérifiée par l'index SQL existant (aucune
+  collision possible, la correspondance est injective sur les 220 entrées du catalogue).
 - **Waypoints déjà existants** : migration **V22** (voir plus bas) attribue un nom à chaud à chaque
   ligne déjà en base, dans un ordre stable (par `id`), sans jamais toucher l'`id` ni les découvertes
   joueurs déjà enregistrées.
@@ -545,8 +590,15 @@ secondaire** (deux waypoints du même biome n'affichent donc plus jamais le mêm
   emplacement accessible proche de sa position actuelle — `id`/nom d'affichage/instance de
   biome/découvertes **jamais** modifiés, seuls les blocs ajoutés par la structure sont déplacés
   (jamais le sol/la végétation environnante).
-- **Hors périmètre de cette livraison** (voir le rapport de session pour le détail) :
-  administration PlugAdmin des bornes/villages/politiques (#152).
+- **Control Panel (issue #152, terminé)** : page `/travel` (PlugAdmin) en **lecture seule**, action
+  agent `travel.catalog` (réutilise `WaypointService#all()`/`TravelBeaconService#all()`, jamais un
+  scan monde). Listes séparées waypoints/bornes (id, nom, monde, biome/instance, coordonnées,
+  actif, version de modèle), pairage waypoint↔borne visible pour chaque ligne (y compris les
+  waypoints du Hub **sans** borne appariée), compteurs par monde, recherche + filtre par monde,
+  pagination (20/page), horodatage de fraîcheur de la donnée, distinction explicite **enregistré**
+  (dernier relevé agent) vs **vérifié physiquement** (voir `/rpgadmin travel diagnose` pour ça).
+  Aucun éditeur (création/déplacement/désactivation) : hors périmètre explicite du ticket, qui
+  demandait la consultation d'abord.
 
 ## Tests
 
@@ -581,6 +633,15 @@ même bloc de mission.
 Voyage par objet, suite : `ItemTravelServiceTest` couvre aussi le **cooldown** de la Rune
 (un voyage réussi bloque l'usage suivant, cooldown persisté) et le **refus hors du monde requis**.
 
+Secours Hub (issue #154) : `ItemTravelServiceTest` — `freeRescueWorldTeleportsImmediatelyIgnoringCooldownAndRequiredWorld`
+(le chemin de secours gratuit est bien atteint même avec un `requiredWorld` différent, preuve
+indirecte via l'exception `UnimplementedOperationException` de `teleportAsync`, jamais présentée
+comme une validation de la téléportation cliente elle-même) et
+`outsideTheFreeRescueWorldTheNormalRequiredWorldRestrictionStillApplies` (comportement normal
+inchangé partout ailleurs). `StarterKitListenerTest` (nouveau) : distribution à la première
+connexion, aucune duplication si déjà possédée, et surtout **inventaire plein à la première
+connexion ne marque plus jamais la Rune distribuée** (retenté à la connexion suivante).
+
 Système soulbound générique : `SoulboundItemListenerTest` (remplace `ReturnStoneGuardListenerTest`) —
 tout objet soulbound enregistré est intombable au drop et à la mort, restauré tel quel à la
 réapparition sans jamais dupliquer, un objet quelconque jamais concerné.
@@ -610,3 +671,15 @@ effective au spawn du Hub, **actionbar propre — 100% puis disparition
 immédiate, aucun résidu type « 98% »**, **refus propre et bref hors du
 monde `claims`**, **impossible à jeter (touche Q)**, **jamais perdue à la
 mort, redonnée automatiquement à la réapparition**).
+
+`PENDING MANUAL VALIDATION`, retours joueur 2026-10-04 (issues #154/#156-recherche/#159) :
+- Secours Hub : clic droit sur la Rune dans un trou du Hub → retour immédiat au spawn, sans message
+  « Cet objet ne fonctionne pas ici » ; vérifier aussi inventaire plein (le filet graphique doit
+  apparaître dans la minute) et après mort/reconnexion/reset.
+- Recherche de waypoints : taper un nom dans l'enclume puis cliquer l'étiquette de résultat
+  retrouve bien la destination attendue sans distinction de casse/accents ; l'indicateur de
+  recherche active + son bouton d'effacement sont visibles ; **le coût XP affiché (`Coût : …`) doit
+  être absent** — seul point non vérifiable automatiquement dans cet environnement de test.
+- Faim dans le Wild (issue #159) : après une exploration prolongée (plusieurs minutes de sprint sans
+  manger), la faim doit baisser normalement ; si elle reste bloquée, chercher `[HUNGER-TRACE]` dans
+  les logs serveur et vérifier le monde qui y apparaît (voir `docs/current_state.md`).

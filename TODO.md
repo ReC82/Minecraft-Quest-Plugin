@@ -642,9 +642,10 @@
 -   [x] Mod client prototype (Fabric, séparé)
 
 ## Plus tard
--   [ ] **Waypoints #124 — suites** : lecture `/waypoints` (lecture seule) ou action agent
-    `list` dans PlugAdmin ; identité « instance de biome » par vrai flood-fill borné de blob
-    contigu (le MVP utilise une tuile spatiale biome-typée, cf. `docs/WAYPOINTS.md` §1) ;
+-   [x] **Waypoints #124 — suites (partiel)** : lecture `/waypoints`/bornes en lecture seule
+    livrée via l'action agent `travel.catalog` + la page Control Panel `/travel` (issue #152,
+    2026-10-04). Restent en attente : identité « instance de biome » par vrai flood-fill borné de
+    blob contigu (le MVP utilise une tuile spatiale biome-typée, cf. `docs/WAYPOINTS.md` §1) ;
     passe de re-rendu des waypoints existants lors d'un changement de `model-version`.
 -   [ ] **Waypoints #122** : protection *fonctionnelle* anti-enfermement de proximité
     (noyau strict + zone tampon + chemin praticable garanti + signal vertical repérable de

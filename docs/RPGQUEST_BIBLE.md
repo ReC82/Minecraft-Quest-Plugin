@@ -1068,7 +1068,18 @@ Règles appliquées (idempotentes) :
     annulé pour toute diminution (sprint/sauts/épuisement) ; une garde périodique (1 s) neutralise
     aussi l'épuisement silencieux (`exhaustion`/`saturation` internes, sans événement dédié). Vie,
     faim et saturation restaurées au maximum à la connexion, à tout changement de monde vers le Hub
-    et à une réapparition dans le Hub — jamais dans les autres mondes.
+    et à une réapparition dans le Hub — jamais dans les autres mondes. Strictement scopé par
+    `isHub(player)` à chaque appel : le Wild garde sa survie normale (couvert automatiquement). Un
+    signalement (#159, 2026-10-04) rapportant la faim bloquée aussi dans le Wild n'a trouvé aucune
+    cause côté code/config à l'audit ; une trace `[HUNGER-TRACE]` (temporaire) log désormais toute
+    annulation réelle avec le monde concerné, pour confirmer/infirmer depuis les logs serveur.
+-   **secours gratuit dans le Hub via la Rune de rappel** (issue #154) : la même Rune
+    (`ItemTravelDefinition#freeRescueWorld = hub.world`) téléporte, dans le Hub uniquement,
+    immédiatement et sans canalisation/cooldown vers `SpawnService#resolve` — pour un joueur coincé
+    sans pouvoir poser/casser. Comportement Wild (restriction + canalisation + cooldown) inchangé.
+    `hub.HubRescueFallbackService` complète un éventuel inventaire plein par un accès graphique
+    minimal (1 bouton), et `player.StarterKitListener` ne marque plus la Rune distribuée si elle
+    n'a pas pu être réellement ajoutée (retenté à la connexion suivante).
 -   claims interdits (`ClaimService` refuse toute création dans le monde exact de `hub.world`, voir section 8).
 
 Log attendu au démarrage/chargement :
@@ -1133,9 +1144,12 @@ trois catégories, toutes revalidées fraîchement à chaque clic :
 - **Waypoints découverts** : ouvre d'abord un **choix du monde** (Hub/Wild toujours proposés même à
   0 découverte, tout autre monde extensible dès qu'une découverte active y existe), puis la liste —
   uniquement celle du joueur courant, **filtrée au monde choisi**. Pagination (45/page), recherche
-  graphique via une enclume virtuelle (`InventoryType.ANVIL`, aucun coût XP, insensible
-  casse/accents, filtre sur le **nom d'affichage** — voir ci-dessous), revalidation stricte
-  (`hasActivelyDiscovered`) et arrivée sûre (`RandomSafeLocationFinder#findAtColumn`).
+  graphique via une enclume virtuelle (`InventoryType.ANVIL`, `repairCost` **et**
+  `repairCostAmount` à 0 — aucun coût XP, `PENDING MANUAL VALIDATION` : non simulable par
+  MockBukkit, voir TRAVEL.md, insensible casse/accents, filtre sur le **nom d'affichage** — voir
+  ci-dessous, indicateur de recherche active + nombre de résultats + bouton d'effacement),
+  revalidation stricte (`hasActivelyDiscovered`) et arrivée sûre
+  (`RandomSafeLocationFinder#findAtColumn`).
 - **Mon claim** (#151) : résout le claim courant via `ClaimService#mainClaimOf` (jamais une
   coordonnée copiée) ; absent → icône grisée + message, jamais un bouton muet. Arrivée au centre du
   claim, vérifiée **dans** son cuboïde actif.
@@ -1150,7 +1164,12 @@ trois catégories, toutes revalidées fraîchement à chaque clic :
 #148 l'enrichira plus tard) ; dédoublonnage à l'import (casse/accents/espaces) ; attribution
 synchrone sans doublon à la génération (+ index SQL unique en défense) ; nom de secours
 (`"Avant-poste N"`) si la réserve est épuisée ; migration **V22** attribue un nom aux waypoints déjà
-existants (id et découvertes joueurs inchangés).
+existants (id et découvertes joueurs inchangés). **Noms lisibles** (retour joueur 2026-10-04) : la
+réserve ne concatène plus deux mots sans séparateur (ex. l'ancien `Lacgivre` → `Lac de Givre`,
+grammaire `<nom> de <nom>` ou `<adjectif accordé> <nom>`) ; migration **V23** renomme les noms déjà
+attribués via une correspondance figée ancien→nouveau (id/découvertes inchangés, unicité
+revérifiée). **Retour « déjà découvert »** : un reclic sur un waypoint déjà découvert affiche
+désormais `Waypoint déjà découvert : <nom>` (silence complet auparavant), sans nouvelle récompense.
 
 **Correction d'un bug de clics (validation en jeu)** : destination, retour et recherche restaient
 silencieux une fois le menu ouvert — l'état du menu (`BeaconMenuSession`) était posé **avant**
@@ -1171,6 +1190,14 @@ existe. Gating indépendant : `travel.waypoint.hub-enabled` (coupe la générati
 `travel.beacon.hub-generation.enabled` (coupe l'appariement de borne seul, le waypoint continue de
 se générer). Tables dédiées `travel_beacons` (migration V19, colonne `biome_instance` V21) et
 `village_centers` (migration V20).
+
+**Control Panel — `/travel` (issue #152, terminé)** : consultation **lecture seule** des
+waypoints/bornes réellement persistés (action agent `travel.catalog`, réutilise
+`WaypointService#all()`/`TravelBeaconService#all()`, jamais un scan monde). Listes séparées avec
+pairage waypoint↔borne visible (y compris les waypoints du Hub sans borne), recherche/filtre par
+monde, pagination, horodatage de fraîcheur, distinction explicite **enregistré** (dernier relevé)
+vs **vérifié physiquement** (`/rpgadmin travel diagnose`). Permission dédiée `TRAVEL_READ` ; aucun
+éditeur (hors périmètre explicite du ticket).
 
 ---
 
@@ -1621,6 +1648,7 @@ database:
 | V20 | `village_centers` | Centres de village du réseau de voyage (#151) |
 | V21 | `travel_beacons.biome_instance` (ALTER) | Appariement borne↔waypoint du Hub (#149), idempotence uniquement |
 | V22 | `waypoints.display_name` (ALTER + backfill + index unique) | Nom d'affichage humain unique par waypoint (#133/#135) |
+| V23 | `waypoints.display_name` (UPDATE via correspondance figée) | Renommage des noms concaténés sans séparateur en noms lisibles (retour joueur 2026-10-04) |
 
 Suivi de version : `PRAGMA user_version` en SQLite (natif, inchangé) ; table portable
 `rpgquest_schema_migrations` en MySQL (#41). `SchemaMigrationRunner` applique les étapes en

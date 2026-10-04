@@ -36,7 +36,22 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   nettoyage ciblé des entités déjà présentes) ; dégâts joueur causés à une entité protégée
   (animaux...) toujours annulés sauf bypass explicite `rpgquest.admin.hub.combat` (issues #30/#31,
   distinct de la construction) ; faim/saturation jamais réduites, restaurées au maximum à
-  l'arrivée (connexion/changement de monde/réapparition) — issue #33, `hub.HubComfortService`.
+  l'arrivée (connexion/changement de monde/réapparition) — issue #33, `hub.HubComfortService`,
+  strictement scopé au monde `hub.world` (`isHub()` par joueur, le Wild garde sa survie normale,
+  couvert par `foodLevelDecreaseInTheWildIsNeverCancelled`/`periodicSweepNeverTouchesPlayersInTheWild`).
+  **Signalement #159** (faim bloquée dans le Wild après les correctifs #33) : audit code + config
+  déployée (`hub.world=world_hub`, `travel.wild-world=wild`, distincts) n'a trouvé aucune cause —
+  trace temporaire `[HUNGER-TRACE]` ajoutée sur toute annulation réelle pour confirmer/infirmer
+  depuis les logs serveur si le signalement persiste après un test prolongé (la saturation posée au
+  maximum dans le Hub retarde naturellement, en vanilla, la baisse de faim dans le Wild le temps
+  qu'elle s'épuise — comportement attendu, pas nécessairement un bug).
+  **Secours Hub (#154)** : la Rune de rappel téléporte désormais aussi, gratuitement et sans
+  canalisation/cooldown, vers le spawn configuré **quand elle est utilisée dans le Hub**
+  (`ItemTravelDefinition#freeRescueWorld`, indépendant de sa restriction `requiredWorld` au Wild) ;
+  filet de secours graphique (`hub.HubRescueFallbackService`) si elle venait à manquer avec
+  l'inventaire plein ; `player.StarterKitListener` ne marque plus jamais la Rune distribuée si
+  `addItem` échoue (inventaire plein à la première connexion), pour réessayer à la connexion
+  suivante au lieu de perdre l'objet pour toujours.
 - **Claims** — terrains protégés créés par les joueurs eux-mêmes, confiance par UUID ; monde
   résidentiel `claims` réellement pacifique (tout dégât joueur annulé, tout mob hostile empêché et
   nettoyé, Nether bloqué en sortie) ; frontière visualisée par particules (propriétaire uniquement,
@@ -108,8 +123,10 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (ouvre d'abord un **choix du monde** — Hub/Wild toujours proposés même à 0 découverte, tout autre
   monde extensible dès qu'une découverte y existe — puis la liste filtrée à ce monde, triée par
   **nom d'affichage**, pagination 45/page, **recherche graphique par enclume virtuelle**
-  `InventoryType.ANVIL` sans bloc réel ni coût XP, insensible casse/accents, monde mémorisé pendant
-  le détour par l'enclume) ; « Mon claim » (résout `ClaimService#mainClaimOf`, jamais une coordonnée
+  `InventoryType.ANVIL` sans bloc réel ni coût XP (`repairCost` **et** `repairCostAmount` à 0,
+  retour joueur 2026-10-04), insensible casse/accents, indicateur de recherche active + nombre de
+  résultats + bouton d'effacement une fois filtré (manquait jusqu'ici, laissant croire que le
+  filtre n'avait aucun effet), monde mémorisé pendant le détour par l'enclume) ; « Mon claim » (résout `ClaimService#mainClaimOf`, jamais une coordonnée
   copiée — icône grisée + message si absent, arrivée revérifiée **dans** le cuboïde actif du claim) ;
   « Villages » (centres administrés `VillageCenter`, table `village_centers`, identité
   **indépendante du monde** — plusieurs centres possibles dans `world_hub`, arrivée à la
@@ -130,16 +147,28 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   relégué en métadonnée secondaire — réserve statique bundlée (`waypoint-names.txt` via
   `WaypointNameCatalog`, jamais d'appel IA au runtime, dédoublonnée à l'import), attribution
   synchrone sans doublon à la génération (+ index SQL unique), nom de secours si la réserve est
-  épuisée, backfill des waypoints déjà existants (migration V22, id/découvertes inchangés). **Bug de
-  clics corrigé** : la session du menu était posée avant l'ouverture de l'inventaire, effacée par la
-  fermeture synchrone de l'ancien menu (même classe que le bug #11 du journal de quêtes) — tous les
-  clics (destination/retour/recherche) restaient silencieux ; corrigé en posant la session après
-  l'ouverture partout, couvert par des tests routant un vrai `InventoryClickEvent`. Migrations
-  **V19** (`travel_beacons`), **V20** (`village_centers`), **V21** (`travel_beacons.biome_instance`,
-  ALTER idempotent) et **V22** (`waypoints.display_name`, ALTER + backfill + index unique). Hors
-  périmètre : administration PlugAdmin (#152). Validation en jeu : `PENDING MANUAL VALIDATION`
-  (couverture automatisée détaillée dans le rapport de session — tout ce qui précède l'appel
-  `teleportAsync` est testé, l'appel lui-même ne l'est jamais dans cet environnement).
+  épuisée, backfill des waypoints déjà existants (migration V22, id/découvertes inchangés).
+  **Noms lisibles (retour joueur 2026-10-04)** : la réserve bundlée ne concatène plus deux mots
+  sans séparateur (ex. l'ancien `Lacgivre`) — grammaire `<nom> de <nom>` ou `<adjectif accordé>
+  <nom>` (ex. `Lac de Givre`), migration **V23** renommant les noms déjà attribués via une table de
+  correspondance figée (`SchemaMigrator#RENAMED_DISPLAY_NAMES`, comparaison normalisée), id et
+  découvertes inchangés, unicité revérifiée par l'index SQL existant. **Retour « déjà découvert »
+  (retour joueur 2026-10-04)** : un reclic sur un waypoint déjà découvert affichait un silence
+  total (clic juste consommé) — affiche désormais `Waypoint déjà découvert : <nom>`, sans nouvelle
+  récompense ni ré-écriture. **Bug de clics corrigé** : la session du menu était posée avant
+  l'ouverture de l'inventaire, effacée par la fermeture synchrone de l'ancien menu (même classe que
+  le bug #11 du journal de quêtes) — tous les clics (destination/retour/recherche) restaient
+  silencieux ; corrigé en posant la session après l'ouverture partout, couvert par des tests routant
+  un vrai `InventoryClickEvent`. Migrations **V19** (`travel_beacons`), **V20** (`village_centers`),
+  **V21** (`travel_beacons.biome_instance`, ALTER idempotent), **V22** (`waypoints.display_name`,
+  ALTER + backfill + index unique) et **V23** (renommage lisible). **Control Panel (#152, terminé)**
+  : page `/travel` en lecture seule (action agent `travel.catalog`), listes séparées
+  waypoints/bornes, pairage waypoint↔borne visible (manquants inclus), recherche/filtre par monde,
+  pagination, horodatage de fraîcheur — aucun éditeur (hors périmètre explicite du ticket).
+  Validation en jeu : `PENDING MANUAL VALIDATION` (couverture automatisée détaillée dans le rapport
+  de session — tout ce qui précède l'appel `teleportAsync` est testé, l'appel lui-même ne l'est
+  jamais dans cet environnement ; la saisie réelle dans l'enclume — `PrepareAnvilEvent`/`AnvilView`
+  — n'est pas non plus simulable par cette version de MockBukkit, voir le rapport).
 - **Reset admin « nouveau joueur »** — `/rpgadmin player resetnew <joueur> confirm`
   (permission `rpgquest.admin.world`, console OK, online **ou** offline) : remet l'état RPGQuest
   d'un seul joueur à l'équivalent « jamais joué » (quêtes, Stories, variables/unlocks dont

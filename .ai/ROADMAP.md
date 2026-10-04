@@ -216,6 +216,80 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-04 (suite overnight — #152/#154 puis retours joueur)
+Branche de départ: feat/control-panel-admin-tools @ aa554c9 (entrée précédente)
+Étape de départ: instruction explicite « continue to #152 and #154 », mêmes autorisations
+  overnight (coder/documenter/committer/pousser/déployer DEV+AWS/redémarrer sans reconfirmation,
+  aucun merge/PROD). En cours de route, retours joueur supplémentaires reçus en conversation
+  (recherche de waypoints peu claire, #154 pas encore terminé côté rune, noms concaténés sans
+  espace, message « déjà découvert » muet) puis ajout explicite des tickets #159 à #163 à la file
+  de travail, priorité #159.
+Étapes terminées:
+(1) DONE — #152 : action agent travel.catalog (lecture de WaypointService#all()/
+  TravelBeaconService#all(), jamais un scan monde) + page Control Panel /travel (permission
+  TRAVEL_READ), tables waypoints/bornes séparées, pairage visible, recherche/filtre monde,
+  pagination, horodatage de fraîcheur. Aucun éditeur (hors périmètre explicite du ticket).
+(2) DONE — #154 : ItemTravelDefinition#freeRescueWorld (nouveau champ optionnel) -- la Rune de
+  rappel téléporte immédiatement et gratuitement vers le spawn quand elle est utilisée dans le Hub,
+  évalué AVANT requiredWorld/cooldown, totalement indépendant du comportement Wild inchangé.
+  StarterKitListener ne marque plus la Rune distribuée si addItem échoue (inventaire plein à la
+  première connexion) -- retenté à la connexion suivante au lieu d'une perte définitive. Nouveau
+  hub.HubRescueFallbackService : balayage périodique qui redonne silencieusement la Rune manquante
+  dès qu'une place se libère, ou ouvre un accès graphique minimal (1 bouton) si l'inventaire reste
+  plein.
+(3) DONE — retours joueur supplémentaires reçus en cours de session, traités dans la même branche :
+  noms de waypoints lisibles (l'ancien générateur concaténait deux mots sans séparateur, ex.
+  "Lacgivre" -> "Lac de Givre" ; migration V23, correspondance figée ancien->nouveau, id/découvertes
+  inchangés) ; indicateur de recherche active + bouton d'effacement dans le menu de bornes (un
+  filtre actif était invisible, donnant l'impression qu'il n'avait aucun effet) ; message « Waypoint
+  déjà découvert : <nom> » au lieu d'un silence complet au reclic ; repairCost ET repairCostAmount
+  zérotés sur l'enclume de recherche (un « Coût : 1 » résiduel signalé malgré repairCost déjà à 0).
+(4) DONE (diagnostic, pas de cause trouvée) — #159 : signalement « faim bloquée aussi dans le Wild »
+  après les correctifs #33. Audit code (HubComfortService strictement scopé par isHub() à chaque
+  appel) + config déployée (hub.world=world_hub, travel.wild-world=wild, distincts, vérifié par
+  téléchargement réel du config.yml via FTP) + 3 tests Wild déjà verts (foodLevelDecreaseInTheWild
+  IsNeverCancelled, periodicSweepNeverTouchesPlayersInTheWild,
+  changingWorldIntoTheWildNeverRestoresAnything) : aucune cause trouvée. Hypothèse la plus probable :
+  la saturation posée au maximum en sortant du Hub retarde normalement, en vanilla, la baisse de
+  faim dans le Wild le temps qu'elle s'épuise -- pas nécessairement un bug. Trace temporaire
+  [HUNGER-TRACE] ajoutée (monde + joueur) sur toute annulation réelle, pour trancher depuis les logs
+  serveur si le signalement persiste après un test prolongé.
+(5) TODO (ajoutés à la file, non commencés cette session) — #160 (afficher le nom canonique au clic
+  physique sur un waypoint, pas seulement le biome — extension du point (3) ci-dessus à la
+  découverte elle-même, pas seulement au reclic), #161 (confirmation graphique + indication de
+  latence avant l'entrée dans le Wild, précise #26 partie B), #162 (Control Panel AWS : création de
+  dialogues bloquée en lecture seule par les permissions réelles du service, #145), #163 (sélection
+  recherchable des quêtes prérequises au lieu d'IDs saisis à la main, #46 -- recoupe la ligne
+  « V2 restant » de docs/control-panel/ROADMAP.md).
+Tests : suite complète ./gradlew test (3 modules) : 1799 tests, 1764 exécutés verts, 35 ignorés
+  (limitation MockBukkit teleportAsync déjà documentée), 0 échec -- confirmé en parsant les XML de
+  résultat, pas seulement le texte "BUILD SUCCESSFUL". ./gradlew build (3 modules) vert aussi
+  (RPGQUEST_TEST_MAX_HEAP=768m obligatoire sur cette box -- un essai sans cette variable a échoué en
+  OOM, non représentatif d'un bug réel, rejoué correctement). Nouveaux : TravelCatalogTest (5 cas,
+  control-panel), ItemTravelServiceTest (+2 cas secours gratuit), StarterKitListenerTest (3 cas,
+  nouveau fichier), WaypointServiceTest (+1 cas déjà-découvert), TravelBeaconServiceTest (+1 cas
+  recherche réelle via vrai InventoryClickEvent), WaypointNameCatalogTest (+1 cas lisibilité),
+  SchemaMigratorTest (+3 cas V23).
+Branche finale: feat/control-panel-admin-tools (aucun merge — déploiement DEV/AWS autorisé
+  explicitement pour cette session)
+Dernier commit: d0e75d1 (voir aussi f776629 #152, 47f50f5 noms/recherche/déjà-découvert, b9c2578
+  #154 ; docs à committer séparément ensuite)
+Build: vert, voir Tests ci-dessus.
+Tests manuels en attente: TC-226 (#154), TC-227 (#133/#135/#156 recherche/noms/déjà-découvert),
+  TC-228 (#152 Control Panel), addendum #159 dans TC-225 -- tous dans docs/MANUAL_TEST_PLAN.md,
+  explicitement non présentés comme validés en jeu. En particulier : la saisie réelle dans l'enclume
+  et l'affichage du coût XP ne sont PAS vérifiables automatiquement ici (PrepareAnvilEvent exige un
+  AnvilView que cette version de MockBukkit ne simule pas) -- ne jamais présenter ce point comme
+  validé sans un test en jeu réel.
+Blocages: aucun bloquant produit non déductible. #159 reste un signalement sans cause confirmée
+  (diagnostic + instrumentation posés, pas une correction au sens strict) -- à retrancher ou
+  reclasser selon le retest en jeu demandé.
+Première étape à reprendre: déploiement DEV (plugin) + AWS (Control Panel) de cette session, puis
+  validation manuelle en jeu (TC-226/227/228 + addendum TC-225/#159) ; si du temps reste ensuite,
+  #160 à #163 dans cet ordre de priorité (159 déjà traité en diagnostic).
+```
+
+```text
 Date: 2026-10-03 (nuit, session autonome longue durée — multi-tickets)
 Branche de départ: feat/control-panel-admin-tools
 Étape de départ: session autonome overnight autorisée explicitement (coder/documenter/committer/pousser/déployer DEV+AWS/redémarrer sans reconfirmation, LoDyMcFly déconnectable, aucun merge/PROD), ordre de priorité fourni : (1) finir le déploiement DEV déjà poussé (fa41931/7c50802), (2) #153 placement accessible, (3) #156 waypoints sans borne, (4) #33 faim/saturation Hub, (5) #155+#121 mobs indésirables Hub, (6) #30 protection animaux Hub, (7) #152 Control Panel listes, (8) #154 secours rune. Audit préalable : lecture CLAUDE.md + état réel dépôt + 9 tickets (#153/#156/#33/#155/#121/#30/#31 fermé/#152/#154) via gh issue view avant tout code.

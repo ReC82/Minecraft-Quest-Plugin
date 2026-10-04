@@ -1777,6 +1777,104 @@ le résumé de récompenses de TC-014).
 -   **Limites MockBukkit :** aucun des nouveaux cas n'atteint `teleportAsync` — tous réellement
     exécutés et vérifiés, aucun ignoré. Le ressenti réel en jeu (fluidité de la barre de faim,
     disparition visible des mobs nettoyés) reste `PENDING MANUAL VALIDATION`.
+-   **Addendum — signalement #159 (04/10/2026) : faim bloquée aussi dans le Wild.** Audit complet
+    du code (`HubComfortService` strictement scopé par `isHub()`) et de la config déployée
+    (`hub.world=world_hub` ≠ `travel.wild-world=wild`) : aucune cause trouvée, les 3 tests Wild
+    existants (`foodLevelDecreaseInTheWildIsNeverCancelled`,
+    `periodicSweepNeverTouchesPlayersInTheWild`, `changingWorldIntoTheWildNeverRestoresAnything`)
+    passent déjà. Trace temporaire `[HUNGER-TRACE]` ajoutée sur toute annulation réelle (world +
+    joueur). **À retester explicitement** : rester dans `wild` **plusieurs minutes** en sprintant
+    sans manger (la saturation posée au maximum en sortant du Hub retarde normalement, en vanilla,
+    la baisse de faim le temps qu'elle s'épuise — pas nécessairement un bug) ; si la faim reste
+    bloquée au-delà de ça, chercher `[HUNGER-TRACE]` dans les logs serveur et noter le `world`
+    affiché.
+
+### TC-226 — Secours Hub via la Rune de rappel (issue #154, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `travel.ItemTravelService#performFreeRescue`,
+    `hub.HubRescueFallbackService`, `player.StarterKitListener`.
+-   **Préconditions :** JAR de cette session déployé et redémarré ; compte de test **non-op**,
+    possédant sa Rune de rappel (remise automatique à la première connexion).
+-   **Scénario principal :**
+    1.  Dans `world_hub`, se mettre volontairement dans un trou (sans en sortir par la pose/casse,
+        interdites) puis clic droit sur la Rune de rappel → retour **immédiat** au spawn configuré
+        du Hub, sans message « Cet objet ne fonctionne pas ici », sans perte de la Rune.
+    2.  Répéter plusieurs fois d'affilée (spam) → aucune erreur, aucun comportement différent.
+    3.  Dans `wild`, vérifier que la Rune garde son comportement normal (canalisation ~10 s, annulée
+        par un déplacement, cooldown 30 min après un usage réussi) — aucune régression.
+-   **Disponibilité de la Rune :**
+    4.  Remplir complètement son inventaire **avant** la toute première connexion d'un compte neuf →
+        aucune Rune donnée immédiatement ; libérer une place puis se reconnecter → la Rune est
+        donnée à cette connexion suivante (jamais perdue pour toujours).
+    5.  (cas limite) Si un joueur du Hub se retrouve sans Rune avec l'inventaire plein, un menu
+        « Secours du Hub » (1 bouton, inventaire vanilla) doit apparaître dans la minute ; cliquer
+        le bouton téléporte au spawn exactement comme la Rune.
+-   **Reset :** aucune donnée à réinitialiser spécifiquement ; `/rpgadmin player resetnew` restaure
+    le droit à la Rune comme avant.
+-   **Couverture automatisée :** `ItemTravelServiceTest` (secours gratuit atteint hors du monde
+    requis, comportement normal inchangé ailleurs), `StarterKitListenerTest` (3 cas, dont
+    l'inventaire plein).
+-   **Limites MockBukkit :** la téléportation elle-même (`teleportAsync`) n'est jamais exécutée
+    dans les tests automatisés (exception attendue et vérifiée) ; le menu graphique de secours et
+    son déclenchement par balayage périodique ne sont pas couverts par un test automatisé dédié
+    (service neuf, voir le rapport de session) — `PENDING MANUAL VALIDATION` pour ces deux points.
+
+### TC-227 — Recherche de waypoints, noms lisibles, retour « déjà découvert » (issues #133/#135/#156-suite, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `travel.beacon.TravelBeaconService` (recherche par enclume),
+    `waypoint.model.WaypointNameCatalog` (noms lisibles), `waypoint.WaypointService#handleInteract`
+    (retour déjà découvert).
+-   **Préconditions :** JAR de cette session déployé et redémarré ; au moins deux waypoints
+    découverts dans un même monde, dont un avec un nom contenant un mot recherchable (ex. « Lac »).
+-   **Scénario principal :**
+    1.  Ouvrir une borne → « Waypoints découverts » → un monde → « Rechercher ». Taper un mot
+        (ex. « lac ») en majuscules ou minuscules, avec ou sans accent.
+    2.  Cliquer sur l'étiquette de résultat (**pas** la touche Entrée, qui ne doit visiblement rien
+        faire dans cette interface) → la liste filtrée ne contient que les destinations dont le nom
+        ou le biome correspond, sans distinction de casse/accents.
+    3.  Vérifier l'indicateur « Recherche active : « … » · N résultat(s) » et son bouton d'effacement
+        (slot dédié) → cliquer l'efface et réaffiche tout.
+    4.  **Vérifier qu'aucun coût XP (`Coût : …`) n'apparaît** sur l'enclume, à l'ouverture comme
+        après la saisie — point explicitement non couvert par les tests automatisés dans cet
+        environnement, à confirmer en jeu.
+    5.  Noter les noms affichés (ex. « Lac de Givre ») : plus aucun nom ne doit être deux mots
+        collés sans espace (ex. l'ancien « Lacgivre »).
+    6.  Cliquer une seconde fois sur le bouton physique d'un waypoint déjà découvert → message
+        « Waypoint déjà découvert : <nom> » visible, aucune nouvelle récompense.
+-   **Reset :** aucun ; les découvertes/noms existants ne sont jamais réinitialisés par ce correctif.
+-   **Couverture automatisée :** `TravelBeaconServiceTest` (filtrage insensible casse/accents via un
+    vrai clic sur le résultat, indicateur de filtre, effacement — **le résultat de l'enclume est
+    construit dans le test, pas saisi réellement**, voir la limite ci-dessous),
+    `WaypointServiceTest` (message « déjà découvert » avec le nom), `WaypointNameCatalogTest`
+    (chaque nom bundlé contient un séparateur), `SchemaMigratorTest` (migration V23 renomme les
+    noms existants en préservant id/découvertes).
+-   **Limites MockBukkit :** `PrepareAnvilEvent` exige un `AnvilView` que cette version de
+    MockBukkit ne simule pas — **la saisie réelle dans l'enclume et l'affichage du coût XP ne sont
+    donc jamais vérifiés automatiquement**, uniquement le filtrage qui en découlerait. Ne jamais
+    présenter ce point comme validé sans un test en jeu réel.
+
+### TC-228 — Control Panel : réseau de voyage en lecture seule (issue #152, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** page `/travel` du Control Panel (PlugAdmin), action agent
+    `travel.catalog`.
+-   **Préconditions :** Control Panel AWS déployé avec cette version ; agent plugin connecté et
+    heartbeat actif ; au moins un waypoint et une borne existants côté serveur.
+-   **Scénario principal :**
+    1.  Se connecter au Control Panel avec un rôle ayant `TRAVEL_READ` (ADMIN/TESTER/BUILDER/
+        READ_ONLY) → le lien « Réseau de voyage » est visible dans la navigation et sur `/home`.
+    2.  Ouvrir `/travel`, cliquer « Rafraîchir » → les deux tableaux (waypoints, bornes) se
+        remplissent avec id/nom/monde/biome/coordonnées/état, l'horodatage de fraîcheur s'affiche.
+    3.  Vérifier qu'un waypoint du Hub sans borne appariée est visible avec un badge distinct, et
+        qu'une borne auto-générée référence bien son waypoint apparié.
+    4.  Filtrer par recherche et par monde → les deux tableaux se filtrent indépendamment ;
+        pagination fonctionnelle au-delà de 20 lignes.
+    5.  Avec un rôle sans `TRAVEL_READ` : le lien et la page ne doivent jamais être accessibles.
+-   **Reset :** aucun ; page strictement en lecture seule.
+-   **Couverture automatisée :** `TravelCatalogTest` (5 cas : état vide, listes + pairage +
+    fraîcheur, recherche, filtre monde, accès lecture seule), `AgentActionExecutorTest`
+    (`travel.catalog`), `RolePermissionMatrixTest` (générique sur toutes les permissions).
+-   **Limites :** aucune (page HTML pure, entièrement exerçable par un test HTTP) — seul le rendu
+    visuel final (CSS/alignement) reste `PENDING MANUAL VALIDATION`.
 
 ---
 
@@ -1836,3 +1934,6 @@ le résumé de récompenses de TC-014).
 | TC-223 | Réseau de voyage #149 : génération Hub waypoint + borne appariée (PENDING) | | | |
 | TC-224 | Accessibilité Hub + diagnostic/réparation #153/#156 (PENDING) | | | |
 | TC-225 | Hub sûr : faim/saturation, animaux protégés, mobs indésirables #33/#30/#121/#155 (PENDING) | | | |
+| TC-226 | Secours Hub via la Rune de rappel #154 (PENDING) | | | |
+| TC-227 | Recherche waypoints, noms lisibles, retour « déjà découvert » #133/#135/#156 (PENDING) | | | |
+| TC-228 | Control Panel : réseau de voyage en lecture seule #152 (PENDING) | | | |

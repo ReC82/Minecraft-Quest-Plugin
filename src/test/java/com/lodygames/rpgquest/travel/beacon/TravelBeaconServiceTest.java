@@ -2,6 +2,8 @@ package com.lodygames.rpgquest.travel.beacon;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
@@ -42,6 +44,8 @@ import java.util.UUID;
 import java.time.Instant;
 import java.util.function.BooleanSupplier;
 import java.util.concurrent.TimeUnit;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -55,8 +59,10 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -737,6 +743,72 @@ class TravelBeaconServiceTest {
         assertEquals(BeaconMenuHolder.Kind.WAYPOINTS, openMenuKind(player),
                 "le résultat de recherche doit rouvrir la liste de waypoints du MÊME monde, jamais perdu");
         assertEquals(1, countFilledMaps(player));
+    }
+
+    /**
+     * Retour joueur 2026-10-04 : reproduit le parcours réel signalé en jeu -- taper « lac » dans
+     * l'enclume puis cliquer sur l'étiquette de résultat doit retrouver « Lac de Givre » sans
+     * distinction de casse/accents, via le vrai routage d'événements du clic sur le résultat
+     * ({@code TravelBeaconListener#onInventoryClick}, slot 2), pas seulement un appel direct à
+     * {@code handleSearchResultClick}. Le résultat (slot 2) est construit ici exactement comme le
+     * fait {@code handlePrepareAnvil} à partir d'un texte tapé -- {@code PrepareAnvilEvent} lui-même
+     * exige un {@code AnvilView} que cette version de MockBukkit ne simule pas encore (limitation
+     * distincte de celle de {@code teleportAsync} documentée en tête de ce fichier) : le zéro de
+     * {@code repairCost}/{@code repairCostAmount} dans {@code handlePrepareAnvil} reste donc
+     * PENDING MANUAL VALIDATION (voir le rapport de session), seul le filtrage qui en découle est
+     * vérifié ici de bout en bout.
+     */
+    @Test
+    void realClickOnSearchResultFindsLacDeGivreCaseAndAccentInsensitivelyWithActiveFilterIndicator() throws Exception {
+        server.getPluginManager().registerEvents(waypointService.listener(), plugin);
+        waypointService.start();
+        Waypoint lac = new Waypoint("wp_lac", "Lac de Givre", "wild", "minecraft:frozen_ocean@0,0",
+                "minecraft:frozen_ocean", 0, 0, 500, 65, 500, "NORTH", 1, true, Instant.now());
+        Waypoint mont = new Waypoint("wp_mont", "Mont Blanc", "wild", "minecraft:mountains@1,0",
+                "minecraft:mountains", 1, 0, 600, 65, 600, "NORTH", 1, true, Instant.now());
+        waypointRepository.insertIfAbsent(lac).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        waypointRepository.insertIfAbsent(mont).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        reloadAndAwaitIndexed(lac, mont);
+        service.start();
+        PlayerMock player = addPlayer();
+        discover(player, lac);
+        discover(player, mont);
+
+        service.openWaypoints(player, 0, "", "wild");
+        click(player, 47); // "Rechercher"
+        assertEquals(BeaconMenuHolder.Kind.SEARCH, openMenuKind(player));
+
+        // Résultat tel que le produirait handlePrepareAnvil pour une saisie "LAC" (majuscules, pour
+        // couvrir l'insensibilité à la casse) -- construit directement puisque PrepareAnvilEvent
+        // (AnvilView) n'est pas simulable ici, voir le javadoc ci-dessus.
+        ItemStack result = new ItemStack(Material.NAME_TAG);
+        ItemMeta meta = result.getItemMeta();
+        meta.displayName(Component.text("LAC"));
+        result.setItemMeta(meta);
+        player.getOpenInventory().getTopInventory().setItem(2, result);
+
+        click(player, 2); // clic sur l'étiquette de résultat -- jamais l'appui sur Entrée
+        assertEquals(BeaconMenuHolder.Kind.WAYPOINTS, openMenuKind(player),
+                "le clic sur le résultat doit rouvrir la liste, maintenant filtrée");
+
+        Inventory waypoints = player.getOpenInventory().getTopInventory();
+        assertEquals(1, countFilledMaps(player), "un seul résultat : Mont Blanc doit être exclu du filtre");
+        ItemStack first = waypoints.getItem(0);
+        assertNotNull(first);
+        assertTrue(PlainTextComponentSerializer.plainText().serialize(first.getItemMeta().displayName())
+                .contains("Lac de Givre"), "« lac » doit retrouver « Lac de Givre » sans distinction de casse");
+
+        ItemStack filterIndicator = waypoints.getItem(46);
+        assertNotNull(filterIndicator, "un indicateur de recherche active doit être visible après filtrage");
+        String indicatorText = PlainTextComponentSerializer.plainText().serialize(filterIndicator.getItemMeta().displayName());
+        assertTrue(indicatorText.toLowerCase(java.util.Locale.ROOT).contains("lac"),
+                "l'indicateur doit afficher la recherche active : " + indicatorText);
+
+        click(player, 46); // efface le filtre
+        assertEquals(BeaconMenuHolder.Kind.WAYPOINTS, openMenuKind(player));
+        assertEquals(2, countFilledMaps(player), "après effacement, les deux waypoints réapparaissent");
+        assertNull(player.getOpenInventory().getTopInventory().getItem(46),
+                "après effacement, plus d'indicateur de filtre actif");
     }
 
     @Test

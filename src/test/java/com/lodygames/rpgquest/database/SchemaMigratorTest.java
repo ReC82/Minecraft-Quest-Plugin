@@ -23,7 +23,7 @@ class SchemaMigratorTest {
     void migrateSetsUserVersionToCurrentSchemaVersion() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
         }
     }
 
@@ -32,7 +32,7 @@ class SchemaMigratorTest {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema2.db"))) {
             SchemaMigrator.migrate(connection);
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
         }
     }
 
@@ -48,7 +48,7 @@ class SchemaMigratorTest {
 
             SchemaMigrator.migrate(connection);
 
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='quest_objective_progress'")) {
@@ -245,7 +245,7 @@ class SchemaMigratorTest {
                 assertTrue(resultSet.next(), "les données déjà présentes avant la migration V14 doivent survivre telles quelles");
                 assertEquals("Steve", resultSet.getString("last_name"));
             }
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
         }
     }
 
@@ -311,7 +311,7 @@ class SchemaMigratorTest {
 
             SchemaMigrator.migrate(connection);
 
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT min_x, max_x, reserved_min_x, reserved_max_x FROM claims WHERE id = 'legacy'")) {
@@ -380,7 +380,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 17");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
         }
     }
 
@@ -392,7 +392,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 15");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
         }
     }
 
@@ -400,7 +400,7 @@ class SchemaMigratorTest {
     void migrateCreatesTravelBeaconsTable() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema19.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='travel_beacons'")) {
@@ -417,7 +417,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 18");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
         }
     }
 
@@ -425,7 +425,7 @@ class SchemaMigratorTest {
     void migrateCreatesVillageCentersTable() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema20.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
             try (Statement statement = connection.createStatement();
                  ResultSet resultSet = statement.executeQuery(
                          "SELECT name FROM sqlite_master WHERE type='table' AND name='village_centers'")) {
@@ -442,7 +442,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 19");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
         }
     }
 
@@ -450,7 +450,7 @@ class SchemaMigratorTest {
     void migrateAddsBiomeInstanceColumnToTravelBeacons() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema21.db"))) {
             SchemaMigrator.migrate(connection);
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
             try (Statement statement = connection.createStatement()) {
                 statement.executeUpdate(
                         "INSERT INTO travel_beacons (id, world, x, y, z, facing, model_version, active, created_at) "
@@ -472,7 +472,7 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 20");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
         }
     }
 
@@ -508,7 +508,7 @@ class SchemaMigratorTest {
             }
 
             SchemaMigrator.migrate(connection);
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
 
             String name1, name2;
             try (Statement statement = connection.createStatement();
@@ -566,7 +566,85 @@ class SchemaMigratorTest {
                 statement.execute("PRAGMA user_version = 21");
             }
             assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
-            assertEquals(22, userVersion(connection));
+            assertEquals(23, userVersion(connection));
+        }
+    }
+
+    /**
+     * Retour joueur 2026-10-04 (suite #133/#135) : les noms générés avant cette migration par simple
+     * concaténation (ex. {@code Lacgivre}) deviennent lisibles (ex. {@code Lac de Givre}), sans
+     * jamais toucher {@code id} ni les découvertes déjà enregistrées pour ce waypoint.
+     */
+    @Test
+    void migrateRenamesExistingConcatenatedDisplayNamesToReadableFormPreservingIdAndDiscoveries() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema23.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate(
+                        "INSERT INTO waypoints (id, display_name, world, biome_instance, biome_key, region_x, "
+                                + "region_z, x, y, z, facing, model_version, active, created_at) VALUES "
+                                + "('wp_lac', 'Lacgivre', 'wild', 'minecraft:frozen_ocean@0,0', "
+                                + "'minecraft:frozen_ocean', 0, 0, 20, 65, 20, 'NORTH', 1, 1, '2026-01-01T00:00:00Z')");
+                statement.executeUpdate(
+                        "INSERT INTO waypoint_discoveries (player_uuid, waypoint_id, discovered_at) VALUES "
+                                + "('p1', 'wp_lac', '2026-01-01T00:00:00Z')");
+                statement.execute("PRAGMA user_version = 22");
+            }
+
+            SchemaMigrator.migrate(connection);
+            assertEquals(23, userVersion(connection));
+
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT display_name FROM waypoints WHERE id = 'wp_lac'")) {
+                assertTrue(resultSet.next());
+                assertEquals("Lac de Givre", resultSet.getString("display_name"),
+                        "le nom concaténé doit devenir lisible, exactement comme demandé par le joueur");
+            }
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT waypoint_id FROM waypoint_discoveries WHERE player_uuid = 'p1'")) {
+                assertTrue(resultSet.next());
+                assertEquals("wp_lac", resultSet.getString("waypoint_id"), "la découverte survit au renommage");
+            }
+        }
+    }
+
+    /** Un nom déjà lisible (ou un nom de secours « Avant-poste N ») n'est jamais altéré par V23. */
+    @Test
+    void migrateNeverRenamesANameAlreadyOutsideTheOldCatalog() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema23b.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate(
+                        "INSERT INTO waypoints (id, display_name, world, biome_instance, biome_key, region_x, "
+                                + "region_z, x, y, z, facing, model_version, active, created_at) VALUES "
+                                + "('wp_custom', 'Avant-poste 1', 'wild', 'minecraft:plains@9,9', "
+                                + "'minecraft:plains', 9, 9, 90, 65, 90, 'NORTH', 1, 1, '2026-01-01T00:00:00Z')");
+                statement.execute("PRAGMA user_version = 22");
+            }
+
+            SchemaMigrator.migrate(connection);
+
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT display_name FROM waypoints WHERE id = 'wp_custom'")) {
+                assertTrue(resultSet.next());
+                assertEquals("Avant-poste 1", resultSet.getString("display_name"),
+                        "un nom hors ancien catalogue (ex. nom de secours) reste inchangé");
+            }
+        }
+    }
+
+    @Test
+    void reRunningV23IsIdempotent() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schemaV23.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA user_version = 22");
+            }
+            assertDoesNotThrow(() -> SchemaMigrator.migrate(connection));
+            assertEquals(23, userVersion(connection));
         }
     }
 

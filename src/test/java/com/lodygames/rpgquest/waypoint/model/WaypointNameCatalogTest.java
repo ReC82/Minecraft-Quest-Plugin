@@ -43,6 +43,19 @@ class WaypointNameCatalogTest {
         }
     }
 
+    /**
+     * Retour joueur 2026-10-04 : les anciens noms étaient deux mots concaténés sans séparateur
+     * (ex. {@code Lacgivre}). La réserve bundlée doit désormais toujours contenir au moins un espace
+     * (ex. {@code Lac de Givre}) -- jamais une régression vers la concaténation brute.
+     */
+    @Test
+    void everyBundledNameIsReadableWithAtLeastOneWordSeparator() {
+        WaypointNameCatalog catalog = WaypointNameCatalog.loadBundled();
+        for (String name : catalog.reserve()) {
+            assertTrue(name.contains(" "), "nom non lisible (aucun séparateur de mot) : " + name);
+        }
+    }
+
     @Test
     void reserveNameNeverReturnsAnAlreadyUsedName() {
         WaypointNameCatalog catalog = fromLines("Rochebrune", "Clairval", "Ventdoré");

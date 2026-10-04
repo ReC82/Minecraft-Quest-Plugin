@@ -844,7 +844,7 @@ public final class TravelBeaconService implements PluginService {
             inventory.setItem(22, icon(Material.BARRIER, "<red>Aucun waypoint</red>",
                     filter.isEmpty()
                             ? "<gray>Rien d'encore découvert dans ce monde.</gray>"
-                            : "<gray>Aucun résultat pour cette recherche.</gray>"));
+                            : "<gray>Aucun résultat pour « " + filter + " ».</gray>"));
         } else {
             for (int i = 0; i < pageItems.size(); i++) {
                 Waypoint waypoint = pageItems.get(i);
@@ -852,6 +852,13 @@ public final class TravelBeaconService implements PluginService {
             }
         }
         inventory.setItem(45, icon(Material.ARROW, "<yellow>Retour</yellow>", ""));
+        // Indicateur de recherche active (retour joueur 2026-10-04) : rend le filtre et son nombre
+        // de résultats visibles, avec une action dédiée pour l'effacer -- jusqu'ici, un filtre actif
+        // était invisible une fois revenu sur la liste, donnant l'impression qu'il n'avait rien fait.
+        if (!filter.isEmpty()) {
+            inventory.setItem(46, icon(Material.COMPASS, "<yellow>Recherche active :</yellow> <white>« " + filter + " »</white>",
+                    "<gray>" + sorted.size() + " résultat(s).</gray>", "<gray>Clique pour effacer le filtre.</gray>"));
+        }
         inventory.setItem(47, icon(Material.NAME_TAG, "<aqua>Rechercher</aqua>",
                 "<gray>Ouvre une saisie de nom (sans commande, sans coût).</gray>"));
         if (clampedPage > 0) {
@@ -870,6 +877,11 @@ public final class TravelBeaconService implements PluginService {
     void handleWaypointsClick(Player player, int slot, BeaconMenuSession session) {
         switch (slot) {
             case 45 -> openWorldSelection(player);
+            case 46 -> {
+                if (!session.filter().isEmpty()) {
+                    openWaypoints(player, 0, "", session.world());
+                }
+            }
             case 47 -> openSearch(player, session.world());
             case 48 -> openWaypoints(player, session.page() - 1, session.filter(), session.world());
             case 50 -> openWaypoints(player, session.page() + 1, session.filter(), session.world());
@@ -941,15 +953,28 @@ public final class TravelBeaconService implements PluginService {
         ItemStack input = new ItemStack(Material.NAME_TAG);
         ItemMeta meta = input.getItemMeta();
         meta.displayName(MM.deserialize("<white>Tape un nom...</white>"));
+        // Enclume vanilla : ni la touche Entrée ni la fermeture ne valident une recherche, seul un
+        // clic sur l'étiquette de résultat (à droite) le fait -- rendu explicite ici (retour joueur
+        // 2026-10-04) plutôt que supposé compris, Minecraft ne l'indiquant pas lui-même.
+        meta.lore(List.of(MM.deserialize("<gray>Clique sur l'étiquette à droite pour rechercher.</gray>")
+                .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false)));
         input.setItemMeta(meta);
         inventory.setItem(0, input);
         player.openInventory(inventory);
         sessions.put(player.getUniqueId(), new BeaconMenuSession(0, "", world));
     }
 
-    /** Appelé par {@link TravelBeaconListener} sur {@code PrepareAnvilEvent} : jamais de coût XP. */
+    /**
+     * Appelé par {@link TravelBeaconListener} sur {@code PrepareAnvilEvent} : jamais de coût XP.
+     * Zéro à la fois sur {@code repairCost} (le niveau affiché) <strong>et</strong> {@code
+     * repairCostAmount} (compteur interne vanilla distinct, voir {@link
+     * org.bukkit.inventory.AnvilInventory}) -- un retour joueur a observé un « Coût : 1 » résiduel
+     * malgré {@code repairCost} déjà à 0, ce second champ étant la cause la plus documentée de ce
+     * résidu visuel côté client.
+     */
     void handlePrepareAnvil(org.bukkit.event.inventory.PrepareAnvilEvent event) {
         event.getInventory().setRepairCost(0);
+        event.getInventory().setRepairCostAmount(0);
         ItemStack first = event.getInventory().getItem(0);
         if (first == null) {
             return;

@@ -481,7 +481,15 @@ public final class WaypointService implements PluginService {
         UUID playerId = player.getUniqueId();
         Set<String> discovered = discoveriesByPlayer.computeIfAbsent(playerId, k -> ConcurrentHashMap.newKeySet());
         if (discovered.contains(waypoint.id())) {
-            return true; // déjà découvert : on consomme le clic, sans spam ni ré-écriture.
+            // Déjà découvert : jamais de nouvelle récompense ni de ré-écriture, mais un retour clair
+            // à chaque clic (retour joueur 2026-10-04) -- l'ancien comportement consommait le clic
+            // en silence, laissant croire que rien ne s'était passé.
+            if (player.isOnline()) {
+                player.sendMessage(MM.deserialize(
+                        "<yellow>Waypoint déjà découvert :</yellow> <white><name></white>",
+                        Placeholder.unparsed("name", waypoint.displayName())));
+            }
+            return true;
         }
         repository.recordDiscovery(playerId, waypoint.id(), Instant.now())
                 .thenAccept(isNew -> runSync(() -> {

@@ -1,222 +1,224 @@
 # Catalogue de noms de waypoints (issue #133/#135, réserve statique bundlée -- #148 l'enrichira)
 # Un nom par ligne, dedupliqué (casse/espaces) au chargement par WaypointNameCatalog.
-Pierrerive
-Collinevert
-Collinefontaine
-Closbelle
-Tremblesoir
-Grandbrune
-Frênemiel
-Ventrive
-Frênebrune
-Chênechamp
-Collinenoix
-Bruyèrebois
-Erableval
-Falaisenoir
-Chênesoir
-Chêneclair
-Jardinrive
-Lacgris
-Valgivre
-Trembleor
-Closvert
-Rochedoré
-Pierremiel
-Fontainebois
-Ventfort
-Rochefort
-Closgris
-Noyerfort
-Lacfleur
-Aulnemont
-Landeroc
-Montaube
-Fontainerive
-Frênebelle
-Combevent
-Jardingivre
-Ventgivre
-Rivagenoix
-Hautegris
-Collinemiel
-Landeombre
-Frêneaube
-Chêneroc
-Clospierre
-Brumenoir
-Brumefort
-Montpierre
-Petitmiel
-Combenoix
-Montnoix
-Étangblanc
-Préfontaine
-Clairclair
-Rivagefleur
-Étangfeu
-Ventfontaine
-Brumeroc
-Closfontaine
-Étangnoir
-Aulneombre
-Prairienoir
-Landefort
-Prairiefleur
-Prairievert
-Ormemiel
-Prairierive
-Sourcenoir
-Closvent
-Falaiseval
-Présoir
-Collinefort
-Petitval
-Noyerpierre
-Rivageombre
-Granddoré
-Rivagebelle
-Lacgivre
-Grandor
-Aulnevent
-Frênemont
-Clairbrune
-Saulebrune
-Falaisegivre
-Rivagevert
-Erablemiel
-Prairiefort
-Rivagepierre
-Roncegris
-Sourcebrune
-Prairiesoir
-Genêtor
-Bassesource
-Trembledoré
-Aulnesource
-Noyermurmure
-Bruyèreor
-Tremblebrune
-Collinegris
-Falaisebelle
-Saulevert
-Étangvent
-Hautemurmure
-Petitgivre
-Saulepierre
-Erableor
-Prédoré
-Noyergris
-Erableombre
-Lacpierre
-Closnoix
-Lacbrune
-Montlune
-Bassefort
-Collinebelle
-Clairgris
-Rivagefontaine
-Boisbois
-Sourceor
-Boisblanc
-Étangvert
-Chênenoix
-Erablemurmure
-Clairdoré
-Boisfeu
-Brumeblanc
-Moulinrive
-Valpierre
-Frêneroc
-Genêtlune
-Boisvent
-Montblanc
-Montvert
-Pontbois
-Rivagelune
-Collinedoré
-Boisval
-Prairieombre
-Sourcegivre
-Pierrevert
-Bassegivre
-Pontclair
-Prairieval
-Bruyèrebelle
-Moulinfort
-Maraischamp
-Rochemiel
-Combeclair
-Petitbrune
-Falaisevent
-Noyerval
-Clairgivre
-Tremblefort
-Montfeu
-Combegris
-Tremblenoix
-Boisbelle
-Frêneombre
-Hautesource
-Bassemiel
-Aulnelune
-Lacblanc
-Brumegivre
-Moulinaube
-Moulinval
-Combepierre
-Rivagegivre
-Genêtombre
-Genêtfontaine
-Sourceroc
-Vergerfort
-Boisor
-Clairfeu
-Ventaube
-Fontaineclair
-Erablefort
-Noyermiel
-Vergerclair
-Maraisval
-Moulinbois
-Pierrelune
-Bruyèregivre
-Pierreval
-Frênenoir
-Lacombre
-Grandombre
-Étangfontaine
-Genêtfeu
-Clairaube
-Rocherive
-Collinefleur
-Maraismurmure
-Rivageblanc
-Collinevent
-Hautegivre
-Sourcenoix
-Bruyèremurmure
-Jardinor
-Genêtgivre
-Boisfontaine
-Rivagechamp
-Maraisgris
-Roncesource
-Ventclair
-Falaisepierre
-Pontombre
-Saulesoir
-Erablegris
-Clairor
-Pontgivre
-Prairiemont
-Aulneblanc
-Ronceclair
-Saulemiel
-Vergerbrune
-Falaisegris
-Lacdoré
-Préfeu
-Genêtblanc
-Genêtfort
-Lacor
+# Noms lisibles (issue #156 suite, retours joueur 2026-10-04) : <nom> de <nom> ou
+# <adjectif> <nom> avec accord de genre -- jamais deux mots concatenes sans separation.
+Pierre de Rive
+Colline Verte
+Colline de Fontaine
+Beau Clos
+Tremble de Soir
+Grande Brune
+Frêne de Miel
+Vent de Rive
+Frêne Brun
+Chêne de Champ
+Colline de Noix
+Bruyère de Bois
+Érable de Val
+Falaise Noire
+Chêne de Soir
+Chêne Clair
+Jardin de Rive
+Lac Gris
+Val de Givre
+Tremble d'Or
+Clos Vert
+Roche Dorée
+Pierre de Miel
+Fontaine de Bois
+Vent Fort
+Roche Forte
+Clos Gris
+Noyer Fort
+Lac de Fleur
+Aulne de Mont
+Lande de Roc
+Mont d'Aube
+Fontaine de Rive
+Beau Frêne
+Combe de Vent
+Jardin de Givre
+Vent de Givre
+Rivage de Noix
+Haute Grise
+Colline de Miel
+Lande d'Ombre
+Frêne d'Aube
+Chêne de Roc
+Clos de Pierre
+Brume Noire
+Brume Forte
+Mont de Pierre
+Petit Miel
+Combe de Noix
+Mont de Noix
+Étang Blanc
+Pré de Fontaine
+Clair Matin
+Rivage de Fleur
+Étang de Feu
+Vent de Fontaine
+Brume de Roc
+Clos de Fontaine
+Étang Noir
+Aulne d'Ombre
+Prairie Noire
+Lande Forte
+Prairie de Fleur
+Prairie Verte
+Orme de Miel
+Prairie de Rive
+Source Noire
+Clos de Vent
+Falaise de Val
+Pré de Soir
+Colline Forte
+Petit Val
+Noyer de Pierre
+Rivage d'Ombre
+Grande Dorée
+Beau Rivage
+Lac de Givre
+Grand Or
+Aulne de Vent
+Frêne de Mont
+Claire Brune
+Saule Brun
+Falaise de Givre
+Rivage Vert
+Érable de Miel
+Prairie Forte
+Rivage de Pierre
+Ronce Grise
+Source Brune
+Prairie de Soir
+Genêt d'Or
+Basse Source
+Tremble Doré
+Aulne de Source
+Noyer de Murmure
+Bruyère d'Or
+Tremble Brun
+Colline Grise
+Belle Falaise
+Saule Vert
+Étang de Vent
+Haut Murmure
+Petit Givre
+Saule de Pierre
+Érable d'Or
+Pré Doré
+Noyer Gris
+Érable d'Ombre
+Lac de Pierre
+Clos de Noix
+Lac Brun
+Mont de Lune
+Basse Forte
+Belle Colline
+Claire Grise
+Rivage de Fontaine
+Bois de Bois
+Source d'Or
+Bois Blanc
+Étang Vert
+Chêne de Noix
+Érable de Murmure
+Claire Dorée
+Bois de Feu
+Brume Blanche
+Moulin de Rive
+Val de Pierre
+Frêne de Roc
+Genêt de Lune
+Bois de Vent
+Mont Blanc
+Mont Vert
+Pont de Bois
+Rivage de Lune
+Colline Dorée
+Bois de Val
+Prairie d'Ombre
+Source de Givre
+Pierre Verte
+Bas Givre
+Pont Clair
+Prairie de Val
+Belle Bruyère
+Moulin Fort
+Marais de Champ
+Roche de Miel
+Combe Claire
+Petite Brune
+Falaise de Vent
+Noyer de Val
+Clair Givre
+Tremble Fort
+Mont de Feu
+Combe Grise
+Tremble de Noix
+Beau Bois
+Frêne d'Ombre
+Haute Source
+Bas Miel
+Aulne de Lune
+Lac Blanc
+Brume de Givre
+Moulin d'Aube
+Moulin de Val
+Combe de Pierre
+Rivage de Givre
+Genêt d'Ombre
+Genêt de Fontaine
+Source de Roc
+Verger Fort
+Bois d'Or
+Clair Feu
+Vent d'Aube
+Fontaine Claire
+Érable Fort
+Noyer de Miel
+Verger Clair
+Marais de Val
+Moulin de Bois
+Pierre de Lune
+Bruyère de Givre
+Pierre de Val
+Frêne Noir
+Lac d'Ombre
+Grande Ombre
+Étang de Fontaine
+Genêt de Feu
+Claire Aube
+Roche de Rive
+Colline de Fleur
+Marais de Murmure
+Rivage Blanc
+Colline de Vent
+Haut Givre
+Source de Noix
+Bruyère de Murmure
+Jardin d'Or
+Genêt de Givre
+Bois de Fontaine
+Rivage de Champ
+Marais Gris
+Ronce de Source
+Vent Clair
+Falaise de Pierre
+Pont d'Ombre
+Saule de Soir
+Érable Gris
+Clair Or
+Pont de Givre
+Prairie de Mont
+Aulne Blanc
+Ronce Claire
+Saule de Miel
+Verger Brun
+Falaise Grise
+Lac Doré
+Pré de Feu
+Genêt Blanc
+Genêt Fort
+Lac d'Or

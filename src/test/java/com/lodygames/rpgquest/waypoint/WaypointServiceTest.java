@@ -246,6 +246,42 @@ class WaypointServiceTest {
         });
     }
 
+    /**
+     * Retour joueur 2026-10-04 : un clic sur un waypoint déjà découvert ne doit plus être muet
+     * (consommation silencieuse) -- un retour clair contenant le nom doit apparaître à chaque fois,
+     * sans nouvelle récompense ni ré-écriture de la découverte déjà enregistrée.
+     */
+    @Test
+    void clickingAnAlreadyDiscoveredWaypointAgainShowsAClearFeedbackWithItsName() throws Exception {
+        // Jamais de service.handleJoin(player) ici : son chargement asynchrone des découvertes
+        // (écriture brute, pas un computeIfAbsent) peut écraser l'ensemble que handleInteract vient
+        // de peupler -- même piège déjà rencontré et documenté pour repairMoves...PreservingIdName...
+        Waypoint wp = generateAround(384, 384, Biome.FOREST);
+        PlayerMock player = addPlayer();
+
+        assertTrue(service.handleInteract(player, interactorBlockOf(wp)));
+        await(() -> {
+            try {
+                return repository.discoveriesFor(player.getUniqueId()).get(2, TimeUnit.SECONDS).contains(wp.id());
+            } catch (Exception e) {
+                return false;
+            }
+        });
+        // Laisse le temps au message asynchrone de première découverte d'être réellement envoyé
+        // (tâche planifiée sur le thread principal après l'écriture en base), puis vide la file
+        // avant le second clic -- jamais une hypothèse d'ordre entre deux nextMessage() successifs.
+        server.getScheduler().performTicks(5);
+        while (player.nextMessage() != null) {
+            // vide la file des messages déjà reçus (première découverte), hors du périmètre de ce test.
+        }
+
+        assertTrue(service.handleInteract(player, interactorBlockOf(wp)), "le clic reste consommé (annule l'événement)");
+        String feedback = player.nextMessage();
+        assertNotNull(feedback, "un second clic doit produire un retour visible, jamais un silence");
+        assertTrue(feedback.contains(wp.displayName()),
+                "le retour doit contenir le nom du waypoint : " + feedback);
+    }
+
     @Test
     void discoveryIsIndependentPerPlayer() throws Exception {
         Waypoint wp = generateAround(384, 384, Biome.FOREST);

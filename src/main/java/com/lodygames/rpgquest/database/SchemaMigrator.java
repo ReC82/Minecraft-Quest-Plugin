@@ -7,8 +7,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -27,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 22;
+    public static final int CURRENT_VERSION = 23;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -52,7 +54,8 @@ public final class SchemaMigrator {
             new SchemaMigration(19, "travel_beacons", SchemaMigrator::applyV19),
             new SchemaMigration(20, "village_centers", SchemaMigrator::applyV20),
             new SchemaMigration(21, "travel_beacons.biome_instance", SchemaMigrator::applyV21),
-            new SchemaMigration(22, "waypoints.display_name", SchemaMigrator::applyV22));
+            new SchemaMigration(22, "waypoints.display_name", SchemaMigrator::applyV22),
+            new SchemaMigration(23, "waypoints.display_name noms lisibles", SchemaMigrator::applyV23));
 
     private SchemaMigrator() {
     }
@@ -672,6 +675,264 @@ public final class SchemaMigrator {
         try (Statement statement = connection.createStatement()) {
             statement.execute(dialect.ddl(
                     "CREATE UNIQUE INDEX IF NOT EXISTS idx_waypoints_display_name ON waypoints (display_name)"));
+        }
+    }
+
+    /**
+     * Correspondance figée ancien nom généré (concaténation sans séparateur, ex. {@code Lacgivre})
+     * -> nouveau nom lisible (ex. {@code Lac de Givre}) -- retour joueur 2026-10-04, suite #133/#135.
+     * Clé normalisée via {@link WaypointNameCatalog#normalize} : jamais une égalité de chaîne brute,
+     * insensible à la casse/aux accents comme {@code idx_waypoints_display_name}. Un waypoint dont
+     * le nom actuel ne correspond à aucune clé (ex. nom de secours {@code "Avant-poste N"}, ou déjà
+     * un nom lisible) n'est jamais modifié par cette migration.
+     */
+    private static final Map<String, String> RENAMED_DISPLAY_NAMES = Map.ofEntries(
+            Map.entry("Pierrerive", "Pierre de Rive"),
+            Map.entry("Collinevert", "Colline Verte"),
+            Map.entry("Collinefontaine", "Colline de Fontaine"),
+            Map.entry("Closbelle", "Beau Clos"),
+            Map.entry("Tremblesoir", "Tremble de Soir"),
+            Map.entry("Grandbrune", "Grande Brune"),
+            Map.entry("Frênemiel", "Frêne de Miel"),
+            Map.entry("Ventrive", "Vent de Rive"),
+            Map.entry("Frênebrune", "Frêne Brun"),
+            Map.entry("Chênechamp", "Chêne de Champ"),
+            Map.entry("Collinenoix", "Colline de Noix"),
+            Map.entry("Bruyèrebois", "Bruyère de Bois"),
+            Map.entry("Erableval", "Érable de Val"),
+            Map.entry("Falaisenoir", "Falaise Noire"),
+            Map.entry("Chênesoir", "Chêne de Soir"),
+            Map.entry("Chêneclair", "Chêne Clair"),
+            Map.entry("Jardinrive", "Jardin de Rive"),
+            Map.entry("Lacgris", "Lac Gris"),
+            Map.entry("Valgivre", "Val de Givre"),
+            Map.entry("Trembleor", "Tremble d'Or"),
+            Map.entry("Closvert", "Clos Vert"),
+            Map.entry("Rochedoré", "Roche Dorée"),
+            Map.entry("Pierremiel", "Pierre de Miel"),
+            Map.entry("Fontainebois", "Fontaine de Bois"),
+            Map.entry("Ventfort", "Vent Fort"),
+            Map.entry("Rochefort", "Roche Forte"),
+            Map.entry("Closgris", "Clos Gris"),
+            Map.entry("Noyerfort", "Noyer Fort"),
+            Map.entry("Lacfleur", "Lac de Fleur"),
+            Map.entry("Aulnemont", "Aulne de Mont"),
+            Map.entry("Landeroc", "Lande de Roc"),
+            Map.entry("Montaube", "Mont d'Aube"),
+            Map.entry("Fontainerive", "Fontaine de Rive"),
+            Map.entry("Frênebelle", "Beau Frêne"),
+            Map.entry("Combevent", "Combe de Vent"),
+            Map.entry("Jardingivre", "Jardin de Givre"),
+            Map.entry("Ventgivre", "Vent de Givre"),
+            Map.entry("Rivagenoix", "Rivage de Noix"),
+            Map.entry("Hautegris", "Haute Grise"),
+            Map.entry("Collinemiel", "Colline de Miel"),
+            Map.entry("Landeombre", "Lande d'Ombre"),
+            Map.entry("Frêneaube", "Frêne d'Aube"),
+            Map.entry("Chêneroc", "Chêne de Roc"),
+            Map.entry("Clospierre", "Clos de Pierre"),
+            Map.entry("Brumenoir", "Brume Noire"),
+            Map.entry("Brumefort", "Brume Forte"),
+            Map.entry("Montpierre", "Mont de Pierre"),
+            Map.entry("Petitmiel", "Petit Miel"),
+            Map.entry("Combenoix", "Combe de Noix"),
+            Map.entry("Montnoix", "Mont de Noix"),
+            Map.entry("Étangblanc", "Étang Blanc"),
+            Map.entry("Préfontaine", "Pré de Fontaine"),
+            Map.entry("Clairclair", "Clair Matin"),
+            Map.entry("Rivagefleur", "Rivage de Fleur"),
+            Map.entry("Étangfeu", "Étang de Feu"),
+            Map.entry("Ventfontaine", "Vent de Fontaine"),
+            Map.entry("Brumeroc", "Brume de Roc"),
+            Map.entry("Closfontaine", "Clos de Fontaine"),
+            Map.entry("Étangnoir", "Étang Noir"),
+            Map.entry("Aulneombre", "Aulne d'Ombre"),
+            Map.entry("Prairienoir", "Prairie Noire"),
+            Map.entry("Landefort", "Lande Forte"),
+            Map.entry("Prairiefleur", "Prairie de Fleur"),
+            Map.entry("Prairievert", "Prairie Verte"),
+            Map.entry("Ormemiel", "Orme de Miel"),
+            Map.entry("Prairierive", "Prairie de Rive"),
+            Map.entry("Sourcenoir", "Source Noire"),
+            Map.entry("Closvent", "Clos de Vent"),
+            Map.entry("Falaiseval", "Falaise de Val"),
+            Map.entry("Présoir", "Pré de Soir"),
+            Map.entry("Collinefort", "Colline Forte"),
+            Map.entry("Petitval", "Petit Val"),
+            Map.entry("Noyerpierre", "Noyer de Pierre"),
+            Map.entry("Rivageombre", "Rivage d'Ombre"),
+            Map.entry("Granddoré", "Grande Dorée"),
+            Map.entry("Rivagebelle", "Beau Rivage"),
+            Map.entry("Lacgivre", "Lac de Givre"),
+            Map.entry("Grandor", "Grand Or"),
+            Map.entry("Aulnevent", "Aulne de Vent"),
+            Map.entry("Frênemont", "Frêne de Mont"),
+            Map.entry("Clairbrune", "Claire Brune"),
+            Map.entry("Saulebrune", "Saule Brun"),
+            Map.entry("Falaisegivre", "Falaise de Givre"),
+            Map.entry("Rivagevert", "Rivage Vert"),
+            Map.entry("Erablemiel", "Érable de Miel"),
+            Map.entry("Prairiefort", "Prairie Forte"),
+            Map.entry("Rivagepierre", "Rivage de Pierre"),
+            Map.entry("Roncegris", "Ronce Grise"),
+            Map.entry("Sourcebrune", "Source Brune"),
+            Map.entry("Prairiesoir", "Prairie de Soir"),
+            Map.entry("Genêtor", "Genêt d'Or"),
+            Map.entry("Bassesource", "Basse Source"),
+            Map.entry("Trembledoré", "Tremble Doré"),
+            Map.entry("Aulnesource", "Aulne de Source"),
+            Map.entry("Noyermurmure", "Noyer de Murmure"),
+            Map.entry("Bruyèreor", "Bruyère d'Or"),
+            Map.entry("Tremblebrune", "Tremble Brun"),
+            Map.entry("Collinegris", "Colline Grise"),
+            Map.entry("Falaisebelle", "Belle Falaise"),
+            Map.entry("Saulevert", "Saule Vert"),
+            Map.entry("Étangvent", "Étang de Vent"),
+            Map.entry("Hautemurmure", "Haut Murmure"),
+            Map.entry("Petitgivre", "Petit Givre"),
+            Map.entry("Saulepierre", "Saule de Pierre"),
+            Map.entry("Erableor", "Érable d'Or"),
+            Map.entry("Prédoré", "Pré Doré"),
+            Map.entry("Noyergris", "Noyer Gris"),
+            Map.entry("Erableombre", "Érable d'Ombre"),
+            Map.entry("Lacpierre", "Lac de Pierre"),
+            Map.entry("Closnoix", "Clos de Noix"),
+            Map.entry("Lacbrune", "Lac Brun"),
+            Map.entry("Montlune", "Mont de Lune"),
+            Map.entry("Bassefort", "Basse Forte"),
+            Map.entry("Collinebelle", "Belle Colline"),
+            Map.entry("Clairgris", "Claire Grise"),
+            Map.entry("Rivagefontaine", "Rivage de Fontaine"),
+            Map.entry("Boisbois", "Bois de Bois"),
+            Map.entry("Sourceor", "Source d'Or"),
+            Map.entry("Boisblanc", "Bois Blanc"),
+            Map.entry("Étangvert", "Étang Vert"),
+            Map.entry("Chênenoix", "Chêne de Noix"),
+            Map.entry("Erablemurmure", "Érable de Murmure"),
+            Map.entry("Clairdoré", "Claire Dorée"),
+            Map.entry("Boisfeu", "Bois de Feu"),
+            Map.entry("Brumeblanc", "Brume Blanche"),
+            Map.entry("Moulinrive", "Moulin de Rive"),
+            Map.entry("Valpierre", "Val de Pierre"),
+            Map.entry("Frêneroc", "Frêne de Roc"),
+            Map.entry("Genêtlune", "Genêt de Lune"),
+            Map.entry("Boisvent", "Bois de Vent"),
+            Map.entry("Montblanc", "Mont Blanc"),
+            Map.entry("Montvert", "Mont Vert"),
+            Map.entry("Pontbois", "Pont de Bois"),
+            Map.entry("Rivagelune", "Rivage de Lune"),
+            Map.entry("Collinedoré", "Colline Dorée"),
+            Map.entry("Boisval", "Bois de Val"),
+            Map.entry("Prairieombre", "Prairie d'Ombre"),
+            Map.entry("Sourcegivre", "Source de Givre"),
+            Map.entry("Pierrevert", "Pierre Verte"),
+            Map.entry("Bassegivre", "Bas Givre"),
+            Map.entry("Pontclair", "Pont Clair"),
+            Map.entry("Prairieval", "Prairie de Val"),
+            Map.entry("Bruyèrebelle", "Belle Bruyère"),
+            Map.entry("Moulinfort", "Moulin Fort"),
+            Map.entry("Maraischamp", "Marais de Champ"),
+            Map.entry("Rochemiel", "Roche de Miel"),
+            Map.entry("Combeclair", "Combe Claire"),
+            Map.entry("Petitbrune", "Petite Brune"),
+            Map.entry("Falaisevent", "Falaise de Vent"),
+            Map.entry("Noyerval", "Noyer de Val"),
+            Map.entry("Clairgivre", "Clair Givre"),
+            Map.entry("Tremblefort", "Tremble Fort"),
+            Map.entry("Montfeu", "Mont de Feu"),
+            Map.entry("Combegris", "Combe Grise"),
+            Map.entry("Tremblenoix", "Tremble de Noix"),
+            Map.entry("Boisbelle", "Beau Bois"),
+            Map.entry("Frêneombre", "Frêne d'Ombre"),
+            Map.entry("Hautesource", "Haute Source"),
+            Map.entry("Bassemiel", "Bas Miel"),
+            Map.entry("Aulnelune", "Aulne de Lune"),
+            Map.entry("Lacblanc", "Lac Blanc"),
+            Map.entry("Brumegivre", "Brume de Givre"),
+            Map.entry("Moulinaube", "Moulin d'Aube"),
+            Map.entry("Moulinval", "Moulin de Val"),
+            Map.entry("Combepierre", "Combe de Pierre"),
+            Map.entry("Rivagegivre", "Rivage de Givre"),
+            Map.entry("Genêtombre", "Genêt d'Ombre"),
+            Map.entry("Genêtfontaine", "Genêt de Fontaine"),
+            Map.entry("Sourceroc", "Source de Roc"),
+            Map.entry("Vergerfort", "Verger Fort"),
+            Map.entry("Boisor", "Bois d'Or"),
+            Map.entry("Clairfeu", "Clair Feu"),
+            Map.entry("Ventaube", "Vent d'Aube"),
+            Map.entry("Fontaineclair", "Fontaine Claire"),
+            Map.entry("Erablefort", "Érable Fort"),
+            Map.entry("Noyermiel", "Noyer de Miel"),
+            Map.entry("Vergerclair", "Verger Clair"),
+            Map.entry("Maraisval", "Marais de Val"),
+            Map.entry("Moulinbois", "Moulin de Bois"),
+            Map.entry("Pierrelune", "Pierre de Lune"),
+            Map.entry("Bruyèregivre", "Bruyère de Givre"),
+            Map.entry("Pierreval", "Pierre de Val"),
+            Map.entry("Frênenoir", "Frêne Noir"),
+            Map.entry("Lacombre", "Lac d'Ombre"),
+            Map.entry("Grandombre", "Grande Ombre"),
+            Map.entry("Étangfontaine", "Étang de Fontaine"),
+            Map.entry("Genêtfeu", "Genêt de Feu"),
+            Map.entry("Clairaube", "Claire Aube"),
+            Map.entry("Rocherive", "Roche de Rive"),
+            Map.entry("Collinefleur", "Colline de Fleur"),
+            Map.entry("Maraismurmure", "Marais de Murmure"),
+            Map.entry("Rivageblanc", "Rivage Blanc"),
+            Map.entry("Collinevent", "Colline de Vent"),
+            Map.entry("Hautegivre", "Haut Givre"),
+            Map.entry("Sourcenoix", "Source de Noix"),
+            Map.entry("Bruyèremurmure", "Bruyère de Murmure"),
+            Map.entry("Jardinor", "Jardin d'Or"),
+            Map.entry("Genêtgivre", "Genêt de Givre"),
+            Map.entry("Boisfontaine", "Bois de Fontaine"),
+            Map.entry("Rivagechamp", "Rivage de Champ"),
+            Map.entry("Maraisgris", "Marais Gris"),
+            Map.entry("Roncesource", "Ronce de Source"),
+            Map.entry("Ventclair", "Vent Clair"),
+            Map.entry("Falaisepierre", "Falaise de Pierre"),
+            Map.entry("Pontombre", "Pont d'Ombre"),
+            Map.entry("Saulesoir", "Saule de Soir"),
+            Map.entry("Erablegris", "Érable Gris"),
+            Map.entry("Clairor", "Clair Or"),
+            Map.entry("Pontgivre", "Pont de Givre"),
+            Map.entry("Prairiemont", "Prairie de Mont"),
+            Map.entry("Aulneblanc", "Aulne Blanc"),
+            Map.entry("Ronceclair", "Ronce Claire"),
+            Map.entry("Saulemiel", "Saule de Miel"),
+            Map.entry("Vergerbrune", "Verger Brun"),
+            Map.entry("Falaisegris", "Falaise Grise"),
+            Map.entry("Lacdoré", "Lac Doré"),
+            Map.entry("Préfeu", "Pré de Feu"),
+            Map.entry("Genêtblanc", "Genêt Blanc"),
+            Map.entry("Genêtfort", "Genêt Fort"),
+            Map.entry("Lacor", "Lac d'Or")
+    );
+
+    private static void applyV23(Connection connection, SqlDialect dialect) throws SQLException {
+        Map<String, String> byNormalizedOldName = new HashMap<>();
+        for (Map.Entry<String, String> entry : RENAMED_DISPLAY_NAMES.entrySet()) {
+            byNormalizedOldName.put(WaypointNameCatalog.normalize(entry.getKey()), entry.getValue());
+        }
+
+        List<String[]> toRename = new ArrayList<>();
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery("SELECT id, display_name FROM waypoints")) {
+            while (resultSet.next()) {
+                String id = resultSet.getString("id");
+                String currentName = resultSet.getString("display_name");
+                String newName = byNormalizedOldName.get(WaypointNameCatalog.normalize(currentName));
+                if (newName != null) {
+                    toRename.add(new String[] {id, newName});
+                }
+            }
+        }
+        try (PreparedStatement update = connection.prepareStatement("UPDATE waypoints SET display_name = ? WHERE id = ?")) {
+            for (String[] row : toRename) {
+                update.setString(1, row[1]);
+                update.setString(2, row[0]);
+                update.executeUpdate();
+            }
         }
     }
 }

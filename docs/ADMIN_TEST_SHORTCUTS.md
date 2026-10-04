@@ -74,6 +74,21 @@ Clés proposées en tab-complétion (indicatif, la saisie libre reste acceptée)
 `CLAIM_TIER_1`, `tutorial_started`, `crystal_hunt_started`, `woodcutter_reputation`,
 `RUNE_RAPPEL_GRANTED`.
 
+### Claims — palier (issue #179)
+
+```
+/rpgadmin claim grant-tier <joueur> <TIER_n>
+```
+
+| Commande | Effet | Cible |
+|---|---|---|
+| `claim grant-tier` | Fait directement grandir le claim principal **déjà posé** du joueur jusqu'à `TIER_n` (`ClaimService#upgradeTier`), sans passer par une quête. Idempotent : déjà à ce palier ou plus grand → message « rien à faire » ; pas encore de claim posé → message « le droit reste acquis, l'Acte posera directement au bon palier ». | **en ligne** |
+
+Ne touche **jamais** à l'état des quêtes `guard_tierN` ni à la variable
+`CLAIM_TIER_n` elle-même — utiliser `quest complete guard_tierN` (ci-dessous)
+pour tester la quête de bout en bout, ou `claim grant-tier` seul si uniquement
+la taille du claim doit être vérifiée indépendamment des quêtes.
+
 ------------------------------------------------------------------------
 
 ## Comportement des récompenses (résumé)
@@ -150,6 +165,26 @@ les étapes déjà validées.
 ```
 /rpgadmin story complete Rondoudou9000 main_story
 #  -> premiers_pas, first_steps, crystal_hunt complétées dans l'ordre ; CLAIM_TIER_1 posée
+```
+
+### D. Tester les 5 paliers du Garde sans tuer un seul mob (issue #179)
+
+```
+/rpgadmin player resetnew Rondoudou9000 confirm
+/rpgadmin quest complete Rondoudou9000 rpgquest:guard_tier1
+/rpgadmin quest complete Rondoudou9000 rpgquest:guard_tier2
+/rpgadmin quest complete Rondoudou9000 rpgquest:guard_tier3
+/rpgadmin quest complete Rondoudou9000 rpgquest:guard_tier4
+/rpgadmin quest complete Rondoudou9000 rpgquest:guard_tier5
+# chaque complétion applique ses récompenses (VARIABLE CLAIM_TIER_n + montée
+# réelle du claim si déjà posé) ; reparler au Garde après chaque étape doit
+# proposer le palier suivant, puis un message de clôture après le 5e.
+```
+
+Pour vérifier uniquement la taille du claim sans toucher aux quêtes :
+
+```
+/rpgadmin claim grant-tier Rondoudou9000 TIER_5
 ```
 
 ------------------------------------------------------------------------

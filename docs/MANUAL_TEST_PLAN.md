@@ -2025,6 +2025,48 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-233 — Chaîne de paliers du Garde : claims TIER_1 à TIER_5 (issue #179, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `quests/guard_tier{1..5}.yml`, `dialogues/guard.yml` (nouvelles
+    branches), `ClaimService#upgradeTier`/`#highestEntitledTier`, `/rpgadmin claim grant-tier`.
+-   **Préconditions :** JAR de cette session déployé et redémarré ; `CLAIM_TIER_1` et tout claim du
+    joueur de test remis à zéro (`/rpgadmin player resetnew <joueur> confirm`, ou
+    `/claim admin resettier1 <joueur>` si seul le volet claim doit être rejoué).
+-   **Scénario principal (sans grinder, via les raccourcis admin déjà documentés) :**
+    1.  Parler au Garde → le choix « Je veux prouver ma valeur... (palier 1) » doit apparaître (si
+        `crystal_hunt` n'a pas déjà accordé `CLAIM_TIER_1`, ou même si elle l'a déjà fait : le
+        palier 1 du Garde reste un parcours indépendant).
+    2.  Accepter → le nœud affiché doit énoncer les quatre menaces et leurs montants (5 de chaque).
+    3.  Au lieu de tuer 5+5+5+5 mobs, exécuter `/rpgadmin quest complete <joueur> guard_tier1` →
+        vérifier en jeu que l'Acte de propriété (ou le claim existant) correspond bien à `TIER_1`.
+    4.  Répéter `/rpgadmin quest complete <joueur> guard_tierN` pour N=2..5 dans l'ordre → après
+        chaque complétion, revérifier auprès du Garde que le palier suivant est bien proposé (texte
+        cohérent, bons montants dans le nœud `guard_tierN_accepted`), et que le claim grandit
+        réellement (`/claim info` ou `/rpgadmin claim grant-tier <joueur> TIER_n` pour vérifier
+        l'idempotence : doit répondre « déjà à ce palier »).
+    5.  Après `guard_tier5` complétée, reparler au Garde → doit proposer uniquement le message de
+        clôture (« Tu as largement prouvé... »), **jamais** un rappel d'objectif ni une 6e offre.
+    6.  Vérifier qu'un joueur n'ayant **pas encore posé** son Acte, mais ayant déjà complété
+        `guard_tier1`..`guard_tier3` (ex. via les raccourcis admin ci-dessus), pose directement un
+        claim `TIER_3` (20×20) à la première confirmation de l'Acte — jamais 5×5 par défaut.
+    7.  (Optionnel, scénario réel) Refaire le parcours en tuant réellement quelques araignées pour
+        confirmer que les compteurs de `/quest progress guard_tier1` avancent bien avec les 4
+        objectifs simultanés, dans n'importe quel ordre.
+-   **Reset :** `/rpgadmin quest reset <joueur> guard_tierN` (ne révoque pas les récompenses déjà
+    données, y compris la taille de claim déjà accordée — limite documentée, cohérente avec
+    `quest reset` en général) ; `/claim admin resettier1 <joueur>` pour repartir du claim lui-même.
+-   **Couverture automatisée :** `BundledQuestsValidityTest` (chargement sans erreur, 4 objectifs
+    `KILL_ENTITY` aux bons montants par palier, prérequis chaînés, entitlement `CLAIM_TIER_n`
+    accordée), `BundledDialoguesValidityTest` (`guard.yml` toujours chargeable avec les nouvelles
+    branches), `ClaimServiceTest` (`highestEntitledTier`, `upgradeTier` : succès centré sur le même
+    point, idempotence déjà-au-palier, refus sans claim posé, refus de chevauchement),
+    `DeedClaimListenerTest` (première pose directement au palier le plus haut déjà obtenu).
+-   **Limites :** aucune limite MockBukkit connue pour ce volet (contrairement à #190) — tout le
+    mécanisme de palier est testable automatiquement ; seul le parcours en jeu réel (dialogue visuel,
+    vrais combats) reste `PENDING MANUAL VALIDATION`.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -2088,3 +2130,4 @@ le résumé de récompenses de TC-014).
 | TC-230 | Panneaux latéraux de nom des waypoints #167 (PENDING) | | | |
 | TC-231 | Mobs spéciaux/boss : éditeur panel, tirage Wild, capacités #169/#171 (PENDING) | | | |
 | TC-232 | Zombie fissile équilibré, poursuite Cochon Creeper, création de profil #190 (PENDING) | | | |
+| TC-233 | Chaîne de paliers du Garde (claims TIER_1-5) #179 (PENDING) | | | |

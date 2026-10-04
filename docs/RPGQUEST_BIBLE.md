@@ -150,6 +150,7 @@ Détail complet : [docs/ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md). Outil
 | `/rpgadmin story complete <joueur> <storyId>` | Enchaîne `advance` jusqu'au bout, dans l'ordre, borné. | en ligne | via `forceComplete`, une seule fois par quête |
 | `/rpgadmin player variable get <joueur> <clé>` | Lit `player_variables` (lecture pure). Clé absente signalée. | en ligne **ou** hors ligne | — |
 | `/rpgadmin player variable set <joueur> <clé> <valeur>` | Écrit la clé. Avertissement + journalisation (ancienne/nouvelle valeur). | en ligne **ou** hors ligne | **exige `rpgquest.admin.debug` en plus** |
+| `/rpgadmin claim grant-tier <joueur> <TIER_n>` (issue #179) | Fait directement grandir le claim principal déjà posé (`ClaimService#upgradeTier`), sans passer par une quête. | en ligne | n/a (pas une récompense de quête — voir `/rpgadmin quest complete guard_tierN` pour tester la quête elle-même, récompenses incluses) |
 
 `story advance`/`complete` ne touchent jamais une quête non référencée par la story ciblée. Pour un état vraiment propre : `/rpgadmin player resetnew … confirm`, `/rpgadmin story resetwithquests …`, ou `/rpgadmin player variable set … CLAIM_TIER_1 false`.
 
@@ -266,6 +267,49 @@ Permission : `rpgquest.quest` (toutes), joueur uniquement (jamais console).
 | `/quest abandon <id>` | Abandonne une quête active (réacceptable ensuite, indépendamment de `repeatable`). |
 
 Persistance : oui pour tout ce qui touche à l'état (`accept`/`abandon`) — SQLite `quest_progress` + `quest_objective_progress` (migration V2). `list`/`progress` sont en lecture seule.
+
+### Chaîne de paliers du Garde — `guard_tier1`..`guard_tier5` (issue #179)
+
+Parcours combat simplifié pour obtenir les claims de palier 1 à 5 (voir
+[docs/CLAIMS.md](../CLAIMS.md), section « Montée de palier ») — **chemin
+parallèle à `crystal_hunt`, jamais modifié**, même PNJ donneur (`guard`).
+
+Cinq quêtes (`rpgquest:guard_tier1` → `rpgquest:guard_tier5`,
+`src/main/resources/quests/guard_tier{1..5}.yml`), chacune :
+
+-   **une seule étape**, **quatre objectifs `KILL_ENTITY` simultanés**
+    (araignées, zombies, squelettes, creepers), tous requis avant de
+    terminer l'étape, dans n'importe quel ordre — supporté nativement par
+    le moteur (`QuestObjectiveIndex` indexe chaque objectif indépendamment
+    par type+clé), **aucun changement du moteur n'a été nécessaire** ;
+-   montants par palier : 5/10/20/40/80 de chaque menace ;
+-   **aucun report d'une quête à l'autre** : chaque quête a son propre
+    compteur de progression (clé = id de quête + étape), remis à zéro à
+    l'acceptation d'une nouvelle quête, jamais partagé avec la précédente ;
+-   `prerequisites: [rpgquest:guard_tier(N-1)]` pour N ≥ 2 — palier N+1
+    invisible dans le dialogue tant que le palier N n'est pas `COMPLETED` ;
+-   `repeatable: false` ;
+-   récompenses : `EXPERIENCE` (20×N), `VARIABLE CLAIM_TIER_N=true`
+    (entitlement, même mécanisme que `crystal_hunt` pour `CLAIM_TIER_1`),
+    `COMMAND: "rpgadmin claim grant-tier %player% TIER_N"` (montée réelle du
+    claim déjà posé, idempotente dans tous les cas).
+
+**Dialogue** (`dialogues/guard.yml`) : un choix par palier dans `greeting`,
+conditionné par `QUEST_STATE` (palier précédent `COMPLETED` + palier
+courant `NOT_STARTED`, palier 1 sans condition de prérequis dialogue — le
+`prerequisites` de la quête elle-même suffit), menant à un nœud
+`guard_tierN_accepted` qui énonce les quatre objectifs et leurs montants.
+Après `guard_tier5` `COMPLETED`, un choix dédié (« J'ai fini tout ce que tu
+m'as demandé... ») mène à `guard_tiers_done` — un message cohérent de
+clôture, **jamais** un rappel d'objectif resté bloqué sur un état périmé
+(voir l'issue #158 pour le symptôme évité). Les branches `first_steps`/
+`crystal_hunt` existantes ne sont pas modifiées.
+
+**Test en jeu sans grinder** : `/rpgadmin quest complete <joueur> guard_tierN`
+complète instantanément une quête de palier avec ses récompenses (donc la
+montée de claim réelle) ; `/rpgadmin claim grant-tier <joueur> TIER_n`
+fait grandir le claim sans toucher à l'état des quêtes, si seule la taille
+doit être vérifiée. Voir section 2 et [docs/ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md).
 
 ### `/quests` — journal de quêtes
 Type : Joueur — Permission : `rpgquest.quest`
@@ -1301,7 +1345,7 @@ Bypass : `rpgquest.admin.world` (même permission que le bypass des zones proté
 
 Vérifié dans `claim.ClaimWorldAccessGuard`, `claim.ClaimWorldSafetyListener`, `travel.CompositeWorldPortalEntryGuard`, `dialogues/guide.yml`, `dialogues/jo.yml`, `quests/crystal_hunt.yml`.
 
-**Condition réelle du premier claim** : la variable joueur `CLAIM_TIER_1 == "true"`, accordée **uniquement** par la récompense `VARIABLE` de `rpgquest:crystal_hunt` (dernière quête de `main_story`, rendue au Garde). Aucune autre mécanique. `/rpgadmin player resetnew` l'efface (avec tous les claims), `/claim admin resettier1` la met à `"false"`.
+**Condition réelle du premier claim** : la variable joueur `CLAIM_TIER_1 == "true"`, accordée par la récompense `VARIABLE` de `rpgquest:crystal_hunt` (dernière quête de `main_story`, rendue au Garde) **ou**, depuis l'issue #179, par `rpgquest:guard_tier1` (chemin parallèle et plus simple, même Garde, voir section 3 « Chaîne de paliers du Garde »). `/rpgadmin player resetnew` l'efface (avec tous les claims), `/claim admin resettier1` la met à `"false"`.
 
 **Portail Hub → `claims` fermé tant que le premier claim n'est pas débloqué** : `ClaimWorldAccessGuard` (un `travel.WorldPortalEntryGuard`, composé avec l'avertissement d'entrée dans le Wild) refuse l'entrée d'un joueur qui n'a ni `CLAIM_TIER_1 == "true"` ni claim existant — **aucune téléportation**, message d'orientation vers Jo / le Guide. Seul `rpgquest.admin.world` passe outre ; aucune permission de build/admin ne contourne la règle par accident.
 
@@ -1319,7 +1363,7 @@ Vérifié dans `claim.ClaimWorldAccessGuard`, `claim.ClaimWorldSafetyListener`, 
 
 ### Prévu / TODO
 
--   **Agrandissement de claim par le propriétaire (largeur/hauteur au-delà du niveau RPG)** : non implémenté. Seul le **nombre** maximal de claims augmente avec le niveau `GLOBAL` (+1 tous les 10 niveaux) ; largeur/hauteur restent fixes (`config.yml`, identiques pour tous). Aucun avantage payant n'est prévu (politique confirmée dans `docs/CLAIMS.md`).
+-   **Agrandissement du claim principal (`TIER_1` → `TIER_5`)** : implémenté depuis l'issue #179 via `ClaimService#upgradeTier`, déclenché par la chaîne de quêtes du Garde (voir section 3). Toujours **hors périmètre** : agrandissement au-delà de `TIER_5`, ou largeur/hauteur indépendantes du modèle de palier (seul le **nombre** maximal de claims augmente encore avec le niveau `GLOBAL`, +1 tous les 10 niveaux). Aucun avantage payant n'est prévu (politique confirmée dans `docs/CLAIMS.md`).
 -   Aucune autre évolution de claims trouvée dans `TODO.md` à la racine.
 
 ---

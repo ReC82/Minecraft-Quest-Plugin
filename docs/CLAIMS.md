@@ -164,8 +164,13 @@ commande, via un objet spécial remis par un PNJ.
 4. **Pose du claim** — clic droit sur un bloc avec l'Acte, **dans le monde
    des claims** (`claims.world`, voir Configuration) :
    -   1er clic droit sur une cible : **aperçu** (message chat, bornes
-       actives 5×5 et réservation 100×100 centrées sur le bloc visé) —
-       aucune écriture, aucun claim créé.
+       actives et réservation 100×100 centrées sur le bloc visé) — aucune
+       écriture, aucun claim créé. **Depuis l'issue #179**, la taille active
+       de l'aperçu n'est plus figée à 5×5 : elle correspond au palier le
+       plus haut déjà obtenu par le joueur au moment du clic
+       (`ClaimService#highestEntitledTier`) — un joueur ayant déjà complété
+       des quêtes de palier supérieur avant sa toute première pose obtient
+       directement un claim plus grand, jamais 5×5 par défaut.
    -   2e clic droit sur (ou près de) la **même** cible : **confirmation**
        — crée réellement le claim via `ClaimService#create` (mêmes
        vérifications que `/claim create`, voir « Refus à la création »),
@@ -345,12 +350,54 @@ Chaque claim a désormais **deux cuboïdes** (`claim.model.Claim`) :
     installer entre-temps** (`Claim#overlapsReservation`, vérifié à chaque
     création, voir « Refus à la création »).
 
-`claim.model.ClaimTier` centralise les tailles par palier — **seul
-`TIER_1` (5×5 actif / 100×100 de réservation) est réellement atteignable
-aujourd'hui** ; l'énumération existe pour que le modèle (`Claim`,
-`ClaimRepository`, migration V15) n'ait pas besoin d'être retouché quand un
-futur palier (10×10, 20×20...) sera implémenté — **aucune logique
-d'amélioration/upgrade n'existe encore**, volontairement hors périmètre.
+`claim.model.ClaimTier` centralise les tailles par palier — `TIER_1` à
+`TIER_5` (actif 5×5/10×10/20×20/40×40/80×80, **réservation constante à
+100×100 pour les cinq paliers**). La réservation reste volontairement
+identique à celle déjà posée dès `TIER_1` : comme chaque `activeSize` ≤ 100,
+toute montée de palier reste à l'intérieur de l'espace déjà exclusivement
+réservé pour ce claim depuis sa création — aucune collision avec un claim
+voisin n'est donc possible par construction (une vérification explicite
+reste faite par prudence, voir ci-dessous).
+
+### Montée de palier (issue #179 — parcours du Garde)
+
+`ClaimService#upgradeTier(UUID owner, ClaimTier newTier)` fait grandir le
+**claim principal déjà posé** d'un joueur jusqu'à `newTier`, **centré sur le
+même point** que son claim actuel (jamais une nouvelle position) — seules
+les bornes actives/réservation changent, jamais l'id, le monde, les membres
+ou les drapeaux. Issues possibles : `UPGRADED` ; `NO_CLAIM_YET` (le joueur
+n'a pas encore posé de claim principal — l'entitlement `CLAIM_TIER_n` reste
+malgré tout acquis, voir « Pose du claim » ci-dessus) ; `ALREADY_AT_TIER_OR_HIGHER`
+(jamais de rétrogradation, idempotent — protège contre un double
+déclenchement de la récompense) ; `NOT_SQUARE`, `OVERLAPS_CLAIM`,
+`OVERLAPS_RESERVATION` (défense en profondeur, normalement inatteignables
+par construction pour un claim posé via l'Acte).
+
+**Déclenché par les cinq quêtes du Garde** (`rpgquest:guard_tier1`..`guard_tier5`,
+voir [docs/RPGQUEST_BIBLE.md](RPGQUEST_BIBLE.md)) : chaque palier propose
+une quête à étape unique avec quatre objectifs `KILL_ENTITY` simultanés
+(araignées/zombies/squelettes/creepers, 5/10/20/40/80 selon le palier,
+**aucun report d'une quête à l'autre** — chaque quête réinitialise son
+propre compteur), prérequis chaîné au palier précédent. Les récompenses
+accordent l'entitlement `CLAIM_TIER_n` (`VARIABLE`, même mécanisme que
+`crystal_hunt` pour `CLAIM_TIER_1`) **et** déclenchent la montée réelle via
+`COMMAND: "rpgadmin claim grant-tier %player% TIER_n"` — idempotent dans
+tous les cas (joueur déjà à ce palier, ou sans claim posé).
+
+Ce parcours du Garde est **un chemin parallèle et plus simple** vers
+`CLAIM_TIER_1`, indépendant de `crystal_hunt` (jamais modifié) : les deux
+peuvent accorder la même entitlement sans conflit (écriture idempotente de
+la même variable).
+
+### `/rpgadmin claim grant-tier <joueur> <TIER_n>`
+
+Type : console ou joueur — Permission : `rpgquest.admin.world`.
+Raccourci admin qui appelle directement `ClaimService#upgradeTier` (sans
+passer par une quête) — utile pour les tests en jeu sans avoir à tuer des
+centaines de mobs : voir `/rpgadmin quest complete` ci-dessous pour
+compléter une quête de palier instantanément (récompenses incluses, donc
+`grant-tier` déclenché automatiquement), ou `grant-tier` directement si
+seule la taille du claim doit être vérifiée.
 
 Un claim créé via `/claim create` (baguette, sélection arbitraire) n'a
 **aucune réservation supplémentaire** : sa réservation vaut exactement son
@@ -481,7 +528,13 @@ claims déjà existants), `ConfigValidatorTest` (section `claims`, y compris
 taille, nombre maximal, suppression, confiance/retrait de confiance, monde
 absent, protection indépendante du statut en ligne du propriétaire,
 **prérequis `CLAIM_TIER_1` sur le premier claim uniquement**, **chevauchement
-de réservation**), `ClaimProtectionListenerTest` (frontière incluse, membre
+de réservation**, **issue #179** : `highestEntitledTier` vide sans
+entitlement puis renvoie le palier le plus haut accordé quel que soit
+l'ordre d'octroi, `upgradeTier` refuse sans claim posé
+(`NO_CLAIM_YET`)/déjà au palier ou plus grand (`ALREADY_AT_TIER_OR_HIGHER`,
+idempotent)/en cas de chevauchement avec un claim voisin
+(`OVERLAPS_CLAIM`), fait grandir un claim en conservant son centre et une
+réservation 100×100), `ClaimProtectionListenerTest` (frontière incluse, membre
 autorisé/non autorisé, conteneurs, redstone configurable, animaux,
 explosion externe, piston traversant la frontière, monde sans claim,
 suppression), `ClaimsWorldRulesListenerTest` (PvP, mobs hostiles,
@@ -489,7 +542,13 @@ construction hors de tout claim, bypass admin, jour/nuit et météo jamais
 verrouillés), `DeedClaimListenerTest` (refus sans `CLAIM_TIER_1`, refus
 hors du monde des claims, aperçu sans création, confirmation créant un
 claim 5×5 avec réservation 100×100 centrée sur la cible, consommation de
-l'Acte, refus d'un second claim principal), `DialogueSessionEngineTest`
+l'Acte, refus d'un second claim principal, **issue #179** : première pose
+directement au palier le plus haut déjà obtenu quand il dépasse `TIER_1`),
+`BundledQuestsValidityTest` (toutes les quêtes livrées, dont la chaîne
+`guard_tier1`..`guard_tier5`, chargent sans erreur ; chaque palier a le bon
+donneur, les quatre objectifs `KILL_ENTITY` aux bons montants, le prérequis
+chaîné au palier précédent, et accorde la bonne entitlement
+`CLAIM_TIER_n`), `DialogueSessionEngineTest`
 (condition `NO_MAIN_CLAIM`, visible sans claim puis masquée une fois le
 claim créé ; condition `HAS_MAIN_CLAIM`, invisible sans claim puis visible
 une fois le claim créé — strict opposé ; **Jo adapte son dialogue aux 3

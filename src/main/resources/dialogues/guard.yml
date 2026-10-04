@@ -27,6 +27,69 @@ nodes:
           - type: START_QUEST
             quest: rpgquest:crystal_hunt
         next: crystal_hunt_accepted
+      - text: "Je veux prouver ma valeur pour obtenir un bout de terrain (palier 1)"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:guard_tier1
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:guard_tier1
+        next: guard_tier1_accepted
+      - text: "Je veux agrandir mon terrain (palier 2)"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:guard_tier1
+            state: COMPLETED
+          - type: QUEST_STATE
+            quest: rpgquest:guard_tier2
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:guard_tier2
+        next: guard_tier2_accepted
+      - text: "Je veux encore agrandir mon terrain (palier 3)"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:guard_tier2
+            state: COMPLETED
+          - type: QUEST_STATE
+            quest: rpgquest:guard_tier3
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:guard_tier3
+        next: guard_tier3_accepted
+      - text: "Je veux encore agrandir mon terrain (palier 4)"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:guard_tier3
+            state: COMPLETED
+          - type: QUEST_STATE
+            quest: rpgquest:guard_tier4
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:guard_tier4
+        next: guard_tier4_accepted
+      - text: "Je veux encore agrandir mon terrain (palier 5)"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:guard_tier4
+            state: COMPLETED
+          - type: QUEST_STATE
+            quest: rpgquest:guard_tier5
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:guard_tier5
+        next: guard_tier5_accepted
+      - text: "J'ai fini tout ce que tu m'as demandé pour mon terrain"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:guard_tier5
+            state: COMPLETED
+        next: guard_tiers_done
       - text: "Parle-moi de la récompense"
         next: reward_info
       - text: "Non merci"
@@ -46,6 +109,70 @@ nodes:
       <green>Ramène-moi des crocs d'araignée et des cristaux raffinés, et
       forge une lame digne de ce nom. Reviens me voir une fois la lame
       forgée.</green>
+    choices:
+      - text: "D'accord"
+        actions:
+          - type: CLOSE
+
+  guard_tier1_accepted:
+    speaker: "Garde"
+    text: >
+      <green>Fais tes preuves : élimine 5 araignées, 5 zombies, 5 squelettes
+      et 5 creepers. Reviens me voir une fois les quatre menaces repoussées.</green>
+    choices:
+      - text: "D'accord"
+        actions:
+          - type: CLOSE
+
+  guard_tier2_accepted:
+    speaker: "Garde"
+    text: >
+      <green>Un terrain plus grand, un effort plus grand : 10 araignées,
+      10 zombies, 10 squelettes et 10 creepers. Reviens me voir une fois
+      les quatre menaces repoussées.</green>
+    choices:
+      - text: "D'accord"
+        actions:
+          - type: CLOSE
+
+  guard_tier3_accepted:
+    speaker: "Garde"
+    text: >
+      <green>Toujours plus : 20 araignées, 20 zombies, 20 squelettes et
+      20 creepers. Reviens me voir une fois les quatre menaces repoussées.</green>
+    choices:
+      - text: "D'accord"
+        actions:
+          - type: CLOSE
+
+  guard_tier4_accepted:
+    speaker: "Garde"
+    text: >
+      <green>Peu de villageois tiennent ce rythme : 40 araignées, 40 zombies,
+      40 squelettes et 40 creepers. Reviens me voir une fois les quatre
+      menaces repoussées.</green>
+    choices:
+      - text: "D'accord"
+        actions:
+          - type: CLOSE
+
+  guard_tier5_accepted:
+    speaker: "Garde"
+    text: >
+      <green>Le dernier effort que je te demande : 80 araignées, 80 zombies,
+      80 squelettes et 80 creepers. Reviens me voir une fois les quatre
+      menaces repoussées.</green>
+    choices:
+      - text: "D'accord"
+        actions:
+          - type: CLOSE
+
+  guard_tiers_done:
+    speaker: "Garde"
+    text: >
+      <gold>Tu as largement prouvé ta valeur au village. Je n'ai rien de
+      plus à te confier pour ton terrain pour l'instant — mais le village
+      n'oubliera pas.</gold>
     choices:
       - text: "D'accord"
         actions:

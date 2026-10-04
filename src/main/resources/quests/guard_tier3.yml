@@ -1,0 +1,35 @@
+id: rpgquest:guard_tier3
+title: "<gold>Le Garde — Palier 3</gold>"
+description: "<gray>Un terrain plus vaste se mérite. Le village compte encore sur toi.</gray>"
+category: combat
+giver: guard
+icon: IRON_SWORD
+repeatable: false
+
+prerequisites:
+  - rpgquest:guard_tier2
+
+steps:
+  - id: prove_worth
+    objectives:
+      - type: KILL_ENTITY
+        entity: SPIDER
+        amount: 20
+      - type: KILL_ENTITY
+        entity: ZOMBIE
+        amount: 20
+      - type: KILL_ENTITY
+        entity: SKELETON
+        amount: 20
+      - type: KILL_ENTITY
+        entity: CREEPER
+        amount: 20
+
+rewards:
+  - type: EXPERIENCE
+    amount: 60
+  - type: VARIABLE
+    key: CLAIM_TIER_3
+    value: "true"
+  - type: COMMAND
+    command: "rpgadmin claim grant-tier %player% TIER_3"

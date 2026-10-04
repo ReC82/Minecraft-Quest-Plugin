@@ -1,0 +1,35 @@
+id: rpgquest:guard_tier4
+title: "<gold>Le Garde — Palier 4</gold>"
+description: "<gray>Peu ont tenu aussi longtemps à mes côtés. Prouve que tu mérites encore plus de terrain.</gray>"
+category: combat
+giver: guard
+icon: DIAMOND_SWORD
+repeatable: false
+
+prerequisites:
+  - rpgquest:guard_tier3
+
+steps:
+  - id: prove_worth
+    objectives:
+      - type: KILL_ENTITY
+        entity: SPIDER
+        amount: 40
+      - type: KILL_ENTITY
+        entity: ZOMBIE
+        amount: 40
+      - type: KILL_ENTITY
+        entity: SKELETON
+        amount: 40
+      - type: KILL_ENTITY
+        entity: CREEPER
+        amount: 40
+
+rewards:
+  - type: EXPERIENCE
+    amount: 80
+  - type: VARIABLE
+    key: CLAIM_TIER_4
+    value: "true"
+  - type: COMMAND
+    command: "rpgadmin claim grant-tier %player% TIER_4"

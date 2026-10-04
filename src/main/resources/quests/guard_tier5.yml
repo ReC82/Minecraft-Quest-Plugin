@@ -1,0 +1,35 @@
+id: rpgquest:guard_tier5
+title: "<gold>Le Garde — Palier 5</gold>"
+description: "<gray>Le dernier défi que je peux t'offrir pour l'instant. Après ça, le village n'aura plus que des remerciements à t'offrir.</gray>"
+category: combat
+giver: guard
+icon: NETHERITE_SWORD
+repeatable: false
+
+prerequisites:
+  - rpgquest:guard_tier4
+
+steps:
+  - id: prove_worth
+    objectives:
+      - type: KILL_ENTITY
+        entity: SPIDER
+        amount: 80
+      - type: KILL_ENTITY
+        entity: ZOMBIE
+        amount: 80
+      - type: KILL_ENTITY
+        entity: SKELETON
+        amount: 80
+      - type: KILL_ENTITY
+        entity: CREEPER
+        amount: 80
+
+rewards:
+  - type: EXPERIENCE
+    amount: 100
+  - type: VARIABLE
+    key: CLAIM_TIER_5
+    value: "true"
+  - type: COMMAND
+    command: "rpgadmin claim grant-tier %player% TIER_5"

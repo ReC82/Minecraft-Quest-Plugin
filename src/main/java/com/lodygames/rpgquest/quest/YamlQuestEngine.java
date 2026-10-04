@@ -19,7 +19,8 @@ import org.slf4j.Logger;
 public final class YamlQuestEngine implements QuestEngine {
 
     private static final String[] BUNDLED_EXAMPLES =
-            {"premiers_pas.yml", "first_steps.yml", "woodcutters_request.yml", "crystal_hunt.yml"};
+            {"premiers_pas.yml", "first_steps.yml", "woodcutters_request.yml", "crystal_hunt.yml",
+                    "guard_tier1.yml", "guard_tier2.yml", "guard_tier3.yml", "guard_tier4.yml", "guard_tier5.yml"};
 
     private final Path questsDirectory;
     private final Logger logger;

@@ -25,8 +25,12 @@ class YamlQuestEngineTest {
         assertTrue(Files.exists(tempDir.resolve("quests/first_steps.yml")));
         assertTrue(Files.exists(tempDir.resolve("quests/woodcutters_request.yml")));
         assertTrue(Files.exists(tempDir.resolve("quests/crystal_hunt.yml")));
+        for (int tier = 1; tier <= 5; tier++) {
+            assertTrue(Files.exists(tempDir.resolve("quests/guard_tier" + tier + ".yml")),
+                    "guard_tier" + tier + ".yml doit être généré (issue #179)");
+        }
         assertEquals(0, engine.lastReport().issues().size(), () -> "issues: " + engine.lastReport().issues());
-        assertEquals(4, engine.quests().size());
+        assertEquals(9, engine.quests().size());
     }
 
     @Test

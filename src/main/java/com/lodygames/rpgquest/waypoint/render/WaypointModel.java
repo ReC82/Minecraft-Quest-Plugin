@@ -29,8 +29,13 @@ public interface WaypointModel {
     /** Numéro de version stable de ce modèle (>= 1). Stocké tel quel en base. */
     int version();
 
-    /** Pose la structure dans le monde. Ne doit jamais lever si la zone a été jugée constructible. */
-    void place(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing);
+    /**
+     * Pose la structure dans le monde. Ne doit jamais lever si la zone a été jugée constructible.
+     *
+     * @param displayName nom canonique affiché (issue #167 : panneaux latéraux) -- jamais
+     *                     régénéré ici, toujours celui déjà persisté par l'appelant.
+     */
+    void place(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing, String displayName);
 
     /** Décalage du bloc <strong>interacteur</strong> (le bouton) : seul un clic sur CE bloc découvre. */
     BlockOffset interactor(BlockFace facing);

@@ -19,15 +19,20 @@ import com.lodygames.rpgquest.waypoint.render.WaypointModel;
 import com.lodygames.rpgquest.waypoint.render.WaypointModelRegistry;
 import com.lodygames.rpgquest.waypoint.render.WaypointModelV1;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Biome;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.Sign;
+import org.bukkit.block.data.Directional;
+import org.bukkit.block.sign.Side;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -168,6 +173,77 @@ class WaypointServiceTest {
         assertEquals(Material.STONE_BUTTON, interactorBlockOf(wp).getType());
     }
 
+    /**
+     * Issue #167 : un panneau sur chacune des deux faces latérales adjacentes à la face du bouton
+     * (jamais la face opposée), affichant le nom canonique persisté, le bouton restant accessible.
+     */
+    @Test
+    void waypointGenerationPlacesTwoLateralNameSignsWithTheCanonicalNameAndKeepsTheButtonAccessible() throws Exception {
+        Waypoint wp = generateAround(448, 448, Biome.PLAINS);
+        BlockFace facing = BlockFace.valueOf(wp.facing());
+        BlockFace[] laterals = (facing == BlockFace.NORTH || facing == BlockFace.SOUTH)
+                ? new BlockFace[] {BlockFace.EAST, BlockFace.WEST}
+                : new BlockFace[] {BlockFace.NORTH, BlockFace.SOUTH};
+
+        for (BlockFace side : laterals) {
+            Block signBlock = wild.getBlockAt(wp.x() + side.getModX(), wp.y() + 1, wp.z() + side.getModZ());
+            assertEquals(Material.OAK_WALL_SIGN, signBlock.getType(), "panneau latéral attendu côté " + side);
+            assertTrue(signBlock.getBlockData() instanceof Directional, "le panneau doit porter une orientation");
+            assertEquals(side, ((Directional) signBlock.getBlockData()).getFacing(),
+                    "le panneau doit être orienté vers l'extérieur, côté " + side);
+
+            assertTrue(signBlock.getState() instanceof Sign, "le bloc doit être un vrai panneau");
+            Sign sign = (Sign) signBlock.getState();
+            String rendered = String.join(" ", sign.getSide(Side.FRONT).lines().stream()
+                    .map(c -> PlainTextComponentSerializer.plainText().serialize(c))
+                    .filter(s -> !s.isBlank())
+                    .toList());
+            assertEquals(wp.displayName(), rendered,
+                    "le panneau doit afficher le nom canonique complet, réparti sur ses lignes");
+        }
+
+        // Le bouton (face « facing », pas une face latérale) reste bien l'interacteur, inchangé.
+        assertEquals(Material.STONE_BUTTON, interactorBlockOf(wp).getType());
+        for (BlockFace side : laterals) {
+            assertTrue(service.isProtectedBlock("wild", wp.x() + side.getModX(), wp.y() + 1, wp.z() + side.getModZ()),
+                    "chaque panneau doit être protégé comme le reste de la structure, côté " + side);
+        }
+    }
+
+    /**
+     * Issue #167 : mise à niveau idempotente -- un waypoint généré avant cette version (simulé ici
+     * en effaçant ses panneaux après génération) retrouve ses panneaux via {@code upgradeSigns},
+     * sans jamais changer id/position/découvertes. Rejouable sans risque (idempotent).
+     */
+    @Test
+    void upgradeSignsRetrofitsAnExistingWaypointWithoutChangingItsIdentity() throws Exception {
+        Waypoint wp = generateAround(480, 480, Biome.PLAINS);
+        BlockFace facing = BlockFace.valueOf(wp.facing());
+        BlockFace[] laterals = (facing == BlockFace.NORTH || facing == BlockFace.SOUTH)
+                ? new BlockFace[] {BlockFace.EAST, BlockFace.WEST}
+                : new BlockFace[] {BlockFace.NORTH, BlockFace.SOUTH};
+
+        // Simule un waypoint généré avant #167 : ses panneaux n'existent pas (effacés ici).
+        for (BlockFace side : laterals) {
+            wild.getBlockAt(wp.x() + side.getModX(), wp.y() + 1, wp.z() + side.getModZ()).setType(Material.AIR);
+        }
+
+        int processed = service.upgradeSigns("wild");
+        assertEquals(1, processed, "le seul waypoint du monde « wild » doit être traité");
+
+        for (BlockFace side : laterals) {
+            Block signBlock = wild.getBlockAt(wp.x() + side.getModX(), wp.y() + 1, wp.z() + side.getModZ());
+            assertEquals(Material.OAK_WALL_SIGN, signBlock.getType(), "le panneau doit être reposé côté " + side);
+        }
+        // id/position/découvertes inchangés : le waypoint indexé reste strictement le même.
+        assertEquals(wp.id(), service.byId(wp.id()).orElseThrow().id());
+        assertEquals(wp.x(), service.byId(wp.id()).orElseThrow().x());
+        assertEquals(wp.displayName(), service.byId(wp.id()).orElseThrow().displayName());
+
+        // Rejouable sans risque : un second passage ne lève jamais et ne change rien.
+        assertEquals(1, service.upgradeSigns("wild"));
+    }
+
     @Test
     void twoPlayersEnteringSimultaneouslyNeverCreateTwoWaypoints() throws Exception {
         prepareArea(384, 384, Biome.FOREST, 48);
@@ -244,6 +320,37 @@ class WaypointServiceTest {
                 return false;
             }
         });
+    }
+
+    /**
+     * Retour joueur 2026-10-04 (issue #160) : la toute première découverte affichait seulement le
+     * biome ("Waypoint découvert — plains"), jamais le nom canonique persisté -- pourtant déjà
+     * utilisé par le menu de voyage et par le reclic (message « déjà découvert »). Les deux doivent
+     * désormais partager le même nom.
+     */
+    @Test
+    void firstDiscoveryShowsTheCanonicalNameNotOnlyTheBiome() throws Exception {
+        Waypoint wp = generateAround(416, 416, Biome.PLAINS);
+        PlayerMock player = addPlayer();
+
+        assertTrue(service.handleInteract(player, interactorBlockOf(wp)));
+        await(() -> {
+            try {
+                return repository.discoveriesFor(player.getUniqueId()).get(2, TimeUnit.SECONDS).contains(wp.id());
+            } catch (Exception e) {
+                return false;
+            }
+        });
+        server.getScheduler().performTicks(5);
+
+        String message = null;
+        String next;
+        while ((next = player.nextMessage()) != null) {
+            message = next;
+        }
+        assertNotNull(message, "la première découverte doit produire un message visible");
+        assertTrue(message.contains(wp.displayName()),
+                "le nom canonique doit apparaître dès la première découverte, pas seulement le biome : " + message);
     }
 
     /**
@@ -436,7 +543,7 @@ class WaypointServiceTest {
         }
 
         @Override
-        public void place(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing) {
+        public void place(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing, String displayName) {
         }
 
         @Override

@@ -73,7 +73,7 @@ class WaypointModelRegistryTest {
         }
 
         @Override
-        public void place(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing) {
+        public void place(World world, int anchorX, int anchorY, int anchorZ, BlockFace facing, String displayName) {
         }
 
         @Override

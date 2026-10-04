@@ -88,8 +88,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
             List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel");
-    private static final List<String> TRAVEL_SUBCOMMANDS = List.of("beacon", "village", "diagnose", "repair");
+    private static final List<String> TRAVEL_SUBCOMMANDS = List.of("beacon", "village", "diagnose", "repair", "signs");
     private static final List<String> TRAVEL_REPAIR_KINDS = List.of("waypoint", "beacon");
+    private static final List<String> TRAVEL_SIGNS_SUBCOMMANDS = List.of("upgrade");
     private static final List<String> TRAVEL_BEACON_SUBCOMMANDS = List.of("set");
     private static final List<String> TRAVEL_VILLAGE_SUBCOMMANDS =
             List.of("set", "sethub", "remove", "enable", "disable", "list");
@@ -894,9 +895,30 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handleTravelDiagnose(player, args);
         } else if (args[1].equalsIgnoreCase("repair")) {
             handleTravelRepair(player, args);
+        } else if (args[1].equalsIgnoreCase("signs")) {
+            handleTravelSigns(player, args);
         } else {
             sendTravelUsage(player);
         }
+    }
+
+    /**
+     * Mise à niveau idempotente des panneaux latéraux de nom (issue #167) : rejouable sans risque
+     * après un redémarrage, une réparation ou un renommage. Jamais de changement d'id/position/
+     * découvertes -- voir {@code WaypointService#upgradeSigns}.
+     */
+    private void handleTravelSigns(Player player, String[] args) {
+        if (args.length < 3 || !args[2].equalsIgnoreCase("upgrade")) {
+            player.sendMessage(MM.deserialize(
+                    "<yellow>/rpgadmin travel signs upgrade [monde]</yellow> "
+                            + "<gray>- pose/rafraîchit les panneaux de nom des waypoints du monde donné (tous les mondes chargés si omis), sans jamais toucher id/position/découvertes</gray>"));
+            return;
+        }
+        String world = args.length >= 4 ? args[3] : null;
+        int processed = waypointService.upgradeSigns(world);
+        player.sendMessage(MM.deserialize(
+                "<green><n> waypoint(s) traité(s) (panneaux posés/rafraîchis).</green>",
+                Placeholder.unparsed("n", Integer.toString(processed))));
     }
 
     /** Diagnostic lecture seule (issues #153/#156) : jamais d'écriture, à partir des données persistées/indexées. */
@@ -1085,6 +1107,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                 "<yellow>/rpgadmin travel diagnose [monde]</yellow> <gray>- waypoints/bornes, appariements manquants, structures inaccessibles (#153/#156)</gray>"));
         sender.sendMessage(MM.deserialize(
                 "<yellow>/rpgadmin travel repair waypoint|beacon <id> confirm</yellow> <gray>- déplace une structure inaccessible (voir diagnose)</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin travel signs upgrade [monde]</yellow> <gray>- pose/rafraîchit les panneaux de nom (#167), idempotent</gray>"));
     }
 
     private void sendSpawnUsage(CommandSender sender) {
@@ -2533,6 +2557,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("travel") && args[1].equalsIgnoreCase("village")) {
             return TRAVEL_VILLAGE_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("travel") && args[1].equalsIgnoreCase("signs")) {
+            return TRAVEL_SIGNS_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 4 && args[0].equalsIgnoreCase("travel") && args[1].equalsIgnoreCase("village")
                 && (args[2].equalsIgnoreCase("remove") || args[2].equalsIgnoreCase("enable")

@@ -101,7 +101,8 @@ class AgentActionCatalogTest {
         // Édition de contenu normale et réversible (issues #111 / #113 / #118) : aucune case cachée.
         for (String type : new String[] {"npc.definition.create", "npc.definition.update", "quest.giver.set",
                 "npc.citizens.link", "dialogue.definition.create", "dialogue.node.create", "dialogue.node.update",
-                "dialogue.choice.add", "dialogue.choice.update"}) {
+                "dialogue.choice.add", "dialogue.choice.update", "mob.definition.create", "mob.definition.update",
+                "mob.definition.toggle", "mob.spawn-settings.set"}) {
             assertFalse(AgentActionCatalog.spec(type).orElseThrow().sensitive(), type + " ne doit pas être « sensible »");
         }
         assertTrue(AgentActionCatalog.validate("dialogue.node.update", Map.of(
@@ -110,7 +111,7 @@ class AgentActionCatalogTest {
 
         // Actions réellement sensibles / destructrices : confirmation explicite conservée.
         for (String type : new String[] {"dialogue.choice.delete", "npc.citizens.create", "player.ban",
-                "player.unban", "player.resetnew.confirm", "quest.reset"}) {
+                "player.unban", "player.resetnew.confirm", "quest.reset", "mob.test.spawn", "mob.test.clear"}) {
             assertTrue(AgentActionCatalog.spec(type).orElseThrow().sensitive(), type + " doit rester « sensible »");
         }
         assertFalse(AgentActionCatalog.validate("dialogue.choice.delete", Map.of(
@@ -230,5 +231,92 @@ class AgentActionCatalogTest {
         // Id malformé.
         assertFalse(AgentActionCatalog.validate("content.export",
                 Map.of("family", "quests", "ids", "bad id!!")).valid());
+    }
+
+    // ---- Mobs spéciaux / boss (issue #169, lot 1) -------------------------------------------
+
+    @Test
+    void mobDefinitionWriteRequiresIdCategoryEntityTypeNameAndSpawnChance() {
+        assertFalse(AgentActionCatalog.validate("mob.definition.create", Map.of()).valid());
+        assertFalse(AgentActionCatalog.validate("mob.definition.create", Map.of(
+                "mob_id", "swamp_king", "category", "NOT_A_CATEGORY", "entity_type", "ZOMBIE",
+                "display_name", "Roi", "spawn_chance", "1.0")).valid());
+        assertFalse(AgentActionCatalog.validate("mob.definition.create", Map.of(
+                "mob_id", "swamp_king", "category", "BOSS", "entity_type", "ZOMBIE",
+                "display_name", "Roi", "spawn_chance", "1.5")).valid(), "spawn_chance hors bornes");
+
+        AgentActionCatalog.Validation ok = AgentActionCatalog.validate("mob.definition.create", Map.of(
+                "mob_id", "Swamp_King", "category", "boss", "entity_type", "zombie",
+                "display_name", "Roi des Marais", "spawn_chance", "0.25"));
+        assertTrue(ok.valid(), ok.error());
+        assertEquals("swamp_king", ok.params().get("mob_id"));
+        assertEquals("BOSS", ok.params().get("category"));
+        assertEquals("ZOMBIE", ok.params().get("entity_type"));
+        assertEquals("false", ok.params().get("enabled"), "enabled absent du formulaire = false (case non cochée)");
+    }
+
+    @Test
+    void mobDefinitionWriteKeepsEnragedAndSummonFieldsOnlyWhenTheirToggleIsChecked() {
+        Map<String, String> base = Map.of("mob_id", "x", "category", "SPECIAL", "entity_type", "ZOMBIE",
+                "display_name", "X", "spawn_chance", "0.1");
+
+        AgentActionCatalog.Validation withoutToggle = AgentActionCatalog.validate("mob.definition.create", base);
+        assertTrue(withoutToggle.valid());
+        assertFalse(withoutToggle.params().containsKey("enraged_health_fraction"));
+
+        Map<String, String> withEnraged = new java.util.LinkedHashMap<>(base);
+        withEnraged.put("enraged_enabled", "true");
+        withEnraged.put("enraged_health_fraction", "0.3");
+        withEnraged.put("enraged_speed_multiplier", "1.5");
+        withEnraged.put("enraged_damage_multiplier", "2.0");
+        AgentActionCatalog.Validation ok = AgentActionCatalog.validate("mob.definition.create", withEnraged);
+        assertTrue(ok.valid(), ok.error());
+        assertEquals("0.3", ok.params().get("enraged_health_fraction"));
+
+        Map<String, String> incomplete = new java.util.LinkedHashMap<>(base);
+        incomplete.put("enraged_enabled", "true");
+        incomplete.put("enraged_health_fraction", "0.3");
+        assertFalse(AgentActionCatalog.validate("mob.definition.create", incomplete).valid(),
+                "capacité activée mais incomplète : rejet");
+    }
+
+    @Test
+    void mobDefinitionToggleAndSpawnSettingsValidateTheirOwnFields() {
+        assertFalse(AgentActionCatalog.validate("mob.definition.toggle", Map.of()).valid());
+        AgentActionCatalog.Validation t = AgentActionCatalog.validate("mob.definition.toggle",
+                Map.of("mob_id", "swamp_king", "enabled", "true"));
+        assertTrue(t.valid());
+        assertEquals("true", t.params().get("enabled"));
+
+        assertFalse(AgentActionCatalog.validate("mob.spawn-settings.set", Map.of("chance", "1.5")).valid());
+        AgentActionCatalog.Validation s = AgentActionCatalog.validate("mob.spawn-settings.set",
+                Map.of("enabled", "true", "chance", "0.05", "max_simultaneous_special", "10"));
+        assertTrue(s.valid());
+        assertEquals("0.05", s.params().get("chance"));
+        assertEquals("10", s.params().get("max_simultaneous_special"));
+    }
+
+    @Test
+    void mobTestSpawnNeedsPlayerAndMobIdAndConfirmation() {
+        assertFalse(AgentActionCatalog.validate("mob.test.spawn", Map.of("player", "Steve")).valid(),
+                "mob_id manquant");
+        assertFalse(AgentActionCatalog.validate("mob.test.spawn",
+                Map.of("player", "Steve", "mob_id", "swamp_king")).valid(), "confirmation manquante");
+        AgentActionCatalog.Validation ok = AgentActionCatalog.validate("mob.test.spawn",
+                Map.of("player", "Steve", "mob_id", "swamp_king", "confirm", "true"));
+        assertTrue(ok.valid(), ok.error());
+        assertEquals("swamp_king", ok.params().get("mob_id"));
+
+        AgentActionCatalog.Validation clear = AgentActionCatalog.validate("mob.test.clear", Map.of("confirm", "true"));
+        assertTrue(clear.valid());
+    }
+
+    @Test
+    void mobPermissionsAreMappedPerType() {
+        assertEquals(Permission.MOB_READ, AgentActionCatalog.spec("mob.list").orElseThrow().permission());
+        assertEquals(Permission.MOB_WRITE, AgentActionCatalog.spec("mob.definition.create").orElseThrow().permission());
+        assertEquals(Permission.MOB_WRITE, AgentActionCatalog.spec("mob.spawn-settings.set").orElseThrow().permission());
+        assertEquals(Permission.MOB_TEST_SPAWN, AgentActionCatalog.spec("mob.test.spawn").orElseThrow().permission());
+        assertEquals(Permission.MOB_TEST_SPAWN, AgentActionCatalog.spec("mob.test.clear").orElseThrow().permission());
     }
 }

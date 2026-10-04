@@ -3456,6 +3456,357 @@ public final class AgentPages {
         return label + " " + Ui.id(id);
     }
 
+    // ---- Mobs spéciaux / boss (issue #169, lot 1) ----------------------------------------------
+
+    public String mobs(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("mob", "Mobs spéciaux & boss",
+                "Profils appliqués aux spawns naturels du Wild (ou à une instance de test) — jamais de "
+                        + "YAML ni de commande à écrire pour en créer ou en tester un.", ""));
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+        boolean canWrite = perms.can(session.role(), Permission.MOB_WRITE);
+        boolean canTest = perms.can(session.role(), Permission.MOB_TEST_SPAWN);
+        sb.append(agentPicker(agentId, "/mobs", ""));
+
+        sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Catalogue</span>");
+        sb.append(compactRefresh(session, agentId, "mob.list", "Rafraîchir", "btn-outline-primary", "/mobs"));
+        if (canWrite) {
+            sb.append("<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+                    + "data-bs-target=\"#mob-new-def\" aria-expanded=\"false\" aria-controls=\"mob-new-def\">")
+                    .append(Icons.icon("plus")).append("Nouveau profil</button>");
+        }
+        if (canTest) {
+            sb.append(compactRefresh(session, agentId, "mob.test.clear", "Nettoyer les instances de test",
+                    "btn-outline-danger", "/mobs"));
+        }
+        sb.append("</div>");
+        if (canWrite) {
+            sb.append("<div class=\"collapse\" id=\"mob-new-def\"><div class=\"card card-body npc-formcard\">");
+            sb.append(mobDefForm(session, agentId, null, "mob-new-def"));
+            sb.append("</div></div>");
+        }
+
+        Optional<Map<String, Object>> details = latestDetails(agentId, "mob.list");
+        if (details.isEmpty()) {
+            sb.append(Ui.empty("mob", "Aucun catalogue chargé — cliquer sur « Rafraîchir »."));
+            return sb.toString();
+        }
+        Map<String, Object> d = details.get();
+        List<Object> profiles = asList(d.get("profiles"));
+        Map<String, Object> spawnSettings = asMap(d.get("spawnSettings"));
+
+        if (Boolean.TRUE.equals(d.get("hasIssues"))) {
+            StringBuilder issues = new StringBuilder();
+            for (Object o : asList(d.get("issues"))) {
+                issues.append("<div>").append(Http.esc(str(o))).append("</div>");
+            }
+            sb.append(Ui.banner("warning", "<strong>Profils rejetés au chargement :</strong>" + issues));
+        }
+
+        sb.append(Ui.sectionTitle("mob", "Tirage aléatoire dans le Wild"));
+        sb.append("<p class=\"muted\">« Chance globale » filtre d'abord <strong>chaque</strong> spawn naturel "
+                + "éligible avant même d'examiner les profils ; seuls les profils dont le tirage individuel "
+                + "réussit ensuite participent, et si plusieurs réussissent en même temps, un tirage pondéré "
+                + "explicite (poids = leur propre chance) choisit lequel s'applique. Les profils BOSS n'entrent "
+                + "jamais dans ce tirage.</p>");
+        sb.append(spawnSettingsForm(session, agentId, spawnSettings, canWrite));
+
+        sb.append(Ui.sectionTitle("mob", "Profils (" + profiles.size() + ")"));
+        if (profiles.isEmpty()) {
+            sb.append(Ui.empty("mob", "Aucun profil : créer le premier avec « Nouveau profil »."));
+            return sb.toString();
+        }
+        List<String> onlinePlayers = latestDetails(agentId, "player.list")
+                .map(x -> asList(x.get("players"))).orElse(List.of())
+                .stream().map(o -> str(asMap(o).get("name"))).filter(s -> !s.isEmpty()).toList();
+        sb.append("<div class=\"accordion npc-accordion\" id=\"mob-accordion\">");
+        int i = 0;
+        for (Object o : profiles) {
+            sb.append(renderMobAccordionItem(session, agentId, asMap(o), i++, canWrite, canTest, onlinePlayers));
+        }
+        sb.append("</div>");
+        return sb.toString();
+    }
+
+    private String spawnSettingsForm(Session session, String agentId, Map<String, Object> settings, boolean canWrite) {
+        boolean enabled = Boolean.TRUE.equals(settings.get("enabled"));
+        String chance = str(settings.get("chance"));
+        String max = str(settings.get("maxSimultaneousSpecial"));
+        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"npc-def-form\">");
+        sb.append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken())).append("\">");
+        sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"type\" value=\"mob.spawn-settings.set\">");
+        sb.append("<input type=\"hidden\" name=\"return\" value=\"/mobs\">");
+        sb.append("<div class=\"npc-fs\">");
+        sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" role=\"switch\" "
+                + "id=\"mob-ss-en\" name=\"enabled\" value=\"true\"").append(enabled ? " checked" : "")
+                .append(canWrite ? "" : " disabled").append("><label class=\"form-check-label\" for=\"mob-ss-en\">"
+                + "Tirage aléatoire actif</label></div>");
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"mob-ss-chance\">Chance globale (0 à 1)</label>")
+                .append("<input class=\"form-control\" id=\"mob-ss-chance\" type=\"number\" name=\"chance\" "
+                        + "step=\"0.001\" min=\"0\" max=\"1\" value=\"").append(Http.esc(chance))
+                .append("\"").append(canWrite ? " required" : " readonly").append(">")
+                .append("<div class=\"form-text\">Ex. 0.05 = 5% des spawns naturels éligibles sont même "
+                        + "considérés pour une transformation.</div></div>");
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"mob-ss-max\">Plafond simultané (optionnel)</label>")
+                .append("<input class=\"form-control\" id=\"mob-ss-max\" type=\"number\" name=\"max_simultaneous_special\" "
+                        + "min=\"0\" value=\"").append("null".equals(max) ? "" : Http.esc(max)).append("\"")
+                .append(canWrite ? "" : " readonly").append(">")
+                .append("<div class=\"form-text\">Nombre total de mobs SPECIAL vivants, toutes définitions "
+                        + "confondues. Laisser vide = pas de plafond global.</div></div>");
+        sb.append("</div>");
+        if (canWrite) {
+            sb.append("<button class=\"btn btn-primary\" type=\"submit\">")
+                    .append(Icons.icon("save")).append("Enregistrer</button>");
+        }
+        sb.append("</form>");
+        return sb.toString();
+    }
+
+    private String renderMobAccordionItem(Session session, String agentId, Map<String, Object> m, int index,
+                                          boolean canWrite, boolean canTest, List<String> onlinePlayers) {
+        String id = str(m.get("id"));
+        String category = str(m.get("category"));
+        boolean enabled = Boolean.TRUE.equals(m.get("enabled"));
+        boolean boss = "BOSS".equals(category);
+        String headingId = "mob-h-" + index;
+        String collapseId = "mob-c-" + index;
+
+        StringBuilder sb = new StringBuilder("<div class=\"accordion-item\">");
+        sb.append("<h2 class=\"accordion-header\" id=\"").append(headingId).append("\">")
+                .append("<button class=\"accordion-button collapsed\" type=\"button\" data-bs-toggle=\"collapse\" "
+                        + "data-bs-target=\"#").append(collapseId).append("\" aria-expanded=\"false\" aria-controls=\"")
+                .append(collapseId).append("\">");
+        sb.append(boss ? "<span class=\"badge text-bg-danger\">BOSS</span> " : "<span class=\"badge text-bg-info\">SPECIAL</span> ");
+        sb.append(enabled ? "" : "<span class=\"badge text-bg-secondary\">désactivé</span> ");
+        sb.append(Http.esc(MiniText.plain(str(m.get("displayName"))))).append(" <code class=\"ms-1\">")
+                .append(Http.esc(id)).append("</code>");
+        sb.append(" <span class=\"muted ms-2\">").append(Http.esc(str(m.get("entityType")))).append(" · vivants : ")
+                .append(Http.esc(str(m.get("alivePopulation")))).append("</span>");
+        sb.append("</button></h2>");
+        sb.append("<div id=\"").append(collapseId).append("\" class=\"accordion-collapse collapse\" "
+                + "aria-labelledby=\"").append(headingId).append("\" data-bs-parent=\"#mob-accordion\">");
+        sb.append("<div class=\"accordion-body\">");
+
+        sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Chance d'apparition</span> ")
+                .append(Http.esc(str(m.get("spawnChance")))).append("</p>");
+        List<Object> abilities = asList(m.get("abilitiesSummary"));
+        if (!abilities.isEmpty()) {
+            sb.append("<p class=\"meta-line\"><span class=\"meta-k\">Capacités</span> ").append(join(abilities)).append("</p>");
+        }
+
+        if (canWrite) {
+            sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"button\" data-bs-toggle=\"collapse\" "
+                    + "data-bs-target=\"#mob-edit-").append(index).append("\" aria-expanded=\"false\">")
+                    .append(Icons.icon("edit")).append("Modifier</button> ");
+            sb.append(toggleForm(session, agentId, id, enabled));
+        }
+        if (canTest) {
+            sb.append(' ').append(testSpawnForm(session, agentId, id, onlinePlayers));
+        }
+
+        if (canWrite) {
+            sb.append("<div class=\"collapse mt-2\" id=\"mob-edit-").append(index)
+                    .append("\"><div class=\"card card-body npc-formcard\">");
+            sb.append(mobDefForm(session, agentId, m, "mob-edit-" + index));
+            sb.append("</div></div>");
+        }
+
+        sb.append("</div></div></div>");
+        return sb.toString();
+    }
+
+    private String toggleForm(Session session, String agentId, String id, boolean enabled) {
+        return "<form method=\"post\" action=\"/agents/action\" class=\"d-inline\">"
+                + "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">"
+                + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
+                + "<input type=\"hidden\" name=\"type\" value=\"mob.definition.toggle\">"
+                + "<input type=\"hidden\" name=\"mob_id\" value=\"" + Http.esc(id) + "\">"
+                + "<input type=\"hidden\" name=\"return\" value=\"/mobs\">"
+                + "<input type=\"hidden\" name=\"enabled\" value=\"" + (enabled ? "false" : "true") + "\">"
+                + "<button class=\"btn btn-sm " + (enabled ? "btn-outline-warning" : "btn-outline-success") + "\" type=\"submit\">"
+                + (enabled ? "Désactiver" : "Activer") + "</button></form>";
+    }
+
+    private String testSpawnForm(Session session, String agentId, String id, List<String> onlinePlayers) {
+        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"/agents/action\" class=\"d-inline\">");
+        sb.append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken())).append("\">");
+        sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"type\" value=\"mob.test.spawn\">");
+        sb.append("<input type=\"hidden\" name=\"mob_id\" value=\"").append(Http.esc(id)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"return\" value=\"/mobs\">");
+        sb.append("<input type=\"hidden\" name=\"confirm\" value=\"true\">");
+        if (onlinePlayers.isEmpty()) {
+            sb.append("<input type=\"text\" name=\"player\" class=\"form-control form-control-sm d-inline-block\" "
+                    + "style=\"width:9rem\" placeholder=\"Pseudo exact\" required>");
+        } else {
+            sb.append("<select name=\"player\" class=\"form-select form-select-sm d-inline-block\" style=\"width:9rem\">");
+            for (String p : onlinePlayers) {
+                sb.append("<option value=\"").append(Http.esc(p)).append("\">").append(Http.esc(p)).append("</option>");
+            }
+            sb.append("</select>");
+        }
+        sb.append("<button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
+                .append(Icons.icon("target")).append("Apparaître (test, Wild)</button></form>");
+        return sb.toString();
+    }
+
+    /** Formulaire création/modification d'un profil. {@code existing == null} = création. */
+    private String mobDefForm(Session session, String agentId, Map<String, Object> existing, String uid) {
+        boolean update = existing != null;
+        String id = update ? str(existing.get("id")) : "";
+        StringBuilder sb = new StringBuilder();
+        sb.append("<p class=\"fs-h\">").append(Icons.icon("mob"))
+                .append(update ? "Modifier le profil" : "Créer un profil").append("</p>");
+        sb.append("<form method=\"post\" action=\"/agents/action\" autocomplete=\"off\" class=\"npc-def-form\">");
+        sb.append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken())).append("\">");
+        sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"type\" value=\"mob.definition.")
+                .append(update ? "update" : "create").append("\">");
+        sb.append("<input type=\"hidden\" name=\"return\" value=\"/mobs\">");
+
+        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Identité</p>");
+        if (update) {
+            sb.append("<input type=\"hidden\" name=\"mob_id\" value=\"").append(Http.esc(id)).append("\">");
+            sb.append("<div class=\"mb-2\"><label class=\"form-label\">ID technique</label>"
+                    + "<input class=\"form-control\" type=\"text\" value=\"").append(Http.esc(id))
+                    .append("\" readonly></div>");
+        } else {
+            sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-id\">ID technique</label>")
+                    .append("<input class=\"form-control\" id=\"").append(uid).append("-id\" type=\"text\" name=\"mob_id\" "
+                            + "pattern=\"[a-z0-9._-]{1,64}\" placeholder=\"Exemple : swamp_king\" required>")
+                    .append("<div class=\"form-text\">Minuscules, chiffres, « . _ - ». Non modifiable après création.</div></div>");
+        }
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-cat\">Catégorie</label>")
+                .append("<select class=\"form-select\" id=\"").append(uid).append("-cat\" name=\"category\">")
+                .append(option("SPECIAL", str(existing == null ? null : existing.get("category")), "Spécial (tirage aléatoire Wild)"))
+                .append(option("BOSS", str(existing == null ? null : existing.get("category")), "Boss (jamais tiré au hasard)"))
+                .append("</select><div class=\"form-text\">BOSS : nom + particules colorées en continu + barre de vie, "
+                        + "jamais dans le tirage automatique.</div></div>");
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-et\">Type d'entité Minecraft</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-et\" type=\"text\" name=\"entity_type\" "
+                        + "value=\"").append(Http.esc(str(existing == null ? null : existing.get("entityType"))))
+                .append("\" placeholder=\"Exemple : ZOMBIE, CREEPER, SKELETON\" required>"
+                        + "<div class=\"form-text\">Nom technique vanilla en majuscules.</div></div>");
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-name\">Nom affiché</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-name\" type=\"text\" name=\"display_name\" "
+                        + "maxlength=\"128\" value=\"").append(Http.esc(str(existing == null ? null : existing.get("displayName"))))
+                .append("\" placeholder=\"Exemple : <red>Roi des Marais</red>\" required>"
+                        + "<div class=\"form-text\">MiniMessage accepté — c'est ce qui colore le nom.</div></div>");
+        sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" role=\"switch\" "
+                + "id=\"").append(uid).append("-en\" name=\"enabled\" value=\"true\"")
+                .append(!update || Boolean.TRUE.equals(existing.get("enabled")) ? " checked" : "")
+                .append("><label class=\"form-check-label\" for=\"").append(uid).append("-en\">Profil actif</label></div>");
+        sb.append("</div>");
+
+        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Tirage aléatoire (Wild)</p>");
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-sc\">Chance individuelle (0 à 1)</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-sc\" type=\"number\" step=\"0.0001\" "
+                        + "min=\"0\" max=\"1\" name=\"spawn_chance\" value=\"")
+                .append(Http.esc(str(existing == null ? "0.01" : existing.get("spawnChance")))).append("\" required>"
+                        + "<div class=\"form-text\">Ignorée pour un profil BOSS (jamais tiré au hasard).</div></div>");
+        sb.append(csvField(uid, "worlds", "Mondes autorisés", existing, "Vide = tous les mondes"));
+        sb.append(csvField(uid, "biomes", "Biomes autorisés", existing, "Vide = tous les biomes"));
+        sb.append(csvField(uid, "zones", "Zones autorisées", existing, "Vide = toutes les zones"));
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-mp\">Population maximale simultanée</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-mp\" type=\"number\" min=\"0\" "
+                        + "name=\"max_population\" value=\"").append(Http.esc(str(existing == null ? null : existing.get("maxPopulation"))))
+                .append("\"><div class=\"form-text\">Laisser vide = pas de plafond pour ce profil.</div></div>");
+        sb.append("</div>");
+
+        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Statistiques (laisser vide = valeur vanilla)</p>");
+        sb.append(numField(uid, "health", "Vie max", existing, "0.01", null));
+        sb.append(numField(uid, "damage", "Dégâts", existing, "0.01", null));
+        sb.append(numField(uid, "speed", "Vitesse", existing, "0.01", null));
+        sb.append(numField(uid, "armor", "Armure", existing, "0.01", null));
+        sb.append(numField(uid, "knockback_resistance", "Résistance au recul (0 à 1)", existing, "0.01", null));
+        sb.append(numField(uid, "scale", "Taille relative (1 = normale)", existing, "0.01", null));
+        sb.append(numField(uid, "creeper_explosion_radius", "Rayon d'explosion (CREEPER uniquement)", existing, "0.1", null));
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-pt\">Particule (optionnel)</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-pt\" type=\"text\" name=\"particle\" "
+                        + "value=\"").append(Http.esc(str(existing == null ? null : existing.get("particle"))))
+                .append("\" placeholder=\"Exemple : FLAME, TOTEM_OF_UNDYING\"></div>");
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-sd\">Son (optionnel)</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-sd\" type=\"text\" name=\"sound\" "
+                        + "value=\"").append(Http.esc(str(existing == null ? null : existing.get("sound"))))
+                .append("\" placeholder=\"Exemple : ENTITY_CREEPER_PRIMED\"></div>");
+        sb.append(numField(uid, "xp_reward", "XP à la mort", existing, "1", null));
+        sb.append("</div>");
+
+        boolean hasEnraged = existing != null && existing.get("enragedHealthFraction") != null;
+        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Capacité : Enragé</p>");
+        sb.append("<div class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" id=\"").append(uid)
+                .append("-rg-en\" name=\"enraged_enabled\" value=\"true\"").append(hasEnraged ? " checked" : "")
+                .append("><label class=\"form-check-label\" for=\"").append(uid).append("-rg-en\">Activer cette capacité</label></div>");
+        sb.append(numField(uid, "enraged_health_fraction", "Seuil de vie (0 à 1, ex. 0.3 = sous 30%)", existing, "0.01", null));
+        sb.append(numField(uid, "enraged_speed_multiplier", "Multiplicateur de vitesse", existing, "0.1", null));
+        sb.append(numField(uid, "enraged_damage_multiplier", "Multiplicateur de dégâts", existing, "0.1", null));
+        sb.append("</div>");
+
+        boolean hasSummon = existing != null && existing.get("summonEntityType") != null;
+        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Capacité : Invocation de renforts</p>");
+        sb.append("<div class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" id=\"").append(uid)
+                .append("-sm-en\" name=\"summon_enabled\" value=\"true\"").append(hasSummon ? " checked" : "")
+                .append("><label class=\"form-check-label\" for=\"").append(uid).append("-sm-en\">Activer cette capacité</label></div>");
+        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-sm-t\">Type de renfort</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-sm-t\" type=\"text\" name=\"summon_entity_type\" "
+                        + "value=\"").append(Http.esc(str(existing == null ? null : existing.get("summonEntityType"))))
+                .append("\" placeholder=\"Exemple : ZOMBIE\"></div>");
+        sb.append(numField(uid, "summon_amount", "Nombre invoqué par déclenchement", existing, "1", null));
+        sb.append(numField(uid, "summon_chance", "Chance par coup reçu (0 à 1)", existing, "0.01", null));
+        sb.append(numField(uid, "summon_cooldown_seconds", "Cooldown (secondes)", existing, "1", null));
+        sb.append(numField(uid, "summon_max_alive", "Renforts vivants max", existing, "1", null));
+        sb.append("<div class=\"form-text\">Ne se déclenche que sur des dégâts effectifs ; jamais de cascade "
+                + "(les renforts eux-mêmes n'invoquent jamais).</div>");
+        sb.append("</div>");
+
+        sb.append("<button class=\"btn btn-primary\" type=\"submit\">")
+                .append(Icons.icon("save")).append(update ? "Enregistrer" : "Créer").append("</button>");
+        sb.append("</form>");
+        return sb.toString();
+    }
+
+    private static String option(String value, String current, String label) {
+        return "<option value=\"" + value + "\"" + (value.equals(current) ? " selected" : "") + ">" + label + "</option>";
+    }
+
+    private String csvField(String uid, String name, String label, Map<String, Object> existing, String help) {
+        List<Object> current = existing == null ? List.of() : asList(existing.get(name));
+        return "<div class=\"mb-2\"><label class=\"form-label\" for=\"" + uid + "-" + name + "\">" + Http.esc(label) + "</label>"
+                + "<input class=\"form-control\" id=\"" + uid + "-" + name + "\" type=\"text\" name=\"" + name + "\" "
+                + "value=\"" + Http.esc(join(current).equals("—") ? "" : String.join(",", current.stream().map(AgentPages::str).toList()))
+                + "\" placeholder=\"séparés par des virgules\"><div class=\"form-text\">" + Http.esc(help) + "</div></div>";
+    }
+
+    private String numField(String uid, String name, String label, Map<String, Object> existing, String step, String unused) {
+        String value = existing == null ? "" : str(existing.get(toCamel(name)));
+        if ("null".equals(value)) {
+            value = "";
+        }
+        return "<div class=\"mb-2\"><label class=\"form-label\" for=\"" + uid + "-" + name + "\">" + Http.esc(label) + "</label>"
+                + "<input class=\"form-control\" id=\"" + uid + "-" + name + "\" type=\"number\" step=\"" + step + "\" "
+                + "name=\"" + name + "\" value=\"" + Http.esc(value) + "\"></div>";
+    }
+
+    /** {@code creeper_explosion_radius} -> {@code creeperExplosionRadius} (clés JSON de {@code MobProfileSummary}). */
+    private static String toCamel(String snake) {
+        StringBuilder sb = new StringBuilder();
+        boolean upperNext = false;
+        for (char c : snake.toCharArray()) {
+            if (c == '_') {
+                upperNext = true;
+                continue;
+            }
+            sb.append(upperNext ? Character.toUpperCase(c) : c);
+            upperNext = false;
+        }
+        return sb.toString();
+    }
+
     private static String join(List<Object> values) {
         StringBuilder sb = new StringBuilder();
         for (Object v : values) {

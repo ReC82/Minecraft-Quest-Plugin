@@ -39,6 +39,7 @@ public enum Role {
             Permission.PLAYERS_READ, Permission.PLAYER_MODERATE, Permission.PLAYER_BUILD_WRITE,
             Permission.NPC_READ, Permission.TRAVEL_READ, Permission.NPC_WRITE, Permission.NPC_BIND_WRITE,
             Permission.NPC_SPAWN_WRITE, Permission.QUEST_GIVER_WRITE,
+            Permission.MOB_READ, Permission.MOB_WRITE, Permission.MOB_TEST_SPAWN,
             Permission.DIALOGUE_READ, Permission.DIALOGUE_WRITE,
             Permission.QUEST_CONTENT_WRITE, Permission.STORY_CONTENT_WRITE,
             Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
@@ -52,11 +53,12 @@ public enum Role {
             Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ,
             Permission.DIALOGUE_READ, Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
             Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ,
-            Permission.ACTION_QUEST, Permission.ACTION_STORY, Permission.ACTION_VARIABLE_GET)),
+            Permission.ACTION_QUEST, Permission.ACTION_STORY, Permission.ACTION_VARIABLE_GET,
+            Permission.MOB_READ, Permission.MOB_TEST_SPAWN)),
 
     BUILDER("Builder", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.CONTENT_READ,
-            Permission.DIAGNOSTICS_READ, Permission.DOCS_READ)),
+            Permission.DIAGNOSTICS_READ, Permission.DOCS_READ, Permission.MOB_READ)),
 
     CONTENT_EDITOR("Éditeur de contenu", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
@@ -64,12 +66,12 @@ public enum Role {
             Permission.NPC_READ, Permission.DIALOGUE_READ,
             Permission.QUEST_CONTENT_WRITE, Permission.STORY_CONTENT_WRITE,
             Permission.DIALOGUE_WRITE, Permission.NPC_WRITE, Permission.QUEST_GIVER_WRITE,
-            Permission.ACTION_CONTENT_RELOAD)),
+            Permission.ACTION_CONTENT_RELOAD, Permission.MOB_READ, Permission.MOB_WRITE)),
 
     READ_ONLY("Lecture seule", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ,
             Permission.DIALOGUE_READ, Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
-            Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ));
+            Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ, Permission.MOB_READ));
 
     private final String label;
     private final Set<Permission> permissions;

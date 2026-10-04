@@ -19,6 +19,12 @@ public enum Permission {
     NPC_READ,
     /** Consultation lecture seule du réseau de voyage : waypoints/bornes persistés (issue #152). */
     TRAVEL_READ,
+    /** Consultation des profils de mob spécial/boss + throttle Wild (issue #169). */
+    MOB_READ,
+    /** Créer/modifier/activer-désactiver un profil de mob spécial/boss, régler le throttle Wild (issue #169). */
+    MOB_WRITE,
+    /** Faire apparaître/supprimer une instance de test d'un profil, jamais un mob ordinaire (issue #169). */
+    MOB_TEST_SPAWN,
     NPC_WRITE,
     NPC_BIND_WRITE,
     NPC_SPAWN_WRITE,

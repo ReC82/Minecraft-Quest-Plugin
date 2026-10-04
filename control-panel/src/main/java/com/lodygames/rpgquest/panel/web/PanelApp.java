@@ -154,6 +154,8 @@ public final class PanelApp {
                 Permission.NPC_READ, agentPages::npcs));
         route("/travel", exchange -> handleBusinessPage(exchange, "/travel", "Réseau de voyage",
                 Permission.TRAVEL_READ, agentPages::travel));
+        route("/mobs", exchange -> handleBusinessPage(exchange, "/mobs", "Mobs spéciaux & boss",
+                Permission.MOB_READ, agentPages::mobs));
         route("/dialogues", exchange -> handleBusinessPage(exchange, "/dialogues", "Dialogues",
                 Permission.DIALOGUE_READ, agentPages::dialogues));
         route("/dialogues/new", exchange -> handleContentEditor(exchange, "dialogues", "/dialogues",
@@ -1327,7 +1329,7 @@ public final class PanelApp {
     private static String safeReturnPath(String requested, String fallback) {
         return switch (requested == null ? "" : requested) {
             case "/players", "/quests", "/stories", "/npcs", "/travel", "/dialogues", "/agents", "/diagnostics",
-                 "/content/export" -> requested;
+                 "/content/export", "/mobs" -> requested;
             default -> fallback;
         };
     }

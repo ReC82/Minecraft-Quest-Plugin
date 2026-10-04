@@ -22,6 +22,8 @@ public final class AgentActionCatalog {
     private static final Pattern RESOURCE_ID = Pattern.compile("[a-zA-Z0-9_.:\\-/]{1,128}");
     private static final Pattern STORY_ID = Pattern.compile("[a-z0-9_-]{1,64}");
     private static final Pattern NPC_ID = Pattern.compile("[a-z0-9._-]{1,64}");
+    private static final Pattern MOB_ID = Pattern.compile("[a-z0-9._-]{1,64}");
+    private static final java.util.Set<String> MOB_CATEGORIES = java.util.Set.of("SPECIAL", "BOSS");
     private static final Pattern DIALOGUE_REF = Pattern.compile("[a-z0-9._-]{1,64}(?::[a-z0-9._/-]{1,128})?");
     private static final Pattern DIALOGUE_NODE_ID = Pattern.compile("[a-z0-9_][a-z0-9_-]{0,63}");
     private static final int MAX_DIALOGUE_TEXT = 512;
@@ -109,6 +111,8 @@ public final class AgentActionCatalog {
                 "Rafraîchir le catalogue waypoints/bornes (issue #152)");
         add("npc.citizens.list", Permission.NPC_READ, false, false, "Rafraîchir les PNJ Citizens");
         add("dialogue.list", Permission.DIALOGUE_READ, false, false, "Rafraîchir le catalogue des dialogues");
+        add("mob.list", Permission.MOB_READ, false, false,
+                "Rafraîchir le catalogue des profils de mob spécial/boss (issue #169)");
         // Export versionné du contenu déclaratif (issue #108) — lecture seule, aucun effet de bord,
         // aucun catalogue à réenfiler.
         add("content.export", Permission.CONTENT_EXPORT, false, false, "Exporter le contenu (pack versionné)");
@@ -131,6 +135,14 @@ public final class AgentActionCatalog {
         addContentWrite("dialogue.choice.update", Permission.DIALOGUE_WRITE, "Modifier un choix", "dialogue.list");
         addSensitiveWrite("dialogue.choice.delete", Permission.DIALOGUE_WRITE, false, "Supprimer un choix",
                 "dialogue.list");
+        addContentWrite("mob.definition.create", Permission.MOB_WRITE, "Créer un profil de mob spécial/boss", "mob.list");
+        addContentWrite("mob.definition.update", Permission.MOB_WRITE, "Modifier un profil de mob spécial/boss", "mob.list");
+        addContentWrite("mob.definition.toggle", Permission.MOB_WRITE, "Activer/désactiver un profil", "mob.list");
+        addContentWrite("mob.spawn-settings.set", Permission.MOB_WRITE, "Régler le throttle Wild (issue #169)", "mob.list");
+        addSensitiveWrite("mob.test.spawn", Permission.MOB_TEST_SPAWN, true,
+                "Faire apparaître une instance de test", "mob.list");
+        addSensitiveWrite("mob.test.clear", Permission.MOB_TEST_SPAWN, false,
+                "Supprimer les instances de test", "mob.list");
         // Mutations
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");
@@ -492,6 +504,125 @@ public final class AgentActionCatalog {
                     }
                 }
             }
+            case "mob.definition.create", "mob.definition.update" -> {
+                String mobId = trim(form.get("mob_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!MOB_ID.matcher(mobId).matches()) {
+                    return Validation.fail("Identifiant de profil manquant ou invalide (minuscules, « . _ - »).");
+                }
+                String category = trim(form.get("category")).toUpperCase(java.util.Locale.ROOT);
+                if (!MOB_CATEGORIES.contains(category)) {
+                    return Validation.fail("Catégorie manquante ou invalide (SPECIAL ou BOSS).");
+                }
+                String entityType = trim(form.get("entity_type")).toUpperCase(java.util.Locale.ROOT);
+                if (entityType.isEmpty() || !entityType.matches("[A-Z_]{1,64}")) {
+                    return Validation.fail("Type d'entité manquant ou invalide.");
+                }
+                String displayName = trim(form.get("display_name"));
+                if (displayName.isEmpty() || displayName.length() > 128 || displayName.indexOf('\n') >= 0) {
+                    return Validation.fail("Nom affiché manquant, trop long, ou multi-ligne.");
+                }
+                Double spawnChance = finite(form.get("spawn_chance"));
+                if (spawnChance == null || spawnChance < 0 || spawnChance > 1) {
+                    return Validation.fail("« Chance d'apparition » manquante ou hors bornes (0 à 1).");
+                }
+                params.put("mob_id", mobId);
+                params.put("category", category);
+                params.put("entity_type", entityType);
+                params.put("display_name", displayName);
+                params.put("spawn_chance", trimNumber(spawnChance));
+                params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
+                copyOptionalList(form, params, "worlds");
+                copyOptionalList(form, params, "biomes");
+                copyOptionalList(form, params, "zones");
+                for (String key : new String[] {"health", "damage", "speed", "armor", "knockback_resistance",
+                        "scale", "creeper_explosion_radius"}) {
+                    Double v = finite(form.get(key));
+                    if (v != null) {
+                        params.put(key, trimNumber(v));
+                    }
+                }
+                String particle = trim(form.get("particle")).toUpperCase(java.util.Locale.ROOT);
+                if (!particle.isEmpty()) {
+                    params.put("particle", particle);
+                }
+                String sound = trim(form.get("sound")).toUpperCase(java.util.Locale.ROOT);
+                if (!sound.isEmpty()) {
+                    params.put("sound", sound);
+                }
+                for (String key : new String[] {"xp_reward", "max_population"}) {
+                    String raw = trim(form.get(key));
+                    if (!raw.isEmpty()) {
+                        try {
+                            params.put(key, Integer.toString(Integer.parseInt(raw)));
+                        } catch (NumberFormatException e) {
+                            return Validation.fail("« " + key + " » doit être un entier.");
+                        }
+                    }
+                }
+                // Capacités du premier lot (issue #171) : toutes les clés d'une capacité ensemble, ou aucune.
+                if ("true".equals(trim(form.get("enraged_enabled")))) {
+                    Double hf = finite(form.get("enraged_health_fraction"));
+                    Double sm = finite(form.get("enraged_speed_multiplier"));
+                    Double dm = finite(form.get("enraged_damage_multiplier"));
+                    if (hf == null || hf <= 0 || hf >= 1 || sm == null || sm <= 0 || dm == null || dm <= 0) {
+                        return Validation.fail("Paramètres « Enragé » manquants ou invalides.");
+                    }
+                    params.put("enraged_health_fraction", trimNumber(hf));
+                    params.put("enraged_speed_multiplier", trimNumber(sm));
+                    params.put("enraged_damage_multiplier", trimNumber(dm));
+                }
+                if ("true".equals(trim(form.get("summon_enabled")))) {
+                    String summonType = trim(form.get("summon_entity_type")).toUpperCase(java.util.Locale.ROOT);
+                    Double chance = finite(form.get("summon_chance"));
+                    String amountRaw = trim(form.get("summon_amount"));
+                    String cooldownRaw = trim(form.get("summon_cooldown_seconds"));
+                    String maxAliveRaw = trim(form.get("summon_max_alive"));
+                    if (summonType.isEmpty() || chance == null || chance <= 0 || chance > 1
+                            || amountRaw.isEmpty() || cooldownRaw.isEmpty() || maxAliveRaw.isEmpty()) {
+                        return Validation.fail("Paramètres « Invocation de renforts » manquants ou invalides.");
+                    }
+                    try {
+                        params.put("summon_amount", Integer.toString(Integer.parseInt(amountRaw)));
+                        params.put("summon_cooldown_seconds", Integer.toString(Integer.parseInt(cooldownRaw)));
+                        params.put("summon_max_alive", Integer.toString(Integer.parseInt(maxAliveRaw)));
+                    } catch (NumberFormatException e) {
+                        return Validation.fail("Paramètres « Invocation de renforts » non numériques.");
+                    }
+                    params.put("summon_entity_type", summonType);
+                    params.put("summon_chance", trimNumber(chance));
+                }
+            }
+            case "mob.definition.toggle" -> {
+                String mobId = trim(form.get("mob_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!MOB_ID.matcher(mobId).matches()) {
+                    return Validation.fail("Identifiant de profil manquant ou invalide.");
+                }
+                params.put("mob_id", mobId);
+                params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
+            }
+            case "mob.spawn-settings.set" -> {
+                Double chance = finite(form.get("chance"));
+                if (chance == null || chance < 0 || chance > 1) {
+                    return Validation.fail("Throttle global manquant ou hors bornes (0 à 1).");
+                }
+                params.put("enabled", "true".equals(trim(form.get("enabled"))) ? "true" : "false");
+                params.put("chance", trimNumber(chance));
+                String maxRaw = trim(form.get("max_simultaneous_special"));
+                if (!maxRaw.isEmpty()) {
+                    try {
+                        params.put("max_simultaneous_special", Integer.toString(Integer.parseInt(maxRaw)));
+                    } catch (NumberFormatException e) {
+                        return Validation.fail("Plafond simultané doit être un entier.");
+                    }
+                }
+            }
+            case "mob.test.spawn" -> {
+                String mobId = trim(form.get("mob_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!MOB_ID.matcher(mobId).matches()) {
+                    return Validation.fail("Identifiant de profil manquant ou invalide.");
+                }
+                params.put("mob_id", mobId);
+            }
             case "player.resetnew.confirm" -> params.put("confirm", "true");
             case "player.ban" -> {
                 String reason = trim(form.get("reason"));
@@ -528,6 +659,14 @@ public final class AgentActionCatalog {
 
     private static String trim(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /** Copie une liste texte virgule (formulaire : une valeur par ligne, jointe côté page en CSV) si non vide. */
+    private static void copyOptionalList(Map<String, String> form, Map<String, String> params, String key) {
+        String raw = trim(form.get(key));
+        if (!raw.isEmpty()) {
+            params.put(key, raw);
+        }
     }
 
     /** {@code namespace:clé} minuscule, ou {@code null} si invalide. Une clé simple reçoit {@code rpgquest:}. */

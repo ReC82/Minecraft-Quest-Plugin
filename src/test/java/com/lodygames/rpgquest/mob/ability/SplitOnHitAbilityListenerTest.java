@@ -15,10 +15,13 @@ import java.nio.file.Path;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Zombie;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.persistence.PersistentDataType;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -90,9 +93,23 @@ class SplitOnHitAbilityListenerTest {
         MockBukkit.unmock();
     }
 
+    /**
+     * Tague l'entité exactement comme {@link SpecialMobService#apply} le ferait (identité PDC +
+     * vie), <strong>sans</strong> passer par {@code apply()} lui-même : {@code
+     * LivingEntityMock#setRemoveWhenFarAway} n'est pas implémenté par cette version de MockBukkit
+     * (limitation déjà documentée ailleurs dans le projet) et ferait échouer tout test l'utilisant.
+     * Suffisant ici : seules l'identité PDC et la vie importent pour le mécanisme de division.
+     */
     private LivingEntity spawnParent() {
         LivingEntity parent = (LivingEntity) world.spawnEntity(new Location(world, 0, 64, 0), org.bukkit.entity.EntityType.ZOMBIE);
-        service.apply(parent, definition);
+        if (definition.health() != null) {
+            AttributeInstance maxHealth = parent.getAttribute(Attribute.MAX_HEALTH);
+            if (maxHealth != null) {
+                maxHealth.setBaseValue(definition.health());
+            }
+            parent.setHealth(definition.health());
+        }
+        parent.getPersistentDataContainer().set(service.pdcKey(), PersistentDataType.STRING, definition.id().asString());
         return parent;
     }
 
@@ -156,6 +173,27 @@ class SplitOnHitAbilityListenerTest {
         listener.onDamage(event);
 
         assertEquals(before, world.getEntitiesByClass(Zombie.class).size());
+    }
+
+    @Test
+    void repeatedNonLethalHitsOnTheSameParentNeverExceedMaxAlivePerParent() {
+        // Issue #190 : avant correction, chaque coup non mortel relançait une division complète
+        // (max-children-per-hit: 2) indépendamment du nombre de coups déjà reçus -- 4 coups
+        // auraient donc pu produire jusqu'à 8 enfants directs pour UN SEUL parent. Le fixture
+        // n'indique pas max-alive-per-parent : doit donc utiliser le défaut (2).
+        LivingEntity parent = spawnParent();
+        PlayerMock attacker = server.addPlayer();
+        int before = world.getEntitiesByClass(Zombie.class).size();
+
+        for (int i = 0; i < 4; i++) {
+            listener.onDamage(new EntityDamageByEntityEvent(
+                    attacker, parent, EntityDamageEvent.DamageCause.ENTITY_ATTACK, 1.0));
+        }
+
+        int after = world.getEntitiesByClass(Zombie.class).size();
+        assertEquals(before + 2, after,
+                "4 coups non mortels répétés sur le même parent ne doivent jamais produire plus que "
+                        + "max-alive-per-parent (2 par défaut) enfants directs vivants, jamais 8");
     }
 
     @Test

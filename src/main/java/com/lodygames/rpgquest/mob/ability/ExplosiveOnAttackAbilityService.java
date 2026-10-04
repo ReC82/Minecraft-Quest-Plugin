@@ -11,8 +11,11 @@ import java.util.Optional;
 import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Mob;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitTask;
@@ -27,10 +30,22 @@ import org.bukkit.scheduler.BukkitTask;
  * {@code World#createExplosion}, ce qui déclenche un {@code EntityExplodeEvent}
  * normal — les listeners de protection de zone/claim s'appliquent donc sans
  * modification (mission point 6).
+ *
+ * <p><strong>Issue #190</strong> : changer les statistiques d'une base passive (ex. {@code PIG})
+ * ne lui donne aucune IA de poursuite — une créature vanilla passive n'a tout simplement pas de
+ * goal de combat/poursuite dans son sélecteur d'IA. Solution 100% API publique Paper, sans NMS :
+ * {@link org.bukkit.entity.Mob#getPathfinder()} ({@code com.destroystokyo.paper.entity.Pathfinder})
+ * permet de commander un déplacement vers une cible indépendamment des goals d'IA de l'entité.
+ * Tant qu'un joueur éligible est à portée de {@link #SENSE_RANGE_BLOCKS} mais hors de
+ * {@code triggerRangeBlocks}, un nouveau chemin vers lui est recalculé à chaque balayage (1 s,
+ * même cadence que le reste de cette classe) ; inchangé pour toute entité sans cette capacité --
+ * les animaux ordinaires ne sont jamais rendus agressifs.</p>
  */
 public final class ExplosiveOnAttackAbilityService implements PluginService {
 
     private static final long SWEEP_PERIOD_TICKS = 20L; // 1 s : assez réactif pour une capacité "aggro à portée".
+    /** Rayon (blocs) au-delà de {@code triggerRangeBlocks} dans lequel l'entité se met en chemin vers le joueur. */
+    private static final double SENSE_RANGE_BLOCKS = 16.0;
 
     private final Plugin plugin;
     private final SpecialMobRegistry registry;
@@ -70,17 +85,41 @@ public final class ExplosiveOnAttackAbilityService implements PluginService {
     }
 
     private void maybeTrigger(LivingEntity entity, ExplosiveOnAttackAbility ability) {
-        double rangeSquared = ability.triggerRangeBlocks() * ability.triggerRangeBlocks();
-        boolean playerNearby = entity.getWorld().getPlayers().stream()
-                .filter(p -> p.getGameMode() != GameMode.SPECTATOR)
-                .anyMatch(p -> p.getLocation().distanceSquared(entity.getLocation()) <= rangeSquared);
-        if (!playerNearby) {
+        double triggerRangeSquared = ability.triggerRangeBlocks() * ability.triggerRangeBlocks();
+        Player nearest = nearestEligiblePlayer(entity);
+        if (nearest == null) {
+            return;
+        }
+        double distanceSquared = nearest.getLocation().distanceSquared(entity.getLocation());
+        if (distanceSquared <= triggerRangeSquared) {
+            entity.getWorld().createExplosion(entity, entity.getLocation(), ability.power(), ability.setFire(), true);
+            entity.damage(entity.getHealth() + 1.0);
+            service.recordAbilityTrigger(MobAbilityType.EXPLOSIVE_ON_ATTACK.name());
             return;
         }
 
-        entity.getWorld().createExplosion(entity, entity.getLocation(), ability.power(), ability.setFire(), true);
-        entity.damage(entity.getHealth() + 1.0);
-        service.recordAbilityTrigger(MobAbilityType.EXPLOSIVE_ON_ATTACK.name());
+        double senseRangeSquared = SENSE_RANGE_BLOCKS * SENSE_RANGE_BLOCKS;
+        if (distanceSquared <= senseRangeSquared && entity instanceof Mob mob) {
+            AttributeInstance speedAttr = entity.getAttribute(Attribute.MOVEMENT_SPEED);
+            double speed = speedAttr != null ? speedAttr.getValue() : 0.25;
+            mob.getPathfinder().moveTo(nearest, speed);
+        }
+    }
+
+    private Player nearestEligiblePlayer(LivingEntity entity) {
+        Player nearest = null;
+        double nearestDistanceSquared = Double.MAX_VALUE;
+        for (Player p : entity.getWorld().getPlayers()) {
+            if (p.getGameMode() == GameMode.SPECTATOR) {
+                continue;
+            }
+            double d = p.getLocation().distanceSquared(entity.getLocation());
+            if (d < nearestDistanceSquared) {
+                nearestDistanceSquared = d;
+                nearest = p;
+            }
+        }
+        return nearest;
     }
 
     private Optional<ExplosiveOnAttackAbility> findAbility(SpecialMobDefinition def) {

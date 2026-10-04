@@ -68,6 +68,9 @@ public final class SpecialMobService implements PluginService, Listener {
 
     public static final String PDC_KEY_NAME = "special-mob-id";
     public static final String SPLIT_DEPTH_KEY_NAME = "special-mob-split-depth";
+    /** Issue #190 : UUID du parent direct, posé sur chaque enfant {@code SPLIT_ON_HIT} pour compter
+     * ses enfants vivants indépendamment du nombre de coups reçus (voir {@code SplitOnHitAbilityListener}). */
+    public static final String SPLIT_PARENT_KEY_NAME = "special-mob-split-parent";
     public static final String TEST_INSTANCE_KEY_NAME = "special-mob-test-instance";
 
     private static final long BOSS_BAR_PERIOD_TICKS = 20L; // 1 s : aura + rafraîchissement de la barre de vie.
@@ -84,6 +87,7 @@ public final class SpecialMobService implements PluginService, Listener {
     private final MobSpawnSettingsStore spawnSettingsStore;
     private final NamespacedKey pdcKey;
     private final NamespacedKey splitDepthKey;
+    private final NamespacedKey splitParentKey;
     private final NamespacedKey testInstanceKey;
 
     private final Map<NamespacedKey, Set<UUID>> population = new ConcurrentHashMap<>();
@@ -111,6 +115,7 @@ public final class SpecialMobService implements PluginService, Listener {
         this.spawnSettingsStore = spawnSettingsStore;
         this.pdcKey = new NamespacedKey(plugin, PDC_KEY_NAME);
         this.splitDepthKey = new NamespacedKey(plugin, SPLIT_DEPTH_KEY_NAME);
+        this.splitParentKey = new NamespacedKey(plugin, SPLIT_PARENT_KEY_NAME);
         this.testInstanceKey = new NamespacedKey(plugin, TEST_INSTANCE_KEY_NAME);
     }
 
@@ -150,6 +155,10 @@ public final class SpecialMobService implements PluginService, Listener {
 
     public NamespacedKey splitDepthKey() {
         return splitDepthKey;
+    }
+
+    public NamespacedKey splitParentKey() {
+        return splitParentKey;
     }
 
     // ---- Identification PDC ----------------------------------------------------------------

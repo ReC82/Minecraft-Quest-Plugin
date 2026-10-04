@@ -191,6 +191,27 @@ class SpecialMobDefinitionParserTest {
         assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
         MobAbility ability = result.definition().abilities().get(0);
         assertEquals(new SplitOnHitAbility(2, 2), ability);
+        assertEquals(2, ((SplitOnHitAbility) ability).maxAlivePerParent(),
+                "« max-alive-per-parent » absent du YAML doit défaut à 2 (issue #190)");
+    }
+
+    @Test
+    void splitOnHitAbilityAcceptsAnExplicitMaxAlivePerParent() {
+        SpecialMobDefinitionParser.ParseResult result = parser.parse("zombie.yml", load("""
+                id: rpgquest:splitting_zombie
+                entity-type: ZOMBIE
+                name: "Splitting Zombie"
+                spawn-chance: 0.02
+                abilities:
+                  - type: SPLIT_ON_HIT
+                    max-depth: 2
+                    max-children-per-hit: 2
+                    max-alive-per-parent: 5
+                """));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        SplitOnHitAbility ability = (SplitOnHitAbility) result.definition().abilities().get(0);
+        assertEquals(5, ability.maxAlivePerParent());
     }
 
     @Test

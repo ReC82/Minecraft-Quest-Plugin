@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.lodygames.rpgquest.mob.model.EnragedAbility;
 import com.lodygames.rpgquest.mob.model.MobCategory;
 import com.lodygames.rpgquest.mob.model.SpecialMobDefinition;
+import com.lodygames.rpgquest.mob.model.SplitOnHitAbility;
 import com.lodygames.rpgquest.mob.model.SummonOnDamageAbility;
 import com.lodygames.rpgquest.resource.model.VanillaItemDrop;
 import java.io.StringReader;
@@ -69,6 +70,22 @@ class SpecialMobDefinitionYamlTest {
                 Set.of(), Set.of(), Set.of(),
                 null, null, null, null, null, null, null,
                 null, null, List.of(), List.of(), null, null);
+
+        assertEquals(in, roundTrip(in));
+    }
+
+    @Test
+    void splitOnHitAbilityWithExplicitMaxAlivePerParentRoundTrips() {
+        // Issue #190 : le troisième champ (max-alive-per-parent) doit survivre au round-trip,
+        // pas seulement les deux premiers déjà couverts par SpecialMobDefinitionParserTest.
+        SpecialMobDefinition in = new SpecialMobDefinition(
+                new NamespacedKey("rpgquest", "splitting_zombie"),
+                MobCategory.SPECIAL, true, EntityType.ZOMBIE, "Zombie Fissible", 0.02,
+                Set.of(), Set.of(), Set.of(),
+                25.0, 4.0, 0.25, null, null, null, null,
+                null, null,
+                List.of(new SplitOnHitAbility(2, 2, 2)),
+                List.of(), 12, 12);
 
         assertEquals(in, roundTrip(in));
     }

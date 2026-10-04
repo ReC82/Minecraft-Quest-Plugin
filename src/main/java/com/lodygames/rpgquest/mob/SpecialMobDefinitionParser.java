@@ -306,7 +306,13 @@ final class SpecialMobDefinitionParser {
             case SPLIT_ON_HIT -> {
                 Integer maxDepth = parsePositiveIntRequired(section, "max-depth", context, errors);
                 Integer maxChildren = parsePositiveIntRequired(section, "max-children-per-hit", context, errors);
-                yield (maxDepth == null || maxChildren == null) ? null : new SplitOnHitAbility(maxDepth, maxChildren);
+                // Optionnelle : les profils antérieurs à l'issue #190 n'ont pas « max-alive-per-parent »
+                // -- défaut 2 (voir SplitOnHitAbility#SplitOnHitAbility(int, int)).
+                Integer maxAlivePerParent = section.isSet("max-alive-per-parent")
+                        ? parsePositiveIntRequired(section, "max-alive-per-parent", context, errors)
+                        : 2;
+                yield (maxDepth == null || maxChildren == null || maxAlivePerParent == null) ? null
+                        : new SplitOnHitAbility(maxDepth, maxChildren, maxAlivePerParent);
             }
             case ENRAGED -> {
                 Double healthFraction = parseExclusiveFractionRequired(section, "health-fraction", context, errors);

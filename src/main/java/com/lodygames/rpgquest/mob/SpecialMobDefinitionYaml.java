@@ -96,6 +96,7 @@ public final class SpecialMobDefinitionYaml {
                     sb.append("  - type: SPLIT_ON_HIT\n");
                     sb.append("    max-depth: ").append(a.maxDepth()).append('\n');
                     sb.append("    max-children-per-hit: ").append(a.maxChildrenPerHit()).append('\n');
+                    sb.append("    max-alive-per-parent: ").append(a.maxAlivePerParent()).append('\n');
                 }
                 case EnragedAbility a -> {
                     sb.append("  - type: ENRAGED\n");

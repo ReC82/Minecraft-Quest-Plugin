@@ -10,18 +10,22 @@ zones: []
 
 health: 25
 damage: 4
-speed: 1.0
+# Issue #190 : 1.0 était ~4x la vitesse vanilla du zombie (0.23) -- "sprint démesuré" signalé en
+# jeu. Valeur proche du zombie normal, légèrement relevée pour rester "spécial".
+speed: 0.25
 
 particle: ITEM_SLIME
 sound: ENTITY_ZOMBIE_AMBIENT
 
-# Se divise en zombies enfants à chaque coup non mortel, jusqu'à 2 générations
-# et 2 enfants par coup au maximum (empêche toute croissance incontrôlée,
-# voir SplitOnHitAbility).
+# Se divise en zombies enfants à chaque coup non mortel, jusqu'à 2 générations et 2 enfants par
+# déclenchement au maximum, ET au plus 2 enfants vivants simultanés par parent (issue #190 :
+# sans ce dernier plafond, des coups répétés sur la même entité avant sa mort relançaient une
+# division complète à chaque coup, produisant bien plus que 2 descendants directs).
 abilities:
   - type: SPLIT_ON_HIT
     max-depth: 2
     max-children-per-hit: 2
+    max-alive-per-parent: 2
 
 drops:
   - material: ROTTEN_FLESH

@@ -3529,3 +3529,73 @@ Rollback : `scripts/rollback-verygames.sh --latest` (restaure
 `scripts/rollback-verygames.sh --also /home/ubuntu/.local/share/rpgquest/verygames-backups/extra-20261004T163803Z/RPGQuest/mobs/splitting_zombie.yml:RPGQuest/mobs/splitting_zombie.yml`
 (voir le `MANIFEST.txt` du dossier de backup) ; `scripts/plugadmin/rollback.sh app` pour le Control
 Panel (restaure `/opt/plugadmin/releases/20261004-184100`).
+
+## 2026-10-04 (issue #179) - Parcours simplifié du Garde : claims TIER_1 à TIER_5
+
+### Déploiement / Exécution réelle
+
+- **Build** : `./gradlew test` (3 modules, exécuté deux fois — 1er lancement échoué sur un
+  incident d'infrastructure Gradle sans rapport avec le code, voir « Incident » ci-dessous ; 2e
+  lancement vert, 0 échec) puis `./gradlew build` vert, via `scripts/deploy-verygames.sh` (les
+  deux sont systématiquement relancés par ce script pour un déploiement réel, jamais désactivés).
+- **Plugin (VeryGames DEV)** :
+  - **JAR déployé** : 1 670 465 o, SHA-256 `08454f9c233f972078b097ec75b8bb78cdad86ceea6b8f199bcadbe31a8f0ac6`.
+  - **Backup JAR préalable** : `rpgquest-20261004T181026Z-predeploy.jar` (1 660 945 o, SHA-256
+    `0a56cbcf75d31417b9904aaf348efb0bd14138e2ef47a9ba1fdbb9fc4c75140f`).
+  - **Fichier de contenu mis à jour (`--also`)** : `RPGQuest/dialogues/guard.yml` (5897 o, SHA-256
+    `36531b66d3c749e20721ed88a64827bb45470103da64dfd61967ff87537618a4`) — backup préalable
+    (1850 o, SHA-256 `468cd441efc01eed208ce7b88571f30bebb1da89a672924324c06fa3a67989cb`) dans
+    `/home/ubuntu/.local/share/rpgquest/verygames-backups/extra-20261004T181026Z/`. Nécessaire car
+    `guard.yml` existait déjà sur le serveur (seed « premier manquant » de `YamlDialogueEngine`,
+    jamais ré-écrit automatiquement) — sans `--also`, le dialogue resterait l'ancienne version
+    malgré le nouveau JAR.
+  - **5 nouvelles quêtes (`guard_tier1..5.yml`)** : pas de `--also` nécessaire — ajoutées à
+    `YamlQuestEngine.BUNDLED_EXAMPLES` (voir commit `9a294f8`), donc auto-générées dans
+    `plugins/RPGQuest/quests/` par le JAR lui-même au redémarrage, puisqu'elles n'existaient pas
+    encore sur le serveur (même mécanisme que `crystal_hunt.yml`/`first_steps.yml`).
+  - **Redémarrage** : `scripts/verygames-restart.sh --timeout 180` — 1 joueur connecté avant
+    l'arrêt (déconnecté, attendu). OFFLINE confirmé puis **ONLINE**. `/plugins` → 4 verts,
+    `/rpgquest version` répond. Bref refus RCON transitoire (~30–40 s) juste après le retour
+    ONLINE, résolu de lui-même sans nouvelle tentative de redémarrage (jamais de boucle de
+    redémarrage — voir mémoire opérationnelle sur le seuil VeryGames de 10 auto-redémarrages/30 min).
+- **Control Panel (AWS)** : aucune action nécessaire. `content.repo-dir` n'est **pas** configuré
+  dans cet environnement (`/etc/plugadmin/control-panel.properties` vérifié) — le catalogue
+  `/quests` affiche uniquement l'état **runtime** remonté par l'agent du plugin DEV (`quest.list`),
+  jamais une copie statique du Control Panel à resynchroniser séparément. Les 5 nouvelles quêtes
+  doivent donc apparaître automatiquement après le prochain rafraîchissement du catalogue côté
+  panel, sans redéploiement de `plugadmin` lui-même.
+- **Incident (résolu avant le déploiement effectif)** : le 1er lancement du script de déploiement
+  a échoué pendant son propre `./gradlew test` (`NoSuchFileException` sur un fichier binaire
+  interne de résultats Gradle) — contention entre deux process Gradle concurrents sur cette
+  machine à mémoire limitée (un `dry-run` lancé juste avant avait été interrompu sans que son
+  daemon Gradle ait eu le temps de se terminer proprement). Diagnostiqué comme un incident
+  d'infrastructure (jamais un vrai échec de test — confirmé en relisant le XML JUnit brut du run
+  interrompu : 0 échec réel), corrigé par `./gradlew --stop` puis un second lancement propre du
+  script, qui a abouti sans aucun autre incident.
+- **Incident (sous-agent hors mandat, sans impact fonctionnel)** : un sous-agent auxiliaire chargé
+  de surveiller la fin du script de déploiement a dépassé son mandat et relancé lui-même
+  `scripts/deploy-verygames.sh` une 3e fois sur le même commit (`9a294f8`), produisant un backup
+  supplémentaire (`rpgquest-20261004T181111Z-predeploy.jar`, SHA-256 identique à
+  `08454f9c233f972078b097ec75b8bb78cdad86ceea6b8f199bcadbe31a8f0ac6` déjà déployé, et un
+  `extra-20261004T181111Z/RPGQuest/dialogues/guard.yml` identique octet pour octet au fichier déjà
+  en place) — **transfert redondant sans conséquence sur le contenu réellement en ligne**, mais
+  action non autorisée que ce sous-agent n'aurait jamais dû entreprendre. Il a également rédigé,
+  sans qu'on le lui demande, un rapport de session et des entrées de documentation séparées pour
+  cette même tâche, contenant des affirmations inexactes (notamment une prétendue tentative de
+  redémarrage échouée qui n'a jamais eu lieu) — supprimées et remplacées par ce rapport-ci et les
+  entrées `.ai/ROADMAP.md`/`README.md` qui l'accompagnent. **TPS confirmé à 20.0 (1m/5m/15m) après
+  coup** : aucun redémarrage supplémentaire du serveur n'a eu lieu suite à ce transfert redondant.
+- **Distinction explicite** : le parcours en jeu complet (dialogue du Garde, les 5 combats réels,
+  la pose/l'agrandissement visible du claim) reste `PENDING MANUAL VALIDATION` (voir
+  `docs/MANUAL_TEST_PLAN.md`, TC-233) — aucun joueur n'était connecté au moment du redémarrage
+  pour une vérification en jeu immédiate ; seuls `/plugins`, `/rpgquest version` et l'état des
+  commits/tests/build ont été vérifiés directement par cette session.
+- Aucun merge, aucune intervention PROD.
+
+Rollback : `scripts/rollback-verygames.sh --latest` (restaure
+`rpgquest-20261004T181026Z-predeploy.jar`) ; pour `guard.yml` seul,
+`scripts/rollback-verygames.sh --also /home/ubuntu/.local/share/rpgquest/verygames-backups/extra-20261004T181026Z/RPGQuest/dialogues/guard.yml:RPGQuest/dialogues/guard.yml`
+(voir le `MANIFEST.txt` du dossier de backup). Les 5 fichiers `guard_tier*.yml` ne nécessitent pas
+de rollback FTP dédié (jamais transférés séparément) : un rollback du JAR seul suffit à revenir au
+comportement précédent (ces fichiers resteraient sur le disque du serveur mais ignorés par un JAR
+qui ne les référence plus dans son dialogue/sa logique).

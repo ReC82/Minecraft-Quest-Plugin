@@ -328,6 +328,61 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-04 (issue #179 — parcours simplifié du Garde pour les claims TIER_1 à TIER_5)
+Branche de départ: feature/169-special-mobs-boss @ 5ab472e (entrée précédente, #190 déployé)
+Étape de départ: demande explicite de l'utilisateur, exécutée sans attendre de confirmation :
+  cinq quêtes successives du Garde, chacune une étape à quatre objectifs KILL_ENTITY simultanés
+  (araignées/zombies/squelettes/creepers, 5/10/20/40/80), débloquant respectivement les claims
+  TIER_1 à TIER_5, sans doubler les récompenses, sans confondre déblocage de tier/agrandissement/
+  création de claim, visibles dans le Control Panel.
+Étapes terminées:
+(1) DONE — Moteur de palier de claim : ClaimTier modélise désormais TIER_1..TIER_5 (actif
+  5/10/20/40/80, réservation constante à 100 pour les cinq — collision-free par construction).
+  ClaimService#upgradeTier (nouveau) agrandit le claim principal déjà posé en conservant son
+  centre, avec vérification de chevauchement défensive ; ClaimService#highestEntitledTier
+  (nouveau) résout le palier le plus haut déjà acquis. ClaimRepository#updateBounds (nouveau).
+(2) DONE — DeedClaimListener pose désormais directement au palier le plus haut déjà acquis
+  (jamais TIER_1 par défaut) — couvre le cas d'un joueur ayant complété des paliers avant même
+  d'avoir posé son premier claim.
+(3) DONE — Nouvelle sous-commande console /rpgadmin claim grant-tier <joueur> <TIER_n>, permet
+  de tester les 5 paliers sans combat réel (voir docs/ADMIN_TEST_SHORTCUTS.md, workflow D).
+(4) DONE — Cinq nouvelles quêtes rpgquest:guard_tier1..guard_tier5 (aucun changement du moteur de
+  quête nécessaire — le support multi-objectifs-par-étape existait déjà et a été vérifié par
+  lecture directe du code avant toute implémentation). Prérequis chaînés, repeatable: false,
+  récompenses VARIABLE CLAIM_TIER_n + COMMAND grant-tier (idempotent dans tous les cas).
+(5) DONE — dialogues/guard.yml étendu (5 offres + nœud de clôture après le palier 5, jamais un
+  rappel d'objectif périmé) sans toucher aux branches first_steps/crystal_hunt existantes —
+  décision explicite de ne JAMAIS modifier crystal_hunt.yml (parcours parallèle, pas un remplacement).
+(6) DONE — Les 5 quêtes ajoutées à YamlQuestEngine.BUNDLED_EXAMPLES, sinon jamais générées sur un
+  serveur déjà démarré auparavant (trouvé en auditant le mécanisme de seed avant le déploiement,
+  pas après coup).
+Tests : 1425 tests (module racine) + confirmation interne au script de déploiement (./gradlew
+  test+build OK, 3 modules) ; nouveaux : BundledQuestsValidityTest (chargement + structure des 5
+  quêtes de palier), extensions ClaimServiceTest (highestEntitledTier, upgradeTier : succès
+  centré, idempotence, refus sans claim, refus de chevauchement), DeedClaimListenerTest (première
+  pose au palier déjà acquis), YamlQuestEngineTest (seed des 5 nouveaux fichiers). 0 échec, 34
+  ignorés (limitation MockBukkit déjà documentée, sans rapport avec ce lot).
+Branche finale: feature/169-special-mobs-boss (aucun merge — déploiement DEV/AWS autorisé
+  explicitement pour cette session)
+Dernier commit: 9a294f8 au moment du déploiement (docs committées séparément ensuite — voir git
+  log : f195119 moteur de palier, e2cc759 quêtes+dialogue, 205fc31 documentation, 9a294f8
+  correctif seed des exemples)
+Build: vert, voir Tests ci-dessus.
+Tests manuels en attente: TC-233 (parcours complet en jeu des 5 paliers — aucun joueur connecté
+  au moment du redémarrage pour un test en conditions réelles).
+Blocages: aucun bloquant restant. Deux incidents transitoires rencontrés et résolus sans
+  conséquence : (a) 1er lancement du script de déploiement échoué dans son ./gradlew test interne
+  sur une NoSuchFileException (contention Gradle entre deux process concurrents sur cette machine
+  à mémoire limitée, jamais un vrai échec de test — confirmé par relecture du XML JUnit du run
+  interrompu) ; corrigé par ./gradlew --stop puis un second lancement propre, qui a abouti. (b)
+  Bref refus RCON (~30-40 s) juste après le retour ONLINE du serveur suite au redémarrage, résolu
+  de lui-même sans nouvelle tentative de redémarrage (jamais de boucle, conformité au seuil
+  VeryGames de 10 auto-redémarrages/30 min).
+Première étape à reprendre: validation manuelle en jeu de TC-233 ; #161/#162/#163 restent en file
+  (non commencés, non liés à ce lot).
+```
+
+```text
 Date: 2026-10-04 (démarrage EPIC #169 — mobs spéciaux et boss configurables, lot 1)
 Branche de départ: feat/control-panel-admin-tools (entrée précédente) — travail réalisé dans un
   worktree isolé /srv/rpgquest/worktree-169 (branche feature/169-special-mobs-boss) pour ne jamais

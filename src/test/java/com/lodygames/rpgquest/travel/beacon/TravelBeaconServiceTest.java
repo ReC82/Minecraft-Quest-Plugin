@@ -746,20 +746,16 @@ class TravelBeaconServiceTest {
     }
 
     /**
-     * Retour joueur 2026-10-04 : reproduit le parcours réel signalé en jeu -- taper « lac » dans
-     * l'enclume puis cliquer sur l'étiquette de résultat doit retrouver « Lac de Givre » sans
-     * distinction de casse/accents, via le vrai routage d'événements du clic sur le résultat
-     * ({@code TravelBeaconListener#onInventoryClick}, slot 2), pas seulement un appel direct à
-     * {@code handleSearchResultClick}. Le résultat (slot 2) est construit ici exactement comme le
-     * fait {@code handlePrepareAnvil} à partir d'un texte tapé -- {@code PrepareAnvilEvent} lui-même
-     * exige un {@code AnvilView} que cette version de MockBukkit ne simule pas encore (limitation
-     * distincte de celle de {@code teleportAsync} documentée en tête de ce fichier) : le zéro de
-     * {@code repairCost}/{@code repairCostAmount} dans {@code handlePrepareAnvil} reste donc
-     * PENDING MANUAL VALIDATION (voir le rapport de session), seul le filtrage qui en découle est
-     * vérifié ici de bout en bout.
+     * Retour joueur 2026-10-04 (issue #150, round 2) : reproduit le parcours RÉEL signalé en jeu --
+     * taper « lac » dans l'enclume (un vrai {@code PrepareAnvilEvent}, pas un résultat injecté à la
+     * main) puis cliquer sur l'étiquette de résultat (un vrai {@code InventoryClickEvent}, slot 2).
+     * La précédente régression de ce test injectait directement l'{@code ItemStack} de résultat,
+     * ce qui masquait exactement le bug signalé : le texte tapé ne survivait pas jusqu'au clic.
+     * {@link FakeAnvilView} comble l'absence d'implémentation {@code AnvilView} dans cette version
+     * de MockBukkit, seul moyen de construire un {@code PrepareAnvilEvent} réel ici.
      */
     @Test
-    void realClickOnSearchResultFindsLacDeGivreCaseAndAccentInsensitivelyWithActiveFilterIndicator() throws Exception {
+    void realTypingThenClickingTheResultFindsLacDeGivreCaseAndAccentInsensitivelyWithActiveFilterIndicator() throws Exception {
         server.getPluginManager().registerEvents(waypointService.listener(), plugin);
         waypointService.start();
         Waypoint lac = new Waypoint("wp_lac", "Lac de Givre", "wild", "minecraft:frozen_ocean@0,0",
@@ -774,18 +770,26 @@ class TravelBeaconServiceTest {
         discover(player, lac);
         discover(player, mont);
 
+        TravelBeaconListener listener = (TravelBeaconListener) service.listener();
         service.openWaypoints(player, 0, "", "wild");
         click(player, 47); // "Rechercher"
         assertEquals(BeaconMenuHolder.Kind.SEARCH, openMenuKind(player));
 
-        // Résultat tel que le produirait handlePrepareAnvil pour une saisie "LAC" (majuscules, pour
-        // couvrir l'insensibilité à la casse) -- construit directement puisque PrepareAnvilEvent
-        // (AnvilView) n'est pas simulable ici, voir le javadoc ci-dessus.
-        ItemStack result = new ItemStack(Material.NAME_TAG);
-        ItemMeta meta = result.getItemMeta();
-        meta.displayName(Component.text("LAC"));
-        result.setItemMeta(meta);
-        player.getOpenInventory().getTopInventory().setItem(2, result);
+        // Simule la saisie réelle du joueur ("LAC", en majuscules, pour couvrir l'insensibilité à la
+        // casse) : l'enclume reçoit le texte (comme le ferait le paquet client réel), puis un vrai
+        // PrepareAnvilEvent est routé par le vrai listener -- jamais un résultat injecté à la main.
+        org.mockbukkit.mockbukkit.inventory.AnvilInventoryMock anvil =
+                (org.mockbukkit.mockbukkit.inventory.AnvilInventoryMock) player.getOpenInventory().getTopInventory();
+        anvil.setRenameText("LAC");
+        org.bukkit.event.inventory.PrepareAnvilEvent prepare =
+                new org.bukkit.event.inventory.PrepareAnvilEvent(new FakeAnvilView(anvil, player), null);
+        listener.onPrepareAnvil(prepare);
+        assertEquals(0, anvil.getRepairCost(), "aucun coût XP (niveau) affiché");
+        assertEquals(0, anvil.getRepairCostAmount(), "aucun coût XP résiduel (compteur interne vanilla)");
+        // Le serveur réel propage le résultat calculé par l'événement dans le slot 2 ; MockBukkit ne
+        // le fait pas automatiquement, donc on le reproduit ici pour simuler fidèlement le parcours
+        // -- mais le FILTRAGE lui-même, lui, ne doit plus dépendre de ce résultat (voir la session).
+        anvil.setItem(2, prepare.getResult());
 
         click(player, 2); // clic sur l'étiquette de résultat -- jamais l'appui sur Entrée
         assertEquals(BeaconMenuHolder.Kind.WAYPOINTS, openMenuKind(player),
@@ -809,6 +813,47 @@ class TravelBeaconServiceTest {
         assertEquals(2, countFilledMaps(player), "après effacement, les deux waypoints réapparaissent");
         assertNull(player.getOpenInventory().getTopInventory().getItem(46),
                 "après effacement, plus d'indicateur de filtre actif");
+    }
+
+    /**
+     * Retour joueur 2026-10-04 : reproduit exactement le cas rapporté -- taper « lac » puis cliquer
+     * sur le résultat, mais simule en plus la perte de l'ItemStack de résultat au moment du clic
+     * (slot 2 déjà vide quand {@code InventoryClickEvent#getCurrentItem()} est lu, reproduisant le
+     * quirk vanilla des conteneurs « résultat »). Le filtrage doit malgré tout fonctionner, puisque
+     * le texte tapé est désormais mémorisé dans la session dès la frappe, jamais relu sur le clic.
+     */
+    @Test
+    void searchStillFiltersEvenWhenTheResultSlotItemIsGoneByTheTimeTheClickIsHandled() throws Exception {
+        server.getPluginManager().registerEvents(waypointService.listener(), plugin);
+        waypointService.start();
+        Waypoint lac = new Waypoint("wp_lac2", "Lac de Givre", "wild", "minecraft:frozen_ocean@2,0",
+                "minecraft:frozen_ocean", 2, 0, 700, 65, 700, "NORTH", 1, true, Instant.now());
+        Waypoint mont = new Waypoint("wp_mont2", "Mont Blanc", "wild", "minecraft:mountains@3,0",
+                "minecraft:mountains", 3, 0, 800, 65, 800, "NORTH", 1, true, Instant.now());
+        waypointRepository.insertIfAbsent(lac).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        waypointRepository.insertIfAbsent(mont).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        reloadAndAwaitIndexed(lac, mont);
+        service.start();
+        PlayerMock player = addPlayer();
+        discover(player, lac);
+        discover(player, mont);
+
+        TravelBeaconListener listener = (TravelBeaconListener) service.listener();
+        service.openWaypoints(player, 0, "", "wild");
+        click(player, 47);
+
+        org.mockbukkit.mockbukkit.inventory.AnvilInventoryMock anvil =
+                (org.mockbukkit.mockbukkit.inventory.AnvilInventoryMock) player.getOpenInventory().getTopInventory();
+        anvil.setRenameText("lac");
+        listener.onPrepareAnvil(new org.bukkit.event.inventory.PrepareAnvilEvent(new FakeAnvilView(anvil, player), null));
+        // Slot 2 délibérément laissé vide (jamais rempli) : reproduit le cas où le clic sur le
+        // résultat ne voit plus l'ItemStack attendu -- la session, pas le clic, porte le filtre.
+        assertNull(anvil.getItem(2));
+
+        click(player, 2);
+
+        assertEquals(1, countFilledMaps(player),
+                "le filtrage doit utiliser le texte mémorisé par la session, pas l'ItemStack du clic");
     }
 
     @Test

@@ -987,17 +987,39 @@ public final class TravelBeaconService implements PluginService {
             result.setItemMeta(meta);
         }
         event.setResult(result);
+
+        // Retour joueur 2026-10-04 (issue #150) : mémorise le texte RÉELLEMENT tapé dans la session
+        // à chaque frappe, plutôt que de ne le lire qu'au clic sur le résultat. Le slot « résultat »
+        // d'une enclume suit un chemin vanilla spécial (consommation des entrées à la prise) qui ne
+        // garantit pas que l'ItemStack lu par InventoryClickEvent#getCurrentItem() porte encore le
+        // texte tapé au moment où notre écouteur s'exécute -- cause probable du filtrage resté vide
+        // malgré un clic bien reçu. En gardant la dernière valeur connue dans la session, le clic
+        // n'a plus besoin de relire quoi que ce soit sur l'objet cliqué (voir handleSearchResultClick).
+        if (event.getView().getPlayer() instanceof Player typingPlayer) {
+            BeaconMenuSession current = sessions.get(typingPlayer.getUniqueId());
+            if (current != null) {
+                String liveFilter = renameText == null ? "" : normalize(renameText);
+                sessions.put(typingPlayer.getUniqueId(), new BeaconMenuSession(0, liveFilter, current.world()));
+            }
+        }
     }
 
-    /** Clic sur le résultat (slot 2) de l'enclume de recherche : jamais d'objet réellement donné. */
+    /**
+     * Clic sur le résultat (slot 2) de l'enclume de recherche : jamais d'objet réellement donné.
+     * Utilise en priorité le texte déjà mémorisé en continu par {@link #handlePrepareAnvil} ; ne
+     * retombe sur une lecture de {@code resultItem} que si la session n'a mémorisé aucune frappe
+     * (ex. appel direct sans simulation de saisie, comme certains tests) -- jamais l'inverse.
+     */
     void handleSearchResultClick(Player player, ItemStack resultItem) {
-        String typed = "";
-        if (resultItem != null && resultItem.getItemMeta() != null && resultItem.getItemMeta().hasDisplayName()) {
-            typed = PlainTextComponentSerializer.plainText().serialize(resultItem.getItemMeta().displayName());
-        }
         BeaconMenuSession session = sessionOf(player);
         String world = session != null && !session.world().isBlank() ? session.world() : travelConfig.get().wildWorld();
-        openWaypoints(player, 0, normalize(typed), world);
+        String filter = session != null ? session.filter() : "";
+        if (filter.isEmpty() && resultItem != null && resultItem.getItemMeta() != null
+                && resultItem.getItemMeta().hasDisplayName()) {
+            String typed = PlainTextComponentSerializer.plainText().serialize(resultItem.getItemMeta().displayName());
+            filter = normalize(typed);
+        }
+        openWaypoints(player, 0, filter, world);
     }
 
     void handleClose(Player player) {

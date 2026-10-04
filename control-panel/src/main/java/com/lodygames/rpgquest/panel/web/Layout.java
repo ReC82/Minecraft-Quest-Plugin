@@ -43,6 +43,7 @@ public final class Layout {
                 new NavGroup("RPGQuest", List.of(
                         new NavItem("Joueurs", "/players", "players", Permission.PLAYERS_READ, true),
                         new NavItem("PNJ", "/npcs", "npc", Permission.NPC_READ, true),
+                        new NavItem("Réseau de voyage", "/travel", "travel", Permission.TRAVEL_READ, true),
                         new NavItem("Quêtes", "/quests", "quests", Permission.CONTENT_READ, true),
                         new NavItem("Stories", "/stories", "stories", Permission.CONTENT_READ, true),
                         new NavItem("Dialogues", "/dialogues", "dialogues", Permission.DIALOGUE_READ, true),

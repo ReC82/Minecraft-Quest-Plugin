@@ -25,6 +25,7 @@ public final class Icons {
             Map.entry("agents", "hdd-network"),
             Map.entry("players", "people"),
             Map.entry("npc", "person-badge"),
+            Map.entry("travel", "signpost-split"),
             Map.entry("quests", "journal-check"),
             Map.entry("stories", "book"),
             Map.entry("dialogues", "chat-dots"),

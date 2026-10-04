@@ -47,6 +47,8 @@ public enum AgentActionType {
     /** Export versionné du contenu déclaratif (issue #108) — lecture seule, aucun effet de bord. */
     CONTENT_EXPORT("content.export"),
     PLAYER_RESETNEW_PREVIEW("player.resetnew.preview"),
+    /** Catalogue waypoints/bornes (issue #152) — lecture seule, aucun effet de bord. */
+    TRAVEL_CATALOG("travel.catalog"),
 
     PLAYER_ITEM_GIVE("player.item.give"),
     QUEST_START("quest.start"),

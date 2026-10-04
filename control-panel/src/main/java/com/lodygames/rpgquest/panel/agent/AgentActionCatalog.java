@@ -105,6 +105,8 @@ public final class AgentActionCatalog {
         add("story.player.status", Permission.PLAYERS_READ, false, true, "État des stories d'un joueur");
         add("item.list", Permission.CONTENT_READ, false, false, "Rafraîchir la liste des objets");
         add("npc.list", Permission.NPC_READ, false, false, "Rafraîchir le catalogue des PNJ");
+        add("travel.catalog", Permission.TRAVEL_READ, false, false,
+                "Rafraîchir le catalogue waypoints/bornes (issue #152)");
         add("npc.citizens.list", Permission.NPC_READ, false, false, "Rafraîchir les PNJ Citizens");
         add("dialogue.list", Permission.DIALOGUE_READ, false, false, "Rafraîchir le catalogue des dialogues");
         // Export versionné du contenu déclaratif (issue #108) — lecture seule, aucun effet de bord,

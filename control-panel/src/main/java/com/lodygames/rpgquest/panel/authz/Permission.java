@@ -17,6 +17,8 @@ public enum Permission {
     /** Accorder / retirer un droit de construction persistant à un joueur (issue #96 — dépend de #27). */
     PLAYER_BUILD_WRITE,
     NPC_READ,
+    /** Consultation lecture seule du réseau de voyage : waypoints/bornes persistés (issue #152). */
+    TRAVEL_READ,
     NPC_WRITE,
     NPC_BIND_WRITE,
     NPC_SPAWN_WRITE,

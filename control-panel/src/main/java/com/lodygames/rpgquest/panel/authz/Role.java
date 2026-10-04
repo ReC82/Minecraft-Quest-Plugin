@@ -37,7 +37,7 @@ public enum Role {
     ADMIN("Administrateur", EnumSet.of(
             Permission.DASHBOARD_VIEW,
             Permission.PLAYERS_READ, Permission.PLAYER_MODERATE, Permission.PLAYER_BUILD_WRITE,
-            Permission.NPC_READ, Permission.NPC_WRITE, Permission.NPC_BIND_WRITE,
+            Permission.NPC_READ, Permission.TRAVEL_READ, Permission.NPC_WRITE, Permission.NPC_BIND_WRITE,
             Permission.NPC_SPAWN_WRITE, Permission.QUEST_GIVER_WRITE,
             Permission.DIALOGUE_READ, Permission.DIALOGUE_WRITE,
             Permission.QUEST_CONTENT_WRITE, Permission.STORY_CONTENT_WRITE,
@@ -49,13 +49,13 @@ public enum Role {
             Permission.ACTION_CONTENT_RELOAD)),
 
     TESTER("Testeur", EnumSet.of(
-            Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ,
+            Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ,
             Permission.DIALOGUE_READ, Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
             Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ,
             Permission.ACTION_QUEST, Permission.ACTION_STORY, Permission.ACTION_VARIABLE_GET)),
 
     BUILDER("Builder", EnumSet.of(
-            Permission.DASHBOARD_VIEW, Permission.NPC_READ, Permission.CONTENT_READ,
+            Permission.DASHBOARD_VIEW, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.CONTENT_READ,
             Permission.DIAGNOSTICS_READ, Permission.DOCS_READ)),
 
     CONTENT_EDITOR("Éditeur de contenu", EnumSet.of(
@@ -67,7 +67,7 @@ public enum Role {
             Permission.ACTION_CONTENT_RELOAD)),
 
     READ_ONLY("Lecture seule", EnumSet.of(
-            Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ,
+            Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ,
             Permission.DIALOGUE_READ, Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
             Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ));
 

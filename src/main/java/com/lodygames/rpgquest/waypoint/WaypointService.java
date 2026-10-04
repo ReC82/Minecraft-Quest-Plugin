@@ -322,7 +322,7 @@ public final class WaypointService implements PluginService {
             retryNotBefore.remove(instanceKey);
             if (inserted) {
                 model.place(world, waypoint.x(), waypoint.y(), waypoint.z(),
-                        BlockFace.valueOf(waypoint.facing()));
+                        BlockFace.valueOf(waypoint.facing()), waypoint.displayName());
                 index(waypoint);
                 logger.info("Waypoint « {} » généré en {} ({},{},{}) [biome {}, modèle v{}].",
                         waypoint.id(), world.getName(), waypoint.x(), waypoint.y(), waypoint.z(),
@@ -412,7 +412,7 @@ public final class WaypointService implements PluginService {
             deindexPositionalBlocks(existing);
             removeStructureBlocks(world, existing.x(), existing.y(), existing.z(),
                     parseFacing(existing.facing()), modelRegistry.resolveOrCurrent(existing.modelVersion()));
-            model.place(world, anchorX, anchorY, anchorZ, facing);
+            model.place(world, anchorX, anchorY, anchorZ, facing, existing.displayName());
             Waypoint repaired = new Waypoint(existing.id(), existing.displayName(), existing.world(),
                     existing.biomeInstance(), existing.biomeKey(), existing.regionX(), existing.regionZ(),
                     anchorX, anchorY, anchorZ, facing.name(), model.version(), existing.active(), existing.createdAt());
@@ -426,6 +426,36 @@ public final class WaypointService implements PluginService {
             return Optional.empty();
         }
         return Optional.of("Aucun emplacement accessible trouvé près de l'ancien — réessaie plus tard.");
+    }
+
+    /**
+     * Mise à niveau contrôlée et idempotente des panneaux latéraux (issue #167) : rejoue
+     * {@code model.place(...)} à la position/orientation <strong>déjà persistées</strong> de
+     * chaque waypoint dont le monde est chargé -- jamais de changement d'id, de position ni de
+     * découvertes. Les blocs déjà corrects (support/or/bouton) ne sont jamais réécrits
+     * ({@code set()} ne change que ce qui diffère réellement) : seuls les panneaux, absents sur un
+     * waypoint généré avant cette version, sont réellement posés. Rejouable sans risque après un
+     * redémarrage ou un renommage (les panneaux reprennent alors le nom d'affichage courant).
+     *
+     * @param worldFilter {@code null}/vide = tous les mondes chargés.
+     * @return le nombre de waypoints effectivement traités (monde chargé).
+     */
+    public int upgradeSigns(String worldFilter) {
+        int processed = 0;
+        for (Waypoint waypoint : List.copyOf(byId.values())) {
+            if (worldFilter != null && !worldFilter.isBlank() && !waypoint.world().equals(worldFilter)) {
+                continue;
+            }
+            World world = plugin.getServer().getWorld(waypoint.world());
+            if (world == null) {
+                continue;
+            }
+            WaypointModel model = modelRegistry.resolveOrCurrent(waypoint.modelVersion());
+            model.place(world, waypoint.x(), waypoint.y(), waypoint.z(),
+                    parseFacing(waypoint.facing()), waypoint.displayName());
+            processed++;
+        }
+        return processed;
     }
 
     private void deindexPositionalBlocks(Waypoint waypoint) {
@@ -483,11 +513,14 @@ public final class WaypointService implements PluginService {
         if (discovered.contains(waypoint.id())) {
             // Déjà découvert : jamais de nouvelle récompense ni de ré-écriture, mais un retour clair
             // à chaque clic (retour joueur 2026-10-04) -- l'ancien comportement consommait le clic
-            // en silence, laissant croire que rien ne s'était passé.
+            // en silence, laissant croire que rien ne s'était passé. Même gabarit nom+biome que la
+            // première découverte ci-dessous (issue #160 : les deux doivent utiliser le même nom
+            // canonique persisté, jamais seulement le biome).
             if (player.isOnline()) {
                 player.sendMessage(MM.deserialize(
-                        "<yellow>Waypoint déjà découvert :</yellow> <white><name></white>",
-                        Placeholder.unparsed("name", waypoint.displayName())));
+                        "<yellow>Waypoint déjà découvert :</yellow> <white><name></white> <gray>—</gray> <white><biome></white>",
+                        Placeholder.unparsed("name", waypoint.displayName()),
+                        Placeholder.parsed("biome", prettyBiome(waypoint.biomeKey()))));
             }
             return true;
         }
@@ -496,8 +529,12 @@ public final class WaypointService implements PluginService {
                     discovered.add(waypoint.id());
                     Player online = plugin.getServer().getPlayer(playerId);
                     if (online != null && online.isOnline() && isNew) {
+                        // Retour joueur 2026-10-04 (issue #160) : la première découverte n'affichait
+                        // que le biome ("Waypoint découvert — plains"), jamais le nom canonique --
+                        // pourtant déjà utilisé partout ailleurs (menu de voyage, reclic ci-dessus).
                         online.sendMessage(MM.deserialize(
-                                "<gold>Waypoint découvert</gold> <gray>—</gray> <white><biome></white>",
+                                "<gold>Waypoint découvert :</gold> <white><name></white> <gray>—</gray> <white><biome></white>",
+                                Placeholder.unparsed("name", waypoint.displayName()),
                                 Placeholder.parsed("biome", prettyBiome(waypoint.biomeKey()))));
                         online.playSound(online.getLocation(), Sound.BLOCK_BEACON_ACTIVATE, 0.7f, 1.5f);
                     }

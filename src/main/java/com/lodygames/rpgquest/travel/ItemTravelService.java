@@ -140,6 +140,11 @@ public final class ItemTravelService implements PluginService {
         if (definition == null) {
             return;
         }
+        Optional<String> freeRescueWorld = definition.freeRescueWorld().get();
+        if (freeRescueWorld.isPresent() && freeRescueWorld.get().equals(player.getWorld().getName())) {
+            performFreeRescue(player, definition);
+            return;
+        }
         Optional<String> requiredWorld = definition.requiredWorld().get();
         if (requiredWorld.isPresent() && !requiredWorld.get().equals(player.getWorld().getName())) {
             player.sendMessage(MM.deserialize("<red>Cet objet ne fonctionne pas ici.</red>"));
@@ -154,6 +159,24 @@ public final class ItemTravelService implements PluginService {
             }
         }
         startChanneling(player, definition);
+    }
+
+    /**
+     * Secours Hub (issue #154) : téléportation immédiate et gratuite, sans canalisation ni
+     * cooldown — l'objet reste de toute façon jamais consommé par ce moteur. Un joueur coincé dans
+     * un trou doit pouvoir revenir sans attendre ni risquer une annulation par un petit dégât
+     * pendant la canalisation normale, qui ne s'applique jamais ici.
+     */
+    private void performFreeRescue(Player player, ItemTravelDefinition definition) {
+        Optional<Location> destination = definition.destination().get();
+        if (destination.isEmpty()) {
+            player.sendMessage(MM.deserialize("<red>Destination indisponible, contacte un administrateur.</red>"));
+            logger.warn("Destination indisponible pour un secours gratuit ({}), joueur {}.",
+                    definition.itemId(), player.getUniqueId());
+            return;
+        }
+        player.teleportAsync(destination.get());
+        player.sendMessage(MM.deserialize("<green>Retour au point d'apparition du Hub.</green>"));
     }
 
     void handleDamage(Player player) {

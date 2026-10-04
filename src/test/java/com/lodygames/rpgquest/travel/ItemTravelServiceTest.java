@@ -272,6 +272,52 @@ class ItemTravelServiceTest {
                 "hors du monde requis, la Rune ne doit jamais démarrer de canalisation");
     }
 
+    // ---- Secours Hub gratuit (issue #154) ------------------------------------------------------
+
+    /**
+     * Dans le monde de secours configuré ({@code freeRescueWorld}), la Rune doit téléporter
+     * immédiatement -- ni canalisation, ni cooldown, ni restriction {@code requiredWorld} (ici
+     * délibérément réglée sur un monde différent, pour prouver que ce n'est jamais évalué sur ce
+     * chemin). La téléportation elle-même ({@code teleportAsync}) heurte la limitation MockBukkit
+     * déjà documentée en tête de ce fichier et de {@code TravelBeaconServiceTest} : {@link
+     * org.mockbukkit.mockbukkit.exception.UnimplementedOperationException} est attendue et
+     * capturée ici, ce qui prouve que le chemin de secours gratuit a bien été atteint (seul ce
+     * chemin appelle la téléportation sans canaliser ni vérifier de cooldown au préalable) sans
+     * prétendre valider la téléportation cliente elle-même.
+     */
+    @Test
+    void freeRescueWorldTeleportsImmediatelyIgnoringCooldownAndRequiredWorld() throws Exception {
+        World hub = server.addSimpleWorld("hub");
+        service.register(new ItemTravelDefinition(
+                RUNE, 1, 3, () -> Optional.of(destination), () -> Optional.of("wild"), () -> Optional.of("hub")));
+        PlayerMock player = addPlayer();
+        player.teleport(new Location(hub, 0.5, 61, 0.5));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                org.mockbukkit.mockbukkit.exception.UnimplementedOperationException.class,
+                () -> service.handleInteract(player, rune()),
+                "le secours gratuit doit atteindre la téléportation directement, sans canaliser");
+        assertFalse(service.isChanneling(player.getUniqueId()),
+                "le secours gratuit ne doit jamais démarrer de canalisation");
+    }
+
+    /** Hors du monde de secours gratuit, le comportement normal (restriction + canalisation) reste inchangé. */
+    @Test
+    void outsideTheFreeRescueWorldTheNormalRequiredWorldRestrictionStillApplies() throws Exception {
+        server.addSimpleWorld("hub");
+        World other = server.addSimpleWorld("not_wild");
+        service.register(new ItemTravelDefinition(
+                RUNE, 1, 3, () -> Optional.of(destination), () -> Optional.of("wild"), () -> Optional.of("hub")));
+        PlayerMock player = addPlayer();
+        player.teleport(new Location(other, 0.5, 61, 0.5));
+
+        service.handleInteract(player, rune());
+        awaitTicks(5);
+
+        assertFalse(service.isChanneling(player.getUniqueId()),
+                "hors du monde requis ET hors du monde de secours gratuit, toujours aucune canalisation");
+    }
+
     private List<String> drainActionBarsAsPlainText(PlayerMock player) {
         List<String> rendered = new ArrayList<>();
         Component next;

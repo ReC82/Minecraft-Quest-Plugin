@@ -5,7 +5,9 @@ import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.item.RpgItemKeys;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.entity.Player;
@@ -61,12 +63,28 @@ public final class StarterKitListener implements Listener {
             return;
         }
         UUID playerId = player.getUniqueId();
-        if (!hasRune(player)) {
-            customItemRegistry.create(RpgItemKeys.RUNE_RAPPEL, 1)
-                    .ifPresent(stack -> player.getInventory().addItem(stack));
-            player.sendMessage(MM.deserialize(
-                    "<aqua>Tu reçois une Rune de rappel.</aqua> <gray>Clic droit dans le Wild pour revenir au Hub.</gray>"));
+        if (hasRune(player)) {
+            markGranted(playerId);
+            return;
         }
+        Optional<ItemStack> rune = customItemRegistry.create(RpgItemKeys.RUNE_RAPPEL, 1);
+        if (rune.isEmpty()) {
+            return; // objet introuvable (config invalide) : jamais marqué distribué, retenté à la prochaine connexion.
+        }
+        Map<Integer, ItemStack> leftover = player.getInventory().addItem(rune.get());
+        if (!leftover.isEmpty()) {
+            // Inventaire plein : jamais marqué distribué (retour joueur 2026-10-04, issue #154) --
+            // sans ce garde-fou, la Rune était silencieusement perdue pour toujours dès que
+            // l'inventaire était plein à la première connexion, puisque GRANTED_VARIABLE empêche
+            // tout nouvel essai. Le filet de secours graphique du Hub couvre l'attente entre-temps.
+            return;
+        }
+        player.sendMessage(MM.deserialize(
+                "<aqua>Tu reçois une Rune de rappel.</aqua> <gray>Clic droit dans le Wild pour revenir au Hub.</gray>"));
+        markGranted(playerId);
+    }
+
+    private void markGranted(UUID playerId) {
         variableRepository.set(playerId, GRANTED_VARIABLE, "true").exceptionally(error -> {
             plugin.getSLF4JLogger().error("Impossible de marquer le kit de départ de {} comme distribué", playerId, error);
             return null;

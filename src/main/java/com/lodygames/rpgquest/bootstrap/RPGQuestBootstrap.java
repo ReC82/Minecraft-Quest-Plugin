@@ -67,6 +67,7 @@ import com.lodygames.rpgquest.economy.merchant.YamlMerchantRegistry;
 import com.lodygames.rpgquest.entitlement.EntitlementService;
 import com.lodygames.rpgquest.hub.HubGuideRegistry;
 import com.lodygames.rpgquest.hub.HubComfortService;
+import com.lodygames.rpgquest.hub.HubRescueFallbackService;
 import com.lodygames.rpgquest.hub.HubWorldProtectionListener;
 import com.lodygames.rpgquest.hub.HubWorldRulesService;
 import com.lodygames.rpgquest.item.RpgItemKeys;
@@ -305,6 +306,15 @@ public final class RPGQuestBootstrap {
         registry.start(hubComfortService);
         registry.start(new PlayerListenerService(plugin, hubComfortService.listener()));
 
+        // Filet de secours graphique du Hub (issue #154) : garantit la Rune de rappel accessible
+        // même après un inventaire plein à la première connexion (voir StarterKitListener), et
+        // propose un accès de secours purement graphique (sans objet) si elle ne peut toujours pas
+        // être redonnée.
+        HubRescueFallbackService hubRescueFallbackService = new HubRescueFallbackService(
+                plugin, () -> configService.current().hub(), customItemRegistry, spawnService, plugin.getSLF4JLogger());
+        registry.start(hubRescueFallbackService);
+        registry.start(new PlayerListenerService(plugin, hubRescueFallbackService.listener()));
+
         registry.start(questEngine);
         registry.start(questMessagesService);
         registry.start(customItemRegistry);
@@ -491,12 +501,16 @@ public final class RPGQuestBootstrap {
                 () -> Optional.of(configService.current().claims().world())));
         // Rune de rappel (mission « boucle joueur ») : wild → Hub, canalisation + cooldown depuis
         // config.yml (travel.rune), lus au démarrage. Restreinte au monde d'exploration configuré.
+        // Secours Hub (issue #154) : dans le Hub, le même objet téléporte en plus immédiatement et
+        // gratuitement vers le spawn configuré -- jamais une sortie gratuite du Wild, uniquement un
+        // second comportement propre au Hub, totalement indépendant de la restriction ci-dessus.
         itemTravelService.register(new ItemTravelDefinition(
                 RpgItemKeys.RUNE_RAPPEL,
                 configService.current().travel().rune().channelSeconds(),
                 configService.current().travel().rune().cooldownSeconds(),
                 spawnService::resolve,
-                () -> Optional.of(configService.current().travel().wildWorld())));
+                () -> Optional.of(configService.current().travel().wildWorld()),
+                () -> Optional.of(configService.current().hub().world())));
 
         // Anti-perte générique (mission « système soulbound générique ») : un seul écouteur pour
         // tous les objets permanents du plugin, plutôt qu'un écouteur dédié recopié par objet.
@@ -620,7 +634,8 @@ public final class RPGQuestBootstrap {
                                         configService.current().dialogue().allowedCommands()),
                                 new com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor(
                                         plugin.getDataFolder().toPath().resolve("dialogues"),
-                                        configService.current().dialogue().allowedCommands())))));
+                                        configService.current().dialogue().allowedCommands()),
+                                waypointService, travelBeaconService))));
 
         registerCommands();
     }

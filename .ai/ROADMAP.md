@@ -268,6 +268,81 @@ Première étape à reprendre: déploiement DEV (plugin) + AWS (Control Panel) d
 ```
 
 ```text
+Date: 2026-10-04 (démarrage EPIC #169 — mobs spéciaux et boss configurables, lot 1)
+Branche de départ: feat/control-panel-admin-tools (entrée précédente) — travail réalisé dans un
+  worktree isolé /srv/rpgquest/worktree-169 (branche feature/169-special-mobs-boss) pour ne jamais
+  contaminer les brouillons locaux du panel (crystal_hunt.yml en cours d'édition, lily/jeff) :
+  jamais stashés, conformément à l'instruction explicite de ne plus les stasher par défaut.
+Étape de départ: EPIC #169 (mobs spéciaux et boss configurables dans PlugAdmin, apparitions Wild,
+  objectifs de quête localisables) découpé en lots ; recherche explicite de livrer vite un premier
+  lot testable en jeu plutôt que de ne concevoir/documenter. #150 (recherche waypoints) mis en
+  pause sur instruction explicite — non retouché, jamais marqué corrigé.
+Étapes terminées:
+(1) DONE — Modèle étendu (`SpecialMobDefinition`) : `category` (SPECIAL/BOSS, optionnelle, défaut
+  SPECIAL rétro-compatible), `enabled` (défaut true), `knockback-resistance`, `scale`,
+  `creeper-explosion-radius` (refusé hors CREEPER — jamais silencieusement ignoré). Deux nouvelles
+  capacités premier lot : `ENRAGED` (seuil de vie, multiplicateurs vitesse/dégâts, binaire et
+  définitif via PDC) et `SUMMON_ON_DAMAGE` (invocation de renforts sur dégâts effectifs, cooldown +
+  plafond de vivants, aucune cascade possible par construction — renforts jamais eux-mêmes des mobs
+  spéciaux). `SpecialMobDefinitionParser` étendu en conséquence, 4 YAML d'exemple bundlés mis à jour.
+(2) DONE — `SpecialMobService` étendu : nouveaux attributs appliqués (KNOCKBACK_RESISTANCE/SCALE),
+  rayon d'explosion creeper, visuels BOSS (BossBar Adventure par entité + aura de particules
+  périodique, affichage/masquage par joueur selon la distance, nettoyage sur mort/arrêt/redécouverte
+  de chunk). `rollDefinition()` entièrement redessiné en deux étages pour résoudre l'ambiguïté du
+  pourcentage cumulé signalée par le porteur de projet : throttle global (nouveau
+  `MobSpawnSettings`/`MobSpawnSettingsStore`, fichier `mobs/spawn-settings.yml` édité depuis le
+  panel) évalué une seule fois avant d'examiner les profils, puis tirage indépendant par profil
+  SPECIAL compatible, puis tirage pondéré explicite (poids = `spawn-chance`) si plusieurs réussissent
+  simultanément — jamais le premier trouvé. BOSS exclu par construction. Plafond global
+  `max-simultaneous-special` en plus du `max-population` par profil déjà existant. Aucun nouveau
+  tirage au chargement de chunk/reconnexion (inchangé).
+(3) DONE — Deux nouveaux services d'ability : `EnragedAbilityService` (balayage périodique borné à
+  la population suivie, même patron qu'`ExplosiveOnAttackAbilityService`) et
+  `SummonOnDamageAbilityListener` (événement de dégâts, cooldown/plafond via PDC dédiée).
+(4) DONE — CRUD complet sans YAML/commande : `SpecialMobDefinitionStore`/`SpecialMobDefinitionYaml`
+  (écriture atomique, round-trip vérifié, même discipline que l'équivalent PNJ) ; spawn/suppression
+  d'instances de test marquées distinctement (PDC dédiée, jamais un mob ordinaire supprimé) via
+  `SpecialMobService#findTestSpawnLocation/applyTestInstance/clearTestInstances`
+  (`RandomSafeLocationFinder`, position sûre près du joueur choisi, refusé si le joueur n'est pas
+  dans le monde Wild configuré).
+(5) DONE — Agent PlugAdmin : 7 nouvelles actions whitelistées (`mob.list`,
+  `mob.definition.create/update/toggle`, `mob.spawn-settings.set`, `mob.test.spawn/clear`) de bout
+  en bout (`AgentActionType` → `AgentActionExecutor` → `BukkitAgentActions` côté plugin ;
+  `Permission`/`Role`/`AgentActionCatalog` côté Control Panel, défense en profondeur — re-validation
+  des deux côtés).
+(6) DONE — Nouvelle page Control Panel `/mobs` (nav + route) : catalogue en accordéon (catégorie,
+  actif/inactif, population vivante, capacités résumées), formulaire création/modification complet
+  (identité, tirage, statistiques, les deux capacités premier lot via case à cocher « activer » +
+  champs dédiés), bascule activer/désactiver en un clic, réglage du throttle Wild, spawn de test
+  près d'un joueur connecté + nettoyage des instances de test. Permissions : `MOB_READ` (tous les
+  rôles lecture), `MOB_WRITE` (ADMIN + CONTENT_EDITOR), `MOB_TEST_SPAWN` (ADMIN + TESTER).
+(7) PAS FAIT CE LOT (scope explicitement différé, documenté) : aperçu dynamique des réglages selon
+  le type de créature (formulaire actuellement statique avec aide contextuelle par champ, pas de
+  JS conditionnel) ; page docs-site dédiée (RPGQUEST_BIBLE.md section 11 + SPECIAL_MOB_FORMAT.md mis
+  à jour, pas de nouveau docs-site/mobs.html, même précédent que /travel) ; ticket boss de quête
+  (#173 placeholder, spawn à l'acceptation/objectif de victoire/localisation — jamais présenté comme
+  disponible) ; garde-fou dur supplémentaire contre le monde Wild dans `rollDefinition` lui-même
+  (le filtrage par profil `worlds`/zones existant + le gate explicite de `mob.test.spawn` suffisent
+  à préserver Hub/Claims pour ce lot) ; tickets enfants GitHub (à créer séparément, non bloquant).
+Tests : voir rapport de session pour les chiffres exacts (suite complète 3 modules relancée en fin
+  de tâche) ; nouveaux : `SpecialMobServiceTest` (+5, throttle/BOSS exclu/tirage pondéré/désactivé),
+  `SpecialMobDefinitionYamlTest` (+4, round-trip complet), `SpecialMobDefinitionStoreTest` (+4,
+  écriture atomique), `AgentActionCatalogTest` (+5 et 2 listes étendues), `RolePermissionMatrixTest`
+  (inchangé, revérifié vert après ajout des 3 nouvelles permissions).
+Build: voir rapport de session.
+Dernier commit: voir rapport de session / git log sur feature/169-special-mobs-boss.
+Tests manuels en attente: TC-231 (voir docs/MANUAL_TEST_PLAN.md) — boss (nom/particules/barre de
+  vie), Enragé, Invocation de renforts, exclusion BOSS du tirage automatique, throttle Wild.
+  Limitation MockBukkit préexistante (`setRemoveWhenFarAway` non implémenté) : tout chemin passant
+  par `SpecialMobService#apply` reste sans couverture automatisée exécutable, comme pour les trois
+  capacités précédentes.
+Blocages: aucun.
+Première étape à reprendre: tickets enfants GitHub sous l'EPIC #169 (dont le ticket boss de quête,
+  placeholder #173, explicitement non implémenté) ; aperçu dynamique du formulaire par type de
+  créature si demandé ; lot d'abilities suivant de l'EPIC #169 au-delà d'Enragé/Invocation.
+```
+
+```text
 Date: 2026-10-04 (suite overnight — #152/#154 puis retours joueur)
 Branche de départ: feat/control-panel-admin-tools @ aa554c9 (entrée précédente)
 Étape de départ: instruction explicite « continue to #152 and #154 », mêmes autorisations

@@ -1404,11 +1404,12 @@ Persistance : non (lecture seule).
 
 Variantes entièrement vanilla pilotées par YAML dans `plugins/RPGQuest/mobs/*.yml` (quatre exemples générés : `red_creeper`, `golden_creeper`, `creeper_pig`, `splitting_zombie`). Un spawn naturel correspondant au type d'entité/mondes/biomes/zones autorisés et sous la limite de population peut être tiré au sort comme variante ; identification uniquement par PersistentDataContainer. Format complet : [SPECIAL_MOB_FORMAT.md](../SPECIAL_MOB_FORMAT.md) ; détail d'implémentation : [docs/ARCHITECTURE.md](ARCHITECTURE.md).
 
-Les commandes d'administration (`/rpgadmin mob spawn|list|inspect|reload|metrics`, `rpgquest.admin.world`) sont documentées en **section 2 (Administration RPGQuest)** — non répétées ici.
+Les commandes d'administration (`/rpgadmin mob spawn|list|inspect|reload|metrics`, `rpgquest.admin.world`) sont documentées en **section 2 (Administration RPGQuest)** — non répétées ici. Depuis l'issue #169 (lot 1), la **création/modification/activation/désactivation d'un profil, le réglage du tirage aléatoire Wild, et le spawn/nettoyage d'instances de test se font depuis le Control Panel (page « Mobs spéciaux & boss ») — aucune YAML ni commande à écrire pour un usage courant.**
 
-Exemple minimal (registry `id`, `entity-type`, `name`, `spawn-chance` obligatoires) :
+Exemple minimal (registry `id`, `entity-type`, `name`, `spawn-chance` obligatoires ; `category` optionnelle, défaut `SPECIAL` pour rétro-compatibilité) :
 ```yaml
 id: rpgquest:golden_creeper
+category: SPECIAL
 entity-type: CREEPER
 name: "<gold><bold>Creeper Doré</bold></gold>"
 spawn-chance: 0.005
@@ -1417,13 +1418,37 @@ abilities:
     radius-multiplier: 1.5
 ```
 
-Trois `abilities` réellement implémentées (enum `MobAbilityType`, vérifié dans `src/main/java/com/lodygames/rpgquest/mob/model/MobAbilityType.java`) — ne pas en inventer d'autres :
+### Catégorie et attributs (issue #169, lot 1)
+
+- `category` : `SPECIAL` (éligible au tirage aléatoire Wild, nom coloré) ou `BOSS` (jamais tiré au hasard — n'apparaît que par spawn de test admin ou, plus tard, objectif de quête #173 — nom coloré + particules colorées en continu + barre de vie Adventure).
+- `enabled` (optionnel, défaut `true`) : désactivé = ignoré par le tirage aléatoire ET par le spawn de test, jamais supprimé du disque.
+- `knockback-resistance` (0 à 1), `scale` (taille relative, 1.0 = normale) : attributs vanilla supplémentaires, en plus de `health`/`damage`/`speed`/`armor` déjà existants.
+- `creeper-explosion-radius` : uniquement si `entity-type: CREEPER` — refusé (erreur de chargement, jamais une option silencieusement ignorée) pour tout autre type.
+
+### Tirage aléatoire Wild : sémantique à deux étages (issue #169, lot 1)
+
+Réglé depuis le Control Panel (`mobs/spawn-settings.yml`, jamais édité à la main) :
+
+1. **Throttle global** (`chance`, 0 à 1) : évalué une seule fois par spawn naturel éligible, *avant* d'examiner les profils individuels. Résout l'ambiguïté d'un pourcentage par-profil cumulé.
+2. Seulement si ce tirage réussit, chaque profil `SPECIAL` activé et compatible (type/monde/biome/zone, sous son `max-population`) tire indépendamment sa propre `spawn-chance`.
+3. Zéro résultat → rien. Un résultat → appliqué. **Plusieurs résultats simultanés → tirage pondéré explicite** entre eux (poids = la `spawn-chance` de chacun), jamais le premier trouvé dans le registre.
+4. `max_simultaneous_special` (optionnel) plafonne le nombre total de mobs `SPECIAL` vivants, toutes définitions confondues, en plus du `max-population` déjà existant par profil.
+5. Les profils `BOSS` sont **exclus** de ce tirage automatique, sans exception.
+6. Aucun nouveau tirage au chargement de chunk ni à la reconnexion (seul un vrai spawn naturel `CreatureSpawnEvent` déclenche un tirage).
+
+### Capacités (premier lot, issue #171)
+
+Cinq `abilities` réellement implémentées (enum `MobAbilityType`, vérifié dans `src/main/java/com/lodygames/rpgquest/mob/model/MobAbilityType.java`) — ne pas en inventer d'autres :
 
 | type | champs requis | rôle |
 |---|---|---|
 | `STRONGER_EXPLOSION` | `radius-multiplier` (> 0) | multiplie le rayon d'une explosion vanilla qui prime |
 | `EXPLOSIVE_ON_ATTACK` | `power` (> 0), `set-fire`, `trigger-range-blocks` (> 0) | rend une entité passive agressive : explosion réelle en approche, puis mort de l'entité |
 | `SPLIT_ON_HIT` | `max-depth` (≥ 1), `max-children-per-hit` (≥ 1) | fait apparaître des enfants à chaque coup non mortel, profondeur/nombre strictement bornés |
+| `ENRAGED` | `health-fraction` (0 < x < 1), `speed-multiplier` (> 0), `damage-multiplier` (> 0) | sous le seuil de vie, signal visuel (particule + son) puis bascule en rage une seule fois (jamais réappliqué/cumulé) |
+| `SUMMON_ON_DAMAGE` | `summon-entity-type`, `amount` (> 0), `chance` (0 < x ≤ 1), `cooldown-seconds` (≥ 0), `max-alive` (> 0) | invoque des renforts sur dégâts effectifs, cooldown + plafond de renforts vivants ; jamais de cascade (les renforts invoqués sont de simples mobs vanilla, jamais eux-mêmes des mobs spéciaux) |
+
+Le boss de quête (spawn à l'acceptation, identité liée joueur/quête/cycle, objectif de victoire, localisation biome/waypoint) est un développement séparé, pas encore implémenté — ne jamais le présenter comme disponible.
 
 ---
 

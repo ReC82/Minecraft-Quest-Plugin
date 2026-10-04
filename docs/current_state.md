@@ -192,7 +192,13 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 - **Items / équipements personnalisés** — objets marqués PDC, comportements d'arme/outil,
   recettes de craft dédiées.
 - **Ressources** — nœuds de ressources rechargeables.
-- **Mobs spéciaux** — définitions avec capacités (explosion renforcée, division au coup...).
+- **Mobs spéciaux / boss** (issue #169, lot 1) — profils catégorisés SPECIAL/BOSS, attributs étendus
+  (résistance au recul, taille, rayon d'explosion creeper), capacités Enragé et invocation de
+  renforts en plus des trois précédentes, visuels BOSS (barre de vie + aura de particules), tirage
+  aléatoire Wild à deux étages (throttle global puis tirage pondéré entre profils simultanément
+  gagnants, BOSS toujours exclu). Éditeur Control Panel complet (`/mobs`) : créer/modifier/activer-
+  désactiver un profil, régler le throttle, faire apparaître/nettoyer une instance de test — aucune
+  YAML ni commande requise.
 - **Économie / Marché / Marchands** — portefeuille, transactions, hôtel des ventes, offres PNJ.
 - **Backpacks** — paliers via avantages (entitlements), boîte de récupération.
 - **Progression** — compétences, XP, niveaux, courbe configurable.

@@ -1921,6 +1921,65 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-231 — Mobs spéciaux / boss : éditeur Control Panel, tirage Wild, capacités (issue #169 lot 1, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** page Control Panel « Mobs spéciaux & boss » (`/mobs`, actions
+    `mob.list`/`mob.definition.create`/`mob.definition.update`/`mob.definition.toggle`/
+    `mob.spawn-settings.set`/`mob.test.spawn`/`mob.test.clear`), `MobCategory`,
+    `EnragedAbilityService`, `SummonOnDamageAbilityListener`, `SpecialMobService` (attributs
+    `KNOCKBACK_RESISTANCE`/`SCALE`, rayon d'explosion creeper, barre de vie + aura de particules
+    boss, tirage aléatoire à deux étages).
+-   **Préconditions :** JAR + Control Panel de cette session déployés et redémarrés ; opérateur
+    avec le rôle `ADMIN` (ou `OWNER`) ; un joueur de test connecté et présent dans le monde Wild
+    configuré (`travel.wild-world`).
+-   **Scénario principal :**
+    1.  Depuis `/mobs`, créer un profil `SPECIAL` (ex. `ZOMBIE`, nom coloré, `spawn-chance` élevée
+        pour le test) sans écrire de YAML ni de commande → apparaît dans la liste, fichier
+        `mobs/<id>.yml` créé côté serveur.
+    2.  Créer un profil `BOSS` (ex. `ZOMBIE`, vie élevée) → apparaît avec le badge BOSS.
+    3.  Depuis la fiche du profil `BOSS`, utiliser « Apparaître (test, Wild) » en choisissant le
+        joueur de test → une instance apparaît à une position sûre à proximité ; vérifier en jeu :
+        nom coloré, barre de vie Adventure visible et qui diminue quand on la frappe, aura de
+        particules visible en continu.
+    4.  Vérifier que ce boss **n'apparaît jamais** via un spawn naturel, même en attendant / en
+        multipliant les spawns de zombies dans le Wild (profil BOSS exclu du tirage automatique).
+    5.  Sur le profil `SPECIAL`, activer la capacité **Enragé** (ex. seuil 50 %, x1.5 vitesse,
+        x2 dégâts) et sauvegarder ; faire apparaître une instance de test, la frapper jusque sous
+        50 % de vie → signal visuel (particule + son) puis vitesse/dégâts visiblement augmentés ;
+        continuer à la frapper → pas de nouveau signal, pas de ré-augmentation (binaire, une seule
+        fois).
+    6.  Sur un autre profil, activer **Invocation de renforts** (ex. type `ZOMBIE`, montant 2,
+        chance 100 %, cooldown 10 s, max vivants 2) ; faire apparaître une instance de test et la
+        frapper → des renforts apparaissent (zombies ordinaires, jamais eux-mêmes des mobs
+        spéciaux), puis plus aucun au-delà du plafond avant la mort d'un renfort, et pas de nouveau
+        déclenchement avant la fin du cooldown.
+    7.  Régler le throttle Wild (« Tirage aléatoire dans le Wild ») à une chance faible puis à 0 →
+        constater que les transformations deviennent rares puis plus aucune, sans toucher aux
+        instances de test déjà présentes ni aux PNJ/mobs de Hub/Claims.
+    8.  « Nettoyer les instances de test » → seules les instances taguées test disparaissent,
+        aucun mob ordinaire du Wild n'est affecté.
+    9.  Désactiver un profil (bouton Activer/Désactiver) → il n'est plus tiré au hasard ni
+        disponible pour un nouveau spawn de test, mais reste listé et réactivable.
+    10. Redémarrer le serveur → les profils, leurs capacités et le throttle Wild sont identiques
+        après rechargement (fichiers YAML relus, jamais régénérés par défaut).
+-   **Reset :** supprimer manuellement les fichiers `mobs/<id>.yml` créés pour le test si besoin ;
+    `mob.test.clear` suffit pour les instances vivantes.
+-   **Couverture automatisée :** `SpecialMobDefinitionParserTest` (nouveaux champs + capacités),
+    `SpecialMobDefinitionYamlTest`/`SpecialMobDefinitionStoreTest` (round-trip, création/modification
+    atomique), `SpecialMobServiceTest` (exclusion BOSS du tirage, throttle global, tirage pondéré
+    explicite entre profils simultanément gagnants, profil désactivé jamais tiré),
+    `AgentActionCatalogTest`/`RolePermissionMatrixTest` (whitelisting, permissions, confirmation).
+-   **Limites MockBukkit :** `setRemoveWhenFarAway` n'est pas implémenté par MockBukkit — tout test
+    automatisé appelant `SpecialMobService#apply` (donc `EnragedAbilityService`,
+    `SummonOnDamageAbilityListener`, la barre de vie/aura boss, les nouveaux attributs
+    `KNOCKBACK_RESISTANCE`/`SCALE`/rayon d'explosion creeper) est **sans couverture automatisée
+    exécutable** dans cet environnement — limitation préexistante (les trois capacités
+    précédentes, `STRONGER_EXPLOSION`/`EXPLOSIVE_ON_ATTACK`/`SPLIT_ON_HIT`, ont la même limite ou
+    n'ont aucun test dédié). Les points 3, 5, 6 de ce scénario restent donc entièrement
+    `PENDING MANUAL VALIDATION`.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -1982,3 +2041,4 @@ le résumé de récompenses de TC-014).
 | TC-228 | Control Panel : réseau de voyage en lecture seule #152 (PENDING) | | | |
 | TC-229 | Bossbar de suivi de quête, balise/id corrigés #157 (PENDING) | | | |
 | TC-230 | Panneaux latéraux de nom des waypoints #167 (PENDING) | | | |
+| TC-231 | Mobs spéciaux/boss : éditeur panel, tirage Wild, capacités #169/#171 (PENDING) | | | |

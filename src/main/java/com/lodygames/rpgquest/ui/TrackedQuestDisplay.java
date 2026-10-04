@@ -3,6 +3,8 @@ package com.lodygames.rpgquest.ui;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.progress.ObjectiveProgressView;
 import com.lodygames.rpgquest.quest.progress.QuestStepProgressView;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,9 +36,12 @@ final class TrackedQuestDisplay {
         if (!enabled) {
             return;
         }
-        Component title = MM.deserialize("<gold><quest></gold> <gray>— <step></gray></gray>",
+        // Retour joueur 2026-10-04 (issue #157) : gabarit mal formé -- une balise </gray>
+        // supplémentaire (sans ouverture correspondante) était rendue littéralement par
+        // MiniMessage au lieu d'être un simple formatage, exactement comme rapporté en jeu.
+        Component title = MM.deserialize("<gold><quest></gold> <gray>— <step></gray>",
                 Placeholder.parsed("quest", quest.title().base()),
-                Placeholder.unparsed("step", stepView.stepId()));
+                Placeholder.unparsed("step", describeStep(stepView)));
         float progress = progressOf(stepView);
 
         BossBar bar = activeBars.get(player.getUniqueId());
@@ -59,6 +64,22 @@ final class TrackedQuestDisplay {
 
     void clearAll() {
         activeBars.clear();
+    }
+
+    /**
+     * Libellé humain de l'étape (issue #157) -- jamais l'id technique (ex. {@code kill_spiders})
+     * affiché tel quel. Construit à partir des descriptions déjà humanisées de ses objectifs
+     * ({@link ObjectiveProgressView#description()}, voir {@code QuestObjective#describe}) ; ne
+     * modifie jamais {@code stepId()} lui-même, qui reste l'identité technique interne.
+     */
+    private static String describeStep(QuestStepProgressView stepView) {
+        List<String> labels = new ArrayList<>();
+        for (ObjectiveProgressView objective : stepView.objectives()) {
+            if (objective.description() != null && !objective.description().isBlank()) {
+                labels.add(objective.description());
+            }
+        }
+        return labels.isEmpty() ? stepView.stepId() : String.join(" · ", labels);
     }
 
     private float progressOf(QuestStepProgressView stepView) {

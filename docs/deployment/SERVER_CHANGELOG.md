@@ -3414,3 +3414,50 @@ exécutés verts, 35 ignorés (limitation MockBukkit déjà documentée), 0 éch
 Rollback : `scripts/rollback-verygames.sh --latest` (restaure
 `rpgquest-20261004T143202Z-predeploy.jar`) ; `scripts/plugadmin/rollback.sh app` pour le Control
 Panel (restaure `/opt/plugadmin/releases/20261004-163442`).
+
+---
+
+## 2026-10-04 (correctif) - `/mobs` : id namespacé rejeté sur édition/bascule/spawn de test
+
+### Déploiement / Exécution réelle
+
+Déployé sur **VeryGames DEV** (plugin) et **AWS** (Control Panel) le 2026-10-04 (~17:20-17:23
+CEST), correctif demandé après blocage constaté en test manuel du lot #169 (voir rapport
+`2026-10-04_1635_epic-169-mobs-speciaux-boss-lot1.md`). Branche `feature/169-special-mobs-boss`,
+commit `8d2195a`. `./gradlew test` (interne au script officiel) **OK** sur les 3 modules — 1831
+tests, 1796 exécutés verts, 35 ignorés (limitation MockBukkit déjà documentée), 0 échec.
+
+- **Cause** : `mob.list` renvoie toujours l'id namespacé complet (`NamespacedKey#asString()`, ex.
+  `rpgquest:creeper_pig`), réinjecté tel quel par les formulaires d'édition/bascule/spawn de test ;
+  les motifs de validation côté panel (`AgentActionCatalog.MOB_ID`) et côté plugin
+  (`AgentActionExecutor.MOB_ID`) n'acceptaient pas le « : », rejetant tout profil existant avec
+  « Identifiant de profil manquant ou invalide » alors que le catalogue le listait correctement.
+  Seule la création avec une clé courte (sans « : » tapé par l'admin) fonctionnait.
+- **Correctif** : les deux motifs acceptent désormais un suffixe `:<clé>` optionnel (même forme que
+  `rollDefinition`/`resolveKey`, qui géraient déjà correctement les deux formes). Bug reproduit
+  (régression confirmée en revenant temporairement à l'ancien motif, tests en échec) puis corrigé
+  (tests de nouveau verts) avant commit.
+- **Plugin (VeryGames DEV)** :
+  - **JAR déployé** : 1 659 537 o, SHA-256 `881b9eff451589e76851de41b6af4585f9830cd9e340cf7a5dc3e1c5aaba4ae9`.
+  - **Backup préalable** : `rpgquest-20261004T152036Z-predeploy.jar` (1 659 532 o, SHA-256
+    `d43e6b2d350d23dbf24feb4533a12d6b73b6ac0b3e8655432b04d2fa63c449f3` — JAR du lot 1, confirmé
+    identique).
+  - **Redémarrage** : `scripts/verygames-restart.sh --timeout 240` — 1 joueur connecté avant
+    l'arrêt (déconnecté par le redémarrage, attendu). OFFLINE confirmé puis **ONLINE**.
+  - **Vérifications post-redémarrage** : `/rpgquest version` → `v0.1.0-SNAPSHOT` ; `/plugins` → 4
+    plugins verts.
+- **Control Panel (AWS, service `plugadmin`)** :
+  - `scripts/plugadmin/deploy.sh` : sauvegarde de la release précédente
+    (`/opt/plugadmin/releases/20261004-172300`) → redémarrage → `/health` →
+    `{"panel":"ONLINE","disabled":false,...}`.
+  - `GET /mobs` (non authentifié) → `303` (jamais une erreur 500).
+- **Distinction explicite** : le parcours complet (ouvrir un profil existant, choisir un joueur,
+  faire apparaître une instance de test, éditer, activer/désactiver) reste à reconfirmer
+  réellement en jeu/navigateur par l'utilisateur — la correction est vérifiée par tests
+  automatisés (reproduction + correction confirmées) et par les contrôles de démarrage/santé
+  ci-dessus, pas encore par un clic réel dans le panel.
+- Aucun merge, aucune intervention PROD.
+
+Rollback : `scripts/rollback-verygames.sh --latest` (restaure
+`rpgquest-20261004T152036Z-predeploy.jar`) ; `scripts/plugadmin/rollback.sh app` pour le Control
+Panel (restaure `/opt/plugadmin/releases/20261004-172300`).

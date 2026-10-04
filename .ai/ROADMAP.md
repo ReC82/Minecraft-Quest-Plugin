@@ -320,7 +320,7 @@ Branche de départ: feat/control-panel-admin-tools (entrée précédente) — tr
   le type de créature (formulaire actuellement statique avec aide contextuelle par champ, pas de
   JS conditionnel) ; page docs-site dédiée (RPGQUEST_BIBLE.md section 11 + SPECIAL_MOB_FORMAT.md mis
   à jour, pas de nouveau docs-site/mobs.html, même précédent que /travel) ; ticket boss de quête
-  (#173 placeholder, spawn à l'acceptation/objectif de victoire/localisation — jamais présenté comme
+  (#171, spawn à l'acceptation/objectif de victoire/localisation — jamais présenté comme
   disponible) ; garde-fou dur supplémentaire contre le monde Wild dans `rollDefinition` lui-même
   (le filtrage par profil `worlds`/zones existant + le gate explicite de `mob.test.spawn` suffisent
   à préserver Hub/Claims pour ce lot) ; tickets enfants GitHub (à créer séparément, non bloquant).
@@ -337,9 +337,43 @@ Tests manuels en attente: TC-231 (voir docs/MANUAL_TEST_PLAN.md) — boss (nom/p
   par `SpecialMobService#apply` reste sans couverture automatisée exécutable, comme pour les trois
   capacités précédentes.
 Blocages: aucun.
-Première étape à reprendre: tickets enfants GitHub sous l'EPIC #169 (dont le ticket boss de quête,
-  placeholder #173, explicitement non implémenté) ; aperçu dynamique du formulaire par type de
-  créature si demandé ; lot d'abilities suivant de l'EPIC #169 au-delà d'Enragé/Invocation.
+Première étape à reprendre: tickets enfants GitHub sous l'EPIC #169 créés (#170-#177, voir le
+  rapport de session) ; boss de quête (#171) ou capacités avancées (#170) selon priorité produit ;
+  aperçu dynamique du formulaire par type de créature si demandé.
+```
+
+```text
+Date: 2026-10-04 (correctif post-déploiement — id namespacé rejeté dans /mobs)
+Branche de départ: feature/169-special-mobs-boss @ dddcd35 (entrée précédente, lot 1 déployé)
+Étape de départ: retour utilisateur après test manuel du lot 1 : le panel `/mobs` affichait
+  « Identifiant de profil manquant ou invalide » sur un profil pourtant bien listé (`rpgquest:
+  creeper_pig`), bloquant édition/bascule/spawn de test. Consigne explicite de vérifier l'id envoyé
+  par le navigateur, son parsing côté panel et sa transmission à l'agent, sans supposer la cause ;
+  ne pas enchaîner sur un autre ticket avant d'avoir débloqué ce test.
+Étapes terminées: DONE — cause confirmée en traçant le flux complet (jamais supposée) :
+  `mob.list` renvoie toujours l'id namespacé complet (`NamespacedKey#asString()`, ex.
+  `rpgquest:creeper_pig`), réinjecté tel quel par les formulaires d'édition/bascule/spawn de test ;
+  les motifs `AgentActionCatalog.MOB_ID` (panel) et `AgentActionExecutor.MOB_ID` (plugin)
+  n'acceptaient pas le « : », donc tout profil existant était rejeté — seule la création avec une
+  clé courte fonctionnait. Les deux motifs acceptent désormais un suffixe `:<clé>` optionnel
+  (`resolveKey` côté plugin gérait déjà correctement les deux formes, jamais le problème). Bug
+  reproduit concrètement (régression confirmée : ancien motif restauré temporairement, nouveaux
+  tests en échec) avant d'appliquer et de re-vérifier le correctif.
+Tests: nouveaux `AgentActionCatalogTest#mobIdAcceptsTheFullNamespacedFormReturnedByMobList` (+1) et
+  `AgentActionExecutorTest#mobDefinitionToggleAndTestSpawnAcceptTheFullNamespacedId` (+1), tous deux
+  construits pour reproduire exactement le blocage rapporté avant de valider la correction. Suite
+  complète 3 modules : 1831 tests, 1796 exécutés verts, 35 ignorés, 0 échec.
+Branche finale: feature/169-special-mobs-boss (aucun merge).
+Dernier commit: `8d2195a` fix(agent): accept namespaced mob ids in mob.* action validation.
+Build: vert (voir Tests).
+Tests manuels en attente: parcours complet demandé par l'utilisateur (ouvrir un profil existant →
+  choisir un joueur connecté dans le Wild → faire apparaître une instance de test → vérifier
+  édition et activation/désactivation) — corrigé et vérifié par tests automatisés + contrôles de
+  démarrage/santé, mais pas encore par un clic réel dans le panel déployé.
+Blocages: aucun.
+Première étape à reprendre: validation manuelle par l'utilisateur du parcours ci-dessus ; #179
+  (mentionné par l'utilisateur comme suite, explicitement différé tant que ce test n'est pas
+  débloqué).
 ```
 
 ```text

@@ -4206,3 +4206,122 @@ Rollback : `scripts/rollback-verygames.sh --latest` pour le JAR, et
 `scripts/rollback-verygames.sh --also <backup>/RPGQuest/dialogues/jo.yml:RPGQuest/dialogues/jo.yml`
 pour le dialogue (voir `MANIFEST.txt`). Aucun état persistant n'a changé : un retour arrière
 restaure exactement le comportement précédent — y compris le piège.
+
+---
+
+## 2026-10-05 (lot 10) - #95 : module « Exploitation serveur » dans PlugAdmin (lot 1)
+
+### Changement
+
+Nouvelle page **`/ops`** du Control Panel : état réel du serveur et de l'agent avec **fraîcheur**
+affichée, **annonce globale** aux joueurs (3 canaux), **redémarrage** immédiat ou différé avec
+annonces, annulation et **retour en ligne vérifié**, et **console récente** en lecture seule
+(recherche, filtres, pause, suivi automatique).
+
+Côté plugin : deux actions agent whitelistées (`server.announce`, `server.logs.tail`) et un tampon
+circulaire de console alimenté par un appender Log4j2.
+
+### Action serveur
+
+**Deux cibles dans ce lot** :
+
+1. **Control Panel AWS** — `scripts/plugadmin/deploy.sh` (reconstruction + remplacement de
+   `/opt/plugadmin/app`, redémarrage du service, contrôle `/health`).
+2. **JAR RPGQuest** sur VeryGames + **un seul redémarrage** Minecraft.
+
+**Configuration serveur ajoutée** (hors dépôt, nécessaire au seul redémarrage) :
+
+- `/etc/plugadmin/control-panel.properties` : `ops.rcon.dev.host` et `ops.rcon.dev.port`
+  (valeurs **non secrètes**) ;
+- `/etc/plugadmin/plugadmin.env` : `RPGQUEST_RCON_PASSWORD_DEV` (**secret**, fichier `640
+  root:plugadmin`, hors Git). Les deux fichiers ont été **sauvegardés** avant modification
+  (`.bak-<horodatage UTC>`).
+
+Sans cette configuration, la page fonctionne et affiche simplement « **Redémarrage indisponible** »
+avec son motif : aucune autre fonction n'est affectée.
+
+**Aucune migration de schéma.** Aucun fichier de contenu touché.
+
+### Sauvegarde préalable
+
+- JAR précédent : `/home/ubuntu/.local/share/rpgquest/verygames-backups/rpgquest-20261005T205914Z-predeploy.jar`
+  (1 735 478 octets, SHA-256 `97e77bc3…`).
+- Ancienne distribution du panel : `/opt/plugadmin/releases/<horodatage>` (faite par le script).
+- Fichiers de configuration : `.bak-<horodatage UTC>` dans `/etc/plugadmin/`.
+
+### Déploiement effectué
+
+- **Panel AWS** : déployé, service `active (running)`, `/health` → `{"panel":"ONLINE"}`.
+- **JAR** : SHA-256 `cbac00bfb6bba03add3b919c5a15765cabba370e245d9355868a9d53c9d38dbb` (1,756,236 octets, commit `c7962f4`).
+- **Un seul redémarrage** Minecraft, annoncé en jeu : `save-all`, `stop`, arrêt **constaté
+  OFFLINE**, retour **constaté ONLINE**.
+- **Vérifié après redémarrage, par RCON** : `plugins` → **4 plugins verts** (Citizens,
+  Multiverse-Core, RPGQuest, WorldEdit) ; `rpgquest version` → `v0.1.0-SNAPSHOT`.
+- **Vérifié sur la page déployée** (compte de vérification temporaire, supprimé ensuite) : agent
+  `ONLINE`, uptime réel, version réelle, fraîcheur « il y a 2 s » ; **5 modèles d'annonce**, les
+  **3 canaux** `chat`/`actionbar`/`title` ; console avec recherche, filtres `ERROR`/`WARN`/`INFO`,
+  pause, suivi auto, retour en bas ; section « Non disponible dans ce lot » citant ses motifs
+  réels ; **aucune zone de saisie libre**. Le bloc de redémarrage s'affiche **actif** (et non
+  « indisponible »), ce qui confirme que le service lit bien la configuration RCON.
+- **Tests** : `./gradlew test` puis `./gradlew build` — **1538** plugin (34 ignorés), **543**
+  control-panel (1 ignoré), **30** web-api, **0 échec, 0 erreur**.
+
+### Décisions de conception, chacune mesurée
+
+- **Le log serveur n'est pas atteignable.** Sondé avant de concevoir : la racine FTP est le dossier
+  `plugins/` et le serveur répond « Server denied you to change to the given directory » sur
+  `../logs`. La console vient donc d'un appender **Log4j2** côté plugin, remonté par l'**agent
+  sortant** existant — ni SSE, ni WebSocket, ni port entrant, conformément au ticket.
+- **`java.util.logging` ne suffirait pas** : Paper route `getSLF4JLogger()` directement vers Log4j2,
+  donc un `Handler` JUL ne verrait pas nos propres lignes. `log4j-core` est **`compileOnly`**
+  (fourni par le serveur, jamais empaqueté) et une absence/incompatibilité est rattrapée
+  (`LinkageError`) : la console s'affiche « indisponible » avec son motif, le serveur démarre
+  normalement.
+- **Le redémarrage ne peut venir ni de l'agent** (il s'arrête avec le serveur) **ni du script
+  shell** (le service PlugAdmin tourne avec `ProtectHome=true` et n'a accès ni au `$HOME` de
+  l'opérateur ni à son fichier d'identifiants). D'où un client RCON en Java dans le panel,
+  réutilisant le mécanisme déjà éprouvé par `scripts/verygames-restart.sh`.
+
+### Un arrêt n'est pas un redémarrage
+
+Avant d'arrêter, le service vérifie que le serveur répond — sinon **aucun arrêt n'est demandé**.
+Après l'arrêt, deux preuves seulement sont acceptées : serveur **vu hors ligne** puis répondant de
+nouveau, **ou** uptime du plugin **diminué**. Sans preuve avant le délai, l'opération finit en
+**échec** avec le motif, jamais en « redémarré ».
+
+### Sécurité
+
+Quatre permissions séparées (`OPS_VIEW`, `OPS_ANNOUNCE`, `OPS_RESTART`, `OPS_LOGS`).
+`RconCommand` est une **énumération de trois valeurs** (`list`, `save-all`, `stop`) : aucun chemin
+de code ne transporte un texte libre jusqu'au serveur. L'annonce envoie le message en **texte
+littéral** (jamais MiniMessage — un `<click:run_command:…>` ferait exécuter une commande à tous les
+joueurs qui cliquent) et refuse un message commençant par `/`. Mot de passe RCON jamais journalisé,
+jamais réaffiché, jamais inclus dans un message d'erreur. Audit : `ops.restart`,
+`ops.restart.cancel`, et les annonces via l'audit d'action.
+
+### Défaut de conception trouvé et corrigé avant livraison
+
+La console ré-enfile un relevé à chaque cycle d'agent, et `AgentStore` n'avait **aucune purge** :
+consulter la console une heure aurait laissé des centaines de lignes dans `agent_action` et noyé
+l'historique réel des actions d'administration. Purge ciblée
+(`AgentStore#pruneTerminalActionsOfType`), qui ne touche **jamais** une action en cours, couverte
+par deux tests.
+
+### Redémarrage requis
+
+**Oui — un seul, effectué et vérifié** (arrêt constaté, retour constaté).
+
+### Migration automatique
+
+**Aucune.** Schéma inchangé (V24).
+
+### Validation
+
+TC-246 (nouveau) — protocole complet, 31 étapes, dont un **vrai redémarrage** depuis le panel.
+**Aucun test en jeu n'a été exécuté** : les trois canaux d'annonce vus par un joueur, un
+redémarrage piloté de bout en bout et l'ergonomie de la console sous charge restent à valider.
+
+Rollback : `scripts/plugadmin/rollback.sh` pour le panel, `scripts/rollback-verygames.sh --latest`
+pour le JAR. Les clés `ops.*` peuvent rester en place sans effet avec un JAR antérieur ; retirer
+`ops.rcon.dev.host` suffit à rendre le redémarrage indisponible sans rien redéployer.
+

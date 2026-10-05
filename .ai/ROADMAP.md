@@ -328,6 +328,116 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-05 (lot 10 — #95 module « Exploitation serveur » dans PlugAdmin, lot 1)
+Branche de départ: feature/169-special-mobs-boss @ 5f5d4c6 (lot 9, #22 déployé)
+Étape de départ: le propriétaire demande d'abord de CONFIRMER le dépannage #22 (fait : joueur sorti
+  de Claims, correctif déployé, aucun blocage restant), puis de réaliser le premier lot concret de
+  #95 : page Exploitation serveur, état réel + fraîcheur, annonce avec aperçu/modèles/canaux
+  réellement supportés, redémarrage immédiat ou différé avec annonces + annulation + suivi jusqu'au
+  retour ONLINE, logs récents avec recherche/filtres/pause actualisés automatiquement.
+  Consignes dures : réutiliser l'existant, « un simple stop ne constitue pas un restart », afficher
+  les fonctions indisponibles, aucune console shell/RCON libre, aucun reload global Bukkit,
+  #131 et #210 préparés mais NON implémentés.
+Étapes terminées:
+(1) DONE — AUDIT, trois constats MESURÉS qui ont décidé la conception :
+  * le fichier de log du serveur n'est PAS atteignable. Sondé avec la bibliothèque FTP du dépôt
+    AVANT d'écrire du code : la racine FTP EST plugins/, et le serveur répond
+    « Server denied you to change to the given directory » sur ../logs. Donc console alimentée par
+    le PLUGIN et remontée par l'agent sortant existant — ni SSE, ni WebSocket, ni port entrant.
+  * java.util.logging aurait capté presque rien : Paper route getSLF4JLogger() DIRECTEMENT vers
+    Log4j2, donc un Handler JUL ne verrait pas nos propres lignes. D'où un appender Log4j2
+    (log4j-core en compileOnly, fourni par le serveur, jamais empaqueté ; LinkageError rattrapée →
+    console « indisponible » avec motif, serveur qui démarre normalement).
+    VALIDÉ EN PRODUCTION : la capture contient des lignes RPGQuest (SLF4J), spark, ET vanilla
+    (net.minecraft.server.rcon.thread.RconThread) — les deux dernières invisibles avec JUL.
+  * le redémarrage ne peut venir NI de l'agent (il s'arrête avec le serveur) NI du script shell
+    (service PlugAdmin sous ProtectHome=true, sans accès au $HOME ni aux identifiants RCON de
+    l'opérateur). D'où un client RCON EN JAVA dans le panel, réutilisant le mécanisme éprouvé de
+    scripts/verygames-restart.sh sans réutiliser le script.
+(2) DONE — Réutilisation : AgentStore/AgentEndpoints/AgentActionCatalog/AgentActionExecutor (les
+  deux opérations sont des actions agent ORDINAIRES, validées côté panel ET côté plugin),
+  AgentLiveness + HeartbeatRecord pour l'état et la fraîcheur (aucun nouveau relevé),
+  Ui/Layout/Icons/panel.js/plugadmin.css, /agents/action avec son CSRF, l'audit existant.
+(3) DONE — SSE écarté et le choix DOCUMENTÉ comme le ticket l'exige : la fraîcheur est de toute
+  façon bornée par la scrutation de l'agent déployé (15 s, lu dans son fichier réel). Un second
+  canal n'accélérerait rien. Le navigateur interroge /ops/logs.json toutes les 4 s, le panel
+  n'enfile QU'UN relevé à la fois, et la page AFFICHE cette latence (~15 s).
+(4) DONE — UN ARRÊT N'EST PAS UN REDÉMARRAGE (exigence centrale) : on vérifie d'abord que le
+  serveur répond, sinon AUCUN arrêt n'est demandé ; puis save-all best-effort, puis stop ; puis on
+  attend une PREUVE — serveur vu hors ligne puis répondant, OU uptime du plugin DIMINUÉ (relevé par
+  le heartbeat, ce qui couvre une relance plus rapide que l'intervalle de sonde). Sans preuve →
+  ÉCHEC avec motif. Single-flight (= protection double-clic et rejeu). Confirmations ADAPTÉES :
+  case pour un différé annulable, saisie du mot REDEMARRER pour l'immédiat.
+(5) DONE — Aucune commande arbitraire PAR CONSTRUCTION : RconCommand est une énumération de TROIS
+  valeurs. Aucun chemin de code ne porte un texte libre jusqu'au serveur. L'annonce envoie le
+  message en TEXTE LITTÉRAL — un <click:run_command:…> ferait exécuter une commande à tous les
+  joueurs qui cliquent — et un message commençant par « / » est refusé des DEUX côtés.
+  Trois canaux réellement supportés (chat/actionbar/title), chacun testé comme délivrant vraiment ;
+  NO_PLAYERS dit honnêtement quand personne n'était connecté.
+(6) DONE — Fonctions indisponibles AFFICHÉES avec leur motif réel : start/stop explicite (pas d'API
+  de supervision), console complète de l'hébergeur (motif mesuré en (1)), sauvegarde restaurable
+  (save-all n'est pas un point de restauration), mode maintenance, annonces programmées.
+  #131 et #210 annoncés comme lots SUIVANTS avec leur emplacement prévu — rien n'en est implémenté.
+(7) DONE — Sécurité : quatre permissions SÉPARÉES (OPS_VIEW jusqu'à READ_ONLY ; OPS_LOGS pas pour
+  READ_ONLY car une ligne de log contient pseudos/coordonnées/erreurs internes ; OPS_ANNOUNCE et
+  OPS_RESTART réservées OWNER+ADMIN). Secret RCON uniquement depuis l'environnement du service ;
+  RconEndpoint.toString() redéfini pour ne jamais l'imprimer, et un test vérifie qu'aucun message
+  d'erreur ne le contient. CSRF sur chaque POST, permission vérifiée côté BACKEND, audit
+  ops.restart / ops.restart.cancel. Aucun reload global Bukkit.
+Tests: suite complète verte — 1538 plugin (34 ignorés), 543 control-panel (1 ignoré), 30 web-api,
+  0 échec, 0 erreur. 110 cas nouveaux : ServerLogBufferTest (14), ConsoleTapTest (8),
+  ServerOpsServiceTest (10), AgentActionExecutorTest (+11), RestartServiceTest (24),
+  RconClientTest (7), AgentActionCatalogTest (+11), RolePermissionMatrixTest (+5), OpsPageTest (20).
+  RconClientTest confronte le client à un VRAI serveur RCON ouvert dans la JVM de test : le
+  protocole est binaire, une erreur d'ordre d'octets ne se verrait qu'en production PENDANT un
+  redémarrage.
+  UN DÉFAUT DE MA PROPRE CONCEPTION, trouvé et corrigé AVANT livraison : la console ré-enfile un
+  relevé à chaque cycle d'agent et AgentStore n'avait AUCUNE purge — une heure de consultation
+  aurait laissé des centaines de lignes dans agent_action et noyé l'historique réel des actions.
+  J'ai mesuré la table existante (~150 lignes) avant de conclure. Purge CIBLÉE ajoutée
+  (pruneTerminalActionsOfType), qui ne touche jamais une action en cours, couverte par deux tests.
+  UN TEST EXISTANT A REFUSÉ MON CODE ET AVAIT RAISON :
+  CatalogResyncTest#panelScriptCarriesTheSharedReloadOnIdleMechanism impose UN SEUL point de
+  rechargement dans panel.js. Mon module en ajoutait un second. Le test n'a PAS été relâché : le
+  module réutilise runReload().
+Branche finale: feature/169-special-mobs-boss (aucun merge).
+Commit: c7962f4.
+Build: vert.
+Déploiements: DEUX cibles. (a) Control Panel AWS via scripts/plugadmin/deploy.sh — service
+  active (running), /health -> {"panel":"ONLINE"}. (b) JAR VeryGames DEV SHA-256
+  cbac00bfb6bba03add3b919c5a15765cabba370e245d9355868a9d53c9d38dbb (1 756 236 octets) avec UN SEUL
+  redémarrage, annoncé en jeu : arrêt CONSTATÉ OFFLINE, retour CONSTATÉ ONLINE ; puis plugins -> 4
+  verts, rpgquest version -> v0.1.0-SNAPSHOT. JAR précédent sauvegardé
+  (rpgquest-20261005T205914Z-predeploy.jar, SHA-256 97e77bc3…).
+  Configuration serveur ajoutée HORS DÉPÔT : ops.rcon.dev.host/.port dans
+  /etc/plugadmin/control-panel.properties, RPGQUEST_RCON_PASSWORD_DEV dans
+  /etc/plugadmin/plugadmin.env (640 root:plugadmin). Les deux fichiers SAUVEGARDÉS avant
+  modification. AUCUNE valeur de secret affichée à aucun moment.
+Vérifications sur la page RÉELLEMENT déployée (compte temporaire claude-ops, SUPPRIMÉ ensuite) :
+  agent ONLINE, uptime réel, version réelle, fraîcheur « il y a 2 s » ; 5 modèles d'annonce ;
+  3 canaux chat/actionbar/title ; console avec recherche, filtres ERROR/WARN/INFO, pause, suivi
+  auto, retour en bas ; section « Non disponible dans ce lot » avec ses motifs réels et #131/#210 ;
+  AUCUNE zone de saisie libre ; bloc de redémarrage ACTIF (donc le service lit bien la config RCON).
+Chaîne de vérification de bout en bout, entièrement réelle :
+  server.logs.tail REJECTED avant le JAR (dégradation gracieuse), SUCCESS 37 lignes après, puis
+  1 ligne avec curseur 37->38 (incrémental) ; lignes captées = RPGQuest + spark + vanilla ;
+  server.announce SUCCESS « Aucun joueur connecté : l'annonce n'a été affichée à personne. ».
+Tests manuels en attente: TC-246 — 31 étapes, dont un VRAI redémarrage depuis le panel. AUCUN test
+  en jeu n'a été exécuté : rendu des trois canaux vu par un joueur, redémarrage piloté de bout en
+  bout, ergonomie de la console sous charge, permissions depuis de vrais comptes.
+Limites: un redémarrage DIFFÉRÉ est perdu si PlugAdmin redémarre (opération en mémoire ; rien n'est
+  jamais exécuté EN RETARD, comportement sûr). Fraîcheur console bornée à ~15 s par l'agent (la
+  réduire changerait la cadence de TOUTES les actions : hors périmètre). La capture dépend du niveau
+  du logger racine — c'est AFFICHÉ, pas silencieux. Pas de rétention générale sur agent_action.
+  Un seul agent consulté (modèle par cible, mais pas encore de sélecteur).
+Propreté: aucun contenu du propriétaire modifié, aucune progression touchée, aucun reset joueur.
+  Compte de vérification supprimé, mot de passe et session effacés du scratchpad.
+Première étape à reprendre: ouvrir /ops et contrôler le bloc « État du serveur » (agent ONLINE,
+  uptime cohérent, version 0.1.0-SNAPSHOT, fraîcheur < 30 s), puis dérouler TC-246 quand personne
+  ne joue. Ensuite, attendre le choix du prochain ticket par le propriétaire.
+```
+
+```text
 Date: 2026-10-05 (lot 9 — #22 URGENCE : joueur coincé dans le monde des claims)
 Branche de départ: feature/169-special-mobs-boss @ dddf709 (lot 8, #12 déployé)
 Étape de départ: urgence signalée par le propriétaire — coincé dans le monde Claims avec son Acte,

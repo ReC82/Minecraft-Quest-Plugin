@@ -328,6 +328,111 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-06 (lot 11 — nuit : #131 rechargement du contenu, #210 actions joueurs, premier lot
+  économie)
+Branche de départ: feature/169-special-mobs-boss @ 00c2c3e (lot 10, #95 déployé)
+Étape de départ: ordre explicitement choisi par le propriétaire pour la nuit : 1. #131, 2. #210,
+  puis 3. un premier lot ÉCONOMIE. Séquentiel, sans sous-agents, aucun autre ticket commencé.
+  Consignes dures : auditer l'existant avant de concevoir ; distinguer source / publié / chargé ;
+  « un reload ne transfère pas les fichiers du panel AWS vers VeryGames » ; valider les références
+  croisées AVANT application ; conserver le runtime précédent valide en cas d'erreur ; aucun
+  /reload global Bukkit ; aucune progression, quête active, inventaire ou instance de boss touchée ;
+  OP/DEOP derrière une permission dédiée + confirmation + audit ; ne pas confondre OP Minecraft,
+  rôle PlugAdmin, droit builder et bypass gameplay ; côté économie, éviter toute SECONDE source de
+  vérité, aucune conversion ou migration silencieuse, aucune décision gameplay arbitraire ;
+  GitHub géré par ChatGPT (aucun ticket modifié/fermé, aucun test manuel coché) ; aucun mail ni
+  annonce publique de livraison.
+Étapes terminées:
+(1) DONE — #131, rechargement contrôlé du contenu depuis PlugAdmin.
+  * AUDIT d'abord : registres, caches, index et sessions existants. Deux constats ont décidé la
+    conception. (a) Il y avait DÉJÀ un rechargement de mobs isolé dans la commande admin : il
+    délègue désormais au service commun au lieu d'être une seconde implémentation. (b) Un défaut
+    ATTEIGNABLE EN PRODUCTION : une définition supprimée du disque disparaissait SILENCIEUSEMENT
+    du runtime, sans aucun signal. D'où l'empreinte runtimeHash (SHA-256 sur les identifiants
+    triés, 12 caractères) : l'écart devient CONSTATABLE au lieu de supposé.
+  * content.reload.ContentReloadService : valider -> contrôler les références croisées -> appliquer.
+    Familles ITEMS, NPCS, QUESTS, STORIES, DIALOGUES, MOBS — l'ordre de DÉCLARATION est l'ordre
+    d'application, pour qu'une quête ne soit jamais chargée avant l'objet qu'elle récompense.
+    Codes typés : APPLIED, PREVIEW_OK, INVALID_CONTENT, BROKEN_REFERENCES, BUSY, NOTHING_REQUESTED,
+    ERROR. En cas d'échec, RIEN n'est appliqué et le runtime précédent valide reste en place.
+    parseCsv renvoie vide sur un seul jeton inconnu (pas de rechargement partiel involontaire).
+  * TROIS ÉTATS DISTINGUÉS à l'écran : contenu dans la source (dépôt/panel AWS), contenu publié sur
+    VeryGames, contenu réellement chargé en jeu. La page écrit qu'un rechargement NE TRANSPORTE
+    AUCUN FICHIER : sans cela, un rechargement « sans effet » serait lu comme une panne.
+  * validate() ajouté à StoryRegistry, YamlDialogueEngine et YamlNpcEngine (contrôle à blanc, sans
+    publier) ; NpcHintService#invalidateAll() pour que le signal visuel #12 ne garde pas un cache
+    périmé après rechargement.
+  * Aperçu (content.reload.preview, LECTURE) séparé de l'application (content.reload, SENSIBLE,
+    ACTION_CONTENT_RELOAD). L'application ré-enfile les SIX relevés de catalogue : l'affichage est
+    RELU, pas deviné. Opérations concurrentes protégées (BUSY), double-clic neutralisé.
+  * Aucun /reload Bukkit/Paper. Progression, quêtes actives, inventaires et mobs/boss VIVANTS
+    intouchés : aucune récompense redistribuée, aucun respawn, aucun reset implicite.
+  * LIMITE DITE CLAIREMENT : les PARAMÈTRES (config.yml, npc-hints:, …) ne peuvent pas être
+    rechargés de façon fiable -> redémarrage requis, via le workflow #95.
+  * Aussi trouvé en auditant : une permission orpheline, plus référencée par aucune route.
+(2) DONE — #210, actions joueurs sur la fiche joueur.
+  * Statut OP Minecraft et whitelist RÉELS (lus depuis le serveur, PlayerCatalogEntry enrichi),
+    OP/DEOP, renvoi de secours au Hub, expulsion avec raison, whitelist.
+  * PLAYER_OP_WRITE : permission DÉDIÉE, OWNER UNIQUEMENT, explicitement REFUSÉE à ADMIN. Accorder
+    OP donne tout le serveur : ce n'est pas le même geste qu'administrer du contenu. Les quatre
+    notions OP Minecraft / rôle PlugAdmin / droit builder / bypass gameplay sont rappelées à
+    l'écran, parce que les confondre est l'erreur coûteuse.
+  * Ciblage par UUID, online/offline distingués, résultat RELU après l'action : codes OPPED,
+    DEOPPED, ALREADY_OP, NOT_OP, UNKNOWN_PLAYER, NOT_APPLIED, OFFLINE, NO_DESTINATION, SENT,
+    KICKED, WHITELISTED, UNWHITELISTED, NOT_WHITELISTED. Jamais « succès » sur la seule absence
+    d'erreur. Confirmation par pseudonyme EXACT retapé + raison, audit.
+  * Hors ligne, send.hub et kick s'affichent INDISPONIBLES AVEC LEUR MOTIF au lieu d'échouer ;
+    op et whitelist restent proposés (ils fonctionnent hors ligne).
+  * Le renvoi au Hub réutilise la destination résolue du correctif #22 : inventaire, Acte, claim et
+    progression préservés.
+(3) DONE — ÉCONOMIE, premier lot (#140, #16 ; #138/#139 lus mais non commencés).
+  * AUDIT AVANT ARCHITECTURE, et il a changé la décision : le socle EXISTE (WalletRepository,
+    persistance, journal des transactions). Le journal était ÉCRIT mais JAMAIS LISIBLE. Donc
+    fiabiliser et administrer, PAS recréer — et AUCUNE seconde source de vérité.
+  * Livré : WalletRepository#history (borné [1,100]), lecture du solde ET des dernières écritures du
+    journal depuis le panel, crédit/débit avec RAISON OBLIGATOIRE (sans elle, une création
+    administrative serait indiscernable d'un gain de jeu des mois plus tard), débit IMPOSSIBLE
+    au-delà du disponible, plafond de SAISIE 1 000 000 annoncé comme garde-fou de frappe et NON
+    comme règle d'équilibrage, ECONOMY_READ séparée de ECONOMY_WRITE.
+  * Aucune conversion ni migration d'inventaire, d'objet ou de solde. Aucune monnaie reconnue par
+    son seul nom ou lore. Aucune décision gameplay prise à la place du propriétaire.
+Tests: 1603 plugin (34 ignorés) + 577 control-panel (1 ignoré) + 30 web-api = 2210, 0 échec,
+  0 erreur. ./gradlew test ET ./gradlew build BUILD SUCCESSFUL. +99 cas nouveaux sur la nuit
+  (1538 -> 1603 plugin, 543 -> 577 panel).
+  TROIS défauts de mes propres tests, MESURÉS au lieu d'être supposés : des tests #131 attendaient
+  BROKEN_REFERENCES là où le chargeur de quêtes répond déjà INVALID_CONTENT (il valide les
+  prérequis à l'échelle du dossier) -> corrigés sur le COMPORTEMENT RÉEL ; les tests #210
+  expiraient tous parce que onMain() exige des ticks pompés sous MockBukkit ; et setOp ne persiste
+  pas après disconnect() sous MockBukkit -> test RÉÉCRIT pour verrouiller le garde NOT_APPLIED,
+  l'élévation OP HORS LIGNE restant à confirmer en réel.
+Déploiement: JAR #131+#210 SHA-256 fce156b2d32ca077ed83381b460cf4e5a62328279ef0486fbbd424f76f36c2f7
+  (1 787 548 o, commit 50b5aad) ; JAR économie SHA-256
+  3a29b540787ff6e337858bc1aba09b86d9b29548a1f6a85ce85b20d3faded3be (1 796 897 o, commit b7686c4).
+  Panel redéployé DEUX fois (distributions 20261006-001824 et 20261006-005116, /health -> 200).
+  DEUX redémarrages Minecraft, arrêt ET retour CONSTATÉS chaque fois, plugins -> 4 verts,
+  rpgquest version -> v0.1.0-SNAPSHOT. Non groupables sans retarder la vérification des deux
+  premiers lots : c'est dit, pas présenté comme un seul redémarrage.
+  CHARGEMENT vérifié, pas seulement le transfert : economy.balance sur un UUID inexistant ->
+  FAILED « Joueur inconnu », tandis qu'un type bidon -> REJECTED « Type d'action non whitelisté ».
+  Les deux réponses diffèrent, donc l'exécuteur économie tourne réellement dans ce JAR.
+Tests manuels en attente: TC-247 (#131, 23 étapes — l'étape B est la plus importante : rendre un
+  fichier invalide SUR LE SERVEUR et constater que le rechargement REFUSE et que la définition
+  reste chargée), TC-248 (#210, 23 étapes, dont 403 sur route directe depuis un compte ADMIN et
+  persistance de l'OP après redémarrage), TC-249 (économie, 18 étapes, dont débit supérieur au
+  solde refusé SANS aucune ligne de journal). AUCUNE case cochée. TC-243 à TC-246 des nuits
+  précédentes restent également en attente.
+Blocages: aucun blocage réel. Une gêne mineure confirmée : la sonde /health de
+  scripts/plugadmin/deploy.sh tire trop tôt et a signalé un faux « KO » au premier déploiement
+  (revérifié à la main -> 200 ; la santé est le dernier pas du script, donc rien n'était partiel).
+  Attente/retry à ajouter au script.
+Première étape à reprendre: dérouler les validations manuelles, puis attendre le choix du
+  propriétaire. Côté économie, la suite dépend de DÉCISIONS GAMEPLAY encore à prendre (monnaie
+  physique et conversion solde <-> objet, perte à la mort, prix, règles d'échange) : la prochaine
+  étape indépendante utile est le type de récompense monétaire de quête et l'affichage lisible du
+  montant possédé en jeu, avant #138/#139.
+```
+
+```text
 Date: 2026-10-05 (lot 10 — #95 module « Exploitation serveur » dans PlugAdmin, lot 1)
 Branche de départ: feature/169-special-mobs-boss @ 5f5d4c6 (lot 9, #22 déployé)
 Étape de départ: le propriétaire demande d'abord de CONFIRMER le dépannage #22 (fait : joueur sorti

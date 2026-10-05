@@ -4325,3 +4325,106 @@ Rollback : `scripts/plugadmin/rollback.sh` pour le panel, `scripts/rollback-very
 pour le JAR. Les clés `ops.*` peuvent rester en place sans effet avec un JAR antérieur ; retirer
 `ops.rcon.dev.host` suffit à rendre le redémarrage indisponible sans rien redéployer.
 
+
+---
+
+## 2026-10-06 (lot 11) - #131 rechargement du contenu, #210 actions joueurs, premier lot économie
+
+### Changement
+
+Trois lots livrés dans la même nuit, dans cet ordre, chacun déployé et vérifié avant le suivant.
+
+1. **#131 — rechargement contrôlé du contenu.** Nouveau service plugin
+   `content.reload.ContentReloadService` : validation, contrôle des **références croisées**, puis
+   application atomique par familles (`ITEMS`, `NPCS`, `QUESTS`, `STORIES`, `DIALOGUES`, `MOBS`).
+   Deux actions agent (`content.reload.preview` en lecture, `content.reload` sensible), bloc dédié
+   sur `/ops` et rappel contextuel sur `/quests`, `/stories`, `/dialogues`. Commandes
+   `/rpgadmin content preview|reload`. **Aucun `/reload` Bukkit.**
+2. **#210 — actions joueurs.** Sur les fiches joueurs : statut **OP Minecraft** et **whitelist**
+   réels, OP/DEOP, renvoi de secours au Hub, expulsion avec raison, whitelist.
+3. **Économie (premier lot).** Lecture du solde **et du journal des transactions** depuis le panel,
+   crédit et débit avec **raison obligatoire**, trois actions agent `economy.*`.
+
+### Action serveur
+
+**Deux cibles, dans l'ordre** :
+
+1. **Control Panel AWS** — `scripts/plugadmin/deploy.sh`, **deux fois** (une pour #131+#210, une
+   pour l'économie). Distributions `20261006-001824` puis `20261006-005116`.
+2. **JAR RPGQuest** sur VeryGames, **deux fois**, avec **un redémarrage Minecraft chacun**
+   (**deux au total sur la nuit**).
+
+**Aucune migration de schéma** (V24 inchangé). **Aucun fichier de contenu touché** : le
+rechargement **relit** le contenu déjà présent sur le serveur, il ne le transporte pas.
+
+### Sauvegarde préalable
+
+- JAR avant #131+#210 : `rpgquest-20261005T221919Z-predeploy.jar` (1 756 236 octets,
+  SHA-256 `cbac00bf…`).
+- JAR avant l'économie : `rpgquest-20261005T225156Z-predeploy.jar` (1 787 548 octets,
+  SHA-256 `fce156b2…`). **Le backup précédent n'a pas été écrasé.**
+- Distributions du panel conservées dans `/opt/plugadmin/releases/` par le script.
+
+### Déploiement effectué
+
+| Cible | Empreinte réelle | Vérification |
+|---|---|---|
+| JAR #131 + #210 | SHA-256 `fce156b2d32ca077ed83381b460cf4e5a62328279ef0486fbbd424f76f36c2f7` (1 787 548 o, commit `50b5aad`) | redémarrage 1 : arrêt **constaté OFFLINE**, retour **constaté ONLINE** ; `plugins` → **4 verts** ; `rpgquest version` → `v0.1.0-SNAPSHOT` |
+| JAR économie | SHA-256 `3a29b540787ff6e337858bc1aba09b86d9b29548a1f6a85ce85b20d3faded3be` (1 796 897 o, commit `b7686c4`) | redémarrage 2 : arrêt **constaté OFFLINE**, retour **constaté ONLINE** ; `plugins` → **4 verts** ; taille du JAR en ligne relue = taille locale |
+| Panel #131 + #210 | distribution `20261006-001824` | `/health` → **200** (sonde du script trop précoce, revérifié à la main) |
+| Panel économie | distribution `20261006-005116` | `script_exit=0`, `/health` → `{"panel":"ONLINE"}` |
+
+**Tests** : `./gradlew test` puis `./gradlew build` — **1603** plugin (34 ignorés), **577**
+control-panel (1 ignoré), **30** web-api, **0 échec, 0 erreur**.
+
+### Preuves de bout en bout obtenues sur le serveur réel
+
+- **Aperçu de contenu** : `SUCCESS`, 27 éléments valides, aucune référence cassée, **rien
+  appliqué**, empreinte `90afd489406e`.
+- **Rechargement réel** : `SUCCESS`, PNJ + quêtes + stories + dialogues, **35 éléments**, **même
+  empreinte** — donc le disque égalait déjà ce qui tournait ; l'empreinte **constate** au lieu de
+  supposer. Les **six** relevés de catalogue ont été ré-enfilés automatiquement.
+- **#210 sur un UUID inexistant** : `FAILED` — « Joueur inconnu (jamais connecté) ». **Aucun compte
+  touché, aucun droit du propriétaire modifié.**
+- **Économie réellement chargée après le second redémarrage** : `economy.balance` sur un UUID
+  inexistant → `FAILED` « Joueur inconnu », tandis qu'un type bidon `economy.nonexistent` →
+  `REJECTED` « Type d'action non whitelisté ». Les deux réponses diffèrent : la première vient de
+  l'exécuteur économie **embarqué dans ce JAR**. Aucun crédit, aucun débit, aucune écriture au
+  journal des transactions.
+
+### Ce que ce déploiement ne fait PAS
+
+- **Il ne transporte aucun contenu.** Publier un fichier de quête/story/dialogue du panel AWS vers
+  VeryGames reste une opération **manuelle** : un rechargement relit ce qui est **déjà** sur le
+  serveur. La page le dit explicitement, pour qu'un rechargement « sans effet » ne soit pas lu
+  comme une panne.
+- **Il ne recharge pas les paramètres** (`config.yml`, `npc-hints:`, etc.) : un changement de
+  configuration demande toujours un redémarrage, et la page l'indique.
+- **Aucune progression, aucune quête active, aucun inventaire, aucune instance de boss ou de mob
+  vivant n'est affecté** : pas de récompense redistribuée, pas de respawn, pas de reset implicite.
+- **Aucun OP accordé, aucun joueur expulsé, aucun solde crédité ou débité** pendant la
+  vérification.
+
+### Permissions ajoutées
+
+- `ACTION_CONTENT_RELOAD` (OWNER, ADMIN, CONTENT_EDITOR) pour **appliquer** un rechargement ;
+  l'aperçu reste derrière la lecture de contenu, puisqu'il ne change rien.
+- `PLAYER_OP_WRITE` — **OWNER uniquement, explicitement refusée à ADMIN** : accorder OP donne tout
+  le serveur, ce n'est pas le même geste qu'administrer le contenu.
+- `ECONOMY_READ` (OWNER, ADMIN, TESTER, READ_ONLY) et `ECONOMY_WRITE` (OWNER, ADMIN) : lire un
+  solde et **créer de la monnaie** sont deux droits distincts.
+
+### Migration automatique
+
+**Aucune.** Schéma inchangé (V24). Le portefeuille et son journal existaient déjà : ce lot les rend
+**lisibles et administrables**, il ne les recrée pas et ne convertit rien.
+
+### Validation
+
+TC-247 (#131), TC-248 (#210) et TC-249 (économie) ajoutés à `docs/MANUAL_TEST_PLAN.md`.
+**Aucun test en jeu n'a été exécuté, aucune case cochée.**
+
+Rollback : `scripts/plugadmin/rollback.sh` pour le panel, `scripts/rollback-verygames.sh --latest`
+pour le JAR (un cran = l'économie retirée, deux crans = #131/#210 retirés également). Un JAR
+antérieur rend simplement les nouvelles actions `REJECTED` côté plugin et le panel les affiche
+indisponibles : aucune autre fonction n'est affectée.

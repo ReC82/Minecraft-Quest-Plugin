@@ -374,6 +374,12 @@ Tests: :discord-sync:test → 74 tests, 0 échec, 0 erreur, 1 ignoré (test rés
   le résumé d'exploitation. UN défaut de l'unité systemd trouvé par son propre journal :
   StartLimitIntervalSec placé dans [Service], où systemd l'ignore — l'unité aurait été abandonnée
   définitivement après quelques échecs rapprochés. Déplacé dans [Unit].
+  Enfin, le premier push a été REFUSÉ par la protection de secrets de GitHub (GH013) : mon FAUX
+  jeton de test avait la forme d'un vrai jeton Discord. GitHub proposait une URL pour autoriser ce
+  « secret » : non utilisée, car cela émousse la protection du dépôt pour la commodité d'un test.
+  Les valeurs de test sont désormais assemblées à l'exécution, ce qui conserve ce que le validateur
+  observe sans motif reconnaissable. Commits refaits AVANT tout push (branche inexistante côté
+  distant, vérifié) : aucun historique partagé réécrit.
 Déploiements: service lodyquests-discord installé et démarré sur l'hôte AWS. AUCUNE action sur le
   serveur Minecraft VeryGames : pas de JAR, pas de redémarrage, pas de configuration serveur.
 Tests manuels en attente: TC-241 — premier signalement réel depuis le forum. C'est la PREMIÈRE

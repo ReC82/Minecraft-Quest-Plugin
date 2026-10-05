@@ -2312,6 +2312,57 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-241 — Premier signalement réel depuis le forum Discord (issue #202)
+
+-   **Fonctionnalité testée :** service `lodyquests-discord` — un sujet du forum crée une issue
+    GitHub, le lien revient dans le sujet, et les changements de statut y sont annoncés.
+-   **Préconditions — à faire d'abord, sinon le test ne peut pas démarrer :**
+    1.  Corriger `~/.config/lodyquests-discord/bot.env` : la clé `DISCORD_BOT_TOKEN` contient
+        actuellement un **jeton GitHub**, et `GITHUB_TOKEN` est **absente**. Renommer la clé
+        existante en `GITHUB_TOKEN`, puis mettre le vrai jeton du bot Discord sous
+        `DISCORD_BOT_TOKEN` (portail développeurs → application → onglet « Bot » →
+        « Reset Token »).
+    2.  `/opt/lodyquests-discord/app/bin/discord-sync check` doit afficher le bot, le forum, ses
+        tags, et **« pas administrateur, correct »**. Cette commande n'écrit rien.
+    3.  Le service repart seul en moins de deux minutes. Vérifier :
+        `journalctl -u lodyquests-discord -n 20`.
+-   **Parcours — nouveau signalement :**
+    1.  Dans le forum **bugs-et-suggestions**, créer un sujet avec le tag **Bug**, par exemple
+        « TEST — mon premier signalement », et un premier message décrivant un faux problème.
+    2.  Attendre au plus **une minute** (intervalle de scrutation). Le robot doit **répondre dans
+        le sujet** avec le lien de l'issue GitHub.
+    3.  Ouvrir le lien : l'issue doit porter les étiquettes `source:discord`, `type:bug` et
+        `triage`, reprendre le titre, et afficher le premier message **en bloc de citation**.
+    4.  Créer un second sujet avec le tag **Suggestion** → étiquette `type:request` attendue.
+-   **Parcours — statut (GitHub fait autorité) :**
+    5.  Sur l'issue, **Close as completed** → dans la minute, le sujet doit annoncer
+        **« Statut : Résolu »**, avec la phrase disant que **ce n'est pas forcément déployé**.
+    6.  **Reopen** → annonce **« À trier »**.
+    7.  **Close as not planned** → annonce **« Refusé »**, et surtout **jamais « Résolu »**.
+    8.  Si le salon possède des tags *Résolu* / *Refusé* / *En cours*, vérifier qu'ils sont posés
+        **sans retirer** le tag Bug ou Suggestion du sujet.
+-   **Parcours — édition et notes de triage :**
+    9.  Modifier le titre du sujet Discord, puis son premier message → l'issue doit suivre.
+    10. Écrire une note de triage sur GitHub **après** le commentaire `<!-- lodyquests:fin -->`,
+        puis modifier encore le message Discord → la note doit **survivre** intacte.
+-   **Parcours — anti-doublon :**
+    11. `sudo systemctl restart lodyquests-discord`, attendre deux minutes → **aucune nouvelle
+        issue** ne doit apparaître pour les sujets déjà traités.
+-   **Sujet TEST existant :** il est antérieur au repère temporel, donc volontairement ignoré. Pour
+    le prendre en charge :
+    `/opt/lodyquests-discord/app/bin/discord-sync adopt <idDuSujet> "sujet TEST"`.
+-   **Consignes du forum :** `discord-sync notice` imprime le texte à coller, qui prévient que le
+    dépôt est **public** et que le contenu y sera visible de tous.
+-   **Couverture automatisée :** `:discord-sync:test` → 74 tests (anti-doublon après redémarrage,
+    création ambiguë réconciliée et non rejouée, relevé en retard compensé, notes de triage
+    préservées, marqueurs retirés → refus de réécrire, statuts, tags préservés, assainissement du
+    contenu, détection des jetons inversés). **Validé sur le vrai dépôt GitHub** par
+    `LiveGitHubSyncIT` (issue de test #206, refermée). **Non couvert : tout le côté Discord**, qui
+    n'a jamais pu être exercé faute de jeton de bot — ce test manuel est donc la **première**
+    vérification réelle de cette moitié.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -2383,3 +2434,4 @@ le résumé de récompenses de TC-014).
 | TC-238 | PNJ : nom en jeu et skin MineSkin depuis le panel #165 (PENDING) | | | |
 | TC-239 | Création mob SPECIAL + BOSS depuis le panel #172 (navigateur) | | | |
 | TC-240 | Couleurs et styles au clic, textes multi-styles préservés #195 (navigateur) | | | |
+| TC-241 | Forum Discord → issue GitHub, statut, anti-doublon #202 (PENDING) | | | |

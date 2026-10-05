@@ -328,6 +328,73 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-05 (lot 5 — #202 forum communautaire Discord synchronisé avec GitHub, V1)
+Branche de départ: feature/169-special-mobs-boss @ 1ccde5e (lots 3 et 4 du même jour)
+Branche de travail: feature/202-discord-forum-sync (worktree /srv/rpgquest/worktree-202)
+Étape de départ: demande explicite d'implémenter #202 en V1 opérationnelle, sans sous-agents, avec
+  commit/push et installation/démarrage du service AWS autorisés sans nouvelle confirmation.
+  Consigne appuyée : « ne considère pas le bot installé comme une preuve que la synchronisation
+  fonctionne ».
+Étapes terminées:
+(1) DONE — Nouveau module Gradle indépendant `discord-sync` (4e module du dépôt, même décision
+  d'isolation que web-api et control-panel : HTTP par java.net.http, codec JSON maison, seule
+  dépendance sqlite-jdbc). Aucune dépendance Paper/plugin/web-api/control-panel ; ne touche ni
+  data.db, ni store.db, ni control-panel.db ; ne peut provoquer aucun redémarrage Minecraft ;
+  n'écrit jamais sur #news/#soon (#186/#188).
+(2) DONE — Anti-doublon « un sujet = une issue ». L'intention de créer est écrite et validée dans
+  SQLite AVANT l'appel réseau, donc une création engagée laisse toujours une trace. Index unique en
+  base garantissant qu'une issue n'est appariée qu'à un sujet.
+(3) DONE — CONSTAT MESURÉ qui a invalidé ma première conception : la liste des issues GitHub ne
+  renvoie PAS une issue créée quelques secondes plus tôt (5 lectures consécutives l'ont manquée,
+  toutes variantes de tri, de filtre et de `since`), alors que GET /issues/{numéro} la renvoie
+  immédiatement. Réconcilier sur la liste seule aurait produit exactement le doublon interdit par
+  le ticket. Corrigé par trois garde-fous : relevé par étiquette, balayage borné des numéros
+  voisins par accès unitaire (plancher FIGÉ au moment de la tentative — un relevé postérieur peut
+  avoir intégré l'issue cherchée et la ferait sauter), et délai de prudence de 3 minutes pendant
+  lequel le service ATTEND au lieu de recréer.
+(4) DONE — Contenu synchronisé sans écraser les notes de triage : zone gérée délimitée par deux
+  commentaires HTML, tout ce qui est écrit dehors conservé mot pour mot, et refus de réécrire le
+  corps si les marqueurs ont disparu (le titre reste synchronisé).
+(5) DONE — Contenu des membres traité en donnée, jamais en commande : `<!--`/`-->` neutralisés,
+  @mention et #123 défangés (donc aucune notification ni référence croisée sur GitHub), bloc de
+  citation, taille bornée, allowed_mentions vide à chaque publication Discord.
+(6) DONE — Service AWS autonome installé, activé au démarrage et supervisé
+  (Restart=always/RestartSec=120/StartLimitIntervalSec=0, ProtectSystem=strict, écriture limitée à
+  /var/lib/lodyquests-discord). Commandes run/once/check/adopt/notice/status + LODYQUESTS_DRY_RUN.
+(7) PARTIAL — Test réel : la moitié GitHub est validée de bout en bout sur le vrai dépôt
+  (LiveGitHubSyncIT, issue TEST #206) — création étiquetée, lien renvoyé, redémarrage sans doublon,
+  édition préservant une note de triage réelle, completed→Résolu, réouverture→À trier,
+  not_planned→Refusé. La moitié DISCORD n'a jamais pu être exercée : voir Blocages.
+Tests: :discord-sync:test → 74 tests, 0 échec, 0 erreur, 1 ignoré (test réseau désactivé par
+  défaut, gated par -DdiscordSyncLiveGitHub=true comme panelProdDbCopy côté control-panel).
+  DEUX défauts trouvés par ces tests et corrigés DANS LE CODE, pas contournés dans les assertions :
+  (a) la neutralisation remplaçait `<!--` par `(<!--)`, laissant subsister la séquence, donc un
+  membre pouvait encore ouvrir un commentaire HTML masquant la zone gérée ; (b) une anomalie de
+  synchronisation de contenu était journalisée mais absente du bilan de tour, donc invisible dans
+  le résumé d'exploitation. UN défaut de l'unité systemd trouvé par son propre journal :
+  StartLimitIntervalSec placé dans [Service], où systemd l'ignore — l'unité aurait été abandonnée
+  définitivement après quelques échecs rapprochés. Déplacé dans [Unit].
+Déploiements: service lodyquests-discord installé et démarré sur l'hôte AWS. AUCUNE action sur le
+  serveur Minecraft VeryGames : pas de JAR, pas de redémarrage, pas de configuration serveur.
+Tests manuels en attente: TC-241 — premier signalement réel depuis le forum. C'est la PREMIÈRE
+  vérification réelle de la moitié Discord, et elle exige d'abord la correction ci-dessous.
+Blocages: BLOCAGE EXTERNE RÉEL. Aucun jeton de bot Discord n'est configuré :
+  ~/.config/lodyquests-discord/bot.env n'a pas de clé GITHUB_TOKEN, et la valeur placée sous
+  DISCORD_BOT_TOKEN est un jeton GitHub (Discord la refuse en 401 ; la même valeur authentifie sur
+  l'API GitHub). Diagnostiqué sans jamais afficher de valeur, par la seule structure des lignes
+  puis confirmation auprès des deux API. Le fichier de secrets n'a PAS été modifié : il appartient
+  au propriétaire. Correction = deux lignes (renommer la clé existante en GITHUB_TOKEN, mettre le
+  vrai jeton du bot sous DISCORD_BOT_TOKEN) ; le service repart seul en moins de deux minutes.
+Propreté: 4 tickets de test, tous titrés « TEST — … » et tous REFERMÉS en not_planned (#203 et #206
+  parcours d'intégration, #204 et #205 sondes de cohérence de lecture). GitHub ne permet pas de
+  supprimer une issue par l'API : ils sont documentés. Aucun autre ticket lu en écriture, aucune
+  annonce publiée, aucun merge. Contenus du propriétaire intacts.
+Première étape à reprendre: corriger les deux lignes du fichier de secrets, lancer
+  `discord-sync check`, puis dérouler TC-241. Ensuite seulement, reprendre le lot Control Panel :
+  #196 (catalogues d'icônes et de récompenses), puis #194.
+```
+
+```text
 Date: 2026-10-05 (lots 3 et 4 — #172 catalogues réels de l'éditeur de mobs, #195 couleurs au clic)
 Branche de départ: feature/169-special-mobs-boss @ 9af3143 (entrée précédente du même jour)
 Étape de départ: lot Control Panel vérifiable au navigateur, par ordre de priorité donné par

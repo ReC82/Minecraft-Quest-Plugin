@@ -3871,3 +3871,77 @@ TC-240 (nouveau) — entièrement vérifiable **au navigateur**, sans Minecraft.
 
 Rollback : `scripts/plugadmin/rollback.sh app` (aucun rollback plugin nécessaire : le JAR n'a pas
 changé dans ce lot).
+
+## 2026-10-05 (lot 5) - #202 : forum communautaire Discord synchronisé avec GitHub
+
+### Changement
+
+Nouveau service **autonome** (module Gradle `discord-sync`, unité systemd `lodyquests-discord`
+sur l'hôte AWS) : un sujet du forum Discord **bugs-et-suggestions** crée l'issue GitHub
+correspondante, reçoit son lien en réponse dans le sujet, et y voit annoncer les changements de
+statut. Les joueurs suivent leur signalement sans compte GitHub.
+
+### Action serveur
+
+**AUCUNE action sur le serveur Minecraft VeryGames.** Pas de JAR, pas de redémarrage, pas de
+fichier de monde, pas de configuration serveur. Ce service ne dépend ni de Paper, ni de
+`web-api`, ni du Control Panel, et ne peut provoquer aucun redémarrage Minecraft. Les annonces
+`#news` / `#soon` (issues #186 / #188) ne sont ni lues ni modifiées.
+
+### Sauvegarde préalable
+
+Sans objet pour le serveur de jeu. Côté AWS, `install.sh` sauvegarde l'application précédente
+sous `/opt/lodyquests-discord/releases/<horodatage>` (5 conservées) et ne touche jamais au
+fichier de secrets.
+
+### Déploiement / Exécution réelle
+
+- **Service installé, activé au démarrage et supervisé** sur l'hôte AWS :
+  `/etc/systemd/system/lodyquests-discord.service`, binaire
+  `/opt/lodyquests-discord/app/bin/discord-sync`, état
+  `/var/lib/lodyquests-discord/sync.db`, `Restart=always` / `RestartSec=120` /
+  `StartLimitIntervalSec=0`.
+- **Moitié GitHub validée pour de vrai**, par un test d'intégration exerçant le vrai client HTTP
+  contre le vrai dépôt (issue de test `TEST — synchronisation GitHub` **#206**) : création avec
+  les étiquettes `source:discord` / `type:bug` / `triage`, lien renvoyé, deux tours de plus et un
+  **redémarrage** sans doublon, édition du titre et du message **préservant une note de triage
+  réelle**, clôture `completed` → « Résolu », réouverture → « À trier », clôture `not_planned` →
+  « Refusé ». Les quatre tickets de test (#203, #204, #205, #206) sont **refermés** ; aucun autre
+  ticket n'a été touché.
+- **Constat mesuré, qui a changé la conception** : la liste des issues de GitHub
+  (`GET /issues?…`) **ne renvoie pas** une issue qui vient d'être créée — cinq lectures
+  consécutives l'ont manquée, toutes variantes de tri et de filtre confondues — alors que
+  `GET /issues/{numéro}` la renvoie immédiatement. Se fier à la liste seule pour réconcilier
+  aurait produit des doublons. La réconciliation combine donc relevé, **balayage borné des
+  numéros voisins** par accès unitaire (point de départ figé au moment de la tentative) et
+  **délai de prudence de 3 minutes** pendant lequel le service attend au lieu de recréer.
+- **Tests** : `:discord-sync:test` → **74 tests, 0 échec** (le test d'intégration réseau est
+  désactivé par défaut et ne s'exécute que sur `-DdiscordSyncLiveGitHub=true`). Deux défauts ont
+  été trouvés par ces tests et corrigés dans le code, pas contournés dans les assertions : une
+  neutralisation de marqueur HTML qui laissait subsister la séquence `<!--`, et une anomalie de
+  synchronisation de contenu absente du bilan de tour.
+
+### État réel à ce jour — la moitié Discord n'est PAS vérifiable
+
+Le fichier de secrets `~/.config/lodyquests-discord/bot.env` contient, **sous la clé
+`DISCORD_BOT_TOKEN`, un jeton GitHub**, et **n'a aucune clé `GITHUB_TOKEN`**. Il n'y a donc
+**aucun jeton de bot Discord configuré** : le service ne peut ni lire le forum, ni publier de
+lien, ni poser de tag. Vérifié : l'API Discord refuse la valeur présente (`401`), et la même
+valeur authentifie sur GitHub.
+
+Le service le dit lui-même dans son journal, sans jamais afficher de secret, et redémarre toutes
+les deux minutes en attendant la correction. **Deux lignes à corriger** dans le fichier :
+renommer la clé actuelle en `GITHUB_TOKEN`, et mettre le vrai jeton du bot Discord sous
+`DISCORD_BOT_TOKEN` (portail développeurs → application → onglet « Bot » → « Reset Token »).
+Puis `discord-sync check` : le service repart seul.
+
+**Le service installé ne prouve rien du fonctionnement de la synchronisation Discord** : seule la
+moitié GitHub a été validée sur des données réelles.
+
+### Validation
+
+TC-241 (nouveau) — premier signalement réel depuis le forum, à faire **après** la correction des
+deux lignes de configuration.
+
+Rollback : `sudo systemctl disable --now lodyquests-discord` ; l'application précédente est sous
+`/opt/lodyquests-discord/releases/`. Aucun rollback plugin ni serveur n'est concerné.

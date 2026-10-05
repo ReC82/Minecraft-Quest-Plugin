@@ -46,6 +46,8 @@ existant, cette bible signale l'écart et suit le code.
 18. [Dépannage](#18-dépannage)
 19. [Synchronisation avec docs-site](#19-synchronisation-avec-docs-site)
 20. [Maintenance](#20-maintenance)
+21. [Storylines](#21-storylines)
+22. [Forum communautaire Discord ↔ GitHub](#22-forum-communautaire-discord--github)
 
 ---
 
@@ -2059,3 +2061,89 @@ Définitions chargées depuis `plugins/RPGQuest/stories/` (un exemple `main_stor
 | `/rpgadmin story resetwithquests <joueur> <storyId>` | Comme `reset`, **et** réinitialise (via `QuestProgressEngine#resetQuest`) chacune des quêtes que cette Story référence — jamais les autres quêtes du joueur, jamais un `... all`. Outil ciblé pour rejouer un scénario de test. | oui (suppression) |
 
 À savoir : **seule branche de `/rpgadmin` utilisable depuis la console** (cible un joueur passé en argument, jamais la position de l'exécutant) ; le joueur ciblé peut être hors ligne pour ces quatre sous-commandes (résolution asynchrone, profil créé au besoin par `start`) — seul le déclenchement effectif de la première quête attend une connexion réelle. Ces commandes restent strictement admin/debug — l'UX finale ne repose sur aucune commande joueur. Feedback joueur envoyé dans le **chat** (`messages.yml` → `story:`, jamais Title/Subtitle comme les quêtes, pour éviter une course d'affichage avec le Title « Quête commencée » que `QuestProgressEngine#accept` affiche déjà à chaque démarrage de quête).
+
+---
+
+## 22. Forum communautaire Discord ↔ GitHub
+
+Référence complète : [docs/discord-sync/README.md](discord-sync/README.md).
+
+Un membre ouvre un sujet dans le forum **bugs-et-suggestions** du Discord ; un service crée
+l'issue GitHub correspondante, **répond dans le sujet avec son lien**, et y annonce ensuite les
+changements de statut. Les joueurs suivent leur signalement **sans compte GitHub** (issue #202).
+
+**Service totalement séparé du jeu.** Module Gradle `discord-sync`, unité systemd
+`lodyquests-discord` sur l'hôte AWS, base SQLite propre
+(`/var/lib/lodyquests-discord/sync.db`). Aucune dépendance vers Paper, `web-api` ou le Control
+Panel ; **aucun redémarrage Minecraft n'est jamais provoqué** ; les annonces `#news` / `#soon`
+(issues #186 / #188) ne sont ni lues ni modifiées.
+
+### Ce qui circule
+
+| Sens | Contenu | Autorité |
+|---|---|---|
+| Discord → GitHub | titre et **premier message** du sujet, auteur, lien du sujet, références des pièces jointes | Discord fait autorité sur le **contenu** |
+| GitHub → Discord | changements de **statut** annoncés dans le sujet, et tag de statut s'il existe | GitHub fait autorité sur le **statut** |
+
+Les messages **suivants** de la discussion restent sur Discord. Les commentaires GitHub ne sont
+**pas** relayés : ce sont des notes techniques internes.
+
+### Statuts annoncés
+
+| État GitHub | Statut |
+|---|---|
+| ouverte, `status:needs-testing` | À tester |
+| ouverte, `status:in-progress` | En cours |
+| ouverte, sinon | À trier |
+| fermée `completed` | **Résolu** — ne veut **pas** dire « déployé sur le serveur » |
+| fermée `not_planned` | **Refusé** — distinct de « Résolu », délibérément |
+| fermée `duplicate` | Doublon |
+
+### Étiquettes GitHub posées
+
+`source:discord` (origine), `type:bug` ou `type:request` (déduit des tags Bug/Suggestion du
+sujet, **suggestion par défaut** si aucun tag connu), et `triage`. Une issue **sans** marqueur
+d'origine n'est jamais retouchée rétroactivement.
+
+### Commandes d'exploitation
+
+| Commande | Effet |
+|---|---|
+| `discord-sync check` | diagnostic **en lecture seule** : configuration, permissions, salon, dépôt. N'écrit **rien**. |
+| `discord-sync adopt <idSujet> [raison]` | prise en charge **explicite** d'un sujet existant (aucun import massif sans ce geste) |
+| `discord-sync notice` | texte à coller dans les consignes du forum, adapté à la visibilité réelle du dépôt |
+| `discord-sync status` | état local : repère temporel, sujets adoptés, appariements |
+| `discord-sync once` | un seul tour de synchronisation, puis sortie |
+
+Binaire installé en `/opt/lodyquests-discord/app/bin/discord-sync` par
+`scripts/lodyquests-discord/install.sh` (idempotent). Journal :
+`journalctl -u lodyquests-discord -f`.
+
+### Fichier de configuration
+
+`~/.config/lodyquests-discord/bot.env`, `chmod 600`, **hors dépôt et jamais versionné**. Modèle
+commenté : `scripts/lodyquests-discord/bot.env.example`. Clés : `DISCORD_GUILD_ID`,
+`DISCORD_FORUM_CHANNEL_ID`, `DISCORD_BOT_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_TOKEN`.
+Facultatif : `LODYQUESTS_SYNC_DB`, `LODYQUESTS_POLL_SECONDS`, `LODYQUESTS_DRY_RUN`.
+
+La **forme** des deux jetons est vérifiée avant tout appel réseau : un jeton Discord a trois
+parties séparées par des points, un jeton GitHub porte un préfixe `ghp_` / `github_pat_`. Une
+inversion est donc nommée explicitement au lieu de produire un « 401 Unauthorized »
+inexploitable. Aucune valeur de secret n'apparaît jamais dans un message, un journal ou un
+rapport.
+
+Permissions Discord attendues, volontairement minimales : voir le salon, lire l'historique,
+écrire dans les fils, et — facultatif, pour les tags — gérer les fils. **Jamais Administrateur** ;
+`check` le signale comme un défaut si la permission est accordée.
+
+### Garanties
+
+- **Un sujet = une issue**, y compris après redémarrage, événement dupliqué ou réponse HTTP
+  perdue : l'intention de créer est enregistrée **avant** l'appel réseau, et une création au
+  résultat incertain est **réconciliée**, jamais rejouée à l'aveugle.
+- **Les notes de triage écrites sur GitHub ne sont jamais écrasées** : le service ne réécrit que
+  l'intérieur d'une zone délimitée du corps d'issue, et refuse d'y toucher si les marqueurs ont
+  disparu.
+- **Le contenu des membres est une donnée, jamais une commande** : mentions et références de
+  tickets neutralisées, marqueurs inoffensifs, taille bornée, aucune notification possible.
+- **Aucun import massif** des anciens sujets : un repère temporel est posé au premier démarrage.

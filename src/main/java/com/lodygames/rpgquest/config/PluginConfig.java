@@ -19,7 +19,8 @@ public record PluginConfig(
         RandomSafeArrivalConfig randomSafeArrival,
         HubConfig hub,
         TravelConfig travel,
-        StarterToolKitConfig starterToolKit
+        StarterToolKitConfig starterToolKit,
+        WildConfig wild
 ) {
 
     /**

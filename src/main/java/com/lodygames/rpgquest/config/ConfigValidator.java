@@ -47,9 +47,10 @@ public final class ConfigValidator {
         HubConfig hub = validateHub(section);
         TravelConfig travel = validateTravel(section);
         StarterToolKitConfig starterToolKit = validateStarterToolKit(section);
+        WildConfig wild = validateWild(section);
         return new PluginConfig(
                 debug, locale, database, resourcePack, dialogue, journal, adminFlatten, claims, progression,
-                backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel, starterToolKit);
+                backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel, starterToolKit, wild);
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {
@@ -815,6 +816,77 @@ public final class ConfigValidator {
         }
 
         return new StarterToolKitConfig(enabled, List.copyOf(items));
+    }
+
+    /** Espèces diurnes par défaut (issue #168) : les hostiles de surface les plus courants. */
+    private static final List<org.bukkit.entity.EntityType> DEFAULT_WILD_DAYLIGHT_TYPES = List.of(
+            org.bukkit.entity.EntityType.ZOMBIE, org.bukkit.entity.EntityType.SKELETON,
+            org.bukkit.entity.EntityType.SPIDER, org.bukkit.entity.EntityType.CREEPER);
+
+    /**
+     * Section {@code wild:} (issue #168). Absente = valeurs par défaut ci-dessous, qui n'activent
+     * les règles que pour le seul {@code travel.wild-world} (liste {@code worlds} vide) : jamais
+     * d'effet global, jamais sur le Hub ni les Claims.
+     */
+    private static WildConfig validateWild(ConfigurationSection section) throws ConfigValidationException {
+        ConfigurationSection wild = section.getConfigurationSection("wild");
+        if (wild == null) {
+            return defaultWild();
+        }
+        List<String> worlds = new ArrayList<>();
+        for (String raw : wild.getStringList("worlds")) {
+            if (raw == null || raw.isBlank()) {
+                throw new ConfigValidationException("« wild.worlds » contient une entrée vide.");
+            }
+            worlds.add(raw.trim());
+        }
+        boolean sunImmunity = wild.getBoolean("sun-immunity", true);
+        boolean aggressiveSpiders = wild.getBoolean("aggressive-spiders", true);
+
+        ConfigurationSection ds = wild.getConfigurationSection("daylight-spawns");
+        WildConfig.DaylightSpawnConfig spawns;
+        if (ds == null) {
+            spawns = defaultWild().daylightSpawns();
+        } else {
+            boolean enabled = ds.getBoolean("enabled", true);
+            int periodTicks = positiveInt(ds, "wild.daylight-spawns.period-ticks", 100);
+            int attempts = positiveInt(ds, "wild.daylight-spawns.attempts-per-player", 6);
+            int minDistance = positiveInt(ds, "wild.daylight-spawns.min-distance", 24);
+            int maxDistance = positiveInt(ds, "wild.daylight-spawns.max-distance", 48);
+            if (maxDistance <= minDistance) {
+                throw new ConfigValidationException(
+                        "« wild.daylight-spawns.max-distance » doit être strictement supérieur à min-distance, "
+                                + "valeurs trouvées : " + maxDistance + " <= " + minDistance);
+            }
+            int maxPerPlayer = positiveInt(ds, "wild.daylight-spawns.max-per-player", 12);
+            int maxPerWorld = positiveInt(ds, "wild.daylight-spawns.max-per-world", 120);
+            List<org.bukkit.entity.EntityType> types = new ArrayList<>();
+            for (String raw : ds.getStringList("types")) {
+                if (raw == null || raw.isBlank()) {
+                    throw new ConfigValidationException("« wild.daylight-spawns.types » contient une entrée vide.");
+                }
+                org.bukkit.entity.EntityType type;
+                try {
+                    type = org.bukkit.entity.EntityType.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+                } catch (IllegalArgumentException e) {
+                    throw new ConfigValidationException(
+                            "« wild.daylight-spawns.types » contient une entité inconnue : \"" + raw + "\".");
+                }
+                types.add(type);
+            }
+            if (types.isEmpty()) {
+                types.addAll(DEFAULT_WILD_DAYLIGHT_TYPES);
+            }
+            spawns = new WildConfig.DaylightSpawnConfig(enabled, periodTicks, attempts, minDistance,
+                    maxDistance, maxPerPlayer, maxPerWorld, List.copyOf(types));
+        }
+        return new WildConfig(List.copyOf(worlds), sunImmunity, aggressiveSpiders, spawns);
+    }
+
+    private static WildConfig defaultWild() {
+        return new WildConfig(List.of(), true, true,
+                new WildConfig.DaylightSpawnConfig(true, 100, 6, 24, 48, 12, 120,
+                        DEFAULT_WILD_DAYLIGHT_TYPES));
     }
 
     private static StarterToolKitConfig defaultStarterToolKit() {

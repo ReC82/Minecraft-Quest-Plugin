@@ -291,3 +291,28 @@ admin:
     blocks-per-tick: 4000
     # Aucune zone interdite par défaut ; noms de mondes exacts.
     forbidden-worlds: []
+
+# Règles des mondes d'exploration (issue #168) — créatures hostiles de jour comme de nuit.
+# N'affecte QUE les mondes listés ci-dessous ; « worlds » vide = le seul travel.wild-world.
+# Le Hub reste sans mobs hostiles et les protections de Claims sont inchangées.
+wild:
+  # Mondes concernés. Vide -> travel.wild-world uniquement. Plusieurs mondes Wild possibles.
+  worlds: []
+  # Annule UNIQUEMENT l'embrasement par la lumière du jour. Les dégâts de feu, de lave et de
+  # combat restent strictement normaux (ce n'est pas une immunité au feu).
+  sun-immunity: true
+  # En journée, une araignée vanilla est neutre : lui redonner une cible valide à portée.
+  aggressive-spiders: true
+  # Complément DIURNE au spawn vanilla (qui refuse la surface éclairée). La nuit, rien n'est
+  # ajouté : les apparitions nocturnes restent celles du jeu, jamais doublées.
+  daylight-spawns:
+    enabled: true
+    period-ticks: 100        # une passe toutes les 5 s (jamais une tâche par mob)
+    attempts-per-player: 6   # tentatives par passe ; une seule apparition retenue au maximum
+    min-distance: 24         # jamais dans le dos immédiat du joueur
+    max-distance: 48         # reste dans les chunks déjà chargés (aucune génération forcée)
+    max-per-player: 12       # plafond d'hostiles comptés autour d'un joueur
+    max-per-world: 120       # plafond global par monde
+    # Espèces de surface. Les espèces à conditions spéciales (PHANTOM, WARDEN...) sont
+    # volontairement absentes : elles demandent un traitement explicite, pas un spawn de masse.
+    types: [ZOMBIE, SKELETON, SPIDER, CREEPER]

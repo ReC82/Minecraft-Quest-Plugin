@@ -581,6 +581,12 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin, travelBeaconService.listener()));
         registry.start(new PlayerListenerService(plugin, travelBeaconService.protectionListener(travelMaintenanceMode)));
 
+        // Issue #168 : hostiles de jour comme de nuit dans les mondes Wild configurés, immunité au
+        // soleil (jamais aux autres dégâts de feu) et araignées agressives en pleine lumière.
+        // Strictement limité aux mondes Wild : Hub et Claims inchangés.
+        registry.start(new com.lodygames.rpgquest.wild.WildHostileRulesService(plugin,
+                () -> configService.current().wild(), () -> configService.current().travel().wildWorld()));
+
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
                 configService.current().dialogue().allowedCommands());

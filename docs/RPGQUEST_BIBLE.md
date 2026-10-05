@@ -226,7 +226,19 @@ Voir aussi `docs/TRAVEL.md` section « Réseau de voyage / bornes » pour le dé
 | `/rpgadmin travel village enable\|disable <id>` | (Dés)active un centre sans changer son `id` ni ses coordonnées — une désactivation ne casse jamais une référence déjà exposée dans le menu. | oui |
 | `/rpgadmin travel village list` | Liste les centres configurés (id, nom, monde, actif). | non |
 | `/rpgadmin travel diagnose [monde]` | Diagnostic lecture seule (#153/#156) : comptes waypoints/bornes, instances Hub sans borne appariée, structures inaccessibles. | non |
-| `/rpgadmin travel repair waypoint\|beacon <id> confirm` | Déplace une structure inaccessible (#153) vers un emplacement accessible proche ; id/nom/découvertes conservés. | oui |
+| `/rpgadmin travel repair waypoint\|beacon <id> confirm` | **Déplace** une structure inaccessible (#153) vers un emplacement accessible proche ; id/nom/découvertes conservés. | oui |
+| `/rpgadmin travel restore waypoint <id> confirm [force]` | (#191) **Repose les blocs manquants sans déplacer** le waypoint — à utiliser après une destruction. Conserve id, nom, découvertes et borne appariée ; ne crée aucun doublon. Un emplacement occupé par une construction tierce est signalé en conflit et **laissé intact** sauf `force` explicite. Ne pas confondre avec `repair`, qui relocalise. | oui (blocs du monde) |
+| `/rpgadmin travel maintenance <on\|off>` | (#191) Autorise temporairement, **pour soi uniquement**, la casse des blocs de waypoints/bornes. Exige la permission dédiée `rpgquest.admin.travel.maintenance` (`default: false`, **jamais accordée par le simple statut OP**) ; expire d'elle-même au bout de 5 minutes. Sans argument : affiche l'état courant. | non (mémoire, perdu au redémarrage — défaut sûr) |
+
+**Protection des structures (issue #191)** — casser le bouton, le bloc d'or, le support ou un
+panneau latéral d'un waypoint, ainsi que les blocs d'une borne diamant, est refusé pour **tout le
+monde** : explosions, pistons et perte de support inclus. Il n'existe plus de bypass implicite par
+statut OP — c'était la cause du défaut signalé en jeu, où un compte opérateur détruisait la
+structure entière sans geste délibéré. Pour une maintenance réelle, il faut **deux** choses :
+la permission dédiée `rpgquest.admin.travel.maintenance` (`default: false`) **et**
+`/rpgadmin travel maintenance on`, qui expire tout seul. `/rpgadmin travel diagnose` signale
+désormais aussi les structures **abîmées** (blocs manquants), distinctes des structures
+*inaccessibles* — une structure cassée restait « accessible », elle n'était donc pas détectée.
 
 À savoir : dans le **Hub**, un waypoint (modèle or) **et** une borne distincte s'y génèrent
 désormais automatiquement par instance de biome (issue #149, réutilise #124) — ces commandes
@@ -1147,7 +1159,36 @@ Son absence après un redémarrage signale que `world_hub` n'a pas été détect
 
 ### Mondes futurs (`wild`, claims...) — état réel
 
-Aucune trace dans le code actuel (`RpgAdminCommand`, `WorldService`) d'un monde `wild` prédéfini ou d'un traitement spécial par nom de monde autre que `hub.world` : `/rpgadmin world create <name>` crée un monde générique en environnement `NORMAL`, sans distinction. Un monde `wild` mentionné dans `docs-site/worlds.html` (exemple d'usage avec `worldportal`) est un **exemple d'utilisation de la fonctionnalité générique**, pas un monde livré ou codé en dur — à traiter comme *Prévu / exemple*, pas comme une fonctionnalité dédiée implémentée.
+Aucune trace dans le code actuel (`RpgAdminCommand`, `WorldService`) d'un monde `wild` prédéfini ou d'un traitement spécial par nom de monde autre que `hub.world` : `/rpgadmin world create <name>` crée un monde générique en environnement `NORMAL`, sans distinction. Un monde `wild` mentionné dans `docs-site/worlds.html` (exemple d'usage avec `worldportal`) est un **exemple d'utilisation de la fonctionnalité générique**, pas un monde livré ou codé en dur — à traiter comme *Prévu / exemple*, pas comme une fonctionnalité dédiée implémentée. **Depuis l'issue #168**, une exception ciblée existe : la section `wild:` de `config.yml` (ci-dessous) applique des règles hostiles aux mondes qu'elle liste explicitement.
+
+### Créatures hostiles de jour dans le Wild (issue #168)
+
+Vérifié dans `src/main/java/com/lodygames/rpgquest/wild/WildHostileRulesService.java` et la section
+`wild:` de `config.yml`. **Ne s'applique qu'aux mondes listés** (`wild.worlds`, vide = le seul
+`travel.wild-world`) : le Hub reste sans mob hostile, les protections de Claims sont inchangées, et
+tout monde non listé conserve exactement les règles vanilla. Plusieurs mondes Wild sont supportés
+sans changement de code.
+
+Trois mécanismes **distincts** — le ticket demandait explicitement de ne pas confondre « ne plus
+brûler » et « apparaître de jour » :
+
+| Mécanisme | Clé | Comportement |
+|---|---|---|
+| Immunité au soleil | `wild.sun-immunity` | Annule **uniquement** l'embrasement spontané par la lumière du jour (l'`EntityCombustEvent` qui n'est ni `…ByBlock` ni `…ByEntity`). Feu, lave, flèches enflammées et tous les dégâts de combat restent **strictement normaux** : aucun `EntityDamageEvent` n'est touché. Monstres uniquement, jamais les animaux passifs. |
+| Apparitions diurnes | `wild.daylight-spawns.*` | Le spawn vanilla refuse la surface éclairée ; on le **complète de jour seulement**, par une passe périodique autour des joueurs. La nuit, le service ne fait **rien** : les apparitions nocturnes restent celles du jeu, jamais doublées. **Aucune nuit permanente simulée** — le cycle jour/nuit réel est intact. |
+| Araignées agressives | `wild.aggressive-spiders` | En journée, une araignée vanilla est neutre : on lui réattribue une cible valide à portée **seulement si elle n'en a pas déjà une** (jamais de vol de cible), et jamais sur un joueur exempté (créatif, spectateur, invulnérable, mort). |
+
+**Bornes de coût et de sûreté** : une seule tâche périodique pour tout le serveur (jamais une tâche
+par mob), `attempts-per-player` tentatives par passe pour **au plus une** apparition retenue,
+plafonds `max-per-player` et `max-per-world`, anneau `min-distance`/`max-distance` autour du joueur,
+et **aucune génération de chunk** (une tentative dans un chunk non chargé est simplement
+abandonnée). Les créatures ajoutées passent par `World#spawnEntity`, donc un `CreatureSpawnEvent`
+normal : les mobs spéciaux (#169), les règles du Hub et les protections de Claims continuent de
+s'appliquer et peuvent annuler l'apparition. Elles ne sont pas marquées persistantes — le despawn
+naturel s'applique.
+
+Les espèces à conditions spéciales (`PHANTOM`, `WARDEN`…) sont **volontairement absentes** de
+`types` par défaut : elles exigent un traitement explicite, pas un spawn de masse.
 
 ### Waypoints par instance de biome (issue #124)
 
@@ -1573,6 +1614,31 @@ Persistance : `player_entitlements`, `backpacks`, `backpack_overflow`, `backpack
 **Piège constaté en test réel** (VeryGames, WorldEdit 7.4.1) : la reconnaissance par PDC protège contre un *nom* usurpé, mais pas contre WorldEdit lui-même — WorldEdit reconnaît sa propre wand par **type d'objet** (`wand-item` dans sa config, `minecraft:wooden_axe` par défaut), sans se soucier du PDC. La wand de `/rpgadmin zone wand` était initialement une hache en bois : WorldEdit la traitait donc *aussi* comme la sienne (ses propres messages « Première/Seconde position définie », sa propre sélection, événement parfois annulé avant que RPGQuest ne le voie) et la sélection RPGQuest n'était jamais enregistrée. Corrigé en donnant à chaque wand RPGQuest un matériau qu'aucun plugin tiers connu (WorldEdit inclus) n'utilise par défaut (tige de blaze pour `zone`/`portal`, houe en bois pour `claim`) — règle à respecter pour tout futur outil de sélection du projet.
 
 WorldEdit est installé en production VeryGames uniquement pour la **préparation manuelle de terrain par un administrateur** (voir [VERYGAMES.md](deployment/VERYGAMES.md)), en dehors de toute commande RPGQuest. Cette section reste volontairement minimale — pour la documentation complète, se référer à la documentation officielle WorldEdit.
+
+### Hache du kit interceptée par WorldEdit (issue #192) — correctif de **configuration serveur**
+
+Symptôme en jeu : casser une bûche avec la **hache en bois du kit** (#26) affiche « Première position définie en (…) » et ne casse pas le bloc.
+
+Cause, dans le prolongement direct du piège documenté juste au-dessus : WorldEdit reconnaît sa wand **par type d'objet** (`wand-item`, `minecraft:wooden_axe` par défaut) et ignore le PersistentDataContainer. Le kit, lui, doit conserver ses quatre outils en bois (exigence #26) : la hache de gameplay et la wand WorldEdit sont donc le même matériau, et **aucun correctif côté plugin RPGQuest ne peut les distinguer** de façon fiable (l'interception a lieu dans le listener de WorldEdit).
+
+**`/toggleeditwand` n'est pas la solution — et c'est pourquoi « ça ne change rien ».** Vérifié par RCON sur le DEV (WorldEdit `7.4.1`) : cette commande ne fait plus qu'**afficher un rappel**, son aide répond littéralement « Remind the user that the wand is now a tool and can be unbound with `/tool none` ». Depuis WorldEdit 7.3+, la wand est un *tool* lié à l'objet tenu. Conserver ce réflexe mène à croire le problème contourné alors que rien n'a changé.
+
+| Piste | Effet réel | Verdict |
+|---|---|---|
+| `/toggleeditwand` | affiche un rappel, ne délie rien (7.4.1) | ❌ ne corrige rien |
+| `/tool none` (hache en main) | délie la wand **pour ce joueur** | ⚠️ par joueur, à refaire — rejeté par le ticket (« ne pas demander au joueur de contourner à chaque connexion ») |
+| `wand-item` ≠ hache en bois | la hache de gameplay n'est **plus jamais** une wand, pour tout le monde | ✅ correctif retenu |
+
+**Correctif à appliquer** (hors dépôt : configuration d'un plugin tiers) :
+
+1. éditer `plugins/WorldEdit/config.yml` sur le serveur → `wand-item: minecraft:golden_axe`
+   (n'importe quel matériau absent de `starter-tool-kit.items` ; la hache en or n'est dans aucun kit) ;
+2. `/worldedit reload` (ou redémarrage) ;
+3. vérifier : la hache en bois du kit casse une bûche normalement, **y compris sur un compte administrateur** ; `//wand` donne désormais une hache en or et la sélection WorldEdit reste pleinement disponible pour l'administration (`/tool selwand` permet aussi de lier explicitement l'objet tenu).
+
+Aucune permission OP n'est retirée, aucune protection de blocs n'est assouplie : Hub, claims, waypoints et bornes gardent exactement leurs règles.
+
+> **Pourquoi ce n'est pas automatisé** : `scripts/deploy-verygames.sh` refuse par conception tout fichier d'un autre plugin (liste blanche limitée au JAR RPGQuest et à `RPGQuest/…`). Ce changement reste donc une opération manuelle assumée, à faire une fois, et à refaire après une réinstallation de WorldEdit.
 
 ### `//wand` (ou `/worldedit version`)
 Type : Plugin externe (WorldEdit `7.4.1`)

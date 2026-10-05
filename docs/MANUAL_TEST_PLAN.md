@@ -2067,6 +2067,105 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-234 — Protection et réparation des structures de voyage (issue #191, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `TravelMaintenanceMode`, les deux écouteurs de protection
+    (waypoint + borne diamant), `/rpgadmin travel maintenance`, `/rpgadmin travel diagnose`
+    (section « structures abîmées »), `/rpgadmin travel restore waypoint`.
+-   **Préconditions :** JAR de cette session déployé **et serveur redémarré** (la permission
+    `rpgquest.admin.travel.maintenance` est déclarée dans `plugin.yml`). Un waypoint connu et une
+    borne diamant accessibles. Prévoir **deux comptes** : un compte OP et un compte joueur ordinaire.
+-   **Scénario principal — la protection (regrouper sur un seul waypoint) :**
+    1.  Avec le **compte OP** (celui du signalement), tenter de casser successivement : le bouton,
+        le bloc d'or, le support en pierre, puis un panneau latéral → **chaque casse doit être
+        refusée**. C'est le cœur du correctif : avant, l'OP détruisait tout.
+    2.  Même tentative avec le **compte joueur ordinaire** → refusée aussi.
+    3.  Casser le **support** sous le bloc d'or → refusé (le bouton/panneau ne doit pas tomber).
+    4.  Faire exploser un creeper / de la TNT à côté → aucun bloc de la structure ne disparaît.
+    5.  Pousser la structure avec un piston → refusé.
+    6.  Répéter les points 1 et 4 sur une **borne diamant** → même protection.
+-   **Scénario maintenance explicite :**
+    7.  Avec l'OP, `/rpgadmin travel maintenance on` → doit **refuser** (permission dédiée absente,
+        volontairement non accordée aux OP).
+    8.  Accorder `rpgquest.admin.travel.maintenance` au compte de test, puis **sans** activer le
+        mode, retenter une casse → toujours refusée.
+    9.  `/rpgadmin travel maintenance on` puis casser le bouton → **autorisé**.
+    10. `/rpgadmin travel maintenance off` → la casse est de nouveau refusée immédiatement.
+    11. Laisser passer 5 minutes après un `on` sans rien faire, puis retenter → refusée (expiration).
+-   **Scénario réparation (enchaîner juste après le point 9, structure déjà cassée) :**
+    12. `/rpgadmin travel diagnose` → le waypoint doit apparaître dans « structures abîmées » avec
+        la liste des blocs manquants.
+    13. Noter le **nom** du waypoint et vérifier qu'il est **déjà découvert** par le compte de test.
+    14. `/rpgadmin travel restore waypoint <id> confirm` → structure reposée **à la même position**,
+        avec le même nom sur les panneaux ; `/rpgadmin travel diagnose` ne le signale plus.
+    15. Vérifier que la découverte du joueur est **conservée** (menu de voyage) et qu'**aucun second
+        waypoint** n'est apparu dans le biome.
+    16. Conflit : casser le bloc d'or, poser un bloc quelconque à sa place, puis
+        `restore … confirm` → doit **refuser** en nommant le conflit, sans rien écraser ;
+        `restore … confirm force` doit alors passer.
+-   **Reset :** `/rpgadmin travel maintenance off`. Aucune donnée à réinitialiser (aucune
+    suppression d'enregistrement n'intervient dans ce scénario).
+-   **Couverture automatisée :** `WaypointProtectionListenerTest` (reproduit le défaut :
+    `rpgquest.admin.world` seul ne casse plus rien ; permission dédiée seule non suffisante ;
+    maintenance explicite autorisée ; OP incapable d'activer le mode ; désactivation immédiate),
+    `WaypointServiceTest` (structure intacte, destruction détectée bloc par bloc, restauration sur
+    place conservant id/nom/position/découvertes sans doublon, refus de conflit sauf `force`).
+-   **Limites :** l'expiration au bout de 5 minutes (point 11) n'est pas couverte automatiquement
+    (dépend de l'horloge réelle) ; la perte de support et les pistons sont vérifiés au niveau de
+    l'événement Bukkit, leur comportement physique réel reste à constater en jeu.
+
+### TC-235 — Hostiles de jour dans le Wild (issue #168, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `WildHostileRulesService` et la section `wild:` de `config.yml`.
+-   **Préconditions :** JAR déployé et serveur redémarré. Être en **survie** dans le monde Wild
+    (`travel.wild-world`), en surface dégagée. Les règles ne s'appliquent qu'aux mondes listés.
+-   **Scénario principal :**
+    1.  `/time set noon`, rester quelques minutes en surface exposée → des hostiles doivent
+        **apparaître** à distance (24 à 48 blocs par défaut), pas uniquement dans les grottes.
+    2.  Vérifier qu'un zombie/squelette **ne prend pas feu** au soleil.
+    3.  Vérifier que le feu et la lave **blessent toujours** normalement ces mêmes créatures
+        (les pousser dans du feu / de la lave) — l'immunité ne doit concerner que le soleil.
+    4.  Observer une **araignée en plein jour** : elle doit acquérir une cible et attaquer.
+        Tester aussi une araignée **déjà présente** au passage nuit → jour.
+    5.  `/time set midnight` → les apparitions nocturnes restent normales, **sans surnombre
+        anormal** (pas de double génération).
+    6.  Rester sur place longtemps et vérifier que la population reste bornée (plafonds
+        `max-per-player` / `max-per-world`), sans chute de TPS (`/tps`).
+    7.  Aller dans le **Hub** : aucun mob hostile ne doit apparaître. Dans un **claim**, les
+        protections restent inchangées.
+    8.  Vérifier qu'un PNJ Citizens n'est pas ciblé/altéré, et qu'en créatif/spectateur les
+        araignées ne prennent pas le joueur pour cible.
+-   **Reset :** `/time set day`, ou `wild.daylight-spawns.enabled: false` + `/rpgquest reload`.
+-   **Couverture automatisée :** `WildHostileRulesServiceTest` (périmètre : monde Wild uniquement,
+    repli sur `travel.wild-world`, plusieurs mondes Wild ; soleil annulé pour un monstre dans le
+    Wild ; **feu/lave et attaquant enflammé jamais annulés** ; hors Wild inchangé ;
+    `sun-immunity: false` rend le comportement vanilla ; animal passif jamais protégé).
+-   **Limites assumées :** MockBukkit ne simule ni le spawn naturel, ni la ligne de vue, ni l'IA de
+    ciblage. **Les points 1, 4 et 6 n'ont aucune couverture automatisée exécutable** et sont
+    entièrement `PENDING MANUAL VALIDATION` — un test vert ici ne vaut pas validation du spawn réel
+    ni de l'agressivité réelle.
+
+### TC-236 — Hache du kit utilisable dans le Wild (issue #192, configuration serveur)
+
+-   **Fonctionnalité testée :** configuration **WorldEdit** (`wand-item`), pas de code RPGQuest.
+-   **Préconditions :** `plugins/WorldEdit/config.yml` → `wand-item: minecraft:golden_axe` puis
+    `/worldedit reload` (voir `docs/RPGQUEST_BIBLE.md` §14). Sans cette modification, le test
+    échoue par conception — **ne pas** considérer `/toggleeditwand` comme un contournement : en
+    WorldEdit 7.4.1 cette commande n'affiche qu'un rappel.
+-   **Scénario principal :**
+    1.  Avec le **compte administrateur** (celui du signalement), casser une bûche ordinaire dans le
+        Wild avec la hache en bois du kit → le bloc casse, **aucun message « position définie »**.
+    2.  Même test avec un **joueur ordinaire**.
+    3.  Se déconnecter/reconnecter, puis redémarrer le serveur → le conflit ne revient pas.
+    4.  `//wand` donne une hache **en or** ; la sélection WorldEdit fonctionne toujours avec elle.
+    5.  Vérifier que les protections restent effectives : tenter de casser un bloc de waypoint
+        (refusé, cf. TC-234) et un bloc du Hub.
+-   **Couverture automatisée :** aucune — c'est une configuration d'un plugin tiers, hors dépôt.
+    La version installée (`7.4.1`) et le comportement de `/toggleeditwand` ont été vérifiés par RCON
+    sur le DEV ; le reste est manuel par nature.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -2131,3 +2230,6 @@ le résumé de récompenses de TC-014).
 | TC-231 | Mobs spéciaux/boss : éditeur panel, tirage Wild, capacités #169/#171 (PENDING) | | | |
 | TC-232 | Zombie fissile équilibré, poursuite Cochon Creeper, création de profil #190 (PENDING) | | | |
 | TC-233 | Chaîne de paliers du Garde (claims TIER_1-5) #179 (PENDING) | | | |
+| TC-234 | Protection + réparation des structures de voyage #191 (PENDING) | | | |
+| TC-235 | Hostiles de jour dans le Wild, immunité soleil, araignées #168 (PENDING) | | | |
+| TC-236 | Hache du kit vs WorldEdit #192 — config serveur (PENDING) | | | |

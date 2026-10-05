@@ -12,17 +12,24 @@ import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.ProgressionRepository;
+import com.lodygames.rpgquest.item.RpgItemKeys;
+import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.progression.ProgressionService;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,8 +61,11 @@ class ClaimWorldAccessGuardTest {
     private PlayerProfileRepository profileRepository;
     private PlayerVariableRepository variableRepository;
     private ClaimService claimService;
+    private YamlCustomItemRegistry customItemRegistry;
     private ClaimWorldAccessGuard guard;
     private final AtomicInteger teleportNowCalls = new AtomicInteger();
+    /** Destination réelle de la Pierre de retour ; vidée par un test pour simuler un spawn non résolu. */
+    private Optional<Location> hubReturnTarget = Optional.empty();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -86,7 +96,12 @@ class ClaimWorldAccessGuardTest {
         // contrôle asynchrone du garde s'achève dans la fenêtre de pumpUntil.
         variableRepository.get(new java.util.UUID(0, 0), "warmup").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        guard = new ClaimWorldAccessGuard(plugin, claimService, () -> CLAIMS_CONFIG,
+        customItemRegistry = new YamlCustomItemRegistry(tempDir.resolve("items"), plugin.getSLF4JLogger());
+        customItemRegistry.start();
+        hubReturnTarget = Optional.of(new Location(server.getWorld("world_hub"), 0, 64, 0));
+        ClaimReturnService returnService = new ClaimReturnService(plugin, customItemRegistry,
+                () -> hubReturnTarget);
+        guard = new ClaimWorldAccessGuard(plugin, claimService, returnService, () -> CLAIMS_CONFIG,
                 (player, portal) -> teleportNowCalls.incrementAndGet());
     }
 
@@ -133,16 +148,42 @@ class ClaimWorldAccessGuardTest {
      * donc jamais réévaluée dans une assertion) et échoue si le refus n'arrive pas.
      */
     private void awaitRefusal(PlayerMock player) throws Exception {
+        awaitMessageContaining(player, "réservé aux joueurs");
+    }
+
+    /** Même lecture destructive, pour un message de refus dont le motif n'est pas l'éligibilité. */
+    private void awaitMessageContaining(PlayerMock player, String needle) throws Exception {
         List<String> seen = new ArrayList<>();
         for (int i = 0; i < 400; i++) {
             server.getScheduler().performTicks(2);
             Thread.sleep(15);
             seen.addAll(drainMessages(player));
-            if (seen.stream().anyMatch(m -> m.contains("réservé aux joueurs"))) {
+            if (seen.stream().anyMatch(m -> m.contains(needle))) {
                 return;
             }
         }
-        org.junit.jupiter.api.Assertions.fail("message de refus jamais reçu ; messages : " + seen);
+        org.junit.jupiter.api.Assertions.fail("message « " + needle + " » jamais reçu ; messages : " + seen);
+    }
+
+    private boolean hasReturnStone(PlayerMock player) {
+        return Arrays.stream(player.getInventory().getContents())
+                .filter(Objects::nonNull)
+                .anyMatch(stack -> customItemRegistry.identify(stack)
+                        .map(RpgItemKeys.PIERRE_RETOUR::equals).orElse(false));
+    }
+
+    /** Remplit chaque emplacement de rangement jusqu'à ce qu'aucun objet ne puisse plus y entrer. */
+    private void fillInventory(PlayerMock player) {
+        for (int guardCount = 0; guardCount < 64 && player.getInventory().firstEmpty() >= 0; guardCount++) {
+            player.getInventory().setItem(player.getInventory().firstEmpty(), new ItemStack(Material.COBBLESTONE, 64));
+        }
+        assertEquals(-1, player.getInventory().firstEmpty(), "précondition : inventaire réellement plein");
+    }
+
+    private long droppedItemsInHub() {
+        return server.getWorld("world_hub").getEntities().stream()
+                .filter(entity -> entity instanceof org.bukkit.entity.Item)
+                .count();
     }
 
     @Test
@@ -187,7 +228,101 @@ class ClaimWorldAccessGuardTest {
         player.addAttachment(plugin, ClaimWorldAccessGuard.BYPASS_PERMISSION, true);
 
         assertTrue(guard.allowEntry(player, TO_CLAIMS));
-        assertTrue(drainMessages(player).isEmpty());
+        assertTrue(drainMessages(player).stream().noneMatch(m -> m.contains("réservé aux joueurs")),
+                "le bypass ne doit jamais être refusé");
+        // Le bypass dispense du contrôle d'éligibilité, pas du moyen de repartir (issue #22).
+        assertTrue(hasReturnStone(player), "un porteur du bypass reçoit tout de même sa Pierre de retour");
+    }
+
+    // ---- Issue #22 : on n'entre pas sans le moyen de repartir ------------------------------
+
+    @Test
+    void anEligiblePlayerGetsTheReturnStoneBeforeTheTeleportation() throws Exception {
+        PlayerMock player = addPlayer();
+        grantTierOne(player);
+
+        assertFalse(guard.allowEntry(player, TO_CLAIMS));
+        pumpUntil(() -> teleportNowCalls.get() >= 1, "téléportation relancée");
+
+        // L'objet doit être là AVANT le départ : le filet d'arrivée est un secours, pas le moyen
+        // normal d'obtenir la Pierre — c'est précisément ce qui a piégé le joueur le 05/10.
+        assertTrue(hasReturnStone(player), "Pierre de retour remise avant l'entrée");
+    }
+
+    @Test
+    void anAlreadyHeldStoneIsNeverDuplicatedOnEntry() throws Exception {
+        PlayerMock player = addPlayer();
+        grantTierOne(player);
+        player.getInventory().addItem(customItemRegistry.create(RpgItemKeys.PIERRE_RETOUR, 1).orElseThrow());
+
+        assertFalse(guard.allowEntry(player, TO_CLAIMS));
+        pumpUntil(() -> teleportNowCalls.get() >= 1, "téléportation relancée");
+
+        long stones = Arrays.stream(player.getInventory().getContents())
+                .filter(Objects::nonNull)
+                .filter(stack -> customItemRegistry.identify(stack)
+                        .map(RpgItemKeys.PIERRE_RETOUR::equals).orElse(false))
+                .count();
+        assertEquals(1, stones, "jamais de second exemplaire");
+    }
+
+    @Test
+    void anEligiblePlayerWithAFullInventoryIsRefusedAndToldWhy() throws Exception {
+        PlayerMock player = addPlayer();
+        grantTierOne(player);
+        fillInventory(player);
+
+        assertFalse(guard.allowEntry(player, TO_CLAIMS));
+        awaitMessageContaining(player, "inventaire est plein");
+
+        server.getScheduler().performTicks(5);
+        assertEquals(0, teleportNowCalls.get(),
+                "entrer sans pouvoir recevoir la Pierre de retour serait un aller simple");
+        assertFalse(hasReturnStone(player));
+        // Déposer l'objet au point de DÉPART ne garantirait rien et joncherait le Hub.
+        assertEquals(0, droppedItemsInHub(), "aucun objet laissé au sol au Hub par le contrôle préventif");
+    }
+
+    @Test
+    void aClaimOwnerWithAFullInventoryIsRefusedToo() throws Exception {
+        PlayerMock player = addPlayer();
+        grantTierOne(player);
+        World claimWorld = server.addSimpleWorld("world_for_claim");
+        assertEquals(ClaimService.CreateOutcome.CREATED, claimService.create(player, "main_" + player.getUniqueId(),
+                        new Location(claimWorld, 0, 60, 0), new Location(claimWorld, 4, 63, 4))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        server.getScheduler().performTicks(2);
+        fillInventory(player);
+
+        // Branche synchrone (propriétaire d'un claim) : la règle de retour s'y applique aussi.
+        assertFalse(guard.allowEntry(player, TO_CLAIMS), "même un propriétaire de claim ne part pas sans retour");
+        assertTrue(drainMessages(player).stream().anyMatch(m -> m.contains("inventaire est plein")));
+        assertEquals(0, teleportNowCalls.get());
+    }
+
+    @Test
+    void entryIsRefusedWhenTheHubReturnDestinationCannotBeResolved() throws Exception {
+        PlayerMock player = addPlayer();
+        grantTierOne(player);
+        hubReturnTarget = Optional.empty(); // spawn du village non résolu : la Pierre ne mènerait nulle part.
+
+        assertFalse(guard.allowEntry(player, TO_CLAIMS));
+        awaitMessageContaining(player, "retour depuis le monde des claims est indisponible");
+
+        server.getScheduler().performTicks(5);
+        assertEquals(0, teleportNowCalls.get(), "aucune entrée tant que le retour ne mène nulle part");
+    }
+
+    @Test
+    void aBypassHolderIsNeverRefusedEvenWithoutAnyWayBack() throws Exception {
+        PlayerMock player = addPlayer();
+        player.addAttachment(plugin, ClaimWorldAccessGuard.BYPASS_PERMISSION, true);
+        fillInventory(player);
+        hubReturnTarget = Optional.empty();
+
+        // Le bypass reste un contournement assumé : un administrateur n'est jamais bloqué à l'entrée.
+        assertTrue(guard.allowEntry(player, TO_CLAIMS));
+        assertFalse(hasReturnStone(player), "inventaire plein : rien ne peut être remis, et rien n'est imposé");
     }
 
     @Test

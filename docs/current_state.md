@@ -72,8 +72,19 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `dialogues/guard.yml` doit contenir la branche `crystal_hunt`, et un World-Portal `world_hub → claims`
   doit être configuré. Sans PNJ `guard`, `first_steps` et `crystal_hunt` sont indémarrables et
   `CLAIM_TIER_1` n'est jamais accordé. Toute validation #21/#22 se fait avec un compte **non opéré**
-  (`rpgquest.admin.world`, défaut `op`, contourne les deux gardes — décisions journalisées
-  `[claims-access]` / `[claims-safety]`). Voir `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b.
+  (`rpgquest.admin.world`, défaut `op`, contourne le contrôle d'éligibilité et n'est jamais renvoyé
+  — décisions journalisées `[claims-access]` / `[claims-safety]` / `[claims-retour]`). Voir
+  `docs/NPC_DIALOGUES_QUESTS_GUIDE.md` §1b.
+- **Aucune entrée dans `claims` sans moyen d'en repartir (issue #22)** — être éligible ne suffit
+  plus : avant la téléportation, `ClaimWorldAccessGuard` exige, via l'unique
+  `claim.ClaimReturnService`, que la destination de retour se résolve (la même que la Pierre de
+  retour elle-même) **et** que le joueur détienne ou puisse recevoir une `rpgquest:pierre_retour`
+  **dans son inventaire** ; sinon l'entrée est refusée avec le motif exact, sans rien laisser au
+  sol au Hub. Le bypass `rpgquest.admin.world` n'est jamais refusé mais **ne dispense plus** de la
+  Pierre — le dispenser des deux laissait un administrateur éligible sans aucune sortie (blocage
+  réel du 05/10/2026). Inventaire plein à l'arrivée : l'objet tombe aux pieds du joueur et le
+  message le dit. Le choix « Obtenir une Pierre de retour » de Jo n'exige plus un claim déjà posé,
+  seulement `CLAIM_TIER_1`.
 - **Boucle joueur Hub ↔ Wild** — Journal des quêtes (`rpgquest:journal_quetes`, donné par le
   Libraire, clic droit → GUI deux onglets, voir ligne « Guide / journal » ci-dessus) ; Rune de
   rappel (`rpgquest:rune_rappel`,

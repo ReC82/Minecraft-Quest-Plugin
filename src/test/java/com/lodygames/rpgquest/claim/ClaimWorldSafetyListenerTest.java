@@ -90,7 +90,9 @@ class ClaimWorldSafetyListenerTest {
         // contrôles asynchrones du listener s'achèvent dans la fenêtre de pumpUntil.
         variableRepository.get(new java.util.UUID(0, 0), "warmup").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        listener = new ClaimWorldSafetyListener(plugin, claimService, customItemRegistry, () -> CLAIMS_CONFIG,
+        ClaimReturnService returnService = new ClaimReturnService(plugin, customItemRegistry,
+                () -> Optional.of(new Location(hubWorld, 0, 64, 0)));
+        listener = new ClaimWorldSafetyListener(plugin, claimService, returnService, () -> CLAIMS_CONFIG,
                 () -> Optional.of(new Location(hubWorld, 0, 64, 0)));
     }
 
@@ -208,16 +210,104 @@ class ClaimWorldSafetyListenerTest {
         assertEquals("claims", player.getWorld().getName(), "un propriétaire n'est jamais renvoyé");
     }
 
+    /**
+     * Issue #22 — ce test affirmait l'inverse jusqu'au 05/10 (« aucun objet imposé à un joueur avec
+     * le bypass »), et figeait donc le piège : un administrateur éligible arrivé dans le monde des
+     * claims n'était ni renvoyé, ni doté d'une Pierre de retour, donc sans aucune sortie. C'est
+     * exactement le blocage signalé. Le bypass garde son seul sens défendable — ne jamais
+     * téléporter de force quelqu'un venu volontairement — mais il ne prive plus du moyen de
+     * repartir.
+     */
     @Test
-    void theExplicitBypassPermissionIsNeitherBouncedNorHandedAStone() throws Exception {
+    void theExplicitBypassPermissionIsNeverBouncedButStillGetsAStone() throws Exception {
         PlayerMock player = addPlayer();
         player.addAttachment(plugin, ClaimWorldAccessGuard.BYPASS_PERMISSION, true);
 
         arriveInClaims(player);
+
+        pumpUntil(() -> hasReturnStone(player), "Pierre de retour garantie malgré le bypass");
+        assertEquals("claims", player.getWorld().getName(),
+                "un joueur avec le bypass n'est JAMAIS téléporté de force");
+        assertEquals(1, returnStoneCount(player), "jamais de second exemplaire");
+    }
+
+    @Test
+    void aBypassHolderWhoAlreadyHasAStoneGetsNoDuplicate() throws Exception {
+        PlayerMock player = addPlayer();
+        player.addAttachment(plugin, ClaimWorldAccessGuard.BYPASS_PERMISSION, true);
+
+        arriveInClaims(player);
+        pumpUntil(() -> hasReturnStone(player), "1re Pierre de retour");
+        arriveInClaims(player);
         server.getScheduler().performTicks(10);
 
-        assertEquals("claims", player.getWorld().getName(), "un joueur avec le bypass reste sur place");
-        assertFalse(hasReturnStone(player), "aucun objet imposé à un joueur avec le bypass");
+        assertEquals(1, returnStoneCount(player));
+    }
+
+    @Test
+    void aBypassHolderWithAFullInventoryGetsTheStoneAtTheirFeetAndIsToldSo() throws Exception {
+        PlayerMock player = addPlayer();
+        player.addAttachment(plugin, ClaimWorldAccessGuard.BYPASS_PERMISSION, true);
+        fillInventory(player);
+        assertEquals(-1, player.getInventory().firstEmpty(),
+                "précondition : l'inventaire doit être réellement plein");
+
+        arriveInClaims(player);
+        server.getScheduler().performTicks(10);
+
+        // L'objet ne peut pas entrer dans l'inventaire : il tombe au sol. Le point corrigé est le
+        // MESSAGE — avant, le joueur lisait « tu reçois une Pierre de retour » et la cherchait
+        // dans des poches pleines.
+        assertFalse(hasReturnStone(player), "inventaire plein : l'objet ne peut pas y entrer");
+        boolean toldAboutTheGround = false;
+        String msg;
+        while ((msg = player.nextMessage()) != null) {
+            if (msg.contains("à tes pieds") || msg.contains("inventaire")) {
+                toldAboutTheGround = true;
+            }
+        }
+        assertTrue(toldAboutTheGround,
+                "le joueur doit être prévenu que la Pierre est au sol, pas dans son inventaire");
+    }
+
+    @Test
+    void anEligiblePlayerWithAFullInventoryIsAlsoToldWhereTheStoneWent() throws Exception {
+        PlayerMock player = addPlayer();
+        grantTierOne(player);
+        fillInventory(player);
+        assertEquals(-1, player.getInventory().firstEmpty(),
+                "précondition : l'inventaire doit être réellement plein");
+
+        arriveInClaims(player);
+        server.getScheduler().performTicks(10);
+
+        boolean toldAboutTheGround = false;
+        String msg;
+        while ((msg = player.nextMessage()) != null) {
+            if (msg.contains("à tes pieds")) {
+                toldAboutTheGround = true;
+            }
+        }
+        assertTrue(toldAboutTheGround, "même message explicite pour un joueur éligible non admin");
+    }
+
+    /**
+     * Remplit l'inventaire jusqu'à saturation réelle.
+     *
+     * <p>On ne présume pas le nombre d'emplacements : {@code firstEmpty()} de MockBukkit renvoie
+     * encore 36 après avoir rempli 0–35, alors que le rangement d'un joueur Bukkit s'arrête à 35.
+     * Boucler sur {@code firstEmpty()} rend le test juste quelle que soit cette différence, au lieu
+     * de tester un inventaire qu'on croit plein.</p>
+     */
+    private void fillInventory(PlayerMock player) {
+        for (int guard = 0; guard < 64; guard++) {
+            int slot = player.getInventory().firstEmpty();
+            if (slot < 0) {
+                return;
+            }
+            player.getInventory().setItem(slot,
+                    new org.bukkit.inventory.ItemStack(org.bukkit.Material.COBBLESTONE, 64));
+        }
     }
 
     @Test

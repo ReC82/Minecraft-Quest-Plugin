@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.claim.ClaimBorderEntryListener;
 import com.lodygames.rpgquest.claim.ClaimBorderRenderer;
 import com.lodygames.rpgquest.claim.ClaimNetherTravelListener;
 import com.lodygames.rpgquest.claim.ClaimProtectionListener;
+import com.lodygames.rpgquest.claim.ClaimReturnService;
 import com.lodygames.rpgquest.claim.ClaimSelectionService;
 import com.lodygames.rpgquest.claim.ClaimService;
 import com.lodygames.rpgquest.claim.ClaimTeleportService;
@@ -486,8 +487,15 @@ public final class RPGQuestBootstrap {
         // Parcours Claims cohérent (issues #21/#22/#23) : accès au monde des claims réservé au
         // déblocage réel du premier terrain (CLAIM_TIER_1 / claim existant), composé avec
         // l'avertissement d'entrée dans le Wild — un seul garde côté WorldPortalTeleportListener.
+        // Moyen de repartir du monde des claims (issue #22), partagé par le garde d'entrée et le
+        // filet d'arrivée. La destination est EXACTEMENT celle de la Pierre de retour elle-même
+        // (ItemTravelDefinition ci-dessous) : si elle ne se résout pas, l'objet ne mène nulle part
+        // et l'entrée doit être refusée plutôt que de piéger le joueur.
+        ClaimReturnService claimReturnService =
+                new ClaimReturnService(plugin, customItemRegistry, spawnService::resolve);
         ClaimWorldAccessGuard claimWorldAccessGuard = new ClaimWorldAccessGuard(
-                plugin, claimService, () -> configService.current().claims(), worldPortalTeleportListener);
+                plugin, claimService, claimReturnService, () -> configService.current().claims(),
+                worldPortalTeleportListener);
         worldPortalTeleportListener.setEntryGuard(new CompositeWorldPortalEntryGuard(List.of(
                 claimWorldAccessGuard,
                 new WildEntryWarningService(plugin, customItemRegistry,
@@ -496,7 +504,7 @@ public final class RPGQuestBootstrap {
         // sans commande y est toujours possible (Pierre de retour donnée si absente ; joueur non
         // éligible arrivé autrement que par le portail renvoyé au village).
         registry.start(new PlayerListenerService(plugin, new ClaimWorldSafetyListener(
-                plugin, claimService, customItemRegistry, () -> configService.current().claims(),
+                plugin, claimService, claimReturnService, () -> configService.current().claims(),
                 () -> spawnService.resolve().or(() -> worldService.find(configService.current().hub().world())
                         .map(w -> w.getSpawnLocation())))));
 

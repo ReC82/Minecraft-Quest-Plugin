@@ -77,9 +77,14 @@ nodes:
           - type: RUN_SAFE_COMMAND
             command: "customitem give %player% rpgquest:acte_propriete 1"
           - type: CLOSE
+      # Issue #22 : exiger HAS_MAIN_CLAIM rendait ce recours inaccessible exactement quand il
+      # sert — un joueur qui a son droit débloqué mais pas encore posé de terrain. La condition
+      # reprend donc l'éligibilité du filet de sécurité : le déblocage suffit.
       - text: "Obtenir une Pierre de retour"
         conditions:
-          - type: HAS_MAIN_CLAIM
+          - type: VARIABLE_EQUALS
+            key: CLAIM_TIER_1
+            value: "true"
           - type: LACKS_CUSTOM_ITEM
             item: rpgquest:pierre_retour
         actions:

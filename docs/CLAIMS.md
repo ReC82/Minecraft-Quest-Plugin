@@ -150,7 +150,14 @@ commande, via un objet spécial remis par un PNJ.
    -   *débloqué, aucun claim* : option « Je viens réclamer mon acte de
        propriété » (ci-dessus) ;
    -   *claim existant* (`HAS_MAIN_CLAIM`) : « Me rendre sur ma propriété »,
-       « Revoir les limites », « Obtenir une Pierre de retour ».
+       « Revoir les limites ».
+   L'option « **Obtenir une Pierre de retour** » n'exige plus
+   `HAS_MAIN_CLAIM` mais seulement `CLAIM_TIER_1 == "true"` (issue #22) :
+   exiger un claim **déjà posé** rendait ce recours inaccessible exactement
+   quand il sert — un joueur dont le droit est débloqué mais qui n'a pas
+   encore choisi son terrain. La condition reprend donc l'éligibilité du
+   filet de sécurité, et reste masquée par `LACKS_CUSTOM_ITEM` dès que le
+   joueur en détient une.
    Le dialogue du **Guide** (`guide.yml`, nœud `help_claims`) énonce
    désormais le même prérequis réel : le droit se mérite en terminant
    l'histoire principale, *puis* Jo remet l'acte — plus aucune promesse que
@@ -208,6 +215,33 @@ avec l'avertissement d'entrée dans le Wild via
     `ClaimsWorldRulesListener`) passe outre — aucune permission de build ni
     d'admin ne contourne la règle par accident.
 
+### Deuxième condition : pas d'entrée sans moyen de repartir (issue #22)
+
+Être éligible ne suffit pas. **Avant** toute téléportation vers
+`claims.world`, `ClaimWorldAccessGuard` exige que le joueur dispose
+réellement d'un retour, via l'unique `claim.ClaimReturnService` :
+
+-   la **destination** de la Pierre de retour doit se résoudre — c'est
+    *exactement* la cible de l'objet lui-même (`spawnService::resolve`,
+    la même que l'`ItemTravelDefinition` enregistrée) et jamais une copie :
+    si elle est vide, l'objet ne mènerait nulle part ;
+-   le joueur doit **détenir** une `rpgquest:pierre_retour`, ou pouvoir en
+    recevoir une **dans son inventaire**. Le contrôle préventif ne dépose
+    *jamais* l'objet au sol : le joueur est encore au Hub, un objet laissé
+    au point de départ ne garantirait rien et joncherait le village.
+
+Si l'une des deux manque, **l'entrée est refusée** avec le motif exact
+(« ton inventaire est plein : libère un emplacement » / « le retour est
+indisponible, signale-le à un administrateur ») — plutôt que de laisser le
+joueur découvrir le piège une fois sur place. Le filet d'arrivée ci-dessous
+reste utile pour les autres façons d'arriver, mais il agit **trop tard** :
+au portail, rien n'est encore irréversible.
+
+Le **bypass** `rpgquest.admin.world` n'est jamais refusé à l'entrée (un
+administrateur y va volontairement et dispose de ses propres moyens), mais
+il reçoit lui aussi la Pierre de retour quand c'est possible, et l'absence
+de retour est journalisée en `WARN`.
+
 ### Retour au Hub garanti, sans commande
 
 `claim.ClaimWorldSafetyListener` (sur `PlayerChangedWorldEvent` et
@@ -220,11 +254,20 @@ des claims :
     jamais consommé, clic droit — **aucune commande**). Idempotent : jamais
     de second exemplaire (même patron que `player.StarterKitListener` pour
     la Rune). C'est le parcours de retour **normal** ;
+-   **inventaire plein à l'arrivée** → le joueur est déjà sur place : mieux
+    vaut l'objet au sol que rien, donc la Pierre tombe **à ses pieds** et le
+    message le dit explicitement (issue #22 — il annonçait « tu reçois »
+    dans les deux cas, et le joueur cherchait un objet absent de ses
+    poches) ;
 -   **joueur non éligible qui se retrouve malgré tout dans le monde des
     claims** (`/tp` d'un administrateur, reconnexion dans ce monde, joueur
     présent avant l'ajout du contrôle d'accès) → renvoyé au Hub (spawn du
     village configuré, sinon spawn du monde Hub) avec un message ;
--   **bypass `rpgquest.admin.world`** : ni renvoi, ni objet imposé.
+-   **bypass `rpgquest.admin.world`** : **jamais** téléporté de force — il
+    est venu volontairement — mais il reçoit tout de même une Pierre de
+    retour. Le bypass dispensait auparavant des **deux**, ce qui laissait un
+    administrateur éligible sans aucune sortie : c'est la cause racine du
+    blocage signalé le 05/10/2026 (issue #22).
 
 La commande `/claim admin sendhome` (déclenchée par l'option « Me rendre
 sur ma propriété » de Jo) et `/spawn` restent des voies **auxiliaires**,
@@ -560,11 +603,18 @@ true` enrobe la condition dans une `NegatedCondition`),
 accès refusé sans téléportation + message ; avec `CLAIM_TIER_1` → autorisé ;
 propriétaire d'un claim → autorisé immédiatement ; bypass
 `rpgquest.admin.world` ; après effacement des variables — équivalent
-`resetnew` — refusé à nouveau ; portail non-claims ignoré),
+`resetnew` — refusé à nouveau ; portail non-claims ignoré ; **règle de
+retour #22** : Pierre remise *avant* la téléportation et jamais en double,
+inventaire plein → entrée refusée avec le motif et **aucun objet laissé au
+sol au Hub**, propriétaire d'un claim soumis à la même règle sur sa branche
+synchrone, destination de retour non résolue → entrée refusée, bypass jamais
+refusé même sans retour possible),
 `ClaimWorldSafetyListenerTest` (issues #21/#22/#23 : Pierre de retour
 donnée à l'arrivée d'un joueur éligible, jamais en double ; joueur non
-éligible renvoyé au Hub ; propriétaire jamais renvoyé ; bypass ni renvoyé
-ni doté ; connexion dans le monde des claims traitée comme une arrivée),
+éligible renvoyé au Hub ; propriétaire jamais renvoyé ; **bypass jamais
+renvoyé mais toujours doté** (#22) ; inventaire plein → objet au sol *et*
+message qui le dit ; connexion dans le monde des claims traitée comme une
+arrivée),
 `CompositeWorldPortalEntryGuardTest` (ET logique, arrêt au premier refus),
 `ClaimTeleportServiceTest`
 (`NO_MAIN_CLAIM`/`WORLD_UNAVAILABLE`/`NO_SAFE_LOCATION`/`TELEPORTED`, centre

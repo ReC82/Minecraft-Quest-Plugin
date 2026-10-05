@@ -2517,6 +2517,67 @@ le résumé de récompenses de TC-014).
     en charge, et la différence entre deux joueurs en jeu — c'est l'objet des étapes B à F
     ci-dessus.
 
+### TC-245 — Monde des claims : jamais d'entrée sans retour, jamais de blocage (issue #22)
+
+-   **Fonctionnalité testée :** règle préventive d'entrée (destination de retour résolue + Pierre
+    de retour réellement remise **avant** la téléportation), filet d'arrivée pour les autres
+    chemins, bypass OP qui ne dispense plus de la Pierre, inventaire plein, choix de Jo accessible
+    sans claim posé.
+-   **Préconditions :** JAR de cette session déployé, serveur redémarré. World-Portal
+    `world_hub → claims` en place. Jo lié (`/rpgadmin npc tag jo`) avec un `jo.yml` à jour — ce
+    fichier **n'est pas** un exemple empaqueté, il doit être transféré explicitement.
+-   **IMPORTANT :** aucune réinitialisation de joueur. Les étapes A et B se déroulent avec un
+    **compte non opéré** ; l'étape C exige au contraire un compte **OP**.
+
+-   **A. Entrée normale, retour garanti (compte non opéré, `CLAIM_TIER_1` débloqué) :**
+    1.  Vider une place dans l'inventaire, puis franchir le portail Hub → claims.
+        **Attendu** : la Pierre de retour est reçue **au Hub, avant le départ** (message
+        « Tu reçois une Pierre de retour »), puis la téléportation a lieu.
+    2.  Dans le monde des claims, clic droit avec la Pierre. **Attendu** : retour au village après
+        la canalisation, l'objet **reste** dans l'inventaire.
+    3.  Repasser le portail. **Attendu** : aucun second exemplaire (une seule Pierre).
+
+-   **B. Inventaire plein = entrée refusée, pas un piège :**
+    4.  Remplir **tous** les emplacements (36 cases) et franchir le portail.
+        **Attendu** : **aucune téléportation**, message « Ton inventaire est plein : impossible de
+        te remettre ta Pierre de retour » + « Libère un emplacement avant d'entrer ». **Aucun objet
+        ne doit traîner au sol** au Hub.
+    5.  Libérer une case, repasser le portail. **Attendu** : entrée normale comme en A.
+
+-   **C. Compte OP : jamais bloqué, mais jamais sans retour :**
+    6.  Avec un compte **OP** (`rpgquest.admin.world`), franchir le portail sans Pierre.
+        **Attendu** : l'entrée est **autorisée** (le bypass n'est jamais refusé) **et** la Pierre
+        de retour est reçue. Console : `[claims-access] … bypass … AUTORISÉE`.
+    7.  Toujours en OP, se téléporter dans le monde des claims par `/mv tp claims` (hors portail),
+        sans Pierre. **Attendu** : **aucun renvoi forcé** au Hub, mais une Pierre de retour est
+        remise. Console : `[claims-safety] … bypass … aucun renvoi forcé, mais Pierre de retour
+        garantie`. **C'est le correctif du blocage du 05/10** : avant, l'OP n'avait ni l'un ni
+        l'autre.
+    8.  Refaire l'étape 7 avec un inventaire plein. **Attendu** : la Pierre tombe **à ses pieds**
+        et le message dit explicitement « est tombée à tes pieds — ton inventaire était plein ».
+
+-   **D. Jo : recours accessible sans claim posé :**
+    9.  Avec un joueur dont `CLAIM_TIER_1` est débloqué mais **qui n'a pas encore posé de claim**,
+        jeter sa Pierre de retour puis parler à Jo. **Attendu** : le choix « Obtenir une Pierre de
+        retour » est **visible** (il exigeait auparavant un claim déjà posé) et la remet.
+    10. Reparler à Jo avec la Pierre en poche. **Attendu** : le choix a **disparu**
+        (`LACKS_CUSTOM_ITEM`) — jamais de second exemplaire.
+
+-   **E. Joueur non éligible (compte non opéré, `CLAIM_TIER_1` absent) :**
+    11. Franchir le portail. **Attendu** : aucune téléportation, message d'orientation vers Jo /
+        le Guide — comportement inchangé.
+
+-   **Nettoyage :** aucun. Aucun contenu de test n'est créé.
+-   **Couverture automatisée :** `ClaimWorldAccessGuardTest` (12 cas, dont les 7 de la règle de
+    retour : Pierre remise avant la téléportation, jamais dupliquée, inventaire plein → refus avec
+    motif et **aucun objet au sol au Hub**, propriétaire d'un claim soumis à la même règle sur sa
+    branche synchrone, destination non résolue → refus, bypass jamais refusé même sans retour),
+    `ClaimWorldSafetyListenerTest` (9 cas, dont bypass **jamais renvoyé mais toujours doté**, et
+    les deux cas d'inventaire plein avec le message corrigé).
+    **Non couvert automatiquement** : le comportement réel du World-Portal en jeu, la canalisation
+    de la Pierre, le texte de Jo tel qu'affiché, et le fait qu'un compte OP du serveur de
+    production porte bien `rpgquest.admin.world` — c'est l'objet des étapes A à E.
+
 ---
 
 ## Table de recette
@@ -2593,3 +2654,4 @@ le résumé de récompenses de TC-014).
 | TC-242 | Catalogue complet des objets, recherche FR + id #196 (navigateur) | | | |
 | TC-243 | Suppression quête/story : aperçu, confirmation, blocages #194 | | | |
 | TC-244 | Signal visuel PNJ : quête dispo / dialogue non lu #12 (PENDING) | | | |
+| TC-245 | Claims : pas d'entrée sans retour, bypass doté, inventaire plein #22 (PENDING) | | | |

@@ -3,9 +3,6 @@ package com.lodygames.rpgquest.claim;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.config.ClaimConfig;
 import com.lodygames.rpgquest.item.RpgItemKeys;
-import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
-import java.util.Arrays;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -18,7 +15,6 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.inventory.ItemStack;
 
 /**
  * Filet de sécurité du monde des claims (issues #21/#22/#23) : garantit qu'<strong>aucun joueur ne
@@ -37,6 +33,10 @@ import org.bukkit.inventory.ItemStack;
  *       consommé, clic droit sans commande. Idempotent (jamais de second exemplaire) ;</li>
  *   <li><strong>joueur non éligible</strong> et sans le bypass {@code rpgquest.admin.world} : il est
  *       immédiatement renvoyé au Hub avec un message — jamais laissé sur place.</li>
+ *   <li><strong>porteur du bypass</strong> {@code rpgquest.admin.world} : <strong>jamais</strong>
+ *       téléporté de force — il est venu volontairement — mais il reçoit tout de même une Pierre de
+ *       retour. Le bypass dispensait auparavant des deux, ce qui laissait un administrateur éligible
+ *       sans aucune sortie (issue #22, blocage signalé le 05/10).</li>
  * </ul>
  *
  * <p>Même patron que {@code player.StarterKitListener} (don unique d'un objet de secours à la
@@ -48,17 +48,17 @@ public final class ClaimWorldSafetyListener implements Listener {
 
     private final RPGQuestPlugin plugin;
     private final ClaimService claimService;
-    private final YamlCustomItemRegistry customItemRegistry;
+    private final ClaimReturnService returnService;
     private final Supplier<ClaimConfig> config;
     /** Cible de repli au Hub (spawn du village configuré, sinon spawn du monde Hub) — jamais une position figée. */
     private final Supplier<Optional<Location>> hubReturnTarget;
 
     public ClaimWorldSafetyListener(RPGQuestPlugin plugin, ClaimService claimService,
-                                     YamlCustomItemRegistry customItemRegistry, Supplier<ClaimConfig> config,
+                                     ClaimReturnService returnService, Supplier<ClaimConfig> config,
                                      Supplier<Optional<Location>> hubReturnTarget) {
         this.plugin = plugin;
         this.claimService = claimService;
-        this.customItemRegistry = customItemRegistry;
+        this.returnService = returnService;
         this.config = config;
         this.hubReturnTarget = hubReturnTarget;
     }
@@ -82,14 +82,21 @@ public final class ClaimWorldSafetyListener implements Listener {
     private void handleArrival(Player player) {
         UUID playerId = player.getUniqueId();
         if (player.hasPermission(ClaimWorldAccessGuard.BYPASS_PERMISSION)) {
-            // Trace explicite (issues #21/#22) : un compte OP n'est ni renvoyé ni doté d'une Pierre
-            // de retour — c'est la cause la plus fréquente d'un « je reste coincé dans le monde des
-            // claims ». Valider le retour Hub avec un compte NON opéré.
+            // Issue #22, cause racine du blocage signalé le 05/10. Le bypass dispensait de TOUT :
+            // ni renvoi au Hub, ni Pierre de retour. Un administrateur éligible, arrivé ici par
+            // portail, se retrouvait donc sans aucune sortie — exactement ce que ce filet existe
+            // pour empêcher, et ce que l'ancien commentaire décrivait déjà comme « la cause la
+            // plus fréquente ».
+            //
+            // Le bypass garde son seul sens défendable : ne JAMAIS téléporter de force un
+            // administrateur hors d'un monde où il est venu volontairement. Mais il ne doit pas le
+            // priver du moyen d'en repartir. Une Pierre de retour est donc garantie ici aussi.
             plugin.getSLF4JLogger().info(
-                    "[claims-safety] {} présent dans « {} » : filet de sécurité IGNORÉ (bypass {}) — "
-                            + "ni renvoi au Hub ni Pierre de retour.",
+                    "[claims-safety] {} présent dans « {} » avec le bypass {} : aucun renvoi forcé, "
+                            + "mais Pierre de retour garantie.",
                     player.getName(), player.getWorld().getName(), ClaimWorldAccessGuard.BYPASS_PERMISSION);
-            return; // bypass explicite : ni renvoi, ni objet imposé dans l'inventaire.
+            ensureReturnStone(player);
+            return;
         }
         if (claimService.mainClaimOf(playerId).isPresent()) {
             plugin.getSLF4JLogger().info(
@@ -121,16 +128,13 @@ public final class ClaimWorldSafetyListener implements Listener {
         }));
     }
 
+    /**
+     * Garantit que le joueur détient une Pierre de retour, via l'unique
+     * {@link ClaimReturnService}. Le joueur est <strong>déjà</strong> dans le monde des claims :
+     * l'objet est donc déposé à ses pieds si son inventaire est plein — mieux vaut cela que rien.
+     */
     private void ensureReturnStone(Player player) {
-        if (hasReturnStone(player)) {
-            return;
-        }
-        customItemRegistry.create(RpgItemKeys.PIERRE_RETOUR, 1).ifPresent(stack -> {
-            player.getInventory().addItem(stack).values()
-                    .forEach(leftover -> player.getWorld().dropItemNaturally(player.getLocation(), leftover));
-            player.sendMessage(MM.deserialize(
-                    "<aqua>Tu reçois une Pierre de retour.</aqua> <gray>Clic droit avec pour revenir au village depuis le monde des claims.</gray>"));
-        });
+        returnService.ensureReturnStone(player, true);
     }
 
     private void sendBackToHub(Player player) {
@@ -147,12 +151,6 @@ public final class ClaimWorldSafetyListener implements Listener {
                 "<red>Le monde des claims est réservé aux joueurs qui ont débloqué leur premier terrain.</red>"));
         player.sendMessage(MM.deserialize(
                 "<gray>Tu es ramené au village. Termine l'histoire principale puis parle à <white>Jo</white> pour obtenir ton acte de propriété.</gray>"));
-    }
-
-    private boolean hasReturnStone(Player player) {
-        return Arrays.stream(player.getInventory().getContents())
-                .filter(Objects::nonNull)
-                .anyMatch(stack -> customItemRegistry.identify(stack).map(RpgItemKeys.PIERRE_RETOUR::equals).orElse(false));
     }
 
     private boolean isClaimsWorld(World world) {

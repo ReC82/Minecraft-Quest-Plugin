@@ -26,6 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
@@ -34,6 +35,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Listener;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.slf4j.Logger;
@@ -279,7 +281,7 @@ public final class QuestJournalService implements QuestJournalUi {
                 QuestDefinition quest = pageItems.get(i);
                 QuestState state = states.getOrDefault(quest.id(), QuestState.NOT_STARTED);
                 boolean tracked = quest.id().equals(trackedByPlayer.get(playerId));
-                inventory.setItem(CONTENT_SLOTS[i], buildIcon(playerId, quest, state, tracked));
+                inventory.setItem(CONTENT_SLOTS[i], buildIcon(playerId, quest, state, tracked, false));
             }
             // openInventory AVANT d'enregistrer la session : quand il remplace un menu déjà ouvert,
             // il déclenche un InventoryCloseEvent SYNCHRONE pour l'ancien inventaire, que
@@ -363,7 +365,7 @@ public final class QuestJournalService implements QuestJournalUi {
             Inventory inventory = Bukkit.createInventory(holder, DETAIL_SIZE, MM.deserialize(TITLE_DETAIL));
             holder.bind(inventory);
 
-            inventory.setItem(DETAIL_ICON_SLOT, buildIcon(playerId, quest, state, tracked));
+            inventory.setItem(DETAIL_ICON_SLOT, buildIcon(playerId, quest, state, tracked, true));
             inventory.setItem(DETAIL_BACK_SLOT, navIcon(Material.ARROW, "« Retour"));
             inventory.setItem(DETAIL_TRACK_SLOT, trackToggleIcon(tracked));
             inventory.setItem(DETAIL_CLOSE_SLOT, navIcon(Material.BARRIER, "Fermer"));
@@ -469,11 +471,30 @@ public final class QuestJournalService implements QuestJournalUi {
 
     // ---- Construction des icônes -------------------------------------------
 
-    private ItemStack buildIcon(UUID playerId, QuestDefinition quest, QuestState state, boolean tracked) {
+    /**
+     * Icône d'une quête. {@code detailed} distingue les deux usages, qui partageaient jusqu'ici la
+     * même infobulle démesurée :
+     * <ul>
+     *   <li><strong>liste</strong> ({@code false}) — infobulle <em>compacte</em> : nom, état,
+     *       compteurs de l'étape en cours, indications de clic. Rien d'autre ;</li>
+     *   <li><strong>détails</strong> ({@code true}) — tout le reste : description, catégorie,
+     *       récompenses, prérequis.</li>
+     * </ul>
+     *
+     * <p>Les attributs vanilla de l'objet servant d'icône sont masqués : une quête dont l'icône
+     * est une épée affichait « Quand dans la main principale : … dégâts d'attaque », information
+     * parasite qui n'a rien à voir avec la quête.</p>
+     */
+    private ItemStack buildIcon(UUID playerId, QuestDefinition quest, QuestState state, boolean tracked,
+                                boolean detailed) {
         ItemStack stack = new ItemStack(quest.icon());
         ItemMeta meta = stack.getItemMeta();
         meta.displayName(buildTitle(quest, state, tracked));
-        meta.lore(buildLore(playerId, quest, state, tracked));
+        meta.lore(detailed
+                ? buildDetailedLore(playerId, quest, state)
+                : buildCompactLore(playerId, quest, state, tracked));
+        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_ADDITIONAL_TOOLTIP,
+                ItemFlag.HIDE_ENCHANTS, ItemFlag.HIDE_UNBREAKABLE);
         stack.setItemMeta(meta);
         return stack;
     }
@@ -489,7 +510,75 @@ public final class QuestJournalService implements QuestJournalUi {
         return MM.deserialize(color + "<name>" + colorEnd + star, Placeholder.parsed("name", quest.title().base()));
     }
 
-    private List<Component> buildLore(UUID playerId, QuestDefinition quest, QuestState state, boolean tracked) {
+    /** Au-delà de ce nombre, les compteurs sont résumés : une infobulle de liste reste courte. */
+    private static final int MAX_COMPACT_COUNTERS = 4;
+
+    /**
+     * Infobulle de <strong>liste</strong> : état, compteurs de l'étape en cours, indications de
+     * clic. Volontairement sans description, sans récompenses, sans prérequis, sans catégorie —
+     * tout cela est à un clic, dans les détails.
+     *
+     * <p>L'identifiant technique de l'étape ({@code prove_worth}…) n'est plus affiché : c'est une
+     * donnée interne, illisible pour un joueur, et elle occupait une ligne entière.</p>
+     */
+    private List<Component> buildCompactLore(UUID playerId, QuestDefinition quest, QuestState state,
+                                             boolean tracked) {
+        List<Component> lore = new ArrayList<>();
+        lore.add(MM.deserialize("<white>État :</white> " + stateLabel(state)));
+
+        QuestStepProgressView stepView = stepViewFor(playerId, quest, state);
+        List<QuestObjective> objectives = objectivesOf(quest, stepView.stepId());
+        List<ObjectiveProgressView> progress = stepView.objectives();
+        if (!progress.isEmpty()) {
+            lore.add(Component.empty());
+        }
+        int shown = Math.min(progress.size(), MAX_COMPACT_COUNTERS);
+        for (int i = 0; i < shown; i++) {
+            lore.add(counterLine(progress.get(i), i < objectives.size() ? objectives.get(i) : null));
+        }
+        if (progress.size() > shown) {
+            lore.add(MM.deserialize("<dark_gray>+<n> autre(s) — voir les détails</dark_gray>",
+                    Placeholder.unparsed("n", String.valueOf(progress.size() - shown))));
+        }
+
+        lore.add(Component.empty());
+        lore.add(MM.deserialize("<yellow>Clic gauche</yellow> <gray>: détails</gray>"));
+        lore.add(MM.deserialize("<yellow>Clic droit</yellow> <gray>: <hint></gray>",
+                Placeholder.unparsed("hint", tracked ? "ne plus suivre" : "suivre")));
+        return lore;
+    }
+
+    /**
+     * Une ligne de compteur, courte : « Araignée 3/5 ». Le nom vient de la clé de traduction
+     * vanilla (voir {@link ObjectiveLabels}), donc le client l'affiche en français — jamais
+     * « Tuer SPIDER ». Un objectif binaire (parler, atteindre) n'affiche pas de compteur.
+     */
+    private Component counterLine(ObjectiveProgressView progress, QuestObjective objective) {
+        boolean done = progress.current() >= progress.total();
+        Component name = objective != null
+                ? ObjectiveLabels.targetName(objective)
+                : Component.text(progress.description());
+        Component line = Component.text("• ", done ? NamedTextColor.GREEN : NamedTextColor.GRAY)
+                .append(name.colorIfAbsent(done ? NamedTextColor.GREEN : NamedTextColor.GRAY));
+        if (objective == null || ObjectiveLabels.isCountable(objective)) {
+            line = line.append(Component.text(" " + progress.current() + "/" + progress.total(),
+                    done ? NamedTextColor.GREEN : NamedTextColor.WHITE));
+        }
+        return line.decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false);
+    }
+
+    /** Objectifs de l'étape {@code stepId} tels que définis par la quête (ordre identique à la vue). */
+    private List<QuestObjective> objectivesOf(QuestDefinition quest, String stepId) {
+        for (QuestStep step : quest.steps()) {
+            if (step.id().equals(stepId)) {
+                return step.objectives();
+            }
+        }
+        return List.of();
+    }
+
+    /** Infobulle de <strong>détails</strong> : tout ce qui a été retiré de la liste. */
+    private List<Component> buildDetailedLore(UUID playerId, QuestDefinition quest, QuestState state) {
         List<Component> lore = new ArrayList<>();
         lore.add(MM.deserialize("<gray><description></gray>", Placeholder.parsed("description", quest.description().base())));
         lore.add(Component.empty());
@@ -498,20 +587,27 @@ public final class QuestJournalService implements QuestJournalUi {
         lore.add(MM.deserialize("<white>État :</white> " + stateLabel(state)));
 
         QuestStepProgressView stepView = stepViewFor(playerId, quest, state);
-        lore.add(Component.empty());
-        lore.add(MM.deserialize("<white>Étape :</white> <gray><step></gray>", Placeholder.unparsed("step", stepView.stepId())));
-        for (ObjectiveProgressView objective : stepView.objectives()) {
-            lore.add(MM.deserialize("<gray>- <desc> (<current>/<total>)</gray>",
-                    Placeholder.unparsed("desc", objective.description()),
-                    Placeholder.unparsed("current", String.valueOf(objective.current())),
-                    Placeholder.unparsed("total", String.valueOf(objective.total()))));
+        List<QuestObjective> objectives = objectivesOf(quest, stepView.stepId());
+        if (!stepView.objectives().isEmpty()) {
+            lore.add(Component.empty());
+            lore.add(MM.deserialize("<white>Objectifs :</white>"));
+            for (int i = 0; i < stepView.objectives().size(); i++) {
+                lore.add(counterLine(stepView.objectives().get(i),
+                        i < objectives.size() ? objectives.get(i) : null));
+            }
         }
 
-        if (!quest.rewards().isEmpty()) {
+        List<Component> rewards = new ArrayList<>();
+        for (QuestReward reward : quest.rewards()) {
+            describeReward(reward).ifPresent(rewards::add);
+        }
+        if (!rewards.isEmpty()) {
             lore.add(Component.empty());
             lore.add(MM.deserialize("<white>Récompenses :</white>"));
-            for (QuestReward reward : quest.rewards()) {
-                lore.add(MM.deserialize("<gray>- <reward></gray>", Placeholder.unparsed("reward", describeReward(reward))));
+            for (Component reward : rewards) {
+                lore.add(Component.text("- ", NamedTextColor.GRAY)
+                        .append(reward.colorIfAbsent(NamedTextColor.GRAY))
+                        .decoration(net.kyori.adventure.text.format.TextDecoration.ITALIC, false));
             }
         }
 
@@ -523,11 +619,6 @@ public final class QuestJournalService implements QuestJournalUi {
                 lore.add(MM.deserialize("<gray>- <name></gray>", Placeholder.parsed("name", name)));
             }
         }
-
-        lore.add(Component.empty());
-        lore.add(MM.deserialize("<yellow>Clic gauche</yellow> <gray>: détails</gray>"));
-        lore.add(MM.deserialize("<yellow>Clic droit</yellow> <gray>: <hint></gray>",
-                Placeholder.unparsed("hint", tracked ? "ne plus suivre" : "suivre")));
         return lore;
     }
 
@@ -563,12 +654,22 @@ public final class QuestJournalService implements QuestJournalUi {
         return new QuestStepProgressView(step.id(), objectives);
     }
 
-    private String describeReward(QuestReward reward) {
+    /**
+     * Récompense telle qu'elle doit être <strong>montrée au joueur</strong>, ou vide si elle ne
+     * doit pas l'être.
+     *
+     * <p>Deux choix assumés : le nom de l'objet vient de sa clé de traduction vanilla (« Épée en
+     * fer », pas {@code IRON_SWORD}), et une récompense {@code VARIABLE} n'est <strong>jamais</strong>
+     * affichée — c'est un état interne (ex. {@code CLAIM_TIER_1}, un droit débloqué) dont
+     * l'identifiant n'a aucun sens pour un joueur et ne doit pas fuiter dans une infobulle.</p>
+     */
+    private Optional<Component> describeReward(QuestReward reward) {
         return switch (reward) {
-            case ExperienceReward r -> r.amount() + " XP";
-            case ItemReward r -> r.amount() + "x " + r.material();
-            case VariableReward r -> "Variable " + r.key();
-            case CommandReward r -> "Bonus spécial";
+            case ExperienceReward r -> Optional.of(Component.text(r.amount() + " XP"));
+            case ItemReward r -> Optional.of(Component.text(r.amount() + "× ")
+                    .append(Component.translatable(r.material())));
+            case VariableReward r -> Optional.empty();
+            case CommandReward r -> Optional.of(Component.text("Bonus spécial"));
         };
     }
 

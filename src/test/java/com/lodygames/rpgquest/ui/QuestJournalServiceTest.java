@@ -25,6 +25,7 @@ import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
@@ -458,6 +459,93 @@ class QuestJournalServiceTest {
         PlayerMock player = server.addPlayer();
         profileRepository.findOrCreate(player.getUniqueId(), player.getName()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         return player;
+    }
+
+    // ---- Infobulles : compacte en liste, complète en détails ----------------------------------
+
+    /** Texte brut (sans couleur ni balise) de la lore d'un objet, une ligne par entrée. */
+    private static List<String> loreText(org.bukkit.inventory.ItemStack stack) {
+        var lore = stack.getItemMeta().lore();
+        if (lore == null) {
+            return List.of();
+        }
+        return lore.stream()
+                .map(c -> net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                        .serialize(c))
+                .toList();
+    }
+
+    @Test
+    void theListTooltipStaysCompactAndFreeOfTechnicalIdentifiers() throws Exception {
+        writeQuests(1);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        NamespacedKey questId = new NamespacedKey("rpgquest", "quest_0");
+        setState(player, questId, QuestState.ACTIVE);
+
+        service.open(player);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        var icon = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.CONTENT_SLOTS[0]);
+        assertNotNull(icon, "la quête active doit avoir une icône");
+        String joined = String.join("\n", loreText(icon));
+
+        assertTrue(joined.contains("État"), "l'état doit rester dans l'infobulle compacte");
+        assertTrue(joined.contains("Clic gauche") && joined.contains("Clic droit"),
+                "les indications de clic doivent rester : " + joined);
+        assertTrue(joined.contains("0/1"), "le compteur de l'objectif doit apparaître : " + joined);
+
+        // Les identifiants techniques ne doivent plus fuiter dans une infobulle joueur.
+        assertFalse(joined.contains("step_one"), "l'id technique d'étape ne doit plus être affiché : " + joined);
+        assertFalse(joined.contains("ZOMBIE"), "l'entité doit être nommée, pas affichée en id brut : " + joined);
+        assertFalse(joined.contains("rpgquest:"), "aucun id namespacé dans l'infobulle : " + joined);
+
+        // Allégée : description et récompenses passent dans les détails.
+        assertFalse(joined.contains("Description"), "la description appartient aux détails : " + joined);
+        assertFalse(joined.contains("Récompenses"), "les récompenses appartiennent aux détails : " + joined);
+
+        assertTrue(icon.getItemMeta().hasItemFlag(org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES),
+                "les attributs vanilla de l'icône (dégâts d'attaque…) doivent être masqués");
+    }
+
+    @Test
+    void theDetailTooltipCarriesDescriptionAndRewardsButNeverTheInternalVariable() throws Exception {
+        Files.writeString(questsDir.resolve("rewarded.yml"), """
+                id: rpgquest:rewarded
+                title: "Quête récompensée"
+                description: "Description longue"
+                category: test
+                steps:
+                  - id: step_one
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 1
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 50
+                  - type: VARIABLE
+                    key: CLAIM_TIER_1
+                    value: "true"
+                """);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        NamespacedKey questId = new NamespacedKey("rpgquest", "rewarded");
+        setState(player, questId, QuestState.ACTIVE);
+
+        service.open(player);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        service.handleListClick(player, service.sessionOf(player), QuestJournalService.CONTENT_SLOTS[0], false);
+        waitUntil(() -> player.getOpenInventory().getTopInventory()
+                .getItem(QuestJournalService.DETAIL_ICON_SLOT) != null);
+
+        var detail = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.DETAIL_ICON_SLOT);
+        String joined = String.join("\n", loreText(detail));
+
+        assertTrue(joined.contains("Description longue"), "la description est dans les détails : " + joined);
+        assertTrue(joined.contains("50 XP"), "la récompense d'XP est dans les détails : " + joined);
+        // Une récompense VARIABLE est un état interne : son nom de clé ne doit jamais être montré.
+        assertFalse(joined.contains("CLAIM_TIER_1"), "la variable interne ne doit pas fuiter : " + joined);
+        assertFalse(joined.contains("step_one"), "pas d'id technique non plus dans les détails : " + joined);
     }
 
     private void writeQuests(int count) throws Exception {

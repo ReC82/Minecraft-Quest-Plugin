@@ -328,6 +328,65 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-05 (lots 3 et 4 — #172 catalogues réels de l'éditeur de mobs, #195 couleurs au clic)
+Branche de départ: feature/169-special-mobs-boss @ 9af3143 (entrée précédente du même jour)
+Étape de départ: lot Control Panel vérifiable au navigateur, par ordre de priorité donné par
+  l'utilisateur : #172 d'abord (« la création reste KO côté utilisateur, même si elle a été
+  annoncée livrée » — reproduire le parcours réel, diagnostiquer le défaut réel), puis #195, #196,
+  #194, #108/#109, #197. Sans sous-agents, y compris pour surveiller les builds.
+Étapes terminées:
+(1) DONE — #172, défaut bloquant. Le parcours réel a été rejoué en HTTP authentifié : le backend
+  répondait déjà SUCCESS/CREATED, donc l'hypothèse #190 (bouton trop bas) ne corrigeait pas le vrai
+  défaut. Vrai défaut : la page n'émettait AUCUNE <datalist> — type d'entité (obligatoire),
+  particule, son, mondes, biomes étaient des champs texte à placeholder, donc créer exigeait de
+  connaître l'identifiant vanilla exact (alors que modifier un profil marchait, champs déjà
+  remplis). Second défaut indépendant : deux sections repliées avec champs numériques contraints →
+  le navigateur refusait la soumission sans pouvoir focaliser un champ caché, bouton sans réaction
+  ET sans message. Corrigés par un nouveau relevé plugin `mob.catalogs` (registres réels : 91
+  entités, 115 particules, 1838 sons, 65 biomes, 6 mondes ; 51 731 caractères — au-delà de
+  l'ancienne borne de 20 000 corrigée le matin même par #164, sans quoi ce relevé serait arrivé
+  tronqué en silence), des listes recherchables, des multisélections mondes/biomes au contrat CSV
+  inchangé, une aide par champ, et `novalidate` sur le formulaire.
+(2) DONE — #195, couleurs et styles sans écrire de MiniMessage. Composant partagé StyleField :
+  16 couleurs nommées au clic + « aucune couleur », cases gras/italique/souligné/barré, aperçu,
+  texte simple. Appliqué au nom affiché des mobs/boss et aux textes de nœuds de dialogue. Le champ
+  réellement soumis garde son nom et sa valeur MiniMessage : contrat serveur, validateurs, plugin
+  et YAML inchangés ; sans JavaScript, champ texte ordinaire. Le vrai risque était l'aplatissement
+  d'un texte multi-styles : le mode guidé n'est ouvert que pour une valeur uniforme, sinon le texte
+  reste tel quel en mode avancé avec la raison affichée et un basculement explicite. Vérifié sur
+  les contenus réels servis par l'instance déployée : 42 textes de nœuds → 23 guidés avec
+  aller-retour exact, 19 intacts, 0 altération ; et aller-retour complet d'un nom multi-styles
+  panel → plugin → YAML → relevé → formulaire, rendu à l'identique.
+(3) CORRECTION DE DOCUMENTATION — le rapport du lot #172 indique `.ai/ROADMAP.md` parmi la
+  documentation mise à jour, or aucune entrée n'avait été écrite. Les rapports étant immuables, la
+  présente entrée corrige le dépôt et couvre les deux lots ; l'ancien rapport n'a pas été modifié.
+Tests: `:control-panel:build` vert (suite complète du module) après chaque lot. Nouveaux :
+  `StyleFieldTest` (contrat du champ soumis, repli sans JavaScript, échappement, palette) ;
+  `control-panel/src/test/js/stylefield-parse.test.js` (17 cas sur la règle d'uniformité et
+  l'aller-retour, extrait de panel.js au vol pour ne pas se désynchroniser — exécution manuelle par
+  `node`, volontairement non câblé à Gradle pour ne pas faire dépendre le build d'un Node installé).
+  Doubles de test du plugin mis à jour pour `mob.catalogs`.
+Branche finale: feature/169-special-mobs-boss (aucun merge).
+Dernier commit: 264377e feat(control-panel): couleurs et styles au clic (#195) — docs ensuite.
+Build: vert.
+Déploiements: Control Panel AWS deux fois (`/health` → 200) ; JAR VeryGames DEV une fois pour #172
+  avec un seul redémarrage. Lot #195 : panel seulement, aucun JAR, aucun redémarrage Minecraft.
+Tests manuels en attente: TC-239 (#172) et TC-240 (#195), tous deux vérifiables au NAVIGATEUR sans
+  Minecraft. Reste en jeu : apparition réelle d'un profil créé et rendu BOSS.
+Blocages: aucun. #172 reste OUVERT : renforts multi-types avec quantité par type (changement de
+  format de profil, à coordonner avec #173/#170), Wild présélectionné par défaut (volontairement
+  non fait — changerait le sens d'un profil existant à la réouverture, décision à prendre), valeurs
+  par défaut par entité.
+Propreté: comptes panel de diagnostic/vérification (`claude-diag-172`, `claude-verif`) créés puis
+  SUPPRIMÉS avec leurs identifiants ; `owner` et `TESTER` intacts. Profils de test
+  `claude_diag_special` / `claude_diag_boss` laissés DÉSACTIVÉS donc inertes, identifiables.
+  Aucun contenu du propriétaire (crystal_hunt, Lily/Jeff, configurations, progression) modifié.
+Première étape à reprendre: #196 (catalogues d'icônes et de récompenses — la recherche « sword »
+  doit retrouver toutes les épées de la version réelle ; réutilise directement le mécanisme de
+  relevé introduit par #172), puis #194.
+```
+
+```text
 Date: 2026-10-05 (suite — #192 appliqué, journal lisible, #165 nom+skin PNJ)
 Branche de départ: feature/169-special-mobs-boss @ 4bc5b89 (entrée précédente du même jour)
 Étape de départ: autorisation explicite d'appliquer le correctif WorldEdit sur DEV ; attentes

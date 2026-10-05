@@ -3812,3 +3812,62 @@ valeur d'origine (ou restaurer le `config.yml` sauvegardé dans
 - Aucun merge, aucune intervention PROD. Aucun contenu du propriétaire modifié ou supprimé.
 
 Rollback : `scripts/rollback-verygames.sh --latest` ; `scripts/plugadmin/rollback.sh app`.
+
+## 2026-10-05 (lot 4) - #195 : couleurs et styles au clic, sans écrire de MiniMessage
+
+### Changement
+
+Composant partagé du Control Panel pour les champs de texte destinés aux joueurs : palette de
+16 couleurs nommées au clic plus « ∅ aucune couleur », cases Gras / Italique / Souligné / Barré,
+aperçu, saisie en texte simple. Appliqué au **nom affiché** des mobs et boss (`/mobs`) et au
+**texte des nœuds de dialogue** (`/dialogues`), en création comme en modification.
+
+Le seul embryon de palette qui existait dans les assets était du **code mort** : aucune page
+n'émettait son balisage.
+
+### Action serveur
+
+**Aucune.** Panel uniquement — pas de nouveau JAR, pas de redémarrage Minecraft, pas de
+modification de configuration serveur ni de données.
+
+### Sauvegarde préalable
+
+Release PlugAdmin automatique par `scripts/plugadmin/deploy.sh`
+(`/opt/plugadmin/releases/20261005-140749`).
+
+### Déploiement / Exécution réelle
+
+- **Contrat serveur strictement inchangé** : le champ réellement soumis garde le même nom et la
+  même valeur MiniMessage qu'avant. Ni les actions agent, ni les validateurs, ni le plugin ne
+  voient de différence ; les fichiers YAML produits sont identiques. Sans JavaScript, c'est un
+  champ texte ordinaire — la page reste utilisable.
+- **Textes multi-styles préservés, vérifié sur les contenus réels.** Un éditeur « une couleur +
+  des cases » ne peut pas représenter `<red>Roi</red> <gold>des Marais</gold>` sans l'aplatir.
+  L'analyse n'ouvre donc le mode guidé que pour une valeur **uniforme** (au plus une couleur et
+  des décorations englobant tout le texte) ; sinon le texte reste tel quel en mode avancé, la
+  raison est écrite à l'écran, et basculer demande un geste explicite annonçant la simplification.
+  - Mesure réelle : les **42 textes de nœuds** servis par l'instance déployée passés au parseur →
+    **23 en mode guidé avec aller-retour exact, 19 laissés intacts en mode avancé, 0 altération**.
+  - **Aller-retour complet vérifié** : nom multi-styles posé par le formulaire réel sur le profil
+    de test `claude_diag_special`, exécuté par le plugin (`mob.definition.update` → SUCCESS /
+    UPDATED, `mobs/claude_diag_special.yml`), puis relevé `mob.list` et réouverture du
+    formulaire → valeur rendue **à l'identique**, aucun aplatissement.
+- **Tests** : `:control-panel:build` vert (suite complète du module) ; nouveau `StyleFieldTest`
+  (contrat du champ soumis, repli sans JavaScript, échappement) ; nouveau test JavaScript
+  `control-panel/src/test/js/stylefield-parse.test.js` (17 cas, exécution manuelle par `node`,
+  **volontairement non câblé à Gradle** pour ne pas faire dépendre le build d'un Node installé).
+- **Déploiement** : Control Panel AWS uniquement, `/health` → `200`
+  (`{"panel":"ONLINE","disabled":false}` à 14:08:06 UTC).
+- Le compte panel de vérification (`claude-verif`, ADMIN) et ses identifiants locaux ont été
+  **supprimés** en fin d'intervention ; `owner` et `TESTER` intacts.
+- Le profil de test `claude_diag_special` (toujours **désactivé**) porte désormais le nom
+  multi-styles `<red>Roi</red> <gold>des Marais</gold>` : il sert de démonstrateur du mode avancé
+  pour TC-240. Il est identifiable et supprimable à volonté.
+- Aucun merge, aucune intervention PROD, aucun contenu du propriétaire modifié ou supprimé.
+
+### Validation
+
+TC-240 (nouveau) — entièrement vérifiable **au navigateur**, sans Minecraft.
+
+Rollback : `scripts/plugadmin/rollback.sh app` (aucun rollback plugin nécessaire : le JAR n'a pas
+changé dans ce lot).

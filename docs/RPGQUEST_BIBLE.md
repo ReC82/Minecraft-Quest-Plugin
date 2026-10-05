@@ -640,6 +640,34 @@ sur déconnexion, jamais restaurée).
 À savoir : `dialogueId` sans `:` prend le namespace `rpgquest` par défaut ;
 joueur hors-ligne → message d'erreur, aucune action.
 
+### Couleurs et styles sans écrire de MiniMessage (issue #195)
+
+**Composant partagé du Control Panel.** Colorer un texte imposait auparavant de taper du
+MiniMessage à la main (`<red>Roi des Marais</red>`). Les champs de texte destinés aux joueurs
+offrent désormais : **palette de 16 couleurs nommées au clic** plus « ∅ aucune couleur », cases
+**Gras / Italique / Souligné / Barré**, **aperçu** du résultat, et saisie en **texte simple**.
+Aucun code à connaître pour un usage courant.
+
+Champs concernés : **nom affiché** d'un mob spécial ou d'un boss (`/mobs`, création et
+modification) et **texte d'un nœud de dialogue** (`/dialogues`, nœud existant et nouveau nœud).
+
+- **MiniMessage reste le format stocké** — c'est un détail interne. Le champ réellement soumis
+  garde le même nom et la même valeur qu'avant : les actions agent, les validateurs et le plugin
+  ne voient aucune différence, et les fichiers YAML produits sont inchangés.
+- **Sans JavaScript**, c'est un champ texte ordinaire : la page reste utilisable.
+- **Les textes multi-styles sont préservés.** Un éditeur « une couleur + des cases » ne peut pas
+  représenter `<red>Roi</red> <gold>des Marais</gold>` sans l'aplatir. Le composant n'ouvre donc
+  l'éditeur guidé que pour une valeur **uniforme** : au plus une couleur et des décorations qui
+  englobent **tout** le texte. Dès qu'il y a deux couleurs, une balise au milieu du texte, une
+  couleur hexadécimale ou une balise avancée (`<gradient>`, `<hover>`…), le texte reste affiché
+  **tel quel** en mode avancé, avec la raison écrite à l'écran ; passer en mode guidé demande
+  alors un **geste explicite** et le bouton annonce qu'il simplifiera les styles. **Aucune
+  simplification silencieuse.**
+- **Couleurs proposées** : `white`, `gray`, `dark_gray`, `black`, `red`, `dark_red`, `gold`,
+  `yellow`, `green`, `dark_green`, `aqua`, `dark_aqua`, `blue`, `dark_blue`, `light_purple`,
+  `dark_purple`. Les formats non couverts par la palette (dégradés, hexadécimal, interactions)
+  restent entièrement disponibles en mode avancé — le composant ne retire aucune possibilité.
+
 ---
 
 ## 5. NPC / Citizens
@@ -1531,9 +1559,13 @@ fermé — le bouton semblait ne rien faire, sans aucun message. Le formulaire e
 
 **Catalogue** : recherche par nom ou identifiant, filtres **Boss / Mob spécial / Désactivés**.
 
+**Nom affiché** : plus besoin d'écrire du MiniMessage — couleur au clic, cases de style et aperçu.
+Voir § 4 « Couleurs et styles sans écrire de MiniMessage » (issue #195) ; le composant est partagé
+avec les textes de dialogue et préserve les noms déjà écrits avec plusieurs styles.
+
 **Ce qui reste explicitement hors de ce lot** : un profil à base passive ne devient **jamais**
-agressif implicitement (#201) ; les renforts multi-types avec quantité par type, la couleur
-guidée des noms (#195) et les catalogues d'icônes/récompenses (#196) sont des lots distincts.
+agressif implicitement (#201) ; les renforts multi-types avec quantité par type et les catalogues
+d'icônes/récompenses (#196) sont des lots distincts.
 
 ### Catégorie et attributs (issue #169, lot 1)
 

@@ -2272,6 +2272,46 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-240 — Couleurs et styles au clic, sans écrire de MiniMessage (issue #195)
+
+-   **Fonctionnalité testée :** composant de texte stylé partagé — palette, cases de style,
+    aperçu, et **préservation des textes déjà écrits avec plusieurs styles**.
+-   **Préconditions :** Control Panel de cette session déployé. **Aucun Minecraft requis** : ce
+    test se fait entièrement dans le navigateur.
+-   **Parcours — nom d'un mob / boss :**
+    1.  `/mobs` → déplier **« Nouveau profil »**. Le champ **Nom affiché** montre un champ texte
+        simple, une rangée de pastilles de couleur et quatre cases de style.
+    2.  Taper `Roi des Marais` → cliquer la pastille **or** → cocher **Gras**. L'**aperçu** doit
+        s'afficher en or et en gras. Aucun code n'a été saisi.
+    3.  Cliquer **« Modifier le code MiniMessage »** : le champ brut doit afficher exactement
+        `<gold><bold>Roi des Marais</bold></gold>`. Recliquer le bouton pour revenir au mode guidé.
+    4.  Cliquer la pastille **∅** (aucune couleur) → le code redevient `<bold>Roi des Marais</bold>`.
+-   **Parcours — texte de dialogue :** `/dialogues` → ouvrir un dialogue → déplier un nœud. Même
+    composant sur **Texte du nœud**. Enregistrer un nœud **sans rien changer** au style : le texte
+    doit rester identique (vérifiable en rouvrant le nœud).
+-   **Le point important — un texte multi-styles ne doit JAMAIS être aplati :**
+    1.  Sur `/mobs`, ouvrir le profil de test **`claude_diag_special`** (désactivé). Son nom a été
+        volontairement posé à `<red>Roi</red> <gold>des Marais</gold>` pendant la vérification.
+    2.  Le composant doit s'ouvrir en **mode avancé** : le code brut est visible tel quel, un
+        message explique que l'éditeur guidé le simplifierait, et le bouton propose de basculer
+        **explicitement** en annonçant la simplification.
+    3.  **Ne pas** cliquer ce bouton, enregistrer → le nom doit rester inchangé.
+    4.  Même attendu pour un dégradé (`<gradient:red:blue>…</gradient>`), une couleur
+        hexadécimale (`<#ff00ff>…</#ff00ff>`) ou une balise au milieu du texte
+        (`Bonjour <red>joueur</red>`) : mode avancé, contenu intact.
+-   **Sans JavaScript** (désactiver JS dans le navigateur) : les deux champs restent des champs
+    texte MiniMessage ordinaires et l'enregistrement fonctionne. L'éditeur guidé est simplement
+    absent — jamais un champ en double ni un formulaire bloqué.
+-   **Couverture automatisée :** `StyleFieldTest` (contrat du champ soumis, repli sans JavaScript,
+    échappement) ; `control-panel/src/test/js/stylefield-parse.test.js` exécuté avec
+    `node control-panel/src/test/js/stylefield-parse.test.js` (règle d'uniformité et aller-retour).
+    **Vérifié sur l'instance déployée** : aller-retour réel d'un nom multi-styles
+    panel → plugin → YAML → relevé → formulaire, rendu à l'identique ; et les **42 textes de nœuds
+    réels** du dépôt passés au parseur — 23 en mode guidé avec aller-retour exact, 19 laissés en
+    mode avancé, **0 contenu altéré**. Cela ne remplace pas l'essai au navigateur ci-dessus.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -2342,3 +2382,4 @@ le résumé de récompenses de TC-014).
 | TC-237 | Journal : infobulle compacte + récupération sans doublon (PENDING) | | | |
 | TC-238 | PNJ : nom en jeu et skin MineSkin depuis le panel #165 (PENDING) | | | |
 | TC-239 | Création mob SPECIAL + BOSS depuis le panel #172 (navigateur) | | | |
+| TC-240 | Couleurs et styles au clic, textes multi-styles préservés #195 (navigateur) | | | |

@@ -375,11 +375,38 @@ Branche de départ: feature/169-special-mobs-boss @ 7abfbf3 (lot 7, #194 déploy
   dialogue-particle, count 1-10). Une valeur numérique hors bornes est CORRIGÉE (un signal visuel
   ne doit pas empêcher le serveur de démarrer) ; une particule inconnue est REFUSÉE au démarrage,
   parce que c'est une faute de frappe qu'il faut voir.
-Tests: TESTS_PLACEHOLDER
+Tests: suite complète des trois modules verte — 1486 tests plugin (34 ignorés, limitations
+  MockBukkit héritées), 476 control-panel (1 ignoré), 30 web-api, 0 échec, 0 erreur.
+  28 nouveaux cas : NpcHintConfigTest (7 — bornage dans les deux sens, particule absente
+  remplacée, interrupteurs intacts, bornage idempotent), DialogueReadRepositoryTest (9 — rien
+  n'est lu par défaut, lecture par joueur ET par nœud, idempotence, SURVIE à la
+  fermeture/réouverture de la base, reset d'un joueur sans effet sur un autre),
+  DialogueSessionEngineTest (+6 — atteignabilité réelle selon les conditions, rétrécissement quand
+  une condition cesse de passer, choix fermant non suivi, OUVRIR UN PNJ NE MARQUE QUE LE NŒUD
+  AFFICHÉ, parcourir une branche la marque aussi, absence d'observateur inoffensive),
+  QuestProgressEngineTest (+6 — disponibilité d'une quête neuve, refus si active, quête inconnue,
+  prérequis manquants NOMMÉS, aucune progression créée par une simple lecture, ignorePrerequisites
+  ne saute que les prérequis).
+  UN DÉFAUT INTRODUIT PAR CE LOT, attrapé par les tests et corrigé :
+  SchemaMigrator.CURRENT_VERSION était resté à 23 alors que le catalogue allait à 24 — le test
+  SchemaMigrationRunnerTest#realCatalogueTargetsTheDeclaredCurrentVersion a exactement servi à ça.
+  Les tests de migration pointent désormais la constante du code plutôt qu'un littéral, pour que la
+  prochaine migration ne fasse plus tomber quinze tests pour la même raison.
 Branche finale: feature/169-special-mobs-boss (aucun merge).
-Dernier commit: COMMIT_PLACEHOLDER
+Dernier commit: f3f89d0 feat(npc): signal visuel discret de quête disponible et dialogue
+  non lu (#12) — documentation finalisée ensuite.
 Build: vert.
-Déploiements: DEPLOY_PLACEHOLDER
+Déploiements: JAR VeryGames DEV (SHA-256
+  1ab198d032f16cbbd6c7f47e7904ae26d0968c155b556419301cba6cbed33975, 1 731 370 octets) avec UN SEUL
+  redémarrage RCON — serveur revenu ONLINE, 0 joueur connecté. JAR précédent sauvegardé :
+  rpgquest-20261005T172148Z-predeploy.jar.
+  AUCUN déploiement du Control Panel : ce lot ne touche que le plugin (vérifié par git status).
+  Le panel reste actif et /health répond 200.
+Vérification sur le serveur déployé, via RCON : « plugins » -> les 4 plugins en VERT
+  (Citizens, Multiverse-Core, RPGQuest, WorldEdit), et « rpgquest version » -> v0.1.0-SNAPSHOT.
+  Le plugin a donc chargé le nouveau JAR sans erreur, migration V24 incluse.
+  AUCUN test en jeu n'a été exécuté : le rendu visuel des particules, la cadence en charge et la
+  différence entre deux joueurs ne sont pas vérifiés et restent à valider manuellement (TC-244).
 Tests manuels en attente: TC-244 — protocole complet en jeu, sur contenu préfixé tc12_ uniquement,
   avec deux joueurs pour l'étape décisive (deux états différents devant le même PNJ). AUCUN test en
   jeu n'a été exécuté par Claude : le rendu visuel, la cadence en charge et la différence entre

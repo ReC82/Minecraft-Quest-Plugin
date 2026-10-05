@@ -4039,3 +4039,90 @@ du Garde ou `main_story`.
 Rollback : `scripts/rollback-verygames.sh --latest` ; `scripts/plugadmin/rollback.sh app`.
 Un contenu supprimé par erreur se restaure depuis `/var/lib/plugadmin/content-backups/<horodatage>/`
 (source) et `plugins/RPGQuest/content-backups/<horodatage>/` (serveur).
+
+## 2026-10-05 (lot 8) - #12 : signal visuel sur les PNJ (quête disponible / dialogue non lu)
+
+### Changement
+
+Particules **discrètes** au-dessus d'un PNJ quand une **quête est réellement disponible** pour
+**ce** joueur, ou qu'un **dialogue accessible comporte un nœud jamais lu**. Spécifique à chaque
+joueur, rendu par un client **vanilla**, compatible Citizens. Le PNJ lui-même n'est jamais
+modifié.
+
+### Action serveur
+
+**Remplacement du JAR RPGQuest uniquement**, puis **un seul redémarrage**. **Nouvelle migration de
+schéma V24** (table `dialogue_node_reads`) appliquée automatiquement au démarrage — idempotente,
+aucune donnée existante touchée. Aucune modification de configuration requise : la section
+`npc-hints:` a des valeurs par défaut, et un `config.yml` existant sans cette section continue de
+fonctionner.
+
+### Sauvegarde préalable
+
+JAR précédent sauvegardé automatiquement :
+`~/.local/share/rpgquest/verygames-backups/rpgquest-20261005T172148Z-predeploy.jar`.
+
+### Déploiement effectué
+
+- **JAR** : SHA-256 `1ab198d032f16cbbd6c7f47e7904ae26d0968c155b556419301cba6cbed33975`
+  (1 731 370 octets), transféré puis **un seul redémarrage** RCON — serveur revenu `ONLINE`,
+  0 joueur connecté.
+- **Vérifié sur le serveur, via RCON** : `plugins` → les **4 plugins en vert** (Citizens,
+  Multiverse-Core, RPGQuest, WorldEdit) ; `rpgquest version` → `v0.1.0-SNAPSHOT`. Le nouveau JAR a
+  donc chargé sans erreur, migration V24 incluse.
+- **Aucun déploiement du Control Panel** : ce lot ne touche que le plugin. Le panel reste actif et
+  `/health` répond `200`.
+- **Tests** : `./gradlew test build` — **1486** plugin (34 ignorés), **476** control-panel
+  (1 ignoré), **30** web-api, **0 échec, 0 erreur**.
+
+### Deux constats d'audit qui ont décidé la conception
+
+- **« Quête prête à rendre » n'est pas un état observable.** `QuestState.READY_TO_TURN_IN` existe
+  dans l'énumération, mais `QuestProgressEngine#turnIn` le pose puis le remplace par `COMPLETED`
+  dans la même méthode, et seul `COMPLETED` est persisté. Le ticket demandait de ne l'intégrer que
+  si l'état existe réellement : il est donc **documenté hors MVP**, sans inventer de mécanique de
+  remise.
+- **Un PNJ ne référence aucune quête.** Le lien vit dans le champ `giver:` **de la quête**. Le
+  signal part donc des quêtes, pas d'une table de liaison inexistante.
+
+### Garanties
+
+- **Aucune règle dupliquée** : la disponibilité vient de `QuestProgressEngine#availability`, et
+  `accept()` **délègue** désormais à cette méthode — une seule implémentation des règles de refus.
+  Les conditions de dialogue viennent de `reachableNodes()`, qui réutilise l'évaluateur existant.
+- **« Lu » ne concerne que ce qui a été présenté** : le marquage se fait dans
+  `DialogueSessionEngine#openNode`, seul point de rendu d'un nœud. Ouvrir un PNJ n'écrit qu'une
+  ligne, celle du nœud de départ. État par **UUID**, persistant après reconnexion et redémarrage.
+- **Coût maîtrisé** : aucune boucle par tick (une passe par seconde et **par joueur**), aucun PNJ
+  distant (rayon, même monde, ligne de vue, aucun chunk chargé), calcul découplé de l'affichage
+  (recalcul au plus toutes les 5 s, asynchrone, un seul à la fois par joueur, cache invalidé
+  immédiatement sur changement pertinent).
+- **Réglages bornés** : une valeur numérique hors plage est **corrigée** (un signal visuel ne doit
+  pas empêcher le serveur de démarrer) ; une **particule inconnue est refusée** au démarrage, parce
+  que c'est une faute de frappe qu'il faut voir.
+
+### Défaut introduit par ce lot et corrigé
+
+`SchemaMigrator.CURRENT_VERSION` était resté à **23** alors que le catalogue allait à **24** — la
+version déclarée mentait donc sur le catalogue. Attrapé par
+`SchemaMigrationRunnerTest#realCatalogueTargetsTheDeclaredCurrentVersion`, corrigé, et les tests de
+migration pointent désormais la constante du code plutôt qu'un littéral.
+
+### Redémarrage requis
+
+**Oui — un seul, effectué.**
+
+### Migration automatique
+
+**Oui — V24**, appliquée au démarrage, idempotente. Crée `dialogue_node_reads` et son index.
+Aucune ligne existante n'est lue ni modifiée.
+
+### Validation
+
+TC-244 (nouveau) — protocole complet **en jeu**, sur contenu préfixé `tc12_` uniquement, avec
+**deux joueurs** pour l'étape décisive. **Aucun test en jeu n'a été exécuté** : le rendu visuel, la
+cadence en charge et la différence entre joueurs restent à valider manuellement.
+
+Rollback : `scripts/rollback-verygames.sh --latest`. La table `dialogue_node_reads` peut rester en
+place sans effet (un JAR antérieur l'ignore simplement) ; `npc-hints.enabled: false` désactive le
+signal sans redéployer autre chose qu'un redémarrage.

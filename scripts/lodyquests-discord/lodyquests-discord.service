@@ -1,0 +1,65 @@
+# LodyQuests — synchronisation du forum communautaire Discord avec les issues GitHub (issue #202)
+#
+# Service systemd DÉDIÉ et indépendant : il ne touche ni au serveur Minecraft, ni au Control
+# Panel (plugadmin.service), ni aux autres services de l'instance. Aucun redémarrage Minecraft
+# n'est jamais provoqué par ce service.
+#
+# Installé par scripts/lodyquests-discord/install.sh en
+# /etc/systemd/system/lodyquests-discord.service. Ne PAS lancer le service depuis le working
+# tree Git : il tourne depuis /opt/lodyquests-discord/app (sortie de
+# `./gradlew :discord-sync:installDist`).
+#
+# Secrets : EnvironmentFile hors dépôt, ~ubuntu/.config/lodyquests-discord/bot.env (chmod 600).
+# systemd le lit en tant que root AVANT de restreindre le service, donc le fichier n'a pas
+# besoin d'être lisible par d'autres. Il n'est jamais versionné ni journalisé.
+
+[Unit]
+Description=LodyQuests - synchronisation forum Discord vers issues GitHub
+Documentation=https://github.com/ReC82/Minecraft-Quest-Plugin/issues/202
+After=network-online.target
+Wants=network-online.target
+# Dans [Unit], et non [Service] : systemd ignore la clé si elle est placée dans [Service]
+# (« Unknown key name »), et abandonnerait alors l'unité après quelques échecs rapprochés.
+# À 0, systemd ne renonce jamais : dès que le fichier de secrets est corrigé, le service repart.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/var/lib/lodyquests-discord
+EnvironmentFile=/home/ubuntu/.config/lodyquests-discord/bot.env
+ExecStart=/opt/lodyquests-discord/app/bin/discord-sync run
+
+# Redémarrage supervisé, y compris après une configuration refusée (code 78 EX_CONFIG) : dès que
+# le fichier de secrets est corrigé, le service repart seul en moins de deux minutes, sans
+# intervention. RestartSec est volontairement long pour ne pas inonder le journal (voir aussi
+# StartLimitIntervalSec dans [Unit]).
+Restart=always
+RestartSec=120
+TimeoutStopSec=90
+# Le script Gradle exec() la JVM ; à l'arrêt, elle sort sur SIGTERM avec 143. Sans ça,
+# `systemctl stop` laisse l'unité en état « failed » — cosmétique, mais trompeur.
+SuccessExitStatus=143 130 SIGTERM
+
+# --- Durcissement : ce service n'écrit que dans /var/lib/lodyquests-discord ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# read-only et non « true » : le chargeur de configuration sait aussi relire le fichier de
+# secrets directement, ce qui rend le diagnostic identique en service et en ligne de commande.
+ProtectHome=read-only
+ReadWritePaths=/var/lib/lodyquests-discord
+StateDirectory=lodyquests-discord
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+# Le service ne fait que des appels HTTPS sortants : aucun port à ouvrir, aucun endpoint exposé.
+PrivateDevices=true
+
+[Install]
+WantedBy=multi-user.target

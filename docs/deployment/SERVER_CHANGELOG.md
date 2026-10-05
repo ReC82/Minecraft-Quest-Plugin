@@ -4126,3 +4126,83 @@ cadence en charge et la différence entre joueurs restent à valider manuellemen
 Rollback : `scripts/rollback-verygames.sh --latest`. La table `dialogue_node_reads` peut rester en
 place sans effet (un JAR antérieur l'ignore simplement) ; `npc-hints.enabled: false` désactive le
 signal sans redéployer autre chose qu'un redémarrage.
+
+---
+
+## 2026-10-05 (lot 9) - #22 : aucune entrée dans le monde des claims sans moyen d'en repartir
+
+### Changement
+
+Correction d'un **blocage réel** : un joueur éligible s'est retrouvé coincé dans le monde `claims`,
+Acte en poche, sans Pierre de retour ni aucun moyen de revenir au Hub. Trois défauts cumulés sont
+corrigés, et une **règle préventive** est ajoutée : on n'entre plus dans `claims` sans le moyen d'en
+repartir.
+
+### Action serveur
+
+**Remplacement du JAR RPGQuest** *et* **transfert explicite de `RPGQuest/dialogues/jo.yml`**, puis
+**un seul redémarrage**. Aucune migration de schéma, aucune modification de configuration.
+
+**Point d'attention permanent** : `dialogues/jo.yml` n'est **pas** un exemple empaqueté
+(`YamlDialogueEngine.BUNDLED_EXAMPLES = {"guard.yml"}`, et un fichier existant n'est jamais
+réécrit). Un redéploiement de JAR seul **n'aurait pas** mis à jour le dialogue de Jo : le transfert
+par `--also` est obligatoire pour ce fichier.
+
+### Sauvegarde préalable
+
+- JAR précédent : `~/.local/share/rpgquest/verygames-backups/rpgquest-20261005T195459Z-predeploy.jar`
+  (1 731 370 octets, SHA-256 `1ab198d0…`).
+- `jo.yml` précédent : `…/verygames-backups/extra-20261005T195459Z/RPGQuest/dialogues/jo.yml`
+  (5 591 octets, SHA-256 `55418687…`), avec `MANIFEST.txt`.
+
+### Déploiement effectué
+
+- **JAR** : SHA-256 `97e77bc3b054ffd94094a9b8684a3216fc2b15cb3ac658b49047e91a1b8ceb1f`
+  (1 735 478 octets), commit `eb439a3`.
+- **`jo.yml`** transféré par `--also` (téléversement atomique, backup préalable).
+- **Un seul redémarrage** RCON : `save-all`, `stop`, arrêt **constaté OFFLINE**, puis retour
+  **vérifié ONLINE**.
+- **Vérifié après redémarrage, par RCON** : `plugins` → les **4 plugins en vert** (Citizens,
+  Multiverse-Core, RPGQuest, WorldEdit) ; `rpgquest version` → `v0.1.0-SNAPSHOT`.
+- **Control Panel** : non redéployé (ce lot ne touche que le plugin) ; `/health` répond `200`.
+- **Tests** : `./gradlew test` puis `./gradlew build` — **1495** plugin (34 ignorés), **476**
+  control-panel (1 ignoré), **30** web-api, **0 échec, 0 erreur**.
+
+### Les trois défauts, et pourquoi ils se cumulaient
+
+1. **Cause racine** — `ClaimWorldSafetyListener#handleArrival` sortait **avant**
+   `ensureReturnStone` pour les porteurs de `rpgquest.admin.world`. Le bypass dispensait donc de
+   **tout** : ni renvoi au Hub, ni Pierre de retour. Un administrateur éligible arrivé par portail
+   n'avait plus aucune sortie. Un test figeait ce comportement en affirmant « aucun objet imposé à
+   un joueur avec le bypass » : il est réécrit.
+2. **`jo.yml`** — le choix « Obtenir une Pierre de retour » exigeait `HAS_MAIN_CLAIM`, donc était
+   inaccessible exactement quand il sert : un joueur débloqué qui n'a pas encore posé de terrain. Il
+   exige désormais seulement `CLAIM_TIER_1`.
+3. **Inventaire plein** — l'objet tombait déjà au sol, mais le message annonçait « tu reçois une
+   Pierre de retour » dans les deux cas. Le joueur la cherchait dans des poches pleines.
+
+### Règle préventive ajoutée
+
+Avant toute téléportation vers `claims`, `ClaimWorldAccessGuard` exige, via l'unique
+`claim.ClaimReturnService`, que la destination de retour se résolve **et** que le joueur détienne ou
+puisse recevoir une Pierre de retour **dans son inventaire**. Sinon l'entrée est refusée avec le
+motif exact, sans rien laisser au sol au Hub. Le bypass n'est jamais refusé mais reçoit la Pierre.
+
+### Redémarrage requis
+
+**Oui — un seul, effectué et vérifié** (arrêt constaté, retour en ligne constaté).
+
+### Migration automatique
+
+**Aucune.** Schéma inchangé (V24), aucune donnée joueur lue ni modifiée.
+
+### Validation
+
+TC-245 (nouveau) — protocole complet **en jeu**. **Aucun test en jeu n'a été exécuté** : le
+comportement réel du portail, la canalisation de la Pierre et le texte de Jo restent à valider
+manuellement.
+
+Rollback : `scripts/rollback-verygames.sh --latest` pour le JAR, et
+`scripts/rollback-verygames.sh --also <backup>/RPGQuest/dialogues/jo.yml:RPGQuest/dialogues/jo.yml`
+pour le dialogue (voir `MANIFEST.txt`). Aucun état persistant n'a changé : un retour arrière
+restaure exactement le comportement précédent — y compris le piège.

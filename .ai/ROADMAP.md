@@ -328,6 +328,79 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-05 (lot 9 — #22 URGENCE : joueur coincé dans le monde des claims)
+Branche de départ: feature/169-special-mobs-boss @ dddf709 (lot 8, #12 déployé)
+Étape de départ: urgence signalée par le propriétaire — coincé dans le monde Claims avec son Acte,
+  aucun moyen de revenir au Hub. Consigne : débloquer D'ABORD, puis diagnostiquer et corriger #22.
+  Travail non urgent interrompu proprement (aucun autre lot en vol).
+Étapes terminées:
+(1) DONE — DÉBLOCAGE vérifié. LoDyMcFly, seul connecté, était dans minecraft:claims
+  (-20.5, 101, 44.8). Destination LUE SUR LE SERVEUR (RPGQuest/spawn.yml), jamais inventée :
+  minecraft:world_hub 738.8234287986836 / 67.0 / -679.5730077006267. Dimension et Pos RELUS après
+  la téléportation pour confirmer — pas « absence d'erreur » mais vérification positive.
+  Aucun reset, aucune suppression, inventaire/Acte/claim/progression intacts.
+  Honnêteté : l'inventaire complet n'a PAS pu être énuméré (RCON tronque les NBT longs). Établi
+  sans rien détruire via /clear <joueur> <objet> 0 (compte sans retirer) : aucun echo_shard,
+  aucun paper, 1 amethyst_shard.
+(2) DONE — CAUSE RACINE par élimination. player.variable.get CLAIM_TIER_1 -> true. Éligible +
+  dans claims + sans ECHO_SHARD ne sont compatibles qu'avec UNE branche :
+  ClaimWorldSafetyListener#handleArrival sortait AVANT ensureReturnStone pour les porteurs de
+  rpgquest.admin.world. Le bypass dispensait donc de TOUT (ni renvoi, ni Pierre) -> un
+  administrateur ÉLIGIBLE n'avait AUCUNE sortie. L'ancien commentaire décrivait déjà ce cas comme
+  « la cause la plus fréquente » sans le corriger, et un TEST figeait le défaut : réécrit.
+(3) DONE — Deux défauts secondaires trouvés en auditant comme demandé :
+  * jo.yml exigeait HAS_MAIN_CLAIM pour « Obtenir une Pierre de retour » -> inaccessible
+    EXACTEMENT quand ce recours sert (droit débloqué, terrain pas encore posé). CLAIM_TIER_1 suffit
+    désormais. Le jo.yml DU SERVEUR a été téléchargé et comparé au dépôt (identiques) avant
+    toute conclusion : l'analyse porte bien sur la production.
+  * inventaire plein : l'objet tombait au sol mais le message disait « tu reçois ». Distingué.
+(4) DONE — RÈGLE PRÉVENTIVE (demande ajoutée en cours de lot) : on n'entre plus dans claims sans
+  le moyen d'en repartir. ClaimWorldAccessGuard exige, AVANT toute téléportation, que la
+  destination de retour se résolve (exactement spawnService::resolve, la cible de la Pierre
+  elle-même, jamais une copie) ET que le joueur détienne ou puisse recevoir une Pierre DANS son
+  inventaire. Jamais de dépôt au sol au point de départ : cela ne garantirait rien et joncherait le
+  Hub. Sinon entrée REFUSÉE avec le motif exact. Appliqué aux trois chemins d'autorisation ; le
+  bypass n'est JAMAIS refusé mais reçoit la Pierre au mieux.
+(5) DONE — Aucune règle dupliquée : nouveau claim.ClaimReturnService, unique source du moyen de
+  retour, partagé par le garde d'entrée et le filet d'arrivée, à issue TYPÉE
+  (ALREADY_HELD/GIVEN/DROPPED/NO_ROOM/UNAVAILABLE) dont canReturn() ne peut pas mentir.
+(6) DONE — Vérifié et NON modifié parce que correct : enregistrement ItemTravelDefinition
+  (PIERRE_RETOUR, 3 s, spawnService::resolve, requiredWorld = claims.world), résolution de la
+  destination, objets soulbound, renvoi au Hub d'un joueur NON éligible, config du monde claims.
+Tests: suite complète verte — 1495 plugin (34 ignorés), 476 control-panel (1 ignoré), 30 web-api,
+  0 échec, 0 erreur. 10 cas nouveaux ou réécrits.
+  DEUX DÉFAUTS DE MES PROPRES TESTS, mesurés au lieu d'être supposés :
+  * PlayerInventoryMock.firstEmpty() renvoie encore 36 après remplissage de 0-35 : remplacé par une
+    boucle sur firstEmpty() avec garde, et la précondition est AFFIRMÉE dans les tests.
+  * deux tests attendaient une lecture ASYNCHRONE pendant un nombre FIXE de ticks. Verts en suite
+    complète, ROUGES pendant le déploiement (machine chargée). Le garde-fou du script de
+    déploiement a refusé de livrer AVANT tout transfert FTP — il a fait exactement son travail.
+    Corrigés (commit eb439a3) : ils pompent jusqu'à réception du message.
+Branche finale: feature/169-special-mobs-boss (aucun merge).
+Commits: a91f99a (correctif + documentation), eb439a3 (course de test corrigée).
+Build: vert.
+Déploiements: JAR VeryGames DEV (SHA-256
+  97e77bc3b054ffd94094a9b8684a3216fc2b15cb3ac658b49047e91a1b8ceb1f, 1 735 478 octets) ET
+  RPGQuest/dialogues/jo.yml via --also. CE DERNIER EST INDISPENSABLE : jo.yml n'est pas un exemple
+  empaqueté (YamlDialogueEngine.BUNDLED_EXAMPLES = {"guard.yml"}) et un fichier existant n'est
+  jamais réécrit — un redéploiement de JAR seul n'aurait PAS mis à jour le dialogue de Jo.
+  Backups : rpgquest-20261005T195459Z-predeploy.jar (SHA-256 1ab198d0…) et
+  extra-20261005T195459Z/RPGQuest/dialogues/jo.yml (SHA-256 55418687…) avec MANIFEST.txt.
+  UN SEUL redémarrage, annoncé en jeu : save-all, stop, arrêt CONSTATÉ OFFLINE, retour CONSTATÉ
+  ONLINE. Vérifié ensuite par RCON : plugins -> 4 verts (Citizens, Multiverse-Core, RPGQuest,
+  WorldEdit), rpgquest version -> v0.1.0-SNAPSHOT.
+  Control Panel NON redéployé (lot plugin uniquement) ; /health -> 200.
+Tests manuels en attente: TC-245 — protocole complet en jeu (réception de la Pierre AU HUB avant le
+  départ, refus avec inventaire plein sans rien laisser au sol, compte OP jamais renvoyé mais doté,
+  choix de Jo visible sans claim posé). AUCUN test en jeu n'a été exécuté par Claude.
+Limites: le correctif ne crée pas rétroactivement de Pierre pour un joueur DÉJÀ dans claims — le
+  filet d'arrivée s'en charge à sa prochaine arrivée/connexion. Le garde ne contrôle que les
+  World-Portals : /mv tp et /tp restent couverts par le filet, pas par la règle préventive.
+Propreté: aucun contenu du propriétaire modifié, aucune progression touchée, aucun reset joueur.
+Première étape à reprendre: dérouler TC-245 en jeu. Ensuite, attendre le choix du prochain ticket.
+```
+
+```text
 Date: 2026-10-05 (lot 8 — #12 signal visuel sur les PNJ, première version)
 Branche de départ: feature/169-special-mobs-boss @ 7abfbf3 (lot 7, #194 déployé)
 Étape de départ: le propriétaire choisit désormais les tickets un par un. Ticket actif : #12

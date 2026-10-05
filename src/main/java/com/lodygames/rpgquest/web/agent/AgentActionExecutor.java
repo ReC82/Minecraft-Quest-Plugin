@@ -119,6 +119,9 @@ public final class AgentActionExecutor {
                 case PLAYER_KICK -> playerKick(action);
                 case PLAYER_WHITELIST_ADD -> playerWhitelist(action, true);
                 case PLAYER_WHITELIST_REMOVE -> playerWhitelist(action, false);
+                case ECONOMY_BALANCE -> economyBalance(action);
+                case ECONOMY_CREDIT -> economyAdjust(action, true);
+                case ECONOMY_DEBIT -> economyAdjust(action, false);
                 case PLAYER_ITEM_GIVE -> itemGive(action);
                 case QUEST_START -> questStart(action);
                 case QUEST_COMPLETE -> questMutation(action, AgentActionType.QUEST_COMPLETE);
@@ -875,6 +878,77 @@ public final class AgentActionExecutor {
     private CompletableFuture<AgentActionOutcome> playerWhitelist(AgentAction action, boolean add) {
         return withResolvedUuid(action, (uuid, name) ->
                 actions.setWhitelisted(uuid, name, add).thenApply(r -> toOutcome(action, r)));
+    }
+
+    // ---- Monnaie (issue #140) -------------------------------------------------------------
+
+    /** Plafond d'une opération unique — garde-fou de saisie, pas une règle d'équilibrage. */
+    private static final long MAX_ECONOMY_AMOUNT = 1_000_000L;
+
+    /** {@code economy.balance} — solde réel et journal récent. Lecture seule. */
+    private CompletableFuture<AgentActionOutcome> economyBalance(AgentAction action) {
+        long historyLimit = parseLongParam(action.param("history"), 20L);
+        if (historyLimit < 1 || historyLimit > 100) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Nombre de lignes de journal hors bornes (1 à 100)."));
+        }
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.economyBalance(uuid, (int) historyLimit).thenApply(view -> {
+                    if (!view.ok()) {
+                        return AgentActionOutcome.failed(action.id(), view.message());
+                    }
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    details.put("balance", view.balance());
+                    List<Map<String, Object>> history = new ArrayList<>();
+                    for (AgentActions.EconomyLedgerView entry : view.history()) {
+                        Map<String, Object> item = new LinkedHashMap<>();
+                        item.put("type", entry.type());
+                        item.put("amount", entry.amount());
+                        item.put("context", entry.context());
+                        item.put("at", entry.at());
+                        history.add(item);
+                    }
+                    details.put("history", history);
+                    return AgentActionOutcome.success(action.id(), String.valueOf(view.balance()),
+                            name + " : solde " + view.balance() + " (" + history.size()
+                                    + " transaction(s) récente(s))", details);
+                }));
+    }
+
+    /**
+     * {@code economy.credit} / {@code economy.debit}. Raison <strong>obligatoire</strong> : elle
+     * est enregistrée dans le journal, sans quoi une création administrative serait indiscernable
+     * d'un gain de jeu quelques mois plus tard.
+     */
+    private CompletableFuture<AgentActionOutcome> economyAdjust(AgentAction action, boolean credit) {
+        long amount = parseLongParam(action.param("amount"), -1L);
+        if (amount <= 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Montant manquant ou non strictement positif."));
+        }
+        if (amount > MAX_ECONOMY_AMOUNT) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Montant trop élevé en une seule opération (maximum " + MAX_ECONOMY_AMOUNT + ")."));
+        }
+        String reason = trimOrNull(firstNonBlank(action.param("reason"), action.param("motif")));
+        if (reason == null || reason.length() > 200 || reason.indexOf('\n') >= 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Raison manquante, trop longue (max 200) ou multi-ligne."));
+        }
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.economyAdjust(uuid, name, amount, credit, reason).thenApply(view -> {
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    details.put("code", view.code());
+                    details.put("balanceBefore", view.balanceBefore());
+                    details.put("balanceAfter", view.balanceAfter());
+                    if (!view.ok()) {
+                        // Fonds insuffisants est un refus MÉTIER : signalé comme échec, avec le
+                        // solde réel, jamais comme un succès silencieux.
+                        return AgentActionOutcome.failed(action.id(), view.message());
+                    }
+                    return AgentActionOutcome.success(action.id(),
+                            String.valueOf(view.balanceAfter()), view.message(), details);
+                }));
     }
 
     /** Entier long de paramètre : {@code -1} marque explicitement une valeur non numérique. */

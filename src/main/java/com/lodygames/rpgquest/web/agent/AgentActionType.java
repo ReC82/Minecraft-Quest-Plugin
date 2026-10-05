@@ -136,7 +136,23 @@ public enum AgentActionType {
     PLAYER_KICK("player.kick"),
     /** Issue #210 — whitelist, en précisant si elle est réellement appliquée par le serveur. */
     PLAYER_WHITELIST_ADD("player.whitelist.add"),
-    PLAYER_WHITELIST_REMOVE("player.whitelist.remove");
+    PLAYER_WHITELIST_REMOVE("player.whitelist.remove"),
+    /**
+     * Issue #140 — solde réel et journal des transactions d'un joueur. Lecture seule : le
+     * portefeuille persistant est l'unique source de vérité, aucun inventaire n'est interprété
+     * comme de la monnaie.
+     */
+    ECONOMY_BALANCE("economy.balance"),
+    /**
+     * Issue #140 — crédit administratif. <strong>Crée de la monnaie</strong> : raison obligatoire,
+     * enregistrée dans le journal des transactions.
+     */
+    ECONOMY_CREDIT("economy.credit"),
+    /**
+     * Issue #140 — débit administratif. Ne peut <strong>jamais</strong> rendre le solde négatif :
+     * fonds insuffisants = refus métier lisible, rien n'est modifié.
+     */
+    ECONOMY_DEBIT("economy.debit");
 
     private final String wire;
 

@@ -55,6 +55,21 @@ public enum Permission {
     ACTION_CONTENT_RELOAD,
     DEV_MODULE,
     /**
+     * Consulter le solde et le journal des transactions d'un joueur (issue #140). Lecture seule.
+     *
+     * <p>Séparée de {@link #ECONOMY_WRITE} : voir combien possède un joueur est utile au support,
+     * lui en créer n'est pas le même geste.</p>
+     */
+    ECONOMY_READ,
+    /**
+     * Créditer ou débiter un joueur depuis le panel (issue #140).
+     *
+     * <p>Permission <strong>dédiée</strong>, parce qu'un crédit <em>crée de la monnaie</em>. Chaque
+     * opération exige une raison, enregistrée dans le journal des transactions — sans elle, une
+     * création administrative serait indiscernable d'un gain de jeu quelques mois plus tard.</p>
+     */
+    ECONOMY_WRITE,
+    /**
      * Accorder ou retirer le statut <strong>OP Minecraft</strong> (issue #210).
      *
      * <p>Permission <strong>dédiée et volontairement la plus restreinte du panel</strong> :

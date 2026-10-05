@@ -2846,6 +2846,74 @@ le résumé de récompenses de TC-014).
     dans `ops.json`), la persistance après redémarrage, le 403 sur route directe depuis un vrai
     compte ADMIN, et le rendu en jeu — c'est l'objet des étapes A à G.
 
+### TC-249 — Administration de la monnaie depuis PlugAdmin (issue #140, premier lot économie)
+
+-   **Fonctionnalité testée :** lecture du solde réel et du journal des transactions, crédit et
+    débit avec raison, permissions séparées lecture/écriture, refus d'un débit au-delà du
+    disponible, et persistance après redémarrage.
+-   **Préconditions :** JAR de cette session déployé, serveur redémarré, panel déployé.
+-   **IMPORTANT — compte de test dédié.** **Ne créditez ni ne débitez jamais votre propre compte
+    pour essayer.** Utilisez un joueur de test. Aucun solde existant n'est converti ni migré par ce
+    lot.
+
+-   **A. Lecture :**
+    1.  Fiche du joueur de test sur `/players` → bouton **Monnaie**. **Attendu** : le bloc indique
+        que le solde vient du **portefeuille persistant**, seule source de vérité, et qu'aucun objet
+        d'inventaire n'est compté comme de la monnaie.
+    2.  Cliquer **Lire le solde et le journal**. **Attendu** : le solde réel s'affiche, avec les
+        dernières transactions.
+    3.  Comparer avec `/money` en jeu. **Attendu** : même valeur.
+
+-   **B. Crédit :**
+    4.  Créditer 250 **sans** raison. **Attendu** : **refus** mentionnant le journal.
+    5.  Créditer 250 avec la raison « test TC-249 ». **Attendu** : succès, et le message montre
+        **solde avant → après**.
+    6.  Relire le journal. **Attendu** : une ligne `ADMIN_GRANT`, montant **+250**, contexte
+        contenant la raison.
+    7.  Saisir un montant de `1000001`. **Attendu** : refus « montant trop élevé » — garde-fou de
+        saisie, pas une règle d'équilibrage.
+    8.  Saisir `0` puis `-5`. **Attendu** : refus dans les deux cas.
+
+-   **C. Débit et plancher à zéro (le point de sécurité) :**
+    9.  Débiter 100 avec une raison. **Attendu** : succès, solde avant → après cohérent, ligne
+        `ADMIN_TAKE` **négative** au journal.
+    10. Débiter un montant **supérieur au solde**. **Attendu** : **échec lisible** « fonds
+        insuffisants », le solde réel est affiché, et **rien n'a changé**. Relire le journal :
+        **aucune ligne** n'a été ajoutée pour cette tentative.
+    11. Vérifier en jeu que le solde correspond.
+
+-   **D. Permissions :**
+    12. Avec un compte panel **TESTER** : **Attendu** : le bloc Monnaie s'ouvre et le solde est
+        lisible, mais la page indique que le rôle ne permet pas de modifier — **aucun** formulaire
+        de crédit ni de débit.
+    13. Depuis ce compte TESTER, poster directement `type=economy.credit`. **Attendu** : **403**.
+    14. Avec un compte **CONTENT_EDITOR** : aucun accès à la monnaie.
+    15. Désactiver les comptes de test créés.
+
+-   **E. Persistance et absence de duplication :**
+    16. Noter le solde, puis **redémarrer** le serveur (workflow #95). **Attendu** : solde
+        identique, journal intact, aucune ligne dupliquée.
+    17. Déconnecter/reconnecter le joueur de test. **Attendu** : solde inchangé.
+
+-   **F. Audit :**
+    18. Vérifier `/actions` : chaque crédit et débit figure avec son auteur, sa cible, son montant
+        et sa raison.
+
+-   **Nettoyage :** remettre le solde du compte de test à sa valeur d'origine par une opération
+    inverse (le journal gardera trace des deux — c'est voulu), et désactiver les comptes panel
+    créés.
+-   **Couverture automatisée :** `WalletRepositoryTest` (+6 cas sur le journal : journal vide au
+    départ, **ligne signée** pour chaque crédit et débit, **aucune ligne pour un débit refusé**,
+    bornes dures de la lecture, journal **par joueur** sans fuite, et **survie à la réouverture de
+    la base**), `AgentActionExecutorTest` (+8 cas : montants signés transmis, limite de journal
+    bornée avec défaut, raison obligatoire, montant invalide ou excessif refusé **avant** d'atteindre
+    le serveur, fonds insuffisants rapportés comme **échec** et non comme succès),
+    `EconomyAdminTest` (13 cas : **deux permissions distinctes**, TESTER qui lit sans créer,
+    rôles de contenu sans aucun accès, sensibilité et confirmation, raison obligatoire, plafond de
+    saisie, bornes du journal).
+    **Non couvert automatiquement** : la cohérence avec `/money` en jeu, le 403 depuis un vrai
+    compte TESTER, et la persistance après un vrai redémarrage — c'est l'objet des étapes A à F.
+
 ---
 
 ## Table de recette
@@ -2926,3 +2994,4 @@ le résumé de récompenses de TC-014).
 | TC-246 | Exploitation serveur : état, annonce, redémarrage vérifié, console #95 (PENDING) | | | |
 | TC-247 | Rechargement du contenu : 3 états, contenu lié, runtime préservé #131 (PENDING) | | | |
 | TC-248 | OP/DEOP, renvoi Hub, kick, whitelist #210 (PENDING) | | | |
+| TC-249 | Monnaie : solde, journal, crédit/débit, plancher à zéro #140 (PENDING) | | | |

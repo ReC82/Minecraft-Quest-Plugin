@@ -719,4 +719,52 @@ public interface AgentActions {
      * mieux que laisser croire à une protection active.</p>
      */
     CompletableFuture<MutationResult> setWhitelisted(UUID playerId, String playerName, boolean whitelisted);
+    // ---- Monnaie (issue #140) ------------------------------------------------------------------
+
+    /**
+     * Solde réel d'un joueur et ses dernières transactions ({@code economy.balance}) — lecture
+     * seule.
+     *
+     * <p>Le portefeuille persistant est l'<strong>unique source de vérité</strong> du solde ; la
+     * table des transactions en est le journal. Aucun objet d'inventaire n'est consulté ni
+     * interprété comme de la monnaie.</p>
+     */
+    CompletableFuture<EconomyBalanceView> economyBalance(UUID playerId, int historyLimit);
+
+    /**
+     * @param balance solde courant
+     * @param history dernières transactions, les plus récentes d'abord
+     */
+    record EconomyBalanceView(boolean ok, String message, long balance, List<EconomyLedgerView> history) {
+    }
+
+    /** {@code amount} est <strong>signé</strong> : négatif = débit, positif = crédit. */
+    record EconomyLedgerView(String type, long amount, String context, String at) {
+    }
+
+    /**
+     * Crédite ou débite un joueur depuis l'administration ({@code economy.credit} /
+     * {@code economy.debit}).
+     *
+     * <p><strong>Un débit ne peut jamais rendre le solde négatif</strong> : si les fonds sont
+     * insuffisants, rien n'est modifié et le résultat le dit ({@code INSUFFICIENT_FUNDS}) — ce
+     * n'est pas une erreur technique mais un refus métier lisible.</p>
+     *
+     * <p>La <strong>raison est obligatoire</strong> et finit dans le journal des transactions :
+     * sans elle, une création de monnaie serait indiscernable d'un gain de jeu six mois plus tard.
+     * Le solde après opération est <strong>relu</strong> et renvoyé.</p>
+     */
+    CompletableFuture<EconomyAdjustView> economyAdjust(UUID playerId, String playerName, long amount,
+                                                      boolean credit, String reason);
+
+    /**
+     * @param code            {@code CREDITED} / {@code DEBITED} / {@code INSUFFICIENT_FUNDS} /
+     *                        {@code INVALID_AMOUNT} / {@code UNKNOWN_PLAYER} / {@code ERROR}
+     * @param balanceBefore   solde avant l'opération
+     * @param balanceAfter    solde <strong>relu</strong> après l'opération
+     */
+    record EconomyAdjustView(boolean ok, String code, String message,
+                             long balanceBefore, long balanceAfter) {
+    }
+
 }

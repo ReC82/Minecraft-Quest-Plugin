@@ -345,6 +345,9 @@ public final class AgentPages {
         boolean canReset = perms.can(session.role(), Permission.ACTION_PLAYER_RESET);
         // Issue #210 : permission DÉDIÉE, la plus restreinte du panel (OWNER uniquement).
         boolean canOp = perms.can(session.role(), Permission.PLAYER_OP_WRITE);
+        // Issue #140 : lire un solde et en créer sont deux gestes distincts.
+        boolean canEcoRead = perms.can(session.role(), Permission.ECONOMY_READ);
+        boolean canEcoWrite = perms.can(session.role(), Permission.ECONOMY_WRITE);
         String focus = cleanPlayer(q.get("player"));
 
         sb.append(agentPicker(agentId, "/players", ""));
@@ -396,7 +399,8 @@ public final class AgentPages {
             boolean open = !focus.isEmpty()
                     && (focus.equalsIgnoreCase(e.uuid()) || focus.equalsIgnoreCase(e.displayName()));
             sb.append(renderPlayerAccordionItem(session, agentId, e, idx++, open, knownItems,
-                    canModerate, canVarGet, canVarSet, canGive, canReset, canOp));
+                    canModerate, canVarGet, canVarSet, canGive, canReset, canOp,
+                    canEcoRead, canEcoWrite));
         }
         sb.append("</div>");
 
@@ -506,7 +510,8 @@ public final class AgentPages {
     private String renderPlayerAccordionItem(Session session, String agentId, PlayerCatalog.Entry e, int idx,
                                              boolean open, List<Object> knownItems, boolean canModerate,
                                              boolean canVarGet, boolean canVarSet, boolean canGive,
-                                             boolean canReset, boolean canOp) {
+                                             boolean canReset, boolean canOp,
+                                             boolean canEcoRead, boolean canEcoWrite) {
         String uuid = e.uuid();
         String name = e.displayName();
         String slug = "pl-" + idx + "-" + uuid.replaceAll("[^0-9a-fA-F]", "").substring(0, Math.min(12, uuid.replaceAll("[^0-9a-fA-F]", "").length()));
@@ -615,6 +620,12 @@ public final class AgentPages {
                     + playerTestTools(session, agentId, uuid, name, e.online(), knownItems, canVarGet, canVarSet, canGive)
                     + "</div>"));
         }
+        // ---- Issue #140 : monnaie ----
+        if (canEcoRead) {
+            toggles.add(new String[] {slug + "-f-eco", "Monnaie", "box", "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-eco", "<div class=\"card card-body npc-formcard\">"
+                    + playerEconomyTools(session, agentId, uuid, name, canEcoWrite) + "</div>"));
+        }
         // ---- Issue #210 : OP/DEOP, secours, expulsion, whitelist ----
         if (canOp) {
             String label = e.op() ? "Retirer OP" : "Accorder OP";
@@ -657,7 +668,8 @@ public final class AgentPages {
         // Résultats récents pour ce joueur (compact — pas l'historique complet).
         for (String type : new String[] {"player.ban", "player.unban", "player.resetnew.confirm",
                 "player.op", "player.deop", "player.send.hub", "player.kick",
-                "player.whitelist.add", "player.whitelist.remove"}) {
+                "player.whitelist.add", "player.whitelist.remove",
+                "economy.balance", "economy.credit", "economy.debit"}) {
             latestForPlayer(agentId, type, uuid).ifPresent(row -> sb.append(resultLine("Dernière action", row)));
         }
 
@@ -743,6 +755,73 @@ public final class AgentPages {
      *   <li>rappel écrit que <strong>seul OP Minecraft change</strong>.</li>
      * </ul>
      */
+    /**
+     * Outils monétaires (issue #140) : lire le solde réel et son journal, puis créditer ou débiter
+     * avec une raison.
+     *
+     * <p><strong>Le portefeuille persistant est l'unique source de vérité du solde.</strong> Aucun
+     * objet d'inventaire n'est consulté ni interprété comme de la monnaie, et rien ici ne convertit
+     * quoi que ce soit.</p>
+     *
+     * <p>La raison est obligatoire parce qu'elle part dans le <em>journal des transactions</em> :
+     * sans elle, une création administrative serait indiscernable d'un gain de jeu quelques mois
+     * plus tard.</p>
+     */
+    private String playerEconomyTools(Session session, String agentId, String uuid, String name,
+                                      boolean canWrite) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("box"))
+                .append("Monnaie de ").append(Http.esc(name)).append("</p>");
+        sb.append("<p class=\"muted\">Le solde vient du <strong>portefeuille persistant</strong>, "
+                + "seule source de vérité. Aucun objet d'inventaire n'est compté comme de la "
+                + "monnaie.</p>");
+
+        // Lecture : relève le solde ET le journal récent.
+        sb.append(formStart(session, agentId, "economy.balance", "/players", uuid));
+        sb.append("<input type=\"hidden\" name=\"history\" value=\"20\">");
+        sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">")
+                .append(Icons.icon("refresh")).append("Lire le solde et le journal</button></form>");
+        latestForPlayer(agentId, "economy.balance", uuid)
+                .ifPresent(row -> sb.append(resultLine("Dernier relevé", row)));
+
+        if (!canWrite) {
+            sb.append("<p class=\"muted\">Votre rôle permet de consulter le solde, pas de le "
+                    + "modifier.</p>");
+            return sb.toString();
+        }
+
+        for (boolean credit : new boolean[] {true, false}) {
+            String type = credit ? "economy.credit" : "economy.debit";
+            sb.append("<hr>");
+            sb.append("<p class=\"fs-h\">").append(credit ? "Créditer" : "Débiter").append("</p>");
+            if (credit) {
+                sb.append("<p class=\"muted\">Un crédit <strong>crée de la monnaie</strong>. "
+                        + "L'opération est tracée avec sa raison.</p>");
+            } else {
+                sb.append("<p class=\"muted\">Un débit ne peut <strong>jamais</strong> rendre le "
+                        + "solde négatif : si les fonds sont insuffisants, rien n'est modifié et le "
+                        + "résultat le dit.</p>");
+            }
+            sb.append(formStart(session, agentId, type, "/players", uuid));
+            sb.append("<label class=\"form-label\">Montant (entier positif, max ")
+                    .append(AgentActionCatalog.MAX_ECONOMY_AMOUNT).append(")</label>");
+            sb.append("<input class=\"form-control mb-2\" type=\"number\" min=\"1\" max=\"")
+                    .append(AgentActionCatalog.MAX_ECONOMY_AMOUNT)
+                    .append("\" name=\"amount\" required>");
+            sb.append("<label class=\"form-label\">Raison (obligatoire, enregistrée au journal)</label>");
+            sb.append("<input class=\"form-control mb-2\" name=\"reason\" maxlength=\"200\" required>");
+            sb.append(confirmBox(credit
+                    ? "Je confirme la création de monnaie pour « " + name + " »."
+                    : "Je confirme le retrait de monnaie à « " + name + " »."));
+            sb.append("<button class=\"btn btn-sm ")
+                    .append(credit ? "btn-outline-primary" : "btn-outline-warning")
+                    .append("\" type=\"submit\">").append(credit ? "Créditer" : "Débiter")
+                    .append("</button></form>");
+            latestForPlayer(agentId, type, uuid)
+                    .ifPresent(row -> sb.append(resultLine("Dernière opération", row)));
+        }
+        return sb.toString();
+    }
+
     private String playerOpForm(Session session, String agentId, String uuid, String name, boolean currentlyOp) {
         String type = currentlyOp ? "player.deop" : "player.op";
         StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("shield-lock"))

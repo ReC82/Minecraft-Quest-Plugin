@@ -57,6 +57,21 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   automatique à l'entrée ou volontaire via l'Acte réutilisé), faisceau dense (DUST + END_ROD)
   hors du claim ; retour au Hub sans commande via la Pierre de retour (mécanique générique de
   voyage par objet, `travel.ItemTravelService`).
+- **Administration de la monnaie (issues #16/#140, premier lot économie)** — le socle existait
+  déjà (`EconomyService` + `WalletRepository`, tables `wallets` et `transactions`, transactions JDBC
+  explicites, débit qui refuse de passer négatif) : ce lot complète sa **fiabilité et son
+  administration**. Le journal était **écrit sans être lisible** → `WalletRepository#history`
+  (lecture seule, bornée, asynchrone) et trois actions whitelistées : `economy.balance`
+  (`ECONOMY_READ`), `economy.credit` / `economy.debit` (`ECONOMY_WRITE`, sensibles). Fiche joueur :
+  solde réel, journal récent, crédit/débit avec **raison obligatoire** enregistrée au journal,
+  montant entier positif **plafonné par opération** (garde-fou de saisie, pas d'équilibrage), débit
+  au-delà du disponible = **refus métier** sans aucune ligne de journal, solde **relu** et affiché
+  avant → après. **Source de vérité tranchée** : le portefeuille persistant ; aucun objet
+  d'inventaire n'est de la monnaie, aucune monnaie reconnue par nom ou lore. Une monnaie physique
+  (#138) serait une **seconde source** : décision de gameplay non prise, et **aucune conversion ni
+  migration** n'a eu lieu. `TESTER`/`READ_ONLY` lisent sans créer ; `BUILDER`/`CONTENT_EDITOR` n'ont
+  aucun accès. Manque identifié : `RewardType` n'a pas de type monnaie, donc une quête ne peut pas
+  encore créditer.
 - **Rechargement du contenu dans le runtime (issue #131)** — service **central**
   `content.reload.ContentReloadService`, seul point qui permute un ensemble actif : dry-run de
   chaque famille, **annulation totale** sur la moindre erreur de contenu (l'ancien runtime valide

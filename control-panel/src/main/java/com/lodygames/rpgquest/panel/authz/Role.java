@@ -54,7 +54,9 @@ public enum Role {
             Permission.ACTION_PLAYER_RESET, Permission.ACTION_ITEM_GIVE,
             Permission.ACTION_CONTENT_RELOAD,
             // Issue #95 : « exploitation du serveur » est la définition même de ce rôle.
-            Permission.OPS_VIEW, Permission.OPS_ANNOUNCE, Permission.OPS_RESTART, Permission.OPS_LOGS)),
+            Permission.OPS_VIEW, Permission.OPS_ANNOUNCE, Permission.OPS_RESTART, Permission.OPS_LOGS,
+            // Issue #140 : administrer la monnaie fait partie de l'exploitation courante.
+            Permission.ECONOMY_READ, Permission.ECONOMY_WRITE)),
 
     TESTER("Testeur", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ,
@@ -64,7 +66,9 @@ public enum Role {
             Permission.MOB_READ, Permission.MOB_TEST_SPAWN,
             // Issue #95 : un testeur a besoin de l'état et de la console pour comprendre ce qu'il
             // observe en jeu. Il n'annonce rien et ne redémarre rien.
-            Permission.OPS_VIEW, Permission.OPS_LOGS)),
+            Permission.OPS_VIEW, Permission.OPS_LOGS,
+            // Issue #140 : lire un solde aide à comprendre un comportement en jeu ; en créer, non.
+            Permission.ECONOMY_READ)),
 
     BUILDER("Builder", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.CONTENT_READ,
@@ -84,7 +88,7 @@ public enum Role {
             Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ, Permission.MOB_READ,
             // Issue #95 : l'état synthétique, oui ; la console, non — elle est plus bavarde
             // (pseudos, coordonnées, erreurs internes).
-            Permission.OPS_VIEW));
+            Permission.OPS_VIEW, Permission.ECONOMY_READ));
 
     private final String label;
     private final Set<Permission> permissions;

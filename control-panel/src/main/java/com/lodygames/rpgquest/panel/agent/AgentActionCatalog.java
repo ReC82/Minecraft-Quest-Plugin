@@ -46,6 +46,13 @@ public final class AgentActionCatalog {
     private static final double Y_MAX = 2048.0;
 
     /**
+     * Plafond d'une opération monétaire administrative unique (issue #140). Garde-fou de
+     * <strong>saisie</strong>, pas une règle d'équilibrage : il empêche qu'une faute de frappe crée
+     * une fortune en un clic, et il est ajustable sans toucher au gameplay.
+     */
+    public static final long MAX_ECONOMY_AMOUNT = 1_000_000L;
+
+    /**
      * Issue #131 — familles rechargeables, miroir de {@code content.reload.ReloadFamily}. L'ordre
      * est celui des dépendances : objets et PNJ avant les quêtes, quêtes avant stories et dialogues.
      */
@@ -225,6 +232,14 @@ public final class AgentActionCatalog {
                 "Ajouter à la whitelist", "player.catalog");
         addSensitiveWrite("player.whitelist.remove", Permission.PLAYER_MODERATE, true,
                 "Retirer de la whitelist", "player.catalog");
+        // Issue #140 — administration de la monnaie. La lecture est un relevé ; le crédit et le
+        // débit sont des mutations SENSIBLES, car un crédit crée de la monnaie.
+        add("economy.balance", Permission.ECONOMY_READ, false, true,
+                "Lire le solde et le journal d'un joueur");
+        addSensitiveWrite("economy.credit", Permission.ECONOMY_WRITE, true,
+                "Créditer un joueur", "player.catalog");
+        addSensitiveWrite("economy.debit", Permission.ECONOMY_WRITE, true,
+                "Débiter un joueur", "player.catalog");
         addSensitiveWrite("player.ban", Permission.PLAYER_MODERATE, true, "Bannir un joueur", "player.catalog");
         addSensitiveWrite("player.unban", Permission.PLAYER_MODERATE, true, "Débannir un joueur", "player.catalog");
         add("quest.start", Permission.ACTION_QUEST, true, true, "Démarrer une quête");
@@ -859,6 +874,48 @@ public final class AgentActionCatalog {
                             + " » pour confirmer la cible.");
                 }
                 params.put("reason", reason);
+            }
+            case "economy.credit", "economy.debit" -> {
+                long value;
+                try {
+                    value = Long.parseLong(trim(form.get("amount")));
+                } catch (NumberFormatException e) {
+                    return Validation.fail("Montant invalide : saisir un entier positif.");
+                }
+                if (value <= 0) {
+                    return Validation.fail("Le montant doit être strictement positif.");
+                }
+                if (value > MAX_ECONOMY_AMOUNT) {
+                    // Garde-fou de SAISIE, pas une règle d'équilibrage : une faute de frappe à six
+                    // zéros ne doit pas pouvoir créer une fortune en un clic.
+                    return Validation.fail("Montant trop élevé en une seule opération (maximum "
+                            + MAX_ECONOMY_AMOUNT + ").");
+                }
+                String reason = trim(form.get("reason"));
+                if (reason.isEmpty()) {
+                    return Validation.fail("Une raison est obligatoire : elle est enregistrée dans "
+                            + "le journal des transactions.");
+                }
+                if (reason.length() > 200 || reason.indexOf('\n') >= 0) {
+                    return Validation.fail("Raison trop longue (max 200) ou multi-ligne.");
+                }
+                params.put("amount", Long.toString(value));
+                params.put("reason", reason);
+            }
+            case "economy.balance" -> {
+                String historyLimit = trim(form.get("history"));
+                if (!historyLimit.isEmpty()) {
+                    int n;
+                    try {
+                        n = Integer.parseInt(historyLimit);
+                    } catch (NumberFormatException e) {
+                        return Validation.fail("Nombre de lignes de journal invalide.");
+                    }
+                    if (n < 1 || n > 100) {
+                        return Validation.fail("Nombre de lignes hors bornes (1 à 100).");
+                    }
+                    params.put("history", Integer.toString(n));
+                }
             }
             case "player.kick" -> {
                 String reason = trim(form.get("reason"));

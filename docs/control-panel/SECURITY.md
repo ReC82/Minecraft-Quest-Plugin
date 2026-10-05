@@ -100,7 +100,29 @@ Paper ou LuckPerms. Toute correspondance future devra être explicite et documen
 `STORY_CONTENT_WRITE`, `CONTENT_READ`, `CONTENT_EXPORT`, `DOCS_READ`, `DIAGNOSTICS_READ`,
 `AUDIT_READ`, `ACTION_QUEST`, `ACTION_STORY`, `ACTION_VARIABLE_GET`, `ACTION_VARIABLE_SET`,
 `ACTION_PLAYER_RESET`, `ACTION_ITEM_GIVE`, `ACTION_CONTENT_RELOAD`, `PLAYER_OP_WRITE`,
-`OPS_VIEW`, `OPS_ANNOUNCE`, `OPS_RESTART`, `OPS_LOGS`, `DEV_MODULE`, `USER_MANAGE`.
+`ECONOMY_READ`, `ECONOMY_WRITE`, `OPS_VIEW`, `OPS_ANNOUNCE`, `OPS_RESTART`, `OPS_LOGS`,
+`DEV_MODULE`, `USER_MANAGE`.
+
+### Monnaie (issues #16/#140)
+
+Deux permissions, parce que les gestes ne se valent pas :
+
+| Permission | Qui l'a | Pourquoi séparée |
+|---|---|---|
+| `ECONOMY_READ` | OWNER, ADMIN, TESTER, READ_ONLY | voir un solde sert au support |
+| `ECONOMY_WRITE` | OWNER, ADMIN | un crédit **crée de la monnaie** |
+
+`BUILDER` et `CONTENT_EDITOR` n'ont **aucun** accès à la monnaie.
+
+**Garde-fous** : montant entier strictement positif et **plafonné par opération** (garde-fou de
+*saisie* contre une faute de frappe, pas une règle d'équilibrage) ; **raison obligatoire**,
+enregistrée dans le journal des transactions ; confirmation explicite ; audit. Un débit au-delà du
+disponible est un **refus métier** qui ne modifie rien et ne laisse **aucune ligne** au journal — le
+solde ne peut pas devenir négatif par ce chemin.
+
+**Source de vérité** : le portefeuille persistant, et lui seul. Aucun objet d'inventaire n'est
+interprété comme de la monnaie, et aucune monnaie n'est reconnue par son nom ou son lore. Une
+monnaie physique serait une seconde source de vérité : décision de gameplay, non prise ici.
 
 ### Élévation OP (issue #210) — la permission la plus restreinte
 

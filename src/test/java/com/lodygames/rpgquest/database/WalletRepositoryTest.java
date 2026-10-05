@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -162,5 +163,89 @@ class WalletRepositoryTest {
         UUID uuid = UUID.randomUUID();
         profiles.findOrCreate(uuid, name).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         return uuid;
+    }
+
+    // ---- Journal des transactions (issue #140) ---------------------------------------------
+
+    @Test
+    void historyIsEmptyForAnUntouchedWallet() throws Exception {
+        UUID player = createPlayer("Steve");
+
+        assertTrue(wallets.history(player, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+    }
+
+    @Test
+    void everyCreditAndDebitLeavesASignedLedgerLine() throws Exception {
+        UUID player = createPlayer("Steve");
+        wallets.credit(player, 100, "ADMIN_GRANT", "don initial").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        wallets.debit(player, 30, "MERCHANT_BUY", "achat pain").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        List<WalletRepository.LedgerEntry> history =
+                wallets.history(player, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        // Les plus récentes d'abord, et le MONTANT EST SIGNÉ : négatif pour un débit. Le journal
+        // décrit le mouvement, il ne le réinterprète pas.
+        assertEquals(2, history.size());
+        assertEquals("MERCHANT_BUY", history.get(0).type());
+        assertEquals(-30L, history.get(0).amount());
+        assertEquals("achat pain", history.get(0).context());
+        assertEquals("ADMIN_GRANT", history.get(1).type());
+        assertEquals(100L, history.get(1).amount());
+    }
+
+    @Test
+    void aRefusedDebitLeavesNoLedgerLineAtAll() throws Exception {
+        UUID player = createPlayer("Steve");
+        wallets.credit(player, 10, "ADMIN_GRANT", null).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        boolean applied = wallets.debit(player, 50, "MERCHANT_BUY", "trop cher")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        // Un débit refusé ne doit laisser AUCUNE trace : sinon le journal raconterait une
+        // transaction qui n'a pas eu lieu.
+        assertFalse(applied);
+        assertEquals(1, wallets.history(player, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+        assertEquals(10L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void historyIsBoundedAndNeverReturnsEverything() throws Exception {
+        UUID player = createPlayer("Steve");
+        for (int i = 0; i < 12; i++) {
+            wallets.credit(player, 1, "TEST", "op " + i).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        }
+
+        assertEquals(5, wallets.history(player, 5).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+        // Bornes dures : une demande absurde ne devient pas un transfert de masse.
+        assertEquals(1, wallets.history(player, 0).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+        assertEquals(12, wallets.history(player, 10_000).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+    }
+
+    @Test
+    void historyIsPerPlayerAndNeverLeaksAnotherWallet() throws Exception {
+        UUID steve = createPlayer("Steve");
+        UUID alex = createPlayer("Alex");
+        wallets.credit(steve, 100, "ADMIN_GRANT", "pour Steve").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(1, wallets.history(steve, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+        assertTrue(wallets.history(alex, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+    }
+
+    @Test
+    void theLedgerSurvivesAReopeningOfTheDatabase() throws Exception {
+        UUID player = createPlayer("Steve");
+        wallets.credit(player, 70, "ADMIN_GRANT", "avant fermeture").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        database.shutdown();
+        database = new DatabaseManager(tempDir.resolve("data.db"));
+        database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        wallets = new WalletRepository(database);
+
+        // Ni perte ni duplication après un redémarrage : c'est l'exigence explicite du ticket.
+        assertEquals(70L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        List<WalletRepository.LedgerEntry> history =
+                wallets.history(player, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(1, history.size());
+        assertEquals("avant fermeture", history.get(0).context());
     }
 }

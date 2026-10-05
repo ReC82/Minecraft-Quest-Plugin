@@ -779,6 +779,47 @@ appliquée** — l'ajouter alors qu'elle est désactivée ne protège rien. Ban 
 dupliqués. Une action impossible hors ligne est **affichée avec son motif**, jamais silencieusement
 inopérante. Cible toujours par **UUID**.
 
+### Monnaie : source de vérité et administration (issues #16/#140, premier lot)
+
+**Constat d'audit : le socle n'était pas manquant.** `economy.EconomyService` et
+`database.WalletRepository` existaient déjà avec les tables `wallets` **et** `transactions`, des
+transactions JDBC explicites (solde + ligne de journal dans la **même** transaction SQL), un débit
+qui **refuse** de passer négatif, un `pay` atomique et dix `TransactionType`. Marchands et marché
+l'utilisent. La consigne appliquée a donc été de **compléter la fiabilité et l'administration**, pas
+de recréer.
+
+**Source de vérité, tranchée explicitement : le portefeuille persistant.** La table `transactions`
+en est le journal. Aucun objet d'inventaire n'est consulté ni interprété comme de la monnaie, et
+**aucune monnaie n'est reconnue par son nom ou son lore**.
+
+**Une monnaie physique (#138) introduirait une seconde source de vérité.** Le lien entre les deux —
+taux, sens de conversion, perte à la mort, fabricable ou non, comportement au drop — est une
+**décision de gameplay** et n'est donc pas prise. Rien de ce lot ne convertit ni ne migre quoi que
+ce soit : aucun solde existant, aucun inventaire n'est touché.
+
+**Ce que ce lot ajoute.** Le journal était **écrit sans être lisible** : aucune méthode ne le
+consultait, donc la traçabilité existait sans être exploitable. `WalletRepository#history` (lecture
+seule, bornée, asynchrone) la rend consultable, et trois actions agent whitelistées l'exposent :
+`economy.balance` (lecture, permission `ECONOMY_READ`), `economy.credit` et `economy.debit`
+(mutations **sensibles**, permission `ECONOMY_WRITE`).
+
+**Deux permissions, parce que les gestes diffèrent** : voir combien possède un joueur sert au
+support ; lui en créer n'est pas le même acte. `TESTER` et `READ_ONLY` lisent sans pouvoir créer ;
+`BUILDER` et `CONTENT_EDITOR` n'ont aucun accès.
+
+**Garanties.** Montant entier **strictement positif**, plafonné par opération — garde-fou de
+**saisie** contre une faute de frappe à six zéros, pas une règle d'équilibrage. **Raison
+obligatoire**, enregistrée dans le journal : sans elle, une création administrative serait
+indiscernable d'un gain de jeu quelques mois plus tard. Un débit au-delà du disponible est un
+**refus métier lisible** (`INSUFFICIENT_FUNDS`) qui ne laisse **aucune ligne** au journal et ne
+modifie rien. Le solde est **relu** après opération et le résultat affiche avant → après.
+Confirmation explicite, audit, et ré-enfilement de l'annuaire pour que le solde affiché soit relu.
+
+**Décisions de gameplay délibérément non prises** : montants des récompenses, prix marchands, coûts
+artisans, perte à la mort, existence et règles d'une monnaie physique, plafond de solde. À noter
+aussi : `RewardType` n'a **pas** de type monnaie, donc une quête ne peut pas encore créditer — c'est
+un manque identifié, pas un oubli silencieux.
+
 ---
 
 ## 4. Dialogues

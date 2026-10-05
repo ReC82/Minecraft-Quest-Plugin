@@ -5,6 +5,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -185,5 +187,46 @@ public final class WalletRepository {
         } catch (ArithmeticException e) {
             throw new SQLException("Dépassement de capacité du solde (montant trop élevé).", e);
         }
+    }
+
+    /**
+     * Une ligne du journal des transactions (issue #140). {@code amount} est <strong>signé</strong> :
+     * négatif pour un débit, positif pour un crédit — exactement comme en base, pour ne pas
+     * réinterpréter la donnée en la lisant.
+     */
+    public record LedgerEntry(String type, long amount, String context, String createdAt) {
+    }
+
+    private static final String SELECT_HISTORY =
+            "SELECT type, amount, context, created_at FROM transactions WHERE player_uuid = ? "
+                    + "ORDER BY id DESC LIMIT ?";
+
+    /**
+     * Dernières transactions d'un joueur, les plus récentes d'abord (issue #140).
+     *
+     * <p>Le journal existait déjà — chaque crédit et chaque débit y écrivent une ligne dans la
+     * <strong>même transaction SQL</strong> que l'écriture du solde — mais <strong>rien ne le
+     * lisait</strong> : la traçabilité était écrite sans être consultable. C'est ce que cette
+     * lecture corrige, et c'est ce qui permet à l'administration de montrer d'où vient un solde.</p>
+     *
+     * <p>Lecture seule, bornée, asynchrone comme le reste du dépôt : jamais de SQL sur le thread
+     * principal.</p>
+     */
+    public CompletableFuture<List<LedgerEntry>> history(UUID uuid, int limit) {
+        int bounded = Math.max(1, Math.min(100, limit));
+        return database.execute(connection -> {
+            List<LedgerEntry> out = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement(SELECT_HISTORY)) {
+                statement.setString(1, uuid.toString());
+                statement.setInt(2, bounded);
+                try (ResultSet rows = statement.executeQuery()) {
+                    while (rows.next()) {
+                        out.add(new LedgerEntry(rows.getString("type"), rows.getLong("amount"),
+                                rows.getString("context"), rows.getString("created_at")));
+                    }
+                }
+            }
+            return List.copyOf(out);
+        });
     }
 }

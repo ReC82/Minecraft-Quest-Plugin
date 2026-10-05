@@ -10,6 +10,9 @@ import com.lodygames.rpgquest.content.pack.ContentPackSerializer;
 import com.lodygames.rpgquest.content.reload.ContentReloadService;
 import com.lodygames.rpgquest.content.reload.ReloadFamily;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
+import com.lodygames.rpgquest.database.WalletRepository;
+import com.lodygames.rpgquest.economy.EconomyService;
+import com.lodygames.rpgquest.economy.TransactionType;
 import com.lodygames.rpgquest.dialogue.DialogueCatalog;
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionStore;
@@ -164,6 +167,9 @@ public final class BukkitAgentActions implements AgentActions {
      * retour et le filet de sécurité des claims : jamais une coordonnée figée.
      */
     private final Supplier<java.util.Optional<org.bukkit.Location>> hubRescueTarget;
+    /** Issue #140 — service monétaire et journal. {@code null} = économie indisponible, dit comme tel. */
+    private final EconomyService economyService;
+    private final WalletRepository walletRepository;
     /** Issue #194 — suppression d'une définition de quête/story sur le serveur, avec sauvegarde. */
     private final com.lodygames.rpgquest.content.ContentDefinitionDeleter contentDeleter;
 
@@ -180,7 +186,8 @@ public final class BukkitAgentActions implements AgentActions {
                               MobSpawnSettingsStore mobSpawnSettingsStore, Supplier<String> wildWorldSupplier,
                               ServerOpsService serverOpsService,
                               ContentReloadService contentReloadService,
-                              Supplier<java.util.Optional<org.bukkit.Location>> hubRescueTarget) {
+                              Supplier<java.util.Optional<org.bukkit.Location>> hubRescueTarget,
+                              EconomyService economyService, WalletRepository walletRepository) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -207,6 +214,8 @@ public final class BukkitAgentActions implements AgentActions {
         this.serverOpsService = serverOpsService;
         this.contentReloadService = contentReloadService;
         this.hubRescueTarget = hubRescueTarget;
+        this.economyService = economyService;
+        this.walletRepository = walletRepository;
         // Issue #194 : dossiers réels du plugin, et sauvegardes HORS des dossiers de contenu pour
         // ne jamais être relues comme des définitions.
         java.nio.file.Path data = plugin.getDataFolder().toPath();
@@ -1877,6 +1886,76 @@ public final class BukkitAgentActions implements AgentActions {
 
     private static String label(String playerName, UUID playerId) {
         return playerName != null && !playerName.isBlank() ? playerName : playerId.toString();
+    }
+
+    // ---- Monnaie (issue #140) -----------------------------------------------------------------
+
+    @Override
+    public CompletableFuture<EconomyBalanceView> economyBalance(UUID playerId, int historyLimit) {
+        if (economyService == null || walletRepository == null) {
+            return CompletableFuture.completedFuture(new EconomyBalanceView(false,
+                    "Économie indisponible sur ce serveur.", 0L, List.of()));
+        }
+        // Lectures SQLite asynchrones : jamais sur le thread principal.
+        return economyService.balance(playerId).thenCompose(balance ->
+                walletRepository.history(playerId, historyLimit).thenApply(entries -> {
+                    List<EconomyLedgerView> history = new ArrayList<>();
+                    for (WalletRepository.LedgerEntry entry : entries) {
+                        history.add(new EconomyLedgerView(entry.type(), entry.amount(),
+                                entry.context(), entry.createdAt()));
+                    }
+                    return new EconomyBalanceView(true, "Solde relu.", balance, List.copyOf(history));
+                }))
+                .exceptionally(err -> new EconomyBalanceView(false,
+                        "Lecture du solde impossible : " + rootName(err), 0L, List.of()));
+    }
+
+    @Override
+    public CompletableFuture<EconomyAdjustView> economyAdjust(UUID playerId, String playerName,
+                                                              long amount, boolean credit, String reason) {
+        String label = label(playerName, playerId);
+        if (economyService == null) {
+            return CompletableFuture.completedFuture(new EconomyAdjustView(false, "ERROR",
+                    "Économie indisponible sur ce serveur.", 0L, 0L));
+        }
+        if (amount <= 0) {
+            return CompletableFuture.completedFuture(new EconomyAdjustView(false, "INVALID_AMOUNT",
+                    "Le montant doit être strictement positif.", 0L, 0L));
+        }
+        String context = (credit ? "panel-credit" : "panel-debit") + " : " + reason;
+        return economyService.balance(playerId).thenCompose(before -> {
+            if (credit) {
+                return economyService.credit(playerId, amount, TransactionType.ADMIN_GRANT, context)
+                        .thenCompose(ignored -> economyService.balance(playerId))
+                        .thenApply(after -> {
+                            plugin.getSLF4JLogger().info(
+                                    "[economy] crédit de {} à {} ({} -> {}) : {}",
+                                    amount, label, before, after, reason);
+                            return new EconomyAdjustView(true, "CREDITED",
+                                    label + " crédité de " + amount + " (solde : " + before + " → "
+                                            + after + ").", before, after);
+                        });
+            }
+            return economyService.debit(playerId, amount, TransactionType.ADMIN_TAKE, context)
+                    .thenCompose(applied -> economyService.balance(playerId)
+                            .thenApply(after -> {
+                                if (!applied) {
+                                    // Refus MÉTIER lisible, pas une erreur technique : le solde
+                                    // n'a pas bougé et ne peut pas devenir négatif par ce chemin.
+                                    return new EconomyAdjustView(false, "INSUFFICIENT_FUNDS",
+                                            "Fonds insuffisants : " + label + " possède " + after
+                                                    + ", débit de " + amount + " refusé. Solde inchangé.",
+                                            before, after);
+                                }
+                                plugin.getSLF4JLogger().info(
+                                        "[economy] débit de {} à {} ({} -> {}) : {}",
+                                        amount, label, before, after, reason);
+                                return new EconomyAdjustView(true, "DEBITED",
+                                        label + " débité de " + amount + " (solde : " + before + " → "
+                                                + after + ").", before, after);
+                            }));
+        }).exceptionally(err -> new EconomyAdjustView(false, "ERROR",
+                "Opération impossible : " + rootName(err), 0L, 0L));
     }
 
     // ---- Utilitaires --------------------------------------------------------------------------

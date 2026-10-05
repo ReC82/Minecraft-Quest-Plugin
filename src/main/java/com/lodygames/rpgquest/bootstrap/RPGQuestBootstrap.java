@@ -214,6 +214,8 @@ public final class RPGQuestBootstrap {
     private EntitlementService entitlementService;
     private BackpackService backpackService;
     private EconomyService economyService;
+    /** Issue #140 — exposé à l'agent pour la lecture du journal des transactions. */
+    private WalletRepository walletRepository;
     private MerchantTradeService merchantTradeService;
     private MarketRepository marketRepository;
     private MarketService marketService;
@@ -436,7 +438,7 @@ public final class RPGQuestBootstrap {
                 () -> configService.current().backpacks(), plugin.getSLF4JLogger());
         registry.start(storeDeliveryService);
 
-        WalletRepository walletRepository = new WalletRepository(databaseService.databaseManager());
+        walletRepository = new WalletRepository(databaseService.databaseManager());
         economyService = new EconomyService(walletRepository);
         registry.start(merchantRegistry);
         merchantTradeService = new MerchantTradeService(
@@ -729,7 +731,10 @@ public final class RPGQuestBootstrap {
                                 // et le filet de sécurité des claims : jamais une coordonnée figée.
                                 () -> spawnService.resolve().or(() -> worldService
                                         .find(configService.current().hub().world())
-                                        .map(org.bukkit.World::getSpawnLocation))))));
+                                        .map(org.bukkit.World::getSpawnLocation)),
+                                // Issue #140 — administration de la monnaie. Le portefeuille
+                                // persistant reste l'unique source de vérité du solde.
+                                economyService, walletRepository))));
 
         registerCommands();
     }

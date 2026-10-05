@@ -311,4 +311,15 @@ class StubAgentActions implements AgentActions {
                                                             boolean whitelisted) {
         return unsupported();
     }
+
+    @Override
+    public CompletableFuture<EconomyBalanceView> economyBalance(java.util.UUID playerId, int historyLimit) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
+
+    @Override
+    public CompletableFuture<EconomyAdjustView> economyAdjust(java.util.UUID playerId, String playerName,
+                                                              long amount, boolean credit, String reason) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
 }

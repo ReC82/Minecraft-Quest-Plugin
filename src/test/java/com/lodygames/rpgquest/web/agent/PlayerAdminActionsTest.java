@@ -52,7 +52,8 @@ class PlayerAdminActionsTest {
                 () -> "wild",
                 new ServerOpsService(plugin, new ServerLogBuffer(50), Optional::empty),
                 null,
-                () -> hubTarget);
+                () -> hubTarget,
+                null, null);
     }
 
     @AfterEach

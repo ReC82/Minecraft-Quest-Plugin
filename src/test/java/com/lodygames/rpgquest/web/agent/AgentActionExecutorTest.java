@@ -794,6 +794,100 @@ class AgentActionExecutorTest {
                         Map.of("families", "a,b,c,d,e,f,g,h,i,j,k,l,m", "confirm", "true"))).status());
     }
 
+    // ---- Monnaie (issue #140) ---------------------------------------------------------
+
+    @Test
+    void readingABalanceCarriesTheLedgerWithSignedAmounts() {
+        AgentActionOutcome outcome = run(new AgentAction("ec1", "economy.balance",
+                Map.of("player", "Rondoudou9000", "history", "20")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals(20, actions.lastEcoHistoryLimit);
+        assertEquals("250", outcome.value());
+        assertEquals(250L, outcome.details().get("balance"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> history = (List<Map<String, Object>>) outcome.details().get("history");
+        assertEquals(2, history.size());
+        // Le montant reste SIGNÉ : un débit est négatif, et le panel n'a pas à le deviner.
+        assertEquals(-30L, history.get(1).get("amount"));
+    }
+
+    @Test
+    void theLedgerLimitDefaultsAndIsBounded() {
+        run(new AgentAction("ec2", "economy.balance", Map.of("player", "Rondoudou9000")));
+        assertEquals(20, actions.lastEcoHistoryLimit, "défaut raisonnable");
+
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("ec3", "economy.balance",
+                        Map.of("player", "Rondoudou9000", "history", "0"))).status());
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("ec4", "economy.balance",
+                        Map.of("player", "Rondoudou9000", "history", "101"))).status());
+    }
+
+    @Test
+    void aCreditForwardsTheAmountAndTheReason() {
+        AgentActionOutcome outcome = run(new AgentAction("ec5", "economy.credit",
+                Map.of("player", "Rondoudou9000", "amount", "250", "reason", "compensation bug",
+                        "confirm", "true")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals(250L, actions.lastEcoAmount);
+        assertEquals(Boolean.TRUE, actions.lastEcoCredit);
+        assertEquals("compensation bug", actions.lastEcoReason);
+        assertEquals(100L, outcome.details().get("balanceBefore"));
+        assertEquals(350L, outcome.details().get("balanceAfter"));
+    }
+
+    @Test
+    void aDebitIsDistinguishedFromACredit() {
+        run(new AgentAction("ec6", "economy.debit",
+                Map.of("player", "Rondoudou9000", "amount", "10", "reason", "correction", "confirm", "true")));
+
+        assertEquals(Boolean.FALSE, actions.lastEcoCredit);
+    }
+
+    @Test
+    void aReasonIsAlwaysRequiredBecauseItLandsInTheLedger() {
+        AgentActionOutcome outcome = run(new AgentAction("ec7", "economy.credit",
+                Map.of("player", "Rondoudou9000", "amount", "10", "confirm", "true")));
+
+        assertEquals(AgentActionOutcome.REJECTED, outcome.status());
+        assertTrue(outcome.message().contains("Raison"), outcome.message());
+        assertEquals(-1, actions.lastEcoAmount, "rien ne doit atteindre le serveur");
+    }
+
+    @Test
+    void anInvalidOrExcessiveAmountIsRejectedBeforeReachingTheServer() {
+        for (String amount : new String[] {"0", "-5", "abc", "1000001"}) {
+            AgentActionOutcome outcome = run(new AgentAction("ec8", "economy.credit",
+                    Map.of("player", "Rondoudou9000", "amount", amount, "reason", "test", "confirm", "true")));
+            assertEquals(AgentActionOutcome.REJECTED, outcome.status(), "montant " + amount);
+        }
+        assertEquals(-1, actions.lastEcoAmount);
+    }
+
+    @Test
+    void insufficientFundsIsAReadableFailureWithTheRealBalance() {
+        actions.ecoOk = false;
+        actions.ecoCode = "INSUFFICIENT_FUNDS";
+
+        AgentActionOutcome outcome = run(new AgentAction("ec9", "economy.debit",
+                Map.of("player", "Rondoudou9000", "amount", "999", "reason", "test", "confirm", "true")));
+
+        // Un refus métier n'est pas un succès : sinon l'administrateur croirait avoir débité.
+        assertEquals(AgentActionOutcome.FAILED, outcome.status());
+        assertTrue(outcome.message().contains("insuffisants"), outcome.message());
+    }
+
+    @Test
+    void aMultilineReasonIsRejected() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("ec10", "economy.credit",
+                        Map.of("player", "Rondoudou9000", "amount", "10", "reason", "a\nb",
+                                "confirm", "true"))).status());
+    }
+
     // ---- Fake façade métier -----------------------------------------------------------
 
     private static final class FakeAgentActions implements AgentActions {
@@ -1260,6 +1354,34 @@ class AgentActionExecutorTest {
                     announceOk ? (announceOnline == 0 ? "NO_PLAYERS" : "SENT") : "ERROR",
                     announceOk ? "Annonce envoyée." : "Diffusion impossible.",
                     channel, announceRecipients, announceOnline));
+        }
+
+        // ---- Monnaie (issue #140) ----------------------------------------------------
+
+        long lastEcoAmount = -1;
+        Boolean lastEcoCredit;
+        String lastEcoReason;
+        int lastEcoHistoryLimit = -1;
+        boolean ecoOk = true;
+        String ecoCode = "CREDITED";
+
+        @Override
+        public CompletableFuture<EconomyBalanceView> economyBalance(UUID playerId, int historyLimit) {
+            lastEcoHistoryLimit = historyLimit;
+            return CompletableFuture.completedFuture(new EconomyBalanceView(true, "Solde relu.", 250L,
+                    List.of(new EconomyLedgerView("ADMIN_GRANT", 100L, "don", "2026-10-06T00:00:00Z"),
+                            new EconomyLedgerView("MERCHANT_BUY", -30L, "pain", "2026-10-06T00:01:00Z"))));
+        }
+
+        @Override
+        public CompletableFuture<EconomyAdjustView> economyAdjust(UUID playerId, String playerName,
+                                                                  long amount, boolean credit, String reason) {
+            lastEcoAmount = amount;
+            lastEcoCredit = credit;
+            lastEcoReason = reason;
+            return CompletableFuture.completedFuture(new EconomyAdjustView(ecoOk, ecoCode,
+                    ecoOk ? "Solde : 100 → 350." : "Fonds insuffisants : solde inchangé.",
+                    100L, ecoOk ? 350L : 100L));
         }
 
         // ---- Administration de joueur (issue #210) -----------------------------------

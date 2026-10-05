@@ -123,7 +123,20 @@ public enum AgentActionType {
      * rien si une famille est invalide ou si une référence croisée serait cassée : l'ancien runtime
      * valide est conservé. Jamais un {@code /reload} Bukkit.
      */
-    CONTENT_RELOAD("content.reload");
+    CONTENT_RELOAD("content.reload"),
+    /**
+     * Issue #210 — statut <strong>OP Minecraft</strong>. Distinct d'un rôle PlugAdmin, d'un droit de
+     * construction et d'un bypass de gameplay : cette action ne touche qu'{@code OfflinePlayer#setOp}.
+     */
+    PLAYER_OP("player.op"),
+    PLAYER_DEOP("player.deop"),
+    /** Issue #210 — renvoi d'un joueur connecté à une position sûre du Hub. Préserve tout. */
+    PLAYER_SEND_HUB("player.send.hub"),
+    /** Issue #210 — expulsion d'un joueur connecté avec une raison affichée. */
+    PLAYER_KICK("player.kick"),
+    /** Issue #210 — whitelist, en précisant si elle est réellement appliquée par le serveur. */
+    PLAYER_WHITELIST_ADD("player.whitelist.add"),
+    PLAYER_WHITELIST_REMOVE("player.whitelist.remove");
 
     private final String wire;
 

@@ -55,6 +55,20 @@ public enum Permission {
     ACTION_CONTENT_RELOAD,
     DEV_MODULE,
     /**
+     * Accorder ou retirer le statut <strong>OP Minecraft</strong> (issue #210).
+     *
+     * <p>Permission <strong>dédiée et volontairement la plus restreinte du panel</strong> :
+     * réservée à {@code OWNER}, et <strong>pas</strong> accordée à {@code ADMIN}. Le ticket l'exige
+     * explicitement — « ne pas accorder ce droit implicitement à tous les
+     * administrateurs/modérateurs ». Une délégation reste possible, mais elle doit être une
+     * décision explicite, pas un effet de bord du rôle d'administrateur.</p>
+     *
+     * <p>OP Minecraft n'est <strong>ni</strong> un rôle PlugAdmin, <strong>ni</strong> un droit de
+     * construction par monde (#200), <strong>ni</strong> un bypass de gameplay (#35). Accorder OP ne
+     * modifie aucun des trois.</p>
+     */
+    PLAYER_OP_WRITE,
+    /**
      * Voir la page « Exploitation serveur » (issue #95) : état réel du serveur et de l'agent,
      * fraîcheur des données, historique des opérations. Lecture seule.
      */

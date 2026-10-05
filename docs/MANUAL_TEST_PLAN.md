@@ -2688,6 +2688,164 @@ le résumé de récompenses de TC-014).
     bout en bout contre VeryGames, l'ergonomie de la console sous charge, et les permissions vues
     depuis de vrais comptes — c'est l'objet des étapes A à F.
 
+### TC-247 — Rechargement du contenu depuis PlugAdmin (issue #131)
+
+-   **Fonctionnalité testée :** les trois états source/publié/chargé, l'aperçu, le rechargement par
+    famille, le contenu lié, la conservation du runtime en cas d'erreur, et la préservation de la
+    progression et des instances vivantes.
+-   **Préconditions :** JAR de cette session déployé, serveur redémarré, panel déployé. Rôle
+    `OWNER` ou `ADMIN`.
+-   **IMPORTANT — contenu de test uniquement.** Tout ce qui est créé ici porte le préfixe
+    `tc131_`. **Ne pas** toucher `first_steps`, `crystal_hunt`, les quêtes du Garde, `main_story`
+    ni les contenus du propriétaire.
+
+-   **A. Les trois états :**
+    1.  Panel `/ops` → bloc **Rechargement du contenu**. **Attendu** : les trois états sont
+        énoncés, et la phrase disant qu'un rechargement **ne transfère rien** depuis AWS.
+    2.  Créer une quête `tc131_etat` depuis `/quests/new`. **Attendu** : badge « Source uniquement »
+        sur `/quests`, et une **action contextuelle** apparaît avec l'explication des deux causes.
+    3.  Cliquer **Aperçu** depuis cette action. **Attendu** : le résultat **ne contient pas**
+        `rpgquest:tc131_etat` dans les identifiants de la famille `quests` — le fichier n'a jamais
+        été publié sur VeryGames. C'est le cas « déploiement requis ».
+    4.  Déployer le contenu sur le serveur, **sans** redémarrer.
+    5.  Cliquer **Aperçu** de nouveau. **Attendu** : `rpgquest:tc131_etat` **apparaît** désormais —
+        le fichier est publié mais pas chargé. C'est le cas « rechargement suffit ».
+    6.  Cliquer **Recharger en jeu**. **Attendu** : succès, et le badge « Source uniquement »
+        **disparaît sans F5 manuel** (les catalogues sont ré-enfilés automatiquement).
+    7.  En jeu, `/rpgadmin quest list` (ou le PNJ donneur). **Attendu** : la quête est réellement
+        utilisable.
+
+-   **B. Erreur de contenu : le runtime précédent survit :**
+    8.  Sur le serveur, rendre `tc131_etat.yml` volontairement invalide (par exemple supprimer la
+        ligne `title:`).
+    9.  Cliquer **Aperçu**. **Attendu** : erreur listée avec le **nom du fichier**, et rien
+        d'appliqué.
+    10. Cliquer **Recharger en jeu**. **Attendu** : **refus**, message « le runtime précédent est
+        conservé », et en jeu la quête `tc131_etat` est **toujours chargée** (l'ancienne version).
+        **C'est le point le plus important du lot** : un contenu cassé ne doit pas faire disparaître
+        une définition déjà chargée.
+    11. Réparer le fichier, recharger. **Attendu** : succès.
+
+-   **C. Contenu lié :**
+    12. Créer une quête `tc131_liee` et une story `tc131_story` qui la contient. Déployer les deux.
+    13. Cocher **uniquement** « Stories » et cliquer **Recharger en jeu**. **Attendu** : **refus**
+        « références croisées cassées », avec le message indiquant de recharger aussi **Quêtes**.
+    14. Cocher « Stories » **et** « Quêtes », recharger. **Attendu** : succès.
+
+-   **D. Préservation (le cœur de la sécurité) :**
+    15. Avec un joueur de test, accepter `tc131_etat` et progresser partiellement.
+    16. Recharger la famille **Quêtes**. **Attendu** : la progression du joueur est **inchangée**
+        (`/quests` en jeu), aucune récompense n'a été redistribuée, et la quête reste active.
+    17. Faire apparaître un mob spécial de test, puis recharger la famille **Mobs**. **Attendu** :
+        l'instance vivante est **toujours là**, aucun despawn, aucun respawn.
+    18. Ouvrir un dialogue avec un PNJ, laisser la fenêtre ouverte, et recharger **Dialogues**
+        depuis le panel. **Attendu** : aucun crash ; au pire le dialogue se ferme proprement.
+
+-   **E. Opérations concurrentes et commande en jeu :**
+    19. Lancer deux rechargements très rapprochés. **Attendu** : le second est **refusé**
+        (« déjà en cours »), jamais mis en file.
+    20. En jeu : `/rpgadmin content preview`. **Attendu** : même résultat structuré que le panel.
+    21. En jeu : `/rpgadmin mob reload`. **Attendu** : il passe désormais par le service central —
+        donc un profil invalide **refuse** le rechargement au lieu de le retirer du runtime.
+    22. Vérifier l'**audit** (`/actions`) : les rechargements et leur résultat y figurent.
+
+-   **F. Paramètres :**
+    23. Modifier une valeur de `config.yml` et tenter un rechargement. **Attendu** : la page indique
+        clairement que les paramètres exigent un **redémarrage** (workflow #95), et ne prétend pas
+        les avoir appliqués.
+
+-   **Nettoyage :** supprimer `tc131_etat`, `tc131_liee` et `tc131_story` (voir TC-243). Aucun
+    joueur à réinitialiser.
+-   **Couverture automatisée :** `ContentReloadServiceTest` (23 cas, registres **réels** sur
+    fichiers temporaires : aperçu qui ne touche rien, **fichier invalide qui ne retire jamais une
+    définition déjà chargée**, erreur dans une famille qui bloque toute la demande, références
+    croisées story→quête / dialogue→quête / PNJ→dialogue / quête→donneur, **familles liées qui
+    réussissent ensemble**, famille non rechargée jugée sur son état runtime réel, ordre de
+    dépendance indépendant de l'ordre de la demande, empreinte stable et insensible aux noms de
+    fichiers, single-flight, aperçu autorisé pendant un rechargement, identifiants du **disque
+    serveur**), `AgentActionExecutorTest` (+7 cas), `ContentReloadPageTest` (10 cas : trois états
+    affichés, avertissement AWS, familles réordonnées, confirmation exigée, famille inconnue
+    refusée, **ré-enfilement des six catalogues** au succès et **aucun** à l'échec).
+    **Non couvert automatiquement** : le déploiement réel entre AWS et VeryGames, la préservation
+    constatée en jeu, et le comportement sous dialogue ouvert — c'est l'objet des étapes A à F.
+
+---
+
+### TC-248 — OP/DEOP et actions de secours sur un joueur (issue #210)
+
+-   **Fonctionnalité testée :** statut OP réel, OP/DEOP avec raison et confirmation d'identité,
+    renvoi au Hub, expulsion, whitelist, frontière de permission, et comportement hors ligne.
+-   **Préconditions :** JAR de cette session déployé, panel déployé.
+-   **IMPORTANT — identité de test.** Utiliser un **compte de test dédié**. **Ne pas** modifier les
+    droits du compte du propriétaire pour tester, et **restaurer** les droits du compte de test à la
+    fin. Aucune élévation d'un joueur réel comme test implicite.
+
+-   **A. Statut OP réel :**
+    1.  Fiche du joueur de test sur `/players` → section **Modération**. **Attendu** : une ligne
+        « OP Minecraft » reflétant l'état réel, et une ligne « Whitelist ».
+    2.  En jeu, `/op <joueur_test>` depuis la console. Rafraîchir l'annuaire dans le panel.
+        **Attendu** : la fiche affiche **Opérateur** — l'état vient du serveur, pas du panel.
+    3.  `/deop <joueur_test>`, rafraîchir. **Attendu** : la fiche repasse à « non ».
+
+-   **B. OP/DEOP depuis le panel :**
+    4.  Cliquer **Accorder OP**. **Attendu** : raison obligatoire **et** champ demandant de retaper
+        le pseudo exact.
+    5.  Retaper un **mauvais** pseudo et valider. **Attendu** : **refus** citant le pseudo attendu.
+    6.  Retaper le bon pseudo, avec une raison, et valider. **Attendu** : succès ; le résultat
+        rappelle que **seul OP Minecraft** a changé. Vérifier en jeu `/op`-status.
+    7.  Recliquer **Accorder OP** (rejeu). **Attendu** : « était déjà OP », pas une erreur.
+    8.  **Retirer OP**, puis vérifier en jeu et après un **redémarrage** que l'état a persisté.
+    9.  Vérifier que le **rôle PlugAdmin** du compte de test est inchangé (`/users`), que son droit
+        de construction est inchangé, et qu'aucun bypass de gameplay ne s'est activé.
+
+-   **C. Frontière de permission (le point de sécurité) :**
+    10. Créer un compte panel de rôle **ADMIN**. **Attendu** : il voit la fiche joueur mais
+        **aucun** bouton OP/DEOP.
+    11. Depuis ce compte ADMIN, poster directement la route `/agents/action` avec
+        `type=player.op`. **Attendu** : **403** cohérent — masquer le bouton n'est pas la sécurité.
+    12. Désactiver le compte de test créé.
+
+-   **D. Renvoi au Hub :**
+    13. Joueur de test connecté, dans le monde des claims ou le Wild. Cliquer **Renvoyer au Hub**.
+        **Attendu** : il arrive à une position sûre du Hub ; **inventaire, Acte, claim et
+        progression intacts**.
+    14. Joueur de test **déconnecté**. **Attendu** : l'action est affichée **indisponible** avec son
+        motif, et ne prétend pas avoir agi.
+    15. Vérifier dans le résultat la mention de préservation.
+
+-   **E. Expulsion :**
+    16. Joueur de test connecté → **Expulser** avec une raison. **Attendu** : il est déconnecté et
+        **voit la raison**. Il peut se reconnecter (une expulsion n'est pas un bannissement).
+    17. Sans raison. **Attendu** : refus.
+    18. Joueur déconnecté. **Attendu** : action indisponible avec motif.
+
+-   **F. Whitelist :**
+    19. **Ajouter à la whitelist** le joueur de test. **Attendu** : succès, et le résultat précise
+        si la whitelist est **réellement appliquée** par le serveur.
+    20. Si la whitelist est désactivée, vérifier que le message **avertit** que la liste n'a aucun
+        effet en l'état.
+    21. **Retirer de la whitelist**, puis recliquer. **Attendu** : « n'était pas sur la whitelist ».
+    22. Vérifier que ces deux actions fonctionnent **joueur hors ligne**.
+
+-   **G. Audit :**
+    23. Vérifier `/actions` : chaque opération figure avec son auteur, sa cible, sa raison et son
+        résultat.
+
+-   **Nettoyage :** retirer OP et la whitelist du compte de test, désactiver les comptes panel
+    créés à l'étape C. **Aucun droit du propriétaire ne doit avoir été modifié.**
+-   **Couverture automatisée :** `PlayerAdminActionsTest` (17 cas : OP accordé/retiré et **relu**,
+    idempotence dans les deux sens, UUID jamais vu **refusé**, **jamais de faux succès** quand
+    l'écriture ne prend pas, renvoi au Hub qui déplace réellement et **préserve l'inventaire**,
+    hors ligne refusé, destination non résolue refusée sans déplacer, expulsion avec raison et
+    repli lisible, whitelist appliquée/relue/idempotente, et **avertissement quand la whitelist est
+    désactivée**), `PlayerAdminPageTest` (11 cas : **OWNER seul peut élever**, ADMIN explicitement
+    exclu, réutilisation de `PLAYER_MODERATE`, sensibilité et confirmation de chaque action,
+    ré-enfilement de l'annuaire, raison obligatoire, **confirmation par l'identité exacte**).
+    **Non couvert automatiquement** : l'élévation OP d'un joueur **hors ligne** (non reproductible
+    sous MockBukkit — `setOp` n'y persiste pas après déconnexion ; sur un vrai serveur Bukkit écrit
+    dans `ops.json`), la persistance après redémarrage, le 403 sur route directe depuis un vrai
+    compte ADMIN, et le rendu en jeu — c'est l'objet des étapes A à G.
+
 ---
 
 ## Table de recette
@@ -2766,3 +2924,5 @@ le résumé de récompenses de TC-014).
 | TC-244 | Signal visuel PNJ : quête dispo / dialogue non lu #12 (PENDING) | | | |
 | TC-245 | Claims : pas d'entrée sans retour, bypass doté, inventaire plein #22 (PENDING) | | | |
 | TC-246 | Exploitation serveur : état, annonce, redémarrage vérifié, console #95 (PENDING) | | | |
+| TC-247 | Rechargement du contenu : 3 états, contenu lié, runtime préservé #131 (PENDING) | | | |
+| TC-248 | OP/DEOP, renvoi Hub, kick, whitelist #210 (PENDING) | | | |

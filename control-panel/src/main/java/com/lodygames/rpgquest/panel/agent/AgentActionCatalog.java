@@ -210,6 +210,21 @@ public final class AgentActionCatalog {
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");
         add("player.resetnew.confirm", Permission.ACTION_PLAYER_RESET, true, true, "Reset « nouveau joueur »");
+        // Issue #210 — administration de joueur. L'élévation OP a sa PROPRE permission, la plus
+        // restreinte du panel : réservée à OWNER, pas accordée à ADMIN. Le reste réutilise
+        // PLAYER_MODERATE comme le ticket le demande, pour ne pas multiplier les permissions.
+        addSensitiveWrite("player.op", Permission.PLAYER_OP_WRITE, true,
+                "Accorder le statut OP Minecraft", "player.catalog");
+        addSensitiveWrite("player.deop", Permission.PLAYER_OP_WRITE, true,
+                "Retirer le statut OP Minecraft", "player.catalog");
+        addSensitiveWrite("player.send.hub", Permission.PLAYER_MODERATE, true,
+                "Renvoyer un joueur au Hub", "player.list");
+        addSensitiveWrite("player.kick", Permission.PLAYER_MODERATE, true,
+                "Expulser un joueur", "player.list", "player.catalog");
+        addSensitiveWrite("player.whitelist.add", Permission.PLAYER_MODERATE, true,
+                "Ajouter à la whitelist", "player.catalog");
+        addSensitiveWrite("player.whitelist.remove", Permission.PLAYER_MODERATE, true,
+                "Retirer de la whitelist", "player.catalog");
         addSensitiveWrite("player.ban", Permission.PLAYER_MODERATE, true, "Bannir un joueur", "player.catalog");
         addSensitiveWrite("player.unban", Permission.PLAYER_MODERATE, true, "Débannir un joueur", "player.catalog");
         add("quest.start", Permission.ACTION_QUEST, true, true, "Démarrer une quête");
@@ -826,6 +841,35 @@ public final class AgentActionCatalog {
                 }
             }
             case "player.resetnew.confirm" -> params.put("confirm", "true");
+            case "player.op", "player.deop" -> {
+                // Raison OBLIGATOIRE : une élévation OP sans motif rend l'audit inexploitable.
+                String reason = trim(form.get("reason"));
+                if (reason.isEmpty()) {
+                    return Validation.fail("Une raison est obligatoire pour modifier le statut OP.");
+                }
+                if (reason.length() > 200 || reason.indexOf('\n') >= 0) {
+                    return Validation.fail("Raison trop longue (max 200) ou multi-ligne.");
+                }
+                // Confirmation portant sur l'IDENTITÉ : l'opérateur doit retaper le pseudo exact,
+                // pour qu'un clic sur la mauvaise fiche ne puisse pas élever le mauvais compte.
+                String typed = trim(form.get("confirm_player"));
+                String target = params.getOrDefault("player", "");
+                if (!typed.equalsIgnoreCase(target)) {
+                    return Validation.fail("Confirmation incorrecte : retaper exactement « " + safe(target)
+                            + " » pour confirmer la cible.");
+                }
+                params.put("reason", reason);
+            }
+            case "player.kick" -> {
+                String reason = trim(form.get("reason"));
+                if (reason.isEmpty()) {
+                    return Validation.fail("Une raison est obligatoire pour expulser un joueur.");
+                }
+                if (reason.length() > 200 || reason.indexOf('\n') >= 0) {
+                    return Validation.fail("Raison trop longue (max 200) ou multi-ligne.");
+                }
+                params.put("reason", reason);
+            }
             case "player.ban" -> {
                 String reason = trim(form.get("reason"));
                 if (reason.isEmpty()) {

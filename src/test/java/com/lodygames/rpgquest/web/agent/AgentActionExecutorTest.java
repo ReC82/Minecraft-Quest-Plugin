@@ -1159,9 +1159,10 @@ class AgentActionExecutorTest {
             lastCatalogLimit = limit;
             return CompletableFuture.completedFuture(List.of(
                     new PlayerCatalogEntry(RONDOUDOU.toString(), "Rondoudou9000", true, true,
-                            1_600_000_000_000L, null, false, null, "world_hub", 1, 64, 2),
+                            1_600_000_000_000L, null, false, null, "world_hub", 1, 64, 2, true, false),
                     new PlayerCatalogEntry("11111111-1111-1111-1111-111111111111", "Steve", false, true,
-                            1_500_000_000_000L, 1_599_000_000_000L, true, "spam", null, null, null, null)));
+                            1_500_000_000_000L, 1_599_000_000_000L, true, "spam", null, null, null, null,
+                            false, true)));
         }
 
         @Override
@@ -1259,6 +1260,40 @@ class AgentActionExecutorTest {
                     announceOk ? (announceOnline == 0 ? "NO_PLAYERS" : "SENT") : "ERROR",
                     announceOk ? "Annonce envoyée." : "Diffusion impossible.",
                     channel, announceRecipients, announceOnline));
+        }
+
+        // ---- Administration de joueur (issue #210) -----------------------------------
+
+        Boolean lastOpValue;
+        String lastOpPlayer;
+        String lastHubPlayer;
+        String lastKickReason;
+        Boolean lastWhitelistValue;
+
+        @Override
+        public CompletableFuture<MutationResult> setOperator(UUID playerId, String playerName, boolean op) {
+            lastOpValue = op;
+            lastOpPlayer = playerName;
+            return mutation(op ? "OP accordé" : "OP retiré");
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> sendToHub(UUID playerId, String playerName) {
+            lastHubPlayer = playerName;
+            return mutation("renvoyé au Hub");
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> kickPlayer(UUID playerId, String playerName, String reason) {
+            lastKickReason = reason;
+            return mutation("expulsé");
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> setWhitelisted(UUID playerId, String playerName,
+                                                                boolean whitelisted) {
+            lastWhitelistValue = whitelisted;
+            return mutation("whitelist");
         }
 
         // ---- Rechargement du contenu (issue #131) ------------------------------------

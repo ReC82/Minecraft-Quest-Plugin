@@ -144,7 +144,7 @@ class PlayerCatalogTest {
         List<PlayerCatalog.Entry> many = new ArrayList<>();
         for (int i = 0; i < 130; i++) {
             many.add(new PlayerCatalog.Entry("uuid-" + String.format("%03d", i), "P" + String.format("%03d", i),
-                    false, false, null, null, (long) (1_000 + i), null, null, null, null));
+                    false, false, null, null, (long) (1_000 + i), null, null, null, null, false, false));
         }
         PlayerCatalog.Page p1 = PlayerCatalog.view(many, "", PlayerCatalog.Filter.ALL, PlayerCatalog.Sort.NAME, 1, 50);
         assertEquals(50, p1.entries().size());

@@ -343,6 +343,8 @@ public final class AgentPages {
         boolean canVarSet = perms.can(session.role(), Permission.ACTION_VARIABLE_SET);
         boolean canGive = perms.can(session.role(), Permission.ACTION_ITEM_GIVE);
         boolean canReset = perms.can(session.role(), Permission.ACTION_PLAYER_RESET);
+        // Issue #210 : permission DÉDIÉE, la plus restreinte du panel (OWNER uniquement).
+        boolean canOp = perms.can(session.role(), Permission.PLAYER_OP_WRITE);
         String focus = cleanPlayer(q.get("player"));
 
         sb.append(agentPicker(agentId, "/players", ""));
@@ -394,7 +396,7 @@ public final class AgentPages {
             boolean open = !focus.isEmpty()
                     && (focus.equalsIgnoreCase(e.uuid()) || focus.equalsIgnoreCase(e.displayName()));
             sb.append(renderPlayerAccordionItem(session, agentId, e, idx++, open, knownItems,
-                    canModerate, canVarGet, canVarSet, canGive, canReset));
+                    canModerate, canVarGet, canVarSet, canGive, canReset, canOp));
         }
         sb.append("</div>");
 
@@ -503,7 +505,8 @@ public final class AgentPages {
 
     private String renderPlayerAccordionItem(Session session, String agentId, PlayerCatalog.Entry e, int idx,
                                              boolean open, List<Object> knownItems, boolean canModerate,
-                                             boolean canVarGet, boolean canVarSet, boolean canGive, boolean canReset) {
+                                             boolean canVarGet, boolean canVarSet, boolean canGive,
+                                             boolean canReset, boolean canOp) {
         String uuid = e.uuid();
         String name = e.displayName();
         String slug = "pl-" + idx + "-" + uuid.replaceAll("[^0-9a-fA-F]", "").substring(0, Math.min(12, uuid.replaceAll("[^0-9a-fA-F]", "").length()));
@@ -582,6 +585,14 @@ public final class AgentPages {
         } else {
             dlRow(sb, "Bannissement", "<span class=\"muted\">aucun</span>");
         }
+        // Issue #210 : statut OP RÉEL, relu du serveur au dernier relevé. La mention « Minecraft »
+        // est délibérée : ce n'est ni le rôle PlugAdmin, ni un droit de construction, ni un bypass.
+        dlRow(sb, "OP Minecraft", e.op()
+                ? "<span class=\"badge text-bg-warning\">Opérateur</span>"
+                : "<span class=\"muted\">non</span>");
+        dlRow(sb, "Whitelist", e.whitelisted()
+                ? "<span class=\"badge text-bg-info\">Présent</span>"
+                : "<span class=\"muted\">absent</span>");
         sb.append("</dl>");
 
         // ---- ACTIONS ----
@@ -604,6 +615,27 @@ public final class AgentPages {
                     + playerTestTools(session, agentId, uuid, name, e.online(), knownItems, canVarGet, canVarSet, canGive)
                     + "</div>"));
         }
+        // ---- Issue #210 : OP/DEOP, secours, expulsion, whitelist ----
+        if (canOp) {
+            String label = e.op() ? "Retirer OP" : "Accorder OP";
+            toggles.add(new String[] {slug + "-f-op", label, "shield-lock", "btn-outline-danger"});
+            forms.append(actionCollapse(slug + "-f-op", "<div class=\"card card-body npc-formcard\">"
+                    + playerOpForm(session, agentId, uuid, name, e.op()) + "</div>"));
+        }
+        if (canModerate) {
+            toggles.add(new String[] {slug + "-f-rescue", "Renvoyer au Hub", "travel",
+                    e.online() ? "btn-outline-primary" : "btn-outline-secondary disabled"});
+            forms.append(actionCollapse(slug + "-f-rescue", "<div class=\"card card-body npc-formcard\">"
+                    + playerRescueForm(session, agentId, uuid, name, e.online()) + "</div>"));
+            toggles.add(new String[] {slug + "-f-kick", "Expulser", "open",
+                    e.online() ? "btn-outline-warning" : "btn-outline-secondary disabled"});
+            forms.append(actionCollapse(slug + "-f-kick", "<div class=\"card card-body npc-formcard\">"
+                    + playerKickForm(session, agentId, uuid, name, e.online()) + "</div>"));
+            toggles.add(new String[] {slug + "-f-wl", e.whitelisted() ? "Retirer de la whitelist"
+                    : "Ajouter à la whitelist", "users", "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-wl", "<div class=\"card card-body npc-formcard\">"
+                    + playerWhitelistForm(session, agentId, uuid, name, e.whitelisted()) + "</div>"));
+        }
         if (canReset) {
             toggles.add(new String[] {slug + "-f-reset", "Reset « nouveau joueur »", "trash", "btn-outline-danger"});
             forms.append(actionCollapse(slug + "-f-reset", "<div class=\"card card-body npc-formcard\">"
@@ -623,7 +655,9 @@ public final class AgentPages {
         sb.append(forms);
 
         // Résultats récents pour ce joueur (compact — pas l'historique complet).
-        for (String type : new String[] {"player.ban", "player.unban", "player.resetnew.confirm"}) {
+        for (String type : new String[] {"player.ban", "player.unban", "player.resetnew.confirm",
+                "player.op", "player.deop", "player.send.hub", "player.kick",
+                "player.whitelist.add", "player.whitelist.remove"}) {
             latestForPlayer(agentId, type, uuid).ifPresent(row -> sb.append(resultLine("Dernière action", row)));
         }
 
@@ -697,6 +731,88 @@ public final class AgentPages {
                 + "autocomplete=\"off\" placeholder=\"Ex. : comportement toxique répété\">");
         sb.append(confirmBox("Je confirme le bannissement de « " + name + " »."));
         sb.append("<button class=\"btn btn-danger\" type=\"submit\">Bannir le joueur</button></form>");
+        return sb.toString();
+    }
+
+    /**
+     * Formulaire OP/DEOP (issue #210). Trois garde-fous, et aucun n'est décoratif :
+     * <ul>
+     *   <li><strong>raison obligatoire</strong> — un audit sans motif est inexploitable ;</li>
+     *   <li><strong>confirmation par l'identité</strong> — retaper le pseudo exact, pour qu'un clic
+     *       sur la mauvaise fiche ne puisse pas élever le mauvais compte ;</li>
+     *   <li>rappel écrit que <strong>seul OP Minecraft change</strong>.</li>
+     * </ul>
+     */
+    private String playerOpForm(Session session, String agentId, String uuid, String name, boolean currentlyOp) {
+        String type = currentlyOp ? "player.deop" : "player.op";
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("shield-lock"))
+                .append(currentlyOp ? "Retirer OP à " : "Accorder OP à ").append(Http.esc(name)).append("</p>");
+        sb.append("<p class=\"muted\">OP Minecraft uniquement. Le rôle PlugAdmin, les droits de "
+                + "construction par monde et le bypass de gameplay ne sont <strong>pas</strong> "
+                + "modifiés par cette action.</p>");
+        sb.append(formStart(session, agentId, type, "/players", uuid));
+        sb.append("<label class=\"form-label\">Raison (obligatoire)</label>");
+        sb.append("<input class=\"form-control mb-2\" name=\"reason\" maxlength=\"200\" required>");
+        sb.append("<label class=\"form-label\">Retaper le pseudo exact pour confirmer la cible</label>");
+        sb.append("<input class=\"form-control mb-2\" name=\"confirm_player\" autocomplete=\"off\" "
+                + "placeholder=\"").append(Http.esc(name)).append("\" required>");
+        sb.append(confirmBox(currentlyOp ? "Je confirme le retrait d'OP." : "Je confirme l'élévation OP."));
+        sb.append("<button class=\"btn btn-outline-danger\" type=\"submit\">")
+                .append(currentlyOp ? "Retirer OP" : "Accorder OP").append("</button></form>");
+        return sb.toString();
+    }
+
+    /** Renvoi au Hub (issue #210) — joueur connecté uniquement, et on le dit si ce n'est pas le cas. */
+    private String playerRescueForm(Session session, String agentId, String uuid, String name, boolean online) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("travel"))
+                .append("Renvoyer ").append(Http.esc(name)).append(" au Hub</p>");
+        if (!online) {
+            return sb.append(Ui.banner("info", "Action impossible hors ligne : un renvoi au Hub "
+                    + "déplace un joueur <strong>connecté</strong>. Elle redeviendra disponible dès "
+                    + "sa prochaine connexion.")).toString();
+        }
+        sb.append("<p class=\"muted\">Position sûre du Hub, résolue par le même mécanisme que la "
+                + "Pierre de retour. <strong>Inventaire, Acte de propriété, claim et progression sont "
+                + "préservés</strong> — aucun reset, aucune récompense.</p>");
+        sb.append(formStart(session, agentId, "player.send.hub", "/players", uuid));
+        sb.append(confirmBox("Je confirme le renvoi de « " + name + " » au Hub."));
+        sb.append("<button class=\"btn btn-outline-primary\" type=\"submit\">Renvoyer au Hub</button></form>");
+        return sb.toString();
+    }
+
+    /** Expulsion avec raison (issue #210) — joueur connecté uniquement. */
+    private String playerKickForm(Session session, String agentId, String uuid, String name, boolean online) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("open"))
+                .append("Expulser ").append(Http.esc(name)).append("</p>");
+        if (!online) {
+            return sb.append(Ui.banner("info", "Action impossible hors ligne : il n'y a rien à "
+                    + "expulser. Pour empêcher une reconnexion, utiliser « Bannir ».")).toString();
+        }
+        sb.append(formStart(session, agentId, "player.kick", "/players", uuid));
+        sb.append("<label class=\"form-label\">Raison affichée au joueur (obligatoire)</label>");
+        sb.append("<input class=\"form-control mb-2\" name=\"reason\" maxlength=\"200\" required>");
+        sb.append("<p class=\"muted\">L'expulsion déconnecte le joueur ; elle ne l'empêche pas de "
+                + "revenir. C'est « Bannir » qui l'en empêche.</p>");
+        sb.append(confirmBox("Je confirme l'expulsion de « " + name + " »."));
+        sb.append("<button class=\"btn btn-outline-warning\" type=\"submit\">Expulser</button></form>");
+        return sb.toString();
+    }
+
+    /** Whitelist (issue #210) — fonctionne hors ligne, et le résultat dira si elle est appliquée. */
+    private String playerWhitelistForm(Session session, String agentId, String uuid, String name,
+                                       boolean whitelisted) {
+        String type = whitelisted ? "player.whitelist.remove" : "player.whitelist.add";
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("users"))
+                .append(whitelisted ? "Retirer " : "Ajouter ").append(Http.esc(name))
+                .append(whitelisted ? " de la whitelist" : " à la whitelist").append("</p>");
+        sb.append("<p class=\"muted\">Fonctionne même hors ligne. Le résultat précisera si la "
+                + "whitelist est <strong>réellement appliquée</strong> par le serveur : l'ajouter "
+                + "alors qu'elle est désactivée ne protège rien.</p>");
+        sb.append(formStart(session, agentId, type, "/players", uuid));
+        sb.append(confirmBox(whitelisted ? "Je confirme le retrait de la whitelist."
+                : "Je confirme l'ajout à la whitelist."));
+        sb.append("<button class=\"btn btn-outline-secondary\" type=\"submit\">")
+                .append(whitelisted ? "Retirer" : "Ajouter").append("</button></form>");
         return sb.toString();
     }
 

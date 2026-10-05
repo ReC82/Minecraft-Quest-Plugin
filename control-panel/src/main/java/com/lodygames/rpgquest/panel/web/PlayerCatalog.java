@@ -27,7 +27,8 @@ public final class PlayerCatalog {
      * {@code null} si indisponibles. Monde / position seulement si {@code online}.
      */
     public record Entry(String uuid, String name, boolean online, boolean banned, String banReason,
-                        Long firstPlayed, Long lastSeen, String world, Integer x, Integer y, Integer z) {
+                        Long firstPlayed, Long lastSeen, String world, Integer x, Integer y, Integer z,
+                        boolean op, boolean whitelisted) {
 
         /** Libellé UX : le pseudo, ou un repli explicite — jamais l'UUID à la place du nom. */
         public String displayName() {
@@ -108,7 +109,8 @@ public final class PlayerCatalog {
                     epoch(m.get("firstPlayed")),
                     epoch(m.get("lastSeen")),
                     nullableStr(m.get("world")),
-                    intOrNull(m.get("x")), intOrNull(m.get("y")), intOrNull(m.get("z"))));
+                    intOrNull(m.get("x")), intOrNull(m.get("y")), intOrNull(m.get("z")),
+                    truthy(m.get("op")), truthy(m.get("whitelisted"))));
         }
         return out;
     }

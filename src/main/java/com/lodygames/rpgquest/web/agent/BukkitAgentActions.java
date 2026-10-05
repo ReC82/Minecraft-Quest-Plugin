@@ -159,6 +159,11 @@ public final class BukkitAgentActions implements AgentActions {
     private final ServerOpsService serverOpsService;
     /** Issue #131 — service central de rechargement du contenu. */
     private final ContentReloadService contentReloadService;
+    /**
+     * Issue #210 — position sûre du Hub pour le renvoi d'un joueur. Même source que la Pierre de
+     * retour et le filet de sécurité des claims : jamais une coordonnée figée.
+     */
+    private final Supplier<java.util.Optional<org.bukkit.Location>> hubRescueTarget;
     /** Issue #194 — suppression d'une définition de quête/story sur le serveur, avec sauvegarde. */
     private final com.lodygames.rpgquest.content.ContentDefinitionDeleter contentDeleter;
 
@@ -174,7 +179,8 @@ public final class BukkitAgentActions implements AgentActions {
                               SpecialMobService mobService, SpecialMobDefinitionStore mobDefinitionStore,
                               MobSpawnSettingsStore mobSpawnSettingsStore, Supplier<String> wildWorldSupplier,
                               ServerOpsService serverOpsService,
-                              ContentReloadService contentReloadService) {
+                              ContentReloadService contentReloadService,
+                              Supplier<java.util.Optional<org.bukkit.Location>> hubRescueTarget) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -200,6 +206,7 @@ public final class BukkitAgentActions implements AgentActions {
         this.wildWorldSupplier = wildWorldSupplier;
         this.serverOpsService = serverOpsService;
         this.contentReloadService = contentReloadService;
+        this.hubRescueTarget = hubRescueTarget;
         // Issue #194 : dossiers réels du plugin, et sauvegardes HORS des dossiers de contenu pour
         // ne jamais être relues comme des définitions.
         java.nio.file.Path data = plugin.getDataFolder().toPath();
@@ -260,7 +267,8 @@ public final class BukkitAgentActions implements AgentActions {
                 byUuid.put(id, new PlayerCatalogEntry(
                         id.toString(), name, online, op.hasPlayedBefore(), first, last, banned, banReason,
                         online ? snap.world().get(id) : null,
-                        pos == null ? null : pos[0], pos == null ? null : pos[1], pos == null ? null : pos[2]));
+                        pos == null ? null : pos[0], pos == null ? null : pos[1], pos == null ? null : pos[2],
+                        op.isOp(), op.isWhitelisted()));
             }
             // Filet : un connecté sans fichier playerdata encore écrit (rare) ne doit pas manquer.
             for (Map.Entry<UUID, String> e : snap.world().entrySet()) {
@@ -275,7 +283,7 @@ public final class BukkitAgentActions implements AgentActions {
                         System.currentTimeMillis(), op.isBanned(),
                         op.isBanned() ? banReason(profileBans, op) : null,
                         e.getValue(), pos == null ? null : pos[0], pos == null ? null : pos[1],
-                        pos == null ? null : pos[2]));
+                        pos == null ? null : pos[2], op.isOp(), op.isWhitelisted()));
             }
             List<PlayerCatalogEntry> out = new ArrayList<>(byUuid.values());
             if (limit > 0 && out.size() > limit) {
@@ -1728,6 +1736,147 @@ public final class BukkitAgentActions implements AgentActions {
                     result.suggestedFamilies().stream().map(ReloadFamily::wire).toList(),
                     result.runtimeHash(), result.durationMillis(), result.restartRequired()));
         });
+    }
+
+    // ---- Administration de joueur (issue #210) ------------------------------------------------
+
+    @Override
+    public CompletableFuture<MutationResult> setOperator(UUID playerId, String playerName, boolean op) {
+        String label = label(playerName, playerId);
+        return onMain(() -> {
+            try {
+                OfflinePlayer target = plugin.getServer().getOfflinePlayer(playerId);
+                if (!target.hasPlayedBefore() && !target.isOnline()) {
+                    // Jamais d'élévation d'un UUID inconnu : ce serait accorder OP à un compte que
+                    // le serveur n'a jamais vu, sur la seule foi d'une saisie.
+                    return done(MutationResult.of(false, "UNKNOWN_PLAYER",
+                            label + " n'est pas connu de ce serveur : aucune élévation possible."));
+                }
+                if (target.isOp() == op) {
+                    return done(new MutationResult(true, op ? "ALREADY_OP" : "NOT_OP",
+                            label + (op ? " était déjà OP." : " n'était pas OP."), List.of()));
+                }
+                target.setOp(op);
+                // Relecture : on rapporte l'état RÉEL, pas l'intention.
+                boolean actual = plugin.getServer().getOfflinePlayer(playerId).isOp();
+                if (actual != op) {
+                    return done(MutationResult.of(false, "NOT_APPLIED",
+                            "Le statut OP de " + label + " n'a pas changé (relu : "
+                                    + (actual ? "OP" : "non OP") + ")."));
+                }
+                plugin.getSLF4JLogger().warn("[player-admin] {} est désormais {} (OP Minecraft).",
+                        label, op ? "OP" : "non OP");
+                return done(new MutationResult(true, op ? "OPPED" : "DEOPPED",
+                        label + (op ? " est désormais OP." : " n'est plus OP."),
+                        List.of("OP Minecraft uniquement : rôle PlugAdmin, droits de construction et "
+                                + "bypass de gameplay sont inchangés.")));
+            } catch (RuntimeException e) {
+                return done(MutationResult.of(false, "ERROR", "Échec : " + rootName(e)));
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> sendToHub(UUID playerId, String playerName) {
+        String label = label(playerName, playerId);
+        return onMain(() -> {
+            try {
+                Player online = plugin.getServer().getPlayer(playerId);
+                if (online == null) {
+                    return done(MutationResult.of(false, "OFFLINE",
+                            label + " est hors ligne : un renvoi au Hub exige un joueur connecté."));
+                }
+                // Même source que la Pierre de retour et le filet de sécurité des claims : le spawn
+                // du village résolu, jamais une coordonnée figée.
+                java.util.Optional<org.bukkit.Location> target = hubRescueTarget.get();
+                if (target.isEmpty()) {
+                    return done(MutationResult.of(false, "NO_DESTINATION",
+                            "Aucune position de Hub ne se résout : renvoi impossible. Vérifier le "
+                                    + "spawn du village."));
+                }
+                String fromWorld = online.getWorld().getName();
+                online.teleport(target.get());
+                // Relecture : on ne rapporte un succès que si le joueur a réellement bougé.
+                String toWorld = online.getWorld().getName();
+                plugin.getSLF4JLogger().info("[player-admin] {} renvoyé au Hub ({} -> {}).",
+                        label, fromWorld, toWorld);
+                return done(new MutationResult(true, "SENT",
+                        label + " a été renvoyé au Hub (" + fromWorld + " → " + toWorld + ").",
+                        List.of("Inventaire, Acte de propriété, claim et progression inchangés.")));
+            } catch (RuntimeException e) {
+                return done(MutationResult.of(false, "ERROR", "Échec : " + rootName(e)));
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> kickPlayer(UUID playerId, String playerName, String reason) {
+        String label = label(playerName, playerId);
+        return onMain(() -> {
+            try {
+                Player online = plugin.getServer().getPlayer(playerId);
+                if (online == null) {
+                    return done(MutationResult.of(false, "OFFLINE",
+                            label + " est hors ligne : rien à expulser."));
+                }
+                String cleanReason = reason == null || reason.isBlank() ? "Expulsé par un administrateur"
+                        : reason.strip();
+                // Texte littéral : une raison n'est ni une commande, ni du MiniMessage.
+                online.kick(Component.text(cleanReason));
+                plugin.getSLF4JLogger().info("[player-admin] {} expulsé : {}", label, cleanReason);
+                return done(new MutationResult(true, "KICKED",
+                        label + " a été expulsé.", List.of("Raison affichée : " + cleanReason)));
+            } catch (RuntimeException e) {
+                return done(MutationResult.of(false, "ERROR", "Échec : " + rootName(e)));
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> setWhitelisted(UUID playerId, String playerName,
+                                                            boolean whitelisted) {
+        String label = label(playerName, playerId);
+        return onMain(() -> {
+            try {
+                OfflinePlayer target = plugin.getServer().getOfflinePlayer(playerId);
+                boolean enforced = plugin.getServer().hasWhitelist();
+                if (target.isWhitelisted() == whitelisted) {
+                    return done(new MutationResult(true, whitelisted ? "ALREADY_WHITELISTED" : "NOT_WHITELISTED",
+                            label + (whitelisted ? " était déjà sur la whitelist."
+                                    : " n'était pas sur la whitelist."),
+                            whitelistNote(enforced)));
+                }
+                target.setWhitelisted(whitelisted);
+                boolean actual = plugin.getServer().getOfflinePlayer(playerId).isWhitelisted();
+                if (actual != whitelisted) {
+                    return done(MutationResult.of(false, "NOT_APPLIED",
+                            "La whitelist de " + label + " n'a pas changé (relu : "
+                                    + (actual ? "présent" : "absent") + ")."));
+                }
+                plugin.getSLF4JLogger().info("[player-admin] whitelist {} : {}",
+                        whitelisted ? "+" : "-", label);
+                return done(new MutationResult(true, whitelisted ? "WHITELISTED" : "UNWHITELISTED",
+                        label + (whitelisted ? " a été ajouté à la whitelist."
+                                : " a été retiré de la whitelist."),
+                        whitelistNote(enforced)));
+            } catch (RuntimeException e) {
+                return done(MutationResult.of(false, "ERROR", "Échec : " + rootName(e)));
+            }
+        });
+    }
+
+    /**
+     * Dit si la whitelist est réellement appliquée. L'omettre laisserait croire qu'ajouter un joueur
+     * protège le serveur alors que la whitelist peut être désactivée.
+     */
+    private static List<String> whitelistNote(boolean enforced) {
+        return enforced ? List.of("La whitelist est active sur ce serveur.")
+                : List.of("Attention : la whitelist est DÉSACTIVÉE sur ce serveur — cette liste "
+                        + "n'a donc aucun effet tant qu'elle n'est pas activée.");
+    }
+
+    private static String label(String playerName, UUID playerId) {
+        return playerName != null && !playerName.isBlank() ? playerName : playerId.toString();
     }
 
     // ---- Utilitaires --------------------------------------------------------------------------

@@ -57,6 +57,30 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   automatique à l'entrée ou volontaire via l'Acte réutilisé), faisceau dense (DUST + END_ROD)
   hors du claim ; retour au Hub sans commande via la Pierre de retour (mécanique générique de
   voyage par objet, `travel.ItemTravelService`).
+- **Rechargement du contenu dans le runtime (issue #131)** — service **central**
+  `content.reload.ContentReloadService`, seul point qui permute un ensemble actif : dry-run de
+  chaque famille, **annulation totale** sur la moindre erreur de contenu (l'ancien runtime valide
+  est conservé — un `reload()` nu faisait *disparaître en silence* une définition devenue
+  invalide), validation des **références croisées** sur le graphe candidat avec désignation du
+  **contenu lié** à recharger conjointement, application dans l'ordre de dépendance, puis relecture
+  avec **empreinte** et durée. Six familles (objets, PNJ, quêtes, stories, dialogues, profils de
+  mobs). `/rpgadmin content preview|reload` et `/rpgadmin mob reload` **délèguent** au même service,
+  ce qui supprime la seule porte qui contournait les garanties. Les **trois états** du ticket sont
+  distinguables parce que l'aperçu lit le **disque du serveur** : « jamais publié » (déploiement
+  requis) ≠ « publié mais pas chargé » (rechargement suffit) — et la page écrit qu'un rechargement
+  **ne transfère rien** depuis AWS. Jamais de `/reload` Bukkit, aucun despawn/respawn, aucune
+  récompense redistribuée, progression et instances vivantes intactes ; `NpcHintService#invalidateAll`
+  garde le signal #12 cohérent. Single-flight. `config.yml` n'est **pas** rechargeable de façon
+  fiable (valeurs capturées au démarrage) : le panel annonce **redémarrage requis**.
+- **OP/DEOP et actions de secours sur un joueur (issue #210)** — fiche `/players` : statut **OP
+  réel relu du serveur**, OP/DEOP, **renvoi au Hub** (mécanisme de la Pierre de retour, inventaire /
+  Acte / claim / progression préservés), **expulsion** avec raison, **whitelist** (qui dit si elle
+  est réellement appliquée). Permission **dédiée** `PLAYER_OP_WRITE` réservée à `OWNER` — **pas**
+  `ADMIN`, par exigence du ticket ; le reste réutilise `PLAYER_MODERATE`. Élévation OP : raison
+  obligatoire **et** pseudo exact à retaper, idempotente, état **relu** après écriture
+  (`NOT_APPLIED` plutôt qu'un faux succès). OP Minecraft reste distinct du rôle PlugAdmin, du droit
+  de construction (#200) et du bypass de gameplay (#35) : aucun n'est modifié. Cible par **UUID** ;
+  actions impossibles hors ligne affichées avec leur motif.
 - **Exploitation serveur depuis PlugAdmin (issue #95, lot 1)** — page `/ops` : état réel et
   **fraîcheur** du dernier heartbeat (vivacité agent, joueurs, uptime, version), annonce globale
   (`server.announce` — trois canaux réellement supportés `chat`/`actionbar`/`title`, message traité

@@ -702,6 +702,83 @@ Fiche utilisateur : `/docs/exploitation-serveur`. Configuration : `ops.rcon.<cib
 dans `control-panel.properties`, mot de passe **uniquement** depuis l'environnement
 (`RPGQUEST_RCON_PASSWORD_<CIBLE>`), jamais dans le dépôt.
 
+### Rechargement du contenu dans le runtime (issue #131)
+
+**Constat d'audit qui a tout décidé.** Les six registres (quêtes, stories, dialogues, PNJ, objets,
+profils de mobs) savaient déjà se recharger, mais rien ne l'exposait : la permission
+`ACTION_CONTENT_RELOAD` existait côté panel **sans aucune action derrière elle**, et la seule porte
+réelle était `/rpgadmin mob reload` — une famille sur six. Surtout, `reload()` remplace l'ensemble
+actif par les fichiers **valides** : un fichier devenu invalide ne provoque donc pas d'erreur, il
+fait **disparaître sa définition du runtime en silence**. Une quête active pour des joueurs pouvait
+s'évaporer d'un seul rechargement, depuis une commande déjà livrée.
+
+**`content.reload.ContentReloadService` est désormais le seul point qui permute un ensemble actif.**
+`/rpgadmin content preview|reload`, `/rpgadmin mob reload` (qui **délègue** maintenant) et les
+actions agent `content.reload.preview` / `content.reload` n'en sont que des appelants — c'est
+l'exigence du ticket d'éviter plusieurs implémentations divergentes.
+
+**Séquence, et c'est elle qui protège :** dry-run de chaque famille (`validate()`, ajouté aux trois
+registres qui n'en avaient pas) → une seule erreur de parsing **annule tout**, l'ancien runtime
+valide reste en place → **validation des références croisées** sur le graphe *candidat* (dry-run
+pour les familles rechargées, runtime courant pour les autres) → application dans l'**ordre de
+dépendance** (objets, PNJ, quêtes, stories, dialogues, mobs) → relecture du runtime avec
+**empreinte** (12 caractères de SHA-256 des identifiants triés) et durée.
+
+**Contenu lié.** Quand une référence casserait, le service **nomme la famille à recharger
+conjointement** : story→quête, dialogue→quête, PNJ→dialogue, quête→donneur. Le cas réel est une
+quête et la story qui la cite, ajoutées ensemble — les stories seules échouent, les deux ensemble
+réussissent. Les actions contextuelles des pages de contenu proposent donc d'emblée les bonnes
+familles. À noter : le **chargeur de quêtes valide déjà les prérequis à l'échelle du dossier**, donc
+une référence intra-famille est attrapée plus tôt (`INVALID_CONTENT`) ; le filet croisé couvre ce
+qu'un chargeur de famille unique ne peut pas voir.
+
+**Les trois états, enfin distinguables.** Le panel ne distinguait que source/runtime, ce qui confond
+« jamais publié sur VeryGames » et « publié mais pas rechargé » — deux causes dont **une seule** se
+répare par un rechargement. L'aperçu lit le **disque du serveur** et renvoie les identifiants
+trouvés, ce qui permet au panel de trancher. La page énonce les trois états et écrit noir sur blanc
+qu'un **rechargement ne transfère rien depuis AWS**.
+
+**Jamais touché** : progression, quêtes actives, inventaires, sessions de dialogue (elles ne
+stockent que des identifiants et sont re-résolues défensivement — vérifié, non modifié), et
+**instances de mobs/boss vivantes**. Recharger un profil change ce qui apparaîtra ensuite, pas ce
+qui est déjà dans le monde. Aucune récompense redistribuée, aucun respawn, aucun reset, **aucun
+`/reload` Bukkit**. `NpcHintService#invalidateAll` est appelé après application pour que le signal
+visuel (#12) ne survive pas à la disparition de sa quête. **Single-flight** : un second
+rechargement est refusé, pas sérialisé ; un aperçu reste autorisé puisqu'il ne touche rien.
+
+**`config.yml` n'est pas rechargeable de façon fiable** : plusieurs valeurs sont lues une seule fois
+au démarrage et capturées par les services. Un rechargement partiel serait le « succès ambigu » que
+le ticket interdit — le panel dit donc **redémarrage requis** et renvoie au workflow #95.
+
+### OP/DEOP et actions de secours sur un joueur (issue #210)
+
+Sur la fiche `/players` : statut **OP réel** (relu du serveur, donc un OP accordé en jeu y apparaît),
+boutons OP/DEOP, **renvoi au Hub**, **expulsion** avec raison, et **whitelist**.
+
+**Quatre notions distinctes, et l'action n'en touche qu'une.** OP Minecraft n'est ni le rôle
+PlugAdmin (`/users`), ni le droit de construction par monde (#200), ni le bypass de gameplay (#35).
+Accorder OP ne modifie aucun des trois, et le résultat le rappelle à l'administrateur.
+
+**Permission dédiée `PLAYER_OP_WRITE`, la plus restreinte du panel : `OWNER` uniquement, pas
+`ADMIN`.** Le ticket l'exige — ne pas accorder ce droit implicitement à tout administrateur. Kick,
+whitelist et renvoi au Hub réutilisent `PLAYER_MODERATE` comme demandé, sans inflation de
+permissions.
+
+**Garde-fous de l'élévation OP** : raison **obligatoire**, et il faut **retaper le pseudo exact** —
+un clic sur la mauvaise fiche ne peut donc pas élever le mauvais compte. L'opération est
+**idempotente** (`ALREADY_OP` / `NOT_OP` au rejeu) et l'état est **relu** après écriture : si
+l'écriture n'a pas pris, le résultat est `NOT_APPLIED` avec la valeur relue, jamais un « OP
+accordé » mensonger.
+
+**Renvoi au Hub** : même mécanisme que la Pierre de retour (`spawnService.resolve()`, jamais une
+coordonnée figée). **Inventaire, Acte, claim et progression préservés**, aucun reset. Refusé
+clairement si le joueur est hors ligne ou si la destination ne se résout pas.
+
+**Whitelist** : fonctionne hors ligne, et le résultat précise si la whitelist est **réellement
+appliquée** — l'ajouter alors qu'elle est désactivée ne protège rien. Ban et unban ne sont pas
+dupliqués. Une action impossible hors ligne est **affichée avec son motif**, jamais silencieusement
+inopérante. Cible toujours par **UUID**.
+
 ---
 
 ## 4. Dialogues

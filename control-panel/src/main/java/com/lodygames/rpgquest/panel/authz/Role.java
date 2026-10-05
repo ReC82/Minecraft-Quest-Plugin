@@ -13,9 +13,12 @@ import java.util.Set;
  *   <li>{@code OWNER} — accès total. Ses permissions sont {@code EnumSet.allOf(Permission.class)} :
  *       toute nouvelle permission lui revient automatiquement, rien à maintenir.</li>
  *   <li>{@code ADMIN} — exploitation du serveur : joueurs, PNJ, dialogues, diagnostics, contenu,
- *       actions d'administration, <strong>suppression de contenu</strong> (#194).
- *       <strong>Pas</strong> de gestion des utilisateurs, ni du module de développement /
- *       déploiement.</li>
+ *       actions d'administration, <strong>suppression de contenu</strong> (#194), module
+ *       <strong>Exploitation serveur</strong> (#95) et <strong>rechargement du contenu</strong>
+ *       (#131). <strong>Pas</strong> de gestion des utilisateurs, ni du module de développement /
+ *       déploiement, ni de l'<strong>élévation OP</strong> (#210, {@code PLAYER_OP_WRITE}) :
+ *       celle-ci est réservée à {@code OWNER} par décision explicite du ticket, pour ne pas
+ *       l'accorder implicitement à tout administrateur.</li>
  *   <li>{@code TESTER} — lectures utiles au test, diagnostics, préparation de test explicitement
  *       sûre (démarrer / avancer une quête ou une story, lire une variable). Pas d'écriture de
  *       contenu, pas de reset joueur, pas de modération.</li>

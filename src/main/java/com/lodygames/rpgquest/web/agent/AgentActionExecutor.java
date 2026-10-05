@@ -113,6 +113,12 @@ public final class AgentActionExecutor {
                 case SERVER_LOGS_TAIL -> serverLogsTail(action);
                 case CONTENT_RELOAD_PREVIEW -> contentReload(action, false);
                 case CONTENT_RELOAD -> contentReload(action, true);
+                case PLAYER_OP -> playerOperator(action, true);
+                case PLAYER_DEOP -> playerOperator(action, false);
+                case PLAYER_SEND_HUB -> playerSendHub(action);
+                case PLAYER_KICK -> playerKick(action);
+                case PLAYER_WHITELIST_ADD -> playerWhitelist(action, true);
+                case PLAYER_WHITELIST_REMOVE -> playerWhitelist(action, false);
                 case PLAYER_ITEM_GIVE -> itemGive(action);
                 case QUEST_START -> questStart(action);
                 case QUEST_COMPLETE -> questMutation(action, AgentActionType.QUEST_COMPLETE);
@@ -196,6 +202,10 @@ public final class AgentActionExecutor {
                 row.put("firstPlayed", p.firstPlayed());
                 row.put("lastSeen", p.lastSeen());
                 row.put("banned", p.banned());
+                // Issue #210 : état RÉEL relu du serveur, pour que la fiche joueur affiche le
+                // statut OP tel qu'il est — y compris changé en jeu ou par un autre outil.
+                row.put("op", p.op());
+                row.put("whitelisted", p.whitelisted());
                 if (p.banReason() != null) {
                     row.put("banReason", p.banReason());
                 }
@@ -821,6 +831,50 @@ public final class AgentActionExecutor {
             }
             return AgentActionOutcome.success(action.id(), view.runtimeHash(), view.message(), details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Administration de joueur (issue #210) -------------------------------------------
+
+    private static final int MAX_REASON = 200;
+
+    /**
+     * {@code player.op} / {@code player.deop}. La <strong>raison est obligatoire</strong> : élever
+     * un compte au rang d'opérateur sans trace de motif rend l'audit inexploitable.
+     *
+     * <p>Réutilise le résolveur d'identité commun : la cible est toujours un UUID, jamais un pseudo
+     * interprété à l'exécution.</p>
+     */
+    private CompletableFuture<AgentActionOutcome> playerOperator(AgentAction action, boolean op) {
+        String reason = trimOrNull(firstNonBlank(action.param("reason"), action.param("motif")));
+        if (reason == null || reason.length() > MAX_REASON) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Une raison est obligatoire pour modifier le statut OP (max " + MAX_REASON + ")."));
+        }
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.setOperator(uuid, name, op).thenApply(r -> toOutcome(action, r)));
+    }
+
+    /** {@code player.send.hub} — renvoi d'un joueur connecté à une position sûre du Hub. */
+    private CompletableFuture<AgentActionOutcome> playerSendHub(AgentAction action) {
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.sendToHub(uuid, name).thenApply(r -> toOutcome(action, r)));
+    }
+
+    /** {@code player.kick} — raison obligatoire, traitée comme du texte. */
+    private CompletableFuture<AgentActionOutcome> playerKick(AgentAction action) {
+        String reason = trimOrNull(firstNonBlank(action.param("reason"), action.param("motif")));
+        if (reason == null || reason.length() > MAX_REASON || reason.indexOf('\n') >= 0) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Raison manquante, trop longue (max " + MAX_REASON + ") ou multi-ligne."));
+        }
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.kickPlayer(uuid, name, reason).thenApply(r -> toOutcome(action, r)));
+    }
+
+    /** {@code player.whitelist.add} / {@code player.whitelist.remove}. */
+    private CompletableFuture<AgentActionOutcome> playerWhitelist(AgentAction action, boolean add) {
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.setWhitelisted(uuid, name, add).thenApply(r -> toOutcome(action, r)));
     }
 
     /** Entier long de paramètre : {@code -1} marque explicitement une valeur non numérique. */

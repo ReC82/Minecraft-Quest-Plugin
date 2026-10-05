@@ -99,8 +99,41 @@ Paper ou LuckPerms. Toute correspondance future devra être explicite et documen
 `QUEST_GIVER_WRITE`, `DIALOGUE_READ`, `DIALOGUE_WRITE`, `QUEST_CONTENT_WRITE`,
 `STORY_CONTENT_WRITE`, `CONTENT_READ`, `CONTENT_EXPORT`, `DOCS_READ`, `DIAGNOSTICS_READ`,
 `AUDIT_READ`, `ACTION_QUEST`, `ACTION_STORY`, `ACTION_VARIABLE_GET`, `ACTION_VARIABLE_SET`,
-`ACTION_PLAYER_RESET`, `ACTION_ITEM_GIVE`, `ACTION_CONTENT_RELOAD`, `OPS_VIEW`, `OPS_ANNOUNCE`,
-`OPS_RESTART`, `OPS_LOGS`, `DEV_MODULE`, `USER_MANAGE`.
+`ACTION_PLAYER_RESET`, `ACTION_ITEM_GIVE`, `ACTION_CONTENT_RELOAD`, `PLAYER_OP_WRITE`,
+`OPS_VIEW`, `OPS_ANNOUNCE`, `OPS_RESTART`, `OPS_LOGS`, `DEV_MODULE`, `USER_MANAGE`.
+
+### Élévation OP (issue #210) — la permission la plus restreinte
+
+`PLAYER_OP_WRITE` est réservée à **`OWNER`** et **n'est pas accordée à `ADMIN`**. C'est une exigence
+explicite du ticket : l'élévation OP ne doit pas être un effet de bord du rôle d'administrateur. Une
+délégation reste possible, mais elle doit être une décision prise, pas héritée.
+
+**Quatre notions à ne jamais confondre**, et cette action n'en touche qu'une :
+
+| Notion | Où elle se gère | Modifiée par OP/DEOP ? |
+|---|---|---|
+| **OP Minecraft** | cette action (`OfflinePlayer#setOp`) | **oui, et seulement elle** |
+| Rôle PlugAdmin | `/users` (`USER_MANAGE`) | non |
+| Droit de construction par monde (#200) | permission séparée | non |
+| Bypass de gameplay (#35) | jamais implicite | non |
+
+**Garde-fous** : raison obligatoire, **confirmation par l'identité** (retaper le pseudo exact, pour
+qu'un clic sur la mauvaise fiche n'élève pas le mauvais compte), opération **idempotente**, et état
+**relu** après écriture — si l'écriture n'a pas pris, le résultat est `NOT_APPLIED` avec la valeur
+relue, jamais un faux « OP accordé ». Cible toujours par **UUID**. Audit avant/après.
+
+Kick, whitelist et renvoi au Hub réutilisent `PLAYER_MODERATE` (annuaire/modération #96) plutôt que
+d'inventer des permissions. Ban et unban ne sont pas dupliqués.
+
+### Rechargement du contenu (issue #131)
+
+`ACTION_CONTENT_RELOAD` existait **sans aucune action derrière elle** ; elle en a désormais deux :
+`content.reload.preview` (lecture — ne touche aucun ensemble actif) et `content.reload` (mutation
+**sensible**, car elle change ce que le serveur utilise pour des joueurs connectés).
+
+Le service central refuse d'appliquer si une famille est invalide **ou** si une référence croisée
+serait cassée : l'ancien runtime valide survit. **Aucun `/reload` Bukkit**, aucun despawn, aucune
+écriture de progression. **Single-flight** : un second rechargement est refusé, pas sérialisé.
 
 ### Exploitation serveur (issue #95)
 

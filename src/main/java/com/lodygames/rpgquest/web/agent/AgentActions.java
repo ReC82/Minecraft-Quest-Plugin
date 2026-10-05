@@ -39,7 +39,8 @@ public interface AgentActions {
      */
     record PlayerCatalogEntry(String uuid, String name, boolean online, boolean hasPlayedBefore,
                               Long firstPlayed, Long lastSeen, boolean banned, String banReason,
-                              String world, Integer x, Integer y, Integer z) {
+                              String world, Integer x, Integer y, Integer z,
+                              boolean op, boolean whitelisted) {
     }
 
     /**
@@ -678,4 +679,44 @@ public interface AgentActions {
     record ContentReloadFamilyView(String family, String label, int loaded, int issues,
                                    List<String> messages, List<String> ids) {
     }
+
+    // ---- Administration de joueur (issue #210) -------------------------------------------------
+
+    /**
+     * Accorde ou retire le statut <strong>OP Minecraft</strong> ({@code player.op} /
+     * {@code player.deop}).
+     *
+     * <p><strong>OP Minecraft n'est ni un rôle PlugAdmin, ni un droit de construction, ni un bypass
+     * de gameplay.</strong> Cette opération ne touche qu'{@code OfflinePlayer#setOp} : aucun rôle
+     * de panel n'est modifié, aucun bypass n'est activé. Fonctionne pour un joueur
+     * <strong>hors ligne</strong> connu du serveur.</p>
+     *
+     * <p>Idempotente, et le résultat est <strong>relu</strong> ({@code isOp()}) après écriture : un
+     * code {@code ALREADY_OP} / {@code NOT_OP} signale un no-op, jamais un faux succès.</p>
+     */
+    CompletableFuture<MutationResult> setOperator(UUID playerId, String playerName, boolean op);
+
+    /**
+     * Renvoie un joueur <strong>connecté</strong> à une position sûre du Hub ({@code player.send.hub}),
+     * via le même mécanisme que la Pierre de retour et le filet de sécurité des claims — le spawn du
+     * village résolu, jamais une coordonnée figée.
+     *
+     * <p>Préserve <strong>tout</strong> : inventaire, Acte de propriété, claim, progression. Aucun
+     * reset, aucune récompense, aucune variable touchée. Refuse clairement si le joueur est hors
+     * ligne ou si la destination ne se résout pas.</p>
+     */
+    CompletableFuture<MutationResult> sendToHub(UUID playerId, String playerName);
+
+    /** Expulse un joueur <strong>connecté</strong> avec une raison affichée ({@code player.kick}). */
+    CompletableFuture<MutationResult> kickPlayer(UUID playerId, String playerName, String reason);
+
+    /**
+     * Ajoute ou retire un joueur de la whitelist ({@code player.whitelist.add} /
+     * {@code player.whitelist.remove}).
+     *
+     * <p>Le résultat précise si la whitelist est <strong>réellement appliquée</strong> par le
+     * serveur : l'ajouter alors qu'elle est désactivée n'a aucun effet visible, et le dire vaut
+     * mieux que laisser croire à une protection active.</p>
+     */
+    CompletableFuture<MutationResult> setWhitelisted(UUID playerId, String playerName, boolean whitelisted);
 }

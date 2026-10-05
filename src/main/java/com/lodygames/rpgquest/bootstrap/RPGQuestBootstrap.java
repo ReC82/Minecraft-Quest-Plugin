@@ -724,7 +724,12 @@ public final class RPGQuestBootstrap {
                                         configService.current().dialogue().allowedCommands()),
                                 waypointService, travelBeaconService, mobRegistry, mobService, mobDefinitionStore,
                                 mobSpawnSettingsStore, () -> configService.current().travel().wildWorld(),
-                                serverOpsService, contentReloadService))));
+                                serverOpsService, contentReloadService,
+                                // Issue #210 — même source de position sûre que la Pierre de retour
+                                // et le filet de sécurité des claims : jamais une coordonnée figée.
+                                () -> spawnService.resolve().or(() -> worldService
+                                        .find(configService.current().hub().world())
+                                        .map(org.bukkit.World::getSpawnLocation))))));
 
         registerCommands();
     }

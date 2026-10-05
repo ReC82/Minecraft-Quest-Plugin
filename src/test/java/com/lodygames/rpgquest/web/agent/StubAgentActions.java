@@ -290,4 +290,25 @@ class StubAgentActions implements AgentActions {
     public CompletableFuture<ContentReloadView> contentReload(java.util.List<String> families, boolean apply) {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
     }
+
+    @Override
+    public CompletableFuture<MutationResult> setOperator(java.util.UUID playerId, String playerName, boolean op) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> sendToHub(java.util.UUID playerId, String playerName) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> kickPlayer(java.util.UUID playerId, String playerName, String reason) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> setWhitelisted(java.util.UUID playerId, String playerName,
+                                                            boolean whitelisted) {
+        return unsupported();
+    }
 }

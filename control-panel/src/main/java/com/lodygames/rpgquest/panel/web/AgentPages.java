@@ -2542,7 +2542,7 @@ public final class AgentPages {
         Optional<Map<String, Object>> details = latestDetails(agentId, "dialogue.list");
         // Issue #164 : si le relevé existe mais n'est pas relisible, on le DIT — sans quoi la page
         // se contentait d'afficher la source et laissait croire que le serveur n'a pas ces dialogues.
-        relevéUnreadable(agentId, "dialogue.list")
+        unreadableReport(agentId, "dialogue.list")
                 .ifPresent(msg -> sb.append(Ui.banner("warn", Http.esc(msg))));
         List<Object> runtimeDialogues = details.map(x -> asList(x.get("dialogues"))).orElse(List.of());
         List<Object> loadIssues = details.map(x -> asList(x.get("loadIssues"))).orElse(List.of());
@@ -3322,7 +3322,7 @@ public final class AgentPages {
      * le serveur en avait bel et bien déclaré. Renvoie un message prêt à afficher, ou vide si tout va
      * bien.
      */
-    private Optional<String> relevéUnreadable(String agentId, String type) {
+    private Optional<String> unreadableReport(String agentId, String type) {
         Optional<AgentActionRow> row = store.latestSuccessfulActionOfType(agentId, type);
         if (row.isEmpty() || detailsOf(row.get()).isPresent()) {
             return Optional.empty();

@@ -3599,3 +3599,95 @@ Rollback : `scripts/rollback-verygames.sh --latest` (restaure
 de rollback FTP dédié (jamais transférés séparément) : un rollback du JAR seul suffit à revenir au
 comportement précédent (ces fichiers resteraient sur le disque du serveur mais ignorés par un JAR
 qui ne les référence plus dans son dialogue/sa logique).
+
+## 2026-10-05 - Control Panel (#162/#163/#164) + protection des structures de voyage (#191) + hostiles de jour (#168) + diagnostic #192
+
+### Déploiement / Exécution réelle
+
+- **Build** : `./gradlew :control-panel:test` → **406 tests, 0 échec, 1 ignoré** ; `./gradlew :test`
+  (plugin) → **1442 tests, 0 échec, 34 ignorés** (limitations MockBukkit déjà documentées).
+  `./gradlew test` + `build` relancés une seconde fois par `scripts/deploy-verygames.sh`, verts.
+
+- **Control Panel (AWS, service `plugadmin`)** — deux déploiements successifs (le second pour un
+  simple renommage de méthode), `/health` → `200` les deux fois, releases sauvegardées.
+  - **#162 — correction d'infrastructure, pas seulement d'affichage.** La création de dialogues
+    était en lecture seule pour **deux** raisons indépendantes, toutes deux manquantes pour
+    `dialogues/` alors que `quests/` et `stories/` avaient les deux : (a) aucune ACL POSIX
+    `user:plugadmin:rwx` sur le dossier, (b) dossier absent de `ReadWritePaths=` dans le drop-in
+    systemd — or l'unité utilise `ProtectSystem=strict`, qui rend tout le reste en lecture seule :
+    **une ACL correcte seule n'aurait rien débloqué**. Nouveau script idempotent du dépôt
+    `scripts/plugadmin/grant-content-access.sh` applique les deux (et refuse d'élargir les droits
+    si un dossier parent n'est pas traversable). Vérifié réellement : `systemctl show plugadmin
+    -p ReadWritePaths` liste les trois dossiers, et une écriture sonde **sous le même bac à sable
+    systemd** réussit (`systemd-run --property=ProtectSystem=strict …` → code 0), avec **contrôle
+    négatif** sans `ReadWritePaths` → code 1. Fichier sonde supprimé immédiatement.
+    Aucun `chmod 777`, aucun service en root, aucun fichier Lily/Jeff modifié (ACL = métadonnée :
+    `git status` du checkout principal inchangé).
+  - **#163** — sélection des prérequis par recherche (titre **ou** identifiant), puces
+    supprimables, états source/runtime affichés. Le champ réellement soumis reste la textarea
+    (format canonique inchangé pour le parseur) et la page reste utilisable **sans JavaScript**.
+    Refus des cycles de prérequis, directs **et indirects**, avec le chemin complet du cycle.
+  - **#164 — cause racine trouvée dans les données réelles, pas supposée.** Le relevé
+    `dialogue.list` était bien un **SUCCESS contenant 10 dialogues** (dont `rpgquest:jeff`), mais
+    il était stocké **tronqué à 20 000 caractères, en plein milieu du JSON** : toute page le
+    relisant perdait l'intégralité du relevé en silence. Le catalogue retombait alors sur la seule
+    source — d'où les 5 entrées toutes étiquetées « Source uniquement », l'absence de `jeff`,
+    `help`, `junior`, `lily_intro`, `mira_first_map`, `robert_writer`, et l'étiquetage erroné des
+    dialogues pourtant chargés. Corrigé : un corps trop volumineux produit désormais un marqueur
+    JSON **valide** au lieu d'un fragment illisible, la borne entrante passe de 64 Kio à 1 Mio
+    (`dialogue.list` la frôlait déjà et l'aurait franchie en silence), et l'interface **dit**
+    qu'un relevé est inexploitable au lieu d'impliquer une absence. Le sélecteur « Attribuer une
+    quête » d'un PNJ est devenu recherchable et lit le catalogue **fusionné source+runtime**.
+  - **Limite connue, à faire côté navigateur** : la ligne `dialogue.list` déjà en base reste
+    tronquée (le correctif protège les relevés **futurs**). Un clic sur « Rafraîchir » de la page
+    Dialogues suffit à en enregistrer un intact et à faire apparaître Jeff. En attendant, la page
+    affiche explicitement l'avertissement au lieu de conclure à une absence.
+
+- **Plugin (VeryGames DEV)** :
+  - **JAR déployé** : 1 687 399 o, SHA-256 `f08bdce74313badba450c2c5af7b585e25e0d57ef4c7191801df4d9aca08a2f0`.
+  - **Backup JAR préalable** : `rpgquest-20261005T084017Z-predeploy.jar`.
+  - **#191** — le bypass de protection reposait sur `rpgquest.admin.world`, dont le défaut est
+    `op` : **tout compte opérateur détruisait waypoints et bornes sans geste délibéré**, ce qui
+    explique exactement le signalement. L'enregistrement des blocs protégés et la couverture du
+    modèle (bouton, or, support, deux panneaux) étaient corrects, y compris après redémarrage.
+    Désormais : permission dédiée `rpgquest.admin.travel.maintenance` (`default: false`, jamais
+    accordée par OP) **et** activation volontaire `/rpgadmin travel maintenance on` qui expire au
+    bout de 5 min. Ajout de la détection des structures **abîmées** dans
+    `/rpgadmin travel diagnose` (distincte des structures *inaccessibles* : une structure cassée
+    restait « accessible », elle n'était donc pas détectée) et de
+    `/rpgadmin travel restore waypoint <id> confirm [force]`, qui repose les blocs manquants
+    **sans déplacer** le waypoint, en conservant id, nom, découvertes et borne appariée, et refuse
+    d'écraser une construction tierce sans `force`.
+  - **#168** — nouvelle section `wild:` de `config.yml` et `WildHostileRulesService`, appliqués
+    **uniquement** aux mondes Wild listés (vide = `travel.wild-world`). Immunité au **soleil
+    seulement** (feu, lave et combat inchangés), complément d'apparitions **diurnes** borné
+    (jamais de doublon nocturne, jamais de nuit simulée, aucune génération de chunk), araignées
+    agressives de jour. Un `config.yml` existant reçoit la section par
+    `ConfigFileCompleter` au démarrage ; même sans elle, les valeurs par défaut s'appliquent.
+  - **Redémarrage** : `scripts/verygames-restart.sh --timeout 240` — **un seul redémarrage** pour
+    l'ensemble du lot en jeu, comme demandé. 0 joueur connecté avant/après. OFFLINE confirmé puis
+    **ONLINE**. `/plugins` → 4 verts ; `/rpgadmin travel maintenance` répond (commande bien
+    enregistrée, refus console attendu car sous-commande joueur).
+
+- **#192 — aucun changement de code, correctif de configuration d'un plugin tiers.** Vérifié par
+  RCON sur le DEV : WorldEdit **7.4.1**, et `/toggleeditwand` n'y **affiche plus qu'un rappel**
+  (« the wand is now a tool and can be unbound with `/tool none` ») — ce qui explique le « ça ne
+  change rien » rapporté par le joueur. WorldEdit reconnaît sa wand **par type d'objet**
+  (`wand-item`, `minecraft:wooden_axe` par défaut) en ignorant le PDC, et le kit doit conserver
+  ses quatre outils en bois (#26) : aucun correctif côté RPGQuest ne peut les distinguer.
+  Correctif retenu et documenté (`RPGQUEST_BIBLE.md` §14, TC-236) :
+  `plugins/WorldEdit/config.yml` → `wand-item: minecraft:golden_axe` puis `/worldedit reload`.
+  **Non appliqué par cette session** : `scripts/deploy-verygames.sh` refuse par conception tout
+  fichier d'un autre plugin, et contourner ce garde-fou à la main n'a pas été fait sans accord.
+
+- **Distinction explicite** : tout le volet en jeu (protection réelle, réparation visuelle,
+  apparitions diurnes, agressivité des araignées, hache du kit) reste
+  `PENDING MANUAL VALIDATION` — voir TC-234, TC-235, TC-236. Aucun test MockBukkit n'est présenté
+  comme une validation du comportement réel ; MockBukkit ne simule ni le spawn naturel, ni la
+  ligne de vue, ni l'IA de ciblage.
+- Aucun merge, aucune intervention PROD.
+
+Rollback : `scripts/rollback-verygames.sh --latest` (restaure
+`rpgquest-20261005T084017Z-predeploy.jar`) ; `scripts/plugadmin/rollback.sh app` pour le Control
+Panel. Pour #162, revenir en arrière consisterait à retirer `dialogues` du drop-in
+`10-content-workspace.conf` puis `systemctl daemon-reload && systemctl restart plugadmin`.

@@ -328,6 +328,50 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-05 (lot panel #162/#163/#164 + voyage #191 + Wild #168 + diagnostic #192)
+Branche de départ: feature/169-special-mobs-boss @ f6d94bc (entrée précédente, #179 déployé)
+Étape de départ: consigne de travail autonome pendant l'indisponibilité de l'utilisateur.
+  Priorité aux améliorations du Control Panel vérifiables au navigateur (#163, #164, #162, #165),
+  puis en jeu #168, #192, #191. Un seul redémarrage Minecraft à regrouper. Sans sous-agents.
+Étapes terminées:
+(1) DONE — #162 : deux causes indépendantes trouvées sur l'instance réelle (ACL POSIX absente ET
+  dossier absent de ReadWritePaths= alors que ProtectSystem=strict rend tout le reste en lecture
+  seule). Script idempotent du dépôt scripts/plugadmin/grant-content-access.sh ; vérifié par une
+  écriture sonde sous le même bac à sable systemd, AVEC contrôle négatif (sans le droit -> échec).
+  Message d'aide du panel corrigé : il nommait quests/stories, pas le dossier réellement bloqué.
+(2) DONE — #163 : RefData porte l'origine source/runtime et le graphe de prérequis ; QuestValidator
+  refuse les cycles INDIRECTS avec le chemin complet ; composant multisel (puces + recherche titre
+  ou id) dont le champ soumis reste la textarea — format canonique intact, page utilisable sans JS.
+(3) DONE — #164 : cause racine trouvée dans les données réelles. dialogue.list était un SUCCESS de
+  10 dialogues (dont rpgquest:jeff) stocké TRONQUÉ à 20 000 caractères en plein JSON, donc
+  illisible : le catalogue retombait en silence sur la source seule. Corrigé (marqueur JSON valide,
+  borne entrante 64 Kio -> 1 Mio qu'il frôlait déjà, interface qui signale un relevé inexploitable
+  au lieu d'impliquer une absence) + sélecteur PNJ recherchable sur le catalogue fusionné.
+(4) DONE — #191 : le bypass acceptait rpgquest.admin.world (default: op), donc tout OP détruisait
+  waypoints et bornes sans geste délibéré. Permission dédiée default:false + activation volontaire
+  expirant en 5 min. Détection des structures abîmées (distincte d'« inaccessible ») et
+  travel restore, qui repose les blocs SANS déplacer, conserve id/nom/découvertes/appariement et
+  refuse d'écraser une construction tierce sans force.
+(5) DONE — #168 : section wild: + WildHostileRulesService limités aux mondes Wild listés. Immunité
+  au SOLEIL seulement (feu/lave/combat intacts), complément d'apparitions DIURNES borné (jamais de
+  doublon nocturne, aucune nuit simulée, aucune génération de chunk), araignées agressives de jour.
+(6) DONE — #192 : vérifié par RCON (WorldEdit 7.4.1 ; /toggleeditwand n'affiche plus qu'un rappel,
+  ce qui explique le « ça ne change rien »). Correctif = wand-item != hache en bois, documenté.
+  NON appliqué : fichier d'un autre plugin, que deploy-verygames.sh refuse par conception.
+Tests : control-panel 406 tests / 0 échec / 1 ignoré ; plugin 1442 tests / 0 échec / 34 ignorés
+  (limitations MockBukkit déjà documentées). Chiffres relevés dans les XML JUnit réels.
+Branche finale: feature/169-special-mobs-boss (aucun merge)
+Dernier commit: a061c75 au déploiement plugin (docs committées ensuite)
+Build: vert ; ./gradlew test + build relancés une 2e fois par le script de déploiement.
+Tests manuels en attente: TC-234 (#191), TC-235 (#168), TC-236 (#192). Côté navigateur, #162/#163/
+  #164 sont testables immédiatement.
+Blocages: aucun. #165 non commencé (temps consommé par la cause racine #164 non anticipée).
+  La ligne dialogue.list déjà en base reste tronquée : un clic sur « Rafraîchir » suffit.
+Première étape à reprendre: validation en jeu TC-234/235, application du wand-item WorldEdit
+  (#192), puis #165 (renommage + skin MineSkin) ; préciser la demande « journal / infobulles ».
+```
+
+```text
 Date: 2026-10-04 (issue #179 — parcours simplifié du Garde pour les claims TIER_1 à TIER_5)
 Branche de départ: feature/169-special-mobs-boss @ 5ab472e (entrée précédente, #190 déployé)
 Étape de départ: demande explicite de l'utilisateur, exécutée sans attendre de confirmation :

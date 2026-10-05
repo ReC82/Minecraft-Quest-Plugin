@@ -6,7 +6,7 @@
 * Sujet : #194 — supprimer des quêtes et des stories depuis le panel, avec aperçu des conséquences et confirmation
 * Statut : DONE
 * Branche Git : `feature/169-special-mobs-boss` (worktree dédié `/srv/rpgquest/worktree-169`)
-* Commit actuel si disponible : voir « Commits »
+* Commit actuel si disponible : `44c1446`
 * Début de la tâche : 2026-10-05 16:56:42 (heure locale réelle, première action)
 * Fin de la tâche : 2026-10-05 17:50:10 (heure locale réelle)
 * Durée totale : 00:53:28
@@ -164,8 +164,25 @@ fixtures écrites à la main que `SourceCatalog` marquait « non analysables » 
 par les sérialiseurs réels, sinon le test vérifiait autre chose que ce qu'il annonçait), et une
 assertion qui cherchait une phrase non échappée alors que `Http.esc` fait correctement son travail.
 
-**Non couvert automatiquement** : le parcours navigateur et l'exécution réelle de l'action agent
-sur le serveur — c'est l'objet de TC-243.
+## Vérification sur les services déployés (sans rien supprimer)
+
+- **Control Panel AWS** : service actif, `/health` → `200`.
+- **Serveur DEV** : `ONLINE`, heartbeat de l'agent vu à **1 seconde** au moment du contrôle.
+- **L'action `content.definition.delete` est bien dans le JAR livré** : sonde sur un identifiant
+  **volontairement inexistant** → « Aucun fichier de *quests* ne déclare l'identifiant
+  `tc243_inexistant_sonde` sur le serveur : rien à supprimer ». Elle est donc reconnue (et non
+  rejetée comme type inconnu) et **n'a rien touché**.
+- **13** boutons « Supprimer… » sur `/quests`, **3** sur `/stories`.
+- **Protection vérifiée sur vos données réelles** : l'aperçu de `first_steps` **bloque** parce que
+  le dialogue `guard` la référence **aux lignes 12, 16 et 21**, et **aucun formulaire de
+  confirmation n'est rendu**. Il est donc impossible de supprimer `first_steps` par accident.
+  Requêtes **GET uniquement** : rien n'a été supprimé.
+- Compte panel de vérification créé puis **supprimé** avec ses identifiants ; `owner` et `TESTER`
+  intacts. Aucun fichier `tc243_` créé par moi.
+
+**Non couvert automatiquement** : le parcours navigateur complet (clics réels, saisie de la
+confirmation) et l'exécution d'une **vraie** suppression de bout en bout — c'est l'objet de TC-243,
+à dérouler sur du contenu `tc243_`.
 
 ## Tests manuels à effectuer
 **TC-243 (nouveau)** — parcours complet, **sur du contenu de test préfixé `tc243_` uniquement**.
@@ -187,13 +204,14 @@ chemin exact, pour qu'une restauration ne se devine pas.
 
 ## Déploiement VeryGames
 ### À transférer
-JAR (empreinte dans l'entrée de `SERVER_CHANGELOG.md`). Nécessaire : sans lui, l'action
-`content.definition.delete` n'existe pas côté serveur et le contenu supprimé de la source resterait
-chargé.
+JAR — **fait**. SHA-256 `d8991636879071c1bdb741bce8ece084407bcaf19697a36d98e3980fbfac3d59`
+(1 705 052 octets). Nécessaire : sans lui, l'action `content.definition.delete` n'existe pas côté
+serveur et le contenu supprimé de la source resterait chargé. JAR précédent sauvegardé :
+`rpgquest-20261005T155027Z-predeploy.jar`.
 ### Ne PAS transférer/altérer
 `data.db`, `config.yml`, `messages.yml`, `spawn.yml`, `RPGQuest/Citizens/`, les mondes.
 ### Redémarrage requis
-Oui — un seul.
+Oui — **un seul, effectué**. Serveur revenu `ONLINE`, 0 joueur connecté au moment de l'opération.
 ### Migration automatique
 Aucune.
 

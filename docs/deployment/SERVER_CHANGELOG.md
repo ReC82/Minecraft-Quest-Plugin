@@ -3969,8 +3969,8 @@ le symptôme rapporté.
 
 ### Sauvegarde préalable
 
-JAR précédent sauvegardé automatiquement par `scripts/deploy-verygames.sh` (voir le résumé du
-déploiement ci-dessous).
+JAR précédent sauvegardé automatiquement par `scripts/deploy-verygames.sh` :
+`~/.local/share/rpgquest/verygames-backups/rpgquest-20261005T155027Z-predeploy.jar`.
 
 ### Déploiement / Exécution réelle
 
@@ -4008,9 +4008,23 @@ déploiement ci-dessous).
   dans le **JAR construit**, et elles auraient **sali le working tree Git**, ce qui bloque
   `deploy-verygames.sh` (il refuse un arbre non propre).
 
+### Déploiement effectué
+
+- **JAR** : SHA-256 `d8991636879071c1bdb741bce8ece084407bcaf19697a36d98e3980fbfac3d59`
+  (1 705 052 octets), transféré puis **un seul redémarrage** RCON — serveur revenu `ONLINE`,
+  0 joueur connecté.
+- **Control Panel AWS** : service actif, `/health` → `200`.
+- **Tests** : `./gradlew test build` en un seul passage — **1458** plugin (34 ignorés),
+  **476** control-panel (1 ignoré), **30** web-api, **0 échec, 0 erreur**.
+- **Vérifié sur les services déployés, sans rien supprimer** : l'action
+  `content.definition.delete` répond correctement sur un identifiant volontairement inexistant
+  (donc elle est bien présente dans le JAR livré) ; 13 boutons « Supprimer… » sur `/quests`, 3 sur
+  `/stories` ; et l'aperçu de `first_steps` **bloque** sur le dialogue `guard` (lignes 12, 16, 21)
+  **sans rendre de formulaire de confirmation** — la protection fonctionne sur le contenu réel.
+
 ### Redémarrage requis
 
-**Oui — un seul.**
+**Oui — un seul, effectué.**
 
 ### Migration automatique
 

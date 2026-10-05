@@ -384,9 +384,24 @@ Tests: suite complète des trois modules verte en un seul passage `./gradlew tes
   non analysables (le test vérifiait donc autre chose que ce qu'il annonçait) et une assertion qui
   ignorait l'échappement HTML de Http.esc.
 Branche finale: feature/169-special-mobs-boss (aucun merge).
-Dernier commit: COMMIT_PLACEHOLDER
+Dernier commit: 44c1446 feat(control-panel): supprimer quêtes et stories avec aperçu et
+  confirmation (#194) — code et documentation dans le même commit.
 Build: vert.
-Déploiements: DEPLOY_PLACEHOLDER
+Déploiements: JAR VeryGames DEV (SHA-256
+  d8991636879071c1bdb741bce8ece084407bcaf19697a36d98e3980fbfac3d59, 1 705 052 octets) avec UN SEUL
+  redémarrage RCON — serveur revenu ONLINE, 0 joueur connecté. Puis Control Panel AWS
+  (service actif, /health -> 200). Heartbeat de l'agent vu à 1 seconde au moment du contrôle.
+Vérification sur les services DÉPLOYÉS, sans rien supprimer :
+  * action `content.definition.delete` prouvée vivante dans le JAR déployé par une sonde sur un
+    identifiant VOLONTAIREMENT inexistant -> « Aucun fichier de quests ne déclare l'identifiant
+    tc243_inexistant_sonde sur le serveur : rien à supprimer ». L'action est donc reconnue (pas
+    REJECTED comme type inconnu) et n'a rien touché ;
+  * 13 boutons « Supprimer… » sur /quests, 3 sur /stories ;
+  * APERÇU DE first_steps SUR DONNÉES RÉELLES : la suppression est BLOQUÉE parce que le dialogue
+    « guard » la référence aux lignes 12, 16 et 21, et AUCUN formulaire de confirmation n'est
+    rendu. La protection fonctionne donc sur le contenu réel du propriétaire, pas seulement en
+    test. Rien n'a été supprimé (requêtes GET uniquement).
+  Compte panel de vérification créé puis supprimé avec ses identifiants ; owner et TESTER intacts.
 Tests manuels en attente: TC-243 — parcours navigateur complet, sur du contenu de test préfixé
   « tc243_ » uniquement. Le test précise explicitement de NE PAS le dérouler sur crystal_hunt,
   first_steps, les quêtes du Garde ou main_story.

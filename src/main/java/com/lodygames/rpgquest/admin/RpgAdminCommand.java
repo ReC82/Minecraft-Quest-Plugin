@@ -90,7 +90,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
             List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim");
-    private static final List<String> TRAVEL_SUBCOMMANDS = List.of("beacon", "village", "diagnose", "repair", "signs");
+    private static final List<String> TRAVEL_SUBCOMMANDS =
+            List.of("beacon", "village", "diagnose", "repair", "restore", "signs", "maintenance");
     private static final List<String> TRAVEL_REPAIR_KINDS = List.of("waypoint", "beacon");
     private static final List<String> TRAVEL_SIGNS_SUBCOMMANDS = List.of("upgrade");
     private static final List<String> TRAVEL_BEACON_SUBCOMMANDS = List.of("set");
@@ -145,6 +146,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final PlayerVariableRepository variableRepository;
     private final TravelBeaconService travelBeaconService;
     private final WaypointService waypointService;
+    private final com.lodygames.rpgquest.travel.TravelMaintenanceMode travelMaintenanceMode;
     private final ClaimService claimService;
     private final RPGQuestPlugin plugin;
 
@@ -157,7 +159,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             PlayerResetService playerResetService, HubGuideRegistry hubGuideRegistry,
                             QuestProgressEngine questProgressEngine, YamlQuestEngine questEngine,
                             PlayerVariableRepository variableRepository, TravelBeaconService travelBeaconService,
-                            WaypointService waypointService, ClaimService claimService, RPGQuestPlugin plugin) {
+                            WaypointService waypointService,
+                            com.lodygames.rpgquest.travel.TravelMaintenanceMode travelMaintenanceMode,
+                            ClaimService claimService, RPGQuestPlugin plugin) {
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
@@ -179,6 +183,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         this.variableRepository = variableRepository;
         this.travelBeaconService = travelBeaconService;
         this.waypointService = waypointService;
+        this.travelMaintenanceMode = travelMaintenanceMode;
         this.claimService = claimService;
         this.plugin = plugin;
     }
@@ -911,8 +916,51 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handleTravelRepair(player, args);
         } else if (args[1].equalsIgnoreCase("signs")) {
             handleTravelSigns(player, args);
+        } else if (args[1].equalsIgnoreCase("maintenance")) {
+            handleTravelMaintenance(player, args);
+        } else if (args[1].equalsIgnoreCase("restore")) {
+            handleTravelRestore(player, args);
         } else {
             sendTravelUsage(player);
+        }
+    }
+
+    /**
+     * Issue #191 — remplace le bypass implicite par statut OP. Exige la permission dédiée
+     * {@code rpgquest.admin.travel.maintenance} ({@code default: false}, donc jamais accordée par le
+     * seul statut d'opérateur) <strong>et</strong> cette activation volontaire, qui expire d'elle-même
+     * pour qu'un mode oublié ne redevienne pas un trou permanent.
+     */
+    private void handleTravelMaintenance(Player player, String[] args) {
+        String mode = args.length >= 3 ? args[2].toLowerCase(Locale.ROOT) : "";
+        if (mode.equals("on")) {
+            if (!travelMaintenanceMode.enable(player)) {
+                player.sendMessage(MM.deserialize(
+                        "<red>Permission manquante :</red> <white><p></white> "
+                                + "<gray>— volontairement non accordée aux opérateurs (issue #191).</gray>",
+                        Placeholder.unparsed("p",
+                                com.lodygames.rpgquest.travel.TravelMaintenanceMode.PERMISSION)));
+                return;
+            }
+            plugin.getSLF4JLogger().info("[admin] {} : mode maintenance voyage ACTIVÉ ({} min)",
+                    player.getName(),
+                    com.lodygames.rpgquest.travel.TravelMaintenanceMode.TTL_MILLIS / 60_000L);
+            player.sendMessage(MM.deserialize(
+                    "<yellow>Mode maintenance voyage ACTIVÉ pour <m> minute(s).</yellow> "
+                            + "<gray>Les blocs des waypoints et des bornes sont cassables pendant ce "
+                            + "délai, puis la protection revient d'elle-même.</gray>",
+                    Placeholder.unparsed("m", Long.toString(
+                            com.lodygames.rpgquest.travel.TravelMaintenanceMode.TTL_MILLIS / 60_000L))));
+        } else if (mode.equals("off")) {
+            travelMaintenanceMode.disable(player);
+            plugin.getSLF4JLogger().info("[admin] {} : mode maintenance voyage désactivé", player.getName());
+            player.sendMessage(MM.deserialize("<green>Mode maintenance voyage désactivé — protection rétablie.</green>"));
+        } else {
+            var remaining = travelMaintenanceMode.remainingMillis(player);
+            player.sendMessage(MM.deserialize(
+                    "<yellow>/rpgadmin travel maintenance <on|off></yellow> <gray>— état actuel : <s></gray>",
+                    Placeholder.unparsed("s", remaining.isPresent()
+                            ? "ACTIF (" + (remaining.get() / 1000) + " s restantes)" : "inactif")));
         }
     }
 
@@ -933,6 +981,43 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         player.sendMessage(MM.deserialize(
                 "<green><n> waypoint(s) traité(s) (panneaux posés/rafraîchis).</green>",
                 Placeholder.unparsed("n", Integer.toString(processed))));
+    }
+
+    /**
+     * Issue #191 — restauration <strong>sur place</strong> d'une structure de waypoint détruite.
+     * Distincte de {@code travel repair}, qui <em>déplace</em> un waypoint inaccessible : ici
+     * position, id, nom, découvertes et appariement de borne sont tous conservés. Un conflit avec
+     * une construction apparue depuis est signalé et rien n'est écrasé sans « force » explicite.
+     */
+    private void handleTravelRestore(Player player, String[] args) {
+        boolean force = args.length >= 6 && args[5].equalsIgnoreCase("force");
+        if (args.length < 5 || !args[4].equalsIgnoreCase("confirm") || !args[2].equalsIgnoreCase("waypoint")) {
+            player.sendMessage(MM.deserialize(
+                    "<yellow>/rpgadmin travel restore waypoint <id> confirm [force]</yellow> "
+                            + "<gray>- repose les blocs manquants SANS déplacer le waypoint "
+                            + "(id, nom, découvertes et borne appariée conservés). « force » écrase "
+                            + "délibérément une construction en conflit.</gray>"));
+            return;
+        }
+        String id = args[3];
+        var state = waypointService.integrity(id);
+        if (state.isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<red>Waypoint introuvable ou monde non chargé :</red> <white><id></white>",
+                    Placeholder.unparsed("id", id)));
+            return;
+        }
+        plugin.getSLF4JLogger().info("[admin] {} : /rpgadmin travel restore waypoint {}{}",
+                player.getName(), id, force ? " (force)" : "");
+        var error = waypointService.restoreInPlace(id, force);
+        if (error.isPresent()) {
+            player.sendMessage(MM.deserialize("<red><m></red>", Placeholder.unparsed("m", error.get())));
+            return;
+        }
+        player.sendMessage(MM.deserialize(
+                "<green>Structure restaurée sur place :</green> <yellow><id></yellow> "
+                        + "<gray>— id, nom, découvertes et appariement inchangés.</gray>",
+                Placeholder.unparsed("id", id)));
     }
 
     /** Diagnostic lecture seule (issues #153/#156) : jamais d'écriture, à partir des données persistées/indexées. */
@@ -969,6 +1054,28 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                         Placeholder.unparsed("id", w.id()), Placeholder.unparsed("name", w.displayName()),
                         Placeholder.unparsed("x", Integer.toString(w.x())), Placeholder.unparsed("y", Integer.toString(w.y())),
                         Placeholder.unparsed("z", Integer.toString(w.z())), Placeholder.unparsed("status", status)));
+            }
+        }
+
+        // Issue #191 : intégrité des blocs, distincte de l'accessibilité. Une structure cassée reste
+        // « accessible » au sens du pathfinding — elle n'était donc pas détectée avant.
+        var damaged = waypointService.damagedStructures(world);
+        if (damaged.isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<green>Aucune structure de waypoint abîmée (mondes chargés).</green>"));
+        } else {
+            player.sendMessage(MM.deserialize("<red><n> waypoint(s) à la structure abîmée :</red>",
+                    Placeholder.unparsed("n", Integer.toString(damaged.size()))));
+            for (var d : damaged) {
+                player.sendMessage(MM.deserialize(
+                        "  <yellow><id></yellow> <gray>manquant :</gray> <white><miss></white>"
+                                + "<gray><conf></gray> <gray>-></gray> "
+                                + "<yellow>/rpgadmin travel restore waypoint <id> confirm</yellow>",
+                        Placeholder.unparsed("id", d.waypointId()),
+                        Placeholder.unparsed("miss", d.missing().isEmpty() ? "aucun"
+                                : String.join(" ; ", d.missing())),
+                        Placeholder.unparsed("conf", d.conflicts().isEmpty() ? ""
+                                : " — conflit : " + String.join(" ; ", d.conflicts()))));
             }
         }
 

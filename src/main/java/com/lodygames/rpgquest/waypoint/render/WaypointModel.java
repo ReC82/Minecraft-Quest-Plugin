@@ -42,4 +42,16 @@ public interface WaypointModel {
 
     /** Tous les blocs constitutifs à protéger (interacteur inclus), en décalages relatifs à l'ancre. */
     Set<BlockOffset> protectedBlocks(BlockFace facing);
+
+    /**
+     * Issue #191 : matériau <strong>attendu</strong> à chaque décalage constitutif, pour pouvoir
+     * diagnostiquer une structure abîmée (bloc manquant ou remplacé) et la restaurer <em>sur place</em>
+     * sans dupliquer la logique de {@link #place} ni déplacer le waypoint.
+     *
+     * <p>Ne décrit que les blocs dont l'absence casse la structure — le sol de soutien, les blocs
+     * d'air de dégagement et tout détail cosmétique restent hors de ce contrat. Le texte des
+     * panneaux n'est pas comparé ici : {@code WaypointService#upgradeSigns} le rétablit déjà de
+     * façon idempotente.</p>
+     */
+    java.util.Map<BlockOffset, org.bukkit.Material> expectedBlocks(BlockFace facing);
 }

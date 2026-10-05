@@ -85,5 +85,10 @@ class WaypointModelRegistryTest {
         public Set<BlockOffset> protectedBlocks(BlockFace facing) {
             return Set.of(new BlockOffset(0, 1, 1));
         }
+
+        @Override
+        public java.util.Map<BlockOffset, org.bukkit.Material> expectedBlocks(BlockFace facing) {
+            return java.util.Map.of(new BlockOffset(0, 1, 1), org.bukkit.Material.GOLD_BLOCK);
+        }
     }
 }

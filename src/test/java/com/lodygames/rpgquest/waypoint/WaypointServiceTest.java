@@ -173,6 +173,103 @@ class WaypointServiceTest {
         assertEquals(Material.STONE_BUTTON, interactorBlockOf(wp).getType());
     }
 
+    // ---- Issue #191 : structure détruite — détection et restauration sur place ----------------
+
+    @Test
+    void anIntactStructureIsReportedAsIntact() throws Exception {
+        Waypoint wp = generateAround(384, 384, Biome.FOREST);
+
+        var state = service.integrity(wp.id()).orElseThrow();
+
+        assertTrue(state.intact(), "structure fraîchement posée : " + state);
+        assertTrue(service.damagedStructures(null).isEmpty());
+    }
+
+    /** Reproduit le signalement : bouton cassé, puis bloc d'or, puis le support. */
+    @Test
+    void destroyingTheStructureIsDetectedBlockByBlock() throws Exception {
+        Waypoint wp = generateAround(384, 384, Biome.FOREST);
+
+        interactorBlockOf(wp).setType(Material.AIR);
+        assertTrue(service.integrity(wp.id()).orElseThrow().damaged(), "bouton manquant détecté");
+
+        wild.getBlockAt(wp.x(), wp.y() + 1, wp.z()).setType(Material.AIR);
+        wild.getBlockAt(wp.x(), wp.y(), wp.z()).setType(Material.AIR);
+
+        var state = service.integrity(wp.id()).orElseThrow();
+        assertTrue(state.missing().size() >= 3, "les blocs détruits sont listés : " + state.missing());
+        assertTrue(state.conflicts().isEmpty(), "de l'air n'est pas un conflit");
+        assertEquals(1, service.damagedStructures(null).size());
+    }
+
+    /**
+     * Le cœur du ticket : restauration sans perte d'identité. L'id, le nom et les découvertes
+     * joueurs doivent survivre, et aucun second waypoint ne doit apparaître dans le biome.
+     */
+    @Test
+    void restoreInPlaceRebuildsWithoutLosingIdentityOrDiscoveries() throws Exception {
+        Waypoint wp = generateAround(384, 384, Biome.FOREST);
+        String id = wp.id();
+        String name = wp.displayName();
+        int x = wp.x();
+        int y = wp.y();
+        int z = wp.z();
+
+        PlayerMock finder = addPlayer();
+        service.handleInteract(finder, interactorBlockOf(wp));
+        await(() -> service.hasActivelyDiscovered(finder.getUniqueId(), id));
+        assertTrue(service.hasActivelyDiscovered(finder.getUniqueId(), id), "découverte enregistrée avant la casse");
+
+        // Destruction complète de la structure.
+        interactorBlockOf(wp).setType(Material.AIR);
+        wild.getBlockAt(x, y + 1, z).setType(Material.AIR);
+        wild.getBlockAt(x, y, z).setType(Material.AIR);
+
+        assertTrue(service.restoreInPlace(id, false).isEmpty(), "restauration sans conflit attendue");
+
+        assertTrue(service.integrity(id).orElseThrow().intact(), "structure complète après restauration");
+        assertEquals(Material.GOLD_BLOCK, wild.getBlockAt(x, y + 1, z).getType());
+        assertEquals(Material.COBBLESTONE_WALL, wild.getBlockAt(x, y, z).getType());
+        assertEquals(Material.STONE_BUTTON, interactorBlockOf(wp).getType());
+
+        Waypoint after = service.all().stream().filter(w -> w.id().equals(id)).findFirst().orElseThrow();
+        assertEquals(x, after.x(), "jamais déplacé : c'est une restauration, pas une relocalisation");
+        assertEquals(y, after.y());
+        assertEquals(z, after.z());
+        assertEquals(name, after.displayName(), "nom canonique conservé");
+        assertEquals(1, service.all().size(), "aucun doublon créé dans le biome");
+        assertTrue(service.hasActivelyDiscovered(finder.getUniqueId(), id), "découvertes conservées");
+    }
+
+    /** Une construction tierce n'est jamais écrasée sans « force » explicite. */
+    @Test
+    void restoreRefusesToOverwriteAThirdPartyBuildUnlessForced() throws Exception {
+        Waypoint wp = generateAround(384, 384, Biome.FOREST);
+        String id = wp.id();
+
+        interactorBlockOf(wp).setType(Material.AIR);
+        // Quelqu'un a construit à l'emplacement du bloc d'or depuis la destruction.
+        wild.getBlockAt(wp.x(), wp.y() + 1, wp.z()).setType(Material.OAK_PLANKS);
+
+        var state = service.integrity(id).orElseThrow();
+        assertFalse(state.conflicts().isEmpty(), "le bloc étranger est signalé comme conflit : " + state);
+
+        var refusal = service.restoreInPlace(id, false);
+        assertTrue(refusal.isPresent(), "sans force, la restauration doit refuser");
+        assertTrue(refusal.get().contains("Conflit"), refusal.get());
+        assertEquals(Material.OAK_PLANKS, wild.getBlockAt(wp.x(), wp.y() + 1, wp.z()).getType(),
+                "rien n'a été écrasé");
+
+        assertTrue(service.restoreInPlace(id, true).isEmpty(), "avec force, la restauration passe");
+        assertEquals(Material.GOLD_BLOCK, wild.getBlockAt(wp.x(), wp.y() + 1, wp.z()).getType());
+    }
+
+    @Test
+    void restoreOfAnUnknownWaypointFailsCleanly() {
+        assertTrue(service.restoreInPlace("inconnu", false).isPresent());
+        assertTrue(service.integrity("inconnu").isEmpty());
+    }
+
     /**
      * Issue #167 : un panneau sur chacune des deux faces latérales adjacentes à la face du bouton
      * (jamais la face opposée), affichant le nom canonique persisté, le bouton restant accessible.
@@ -554,6 +651,11 @@ class WaypointServiceTest {
         @Override
         public Set<BlockOffset> protectedBlocks(BlockFace facing) {
             return Set.of(new BlockOffset(0, 0, 0), new BlockOffset(0, 1, 0), new BlockOffset(0, 2, 0));
+        }
+
+        @Override
+        public java.util.Map<BlockOffset, org.bukkit.Material> expectedBlocks(BlockFace facing) {
+            return java.util.Map.of(new BlockOffset(0, 1, 0), org.bukkit.Material.GOLD_BLOCK);
         }
     }
 }

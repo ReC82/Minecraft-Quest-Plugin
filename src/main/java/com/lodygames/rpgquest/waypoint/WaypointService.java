@@ -24,6 +24,7 @@ import java.util.function.Supplier;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -136,8 +137,8 @@ public final class WaypointService implements PluginService {
         return new WaypointListener(this);
     }
 
-    public Listener protectionListener() {
-        return new WaypointProtectionListener(this::isProtectedBlock);
+    public Listener protectionListener(com.lodygames.rpgquest.travel.TravelMaintenanceMode maintenance) {
+        return new WaypointProtectionListener(this::isProtectedBlock, maintenance);
     }
 
     // ---- Cycle de vie joueur -------------------------------------------------------------------
@@ -456,6 +457,124 @@ public final class WaypointService implements PluginService {
             processed++;
         }
         return processed;
+    }
+
+    // ---- Intégrité structurelle / réparation sur place (issue #191) --------------------------
+
+    /**
+     * État structurel d'un waypoint : ce qui manque, et ce qui a été remplacé par autre chose.
+     *
+     * @param missing  décalages dont le bloc attendu a purement disparu (remplacé par de l'air /
+     *                 un bloc traversable) — restaurables sans rien écraser
+     * @param conflicts décalages occupés par un bloc <strong>différent et non vide</strong> : une
+     *                 construction apparue entre-temps. Jamais écrasée d'office.
+     */
+    public record Integrity(String waypointId, List<String> missing, List<String> conflicts) {
+        public boolean intact() {
+            return missing.isEmpty() && conflicts.isEmpty();
+        }
+
+        public boolean damaged() {
+            return !intact();
+        }
+    }
+
+    /**
+     * Compare la structure réellement présente dans le monde au modèle attendu. Lecture seule :
+     * ne pose ni ne casse aucun bloc, et ne touche jamais l'enregistrement du waypoint.
+     *
+     * @return vide si le monde n'est pas chargé (impossible de conclure — on ne prétend pas que la
+     *         structure est abîmée dans ce cas)
+     */
+    public Optional<Integrity> integrity(String waypointId) {
+        Waypoint waypoint = byId.get(waypointId);
+        if (waypoint == null) {
+            return Optional.empty();
+        }
+        World world = plugin.getServer().getWorld(waypoint.world());
+        if (world == null) {
+            return Optional.empty();
+        }
+        BlockFace facing = parseFacing(waypoint.facing());
+        WaypointModel model = modelRegistry.resolveOrCurrent(waypoint.modelVersion());
+        List<String> missing = new java.util.ArrayList<>();
+        List<String> conflicts = new java.util.ArrayList<>();
+        model.expectedBlocks(facing).forEach((offset, expected) -> {
+            Block block = world.getBlockAt(waypoint.x() + offset.dx(),
+                    waypoint.y() + offset.dy(), waypoint.z() + offset.dz());
+            Material actual = block.getType();
+            if (actual == expected) {
+                return;
+            }
+            String where = "(" + (waypoint.x() + offset.dx()) + "," + (waypoint.y() + offset.dy())
+                    + "," + (waypoint.z() + offset.dz()) + ") " + expected;
+            if (actual.isAir() || !actual.isSolid()) {
+                missing.add(where);
+            } else {
+                conflicts.add(where + " occupé par " + actual);
+            }
+        });
+        return Optional.of(new Integrity(waypointId, List.copyOf(missing), List.copyOf(conflicts)));
+    }
+
+    /** Tous les waypoints dont la structure est abîmée, mondes chargés uniquement. */
+    public List<Integrity> damagedStructures(String worldFilter) {
+        List<Integrity> out = new java.util.ArrayList<>();
+        for (Waypoint waypoint : List.copyOf(byId.values())) {
+            if (worldFilter != null && !worldFilter.isBlank() && !waypoint.world().equalsIgnoreCase(worldFilter)) {
+                continue;
+            }
+            integrity(waypoint.id()).filter(Integrity::damaged).ifPresent(out::add);
+        }
+        return out;
+    }
+
+    /**
+     * Restaure <strong>sur place</strong> les blocs manquants d'un waypoint déjà enregistré :
+     * {@code id}, nom d'affichage, instance de biome, découvertes joueurs, références de quête et
+     * appariement avec une borne sont conservés tels quels — rien n'est recréé sous une nouvelle
+     * identité, et aucun doublon n'est généré dans le biome.
+     *
+     * <p>À distinguer de {@link #repair(String)}, qui <em>déplace</em> un waypoint devenu
+     * inaccessible : ici la position ne change pas, c'est précisément ce qu'on veut après une
+     * destruction (le joueur retrouve sa structure là où elle était).</p>
+     *
+     * <p>Un décalage occupé par une construction tierce est signalé et <strong>laissé
+     * intact</strong> sauf {@code force} explicite — jamais d'écrasement arbitraire.</p>
+     *
+     * @return message d'erreur, ou vide en cas de succès
+     */
+    public Optional<String> restoreInPlace(String waypointId, boolean force) {
+        Waypoint waypoint = byId.get(waypointId);
+        if (waypoint == null) {
+            return Optional.of("Waypoint introuvable : " + waypointId);
+        }
+        World world = plugin.getServer().getWorld(waypoint.world());
+        if (world == null) {
+            return Optional.of("Monde non chargé : " + waypoint.world());
+        }
+        Optional<Integrity> state = integrity(waypointId);
+        if (state.isEmpty()) {
+            return Optional.of("État de la structure indéterminable pour " + waypointId);
+        }
+        if (state.get().intact()) {
+            return Optional.of("Structure déjà complète — rien à restaurer.");
+        }
+        if (!state.get().conflicts().isEmpty() && !force) {
+            return Optional.of("Conflit avec une construction existante : "
+                    + String.join(", ", state.get().conflicts())
+                    + ". Rien n'a été modifié — relancer avec « force » pour écraser délibérément.");
+        }
+        // Repose la structure complète via le modèle : idempotent sur les blocs déjà corrects, et
+        // seul endroit qui sait poser l'orientation du bouton et le texte des panneaux.
+        WaypointModel model = modelRegistry.resolveOrCurrent(waypoint.modelVersion());
+        model.place(world, waypoint.x(), waypoint.y(), waypoint.z(),
+                parseFacing(waypoint.facing()), waypoint.displayName());
+        // Réindexe par prudence : si la protection avait été perdue, elle est rétablie ici.
+        index(waypoint);
+        logger.info("Waypoint {} restauré sur place en ({},{},{}) — id/nom/découvertes inchangés.",
+                waypointId, waypoint.x(), waypoint.y(), waypoint.z());
+        return Optional.empty();
     }
 
     private void deindexPositionalBlocks(Waypoint waypoint) {

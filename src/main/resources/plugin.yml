@@ -81,6 +81,9 @@ permissions:
   rpgquest.admin.world:
     description: Accès aux commandes d'administration du monde (/rpgadmin), dont l'aplatissement de terrain et les raccourcis de test quêtes/stories (/rpgadmin quest|story).
     default: op
+  rpgquest.admin.travel.maintenance:
+    description: "Autorise, APRÈS activation explicite via /rpgadmin travel maintenance on, à casser les blocs d'un waypoint ou d'une borne de voyage (issue #191). Volontairement PAS accordée aux opérateurs : un bypass implicite par statut OP permettait de détruire ces structures sans geste délibéré."
+    default: false
   rpgquest.admin.debug:
     description: Permission stricte supplémentaire pour les écritures bas niveau de debug (/rpgadmin player variable set). Ne jamais accorder à un joueur normal.
     default: op

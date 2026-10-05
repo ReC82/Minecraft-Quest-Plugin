@@ -219,6 +219,9 @@ public final class RPGQuestBootstrap {
     private WaystoneService waystoneService;
     private WaypointService waypointService;
     private TravelBeaconService travelBeaconService;
+    /** Issue #191 : autorisation explicite et temporaire d'altérer waypoints/bornes (jamais via OP seul). */
+    private final com.lodygames.rpgquest.travel.TravelMaintenanceMode travelMaintenanceMode =
+            new com.lodygames.rpgquest.travel.TravelMaintenanceMode();
     private PlayerResetService playerResetService;
     private WebSnapshotWriter webSnapshotWriter;
     private StoreClient storeClient;
@@ -564,7 +567,7 @@ public final class RPGQuestBootstrap {
                 () -> configService.current().travel());
         registry.start(waypointService);
         registry.start(new PlayerListenerService(plugin, waypointService.listener()));
-        registry.start(new PlayerListenerService(plugin, waypointService.protectionListener()));
+        registry.start(new PlayerListenerService(plugin, waypointService.protectionListener(travelMaintenanceMode)));
 
         // Réseau de voyage (issues #132/#150) : borne physique (bouton bois + bloc diamant, même
         // support qu'un waypoint) ouvrant un menu graphique vers les waypoints déjà découverts par
@@ -576,7 +579,7 @@ public final class RPGQuestBootstrap {
                 () -> configService.current().travel(), () -> configService.current().hub().world());
         registry.start(travelBeaconService);
         registry.start(new PlayerListenerService(plugin, travelBeaconService.listener()));
-        registry.start(new PlayerListenerService(plugin, travelBeaconService.protectionListener()));
+        registry.start(new PlayerListenerService(plugin, travelBeaconService.protectionListener(travelMaintenanceMode)));
 
         dialogueEngine = new YamlDialogueEngine(
                 plugin.getDataFolder().toPath().resolve("dialogues"), plugin.getSLF4JLogger(),
@@ -943,7 +946,7 @@ public final class RPGQuestBootstrap {
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
                 worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry,
                 questProgressEngine, questEngine, variableRepository, travelBeaconService, waypointService,
-                claimService, plugin);
+                travelMaintenanceMode, claimService, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

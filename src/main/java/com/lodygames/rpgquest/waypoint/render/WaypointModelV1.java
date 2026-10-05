@@ -93,6 +93,25 @@ public final class WaypointModelV1 implements WaypointModel {
         return Set.copyOf(offsets);
     }
 
+    /**
+     * Issue #191 — matériaux attendus, alignés sur ce que {@link #place} pose réellement : support,
+     * bloc d'or, bouton et les deux panneaux latéraux. Le sol {@code (0,-1,0)} est délibérément
+     * absent : {@code place} ne le remplace que s'il n'était pas déjà solide, donc n'importe quel
+     * bloc solide d'origine y est légitime et ne doit jamais être signalé comme une anomalie.
+     */
+    @Override
+    public java.util.Map<BlockOffset, Material> expectedBlocks(BlockFace facing) {
+        BlockFace f = cardinal(facing);
+        java.util.Map<BlockOffset, Material> expected = new java.util.LinkedHashMap<>();
+        expected.put(new BlockOffset(0, 0, 0), Material.COBBLESTONE_WALL);
+        expected.put(new BlockOffset(0, 1, 0), Material.GOLD_BLOCK);
+        expected.put(new BlockOffset(f.getModX(), 1, f.getModZ()), Material.STONE_BUTTON);
+        for (BlockFace side : lateralFaces(f)) {
+            expected.put(new BlockOffset(side.getModX(), 1, side.getModZ()), SIGN_MATERIAL);
+        }
+        return java.util.Map.copyOf(expected);
+    }
+
     /** Les deux faces à ±90° de {@code facing} -- jamais la face opposée (issue #167). */
     private static BlockFace[] lateralFaces(BlockFace facing) {
         return switch (facing) {

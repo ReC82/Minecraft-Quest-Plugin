@@ -23,7 +23,6 @@ import org.bukkit.event.entity.EntityExplodeEvent;
  */
 final class TravelBeaconProtectionListener implements Listener {
 
-    private static final String BYPASS_PERMISSION = "rpgquest.admin.world";
 
     @FunctionalInterface
     interface ProtectedBlockLookup {
@@ -31,17 +30,21 @@ final class TravelBeaconProtectionListener implements Listener {
     }
 
     private final ProtectedBlockLookup lookup;
+    private final com.lodygames.rpgquest.travel.TravelMaintenanceMode maintenance;
 
-    TravelBeaconProtectionListener(ProtectedBlockLookup lookup) {
+    TravelBeaconProtectionListener(ProtectedBlockLookup lookup,
+                                   com.lodygames.rpgquest.travel.TravelMaintenanceMode maintenance) {
         this.lookup = lookup;
+        this.maintenance = maintenance;
     }
 
     private boolean isProtected(Block block) {
         return lookup.isProtected(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
     }
 
-    private static boolean bypassing(Player player) {
-        return player != null && player.hasPermission(BYPASS_PERMISSION);
+    /** Issue #191 : même règle explicite que les waypoints — jamais un bypass par simple statut OP. */
+    private boolean bypassing(Player player) {
+        return maintenance.isActive(player);
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)

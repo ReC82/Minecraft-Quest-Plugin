@@ -29,8 +29,6 @@ import org.bukkit.event.entity.EntityExplodeEvent;
  */
 final class WaypointProtectionListener implements Listener {
 
-    private static final String BYPASS_PERMISSION = "rpgquest.admin.world";
-
     /** Interrogé sur chaque événement : {@code true} si (x, y, z) est un bloc constitutif d'un waypoint. */
     @FunctionalInterface
     interface ProtectedBlockLookup {
@@ -38,17 +36,25 @@ final class WaypointProtectionListener implements Listener {
     }
 
     private final ProtectedBlockLookup lookup;
+    private final com.lodygames.rpgquest.travel.TravelMaintenanceMode maintenance;
 
-    WaypointProtectionListener(ProtectedBlockLookup lookup) {
+    WaypointProtectionListener(ProtectedBlockLookup lookup,
+                               com.lodygames.rpgquest.travel.TravelMaintenanceMode maintenance) {
         this.lookup = lookup;
+        this.maintenance = maintenance;
     }
 
     private boolean isProtected(Block block) {
         return lookup.isProtected(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
     }
 
-    private static boolean bypassing(Player player) {
-        return player != null && player.hasPermission(BYPASS_PERMISSION);
+    /**
+     * Issue #191 : plus aucun bypass implicite lié au seul statut OP. Il faut la permission dédiée
+     * {@code rpgquest.admin.travel.maintenance} (défaut {@code false}) ET une activation volontaire
+     * et temporaire via {@code /rpgadmin travel maintenance on}.
+     */
+    private boolean bypassing(Player player) {
+        return maintenance.isActive(player);
     }
 
     // ---- Casse / remplacement joueur --------------------------------------------------------

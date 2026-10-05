@@ -37,6 +37,7 @@ class WaypointProtectionListenerTest {
     private ServerMock server;
     private Plugin plugin;
     private World world;
+    private com.lodygames.rpgquest.travel.TravelMaintenanceMode maintenance;
 
     /** Le bloc protégé de référence pour tous les tests. */
     private static final int PX = 10;
@@ -49,8 +50,9 @@ class WaypointProtectionListenerTest {
         plugin = MockBukkit.createMockPlugin("WaypointProtTest");
         world = server.addSimpleWorld("wild");
         Set<String> protectedKeys = Set.of("wild:" + PX + "," + PY + "," + PZ);
+        maintenance = new com.lodygames.rpgquest.travel.TravelMaintenanceMode();
         WaypointProtectionListener listener = new WaypointProtectionListener(
-                (w, x, y, z) -> protectedKeys.contains(w + ":" + x + "," + y + "," + z));
+                (w, x, y, z) -> protectedKeys.contains(w + ":" + x + "," + y + "," + z), maintenance);
         server.getPluginManager().registerEvents(listener, plugin);
     }
 
@@ -73,13 +75,63 @@ class WaypointProtectionListenerTest {
         assertTrue(event.isCancelled(), "casse joueur d'un bloc de waypoint refusée");
     }
 
+    /**
+     * Issue #191 — reproduit exactement le défaut signalé en jeu. {@code rpgquest.admin.world} a
+     * {@code default: op} : tout compte opérateur cassait donc bouton puis structure entière sans
+     * aucun geste délibéré. Ce test garantit que cette permission large ne suffit plus.
+     */
     @Test
-    void adminWithBypassPermissionCanBreakAProtectedBlock() {
+    void adminWorldPermissionAloneNoLongerBreaksAProtectedBlock() {
         PlayerMock player = server.addPlayer();
         player.addAttachment(plugin, "rpgquest.admin.world", true);
         BlockBreakEvent event = new BlockBreakEvent(protectedBlock(), player);
         server.getPluginManager().callEvent(event);
-        assertFalse(event.isCancelled(), "bypass rpgquest.admin.world : maintenance possible");
+        assertTrue(event.isCancelled(),
+                "le statut OP / rpgquest.admin.world ne doit plus suffire à détruire un waypoint");
+    }
+
+    /** La permission dédiée seule ne suffit pas non plus : l'activation doit être volontaire. */
+    @Test
+    void dedicatedPermissionWithoutExplicitActivationStillProtects() {
+        PlayerMock player = server.addPlayer();
+        player.addAttachment(plugin, com.lodygames.rpgquest.travel.TravelMaintenanceMode.PERMISSION, true);
+        BlockBreakEvent event = new BlockBreakEvent(protectedBlock(), player);
+        server.getPluginManager().callEvent(event);
+        assertTrue(event.isCancelled(), "sans « maintenance on », la protection reste active");
+    }
+
+    /** Maintenance explicitement activée par un porteur de la permission dédiée : casse autorisée. */
+    @Test
+    void explicitMaintenanceModeAllowsDeliberateRepair() {
+        PlayerMock player = server.addPlayer();
+        player.addAttachment(plugin, com.lodygames.rpgquest.travel.TravelMaintenanceMode.PERMISSION, true);
+        assertTrue(maintenance.enable(player), "activation acceptée avec la permission dédiée");
+        BlockBreakEvent event = new BlockBreakEvent(protectedBlock(), player);
+        server.getPluginManager().callEvent(event);
+        assertFalse(event.isCancelled(), "maintenance explicite : la réparation reste possible");
+    }
+
+    /** Sans la permission dédiée, l'activation est refusée — on ne peut pas se l'auto-accorder. */
+    @Test
+    void maintenanceCannotBeEnabledWithoutTheDedicatedPermission() {
+        PlayerMock player = server.addPlayer();
+        player.addAttachment(plugin, "rpgquest.admin.world", true);
+        assertFalse(maintenance.enable(player), "OP ne doit pas pouvoir activer la maintenance");
+        BlockBreakEvent event = new BlockBreakEvent(protectedBlock(), player);
+        server.getPluginManager().callEvent(event);
+        assertTrue(event.isCancelled());
+    }
+
+    /** Désactivation : la protection revient immédiatement. */
+    @Test
+    void disablingMaintenanceRestoresProtectionImmediately() {
+        PlayerMock player = server.addPlayer();
+        player.addAttachment(plugin, com.lodygames.rpgquest.travel.TravelMaintenanceMode.PERMISSION, true);
+        maintenance.enable(player);
+        maintenance.disable(player);
+        BlockBreakEvent event = new BlockBreakEvent(protectedBlock(), player);
+        server.getPluginManager().callEvent(event);
+        assertTrue(event.isCancelled(), "protection rétablie dès la désactivation");
     }
 
     @Test

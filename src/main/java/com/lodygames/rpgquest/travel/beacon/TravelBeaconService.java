@@ -165,8 +165,8 @@ public final class TravelBeaconService implements PluginService {
         return new TravelBeaconListener(this);
     }
 
-    public Listener protectionListener() {
-        return new TravelBeaconProtectionListener(this::isProtectedBlock);
+    public Listener protectionListener(com.lodygames.rpgquest.travel.TravelMaintenanceMode maintenance) {
+        return new TravelBeaconProtectionListener(this::isProtectedBlock, maintenance);
     }
 
     public boolean isProtectedBlock(String world, int x, int y, int z) {

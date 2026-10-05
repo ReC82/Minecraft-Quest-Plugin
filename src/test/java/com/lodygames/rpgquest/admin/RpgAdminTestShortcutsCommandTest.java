@@ -107,7 +107,8 @@ class RpgAdminTestShortcutsCommandTest {
         command = new RpgAdminCommand(
                 null, null, null, null, null, null, null, null, null, null, null, null,
                 storyService, null, null, null,
-                questProgressEngine, questEngine, variableRepository, null, null, null, plugin);
+                questProgressEngine, questEngine, variableRepository, null, null,
+                new com.lodygames.rpgquest.travel.TravelMaintenanceMode(), null, plugin);
     }
 
     @AfterEach

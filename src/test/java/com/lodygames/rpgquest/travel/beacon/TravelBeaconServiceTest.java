@@ -232,7 +232,7 @@ class TravelBeaconServiceTest {
         server.getPluginManager().registerEvents(waypointService.listener(), plugin);
         waypointService.start();
         server.getPluginManager().registerEvents(service.listener(), plugin);
-        server.getPluginManager().registerEvents(service.protectionListener(), plugin);
+        server.getPluginManager().registerEvents(service.protectionListener(new com.lodygames.rpgquest.travel.TravelMaintenanceMode()), plugin);
         service.start();
 
         PlayerMock admin = addPlayer();
@@ -264,7 +264,7 @@ class TravelBeaconServiceTest {
         server.getPluginManager().registerEvents(waypointService.listener(), plugin);
         waypointService.start();
         server.getPluginManager().registerEvents(service.listener(), plugin);
-        server.getPluginManager().registerEvents(service.protectionListener(), plugin);
+        server.getPluginManager().registerEvents(service.protectionListener(new com.lodygames.rpgquest.travel.TravelMaintenanceMode()), plugin);
         service.start();
 
         PlayerMock admin = addPlayer();

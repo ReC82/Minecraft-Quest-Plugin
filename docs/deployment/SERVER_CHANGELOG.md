@@ -3765,3 +3765,50 @@ Rollback : `scripts/rollback-verygames.sh --latest` (JAR) ; `scripts/plugadmin/r
 (panel) ; pour WorldEdit, `scripts/worldedit-wand-item.sh --item minecraft:wooden_axe` rétablit la
 valeur d'origine (ou restaurer le `config.yml` sauvegardé dans
 `…/verygames-backups/worldedit-20261005T085147Z/`).
+
+## 2026-10-05 (lot 3) - #172 : catalogues Minecraft réels dans l'éditeur de mobs
+
+### Déploiement / Exécution réelle
+
+- **Diagnostic sur le parcours réel, pas sur une supposition.** Un compte panel de diagnostic
+  dédié (`claude-diag-172`, ADMIN, **supprimé en fin d'intervention** avec ses identifiants) a
+  permis de rejouer le parcours complet en HTTP authentifié : la page `/mobs`, le formulaire
+  « Nouveau profil », le POST réel vers `/agents/action`, puis l'exécution côté plugin.
+  - Résultat : `mob.definition.create` → **SUCCESS / CREATED**. Le backend n'était donc **pas** en
+    cause, et l'hypothèse #190 (bouton trop bas dans le formulaire) ne corrigeait pas le vrai défaut.
+  - **Vrai défaut** : la page n'émettait **aucune `<datalist>`**. Type d'entité (obligatoire),
+    particule, son, mondes et biomes étaient de simples champs texte à placeholder — il fallait
+    connaître l'identifiant vanilla exact. D'où « impossible de créer » côté utilisateur, alors que
+    modifier un profil existant fonctionnait (champs déjà remplis).
+  - **Second défaut, soumission silencieuse** : deux sections de capacités repliées par défaut
+    contiennent des champs numériques contraints ; une valeur invalide faisait refuser la
+    soumission par le navigateur, qui ne peut pas focaliser un champ caché dans un `<details>`
+    fermé → bouton sans réaction **et sans message**. Formulaire passé en `novalidate`, la
+    validation métier existante (panel + plugin) répond désormais avec un message lisible.
+
+- **Nouveau relevé `mob.catalogs`** (plugin) : lit les registres réels de la version installée.
+  Mesuré sur le DEV : **91 entités, 115 particules, 1838 sons, 65 biomes, 6 mondes**. Charge utile
+  **51 731 caractères** — soit bien au-delà de l'ancienne borne de 20 000 corrigée plus tôt dans la
+  journée (#164) : sans ce correctif, ce relevé serait arrivé tronqué et la fonctionnalité aurait
+  échoué en silence.
+- **Éditeur** : listes recherchables (entité / particule / son), multisélections (mondes / biomes,
+  même composant que #163, contrat CSV du serveur inchangé), aide par champ, mention « colorable »
+  sur les particules qui acceptent réellement une couleur (lu du type de données Paper, jamais
+  deviné). Sans relevé, bandeau explicite et repli en saisie libre — jamais de liste inventée.
+- **Catalogue** : recherche nom/identifiant + filtres Boss / Mob spécial / Désactivés.
+
+- **Vérification de bout en bout effectuée** : création d'un **SPECIAL** puis d'un **BOSS** depuis
+  le formulaire réel, jusqu'à leur réapparition dans le catalogue avec les bons badges
+  (6 profils affichés, 1 BOSS / 5 SPECIAL). Les deux profils de test (`claude_diag_special`,
+  `claude_diag_boss`) ont été **désactivés** pour ne pas influencer les spawns de la soirée ; ils
+  sont identifiables et supprimables par le propriétaire.
+
+- **Déploiements** : Control Panel AWS (`/health` → 200) puis JAR VeryGames DEV (SHA-256
+  `9492dfa0c5b35a0e77275b256e89544a0179167ecb6c1c9d81c31acfd9513f05`) suivi d'**un seul**
+  redémarrage ; `/plugins` → 4 verts après.
+- **Distinction explicite** : le rendu HTML et le comportement JavaScript des listes ont été
+  vérifiés par requêtes HTTP réelles sur l'instance déployée, ce qui ne remplace pas un essai au
+  navigateur (TC-239) ; l'apparition réelle en jeu d'un profil créé reste à valider en jeu.
+- Aucun merge, aucune intervention PROD. Aucun contenu du propriétaire modifié ou supprimé.
+
+Rollback : `scripts/rollback-verygames.sh --latest` ; `scripts/plugadmin/rollback.sh app`.

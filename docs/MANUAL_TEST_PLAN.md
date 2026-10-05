@@ -2235,6 +2235,43 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-239 — Création d'un mob SPECIAL et d'un BOSS depuis le panel (issue #172)
+
+-   **Fonctionnalité testée :** relevé `mob.catalogs`, listes recherchables et multisélections de
+    l'éditeur `/mobs`, recherche et filtres du catalogue.
+-   **Préconditions :** Control Panel et JAR de cette session déployés, serveur redémarré.
+-   **Vérifiable immédiatement dans le navigateur (pas besoin de Minecraft) :**
+    1.  `/mobs` → cliquer **« Catalogues Minecraft »**. Le bandeau d'avertissement doit disparaître
+        et le bouton repasser en gris (il est orange tant que le relevé manque).
+    2.  **« Nouveau profil »** → champ **Type d'entité** : taper `zomb` → la liste filtrée doit
+        proposer `ZOMBIE`, `ZOMBIE_VILLAGER`, `ZOMBIFIED_PIGLIN`… Vérifier qu'on peut choisir à la
+        souris **et** au clavier (flèches + Entrée).
+    3.  Champ **Particule** : taper `dust` → les entrées colorables portent la mention
+        « colorable ». Champ **Son** : taper `wither` → la liste filtre parmi ~1800 sons.
+    4.  Champs **Mondes autorisés** / **Biomes autorisés** : ajouter plusieurs valeurs → elles
+        apparaissent en puces supprimables. Laisser vide affiche « Aucune restriction ».
+    5.  Remplir ID technique, Catégorie **Spécial**, Type d'entité, Nom affiché → **Créer**.
+    6.  Cliquer **« Rafraîchir »** : le profil doit apparaître dans le catalogue avec le badge
+        `SPECIAL`.
+    7.  Refaire 5-6 avec Catégorie **Boss** → badge `BOSS`.
+    8.  Utiliser la **recherche** du catalogue (nom ou identifiant) puis les filtres
+        **Boss / Mob spécial / Désactivés**.
+    9.  Cas d'erreur : créer avec un type d'entité inexistant (ex. `PAS_UN_MOB`) → un message
+        d'erreur **lisible** doit s'afficher. Le point important : le bouton ne doit **jamais**
+        rester sans réaction ni message.
+-   **Contenu de test déjà présent** : deux profils `claude_diag_special` et `claude_diag_boss`
+    créés pendant le diagnostic, **laissés désactivés** (ils n'influencent donc aucun spawn). À
+    supprimer quand vous voulez — ce sont des contenus de test, pas du contenu de jeu.
+-   **À vérifier en jeu (ce soir)** : qu'un profil créé depuis le panel apparaît réellement via le
+    tirage Wild ou un spawn de test, et que le rendu BOSS (nom, particules, barre de vie) est correct.
+-   **Couverture automatisée :** `AgentActionCatalogTest` (validation des actions).
+    **Non couvert automatiquement** : le rendu HTML et le comportement JavaScript des listes — ils
+    ont été vérifiés par requêtes HTTP authentifiées réelles sur l'instance déployée (datalists
+    peuplées : 91 entités / 115 particules / 1838 sons / 65 biomes ; création SPECIAL **et** BOSS
+    jusqu'à réapparition au catalogue), ce qui ne remplace pas un essai au navigateur.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -2304,3 +2341,4 @@ le résumé de récompenses de TC-014).
 | TC-236 | Hache du kit vs WorldEdit #192 — config serveur appliquée (PENDING) | | | |
 | TC-237 | Journal : infobulle compacte + récupération sans doublon (PENDING) | | | |
 | TC-238 | PNJ : nom en jeu et skin MineSkin depuis le panel #165 (PENDING) | | | |
+| TC-239 | Création mob SPECIAL + BOSS depuis le panel #172 (navigateur) | | | |

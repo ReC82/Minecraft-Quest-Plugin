@@ -1503,6 +1503,38 @@ abilities:
     radius-multiplier: 1.5
 ```
 
+### Éditeur de mobs : catalogues réels du serveur (issue #172)
+
+**Défaut corrigé, diagnostiqué sur le parcours réel** : la page `/mobs` n'émettait **aucune**
+`<datalist>`. Le type d'entité (champ *obligatoire*), la particule, le son, les mondes et les
+biomes étaient de simples champs texte avec un placeholder — il fallait donc connaître
+l'identifiant vanilla exact pour créer un profil. L'action serveur, elle, fonctionnait déjà
+(`mob.definition.create` → `CREATED`), ce qui explique pourquoi l'édition d'un profil existant
+marchait alors que la création semblait impossible.
+
+Nouveau relevé **`mob.catalogs`** (permission `MOB_READ`, bouton « Catalogues Minecraft » sur
+`/mobs`) : lit les **registres réels de la version installée** — types d'entité vivants et
+invocables, particules, sons, biomes, mondes chargés, et la liste des particules qui acceptent
+réellement une couleur (d'après le type de données Paper du type choisi, jamais une supposition).
+Relevé constaté sur le DEV : 91 entités, 115 particules, 1838 sons, 65 biomes.
+
+L'éditeur s'appuie dessus : liste **recherchable** pour entité / particule / son, **multisélection**
+pour mondes et biomes (même composant que les prérequis de quête, #163 ; le champ soumis reste la
+liste CSV attendue par l'action, le contrat serveur ne change pas). Sans relevé disponible, un
+bandeau le dit et les champs restent en saisie libre — jamais une liste inventée.
+
+**Piège de soumission silencieuse également corrigé** : deux sections de capacités sont repliées
+par défaut et contiennent des champs numériques contraints. Dès qu'une valeur devenait invalide, le
+navigateur refusait de soumettre **et** ne pouvait pas focaliser un champ caché dans un `<details>`
+fermé — le bouton semblait ne rien faire, sans aucun message. Le formulaire est désormais
+`novalidate` et s'appuie sur la validation métier qui existe déjà côté panel **et** côté plugin.
+
+**Catalogue** : recherche par nom ou identifiant, filtres **Boss / Mob spécial / Désactivés**.
+
+**Ce qui reste explicitement hors de ce lot** : un profil à base passive ne devient **jamais**
+agressif implicitement (#201) ; les renforts multi-types avec quantité par type, la couleur
+guidée des noms (#195) et les catalogues d'icônes/récompenses (#196) sont des lots distincts.
+
 ### Catégorie et attributs (issue #169, lot 1)
 
 - `category` : `SPECIAL` (éligible au tirage aléatoire Wild, nom coloré) ou `BOSS` (jamais tiré au hasard — n'apparaît que par spawn de test admin ou, plus tard, objectif de quête #173 — nom coloré + particules colorées en continu + barre de vie Adventure).

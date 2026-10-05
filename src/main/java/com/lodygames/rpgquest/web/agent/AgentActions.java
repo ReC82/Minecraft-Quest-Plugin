@@ -213,6 +213,28 @@ public interface AgentActions {
      * logique RPGQuest ({@code npcId}), l'UUID/l'id Citizens et toutes les liaisons
      * quêtes/dialogues/stories restent inchangés : seul le nom visible bouge.
      */
+    /**
+     * Issue #172/#196 — catalogues <strong>réels du serveur</strong> pour les listes déroulantes de
+     * l'éditeur de mobs : types d'entité, particules, sons et biomes tels que la version installée
+     * les expose, plus les mondes chargés. Le Control Panel ne peut pas dépendre de Bukkit : sans ce
+     * relevé, ses champs restent du texte libre et l'administrateur doit devine les identifiants.
+     */
+    CompletableFuture<MobCatalogsView> mobCatalogs();
+
+    /**
+     * @param entityTypes  types d'entité vivants et réellement invocables
+     * @param particles    particules disponibles
+     * @param sounds       sons disponibles
+     * @param biomes       biomes du registre réel
+     * @param worlds       mondes actuellement chargés
+     * @param wildWorld    monde Wild configuré (défaut pertinent pour « Mondes autorisés »)
+     * @param colorableParticles particules acceptant une couleur (sous-ensemble de {@code particles})
+     */
+    record MobCatalogsView(List<String> entityTypes, List<String> particles, List<String> sounds,
+                           List<String> biomes, List<String> worlds, String wildWorld,
+                           List<String> colorableParticles) {
+    }
+
     CompletableFuture<MutationResult> citizensRename(String npcId, String newName);
 
     /**

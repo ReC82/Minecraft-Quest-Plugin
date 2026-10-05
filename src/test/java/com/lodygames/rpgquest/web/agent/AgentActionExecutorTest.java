@@ -684,6 +684,14 @@ class AgentActionExecutorTest {
         int lastLinkCitizensId;
 
         @Override
+        public CompletableFuture<MobCatalogsView> mobCatalogs() {
+            return CompletableFuture.completedFuture(new MobCatalogsView(
+                    List.of("ZOMBIE", "CREEPER"), List.of("FLAME", "DUST"),
+                    List.of("ENTITY_CREEPER_PRIMED"), List.of("PLAINS", "SWAMP"),
+                    List.of("wild"), "wild", List.of("DUST")));
+        }
+
+        @Override
         public CompletableFuture<MutationResult> citizensRename(String npcId, String newName) {
             lastRenameNpcId = npcId;
             lastRenameName = newName;

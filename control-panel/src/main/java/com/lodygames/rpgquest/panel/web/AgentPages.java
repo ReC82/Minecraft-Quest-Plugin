@@ -3663,8 +3663,20 @@ public final class AgentPages {
         boolean canTest = perms.can(session.role(), Permission.MOB_TEST_SPAWN);
         sb.append(agentPicker(agentId, "/mobs", ""));
 
+        // Issue #172 : catalogues réels du serveur, émis une fois pour toute la page (ils alimentent
+        // le formulaire de création ET ceux d'édition).
+        sb.append(mobCatalogDatalists(agentId));
+        boolean catalogsLoaded = latestDetails(agentId, "mob.catalogs").isPresent();
+        if (!catalogsLoaded) {
+            sb.append(Ui.banner("warn", "Les catalogues Minecraft (entités, particules, sons, biomes) "
+                    + "ne sont pas encore chargés : les champs correspondants restent en saisie libre. "
+                    + "Cliquer sur <strong>« Catalogues Minecraft »</strong> ci-dessous pour les récupérer "
+                    + "depuis le serveur."));
+        }
         sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Catalogue</span>");
         sb.append(compactRefresh(session, agentId, "mob.list", "Rafraîchir", "btn-outline-primary", "/mobs"));
+        sb.append(compactRefresh(session, agentId, "mob.catalogs", "Catalogues Minecraft",
+                catalogsLoaded ? "btn-outline-secondary" : "btn-warning", "/mobs"));
         if (canWrite) {
             sb.append("<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
                     + "data-bs-target=\"#mob-new-def\" aria-expanded=\"false\" aria-controls=\"mob-new-def\">")
@@ -3714,6 +3726,14 @@ public final class AgentPages {
         List<String> onlinePlayers = latestDetails(agentId, "player.list")
                 .map(x -> asList(x.get("players"))).orElse(List.of())
                 .stream().map(o -> str(asMap(o).get("name"))).filter(s -> !s.isEmpty()).toList();
+        // Issue #172 : recherche nom/ID + filtres Boss / Mob spécial / désactivés, comme les autres
+        // catalogues du panel (même composant, même ergonomie).
+        sb.append(listControls("mobs", "Rechercher un profil (nom ou identifiant)\u2026",
+                filterBtn("", "Tous", true) + filterBtn("boss", "Boss", false)
+                        + filterBtn("special", "Mob spécial", false)
+                        + filterBtn("disabled", "Désactivés", false)));
+        sb.append("<p class=\"count-note\" data-count-note data-noun=\"profil\">")
+                .append(profiles.size()).append(" profil(s)</p>");
         sb.append("<div class=\"accordion npc-accordion\" id=\"mob-accordion\">");
         int i = 0;
         for (Object o : profiles) {
@@ -3767,7 +3787,13 @@ public final class AgentPages {
         String headingId = "mob-h-" + index;
         String collapseId = "mob-c-" + index;
 
-        StringBuilder sb = new StringBuilder("<div class=\"accordion-item\">");
+        // Issue #172 : la carte porte de quoi être filtrée/cherchée (même mécanique que les autres
+        // catalogues) — texte cherché = identifiant ET nom affiché, catégories = boss/special/état.
+        String displayName = MiniText.plain(str(m.get("displayName")));
+        StringBuilder sb = new StringBuilder("<div class=\"accordion-item\" data-filter-item=\"mobs\" "
+                + "data-filter-cat=\"" + (boss ? "boss" : "special") + (enabled ? "" : " disabled") + "\" "
+                + "data-filter-text=\"" + Http.esc((id + " " + displayName).toLowerCase(java.util.Locale.ROOT))
+                + "\">");
         sb.append("<h2 class=\"accordion-header\" id=\"").append(headingId).append("\">")
                 .append("<button class=\"accordion-button collapsed\" type=\"button\" data-bs-toggle=\"collapse\" "
                         + "data-bs-target=\"#").append(collapseId).append("\" aria-expanded=\"false\" aria-controls=\"")
@@ -3847,13 +3873,34 @@ public final class AgentPages {
     }
 
     /** Formulaire création/modification d'un profil. {@code existing == null} = création. */
+    /**
+     * Issue #172 — l'éditeur a longtemps affiché des champs de <strong>texte libre</strong> pour le
+     * type d'entité (obligatoire !), la particule, le son, les mondes et les biomes : aucune liste,
+     * aucune recherche, seulement un placeholder. L'administrateur devait donc connaître par cœur
+     * l'identifiant vanilla exact — d'où « je n'arrive pas à créer un mob », alors que l'action
+     * serveur fonctionnait (vérifié de bout en bout : le profil se créait bien quand les bons
+     * identifiants étaient postés).
+     *
+     * <p>Désormais ces champs sont alimentés par les <strong>catalogues réels du serveur</strong>
+     * (relevé {@code mob.catalogs}) : liste recherchable pour entité / particule / son,
+     * multisélection pour mondes et biomes. Sans relevé disponible, on le dit et on retombe sur la
+     * saisie libre plutôt que d'afficher une liste inventée.</p>
+     */
     private String mobDefForm(Session session, String agentId, Map<String, Object> existing, String uid) {
         boolean update = existing != null;
         String id = update ? str(existing.get("id")) : "";
         StringBuilder sb = new StringBuilder();
         sb.append("<p class=\"fs-h\">").append(Icons.icon("mob"))
                 .append(update ? "Modifier le profil" : "Créer un profil").append("</p>");
-        sb.append("<form method=\"post\" action=\"/agents/action\" autocomplete=\"off\" class=\"npc-def-form\">");
+        // Issue #172 — « novalidate » volontaire. Deux sections de capacités sont repliées par
+        // défaut et contiennent des champs numériques contraints : si l'un d'eux devient invalide,
+        // le navigateur refuse de soumettre ET ne peut pas focaliser un champ caché dans un
+        // <details> fermé. Résultat vu par l'administrateur : « le bouton ne fait rien », sans
+        // aucun message. La validation métier complète existe déjà côté panel ET côté plugin
+        // (défense en profondeur) : on laisse donc le serveur répondre, avec un message lisible,
+        // plutôt que de dépendre d'une validation navigateur qui échoue en silence.
+        sb.append("<form method=\"post\" action=\"/agents/action\" autocomplete=\"off\" novalidate "
+                + "class=\"npc-def-form\">");
         sb.append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken())).append("\">");
         sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">");
         sb.append("<input type=\"hidden\" name=\"type\" value=\"mob.definition.")
@@ -3878,15 +3925,12 @@ public final class AgentPages {
                 .append(option("BOSS", str(existing == null ? null : existing.get("category")), "Boss (jamais tiré au hasard)"))
                 .append("</select><div class=\"form-text\">BOSS : nom + particules colorées en continu + barre de vie, "
                         + "jamais dans le tirage automatique.</div></div>");
-        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-et\">Type d'entité Minecraft</label>")
-                .append("<input class=\"form-control\" id=\"").append(uid).append("-et\" type=\"text\" name=\"entity_type\" "
-                        + "value=\"").append(Http.esc(str(existing == null ? null : existing.get("entityType"))))
-                .append("\" placeholder=\"Exemple : ZOMBIE, CREEPER, SKELETON, PIG, CHICKEN, FROG\" required>"
-                        + "<div class=\"form-text\">Nom technique vanilla en majuscules. Les bases passives "
-                        + "(PIG, CHICKEN, FROG…) fonctionnent aussi — sans capacité agressive ajoutée, un tel "
-                        + "profil reste aussi passif que la base vanilla (voir Enragé/Invocation de renforts "
-                        + "ci-dessous ; les capacités offensives type « explosif au contact » arrivent avec "
-                        + "l'issue #170, pas encore éditables ici).</div></div>");
+        sb.append(catalogCombo(uid, "entity_type", "et", "Type d'entité Minecraft",
+                str(existing == null ? null : existing.get("entityType")), "dl-mob-entity", true,
+                "Créature vanilla servant de base. <strong>Liste réelle du serveur</strong> : taper « zomb » "
+                + "ou « ZOMBIE » filtre. Les bases passives (PIG, CHICKEN, FROG…) sont autorisées — sans "
+                + "capacité agressive ajoutée, un tel profil reste <strong>aussi passif que la base "
+                + "vanilla</strong> (rien ne le rend hostile implicitement)."));
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-name\">Nom affiché</label>")
                 .append("<input class=\"form-control\" id=\"").append(uid).append("-name\" type=\"text\" name=\"display_name\" "
                         + "maxlength=\"128\" value=\"").append(Http.esc(str(existing == null ? null : existing.get("displayName"))))
@@ -3912,9 +3956,21 @@ public final class AgentPages {
                         + "min=\"0\" max=\"1\" name=\"spawn_chance\" value=\"")
                 .append(Http.esc(str(existing == null ? "0.01" : existing.get("spawnChance")))).append("\" required>"
                         + "<div class=\"form-text\">Ignorée pour un profil BOSS (jamais tiré au hasard).</div></div>");
-        sb.append(csvField(uid, "worlds", "Mondes autorisés", existing, "Vide = tous les mondes"));
-        sb.append(csvField(uid, "biomes", "Biomes autorisés", existing, "Vide = tous les biomes"));
-        sb.append(csvField(uid, "zones", "Zones autorisées", existing, "Vide = toutes les zones"));
+        sb.append(catalogMulti(uid, "worlds", "Mondes autorisés",
+                existing == null ? null : existing.get("worlds"), "dl-mob-world",
+                "Mondes où ce profil peut apparaître. <strong>Vide = aucune restriction de monde</strong>, "
+                + "donc tous les mondes où le tirage s'applique — à éviter : préférer cocher "
+                + "explicitement le Wild. Ajouter le Hub ou un monde de claims doit rester un choix "
+                + "délibéré (leurs propres règles continuent de s'appliquer et peuvent annuler "
+                + "l'apparition)."));
+        sb.append(catalogMulti(uid, "biomes", "Biomes autorisés",
+                existing == null ? null : existing.get("biomes"), "dl-mob-biome",
+                "Biomes où ce profil peut apparaître. <strong>Vide = tous les biomes.</strong> "
+                + "Liste réelle du serveur."));
+        sb.append(csvField(uid, "zones", "Zones autorisées", existing,
+                "Zones protégées RPGQuest (/rpgadmin zone), par identifiant. Vide = aucune "
+                + "restriction de zone. À ne pas confondre avec les mondes (ci-dessus) ni avec les "
+                + "biomes : une zone est un cuboïde nommé défini par un administrateur."));
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-mp\">Population maximale simultanée</label>")
                 .append("<input class=\"form-control\" id=\"").append(uid).append("-mp\" type=\"number\" min=\"0\" "
                         + "name=\"max_population\" value=\"").append(Http.esc(str(existing == null ? null : existing.get("maxPopulation"))))
@@ -3929,14 +3985,15 @@ public final class AgentPages {
         sb.append(numField(uid, "knockback_resistance", "Résistance au recul (0 à 1)", existing, "0.01", null));
         sb.append(numField(uid, "scale", "Taille relative (1 = normale)", existing, "0.01", null));
         sb.append(numField(uid, "creeper_explosion_radius", "Rayon d'explosion (CREEPER uniquement)", existing, "0.1", null));
-        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-pt\">Particule (optionnel)</label>")
-                .append("<input class=\"form-control\" id=\"").append(uid).append("-pt\" type=\"text\" name=\"particle\" "
-                        + "value=\"").append(Http.esc(str(existing == null ? null : existing.get("particle"))))
-                .append("\" placeholder=\"Exemple : FLAME, TOTEM_OF_UNDYING\"></div>");
-        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-sd\">Son (optionnel)</label>")
-                .append("<input class=\"form-control\" id=\"").append(uid).append("-sd\" type=\"text\" name=\"sound\" "
-                        + "value=\"").append(Http.esc(str(existing == null ? null : existing.get("sound"))))
-                .append("\" placeholder=\"Exemple : ENTITY_CREEPER_PRIMED\"></div>");
+        sb.append(catalogCombo(uid, "particle", "pt", "Particule (optionnel)",
+                str(existing == null ? null : existing.get("particle")), "dl-mob-particle", false,
+                "Effet visuel émis en continu par un BOSS. <strong>Vide = aucune particule.</strong> "
+                + "Liste réelle du serveur. Une couleur n'est applicable que sur les types qui "
+                + "l'acceptent (voir la mention « colorable » dans la liste) — pour les autres, "
+                + "Minecraft ignore toute couleur, ce n'est pas un défaut du panel."));
+        sb.append(catalogCombo(uid, "sound", "sd", "Son (optionnel)",
+                str(existing == null ? null : existing.get("sound")), "dl-mob-sound", false,
+                "Son joué à l'apparition. <strong>Vide = aucun son.</strong> Liste réelle du serveur."));
         sb.append(numField(uid, "xp_reward", "XP à la mort", existing, "1", null));
         sb.append("</div>");
 
@@ -3988,6 +4045,101 @@ public final class AgentPages {
                 + "<input class=\"form-control\" id=\"" + uid + "-" + name + "\" type=\"text\" name=\"" + name + "\" "
                 + "value=\"" + Http.esc(join(current).equals("—") ? "" : String.join(",", current.stream().map(AgentPages::str).toList()))
                 + "\" placeholder=\"séparés par des virgules\"><div class=\"form-text\">" + Http.esc(help) + "</div></div>";
+    }
+
+
+    /**
+     * Issue #172 — champ à valeur unique adossé au catalogue réel du serveur, rendu recherchable par
+     * le composant {@code .combo} de {@code panel.js}. Sans JavaScript, l'{@code <input list>} natif
+     * reste utilisable ; sans relevé de catalogue, le champ reste une saisie libre (jamais une liste
+     * inventée) et l'aide le signale.
+     */
+    private String catalogCombo(String uid, String name, String shortId, String label, String value,
+                                String datalistId, boolean required, String help) {
+        String id = uid + "-" + shortId;
+        StringBuilder sb = new StringBuilder("<div class=\"mb-2\">");
+        sb.append("<label class=\"form-label\" for=\"").append(id).append("\">").append(Http.esc(label))
+                .append("</label>");
+        sb.append("<div class=\"combo\" data-combo><input class=\"form-control combo-input\" id=\"").append(id)
+                .append("\" type=\"text\" name=\"").append(Http.esc(name))
+                .append("\" value=\"").append(Http.esc(value == null || "null".equals(value) ? "" : value))
+                .append("\" list=\"").append(datalistId).append("\" autocomplete=\"off\" role=\"combobox\" ")
+                .append("aria-expanded=\"false\" aria-autocomplete=\"list\"")
+                .append(required ? " required" : "").append("></div>");
+        sb.append("<div class=\"form-text\">").append(help).append("</div></div>");
+        return sb.toString();
+    }
+
+    /**
+     * Issue #172 — multisélection adossée au catalogue réel, via le composant {@code multisel} de
+     * {@code panel.js} (déjà utilisé pour les prérequis de quête, #163). Le champ réellement soumis
+     * reste la liste séparée par des virgules attendue par l'action : le contrat serveur ne change
+     * pas, et sans JavaScript le champ reste éditable tel quel.
+     */
+    private String catalogMulti(String uid, String name, String label, Object existingValue,
+                                String datalistId, String help) {
+        String current = "";
+        if (existingValue instanceof List<?> list) {
+            StringBuilder joined = new StringBuilder();
+            for (Object v : list) {
+                if (!joined.isEmpty()) {
+                    joined.append('\n');
+                }
+                joined.append(str(v));
+            }
+            current = joined.toString();
+        } else if (existingValue != null && !"null".equals(str(existingValue))) {
+            current = str(existingValue);
+        }
+        String id = uid + "-" + name;
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"mb-2 field multisel\" data-multisel=\"").append(Http.esc(name))
+                .append("\" data-multisel-list=\"").append(datalistId)
+                .append("\" data-multisel-add=\"Ajouter…\" data-multisel-separator=\",\" "
+                        + "data-multisel-empty=\"Aucune restriction — tout est autorisé.\">");
+        sb.append("<label class=\"form-label\" for=\"").append(id).append("\">").append(Http.esc(label))
+                .append("</label>");
+        sb.append("<textarea class=\"form-control\" id=\"").append(id).append("\" name=\"")
+                .append(Http.esc(name)).append("\" data-multisel-store>").append(Http.esc(current))
+                .append("</textarea>");
+        sb.append("<div class=\"form-text\">").append(help).append("</div></div>");
+        return sb.toString();
+    }
+
+    /** Datalists des catalogues réels, émises une fois par page {@code /mobs}. */
+    private String mobCatalogDatalists(String agentId) {
+        Optional<Map<String, Object>> det = latestDetails(agentId, "mob.catalogs");
+        List<String> entities = stringList(det, "entityTypes");
+        List<String> particles = stringList(det, "particles");
+        List<String> colorable = stringList(det, "colorableParticles");
+        List<String> sounds = stringList(det, "sounds");
+        List<String> biomes = stringList(det, "biomes");
+        List<String> worlds = stringList(det, "worlds");
+        StringBuilder sb = new StringBuilder();
+        sb.append(simpleDatalist("dl-mob-entity", entities, List.of()));
+        sb.append(simpleDatalist("dl-mob-particle", particles, colorable));
+        sb.append(simpleDatalist("dl-mob-sound", sounds, List.of()));
+        sb.append(simpleDatalist("dl-mob-biome", biomes, List.of()));
+        sb.append(simpleDatalist("dl-mob-world", worlds, List.of()));
+        return sb.toString();
+    }
+
+    /** {@code labelled} : valeurs recevant la mention « colorable » (#195). */
+    private static String simpleDatalist(String id, List<String> values, List<String> labelled) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"").append(id).append("\">");
+        for (String v : values) {
+            sb.append("<option value=\"").append(Http.esc(v)).append("\"");
+            if (labelled.contains(v)) {
+                sb.append(" label=\"colorable\"");
+            }
+            sb.append(">");
+        }
+        return sb.append("</datalist>").toString();
+    }
+
+    private List<String> stringList(Optional<Map<String, Object>> details, String key) {
+        return details.map(d -> asList(d.get(key)).stream().map(AgentPages::str)
+                .filter(x -> !x.isEmpty()).toList()).orElse(List.of());
     }
 
     private String numField(String uid, String name, String label, Map<String, Object> existing, String step, String unused) {

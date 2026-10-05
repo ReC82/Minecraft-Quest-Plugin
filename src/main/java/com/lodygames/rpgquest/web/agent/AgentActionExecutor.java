@@ -100,6 +100,7 @@ public final class AgentActionExecutor {
                 case PLAYER_RESETNEW_PREVIEW -> resetPreview(action);
                 case TRAVEL_CATALOG -> travelCatalog(action);
                 case MOB_LIST -> mobList(action);
+                case MOB_CATALOGS -> mobCatalogs(action);
                 case MOB_DEFINITION_CREATE -> mobDefinitionWrite(action, true);
                 case MOB_DEFINITION_UPDATE -> mobDefinitionWrite(action, false);
                 case MOB_DEFINITION_TOGGLE -> mobDefinitionToggle(action);
@@ -459,6 +460,24 @@ public final class AgentActionExecutor {
     }
 
     // ---- Mobs spéciaux / boss (issue #169, lot 1) ---------------------------------------------
+
+    /** {@code mob.catalogs} (#172/#196) : lecture pure des registres de la version installée. */
+    private CompletableFuture<AgentActionOutcome> mobCatalogs(AgentAction action) {
+        return actions.mobCatalogs().thenApply(view -> {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("entityTypes", view.entityTypes());
+            details.put("particles", view.particles());
+            details.put("colorableParticles", view.colorableParticles());
+            details.put("sounds", view.sounds());
+            details.put("biomes", view.biomes());
+            details.put("worlds", view.worlds());
+            details.put("wildWorld", view.wildWorld());
+            String summary = view.entityTypes().size() + " entités, " + view.particles().size()
+                    + " particules, " + view.sounds().size() + " sons, " + view.biomes().size() + " biomes";
+            return AgentActionOutcome.success(action.id(), String.valueOf(view.entityTypes().size()),
+                    summary, details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
 
     private CompletableFuture<AgentActionOutcome> mobList(AgentAction action) {
         return actions.mobDefinitions().thenApply(view -> {

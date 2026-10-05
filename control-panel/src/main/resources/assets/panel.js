@@ -525,8 +525,12 @@
       byPlain[plainId(v)] = o;
     }
 
+    // Le séparateur dépend du contrat de l'action cible : « \n » pour les prérequis de quête
+    // (#163), « , » pour les mondes/biomes d'un profil de mob (#172). On ne change jamais le
+    // format attendu par le serveur.
+    var sep = box.getAttribute("data-multisel-separator") || "\n";
     var chosen = [];
-    var lines = (store.value || "").split("\n");
+    var lines = (store.value || "").split(sep === "," ? /[,\n]/ : "\n");
     for (var l = 0; l < lines.length; l++) {
       var t = lines[l].trim();
       if (t && chosen.indexOf(t) === -1) { chosen.push(t); }
@@ -569,13 +573,14 @@
     var visible = [];
 
     function sync() {
-      store.value = chosen.join("\n");
+      store.value = chosen.join(sep === "," ? ", " : "\n");
       try { store.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) { /* ignore */ }
     }
 
     function renderChips() {
       if (chosen.length === 0) {
-        chips.innerHTML = '<span class="multisel-none">Aucun prérequis — la quête est accessible d\'emblée.</span>';
+        chips.innerHTML = '<span class="multisel-none">'
+          + (box.getAttribute("data-multisel-empty") || "Aucune valeur sélectionnée.") + "</span>";
         return;
       }
       var html = "";

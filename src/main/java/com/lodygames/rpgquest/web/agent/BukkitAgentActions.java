@@ -90,6 +90,7 @@ import io.papermc.paper.ban.BanListType;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -546,6 +547,68 @@ public final class BukkitAgentActions implements AgentActions {
             questProgressEngine.reloadQuestDefinitions();
             return done(new MutationResult(true, "SET", r.message(),
                     List.of("quests/" + r.file(), "giver: " + npcId)));
+        });
+    }
+
+    /**
+     * Issue #172/#196 — catalogues réels de la version installée. Tout vient des registres Bukkit,
+     * jamais d'une liste figée côté panel : une mise à jour de Minecraft fait donc évoluer les
+     * listes sans toucher au code.
+     *
+     * <p>Filtrage assumé : seuls les types d'entité <em>vivants et invocables</em> sont proposés
+     * (un item tombé, une flèche ou un marqueur n'est pas un profil de mob possible). L'ordre est
+     * alphabétique pour que la recherche soit prévisible.</p>
+     */
+    @Override
+    public CompletableFuture<MobCatalogsView> mobCatalogs() {
+        // Registres et mondes = API Bukkit -> thread principal.
+        return onMain(() -> {
+            List<String> entities = new ArrayList<>();
+            for (org.bukkit.entity.EntityType type : org.bukkit.entity.EntityType.values()) {
+                if (type.isAlive() && type.isSpawnable()) {
+                    entities.add(type.name());
+                }
+            }
+            Collections.sort(entities);
+
+            List<String> particles = new ArrayList<>();
+            List<String> colorable = new ArrayList<>();
+            for (org.bukkit.Particle particle : org.bukkit.Particle.values()) {
+                particles.add(particle.name());
+                // #195 : une couleur n'est proposée que si le type l'accepte réellement. Les
+                // particules colorables de Paper portent un type de données dédié (DustOptions /
+                // DustTransition) — on ne devine jamais, on lit le contrat du type.
+                Class<?> data = particle.getDataType();
+                if (data != null && (org.bukkit.Particle.DustOptions.class.isAssignableFrom(data)
+                        || org.bukkit.Particle.DustTransition.class.isAssignableFrom(data)
+                        || org.bukkit.Color.class.isAssignableFrom(data))) {
+                    colorable.add(particle.name());
+                }
+            }
+            Collections.sort(particles);
+            Collections.sort(colorable);
+
+            List<String> sounds = new ArrayList<>();
+            for (org.bukkit.Sound sound : org.bukkit.Registry.SOUNDS) {
+                sounds.add(sound.getKey().getKey().toUpperCase(java.util.Locale.ROOT).replace('.', '_'));
+            }
+            Collections.sort(sounds);
+
+            List<String> biomes = new ArrayList<>();
+            for (org.bukkit.block.Biome biome : org.bukkit.Registry.BIOME) {
+                biomes.add(biome.getKey().getKey().toUpperCase(java.util.Locale.ROOT));
+            }
+            Collections.sort(biomes);
+
+            List<String> worlds = new ArrayList<>();
+            for (org.bukkit.World world : plugin.getServer().getWorlds()) {
+                worlds.add(world.getName());
+            }
+            Collections.sort(worlds);
+
+            return done(new MobCatalogsView(List.copyOf(entities), List.copyOf(particles),
+                    List.copyOf(sounds), List.copyOf(biomes), List.copyOf(worlds),
+                    wildWorldSupplier.get() == null ? "" : wildWorldSupplier.get(), List.copyOf(colorable)));
         });
     }
 

@@ -119,6 +119,11 @@ public final class AgentActionCatalog {
         add("dialogue.list", Permission.DIALOGUE_READ, false, false, "Rafraîchir le catalogue des dialogues");
         add("mob.list", Permission.MOB_READ, false, false,
                 "Rafraîchir le catalogue des profils de mob spécial/boss (issue #169)");
+        // Issue #172/#196 : catalogues RÉELS de la version installée (entités, particules, sons,
+        // biomes, mondes). Sans ce relevé, les champs de l'éditeur restent du texte libre et
+        // l'administrateur doit deviner les identifiants vanilla exacts.
+        add("mob.catalogs", Permission.MOB_READ, false, false,
+                "Rafraîchir les catalogues Minecraft (entités, particules, sons, biomes)");
         // Export versionné du contenu déclaratif (issue #108) — lecture seule, aucun effet de bord,
         // aucun catalogue à réenfiler.
         add("content.export", Permission.CONTENT_EXPORT, false, false, "Exporter le contenu (pack versionné)");

@@ -80,11 +80,23 @@ public final class QuestValidator {
             }
             if (refData.questsKnown() && !refData.isQuestKnown(p)) {
                 out.add(Diagnostic.warning("prerequisites", "Quête prérequise inconnue « " + p + " » "
-                        + "(absente du dernier relevé « quest.list »)."));
+                        + "(absente de la source éditable et du dernier relevé « quest.list »). "
+                        + "La référence est conservée telle quelle — à corriger ou à déployer."));
             } else if (!refData.questsKnown()) {
                 out.add(Diagnostic.info("prerequisites", "Impossible de vérifier le prérequis « " + p
                         + " » : aucun relevé « quest.list »."));
             }
+        }
+
+        // --- Cycles de prérequis (issue #163) ---
+        // L'auto-référence est déjà signalée ci-dessus ; ici on attrape les boucles INDIRECTES
+        // (A exige B, B exige A) que le formulaire ne peut pas voir champ par champ. Le graphe vient
+        // de RefData (source + runtime) : si aucun des deux n'est disponible, on ne prétend rien.
+        String cycle = refData.findPrereqCycle(id, q.prerequisites);
+        if (cycle != null) {
+            out.add(Diagnostic.error("prerequisites", "Cycle de prérequis détecté : " + cycle
+                    + ". Une quête ne peut jamais dépendre d'elle-même, même indirectement — "
+                    + "elle deviendrait impossible à démarrer."));
         }
 
         // --- Étapes / objectifs ---

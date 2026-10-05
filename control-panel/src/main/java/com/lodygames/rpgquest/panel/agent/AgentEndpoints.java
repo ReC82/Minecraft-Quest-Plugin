@@ -37,7 +37,14 @@ public final class AgentEndpoints {
 
     private static final System.Logger LOG = System.getLogger("rpgquest.panel.agent");
     private static final String BEARER = "Bearer ";
-    private static final long MAX_BODY_BYTES = 64 * 1024;
+    /**
+     * Borne du corps de requête entrant (issue #164). 64 Kio étaient trop justes : le relevé
+     * {@code dialogue.list} embarque tous les nœuds et leurs textes, et grossit avec le contenu du
+     * serveur — il frôlait déjà la borne, et l'aurait franchie en silence (relevé alors rejeté en
+     * 413, donc catalogue vide) au fil des dialogues ajoutés. 1 Mio reste une borne finie, sur un
+     * endpoint authentifié par jeton d'agent et réservé à nos propres relevés d'administration.
+     */
+    private static final long MAX_BODY_BYTES = 1024 * 1024;
 
     private final AgentRegistry registry;
     private final AgentStore store;
@@ -195,7 +202,7 @@ public final class AgentEndpoints {
         // Le corps brut (détails structurés non secrets : listes de quêtes/stories/joueurs pour les
         // pages du Control Panel) est conservé dans la base PROPRE du panel — borne large mais finie.
         boolean accepted = store.recordResult(actionId, agent.id(), status, value, message,
-                truncate(rawBody, 20000), Instant.now());
+                boundedJson(rawBody), Instant.now());
         if (!accepted) {
             return send(exchange, 404, error("unknown_action", "Action inconnue ou destinée à un autre agent."));
         }
@@ -345,5 +352,38 @@ public final class AgentEndpoints {
             return null;
         }
         return value.length() <= max ? value : value.substring(0, max);
+    }
+
+    /**
+     * Borne du corps de résultat conservé (issue #164). 20 000 caractères ne suffisaient pas :
+     * un relevé {@code dialogue.list} de 10 dialogues embarque tous les nœuds et leurs textes et
+     * dépassait la borne.
+     */
+    private static final int RESULT_JSON_MAX = 512 * 1024;
+
+    /**
+     * Issue #164 — cause racine du « dialogue Jeff absent du catalogue ».
+     *
+     * <p>L'ancienne version stockait {@code truncate(rawBody, 20000)} : au-delà de la borne, le JSON
+     * était coupé <strong>en plein milieu d'un token</strong>, donc devenait illisible. Toutes les
+     * pages qui relisent {@code result_json} perdaient alors la totalité du relevé, et le catalogue
+     * des dialogues retombait silencieusement sur la seule source — en étiquetant « Source
+     * uniquement » des dialogues pourtant chargés par le serveur, et en masquant complètement ceux
+     * qui n'existent que côté serveur ({@code jeff}, {@code help}, …). L'échec était invisible :
+     * l'action restait {@code SUCCESS}.</p>
+     *
+     * <p>Désormais : borne nettement plus large et, si elle est malgré tout dépassée, on
+     * n'enregistre <strong>jamais</strong> un fragment invalide — on stocke un objet JSON
+     * <em>valide</em> qui déclare explicitement le dépassement, pour que l'interface puisse le dire
+     * au lieu de conclure à tort à une absence de contenu.</p>
+     */
+    private static String boundedJson(String rawBody) {
+        if (rawBody == null || rawBody.length() <= RESULT_JSON_MAX) {
+            return rawBody;
+        }
+        return "{\"truncated\":true,\"original_length\":" + rawBody.length()
+                + ",\"limit\":" + RESULT_JSON_MAX
+                + ",\"message\":\"Relevé trop volumineux pour être conservé intégralement :"
+                + " détails non exploitables. Relancer le relevé ou réduire le volume de contenu.\"}";
     }
 }

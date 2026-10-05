@@ -1534,6 +1534,10 @@ public final class AgentPages {
                 latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of()), "id", "title");
         List<String> questIds = latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of())
                 .stream().map(o -> str(asMap(o).get("id"))).filter(s -> !s.isEmpty()).toList();
+        // Issue #164 : catalogue FUSIONNÉ source + runtime pour « Attribuer une quête ». Le relevé
+        // runtime seul masquait toute quête fraîchement enregistrée dans la source, d'où la quête
+        // « introuvable » signalée. Construit une seule fois pour toute la page.
+        com.lodygames.rpgquest.panel.content.RefData giverRef = referenceData(agentId);
         List<String[]> dialogueOptions = dialogueSelectOptions(agentId);
 
         Optional<Map<String, Object>> citizensCat = latestDetails(agentId, "npc.citizens.list");
@@ -1621,7 +1625,7 @@ public final class AgentPages {
         sb.append("<div class=\"accordion npc-accordion\" id=\"npc-accordion\">");
         int i = 0;
         for (Object o : npcs) {
-            sb.append(renderNpcAccordionItem(session, agentId, asMap(o), i++, questTitles, questIds,
+            sb.append(renderNpcAccordionItem(session, agentId, asMap(o), i++, questTitles, questIds, giverRef,
                     dialogueOptions, citizensRoster, spawnWorlds, canWrite, canSetGiver, canLink, canSpawn,
                     canWriteDialogue));
         }
@@ -1783,6 +1787,7 @@ public final class AgentPages {
 
     private String renderNpcAccordionItem(Session session, String agentId, Map<String, Object> n, int idx,
                                           Map<String, String> questTitles, List<String> questIds,
+                                          com.lodygames.rpgquest.panel.content.RefData giverRef,
                                           List<String[]> dialogueOptions, List<Object> citizensRoster,
                                           List<String> spawnWorlds, boolean canWrite, boolean canSetGiver,
                                           boolean canLink, boolean canSpawn, boolean canWriteDialogue) {
@@ -1976,7 +1981,7 @@ public final class AgentPages {
         if (canSetGiver && hasDefinition) {
             toggles.add(new String[] {slug + "-f-giver", "Attribuer une quête", "gift", "btn-outline-secondary"});
             forms.append(actionCollapse(slug + "-f-giver", "<div class=\"card card-body npc-formcard\">"
-                    + giverForm(session, agentId, id, questIds) + "</div>"));
+                    + giverForm(session, agentId, id, giverRef, slug) + "</div>"));
         }
         if (canLink && hasDefinition && !boundCitizens && enabled) {
             toggles.add(new String[] {slug + "-f-link", "Lier un PNJ Citizens", "link", "btn-outline-secondary"});
@@ -2300,17 +2305,71 @@ public final class AgentPages {
         return sb.append("</select>").toString();
     }
 
-    /** Formulaire « Attribuer une quête (giver) » — select des quêtes connues. */
-    private String giverForm(Session session, String agentId, String npcId, List<String> questIds) {
+    /**
+     * Formulaire « Attribuer une quête (giver) ».
+     *
+     * <p><strong>Issue #164</strong> : la liste est désormais (a) <em>recherchable</em> par titre
+     * <em>ou</em> par identifiant (composant {@code .combo} de {@code panel.js}, repli natif
+     * {@code <input list>} sans JavaScript) et (b) alimentée par le catalogue <em>fusionné</em>
+     * source + runtime — une quête tout juste enregistrée dans la source apparaît donc
+     * immédiatement, sans redémarrage ni déploiement Minecraft, ce qui était le défaut signalé.</p>
+     *
+     * <p><strong>Sémantique assumée, pas masquée</strong> : {@code quest.giver.set} agit sur le
+     * <em>serveur</em> (il écrit {@code giver:} dans le YAML côté serveur puis recharge le moteur)
+     * et refuse une quête que le serveur n'a pas chargée ({@code UNKNOWN_QUEST}) — aucune référence
+     * invalide n'est donc jamais enregistrée. Une quête « source uniquement » est affichée et
+     * cherchable, avec le prérequis de déploiement énoncé explicitement et le chemin source
+     * alternatif (champ « PNJ donneur » de l'éditeur de quête) proposé en lien direct.</p>
+     */
+    private String giverForm(Session session, String agentId, String npcId,
+                             com.lodygames.rpgquest.panel.content.RefData ref, String domId) {
         StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("gift"))
                 .append("Attribuer une quête</p>");
-        if (questIds.isEmpty()) {
-            return sb.append(Ui.empty("Charger d'abord le catalogue de quêtes (page Quêtes).")).toString();
+        List<String> quests = ref == null ? List.of() : ref.quests();
+        if (quests.isEmpty()) {
+            return sb.append(Ui.empty("Aucune quête connue : charger le catalogue (page Quêtes) "
+                    + "ou créer une quête dans l'éditeur.")).toString();
         }
+        String dlId = "dl-giver-" + domId;
+        boolean anySourceOnly = false;
+        StringBuilder dl = new StringBuilder("<datalist id=\"").append(dlId).append("\">");
+        for (String q : quests) {
+            String label = ref.questLabel(q);
+            String origin = ref.questOriginLabel(q);
+            if (com.lodygames.rpgquest.panel.content.RefData.ORIGIN_SOURCE.equals(ref.questOrigin(q))) {
+                anySourceOnly = true;
+            }
+            dl.append("<option value=\"").append(Http.esc(q)).append("\"");
+            if (!label.equals(q)) {
+                dl.append(" label=\"").append(Http.esc(label)).append("\"");
+            }
+            if (!origin.isBlank()) {
+                dl.append(" data-origin=\"").append(Http.esc(origin)).append("\"");
+            }
+            dl.append(">");
+        }
+        dl.append("</datalist>");
+
         sb.append(formStart(session, agentId, "quest.giver.set", "/npcs", ""));
         sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
         sb.append("<input type=\"hidden\" name=\"npc_ctx\" value=\"").append(Http.esc(npcId)).append("\">");
-        sb.append("<label>Quête</label>").append(idSelect("quest_id", questIds, "rpgquest:woodcutters_request"));
+        sb.append("<label for=\"giver-q-").append(domId).append("\">Quête</label>");
+        sb.append(dl);
+        sb.append("<div class=\"combo\" data-combo><input class=\"combo-input\" type=\"text\" ")
+                .append("id=\"giver-q-").append(domId).append("\" name=\"quest_id\" list=\"").append(dlId)
+                .append("\" autocomplete=\"off\" role=\"combobox\" aria-expanded=\"false\" ")
+                .append("aria-autocomplete=\"list\" placeholder=\"Chercher par titre ou identifiant…\" ")
+                .append("pattern=\"[A-Za-z0-9_.:/-]{1,96}\" required></div>");
+        sb.append("<p class=\"faint\" style=\"font-size:12px\">Chercher par titre (« Premiers pas ») "
+                + "ou par identifiant (« first_steps »). L'état de chaque quête est indiqué dans la liste.</p>");
+        if (anySourceOnly) {
+            sb.append("<p class=\"faint\" style=\"font-size:12px\">Une quête <strong>« source "
+                    + "uniquement »</strong> n'est pas encore chargée par le serveur : cette action la "
+                    + "refusera (jamais de référence cassée enregistrée, jamais de déploiement "
+                    + "silencieux). Deux chemins possibles — déployer puis réattribuer ici, ou "
+                    + "renseigner directement le champ « PNJ donneur » dans "
+                    + "<a href=\"/quests\">l'éditeur de quête</a>, qui écrit dans la source.</p>");
+        }
         sb.append(mutationConsent("quest.giver.set", "",
                 "La quête choisie sera donnée par « " + npcId + " ». Réversible en la réattribuant à un autre PNJ."));
         sb.append("<button class=\"btn\" type=\"submit\">Attribuer</button></form>");
@@ -2481,6 +2540,10 @@ public final class AgentPages {
                 latestDetails(agentId, "quest.list").map(x -> asList(x.get("quests"))).orElse(List.of()), "id", "title");
 
         Optional<Map<String, Object>> details = latestDetails(agentId, "dialogue.list");
+        // Issue #164 : si le relevé existe mais n'est pas relisible, on le DIT — sans quoi la page
+        // se contentait d'afficher la source et laissait croire que le serveur n'a pas ces dialogues.
+        relevéUnreadable(agentId, "dialogue.list")
+                .ifPresent(msg -> sb.append(Ui.banner("warn", Http.esc(msg))));
         List<Object> runtimeDialogues = details.map(x -> asList(x.get("dialogues"))).orElse(List.of());
         List<Object> loadIssues = details.map(x -> asList(x.get("loadIssues"))).orElse(List.of());
         List<Object> missing = details.map(x -> asList(x.get("declaredButMissing"))).orElse(List.of());
@@ -3252,6 +3315,31 @@ public final class AgentPages {
     }
 
     /**
+     * Issue #164 : distingue « aucun relevé » de « relevé présent mais inexploitable ». Sans cette
+     * distinction, un résultat {@code SUCCESS} dont le corps n'est pas relisible (cas réel : corps
+     * tronqué en plein JSON par l'ancienne borne de 20 000 caractères) produisait exactement le même
+     * affichage qu'un catalogue vide — l'interface concluait donc à une absence de contenu alors que
+     * le serveur en avait bel et bien déclaré. Renvoie un message prêt à afficher, ou vide si tout va
+     * bien.
+     */
+    private Optional<String> relevéUnreadable(String agentId, String type) {
+        Optional<AgentActionRow> row = store.latestSuccessfulActionOfType(agentId, type);
+        if (row.isEmpty() || detailsOf(row.get()).isPresent()) {
+            return Optional.empty();
+        }
+        String raw = row.get().resultJson();
+        if (raw == null || raw.isBlank()) {
+            return Optional.of("Le dernier relevé « " + type + " » a réussi mais n'a transmis aucun "
+                    + "détail exploitable. Relancer le relevé.");
+        }
+        boolean declaredTruncated = raw.contains("\"truncated\":true");
+        return Optional.of("Le dernier relevé « " + type + " » a réussi mais son contenu n'est pas "
+                + "exploitable" + (declaredTruncated ? " (trop volumineux pour être conservé)" : "")
+                + " : l'affichage ci-dessous peut donc être incomplet et ne prouve pas l'absence de "
+                + "contenu côté serveur. Relancer le relevé pour rétablir les données.");
+    }
+
+    /**
      * Données de référence pour l'éditeur guidé #46 : id de quêtes / PNJ connus et mondes chargés,
      * pris du dernier relevé <em>réussi</em> de l'agent ({@code quest.list} / {@code npc.list} +
      * heartbeat). Si un relevé manque, la partie correspondante est marquée « inconnue » et la
@@ -3319,6 +3407,33 @@ public final class AgentPages {
                 questNames.putIfAbsent(id, title);
             }
         }
+        // Issue #163 : graphe des prérequis DÉJÀ connus, nécessaire pour refuser un cycle indirect
+        // (A exige B, B exige A) dans l'éditeur. Relevé runtime d'abord — c'est la vérité de ce que
+        // le serveur applique réellement ; la source le complète/l'écrase juste après, car c'est
+        // elle qu'on est en train d'éditer.
+        Map<String, List<String>> questPrereqs = new java.util.LinkedHashMap<>();
+        for (Object o : questDet.map(d -> asList(d.get("quests"))).orElse(List.of())) {
+            Map<String, Object> m = asMap(o);
+            String id = QuestYaml.plainId(str(m.get("id")));
+            if (id.isEmpty()) {
+                continue;
+            }
+            List<String> pr = asList(m.get("prerequisites")).stream()
+                    .map(x -> QuestYaml.plainId(str(x)))
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+            questPrereqs.put(id, pr);
+        }
+        // Origine de chaque quête (#163/#164) : « serveur uniquement » tant que la source ne la
+        // contient pas ; complété ci-dessous pour les quêtes de la source.
+        Map<String, String> questOrigins = new java.util.LinkedHashMap<>();
+        for (String q : quests) {
+            String plain = QuestYaml.plainId(q);
+            if (!plain.isEmpty()) {
+                questOrigins.put(plain, com.lodygames.rpgquest.panel.content.RefData.ORIGIN_RUNTIME);
+            }
+        }
+
         // Fusion des quêtes de la SOURCE éditable (issue #144) : une quête tout juste enregistrée
         // depuis /quests/new doit être immédiatement disponible dans les lookups d'édition (prérequis,
         // chaîne de story) sans redémarrage Minecraft. Id « nu » pour rester cohérent avec la
@@ -3336,12 +3451,23 @@ public final class AgentPages {
             if (!title.isEmpty()) {
                 questNames.putIfAbsent(plain, title);
             }
+            questOrigins.put(plain, questOrigins.containsKey(plain)
+                    ? com.lodygames.rpgquest.panel.content.RefData.ORIGIN_BOTH
+                    : com.lodygames.rpgquest.panel.content.RefData.ORIGIN_SOURCE);
+            // La source est la version en cours d'édition : ses prérequis prévalent sur le relevé
+            // runtime, qui peut être antérieur au dernier enregistrement.
+            if (qs.parseOk()) {
+                questPrereqs.put(plain, qs.draft().prerequisites.stream()
+                        .map(QuestYaml::plainId)
+                        .filter(s -> !s.isEmpty())
+                        .toList());
+            }
         }
         boolean questsKnown = questDet.isPresent() || !sourceQuests.isEmpty();
         List<String> worlds = loadedWorldNames(agentId);
         return new com.lodygames.rpgquest.panel.content.RefData(
                 quests, npcs, worlds, questsKnown, npcDet.isPresent(), !worlds.isEmpty(),
-                npcNames, questNames);
+                npcNames, questNames, questOrigins, questPrereqs);
     }
 
     /**

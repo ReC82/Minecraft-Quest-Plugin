@@ -317,13 +317,19 @@ public final class ContentEditorPages {
         sb.append("</div></div>");
         sb.append(sectionClose());
 
-        // -- Prérequis --
+        // -- Prérequis (issue #163 : sélection recherchable, plus de saisie d'id à la main) --
         sb.append(sectionOpen("lock", "Prérequis",
-                "Quêtes à terminer avant celle-ci — un identifiant par ligne (namespace optionnel)."));
-        sb.append(textarea("prereq", "Quêtes prérequises", "Ex. first_steps", String.join("\n", d.prerequisites), "full"));
-        if (!ref.quests().isEmpty()) {
-            sb.append("<p class=\"field-help\">Connues : ").append(Http.esc(preview(ref.quests(), 12))).append("</p>");
-        }
+                "Quêtes que le joueur doit avoir terminées avant de pouvoir démarrer celle-ci. "
+                        + "Chercher par titre (« Premiers pas ») ou par identifiant (« first_steps »)."));
+        sb.append(multiSelect("prereq", "Quêtes prérequises",
+                // Sémantique explicite, demandée par le ticket : ce n'est NI une séquence, NI
+                // l'ordre des quêtes d'une story. L'ordre d'affichage n'a aucun effet moteur.
+                "Toutes les quêtes listées sont exigées (ET logique), dans n'importe quel ordre : "
+                        + "ce n'est pas une séquence, et l'ordre d'affichage n'a aucun effet. "
+                        + "Pour « B après A », mettre A en prérequis de B. Ne pas confondre avec "
+                        + "l'ordre des quêtes d'une story, qui se règle dans l'éditeur de story. "
+                        + "Zéro, un ou plusieurs prérequis sont acceptés.",
+                d.prerequisites, "dl-quest", "Ajouter un prérequis", "full"));
         sb.append(sectionClose());
 
         // -- Objectifs --
@@ -979,11 +985,23 @@ public final class ContentEditorPages {
                 + " La validation, l'aperçu et le diff restent disponibles.");
     }
 
+    /**
+     * Issue #162 : le message nomme désormais <strong>le dossier réellement bloqué</strong> (jamais
+     * une liste figée qui l'omettait) et cite les <strong>deux</strong> causes possibles. L'oubli de
+     * l'une des deux suffit à produire ce bandeau, et c'est exactement ce qui s'était produit pour
+     * {@code dialogues/} : ACL POSIX absente <em>et</em> dossier non listé en {@code ReadWritePaths=}
+     * alors que {@code ProtectSystem=strict} rend tout le reste du système en lecture seule pour le
+     * service — une ACL correcte seule n'aurait donc rien débloqué.
+     */
     private String readOnlyHint(String kind) {
         return "Le service PlugAdmin n'a pas les droits d'écriture sur <code>src/main/resources/" + kind
-                + "/</code>. Le propriétaire du dépôt peut les accorder (ex. "
-                + "<code>setfacl -m u:plugadmin:rwx src/main/resources/quests src/main/resources/stories</code>), "
-                + "puis relancer le service.";
+                + "/</code>. Deux conditions sont nécessaires, et l'oubli d'une seule produit ce "
+                + "bandeau : l'ACL POSIX du dossier pour l'utilisateur <code>plugadmin</code>, "
+                + "<em>et</em> ce dossier listé en <code>ReadWritePaths=</code> dans le drop-in "
+                + "systemd (<code>ProtectSystem=strict</code> rend tout le reste du système en "
+                + "lecture seule pour le service, ACL correcte ou non). Le script "
+                + "<code>scripts/plugadmin/grant-content-access.sh</code> applique les deux de "
+                + "façon idempotente, puis relance le service.";
     }
 
     private String missing(String kind, String slug) {
@@ -1094,6 +1112,38 @@ public final class ContentEditorPages {
                 + "</div>";
     }
 
+    /**
+     * Issue #163 : sélection <strong>multiple et recherchable</strong> adossée à une {@code
+     * <datalist>}, sans JavaScript inline (la CSP du panel l'interdit — tout le comportement est
+     * dans {@code assets/panel.js}).
+     *
+     * <p><strong>Le champ réellement soumis reste la {@code <textarea>}</strong> (une valeur par
+     * ligne) : le format canonique attendu par {@code QuestYaml} et le parseur du plugin ne change
+     * pas d'un octet, et <strong>sans JavaScript la page reste pleinement utilisable</strong> —
+     * la textarea s'affiche telle quelle, comme avant cette issue. Avec JavaScript, {@code panel.js}
+     * la masque, affiche des puces supprimables et un champ de recherche, et la réécrit à chaque
+     * modification. Aucune valeur n'est donc jamais perdue au passage, y compris une référence
+     * inconnue du catalogue (affichée en puce signalée, jamais supprimée silencieusement).</p>
+     */
+    private static String multiSelect(String name, String label, String help, List<String> values,
+                                      String datalistId, String addLabel, String extraClass) {
+        String id = "f-" + name.replace('.', '-');
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"field multisel").append(extraClass == null ? "" : " " + extraClass)
+                .append("\" data-multisel=\"").append(Http.esc(name))
+                .append("\" data-multisel-list=\"").append(Http.esc(datalistId))
+                .append("\" data-multisel-add=\"").append(Http.esc(addLabel)).append("\">");
+        sb.append("<label for=\"").append(id).append("\">").append(Http.esc(label)).append("</label>");
+        sb.append("<textarea id=\"").append(id).append("\" name=\"").append(Http.esc(name))
+                .append("\" data-multisel-store>").append(Http.esc(String.join("\n", values)))
+                .append("</textarea>");
+        if (help != null && !help.isBlank()) {
+            sb.append("<p class=\"field-help\">").append(help).append("</p>");
+        }
+        sb.append("</div>");
+        return sb.toString();
+    }
+
     private static String checkbox(String name, String label, boolean checked) {
         return "<label class=\"inline\"><input type=\"checkbox\" name=\"" + Http.esc(name) + "\" value=\"on\""
                 + (checked ? " checked" : "") + "> " + Http.esc(label) + "</label>";
@@ -1190,6 +1240,14 @@ public final class ContentEditorPages {
             sb.append("<option value=\"").append(Http.esc(quest)).append("\"");
             if (!label.equals(quest)) {
                 sb.append(" label=\"").append(Http.esc(label)).append("\"");
+            }
+            // Issue #163/#164 : l'état source/runtime voyage avec l'option. Une quête enregistrée
+            // dans la source mais pas encore relue par le serveur reste sélectionnable — en le
+            // disant, plutôt qu'en l'omettant du catalogue (ce qui laissait croire qu'elle n'existait
+            // pas) ou en la présentant comme déjà active.
+            String origin = ref.questOriginLabel(quest);
+            if (!origin.isBlank()) {
+                sb.append(" data-origin=\"").append(Http.esc(origin)).append("\"");
             }
             sb.append(">");
         }

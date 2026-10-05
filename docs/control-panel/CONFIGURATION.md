@@ -33,7 +33,7 @@ Modèle : [`control-panel/control-panel.properties.example`](../../control-panel
 | `agent.stale-seconds` | `45` | âge du heartbeat au-delà duquel l'agent est `STALE` |
 | `agent.offline-seconds` | `150` | âge du heartbeat au-delà duquel l'agent est `OFFLINE` |
 | `agent.action-expiry-seconds` | `300` | délai sans résultat après lequel une action passe `EXPIRED` |
-| `content.repo-dir` | *(vide)* | racine du checkout **source** du contenu éditable par l'éditeur guidé #46 (typiquement `<repo>/src/main/resources`). Vide → l'éditeur de quêtes / stories s'affiche mais reste **en lecture seule**. L'écriture est strictement limitée à `<content.repo-dir>/quests/*.yml` et `<content.repo-dir>/stories/*.yml`. |
+| `content.repo-dir` | *(vide)* | racine du checkout **source** du contenu éditable par l'éditeur guidé #46/#145 (typiquement `<repo>/src/main/resources`). Vide → l'éditeur s'affiche mais reste **en lecture seule**. L'écriture est strictement limitée à `<content.repo-dir>/{quests,stories,dialogues}/*.yml` (les trois `ContentWorkspace.KINDS`, rien d'autre). Voir « Droits d'écriture du workspace de contenu » ci-dessous. |
 
 ## Variables d'environnement
 
@@ -51,8 +51,56 @@ Modèle : [`control-panel/control-panel.properties.example`](../../control-panel
 | `RPGQUEST_PANEL_BASE_URL` | non | surcharge `panel.base-url` |
 | `RPGQUEST_PANEL_DB` | non | surcharge `panel.db` |
 | `RPGQUEST_PANEL_CONFIG` | non | chemin d'un `control-panel.properties` alternatif |
-| `PLUGADMIN_CONTENT_DIR` | non | surcharge `content.repo-dir` (éditeur guidé #46). Absent → éditeur en lecture seule. Pour activer l'enregistrement, le service `plugadmin` doit aussi avoir le droit d'écriture sur `<dir>/quests` et `<dir>/stories` (accordé **par le propriétaire du dépôt**, p.ex. `setfacl -m u:plugadmin:rwx …` ; aucun `chmod`/`sudo` automatique). |
+| `PLUGADMIN_CONTENT_DIR` | non | surcharge `content.repo-dir` (éditeur guidé #46/#145). Absent → éditeur en lecture seule. Pour activer l'enregistrement, voir « Droits d'écriture du workspace de contenu » ci-dessous — **deux** conditions sont nécessaires, pas une. |
 | `PANEL_DISABLED` | non | `true` → kill-switch (prioritaire sur `panel.disabled`) |
+
+### Droits d'écriture du workspace de contenu (issue #162)
+
+L'éditeur guidé écrit dans `<content.repo-dir>/{quests,stories,dialogues}/`. Sur l'instance AWS,
+**deux** conditions indépendantes doivent être réunies pour chacun de ces dossiers. L'oubli d'une
+seule produit le bandeau « Éditeur en lecture seule », et c'est exactement ce qui s'était produit
+pour `dialogues/` (incident #162 : ni l'une ni l'autre n'était en place pour ce dossier, alors que
+`quests/` et `stories/` avaient les deux) :
+
+1. **ACL POSIX** — le dossier appartient à `ubuntu`, le service tourne en `plugadmin` :
+   il faut une entrée `user:plugadmin:rwx` (+ l'ACL `default:` pour que les fichiers créés
+   ensuite restent modifiables). Jamais de `chown`, jamais de `chmod 777`, jamais de service
+   en root.
+2. **Bac à sable systemd** — `plugadmin.service` utilise `ProtectSystem=strict`, qui rend
+   **tout** le système de fichiers en lecture seule pour le service, ACL correcte ou non.
+   Chaque dossier autorisé doit être listé en `ReadWritePaths=` dans le drop-in
+   `/etc/systemd/system/plugadmin.service.d/10-content-workspace.conf`.
+
+Les deux sont appliquées de façon idempotente par :
+
+```bash
+sudo scripts/plugadmin/grant-content-access.sh            # ajouter --dry-run pour voir le plan
+```
+
+Le script lit `PLUGADMIN_CONTENT_DIR` dans `/etc/plugadmin/plugadmin.env`, pose les ACL
+minimales, régénère le drop-in à partir des trois `ContentWorkspace.KINDS`, fait un
+`daemon-reload` puis redémarre le service. Il refuse d'élargir globalement des droits : si un
+dossier **parent** n'est pas traversable par `plugadmin`, il le signale et s'arrête au lieu de
+« corriger » toute l'arborescence.
+
+**Persistance** : le drop-in et les ACL survivent aux redémarrages du service et de la machine, et
+`scripts/plugadmin/deploy.sh` ne remplace que `/opt/plugadmin/app` — il ne touche ni le drop-in ni
+les ACL. Après un `install.sh` (qui réécrit l'unité principale, pas les drop-ins), relancer ce
+script par précaution.
+
+**Vérification** (ne jamais conclure sur la seule ACL — elle ne voit pas le bac à sable) :
+
+```bash
+systemctl show plugadmin -p ReadWritePaths        # doit lister les trois dossiers
+# preuve réelle d'écriture sous le même bac à sable, avec nettoyage immédiat :
+sudo systemd-run --quiet --wait --collect --uid=plugadmin \
+  --property=ProtectSystem=strict --property=ProtectHome=true \
+  --property=ReadWritePaths=<content-dir>/dialogues \
+  /bin/sh -c 'p=<content-dir>/dialogues/.probe; touch "$p" && rm -f "$p"'
+# echo $? -> 0 attendu ; sans le --property=ReadWritePaths ci-dessus, 1 attendu (contrôle négatif)
+```
+
+Puis, côté navigateur : `/dialogues/new` ne doit plus afficher le bandeau de lecture seule.
 
 ### Plugin — bridge d'administration
 

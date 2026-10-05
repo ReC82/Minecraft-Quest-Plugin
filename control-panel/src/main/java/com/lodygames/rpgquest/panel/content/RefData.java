@@ -21,7 +21,13 @@ import java.util.Set;
  */
 public record RefData(List<String> quests, List<String> npcs, List<String> worlds,
                       boolean questsKnown, boolean npcsKnown, boolean worldsKnown,
-                      Map<String, String> npcNames, Map<String, String> questNames) {
+                      Map<String, String> npcNames, Map<String, String> questNames,
+                      Map<String, String> questOrigins, Map<String, List<String>> questPrereqs) {
+
+    /** Origines possibles d'une quête du catalogue fusionné (issues #163/#164). */
+    public static final String ORIGIN_BOTH = "both";
+    public static final String ORIGIN_SOURCE = "source";
+    public static final String ORIGIN_RUNTIME = "runtime";
 
     /** Constructeur historique (6 composantes) : aucun libellé de PNJ ni de quête. */
     public RefData(List<String> quests, List<String> npcs, List<String> worlds,
@@ -36,12 +42,26 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
         this(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown, npcNames, Map.of());
     }
 
+    /** Constructeur historique (8 composantes) : ni origine, ni graphe de prérequis (#163). */
+    public RefData(List<String> quests, List<String> npcs, List<String> worlds,
+                   boolean questsKnown, boolean npcsKnown, boolean worldsKnown,
+                   Map<String, String> npcNames, Map<String, String> questNames) {
+        this(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown, npcNames, questNames,
+                Map.of(), Map.of());
+    }
+
     public RefData {
         quests = List.copyOf(quests == null ? List.of() : quests);
         npcs = List.copyOf(npcs == null ? List.of() : npcs);
         worlds = List.copyOf(worlds == null ? List.of() : worlds);
         npcNames = Map.copyOf(npcNames == null ? Map.of() : npcNames);
         questNames = Map.copyOf(questNames == null ? Map.of() : questNames);
+        questOrigins = Map.copyOf(questOrigins == null ? Map.of() : questOrigins);
+        Map<String, List<String>> prereqCopy = new java.util.LinkedHashMap<>();
+        if (questPrereqs != null) {
+            questPrereqs.forEach((k, v) -> prereqCopy.put(k, List.copyOf(v == null ? List.of() : v)));
+        }
+        questPrereqs = Map.copyOf(prereqCopy);
     }
 
     public static RefData empty() {
@@ -69,6 +89,94 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
     public boolean isQuestKnown(String id) {
         String p = QuestYaml.plainId(id);
         return quests.stream().anyMatch(q -> QuestYaml.plainId(q).equals(p));
+    }
+
+    /**
+     * Issue #163/#164 : d'où vient cette quête — {@link #ORIGIN_BOTH} (source éditable + chargée
+     * par le serveur), {@link #ORIGIN_SOURCE} (enregistrée dans la source mais pas encore déployée
+     * / pas encore relue par le serveur), {@link #ORIGIN_RUNTIME} (le serveur la connaît mais elle
+     * n'est pas dans l'espace de travail source, ex. fichier posé à la main sur le serveur), ou
+     * {@code ""} si l'id est inconnu. Jamais deviné : uniquement ce que les deux relevés disent.
+     */
+    public String questOrigin(String id) {
+        String p = QuestYaml.plainId(id);
+        String o = questOrigins.get(p);
+        return o == null ? "" : o;
+    }
+
+    /** Libellé court et non ambigu de l'origine, pour une puce / un badge d'interface. */
+    public String questOriginLabel(String id) {
+        return switch (questOrigin(id)) {
+            case ORIGIN_BOTH -> "source + serveur";
+            case ORIGIN_SOURCE -> "source uniquement";
+            case ORIGIN_RUNTIME -> "serveur uniquement";
+            default -> "";
+        };
+    }
+
+    /** Prérequis connus d'une quête (ids « nus »), tels que relevés dans la source ou le runtime. */
+    public List<String> prereqsOf(String id) {
+        List<String> l = questPrereqs.get(QuestYaml.plainId(id));
+        return l == null ? List.of() : l;
+    }
+
+    /**
+     * Issue #163 : cherche un cycle introduit en donnant {@code chosen} comme prérequis de
+     * {@code selfId}. Renvoie le chemin lisible du cycle (ex. {@code b -> a -> b}) ou {@code null}
+     * s'il n'y en a pas.
+     *
+     * <p>Parcours en profondeur depuis chaque prérequis choisi, en suivant le graphe
+     * <em>déjà connu</em> ({@link #questPrereqs}) : si l'on retombe sur {@code selfId}, la
+     * sélection fermerait la boucle. Le graphe connu ne contient pas encore la sélection en cours
+     * d'édition — c'est précisément ce qu'on teste. Une quête absente du graphe est une feuille
+     * (prudence : on ne peut pas inventer ses prérequis, donc on n'invente pas de cycle non
+     * plus).</p>
+     */
+    public String findPrereqCycle(String selfId, List<String> chosen) {
+        String self = QuestYaml.plainId(selfId);
+        if (self.isEmpty() || chosen == null) {
+            return null;
+        }
+        for (String raw : chosen) {
+            String start = QuestYaml.plainId(raw);
+            if (start.isEmpty() || start.equals(self)) {
+                continue; // l'auto-référence a son propre diagnostic, plus explicite
+            }
+            List<String> path = walkTo(self, start, new LinkedHashSet<>());
+            if (path != null) {
+                // Le chemin rendu se lit dans le sens « dépend de » : self -> start -> … -> self.
+                StringBuilder sb = new StringBuilder(self);
+                for (String step : path) {
+                    sb.append(" → ").append(step);
+                }
+                return sb.toString();
+            }
+        }
+        return null;
+    }
+
+    /** DFS borné par {@code seen} : renvoie le chemin de {@code from} jusqu'à {@code target}, ou null. */
+    private List<String> walkTo(String target, String from, Set<String> seen) {
+        if (!seen.add(from)) {
+            return null; // cycle préexistant dans le graphe connu, étranger à la sélection testée
+        }
+        if (from.equals(target)) {
+            return new java.util.ArrayList<>(List.of(from));
+        }
+        for (String next : prereqsOf(from)) {
+            String n = QuestYaml.plainId(next);
+            if (n.isEmpty()) {
+                continue;
+            }
+            List<String> sub = walkTo(target, n, seen);
+            if (sub != null) {
+                List<String> path = new java.util.ArrayList<>();
+                path.add(from);
+                path.addAll(sub);
+                return path;
+            }
+        }
+        return null;
     }
 
     public boolean isNpcKnown(String id) {
@@ -132,7 +240,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             }
         }
         return new RefData(List.copyOf(merged), npcs, worlds, questsKnown, npcsKnown, worldsKnown,
-                npcNames, questNames);
+                npcNames, questNames, questOrigins, questPrereqs);
     }
 
     // ---- listes curées (les plus courantes ; saisie libre toujours possible) ----------------

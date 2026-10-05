@@ -475,6 +475,221 @@
     input.addEventListener("blur", function () { window.setTimeout(close, 120); });
   }
 
+  /* ---- Sélection MULTIPLE recherchable (#163) --------------------------------------- */
+
+  /**
+   * Transforme un champ `[data-multisel]` (prérequis de quête, …) en liste de puces
+   * supprimables + champ de recherche, alimenté par la `<datalist>` désignée par
+   * `data-multisel-list`.
+   *
+   * Contrat volontairement conservateur :
+   *   - la <textarea> `[data-multisel-store]` reste LE champ soumis (une valeur par ligne) :
+   *     le format attendu par le serveur ne change pas, et sans JavaScript la page reste
+   *     utilisable telle quelle (la textarea s'affiche simplement normalement) ;
+   *   - une valeur absente du catalogue n'est JAMAIS supprimée : elle devient une puce
+   *     signalée « inconnue », pour que l'admin la voie au lieu de la perdre ;
+   *   - aucun doublon : comparaison sur l'id « nu » (préfixe `rpgquest:` ignoré), comme le
+   *     fait le validateur côté serveur.
+   */
+  function initMultiSel() {
+    var boxes = document.querySelectorAll("[data-multisel]");
+    for (var i = 0; i < boxes.length; i++) { setupMultiSel(boxes[i]); }
+  }
+
+  function plainId(v) {
+    var s = String(v == null ? "" : v).trim();
+    var c = s.indexOf(":");
+    return (c >= 0 ? s.substring(c + 1) : s).toLowerCase();
+  }
+
+  function setupMultiSel(box) {
+    var store = box.querySelector("textarea[data-multisel-store]");
+    if (!store || store.getAttribute("data-multisel-ready") === "1") { return; }
+    var dl = document.getElementById(box.getAttribute("data-multisel-list") || "");
+    if (!dl) { return; } // pas de catalogue : on laisse la textarea brute, jamais de régression
+    store.setAttribute("data-multisel-ready", "1");
+
+    var options = [];
+    var byPlain = {};
+    var opts = dl.querySelectorAll("option");
+    for (var k = 0; k < opts.length; k++) {
+      var v = opts[k].getAttribute("value") || "";
+      if (!v) { continue; }
+      var lbl = opts[k].getAttribute("label") || "";
+      var o = {
+        value: v,
+        label: lbl && lbl !== v ? lbl : "",
+        origin: opts[k].getAttribute("data-origin") || ""
+      };
+      options.push(o);
+      byPlain[plainId(v)] = o;
+    }
+
+    var chosen = [];
+    var lines = (store.value || "").split("\n");
+    for (var l = 0; l < lines.length; l++) {
+      var t = lines[l].trim();
+      if (t && chosen.indexOf(t) === -1) { chosen.push(t); }
+    }
+
+    // La textarea reste dans le DOM (c'est elle qui est soumise) mais sort du flux visuel
+    // et du parcours clavier : deux champs concurrents pour la même donnée seraient pires
+    // que pas de widget du tout.
+    store.classList.add("multisel-store");
+    store.setAttribute("tabindex", "-1");
+    store.setAttribute("aria-hidden", "true");
+
+    var chips = document.createElement("div");
+    chips.className = "multisel-chips";
+    var combo = document.createElement("div");
+    combo.className = "combo multisel-combo";
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "combo-input";
+    input.setAttribute("placeholder", box.getAttribute("data-multisel-add") || "Ajouter…");
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-expanded", "false");
+    input.setAttribute("aria-autocomplete", "list");
+    var lbl2 = box.querySelector("label");
+    if (lbl2) {
+      // Le <label for> pointe sur la textarea masquée ; on rattache le champ visible au même
+      // intitulé pour que le lecteur d'écran annonce bien « Quêtes prérequises ».
+      input.setAttribute("aria-label", (lbl2.textContent || "").trim());
+    }
+    var menu = document.createElement("ul");
+    menu.className = "combo-menu";
+    menu.setAttribute("role", "listbox");
+    menu.hidden = true;
+    combo.appendChild(input);
+    combo.appendChild(menu);
+    store.parentNode.insertBefore(chips, store);
+    store.parentNode.insertBefore(combo, store.nextSibling);
+
+    var active = -1;
+    var visible = [];
+
+    function sync() {
+      store.value = chosen.join("\n");
+      try { store.dispatchEvent(new Event("change", { bubbles: true })); } catch (e) { /* ignore */ }
+    }
+
+    function renderChips() {
+      if (chosen.length === 0) {
+        chips.innerHTML = '<span class="multisel-none">Aucun prérequis — la quête est accessible d\'emblée.</span>';
+        return;
+      }
+      var html = "";
+      for (var c = 0; c < chosen.length; c++) {
+        var known = byPlain[plainId(chosen[c])];
+        var title = known && known.label ? known.label : chosen[c];
+        html += '<span class="chip' + (known ? "" : " chip-unknown") + '">'
+          + '<span class="chip-t">' + esc(title) + "</span>"
+          + '<code class="chip-id">' + esc(chosen[c]) + "</code>"
+          + (known && known.origin ? '<span class="chip-o">' + esc(known.origin) + "</span>" : "")
+          + (known ? "" : '<span class="chip-o">inconnue du catalogue</span>')
+          + '<button type="button" class="chip-x" data-multisel-del="' + esc(chosen[c])
+          + '" aria-label="Retirer ' + esc(chosen[c]) + '">&times;</button>'
+          + "</span>";
+      }
+      chips.innerHTML = html;
+    }
+
+    function render() {
+      var q = (input.value || "").trim().toLowerCase();
+      visible = [];
+      for (var n = 0; n < options.length && visible.length < 60; n++) {
+        var o = options[n];
+        if (chosen.some(function (ch) { return plainId(ch) === plainId(o.value); })) { continue; }
+        if (!q || o.value.toLowerCase().indexOf(q) !== -1
+            || (o.label && o.label.toLowerCase().indexOf(q) !== -1)) {
+          visible.push(o);
+        }
+      }
+      if (visible.length === 0) {
+        menu.innerHTML = '<li class="combo-empty" aria-disabled="true">'
+          + (q ? "Aucune correspondance" : "Toutes les quêtes connues sont déjà sélectionnées")
+          + "</li>";
+      } else {
+        var html = "";
+        for (var m = 0; m < visible.length; m++) {
+          html += '<li role="option" data-idx="' + m + '">'
+            + (visible[m].label ? '<span class="combo-l">' + esc(visible[m].label) + "</span>" : "")
+            + '<span class="combo-v">' + esc(visible[m].value) + "</span>"
+            + (visible[m].origin ? '<span class="combo-o">' + esc(visible[m].origin) + "</span>" : "")
+            + "</li>";
+        }
+        menu.innerHTML = html;
+      }
+      active = -1;
+      menu.hidden = false;
+      menu.classList.remove("up");
+      var r = input.getBoundingClientRect();
+      var below = window.innerHeight - r.bottom;
+      if (below < 240 && r.top > below) { menu.classList.add("up"); }
+      input.setAttribute("aria-expanded", "true");
+    }
+
+    function close() {
+      menu.hidden = true;
+      active = -1;
+      input.setAttribute("aria-expanded", "false");
+    }
+
+    function add(value) {
+      var v = String(value || "").trim();
+      if (!v) { return; }
+      if (chosen.some(function (ch) { return plainId(ch) === plainId(v); })) { return; }
+      chosen.push(v);
+      sync();
+      renderChips();
+      input.value = "";
+      render();
+    }
+
+    function highlight(next) {
+      var lis = menu.querySelectorAll("li[role=option]");
+      if (lis.length === 0) { return; }
+      active = (next + lis.length) % lis.length;
+      for (var a = 0; a < lis.length; a++) { lis[a].classList.toggle("on", a === active); }
+      lis[active].scrollIntoView({ block: "nearest" });
+    }
+
+    input.addEventListener("focus", render);
+    input.addEventListener("input", render);
+    input.addEventListener("keydown", function (ev) {
+      if (menu.hidden && (ev.key === "ArrowDown" || ev.key === "ArrowUp")) { render(); return; }
+      if (ev.key === "ArrowDown") { ev.preventDefault(); highlight(active + 1); }
+      else if (ev.key === "ArrowUp") { ev.preventDefault(); highlight(active - 1); }
+      else if (ev.key === "Enter") {
+        // Jamais de soumission du formulaire depuis ce champ : on ajoute la valeur visée.
+        ev.preventDefault();
+        if (active >= 0 && active < visible.length) { add(visible[active].value); }
+        else if (input.value.trim()) { add(input.value); }
+      } else if (ev.key === "Escape") { close(); }
+    });
+    menu.addEventListener("mousedown", function (ev) {
+      var li = ev.target.closest ? ev.target.closest("li[role=option]") : null;
+      if (!li) { return; }
+      ev.preventDefault();
+      var idx = parseInt(li.getAttribute("data-idx"), 10);
+      if (idx >= 0 && idx < visible.length) { add(visible[idx].value); }
+    });
+    input.addEventListener("blur", function () { window.setTimeout(close, 120); });
+    chips.addEventListener("click", function (ev) {
+      var btn = ev.target.closest ? ev.target.closest("[data-multisel-del]") : null;
+      if (!btn) { return; }
+      ev.preventDefault();
+      var del = btn.getAttribute("data-multisel-del");
+      chosen = chosen.filter(function (ch) { return ch !== del; });
+      sync();
+      renderChips();
+      render();
+      input.focus();
+    });
+
+    renderChips();
+  }
+
   /**
    * Un type d'objectif / récompense = un seul jeu de champs visible. Le serveur émet tous les
    * jeux (chacun issu du même descripteur) ; ici on bascule au changement de <select>, sans
@@ -610,6 +825,7 @@
     run("initFilters", initFilters);
     run("initFocus", initFocus);
     run("initCombo", initCombo);
+    run("initMultiSel", initMultiSel);
     run("initEditorForms", initEditorForms);
     run("initColorPalette", initColorPalette);
     run("initDrawer", initDrawer);

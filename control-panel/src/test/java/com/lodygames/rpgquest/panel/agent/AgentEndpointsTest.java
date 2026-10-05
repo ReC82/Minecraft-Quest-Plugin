@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.panel.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.panel.audit.InMemoryAuditLog;
@@ -113,7 +114,9 @@ class AgentEndpointsTest {
 
     @Test
     void oversizedHeartbeatIsRejected() throws Exception {
-        String huge = "{\"protocol\":\"agent/v1\",\"pad\":\"" + "x".repeat(70_000) + "\"}";
+        // La borne de corps entrant est passée de 64 Kio à 1 Mio (issue #164 : les relevés
+        // « dialogue.list » la frôlaient déjà). Elle reste FINIE — c'est ce que ce test garantit.
+        String huge = "{\"protocol\":\"agent/v1\",\"pad\":\"" + "x".repeat(1_100_000) + "\"}";
         assertEquals(413, req("POST", "/agent/v1/heartbeat", "rpgquest-dev", DEV_TOKEN, huge).statusCode());
     }
 
@@ -151,6 +154,64 @@ class AgentEndpointsTest {
         // Rejeu (réponse perdue) : toujours 200, action inchangée.
         assertEquals(200, req("POST", "/agent/v1/actions/" + id + "/result", "rpgquest-dev", DEV_TOKEN, body).statusCode());
         assertTrue(audit.recent(20).stream().anyMatch(e -> e.action().equals("agent.action.result")));
+    }
+
+    /**
+     * Issue #164 — régression qui cassait le catalogue des dialogues. Un corps de résultat
+     * volumineux était stocké coupé à 20 000 caractères, donc <strong>au milieu du JSON</strong> :
+     * toute page relisant {@code result_json} perdait l'intégralité du relevé en silence (l'action
+     * restait {@code SUCCESS}). Le cas réel : {@code dialogue.list} de 10 dialogues, dont
+     * {@code rpgquest:jeff}, qui disparaissait du catalogue.
+     */
+    @Test
+    void largeResultBodyStaysParsableJson() throws Exception {
+        String id = store.createAction("rpgquest-dev", "dialogue.list", java.util.Map.of(), "owner");
+        req("GET", "/agent/v1/actions", "rpgquest-dev", DEV_TOKEN, null);
+
+        // Corps réaliste (~60 000 caractères) : largement au-delà de l'ancienne borne de 20 000.
+        StringBuilder dialogues = new StringBuilder();
+        for (int i = 0; i < 300; i++) {
+            if (i > 0) {
+                dialogues.append(',');
+            }
+            dialogues.append("{\"id\":\"rpgquest:d").append(i).append("\",\"key\":\"d").append(i)
+                    .append("\",\"text\":\"").append("x".repeat(180)).append("\"}");
+        }
+        String body = "{\"action_id\":\"" + id + "\",\"status\":\"SUCCESS\",\"value\":\"300\","
+                + "\"message\":\"ok\",\"details\":{\"dialogues\":[" + dialogues + "]}}";
+        assertTrue(body.length() > 20_000, "le corps doit dépasser l'ancienne borne");
+
+        assertEquals(200, req("POST", "/agent/v1/actions/" + id + "/result", "rpgquest-dev", DEV_TOKEN, body)
+                .statusCode());
+
+        String stored = store.action(id).orElseThrow().resultJson();
+        assertNotNull(stored, "le corps doit être conservé");
+        // Le point qui comptait : ce qui est stocké se relit. Avant le correctif, ce parse échouait.
+        Object details = com.lodygames.rpgquest.panel.json.Json.parseObject(stored).get("details");
+        assertTrue(details instanceof java.util.Map, "les détails doivent rester exploitables");
+        Object list = ((java.util.Map<?, ?>) details).get("dialogues");
+        assertTrue(list instanceof java.util.List, "la liste de dialogues doit survivre");
+        assertEquals(300, ((java.util.List<?>) list).size(), "aucun dialogue perdu");
+    }
+
+    /**
+     * Au-delà de la borne (très large) on ne conserve plus un fragment illisible : on stocke un
+     * objet JSON <em>valide</em> qui déclare le dépassement, pour que l'interface puisse le dire au
+     * lieu de conclure à tort à une absence de contenu.
+     */
+    @Test
+    void oversizedResultBodyIsReplacedByAValidTruncationMarker() throws Exception {
+        String id = store.createAction("rpgquest-dev", "dialogue.list", java.util.Map.of(), "owner");
+        req("GET", "/agent/v1/actions", "rpgquest-dev", DEV_TOKEN, null);
+
+        String body = "{\"action_id\":\"" + id + "\",\"status\":\"SUCCESS\",\"details\":{\"blob\":\""
+                + "y".repeat(600 * 1024) + "\"}}";
+        assertEquals(200, req("POST", "/agent/v1/actions/" + id + "/result", "rpgquest-dev", DEV_TOKEN, body)
+                .statusCode());
+
+        String stored = store.action(id).orElseThrow().resultJson();
+        var parsed = com.lodygames.rpgquest.panel.json.Json.parseObject(stored); // ne doit pas lever
+        assertEquals(Boolean.TRUE, parsed.get("truncated"), "le dépassement doit être déclaré : " + stored);
     }
 
     @Test

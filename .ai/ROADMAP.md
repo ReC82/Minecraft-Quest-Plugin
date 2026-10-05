@@ -328,6 +328,38 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-05 (suite — #192 appliqué, journal lisible, #165 nom+skin PNJ)
+Branche de départ: feature/169-special-mobs-boss @ 4bc5b89 (entrée précédente du même jour)
+Étape de départ: autorisation explicite d'appliquer le correctif WorldEdit sur DEV ; attentes
+  précisées pour le journal (infobulle compacte, noms français, pas d'id technique, récupération
+  sans reset ni doublon) ; démarrage de #165.
+Étapes terminées:
+(1) DONE — #192 appliqué. Chemin distant corrigé par un listing réel : la racine FTP EST déjà
+  « plugins/ », donc WorldEdit/config.yml. Script mono-usage dédié (le garde-fou de
+  deploy-verygames.sh n'est pas affaibli), sauvegarde horodatée, diff d'une ligne, upload
+  atomique, /worldedit reload. Valeur RÉELLEMENT CHARGÉE vérifiée via le rapport interne de
+  WorldEdit (wandItem: minecraft:golden_axe), re-vérifiée APRÈS redémarrage.
+(2) DONE — Journal : liste et détails partageaient la même lore. Séparées (liste = état +
+  compteurs plafonnés à 4 + clics). Id d'étape retiré, noms via clé de traduction vanilla,
+  récompense VARIABLE jamais affichée, attributs d'attaque de l'icône masqués.
+(3) DONE — Récupération du journal : déjà correcte (LACKS_CUSTOM_ITEM + soulbound + simple give),
+  donc rien à corriger ; un test verrouille le contrat, qui vit dans une donnée éditable au panel.
+(4) DONE — #165 : renommage via NPC.setName (API publique). SkinTrait ABSENT de citizensapi (il est
+  dans citizens-main) -> commande structurée Citizens, mais avec sélection explicite du PNJ visé
+  via NPCSelector (API publique) puis désélection, dans le même passage thread principal. Lien
+  MineSkin strict validé côté panel ET plugin. Id logique et liaisons inchangés.
+Tests : plugin 1445 / 0 échec / 34 ignorés ; control-panel 408 / 0 échec / 1 ignoré (XML JUnit).
+Branche finale: feature/169-special-mobs-boss (aucun merge)
+Dernier commit: 678ae55 au déploiement plugin (docs committées ensuite)
+Build: vert ; test + build relancés par le script de déploiement.
+Tests manuels en attente: TC-236 (hache du kit), TC-237 (journal), TC-238 (nom/skin PNJ).
+Blocages: aucun. Le succès d'un skin = « demande transmise » (Citizens télécharge en asynchrone),
+  jamais « skin confirmé » : la confirmation visuelle est un test en jeu.
+Première étape à reprendre: validations en jeu TC-236/237/238 ; confirmer l'interprétation des
+  « quatre compteurs » ; décider si la synchronisation nom de définition / locuteur est voulue.
+```
+
+```text
 Date: 2026-10-05 (lot panel #162/#163/#164 + voyage #191 + Wild #168 + diagnostic #192)
 Branche de départ: feature/169-special-mobs-boss @ f6d94bc (entrée précédente, #179 déployé)
 Étape de départ: consigne de travail autonome pendant l'indisponibilité de l'utilisateur.

@@ -3691,3 +3691,77 @@ Rollback : `scripts/rollback-verygames.sh --latest` (restaure
 `rpgquest-20261005T084017Z-predeploy.jar`) ; `scripts/plugadmin/rollback.sh app` pour le Control
 Panel. Pour #162, revenir en arrière consisterait à retirer `dialogues` du drop-in
 `10-content-workspace.conf` puis `systemctl daemon-reload && systemctl restart plugadmin`.
+
+## 2026-10-05 (suite) - WorldEdit wand (#192 appliqué), journal compact, PNJ nom+skin (#165)
+
+### Déploiement / Exécution réelle
+
+- **Build** : plugin **1445 tests / 0 échec / 34 ignorés** ; Control Panel **408 tests / 0 échec /
+  1 ignoré** (chiffres relevés dans les XML JUnit). `test` + `build` relancés par
+  `scripts/deploy-verygames.sh`, verts.
+
+- **#192 — APPLIQUÉ sur DEV** (autorisé explicitement par le propriétaire).
+  - Chemin distant réel : le dossier FTP racine **est déjà** `plugins/` du serveur — le fichier est
+    donc `WorldEdit/config.yml`, pas `plugins/WorldEdit/config.yml` (constaté par un listing réel,
+    une première tentative sur le mauvais chemin ayant échoué proprement sans rien écrire).
+  - Nouveau script **mono-usage** `scripts/worldedit-wand-item.sh` : le garde-fou de
+    `deploy-verygames.sh` (qui refuse tout fichier hors `RPGQuest/`) **n'a pas été affaibli** ; ce
+    script ne prend aucun paramètre de chemin, ne peut écrire que le `config.yml` de WorldEdit,
+    n'y modifie que la clé `wand-item`, refuse tout matériau du kit de départ (#26) comme nouvelle
+    valeur, sauvegarde avant écriture et téléverse de façon atomique.
+  - Sauvegarde : `…/verygames-backups/worldedit-20261005T085147Z/config.yml` + `MANIFEST.txt`
+    (ancienne valeur `minecraft:wooden_axe` consignée).
+  - Changement : `wand-item: minecraft:wooden_axe` → `minecraft:golden_axe` (diff d'**une seule
+    ligne**, vérifié en dry-run avant application).
+  - `/worldedit reload` → « Configuration reloaded! ».
+  - **Valeur réellement chargée vérifiée**, pas seulement le fichier : `/worldedit report` puis
+    relecture du rapport généré côté serveur → `wandItem: minecraft:golden_axe`. **Re-vérifié après
+    le redémarrage** du serveur plus bas : toujours `minecraft:golden_axe`.
+  - La hache en bois du kit et les protections de blocs sont inchangées (aucune permission retirée).
+
+- **Journal de quêtes** — infobulle de liste et infobulle de détails étaient la **même** lore
+  surchargée. Séparées : la liste ne garde que l'état, les compteurs de l'étape (plafonnés à
+  quatre, avec un « +N autre(s) ») et les indications de clic ; description, catégorie,
+  récompenses et prérequis passent dans les détails. Plus aucun identifiant technique affiché
+  (l'id d'étape `prove_worth` disparaît) ; les noms de cibles viennent de la **clé de traduction
+  vanilla**, donc le client affiche « Araignée » au lieu de « Tuer SPIDER », sans table à
+  maintenir. Une récompense `VARIABLE` (état interne type `CLAIM_TIER_1`) n'est **plus jamais**
+  affichée. Les attributs vanilla de l'objet-icône (« dégâts d'attaque » d'une épée) sont masqués.
+  - **Récupération du journal** : déjà correcte par conception (option du Libraire conditionnée par
+    `LACKS_CUSTOM_ITEM` + objet soulbound → remise possible, jamais de doublon, et l'action ne fait
+    que donner l'objet, donc aucun reset). Ce contrat vivant dans la **donnée**, un test le
+    verrouille désormais (un seul chemin de remise, condition présente, action limitée à un
+    `customitem give … 1`).
+
+- **#165 — nom en jeu et apparence des PNJ depuis le panel** : nouvelle section « Nom en jeu &
+  apparence » sur la fiche PNJ, visible dès qu'un PNJ Citizens est lié (aucune définition RPGQuest
+  exigée — cas de Help, Citizens orphelin). Deux actions agent distinctes
+  (`npc.citizens.rename`, `npc.citizens.skin`, permission `NPC_BIND_WRITE`). Identifiant logique,
+  identité Citizens et liaisons quêtes/dialogues/stories **inchangés** ; nom de définition et
+  locuteur de dialogue volontairement non modifiés (ils peuvent être partagés).
+  - Ciblage par la **liaison persistée** (id logique → UUID Citizens). Pour le skin, `SkinTrait`
+    n'existe pas dans l'artefact `citizensapi` auquel le projet se limite : on passe donc par la
+    commande structurée de Citizens, mais en **sélectionnant explicitement** le PNJ visé pour la
+    console via `NPCSelector` (API publique) juste avant et en désélectionnant juste après, dans le
+    même passage sur le thread principal — deux admins simultanés ne peuvent pas viser le mauvais
+    PNJ.
+  - Seul un lien `https://minesk.in/<id>` strict est accepté, validé côté panel **et** revalidé
+    côté plugin ; coller la commande `/npc skin --url …` est refusé (ce n'est pas une console
+    libre). Le téléchargement étant asynchrone côté Citizens, un succès signifie « demande
+    transmise » — l'interface le dit explicitement plutôt que de surpromettre.
+
+- **Déploiements** : Control Panel AWS (`/health` → 200) puis JAR VeryGames DEV
+  (1 693 858 o, SHA-256 `098efa025ddc77e9f4c28c9e6ba5a5b00d91056582cd84fdfc4d525282a14dda`,
+  backup `rpgquest-20261005T092950Z-predeploy.jar`), suivis d'**un seul** redémarrage
+  (`verygames-restart.sh --timeout 240`, 0 joueur connecté). Après redémarrage : `/plugins` → 4
+  verts.
+
+- **Distinction explicite** : tout le volet en jeu reste `PENDING MANUAL VALIDATION` — TC-236
+  (hache du kit), TC-237 (infobulles + récupération du journal), TC-238 (nom/skin PNJ). Aucun test
+  MockBukkit n'est présenté comme une validation du rendu en jeu.
+- Aucun merge, aucune intervention PROD.
+
+Rollback : `scripts/rollback-verygames.sh --latest` (JAR) ; `scripts/plugadmin/rollback.sh app`
+(panel) ; pour WorldEdit, `scripts/worldedit-wand-item.sh --item minecraft:wooden_axe` rétablit la
+valeur d'origine (ou restaurer le `config.yml` sauvegardé dans
+`…/verygames-backups/worldedit-20261005T085147Z/`).

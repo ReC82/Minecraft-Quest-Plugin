@@ -749,6 +749,201 @@
 
   /* ---- Palette de couleurs MiniMessage + aperçu (formulaire de dialogue, #118) ------ */
 
+
+  /* ---- Champ de texte stylé, partagé (#195) ----------------------------------------- */
+
+  var SF_COLORS = {
+    black: "#3b3b3b", dark_blue: "#3b5bd6", dark_green: "#2f9e44", dark_aqua: "#22a5a5",
+    dark_red: "#c0392b", dark_purple: "#9b59b6", gold: "#d4a017", gray: "#aab1bd",
+    dark_gray: "#8a929e", blue: "#5b8dff", green: "#43c463", aqua: "#4bd6d6",
+    red: "#f06663", light_purple: "#e06bd6", yellow: "#e3c33b", white: "#e6e8ec"
+  };
+  var SF_DECO_ALIAS = {
+    b: "bold", bold: "bold", i: "italic", italic: "italic", em: "italic",
+    u: "underlined", underlined: "underlined",
+    st: "strikethrough", s: "strikethrough", strikethrough: "strikethrough"
+  };
+
+  /**
+   * Analyse une valeur MiniMessage. Renvoie { uniform, text, color, decos } si la valeur est
+   * « uniforme » — au plus UNE couleur et des décorations qui englobent tout le texte, sans
+   * aucune balise au milieu — sinon { uniform:false }.
+   *
+   * Cette prudence est volontaire : un texte comme « <red>Roi</red> <gold>des Marais</gold> »
+   * ne peut pas être représenté par « une couleur + des cases » sans être aplati. On préfère
+   * refuser le mode guidé plutôt que détruire du contenu existant.
+   */
+  function sfParse(raw) {
+    var value = String(raw == null ? "" : raw);
+    if (value === "") { return { uniform: true, text: "", color: "", decos: {} }; }
+    var color = "";
+    var decos = {};
+    var rest = value;
+    var guard = 0;
+    // Balises ouvrantes en tête.
+    while (guard++ < 12) {
+      var open = /^<([a-zA-Z_#][a-zA-Z0-9_#]*)>/.exec(rest);
+      if (!open) { break; }
+      var tag = open[1].toLowerCase();
+      if (SF_DECO_ALIAS[tag]) {
+        decos[SF_DECO_ALIAS[tag]] = true;
+      } else if (SF_COLORS[tag]) {
+        if (color) { return { uniform: false }; }  // deux couleurs : non uniforme
+        color = tag;
+      } else {
+        return { uniform: false };                 // balise non gérée (hover, gradient, #hex…)
+      }
+      rest = rest.substring(open[0].length);
+    }
+    // Balises fermantes en queue (on ne vérifie pas l'appariement exact : toute balise
+    // résiduelle au milieu fera échouer le test ci-dessous, ce qui suffit).
+    guard = 0;
+    while (guard++ < 12) {
+      var close = /<\/([a-zA-Z_#][a-zA-Z0-9_#]*)>$/.exec(rest);
+      if (!close) { break; }
+      rest = rest.substring(0, rest.length - close[0].length);
+    }
+    if (rest.indexOf("<") !== -1 || rest.indexOf(">") !== -1) {
+      return { uniform: false };                   // du balisage subsiste au milieu du texte
+    }
+    return { uniform: true, text: rest, color: color, decos: decos };
+  }
+
+  /** Recompose une valeur MiniMessage à partir du mode guidé. */
+  function sfCompose(text, color, decos) {
+    if (!text) { return ""; }
+    var open = "";
+    var close = "";
+    if (color) { open += "<" + color + ">"; close = "</" + color + ">" + close; }
+    var order = ["bold", "italic", "underlined", "strikethrough"];
+    for (var i = 0; i < order.length; i++) {
+      if (decos[order[i]]) {
+        open += "<" + order[i] + ">";
+        close = "</" + order[i] + ">" + close;
+      }
+    }
+    return open + text + close;
+  }
+
+  function initStyleFields() {
+    var fields = document.querySelectorAll("[data-stylefield]");
+    for (var i = 0; i < fields.length; i++) { setupStyleField(fields[i]); }
+  }
+
+  function setupStyleField(box) {
+    var store = box.querySelector("[data-sf-store]");
+    if (!store || store.getAttribute("data-sf-ready") === "1") { return; }
+    store.setAttribute("data-sf-ready", "1");
+
+    var guided = box.querySelector("[data-sf-guided]");
+    var textInput = box.querySelector("[data-sf-text]");
+    var palette = box.querySelector("[data-sf-palette]");
+    var preview = box.querySelector("[data-sf-preview]");
+    var warn = box.querySelector("[data-sf-warn]");
+    var toggle = box.querySelector("[data-sf-toggle]");
+    var decoBoxes = box.querySelectorAll("[data-sf-deco]");
+    if (!guided || !textInput || !palette) { return; }
+
+    var state = { color: "", decos: {} };
+    var mode = "guided";
+
+    function paint() {
+      var swatches = palette.querySelectorAll("[data-sf-color]");
+      for (var s = 0; s < swatches.length; s++) {
+        swatches[s].classList.toggle("on", (swatches[s].getAttribute("data-sf-color") || "") === state.color);
+      }
+      if (!preview) { return; }
+      var shown = mode === "guided" ? textInput.value : String(store.value || "").replace(/<[^>]*>/g, "");
+      preview.textContent = shown || "— aperçu —";
+      preview.style.color = mode === "guided" && state.color ? (SF_COLORS[state.color] || "") : "";
+      preview.style.fontWeight = state.decos.bold && mode === "guided" ? "700" : "";
+      preview.style.fontStyle = state.decos.italic && mode === "guided" ? "italic" : "";
+      var deco = [];
+      if (state.decos.underlined) { deco.push("underline"); }
+      if (state.decos.strikethrough) { deco.push("line-through"); }
+      preview.style.textDecoration = mode === "guided" && deco.length ? deco.join(" ") : "";
+    }
+
+    function sync() {
+      if (mode !== "guided") { return; }
+      store.value = sfCompose(textInput.value, state.color, state.decos);
+      paint();
+    }
+
+    function enterGuided(initial) {
+      mode = "guided";
+      guided.hidden = false;
+      store.classList.add("sf-store-hidden");
+      if (warn) { warn.hidden = true; }
+      if (toggle) {
+        toggle.hidden = false;
+        toggle.textContent = "Modifier le code MiniMessage";
+      }
+      if (initial) {
+        textInput.value = initial.text || "";
+        state.color = initial.color || "";
+        state.decos = initial.decos || {};
+        for (var d = 0; d < decoBoxes.length; d++) {
+          decoBoxes[d].checked = !!state.decos[decoBoxes[d].getAttribute("data-sf-deco")];
+        }
+      }
+      sync();
+    }
+
+    function enterAdvanced(reason) {
+      mode = "advanced";
+      guided.hidden = true;
+      store.classList.remove("sf-store-hidden");
+      if (warn) {
+        warn.hidden = !reason;
+        warn.textContent = reason || "";
+      }
+      if (toggle) {
+        toggle.hidden = false;
+        toggle.textContent = "Passer à l'éditeur guidé (simplifiera les styles)";
+      }
+      paint();
+    }
+
+    var parsed = sfParse(store.value);
+    if (parsed.uniform) {
+      enterGuided(parsed);
+    } else {
+      // Contenu multi-styles : on ne le touche pas, et on dit pourquoi.
+      enterAdvanced("Ce texte combine plusieurs styles ou une balise avancée : l'éditeur guidé le "
+        + "simplifierait. Il est donc laissé tel quel — modifiable ci-dessus, ou basculez "
+        + "explicitement en mode guidé.");
+    }
+
+    textInput.addEventListener("input", sync);
+    palette.addEventListener("click", function (ev) {
+      var sw = ev.target.closest ? ev.target.closest("[data-sf-color]") : null;
+      if (!sw) { return; }
+      ev.preventDefault();
+      state.color = sw.getAttribute("data-sf-color") || "";
+      sync();
+    });
+    for (var d2 = 0; d2 < decoBoxes.length; d2++) {
+      decoBoxes[d2].addEventListener("change", function (ev) {
+        state.decos[ev.target.getAttribute("data-sf-deco")] = ev.target.checked;
+        sync();
+      });
+    }
+    store.addEventListener("input", function () { if (mode === "advanced") { paint(); } });
+    if (toggle) {
+      toggle.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        if (mode === "guided") {
+          enterAdvanced("");
+        } else {
+          // Bascule explicite : on repart du texte débarrassé de son balisage.
+          var plain = String(store.value || "").replace(/<[^>]*>/g, "");
+          enterGuided({ text: plain, color: state.color, decos: state.decos });
+        }
+      });
+    }
+  }
+
   function initColorPalette() {
     var palettes = document.querySelectorAll("[data-dlg-palette]");
     for (var i = 0; i < palettes.length; i++) {
@@ -832,6 +1027,7 @@
     run("initCombo", initCombo);
     run("initMultiSel", initMultiSel);
     run("initEditorForms", initEditorForms);
+    run("initStyleFields", initStyleFields);
     run("initColorPalette", initColorPalette);
     run("initDrawer", initDrawer);
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on

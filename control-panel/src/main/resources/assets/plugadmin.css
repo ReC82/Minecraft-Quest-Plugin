@@ -856,3 +856,25 @@ tr[hidden]{display:none}
   .usr-tags{grid-column:1/-1;justify-self:start}
   .usr-meta{grid-column:1/-1}
 }
+
+/* ---- champ de texte stylé partagé (#195) ---- */
+/* Le champ MiniMessage réellement soumis reste dans le DOM ; il n'est masqué que lorsque
+   l'éditeur guidé a pris la main (sans JavaScript, il reste visible et utilisable). */
+.sf .sf-store-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.sf-guided{display:flex;flex-direction:column;gap:6px}
+.sf-palette{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0}
+.sf-swatch{--sw:#888;width:28px;height:28px;border-radius:7px;border:2px solid var(--line-2);
+  background:var(--sw);cursor:pointer;padding:0;line-height:1;transition:transform .08s}
+.sf-swatch:hover{transform:translateY(-1px)}
+.sf-swatch.on{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-soft,rgba(91,141,255,.25))}
+.sf-swatch.sf-none{background:var(--surface-2);color:var(--txt-2);font-size:14px}
+.sf-decos{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px}
+.sf-deco{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.sf-preview{margin:6px 0 2px;padding:7px 10px;border:1px dashed var(--line-2);border-radius:8px;
+  background:var(--surface-2);min-height:34px;font-size:14px}
+.sf-warn{margin:6px 0 2px;font-size:12.5px;color:var(--warn-txt,#8a6100);
+  background:var(--warn-bg,#fff8e1);border:1px solid var(--warn-line,#d9a406);
+  border-radius:8px;padding:6px 9px}
+.sf-toggle{align-self:flex-start;margin-top:4px}
+@media (max-width:560px){.sf-swatch{width:32px;height:32px}}

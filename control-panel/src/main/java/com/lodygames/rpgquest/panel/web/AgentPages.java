@@ -3098,8 +3098,12 @@ public final class AgentPages {
         sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
         sb.append("<label>Locuteur</label><input type=\"text\" name=\"speaker\" value=\"")
                 .append(Http.esc(speaker)).append("\" maxlength=\"128\">");
-        sb.append("<label>Texte (MiniMessage autorisé)</label><input type=\"text\" name=\"text\" value=\"")
-                .append(Http.esc(text)).append("\" maxlength=\"512\">");
+        // Issue #195 : même composant que les noms de mobs — couleur au clic, styles, aperçu.
+        sb.append(StyleField.render("text", "dlg-node-" + Http.esc(nodeId).replaceAll("[^a-zA-Z0-9_-]", "-"),
+                "Texte du nœud", text, false,
+                "Réplique affichée au joueur. Choisir couleur et styles ci-dessus — aucun code à "
+                + "écrire. Un texte déjà composé de <strong>plusieurs styles</strong> est conservé "
+                + "tel quel et n'est jamais simplifié sans action explicite."));
         sb.append(mutationConsent("dialogue.node.update", "",
                 "Met à jour le locuteur et le texte de ce nœud. Les choix du nœud sont conservés. Modification réversible."));
         sb.append("<button class=\"btn\" type=\"submit\">Enregistrer le nœud</button></form>");
@@ -3166,8 +3170,8 @@ public final class AgentPages {
         sb.append("<label>Id du nœud (minuscules, « _ - »)</label><input type=\"text\" name=\"node_id\" "
                 + "pattern=\"[a-z0-9_][a-z0-9_-]{0,63}\" placeholder=\"farewell\">");
         sb.append("<label>Locuteur</label><input type=\"text\" name=\"speaker\" maxlength=\"128\" placeholder=\"Garde\">");
-        sb.append("<label>Texte du nœud (MiniMessage autorisé)</label><input type=\"text\" name=\"text\" "
-                + "maxlength=\"512\" placeholder=\"&lt;gray&gt;À bientôt.&lt;/gray&gt;\">");
+        sb.append(StyleField.render("text", "dlg-newnode-text", "Texte du nœud", "", false,
+                "Réplique affichée au joueur. Choisir couleur et styles ci-dessus — aucun code à écrire."));
         sb.append(mutationConsent("dialogue.node.create", "",
                 "Ajoute un nœud simple au dialogue. Réversible."));
         sb.append("<button class=\"btn\" type=\"submit\">Ajouter le nœud</button></form>");
@@ -3931,11 +3935,13 @@ public final class AgentPages {
                 + "ou « ZOMBIE » filtre. Les bases passives (PIG, CHICKEN, FROG…) sont autorisées — sans "
                 + "capacité agressive ajoutée, un tel profil reste <strong>aussi passif que la base "
                 + "vanilla</strong> (rien ne le rend hostile implicitement)."));
-        sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-name\">Nom affiché</label>")
-                .append("<input class=\"form-control\" id=\"").append(uid).append("-name\" type=\"text\" name=\"display_name\" "
-                        + "maxlength=\"128\" value=\"").append(Http.esc(str(existing == null ? null : existing.get("displayName"))))
-                .append("\" placeholder=\"Exemple : <red>Roi des Marais</red>\" required>"
-                        + "<div class=\"form-text\">MiniMessage accepté — c'est ce qui colore le nom.</div></div>");
+        // Issue #195 : couleur au clic + cases de style + aperçu. MiniMessage reste le format
+        // stocké, mais il n'est plus nécessaire d'en écrire pour un usage courant.
+        sb.append(StyleField.render("display_name", uid + "-name", "Nom affiché",
+                str(existing == null ? null : existing.get("displayName")), true,
+                "Nom vu par les joueurs. Choisir une couleur et des styles ci-dessus : "
+                + "aucun code à écrire. Un nom déjà écrit avec <strong>plusieurs styles</strong> "
+                + "est conservé tel quel et n'est jamais simplifié sans action explicite."));
         sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" role=\"switch\" "
                 + "id=\"").append(uid).append("-en\" name=\"enabled\" value=\"true\"")
                 .append(!update || Boolean.TRUE.equals(existing.get("enabled")) ? " checked" : "")

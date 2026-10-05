@@ -58,6 +58,11 @@ public enum AgentActionType {
      * quête et les récompenses d'objet — lecture seule, aucun effet de bord.
      */
     ITEM_CATALOGS("item.catalogs"),
+    /**
+     * Issue #194 : supprime la définition d'une quête ou d'une story sur le serveur, avec
+     * sauvegarde. Jamais de cascade, jamais de progression joueur touchée.
+     */
+    CONTENT_DEFINITION_DELETE("content.definition.delete"),
 
     PLAYER_ITEM_GIVE("player.item.give"),
     QUEST_START("quest.start"),

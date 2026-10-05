@@ -483,6 +483,82 @@ option honnête est une liste nommée et explicitement indicative.
 clairement qu'il s'agit d'une **liste de dépannage de 76 entrées**, pas du catalogue — et aucun
 avertissement de validation n'est émis sur un matériau absent de ce repli, qui serait un faux positif.
 
+
+#### Supprimer une quête ou une story (issue #194)
+
+**Défaut corrigé** : il n'existait aucun moyen de supprimer une quête ou une story depuis le panel.
+Un doublon créé par erreur restait là.
+
+Bouton **« Supprimer… »** sur les fiches de `/quests` et `/stories`, visible seulement avec la
+**permission dédiée `CONTENT_DELETE`** — accordée à `OWNER` et `ADMIN`, **volontairement refusée à
+`CONTENT_EDITOR`** : écrire du contenu est réversible, le détruire ne l'est pas de la même façon.
+
+Le bouton n'ouvre pas une suppression : il ouvre un **aperçu des conséquences**.
+
+##### Trois règles de conduite
+
+1. **Jamais de cascade.** Supprimer une quête ne supprime ni PNJ, ni dialogue, ni story. On
+   *retire la référence*, on ne détruit pas le contenu qui la portait.
+2. **Jamais de lien orphelin.** Si retirer une référence rendrait un contenu invalide, la
+   suppression est **bloquée**, avec le fichier, la ligne et la marche à suivre — plutôt que de
+   produire un fichier que le serveur refusera au chargement.
+3. **Jamais de progression joueur touchée.** La suppression est **éditoriale**. Les lignes de
+   progression existantes restent en base et deviennent sans objet. Réinitialiser un joueur est
+   une opération distincte, avec sa propre action et sa propre permission.
+
+##### Ce que l'aperçu affiche, et ce qui se passe à la confirmation
+
+| Référence trouvée | Traitement |
+|---|---|
+| **Prérequis** d'une autre quête | **retiré automatiquement** — un prérequis est facultatif, la quête reste valide |
+| Quête dans la **chaîne d'une story** | retirée de la chaîne… |
+| …sauf si c'était la **seule** quête de la story | **BLOQUE** : une story à chaîne vide est refusée par le moteur |
+| **Dialogue** (`QUEST_STATE`, `START_QUEST`…) | **BLOQUE**, avec le fichier et les **numéros de ligne**. Retirer l'action laisserait un choix sans effet ; retirer le choix change le dialogue. C'est une décision éditoriale, pas un nettoyage mécanique. |
+| Fichier référençant **non analysable** | **BLOQUE** : on ne réécrit jamais un fichier qu'on n'a pas su lire |
+| **PNJ donneur** | rien à nettoyer : le lien vit dans le champ `giver:` **de la quête supprimée**, et `NpcDefinition` ne référence aucune quête |
+| **Progression joueur** | jamais touchée (voir règle 3) |
+
+La **confirmation exige de retaper l'identifiant exact**. Un bouton « Confirmer » seul se clique
+par réflexe ; un identifiant se tape volontairement. Et tant qu'un blocage subsiste, **le
+formulaire de confirmation n'existe pas** : il n'y a rien à cliquer.
+
+##### Source et runtime, traités séparément
+
+Supprimer de la source ne retire pas le contenu du serveur : le fichier déployé reste chargé, et
+le contenu « réapparaît » au prochain rafraîchissement du catalogue. L'aperçu dit donc où le
+contenu existe, et à la confirmation :
+
+1. la source est nettoyée puis le fichier supprimé ;
+2. si le serveur le connaît, l'action agent **`content.definition.delete`** est enfilée. Côté
+   serveur, le fichier est retrouvé par l'**identifiant déclaré dedans** (jamais par un nom de
+   fichier deviné), sauvegardé, supprimé, puis les définitions sont **relues** — sans redémarrage.
+
+**Exemples embarqués** : les 9 quêtes et la story d'exemple livrées dans le JAR sont **recréées au
+démarrage** si le fichier manque. L'aperçu le signale explicitement : la suppression ne devient
+définitive qu'après avoir reconstruit et redéployé le plugin depuis la source sans elles. Ce n'est
+pas un blocage — on doit pouvoir retirer un exemple — mais ce n'est jamais passé sous silence. Un
+test de cohérence du dépôt compare la liste du panel aux `BUNDLED_EXAMPLES` réelles du plugin, donc
+une dérive est détectée au lieu d'être subie.
+
+##### Sauvegarde et échec partiel
+
+Tout fichier touché — celui qui part **et** ceux qui sont réécrits — est copié **avant** toute
+écriture, sous un horodatage commun, dans `/var/lib/plugadmin/content-backups/<horodatage>/`.
+Hors du dépôt Git et hors du JAR, délibérément : des sauvegardes sous `src/main/resources/`
+entreraient dans le plugin construit et saliraient le working tree, ce qui bloquerait les scripts
+de déploiement.
+
+L'ordre d'exécution est choisi pour que le contenu visé soit toujours récupérable :
+
+1. tout sauvegarder ;
+2. réécrire les références — en cas d'échec, les réécritures déjà faites sont **restaurées** et on
+   s'arrête **avant** toute suppression ;
+3. supprimer le fichier visé **en dernier**, car c'est l'étape irréversible.
+
+Si le fichier a changé entre l'aperçu et la confirmation, la suppression est **refusée** (conflit
+de version) : on ne détruit pas un contenu que l'opérateur n'a jamais vu. La page de résultat cite
+toujours le chemin de sauvegarde, pour qu'une restauration ne se devine pas.
+
 - **Chaîne de quêtes d'une story** : une story est une liste **ordonnée** de quêtes existantes
   (modèle moteur : `id`, `name`, `secret`, `questIds` — rien d'autre). La sélection d'une quête
   est recherchable **par titre humain (« Premiers pas ») ou par id technique (« first_steps »)** :

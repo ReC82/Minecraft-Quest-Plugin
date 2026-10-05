@@ -44,6 +44,32 @@ class AgentActionExecutorTest {
     // ---- Whitelist + player.variable.get (issue #51) ---------------------------------------
 
     @Test
+    void contentDeleteRejectsAnythingButQuestsAndStories() {
+        for (String kind : new String[] {"dialogues", "npcs", "..", ""}) {
+            AgentActionOutcome outcome = run(new AgentAction("cd1", "content.definition.delete",
+                    Map.of("kind", kind, "id", "test_cible")));
+            assertEquals(AgentActionOutcome.REJECTED, outcome.status(), "type accepté à tort : " + kind);
+        }
+    }
+
+    @Test
+    void contentDeleteRequiresAnIdentifier() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("cd2", "content.definition.delete",
+                        Map.of("kind", "quests"))).status());
+    }
+
+    @Test
+    void contentDeletePassesTheValidatedParametersThrough() {
+        AgentActionOutcome outcome = run(new AgentAction("cd3", "content.definition.delete",
+                Map.of("kind", "stories", "id", "rpgquest:test_saga")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals("stories", actions.lastDeleteKind);
+        assertEquals("rpgquest:test_saga", actions.lastDeleteId);
+    }
+
+    @Test
     void itemCatalogsReportsTheRealMaterialsAndWhatCannotBeAnItem() {
         AgentActionOutcome outcome = run(new AgentAction("ic1", "item.catalogs", Map.of()));
 
@@ -712,6 +738,18 @@ class AgentActionExecutorTest {
                     List.of("ZOMBIE", "CREEPER"), List.of("FLAME", "DUST"),
                     List.of("ENTITY_CREEPER_PRIMED"), List.of("PLAINS", "SWAMP"),
                     List.of("wild"), "wild", List.of("DUST")));
+        }
+
+        /** Mémorise l'appel pour vérifier que l'exécuteur transmet bien ce qu'il a validé. */
+        String lastDeleteKind;
+        String lastDeleteId;
+
+        @Override
+        public CompletableFuture<MutationResult> contentDefinitionDelete(String kind, String id) {
+            lastDeleteKind = kind;
+            lastDeleteId = id;
+            return CompletableFuture.completedFuture(
+                    MutationResult.of(true, "DELETED", "Fichier supprimé du serveur."));
         }
 
         @Override

@@ -267,6 +267,22 @@ public interface AgentActions {
                             String minecraftVersion, int legacyExcluded) {
     }
 
+    /**
+     * Issue #194 — supprime la définition d'une quête ou d'une story <strong>sur le serveur</strong>,
+     * avec sauvegarde horodatée du fichier, puis relit les définitions.
+     *
+     * <p>Sans cette opération, supprimer un contenu de la source éditable ne le retire pas du
+     * serveur : le fichier déployé reste chargé et le contenu réapparaît au prochain
+     * rafraîchissement du catalogue. C'était le symptôme rapporté.</p>
+     *
+     * <p>Ne touche <strong>aucune progression de joueur</strong> : la suppression est éditoriale.
+     * Ne supprime rien d'autre — ni PNJ, ni dialogue, ni les quêtes qu'une story enchaînait.</p>
+     *
+     * @param kind {@code quests} ou {@code stories}
+     * @param id   identifiant déclaré dans le fichier, avec ou sans le namespace {@code rpgquest:}
+     */
+    CompletableFuture<MutationResult> contentDefinitionDelete(String kind, String id);
+
     CompletableFuture<MutationResult> citizensRename(String npcId, String newName);
 
     /**

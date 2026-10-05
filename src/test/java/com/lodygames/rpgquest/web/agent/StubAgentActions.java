@@ -84,6 +84,11 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<MutationResult> contentDefinitionDelete(String kind, String id) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<ItemCatalogsView> itemCatalogs() {
         return CompletableFuture.completedFuture(new ItemCatalogsView(
                 java.util.List.of(), java.util.List.of(), "", 0));

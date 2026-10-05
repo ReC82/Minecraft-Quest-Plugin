@@ -92,6 +92,15 @@ public final class StoryService implements PluginService {
         return registry.stories();
     }
 
+    /**
+     * Relit les définitions de stories depuis le disque (issue #194) — nécessaire après une
+     * suppression de fichier côté serveur, sans quoi la story resterait en mémoire jusqu'au
+     * prochain redémarrage et semblerait n'avoir jamais été supprimée.
+     */
+    public com.lodygames.rpgquest.story.StoryLoadReport reloadDefinitions() {
+        return registry.reload();
+    }
+
     public record StoryInfo(StoryDefinition story, StoryState state, int currentIndex) {
     }
 

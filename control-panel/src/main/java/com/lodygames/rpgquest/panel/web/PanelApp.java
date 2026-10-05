@@ -73,6 +73,7 @@ public final class PanelApp {
     private final NotificationCenter notifications;
     private final ContentWorkspace contentWorkspace;
     private final ContentEditorPages contentEditor;
+    private final ContentDeletionPages contentDeletion;
     private final ContentExportPages contentExportPages;
     private final com.lodygames.rpgquest.panel.diag.DiagnosticsService diagnostics;
 
@@ -96,11 +97,22 @@ public final class PanelApp {
         this.agentRegistry = new AgentRegistry(config.agents().agents());
         this.contentWorkspace = new ContentWorkspace(
                 config.contentRepoDir() == null || config.contentRepoDir().isBlank()
-                        ? null : Path.of(config.contentRepoDir()));
+                        ? null : Path.of(config.contentRepoDir()),
+                // Sauvegardes de suppression (#194) à côté de la base du panel, donc HORS du dépôt
+                // Git et hors du JAR : les mettre sous src/main/resources/ les embarquerait dans
+                // le plugin construit et salirait le working tree, ce qui bloque les déploiements.
+                config.panelDbPath() == null || config.panelDbPath().isBlank() ? null
+                        : Path.of(config.panelDbPath()).toAbsolutePath().getParent()
+                                .resolve("content-backups"));
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
         this.notifications = new NotificationCenter(agentStore, agentRegistry);
         this.contentEditor = new ContentEditorPages(contentWorkspace);
+        // Issue #194 : suppression de contenu, aperçu + confirmation. Partage l'espace de travail
+        // et le catalogue source, donc voit exactement ce que l'éditeur voit.
+        this.contentDeletion = new ContentDeletionPages(contentWorkspace,
+                new com.lodygames.rpgquest.panel.content.ContentDeletionAnalyzer(contentWorkspace,
+                        new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace)));
         this.contentExportPages = new ContentExportPages(agentStore, config.agents().defaultAgentId());
         this.diagnostics = new com.lodygames.rpgquest.panel.diag.DiagnosticsService(
                 agentStore, config.agents().thresholds());
@@ -150,6 +162,9 @@ public final class PanelApp {
                 Permission.STORY_CONTENT_WRITE, "EDIT"));
         route("/stories/save", exchange -> handleContentEditor(exchange, "stories", "/stories",
                 Permission.STORY_CONTENT_WRITE, "SAVE"));
+        // Issue #194 : GET = aperçu des conséquences, POST = application après confirmation tapée.
+        route("/quests/delete", exchange -> handleContentDelete(exchange, "quests"));
+        route("/stories/delete", exchange -> handleContentDelete(exchange, "stories"));
         route("/npcs", exchange -> handleBusinessPage(exchange, "/npcs", "PNJ",
                 Permission.NPC_READ, agentPages::npcs));
         route("/travel", exchange -> handleBusinessPage(exchange, "/travel", "Réseau de voyage",
@@ -682,6 +697,88 @@ public final class PanelApp {
         String back = "/diagnostics?agent=" + enc(agentId);
         Http.redirect(exchange, firstId == null ? back + "&err=" + enc("Aucun relevé autorisé pour votre rôle.")
                 : back + "&toast=" + enc(firstId));
+    }
+
+    // ---- Suppression de contenu (issue #194) ----------------------------------------------
+
+    /**
+     * Suppression d'une quête ou d'une story.
+     *
+     * <p>{@code GET} affiche l'aperçu des conséquences ; {@code POST} applique, et seulement si
+     * l'identifiant a été <strong>retapé</strong>. Après une suppression source réussie, la
+     * suppression de la copie serveur est enfilée comme action agent — sans quoi le contenu
+     * resterait chargé et donnerait l'impression de réapparaître.</p>
+     */
+    private void handleContentDelete(HttpExchange exchange, String kind) throws IOException {
+        String base = "quests".equals(kind) ? "/quests" : "/stories";
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.role(), Permission.CONTENT_DELETE)) {
+            forbidden(exchange, session, base);
+            return;
+        }
+
+        String agentId = config.agents().defaultAgentId();
+        boolean post = "POST".equalsIgnoreCase(exchange.getRequestMethod());
+        String slug;
+        String typed = null;
+        if (post) {
+            Map<String, String> form = Http.formBody(exchange);
+            if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+                Http.html(exchange, 403, Layout.bare("CSRF",
+                        "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+                return;
+            }
+            slug = form.getOrDefault("slug", "").trim();
+            typed = form.getOrDefault(ContentDeletionPages.CONFIRM_FIELD, "");
+        } else {
+            slug = Http.query(exchange).getOrDefault("slug", "").trim();
+        }
+
+        boolean runtimePresent = agentPages.runtimeKnowsContent(agentId, kind, slug);
+        // #194 : sans relevé, « le serveur ne connaît pas ce contenu » serait une affirmation
+        // fausse — on ne lui a jamais demandé. L'aperçu doit dire la différence.
+        boolean listingAvailable = agentPages.runtimeListingAvailable(agentId, kind);
+        String title = "quests".equals(kind) ? "Supprimer une quête" : "Supprimer une story";
+
+        if (!post) {
+            Http.html(exchange, 200, renderPage(title, session, base,
+                    contentDeletion.preview(kind, slug, runtimePresent, listingAvailable,
+                            session.csrfToken(), null)));
+            return;
+        }
+
+        var plan = contentDeletion.plan(kind, slug, runtimePresent);
+        if (!ContentDeletionPages.confirmationMatches(plan, typed)) {
+            // Confirmation absente ou erronée : on réaffiche l'aperçu, sans rien toucher.
+            Http.html(exchange, 200, renderPage(title, session, base,
+                    contentDeletion.preview(kind, slug, runtimePresent, listingAvailable,
+                            session.csrfToken(),
+                            "Confirmation incorrecte : il faut retaper exactement l'identifiant. "
+                                    + "Aucune modification n'a été faite.")));
+            return;
+        }
+
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        var result = contentDeletion.apply(kind, slug, runtimePresent, typed);
+        boolean queued = false;
+        if (result != null && result.ok() && runtimePresent) {
+            agentStore.createAction(agentId, "content.definition.delete",
+                    Map.of("kind", kind, "id", plan.plainId()), session.username());
+            queued = true;
+        }
+        audit.record(session.username(), kind + ".content.delete", base + "/" + slug,
+                result != null && result.ok() ? "OK" : "REFUSED",
+                result == null ? "confirmation invalide" : result.code(), rid);
+        LOG.log(System.Logger.Level.INFO, "event=content_delete rid=" + rid + " kind=" + kind
+                + " id=" + plan.plainId() + " ok=" + (result != null && result.ok())
+                + " runtime_queued=" + queued + " by=" + session.username());
+
+        Http.html(exchange, 200, renderPage(title, session, base,
+                contentDeletion.result(kind, plan.plainId(), result, queued)));
     }
 
     // ---- Gestion des utilisateurs (issue #50) --------------------------------------------

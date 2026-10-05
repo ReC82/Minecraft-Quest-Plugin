@@ -36,6 +36,13 @@ public enum Permission {
     CONTENT_READ,
     /** Exporter le contenu déclaratif en content pack versionné (issue #108). Lecture — jamais d'écriture. */
     CONTENT_EXPORT,
+    /**
+     * Supprimer une quête ou une story (issue #194). Permission <strong>dédiée</strong>, et
+     * volontairement absente du rôle « Éditeur de contenu » : écrire et corriger du contenu est un
+     * geste réversible, le détruire ne l'est pas de la même façon. Un éditeur peut vider ou
+     * renommer ; seul un administrateur supprime.
+     */
+    CONTENT_DELETE,
     DOCS_READ,
     DIAGNOSTICS_READ,
     AUDIT_READ,

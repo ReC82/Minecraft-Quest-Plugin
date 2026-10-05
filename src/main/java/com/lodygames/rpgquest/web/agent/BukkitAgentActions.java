@@ -151,6 +151,8 @@ public final class BukkitAgentActions implements AgentActions {
     private final SpecialMobDefinitionStore mobDefinitionStore;
     private final MobSpawnSettingsStore mobSpawnSettingsStore;
     private final Supplier<String> wildWorldSupplier;
+    /** Issue #194 — suppression d'une définition de quête/story sur le serveur, avec sauvegarde. */
+    private final com.lodygames.rpgquest.content.ContentDefinitionDeleter contentDeleter;
 
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
                               QuestProgressEngine questProgressEngine, StoryService storyService,
@@ -186,6 +188,12 @@ public final class BukkitAgentActions implements AgentActions {
         this.mobDefinitionStore = mobDefinitionStore;
         this.mobSpawnSettingsStore = mobSpawnSettingsStore;
         this.wildWorldSupplier = wildWorldSupplier;
+        // Issue #194 : dossiers réels du plugin, et sauvegardes HORS des dossiers de contenu pour
+        // ne jamais être relues comme des définitions.
+        java.nio.file.Path data = plugin.getDataFolder().toPath();
+        this.contentDeleter = new com.lodygames.rpgquest.content.ContentDefinitionDeleter(
+                data.resolve("quests"), data.resolve("stories"),
+                data.resolve("content-backups"));
     }
 
     // ---- Lectures -------------------------------------------------------------------------------
@@ -632,6 +640,41 @@ public final class BukkitAgentActions implements AgentActions {
      * tout de même faite sur le thread principal, parce que l'énumération des matériaux fait partie
      * de l'API Bukkit et que rien ne garantit sa consultation hors du thread serveur.</p>
      */
+    /**
+     * Issue #194 — suppression de la copie serveur d'une quête ou d'une story.
+     *
+     * <p>La suppression du fichier est faite hors du thread principal (entrée/sortie disque), mais
+     * la <strong>relecture</strong> des définitions revient sur le thread principal : recharger les
+     * quêtes rebranche des écouteurs d'événements, ce qui n'est pas permis ailleurs.</p>
+     *
+     * <p>Aucune progression de joueur n'est touchée, et rien d'autre n'est supprimé — ni PNJ, ni
+     * dialogue, ni les quêtes qu'une story enchaînait.</p>
+     */
+    @Override
+    public CompletableFuture<MutationResult> contentDefinitionDelete(String kind, String id) {
+        return CompletableFuture.supplyAsync(() -> contentDeleter.delete(kind, id))
+                .thenCompose(result -> {
+                    if (!result.ok()) {
+                        return done(MutationResult.of(false, result.code(), result.message()));
+                    }
+                    return onMain(() -> {
+                        String reloaded;
+                        if ("quests".equals(kind)) {
+                            // Le rebuild du moteur de quêtes (dé)branche des listeners.
+                            questEngine.reload();
+                            questProgressEngine.reloadQuestDefinitions();
+                            reloaded = questEngine.quests().size() + " quête(s) rechargée(s)";
+                        } else {
+                            reloaded = storyService.reloadDefinitions().loaded().size()
+                                    + " story(ies) rechargée(s)";
+                        }
+                        return done(new MutationResult(true, "DELETED",
+                                result.message() + " " + reloaded + ".",
+                                List.of(kind + "/" + result.file(), "sauvegarde: " + result.backupPath())));
+                    });
+                });
+    }
+
     @Override
     public CompletableFuture<ItemCatalogsView> itemCatalogs() {
         return onMain(() -> {

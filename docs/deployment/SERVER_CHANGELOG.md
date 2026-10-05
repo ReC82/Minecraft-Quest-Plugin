@@ -3950,3 +3950,78 @@ Aucune. Le relevé est en lecture seule et ne touche aucune donnée.
 TC-242 (nouveau) — entièrement vérifiable **au navigateur**, sans Minecraft.
 
 Rollback : `scripts/rollback-verygames.sh --latest` ; `scripts/plugadmin/rollback.sh app`.
+
+## 2026-10-05 (lot 7) - #194 : suppression de quêtes et stories avec aperçu et confirmation
+
+### Changement
+
+Bouton **« Supprimer… »** sur les fiches de `/quests` et `/stories`, derrière une permission
+**dédiée** (`CONTENT_DELETE`). Le bouton ouvre un **aperçu des conséquences** ; la confirmation
+exige de **retaper l'identifiant**. Les références sont nettoyées, jamais mises en cascade ; une
+référence non traitable **bloque** ; aucune progression de joueur n'est touchée.
+
+### Action serveur
+
+**Remplacement du JAR RPGQuest uniquement**, puis **un seul redémarrage**. Le JAR est nécessaire :
+la nouvelle action `content.definition.delete` supprime la copie serveur du contenu, sans quoi
+celui-ci resterait chargé et « réapparaîtrait » au prochain rafraîchissement du catalogue — c'était
+le symptôme rapporté.
+
+### Sauvegarde préalable
+
+JAR précédent sauvegardé automatiquement par `scripts/deploy-verygames.sh` (voir le résumé du
+déploiement ci-dessous).
+
+### Déploiement / Exécution réelle
+
+- **Cartographie des références vérifiée dans le code, pas supposée.** Le point le moins évident :
+  **un PNJ ne référence aucune quête**. `NpcDefinition` ne porte que `dialogueId`, et le lien
+  quête → PNJ vit dans le champ `giver:` **de la quête elle-même** (`QuestGiverStore` écrit dans le
+  fichier de quête). Supprimer une quête n'orpheline donc aucun PNJ. Les vraies dépendances sont
+  les **prérequis** d'autres quêtes, les **chaînes de story**, et les **dialogues**.
+- **Jamais de cascade** : les fichiers référençants sont **réécrits**, jamais supprimés.
+- **Jamais de lien orphelin** : blocage avec fichier, **numéros de ligne** et marche à suivre pour
+  un dialogue (`QUEST_STATE` / `START_QUEST`) ; blocage si une story perdrait sa dernière quête
+  (chaîne vide refusée par le moteur) ; blocage si un fichier référençant n'est pas analysable ;
+  blocage si l'espace de travail est en lecture seule ou si aucune sauvegarde n'est possible. Un
+  plan bloqué **n'écrit rien** et **n'affiche aucun formulaire** de confirmation.
+- **Progression joueur jamais touchée**, et la politique est écrite dans l'aperçu à chaque fois :
+  suppression **éditoriale**, les lignes restent en base et deviennent sans objet ; le reset joueur
+  est une opération distincte avec sa propre permission.
+- **Permission dédiée** `CONTENT_DELETE` : `OWNER` et `ADMIN` oui, **`CONTENT_EDITOR` non** —
+  écrire du contenu est réversible, le détruire ne l'est pas de la même façon.
+- **Source et runtime séparés.** Côté serveur, le fichier est retrouvé par l'**identifiant déclaré
+  dedans**, jamais par un nom de fichier deviné (un nom n'a pas à correspondre à l'id), sauvegardé,
+  supprimé, puis les définitions sont **relues** — donc sans redémarrage.
+- **Piège des exemples embarqués traité.** Les 9 quêtes et la story d'exemple du JAR sont
+  **recréées au démarrage** si le fichier manque. L'aperçu le dit, avec la conséquence :
+  reconstruire et redéployer le plugin pour que la suppression soit définitive. Ce n'est pas un
+  blocage, mais ce n'est jamais passé sous silence. Un test de cohérence du dépôt confronte la
+  copie du panel aux `BUNDLED_EXAMPLES` réelles du plugin.
+- **Sauvegarde et échec partiel.** Tout fichier touché est copié **avant** toute écriture, sous un
+  horodatage commun, dans `/var/lib/plugadmin/content-backups/`. Ordre d'exécution : sauvegarder,
+  réécrire les références (échec ⇒ **restauration** et arrêt **avant** toute suppression),
+  supprimer en dernier car c'est l'étape irréversible. Un conflit de version entre l'aperçu et la
+  confirmation **refuse** la suppression : on ne détruit pas un contenu que l'opérateur n'a jamais vu.
+- **Décision d'emplacement corrigée en cours de route** : les sauvegardes allaient d'abord sous
+  `src/main/resources/.plugadmin-backups/`. C'était faux pour deux raisons — elles seraient entrées
+  dans le **JAR construit**, et elles auraient **sali le working tree Git**, ce qui bloque
+  `deploy-verygames.sh` (il refuse un arbre non propre).
+
+### Redémarrage requis
+
+**Oui — un seul.**
+
+### Migration automatique
+
+Aucune. Aucune donnée de joueur n'est lue ni écrite par cette fonctionnalité.
+
+### Validation
+
+TC-243 (nouveau) — parcours navigateur complet, **sur du contenu de test préfixé `tc243_`
+uniquement**. Le test précise de ne pas le dérouler sur `crystal_hunt`, `first_steps`, les quêtes
+du Garde ou `main_story`.
+
+Rollback : `scripts/rollback-verygames.sh --latest` ; `scripts/plugadmin/rollback.sh app`.
+Un contenu supprimé par erreur se restaure depuis `/var/lib/plugadmin/content-backups/<horodatage>/`
+(source) et `plugins/RPGQuest/content-backups/<horodatage>/` (serveur).

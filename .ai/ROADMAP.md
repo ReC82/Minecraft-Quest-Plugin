@@ -328,6 +328,76 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-05 (lot 7 — #194 suppression de quêtes et stories avec aperçu et confirmation)
+Branche de départ: feature/169-special-mobs-boss @ 9d5d547 (lot 6, #196)
+Étape de départ: demande explicite — ajouter la suppression dans le panel avec aperçu des
+  conséquences et confirmation, traiter les liens PNJ/dialogues/stories/prérequis SANS supprimer
+  les contenus associés ni effacer les progressions, bloquer si des références ne peuvent pas être
+  traitées proprement. Tests uniquement sur du contenu de test.
+Étapes terminées:
+(1) DONE — Cartographie réelle des références, vérifiée dans le code et non supposée :
+  * prérequis d'autres quêtes -> source quests/*.yml (retirable sans casser : un prérequis est
+    facultatif) ;
+  * chaîne d'une story -> source stories/*.yml (retirable, SAUF si c'était la seule quête) ;
+  * dialogues -> conditions QUEST_STATE et actions START_QUEST/ADVANCE_QUEST/TURN_IN_QUEST ;
+  * PNJ -> AUCUNE référence sortante : NpcDefinition ne porte que dialogueId, et le lien
+    quête->PNJ vit dans le champ giver: DE LA QUÊTE (QuestGiverStore écrit dans le fichier de
+    quête). Supprimer une quête n'orpheline donc aucun PNJ — constat vérifié, pas déduit.
+(2) DONE — Jamais de cascade : les fichiers référençants sont RÉÉCRITS, jamais supprimés.
+(3) DONE — Jamais de lien orphelin : blocage avec fichier, NUMÉROS DE LIGNE et marche à suivre pour
+  un dialogue ; blocage si une story perdrait sa dernière quête (chaîne vide refusée par le
+  moteur) ; blocage si un fichier référençant n'est pas analysable (on ne réécrit jamais ce qu'on
+  n'a pas su lire) ; blocage si l'espace de travail est en lecture seule ou sans sauvegarde
+  possible. Un plan bloqué n'écrit RIEN et n'affiche aucun formulaire de confirmation.
+(4) DONE — Progression joueur jamais touchée, et la politique est ÉCRITE dans l'aperçu à chaque
+  fois : suppression éditoriale, les lignes restent en base et deviennent sans objet, le reset
+  joueur est une opération distincte avec sa propre permission.
+(5) DONE — Confirmation par identifiant RETAPÉ (un bouton seul se clique par réflexe).
+  Permission DÉDIÉE CONTENT_DELETE, accordée à OWNER et ADMIN, volontairement REFUSÉE à
+  CONTENT_EDITOR : écrire est réversible, détruire ne l'est pas de la même façon.
+(6) DONE — Source ET runtime traités séparément. Nouvelle action plugin
+  `content.definition.delete` : le fichier serveur est retrouvé par l'IDENTIFIANT DÉCLARÉ DEDANS
+  (jamais par un nom de fichier deviné — le nom n'a pas à correspondre à l'id), sauvegardé,
+  supprimé, puis les définitions sont RELUES, donc sans redémarrage. Sans cela, le contenu restait
+  chargé et « réapparaissait » au rafraîchissement du catalogue : c'était le symptôme rapporté.
+(7) DONE — Piège des exemples embarqués traité explicitement : les 9 quêtes et la story d'exemple
+  du JAR sont RECRÉÉES AU DÉMARRAGE si le fichier manque. L'aperçu le dit, avec la conséquence
+  (reconstruire et redéployer le plugin pour que ce soit définitif). Ce n'est pas un blocage — on
+  doit pouvoir retirer un exemple — mais jamais passé sous silence. Un test de cohérence du dépôt
+  confronte la copie du panel aux BUNDLED_EXAMPLES réelles du plugin : la dérive est détectée.
+(8) DONE — Sauvegarde et rollback. Tout fichier touché est copié AVANT toute écriture sous un
+  horodatage commun. Ordre : sauvegarder, réécrire les références (échec -> restauration et arrêt
+  AVANT toute suppression), supprimer en dernier car c'est l'étape irréversible. Conflit de version
+  entre l'aperçu et la confirmation -> refus, on ne détruit pas un contenu jamais vu.
+(9) DÉCISION D'EMPLACEMENT, corrigée en cours de route : les sauvegardes allaient d'abord sous
+  src/main/resources/.plugadmin-backups/. C'était faux pour deux raisons — elles seraient entrées
+  dans le JAR construit, et elles auraient sali le working tree Git, ce qui bloque
+  deploy-verygames.sh (il refuse un arbre non propre). Déplacées dans
+  /var/lib/plugadmin/content-backups/, à côté de la base du panel.
+Tests: suite complète des trois modules verte en un seul passage `./gradlew test build` —
+  1458 tests plugin (34 ignorés, limitations MockBukkit héritées), 476 control-panel (1 ignoré),
+  30 web-api, 0 échec, 0 erreur. 44 nouveaux cas : ContentDeletionAnalyzerTest (17),
+  ContentDeletionExecutorTest (6, dont conflit de version avec ROLLBACK vérifié sur disque),
+  ContentDeletionPagesTest (9), ContentDefinitionDeleterTest (9, plugin),
+  BundledExamplesDriftTest (3), AgentActionExecutorTest (+3). Trois défauts de MES PROPRES tests
+  trouvés et corrigés à la bonne couche : deux fixtures écrites à la main que SourceCatalog jugeait
+  non analysables (le test vérifiait donc autre chose que ce qu'il annonçait) et une assertion qui
+  ignorait l'échappement HTML de Http.esc.
+Branche finale: feature/169-special-mobs-boss (aucun merge).
+Dernier commit: COMMIT_PLACEHOLDER
+Build: vert.
+Déploiements: DEPLOY_PLACEHOLDER
+Tests manuels en attente: TC-243 — parcours navigateur complet, sur du contenu de test préfixé
+  « tc243_ » uniquement. Le test précise explicitement de NE PAS le dérouler sur crystal_hunt,
+  first_steps, les quêtes du Garde ou main_story.
+Blocages: aucun.
+Propreté: aucun contenu du propriétaire supprimé ni modifié. Les quêtes/stories de test éventuelles
+  sont préfixées et identifiables.
+Première étape à reprendre: vérifier TC-243 au navigateur, puis #108/#109 (recherche et filtres
+  d'export, import accessible avec aperçu/diff et choix de collision).
+```
+
+```text
 Date: 2026-10-05 (lot 6 — #196 catalogue complet des objets pour icônes et récompenses)
 Branche de départ: feature/169-special-mobs-boss @ 1ccde5e (lots 3 et 4 du même jour)
 Étape de départ: #202 confirmé fonctionnel par le propriétaire (test réel #207, Discord → GitHub

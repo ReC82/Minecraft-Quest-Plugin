@@ -38,10 +38,31 @@ public final class ContentWorkspace {
     private static final Pattern SLUG = Pattern.compile("[a-z0-9][a-z0-9_-]{0,63}");
 
     private final Path root;
+    private final Path backupRoot;
 
-    /** @param root racine du contenu (typiquement {@code <repo>/src/main/resources}) ; {@code null} = non configuré. */
+    /**
+     * @param root racine du contenu (typiquement {@code <repo>/src/main/resources}) ; {@code null}
+     *             = non configuré. Les sauvegardes vont alors à côté, dans un sous-dossier système.
+     */
     public ContentWorkspace(Path root) {
+        this(root, null);
+    }
+
+    /**
+     * @param backupRoot racine des sauvegardes (issue #194). <strong>Doit être hors du dépôt
+     *                   Git</strong> : écrire des sauvegardes sous {@code src/main/resources/} les
+     *                   ferait entrer dans le JAR construit <em>et</em> salirait le working tree,
+     *                   ce qui bloquerait les scripts de déploiement. {@code null} ⇒ pas de
+     *                   sauvegarde possible, et la suppression est alors refusée.
+     */
+    public ContentWorkspace(Path root, Path backupRoot) {
         this.root = root == null ? null : root.toAbsolutePath().normalize();
+        this.backupRoot = backupRoot == null ? null : backupRoot.toAbsolutePath().normalize();
+    }
+
+    /** Les sauvegardes sont-elles possibles ? Sans elles, aucune suppression n'est autorisée. */
+    public boolean backupsConfigured() {
+        return backupRoot != null;
     }
 
     public boolean configured() {
@@ -66,6 +87,18 @@ public final class ContentWorkspace {
         static WriteResult fail(String code, String message) {
             return new WriteResult(false, code, message, null, null);
         }
+    }
+
+    /**
+     * Sauvegarde d'un fichier, prise <strong>avant</strong> toute modification ou suppression
+     * (issue #194).
+     *
+     * @param repoPath   chemin d'origine, affichable
+     * @param backupPath chemin de la sauvegarde sur disque, à citer dans l'interface pour qu'une
+     *                   restauration soit possible sans deviner
+     * @param sha256     hash du contenu sauvegardé
+     */
+    public record Backup(String kind, String slug, String repoPath, Path backupPath, String sha256) {
     }
 
     public List<ContentFile> list(String kind) {
@@ -164,6 +197,121 @@ public final class ContentWorkspace {
         return new WriteResult(true, existsNow ? "UPDATED" : "CREATED",
                 existsNow ? "Contenu mis à jour dans la source." : "Contenu créé dans la source.",
                 repoPath(kind, slug), sha256(out));
+    }
+
+    // ---- sauvegarde et suppression (issue #194) ---------------------------------------------
+
+    /**
+     * Copie un fichier de contenu dans le dossier de sauvegardes, <strong>avant</strong> de le
+     * modifier ou de le supprimer.
+     *
+     * <p>Les sauvegardes vivent <strong>hors du dépôt</strong>, sous la racine passée au
+     * constructeur (en service : {@code /var/lib/plugadmin/content-backups/<horodatage>/}). Les
+     * écrire dans {@code src/main/resources/} les ferait entrer dans le JAR construit et salirait
+     * le working tree Git, ce qui bloquerait les scripts de déploiement.</p>
+     *
+     * @param stamp horodatage commun à toutes les sauvegardes d'une même opération, pour qu'on
+     *              puisse restaurer un ensemble cohérent et pas des morceaux de deux opérations
+     */
+    public Optional<Backup> backup(String kind, String slug, String stamp) {
+        Path file = resolve(kind, slug);
+        if (file == null || !Files.isRegularFile(file)) {
+            return Optional.empty();
+        }
+        Path dir = backupDir(stamp);
+        if (dir == null) {
+            return Optional.empty();
+        }
+        try {
+            Files.createDirectories(dir.resolve(kind));
+            Path target = dir.resolve(kind).resolve(slug + ".yml");
+            byte[] bytes = Files.readAllBytes(file);
+            Files.write(target, bytes);
+            return Optional.of(new Backup(kind, slug, repoPath(kind, slug), target, sha256(bytes)));
+        } catch (IOException e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Dossier de sauvegarde d'une opération, <strong>hors du dépôt Git</strong> (voir le
+     * constructeur). Un horodatage par opération : rien n'est jamais écrasé.
+     */
+    public Path backupDir(String stamp) {
+        if (backupRoot == null) {
+            return null;
+        }
+        String safe = stamp == null ? "" : stamp.replaceAll("[^0-9A-Za-z_-]", "");
+        return backupRoot.resolve(safe.isEmpty() ? "sans-horodatage" : safe);
+    }
+
+    /**
+     * Supprime un fichier de contenu de la source.
+     *
+     * <p>Le hash attendu est <strong>obligatoire</strong> : supprimer un fichier modifié depuis
+     * l'affichage de l'aperçu détruirait un contenu que l'opérateur n'a jamais vu. Dans ce cas on
+     * refuse, on ne devine pas.</p>
+     */
+    public WriteResult delete(String kind, String slug, String expectedSha) {
+        Path file = resolve(kind, slug);
+        if (file == null) {
+            return WriteResult.fail("INVALID", "Type ou identifiant de contenu invalide.");
+        }
+        if (!Files.isRegularFile(file)) {
+            return WriteResult.fail("NOT_FOUND", "Aucun fichier source « " + kind + "/" + slug
+                    + ".yml » : rien à supprimer dans la source.");
+        }
+        Path dir = file.getParent();
+        if (!Files.isWritable(dir)) {
+            return WriteResult.fail("READONLY", "Espace de travail en lecture seule : le service "
+                    + "PlugAdmin n'a pas les droits d'écriture sur « " + kind + "/ ».");
+        }
+        if (expectedSha == null || expectedSha.isBlank()) {
+            return WriteResult.fail("CONFLICT", "Suppression refusée sans hash de version : "
+                    + "recharger l'aperçu pour repartir de la version actuelle du fichier.");
+        }
+        String currentSha;
+        try {
+            currentSha = sha256(Files.readAllBytes(file));
+        } catch (IOException e) {
+            return WriteResult.fail("ERROR", "Lecture du fichier à supprimer impossible : " + e.getMessage());
+        }
+        if (!expectedSha.equals(currentSha)) {
+            return WriteResult.fail("CONFLICT", "Le fichier « " + slug + " » a été modifié depuis "
+                    + "l'affichage de l'aperçu. Suppression annulée — recharger pour revoir les "
+                    + "conséquences réelles.");
+        }
+        try {
+            Files.delete(file);
+        } catch (IOException e) {
+            return WriteResult.fail("ERROR", "Suppression impossible : " + e.getMessage());
+        }
+        return new WriteResult(true, "DELETED", "Fichier source supprimé.",
+                repoPath(kind, slug), currentSha);
+    }
+
+    /** Restaure un fichier depuis une sauvegarde. Sert au rollback d'une opération partielle. */
+    public WriteResult restore(Backup backup) {
+        Path file = resolve(backup.kind(), backup.slug());
+        if (file == null) {
+            return WriteResult.fail("INVALID", "Sauvegarde non restaurable : cible invalide.");
+        }
+        try {
+            Files.createDirectories(file.getParent());
+            byte[] bytes = Files.readAllBytes(backup.backupPath());
+            Path tmp = file.getParent().resolve("." + backup.slug() + ".yml.restore");
+            Files.write(tmp, bytes);
+            try {
+                Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomicUnsupported) {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return new WriteResult(true, "RESTORED", "Fichier restauré depuis la sauvegarde.",
+                    backup.repoPath(), sha256(bytes));
+        } catch (IOException e) {
+            return WriteResult.fail("ERROR", "Restauration impossible depuis "
+                    + backup.backupPath() + " : " + e.getMessage());
+        }
     }
 
     // ---- résolution de chemin (jamais un chemin brut du navigateur) --------------------------

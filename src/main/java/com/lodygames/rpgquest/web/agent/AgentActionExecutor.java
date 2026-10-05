@@ -102,6 +102,7 @@ public final class AgentActionExecutor {
                 case MOB_LIST -> mobList(action);
                 case MOB_CATALOGS -> mobCatalogs(action);
                 case ITEM_CATALOGS -> itemCatalogs(action);
+                case CONTENT_DEFINITION_DELETE -> contentDefinitionDelete(action);
                 case MOB_DEFINITION_CREATE -> mobDefinitionWrite(action, true);
                 case MOB_DEFINITION_UPDATE -> mobDefinitionWrite(action, false);
                 case MOB_DEFINITION_TOGGLE -> mobDefinitionToggle(action);
@@ -501,6 +502,29 @@ public final class AgentActionExecutor {
             return AgentActionOutcome.success(action.id(), String.valueOf(view.items().size()),
                     summary, details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code content.definition.delete} (#194) : supprime la définition d'une quête ou d'une story
+     * sur le serveur, avec sauvegarde, puis relit les définitions.
+     *
+     * <p>Le type de contenu est validé contre une liste fermée : aucun chemin, aucun nom de
+     * dossier ne vient du panel. L'identifiant est validé par le même motif que les autres
+     * actions de contenu.</p>
+     */
+    private CompletableFuture<AgentActionOutcome> contentDefinitionDelete(AgentAction action) {
+        String kind = action.param("kind");
+        if (!"quests".equals(kind) && !"stories".equals(kind)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « kind » attendu : « quests » ou « stories »."));
+        }
+        String id = firstNonBlank(action.param("id"), action.param("content_id"));
+        if (id == null || !RESOURCE_ID.matcher(id).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide."));
+        }
+        return actions.contentDefinitionDelete(kind, id).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
     private CompletableFuture<AgentActionOutcome> mobList(AgentAction action) {

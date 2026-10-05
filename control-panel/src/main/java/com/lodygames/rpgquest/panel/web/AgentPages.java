@@ -781,6 +781,8 @@ public final class AgentPages {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
         boolean canEditQuests = perms.can(session.role(), Permission.QUEST_CONTENT_WRITE);
+        // Issue #194 : permission DÉDIÉE, distincte de l'écriture de contenu.
+        boolean canDeleteContent = perms.can(session.role(), Permission.CONTENT_DELETE);
         sb.append(Ui.pageHeader("quests", "Quêtes",
                 "Catalogue des quêtes, état d'un joueur, et raccourcis d'administration "
                         + "(démarrer / compléter / réinitialiser).",
@@ -836,7 +838,7 @@ public final class AgentPages {
             int qi = 0;
             for (MergedRow mr : merged) {
                 sb.append(renderQuestAccordionItem(mr.data(), qi++, questTitles, knownQuestKeys, knownNpcKeys,
-                        canEditQuests, mr.state()));
+                        canEditQuests, canDeleteContent, mr.state()));
             }
             sb.append("</div>");
         }
@@ -865,7 +867,7 @@ public final class AgentPages {
      */
     private String renderQuestAccordionItem(Map<String, Object> qd, int idx, Map<String, String> questTitles,
                                             java.util.Set<String> knownQuestKeys, java.util.Set<String> knownNpcKeys,
-                                            boolean canEdit, CatalogState state) {
+                                            boolean canEdit, boolean canDelete, CatalogState state) {
         String id = str(qd.get("id"));
         String title = str(qd.get("title"));
         String category = str(qd.get("category"));
@@ -1019,13 +1021,23 @@ public final class AgentPages {
         }
 
         // ---- ACTIONS ----
-        if (canEdit) {
+        if (canEdit || canDelete) {
             String eslug = editSlug(id);
             if (!eslug.isEmpty()) {
                 sb.append(detailSection("target", "Actions"));
                 sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">");
-                sb.append("<a class=\"btn btn-sm btn-outline-primary\" href=\"/quests/edit/").append(Http.esc(eslug))
-                        .append("\">").append(Icons.icon("edit")).append("Modifier la quête</a>");
+                if (canEdit) {
+                    sb.append("<a class=\"btn btn-sm btn-outline-primary\" href=\"/quests/edit/")
+                            .append(Http.esc(eslug)).append("\">").append(Icons.icon("edit"))
+                            .append("Modifier la quête</a>");
+                }
+                if (canDelete) {
+                    // Lien vers l'APERÇU, jamais une suppression directe : rien ne se supprime
+                    // sans avoir vu les conséquences et retapé l'identifiant (#194).
+                    sb.append("<a class=\"btn btn-sm btn-outline-danger\" href=\"/quests/delete?slug=")
+                            .append(Http.esc(eslug)).append("\">").append(Icons.icon("trash"))
+                            .append("Supprimer…</a>");
+                }
                 sb.append("</div>");
             }
         }
@@ -1087,6 +1099,7 @@ public final class AgentPages {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
         boolean canEditStories = perms.can(session.role(), Permission.STORY_CONTENT_WRITE);
+        boolean canDeleteStories = perms.can(session.role(), Permission.CONTENT_DELETE);
         sb.append(Ui.pageHeader("stories", "Stories",
                 "Suites ordonnées de quêtes. Avancer d'une étape ou compléter toute la story.",
                 (canEditStories ? Ui.primaryLink("/stories/new", "plus", "Créer une story") : "")
@@ -1138,7 +1151,8 @@ public final class AgentPages {
             sb.append("<div class=\"accordion npc-accordion\" id=\"stories-accordion\">");
             int si = 0;
             for (MergedRow mr : merged) {
-                sb.append(renderStoryAccordionItem(mr.data(), si++, questTitles, storyQuestKeys, canEditStories, mr.state()));
+                sb.append(renderStoryAccordionItem(mr.data(), si++, questTitles, storyQuestKeys,
+                    canEditStories, canDeleteStories, mr.state()));
             }
             sb.append("</div>");
         }
@@ -1163,7 +1177,8 @@ public final class AgentPages {
      * {@code quest.list} a été chargé.
      */
     private String renderStoryAccordionItem(Map<String, Object> sd, int idx, Map<String, String> questTitles,
-                                            java.util.Set<String> storyQuestKeys, boolean canEdit, CatalogState state) {
+                                            java.util.Set<String> storyQuestKeys, boolean canEdit,
+                                            boolean canDelete, CatalogState state) {
         String id = str(sd.get("id"));
         String title = str(sd.get("title"));
         List<Object> steps = asList(sd.get("stepQuestIds"));
@@ -1249,13 +1264,21 @@ public final class AgentPages {
         }
 
         // ---- ACTIONS ----
-        if (canEdit) {
+        if (canEdit || canDelete) {
             String eslug = editSlug(id);
             if (!eslug.isEmpty()) {
                 sb.append(detailSection("target", "Actions"));
                 sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">");
-                sb.append("<a class=\"btn btn-sm btn-outline-primary\" href=\"/stories/edit/").append(Http.esc(eslug))
-                        .append("\">").append(Icons.icon("edit")).append("Modifier la story</a>");
+                if (canEdit) {
+                    sb.append("<a class=\"btn btn-sm btn-outline-primary\" href=\"/stories/edit/")
+                            .append(Http.esc(eslug)).append("\">").append(Icons.icon("edit"))
+                            .append("Modifier la story</a>");
+                }
+                if (canDelete) {
+                    sb.append("<a class=\"btn btn-sm btn-outline-danger\" href=\"/stories/delete?slug=")
+                            .append(Http.esc(eslug)).append("\">").append(Icons.icon("trash"))
+                            .append("Supprimer…</a>");
+                }
                 sb.append("</div>");
             }
         }
@@ -3552,6 +3575,41 @@ public final class AgentPages {
         return new com.lodygames.rpgquest.panel.content.RefData(
                 quests, npcs, worlds, questsKnown, npcDet.isPresent(), !worlds.isEmpty(),
                 npcNames, questNames, questOrigins, questPrereqs, itemCatalog(agentId));
+    }
+
+    /**
+     * Issue #194 — le dernier relevé du serveur connaît-il ce contenu ?
+     *
+     * <p>Sert à décider s'il faut aussi demander une suppression côté serveur. Lecture du dernier
+     * relevé réussi uniquement : aucune requête déclenchée, et surtout aucune supposition — un
+     * relevé absent répond « non », ce qui est honnête (on ne sait pas), et la page le dit.</p>
+     *
+     * @param kind {@code quests} ou {@code stories}
+     */
+    public boolean runtimeKnowsContent(String agentId, String kind, String plainId) {
+        String type = "quests".equals(kind) ? "quest.list" : "story.list";
+        String listKey = "quests".equals(kind) ? "quests" : "stories";
+        String wanted = QuestYaml.plainId(plainId == null ? "" : plainId.trim());
+        if (wanted.isEmpty()) {
+            return false;
+        }
+        return latestDetails(agentId, type)
+                .map(d -> asList(d.get(listKey)))
+                .orElse(List.of())
+                .stream()
+                .map(o -> QuestYaml.plainId(str(asMap(o).get("id"))))
+                .anyMatch(wanted::equals);
+    }
+
+    /**
+     * Issue #194 — un relevé du catalogue serveur a-t-il déjà été fait ?
+     *
+     * <p>Distinct de {@link #runtimeKnowsContent}. Sans relevé, « le serveur ne connaît pas ce
+     * contenu » serait faux : on ne lui a jamais demandé. L'aperçu de suppression doit pouvoir le
+     * dire, parce que l'absence de suppression côté serveur fait réapparaître le contenu.</p>
+     */
+    public boolean runtimeListingAvailable(String agentId, String kind) {
+        return latestDetails(agentId, "quests".equals(kind) ? "quest.list" : "story.list").isPresent();
     }
 
     /**

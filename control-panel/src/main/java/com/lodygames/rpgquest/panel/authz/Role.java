@@ -13,8 +13,9 @@ import java.util.Set;
  *   <li>{@code OWNER} — accès total. Ses permissions sont {@code EnumSet.allOf(Permission.class)} :
  *       toute nouvelle permission lui revient automatiquement, rien à maintenir.</li>
  *   <li>{@code ADMIN} — exploitation du serveur : joueurs, PNJ, dialogues, diagnostics, contenu,
- *       actions d'administration. <strong>Pas</strong> de gestion des utilisateurs, ni du module
- *       de développement / déploiement.</li>
+ *       actions d'administration, <strong>suppression de contenu</strong> (#194).
+ *       <strong>Pas</strong> de gestion des utilisateurs, ni du module de développement /
+ *       déploiement.</li>
  *   <li>{@code TESTER} — lectures utiles au test, diagnostics, préparation de test explicitement
  *       sûre (démarrer / avancer une quête ou une story, lire une variable). Pas d'écriture de
  *       contenu, pas de reset joueur, pas de modération.</li>
@@ -22,7 +23,8 @@ import java.util.Set;
  *       construction. <strong>Pas</strong> d'accès aux données joueurs, pas d'action serveur.</li>
  *   <li>{@code CONTENT_EDITOR} — lecture et édition guidée des quêtes, stories, dialogues et PNJ
  *       logiques ; brouillons et validation. Pas de déploiement (aucune permission de déploiement
- *       n'existe encore) ni de modération joueur.</li>
+ *       n'existe encore), pas de modération joueur, et <strong>pas de suppression de
+ *       contenu</strong> : écrire est réversible, détruire ne l'est pas de la même façon.</li>
  *   <li>{@code READ_ONLY} — lecture seule sur les modules explicitement autorisés. Aucune
  *       permission de cette liste ne déclenche de mutation.</li>
  * </ul>
@@ -42,7 +44,7 @@ public enum Role {
             Permission.MOB_READ, Permission.MOB_WRITE, Permission.MOB_TEST_SPAWN,
             Permission.DIALOGUE_READ, Permission.DIALOGUE_WRITE,
             Permission.QUEST_CONTENT_WRITE, Permission.STORY_CONTENT_WRITE,
-            Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
+            Permission.CONTENT_READ, Permission.CONTENT_EXPORT, Permission.CONTENT_DELETE,
             Permission.DOCS_READ, Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ,
             Permission.ACTION_QUEST, Permission.ACTION_STORY,
             Permission.ACTION_VARIABLE_GET, Permission.ACTION_VARIABLE_SET,

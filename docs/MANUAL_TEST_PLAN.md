@@ -2357,6 +2357,85 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-243 — Supprimer une quête et une story avec aperçu des conséquences (issue #194)
+
+-   **Fonctionnalité testée :** bouton « Supprimer… », aperçu des dépendances, confirmation par
+    identifiant retapé, nettoyage des références, blocages, sauvegarde, suppression côté serveur.
+-   **Préconditions :** Control Panel et JAR de cette session déployés, serveur redémarré. Être
+    connecté avec un rôle **OWNER** ou **ADMIN** (la permission est dédiée).
+-   **IMPORTANT — n'utiliser que du contenu de test.** Les quêtes de test créées pour ce
+    parcours portent le préfixe `tc243_`. **Ne pas** dérouler ce test sur `crystal_hunt`,
+    `first_steps`, les quêtes du Garde ni `main_story`.
+
+-   **A. Préparer le contenu de test (navigateur) :**
+    1.  `/quests/new` → créer `tc243_base` (titre « TC243 base »), enregistrer.
+    2.  `/quests/new` → créer `tc243_suite` avec **`tc243_base` en prérequis**, enregistrer.
+    3.  `/stories/new` → créer `tc243_saga` enchaînant **`tc243_base` puis `tc243_suite`**,
+        enregistrer.
+
+-   **B. Aperçu et nettoyage des références :**
+    4.  `/quests` → fiche `tc243_base` → **« Supprimer… »**. L'aperçu doit afficher :
+        - « Où ce contenu existe » : source présente, et l'état côté serveur ;
+        - « Références qui seront nettoyées » : le **prérequis** de `tc243_suite` **et** la
+          **chaîne** de `tc243_saga`, en précisant qu'ils seront **réécrits, jamais supprimés** ;
+        - « À savoir » : qu'**aucune progression de joueur n'est effacée**.
+    5.  Taper une mauvaise confirmation (par exemple `oui`) → **refus**, l'aperçu revient, et
+        **rien n'a changé** (vérifier que `tc243_base` est toujours au catalogue).
+    6.  Taper `tc243_base` → confirmer. La page de résultat doit lister les fichiers réécrits, le
+        fichier supprimé, et **le chemin de sauvegarde**.
+    7.  Vérifier : `tc243_suite` existe **toujours** et n'a **plus** de prérequis ; `tc243_saga`
+        existe **toujours** et n'enchaîne plus que `tc243_suite`. **Rien n'a été supprimé en
+        cascade.**
+
+-   **C. Blocage — story qui n'enchaîne plus qu'une quête :**
+    8.  `/quests` → fiche `tc243_suite` → **« Supprimer… »**. L'aperçu doit **BLOQUER** : la story
+        `tc243_saga` n'enchaîne plus que cette quête, et une chaîne vide est refusée par le moteur.
+        Le message doit nommer le fichier et proposer quoi faire.
+    9.  Vérifier qu'**aucun formulaire de confirmation n'est affiché** : il n'y a rien à cliquer.
+
+-   **D. Blocage — dialogue qui référence la quête :**
+    10. Prendre une quête de test référencée par un dialogue (ou ajouter dans un dialogue de test
+        une action `START_QUEST` vers `tc243_suite`), puis rouvrir l'aperçu de suppression.
+    11. Le blocage doit citer le **fichier du dialogue** et les **numéros de ligne**, et expliquer
+        que retirer l'action laisserait un choix sans effet.
+
+-   **E. Suppression d'une story :**
+    12. `/stories` → fiche `tc243_saga` → **« Supprimer… »**. L'aperçu doit indiquer que les
+        quêtes enchaînées **ne sont pas supprimées**, et ne lister aucune référence à nettoyer.
+    13. Confirmer avec `tc243_saga`. Vérifier que `tc243_suite` est **toujours** au catalogue.
+
+-   **F. Source et serveur :**
+    14. Après chaque suppression d'un contenu que le serveur connaissait, la page de résultat doit
+        annoncer que la suppression **côté serveur** a été demandée. Vérifier dans le **journal
+        d'actions** que `content.definition.delete` est passée en **Succès**, avec le nom du
+        fichier supprimé et sa sauvegarde.
+    15. Cliquer **« Rafraîchir »** sur le catalogue : le contenu **ne doit pas réapparaître**.
+    16. `/quests` → rouvrir l'aperçu d'une quête **embarquée** (par exemple `first_steps`) **sans
+        confirmer** : l'aperçu doit prévenir qu'elle serait **recréée au démarrage** tant que le
+        JAR déployé la contient. **Annuler** — ne pas supprimer une quête réelle.
+
+-   **G. Annulation sans effet :**
+    17. Ouvrir n'importe quel aperçu puis cliquer **« Annuler et revenir au catalogue »** :
+        **aucune** modification ne doit avoir eu lieu.
+
+-   **Nettoyage :** supprimer `tc243_suite` (après avoir retiré le blocage de l'étape C) et toute
+    quête de test restante. Les sauvegardes restent dans
+    `/var/lib/plugadmin/content-backups/` — elles sont hors du dépôt Git et du JAR, et peuvent
+    être effacées à volonté.
+-   **Couverture automatisée :** `ContentDeletionAnalyzerTest` (16 cas : nettoyage des prérequis et
+    des chaînes, blocages story vide / dialogue / fichier illisible / lecture seule / sans
+    sauvegarde, politiques annoncées), `ContentDeletionExecutorTest` (6 cas : ordre des écritures,
+    sauvegardes hors des dossiers de contenu, plan bloqué qui n'écrit rien, conflit de version avec
+    **rollback**, restauration fidèle), `ContentDeletionPagesTest` (9 cas : seule la saisie exacte
+    confirme, aucun formulaire si blocage, permission dédiée refusée au rôle éditeur),
+    `ContentDefinitionDeleterTest` (9 cas, plugin : fichier retrouvé par id déclaré et non par nom
+    de fichier, sauvegarde avant suppression, types fermés), `BundledExamplesDriftTest` (3 cas :
+    la copie des exemples embarqués est confrontée aux sources réelles du plugin),
+    `AgentActionExecutorTest` (+3). **Non couvert automatiquement** : le parcours navigateur
+    ci-dessus et l'exécution réelle de l'action agent sur le serveur.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -2429,3 +2508,4 @@ le résumé de récompenses de TC-014).
 | TC-239 | Création mob SPECIAL + BOSS depuis le panel #172 (navigateur) | | | |
 | TC-240 | Couleurs et styles au clic, textes multi-styles préservés #195 (navigateur) | | | |
 | TC-242 | Catalogue complet des objets, recherche FR + id #196 (navigateur) | | | |
+| TC-243 | Suppression quête/story : aperçu, confirmation, blocages #194 | | | |

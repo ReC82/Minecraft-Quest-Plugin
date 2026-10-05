@@ -141,6 +141,30 @@ class ClaimWorldSafetyListenerTest {
                 .anyMatch(s -> customItemRegistry.identify(s).map(RpgItemKeys.PIERRE_RETOUR::equals).orElse(false));
     }
 
+    /**
+     * Pompe des ticks jusqu'à recevoir un message contenant {@code needle}, en <strong>accumulant</strong>
+     * les messages lus ({@code nextMessage()} est destructif, donc jamais relu dans une assertion).
+     *
+     * <p>Un {@code performTicks(10)} fixe ne suffit pas : l'éligibilité se lit en base de façon
+     * asynchrone, et la fenêtre dépend de la charge de la machine. Ce test a réussi en suite
+     * complète puis échoué pendant un déploiement — c'était la course, pas le code de production.</p>
+     */
+    private void awaitMessageContaining(PlayerMock player, String needle, String what) throws Exception {
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        for (int i = 0; i < 400; i++) {
+            server.getScheduler().performTicks(2);
+            Thread.sleep(15);
+            String msg;
+            while ((msg = player.nextMessage()) != null) {
+                seen.add(msg);
+            }
+            if (seen.stream().anyMatch(m -> m.contains(needle))) {
+                return;
+            }
+        }
+        org.junit.jupiter.api.Assertions.fail(what + " — message « " + needle + " » jamais reçu ; messages : " + seen);
+    }
+
     private int returnStoneCount(PlayerMock player) {
         int n = 0;
         for (ItemStack s : player.getInventory().getContents()) {
@@ -253,21 +277,12 @@ class ClaimWorldSafetyListenerTest {
                 "précondition : l'inventaire doit être réellement plein");
 
         arriveInClaims(player);
-        server.getScheduler().performTicks(10);
 
         // L'objet ne peut pas entrer dans l'inventaire : il tombe au sol. Le point corrigé est le
         // MESSAGE — avant, le joueur lisait « tu reçois une Pierre de retour » et la cherchait
         // dans des poches pleines.
+        awaitMessageContaining(player, "à tes pieds", "porteur du bypass, inventaire plein");
         assertFalse(hasReturnStone(player), "inventaire plein : l'objet ne peut pas y entrer");
-        boolean toldAboutTheGround = false;
-        String msg;
-        while ((msg = player.nextMessage()) != null) {
-            if (msg.contains("à tes pieds") || msg.contains("inventaire")) {
-                toldAboutTheGround = true;
-            }
-        }
-        assertTrue(toldAboutTheGround,
-                "le joueur doit être prévenu que la Pierre est au sol, pas dans son inventaire");
     }
 
     @Test
@@ -279,16 +294,9 @@ class ClaimWorldSafetyListenerTest {
                 "précondition : l'inventaire doit être réellement plein");
 
         arriveInClaims(player);
-        server.getScheduler().performTicks(10);
 
-        boolean toldAboutTheGround = false;
-        String msg;
-        while ((msg = player.nextMessage()) != null) {
-            if (msg.contains("à tes pieds")) {
-                toldAboutTheGround = true;
-            }
-        }
-        assertTrue(toldAboutTheGround, "même message explicite pour un joueur éligible non admin");
+        awaitMessageContaining(player, "à tes pieds", "joueur éligible non admin, inventaire plein");
+        assertFalse(hasReturnStone(player), "inventaire plein : l'objet ne peut pas y entrer");
     }
 
     /**

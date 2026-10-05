@@ -3871,3 +3871,82 @@ TC-240 (nouveau) — entièrement vérifiable **au navigateur**, sans Minecraft.
 
 Rollback : `scripts/plugadmin/rollback.sh app` (aucun rollback plugin nécessaire : le JAR n'a pas
 changé dans ce lot).
+
+## 2026-10-05 (lot 6) - #196 : catalogue complet des objets pour icônes et récompenses
+
+### Changement
+
+Les listes **Icône** et **Récompense d'objet** de l'éditeur de quêtes proposent désormais le
+catalogue **réel de la version installée** au lieu d'une liste de 76 entrées écrite à la main.
+Recherche par **nom français** ou par **identifiant**, résultats complets et paginés, et refus
+expliqué pour un bloc sans forme d'objet.
+
+### Action serveur
+
+**Remplacement du JAR RPGQuest uniquement**, puis **un seul redémarrage**. Aucun fichier de
+configuration, aucune donnée, aucun monde touché. Le JAR est nécessaire : le nouveau relevé
+`item.catalogs` lit le registre `Material` du serveur, et le Control Panel ne peut pas dépendre de
+Bukkit.
+
+### Sauvegarde préalable
+
+JAR précédent sauvegardé automatiquement par `scripts/deploy-verygames.sh` :
+`~/.local/share/rpgquest/verygames-backups/rpgquest-20261005T144420Z-predeploy.jar`
+(1 696 825 octets, SHA-256 `9492dfa0…`) + fichier `.meta`.
+
+### Déploiement / Exécution réelle
+
+- **Cause racine confirmée par la mesure, pas supposée.** `RefData.MATERIALS` — 76 entrées écrites
+  à la main — servait de catalogue et ne contenait que `IRON_SWORD` et `DIAMOND_SWORD`. La version
+  installée expose **sept** épées : bois, pierre, **cuivre**, or, fer, diamant, netherite.
+  `COPPER_SWORD` n'existe que depuis 1.21.9 — vérifié par `javap` sur le jar `paper-api` réellement
+  utilisé, puis confirmé par le relevé du serveur. Rien n'a été inventé pour une autre version.
+- **Second défaut, indépendant, trouvé en auditant la troncature** comme le demandait le ticket :
+  la liste recherchable de `panel.js` s'arrêtait à **60 correspondances sans le dire**. Avec un
+  catalogue de plus d'un millier d'objets, une recherche large aurait silencieusement caché des
+  résultats. Borne portée à 100, total annoncé (« 100 sur 142 affichés »), et « afficher 100 de
+  plus » cliquable.
+- **Relevé réel mesuré sur le DEV** : **1 504 objets utilisables**, **151 blocs sans forme
+  d'objet**, Minecraft **1.21.11**, charge utile **30 828 caractères** — très en dessous de la
+  borne de 512 Ko corrigée plus tôt dans la journée (#164).
+- **Représentable vs délivrable tranché par l'API** : les deux exigent `isItem()`. La distinction
+  utile est donc avec les blocs sans forme d'objet, renvoyés à part pour être **expliqués** —
+  « WATER existe comme bloc mais n'a aucune forme d'objet dans cette version » — au lieu de
+  « matériau inconnu », qui envoyait chercher une faute de frappe inexistante.
+- **Noms français par composition** (`MaterialNames`), élision comprise. Ce qui ne suit aucune
+  règle tombe sur l'anglais embelli : un repli **visiblement** non traduit plutôt qu'une traduction
+  inventée. La recherche filtrant sur l'identifiant **et** le libellé, « sword » et « épée » donnent
+  le même résultat.
+- **Vérifié sur l'instance déployée** (requêtes HTTP authentifiées, compte dédié supprimé ensuite) :
+  datalist servie = **1 655 options**, `data-material-source="server"`, `data-mc-version="1.21.11"` ;
+  **« sword » renvoie les sept épées** avec leurs libellés français ; 151 blocs marqués
+  `data-noitem` ; 21 objets de créatif signalés ; aide du champ Icône annonçant
+  « 1504 objets de la version installée (Minecraft 1.21.11) ».
+- **Charge des pages maîtrisée** : la liste n'est émise que sur l'éditeur de quêtes, seul à avoir
+  des champs de matériau. `/stories/new` fait **17 Ko** contre **130 Ko** pour `/quests/new`.
+- **Note mesurée** : **0 forme historique écartée** sur ce serveur — ce Paper n'expose plus les
+  constantes `LEGACY_*` à l'exécution. Le filtre `isLegacy()` reste un garde-fou, et **aucune**
+  entrée `LEGACY_` ne pollue la liste (vérifié sur le relevé réel).
+- **Tests** : suite complète des trois modules verte — **1446** plugin (34 ignorés), **441**
+  control-panel (1 ignoré), **30** web-api, **0 échec**. Nouveaux : `MaterialNamesTest`,
+  `ItemCatalogTest`, `MaterialPickerTest`, `AgentActionExecutorTest` (+1), et un test JavaScript
+  `combo-pagination.test.js` (non câblé à Gradle, pour ne pas faire dépendre le build d'un Node
+  installé).
+- **Incident d'environnement, sans effet sur le dépôt** : `control-panel/build/resources`
+  appartenait à `root`, ce qui faisait échouer `processResources` (« Failed to clean up stale
+  outputs »). Propriété rendue à `ubuntu` ; aucun fichier versionné touché.
+- Aucun merge, aucune intervention PROD, aucun contenu du propriétaire modifié.
+
+### Redémarrage requis
+
+**Oui — un seul, effectué.** Serveur revenu `ONLINE` (0 joueur connecté au moment de l'opération).
+
+### Migration automatique
+
+Aucune. Le relevé est en lecture seule et ne touche aucune donnée.
+
+### Validation
+
+TC-242 (nouveau) — entièrement vérifiable **au navigateur**, sans Minecraft.
+
+Rollback : `scripts/rollback-verygames.sh --latest` ; `scripts/plugadmin/rollback.sh app`.

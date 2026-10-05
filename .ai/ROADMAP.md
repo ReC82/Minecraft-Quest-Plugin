@@ -361,11 +361,36 @@ Branche de départ: feature/169-special-mobs-boss @ 1ccde5e (lots 3 et 4 du mêm
 (6) DONE — Sans relevé, le repli curé reste utilisable MAIS est annoncé comme « liste de dépannage
   de 76 entrées » (bandeau + aide du champ), et aucun avertissement de validation n'est émis sur un
   matériau absent de ce repli : ce serait un faux positif qui apprend à ignorer les avertissements.
-Tests: TESTS_PLACEHOLDER
+Tests: suite complète des trois modules verte — 1446 tests plugin (34 ignorés, limitations
+  MockBukkit héritées), 441 tests control-panel (1 ignoré), 30 tests web-api, 0 échec.
+  Nouveaux : MaterialNamesTest (12 cas — familles composées, élision « Lingot d'or », repli anglais
+  assumé, objets de créatif signalés), ItemCatalogTest (9 cas — la liste codée en dur ne contenait
+  que 2 épées, le relevé en trouve 7, le relevé REMPLACE le repli sans fusion, bloc sans objet
+  reconnu, catalogue conservé en dérivant la RefData), MaterialPickerTest (8 cas — libellés dans la
+  datalist, provenance et version annoncées, bloc sans objet marqué, refus EXPLIQUÉ côté
+  validateur, aucun faux positif sans relevé), AgentActionExecutorTest (+1), et un test JavaScript
+  control-panel/src/test/js/combo-pagination.test.js (12 cas sur le fenêtrage, extrait de panel.js
+  au vol, non câblé à Gradle pour ne pas faire dépendre le build d'un Node installé).
 Branche finale: feature/169-special-mobs-boss (aucun merge).
-Dernier commit: COMMIT_PLACEHOLDER
+Dernier commit: 4e3a798 fix(control-panel): catalogue complet et recherchable des objets
+  (#196) — docs committées ensuite.
 Build: vert.
-Déploiements: DEPLOY_PLACEHOLDER
+Déploiements: JAR VeryGames DEV (SHA-256
+  133802fbf5c69eeb0fe852ff175c21e9bc8d73e1f766fb426f222a01ae209cab) avec UN seul redémarrage RCON
+  (serveur revenu ONLINE, 0 joueur connecté), puis Control Panel AWS (/health -> 200). Le relevé
+  exige le JAR : sans lui le panel ne pourrait pas obtenir la liste réelle.
+Vérification sur l'instance DÉPLOYÉE (requêtes HTTP authentifiées, compte dédié supprimé ensuite) :
+  relevé réel = 1504 objets utilisables, 151 blocs sans forme d'objet, Minecraft 1.21.11, charge
+  utile 30 828 caractères. Datalist servie = 1655 options avec data-material-source="server" et
+  data-mc-version="1.21.11". ÉPREUVE DU TICKET PASSÉE : « sword » renvoie les SEPT épées, avec
+  leurs libellés français (Épée en bois/pierre/cuivre/or/fer/diamant/netherite) — dont COPPER_SWORD,
+  qui n'existe que depuis 1.21.9, donc lu du vrai registre et non inventé. 151 blocs marqués
+  data-noitem, 21 objets de créatif signalés. Élision vérifiée sur données réelles (« Lingot d'or »,
+  « Minerai d'émeraude », « Éclat d'améthyste »). Aide du champ Icône : « 1504 objets de la version
+  installée (Minecraft 1.21.11) ». /stories/new ne porte PAS la liste lourde : 17 Ko contre 130 Ko
+  pour /quests/new. Note mesurée : 0 forme historique écartée sur ce serveur — ce Paper ne les
+  expose plus à l'exécution ; le filtre isLegacy() reste un garde-fou, et aucune entrée LEGACY_ ne
+  pollue la liste.
 Tests manuels en attente: TC-242 — entièrement vérifiable au NAVIGATEUR, sans Minecraft. Reste en
   jeu : que l'icône choisie s'affiche dans le journal et qu'une récompense d'objet soit remise.
 Blocages: aucun.

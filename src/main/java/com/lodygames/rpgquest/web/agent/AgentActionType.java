@@ -112,7 +112,18 @@ public enum AgentActionType {
      * Issue #95 — dernières lignes de console captées par le plugin, pour la page « Exploitation
      * serveur ». Lecture seule et bornée ; aucune commande, aucun chemin de fichier.
      */
-    SERVER_LOGS_TAIL("server.logs.tail");
+    SERVER_LOGS_TAIL("server.logs.tail"),
+    /**
+     * Issue #131 — <strong>aperçu</strong> du rechargement de contenu : valide les familles
+     * demandées et leurs références croisées <em>sans rien appliquer</em>. Lecture seule.
+     */
+    CONTENT_RELOAD_PREVIEW("content.reload.preview"),
+    /**
+     * Issue #131 — rechargement effectif du contenu dans le runtime, après validation. N'applique
+     * rien si une famille est invalide ou si une référence croisée serait cassée : l'ancien runtime
+     * valide est conservé. Jamais un {@code /reload} Bukkit.
+     */
+    CONTENT_RELOAD("content.reload");
 
     private final String wire;
 

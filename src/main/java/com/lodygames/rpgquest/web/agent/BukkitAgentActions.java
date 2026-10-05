@@ -7,6 +7,8 @@ import com.lodygames.rpgquest.content.pack.ContentPack;
 import com.lodygames.rpgquest.content.pack.ContentPackAssembler;
 import com.lodygames.rpgquest.content.pack.ContentPackMapper;
 import com.lodygames.rpgquest.content.pack.ContentPackSerializer;
+import com.lodygames.rpgquest.content.reload.ContentReloadService;
+import com.lodygames.rpgquest.content.reload.ReloadFamily;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.dialogue.DialogueCatalog;
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
@@ -155,6 +157,8 @@ public final class BukkitAgentActions implements AgentActions {
     private final Supplier<String> wildWorldSupplier;
     /** Issue #95 — annonce globale et tampon de console (exploitation serveur). */
     private final ServerOpsService serverOpsService;
+    /** Issue #131 — service central de rechargement du contenu. */
+    private final ContentReloadService contentReloadService;
     /** Issue #194 — suppression d'une définition de quête/story sur le serveur, avec sauvegarde. */
     private final com.lodygames.rpgquest.content.ContentDefinitionDeleter contentDeleter;
 
@@ -169,7 +173,8 @@ public final class BukkitAgentActions implements AgentActions {
                               TravelBeaconService travelBeaconService, SpecialMobRegistry mobRegistry,
                               SpecialMobService mobService, SpecialMobDefinitionStore mobDefinitionStore,
                               MobSpawnSettingsStore mobSpawnSettingsStore, Supplier<String> wildWorldSupplier,
-                              ServerOpsService serverOpsService) {
+                              ServerOpsService serverOpsService,
+                              ContentReloadService contentReloadService) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -194,6 +199,7 @@ public final class BukkitAgentActions implements AgentActions {
         this.mobSpawnSettingsStore = mobSpawnSettingsStore;
         this.wildWorldSupplier = wildWorldSupplier;
         this.serverOpsService = serverOpsService;
+        this.contentReloadService = contentReloadService;
         // Issue #194 : dossiers réels du plugin, et sauvegardes HORS des dossiers de contenu pour
         // ne jamais être relues comme des définitions.
         java.nio.file.Path data = plugin.getDataFolder().toPath();
@@ -1687,6 +1693,41 @@ public final class BukkitAgentActions implements AgentActions {
         return CompletableFuture.completedFuture(new ServerLogsView(List.copyOf(lines),
                 snapshot.firstSequence(), snapshot.lastSequence(), snapshot.dropped(),
                 snapshot.capacity(), snapshot.gap(), serverOpsService.consoleLimitation().orElse(null)));
+    }
+
+    // ---- Rechargement du contenu (issue #131) -------------------------------------------------
+
+    @Override
+    public CompletableFuture<ContentReloadView> contentReload(List<String> families, boolean apply) {
+        java.util.Set<ReloadFamily> requested = new java.util.LinkedHashSet<>();
+        for (String token : families) {
+            java.util.Optional<ReloadFamily> family = ReloadFamily.fromWire(token);
+            if (family.isEmpty()) {
+                return CompletableFuture.completedFuture(new ContentReloadView(false, "UNKNOWN_FAMILY",
+                        "Famille de contenu inconnue : « " + safe(token) + " ». Attendu : "
+                                + String.join(", ", java.util.Arrays.stream(ReloadFamily.values())
+                                        .map(ReloadFamily::wire).toList()) + ".",
+                        List.of(), List.of(), List.of(), contentReloadService.runtimeHash(), 0L, false));
+            }
+            requested.add(family.get());
+        }
+        // Le rechargement permute des ensembles lus par des listeners du thread principal :
+        // on l'exécute donc SUR le thread principal, comme toute mutation d'état de jeu.
+        return onMain(() -> {
+            ContentReloadService.ReloadResult result = apply
+                    ? contentReloadService.reload(requested)
+                    : contentReloadService.preview(requested);
+            List<ContentReloadFamilyView> familyViews = new ArrayList<>();
+            for (ContentReloadService.FamilyOutcome outcome : result.families()) {
+                familyViews.add(new ContentReloadFamilyView(outcome.family().wire(),
+                        outcome.family().label(), outcome.loaded(), outcome.issues(),
+                        outcome.messages(), outcome.ids()));
+            }
+            return done(new ContentReloadView(result.applied(), result.code(), result.message(),
+                    List.copyOf(familyViews), result.referenceErrors(),
+                    result.suggestedFamilies().stream().map(ReloadFamily::wire).toList(),
+                    result.runtimeHash(), result.durationMillis(), result.restartRequired()));
+        });
     }
 
     // ---- Utilitaires --------------------------------------------------------------------------

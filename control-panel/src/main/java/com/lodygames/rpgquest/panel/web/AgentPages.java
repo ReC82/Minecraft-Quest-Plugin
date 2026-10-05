@@ -237,6 +237,51 @@ public final class AgentPages {
     }
 
     /** Légende courte des origines, affichée une fois sous la barre du catalogue (issue #144). */
+    /**
+     * Action contextuelle de rechargement (issue #131), affichée <strong>uniquement</strong> quand
+     * au moins une entrée est « Source uniquement ».
+     *
+     * <p>C'est le défaut que le ticket décrit : l'administrateur voyait bien « pas encore chargé en
+     * jeu » mais n'avait <em>aucune</em> action, et devait devine qu'un redémarrage était
+     * nécessaire. Le message distingue en plus les deux causes réelles, car un rechargement ne
+     * répare que l'une des deux.</p>
+     *
+     * @param families familles à recharger conjointement (dépendances comprises)
+     */
+    private String reloadHint(Session session, String agentId, List<MergedRow> merged, String noun,
+                              String... families) {
+        if (agentId == null || !perms.can(session.role(), Permission.ACTION_CONTENT_RELOAD)) {
+            return "";
+        }
+        long sourceOnly = merged.stream().filter(row -> row.state() == CatalogState.SOURCE_ONLY).count();
+        if (sourceOnly == 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<div class=\"banner warn\">").append(Icons.icon("warning"));
+        sb.append("<div><strong>").append(sourceOnly).append(" ").append(Http.esc(noun))
+                .append(sourceOnly > 1 ? "s" : "").append(" pas encore chargé")
+                .append(sourceOnly > 1 ? "s" : "").append(" en jeu.</strong> ");
+        sb.append("Deux causes possibles, et une seule se répare ici : le fichier est "
+                + "<strong>publié sur le serveur mais pas rechargé</strong> (le bouton ci-dessous "
+                + "suffit), ou il n'a <strong>jamais été déployé</strong> depuis AWS (il faut alors "
+                + "un déploiement — un rechargement n'y changerait rien). ");
+        sb.append("L'<em>aperçu</em> lit le disque du serveur et tranche entre les deux.");
+        sb.append("<form method=\"post\" action=\"/agents/action\" class=\"mt-2\">");
+        sb.append("<input type=\"hidden\" name=\"_csrf\" value=\"").append(Http.esc(session.csrfToken()))
+                .append("\">");
+        sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"families\" value=\"")
+                .append(Http.esc(String.join(",", families))).append("\">");
+        sb.append("<input type=\"hidden\" name=\"confirm\" value=\"true\">");
+        sb.append("<input type=\"hidden\" name=\"return\" value=\"/ops\">");
+        sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\" name=\"type\" "
+                + "value=\"content.reload.preview\">Aperçu</button> ");
+        sb.append("<button class=\"btn btn-sm btn-outline-primary\" type=\"submit\" name=\"type\" "
+                + "value=\"content.reload\">Recharger en jeu</button>");
+        sb.append("</form></div></div>");
+        return sb.toString();
+    }
+
     private static String catalogOriginLegend(String noun) {
         boolean f = "story".equals(noun);
         return "<p class=\"muted\" style=\"margin:.35rem 0 .1rem\">"
@@ -830,6 +875,9 @@ public final class AgentPages {
             if (sourceCatalog.available()) {
                 sb.append(catalogOriginLegend("quête"));
             }
+            // Quêtes et PNJ ensemble : une quête cite son donneur, donc recharger les quêtes
+            // seules échouerait si le PNJ vient d'être créé.
+            sb.append(reloadHint(session, agentId, merged, "quête", "npcs", "quests"));
             sb.append(listControls("quests", "Rechercher une quête\u2026",
                     filterBtn("", "Toutes", true) + filterBtn("ok", "Sans alerte", false)
                             + filterBtn("warn", "À vérifier", false)));
@@ -1143,6 +1191,8 @@ public final class AgentPages {
         } else {
             if (sourceCatalog.available()) {
                 sb.append(catalogOriginLegend("story"));
+                // Une story cite des quêtes : les deux familles vont de pair.
+                sb.append(reloadHint(session, agentId, merged, "story", "quests", "stories"));
             }
             sb.append(listControls("stories", "Rechercher une story\u2026",
                     filterBtn("", "Toutes", true) + filterBtn("ok", "Sans alerte", false)
@@ -2711,6 +2761,8 @@ public final class AgentPages {
         } else {
             if (sourceCatalog.available()) {
                 sb.append(catalogOriginLegend("dialogue"));
+                // Un dialogue démarre des quêtes et est cité par des PNJ : trois familles liées.
+                sb.append(reloadHint(session, agentId, merged, "dialogue", "npcs", "quests", "dialogues"));
             }
             sb.append(listControls("dialogues", "Rechercher un dialogue\u2026",
                     filterBtn("", "Tous", true) + filterBtn("linked", "Liés", false)

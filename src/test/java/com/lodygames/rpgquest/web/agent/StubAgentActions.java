@@ -285,4 +285,9 @@ class StubAgentActions implements AgentActions {
     public CompletableFuture<ServerLogsView> serverLogs(long afterSequence, int limit) {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
     }
+
+    @Override
+    public CompletableFuture<ContentReloadView> contentReload(java.util.List<String> families, boolean apply) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
 }

@@ -636,4 +636,46 @@ public interface AgentActions {
 
     record ServerLogLine(long sequence, long epochMillis, String level, String source, String message) {
     }
+
+    // ---- Rechargement du contenu (issue #131) --------------------------------------------------
+
+    /**
+     * Valide ou applique un rechargement de contenu dans le runtime ({@code content.reload.preview}
+     * / {@code content.reload}).
+     *
+     * <p>Jamais un {@code /reload} Bukkit. Le service central valide d'abord chaque famille en
+     * dry-run, puis les références croisées du graphe candidat, et n'applique que si tout passe :
+     * une erreur laisse donc l'ancien runtime valide en place, jamais un état partiellement
+     * chargé.</p>
+     *
+     * @param families jetons de famille ({@code quests}, {@code stories}, {@code dialogues},
+     *                 {@code npcs}, {@code items}, {@code mobs})
+     * @param apply    {@code false} = aperçu seul, rien n'est modifié
+     */
+    CompletableFuture<ContentReloadView> contentReload(List<String> families, boolean apply);
+
+    /**
+     * @param applied        {@code true} = le runtime a réellement changé (jamais pour un aperçu)
+     * @param code           {@code APPLIED} / {@code PREVIEW_OK} / {@code INVALID_CONTENT} /
+     *                       {@code BROKEN_REFERENCES} / {@code BUSY} / {@code NOTHING_REQUESTED} /
+     *                       {@code UNKNOWN_FAMILY} / {@code ERROR}
+     * @param runtimeHash    empreinte du contenu chargé : permet au panel de <strong>constater</strong>
+     *                       un changement au lieu de le supposer
+     * @param restartRequired une partie de la demande ne peut pas être prise à chaud
+     */
+    record ContentReloadView(boolean applied, String code, String message,
+                             List<ContentReloadFamilyView> families, List<String> referenceErrors,
+                             List<String> suggestedFamilies, String runtimeHash,
+                             long durationMillis, boolean restartRequired) {
+    }
+
+    /**
+     * @param ids identifiants présents <strong>sur le disque du serveur</strong> et valides. Permet
+     *     au panel de distinguer « jamais publié sur VeryGames » (absent d'ici : un rechargement n'y
+     *     changerait rien, il faut un déploiement) de « publié mais pas encore chargé » (présent
+     *     ici, absent du runtime : un rechargement suffit).
+     */
+    record ContentReloadFamilyView(String family, String label, int loaded, int issues,
+                                   List<String> messages, List<String> ids) {
+    }
 }

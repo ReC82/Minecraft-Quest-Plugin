@@ -32,6 +32,7 @@ import com.lodygames.rpgquest.command.RPGQuestCommand;
 import com.lodygames.rpgquest.command.SkillsCommand;
 import com.lodygames.rpgquest.command.StoreCommand;
 import com.lodygames.rpgquest.config.ConfigService;
+import com.lodygames.rpgquest.content.reload.ContentReloadService;
 import com.lodygames.rpgquest.config.RendererKind;
 import com.lodygames.rpgquest.crafting.RecipeCraftGuardListener;
 import com.lodygames.rpgquest.crafting.YamlCraftingRegistry;
@@ -227,6 +228,8 @@ public final class RPGQuestBootstrap {
     private final com.lodygames.rpgquest.travel.TravelMaintenanceMode travelMaintenanceMode =
             new com.lodygames.rpgquest.travel.TravelMaintenanceMode();
     private PlayerResetService playerResetService;
+    /** Issue #131 — service central de rechargement du contenu dans le runtime. */
+    private ContentReloadService contentReloadService;
     /** Issue #95 — tampon de console et son branchement Log4j (exploitation serveur). */
     private ServerLogBuffer serverLogBuffer;
     private ConsoleTap consoleTap;
@@ -672,6 +675,18 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin,
                 new NewPlayerResetJoinListener(plugin, variableRepository, customItemRegistry)));
 
+        // Rechargement du contenu dans le runtime (issue #131) : service CENTRAL, seul point qui
+        // permute les ensembles actifs. Les six registres savaient déjà se recharger, mais rien ne
+        // l'exposait — et la permission ACTION_CONTENT_RELOAD du panel n'avait aucune action
+        // derrière elle. /rpgadmin et l'agent PlugAdmin en sont désormais de simples appelants.
+        //
+        // L'invalidateur de cache est passé ici plutôt que câblé dans le service : le service ne
+        // doit rien savoir du signal visuel des PNJ (#12), seulement qu'un cache dérivé existe.
+        contentReloadService = new ContentReloadService(
+                questEngine, storyRegistry, dialogueEngine, npcEngine, customItemRegistry, mobRegistry,
+                plugin.getSLF4JLogger(),
+                families -> npcHintService.invalidateAll());
+
         // Exploitation serveur (issue #95) : tampon borné des lignes de console + annonce globale,
         // consommés par les actions agent « server.logs.tail » et « server.announce ».
         //
@@ -709,7 +724,7 @@ public final class RPGQuestBootstrap {
                                         configService.current().dialogue().allowedCommands()),
                                 waypointService, travelBeaconService, mobRegistry, mobService, mobDefinitionStore,
                                 mobSpawnSettingsStore, () -> configService.current().travel().wildWorld(),
-                                serverOpsService))));
+                                serverOpsService, contentReloadService))));
 
         registerCommands();
     }
@@ -1010,7 +1025,7 @@ public final class RPGQuestBootstrap {
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
                 worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry,
                 questProgressEngine, questEngine, variableRepository, travelBeaconService, waypointService,
-                travelMaintenanceMode, claimService, plugin);
+                travelMaintenanceMode, claimService, contentReloadService, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

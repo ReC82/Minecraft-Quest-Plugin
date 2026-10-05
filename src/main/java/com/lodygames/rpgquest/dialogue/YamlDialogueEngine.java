@@ -53,6 +53,17 @@ public final class YamlDialogueEngine implements DialogueEngine {
         return report;
     }
 
+    /**
+     * Charge et valide depuis le disque <strong>sans toucher</strong> à l'ensemble actif (dry-run).
+     * Même raison que pour les quêtes (issue #131) : ne jamais retirer du runtime une définition
+     * devenue invalide sans l'avoir d'abord constaté.
+     */
+    public DialogueLoadReport validate() {
+        DialogueLoadReport report = loader.loadDirectory(dialoguesDirectory);
+        logReport(report);
+        return report;
+    }
+
     public List<DialogueDefinition> dialogues() {
         return dialogues;
     }

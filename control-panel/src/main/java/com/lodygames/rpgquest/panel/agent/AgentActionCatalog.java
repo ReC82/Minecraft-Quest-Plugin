@@ -45,6 +45,22 @@ public final class AgentActionCatalog {
     private static final double Y_MIN = -2048.0;
     private static final double Y_MAX = 2048.0;
 
+    /**
+     * Issue #131 — familles rechargeables, miroir de {@code content.reload.ReloadFamily}. L'ordre
+     * est celui des dépendances : objets et PNJ avant les quêtes, quêtes avant stories et dialogues.
+     */
+    public static final List<String> RELOAD_FAMILIES =
+            List.of("items", "npcs", "quests", "stories", "dialogues", "mobs");
+
+    /** Libellés humains des familles rechargeables (même ordre que {@link #RELOAD_FAMILIES}). */
+    public static final Map<String, String> RELOAD_FAMILY_LABELS = Map.of(
+            "items", "Objets",
+            "npcs", "PNJ",
+            "quests", "Quêtes",
+            "stories", "Stories",
+            "dialogues", "Dialogues",
+            "mobs", "Mobs spéciaux & boss");
+
     /** Issue #95 : canaux d'annonce réellement supportés — miroir de {@code ServerOpsService.CHANNELS}. */
     public static final List<String> ANNOUNCE_CHANNELS = List.of("chat", "actionbar", "title");
     /** Même borne que le serveur : au-delà, l'affichage en jeu n'est plus lisible. */
@@ -206,6 +222,15 @@ public final class AgentActionCatalog {
                 "Envoyer une annonce globale aux joueurs");
         add("server.logs.tail", Permission.OPS_LOGS, false, false,
                 "Lire les dernières lignes de la console serveur");
+        // Issue #131 — rechargement du contenu dans le runtime. L'aperçu est une LECTURE (il ne
+        // touche aucun ensemble actif) ; l'application est une mutation sensible, car elle change
+        // ce que le serveur utilise pour des joueurs connectés. La permission existait déjà sans
+        // aucune action derrière elle : la voici enfin utilisée.
+        add("content.reload.preview", Permission.ACTION_CONTENT_RELOAD, false, false,
+                "Valider le contenu sans rien appliquer");
+        addSensitiveWrite("content.reload", Permission.ACTION_CONTENT_RELOAD, false,
+                "Recharger le contenu en jeu",
+                "quest.list", "story.list", "dialogue.list", "npc.list", "item.list", "mob.list");
         add("story.advance", Permission.ACTION_STORY, true, true, "Avancer une story");
         add("story.complete", Permission.ACTION_STORY, true, true, "Compléter une story");
     }
@@ -728,6 +753,49 @@ public final class AgentActionCatalog {
                 }
                 params.put("message", message);
                 params.put("channel", channel);
+            }
+            case "content.reload", "content.reload.preview" -> {
+                // Deux formes acceptées, et c'est délibéré :
+                //  * « families » en CSV — utilisé par les actions contextuelles des pages de
+                //    contenu, où les familles liées sont connues d'avance ;
+                //  * « family_<nom>=true » — une case à cocher par famille. Des cases partageant le
+                //    MÊME nom ne fonctionneraient pas : le parseur de formulaire du panel ne garde
+                //    qu'une valeur par clé, donc cocher trois familles n'en transmettrait qu'une.
+                //    Des noms distincts rendent le formulaire correct SANS JavaScript.
+                java.util.List<String> families = new java.util.ArrayList<>();
+                String raw = trim(form.get("families"));
+                if (!raw.isEmpty()) {
+                    for (String token : raw.split(",")) {
+                        String family = token.trim().toLowerCase(java.util.Locale.ROOT);
+                        if (family.isEmpty()) {
+                            continue;
+                        }
+                        if (!RELOAD_FAMILIES.contains(family)) {
+                            // Jamais une interprétation partielle : l'administrateur croirait avoir
+                            // rechargé plus que ce qui l'a été.
+                            return Validation.fail("Famille de contenu inconnue : « " + safe(family) + " ».");
+                        }
+                        if (!families.contains(family)) {
+                            families.add(family);
+                        }
+                    }
+                }
+                for (String family : RELOAD_FAMILIES) {
+                    if ("true".equals(trim(form.get("family_" + family))) && !families.contains(family)) {
+                        families.add(family);
+                    }
+                }
+                if (families.isEmpty()) {
+                    return Validation.fail("Sélectionner au moins une famille de contenu à recharger.");
+                }
+                // Réordonné selon les dépendances, quel que soit l'ordre des cases cochées.
+                java.util.List<String> ordered = new java.util.ArrayList<>();
+                for (String family : RELOAD_FAMILIES) {
+                    if (families.contains(family)) {
+                        ordered.add(family);
+                    }
+                }
+                params.put("families", String.join(",", ordered));
             }
             case "server.logs.tail" -> {
                 String after = trim(form.get("after"));

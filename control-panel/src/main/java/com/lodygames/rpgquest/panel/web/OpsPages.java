@@ -71,6 +71,9 @@ public final class OpsPages {
         if (permissions.can(session.role(), Permission.OPS_ANNOUNCE)) {
             sb.append(announceBlock(session, agentId, liveness, heartbeat));
         }
+        if (permissions.can(session.role(), Permission.ACTION_CONTENT_RELOAD)) {
+            sb.append(reloadBlock(session, agentId));
+        }
         if (permissions.can(session.role(), Permission.OPS_LOGS)) {
             sb.append(consoleBlock(agentId));
         }
@@ -297,6 +300,67 @@ public final class OpsPages {
             case "title" -> "Titre plein écran (impossible à manquer)";
             default -> channel;
         };
+    }
+
+    // ---- Rechargement du contenu (issue #131) ----------------------------------------------
+
+    /**
+     * Bloc de rechargement. Il énonce d'emblée les <strong>trois états distincts</strong> du
+     * ticket, parce que la confusion entre eux est le défaut de fond : un administrateur qui a
+     * enregistré une quête dans PlugAdmin (source, sur AWS) croit volontiers qu'elle est sur le
+     * serveur. Elle ne l'est pas, et <strong>aucun rechargement ne la transférera</strong>.
+     */
+    private String reloadBlock(Session session, String agentId) {
+        StringBuilder sb = new StringBuilder(Ui.sectionTitle("refresh", "Rechargement du contenu"));
+        if (agentId == null) {
+            return sb.append(Ui.empty("Aucun agent : rechargement indisponible.")).toString();
+        }
+        sb.append("<div class=\"panelbox\">");
+        sb.append("<p class=\"muted mb-2\">Trois états, à ne pas confondre :</p>");
+        sb.append("<ol class=\"small mb-3\">");
+        sb.append("<li><strong>Enregistré dans la source</strong> — le fichier existe dans la source "
+                + "éditable, sur AWS. C'est ce que font les éditeurs du panel.</li>");
+        sb.append("<li><strong>Publié sur le serveur</strong> — le fichier est présent sur VeryGames. "
+                + "Cela exige un <strong>déploiement</strong> : un rechargement ne transfère "
+                + "<strong>rien</strong> depuis AWS.</li>");
+        sb.append("<li><strong>Chargé en jeu</strong> — le serveur utilise réellement cette version. "
+                + "C'est ce que fait le rechargement ci-dessous.</li>");
+        sb.append("</ol>");
+        sb.append(Ui.banner("info", "L'aperçu lit le <strong>disque du serveur</strong> : il dit donc "
+                + "ce qui est réellement publié, et distingue « pas encore chargé » (un rechargement "
+                + "suffit) de « jamais publié » (il faut déployer)."));
+
+        sb.append("<form method=\"post\" action=\"/agents/action\" class=\"mt-2\">");
+        sb.append(csrf(session));
+        sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"return\" value=\"/ops\">");
+        sb.append("<p class=\"form-label mb-1\">Familles à traiter</p><div class=\"mb-2\">");
+        for (String family : AgentActionCatalog.RELOAD_FAMILIES) {
+            sb.append("<div class=\"form-check form-check-inline\">")
+                    // Un nom DISTINCT par famille : des cases homonymes seraient écrasées par le
+                    // parseur de formulaire, et cocher trois familles n'en rechargerait qu'une.
+                    .append("<input class=\"form-check-input\" type=\"checkbox\" name=\"family_")
+                    .append(Http.esc(family)).append("\" id=\"rl-").append(Http.esc(family))
+                    .append("\" value=\"true\" checked>")
+                    .append("<label class=\"form-check-label\" for=\"rl-").append(Http.esc(family))
+                    .append("\">")
+                    .append(Http.esc(AgentActionCatalog.RELOAD_FAMILY_LABELS.getOrDefault(family, family)))
+                    .append("</label></div>");
+        }
+        sb.append("</div>");
+        sb.append("<button class=\"btn btn-outline-secondary\" type=\"submit\" name=\"type\" "
+                + "value=\"content.reload.preview\">")
+                .append(Icons.icon("check")).append("Valider sans appliquer</button> ");
+        sb.append("<button class=\"btn btn-outline-primary\" type=\"submit\" name=\"type\" "
+                + "value=\"content.reload\">")
+                .append(Icons.icon("refresh")).append("Recharger en jeu</button>");
+        sb.append("<input type=\"hidden\" name=\"confirm\" value=\"true\">");
+        sb.append("<p class=\"muted mt-2 mb-0\">Une erreur de contenu ou une référence cassée "
+                + "<strong>annule tout</strong> : le runtime précédent est conservé. La progression, "
+                + "les quêtes actives, les inventaires et les mobs déjà vivants ne sont jamais "
+                + "touchés — aucune récompense n'est redistribuée, rien n'est despawné.</p>");
+        sb.append("</form></div>");
+        return sb.toString();
     }
 
     // ---- Console -------------------------------------------------------------------------

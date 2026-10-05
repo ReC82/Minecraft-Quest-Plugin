@@ -721,6 +721,79 @@ class AgentActionExecutorTest {
         assertTrue(outcome.message().contains("indisponible"), outcome.message());
     }
 
+    // ---- content.reload / content.reload.preview (issue #131) -------------------------
+
+    @Test
+    void aReloadForwardsTheRequestedFamiliesAndReportsTheRuntimeHash() {
+        AgentActionOutcome outcome = run(new AgentAction("cr1", "content.reload",
+                Map.of("families", "quests,dialogues", "confirm", "true")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals(List.of("quests", "dialogues"), actions.lastReloadFamilies);
+        assertTrue(actions.lastReloadApply, "content.reload applique");
+        assertEquals("abc123def456", outcome.value(), "la valeur est l'empreinte du runtime");
+        assertEquals(Boolean.TRUE, outcome.details().get("applied"));
+        assertEquals(42L, outcome.details().get("durationMillis"));
+    }
+
+    @Test
+    void aPreviewNeverApplies() {
+        run(new AgentAction("cr2", "content.reload.preview", Map.of("families", "quests")));
+
+        assertFalse(actions.lastReloadApply, "l'aperçu ne doit jamais appliquer");
+    }
+
+    @Test
+    void theFamilyIdsAreCarriedSoThePanelCanTellPublishedFromLoaded() {
+        AgentActionOutcome outcome = run(new AgentAction("cr3", "content.reload.preview",
+                Map.of("families", "quests")));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> families = (List<Map<String, Object>>) outcome.details().get("families");
+        assertEquals(1, families.size());
+        assertEquals(List.of("rpgquest:alpha", "rpgquest:beta", "rpgquest:gamma"), families.get(0).get("ids"));
+    }
+
+    @Test
+    void aReloadWithoutFamiliesIsRejected() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("cr4", "content.reload", Map.of("confirm", "true"))).status());
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("cr5", "content.reload", Map.of("families", "  ,  "))).status());
+        assertNull(actions.lastReloadFamilies, "rien ne doit atteindre le serveur");
+    }
+
+    @Test
+    void aRefusedReloadIsAFailureNotASuccess() {
+        actions.reloadApplied = false;
+        actions.reloadCode = "INVALID_CONTENT";
+
+        AgentActionOutcome outcome = run(new AgentAction("cr6", "content.reload",
+                Map.of("families", "quests", "confirm", "true")));
+
+        // Le panel doit pouvoir distinguer « rien appliqué parce qu'invalide » de « appliqué » :
+        // un SUCCESS ici ferait croire que le contenu est chargé.
+        assertEquals(AgentActionOutcome.FAILED, outcome.status());
+        assertTrue(outcome.message().contains("rien n'a été rechargé"), outcome.message());
+    }
+
+    @Test
+    void anAlreadyRunningReloadIsReportedAsAFailure() {
+        actions.reloadApplied = false;
+        actions.reloadCode = "BUSY";
+
+        assertEquals(AgentActionOutcome.FAILED,
+                run(new AgentAction("cr7", "content.reload",
+                        Map.of("families", "quests", "confirm", "true"))).status());
+    }
+
+    @Test
+    void tooManyFamiliesAreRejected() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("cr8", "content.reload",
+                        Map.of("families", "a,b,c,d,e,f,g,h,i,j,k,l,m", "confirm", "true"))).status());
+    }
+
     // ---- Fake façade métier -----------------------------------------------------------
 
     private static final class FakeAgentActions implements AgentActions {
@@ -1186,6 +1259,27 @@ class AgentActionExecutorTest {
                     announceOk ? (announceOnline == 0 ? "NO_PLAYERS" : "SENT") : "ERROR",
                     announceOk ? "Annonce envoyée." : "Diffusion impossible.",
                     channel, announceRecipients, announceOnline));
+        }
+
+        // ---- Rechargement du contenu (issue #131) ------------------------------------
+
+        List<String> lastReloadFamilies;
+        boolean lastReloadApply;
+        String reloadCode = "APPLIED";
+        boolean reloadApplied = true;
+
+        @Override
+        public CompletableFuture<ContentReloadView> contentReload(List<String> families, boolean apply) {
+            lastReloadFamilies = List.copyOf(families);
+            lastReloadApply = apply;
+            return CompletableFuture.completedFuture(new ContentReloadView(reloadApplied, reloadCode,
+                    reloadApplied ? "Quêtes rechargées : 3 élément(s) en jeu."
+                            : "Contenu invalide : rien n'a été rechargé.",
+                    List.of(new ContentReloadFamilyView("quests", "Quêtes", 3, 0, List.of(),
+                            List.of("rpgquest:alpha", "rpgquest:beta", "rpgquest:gamma"))),
+                    reloadApplied ? List.of() : List.of("Story « s » : quête inconnue « x »."),
+                    reloadApplied ? List.of() : List.of("quests"),
+                    "abc123def456", 42L, false));
         }
 
         @Override

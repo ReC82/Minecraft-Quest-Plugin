@@ -217,6 +217,21 @@ public final class NpcHintService implements com.lodygames.rpgquest.bootstrap.Pl
         }
     }
 
+    /**
+     * Le <strong>contenu</strong> a changé pour tout le monde : rechargement de quêtes ou de
+     * dialogues (issue #131). Sans cette invalidation globale, chaque joueur continuerait de voir
+     * l'ancienne disponibilité jusqu'à l'expiration naturelle de son cache — un signal qui survit à
+     * la disparition de sa quête, ou qui manque sur une quête fraîchement ajoutée.
+     *
+     * <p>N'efface pas les entrées : il n'y a aucune raison de perdre le contexte des joueurs
+     * connectés, seulement de forcer le recalcul.</p>
+     */
+    public void invalidateAll() {
+        for (PlayerHints state : hints.values()) {
+            state.computedAtMillis = 0L;
+        }
+    }
+
     // ---- Passe d'affichage -----------------------------------------------------------------
 
     /**

@@ -53,6 +53,19 @@ public final class StoryRegistry implements PluginService {
         return report;
     }
 
+    /**
+     * Charge et valide depuis le disque <strong>sans toucher</strong> à l'ensemble actif (dry-run).
+     *
+     * <p>Indispensable au rechargement contrôlé (issue #131) : {@link #reload()} remplace l'ensemble
+     * actif par les fichiers <em>valides</em>, ce qui ferait <strong>disparaître du runtime</strong>
+     * une définition devenue invalide. On valide donc d'abord, et on n'applique que si tout passe.</p>
+     */
+    public StoryLoadReport validate() {
+        StoryLoadReport report = loader.loadDirectory(storiesDirectory);
+        logReport("Validation", report);
+        return report;
+    }
+
     public List<StoryDefinition> stories() {
         return stories;
     }

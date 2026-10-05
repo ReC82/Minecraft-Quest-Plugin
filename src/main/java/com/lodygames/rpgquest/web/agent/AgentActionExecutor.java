@@ -111,6 +111,8 @@ public final class AgentActionExecutor {
                 case MOB_TEST_CLEAR -> mobTestClear(action);
                 case SERVER_ANNOUNCE -> serverAnnounce(action);
                 case SERVER_LOGS_TAIL -> serverLogsTail(action);
+                case CONTENT_RELOAD_PREVIEW -> contentReload(action, false);
+                case CONTENT_RELOAD -> contentReload(action, true);
                 case PLAYER_ITEM_GIVE -> itemGive(action);
                 case QUEST_START -> questStart(action);
                 case QUEST_COMPLETE -> questMutation(action, AgentActionType.QUEST_COMPLETE);
@@ -758,6 +760,66 @@ public final class AgentActionExecutor {
                     : view.lines().size() + " ligne(s) de console, curseur " + view.lastSequence();
             return AgentActionOutcome.success(action.id(), String.valueOf(view.lastSequence()),
                     summary, details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- content.reload / content.reload.preview (issue #131) ----------------------------
+
+    /**
+     * Les familles viennent du panel en CSV. Un jeton inconnu est <strong>rejeté</strong> plutôt
+     * qu'ignoré : interpréter partiellement une demande de rechargement serait pire que la refuser,
+     * car l'administrateur croirait avoir rechargé plus que ce qui l'a été.
+     */
+    private CompletableFuture<AgentActionOutcome> contentReload(AgentAction action, boolean apply) {
+        String rawFamilies = firstNonBlank(action.param("families"), action.param("family"));
+        if (rawFamilies == null || rawFamilies.isBlank()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « families » manquant (ex. « quests,dialogues »)."));
+        }
+        List<String> families = new ArrayList<>();
+        for (String token : rawFamilies.split(",")) {
+            String trimmed = token.trim();
+            if (!trimmed.isEmpty()) {
+                families.add(trimmed);
+            }
+        }
+        if (families.isEmpty()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Aucune famille de contenu demandée."));
+        }
+        if (families.size() > 12) {
+            return done(AgentActionOutcome.rejected(action.id(), "Trop de familles demandées."));
+        }
+        return actions.contentReload(families, apply).thenApply(view -> {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("applied", view.applied());
+            details.put("code", view.code());
+            details.put("runtimeHash", view.runtimeHash());
+            details.put("durationMillis", view.durationMillis());
+            details.put("restartRequired", view.restartRequired());
+            details.put("referenceErrors", view.referenceErrors());
+            details.put("suggestedFamilies", view.suggestedFamilies());
+            List<Map<String, Object>> familyDetails = new ArrayList<>();
+            for (AgentActions.ContentReloadFamilyView family : view.families()) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("family", family.family());
+                item.put("label", family.label());
+                item.put("loaded", family.loaded());
+                item.put("issues", family.issues());
+                item.put("messages", family.messages());
+                item.put("ids", family.ids());
+                familyDetails.add(item);
+            }
+            details.put("families", familyDetails);
+            // Un refus de contenu n'est PAS un succès : le panel doit pouvoir distinguer
+            // « rien appliqué parce qu'invalide » de « appliqué ».
+            boolean ok = switch (view.code()) {
+                case "APPLIED", "PREVIEW_OK" -> true;
+                default -> false;
+            };
+            if (!ok) {
+                return AgentActionOutcome.failed(action.id(), view.message());
+            }
+            return AgentActionOutcome.success(action.id(), view.runtimeHash(), view.message(), details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 

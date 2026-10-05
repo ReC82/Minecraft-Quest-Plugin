@@ -55,6 +55,20 @@ public final class YamlNpcEngine implements PluginService {
         return report;
     }
 
+    /**
+     * Charge et valide depuis le disque <strong>sans toucher</strong> à l'ensemble actif (dry-run) —
+     * issue #131.
+     */
+    public NpcLoadReport validate() {
+        NpcLoadReport report = loader.loadDirectory(directory);
+        logger.info("Validation des PNJ : {} définition(s), {} erreur(s).",
+                report.loaded().size(), report.issues().size());
+        for (NpcLoadIssue issue : report.issues()) {
+            logger.warn("[{}] {}", issue.file(), issue.message());
+        }
+        return report;
+    }
+
     public Path directory() {
         return directory;
     }

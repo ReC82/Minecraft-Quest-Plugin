@@ -2,6 +2,8 @@ package com.lodygames.rpgquest.admin;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.claim.ClaimService;
+import com.lodygames.rpgquest.content.reload.ContentReloadService;
+import com.lodygames.rpgquest.content.reload.ReloadFamily;
 import com.lodygames.rpgquest.claim.model.ClaimTier;
 import com.lodygames.rpgquest.hub.HubGuideDefinition;
 import com.lodygames.rpgquest.hub.HubGuideReferral;
@@ -89,7 +91,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String DEBUG_PERMISSION = "rpgquest.admin.debug";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim");
+            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim", "content");
     private static final List<String> TRAVEL_SUBCOMMANDS =
             List.of("beacon", "village", "diagnose", "repair", "restore", "signs", "maintenance");
     private static final List<String> TRAVEL_REPAIR_KINDS = List.of("waypoint", "beacon");
@@ -125,6 +127,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final double NPC_REACH = 6.0;
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
+    /** Issue #131 — service central de rechargement : cette commande n'en est qu'un appelant. */
+    private final ContentReloadService contentReloadService;
     private final FlattenService flattenService;
     private final ZoneRegistry zoneRegistry;
     private final ZoneSelectionService zoneSelectionService;
@@ -161,7 +165,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             PlayerVariableRepository variableRepository, TravelBeaconService travelBeaconService,
                             WaypointService waypointService,
                             com.lodygames.rpgquest.travel.TravelMaintenanceMode travelMaintenanceMode,
-                            ClaimService claimService, RPGQuestPlugin plugin) {
+                            ClaimService claimService, ContentReloadService contentReloadService,
+                            RPGQuestPlugin plugin) {
+        this.contentReloadService = contentReloadService;
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
@@ -245,6 +251,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handlePortal(player, args);
         } else if (args[0].equalsIgnoreCase("mob")) {
             handleMob(player, args);
+        } else if (args[0].equalsIgnoreCase("content")) {
+            handleContent(player, args);
         } else if (args[0].equalsIgnoreCase("npc")) {
             handleNpc(player, args);
         } else if (args[0].equalsIgnoreCase("spawn")) {
@@ -684,16 +692,72 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                 Placeholder.unparsed("popmax", def.maxPopulation() == null ? " (illimitée)" : "/" + def.maxPopulation())));
     }
 
+    /**
+     * Issue #131 — délègue désormais au service central. Avant, cette commande appelait
+     * {@code mobRegistry.reload()} <strong>directement</strong>, donc sans dry-run ni validation des
+     * références croisées : un profil devenu invalide disparaissait du runtime en silence. C'était
+     * la seule porte de rechargement réellement exposée, et elle contournait toutes les garanties.
+     */
     private void handleMobReload(Player player) {
-        SpecialMobLoadReport report = mobRegistry.reload();
-        player.sendMessage(MM.deserialize(
-                "<gold>Rechargement</gold> <gray>: <loaded> mob(s) chargé(s), <errors> erreur(s).</gray>",
-                Placeholder.unparsed("loaded", String.valueOf(report.loaded().size())),
-                Placeholder.unparsed("errors", String.valueOf(report.issues().size()))));
-        for (SpecialMobLoadIssue issue : report.issues()) {
+        reportReload(player, contentReloadService.reload(java.util.Set.of(ReloadFamily.MOBS)));
+    }
+
+    /** {@code /rpgadmin content <preview|reload> [familles]} — issue #131. */
+    private void handleContent(Player player, String[] args) {
+        if (args.length < 2) {
             player.sendMessage(MM.deserialize(
-                    "<red>- [<file>]</red> <white><message></white>",
-                    Placeholder.unparsed("file", issue.file()), Placeholder.unparsed("message", issue.message())));
+                    "<yellow>/rpgadmin content preview [familles]</yellow> <gray>- valide sans rien appliquer</gray>"));
+            player.sendMessage(MM.deserialize(
+                    "<yellow>/rpgadmin content reload [familles]</yellow> <gray>- recharge après validation</gray>"));
+            player.sendMessage(MM.deserialize(
+                    "<gray>Familles : <white><list></white> (défaut : toutes).</gray>",
+                    Placeholder.unparsed("list", String.join(", ",
+                            java.util.Arrays.stream(ReloadFamily.values()).map(ReloadFamily::wire).toList()))));
+            return;
+        }
+        String mode = args[1].toLowerCase(java.util.Locale.ROOT);
+        if (!mode.equals("preview") && !mode.equals("reload")) {
+            player.sendMessage(MM.deserialize("<red>Mode attendu : preview ou reload.</red>"));
+            return;
+        }
+        java.util.Set<ReloadFamily> families;
+        if (args.length >= 3) {
+            java.util.Optional<java.util.Set<ReloadFamily>> parsed =
+                    ReloadFamily.parseCsv(String.join(",", java.util.Arrays.copyOfRange(args, 2, args.length)));
+            if (parsed.isEmpty()) {
+                player.sendMessage(MM.deserialize("<red>Famille de contenu inconnue.</red>"));
+                return;
+            }
+            families = parsed.get();
+        } else {
+            families = ReloadFamily.all();
+        }
+        reportReload(player, mode.equals("reload")
+                ? contentReloadService.reload(families)
+                : contentReloadService.preview(families));
+    }
+
+    /** Rend un résultat de rechargement en jeu, sans jamais présenter un refus comme un succès. */
+    private void reportReload(Player player, ContentReloadService.ReloadResult result) {
+        player.sendMessage(MM.deserialize(
+                (result.applied() ? "<green>Rechargement appliqué</green>" : "<gold>Rechargement non appliqué</gold>")
+                        + " <gray>(<code>, <ms> ms)</gray> <white><message></white>",
+                Placeholder.unparsed("code", result.code()),
+                Placeholder.unparsed("ms", String.valueOf(result.durationMillis())),
+                Placeholder.unparsed("message", result.message())));
+        for (ContentReloadService.FamilyOutcome outcome : result.families()) {
+            player.sendMessage(MM.deserialize(
+                    "<gray>- <family> : <loaded> chargé(s), <issues> erreur(s)</gray>",
+                    Placeholder.unparsed("family", outcome.family().label()),
+                    Placeholder.unparsed("loaded", String.valueOf(outcome.loaded())),
+                    Placeholder.unparsed("issues", String.valueOf(outcome.issues()))));
+            for (String message : outcome.messages()) {
+                player.sendMessage(MM.deserialize("  <red><message></red>",
+                        Placeholder.unparsed("message", message)));
+            }
+        }
+        for (String error : result.referenceErrors()) {
+            player.sendMessage(MM.deserialize("<red><message></red>", Placeholder.unparsed("message", error)));
         }
     }
 

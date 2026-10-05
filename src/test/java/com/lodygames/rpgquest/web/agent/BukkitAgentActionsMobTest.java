@@ -51,7 +51,8 @@ class BukkitAgentActionsMobTest {
         actions = new BukkitAgentActions(plugin, null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, mobRegistry, null, mobDefinitionStore, mobSpawnSettingsStore,
                 () -> "wild",
-                new ServerOpsService(plugin, new ServerLogBuffer(50), java.util.Optional::empty));
+                new ServerOpsService(plugin, new ServerLogBuffer(50), java.util.Optional::empty),
+                null);
     }
 
     @AfterEach

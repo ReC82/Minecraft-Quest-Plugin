@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.panel.support;
 import com.lodygames.rpgquest.panel.agent.AgentIdentity;
 import com.lodygames.rpgquest.panel.agent.AgentLiveness;
 import com.lodygames.rpgquest.panel.agent.AgentSettings;
+import com.lodygames.rpgquest.panel.config.OpsSettings;
 import com.lodygames.rpgquest.panel.config.PanelConfig;
 import com.lodygames.rpgquest.panel.config.Target;
 import com.lodygames.rpgquest.panel.security.PasswordHasher;
@@ -52,6 +53,9 @@ public final class TestConfig {
         Target dev = new Target("dev", "RPGQuest DEV", Target.Mode.BRIDGE, bridgeUrl, BRIDGE_TOKEN);
         return new PanelConfig(
                 0, "127.0.0.1", "", disabled, false, 120, 30, dbPath,
-                OWNER_USERNAME, OWNER_HASH, SESSION_SECRET, List.of(dev), "dev", agents, contentRepoDir);
+                OWNER_USERNAME, OWNER_HASH, SESSION_SECRET, List.of(dev), "dev", agents, contentRepoDir,
+                // Issue #95 : aucun accès RCON en test — la page doit donc afficher « redémarrage
+                // indisponible » avec son motif, ce qui est précisément le cas à couvrir.
+                OpsSettings.defaults());
     }
 }

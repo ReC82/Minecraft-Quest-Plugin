@@ -10,6 +10,10 @@
  *                           léger de /agents/actions.json — accéléré tant qu'une action est en cours ;
  *   - initCopy()          : copie d'un identifiant technique ([data-copy]) ;
  *   - initFilters()       : filtrage progressif des listes de cartes ;
+ *   - initOpsAnnounce()   : compteur, aperçu et modèles rapides de l'annonce globale (#95) ;
+ *   - initOpsConsole()    : console de logs en lecture seule — recherche, filtres de niveau,
+ *                           pause/reprise, suivi automatique, retour en bas (#95) ;
+ *   - initOpsRestart()    : suit une opération de redémarrage jusqu'à son terme, sans F5 (#95) ;
  *   - initDrawer()        : ferme le tiroir mobile au clic sur un lien.
  *
  * Pas de WebSocket (MVP #93). Le polling s'arrête tout seul (garde-fou de durée).
@@ -215,6 +219,237 @@
     }
 
     tick();
+  }
+
+  /* ---- Exploitation serveur : annonce (#95) ------------------------------------------ */
+
+  /**
+   * Compteur de caractères, aperçu fidèle et modèles rapides. L'aperçu rend le message en
+   * TEXTE : c'est exactement ce que le serveur enverra (aucune mise en forme interprétée),
+   * donc l'aperçu ne peut pas promettre un rendu que le jeu n'affichera pas.
+   */
+  function initOpsAnnounce() {
+    var form = document.querySelector("[data-ops-announce]");
+    if (!form) { return; }
+    var input = form.querySelector("[data-ops-message]");
+    var count = form.querySelector("[data-ops-count]");
+    var body = form.querySelector("[data-ops-preview-body]");
+    var preview = form.querySelector("[data-ops-preview]");
+    if (!input) { return; }
+
+    function refresh() {
+      var value = input.value || "";
+      if (count) { count.textContent = String(value.length); }
+      if (body) { body.textContent = value.length ? value : "…"; }
+      if (preview) {
+        var channel = form.querySelector("[data-ops-channel]:checked");
+        preview.setAttribute("data-channel", channel ? channel.value : "chat");
+      }
+    }
+
+    input.addEventListener("input", refresh);
+    var channels = form.querySelectorAll("[data-ops-channel]");
+    for (var c = 0; c < channels.length; c++) {
+      channels[c].addEventListener("change", refresh);
+    }
+    var templates = form.querySelectorAll("[data-ops-template]");
+    for (var t = 0; t < templates.length; t++) {
+      templates[t].addEventListener("click", function (event) {
+        input.value = event.currentTarget.getAttribute("data-ops-template") || "";
+        refresh();
+        input.focus();
+      });
+    }
+    // Anti double-clic : le bouton se désarme à la soumission. Le serveur refuse déjà une
+    // seconde annonce trop rapprochée, mais l'utilisateur ne doit pas avoir à le découvrir.
+    form.addEventListener("submit", function () {
+      var button = form.querySelector("button[type=submit]");
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Envoi…";
+      }
+    });
+    refresh();
+  }
+
+  /* ---- Exploitation serveur : console de logs (#95) ---------------------------------- */
+
+  /**
+   * Console en lecture seule. Le flux vient de /ops/logs.json, alimenté par l'agent sortant :
+   * aucun WebSocket, aucun SSE, aucun port entrant côté serveur de jeu. Recherche et filtres de
+   * niveau s'appliquent à ce qui est déjà reçu (filtrage local, immédiat, sans requête).
+   */
+  function initOpsConsole() {
+    var box = document.querySelector("[data-ops-console]");
+    if (!box) { return; }
+    var status = document.querySelector("[data-ops-console-status]");
+    var search = document.querySelector("[data-ops-search]");
+    var pauseBtn = document.querySelector("[data-ops-pause]");
+    var autoBtn = document.querySelector("[data-ops-autoscroll]");
+    var bottomBtn = document.querySelector("[data-ops-bottom]");
+    var levelBtns = document.querySelectorAll("[data-ops-level]");
+
+    var MAX_LINES = 1000;
+    var POLL_MS = 4000;
+    var lines = [];            // { seq, time, level, source, message }
+    var cursor = 0;
+    var paused = false;
+    var autoscroll = true;
+    var levels = { ERROR: true, WARN: true, INFO: true, DEBUG: false };
+    var timer = null;
+    var ticks = 0;
+
+    function matches(line) {
+      if (!levels[line.level]) { return false; }
+      var needle = search && search.value ? search.value.toLowerCase() : "";
+      if (!needle) { return true; }
+      return (line.message + " " + line.source).toLowerCase().indexOf(needle) >= 0;
+    }
+
+    function render() {
+      var out = [];
+      for (var i = 0; i < lines.length; i++) {
+        if (!matches(lines[i])) { continue; }
+        out.push('<span class="ops-l ops-l--' + esc(lines[i].level) + '">'
+          + '<span class="ops-t">' + esc(lines[i].time) + "</span> "
+          + '<span class="ops-lv">' + esc(lines[i].level) + "</span> "
+          + '<span class="ops-src">' + esc(lines[i].source) + "</span> "
+          + esc(lines[i].message) + "</span>");
+      }
+      box.innerHTML = out.join("\n");
+      if (autoscroll && !paused) { box.scrollTop = box.scrollHeight; }
+    }
+
+    function setStatus(text, kind) {
+      if (!status) { return; }
+      status.textContent = text;
+      status.className = "muted mb-1" + (kind ? " " + kind : "");
+    }
+
+    function hhmmss(epochMs) {
+      var d = new Date(epochMs);
+      function two(n) { return (n < 10 ? "0" : "") + n; }
+      return two(d.getHours()) + ":" + two(d.getMinutes()) + ":" + two(d.getSeconds());
+    }
+
+    function tick() {
+      ticks += 1;
+      if (ticks > 900) { setStatus("Flux arrêté (durée maximale atteinte) — recharger la page."); return; }
+      if (paused) { timer = window.setTimeout(tick, POLL_MS); return; }
+      fetch("/ops/logs.json?after=" + encodeURIComponent(cursor), {
+        headers: { "Accept": "application/json" }, credentials: "same-origin"
+      }).then(function (res) {
+        if (res.status === 401 || res.status === 403) { return null; }
+        if (!res.ok) { throw new Error("HTTP " + res.status); }
+        return res.json();
+      }).then(function (data) {
+        if (!data) { setStatus("Console non autorisée pour ce rôle."); return; }
+        if (data.unavailable) {
+          setStatus(data.unavailable, "text-warning");
+        } else {
+          var added = 0;
+          for (var i = 0; data.lines && i < data.lines.length; i++) {
+            var raw = data.lines[i];
+            lines.push({
+              seq: raw.seq, time: hhmmss(raw.at), level: String(raw.level || "INFO"),
+              source: String(raw.source || ""), message: String(raw.message || "")
+            });
+            if (raw.seq > cursor) { cursor = raw.seq; }
+            added += 1;
+          }
+          if (lines.length > MAX_LINES) { lines = lines.slice(lines.length - MAX_LINES); }
+          if (added > 0) { render(); }
+          var parts = [];
+          parts.push(lines.length + " ligne(s) en mémoire");
+          if (data.age) { parts.push("relevé " + data.age); }
+          if (data.gap) { parts.push("⚠ des lignes ont été perdues entre deux relevés"); }
+          if (data.pending) { parts.push("relevé suivant demandé…"); }
+          setStatus(parts.join(" · "), data.gap ? "text-warning" : "");
+        }
+        timer = window.setTimeout(tick, POLL_MS);
+      }).catch(function () {
+        setStatus("Console momentanément injoignable — nouvelle tentative…", "text-warning");
+        timer = window.setTimeout(tick, POLL_MS * 2);
+      });
+    }
+
+    if (search) { search.addEventListener("input", render); }
+    for (var l = 0; l < levelBtns.length; l++) {
+      levelBtns[l].addEventListener("click", function (event) {
+        var btn = event.currentTarget;
+        var level = btn.getAttribute("data-ops-level");
+        levels[level] = !levels[level];
+        btn.classList.toggle("on", levels[level]);
+        render();
+      });
+    }
+    if (pauseBtn) {
+      pauseBtn.addEventListener("click", function () {
+        paused = !paused;
+        pauseBtn.classList.toggle("on", paused);
+        pauseBtn.textContent = paused ? "Reprendre" : "Pause";
+        setStatus(paused ? "Flux en pause — les lignes continuent de s'accumuler côté serveur."
+          : "Flux repris.");
+      });
+    }
+    if (autoBtn) {
+      autoBtn.addEventListener("click", function () {
+        autoscroll = !autoscroll;
+        autoBtn.classList.toggle("on", autoscroll);
+      });
+    }
+    if (bottomBtn) {
+      bottomBtn.addEventListener("click", function () {
+        autoscroll = true;
+        if (autoBtn) { autoBtn.classList.add("on"); }
+        box.scrollTop = box.scrollHeight;
+      });
+    }
+    // Scroller vers le haut à la main coupe le suivi : sinon la lecture est impossible.
+    box.addEventListener("scroll", function () {
+      var atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 24;
+      if (!atBottom && autoscroll) {
+        autoscroll = false;
+        if (autoBtn) { autoBtn.classList.remove("on"); }
+      }
+    });
+    tick();
+  }
+
+  /* ---- Exploitation serveur : suivi d'une opération de redémarrage (#95) -------------- */
+
+  /**
+   * Tant qu'une opération est active, la carte d'état est rafraîchie sans F5 : l'administrateur
+   * voit l'arrêt puis le retour en ligne. Dès qu'elle est terminée, on recharge une seule fois
+   * pour afficher l'état serveur à jour, puis on s'arrête.
+   */
+  function initOpsRestart() {
+    if (!document.querySelector("[data-ops-operation]")) { return; }
+    var POLL_MS = 3000;
+    var ticks = 0;
+
+    function tick() {
+      ticks += 1;
+      if (ticks > 400) { return; }
+      fetch("/ops/state.json", {
+        headers: { "Accept": "application/json" }, credentials: "same-origin"
+      }).then(function (res) { return res.ok ? res.json() : null; })
+        .then(function (data) {
+          if (!data) { return; }
+          if (data.terminal) {
+            // Réutilise le point de rechargement MUTUALISÉ : il n'en existe qu'un dans ce
+            // fichier, et c'est une règle que CatalogResyncTest fait respecter — un reload
+            // par fonctionnalité redeviendrait vite plusieurs mécanismes concurrents.
+            runReload();
+            return;
+          }
+          var card = document.querySelector("[data-ops-operation]");
+          if (card && data.html) { card.outerHTML = data.html; }
+          window.setTimeout(tick, POLL_MS);
+        }).catch(function () { window.setTimeout(tick, POLL_MS * 2); });
+    }
+
+    window.setTimeout(tick, POLL_MS);
   }
 
   /* ---- Copie d'un identifiant technique -------------------------------------------- */
@@ -1085,6 +1320,9 @@
     run("initEditorForms", initEditorForms);
     run("initStyleFields", initStyleFields);
     run("initColorPalette", initColorPalette);
+    run("initOpsAnnounce", initOpsAnnounce);
+    run("initOpsConsole", initOpsConsole);
+    run("initOpsRestart", initOpsRestart);
     run("initDrawer", initDrawer);
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.

@@ -601,6 +601,126 @@ class AgentActionExecutorTest {
         actions.exportOversize = false;
     }
 
+    // ---- server.announce / server.logs.tail (issue #95) ------------------------------
+
+    @Test
+    void announceIsForwardedWithItsChannelAndReportsRealRecipients() {
+        AgentActionOutcome outcome = run(new AgentAction("an1", "server.announce",
+                Map.of("message", "Redémarrage dans 5 minutes.", "channel", "title")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals("Redémarrage dans 5 minutes.", actions.lastAnnounceMessage);
+        assertEquals("title", actions.lastAnnounceChannel);
+        assertEquals("3", outcome.value(), "la valeur est le nombre réel de destinataires");
+        assertEquals(3, outcome.details().get("recipients"));
+        assertEquals(3, outcome.details().get("online"));
+    }
+
+    @Test
+    void announceDefaultsToChatWhenNoChannelIsGiven() {
+        run(new AgentAction("an2", "server.announce", Map.of("message", "Bonjour")));
+
+        assertEquals("chat", actions.lastAnnounceChannel);
+    }
+
+    @Test
+    void announceRejectsACommandInsteadOfBroadcastingItLiterally() {
+        AgentActionOutcome outcome = run(new AgentAction("an3", "server.announce",
+                Map.of("message", "/say coucou")));
+
+        // Diffuser littéralement « /say coucou » serait pire que refuser : l'administrateur
+        // croirait avoir lancé une commande.
+        assertEquals(AgentActionOutcome.REJECTED, outcome.status());
+        assertTrue(outcome.message().contains("commande"), outcome.message());
+        assertNull(actions.lastAnnounceMessage, "rien ne doit atteindre le serveur");
+    }
+
+    @Test
+    void announceRejectsEmptyTooLongAndMultilineMessages() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("an4", "server.announce", Map.of("message", "  "))).status());
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("an5", "server.announce", Map.of("message", "x".repeat(201)))).status());
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("an6", "server.announce", Map.of("message", "a\nb"))).status());
+        assertNull(actions.lastAnnounceMessage);
+    }
+
+    @Test
+    void announceRejectsAnUnknownChannel() {
+        AgentActionOutcome outcome = run(new AgentAction("an7", "server.announce",
+                Map.of("message", "test", "channel", "bossbar")));
+
+        // « bossbar » existe dans Minecraft mais n'est pas implémenté ici : proposer un canal non
+        // supporté serait un bouton qui ne fait rien.
+        assertEquals(AgentActionOutcome.REJECTED, outcome.status());
+        assertTrue(outcome.message().contains("bossbar"), outcome.message());
+    }
+
+    @Test
+    void anAnnounceWithNobodyOnlineSucceedsButSaysSo() {
+        actions.announceOnline = 0;
+        actions.announceRecipients = 0;
+
+        AgentActionOutcome outcome = run(new AgentAction("an8", "server.announce",
+                Map.of("message", "personne n'écoute")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals(0, outcome.details().get("online"));
+        assertEquals("NO_PLAYERS", outcome.details().get("code"));
+    }
+
+    @Test
+    void aFailedAnnounceIsAFailureNotASuccess() {
+        actions.announceOk = false;
+
+        assertEquals(AgentActionOutcome.FAILED,
+                run(new AgentAction("an9", "server.announce", Map.of("message", "test"))).status());
+    }
+
+    @Test
+    void logsTailForwardsTheCursorAndLimitAndReportsTheGap() {
+        AgentActionOutcome outcome = run(new AgentAction("lg1", "server.logs.tail",
+                Map.of("after", "5", "limit", "50")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals(5L, actions.lastLogsAfter);
+        assertEquals(50, actions.lastLogsLimit);
+        assertEquals("7", outcome.value(), "la valeur est le curseur à renvoyer ensuite");
+        assertEquals(Boolean.TRUE, outcome.details().get("gap"));
+        assertEquals(2L, outcome.details().get("dropped"));
+        assertEquals(1, ((java.util.List<?>) outcome.details().get("lines")).size());
+    }
+
+    @Test
+    void logsTailDefaultsToTheStartOfTheBufferAndASaneLimit() {
+        run(new AgentAction("lg2", "server.logs.tail", Map.of()));
+
+        assertEquals(0L, actions.lastLogsAfter);
+        assertEquals(200, actions.lastLogsLimit);
+    }
+
+    @Test
+    void logsTailRejectsANonNumericOrOutOfBoundsRequest() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("lg3", "server.logs.tail", Map.of("after", "abc"))).status());
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("lg4", "server.logs.tail", Map.of("limit", "0"))).status());
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("lg5", "server.logs.tail", Map.of("limit", "501"))).status());
+    }
+
+    @Test
+    void logsTailSurfacesTheCaptureLimitationInsteadOfPretendingTheConsoleIsEmpty() {
+        actions.logsLimitation = "Capture de la console indisponible sur ce serveur.";
+
+        AgentActionOutcome outcome = run(new AgentAction("lg6", "server.logs.tail", Map.of()));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals(actions.logsLimitation, outcome.details().get("limitation"));
+        assertTrue(outcome.message().contains("indisponible"), outcome.message());
+    }
+
     // ---- Fake façade métier -----------------------------------------------------------
 
     private static final class FakeAgentActions implements AgentActions {
@@ -1045,6 +1165,36 @@ class AgentActionExecutorTest {
         @Override
         public CompletableFuture<MutationResult> mobTestClear() {
             return mutation("mob test clear");
+        }
+
+        // ---- Exploitation serveur (issue #95) ----------------------------------------
+
+        String lastAnnounceMessage;
+        String lastAnnounceChannel;
+        int announceRecipients = 3;
+        int announceOnline = 3;
+        boolean announceOk = true;
+        long lastLogsAfter = -1;
+        int lastLogsLimit = -1;
+        String logsLimitation;
+
+        @Override
+        public CompletableFuture<AnnounceResult> announce(String message, String channel) {
+            lastAnnounceMessage = message;
+            lastAnnounceChannel = channel;
+            return CompletableFuture.completedFuture(new AnnounceResult(announceOk,
+                    announceOk ? (announceOnline == 0 ? "NO_PLAYERS" : "SENT") : "ERROR",
+                    announceOk ? "Annonce envoyée." : "Diffusion impossible.",
+                    channel, announceRecipients, announceOnline));
+        }
+
+        @Override
+        public CompletableFuture<ServerLogsView> serverLogs(long afterSequence, int limit) {
+            lastLogsAfter = afterSequence;
+            lastLogsLimit = limit;
+            return CompletableFuture.completedFuture(new ServerLogsView(
+                    List.of(new ServerLogLine(7L, 1_700_000_000_000L, "WARN", "Citizens", "PNJ perdu")),
+                    5L, 7L, 2L, 500, true, logsLimitation));
         }
     }
 }

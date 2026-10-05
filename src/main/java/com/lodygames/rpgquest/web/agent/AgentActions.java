@@ -578,4 +578,62 @@ public interface AgentActions {
 
     /** Supprime uniquement les instances de test encore vivantes (toutes définitions) -- {@code mob.test.clear}. */
     CompletableFuture<MutationResult> mobTestClear();
+
+    // ---- Exploitation serveur (issue #95) ------------------------------------------------------
+
+    /**
+     * Diffuse une annonce à tous les joueurs connectés ({@code server.announce}).
+     *
+     * <p>Le message est envoyé comme <strong>texte</strong> : il n'est ni exécuté comme commande,
+     * ni interprété comme du MiniMessage. Un {@code <click:run_command:…>} glissé dans une annonce
+     * ferait exécuter une commande à tous les joueurs qui cliquent — cette porte reste fermée.</p>
+     *
+     * @param channel {@code chat} / {@code actionbar} / {@code title} — les seuls canaux réellement
+     *                supportés par l'API publique Paper/Adventure
+     */
+    CompletableFuture<AnnounceResult> announce(String message, String channel);
+
+    /**
+     * Résultat d'une annonce.
+     *
+     * @param code       {@code SENT} / {@code NO_PLAYERS} / {@code INVALID_MESSAGE} /
+     *                   {@code INVALID_CHANNEL} / {@code ERROR}
+     * @param recipients joueurs qui l'ont <strong>réellement</strong> reçue
+     * @param online     joueurs connectés au moment de l'envoi. {@code 0} signifie « personne n'a
+     *                   rien vu » : c'est dit comme tel, jamais présenté comme un succès trompeur
+     */
+    record AnnounceResult(boolean ok, String code, String message, String channel,
+                          int recipients, int online) {
+    }
+
+    /**
+     * Dernières lignes de console captées par le plugin ({@code server.logs.tail}) — lecture seule,
+     * bornée, sans effet de bord.
+     *
+     * <p>Ce n'est <strong>pas</strong> le fichier de log de l'hébergeur : celui-ci n'est pas
+     * atteignable (racine FTP = {@code plugins/}, remontée de dossier refusée par le serveur FTP,
+     * mesuré). C'est la sortie Log4j du serveur telle que le plugin la capte, ce qui couvre vanilla,
+     * Citizens, WorldEdit, Multiverse et RPGQuest.</p>
+     *
+     * @param afterSequence curseur de lecture ({@code 0} = début de consultation : on veut la fin
+     *                      du tampon, pas son début)
+     */
+    CompletableFuture<ServerLogsView> serverLogs(long afterSequence, int limit);
+
+    /**
+     * @param lines         lignes, ordre chronologique
+     * @param firstSequence plus ancienne séquence encore conservée
+     * @param lastSequence  dernière séquence connue du serveur (curseur à renvoyer ensuite)
+     * @param dropped       lignes évincées depuis le démarrage (tampon circulaire)
+     * @param capacity      capacité du tampon
+     * @param gap           {@code true} = des lignes manquent entre le curseur demandé et ce qui est
+     *                      renvoyé ; l'interface doit le dire plutôt que simuler un flux continu
+     * @param limitation    motif d'indisponibilité de la capture, ou {@code null} si elle fonctionne
+     */
+    record ServerLogsView(List<ServerLogLine> lines, long firstSequence, long lastSequence,
+                          long dropped, int capacity, boolean gap, String limitation) {
+    }
+
+    record ServerLogLine(long sequence, long epochMillis, String level, String source, String message) {
+    }
 }

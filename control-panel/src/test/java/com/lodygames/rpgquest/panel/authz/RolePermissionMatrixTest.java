@@ -143,4 +143,50 @@ class RolePermissionMatrixTest {
         assertFalse(authz.can("SUPERADMIN", Permission.DASHBOARD_VIEW));
         assertFalse(authz.can("owner", Permission.DASHBOARD_VIEW), "sensible à la casse : le nom exact est requis");
     }
+
+    // ---- Exploitation serveur (issue #95) -------------------------------------------------
+
+    @Test
+    void onlyOwnerAndAdminCanRestartTheServer() {
+        // C'est la seule action du panel qui déconnecte tous les joueurs : elle doit rester rare.
+        assertTrue(Role.OWNER.has(Permission.OPS_RESTART));
+        assertTrue(Role.ADMIN.has(Permission.OPS_RESTART));
+        for (Role r : new Role[] {Role.TESTER, Role.BUILDER, Role.CONTENT_EDITOR, Role.READ_ONLY}) {
+            assertFalse(r.has(Permission.OPS_RESTART), r + " ne doit pas pouvoir redémarrer le serveur");
+        }
+    }
+
+    @Test
+    void onlyOwnerAndAdminCanAnnounceToEveryPlayer() {
+        assertTrue(Role.OWNER.has(Permission.OPS_ANNOUNCE));
+        assertTrue(Role.ADMIN.has(Permission.OPS_ANNOUNCE));
+        for (Role r : new Role[] {Role.TESTER, Role.BUILDER, Role.CONTENT_EDITOR, Role.READ_ONLY}) {
+            assertFalse(r.has(Permission.OPS_ANNOUNCE), r + " ne doit pas parler à tous les joueurs");
+        }
+    }
+
+    @Test
+    void aTesterSeesTheStateAndTheConsoleButActsOnNothing() {
+        assertTrue(Role.TESTER.has(Permission.OPS_VIEW));
+        assertTrue(Role.TESTER.has(Permission.OPS_LOGS), "comprendre ce qu'on observe en jeu");
+        assertFalse(Role.TESTER.has(Permission.OPS_ANNOUNCE));
+        assertFalse(Role.TESTER.has(Permission.OPS_RESTART));
+    }
+
+    @Test
+    void readOnlySeesTheStateButNotTheConsole() {
+        // La console est plus bavarde que l'état : pseudos, coordonnées, erreurs internes.
+        assertTrue(Role.READ_ONLY.has(Permission.OPS_VIEW));
+        assertFalse(Role.READ_ONLY.has(Permission.OPS_LOGS));
+    }
+
+    @Test
+    void aBuilderAndAContentEditorHaveNoServerOperationsAtAll() {
+        for (Role r : new Role[] {Role.BUILDER, Role.CONTENT_EDITOR}) {
+            for (Permission p : new Permission[] {Permission.OPS_VIEW, Permission.OPS_ANNOUNCE,
+                    Permission.OPS_RESTART, Permission.OPS_LOGS}) {
+                assertFalse(r.has(p), r + " ne doit pas avoir " + p);
+            }
+        }
+    }
 }

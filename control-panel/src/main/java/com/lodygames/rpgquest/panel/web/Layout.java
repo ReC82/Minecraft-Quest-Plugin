@@ -49,6 +49,8 @@ public final class Layout {
                         new NavItem("Stories", "/stories", "stories", Permission.CONTENT_READ, true),
                         new NavItem("Dialogues", "/dialogues", "dialogues", Permission.DIALOGUE_READ, true),
                         new NavItem("Export contenu", "/content/export", "export", Permission.CONTENT_EXPORT, true))),
+                new NavGroup("Serveur", List.of(
+                        new NavItem("Exploitation", "/ops", "server", Permission.OPS_VIEW, true))),
                 new NavGroup("Ressources", List.of(
                         new NavItem("Documentation", "/docs", "docs", Permission.DOCS_READ, true),
                         new NavItem("Diagnostics", "/diagnostics", "diagnostics", Permission.DIAGNOSTICS_READ, true))),

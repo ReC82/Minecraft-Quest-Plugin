@@ -43,3 +43,27 @@ agent.stale-seconds=45
 agent.offline-seconds=150
 # Au-delà de ce délai sans résultat, une action passe EXPIRED (secondes).
 agent.action-expiry-seconds=300
+
+# --- Exploitation serveur — issue #95 ---------------------------------------
+# Accès RCON de la cible, utilisé UNIQUEMENT par le redémarrage piloté depuis
+# la page /ops. Trois commandes au total sont émissibles (list, save-all, stop) :
+# c'est une énumération fermée côté code, pas une console.
+#
+# Sans ces clés, la fonction « redémarrer » s'affiche INDISPONIBLE avec son
+# motif, et le reste de la page (état, annonce, console) fonctionne normalement.
+# ops.rcon.dev.host=
+# ops.rcon.dev.port=25575
+# Nom de la variable d'environnement contenant le mot de passe RCON.
+# Défaut si omis : RPGQUEST_RCON_PASSWORD_DEV. Le mot de passe n'est JAMAIS ici.
+# ops.rcon.dev.password-env=RPGQUEST_RCON_PASSWORD_DEV
+#
+# Délais du redémarrage. Au-delà de return-timeout-seconds sans retour constaté,
+# l'opération finit en ÉCHEC — jamais en « redémarré » optimiste.
+ops.restart.return-timeout-seconds=240
+ops.restart.poll-seconds=5
+ops.restart.stop-grace-seconds=45
+ops.rcon.timeout-seconds=10
+# Intervalle minimal entre deux annonces automatiques (compte à rebours).
+ops.announce.min-interval-seconds=10
+# Lignes de console demandées à l'agent par consultation (1 à 500).
+ops.logs.tail-lines=200

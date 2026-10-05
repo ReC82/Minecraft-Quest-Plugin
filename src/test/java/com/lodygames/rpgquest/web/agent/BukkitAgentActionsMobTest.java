@@ -7,6 +7,8 @@ import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.mob.MobSpawnSettingsStore;
 import com.lodygames.rpgquest.mob.SpecialMobDefinitionStore;
 import com.lodygames.rpgquest.mob.SpecialMobRegistry;
+import com.lodygames.rpgquest.ops.ServerLogBuffer;
+import com.lodygames.rpgquest.ops.ServerOpsService;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -48,7 +50,8 @@ class BukkitAgentActionsMobTest {
 
         actions = new BukkitAgentActions(plugin, null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, mobRegistry, null, mobDefinitionStore, mobSpawnSettingsStore,
-                () -> "wild");
+                () -> "wild",
+                new ServerOpsService(plugin, new ServerLogBuffer(50), java.util.Optional::empty));
     }
 
     @AfterEach

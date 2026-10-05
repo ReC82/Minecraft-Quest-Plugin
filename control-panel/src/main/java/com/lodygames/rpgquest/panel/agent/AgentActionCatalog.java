@@ -45,6 +45,24 @@ public final class AgentActionCatalog {
     private static final double Y_MIN = -2048.0;
     private static final double Y_MAX = 2048.0;
 
+    /** Issue #95 : canaux d'annonce réellement supportés — miroir de {@code ServerOpsService.CHANNELS}. */
+    public static final List<String> ANNOUNCE_CHANNELS = List.of("chat", "actionbar", "title");
+    /** Même borne que le serveur : au-delà, l'affichage en jeu n'est plus lisible. */
+    public static final int MAX_ANNOUNCE_CHARS = 200;
+
+    /**
+     * Modèles d'annonce proposés en un clic (issue #95). Ce ne sont que des <strong>textes</strong>
+     * pré-remplis dans le champ : aucun ne déclenche d'opération, et l'administrateur peut les
+     * modifier avant d'envoyer. Un modèle « Redémarrage dans 5 minutes » n'a jamais redémarré quoi
+     * que ce soit — c'est le bouton de redémarrage qui le fait, et il annonce de lui-même.
+     */
+    public static final List<String> ANNOUNCE_TEMPLATES = List.of(
+            "Redémarrage du serveur dans 10 minutes.",
+            "Redémarrage du serveur dans 5 minutes.",
+            "Redémarrage du serveur dans 1 minute.",
+            "Maintenance imminente : déconnexion conseillée.",
+            "Merci de votre patience, le serveur revient dans un instant.");
+
     /** Suggestions de clés de variables pour les listes déroulantes (jamais imposées). */
     public static final List<String> KNOWN_VARIABLE_KEYS = List.of(
             "CLAIM_TIER_1", "tutorial_started", "crystal_hunt_started", "RUNE_RAPPEL_GRANTED");
@@ -181,6 +199,13 @@ public final class AgentActionCatalog {
         add("quest.start", Permission.ACTION_QUEST, true, true, "Démarrer une quête");
         add("quest.complete", Permission.ACTION_QUEST, true, true, "Compléter une quête");
         add("quest.reset", Permission.ACTION_QUEST, true, true, "Réinitialiser une quête");
+        // Issue #95 — exploitation serveur. L'annonce est une mutation visible IMMÉDIATEMENT par
+        // tous les joueurs et impossible à reprendre : confirmation exigée. La console est un
+        // relevé comme les autres.
+        addSensitiveWrite("server.announce", Permission.OPS_ANNOUNCE, false,
+                "Envoyer une annonce globale aux joueurs");
+        add("server.logs.tail", Permission.OPS_LOGS, false, false,
+                "Lire les dernières lignes de la console serveur");
         add("story.advance", Permission.ACTION_STORY, true, true, "Avancer une story");
         add("story.complete", Permission.ACTION_STORY, true, true, "Compléter une story");
     }
@@ -678,6 +703,59 @@ public final class AgentActionCatalog {
                     return Validation.fail("Identifiant de profil manquant ou invalide.");
                 }
                 params.put("mob_id", mobId);
+            }
+            case "server.announce" -> {
+                String message = form.getOrDefault("message", "").strip();
+                if (message.isEmpty()) {
+                    return Validation.fail("Message d'annonce vide.");
+                }
+                if (message.length() > MAX_ANNOUNCE_CHARS) {
+                    return Validation.fail("Annonce trop longue (" + message.length()
+                            + " caractères, maximum " + MAX_ANNOUNCE_CHARS + ").");
+                }
+                if (message.indexOf('\n') >= 0 || message.indexOf('\r') >= 0) {
+                    return Validation.fail("Annonce multi-ligne refusée.");
+                }
+                if (message.startsWith("/")) {
+                    // Le serveur refuse déjà ce cas ; le refuser ici évite un aller-retour et dit
+                    // clairement que ce champ n'est pas une console.
+                    return Validation.fail("Une annonce est un texte, pas une commande : "
+                            + "retirer le « / » initial.");
+                }
+                String channel = orDefault(trim(form.get("channel")).toLowerCase(java.util.Locale.ROOT), "chat");
+                if (!ANNOUNCE_CHANNELS.contains(channel)) {
+                    return Validation.fail("Canal d'annonce inconnu (chat, actionbar, title).");
+                }
+                params.put("message", message);
+                params.put("channel", channel);
+            }
+            case "server.logs.tail" -> {
+                String after = trim(form.get("after"));
+                if (!after.isEmpty()) {
+                    long value;
+                    try {
+                        value = Long.parseLong(after);
+                    } catch (NumberFormatException e) {
+                        return Validation.fail("Curseur de console invalide.");
+                    }
+                    if (value < 0) {
+                        return Validation.fail("Curseur de console négatif.");
+                    }
+                    params.put("after", Long.toString(value));
+                }
+                String logLimit = trim(form.get("limit"));
+                if (!logLimit.isEmpty()) {
+                    int value;
+                    try {
+                        value = Integer.parseInt(logLimit);
+                    } catch (NumberFormatException e) {
+                        return Validation.fail("Nombre de lignes invalide.");
+                    }
+                    if (value < 1 || value > 500) {
+                        return Validation.fail("Nombre de lignes hors bornes (1 à 500).");
+                    }
+                    params.put("limit", Integer.toString(value));
+                }
             }
             case "player.resetnew.confirm" -> params.put("confirm", "true");
             case "player.ban" -> {

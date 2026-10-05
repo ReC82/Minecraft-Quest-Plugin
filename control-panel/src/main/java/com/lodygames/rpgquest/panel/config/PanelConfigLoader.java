@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.panel.config;
 import com.lodygames.rpgquest.panel.agent.AgentIdentity;
 import com.lodygames.rpgquest.panel.agent.AgentLiveness;
 import com.lodygames.rpgquest.panel.agent.AgentSettings;
+import com.lodygames.rpgquest.panel.ops.RestartService;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -75,7 +76,8 @@ public final class PanelConfigLoader {
                 props.getProperty("content.repo-dir"), null);
 
         return new PanelConfig(port, bind, baseUrl, disabled, cookieSecure, ttl, idle, dbPath,
-                ownerUsername, ownerHash, secret, targets, defaultTargetId, agents, contentRepoDir);
+                ownerUsername, ownerHash, secret, targets, defaultTargetId, agents, contentRepoDir,
+                readOps(props, targets));
     }
 
     /**
@@ -117,6 +119,53 @@ public final class PanelConfigLoader {
 
         return new AgentSettings(agents, new AgentLiveness.Thresholds(stale, offline),
                 Duration.ofSeconds(Math.max(30, expiry)), defaultAgentId);
+    }
+
+    /**
+     * Exploitation serveur (issue #95). Clés, <strong>par cible</strong> :
+     * <pre>
+     *   ops.rcon.&lt;targetId&gt;.host=…
+     *   ops.rcon.&lt;targetId&gt;.port=25575
+     *   ops.rcon.&lt;targetId&gt;.password-env=RPGQUEST_RCON_PASSWORD_DEV   (défaut dérivé de l'id)
+     *   ops.restart.return-timeout-seconds=240
+     *   ops.restart.poll-seconds=5
+     *   ops.restart.stop-grace-seconds=45
+     *   ops.rcon.timeout-seconds=10
+     *   ops.announce.min-interval-seconds=10
+     *   ops.logs.tail-lines=200
+     * </pre>
+     *
+     * <p>Le mot de passe vient <strong>uniquement</strong> de l'environnement, jamais du fichier de
+     * propriétés ni du dépôt. Une cible sans hôte ou sans mot de passe n'est pas une erreur de
+     * configuration : la fonction « redémarrer » s'affichera simplement <strong>indisponible</strong>
+     * avec son motif, ce qui vaut mieux qu'un bouton qui ne fait rien.</p>
+     */
+    private OpsSettings readOps(Properties props, List<Target> targets) {
+        List<RestartService.RconEndpoint> endpoints = new ArrayList<>();
+        for (Target target : targets) {
+            String id = target.id();
+            String host = firstNonBlank(props.getProperty("ops.rcon." + id + ".host"), null);
+            if (host == null) {
+                continue; // cible sans RCON déclaré : rien à inventer
+            }
+            int port = intOf(firstNonBlank(props.getProperty("ops.rcon." + id + ".port"), "25575"), 25575);
+            String passwordEnvKey = firstNonBlank(props.getProperty("ops.rcon." + id + ".password-env"),
+                    "RPGQUEST_RCON_PASSWORD_" + RestartService.envSuffix(id));
+            String password = firstNonBlank(env.apply(passwordEnvKey), "");
+            endpoints.add(new RestartService.RconEndpoint(id, host, port, password == null ? "" : password));
+        }
+        return new OpsSettings(endpoints,
+                Duration.ofSeconds(intOf(firstNonBlank(
+                        props.getProperty("ops.restart.return-timeout-seconds"), "240"), 240)),
+                Duration.ofSeconds(intOf(firstNonBlank(
+                        props.getProperty("ops.restart.poll-seconds"), "5"), 5)),
+                Duration.ofSeconds(intOf(firstNonBlank(
+                        props.getProperty("ops.restart.stop-grace-seconds"), "45"), 45)),
+                Duration.ofSeconds(intOf(firstNonBlank(
+                        props.getProperty("ops.rcon.timeout-seconds"), "10"), 10)),
+                Duration.ofSeconds(intOf(firstNonBlank(
+                        props.getProperty("ops.announce.min-interval-seconds"), "10"), 10)),
+                intOf(firstNonBlank(props.getProperty("ops.logs.tail-lines"), "200"), 200));
     }
 
     private List<Target> readTargets(Properties props) {

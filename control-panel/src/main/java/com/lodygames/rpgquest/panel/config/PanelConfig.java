@@ -24,6 +24,8 @@ import java.util.Optional;
  * @param agents             configuration du canal « agent sortant » (issue #51)
  * @param contentRepoDir     racine du checkout Git source du contenu éditable (#46) — typiquement
  *                           {@code <repo>/src/main/resources} ; {@code null} = éditeur désactivé
+ * @param ops                configuration « exploitation serveur » (issue #95) : points d'accès
+ *                           RCON par cible et délais du redémarrage
  */
 public record PanelConfig(
         int httpPort,
@@ -40,11 +42,13 @@ public record PanelConfig(
         List<Target> targets,
         String defaultTargetId,
         AgentSettings agents,
-        String contentRepoDir) {
+        String contentRepoDir,
+        OpsSettings ops) {
 
     public PanelConfig {
         targets = targets == null ? List.of() : List.copyOf(targets);
         agents = agents == null ? AgentSettings.none() : agents;
+        ops = ops == null ? OpsSettings.defaults() : ops;
     }
 
     public Target defaultTarget() {

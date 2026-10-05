@@ -593,15 +593,20 @@ PlugAdmin** : aucune correspondance automatique avec OP Minecraft, Paper ou Luck
     revient automatiquement). Seul à gérer les comptes (`USER_MANAGE`) et le module
     dev/déploiement (`DEV_MODULE`) par défaut.
   - `ADMIN` — exploitation serveur : joueurs (dont modération), PNJ, dialogues, diagnostics,
-    contenu, actions admin (quest / story / variable / reset / item / reload). **Pas** de gestion
-    des comptes ni du module dev.
-  - `TESTER` — lectures utiles au test + `ACTION_QUEST` / `ACTION_STORY` / `ACTION_VARIABLE_GET`.
-    Pas d'écriture de contenu, pas de reset, pas de modération.
+    contenu, actions admin (quest / story / variable / reset / item / reload) et le module
+    **Exploitation serveur** complet (#95 : `OPS_VIEW`, `OPS_ANNOUNCE`, `OPS_RESTART`,
+    `OPS_LOGS`). **Pas** de gestion des comptes ni du module dev.
+  - `TESTER` — lectures utiles au test + `ACTION_QUEST` / `ACTION_STORY` / `ACTION_VARIABLE_GET`,
+    plus l'**état serveur et la console** (`OPS_VIEW`, `OPS_LOGS`) pour comprendre ce qu'il
+    observe en jeu. Pas d'annonce, pas de redémarrage, pas d'écriture de contenu, pas de reset,
+    pas de modération.
   - `BUILDER` — documentation + infos PNJ / contenu. **Pas** de données joueurs, pas d'action
     serveur.
   - `CONTENT_EDITOR` — lecture + édition guidée quêtes / stories / dialogues / PNJ logiques,
     brouillons, validation, reload contenu. Pas de modération, pas de spawn.
-  - `READ_ONLY` — lecture seule ; aucune permission détenue ne pilote une mutation.
+  - `READ_ONLY` — lecture seule ; aucune permission détenue ne pilote une mutation. Voit l'état
+    serveur (`OPS_VIEW`) mais **pas la console** (`OPS_LOGS`), plus bavarde : pseudos,
+    coordonnées, erreurs internes.
 - **Contrôle centralisé** : `PermissionService.can(roleName, Permission)` — **jamais** un test
   `if role == OWNER` dans un handler. Chaque route et chaque mutation vérifie la permission
   côté backend ; une requête directe sans droit renvoie un **403** cohérent (« Vous n'avez pas
@@ -630,6 +635,72 @@ PlugAdmin** : aucune correspondance automatique avec OP Minecraft, Paper ou Luck
 
 Détails et modèle de menace complet : [docs/control-panel/SECURITY.md](control-panel/SECURITY.md),
 section « Rôles et permissions #50 ».
+
+### Exploitation serveur depuis PlugAdmin (issue #95, lot 1)
+
+Page **`/ops`** : état réel, annonce globale, redémarrage vérifié, console récente. Tout y est
+**typé et whitelisté** — le navigateur ne transporte jamais de commande shell ni de commande RCON,
+seulement des *opérations* dont le serveur décide le contenu. Permissions dédiées `OPS_VIEW`,
+`OPS_ANNOUNCE`, `OPS_RESTART`, `OPS_LOGS`.
+
+**État et fraîcheur** — les quatre cartes (vivacité de l'agent, joueurs, uptime, version) viennent
+du **dernier heartbeat** (~20 s). La page affiche l'âge du relevé : un `ONLINE` vieux de 40 s
+signifie « le serveur allait bien il y a 40 s », pas une mesure en direct. Aucun heartbeat reçu =
+dit explicitement, jamais des zéros.
+
+**Annonce globale** (`server.announce`) — trois canaux, et seulement ceux qui existent réellement
+dans l'API publique : `chat` (`sendMessage`), `actionbar` (`sendActionBar`), `title`
+(`showTitle`). Le message est envoyé en **texte littéral** : jamais exécuté comme commande, jamais
+passé à MiniMessage. Un `<click:run_command:…>` dans une annonce ferait exécuter une commande à
+tous les joueurs qui cliquent — cette porte reste fermée, et un message commençant par `/` est
+refusé. Résultat structuré : destinataires **réels** et joueurs connectés ; `NO_PLAYERS` quand
+personne n'était là, plutôt qu'un « envoyé » trompeur. 200 caractères, une ligne, audité.
+
+**Redémarrage** — exécuté par **PlugAdmin en RCON depuis AWS**, pas par l'agent : un plugin ne peut
+pas garantir son propre retour, puisque l'agent s'arrête avec le serveur. C'est le mécanisme déjà
+éprouvé par `scripts/verygames-restart.sh` (arrêt RCON, relance automatique de l'hébergeur), porté
+en Java parce que le service PlugAdmin tourne sous `systemd` avec `ProtectHome=true` et n'a accès ni
+au `$HOME` de l'opérateur ni à son fichier d'identifiants. Les commandes émissibles sont une
+**énumération de trois valeurs** (`list`, `save-all`, `stop`) : « aucune commande RCON arbitraire »
+est une propriété **du type**, pas une promesse en commentaire.
+
+**Un arrêt n'est pas un redémarrage.** Avant d'arrêter, on vérifie que le serveur répond — sinon
+**aucun arrêt n'est demandé**. Après l'arrêt, deux preuves seulement sont acceptées : serveur **vu
+hors ligne** puis répondant de nouveau, **ou** uptime du plugin **diminué** (relevé par le
+heartbeat, ce qui couvre une relance plus rapide que l'intervalle de sonde). Sans preuve avant le
+délai, l'opération finit en **échec** avec le motif. **Single-flight** : une seule opération à la
+fois, ce qui est aussi la protection contre le double-clic et le rejeu. Confirmations **adaptées** :
+case à cocher pour un différé (annulable), saisie du mot `REDEMARRER` pour un immédiat.
+
+**Console récente** (`server.logs.tail`) — lecture seule, 500 lignes en tampon **circulaire**,
+recherche, filtres `ERROR`/`WARN`/`INFO`, pause, suivi auto, retour en bas. Les lignes sont captées
+par un **appender Log4j2** côté plugin (`ops.ConsoleTap`) : c'est la sortie réelle du serveur —
+vanilla, Citizens, WorldEdit, Multiverse, RPGQuest. Un `Handler` `java.util.logging` ne suffirait
+pas, car Paper route `getSLF4JLogger()` directement vers Log4j2 et la quasi-totalité de nos lignes
+lui échapperait. `log4j-core` est `compileOnly` (fourni par le serveur) et une absence ou une
+incompatibilité est **rattrapée** (`LinkageError`) : la console s'affiche « indisponible » avec son
+motif, le serveur démarre normalement. Si le niveau du logger racine est plus restrictif que
+`INFO`, c'est **dit** plutôt que de laisser croire à une console en panne.
+
+**Transport** — aucun SSE, aucun WebSocket, aucun port entrant côté serveur de jeu : les lignes
+remontent par l'**agent sortant** existant (scrutation ~15 s), et le panel n'enfile **qu'un** relevé
+à la fois. La console est donc *récente*, pas instantanée, et la page l'écrit. Le ticket demandait
+d'évaluer SSE : il aurait ajouté un second canal pour une donnée dont la fraîcheur reste de toute
+façon bornée par l'agent.
+
+**Fonctions affichées comme indisponibles, avec leur motif réel** : démarrage/arrêt explicite
+(l'hébergeur n'expose aucune API de supervision) ; console complète de l'hébergeur (le fichier de
+log n'est pas atteignable — racine FTP = `plugins/`, remontée de dossier refusée, mesuré) ;
+sauvegarde restaurable (`save-all` n'est pas un point de restauration) ; mode maintenance et
+annonces programmées. Rechargement du contenu (#131) et actions joueur / OP-DEOP (#210) sont
+annoncés comme lots suivants, avec leur emplacement prévu.
+
+**Limite assumée** : l'opération de redémarrage vit en mémoire ; si PlugAdmin redémarre, un
+redémarrage *différé* est perdu et doit être reprogrammé. Rien n'est jamais exécuté en retard.
+
+Fiche utilisateur : `/docs/exploitation-serveur`. Configuration : `ops.rcon.<cible>.host` / `.port`
+dans `control-panel.properties`, mot de passe **uniquement** depuis l'environnement
+(`RPGQUEST_RCON_PASSWORD_<CIBLE>`), jamais dans le dépôt.
 
 ---
 

@@ -55,6 +55,27 @@ public enum Permission {
     ACTION_CONTENT_RELOAD,
     DEV_MODULE,
     /**
+     * Voir la page « Exploitation serveur » (issue #95) : état réel du serveur et de l'agent,
+     * fraîcheur des données, historique des opérations. Lecture seule.
+     */
+    OPS_VIEW,
+    /**
+     * Envoyer une annonce globale aux joueurs (issue #95). Permission <strong>dédiée</strong> : une
+     * annonce est visible par tout le monde, immédiatement, et ne peut pas être reprise.
+     */
+    OPS_ANNOUNCE,
+    /**
+     * Redémarrer le serveur (issue #95). Permission <strong>dédiée</strong> et volontairement la
+     * plus rare : c'est la seule action du panel qui déconnecte tous les joueurs.
+     */
+    OPS_RESTART,
+    /**
+     * Lire la console récente du serveur (issue #95). Séparée de {@link #OPS_VIEW} : des lignes de
+     * log peuvent contenir des pseudos, des coordonnées et des messages d'erreur internes — c'est
+     * plus bavard que l'état synthétique.
+     */
+    OPS_LOGS,
+    /**
      * Gérer les comptes PlugAdmin : créer un utilisateur, changer son rôle, l'activer / le
      * désactiver, consulter la page {@code /users} (issue #50). Réservée à {@code OWNER} par
      * défaut ; jamais accordée à {@code ADMIN} sans décision explicite.

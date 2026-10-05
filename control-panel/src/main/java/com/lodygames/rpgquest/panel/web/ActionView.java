@@ -312,6 +312,24 @@ public final class ActionView {
     }
 
     /** Toast d'erreur immédiat (échec de validation, avant même la création d'une action). */
+    /**
+     * Toast de succès pour une opération <strong>synchrone</strong> du panel (issue #95 :
+     * redémarrage demandé, annulé). Les actions agent passent par {@link #toastHtml}, qui suit leur
+     * résolution ; ici le résultat est déjà connu.
+     */
+    public static String okToastHtml(String message) {
+        String msg = message == null || message.isBlank() ? "Opération acceptée." : message;
+        return "<div class=\"toast pa-toast\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\""
+                + " data-toast-group=\"success\" data-bs-autohide=\"false\">"
+                + "<div class=\"toast-header\">"
+                + "<span class=\"toast-ic text-success\">" + Icons.icon("check") + "</span>"
+                + "<strong class=\"me-auto\">Opération acceptée</strong>"
+                + "<button type=\"button\" class=\"btn-close\" data-bs-dismiss=\"toast\" aria-label=\"Fermer\"></button>"
+                + "</div>"
+                + "<div class=\"toast-body\">" + Http.esc(msg) + "</div>"
+                + "</div>";
+    }
+
     public static String errorToastHtml(String message) {
         String msg = message == null || message.isBlank() ? "Requête refusée." : message;
         return "<div class=\"toast pa-toast\" role=\"alert\" aria-live=\"assertive\" aria-atomic=\"true\""

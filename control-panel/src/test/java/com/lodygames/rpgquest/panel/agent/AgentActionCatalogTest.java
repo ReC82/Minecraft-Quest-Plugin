@@ -386,4 +386,112 @@ class AgentActionCatalogTest {
         assertEquals(Permission.MOB_TEST_SPAWN, AgentActionCatalog.spec("mob.test.spawn").orElseThrow().permission());
         assertEquals(Permission.MOB_TEST_SPAWN, AgentActionCatalog.spec("mob.test.clear").orElseThrow().permission());
     }
+
+    // ---- Exploitation serveur (issue #95) --------------------------------------------
+
+    @Test
+    void announceIsAcceptedWithItsChannelAndNormalizedCase() {
+        AgentActionCatalog.Validation valid = AgentActionCatalog.validate("server.announce",
+                Map.of("message", "  Redémarrage dans 5 minutes.  ", "channel", "TITLE", "confirm", "true"));
+
+        assertTrue(valid.valid(), valid.error());
+        assertEquals("Redémarrage dans 5 minutes.", valid.params().get("message"));
+        assertEquals("title", valid.params().get("channel"));
+    }
+
+    @Test
+    void announceDefaultsToChat() {
+        AgentActionCatalog.Validation valid = AgentActionCatalog.validate("server.announce",
+                Map.of("message", "Bonjour", "confirm", "true"));
+
+        assertTrue(valid.valid(), valid.error());
+        assertEquals("chat", valid.params().get("channel"));
+    }
+
+    @Test
+    void announceRequiresAnExplicitConfirmation() {
+        // Une annonce est vue par tout le monde immédiatement et ne peut pas être reprise :
+        // elle est marquée « sensible », donc la confirmation n'est pas optionnelle.
+        AgentActionCatalog.Validation missing = AgentActionCatalog.validate("server.announce",
+                Map.of("message", "Bonjour"));
+
+        assertFalse(missing.valid());
+        assertTrue(missing.error().contains("Confirmation"), missing.error());
+    }
+
+    @Test
+    void announceRefusesACommandAnEmptyMessageAndAnOversizedOne() {
+        assertFalse(AgentActionCatalog.validate("server.announce",
+                Map.of("message", "/say coucou", "confirm", "true")).valid());
+        assertFalse(AgentActionCatalog.validate("server.announce",
+                Map.of("message", "   ", "confirm", "true")).valid());
+        AgentActionCatalog.Validation tooLong = AgentActionCatalog.validate("server.announce",
+                Map.of("message", "x".repeat(AgentActionCatalog.MAX_ANNOUNCE_CHARS + 1), "confirm", "true"));
+        assertFalse(tooLong.valid());
+        assertTrue(tooLong.error().contains("trop longue"), tooLong.error());
+    }
+
+    @Test
+    void announceRefusesAnUnsupportedChannel() {
+        AgentActionCatalog.Validation invalid = AgentActionCatalog.validate("server.announce",
+                Map.of("message", "test", "channel", "bossbar", "confirm", "true"));
+
+        assertFalse(invalid.valid());
+        assertTrue(invalid.error().contains("chat"), invalid.error());
+    }
+
+    @Test
+    void theOfferedChannelsAreExactlyTheSupportedOnes() {
+        // Miroir strict du serveur : proposer un canal de plus serait un bouton qui ne fait rien.
+        assertEquals(java.util.List.of("chat", "actionbar", "title"), AgentActionCatalog.ANNOUNCE_CHANNELS);
+        for (String channel : AgentActionCatalog.ANNOUNCE_CHANNELS) {
+            assertTrue(AgentActionCatalog.validate("server.announce",
+                    Map.of("message", "test", "channel", channel, "confirm", "true")).valid());
+        }
+    }
+
+    @Test
+    void everyQuickTemplateIsItselfAValidAnnounce() {
+        // Un modèle proposé en un clic qui serait refusé à l'envoi serait un piège.
+        for (String template : AgentActionCatalog.ANNOUNCE_TEMPLATES) {
+            AgentActionCatalog.Validation valid = AgentActionCatalog.validate("server.announce",
+                    Map.of("message", template, "confirm", "true"));
+            assertTrue(valid.valid(), () -> template + " -> " + valid.error());
+        }
+    }
+
+    @Test
+    void logsTailAcceptsACursorAndALimitWithinBounds() {
+        AgentActionCatalog.Validation valid = AgentActionCatalog.validate("server.logs.tail",
+                Map.of("after", "42", "limit", "100"));
+
+        assertTrue(valid.valid(), valid.error());
+        assertEquals("42", valid.params().get("after"));
+        assertEquals("100", valid.params().get("limit"));
+    }
+
+    @Test
+    void logsTailRefusesNonNumericNegativeAndOutOfBoundsValues() {
+        assertFalse(AgentActionCatalog.validate("server.logs.tail", Map.of("after", "abc")).valid());
+        assertFalse(AgentActionCatalog.validate("server.logs.tail", Map.of("after", "-1")).valid());
+        assertFalse(AgentActionCatalog.validate("server.logs.tail", Map.of("limit", "0")).valid());
+        assertFalse(AgentActionCatalog.validate("server.logs.tail", Map.of("limit", "501")).valid());
+    }
+
+    @Test
+    void logsTailNeedsNoConfirmationBecauseItChangesNothing() {
+        assertTrue(AgentActionCatalog.validate("server.logs.tail", Map.of()).valid());
+        assertFalse(AgentActionCatalog.spec("server.logs.tail").orElseThrow().mutation());
+    }
+
+    @Test
+    void opsPermissionsAreMappedPerType() {
+        assertEquals(Permission.OPS_ANNOUNCE,
+                AgentActionCatalog.spec("server.announce").orElseThrow().permission());
+        assertEquals(Permission.OPS_LOGS,
+                AgentActionCatalog.spec("server.logs.tail").orElseThrow().permission());
+        // L'annonce est une mutation sensible ; la console est un simple relevé.
+        assertTrue(AgentActionCatalog.spec("server.announce").orElseThrow().sensitive());
+        assertFalse(AgentActionCatalog.spec("server.logs.tail").orElseThrow().sensitive());
+    }
 }

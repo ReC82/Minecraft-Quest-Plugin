@@ -35,6 +35,18 @@ dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
     compileOnly("net.citizensnpcs:citizensapi:2.0.43-SNAPSHOT")
 
+    // Issue #95 — capture de la console serveur pour la page « Exploitation serveur » du Control
+    // Panel. `log4j-api` vient déjà de paper-api, mais attacher un appender exige `log4j-core`,
+    // FOURNI PAR LE SERVEUR : donc compileOnly, jamais empaqueté. Ce n'est ni du NMS ni de la
+    // réflexion CraftBukkit — c'est une bibliothèque de journalisation tierce.
+    //
+    // Pourquoi Log4j et pas java.util.logging : Paper route `getSLF4JLogger()` directement vers
+    // Log4j2, donc un Handler JUL ne verrait PAS nos propres lignes (la quasi-totalité de nos logs).
+    // `ops.ConsoleTap` capture `LinkageError` : si la bibliothèque est absente ou incompatible, la
+    // console du panel s'affiche « indisponible » et le serveur démarre normalement.
+    compileOnly("org.apache.logging.log4j:log4j-core:2.24.1")
+    testImplementation("org.apache.logging.log4j:log4j-core:2.24.1")
+
     testImplementation(platform("org.junit:junit-bom:5.14.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

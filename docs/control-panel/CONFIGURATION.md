@@ -33,6 +33,15 @@ Modèle : [`control-panel/control-panel.properties.example`](../../control-panel
 | `agent.stale-seconds` | `45` | âge du heartbeat au-delà duquel l'agent est `STALE` |
 | `agent.offline-seconds` | `150` | âge du heartbeat au-delà duquel l'agent est `OFFLINE` |
 | `agent.action-expiry-seconds` | `300` | délai sans résultat après lequel une action passe `EXPIRED` |
+| `ops.rcon.<cible>.host` | *(vide)* | hôte RCON de la cible (issue #95). **Vide = redémarrage indisponible**, affiché comme tel avec son motif — aucune autre fonction d'exploitation n'est affectée |
+| `ops.rcon.<cible>.port` | `25575` | port RCON de la cible |
+| `ops.rcon.<cible>.password-env` | `RPGQUEST_RCON_PASSWORD_<CIBLE>` | **nom** de la variable d'env contenant le mot de passe RCON (`-`→`_`, majuscules). Le mot de passe n'est **jamais** dans ce fichier |
+| `ops.rcon.timeout-seconds` | `10` | délai de connexion / lecture d'une session RCON |
+| `ops.restart.return-timeout-seconds` | `240` | délai maximal d'attente du retour en ligne après l'arrêt ; dépassé → opération en **échec**, jamais en « redémarré » |
+| `ops.restart.poll-seconds` | `5` | intervalle entre deux sondes de vivacité pendant un redémarrage |
+| `ops.restart.stop-grace-seconds` | `45` | au-delà, « toujours joignable » devient suspect et est tracé |
+| `ops.announce.min-interval-seconds` | `10` | intervalle minimal entre deux annonces automatiques (anti-matraquage) |
+| `ops.logs.tail-lines` | `200` | nombre de lignes demandées à l'agent par consultation de console (1 à 500) |
 | `content.repo-dir` | *(vide)* | racine du checkout **source** du contenu éditable par l'éditeur guidé #46/#145 (typiquement `<repo>/src/main/resources`). Vide → l'éditeur s'affiche mais reste **en lecture seule**. L'écriture est strictement limitée à `<content.repo-dir>/{quests,stories,dialogues}/*.yml` (les trois `ContentWorkspace.KINDS`, rien d'autre). Voir « Droits d'écriture du workspace de contenu » ci-dessous. |
 
 ## Variables d'environnement
@@ -52,6 +61,7 @@ Modèle : [`control-panel/control-panel.properties.example`](../../control-panel
 | `RPGQUEST_PANEL_DB` | non | surcharge `panel.db` |
 | `RPGQUEST_PANEL_CONFIG` | non | chemin d'un `control-panel.properties` alternatif |
 | `PLUGADMIN_CONTENT_DIR` | non | surcharge `content.repo-dir` (éditeur guidé #46/#145). Absent → éditeur en lecture seule. Pour activer l'enregistrement, voir « Droits d'écriture du workspace de contenu » ci-dessous — **deux** conditions sont nécessaires, pas une. |
+| `RPGQUEST_RCON_PASSWORD_<CIBLE>` | pour le redémarrage #95 | mot de passe RCON de la cible (ex. `RPGQUEST_RCON_PASSWORD_DEV`). Absent → la fonction « redémarrer » s'affiche **indisponible** avec son motif ; jamais journalisé, jamais réaffiché, jamais dans un message d'erreur |
 | `PANEL_DISABLED` | non | `true` → kill-switch (prioritaire sur `panel.disabled`) |
 
 ### Droits d'écriture du workspace de contenu (issue #162)

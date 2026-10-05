@@ -109,6 +109,8 @@ public final class AgentActionExecutor {
                 case MOB_SPAWN_SETTINGS_SET -> mobSpawnSettingsSet(action);
                 case MOB_TEST_SPAWN -> mobTestSpawn(action);
                 case MOB_TEST_CLEAR -> mobTestClear(action);
+                case SERVER_ANNOUNCE -> serverAnnounce(action);
+                case SERVER_LOGS_TAIL -> serverLogsTail(action);
                 case PLAYER_ITEM_GIVE -> itemGive(action);
                 case QUEST_START -> questStart(action);
                 case QUEST_COMPLETE -> questMutation(action, AgentActionType.QUEST_COMPLETE);
@@ -670,6 +672,105 @@ public final class AgentActionExecutor {
     private CompletableFuture<AgentActionOutcome> mobTestClear(AgentAction action) {
         return actions.mobTestClear().thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- server.announce / server.logs.tail (issue #95) ----------------------------------
+
+    private static final int MAX_ANNOUNCE_CHARS = 200;
+    private static final java.util.Set<String> ANNOUNCE_CHANNELS =
+            java.util.Set.of("chat", "actionbar", "title");
+    private static final int MAX_LOG_TAIL = 500;
+
+    /**
+     * {@code server.announce} (#95). Revalide <strong>intégralement</strong> ce que le panel a déjà
+     * validé : le navigateur n'est pas une source de confiance, et l'agent est la dernière barrière
+     * avant le serveur. Le refus du « / » initial est explicite — un administrateur qui tape
+     * « /say … » attend une commande, et diffuser littéralement « /say … » serait pire que refuser.
+     */
+    private CompletableFuture<AgentActionOutcome> serverAnnounce(AgentAction action) {
+        String message = action.param("message");
+        if (message == null || message.isBlank() || message.length() > MAX_ANNOUNCE_CHARS) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Annonce vide ou trop longue (max " + MAX_ANNOUNCE_CHARS + " caractères)."));
+        }
+        if (message.indexOf('\n') >= 0 || message.indexOf('\r') >= 0) {
+            return done(AgentActionOutcome.rejected(action.id(), "Annonce multi-ligne refusée."));
+        }
+        if (message.startsWith("/")) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Une annonce est un texte, pas une commande : « / » initial refusé."));
+        }
+        String rawChannel = action.param("channel");
+        String channel = rawChannel == null || rawChannel.isBlank()
+                ? "chat" : rawChannel.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!ANNOUNCE_CHANNELS.contains(channel)) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Canal d'annonce inconnu : « " + safe(rawChannel) + " » (chat, actionbar, title)."));
+        }
+        return actions.announce(message, channel).thenApply(result -> {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("code", result.code());
+            details.put("channel", result.channel());
+            details.put("recipients", result.recipients());
+            details.put("online", result.online());
+            if (!result.ok()) {
+                return AgentActionOutcome.failed(action.id(), result.message());
+            }
+            return AgentActionOutcome.success(action.id(), String.valueOf(result.recipients()),
+                    result.message(), details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code server.logs.tail} (#95) — lecture bornée du tampon de console. Aucun effet de bord. */
+    private CompletableFuture<AgentActionOutcome> serverLogsTail(AgentAction action) {
+        long after = parseLongParam(action.param("after"), 0L);
+        if (after < 0) {
+            return done(AgentActionOutcome.rejected(action.id(), "Curseur de console invalide."));
+        }
+        long limit = parseLongParam(action.param("limit"), 200L);
+        if (limit < 1 || limit > MAX_LOG_TAIL) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Nombre de lignes hors bornes (1 à " + MAX_LOG_TAIL + ")."));
+        }
+        return actions.serverLogs(after, (int) limit).thenApply(view -> {
+            List<Map<String, Object>> lines = new ArrayList<>();
+            for (AgentActions.ServerLogLine line : view.lines()) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("seq", line.sequence());
+                item.put("at", line.epochMillis());
+                item.put("level", line.level());
+                item.put("source", line.source());
+                item.put("message", line.message());
+                lines.add(item);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("lines", lines);
+            details.put("firstSequence", view.firstSequence());
+            details.put("lastSequence", view.lastSequence());
+            details.put("dropped", view.dropped());
+            details.put("capacity", view.capacity());
+            details.put("gap", view.gap());
+            if (view.limitation() != null) {
+                details.put("limitation", view.limitation());
+            }
+            String summary = view.limitation() != null
+                    ? view.limitation()
+                    : view.lines().size() + " ligne(s) de console, curseur " + view.lastSequence();
+            return AgentActionOutcome.success(action.id(), String.valueOf(view.lastSequence()),
+                    summary, details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Entier long de paramètre : {@code -1} marque explicitement une valeur non numérique. */
+    private static long parseLongParam(String raw, long fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            return -1L;
+        }
     }
 
     private static Double parseDouble(String raw) {

@@ -275,4 +275,14 @@ class StubAgentActions implements AgentActions {
     public CompletableFuture<MutationResult> mobTestClear() {
         return unsupported();
     }
+
+    @Override
+    public CompletableFuture<AnnounceResult> announce(String message, String channel) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
+
+    @Override
+    public CompletableFuture<ServerLogsView> serverLogs(long afterSequence, int limit) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
 }

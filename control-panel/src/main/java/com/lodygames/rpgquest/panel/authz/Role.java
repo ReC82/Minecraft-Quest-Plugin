@@ -49,14 +49,19 @@ public enum Role {
             Permission.ACTION_QUEST, Permission.ACTION_STORY,
             Permission.ACTION_VARIABLE_GET, Permission.ACTION_VARIABLE_SET,
             Permission.ACTION_PLAYER_RESET, Permission.ACTION_ITEM_GIVE,
-            Permission.ACTION_CONTENT_RELOAD)),
+            Permission.ACTION_CONTENT_RELOAD,
+            // Issue #95 : « exploitation du serveur » est la définition même de ce rôle.
+            Permission.OPS_VIEW, Permission.OPS_ANNOUNCE, Permission.OPS_RESTART, Permission.OPS_LOGS)),
 
     TESTER("Testeur", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ,
             Permission.DIALOGUE_READ, Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
             Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ,
             Permission.ACTION_QUEST, Permission.ACTION_STORY, Permission.ACTION_VARIABLE_GET,
-            Permission.MOB_READ, Permission.MOB_TEST_SPAWN)),
+            Permission.MOB_READ, Permission.MOB_TEST_SPAWN,
+            // Issue #95 : un testeur a besoin de l'état et de la console pour comprendre ce qu'il
+            // observe en jeu. Il n'annonce rien et ne redémarre rien.
+            Permission.OPS_VIEW, Permission.OPS_LOGS)),
 
     BUILDER("Builder", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.CONTENT_READ,
@@ -73,7 +78,10 @@ public enum Role {
     READ_ONLY("Lecture seule", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.PLAYERS_READ, Permission.NPC_READ, Permission.TRAVEL_READ,
             Permission.DIALOGUE_READ, Permission.CONTENT_READ, Permission.CONTENT_EXPORT,
-            Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ, Permission.MOB_READ));
+            Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ, Permission.MOB_READ,
+            // Issue #95 : l'état synthétique, oui ; la console, non — elle est plus bavarde
+            // (pseudos, coordonnées, erreurs internes).
+            Permission.OPS_VIEW));
 
     private final String label;
     private final Set<Permission> permissions;

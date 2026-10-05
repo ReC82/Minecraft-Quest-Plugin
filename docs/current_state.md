@@ -57,6 +57,22 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   automatique à l'entrée ou volontaire via l'Acte réutilisé), faisceau dense (DUST + END_ROD)
   hors du claim ; retour au Hub sans commande via la Pierre de retour (mécanique générique de
   voyage par objet, `travel.ItemTravelService`).
+- **Exploitation serveur depuis PlugAdmin (issue #95, lot 1)** — page `/ops` : état réel et
+  **fraîcheur** du dernier heartbeat (vivacité agent, joueurs, uptime, version), annonce globale
+  (`server.announce` — trois canaux réellement supportés `chat`/`actionbar`/`title`, message traité
+  en **texte littéral** jamais en commande ni en MiniMessage, résultat structuré avec destinataires
+  réels et `NO_PLAYERS` quand personne n'est là), **redémarrage** immédiat ou différé avec annonces
+  de compte à rebours, annulation tant que rien n'est exécuté, single-flight et **retour en ligne
+  vérifié** (un `stop` n'est jamais présenté comme un redémarrage : il faut avoir vu le serveur
+  hors ligne, ou l'uptime du plugin diminué), et **console récente** en lecture seule (recherche,
+  filtres niveau, pause, suivi auto) alimentée par un appender Log4j2 côté plugin
+  (`ops.ConsoleTap`, `log4j-core` en `compileOnly`, `LinkageError` rattrapée) et remontée par
+  l'**agent sortant** existant, sans SSE ni port entrant. Le redémarrage est exécuté par le panel
+  en **RCON depuis AWS** avec une énumération fermée de trois commandes (`list`, `save-all`,
+  `stop`) ; permissions dédiées `OPS_VIEW` / `OPS_ANNOUNCE` / `OPS_RESTART` / `OPS_LOGS`. Les
+  fonctions absentes sont **affichées avec leur motif réel** (pas d'API de supervision chez
+  l'hébergeur, log serveur inatteignable car la racine FTP est `plugins/`, `save-all` ≠ point de
+  restauration) ; #131 et #210 annoncés comme lots suivants.
 - **Parcours Claims cohérent (issues #21/#22/#23)** — le portail Hub → `claims` est réservé aux
   joueurs qui ont réellement débloqué leur premier terrain (`CLAIM_TIER_1 == "true"` accordé par la
   dernière quête de l'histoire principale, ou claim déjà existant) : `claim.ClaimWorldAccessGuard`

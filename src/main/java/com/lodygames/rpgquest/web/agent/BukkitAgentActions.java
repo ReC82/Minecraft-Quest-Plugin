@@ -36,6 +36,8 @@ import com.lodygames.rpgquest.dialogue.model.TakeItemAction;
 import com.lodygames.rpgquest.dialogue.model.TurnInQuestAction;
 import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
+import com.lodygames.rpgquest.ops.ServerLogBuffer;
+import com.lodygames.rpgquest.ops.ServerOpsService;
 import com.lodygames.rpgquest.item.model.CustomItemDefinition;
 import com.lodygames.rpgquest.mob.MobSpawnSettings;
 import com.lodygames.rpgquest.mob.MobSpawnSettingsStore;
@@ -151,6 +153,8 @@ public final class BukkitAgentActions implements AgentActions {
     private final SpecialMobDefinitionStore mobDefinitionStore;
     private final MobSpawnSettingsStore mobSpawnSettingsStore;
     private final Supplier<String> wildWorldSupplier;
+    /** Issue #95 — annonce globale et tampon de console (exploitation serveur). */
+    private final ServerOpsService serverOpsService;
     /** Issue #194 — suppression d'une définition de quête/story sur le serveur, avec sauvegarde. */
     private final com.lodygames.rpgquest.content.ContentDefinitionDeleter contentDeleter;
 
@@ -164,7 +168,8 @@ public final class BukkitAgentActions implements AgentActions {
                               DialogueDefinitionEditor dialogueEditor, WaypointService waypointService,
                               TravelBeaconService travelBeaconService, SpecialMobRegistry mobRegistry,
                               SpecialMobService mobService, SpecialMobDefinitionStore mobDefinitionStore,
-                              MobSpawnSettingsStore mobSpawnSettingsStore, Supplier<String> wildWorldSupplier) {
+                              MobSpawnSettingsStore mobSpawnSettingsStore, Supplier<String> wildWorldSupplier,
+                              ServerOpsService serverOpsService) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -188,6 +193,7 @@ public final class BukkitAgentActions implements AgentActions {
         this.mobDefinitionStore = mobDefinitionStore;
         this.mobSpawnSettingsStore = mobSpawnSettingsStore;
         this.wildWorldSupplier = wildWorldSupplier;
+        this.serverOpsService = serverOpsService;
         // Issue #194 : dossiers réels du plugin, et sauvegardes HORS des dossiers de contenu pour
         // ne jamais être relues comme des définitions.
         java.nio.file.Path data = plugin.getDataFolder().toPath();
@@ -1655,6 +1661,32 @@ public final class BukkitAgentActions implements AgentActions {
             int removed = mobService.clearTestInstances();
             return done(new MutationResult(true, "CLEARED", removed + " instance(s) de test supprimée(s).", List.of()));
         });
+    }
+
+    // ---- Exploitation serveur (issue #95) -----------------------------------------------------
+
+    @Override
+    public CompletableFuture<AnnounceResult> announce(String message, String channel) {
+        // Envoi à des entités Bukkit : thread principal obligatoire.
+        return onMain(() -> {
+            ServerOpsService.AnnounceOutcome outcome = serverOpsService.announce(message, channel);
+            return done(new AnnounceResult(outcome.ok(), outcome.code(), outcome.message(),
+                    outcome.channel(), outcome.recipients(), outcome.online()));
+        });
+    }
+
+    @Override
+    public CompletableFuture<ServerLogsView> serverLogs(long afterSequence, int limit) {
+        // Lecture d'un tampon en mémoire, synchronisé : aucun accès disque, aucun besoin du main.
+        ServerLogBuffer.Snapshot snapshot = serverOpsService.logs(afterSequence, limit);
+        List<ServerLogLine> lines = new ArrayList<>();
+        for (ServerLogBuffer.Line line : snapshot.lines()) {
+            lines.add(new ServerLogLine(line.sequence(), line.epochMillis(), line.level(),
+                    line.source(), line.message()));
+        }
+        return CompletableFuture.completedFuture(new ServerLogsView(List.copyOf(lines),
+                snapshot.firstSequence(), snapshot.lastSequence(), snapshot.dropped(),
+                snapshot.capacity(), snapshot.gap(), serverOpsService.consoleLimitation().orElse(null)));
     }
 
     // ---- Utilitaires --------------------------------------------------------------------------

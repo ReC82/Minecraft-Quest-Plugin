@@ -298,6 +298,40 @@ public final class AgentStore {
         }
     }
 
+    /**
+     * Supprime les actions <strong>terminées</strong> d'un type donné au-delà des
+     * {@code keepRecent} plus récentes (issue #95).
+     *
+     * <p><strong>Pourquoi c'est nécessaire.</strong> La console de la page « Exploitation serveur »
+     * ré-enfile un relevé {@code server.logs.tail} à chaque cycle de scrutation : consulter la
+     * console pendant une heure créerait quelques centaines de lignes, et rien ne les effaçait.
+     * Sans cette purge, regarder des logs ferait grossir {@code agent_action} indéfiniment et
+     * noierait l'historique réel des actions d'administration.</p>
+     *
+     * <p>Ne touche <strong>jamais</strong> une action non terminée (une purge ne doit pas faire
+     * disparaître un travail en cours), et reste bornée à un seul type : c'est un ménage ciblé,
+     * pas une rétention globale — celle-ci reste une décision à part entière.</p>
+     *
+     * @return nombre de lignes supprimées
+     */
+    public int pruneTerminalActionsOfType(String agentId, String type, int keepRecent) {
+        int keep = Math.max(1, keepRecent);
+        String sql = "DELETE FROM agent_action WHERE agent_id = ? AND type = ? "
+                + "AND status NOT IN ('PENDING','DELIVERED') AND id NOT IN ("
+                + "  SELECT id FROM agent_action WHERE agent_id = ? AND type = ? "
+                + "  AND status NOT IN ('PENDING','DELIVERED') ORDER BY created_at DESC LIMIT ?)";
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, agentId);
+            ps.setString(2, type);
+            ps.setString(3, agentId);
+            ps.setString(4, type);
+            ps.setInt(5, keep);
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Purge des actions « " + type + " » impossible (" + agentId + ")", e);
+        }
+    }
+
     public List<AgentActionRow> recentActions(String agentId, int limit) {
         String sql = "SELECT * FROM agent_action WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?";
         List<AgentActionRow> rows = new ArrayList<>();

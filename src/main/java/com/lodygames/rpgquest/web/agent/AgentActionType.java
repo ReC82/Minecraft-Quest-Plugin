@@ -100,7 +100,19 @@ public enum AgentActionType {
     MOB_SPAWN_SETTINGS_SET("mob.spawn-settings.set"),
     /** Spawn/suppression d'instances de test, distinctes des mobs ordinaires (issue #169 lot 1). */
     MOB_TEST_SPAWN("mob.test.spawn"),
-    MOB_TEST_CLEAR("mob.test.clear");
+    MOB_TEST_CLEAR("mob.test.clear"),
+    /**
+     * Issue #95 — annonce globale aux joueurs connectés. Le message est envoyé comme
+     * <strong>texte</strong> : jamais exécuté comme commande, jamais interprété comme du
+     * MiniMessage (un {@code <click:run_command:…>} dans une annonce ferait exécuter une commande à
+     * tous les joueurs qui cliquent).
+     */
+    SERVER_ANNOUNCE("server.announce"),
+    /**
+     * Issue #95 — dernières lignes de console captées par le plugin, pour la page « Exploitation
+     * serveur ». Lecture seule et bornée ; aucune commande, aucun chemin de fichier.
+     */
+    SERVER_LOGS_TAIL("server.logs.tail");
 
     private final String wire;
 

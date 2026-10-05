@@ -88,18 +88,46 @@ Paper ou LuckPerms. Toute correspondance future devra être explicite et documen
 | Rôle | Portée |
 |---|---|
 | `OWNER` | tout — `EnumSet.allOf(Permission.class)`, aucune liste à maintenir. Seul à gérer les comptes (`USER_MANAGE`) et le module dev/déploiement (`DEV_MODULE`). |
-| `ADMIN` | exploitation serveur : joueurs (dont modération), PNJ, dialogues, diagnostics, contenu, actions admin (quest/story/variable/reset/item/reload). **Pas** `USER_MANAGE`, **pas** `DEV_MODULE`. |
-| `TESTER` | lectures utiles au test + `ACTION_QUEST`/`ACTION_STORY`/`ACTION_VARIABLE_GET`. **Pas** d'écriture de contenu, pas de reset, pas de modération, pas de gestion des comptes. |
+| `ADMIN` | exploitation serveur : joueurs (dont modération), PNJ, dialogues, diagnostics, contenu, actions admin (quest/story/variable/reset/item/reload) et le module **Exploitation serveur** complet (#95 : `OPS_VIEW`, `OPS_ANNOUNCE`, `OPS_RESTART`, `OPS_LOGS`). **Pas** `USER_MANAGE`, **pas** `DEV_MODULE`. |
+| `TESTER` | lectures utiles au test + `ACTION_QUEST`/`ACTION_STORY`/`ACTION_VARIABLE_GET`, plus `OPS_VIEW` et `OPS_LOGS` (#95) pour comprendre ce qu'il observe en jeu. **Pas** d'annonce, **pas** de redémarrage, pas d'écriture de contenu, pas de reset, pas de modération, pas de gestion des comptes. |
 | `BUILDER` | documentation + infos PNJ / contenu nécessaires. **Pas** de données joueurs (`PLAYERS_READ` non accordé), **pas** d'action serveur. |
 | `CONTENT_EDITOR` | lecture + édition guidée quêtes / stories / dialogues / PNJ logiques, brouillons, validation, reload contenu. **Pas** de modération, pas de spawn d'entité. Le déploiement dépendrait d'une permission dédiée (aucune n'existe encore). |
-| `READ_ONLY` | lecture seule des modules explicitement autorisés. Aucune permission détenue ne pilote une mutation d'`AgentActionCatalog`. |
+| `READ_ONLY` | lecture seule des modules explicitement autorisés. Aucune permission détenue ne pilote une mutation d'`AgentActionCatalog`. Voit l'état serveur (`OPS_VIEW`) mais **pas** la console (`OPS_LOGS`), plus bavarde : pseudos, coordonnées, erreurs internes. |
 
 `Permission` (extensible) : `DASHBOARD_VIEW`, `PLAYERS_READ`, `PLAYER_MODERATE`,
 `PLAYER_BUILD_WRITE`, `NPC_READ`, `NPC_WRITE`, `NPC_BIND_WRITE`, `NPC_SPAWN_WRITE`,
 `QUEST_GIVER_WRITE`, `DIALOGUE_READ`, `DIALOGUE_WRITE`, `QUEST_CONTENT_WRITE`,
 `STORY_CONTENT_WRITE`, `CONTENT_READ`, `CONTENT_EXPORT`, `DOCS_READ`, `DIAGNOSTICS_READ`,
 `AUDIT_READ`, `ACTION_QUEST`, `ACTION_STORY`, `ACTION_VARIABLE_GET`, `ACTION_VARIABLE_SET`,
-`ACTION_PLAYER_RESET`, `ACTION_ITEM_GIVE`, `ACTION_CONTENT_RELOAD`, `DEV_MODULE`, `USER_MANAGE`.
+`ACTION_PLAYER_RESET`, `ACTION_ITEM_GIVE`, `ACTION_CONTENT_RELOAD`, `OPS_VIEW`, `OPS_ANNOUNCE`,
+`OPS_RESTART`, `OPS_LOGS`, `DEV_MODULE`, `USER_MANAGE`.
+
+### Exploitation serveur (issue #95)
+
+Quatre permissions **séparées**, parce que les quatre gestes n'ont pas le même poids :
+
+| Permission | Pourquoi elle est à part |
+|---|---|
+| `OPS_VIEW` | consultation de l'état : la plus large, accordée jusqu'à `READ_ONLY`. |
+| `OPS_LOGS` | la console est **plus bavarde** que l'état : une ligne de log peut contenir un pseudo, des coordonnées, une erreur interne. |
+| `OPS_ANNOUNCE` | visible **immédiatement par tous les joueurs** et impossible à reprendre. |
+| `OPS_RESTART` | la **seule** action du panel qui déconnecte tout le monde. |
+
+**Aucune console libre, par construction.** Le redémarrage n'émet que les trois valeurs de
+l'énumération `RconCommand` (`list`, `save-all`, `stop`) : il n'existe aucun chemin de code
+transportant un texte libre jusqu'au serveur, et le navigateur ne choisit jamais une commande — il
+déclenche une *opération*, dont le service décide le contenu. L'annonce passe par l'action agent
+whitelistée `server.announce`, qui envoie le message en **texte littéral** (jamais MiniMessage,
+jamais une commande ; un message commençant par `/` est refusé des deux côtés).
+
+**Secret RCON** : uniquement depuis l'environnement du service
+(`RPGQUEST_RCON_PASSWORD_<CIBLE>`), jamais dans `control-panel.properties`, jamais dans le dépôt.
+`RconEndpoint.toString()` est redéfini pour ne jamais l'imprimer, et aucun message d'erreur ne
+l'inclut (couvert par un test). Absence de configuration = fonction **affichée indisponible** avec
+son motif, jamais un bouton décoratif.
+
+**Audit** : `ops.restart` et `ops.restart.cancel` (auteur, délai, identifiant d'opération,
+résultat) ; les annonces sont auditées comme toute action agent.
 
 ### Comptes PlugAdmin (`panel_user`)
 

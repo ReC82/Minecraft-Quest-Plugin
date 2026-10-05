@@ -2578,6 +2578,116 @@ le résumé de récompenses de TC-014).
     de la Pierre, le texte de Jo tel qu'affiché, et le fait qu'un compte OP du serveur de
     production porte bien `rpgquest.admin.world` — c'est l'objet des étapes A à E.
 
+### TC-246 — Exploitation serveur : état, annonce, redémarrage vérifié, console (issue #95)
+
+-   **Fonctionnalité testée :** page `/ops`, état réel et fraîcheur, annonce globale sur les trois
+    canaux, redémarrage immédiat/différé avec annonces et annulation, suivi jusqu'au retour ONLINE,
+    console récente avec recherche/filtres/pause, et affichage explicite des fonctions
+    indisponibles.
+-   **Préconditions :** panel déployé sur AWS, JAR de cette session déployé et serveur redémarré
+    (la capture de console et les deux nouvelles actions arrivent avec le JAR). Accès RCON de la
+    cible configuré (`ops.rcon.dev.host` + `RPGQUEST_RCON_PASSWORD_DEV`) — sinon l'étape C doit
+    afficher « indisponible », ce qui est **aussi** un résultat valide à vérifier.
+-   **IMPORTANT :** l'étape C **redémarre réellement le serveur** et déconnecte les joueurs. À
+    faire quand personne ne joue. Aucun contenu n'est créé par ce test.
+
+-   **A. État et fraîcheur :**
+    1.  Ouvrir `/ops`. **Attendu** : quatre cartes — vivacité de l'agent (`ONLINE`), joueurs
+        connectés, uptime du plugin, version — et la ligne « Fraîcheur » qui précise que ces
+        valeurs datent du dernier heartbeat.
+    2.  Comparer le nombre de joueurs avec `/list` en jeu. **Attendu** : même valeur (à un
+        heartbeat près, ~20 s).
+    3.  Arrêter l'agent (ou couper le réseau) et attendre ~3 min. **Attendu** : la carte passe
+        `STALE` puis `OFFLINE`, et l'âge du relevé augmente. Rétablir ensuite.
+
+-   **B. Annonce globale :**
+    4.  Cliquer un **modèle rapide**. **Attendu** : le champ se remplit, le compteur de caractères
+        et l'**aperçu** se mettent à jour.
+    5.  Choisir **Chat**, envoyer. **Attendu** : en jeu, `[Serveur] <message>` dans le chat ; dans
+        le panel, un résultat indiquant le nombre **réel** de destinataires.
+    6.  Recommencer avec **Barre d'action**, puis **Titre plein écran**. **Attendu** : chaque canal
+        s'affiche réellement comme annoncé.
+    7.  Taper `/say coucou` et envoyer. **Attendu** : **refus** « Une annonce est un texte, pas une
+        commande ». Rien ne part.
+    8.  Taper `<click:run_command:/op moi>test</click>` et envoyer. **Attendu** : le texte s'affiche
+        **tel quel** en jeu, non interprété, et **aucun** clic exécutable. C'est le point de
+        sécurité du lot.
+    9.  Coller 250 caractères. **Attendu** : le champ s'arrête à 200 ; en forçant côté serveur, le
+        refus mentionne la longueur.
+    10. Sans aucun joueur connecté, envoyer une annonce. **Attendu** : résultat « Aucun joueur
+        connecté : l'annonce n'a été affichée à personne » — pas un succès trompeur.
+
+-   **C. Redémarrage (déconnecte les joueurs) :**
+    11. Si le bloc affiche « **Redémarrage indisponible** » : vérifier que le **motif** est affiché
+        et qu'aucun bouton de redémarrage n'est proposé. Configurer alors l'accès RCON, recharger,
+        et reprendre.
+    12. Cocher la case et cliquer **Redémarrer dans 5 minutes**. **Attendu** : une carte
+        d'opération apparaît (phase « Redémarrage programmé »), avec un bouton **Annuler**.
+    13. Attendre l'annonce **T-1 min** en jeu. **Attendu** : « Redémarrage du serveur dans
+        1 minute. » dans le chat.
+    14. Cliquer **Annuler**. **Attendu** : phase « Redémarrage annulé », annonce « Redémarrage
+        annulé. » en jeu, et **le serveur n'a pas été touché** (uptime inchangé sur `/ops`).
+    15. Cliquer **Redémarrer maintenant** sans rien taper. **Attendu** : refus demandant de taper
+        `REDEMARRER`.
+    16. Taper `REDEMARRER` et valider. **Attendu** : la carte passe « Arrêt en cours » → « Attente
+        du retour en ligne » → « **Serveur revenu en ligne (vérifié)** », sans recharger la page.
+        Déplier les **étapes** : elles doivent mentionner « Serveur joignable avant l'arrêt »,
+        « stop demandé », « Serveur hors ligne (arrêt effectif constaté) » puis « de nouveau en
+        ligne ».
+    17. Pendant la phase d'arrêt, essayer d'**annuler**. **Attendu** : refus « Trop tard : l'arrêt
+        est déjà en cours ».
+    18. Pendant l'opération, cliquer une seconde fois sur un bouton de redémarrage (ou rejouer le
+        POST). **Attendu** : refus citant l'opération en cours — **jamais** un second arrêt.
+    19. Vérifier l'**audit** (`/actions` ou le journal du panel) : l'opération, son auteur et son
+        résultat y figurent.
+
+-   **D. Console :**
+    20. Faire apparaître des lignes (connexion d'un joueur, `/rpgquest version`, une commande
+        Citizens). **Attendu** : elles apparaissent dans la console en moins d'une trentaine de
+        secondes, préfixées par l'heure, le niveau et la source.
+    21. Taper `Citizens` dans la recherche. **Attendu** : seules les lignes correspondantes
+        restent, **immédiatement** (filtrage local, aucune requête).
+    22. Décocher `INFO`. **Attendu** : seules `WARN` et `ERROR` restent.
+    23. Cliquer **Pause**, provoquer des lignes, puis **Reprendre**. **Attendu** : rien ne bouge
+        pendant la pause, puis les lignes accumulées apparaissent.
+    24. Faire défiler vers le haut. **Attendu** : le **suivi auto** se désactive de lui-même (sinon
+        la lecture serait impossible) ; **Aller en bas** le réactive.
+    25. Vérifier qu'**aucune** zone de saisie n'existe dans la console.
+    26. Si la console reste vide : vérifier que la page affiche un **motif** (capture indisponible,
+        ou niveau de journalisation du serveur plus restrictif que `INFO`).
+
+-   **E. Permissions (nécessite un second compte panel) :**
+    27. Créer un compte `TESTER` (page `/users`). **Attendu** : il voit `/ops`, l'état et la
+        console, mais **ni** le formulaire d'annonce **ni** les boutons de redémarrage.
+    28. Créer un compte `READ_ONLY`. **Attendu** : il voit l'état, mais **pas** la console.
+    29. Créer un compte `CONTENT_EDITOR`. **Attendu** : l'entrée « Exploitation » n'apparaît pas
+        dans le menu, et `/ops` renvoie un **403** cohérent.
+    30. Supprimer (désactiver) les comptes de test créés.
+
+-   **F. Fonctions indisponibles :**
+    31. Vérifier que la section « Non disponible dans ce lot » cite, avec leur **motif** :
+        démarrage/arrêt explicite, console complète de l'hébergeur, sauvegarde restaurable, mode
+        maintenance, et les tickets **#131** et **#210** comme lots suivants.
+
+-   **Nettoyage :** désactiver les comptes panel créés à l'étape E. Aucun contenu de jeu n'est créé.
+-   **Couverture automatisée :** `ServerLogBufferTest` (14 cas : capacité bornée, curseur, première
+    lecture sur le **récent**, **trou de séquence signalé**, niveaux normalisés, troncature,
+    concurrence), `ConsoleTapTest` (8 cas, dont **lignes d'autres plugins réellement captées**,
+    message paramétré formaté, trace d'exception résumée, idempotence install/uninstall, et
+    **niveau serveur restrictif signalé**), `ServerOpsServiceTest` (10 cas, dont **texte littéral
+    jamais MiniMessage**, refus d'une commande, `NO_PLAYERS` honnête, les **trois canaux réellement
+    délivrés**), `AgentActionExecutorTest` (+11 cas sur les deux actions),
+    `RestartServiceTest` (24 cas : **serveur injoignable → aucun arrêt**, **jamais vu hors ligne →
+    échec**, uptime décroissant comme preuve, annulation avant/pendant, single-flight, annonces non
+    envoyées après annulation), `RconClientTest` (7 cas contre un **vrai serveur RCON** ouvert dans
+    la JVM de test : protocole binaire, mot de passe refusé sans écho du secret, connexion coupée
+    par le `stop`), `AgentActionCatalogTest` (+11 cas), `RolePermissionMatrixTest` (+5 cas),
+    `OpsPageTest` (18 cas de bout en bout : auth, 401 sur les endpoints JSON, CSRF, état et
+    fraîcheur, **indisponibilité affichée avec motif**, un seul relevé en vol à la fois).
+    **Non couvert automatiquement** : le rendu réel des trois canaux en jeu, un vrai redémarrage de
+    bout en bout contre VeryGames, l'ergonomie de la console sous charge, et les permissions vues
+    depuis de vrais comptes — c'est l'objet des étapes A à F.
+
 ---
 
 ## Table de recette
@@ -2655,3 +2765,4 @@ le résumé de récompenses de TC-014).
 | TC-243 | Suppression quête/story : aperçu, confirmation, blocages #194 | | | |
 | TC-244 | Signal visuel PNJ : quête dispo / dialogue non lu #12 (PENDING) | | | |
 | TC-245 | Claims : pas d'entrée sans retour, bypass doté, inventaire plein #22 (PENDING) | | | |
+| TC-246 | Exploitation serveur : état, annonce, redémarrage vérifié, console #95 (PENDING) | | | |

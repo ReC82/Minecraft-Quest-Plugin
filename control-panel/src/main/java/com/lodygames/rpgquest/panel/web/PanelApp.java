@@ -8,6 +8,8 @@ import com.lodygames.rpgquest.panel.agent.AgentLiveness;
 import com.lodygames.rpgquest.panel.agent.AgentRegistry;
 import com.lodygames.rpgquest.panel.agent.AgentStore;
 import com.lodygames.rpgquest.panel.agent.HeartbeatRecord;
+import com.lodygames.rpgquest.panel.ops.RestartService;
+import com.lodygames.rpgquest.panel.agent.HeartbeatRecord;
 import com.lodygames.rpgquest.panel.audit.AuditLog;
 import com.lodygames.rpgquest.panel.authz.Permission;
 import com.lodygames.rpgquest.panel.authz.PermissionService;
@@ -76,6 +78,12 @@ public final class PanelApp {
     private final ContentDeletionPages contentDeletion;
     private final ContentExportPages contentExportPages;
     private final com.lodygames.rpgquest.panel.diag.DiagnosticsService diagnostics;
+    /** Issue #95 — exploitation serveur : redémarrage piloté et page dédiée. */
+    private final RestartService restartService;
+    private final OpsPages opsPages;
+    /** Dernière annonce acceptée, pour l'intervalle minimal anti-matraquage (#95). */
+    private final java.util.concurrent.atomic.AtomicReference<Instant> lastAnnounceAt =
+            new java.util.concurrent.atomic.AtomicReference<>(Instant.EPOCH);
 
     private HttpServer server;
 
@@ -116,6 +124,30 @@ public final class PanelApp {
         this.contentExportPages = new ContentExportPages(agentStore, config.agents().defaultAgentId());
         this.diagnostics = new com.lodygames.rpgquest.panel.diag.DiagnosticsService(
                 agentStore, config.agents().thresholds());
+        // Issue #95 — redémarrage par RCON depuis AWS. C'est le mécanisme déjà éprouvé par
+        // scripts/verygames-restart.sh : un plugin ne peut pas garantir son propre retour, puisque
+        // l'agent s'arrête avec le serveur. Les annonces du compte à rebours réutilisent l'action
+        // agent whitelistée « server.announce » — aucun second canal d'annonce.
+        //
+        // Le témoin de redémarrage lit l'uptime annoncé par le heartbeat : si l'uptime DIMINUE, le
+        // processus a bien redémarré, même si aucune sonde RCON n'est tombée pendant l'arrêt.
+        String opsAgentId = config.agents().defaultAgentId();
+        this.restartService = new RestartService(
+                new RestartService.ConfiguredRconGateway(
+                        config.ops().rconFor(config.defaultTargetId()),
+                        config.ops().rconTimeout(),
+                        "Aucun accès RCON configuré pour la cible « " + config.defaultTargetId()
+                                + " ». Renseigner ops.rcon." + config.defaultTargetId()
+                                + ".host et la variable d'environnement du mot de passe."),
+                message -> enqueueAnnounce(opsAgentId, message),
+                () -> opsAgentId == null ? java.util.Optional.empty()
+                        : agentStore.latestHeartbeat(opsAgentId)
+                                .map(HeartbeatRecord::uptimeSeconds)
+                                .filter(seconds -> seconds >= 0),
+                config.ops().restartReturnTimeout(), config.ops().restartPollInterval(),
+                config.ops().restartStopGrace());
+        this.opsPages = new OpsPages(agentStore, permissions, restartService,
+                config.agents().thresholds(), opsAgentId, null);
         this.agentEndpoints = new AgentEndpoints(agentRegistry, agentStore, audit,
                 config.agents().actionExpiry(), config::disabled);
         PasswordHasher hasher = new PasswordHasher();
@@ -182,6 +214,13 @@ public final class PanelApp {
         route("/content/export", this::handleContentExport);
         route("/content/export/download", this::handleContentExportDownload);
         route("/docs", this::handleDocs);
+        // Issue #95 — exploitation serveur. /ops rend la page ; les deux endpoints JSON
+        // alimentent la console et le suivi d'opération sans rechargement complet.
+        route("/ops", this::handleOps);
+        route("/ops/restart", this::handleOpsRestart);
+        route("/ops/restart/cancel", this::handleOpsRestartCancel);
+        route("/ops/logs.json", this::handleOpsLogsJson);
+        route("/ops/state.json", this::handleOpsStateJson);
         route("/diagnostics", this::handleDiagnostics);
         route("/diagnostics/refresh", this::handleDiagnosticsRefresh);
         route("/users", this::handleUsers);
@@ -202,6 +241,7 @@ public final class PanelApp {
             server.stop(0);
             server = null;
         }
+        restartService.shutdown();
     }
 
     // ---- Routage --------------------------------------------------------------------------
@@ -991,6 +1031,288 @@ public final class PanelApp {
         createAgentAction(exchange, session, "/agents");
     }
 
+    // ---- Exploitation serveur (issue #95) ------------------------------------------------
+
+    private void handleOps(HttpExchange exchange) throws IOException {
+        handleBusinessPage(exchange, "/ops", "Exploitation serveur",
+                Permission.OPS_VIEW, opsPages::render);
+    }
+
+    /**
+     * Demande de redémarrage. <strong>Confirmations adaptées</strong> : un redémarrage différé est
+     * annulable, une case suffit ; un redémarrage immédiat déconnecte tout le monde sans recours,
+     * il exige donc de taper le mot de confirmation. Le single-flight de {@link RestartService} fait
+     * office de protection contre le double-clic et le rejeu de formulaire.
+     */
+    private void handleOpsRestart(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "POST requis");
+            return;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF",
+                    "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        if (!permissions.can(session.role(), Permission.OPS_RESTART)) {
+            forbidden(exchange, session, "/ops");
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        long delaySeconds;
+        try {
+            delaySeconds = Long.parseLong(form.getOrDefault("delay_seconds", "0").trim());
+        } catch (NumberFormatException e) {
+            Http.redirect(exchange, "/ops?err=" + enc("Délai de redémarrage invalide."));
+            return;
+        }
+        if (delaySeconds < 0) {
+            Http.redirect(exchange, "/ops?err=" + enc("Délai de redémarrage négatif."));
+            return;
+        }
+        if (delaySeconds == 0) {
+            String typed = form.getOrDefault(OpsPages.CONFIRM_FIELD, "").trim();
+            if (!OpsPages.CONFIRM_WORD.equals(typed)) {
+                audit.record(session.username(), "ops.restart", "delay=0", "DENIED",
+                        "mot de confirmation absent ou incorrect", rid);
+                Http.redirect(exchange, "/ops?err=" + enc("Pour un redémarrage immédiat, taper exactement « "
+                        + OpsPages.CONFIRM_WORD + " »."));
+                return;
+            }
+        } else if (!"true".equals(form.getOrDefault("confirm", "").trim())) {
+            audit.record(session.username(), "ops.restart", "delay=" + delaySeconds, "DENIED",
+                    "confirmation absente", rid);
+            Http.redirect(exchange, "/ops?err=" + enc("Confirmation obligatoire."));
+            return;
+        }
+
+        RestartService.Outcome outcome = restartService.request(session.username(), Duration.ofSeconds(delaySeconds));
+        audit.record(session.username(), "ops.restart", "delay=" + delaySeconds,
+                outcome.ok() ? "ACCEPTED" : "REFUSED", outcome.message(), rid);
+        LOG.log(System.Logger.Level.INFO, "event=ops_restart rid=" + rid + " by=" + session.username()
+                + " delay=" + delaySeconds + " ok=" + outcome.ok() + " op=" + outcome.operationId());
+        Http.redirect(exchange, outcome.ok()
+                ? "/ops?ok=" + enc(outcome.message())
+                : "/ops?err=" + enc(outcome.message()));
+    }
+
+    private void handleOpsRestartCancel(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "POST requis");
+            return;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF",
+                    "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        if (!permissions.can(session.role(), Permission.OPS_RESTART)) {
+            forbidden(exchange, session, "/ops");
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        RestartService.Outcome outcome =
+                restartService.cancel(session.username(), form.getOrDefault("operation", "").trim());
+        audit.record(session.username(), "ops.restart.cancel",
+                "operation=" + form.getOrDefault("operation", ""),
+                outcome.ok() ? "CANCELLED" : "REFUSED", outcome.message(), rid);
+        Http.redirect(exchange, outcome.ok()
+                ? "/ops?ok=" + enc(outcome.message())
+                : "/ops?err=" + enc(outcome.message()));
+    }
+
+    /**
+     * Console récente, en JSON (issue #95). <strong>Pull-through</strong> : on lit le dernier relevé
+     * {@code server.logs.tail} réussi, et on en ré-enfile un s'il n'y en a pas déjà un en vol. Aucun
+     * SSE, aucun WebSocket, aucun port entrant sur le serveur de jeu — le ticket demandait
+     * d'évaluer SSE, mais l'agent sortant existant suffit et évite un second canal : la fraîcheur
+     * réelle est bornée par sa scrutation (~15 s), ce que la page affiche explicitement.
+     */
+    private void handleOpsLogsJson(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.json(exchange, 405, "{\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        Optional<Session> maybe = currentSession(exchange);
+        if (maybe.isEmpty()) {
+            Http.json(exchange, 401, "{\"error\":\"unauthorized\"}");
+            return;
+        }
+        if (!permissions.can(maybe.get().role(), Permission.OPS_LOGS)) {
+            Http.json(exchange, 403, "{\"error\":\"forbidden\"}");
+            return;
+        }
+        String agentId = config.agents().defaultAgentId();
+        Map<String, Object> root = new LinkedHashMap<>();
+        if (agentId == null || agentRegistry.byId(agentId).isEmpty()) {
+            root.put("unavailable", "Aucun agent RPGQuest configuré : la console est indisponible.");
+            Http.json(exchange, 200, com.lodygames.rpgquest.panel.json.Json.write(root));
+            return;
+        }
+        long after = 0L;
+        try {
+            after = Math.max(0L, Long.parseLong(Http.query(exchange).getOrDefault("after", "0").trim()));
+        } catch (NumberFormatException ignored) {
+            after = 0L;
+        }
+        Optional<AgentActionRow> latest = agentStore.latestSuccessfulActionOfType(agentId, "server.logs.tail");
+        boolean pending = agentStore.hasOpenActionOfType(agentId, "server.logs.tail");
+        List<Map<String, Object>> lines = new java.util.ArrayList<>();
+        long cursor = after;
+        boolean gap = false;
+        String limitation = null;
+        if (latest.isPresent()) {
+            Map<String, Object> result = parseResultDetails(latest.get());
+            Object rawLimitation = result.get("limitation");
+            if (rawLimitation != null) {
+                limitation = String.valueOf(rawLimitation);
+            }
+            if (Boolean.TRUE.equals(result.get("gap"))) {
+                gap = true;
+            }
+            Object rawLines = result.get("lines");
+            if (rawLines instanceof List<?> list) {
+                for (Object element : list) {
+                    if (!(element instanceof Map<?, ?> map)) {
+                        continue;
+                    }
+                    long seq = longOf(map.get("seq"));
+                    if (seq <= after) {
+                        continue; // déjà vu par ce navigateur
+                    }
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("seq", seq);
+                    item.put("at", longOf(map.get("at")));
+                    item.put("level", textOf(map.get("level"), "INFO"));
+                    item.put("source", textOf(map.get("source"), ""));
+                    item.put("message", textOf(map.get("message"), ""));
+                    lines.add(item);
+                    cursor = Math.max(cursor, seq);
+                }
+            }
+            root.put("age", ActionView.relativeTime(latest.get().createdAt(), Instant.now()));
+        } else if (!pending) {
+            root.put("age", "aucun relevé encore reçu");
+        }
+        // Un seul relevé en vol à la fois : le navigateur peut interroger toutes les 4 s sans
+        // remplir la file d'actions de l'agent.
+        if (!pending) {
+            Map<String, String> params = new LinkedHashMap<>();
+            params.put("after", Long.toString(cursor));
+            params.put("limit", Integer.toString(config.ops().logTailLines()));
+            agentStore.createAction(agentId, "server.logs.tail", params, "auto");
+            pending = true;
+            // Ménage ciblé : sans lui, consulter la console une heure laisserait quelques centaines
+            // de relevés derrière elle et noierait l'historique réel des actions d'administration.
+            // On garde les derniers (diagnostic) et on ne touche jamais une action en cours.
+            agentStore.pruneTerminalActionsOfType(agentId, "server.logs.tail", LOG_SURVEYS_KEPT);
+        }
+        if (limitation != null) {
+            root.put("unavailable", limitation);
+        }
+        root.put("lines", lines);
+        root.put("cursor", cursor);
+        root.put("gap", gap);
+        root.put("pending", pending);
+        Http.json(exchange, 200, com.lodygames.rpgquest.panel.json.Json.write(root));
+    }
+
+    /**
+     * Nombre de relevés de console conservés (issue #95) : assez pour diagnostiquer un problème de
+     * remontée, pas assez pour polluer l'historique.
+     */
+    private static final int LOG_SURVEYS_KEPT = 5;
+
+    /** Suivi d'une opération de redémarrage sans rechargement complet (issue #95). */
+    private void handleOpsStateJson(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.json(exchange, 405, "{\"error\":\"method_not_allowed\"}");
+            return;
+        }
+        Optional<Session> maybe = currentSession(exchange);
+        if (maybe.isEmpty()) {
+            Http.json(exchange, 401, "{\"error\":\"unauthorized\"}");
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.role(), Permission.OPS_VIEW)) {
+            Http.json(exchange, 403, "{\"error\":\"forbidden\"}");
+            return;
+        }
+        RestartService.Operation operation = restartService.current();
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("id", operation.id());
+        root.put("phase", operation.phase().name());
+        root.put("label", OpsPages.phaseLabel(operation.phase()));
+        root.put("detail", operation.detail() == null ? "" : operation.detail());
+        root.put("terminal", operation.phase().terminal() || operation.phase() == RestartService.Phase.IDLE);
+        root.put("html", opsPages.operationCardHtml(session, operation));
+        Http.json(exchange, 200, com.lodygames.rpgquest.panel.json.Json.write(root));
+    }
+
+    /**
+     * Enfile une annonce via l'action agent whitelistée — jamais un second canal d'annonce. Un
+     * intervalle minimal protège les joueurs d'un matraquage (double-clic, rejeu, compte à rebours
+     * qui se superposerait à une annonce manuelle).
+     */
+    private void enqueueAnnounce(String agentId, String message) {
+        if (agentId == null || message == null || message.isBlank()) {
+            return;
+        }
+        Instant now = Instant.now();
+        Instant previous = lastAnnounceAt.get();
+        if (previous.plus(config.ops().announceMinInterval()).isAfter(now)) {
+            LOG.log(System.Logger.Level.INFO, "event=ops_announce_throttled agent=" + agentId);
+            return;
+        }
+        lastAnnounceAt.set(now);
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("message", message.length() > 200 ? message.substring(0, 200) : message);
+        params.put("channel", "chat");
+        String id = agentStore.createAction(agentId, "server.announce", params, "auto");
+        LOG.log(System.Logger.Level.INFO, "event=ops_announce_enqueued agent=" + agentId + " action=" + id);
+    }
+
+    /** Détails structurés d'un résultat d'action, ou une carte vide si le JSON est illisible. */
+    private Map<String, Object> parseResultDetails(AgentActionRow row) {
+        String json = row.resultJson();
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            Map<String, Object> parsed = com.lodygames.rpgquest.panel.json.Json.parseObject(json);
+            Object details = parsed.get("details");
+            if (details instanceof Map<?, ?> map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> typed = (Map<String, Object>) map;
+                return typed;
+            }
+            return parsed;
+        } catch (RuntimeException e) {
+            return Map.of();
+        }
+    }
+
+    private static long longOf(Object value) {
+        return value instanceof Number n ? n.longValue() : 0L;
+    }
+
+    private static String textOf(Object value, String fallback) {
+        return value == null ? fallback : String.valueOf(value);
+    }
+
     /**
      * État JSON compact des actions récentes d'un agent — consommé par {@code /assets/panel.js}
      * pour le rafraîchissement automatique (issue #65). Même modèle que le tableau rendu côté
@@ -1208,6 +1530,12 @@ public final class PanelApp {
      * {@code ?err=…} un toast d'échec immédiat. Plus de gros bloc « Actions récentes » ici.
      */
     private String actionFeedback(Map<String, String> query) {
+        // Issue #95 : une opération synchrone du panel (redémarrage demandé / annulé) a déjà son
+        // résultat ; elle n'a rien à suivre, juste à le dire.
+        String ok = query.get("ok");
+        if (ok != null && !ok.isBlank()) {
+            return ActionView.okToastHtml(trimTo(ok, 200));
+        }
         String err = query.get("err");
         if (err != null && !err.isBlank()) {
             return ActionView.errorToastHtml(trimTo(err, 200));
@@ -1426,7 +1754,7 @@ public final class PanelApp {
     private static String safeReturnPath(String requested, String fallback) {
         return switch (requested == null ? "" : requested) {
             case "/players", "/quests", "/stories", "/npcs", "/travel", "/dialogues", "/agents", "/diagnostics",
-                 "/content/export", "/mobs" -> requested;
+                 "/content/export", "/mobs", "/ops" -> requested;
             default -> fallback;
         };
     }

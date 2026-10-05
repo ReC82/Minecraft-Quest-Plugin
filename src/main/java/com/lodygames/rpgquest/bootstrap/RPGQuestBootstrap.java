@@ -90,6 +90,9 @@ import com.lodygames.rpgquest.npc.NpcDefinitionStore;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.npc.QuestGiverStore;
 import com.lodygames.rpgquest.npc.YamlNpcEngine;
+import com.lodygames.rpgquest.ops.ConsoleTap;
+import com.lodygames.rpgquest.ops.ServerLogBuffer;
+import com.lodygames.rpgquest.ops.ServerOpsService;
 import com.lodygames.rpgquest.player.PlayerConnectionListener;
 import com.lodygames.rpgquest.player.PlayerListenerService;
 import com.lodygames.rpgquest.player.PlayerProfileService;
@@ -224,6 +227,11 @@ public final class RPGQuestBootstrap {
     private final com.lodygames.rpgquest.travel.TravelMaintenanceMode travelMaintenanceMode =
             new com.lodygames.rpgquest.travel.TravelMaintenanceMode();
     private PlayerResetService playerResetService;
+    /** Issue #95 — tampon de console et son branchement Log4j (exploitation serveur). */
+    private ServerLogBuffer serverLogBuffer;
+    private ConsoleTap consoleTap;
+    /** Motif d'indisponibilité de la capture de console, ou vide si elle fonctionne. */
+    private java.util.Optional<String> consoleUnavailableReason = java.util.Optional.empty();
     private WebSnapshotWriter webSnapshotWriter;
     private StoreClient storeClient;
     private StoreDeliveryService storeDeliveryService;
@@ -664,6 +672,20 @@ public final class RPGQuestBootstrap {
         registry.start(new PlayerListenerService(plugin,
                 new NewPlayerResetJoinListener(plugin, variableRepository, customItemRegistry)));
 
+        // Exploitation serveur (issue #95) : tampon borné des lignes de console + annonce globale,
+        // consommés par les actions agent « server.logs.tail » et « server.announce ».
+        //
+        // La capture passe par un appender Log4j2 et non par un Handler java.util.logging : Paper
+        // route getSLF4JLogger() directement vers Log4j2, donc un Handler JUL ne verrait PAS nos
+        // propres lignes. Si Log4j est absent ou incompatible, install() renvoie une raison lisible
+        // et le plugin démarre NORMALEMENT — la console du panel s'affiche « indisponible » avec ce
+        // motif, jamais un serveur en panne pour un confort d'administration.
+        serverLogBuffer = new ServerLogBuffer(500);
+        consoleTap = new ConsoleTap(serverLogBuffer);
+        consoleUnavailableReason = consoleTap.install(plugin.getSLF4JLogger());
+        ServerOpsService serverOpsService =
+                new ServerOpsService(plugin, serverLogBuffer, () -> consoleUnavailableReason);
+
         // Agent sortant PlugAdmin (issue #51 + outillage Control Panel) — RPGQuest/VeryGames initie
         // une connexion HTTPS SORTANTE vers PlugAdmin/AWS (heartbeat + file d'actions whitelistées).
         // Fail-closed : inerte tant que plugins/RPGQuest/plugadmin-agent.properties (hors Git)
@@ -686,7 +708,8 @@ public final class RPGQuestBootstrap {
                                         plugin.getDataFolder().toPath().resolve("dialogues"),
                                         configService.current().dialogue().allowedCommands()),
                                 waypointService, travelBeaconService, mobRegistry, mobService, mobDefinitionStore,
-                                mobSpawnSettingsStore, () -> configService.current().travel().wildWorld()))));
+                                mobSpawnSettingsStore, () -> configService.current().travel().wildWorld(),
+                                serverOpsService))));
 
         registerCommands();
     }
@@ -715,6 +738,13 @@ public final class RPGQuestBootstrap {
     }
 
     public void stop() {
+        // Détacher l'appender AVANT d'arrêter les services : sinon les dernières lignes d'arrêt
+        // alimenteraient un tampon que plus personne ne lira, et l'appender survivrait à un
+        // /reload du plugin (fuite d'appender, lignes dupliquées au rechargement suivant).
+        if (consoleTap != null) {
+            consoleTap.uninstall();
+            consoleTap = null;
+        }
         registry.stopAll();
     }
 

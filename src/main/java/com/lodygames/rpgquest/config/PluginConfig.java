@@ -20,7 +20,8 @@ public record PluginConfig(
         HubConfig hub,
         TravelConfig travel,
         StarterToolKitConfig starterToolKit,
-        WildConfig wild
+        WildConfig wild,
+        NpcHintConfig npcHints
 ) {
 
     /**

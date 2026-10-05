@@ -328,6 +328,70 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-05 (lot 8 — #12 signal visuel sur les PNJ, première version)
+Branche de départ: feature/169-special-mobs-boss @ 7abfbf3 (lot 7, #194 déployé)
+Étape de départ: le propriétaire choisit désormais les tickets un par un. Ticket actif : #12
+  uniquement, dont le périmètre a été réécrit le 05/10 (la mention « plus tard / hors périmètre »
+  du corps de l'issue est remplacée par une activation explicite). Aucun autre ticket à lancer.
+État des lots précédents au moment de bascule: #196 et #194 livrés ET déployés ; #194 attend
+  seulement le test manuel TC-243 du propriétaire (étape 1 fournie). Working tree propre, branche
+  poussée, aucun build en cours — rien n'a été interrompu.
+Étapes terminées:
+(1) DONE — AUDIT préalable, qui a changé deux décisions :
+  * « quête prête à rendre » n'est PAS un état observable. QuestState.READY_TO_TURN_IN existe dans
+    l'énumération, mais QuestProgressEngine#turnIn le pose puis le remplace par COMPLETED dans la
+    MÊME méthode, et seul COMPLETED est persisté. Le ticket dit « intégrer uniquement si cet état
+    existe effectivement dans le moteur ; sinon documenter hors MVP » -> documenté hors MVP, aucune
+    mécanique de remise inventée.
+  * un PNJ ne référence AUCUNE quête : le lien vit dans le champ giver: de la quête. Le signal
+    part donc des quêtes (filtre sur giver), pas d'une table de liaison inexistante.
+(2) DONE — Disponibilité réutilisée, PAS dupliquée. Extraction de
+  QuestProgressEngine#availability(playerId, questId, ignorePrerequisites), et accept() DÉLÈGUE
+  désormais à cette méthode. Il n'existe donc qu'une seule implémentation des règles de refus :
+  une quête verrouillée, déjà active ou terminée non répétable ne peut pas être annoncée comme
+  nouvelle. Refactoring d'une méthode cœur validé immédiatement par les tests de quête avant de
+  continuer.
+(3) DONE — Lecture des dialogues : audit puis implémentation. Rien n'existait. Nouvelle table
+  dialogue_node_reads (migration V24, idempotente, clé primaire composite) + DialogueReadRepository.
+  Le marquage se fait dans DialogueSessionEngine#openNode, SEUL point de rendu réel d'un nœud :
+  ouvrir un PNJ n'écrit donc qu'une ligne, celle du nœud de départ. Une branche non parcourue reste
+  non lue, donc toujours signalée. État par UUID, persistant après reconnexion et redémarrage.
+(4) DONE — Atteignabilité réelle : DialogueSessionEngine#reachableNodes, parcours en largeur borné
+  depuis le nœud de départ, suivant uniquement les choix dont les conditions PASSENT, via
+  l'évaluateur de conditions existant (visibleChoices rendu public). Un choix fermant le dialogue
+  n'est pas suivi. Aucune règle de condition dupliquée.
+(5) DONE — Service NpcHintService : particules envoyées au SEUL joueur concerné
+  (Player#spawnParticle, API publique Paper, client vanilla, compatible Citizens puisque le signal
+  suit l'entité portant un id RPGQuest). Deux conventions distinguables, quête prioritaire sur
+  dialogue. Le PNJ lui-même n'est jamais modifié — ni son nom, ni rien de global.
+(6) DONE — Coût maîtrisé, trois mécanismes : aucune boucle par tick (une passe toutes les
+  period-ticks, PAR JOUEUR, jamais un balayage des PNJ du monde) ; aucun PNJ distant
+  (getNearbyEntities dans le rayon, même monde, ligne de vue optionnelle, aucun chunk chargé) ;
+  calcul découplé de l'affichage (recalcul au plus toutes les refresh-seconds, en asynchrone, un
+  seul à la fois par joueur, cache invalidé immédiatement sur quête acceptée / progression / nœud
+  lu / changement de monde). Nettoyage à la déconnexion et à l'arrêt.
+(7) DONE — Réglages bornés : section npc-hints: (enabled, period-ticks 10-100, radius 4-48,
+  require-line-of-sight, refresh-seconds 1-60, height-offset 0-3, quest-particle,
+  dialogue-particle, count 1-10). Une valeur numérique hors bornes est CORRIGÉE (un signal visuel
+  ne doit pas empêcher le serveur de démarrer) ; une particule inconnue est REFUSÉE au démarrage,
+  parce que c'est une faute de frappe qu'il faut voir.
+Tests: TESTS_PLACEHOLDER
+Branche finale: feature/169-special-mobs-boss (aucun merge).
+Dernier commit: COMMIT_PLACEHOLDER
+Build: vert.
+Déploiements: DEPLOY_PLACEHOLDER
+Tests manuels en attente: TC-244 — protocole complet en jeu, sur contenu préfixé tc12_ uniquement,
+  avec deux joueurs pour l'étape décisive (deux états différents devant le même PNJ). AUCUN test en
+  jeu n'a été exécuté par Claude : le rendu visuel, la cadence en charge et la différence entre
+  joueurs ne sont pas couverts automatiquement.
+Blocages: aucun.
+Propreté: aucun contenu du propriétaire modifié, aucune progression touchée, aucun reset joueur.
+  Les tests automatisés utilisent des identifiants tc12_ ou le harnais existant.
+Première étape à reprendre: dérouler TC-244 en jeu. Ensuite, attendre le choix du prochain ticket
+  par le propriétaire — aucun ticket ne doit être lancé automatiquement.
+```
+
+```text
 Date: 2026-10-05 (lot 7 — #194 suppression de quêtes et stories avec aperçu et confirmation)
 Branche de départ: feature/169-special-mobs-boss @ 9d5d547 (lot 6, #196)
 Étape de départ: demande explicite — ajouter la suppression dans le panel avec aperçu des

@@ -241,36 +241,37 @@ public final class QuestProgressEngine implements PluginService {
         QuestDefinition quest = questOpt.get();
         UUID playerId = player.getUniqueId();
 
-        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.computeIfAbsent(playerId, k -> new ConcurrentHashMap<>());
-        if (playerActive.containsKey(questId)) {
-            return CompletableFuture.completedFuture(AcceptOutcome.alreadyActive());
-        }
+        // Issue #12 : les règles de refus sont décrites UNE SEULE FOIS, dans availability(). Le
+        // signal visuel au-dessus des PNJ les réutilise telles quelles ; les dupliquer ailleurs
+        // aurait garanti une divergence tôt ou tard.
+        CompletableFuture<AcceptOutcome> future =
+                availability(playerId, questId, ignorePrerequisites).thenCompose(availability -> {
+                    switch (availability.status()) {
+                        case UNKNOWN:
+                            return CompletableFuture.completedFuture(AcceptOutcome.unknown());
+                        case ALREADY_ACTIVE:
+                            return CompletableFuture.completedFuture(AcceptOutcome.alreadyActive());
+                        case NOT_REPEATABLE:
+                            return CompletableFuture.completedFuture(AcceptOutcome.notRepeatable());
+                        case MISSING_PREREQUISITES:
+                            return CompletableFuture.completedFuture(
+                                    AcceptOutcome.missingPrerequisites(availability.missingPrerequisites()));
+                        default:
+                            break;
+                    }
+                    Map<NamespacedKey, ActiveQuestProgress> playerActive =
+                            activeByPlayer.computeIfAbsent(playerId, k -> new ConcurrentHashMap<>());
+                    ActiveQuestProgress progress = new ActiveQuestProgress(questId, 0, QuestState.ACTIVE);
+                    // putIfAbsent : deux acceptations concurrentes ne doivent pas écraser une
+                    // progression déjà posée entre la vérification et ici.
+                    if (playerActive.putIfAbsent(questId, progress) != null) {
+                        return CompletableFuture.completedFuture(AcceptOutcome.alreadyActive());
+                    }
 
-        CompletableFuture<AcceptOutcome> future = repository.find(playerId, questId).thenCompose(existing -> {
-            QuestState currentState = existing.map(QuestProgressRecord::state).orElse(QuestState.NOT_STARTED);
-            if (currentState == QuestState.ACTIVE || currentState == QuestState.READY_TO_TURN_IN) {
-                return CompletableFuture.completedFuture(AcceptOutcome.alreadyActive());
-            }
-            if (currentState == QuestState.COMPLETED && !quest.repeatable()) {
-                return CompletableFuture.completedFuture(AcceptOutcome.notRepeatable());
-            }
-
-            CompletableFuture<List<NamespacedKey>> missingFuture = ignorePrerequisites
-                    ? CompletableFuture.completedFuture(List.of())
-                    : checkPrerequisites(playerId, quest);
-            return missingFuture.thenCompose(missing -> {
-                if (!missing.isEmpty()) {
-                    return CompletableFuture.completedFuture(AcceptOutcome.missingPrerequisites(missing));
-                }
-
-                ActiveQuestProgress progress = new ActiveQuestProgress(questId, 0, QuestState.ACTIVE);
-                playerActive.put(questId, progress);
-
-                String firstStepId = quest.steps().get(0).id();
-                return repository.upsertState(playerId, questId, QuestState.ACTIVE, firstStepId)
-                        .thenApply(v -> AcceptOutcome.accepted());
-            });
-        });
+                    String firstStepId = quest.steps().get(0).id();
+                    return repository.upsertState(playerId, questId, QuestState.ACTIVE, firstStepId)
+                            .thenApply(v -> AcceptOutcome.accepted());
+                });
         future.whenComplete((outcome, error) -> {
             notifyChanged(playerId);
             if (error == null && outcome.result() == AcceptOutcome.Result.ACCEPTED) {
@@ -278,6 +279,69 @@ public final class QuestProgressEngine implements PluginService {
             }
         });
         return future;
+    }
+
+    /**
+     * Issue #12 — <strong>une quête est-elle réellement disponible pour ce joueur ?</strong>
+     * Lecture pure : aucune écriture, aucun effet de bord.
+     *
+     * <p>C'est la <strong>source unique</strong> des règles de refus. {@link #accept} s'en sert
+     * avant d'écrire, et le signal visuel au-dessus des PNJ (issue #12) s'en sert pour décider
+     * d'afficher quelque chose. Il n'existe donc aucune seconde implémentation susceptible de
+     * diverger : une quête verrouillée, déjà active, ou terminée et non répétable ne peut pas
+     * être annoncée comme nouvelle.</p>
+     *
+     * @param ignorePrerequisites ne saute <strong>que</strong> la vérification des prérequis, comme
+     *                            dans {@link #accept} — l'état de la quête reste décisif
+     */
+    public CompletableFuture<Availability> availability(UUID playerId, NamespacedKey questId,
+                                                        boolean ignorePrerequisites) {
+        Optional<QuestDefinition> questOpt = questEngine.find(questId);
+        if (questOpt.isEmpty()) {
+            return CompletableFuture.completedFuture(Availability.of(Availability.Status.UNKNOWN));
+        }
+        QuestDefinition quest = questOpt.get();
+
+        // Lecture sans création : demander la disponibilité ne doit pas instancier une entrée de
+        // progression pour un joueur qui n'en a pas.
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
+        if (playerActive != null && playerActive.containsKey(questId)) {
+            return CompletableFuture.completedFuture(Availability.of(Availability.Status.ALREADY_ACTIVE));
+        }
+
+        return repository.find(playerId, questId).thenCompose(existing -> {
+            QuestState currentState = existing.map(QuestProgressRecord::state).orElse(QuestState.NOT_STARTED);
+            if (currentState == QuestState.ACTIVE || currentState == QuestState.READY_TO_TURN_IN) {
+                return CompletableFuture.completedFuture(Availability.of(Availability.Status.ALREADY_ACTIVE));
+            }
+            if (currentState == QuestState.COMPLETED && !quest.repeatable()) {
+                return CompletableFuture.completedFuture(Availability.of(Availability.Status.NOT_REPEATABLE));
+            }
+            CompletableFuture<List<NamespacedKey>> missingFuture = ignorePrerequisites
+                    ? CompletableFuture.completedFuture(List.of())
+                    : checkPrerequisites(playerId, quest);
+            return missingFuture.thenApply(missing -> missing.isEmpty()
+                    ? Availability.of(Availability.Status.AVAILABLE)
+                    : new Availability(Availability.Status.MISSING_PREREQUISITES, missing));
+        });
+    }
+
+    /** Disponibilité d'une quête pour un joueur, et la raison précise quand elle ne l'est pas. */
+    public record Availability(Status status, List<NamespacedKey> missingPrerequisites) {
+
+        public enum Status { AVAILABLE, UNKNOWN, ALREADY_ACTIVE, NOT_REPEATABLE, MISSING_PREREQUISITES }
+
+        public Availability {
+            missingPrerequisites = List.copyOf(missingPrerequisites == null ? List.of() : missingPrerequisites);
+        }
+
+        static Availability of(Status status) {
+            return new Availability(status, List.of());
+        }
+
+        public boolean available() {
+            return status == Status.AVAILABLE;
+        }
     }
 
     private CompletableFuture<List<NamespacedKey>> checkPrerequisites(UUID playerId, QuestDefinition quest) {

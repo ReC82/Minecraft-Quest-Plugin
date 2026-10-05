@@ -2436,6 +2436,89 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-244 — Signal visuel sur les PNJ : quête disponible et dialogue non lu (issue #12)
+
+-   **Fonctionnalité testée :** particules discrètes propres à chaque joueur, réutilisation de la
+    disponibilité réelle des quêtes, lecture persistante par nœud, limitation aux PNJ proches.
+-   **Préconditions :** JAR de cette session déployé, serveur redémarré. `npc-hints.enabled: true`
+    (défaut). **Deux joueurs** sont nécessaires pour l'étape D.
+-   **IMPORTANT — contenu de test uniquement.** Tout ce qui est créé ici porte le préfixe
+    `tc12_`. **Ne pas** dérouler ce test sur `first_steps`, `crystal_hunt`, les quêtes du Garde ni
+    `main_story`, et ne pas réinitialiser de joueur.
+
+-   **A. Préparer le contenu de test :**
+    1.  Panel `/quests/new` → créer `tc12_dispo` (titre « TC12 disponible »), un objectif
+        **Tuer une entité** `ZOMBIE` ×1, et dans **PNJ donneur** mettre l'identifiant du PNJ de
+        test (voir 3). Enregistrer.
+    2.  Panel `/quests/new` → créer `tc12_verrouillee` avec **`tc12_dispo` en prérequis** et le
+        même PNJ donneur. Enregistrer.
+    3.  En jeu, sur un PNJ de test : `/rpgadmin npc tag tc12_pnj`. Puis créer un dialogue
+        `tc12_pnj` depuis `/dialogues` avec un nœud de départ et **au moins une branche**.
+    4.  Déployer le contenu et redémarrer (les quêtes et dialogues ne se rechargent pas à chaud).
+
+-   **B. Quête disponible, quête verrouillée :**
+    5.  S'approcher du PNJ à moins de 16 blocs, en le regardant. **Attendu** : une particule verte
+        discrète (`HAPPY_VILLAGER`) apparaît au-dessus de lui, environ une fois par seconde.
+    6.  S'éloigner au-delà de 16 blocs. **Attendu** : plus aucune particule.
+    7.  Se placer derrière un mur, à portée. **Attendu** : aucune particule (ligne de vue).
+    8.  Accepter `tc12_dispo` auprès du PNJ, puis revenir devant lui. **Attendu** : le signal
+        **quête disparaît** dans les ~5 s (la quête est active, et `tc12_verrouillee` est encore
+        verrouillée par son prérequis). **C'est le point important** : une quête verrouillée ne
+        doit jamais être signalée.
+    9.  Terminer `tc12_dispo`. **Attendu** : le signal **quête revient**, puisque
+        `tc12_verrouillee` devient réellement disponible.
+
+-   **C. Dialogue non lu :**
+    10. Avec un joueur n'ayant jamais parlé au PNJ et **aucune quête disponible** chez lui
+        (accepter les deux quêtes d'abord) : **attendu** une particule de glyphes (`ENCHANT`).
+    11. Parler au PNJ, lire **seulement** le nœud de départ, fermer. **Attendu** : le signal
+        dialogue **persiste**, car une branche n'a pas été lue.
+    12. Reparler et parcourir **toutes** les branches accessibles. **Attendu** : le signal
+        dialogue **disparaît**.
+    13. Se déconnecter, se reconnecter, revenir devant le PNJ. **Attendu** : toujours **aucun**
+        signal dialogue — la lecture est persistante.
+    14. Débloquer une branche jusque-là inaccessible (par exemple en remplissant sa condition).
+        **Attendu** : le signal dialogue **réapparaît** tant que cette branche n'est pas lue.
+
+-   **D. Deux joueurs, deux états (le cœur de l'exigence) :**
+    15. Joueur A a tout lu et accepté ; joueur B n'a rien fait. Les deux se placent devant le même
+        PNJ. **Attendu** : **B voit un signal, A n'en voit pas**. Le PNJ n'a pas changé de nom et
+        n'a aucun effet visible pour les autres.
+
+-   **E. Cas sans signal :**
+    16. PNJ sans quête disponible et sans dialogue non lu : **aucune** particule.
+    17. PNJ dans un autre monde, ou despawné : **aucune** particule, aucune erreur en console.
+    18. `npc-hints.enabled: false` dans `config.yml` puis redémarrage : **aucune** particule, et la
+        console indique « Signal visuel sur les PNJ désactivé ».
+
+-   **F. Cadence et coût :**
+    19. Observer `/tps` avec plusieurs PNJ à portée. **Attendu** : aucune dégradation manifeste.
+        La cadence par défaut est **une passe par seconde et par joueur**, avec recalcul au plus
+        toutes les 5 s — documenté dans `RPGQUEST_BIBLE.md` § « Signal visuel sur les PNJ ».
+    20. Mettre `period-ticks: 1` dans la configuration puis redémarrer : la valeur doit être
+        **ramenée à 10** (bornage), visible dans le log de démarrage.
+    21. Mettre `quest-particle: PAS_UNE_PARTICULE` puis redémarrer : le serveur doit **refuser**
+        la configuration avec un message nommant la clé. Remettre une valeur valide ensuite.
+
+-   **Nettoyage :** supprimer `tc12_dispo`, `tc12_verrouillee` et le dialogue `tc12_pnj` (voir
+    TC-243 pour la suppression), et retirer le tag du PNJ de test avec
+    `/rpgadmin npc untag`. Aucun joueur à réinitialiser.
+-   **Couverture automatisée :** `NpcHintConfigTest` (7 cas : bornage dans les deux sens, particule
+    absente remplacée, interrupteurs intacts, bornage idempotent),
+    `DialogueReadRepositoryTest` (9 cas : rien n'est lu par défaut, lecture par joueur et par nœud,
+    idempotence, **survie à la fermeture/réouverture de la base**, reset d'un joueur sans effet sur
+    un autre), `DialogueSessionEngineTest` (+6 cas : atteignabilité réelle selon les conditions,
+    rétrécissement quand une condition cesse de passer, choix fermant non suivi, **ouvrir un PNJ ne
+    marque que le nœud affiché**, parcourir une branche la marque aussi, absence d'observateur
+    inoffensive), `QuestProgressEngineTest` (+6 cas : disponibilité d'une quête neuve, refus si
+    active, quête inconnue, **prérequis manquants nommés**, aucune progression créée par une simple
+    lecture, `ignorePrerequisites` ne saute que les prérequis), `SchemaMigratorTest` (version de
+    schéma 24). **Non couvert automatiquement** : le rendu visuel réel des particules, la cadence
+    en charge, et la différence entre deux joueurs en jeu — c'est l'objet des étapes B à F
+    ci-dessus.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -2509,3 +2592,4 @@ le résumé de récompenses de TC-014).
 | TC-240 | Couleurs et styles au clic, textes multi-styles préservés #195 (navigateur) | | | |
 | TC-242 | Catalogue complet des objets, recherche FR + id #196 (navigateur) | | | |
 | TC-243 | Suppression quête/story : aperçu, confirmation, blocages #194 | | | |
+| TC-244 | Signal visuel PNJ : quête dispo / dialogue non lu #12 (PENDING) | | | |

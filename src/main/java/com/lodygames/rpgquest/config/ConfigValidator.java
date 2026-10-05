@@ -48,9 +48,60 @@ public final class ConfigValidator {
         TravelConfig travel = validateTravel(section);
         StarterToolKitConfig starterToolKit = validateStarterToolKit(section);
         WildConfig wild = validateWild(section);
+        NpcHintConfig npcHints = validateNpcHints(section);
         return new PluginConfig(
                 debug, locale, database, resourcePack, dialogue, journal, adminFlatten, claims, progression,
-                backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel, starterToolKit, wild);
+                backpacks, webExport, store, clientMod, randomSafeArrival, hub, travel, starterToolKit,
+                wild, npcHints);
+    }
+
+    /**
+     * Section {@code npc-hints:} (issue #12) — signal visuel discret au-dessus d'un PNJ.
+     *
+     * <p>Toutes les valeurs numériques sont <strong>bornées</strong> par
+     * {@link NpcHintConfig#bounded()} : une configuration trop agressive est ramenée dans la plage
+     * utile plutôt que de dégrader le serveur. Une particule inconnue est en revanche une faute de
+     * frappe que l'administrateur doit voir, donc elle est refusée au chargement — c'est la
+     * discipline du projet : YAML validé au démarrage, jamais d'option silencieusement ignoree.
+     */
+    private static NpcHintConfig validateNpcHints(ConfigurationSection section)
+            throws ConfigValidationException {
+        ConfigurationSection hints = section.getConfigurationSection("npc-hints");
+        NpcHintConfig defaults = NpcHintConfig.defaults();
+        if (hints == null) {
+            return defaults;
+        }
+        boolean enabled = hints.getBoolean("enabled", defaults.enabled());
+        int periodTicks = hints.getInt("period-ticks", defaults.periodTicks());
+        double radius = hints.getDouble("radius", defaults.radius());
+        boolean lineOfSight = hints.getBoolean("require-line-of-sight", defaults.requireLineOfSight());
+        int refreshSeconds = hints.getInt("refresh-seconds", defaults.refreshSeconds());
+        double heightOffset = hints.getDouble("height-offset", defaults.heightOffset());
+        int count = hints.getInt("count", defaults.count());
+        org.bukkit.Particle questParticle =
+                particle(hints, "quest-particle", defaults.questParticle());
+        org.bukkit.Particle dialogueParticle =
+                particle(hints, "dialogue-particle", defaults.dialogueParticle());
+
+        return new NpcHintConfig(enabled, periodTicks, radius, lineOfSight, refreshSeconds,
+                heightOffset, questParticle, dialogueParticle, count).bounded();
+    }
+
+    /** Particule nommée, refusée si le nom n'existe pas dans la version installée. */
+    private static org.bukkit.Particle particle(ConfigurationSection section, String key,
+                                                org.bukkit.Particle fallback)
+            throws ConfigValidationException {
+        String raw = section.getString(key);
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            return org.bukkit.Particle.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException unknown) {
+            throw new ConfigValidationException("« npc-hints." + key + " » : particule inconnue \""
+                    + raw + "\". Utiliser un nom de la version installée (ex. HAPPY_VILLAGER, "
+                    + "ENCHANT, CRIT, END_ROD).");
+        }
     }
 
     private static boolean validateDebug(ConfigurationSection section) throws ConfigValidationException {

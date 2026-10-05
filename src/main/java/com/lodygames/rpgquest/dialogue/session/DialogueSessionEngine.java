@@ -79,6 +79,8 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
 
     private final Map<UUID, DialogueSession> sessions = new ConcurrentHashMap<>();
     private volatile DialogueRenderer renderer;
+    /** Issue #12 — notifie le service de signal visuel qu'un nœud vient d'être affiché. */
+    private volatile NodePresentedListener nodePresented;
 
     public DialogueSessionEngine(RPGQuestPlugin plugin, YamlDialogueEngine dialogueEngine,
                                   QuestProgressEngine questProgressEngine, PlayerVariableRepository variableRepository,
@@ -149,7 +151,86 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         visibleChoices(player, node).thenAccept(visible -> runOnMainThread(() -> {
             sessions.put(player.getUniqueId(), new DialogueSession(dialogue.id(), node.id()));
             renderer.render(player, dialogue, node, visible);
+            // Issue #12 : c'est le SEUL endroit où un nœud est réellement affiché au joueur, donc
+            // le seul endroit où « lu » a un sens. Ouvrir un PNJ ne présente que le nœud de
+            // départ : les branches non parcourues restent non lues, et donc toujours signalées.
+            if (nodePresented != null) {
+                nodePresented.accept(player, dialogue.id(), node.id());
+            }
         }));
+    }
+
+    /**
+     * Issue #12 — observateur appelé quand un nœud est <strong>réellement affiché</strong> à un
+     * joueur. Branché par le service de signal visuel ; {@code null} si la fonctionnalité est
+     * désactivée, et dans ce cas rien n'est enregistré.
+     */
+    public interface NodePresentedListener {
+        void accept(Player player, NamespacedKey dialogueId, String nodeId);
+    }
+
+    public void setNodePresentedListener(NodePresentedListener listener) {
+        this.nodePresented = listener;
+    }
+
+    /**
+     * Issue #12 — nœuds <strong>réellement atteignables</strong> par ce joueur depuis le nœud de
+     * départ, en suivant uniquement les choix dont les conditions passent au moment du calcul.
+     *
+     * <p>Réutilise {@link #visibleChoices} : les conditions ne sont donc évaluées qu'à un seul
+     * endroit du code, et un dialogue dont les conditions changent (prérequis acquis, objet
+     * obtenu, variable posée) voit son ensemble atteignable évoluer sans règle dupliquée.</p>
+     *
+     * <p>Parcours en largeur borné par le nombre de nœuds du dialogue — un dialogue n'en compte
+     * qu'une poignée, et chaque nœud n'est visité qu'une fois.</p>
+     */
+    public CompletableFuture<java.util.Set<String>> reachableNodes(Player player, DialogueDefinition dialogue) {
+        java.util.Set<String> reachable = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        reachable.add(dialogue.startNodeId());
+        return expand(player, dialogue, java.util.List.of(dialogue.startNodeId()), reachable)
+                .thenApply(ignored -> java.util.Set.copyOf(reachable));
+    }
+
+    /** Une vague du parcours en largeur : évalue les choix visibles des nœuds de la vague. */
+    private CompletableFuture<Void> expand(Player player, DialogueDefinition dialogue,
+                                           java.util.List<String> frontier,
+                                           java.util.Set<String> reachable) {
+        if (frontier.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        java.util.List<CompletableFuture<java.util.List<String>>> perNode = new ArrayList<>();
+        for (String nodeId : frontier) {
+            DialogueNode node = dialogue.nodes().get(nodeId);
+            if (node == null) {
+                continue;
+            }
+            perNode.add(visibleChoices(player, node).thenApply(visible -> {
+                java.util.List<String> next = new ArrayList<>();
+                for (VisibleChoice choice : visible) {
+                    DialogueChoice original = node.choices().get(choice.index());
+                    String target = original.next();
+                    if (target == null || target.isBlank() || !dialogue.nodes().containsKey(target)) {
+                        continue;
+                    }
+                    // Un choix qui ferme le dialogue ne mène nulle part : ne pas le suivre.
+                    if (original.actions().stream().anyMatch(a -> a instanceof CloseAction)) {
+                        continue;
+                    }
+                    if (reachable.add(target)) {
+                        next.add(target);
+                    }
+                }
+                return next;
+            }));
+        }
+        if (perNode.isEmpty()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return CompletableFuture.allOf(perNode.toArray(CompletableFuture[]::new)).thenCompose(v -> {
+            java.util.List<String> nextFrontier = new ArrayList<>();
+            perNode.forEach(f -> nextFrontier.addAll(f.join()));
+            return expand(player, dialogue, nextFrontier, reachable);
+        });
     }
 
     @Override
@@ -295,7 +376,8 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
                 .thenApply(v -> checks.stream().allMatch(CompletableFuture::join));
     }
 
-    private CompletableFuture<List<VisibleChoice>> visibleChoices(Player player, DialogueNode node) {
+    /** Choix réellement visibles pour ce joueur : source unique d'évaluation des conditions. */
+    public CompletableFuture<List<VisibleChoice>> visibleChoices(Player player, DialogueNode node) {
         List<DialogueChoice> choices = node.choices();
         List<CompletableFuture<Boolean>> checks = choices.stream()
                 .map(choice -> evaluateAll(player, choice.conditions()))

@@ -751,6 +751,86 @@ compatible tout client, aucune API instable). ⚠️ Divergence constatée :
 `README.md` (racine) affirme à tort que `chat` est la valeur par défaut —
 c'est `paper-dialog` dans le `config.yml` généré réellement ; `docs-site/dialogues.html` a la bonne valeur.
 
+### Signal visuel sur les PNJ (issue #12, première version)
+
+Particules **discrètes** au-dessus d'un PNJ quand une **quête est réellement disponible** pour
+**ce** joueur, ou qu'un **dialogue accessible comporte un nœud jamais lu**.
+
+**Propre à chaque joueur.** Les particules partent par `Player#spawnParticle` : seul le
+destinataire les voit. Deux joueurs devant le même PNJ voient donc des états différents, et le PNJ
+lui-même n'est **jamais** modifié — ni son nom, ni son équipement, ni rien de global. Rendu par un
+client **vanilla**, compatible Citizens (le signal suit l'entité, quelle qu'elle soit, dès qu'elle
+porte un id RPGQuest).
+
+| Signal | Signification | Particule par défaut |
+|---|---|---|
+| Quête | une quête dont ce PNJ est le donneur est **réellement disponible** | `HAPPY_VILLAGER` |
+| Dialogue | un nœud **atteignable** du dialogue de ce PNJ n'a **jamais** été lu | `ENCHANT` |
+
+La **quête prime** sur le dialogue si les deux s'appliquent au même PNJ.
+
+#### Aucune règle dupliquée
+
+- **Disponibilité d'une quête** : `QuestProgressEngine#availability` — exactement ce que
+  `accept()` utilise pour refuser. Une quête verrouillée, déjà active, ou terminée et non
+  répétable **ne peut pas** être annoncée comme nouvelle, parce qu'il n'existe qu'une seule
+  implémentation de ces règles.
+- **Conditions de dialogue** : `DialogueSessionEngine#reachableNodes` parcourt le graphe depuis le
+  nœud de départ en suivant **uniquement** les choix dont les conditions passent, via l'évaluateur
+  du moteur de dialogue. Un choix qui ferme le dialogue n'est pas suivi.
+
+#### Ce que « lu » veut dire
+
+Un nœud est marqué lu **au moment où il est réellement affiché**, et nulle part ailleurs —
+`DialogueSessionEngine#openNode` est le seul point de rendu. Conséquences voulues :
+
+- **ouvrir un PNJ ne marque pas toutes ses branches** : seul le nœud de départ est enregistré ;
+- une branche **nouvellement débloquée** reste signalée jusqu'à ce qu'elle soit lue pour de vrai ;
+- l'état est persistant par **UUID** (table `dialogue_node_reads`, migration V24) : il survit à une
+  reconnexion comme à un redémarrage, et un changement de pseudo ne le perd pas.
+
+#### Coût maîtrisé
+
+- **Jamais de travail à chaque tick** : une passe toutes les `period-ticks` (1 s par défaut), et
+  **par joueur connecté** — jamais un balayage de tous les PNJ du monde.
+- **Jamais de PNJ distant** : les candidats viennent de `getNearbyEntities` dans le `radius`
+  configuré. Hors rayon, dans un autre monde, non chargé ou hors ligne de vue : rien n'est calculé
+  ni envoyé, et **aucun chunk n'est chargé** pour l'occasion.
+- **Calcul découplé de l'affichage** : l'état d'un joueur est recalculé au plus une fois par
+  `refresh-seconds`, en asynchrone, et l'affichage lit un cache. Le cache est invalidé
+  **immédiatement** quand quelque chose change (quête acceptée, progression, nœud lu, changement de
+  monde), pour que le signal suive sans attendre. Un seul recalcul à la fois par joueur.
+- Nettoyage à la déconnexion et à l'arrêt du service.
+
+#### Réglages — section `npc-hints:` de `config.yml`
+
+| Clé | Défaut | Bornes | Effet |
+|---|---|---|---|
+| `enabled` | `true` | — | active le signal |
+| `period-ticks` | `20` | 10–100 | période de la passe d'affichage |
+| `radius` | `16.0` | 4–48 | distance maximale, en blocs |
+| `require-line-of-sight` | `true` | — | pas de signal à travers un mur |
+| `refresh-seconds` | `5` | 1–60 | intervalle minimal entre deux recalculs |
+| `height-offset` | `2.2` | 0–3 | hauteur au-dessus du PNJ |
+| `quest-particle` | `HAPPY_VILLAGER` | nom valide | convention « quête » |
+| `dialogue-particle` | `ENCHANT` | nom valide | convention « dialogue » |
+| `count` | `1` | 1–10 | particules par passe |
+
+Les valeurs numériques hors bornes sont **corrigées** au chargement : un signal visuel ne doit pas
+empêcher le serveur de démarrer. Une **particule inconnue**, en revanche, est **refusée** au
+démarrage — c'est une faute de frappe qu'il faut voir.
+
+#### Hors de cette première version
+
+**« Quête prête à être rendue » n'est pas signalé**, et ce n'est pas un oubli :
+`QuestState.READY_TO_TURN_IN` existe dans l'énumération mais n'est **jamais un état observable** —
+`QuestProgressEngine#turnIn` le pose puis le remplace par `COMPLETED` dans la même méthode, et
+seul `COMPLETED` est persisté. Le signaler supposerait d'inventer une mécanique de remise, ce que
+le ticket interdit. À reprendre si un véritable état « à rendre » est introduit.
+
+Également hors périmètre : halo ou icône au-dessus du PNJ (demanderait un affichage serveur
+supplémentaire), et signal pour un dialogue atteint autrement que par le PNJ lui-même.
+
 ### Convention id dialogue ↔ id PNJ
 
 Cliquer sur un PNJ identifié `X` (voir section 5) ouvre automatiquement le

@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 23;
+    public static final int CURRENT_VERSION = 24;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -55,7 +55,8 @@ public final class SchemaMigrator {
             new SchemaMigration(20, "village_centers", SchemaMigrator::applyV20),
             new SchemaMigration(21, "travel_beacons.biome_instance", SchemaMigrator::applyV21),
             new SchemaMigration(22, "waypoints.display_name", SchemaMigrator::applyV22),
-            new SchemaMigration(23, "waypoints.display_name noms lisibles", SchemaMigrator::applyV23));
+            new SchemaMigration(23, "waypoints.display_name noms lisibles", SchemaMigrator::applyV23),
+            new SchemaMigration(24, "dialogue_node_reads", SchemaMigrator::applyV24));
 
     private SchemaMigrator() {
     }
@@ -933,6 +934,32 @@ public final class SchemaMigrator {
                 update.setString(2, row[0]);
                 update.executeUpdate();
             }
+        }
+    }
+
+    private static void applyV24(Connection connection, SqlDialect dialect) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Nœuds de dialogue RÉELLEMENT présentés à un joueur (issue #12). Une ligne = « ce
+            // joueur a vu ce nœud de ce dialogue ». L'absence de ligne vaut « jamais lu » : rien
+            // n'est pré-rempli, et ouvrir un PNJ n'écrit qu'une ligne — celle du nœud de départ.
+            //
+            // Identité par UUID : un changement de pseudo ne perd pas la lecture. La clé primaire
+            // composite rend l'écriture idempotente, donc relire deux fois le même nœud n'ajoute
+            // rien et ne peut pas produire de doublon.
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS dialogue_node_reads (
+                        player_uuid TEXT NOT NULL,
+                        dialogue_id TEXT NOT NULL,
+                        node_id TEXT NOT NULL,
+                        read_at TEXT NOT NULL,
+                        PRIMARY KEY (player_uuid, dialogue_id, node_id)
+                    )
+                    """));
+            // Lecture d'un joueur pour un dialogue donné : c'est l'accès du service de signal,
+            // fait par joueur et par dialogue, jamais un balayage global.
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_dialogue_node_reads_player "
+                            + "ON dialogue_node_reads (player_uuid, dialogue_id)"));
         }
     }
 }

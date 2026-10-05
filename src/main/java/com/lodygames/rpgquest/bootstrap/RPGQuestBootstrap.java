@@ -617,6 +617,26 @@ public final class RPGQuestBootstrap {
             registry.start(new PlayerListenerService(plugin, citizensDialogueListener));
         }
 
+        // Issue #12 : signal visuel discret et PROPRE A CHAQUE JOUEUR au-dessus d'un PNJ, pour
+        // une quete reellement disponible ou un dialogue accessible jamais lu. Branche ici parce
+        // qu'il a besoin du moteur de dialogue (evaluation des conditions, hook de lecture) et du
+        // moteur de progression (disponibilite reelle d'une quete) — aucune regle dupliquee.
+        var dialogueReadRepository = new com.lodygames.rpgquest.database.DialogueReadRepository(
+                databaseService.databaseManager());
+        var npcHintService = new com.lodygames.rpgquest.npc.hint.NpcHintService(
+                plugin, configService.current().npcHints(), npcIdentityService, questEngine,
+                questProgressEngine, dialogueEngine, dialogueReadRepository,
+                dialogueSessionEngine::reachableNodes, plugin.getSLF4JLogger());
+        // Un noeud REELLEMENT affiche devient lu : seul endroit ou « lu » est ecrit.
+        dialogueSessionEngine.setNodePresentedListener((player, dialogueId, nodeId) ->
+                npcHintService.onNodePresented(player, dialogueId.toString(), nodeId));
+        // Toute progression de quete peut changer la disponibilite : le signal suit sans attendre
+        // l'expiration du cache.
+        questProgressEngine.onProgressChanged(npcHintService::invalidate);
+        registry.start(npcHintService);
+        registry.start(new PlayerListenerService(plugin,
+                new com.lodygames.rpgquest.npc.hint.NpcHintListener(npcHintService)));
+
         // Journal des quêtes : GUI paginée à deux onglets (en cours / terminées), ouverte par un
         // clic droit sur l'item rpgquest:journal_quetes (remis par le Libraire) ou par /quests.
         // Ne liste jamais les quêtes non découvertes (pas de catalogue) — voir docs/RPGQUEST_BIBLE.md.

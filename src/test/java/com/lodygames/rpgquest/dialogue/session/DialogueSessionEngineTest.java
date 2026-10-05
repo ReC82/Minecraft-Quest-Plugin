@@ -199,6 +199,92 @@ class DialogueSessionEngineTest {
         MockBukkit.unmock();
     }
 
+    // ---- Issue #12 : atteignabilite reelle et lecture d'un noeud -------------------------
+
+    @Test
+    void reachableNodesFollowsOnlyChoicesWhoseConditionsPass() throws Exception {
+        PlayerMock player = addPlayer();
+        DialogueDefinition dialogue = dialogueEngine.find(DIALOGUE_ID).orElseThrow();
+
+        java.util.Set<String> reachable =
+                sessionEngine.reachableNodes(player, dialogue).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        // Quete NOT_STARTED : « Accepter » est visible, donc « accepted » est atteignable.
+        assertEquals(java.util.Set.of("greeting", "accepted", "refused"), reachable);
+    }
+
+    @Test
+    void reachableNodesShrinksWhenAConditionStopsPassing() throws Exception {
+        PlayerMock player = addPlayer();
+        questProgressEngine.accept(player, QUEST_ID).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        DialogueDefinition dialogue = dialogueEngine.find(DIALOGUE_ID).orElseThrow();
+
+        java.util.Set<String> reachable =
+                sessionEngine.reachableNodes(player, dialogue).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        // La quete est acceptee : la condition QUEST_STATE NOT_STARTED echoue, donc « accepted »
+        // n'est plus atteignable. C'est ce qui fait disparaitre un signal devenu sans objet.
+        assertEquals(java.util.Set.of("greeting", "refused"), reachable);
+    }
+
+    @Test
+    void reachableNodesNeverFollowsAChoiceThatClosesTheDialogue() throws Exception {
+        PlayerMock player = addPlayer();
+        DialogueDefinition dialogue = dialogueEngine.find(DIALOGUE_ID).orElseThrow();
+
+        java.util.Set<String> reachable =
+                sessionEngine.reachableNodes(player, dialogue).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        // « accepted » et « refused » n'offrent qu'un choix CLOSE : le parcours s'arrete la, et
+        // aucun noeud fantome n'apparait.
+        assertEquals(3, reachable.size(), () -> "noeuds atteignables : " + reachable);
+    }
+
+    @Test
+    void openingADialogueMarksOnlyTheNodeActuallyPresented() throws Exception {
+        PlayerMock player = addPlayer();
+        java.util.List<String> presented = new java.util.ArrayList<>();
+        sessionEngine.setNodePresentedListener((p2, dialogueId, nodeId) -> presented.add(nodeId));
+
+        sessionEngine.open(player, DIALOGUE_ID);
+        awaitRendered();
+
+        // Le coeur de l'exigence #12 : ouvrir un PNJ ne marque PAS toutes ses branches.
+        assertEquals(java.util.List.of("greeting"), presented);
+    }
+
+    @Test
+    void walkingABranchMarksThatBranchToo() throws Exception {
+        PlayerMock player = addPlayer();
+        java.util.List<String> presented = new java.util.ArrayList<>();
+        sessionEngine.setNodePresentedListener((p2, dialogueId, nodeId) -> presented.add(nodeId));
+
+        sessionEngine.open(player, DIALOGUE_ID);
+        awaitRendered();
+        int refuseIndex = renderer.lastVisibleChoices.stream()
+                .filter(c -> c.label().equals("Refuser")).findFirst().orElseThrow().index();
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, DIALOGUE_ID, "greeting", refuseIndex);
+        awaitRendered();
+
+        assertEquals(java.util.List.of("greeting", "refused"), presented,
+                "seuls les noeuds reellement affiches doivent etre marques, dans l'ordre");
+        assertTrue(presented.stream().noneMatch("accepted"::equals),
+                "une branche non parcourue ne doit jamais etre marquee comme lue");
+    }
+
+    @Test
+    void noListenerMeansNothingIsRecorded() throws Exception {
+        PlayerMock player = addPlayer();
+        sessionEngine.setNodePresentedListener(null);
+
+        // Sans observateur (fonctionnalite desactivee), l'ouverture doit rester inoffensive.
+        assertDoesNotThrow(() -> {
+            sessionEngine.open(player, DIALOGUE_ID);
+            awaitRendered();
+        });
+    }
+
     @Test
     void conditionalChoiceIsVisibleWhenConditionIsMet() throws Exception {
         PlayerMock player = addPlayer();

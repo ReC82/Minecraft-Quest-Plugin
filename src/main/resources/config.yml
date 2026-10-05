@@ -316,3 +316,39 @@ wild:
     # Espèces de surface. Les espèces à conditions spéciales (PHANTOM, WARDEN...) sont
     # volontairement absentes : elles demandent un traitement explicite, pas un spawn de masse.
     types: [ZOMBIE, SKELETON, SPIDER, CREEPER]
+
+# ---------------------------------------------------------------------------
+# Signal visuel sur les PNJ (issue #12)
+# ---------------------------------------------------------------------------
+# Particules discrètes au-dessus d'un PNJ quand une quête est RÉELLEMENT disponible pour CE
+# joueur, ou qu'un dialogue accessible comporte un nœud jamais lu.
+#
+# Spécifique au joueur : les particules sont envoyées au seul joueur concerné. Deux joueurs
+# devant le même PNJ voient donc des états différents, et le PNJ lui-même n'est jamais modifié
+# (ni son nom, ni rien de global). Aucun mod client requis — rendu par un client vanilla.
+#
+# Toutes les valeurs numériques sont BORNÉES au chargement : une configuration trop agressive est
+# ramenée dans la plage utile au lieu de dégrader le serveur. Une particule inconnue, en revanche,
+# est refusée au démarrage — c'est une faute de frappe qu'il faut voir.
+npc-hints:
+  enabled: true
+  # Période de la passe d'affichage, en ticks (20 = 1 s). Bornée 10–100. JAMAIS par tick :
+  # une passe par joueur connecté, jamais un balayage de tous les PNJ du monde.
+  period-ticks: 20
+  # Distance maximale, en blocs, à laquelle un PNJ est signalé. Bornée 4–48. Au-delà, rien n'est
+  # ni calculé ni envoyé : aucun effet distant, aucun chunk chargé pour l'occasion.
+  radius: 16.0
+  # N'afficher que si le joueur voit réellement le PNJ (pas à travers un mur).
+  require-line-of-sight: true
+  # Intervalle minimal entre deux RECALCULS de l'état d'un joueur, en secondes. Bornée 1–60.
+  # L'affichage réutilise le cache entre deux recalculs ; le cache est invalidé immédiatement
+  # quand quelque chose change (quête acceptée, progression, nœud lu).
+  refresh-seconds: 5
+  # Hauteur du signal au-dessus du PNJ, en blocs. Bornée 0–3.
+  height-offset: 2.2
+  # Deux conventions immédiatement distinguables. La quête PRIME sur le dialogue si les deux
+  # s'appliquent au même PNJ.
+  quest-particle: HAPPY_VILLAGER
+  dialogue-particle: ENCHANT
+  # Nombre de particules par passe. Bornée 1–10 : 1 ou 2 suffisent pour rester discret.
+  count: 1

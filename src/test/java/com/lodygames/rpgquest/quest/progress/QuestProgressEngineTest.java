@@ -89,6 +89,89 @@ class QuestProgressEngineTest {
         MockBukkit.unmock();
     }
 
+    // ---- Issue #12 : disponibilite, source UNIQUE des regles de refus ---------------------
+
+    @Test
+    void availabilityIsAvailableForAFreshQuest() throws Exception {
+        PlayerMock player = addPlayer();
+
+        QuestProgressEngine.Availability availability =
+                engine.availability(player.getUniqueId(), KILL_QUEST, false)
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertTrue(availability.available());
+        assertEquals(QuestProgressEngine.Availability.Status.AVAILABLE, availability.status());
+        assertTrue(availability.missingPrerequisites().isEmpty());
+    }
+
+    @Test
+    void availabilityIsNotAvailableOnceTheQuestIsActive() throws Exception {
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        QuestProgressEngine.Availability availability =
+                engine.availability(player.getUniqueId(), KILL_QUEST, false)
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertFalse(availability.available(), "une quete deja acceptee n'est plus « nouvelle »");
+        assertEquals(QuestProgressEngine.Availability.Status.ALREADY_ACTIVE, availability.status());
+    }
+
+    @Test
+    void availabilityReportsAnUnknownQuestInsteadOfPretendingItIsAvailable() throws Exception {
+        PlayerMock player = addPlayer();
+
+        QuestProgressEngine.Availability availability = engine
+                .availability(player.getUniqueId(), new NamespacedKey("rpgquest", "tc12_inexistante"), false)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertFalse(availability.available());
+        assertEquals(QuestProgressEngine.Availability.Status.UNKNOWN, availability.status());
+    }
+
+    @Test
+    void availabilityNamesTheMissingPrerequisites() throws Exception {
+        writeKillQuest(KILL_QUEST_TWO, "tc12_locked.yml", 1, false, KILL_QUEST.toString());
+        engine.reloadQuestDefinitions();
+        PlayerMock player = addPlayer();
+
+        QuestProgressEngine.Availability availability =
+                engine.availability(player.getUniqueId(), KILL_QUEST_TWO, false)
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertFalse(availability.available(), "une quete verrouillee ne doit JAMAIS etre signalee");
+        assertEquals(QuestProgressEngine.Availability.Status.MISSING_PREREQUISITES, availability.status());
+        assertEquals(List.of(KILL_QUEST), availability.missingPrerequisites());
+    }
+
+    @Test
+    void availabilityDoesNotCreateAnyProgressForThePlayer() throws Exception {
+        PlayerMock player = addPlayer();
+
+        engine.availability(player.getUniqueId(), KILL_QUEST, false).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        // Demander la disponibilite est une LECTURE : elle ne doit rien ecrire, sinon le signal
+        // visuel creerait de la progression en regardant simplement un PNJ.
+        assertEquals(QuestState.NOT_STARTED,
+                engine.stateOf(player.getUniqueId(), KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void availabilityIgnorePrerequisitesSkipsOnlyThePrerequisiteCheck() throws Exception {
+        writeKillQuest(KILL_QUEST_TWO, "tc12_locked_force.yml", 1, false, KILL_QUEST.toString());
+        engine.reloadQuestDefinitions();
+        PlayerMock player = addPlayer();
+
+        assertTrue(engine.availability(player.getUniqueId(), KILL_QUEST_TWO, true)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).available());
+
+        // L'etat de la quete reste decisif, meme en ignorant les prerequis.
+        engine.accept(player, KILL_QUEST_TWO, true).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(QuestProgressEngine.Availability.Status.ALREADY_ACTIVE,
+                engine.availability(player.getUniqueId(), KILL_QUEST_TWO, true)
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).status());
+    }
+
     @Test
     void acceptProgressAndTurnInCycle() throws Exception {
         PlayerMock player = addPlayer();

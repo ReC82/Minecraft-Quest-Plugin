@@ -15,14 +15,56 @@ import java.util.Set;
  * si aucun relevé n'a encore été fait — dans ce cas les vérifications de référence deviennent des
  * {@code INFO} (« impossible de vérifier ») plutôt que des {@code WARNING}.</p>
  *
- * <p>Les entités et matériaux sont une liste <strong>curée</strong> des valeurs les plus courantes
- * (le module control-panel ne peut pas dépendre de Bukkit) ; la saisie reste libre et le vrai
- * parser RPGQuest tranchera au chargement côté serveur.</p>
+ * <p>Les entités restent une liste <strong>curée</strong> des valeurs les plus courantes (le
+ * module control-panel ne peut pas dépendre de Bukkit) ; la saisie reste libre et le vrai parser
+ * RPGQuest tranchera au chargement côté serveur.</p>
+ *
+ * <p>Les <strong>matériaux</strong>, eux, viennent du relevé {@code item.catalogs} du serveur
+ * depuis l'issue #196 : la liste curée qui servait avant ne contenait que 76 entrées, dont deux
+ * épées sur les sept de la version réelle — chercher « sword » ne trouvait donc presque rien.
+ * {@link #MATERIALS} ne subsiste que comme repli tant qu'aucun relevé n'a été fait, et l'interface
+ * le dit alors explicitement au lieu de faire passer un extrait pour le catalogue.</p>
  */
 public record RefData(List<String> quests, List<String> npcs, List<String> worlds,
                       boolean questsKnown, boolean npcsKnown, boolean worldsKnown,
                       Map<String, String> npcNames, Map<String, String> questNames,
-                      Map<String, String> questOrigins, Map<String, List<String>> questPrereqs) {
+                      Map<String, String> questOrigins, Map<String, List<String>> questPrereqs,
+                      ItemCatalog itemCatalog) {
+
+    /**
+     * Catalogue des matériaux réellement exposés par la version installée (issue #196).
+     *
+     * @param items             matériaux utilisables comme icône <strong>et</strong> comme
+     *                          récompense : le serveur garantit qu'ils peuvent exister en objet
+     * @param blocksWithoutItem blocs réels <strong>sans</strong> forme d'objet (eau, feu,
+     *                          portail…). Conservés exprès : ils permettent d'expliquer un refus
+     *                          plutôt que de laisser croire que la valeur n'existe pas du tout
+     * @param minecraftVersion  version Minecraft du relevé, affichée pour lever tout doute sur la
+     *                          provenance de la liste
+     */
+    public record ItemCatalog(List<String> items, List<String> blocksWithoutItem,
+                              String minecraftVersion) {
+
+        public ItemCatalog {
+            items = List.copyOf(items == null ? List.of() : items);
+            blocksWithoutItem = List.copyOf(blocksWithoutItem == null ? List.of() : blocksWithoutItem);
+            minecraftVersion = minecraftVersion == null ? "" : minecraftVersion;
+        }
+
+        public static ItemCatalog empty() {
+            return new ItemCatalog(List.of(), List.of(), "");
+        }
+
+        /** Un relevé a-t-il réellement eu lieu ? Une liste vide n'est jamais un catalogue. */
+        public boolean known() {
+            return !items.isEmpty();
+        }
+
+        public boolean isBlockWithoutItem(String value) {
+            String v = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+            return blocksWithoutItem.contains(v);
+        }
+    }
 
     /** Origines possibles d'une quête du catalogue fusionné (issues #163/#164). */
     public static final String ORIGIN_BOTH = "both";
@@ -50,6 +92,15 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
                 Map.of(), Map.of());
     }
 
+    /** Constructeur historique (10 composantes) : aucun catalogue de matériaux relevé (#196). */
+    public RefData(List<String> quests, List<String> npcs, List<String> worlds,
+                   boolean questsKnown, boolean npcsKnown, boolean worldsKnown,
+                   Map<String, String> npcNames, Map<String, String> questNames,
+                   Map<String, String> questOrigins, Map<String, List<String>> questPrereqs) {
+        this(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown, npcNames, questNames,
+                questOrigins, questPrereqs, ItemCatalog.empty());
+    }
+
     public RefData {
         quests = List.copyOf(quests == null ? List.of() : quests);
         npcs = List.copyOf(npcs == null ? List.of() : npcs);
@@ -62,6 +113,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             questPrereqs.forEach((k, v) -> prereqCopy.put(k, List.copyOf(v == null ? List.of() : v)));
         }
         questPrereqs = Map.copyOf(prereqCopy);
+        itemCatalog = itemCatalog == null ? ItemCatalog.empty() : itemCatalog;
     }
 
     public static RefData empty() {
@@ -193,7 +245,9 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
     public List<String> options(String source) {
         return switch (source == null ? "" : source) {
             case "entity" -> ENTITIES;
-            case "material", "icon" -> MATERIALS;
+            // #196 : le vrai catalogue du serveur dès qu'il est relevé ; sinon le repli curé,
+            // signalé comme tel par l'interface.
+            case "material", "icon" -> materials();
             case "category" -> CATEGORIES;
             case "npc" -> npcs;
             case "quest" -> quests;
@@ -204,7 +258,11 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
 
     public boolean sourceKnown(String source) {
         return switch (source == null ? "" : source) {
-            case "entity", "material" -> true;
+            case "entity" -> true;
+            // #196 : on ne prétend « connaître » les matériaux que si le relevé serveur
+            // existe. Avec le seul repli curé, un matériau absent de la liste est tout à
+            // fait légitime : le dire WARNING serait un faux positif.
+            case "material" -> itemCatalog.known();
             case "npc" -> npcsKnown;
             case "quest" -> questsKnown;
             case "world" -> worldsKnown;
@@ -218,12 +276,33 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
     public boolean isValueKnown(String source, String value) {
         return switch (source == null ? "" : source) {
             case "entity" -> contains(ENTITIES, value);
-            case "material" -> contains(MATERIALS, value);
+            case "material" -> contains(materials(), value);
             case "npc" -> isNpcKnown(value);
             case "quest" -> isQuestKnown(value);
             case "world" -> isWorldKnown(value);
             default -> true;
         };
+    }
+
+    /**
+     * Matériaux proposés : le relevé serveur s'il existe, sinon le repli curé. Jamais la fusion
+     * des deux — mélanger un extrait et un catalogue complet rendrait impossible de dire à
+     * l'utilisateur ce qu'il regarde.
+     */
+    public List<String> materials() {
+        return itemCatalog.known() ? itemCatalog.items() : MATERIALS;
+    }
+
+    /** Le catalogue affiché vient-il réellement du serveur ? */
+    public boolean materialsFromServer() {
+        return itemCatalog.known();
+    }
+
+    /** Ajoute (ou remplace) le catalogue de matériaux relevé, sans toucher au reste. */
+    public RefData withItemCatalog(ItemCatalog catalog) {
+        return new RefData(quests, npcs, worlds, questsKnown, npcsKnown, worldsKnown,
+                npcNames, questNames, questOrigins, questPrereqs,
+                catalog == null ? ItemCatalog.empty() : catalog);
     }
 
     private static boolean contains(List<String> list, String value) {
@@ -240,7 +319,7 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             }
         }
         return new RefData(List.copyOf(merged), npcs, worlds, questsKnown, npcsKnown, worldsKnown,
-                npcNames, questNames, questOrigins, questPrereqs);
+                npcNames, questNames, questOrigins, questPrereqs, itemCatalog);
     }
 
     // ---- listes curées (les plus courantes ; saisie libre toujours possible) ----------------
@@ -263,6 +342,11 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
             "FOX", "BEE", "TURTLE", "AXOLOTL", "GOAT", "FROG", "ALLAY", "VILLAGER", "IRON_GOLEM",
             "SQUID", "GLOW_SQUID", "DOLPHIN", "COD", "SALMON", "PUFFERFISH", "TROPICAL_FISH");
 
+    /**
+     * Repli curé, utilisé <strong>uniquement</strong> tant que le relevé {@code item.catalogs}
+     * n'a pas eu lieu (issue #196). Ce n'est pas un catalogue : c'est un dépannage, et l'interface
+     * l'annonce comme tel. La vraie liste vient du serveur.
+     */
     public static final List<String> MATERIALS = List.of(
             "OAK_LOG", "BIRCH_LOG", "SPRUCE_LOG", "DARK_OAK_LOG", "ACACIA_LOG", "JUNGLE_LOG",
             "OAK_PLANKS", "STICK", "COBBLESTONE", "STONE", "DIRT", "GRAVEL", "SAND", "GLASS",

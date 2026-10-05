@@ -51,8 +51,13 @@ public enum AgentActionType {
     TRAVEL_CATALOG("travel.catalog"),
     /** Catalogue des profils de mobs spéciaux/boss + throttle Wild (issue #169) — lecture seule. */
     MOB_LIST("mob.list"),
-    /** Issue #172/#196 : catalogues réels du serveur (entités, particules, sons, biomes, mondes). */
+    /** Issue #172 : catalogues réels du serveur (entités, particules, sons, biomes, mondes). */
     MOB_CATALOGS("mob.catalogs"),
+    /**
+     * Issue #196 : catalogue complet des matériaux de la version installée, pour les icônes de
+     * quête et les récompenses d'objet — lecture seule, aucun effet de bord.
+     */
+    ITEM_CATALOGS("item.catalogs"),
 
     PLAYER_ITEM_GIVE("player.item.give"),
     QUEST_START("quest.start"),

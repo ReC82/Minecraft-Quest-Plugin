@@ -124,6 +124,11 @@ public final class AgentActionCatalog {
         // l'administrateur doit deviner les identifiants vanilla exacts.
         add("mob.catalogs", Permission.MOB_READ, false, false,
                 "Rafraîchir les catalogues Minecraft (entités, particules, sons, biomes)");
+        // Issue #196 : catalogue COMPLET des matériaux de la version installée, pour les icônes de
+        // quête et les récompenses d'objet. Sans ce relevé, le panel retombe sur une courte liste
+        // curée — qui ne contenait que deux épées sur les sept réellement disponibles.
+        add("item.catalogs", Permission.CONTENT_READ, false, false,
+                "Rafraîchir le catalogue des objets Minecraft (icônes et récompenses)");
         // Export versionné du contenu déclaratif (issue #108) — lecture seule, aucun effet de bord,
         // aucun catalogue à réenfiler.
         add("content.export", Permission.CONTENT_EXPORT, false, false, "Exporter le contenu (pack versionné)");

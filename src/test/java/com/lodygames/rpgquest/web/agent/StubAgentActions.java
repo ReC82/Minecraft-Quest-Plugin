@@ -84,6 +84,12 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<ItemCatalogsView> itemCatalogs() {
+        return CompletableFuture.completedFuture(new ItemCatalogsView(
+                java.util.List.of(), java.util.List.of(), "", 0));
+    }
+
+    @Override
     public CompletableFuture<MutationResult> citizensRename(String npcId, String newName) {
         return unsupported();
     }

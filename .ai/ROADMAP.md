@@ -328,6 +328,55 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-05 (lot 6 — #196 catalogue complet des objets pour icônes et récompenses)
+Branche de départ: feature/169-special-mobs-boss @ 1ccde5e (lots 3 et 4 du même jour)
+Étape de départ: #202 confirmé fonctionnel par le propriétaire (test réel #207, Discord → GitHub
+  puis GitHub → Discord, message « Résolu » apparu). Consigne : ne plus toucher aux secrets,
+  enchaîner sur #196, sans sous-agents, avec commit/push/déploiement panel autorisés.
+Étapes terminées:
+(1) DONE — CAUSE RACINE confirmée par la mesure, pas supposée : RefData.MATERIALS était une liste
+  écrite à la main de 76 entrées servant de catalogue, ne contenant que IRON_SWORD et
+  DIAMOND_SWORD. Chercher « sword » trouvait donc 2 épées sur les 7 que la version réelle expose
+  (bois, pierre, CUIVRE, or, fer, diamant, netherite — COPPER_SWORD n'existe que depuis 1.21.9,
+  vérifié par javap sur le jar paper-api 1.21.11 réellement utilisé).
+(2) DONE — SECOND DÉFAUT INDÉPENDANT, trouvé en auditant la troncature comme le demandait le
+  ticket : le composant de liste recherchable de panel.js s'arrêtait à 60 correspondances SANS LE
+  DIRE. Avec un catalogue de plus d'un millier d'objets, une recherche large aurait silencieusement
+  caché des résultats — exactement le « résultats perdus » que le ticket voulait éviter. Borne
+  portée à 100, total annoncé (« 100 sur 142 affichés »), et « afficher 100 de plus » cliquable.
+(3) DONE — Nouveau relevé plugin `item.catalogs` (permission CONTENT_READ, bouton « Objets
+  Minecraft » sur /quests) : registre Material réel, trois filtres motivés (isLegacy écarte les
+  doublons d'avant 1.13, isAir écarte la pile vide, isItem est la seule garantie « peut exister
+  comme objet »), et les blocs SANS forme d'objet renvoyés à part pour être EXPLIQUÉS au lieu
+  d'être tus. La version Minecraft voyage avec le relevé pour tracer la provenance de la liste.
+(4) DONE — Représentable vs délivrable tranché par l'API, pas par intuition : les deux exigent
+  isItem(), la distinction utile est avec les blocs sans objet. Le validateur répond désormais
+  « WATER existe comme bloc mais n'a aucune forme d'objet dans cette version » au lieu de
+  « matériau inconnu », qui envoyait chercher une faute de frappe inexistante.
+(5) DONE — Noms français par composition (MaterialNames) : DIAMOND_SWORD → « Épée en diamant »,
+  GOLD_INGOT → « Lingot d'or » (élision gérée). Ce qui ne suit aucune règle tombe sur une table
+  nominative courte puis sur l'anglais embelli — un repli VISIBLEMENT non traduit plutôt qu'une
+  traduction inventée. La recherche filtrant sur l'identifiant ET le libellé, « sword » et « épée »
+  donnent le même résultat, donc un repli anglais ne rend jamais un objet introuvable.
+(6) DONE — Sans relevé, le repli curé reste utilisable MAIS est annoncé comme « liste de dépannage
+  de 76 entrées » (bandeau + aide du champ), et aucun avertissement de validation n'est émis sur un
+  matériau absent de ce repli : ce serait un faux positif qui apprend à ignorer les avertissements.
+Tests: TESTS_PLACEHOLDER
+Branche finale: feature/169-special-mobs-boss (aucun merge).
+Dernier commit: COMMIT_PLACEHOLDER
+Build: vert.
+Déploiements: DEPLOY_PLACEHOLDER
+Tests manuels en attente: TC-242 — entièrement vérifiable au NAVIGATEUR, sans Minecraft. Reste en
+  jeu : que l'icône choisie s'affiche dans le journal et qu'une récompense d'objet soit remise.
+Blocages: aucun.
+Propreté: aucun contenu du propriétaire modifié. Incident d'environnement rencontré et corrigé :
+  control-panel/build/resources appartenait à root, ce qui faisait échouer `processResources`
+  (« Failed to clean up stale outputs ») — ownership rendue à ubuntu, aucun fichier du dépôt touché.
+Première étape à reprendre: vérifier TC-242 au navigateur, puis #194 (suppression de quête/story
+  avec confirmation et aperçu des conséquences), puis #108/#109.
+```
+
+```text
 Date: 2026-10-05 (lots 3 et 4 — #172 catalogues réels de l'éditeur de mobs, #195 couleurs au clic)
 Branche de départ: feature/169-special-mobs-boss @ 9af3143 (entrée précédente du même jour)
 Étape de départ: lot Control Panel vérifiable au navigateur, par ordre de priorité donné par

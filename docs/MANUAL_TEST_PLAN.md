@@ -2312,6 +2312,51 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-242 — Catalogue complet des objets : icônes et récompenses (issue #196)
+
+-   **Fonctionnalité testée :** relevé `item.catalogs`, recherche par nom français et par
+    identifiant, résultats complets et paginés, refus expliqué d'un bloc sans forme d'objet.
+-   **Préconditions :** Control Panel et JAR de cette session déployés, serveur redémarré.
+-   **Vérifiable immédiatement dans le navigateur (pas besoin de Minecraft) :**
+    1.  `/quests` → un bandeau orange doit signaler que le catalogue des objets n'est pas chargé,
+        et le bouton **« Objets Minecraft »** doit être orange. Cliquer dessus.
+    2.  Le bandeau disparaît, le bouton repasse en gris. Dans le journal d'actions, le résumé doit
+        citer la version réelle — par exemple « … — Minecraft 1.21.11 ».
+    3.  `/quests/new` (ou éditer une quête) → champ **Icône** : taper `sword`.
+        **Les sept épées doivent apparaître** : bois, pierre, **cuivre**, or, fer, diamant,
+        netherite. C'est l'épreuve exacte du ticket : avant, seules `IRON_SWORD` et
+        `DIAMOND_SWORD` sortaient.
+    4.  Même champ : taper **`épée`** → les mêmes sept entrées, trouvées par leur nom français.
+        Puis `lingot` → les lingots ; `planches` → les planches de chaque essence.
+    5.  Taper une recherche très large, par exemple `a` : la liste doit afficher
+        **« 100 sur N affichés — afficher 100 de plus »**. Cliquer : 100 entrées de plus
+        s'ajoutent, sans fermer la liste. **Aucun résultat ne doit disparaître en silence.**
+    6.  L'aide sous le champ **Icône** doit annoncer le nombre d'objets **et** la version
+        (« … N objets de la version installée (Minecraft 1.21.11) »), et non plus une liste de
+        dépannage.
+    7.  Section **Récompenses** → ajouter une récompense **Objet** → taper `épée en diamant` → la
+        sélection doit se faire, et la **quantité** saisie doit être conservée.
+    8.  Cas du bloc sans objet : dans **Icône**, saisir `WATER` puis **Vérifier**. Le message doit
+        être explicite — « existe comme bloc mais n'a aucune forme d'objet dans cette version » —
+        et **jamais** « matériau inconnu ». Idem pour une récompense `FIRE`.
+    9.  Cas de l'objet technique : taper `command` → `COMMAND_BLOCK` doit apparaître, **marqué
+        « créatif / technique »**, et rester sélectionnable.
+    10. Enregistrer une quête avec une icône choisie dans la liste, recharger la page : la
+        sélection et les quantités doivent être **inchangées**.
+-   **À vérifier en jeu (plus tard) :** que l'icône choisie s'affiche bien dans le journal de
+    quêtes, et qu'une récompense d'objet est réellement remise.
+-   **Couverture automatisée :** `MaterialNamesTest` (11 cas : familles composées, élision
+    « Lingot d'or », repli anglais assumé, objets de créatif signalés), `ItemCatalogTest` (9 cas :
+    la liste codée en dur ne contenait que 2 épées, le relevé en trouve 7, le relevé remplace le
+    repli sans fusion, bloc sans objet reconnu, catalogue conservé en dérivant la `RefData`),
+    `MaterialPickerTest` (8 cas : libellés dans la datalist, provenance et version annoncées,
+    bloc sans objet marqué, refus expliqué côté validateur, aucun faux positif sans relevé),
+    `AgentActionExecutorTest` (+1 : le relevé rapporte bien objets, blocs sans objet et version).
+    **Non couvert automatiquement** : le comportement JavaScript de la pagination de la liste —
+    c'est l'objet du point 5 ci-dessus.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -2383,3 +2428,4 @@ le résumé de récompenses de TC-014).
 | TC-238 | PNJ : nom en jeu et skin MineSkin depuis le panel #165 (PENDING) | | | |
 | TC-239 | Création mob SPECIAL + BOSS depuis le panel #172 (navigateur) | | | |
 | TC-240 | Couleurs et styles au clic, textes multi-styles préservés #195 (navigateur) | | | |
+| TC-242 | Catalogue complet des objets, recherche FR + id #196 (navigateur) | | | |

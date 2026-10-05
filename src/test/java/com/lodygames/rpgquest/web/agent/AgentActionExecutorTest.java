@@ -44,6 +44,29 @@ class AgentActionExecutorTest {
     // ---- Whitelist + player.variable.get (issue #51) ---------------------------------------
 
     @Test
+    void itemCatalogsReportsTheRealMaterialsAndWhatCannotBeAnItem() {
+        AgentActionOutcome outcome = run(new AgentAction("ic1", "item.catalogs", Map.of()));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals("4", outcome.value(), "la valeur porte le nombre d'objets utilisables");
+
+        @SuppressWarnings("unchecked")
+        List<String> items = (List<String>) outcome.details().get("items");
+        assertTrue(items.contains("WOODEN_SWORD"), items.toString());
+        assertTrue(items.contains("NETHERITE_SWORD"), items.toString());
+
+        @SuppressWarnings("unchecked")
+        List<String> blocks = (List<String>) outcome.details().get("blocksWithoutItem");
+        assertTrue(blocks.contains("WATER"), "un bloc sans forme d'objet doit être rapporté à part");
+        assertFalse(items.contains("WATER"), "il ne doit jamais être proposé comme objet");
+
+        // La version réelle est citée : c'est ce qui permet de vérifier d'où vient la liste.
+        assertEquals("1.21.11", outcome.details().get("minecraftVersion"));
+        assertTrue(outcome.message().contains("1.21.11"), outcome.message());
+        assertTrue(outcome.message().contains("formes historiques écartées"), outcome.message());
+    }
+
+    @Test
     void unknownTypeIsRejectedWithoutExecuting() {
         AgentActionOutcome outcome = run(new AgentAction("a1", "server.shutdown", Map.of()));
         assertEquals(AgentActionOutcome.REJECTED, outcome.status());
@@ -689,6 +712,15 @@ class AgentActionExecutorTest {
                     List.of("ZOMBIE", "CREEPER"), List.of("FLAME", "DUST"),
                     List.of("ENTITY_CREEPER_PRIMED"), List.of("PLAINS", "SWAMP"),
                     List.of("wild"), "wild", List.of("DUST")));
+        }
+
+        @Override
+        public CompletableFuture<ItemCatalogsView> itemCatalogs() {
+            // Jeu réduit mais représentatif : des épées de matières différentes (le cas du
+            // ticket #196), un objet quelconque, et un bloc SANS forme d'objet.
+            return CompletableFuture.completedFuture(new ItemCatalogsView(
+                    List.of("DIAMOND_SWORD", "NETHERITE_SWORD", "WOODEN_SWORD", "BOOK"),
+                    List.of("WATER", "FIRE"), "1.21.11", 500));
         }
 
         @Override

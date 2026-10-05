@@ -49,6 +49,16 @@ public final class QuestValidator {
         }
         if (blank(q.icon)) {
             out.add(Diagnostic.info("icon", "Aucune icône : « BOOK » sera utilisée par défaut."));
+        } else if (refData.itemCatalog().isBlockWithoutItem(q.icon)) {
+            // #196 : refus explicite et expliqué, plutôt qu'une icône qui n'apparaîtra jamais.
+            out.add(Diagnostic.error("icon", q.icon.trim() + " existe comme bloc mais n'a aucune "
+                    + "forme d'objet dans cette version : il ne peut pas servir d'icône. Choisir un "
+                    + "objet réellement affichable dans un inventaire."));
+        } else if (refData.materialsFromServer() && !refData.isValueKnown("material", q.icon)) {
+            out.add(Diagnostic.warning("icon", "Icône « " + q.icon.trim() + " » absente du catalogue "
+                    + "de la version installée (Minecraft "
+                    + refData.itemCatalog().minecraftVersion() + "). Vérifier l'identifiant : le "
+                    + "serveur retombera sur « BOOK » s'il ne le reconnaît pas."));
         }
 
         // --- Donneur ---
@@ -189,7 +199,16 @@ public final class QuestValidator {
                     }
                 }
                 case SELECT -> {
-                    if (ref.sourceKnown(f.selectSource()) && !ref.isValueKnown(f.selectSource(), v)) {
+                    // #196 : un bloc sans forme d'objet n'est pas une valeur « inconnue » — il
+                    // existe bel et bien, mais ne peut jamais devenir un objet. Le dire
+                    // précisément évite de chercher une faute de frappe qui n'existe pas.
+                    if (isMaterialSource(f.selectSource()) && ref.itemCatalog().isBlockWithoutItem(v)) {
+                        out.add(Diagnostic.error(ctx, "« " + f.label() + " » : " + v.trim()
+                                + " existe comme bloc mais n'a aucune forme d'objet dans cette "
+                                + "version — il ne peut donc être ni une icône ni une récompense. "
+                                + "Choisir un objet (par exemple son seau, sa version en bloc "
+                                + "posable, ou un objet équivalent)."));
+                    } else if (ref.sourceKnown(f.selectSource()) && !ref.isValueKnown(f.selectSource(), v)) {
                         out.add(Diagnostic.warning(ctx, "« " + f.label() + " » : valeur « " + v.trim()
                                 + " » hors des valeurs connues. Le serveur refusera un " + f.selectSource()
                                 + " réellement invalide au chargement."));
@@ -202,6 +221,11 @@ public final class QuestValidator {
                 }
             }
         }
+    }
+
+    /** Les champs dont la valeur est un matériau Minecraft (icône ou objet). */
+    private static boolean isMaterialSource(String source) {
+        return "material".equals(source) || "icon".equals(source);
     }
 
     private static boolean blank(String s) {

@@ -798,7 +798,22 @@ public final class AgentPages {
         if (perms.can(session.role(), Permission.NPC_READ)) {
             questBar += compactRefresh(session, agentId, "npc.list", "PNJ", "btn-outline-secondary", "/quests");
         }
+        // Issue #196 : catalogue des objets de la version installée, utilisé par les icônes et les
+        // récompenses de l'éditeur. En orange tant qu'il manque, parce que sans lui l'éditeur ne
+        // propose qu'une courte liste de dépannage — et le disait mal.
+        boolean itemsLoaded = itemCatalog(agentId).known();
+        if (perms.can(session.role(), Permission.CONTENT_READ)) {
+            questBar += compactRefresh(session, agentId, "item.catalogs", "Objets Minecraft",
+                    itemsLoaded ? "btn-outline-secondary" : "btn-warning", "/quests");
+        }
         sb.append(listCatbar("Catalogue", questBar));
+        if (!itemsLoaded) {
+            sb.append(Ui.banner("warn", "Le catalogue des objets Minecraft n'est pas encore chargé : "
+                    + "les listes <strong>Icône</strong> et <strong>Récompense d'objet</strong> de "
+                    + "l'éditeur se limitent à une courte liste de dépannage (76 entrées, dont deux "
+                    + "épées seulement). Cliquer sur <strong>« Objets Minecraft »</strong> pour "
+                    + "récupérer la liste complète depuis le serveur."));
+        }
         List<Object> runtimeQuests = latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of());
         List<MergedRow> merged = mergeQuestRows(runtimeQuests);
         List<Object> rowData = merged.stream().map(m -> (Object) m.data()).toList();
@@ -3536,7 +3551,23 @@ public final class AgentPages {
         List<String> worlds = loadedWorldNames(agentId);
         return new com.lodygames.rpgquest.panel.content.RefData(
                 quests, npcs, worlds, questsKnown, npcDet.isPresent(), !worlds.isEmpty(),
-                npcNames, questNames, questOrigins, questPrereqs);
+                npcNames, questNames, questOrigins, questPrereqs, itemCatalog(agentId));
+    }
+
+    /**
+     * Issue #196 — catalogue des matériaux de la version installée, lu du dernier relevé
+     * {@code item.catalogs} réussi. Absent ⇒ catalogue vide, et c'est l'interface qui l'annonce :
+     * on ne substitue jamais silencieusement un extrait au catalogue réel.
+     */
+    public com.lodygames.rpgquest.panel.content.RefData.ItemCatalog itemCatalog(String agentId) {
+        Optional<Map<String, Object>> det = latestDetails(agentId, "item.catalogs");
+        if (det.isEmpty()) {
+            return com.lodygames.rpgquest.panel.content.RefData.ItemCatalog.empty();
+        }
+        return new com.lodygames.rpgquest.panel.content.RefData.ItemCatalog(
+                stringList(det, "items"),
+                stringList(det, "blocksWithoutItem"),
+                str(det.get().get("minecraftVersion")));
     }
 
     /**

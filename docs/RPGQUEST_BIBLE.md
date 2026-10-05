@@ -424,10 +424,65 @@ Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et
 - **Listes recherchables** : les champs à liste longue (entité, matériau, PNJ, icône, catégorie,
   quête) sont des champs de recherche filtrés (composant local léger `panel.js` `initCombo`,
   aucune dépendance externe, aucun CDN), alimentés par la **bonne source** — la catégorie par une
-  liste curée `RefData.CATEGORIES` + saisie libre, l'icône par les matériaux Minecraft. Entités,
-  matériaux **et PNJ** portent un libellé humain (`<option value="guard" label="Garde">`) : la
-  recherche filtre sur le nom **et** l'id. La récompense `ITEM` accepte uniquement un `Material`
-  vanilla (le moteur ne gère pas un objet personnalisé RPGQuest à cet endroit — l'aide le précise).
+  liste curée `RefData.CATEGORIES` + saisie libre, l'icône et la récompense `ITEM` par le
+  **catalogue réel du serveur** (voir ci-dessous). Entités, matériaux **et PNJ** portent un
+  libellé humain (`<option value="guard" label="Garde">`) : la recherche filtre sur le nom
+  **et** l'id. La récompense `ITEM` accepte uniquement un `Material` vanilla (le moteur ne gère pas
+  un objet personnalisé RPGQuest à cet endroit — l'aide le précise).
+- **Résultats bornés, jamais perdus (issue #196)** : la liste n'affiche que les 100 premières
+  correspondances pour ne pas construire mille lignes à chaque frappe, mais elle **annonce** le
+  total (« 100 sur 142 affichés ») et un clic en affiche 100 de plus. Auparavant la borne était de
+  60 **et muette** : une recherche large semblait n'avoir que 60 réponses.
+
+#### Catalogue des objets : icônes et récompenses (issue #196)
+
+**Défaut corrigé.** `RefData.MATERIALS` — une liste écrite à la main de **76 entrées** — servait de
+catalogue. Elle ne contenait que `IRON_SWORD` et `DIAMOND_SWORD` : chercher « sword » ne trouvait
+donc que **deux** épées sur les **sept** que la version installée expose
+(bois, pierre, **cuivre**, or, fer, diamant, netherite). Même problème pour les récompenses.
+
+**Nouveau relevé `item.catalogs`** (permission `CONTENT_READ`, bouton « Objets Minecraft » sur
+`/quests`) : lit le registre `Material` **réel** de la version installée et renvoie
+trois informations.
+
+| Donnée renvoyée | Contenu | Usage |
+|---|---|---|
+| `items` | matériaux dont `isItem()` est vrai, hors `LEGACY_*` et hors air | proposés comme **icône** et comme **récompense** |
+| `blocksWithoutItem` | blocs réels **sans** forme d'objet (eau, feu, portail…) | **refusés**, avec le motif écrit |
+| `minecraftVersion` | version Minecraft du serveur | affichée pour tracer la provenance de la liste |
+
+Trois filtres, chacun pour une raison :
+
+- `isLegacy()` — les constantes d'avant l'aplatissement 1.13 donneraient des doublons trompeurs
+  (`LEGACY_WOOD_SWORD` à côté de `WOODEN_SWORD`) et des objets que le serveur ne sait plus produire ;
+- `isAir()` — un `ItemStack` d'air est une pile vide : ni icône visible, ni récompense livrable ;
+- `isItem()` — seule garantie que l'API donne sur « peut exister comme objet ».
+
+**Représentable vs délivrable.** Dans l'API Bukkit, c'est la **même** condition : un objet
+affichable en inventaire et un objet livrable à un joueur ont tous deux besoin de `isItem()`. La
+distinction utile n'est donc pas entre les deux listes, mais avec les **blocs sans forme d'objet** :
+ceux-là ne peuvent être ni l'un ni l'autre, et le panel le dit explicitement
+(« WATER existe comme bloc mais n'a aucune forme d'objet dans cette version ») au lieu de répondre
+« matériau inconnu », qui enverrait chercher une faute de frappe inexistante.
+
+**Noms français.** Le Control Panel ne peut pas lire les fichiers de langue du jeu (aucune
+dépendance Bukkit). `MaterialNames` compose donc les libellés à partir de la structure des
+identifiants — `DIAMOND_SWORD` → « Épée en diamant », `OAK_PLANKS` → « Planches de chêne »,
+`GOLD_INGOT` → « Lingot d'or » (élision incluse). Ce qui ne correspond à aucune règle tombe sur une
+table nominative courte, puis sur l'**anglais embelli** (`SCULK_CATALYST` → « Sculk Catalyst ») :
+un repli visiblement non traduit est préférable à une traduction inventée. La recherche filtrant sur
+l'identifiant **et** sur le libellé, taper « sword » ou « épée » donne le même résultat — un repli
+anglais ne rend jamais un objet introuvable.
+
+**Objets de créatif.** Quelques objets existent bel et bien mais ne s'obtiennent pas en jeu normal
+(bloc de commande, bedrock, bâton de débogage…). Ils sont **signalés** « créatif / technique » dans
+la liste, jamais retirés : l'API n'expose aucun indicateur « obtenable en survie », donc la seule
+option honnête est une liste nommée et explicitement indicative.
+
+**Sans relevé** : le repli curé reste utilisable, mais un bandeau et l'aide du champ disent
+clairement qu'il s'agit d'une **liste de dépannage de 76 entrées**, pas du catalogue — et aucun
+avertissement de validation n'est émis sur un matériau absent de ce repli, qui serait un faux positif.
+
 - **Chaîne de quêtes d'une story** : une story est une liste **ordonnée** de quêtes existantes
   (modèle moteur : `id`, `name`, `secret`, `questIds` — rien d'autre). La sélection d'une quête
   est recherchable **par titre humain (« Premiers pas ») ou par id technique (« first_steps »)** :

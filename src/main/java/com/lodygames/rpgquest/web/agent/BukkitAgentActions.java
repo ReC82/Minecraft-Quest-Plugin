@@ -613,6 +613,55 @@ public final class BukkitAgentActions implements AgentActions {
     }
 
     /**
+     * Issue #196 — catalogue complet des matériaux de la version installée.
+     *
+     * <p>Trois filtres, chacun pour une raison précise :</p>
+     * <ul>
+     *   <li>{@code isLegacy()} — les constantes {@code LEGACY_*} sont les matériaux d'avant
+     *       l'aplatissement de 1.13. Les proposer donnerait des doublons trompeurs
+     *       ({@code LEGACY_WOOD_SWORD} à côté de {@code WOODEN_SWORD}) et des objets que le
+     *       serveur ne sait plus fabriquer.</li>
+     *   <li>{@code isAir()} — un {@code ItemStack} d'air est une pile vide : ni icône visible, ni
+     *       récompense livrable.</li>
+     *   <li>{@code isItem()} — c'est la seule garantie que l'API donne sur « peut exister comme
+     *       objet ». Ce qui ne la vérifie pas mais reste un bloc est renvoyé à part, pour être
+     *       expliqué au lieu d'être tu.</li>
+     * </ul>
+     *
+     * <p>Lecture pure d'un registre en mémoire : aucun accès disque, aucune requête SQL. Elle est
+     * tout de même faite sur le thread principal, parce que l'énumération des matériaux fait partie
+     * de l'API Bukkit et que rien ne garantit sa consultation hors du thread serveur.</p>
+     */
+    @Override
+    public CompletableFuture<ItemCatalogsView> itemCatalogs() {
+        return onMain(() -> {
+            List<String> items = new ArrayList<>();
+            List<String> blocksWithoutItem = new ArrayList<>();
+            int legacyExcluded = 0;
+
+            for (org.bukkit.Material material : org.bukkit.Material.values()) {
+                if (material.isLegacy()) {
+                    legacyExcluded++;
+                    continue;
+                }
+                if (material.isAir()) {
+                    continue;
+                }
+                if (material.isItem()) {
+                    items.add(material.name());
+                } else if (material.isBlock()) {
+                    blocksWithoutItem.add(material.name());
+                }
+            }
+            Collections.sort(items);
+            Collections.sort(blocksWithoutItem);
+
+            return done(new ItemCatalogsView(List.copyOf(items), List.copyOf(blocksWithoutItem),
+                    org.bukkit.Bukkit.getMinecraftVersion(), legacyExcluded));
+        });
+    }
+
+    /**
      * Issue #165 — renommage du PNJ Citizens lié. Le ciblage part de la <strong>liaison
      * persistée</strong> ({@code npcId} → UUID Citizens), jamais du nom affiché ni d'une sélection :
      * deux administrateurs qui renomment en même temps ne peuvent pas se tromper de PNJ.

@@ -878,3 +878,12 @@ tr[hidden]{display:none}
   border-radius:8px;padding:6px 9px}
 .sf-toggle{align-self:flex-start;margin-top:4px}
 @media (max-width:560px){.sf-swatch{width:32px;height:32px}}
+
+/* ---- liste recherchable : résultats bornés mais jamais perdus (#196) ---- */
+.combo-menu .combo-note{margin-left:auto;font-size:11px;color:var(--txt-2);font-style:italic}
+.combo-menu .combo-noitem{opacity:.65}
+.combo-menu .combo-more{padding:6px 10px;font-size:12px;cursor:pointer;color:var(--primary);
+  border-top:1px solid var(--line-2);background:var(--surface-2)}
+.combo-menu .combo-more:hover{background:var(--surface-3,var(--surface-2));text-decoration:underline}
+.combo-menu .combo-count{padding:6px 10px;font-size:11px;color:var(--txt-2);
+  border-top:1px solid var(--line-2)}

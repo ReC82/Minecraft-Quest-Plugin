@@ -387,7 +387,16 @@
       var v = opts[k].getAttribute("value") || "";
       if (!v) { continue; }
       var lbl = opts[k].getAttribute("label") || opts[k].textContent || "";
-      options.push({ value: v, label: lbl && lbl !== v ? lbl : "" });
+      options.push({
+        value: v,
+        label: lbl && lbl !== v ? lbl : "",
+        // #196 : marques portées par l'option elle-même. « noitem » = existe comme bloc mais pas
+        // comme objet (ni icône, ni récompense possible) ; « creative » = objet réel mais non
+        // obtenable en jeu normal, donc douteux en récompense. Ce sont des avertissements : rien
+        // n'est retiré de la liste.
+        noItem: opts[k].getAttribute("data-noitem") === "1",
+        creative: opts[k].getAttribute("data-creative") === "1"
+      });
     }
     // On retire la datalist native pour ne pas cumuler deux menus ; les données restent ici.
     input.removeAttribute("list");
@@ -401,25 +410,50 @@
     var active = -1;
     var visible = [];
 
+    // Nombre d'entrées rendues d'un coup. Borné pour ne pas construire mille lignes de DOM à
+    // chaque frappe — mais la borne est DITE et extensible (voir « shown »), sinon des résultats
+    // disparaissent en silence. C'était le cas avant #196 : la liste s'arrêtait à 60 sans le
+    // signaler, donc une recherche large semblait n'avoir que 60 réponses.
+    var PAGE = 100;
+    var shown = PAGE;
+
+    function matches(o, q) {
+      if (!q) { return true; }
+      // Recherche sur l'identifiant ET sur le libellé : « sword » comme « épée ».
+      return o.value.toLowerCase().indexOf(q) !== -1
+        || (o.label && o.label.toLowerCase().indexOf(q) !== -1);
+    }
+
     function render() {
       var q = (input.value || "").trim().toLowerCase();
       visible = [];
-      for (var n = 0; n < options.length && visible.length < 60; n++) {
-        var o = options[n];
-        if (!q || o.value.toLowerCase().indexOf(q) !== -1
-            || (o.label && o.label.toLowerCase().indexOf(q) !== -1)) {
-          visible.push(o);
-        }
+      var total = 0;
+      for (var n = 0; n < options.length; n++) {
+        if (!matches(options[n], q)) { continue; }
+        total++;
+        if (visible.length < shown) { visible.push(options[n]); }
       }
-      if (visible.length === 0) {
+      if (total === 0) {
         menu.innerHTML = '<li class="combo-empty" aria-disabled="true">Aucune correspondance</li>';
       } else {
         var html = "";
         for (var m = 0; m < visible.length; m++) {
-          html += '<li role="option" data-idx="' + m + '"><span class="combo-v">'
-            + esc(visible[m].value) + "</span>"
-            + (visible[m].label ? '<span class="combo-l">' + esc(visible[m].label) + "</span>" : "")
+          var o = visible[m];
+          var note = o.noItem ? "aucune forme d'objet" : (o.creative ? "créatif / technique" : "");
+          html += '<li role="option" data-idx="' + m + '"'
+            + (o.noItem ? ' class="combo-noitem"' : "")
+            + '><span class="combo-v">' + esc(o.value) + "</span>"
+            + (o.label ? '<span class="combo-l">' + esc(o.label) + "</span>" : "")
+            + (note ? '<span class="combo-note">' + esc(note) + "</span>" : "")
             + "</li>";
+        }
+        if (total > visible.length) {
+          // Résultats restants annoncés et atteignables : jamais perdus en silence.
+          html += '<li class="combo-more" data-combo-more="1">'
+            + visible.length + " sur " + total + " affichés — afficher "
+            + Math.min(PAGE, total - visible.length) + " de plus</li>";
+        } else if (total > PAGE) {
+          html += '<li class="combo-count" aria-disabled="true">' + total + " résultats</li>";
         }
         menu.innerHTML = html;
       }
@@ -442,6 +476,11 @@
       input.setAttribute("aria-expanded", "false");
     }
 
+    function showMore() {
+      shown += PAGE;
+      render();
+    }
+
     function choose(idx) {
       if (idx < 0 || idx >= visible.length) { return; }
       input.value = visible[idx].value;
@@ -460,7 +499,12 @@
     }
 
     input.addEventListener("focus", render);
-    input.addEventListener("input", render);
+    input.addEventListener("input", function () {
+      // Nouvelle recherche = nouvelle fenêtre : sinon un « afficher plus » resterait étendu et
+      // rendrait inutilement mille lignes à la frappe suivante.
+      shown = PAGE;
+      render();
+    });
     input.addEventListener("keydown", function (ev) {
       if (menu.hidden && (ev.key === "ArrowDown" || ev.key === "ArrowUp")) { render(); return; }
       if (ev.key === "ArrowDown") { ev.preventDefault(); highlight(active + 1); }
@@ -469,6 +513,13 @@
       else if (ev.key === "Escape") { close(); }
     });
     menu.addEventListener("mousedown", function (ev) {
+      var more = ev.target.closest ? ev.target.closest("[data-combo-more]") : null;
+      if (more) {
+        // Étendre la fenêtre, sans fermer le menu ni perdre le focus du champ.
+        ev.preventDefault();
+        showMore();
+        return;
+      }
       var li = ev.target.closest ? ev.target.closest("li[role=option]") : null;
       if (li) { ev.preventDefault(); choose(parseInt(li.getAttribute("data-idx"), 10)); }
     });
@@ -660,7 +711,12 @@
     }
 
     input.addEventListener("focus", render);
-    input.addEventListener("input", render);
+    input.addEventListener("input", function () {
+      // Nouvelle recherche = nouvelle fenêtre : sinon un « afficher plus » resterait étendu et
+      // rendrait inutilement mille lignes à la frappe suivante.
+      shown = PAGE;
+      render();
+    });
     input.addEventListener("keydown", function (ev) {
       if (menu.hidden && (ev.key === "ArrowDown" || ev.key === "ArrowUp")) { render(); return; }
       if (ev.key === "ArrowDown") { ev.preventDefault(); highlight(active + 1); }

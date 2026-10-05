@@ -65,16 +65,24 @@ public final class Descriptors {
                     List.of(Field.select("entity", "Entité", "entity", "Type d'entité Minecraft (ex. SPIDER, ZOMBIE).", true), AMOUNT)),
             new Descriptor("COLLECT_ITEM", "Collecter un objet", "gift",
                     "Ramasser N exemplaires d'un objet AU SOL (jeter puis marcher dessus — /give ne compte pas).",
-                    List.of(Field.select("material", "Objet", "material", "Matériau Minecraft (ex. AMETHYST_SHARD).", true), AMOUNT)),
+                    List.of(Field.select("material", "Objet", "material",
+                            "Chercher par nom français (« améthyste ») ou par identifiant "
+                                    + "(« AMETHYST_SHARD »).", true), AMOUNT)),
             new Descriptor("CRAFT_ITEM", "Fabriquer un objet", "gift",
                     "Fabriquer N exemplaires d'un objet (table de craft ou grille 2×2).",
-                    List.of(Field.select("material", "Objet", "material", "Matériau Minecraft (ex. STICK).", true), AMOUNT)),
+                    List.of(Field.select("material", "Objet", "material",
+                            "Chercher par nom français (« bâton ») ou par identifiant "
+                                    + "(« STICK »).", true), AMOUNT)),
             new Descriptor("BREAK_BLOCK", "Casser des blocs", "edit",
                     "Casser N blocs d'un type donné.",
-                    List.of(Field.select("material", "Bloc", "material", "Matériau Minecraft (ex. DIRT).", true), AMOUNT)),
+                    List.of(Field.select("material", "Bloc", "material",
+                            "Chercher par nom français (« terre ») ou par identifiant "
+                                    + "(« DIRT »).", true), AMOUNT)),
             new Descriptor("PLACE_BLOCK", "Poser des blocs", "plus",
                     "Poser N blocs d'un type donné.",
-                    List.of(Field.select("material", "Bloc", "material", "Matériau Minecraft (ex. DIRT).", true), AMOUNT)),
+                    List.of(Field.select("material", "Bloc", "material",
+                            "Chercher par nom français (« terre ») ou par identifiant "
+                                    + "(« DIRT »).", true), AMOUNT)),
             new Descriptor("TALK_TO_NPC", "Parler à un PNJ", "npc",
                     "Interagir avec un PNJ identifié RPGQuest (id posé via /rpgadmin npc tag).",
                     List.of(Field.select("npc", "PNJ", "npc",
@@ -98,7 +106,11 @@ public final class Descriptors {
                     "Donne N exemplaires d'un objet vanilla (le moteur ne gère qu'un Material Minecraft ici, "
                             + "pas un objet personnalisé RPGQuest).",
                     List.of(Field.select("material", "Objet", "material",
-                            "Matériau Minecraft vanilla (ex. IRON_SWORD).", true), GIVE_AMOUNT)),
+                            "Chercher par nom français (« épée en diamant ») ou par identifiant "
+                                    + "(« DIAMOND_SWORD »). Seuls les objets réellement "
+                                    + "livrables de la version installée sont proposés : un bloc "
+                                    + "sans forme d'objet (eau, feu…) est refusé avec son motif.",
+                            true), GIVE_AMOUNT)),
             new Descriptor("VARIABLE", "Variable / déblocage", "check",
                     "Pose une variable persistante du joueur (ex. CLAIM_TIER_1 = true).",
                     List.of(

@@ -306,8 +306,7 @@ public final class ContentEditorPages {
                 d.category, true, false, null, "dl-category"));
         sb.append(text("title", "Titre affiché", "Peut contenir du MiniMessage (ex. <gold>…</gold>).", d.title, true, false, "full"));
         sb.append(textarea("description", "Description", "Texte présenté au joueur. MiniMessage accepté.", d.description, "full"));
-        sb.append(text("icon", "Icône", "Matériau Minecraft servant d'icône (BOOK par défaut) — chercher par nom ou par id.",
-                d.icon, false, false, null, "dl-material"));
+        sb.append(text("icon", "Icône", iconHelp(ref), d.icon, false, false, null, "dl-material"));
         sb.append(text("giver", "PNJ donneur",
                 "PNJ logique qui remet la quête (optionnel) — chercher par nom (« Garde ») ou par id (« guard »).",
                 d.giver, false, false, null, "dl-npc"));
@@ -659,7 +658,7 @@ public final class ContentEditorPages {
         }
         sb.append(sectionClose());
 
-        sb.append(sharedDatalists(ref));
+        sb.append(sharedDatalists(ref, false));
         sb.append("</form>");
         return sb.toString();
     }
@@ -867,7 +866,7 @@ public final class ContentEditorPages {
         }
         sb.append(sectionClose());
 
-        sb.append(sharedDatalists(ref));
+        sb.append(sharedDatalists(ref, false));
         sb.append("</form>");
         return sb.toString();
     }
@@ -1204,6 +1203,69 @@ public final class ContentEditorPages {
         return sb.append("</datalist>").toString();
     }
 
+    /**
+     * Datalist des matériaux (issue #196).
+     *
+     * <p>{@code value} = identifiant vanilla, {@code label} = libellé français
+     * ({@link MaterialNames}). La liste recherchable de {@code panel.js} filtre sur les deux :
+     * taper « sword » <em>ou</em> « épée » retrouve les sept épées de cette version.</p>
+     *
+     * <p>Les blocs <strong>sans forme d'objet</strong> sont ajoutés en fin de liste, marqués
+     * {@code data-noitem} : ils ne sont pas proposables, mais les connaître permet d'expliquer un
+     * refus (« l'eau n'existe pas en objet ») au lieu de répondre « matériau inconnu ».</p>
+     */
+    private static String materialDatalist(String id, RefData ref) {
+        StringBuilder sb = new StringBuilder("<datalist id=\"").append(id).append("\"");
+        sb.append(" data-material-source=\"").append(ref.materialsFromServer() ? "server" : "fallback")
+                .append("\"");
+        if (!ref.itemCatalog().minecraftVersion().isBlank()) {
+            sb.append(" data-mc-version=\"").append(Http.esc(ref.itemCatalog().minecraftVersion()))
+                    .append("\"");
+        }
+        sb.append(">");
+        for (String material : ref.materials()) {
+            sb.append("<option value=\"").append(Http.esc(material)).append("\"");
+            String human = MaterialNames.french(material);
+            if (!human.isBlank() && !human.equals(material)) {
+                sb.append(" label=\"").append(Http.esc(human)).append("\"");
+            }
+            if (MaterialNames.creativeOnly(material)) {
+                // Avertissement, jamais une exclusion : le choix reste possible et assumé.
+                sb.append(" data-creative=\"1\"");
+            }
+            sb.append(">");
+        }
+        for (String block : ref.itemCatalog().blocksWithoutItem()) {
+            sb.append("<option value=\"").append(Http.esc(block)).append("\" data-noitem=\"1\"");
+            String human = MaterialNames.french(block);
+            if (!human.isBlank() && !human.equals(block)) {
+                sb.append(" label=\"").append(Http.esc(human)).append(" — aucun objet\"");
+            }
+            sb.append(">");
+        }
+        return sb.append("</datalist>").toString();
+    }
+
+    /**
+     * Aide du champ « Icône », adaptée à ce que le panel propose réellement (issue #196).
+     *
+     * <p>Le point important est de ne pas laisser croire qu'on montre le catalogue complet quand
+     * on montre un dépannage de 76 entrées. La provenance et la version sont donc écrites.</p>
+     */
+    private static String iconHelp(RefData ref) {
+        if (ref.materialsFromServer()) {
+            String version = ref.itemCatalog().minecraftVersion();
+            return "Objet affiché dans le journal de quêtes (BOOK par défaut). Chercher par nom "
+                    + "français (« épée en diamant ») ou par identifiant (« DIAMOND_SWORD ») — "
+                    + ref.materials().size() + " objets de la version installée"
+                    + (version.isBlank() ? "" : " (Minecraft " + Http.esc(version) + ")") + ".";
+        }
+        return "Objet affiché dans le journal de quêtes (BOOK par défaut). <strong>Liste de "
+                + "dépannage seulement</strong> (" + ref.materials().size() + " entrées) : le "
+                + "catalogue complet du serveur n'a pas encore été relevé. Cliquer sur "
+                + "<strong>« Objets Minecraft »</strong> depuis la page Quêtes pour l'obtenir.";
+    }
+
     private static String datalistId(String source) {
         return switch (source == null ? "" : source) {
             case "entity" -> "dl-entity";
@@ -1216,11 +1278,27 @@ public final class ContentEditorPages {
         };
     }
 
-    /** Datalists communes à émettre une fois par page d'éditeur (dans le {@code <form>}). */
+    /**
+     * Datalists communes à émettre une fois par page d'éditeur (dans le {@code <form>}), catalogue
+     * de matériaux inclus.
+     */
     public static String sharedDatalists(RefData ref) {
+        return sharedDatalists(ref, true);
+    }
+
+    /**
+     * @param withMaterials émettre le catalogue des matériaux. Depuis #196 il compte plus d'un
+     *                      millier d'entrées, soit une centaine de kilo-octets : seule la page
+     *                      des quêtes en a besoin (icône, objectifs, récompenses). Les éditeurs de
+     *                      story et de dialogue n'ont aucun champ de matériau — le leur envoyer
+     *                      alourdirait chaque chargement pour rien.
+     */
+    public static String sharedDatalists(RefData ref, boolean withMaterials) {
         RefData r = ref == null ? RefData.empty() : ref;
         return labelledDatalist("dl-entity", RefData.ENTITIES)
-                + labelledDatalist("dl-material", RefData.MATERIALS)
+                // #196 : catalogue RÉEL de la version installée dès qu'il est relevé, avec un
+                // libellé français pour que « épée » trouve autant que « sword ».
+                + (withMaterials ? materialDatalist("dl-material", r) : "")
                 + datalist("dl-category", RefData.CATEGORIES)
                 + npcDatalist("dl-npc", r)
                 + questDatalist("dl-quest", r)

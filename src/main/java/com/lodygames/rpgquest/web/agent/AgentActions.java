@@ -235,6 +235,38 @@ public interface AgentActions {
                            List<String> colorableParticles) {
     }
 
+    /**
+     * Issue #196 — catalogue <strong>complet</strong> des matériaux de la version installée, pour
+     * les icônes de quête et les récompenses d'objet.
+     *
+     * <p><strong>Pourquoi un relevé et pas une liste dans le panel.</strong> Le Control Panel
+     * portait une liste curée d'environ 76 matériaux écrite à la main, qui ne contenait que
+     * {@code IRON_SWORD} et {@code DIAMOND_SWORD} : chercher « sword » ne trouvait donc que deux
+     * épées sur les sept que cette version expose. Une liste codée en dur ne peut pas suivre les
+     * versions — et inventer des matériaux absents de la version installée serait pire que d'en
+     * oublier.</p>
+     */
+    CompletableFuture<ItemCatalogsView> itemCatalogs();
+
+    /**
+     * Catalogue des matériaux, séparé selon ce que l'API garantit réellement.
+     *
+     * <p><strong>La distinction qui compte.</strong> Un matériau n'est utilisable comme icône
+     * d'inventaire <em>ou</em> comme récompense que s'il peut exister en tant qu'objet
+     * ({@code Material#isItem()}). Certains blocs n'ont aucune forme d'objet — l'eau, le feu, un
+     * portail — et ne peuvent donc être ni l'un ni l'autre. Ils sont renvoyés à part pour que le
+     * panel puisse <strong>expliquer</strong> le refus au lieu de les omettre silencieusement.</p>
+     *
+     * @param items             matériaux utilisables comme icône <strong>et</strong> comme
+     *                          récompense ({@code isItem()}, hors formes historiques et hors air)
+     * @param blocksWithoutItem blocs réels sans forme d'objet : ni icône, ni récompense possible
+     * @param minecraftVersion  version Minecraft réellement installée, pour l'afficher au panel
+     * @param legacyExcluded    nombre de constantes historiques ({@code LEGACY_*}) écartées
+     */
+    record ItemCatalogsView(List<String> items, List<String> blocksWithoutItem,
+                            String minecraftVersion, int legacyExcluded) {
+    }
+
     CompletableFuture<MutationResult> citizensRename(String npcId, String newName);
 
     /**

@@ -101,6 +101,7 @@ public final class AgentActionExecutor {
                 case TRAVEL_CATALOG -> travelCatalog(action);
                 case MOB_LIST -> mobList(action);
                 case MOB_CATALOGS -> mobCatalogs(action);
+                case ITEM_CATALOGS -> itemCatalogs(action);
                 case MOB_DEFINITION_CREATE -> mobDefinitionWrite(action, true);
                 case MOB_DEFINITION_UPDATE -> mobDefinitionWrite(action, false);
                 case MOB_DEFINITION_TOGGLE -> mobDefinitionToggle(action);
@@ -475,6 +476,29 @@ public final class AgentActionExecutor {
             String summary = view.entityTypes().size() + " entités, " + view.particles().size()
                     + " particules, " + view.sounds().size() + " sons, " + view.biomes().size() + " biomes";
             return AgentActionOutcome.success(action.id(), String.valueOf(view.entityTypes().size()),
+                    summary, details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code item.catalogs} (#196) : catalogue complet des matériaux de la version installée.
+     *
+     * <p>Le résumé cite la version Minecraft réelle : c'est ce qui permet de vérifier d'un coup
+     * d'œil que le panel propose bien les objets de <em>ce</em> serveur, et non ceux d'une autre
+     * version.</p>
+     */
+    private CompletableFuture<AgentActionOutcome> itemCatalogs(AgentAction action) {
+        return actions.itemCatalogs().thenApply(view -> {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("items", view.items());
+            details.put("blocksWithoutItem", view.blocksWithoutItem());
+            details.put("minecraftVersion", view.minecraftVersion());
+            details.put("legacyExcluded", view.legacyExcluded());
+            String summary = view.items().size() + " objets utilisables (icône et récompense), "
+                    + view.blocksWithoutItem().size() + " blocs sans forme d'objet, "
+                    + view.legacyExcluded() + " formes historiques écartées — Minecraft "
+                    + view.minecraftVersion();
+            return AgentActionOutcome.success(action.id(), String.valueOf(view.items().size()),
                     summary, details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }

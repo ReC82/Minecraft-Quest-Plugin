@@ -2166,6 +2166,75 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-237 — Journal : infobulle compacte et récupération sans doublon (PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** infobulles du journal de quêtes (liste vs détails), noms traduits,
+    masquage des attributs vanilla, remise du journal par le Libraire.
+-   **Préconditions :** JAR de cette session déployé et serveur redémarré. Avoir au moins une quête
+    acceptée (par ex. `guard_tier1`, qui a quatre objectifs — idéal pour voir les quatre compteurs).
+-   **Scénario principal :**
+    1.  Ouvrir le journal (clic droit sur le journal, ou `/quests`). Survoler l'icône d'une quête
+        active → l'infobulle doit tenir en quelques lignes : **état**, les **compteurs** des
+        objectifs de l'étape (quatre pour une quête de palier du Garde), puis **Clic gauche :
+        détails** / **Clic droit : suivre**.
+    2.  Vérifier qu'il **n'y a plus** : la description, la catégorie, les récompenses, les
+        prérequis, ni l'identifiant d'étape (`prove_worth`…).
+    3.  Vérifier les **noms français** : « Araignée », « Zombie », « Squelette », « Creeper » —
+        jamais `SPIDER` ni `Tuer SPIDER`.
+    4.  Si l'icône de la quête est une arme (épée), vérifier qu'**aucune ligne de dégâts d'attaque**
+        n'apparaît dans l'infobulle.
+    5.  Clic gauche → vue détails : la description, la catégorie, les objectifs, les **récompenses**
+        et les prérequis doivent y être. Une récompense « variable » interne (ex. `CLAIM_TIER_1`)
+        ne doit **jamais** y figurer.
+    6.  Avec plus de quatre objectifs sur une étape, vérifier la ligne « +N autre(s) — voir les
+        détails » (si une telle quête existe ; sinon point non applicable).
+-   **Récupération du journal (sans reset ni doublon) :**
+    7.  Jeter / tenter de perdre le journal → impossible (objet soulbound) ; mourir et réapparaître
+        → le journal est toujours là.
+    8.  Parler au Libraire **en ayant déjà le journal** → l'option « Obtenir un journal des quêtes »
+        ne doit **pas** être proposée (anti-doublon).
+    9.  Se faire retirer le journal par un administrateur (`/clear` ciblé), reparler au Libraire →
+        l'option réapparaît, un **seul** exemplaire est remis, et la progression des quêtes est
+        **inchangée** (les mêmes quêtes, au même avancement, dans le journal rouvert).
+-   **Couverture automatisée :** `QuestJournalServiceTest` (infobulle de liste sans identifiant
+    technique ni description ni récompenses, compteurs présents, attributs masqués ; infobulle de
+    détails avec description et récompenses mais **sans** la variable interne),
+    `BundledDialoguesValidityTest` (un seul chemin de remise du journal, condition anti-doublon
+    présente, action limitée à un `customitem give … 1`).
+-   **Limites :** le rendu réel des noms traduits dépend de la langue du client — à constater en
+    jeu ; les tests vérifient seulement qu'aucun identifiant technique n'est écrit.
+
+### TC-238 — Nom en jeu et skin d'un PNJ depuis le panel (issue #165, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** actions `npc.citizens.rename` et `npc.citizens.skin`, formulaire
+    « Nom en jeu & apparence » de la fiche PNJ.
+-   **Préconditions :** Control Panel déployé, JAR déployé **et serveur redémarré**, un PNJ Citizens
+    lié (Help, Citizens #2, id logique `help`). Un lien MineSkin valide, par ex.
+    `https://minesk.in/de347dcfb215477db7ae52d780e68757`.
+-   **Scénario principal (navigateur puis jeu) :**
+    1.  Fiche de Help → « Nom en jeu & apparence » → changer le nom → **Renommer**.
+    2.  Rafraîchir la fiche : le nom affiché doit avoir changé, et l'**id logique `help`** ainsi que
+        l'id Citizens doivent être **inchangés**.
+    3.  En jeu : le nom au-dessus du PNJ doit être le nouveau. Le dialogue et les quêtes liées
+        doivent continuer de fonctionner exactement comme avant (liaisons intactes).
+    4.  Coller le **lien** MineSkin → **Appliquer le skin** → message « demande transmise ».
+    5.  En jeu : l'apparence change (une reconnexion du client peut être nécessaire).
+    6.  Redémarrer le serveur → nom **et** skin doivent être conservés.
+-   **Scénarios d'erreur :**
+    7.  Coller la **commande** `/npc skin --url …` au lieu du lien → refus explicite, aucun
+        changement.
+    8.  Coller une URL d'un autre domaine → refus explicite.
+    9.  Appliquer un skin sur un PNJ d'un type qui n'en accepte pas → message compréhensible, et le
+        skin précédent **conservé**.
+-   **Couverture automatisée :** `AgentActionCatalogTest` (seul un lien MineSkin strict est
+    accepté ; la commande collée, un autre domaine, `http://`, une URL vide et l'absence de PNJ
+    ciblé sont tous refusés ; nom borné à 48 caractères et PNJ toujours ciblé explicitement).
+-   **Limites :** l'application visuelle du skin est **asynchrone côté Citizens** — le succès
+    renvoyé signifie « demande transmise », jamais « skin confirmé ». Les points 5, 6 et 9 n'ont
+    aucune couverture automatisée et sont entièrement à valider en jeu.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -2232,4 +2301,6 @@ le résumé de récompenses de TC-014).
 | TC-233 | Chaîne de paliers du Garde (claims TIER_1-5) #179 (PENDING) | | | |
 | TC-234 | Protection + réparation des structures de voyage #191 (PENDING) | | | |
 | TC-235 | Hostiles de jour dans le Wild, immunité soleil, araignées #168 (PENDING) | | | |
-| TC-236 | Hache du kit vs WorldEdit #192 — config serveur (PENDING) | | | |
+| TC-236 | Hache du kit vs WorldEdit #192 — config serveur appliquée (PENDING) | | | |
+| TC-237 | Journal : infobulle compacte + récupération sans doublon (PENDING) | | | |
+| TC-238 | PNJ : nom en jeu et skin MineSkin depuis le panel #165 (PENDING) | | | |

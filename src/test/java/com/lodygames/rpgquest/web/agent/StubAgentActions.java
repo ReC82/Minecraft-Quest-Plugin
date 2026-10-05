@@ -77,6 +77,16 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<MutationResult> citizensRename(String npcId, String newName) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> citizensSkin(String npcId, String minesSkinUrl) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<CitizensRosterView> citizensRoster() {
         return CompletableFuture.completedFuture(new CitizensRosterView(false, List.of(), 0, 0, 0));
     }

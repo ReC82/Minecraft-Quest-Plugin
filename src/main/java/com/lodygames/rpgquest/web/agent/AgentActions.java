@@ -209,6 +209,21 @@ public interface AgentActions {
     CompletableFuture<MutationResult> questGiverSet(String questId, String npcId);
 
     /**
+     * Issue #165 — change le nom affiché en jeu du PNJ Citizens lié à {@code npcId}. L'identité
+     * logique RPGQuest ({@code npcId}), l'UUID/l'id Citizens et toutes les liaisons
+     * quêtes/dialogues/stories restent inchangés : seul le nom visible bouge.
+     */
+    CompletableFuture<MutationResult> citizensRename(String npcId, String newName);
+
+    /**
+     * Issue #165 — applique un skin à partir d'une URL MineSkin au PNJ Citizens lié à
+     * {@code npcId}. L'URL est validée côté serveur ; le téléchargement est fait par Citizens de
+     * façon asynchrone, donc le succès renvoyé signifie « demande acceptée et transmise », pas
+     * « skin visuellement confirmé ».
+     */
+    CompletableFuture<MutationResult> citizensSkin(String npcId, String minesSkinUrl);
+
+    /**
      * Un PNJ Citizens du registre (action {@code npc.citizens.list}). {@code linkedNpcId} = id
      * logique RPGQuest déjà lié à ce PNJ, ou {@code null}. Aucune position/monde (registre seul).
      */

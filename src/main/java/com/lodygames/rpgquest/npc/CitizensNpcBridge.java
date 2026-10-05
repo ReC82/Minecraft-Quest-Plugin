@@ -101,6 +101,63 @@ final class CitizensNpcBridge {
         return true;
     }
 
+    /**
+     * Issue #165 — change le <strong>nom affiché en jeu</strong> d'un PNJ Citizens, ciblé par son
+     * UUID (identité stable), jamais par son nom ni par une sélection globale.
+     *
+     * <p>Ne touche <strong>que</strong> le nom Citizens : l'id numérique, l'UUID, l'id logique
+     * RPGQuest et toutes les liaisons quêtes/dialogues/stories sont ailleurs et restent intacts.
+     * Renommer « Help » ne renomme donc jamais l'id logique {@code help}.</p>
+     *
+     * @return l'ancien nom si le PNJ existait, sinon vide (aucun autre PNJ n'est touché).
+     */
+    Optional<String> renameByUuid(UUID uuid, String newName) {
+        NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(uuid);
+        if (npc == null) {
+            return Optional.empty();
+        }
+        String previous = npc.getName();
+        npc.setName(newName);
+        CitizensAPI.getNPCRegistry().saveToStore();
+        return Optional.of(previous);
+    }
+
+    /**
+     * Issue #165 — applique un skin à partir d'une URL MineSkin, via la commande structurée de
+     * Citizens ({@code /npc skin --url …}).
+     *
+     * <p><strong>Pourquoi la commande et pas l'API.</strong> {@code SkinTrait} n'existe pas dans
+     * l'artefact {@code citizensapi} auquel ce projet se limite délibérément (il vit dans
+     * {@code citizens-main}) : l'utiliser imposerait soit une nouvelle dépendance, soit de la
+     * réflexion, soit un couplage aux clés de métadonnées internes de Citizens. La commande
+     * structurée est le chemin d'intégration officiel et c'est exactement celui que MineSkin
+     * documente.</p>
+     *
+     * <p><strong>Ciblage sûr.</strong> Le danger d'une commande Citizens est qu'elle s'applique au
+     * PNJ <em>sélectionné</em> par l'exécutant. On ne s'en remet donc jamais à une sélection
+     * préexistante : on sélectionne explicitement le PNJ visé (par son UUID) pour la console juste
+     * avant, et on désélectionne juste après, le tout dans le même passage sur le thread principal
+     * — deux administrateurs simultanés ne peuvent pas s'intercaler entre les deux.</p>
+     *
+     * <p>Le téléchargement du skin est fait par Citizens lui-même, de façon asynchrone : cette
+     * méthode ne bloque pas le thread principal et ne peut donc pas confirmer l'application
+     * visuelle, seulement la bonne prise en compte de la demande.</p>
+     */
+    boolean applySkinUrlByUuid(UUID uuid, String minesSkinUrl) {
+        NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(uuid);
+        if (npc == null) {
+            return false;
+        }
+        var console = org.bukkit.Bukkit.getConsoleSender();
+        var selector = CitizensAPI.getDefaultNPCSelector();
+        try {
+            selector.select(console, npc);
+            return org.bukkit.Bukkit.dispatchCommand(console, "npc skin --url " + minesSkinUrl);
+        } finally {
+            selector.deselect(console);
+        }
+    }
+
     private static void safeDestroy(NPC npc) {
         try {
             npc.destroy();

@@ -1983,6 +1983,14 @@ public final class AgentPages {
             forms.append(actionCollapse(slug + "-f-giver", "<div class=\"card card-body npc-formcard\">"
                     + giverForm(session, agentId, id, giverRef, slug) + "</div>"));
         }
+        // Issue #165 : nom en jeu et apparence. Ne demandent PAS de définition RPGQuest — un PNJ
+        // Citizens « orphelin » (cas de Help) doit pouvoir être renommé et habillé. Seule condition
+        // réelle : qu'un PNJ Citizens soit effectivement lié, puisque c'est lui qu'on modifie.
+        if (canLink && boundCitizens) {
+            toggles.add(new String[] {slug + "-f-look", "Nom en jeu & apparence", "edit", "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-look", "<div class=\"card card-body npc-formcard\">"
+                    + citizensLookForm(session, agentId, id, hasName ? displayName : "") + "</div>"));
+        }
         if (canLink && hasDefinition && !boundCitizens && enabled) {
             toggles.add(new String[] {slug + "-f-link", "Lier un PNJ Citizens", "link", "btn-outline-secondary"});
             forms.append(actionCollapse(slug + "-f-link", "<div class=\"card card-body npc-formcard\">"
@@ -2373,6 +2381,63 @@ public final class AgentPages {
         sb.append(mutationConsent("quest.giver.set", "",
                 "La quête choisie sera donnée par « " + npcId + " ». Réversible en la réattribuant à un autre PNJ."));
         sb.append("<button class=\"btn\" type=\"submit\">Attribuer</button></form>");
+        return sb.toString();
+    }
+
+    /**
+     * Issue #165 — « Nom en jeu & apparence » d'un PNJ Citizens déjà lié. Deux opérations
+     * <strong>distinctes et indépendantes</strong> (deux formulaires, deux boutons) : renommer et
+     * appliquer un skin n'ont pas les mêmes effets ni les mêmes risques, les mélanger en un seul
+     * bouton rendrait l'échec de l'une ambigu.
+     *
+     * <p>Trois garde-fous repris du ticket : on ne demande <em>que</em> le lien MineSkin (jamais
+     * une commande libre), le PNJ est ciblé par son identité logique côté serveur (jamais par une
+     * sélection Citizens globale), et l'identifiant logique RPGQuest n'est pas touché — renommer
+     * « Help » ne renomme pas l'id {@code help}.</p>
+     */
+    private String citizensLookForm(Session session, String agentId, String npcId, String currentName) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("edit"))
+                .append("Nom en jeu &amp; apparence</p>");
+        sb.append("<p class=\"faint\" style=\"font-size:12px\">Ces deux opérations ne changent que "
+                + "l'<strong>apparence en jeu</strong> du PNJ Citizens lié. L'identifiant logique "
+                + "<code>").append(Http.esc(npcId)).append("</code>, l'identité Citizens et les liaisons "
+                + "quêtes / dialogues / stories restent inchangés.</p>");
+
+        // --- Nom en jeu ---
+        sb.append(formStart(session, agentId, "npc.citizens.rename", "/npcs", ""));
+        sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"npc_ctx\" value=\"").append(Http.esc(npcId)).append("\">");
+        sb.append("<label for=\"rename-").append(Http.esc(npcId)).append("\">Nom en jeu</label>");
+        sb.append("<input type=\"text\" id=\"rename-").append(Http.esc(npcId)).append("\" name=\"name\" ")
+                .append("maxlength=\"48\" required value=\"").append(Http.esc(currentName)).append("\">");
+        sb.append("<p class=\"faint\" style=\"font-size:12px\">Nom affiché au-dessus du PNJ. Distinct du "
+                + "nom de la définition RPGQuest et du locuteur des dialogues : ceux-ci ne sont "
+                + "<strong>pas</strong> modifiés ici, pour ne jamais réécrire un texte partagé.</p>");
+        sb.append(mutationConsent("npc.citizens.rename", "",
+                "Le nom affiché en jeu du PNJ Citizens lié à « " + npcId + " » sera changé."));
+        sb.append("<button class=\"btn\" type=\"submit\">Renommer</button></form>");
+
+        // --- Skin MineSkin ---
+        sb.append("<hr>");
+        sb.append(formStart(session, agentId, "npc.citizens.skin", "/npcs", ""));
+        sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"npc_ctx\" value=\"").append(Http.esc(npcId)).append("\">");
+        sb.append("<label for=\"skin-").append(Http.esc(npcId)).append("\">Lien MineSkin</label>");
+        sb.append("<input type=\"url\" id=\"skin-").append(Http.esc(npcId)).append("\" name=\"skin_url\" ")
+                .append("placeholder=\"https://minesk.in/…\" pattern=\"https://minesk\\.in/[A-Za-z0-9]{8,64}\" ")
+                .append("required>");
+        sb.append("<p class=\"faint\" style=\"font-size:12px\">Coller <strong>uniquement le lien</strong> "
+                + "<code>https://minesk.in/…</code> donné par MineSkin — pas la commande "
+                + "<code>/npc skin --url …</code>. Le lien est revalidé côté serveur. "
+                + "S'applique aux PNJ de type joueur ; un type sans skin est refusé avec un message "
+                + "explicite, et le skin précédent est conservé.</p>");
+        sb.append(mutationConsent("npc.citizens.skin", "",
+                "L'apparence du PNJ Citizens lié à « " + npcId + " » sera changée."));
+        sb.append("<button class=\"btn\" type=\"submit\">Appliquer le skin</button>");
+        sb.append("<p class=\"faint\" style=\"font-size:12px\">Le téléchargement est fait par Citizens de "
+                + "façon asynchrone : un succès signifie « demande transmise ». Vérifier le rendu en "
+                + "jeu (une reconnexion du client peut être nécessaire).</p>");
+        sb.append("</form>");
         return sb.toString();
     }
 

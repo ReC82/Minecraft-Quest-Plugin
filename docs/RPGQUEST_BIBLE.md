@@ -1615,6 +1615,40 @@ Persistance : `player_entitlements`, `backpacks`, `backpack_overflow`, `backpack
 
 WorldEdit est installé en production VeryGames uniquement pour la **préparation manuelle de terrain par un administrateur** (voir [VERYGAMES.md](deployment/VERYGAMES.md)), en dehors de toute commande RPGQuest. Cette section reste volontairement minimale — pour la documentation complète, se référer à la documentation officielle WorldEdit.
 
+### Nom en jeu et apparence d'un PNJ depuis PlugAdmin (issue #165)
+
+Fiche PNJ → **« Nom en jeu & apparence »** (visible dès qu'un PNJ Citizens est lié ; aucune
+définition RPGQuest n'est exigée, pour couvrir un Citizens « orphelin » comme Help). Deux
+opérations **séparées**, chacune son bouton, pour qu'un échec ne soit jamais ambigu :
+
+| Action agent | Permission | Effet |
+|---|---|---|
+| `npc.citizens.rename` | `NPC_BIND_WRITE` | Change le **nom affiché en jeu** du PNJ Citizens lié (1 à 48 caractères). |
+| `npc.citizens.skin` | `NPC_BIND_WRITE` | Applique un skin depuis un lien **MineSkin**. |
+
+**Ce qui n'est jamais touché** : l'identifiant logique RPGQuest (renommer « Help » ne renomme pas
+l'id `help`), l'UUID et l'id numérique Citizens, et les liaisons quêtes / dialogues / stories. Le
+nom de la **définition** RPGQuest et le **locuteur** des dialogues sont également laissés tels
+quels — les modifier automatiquement réécrirait des textes potentiellement partagés ; une
+synchronisation éventuelle doit rester une action explicite et distincte.
+
+**Ciblage** : le PNJ est résolu depuis la **liaison persistée** (id logique → UUID Citizens), jamais
+depuis le nom affiché ni depuis une sélection Citizens préexistante. Pour le skin, Citizens
+n'expose sa pose que par commande (`SkinTrait` vit dans `citizens-main`, pas dans l'artefact
+`citizensapi` auquel ce projet se limite) : on sélectionne donc explicitement le PNJ visé pour la
+console (`NPCSelector`, API publique) juste avant la commande et on désélectionne juste après, le
+tout dans le même passage sur le thread principal — deux administrateurs simultanés ne peuvent pas
+s'intercaler et viser le mauvais PNJ.
+
+**Lien MineSkin** : seul le format `https://minesk.in/<identifiant>` est accepté, validé par le
+panel **et** revalidé par le plugin (le navigateur n'est pas une source de confiance). Coller la
+commande `/npc skin --url …` est explicitement refusé : l'action n'est pas une console libre.
+
+**Retour d'état** : le téléchargement du skin est asynchrone côté Citizens. Un succès signifie donc
+« demande transmise », pas « skin visuellement confirmé » — l'interface le dit, et la vérification
+visuelle reste un test en jeu. En cas de refus (PNJ introuvable, type sans skin), le skin précédent
+est conservé.
+
 ### Hache du kit interceptée par WorldEdit (issue #192) — correctif de **configuration serveur**
 
 Symptôme en jeu : casser une bûche avec la **hache en bois du kit** (#26) affiche « Première position définie en (…) » et ne casse pas le bloc.
@@ -1638,7 +1672,16 @@ Cause, dans le prolongement direct du piège documenté juste au-dessus : WorldE
 
 Aucune permission OP n'est retirée, aucune protection de blocs n'est assouplie : Hub, claims, waypoints et bornes gardent exactement leurs règles.
 
-> **Pourquoi ce n'est pas automatisé** : `scripts/deploy-verygames.sh` refuse par conception tout fichier d'un autre plugin (liste blanche limitée au JAR RPGQuest et à `RPGQuest/…`). Ce changement reste donc une opération manuelle assumée, à faire une fois, et à refaire après une réinstallation de WorldEdit.
+> **Outillage** : `scripts/deploy-verygames.sh` refuse par conception tout fichier d'un autre plugin
+> (liste blanche limitée au JAR RPGQuest et à `RPGQuest/…`) et ce garde-fou reste intact. Le
+> changement se fait donc avec le script dédié **mono-usage** `scripts/worldedit-wand-item.sh`, qui
+> ne peut écrire que le `config.yml` de WorldEdit, n'y modifie que la clé `wand-item`, refuse tout
+> matériau du kit de départ, sauvegarde le fichier avant écriture et téléverse de façon atomique.
+> À rejouer après une réinstallation de WorldEdit.
+>
+> **Appliqué sur DEV le 2026-10-05** : `minecraft:wooden_axe` → `minecraft:golden_axe`,
+> `/worldedit reload` exécuté, et valeur **réellement chargée** confirmée par le rapport interne de
+> WorldEdit (`/worldedit report` → `wandItem: minecraft:golden_axe`), pas seulement par le fichier.
 
 ### `//wand` (ou `/worldedit version`)
 Type : Plugin externe (WorldEdit `7.4.1`)

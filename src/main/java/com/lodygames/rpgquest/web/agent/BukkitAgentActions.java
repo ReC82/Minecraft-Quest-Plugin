@@ -549,6 +549,85 @@ public final class BukkitAgentActions implements AgentActions {
         });
     }
 
+    /**
+     * Issue #165 — renommage du PNJ Citizens lié. Le ciblage part de la <strong>liaison
+     * persistée</strong> ({@code npcId} → UUID Citizens), jamais du nom affiché ni d'une sélection :
+     * deux administrateurs qui renomment en même temps ne peuvent pas se tromper de PNJ.
+     */
+    @Override
+    public CompletableFuture<MutationResult> citizensRename(String npcId, String newName) {
+        String name = newName == null ? "" : newName.trim();
+        if (name.isEmpty() || name.length() > 48) {
+            return done(MutationResult.of(false, "INVALID_NAME",
+                    "Nom invalide : 1 à 48 caractères attendus."));
+        }
+        if (!npcIdentityService.citizensAvailable()) {
+            return done(MutationResult.of(false, "CITIZENS_UNAVAILABLE", "Citizens n'est pas disponible."));
+        }
+        return citizensUuidOf(npcId).thenCompose(uuid -> {
+            if (uuid.isEmpty()) {
+                return done(MutationResult.of(false, "NO_CITIZENS_BINDING",
+                        "Aucun PNJ Citizens lié à « " + safe(npcId) + " » — le lier d'abord."));
+            }
+            return onMain(() -> {
+                Optional<String> previous = npcIdentityService.renameCitizensFor(uuid.get(), name);
+                if (previous.isEmpty()) {
+                    return done(MutationResult.of(false, "CITIZENS_NPC_MISSING",
+                            "Le PNJ Citizens lié est introuvable dans le registre (supprimé ?)."));
+                }
+                return done(new MutationResult(true, "RENAMED",
+                        "Nom en jeu : « " + previous.get() + " » → « " + name + " ». "
+                                + "Identifiant logique et liaisons inchangés.",
+                        List.of("citizens:name=" + name)));
+            });
+        });
+    }
+
+    /**
+     * Issue #165 — skin MineSkin. L'URL est validée <strong>côté serveur</strong> (jamais une
+     * commande libre venue du navigateur) et le PNJ est ciblé par la liaison persistée.
+     */
+    @Override
+    public CompletableFuture<MutationResult> citizensSkin(String npcId, String minesSkinUrl) {
+        String url = minesSkinUrl == null ? "" : minesSkinUrl.trim();
+        if (!NpcIdentityService.isValidMineSkinUrl(url)) {
+            return done(MutationResult.of(false, "INVALID_URL",
+                    "Lien MineSkin invalide. Format accepté : https://minesk.in/<identifiant>."));
+        }
+        if (!npcIdentityService.citizensAvailable()) {
+            return done(MutationResult.of(false, "CITIZENS_UNAVAILABLE", "Citizens n'est pas disponible."));
+        }
+        return citizensUuidOf(npcId).thenCompose(uuid -> {
+            if (uuid.isEmpty()) {
+                return done(MutationResult.of(false, "NO_CITIZENS_BINDING",
+                        "Aucun PNJ Citizens lié à « " + safe(npcId) + " » — le lier d'abord."));
+            }
+            return onMain(() -> {
+                boolean accepted = npcIdentityService.applyCitizensSkin(uuid.get(), url);
+                if (!accepted) {
+                    return done(MutationResult.of(false, "SKIN_REFUSED",
+                            "Citizens a refusé la demande de skin (PNJ introuvable, ou type de PNJ "
+                                    + "sans skin). Le skin précédent est conservé."));
+                }
+                // Citizens télécharge le skin de façon asynchrone : on ne peut honnêtement
+                // confirmer que la PRISE EN COMPTE, pas le rendu visuel.
+                return done(new MutationResult(true, "SKIN_REQUESTED",
+                        "Demande de skin transmise à Citizens. L'application est asynchrone : "
+                                + "vérifier en jeu (reconnexion éventuelle du client).",
+                        List.of("citizens:skin-url=" + url)));
+            });
+        });
+    }
+
+    /** UUID Citizens lié à un id logique RPGQuest, depuis la liaison persistée (base, async). */
+    private CompletableFuture<Optional<UUID>> citizensUuidOf(String npcId) {
+        String id = npcId == null ? "" : npcId.trim();
+        return npcBindingRepository.loadAll().thenApply(bindings -> bindings.stream()
+                .filter(b -> b.npcId().equalsIgnoreCase(id))
+                .map(NpcBindingRepository.Binding::citizensUuid)
+                .findFirst());
+    }
+
     @Override
     public CompletableFuture<CitizensRosterView> citizensRoster() {
         boolean available = npcIdentityService.citizensAvailable();

@@ -126,6 +126,38 @@ public final class NpcIdentityService {
     }
 
     /**
+     * Issue #165 — URL MineSkin acceptée. Volontairement <strong>stricte</strong> : on ne reçoit
+     * jamais une commande libre, seulement un lien {@code https://minesk.in/<id>} tel que MineSkin
+     * le fournit. Pas de query, pas de fragment, pas d'autre domaine — une URL arbitraire ferait
+     * de cette action un téléchargeur générique côté serveur.
+     */
+    private static final java.util.regex.Pattern MINESKIN_URL =
+            java.util.regex.Pattern.compile("^https://minesk\\.in/[A-Za-z0-9]{8,64}$");
+
+    /** {@code true} si {@code url} est un lien MineSkin exploitable (validation côté serveur). */
+    public static boolean isValidMineSkinUrl(String url) {
+        return url != null && MINESKIN_URL.matcher(url.trim()).matches();
+    }
+
+    /**
+     * Issue #165 — renomme le PNJ Citizens lié à {@code npcId}. Ciblé par l'UUID issu de la
+     * liaison persistée, jamais par le nom affiché. <strong>Thread principal.</strong>
+     *
+     * @return l'ancien nom, ou vide si aucun PNJ Citizens n'est lié / trouvé.
+     */
+    public Optional<String> renameCitizensFor(UUID citizensUuid, String newName) {
+        return citizensBridge == null ? Optional.empty() : citizensBridge.renameByUuid(citizensUuid, newName);
+    }
+
+    /**
+     * Issue #165 — applique un skin MineSkin au PNJ Citizens d'UUID donné.
+     * <strong>Thread principal</strong> (sélection + commande Citizens atomiques).
+     */
+    public boolean applyCitizensSkin(UUID citizensUuid, String minesSkinUrl) {
+        return citizensBridge != null && citizensBridge.applySkinUrlByUuid(citizensUuid, minesSkinUrl);
+    }
+
+    /**
      * Lie {@code npcId} au PNJ Citizens {@code ref}. Valide les collisions et l'idempotence via
      * {@link CitizensBindPlanner}, écrit de façon atomique ({@link NpcBindingRepository#insertIfAbsent}),
      * puis rafraîchit le cache pour que l'identification en jeu prenne effet sans redémarrage.

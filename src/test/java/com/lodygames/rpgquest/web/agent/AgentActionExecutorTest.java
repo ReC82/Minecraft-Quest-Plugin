@@ -668,6 +668,11 @@ class AgentActionExecutorTest {
             return mutation("update " + id);
         }
 
+        String lastRenameNpcId;
+        String lastRenameName;
+        String lastSkinNpcId;
+        String lastSkinUrl;
+
         @Override
         public CompletableFuture<MutationResult> questGiverSet(String questId, String npcId) {
             lastGiverQuestId = questId;
@@ -677,6 +682,20 @@ class AgentActionExecutorTest {
 
         String lastLinkNpcId;
         int lastLinkCitizensId;
+
+        @Override
+        public CompletableFuture<MutationResult> citizensRename(String npcId, String newName) {
+            lastRenameNpcId = npcId;
+            lastRenameName = newName;
+            return mutation("rename " + npcId + " -> " + newName);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> citizensSkin(String npcId, String minesSkinUrl) {
+            lastSkinNpcId = npcId;
+            lastSkinUrl = minesSkinUrl;
+            return mutation("skin " + npcId + " -> " + minesSkinUrl);
+        }
 
         @Override
         public CompletableFuture<CitizensRosterView> citizensRoster() {

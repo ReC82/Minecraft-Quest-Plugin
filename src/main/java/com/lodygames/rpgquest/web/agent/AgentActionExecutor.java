@@ -86,6 +86,8 @@ public final class AgentActionExecutor {
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
                 case NPC_CITIZENS_CREATE -> npcCitizensCreate(action);
+                case NPC_CITIZENS_RENAME -> npcCitizensRename(action);
+                case NPC_CITIZENS_SKIN -> npcCitizensSkin(action);
                 case DIALOGUE_LIST -> dialogueList(action);
                 case DIALOGUE_DEFINITION_CREATE -> dialogueDefinitionCreate(action);
                 case DIALOGUE_NODE_CREATE -> dialogueNodeWrite(action, true);
@@ -737,6 +739,50 @@ public final class AgentActionExecutor {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /** {@code npc.citizens.rename} (#165) : renomme en jeu, jamais l'id logique. */
+    private CompletableFuture<AgentActionOutcome> npcCitizensRename(AgentAction action) {
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        String name = firstNonBlank(action.param("name"));
+        if (name == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « name » manquant."));
+        }
+        return actions.citizensRename(npcId, name)
+                .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code npc.citizens.skin} (#165) : URL MineSkin uniquement, validée côté plugin. */
+    private CompletableFuture<AgentActionOutcome> npcCitizensSkin(AgentAction action) {
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        String url = firstNonBlank(action.param("skin_url"), action.param("url"));
+        if (url == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « skin_url » manquant."));
+        }
+        return actions.citizensSkin(npcId, url)
+                .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Projection commune d'un {@link AgentActions.MutationResult} en issue d'action. */
+    private static AgentActionOutcome mutationOutcome(AgentAction action, AgentActions.MutationResult r,
+                                                      String detailKey, String detailValue) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("code", r.code());
+        details.put(detailKey, detailValue);
+        details.put("effects", r.effects());
+        if (r.ok()) {
+            return AgentActionOutcome.success(action.id(), r.code(), r.message(), details);
+        }
+        return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, r.code(), r.message(),
+                details, java.time.Instant.now());
     }
 
     /** {@code npc.citizens.create} (#81 phase 2) : paramètres métier stricts, aucun spawn si un contrôle échoue. */

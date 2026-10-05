@@ -118,6 +118,48 @@ class AgentActionCatalogTest {
                 "dialogue_id", "guard", "node_id", "greeting", "choice_index", "0")).valid(), "confirm requis");
     }
 
+    /**
+     * Issue #165 — le panel ne doit jamais transmettre une commande libre : seul un lien MineSkin
+     * strict est accepté, et il est revalidé côté plugin.
+     */
+    @Test
+    void theSkinActionAcceptsOnlyARealMineSkinLink() {
+        assertTrue(AgentActionCatalog.validate("npc.citizens.skin", Map.of(
+                "npc_id", "help",
+                "skin_url", "https://minesk.in/de347dcfb215477db7ae52d780e68757")).valid(),
+                "le lien fourni par MineSkin doit passer");
+
+        // La commande Citizens collée telle quelle (erreur la plus probable de l'admin) est refusée.
+        assertFalse(AgentActionCatalog.validate("npc.citizens.skin", Map.of(
+                "npc_id", "help",
+                "skin_url", "/npc skin --url https://minesk.in/de347dcfb215477db7ae52d780e68757")).valid(),
+                "une commande, même contenant une URL valide, doit être refusée");
+        // Un autre domaine ferait de l'action un téléchargeur générique côté serveur.
+        assertFalse(AgentActionCatalog.validate("npc.citizens.skin", Map.of(
+                "npc_id", "help", "skin_url", "https://example.com/evil.png")).valid());
+        assertFalse(AgentActionCatalog.validate("npc.citizens.skin", Map.of(
+                "npc_id", "help", "skin_url", "http://minesk.in/de347dcfb215477db")).valid(),
+                "http simple refusé");
+        assertFalse(AgentActionCatalog.validate("npc.citizens.skin", Map.of(
+                "npc_id", "help", "skin_url", "")).valid());
+        // Le PNJ est toujours ciblé explicitement : pas d'id, pas d'action.
+        assertFalse(AgentActionCatalog.validate("npc.citizens.skin", Map.of(
+                "skin_url", "https://minesk.in/de347dcfb215477db7ae52d780e68757")).valid(),
+                "aucune action sans PNJ ciblé — jamais de sélection implicite");
+    }
+
+    @Test
+    void theRenameActionBoundsTheDisplayNameAndAlwaysTargetsAnNpc() {
+        assertTrue(AgentActionCatalog.validate("npc.citizens.rename", Map.of(
+                "npc_id", "help", "name", "Aide du village")).valid());
+        assertFalse(AgentActionCatalog.validate("npc.citizens.rename", Map.of(
+                "npc_id", "help", "name", "")).valid(), "nom vide refusé");
+        assertFalse(AgentActionCatalog.validate("npc.citizens.rename", Map.of(
+                "npc_id", "help", "name", "x".repeat(49))).valid(), "nom trop long refusé");
+        assertFalse(AgentActionCatalog.validate("npc.citizens.rename", Map.of(
+                "name", "Aide")).valid(), "aucune action sans PNJ ciblé");
+    }
+
     @Test
     void contentMutationsDeclareTheCatalogsTheyInvalidate() {
         assertEquals(java.util.List.of("npc.list"),

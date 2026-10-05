@@ -38,6 +38,8 @@ public final class AgentActionCatalog {
             java.util.Set.of("all", "quests", "stories", "dialogues", "npcs");
     private static final int MAX_EXPORT_IDS = 500;
     private static final Pattern WORLD_NAME = Pattern.compile("[A-Za-z0-9_./-]{1,64}");
+    /** Issue #165 : lien MineSkin strict — même motif que la validation côté plugin. */
+    private static final Pattern MINESKIN_URL = Pattern.compile("https://minesk\\.in/[A-Za-z0-9]{8,64}");
     /** Bornes de sécurité de position miroir de {@code CitizensSpawnPlanner} côté plugin (#81 phase 2). */
     private static final double HORIZONTAL_LIMIT = 29_999_984.0;
     private static final double Y_MIN = -2048.0;
@@ -130,6 +132,13 @@ public final class AgentActionCatalog {
         addContentWrite("npc.citizens.link", Permission.NPC_BIND_WRITE, "Lier un PNJ Citizens existant",
                 "npc.list", "npc.citizens.list");
         addSensitiveWrite("npc.citizens.create", Permission.NPC_SPAWN_WRITE, false, "Créer le PNJ Citizens",
+                "npc.list", "npc.citizens.list");
+        // Issue #165 : opérations purement cosmétiques sur un PNJ Citizens existant. Réutilisent
+        // la permission de liaison (NPC_BIND_WRITE) : elles ne créent ni ne détruisent rien, et ne
+        // touchent jamais l'identité logique RPGQuest ni les liaisons de contenu.
+        addContentWrite("npc.citizens.rename", Permission.NPC_BIND_WRITE, "Renommer le PNJ en jeu",
+                "npc.list", "npc.citizens.list");
+        addContentWrite("npc.citizens.skin", Permission.NPC_BIND_WRITE, "Appliquer un skin MineSkin",
                 "npc.list", "npc.citizens.list");
         addContentWrite("dialogue.definition.create", Permission.DIALOGUE_WRITE, "Créer un dialogue (squelette)",
                 "dialogue.list");
@@ -330,6 +339,33 @@ public final class AgentActionCatalog {
                 }
                 params.put("npc_id", npcId);
                 params.put("citizens_id", Integer.toString(citizensId));
+            }
+            case "npc.citizens.rename" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide.");
+                }
+                String name = trim(form.get("name"));
+                if (name.isEmpty() || name.length() > 48) {
+                    return Validation.fail("Nom en jeu manquant, ou trop long (48 caractères maximum).");
+                }
+                params.put("npc_id", npcId);
+                params.put("name", name);
+            }
+            case "npc.citizens.skin" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide.");
+                }
+                // Uniquement un lien MineSkin : jamais une commande libre, jamais une autre URL.
+                // Revalidé côté plugin — le navigateur n'est pas une source de confiance.
+                String url = trim(form.get("skin_url"));
+                if (!MINESKIN_URL.matcher(url).matches()) {
+                    return Validation.fail("Lien MineSkin invalide. Format attendu : "
+                            + "https://minesk.in/<identifiant> (coller le lien, pas la commande).");
+                }
+                params.put("npc_id", npcId);
+                params.put("skin_url", url);
             }
             case "npc.citizens.create" -> {
                 String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);

@@ -126,6 +126,14 @@ public final class LuckPermsBridge {
         }
 
         String groupName = BridgeGroupNaming.groupNameFor(panelGroupId);
+        // Contrôle AVANT l'appel : LuckPerms lève IllegalArgumentException sur un nom trop long, et
+        // la classe d'exception nue ne dit rien d'utile à l'administrateur qui lit le panel.
+        String refusal = BridgeGroupNaming.refusalReason(groupName);
+        if (refusal != null) {
+            logger.error("Nom de groupe LuckPerms refusé pour {} : {}", panelGroupId, refusal);
+            return CompletableFuture.completedFuture(SyncResult.failed(
+                    "Nom de groupe refusé : " + refusal + ". Aucun droit modifié."));
+        }
         try {
             LuckPerms api = LuckPermsProvider.get();
             return api.getGroupManager().createAndLoadGroup(groupName)
@@ -133,7 +141,7 @@ public final class LuckPermsBridge {
         } catch (RuntimeException | LinkageError e) {
             logger.error("Écriture du groupe LuckPerms {} impossible", groupName, e);
             return CompletableFuture.completedFuture(SyncResult.failed(
-                    "Écriture impossible : " + e.getClass().getSimpleName() + ". Aucun droit modifié."));
+                    "Écriture impossible : " + describe(e) + ". Aucun droit modifié."));
         }
     }
 
@@ -207,7 +215,7 @@ public final class LuckPermsBridge {
         } catch (RuntimeException | LinkageError e) {
             logger.error("Suppression du groupe LuckPerms {} impossible", groupName, e);
             return CompletableFuture.completedFuture(SyncResult.failed(
-                    "Suppression impossible : " + e.getClass().getSimpleName()));
+                    "Suppression impossible : " + describe(e)));
         }
     }
 
@@ -237,8 +245,7 @@ public final class LuckPermsBridge {
         } catch (RuntimeException | LinkageError e) {
             logger.error("Synchronisation LuckPerms impossible pour {}", playerId, e);
             return CompletableFuture.completedFuture(SyncResult.failed(
-                    "Synchronisation impossible : " + e.getClass().getSimpleName()
-                            + ". Aucun droit n'a été modifié."));
+                    "Synchronisation impossible : " + describe(e) + ". Aucun droit n'a été modifié."));
         }
     }
 
@@ -331,6 +338,17 @@ public final class LuckPermsBridge {
             return CompletableFuture.failedFuture(new IllegalStateException(
                     "Lecture LuckPerms impossible : " + e.getClass().getSimpleName(), e));
         }
+    }
+
+    /**
+     * Classe <strong>et message</strong> de l'erreur. La classe seule ne suffit pas : c'est
+     * précisément ce qui a rendu un refus de longueur de nom indéchiffrable depuis le panel.
+     */
+    private static String describe(Throwable error) {
+        String message = error.getMessage();
+        return message == null || message.isBlank()
+                ? error.getClass().getSimpleName()
+                : error.getClass().getSimpleName() + " — " + message;
     }
 
     private static Node toPermissionNode(ManagedNode managed) {

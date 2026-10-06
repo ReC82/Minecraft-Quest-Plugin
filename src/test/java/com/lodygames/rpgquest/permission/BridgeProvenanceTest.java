@@ -33,8 +33,83 @@ class BridgeProvenanceTest {
         // le groupe LuckPerms ni faire perdre ses droits à ses membres.
         String name = BridgeGroupNaming.groupNameFor("3f2a1b4c-5d6e-7f80-9123-456789abcdef");
 
-        assertEquals("rpgq-3f2a1b4c5d6e7f809123456789abcdef", name);
         assertTrue(BridgeGroupNaming.isBridgeGroup(name));
+        assertEquals(name, BridgeGroupNaming.groupNameFor("3f2a1b4c-5d6e-7f80-9123-456789abcdef"),
+                "déterministe : le même identifiant donne toujours le même nom");
+    }
+
+    @Test
+    void aRealPanelGroupIdProducesANameLuckPermsAccepts() {
+        // CAS RÉEL constaté depuis le panel : le groupe « tc253_builder »
+        // (8cb1178f-f6ae-4835-b495-d1004724f771) faisait échouer mc.group.sync sur
+        // IllegalArgumentException. Cause mesurée : LuckPerms impose
+        // MAX_GROUP_NAME_LENGTH = 36, et la première version concaténait le préfixe aux 32
+        // caractères hexadécimaux de l'identifiant — soit 37. Le défaut était invisible avec la
+        // sonde de validation, qui utilisait un identifiant court (« rpgq-tc253probe », 15).
+        String name = BridgeGroupNaming.groupNameFor("8cb1178f-f6ae-4835-b495-d1004724f771");
+
+        assertTrue(name.length() <= BridgeGroupNaming.MAX_LUCKPERMS_GROUP_NAME,
+                () -> "nom trop long pour LuckPerms : " + name + " (" + name.length() + ")");
+        assertNull(BridgeGroupNaming.refusalReason(name), name);
+        assertTrue(BridgeGroupNaming.isBridgeGroup(name));
+    }
+
+    @Test
+    void anyUuidShapedIdentifierFitsWithinTheLuckPermsLimit() {
+        // Un seul identifiant qui passe ne prouverait rien : on vérifie la forme générale.
+        for (int i = 0; i < 200; i++) {
+            String name = BridgeGroupNaming.groupNameFor(java.util.UUID.randomUUID().toString());
+            assertTrue(name.length() <= BridgeGroupNaming.MAX_LUCKPERMS_GROUP_NAME,
+                    () -> "nom trop long : " + name);
+            assertNull(BridgeGroupNaming.refusalReason(name));
+        }
+    }
+
+    @Test
+    void twoDifferentGroupsNeverShareAName() {
+        // Une troncature de l'identifiant aurait collisionné sur deux identifiants de même préfixe ;
+        // une empreinte répartit uniformément. Ce test ancre la propriété, pas la méthode.
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (int i = 0; i < 500; i++) {
+            assertTrue(names.add(BridgeGroupNaming.groupNameFor(java.util.UUID.randomUUID().toString())),
+                    "deux groupes distincts ne doivent jamais partager un nom LuckPerms");
+        }
+    }
+
+    @Test
+    void anOverlongNameIsRefusedWithAReadableReasonRatherThanAnException() {
+        // C'est ce qui manquait : le panel affichait « IllegalArgumentException », ce qui ne dit
+        // rien. Un motif explicite permet de comprendre sans lire les logs du serveur.
+        String tooLong = "rpgq-" + "a".repeat(40);
+
+        String reason = BridgeGroupNaming.refusalReason(tooLong);
+
+        assertNotNull(reason);
+        assertTrue(reason.contains("trop long"), reason);
+        assertTrue(reason.contains("36"), () -> "le motif doit citer la limite réelle : " + reason);
+    }
+
+    @Test
+    void aBlankNameIsRefusedToo() {
+        assertNotNull(BridgeGroupNaming.refusalReason(null));
+        assertNotNull(BridgeGroupNaming.refusalReason("   "));
+    }
+
+    @Test
+    void aGroupWithoutAnyMemberOrPanelPermissionStillSyncsItsMinecraftRight() throws Exception {
+        // Le groupe réel n'avait AUCUN membre et AUCUNE permission PlugAdmin : seul un droit
+        // Minecraft. Rien dans ce chemin ne doit dépendre d'un membre — la définition du groupe
+        // LuckPerms se pousse indépendamment de qui y appartient.
+        LuckPermsBridge bridge = new LuckPermsBridge(org.slf4j.LoggerFactory.getLogger("test"));
+
+        LuckPermsBridge.SyncResult result = bridge.syncGroupDefinition(
+                "8cb1178f-f6ae-4835-b495-d1004724f771", "tc253_builder",
+                java.util.Set.of(ManagedNode.inWorld("rpgquest.build.hub.world_hub", "world_hub"))).get();
+
+        // Sans LuckPerms au test, l'issue est un échec HONNÊTE — mais pas celui du nom : le motif
+        // doit être l'indisponibilité du pont, et non un refus de longueur.
+        assertFalse(result.ok());
+        assertFalse(result.message().contains("trop long"), result.message());
     }
 
     @Test

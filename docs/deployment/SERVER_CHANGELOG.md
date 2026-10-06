@@ -4984,3 +4984,97 @@ d'édition. `./gradlew test` + `./gradlew build` (internes au script officiel,
 Rollback : `scripts/rollback-verygames.sh --latest` (restaure
 `rpgquest-20261006T160901Z-predeploy.jar`) ; `scripts/plugadmin/rollback.sh app`
 pour le Control Panel (restaure `/opt/plugadmin/releases/20261006-180938`).
+
+---
+
+## 2026-10-06 (restauration) - Régression de déploiement : retour à une version réunissant le socle déployé et l'édition de dialogues
+
+### Changement
+
+**Correction d'une régression introduite par le déploiement précédent de ce même
+jour.** Le déploiement de ~18:09 CEST a livré la branche
+`feat/control-panel-admin-tools`, forkée à `ce1233d` et donc **antérieure de 49
+commits** à ce qui tournait réellement (`feature/169-special-mobs-boss`). Ont
+disparu du panel *et* du plugin, le temps de la panne :
+
+- Mobs spéciaux & boss (#169/#171/#172/#190) — route `/mobs`, entrée de menu et
+  permissions `MOB_*` absentes du code livré ;
+- pont LuckPerms et droits par monde (#200), groupes multiples (#199) ;
+- page « Exploitation serveur » et son refresh (#95) ;
+- économie et récompense monétaire de quête (#16/#140) ;
+- suppression de contenu (#194), catalogues d'objets et de mobs (#172/#196),
+  couleurs et styles au clic (#195), chaîne de paliers du Garde (#179),
+  renommage/skin PNJ (#165), rechargement de contenu (#131), actions joueurs
+  (#210), signal PNJ (#12), claims (#22), hostiles de jour (#168), voyage (#191).
+
+Version restaurée = tout le socle **plus** l'édition de dialogues (#82/#145),
+par fusion sur `feature/169-special-mobs-boss`.
+
+### Données — vérifié, aucune perte
+
+- **Schéma SQLite intact** : le JAR régressé plafonnait à V23 alors que la base
+  est en **V26**. `SchemaMigrationRunner` ignore toute migration ≤ version
+  appliquée et ne réécrit jamais la version : **aucune rétrogradation possible**.
+- **Base du panel intacte** : 3 comptes dont l'OWNER (rôle `OWNER` conservé),
+  598 entrées d'audit, tables `panel_group` / `panel_group_permission` /
+  `panel_user_group` / `panel_group_mc_node` toujours présentes. Elles sont
+  vides parce que l'owner a lui-même supprimé ses groupes de test
+  (`tc252_lecture`, `tc252_ecriture`, `tc253_builder`) entre 11:24 et 12:20 UTC,
+  **soit presque 4 h avant le déploiement fautif de 16:09 UTC** — l'audit log le
+  prouve. Le panel régressé ne connaît pas ces tables et ne pouvait pas y
+  toucher.
+- **Profils de mobs intacts** : ce sont des fichiers YAML du serveur
+  (`SpecialMobDefinitionStore`), et aucun déploiement n'a jamais transféré de
+  fichier de contenu (aucun `--also`).
+- **Permissions de l'owner** : jamais stockées pour ce compte — `Role.OWNER` vaut
+  `EnumSet.allOf(Permission.class)`. `MOB_READ` disparaissait donc avec le code
+  et revient avec lui.
+- **Seule conséquence réelle** : pendant la fenêtre (~18:09 → ~19:30 CEST), les
+  fonctions de ces 49 commits étaient indisponibles ; une quête terminée n'aurait
+  pas crédité de récompense monétaire. 0 joueur connecté sur la quasi-totalité de
+  la fenêtre.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest + redéploiement du Control Panel. Aucune migration,
+aucun fichier de contenu transféré, aucune configuration modifiée.
+
+### Déploiement / Exécution réelle
+
+Branche `feature/169-special-mobs-boss` @ **`e0c1203`** (fusion `dfe642b` +
+alignement de test `e0c1203`), construite et transférée depuis le **worktree
+propre** `/srv/rpgquest/worktree-169`. `./gradlew test build` **OK** —
+**1705 tests plugin + 675 tests panel, 0 échec**, 37 + 1 ignorés.
+
+- **Plugin (VeryGames DEV)** :
+  - **JAR déployé** : 1 859 272 o, SHA-256
+    `2d728eb90c11992376e5759ee5c51724faf600f0e64e76d325941e8982037219`.
+  - **Backup préalable** : `rpgquest-20261006T172836Z-predeploy.jar`
+    (1 622 803 o, SHA-256
+    `1c42ac9dccfccaf4dfc0530271f5b96371763adeac41c3b3981b49cc5e93f961`) —
+    c'est le JAR régressé.
+  - **Redémarrage** : 1 joueur connecté (`LoDyMcFly`), **prévenu en jeu** puis
+    redémarrage après délai ; `save-all`, OFFLINE puis **ONLINE**.
+  - **Vérifications** : `/rpgquest version` → `v0.1.0-SNAPSHOT` ; `/plugins` → 5
+    plugins verts dont **LuckPerms** ; `rpgquest reload` → OK ; heartbeat agent
+    `uptime_seconds=45` (redémarrage réel), `world_hub`/`claims`/`wild` chargés.
+- **Control Panel (AWS)** : release précédente sauvegardée
+  (`/opt/plugadmin/releases/20261006-192902`), service redémarré, `/health` →
+  `{"panel":"ONLINE","disabled":false,…}`.
+- **Vérifications de non-régression** : `/mobs` et `/ops` répondent **303**
+  (route existante et protégée) là où un chemin inconnu répond 404 ; l'artefact
+  déployé contient bien `MOB_READ`, `CONTENT_DELETE`, `ECONOMY_READ` et
+  `StyleField`.
+- **Reste à valider en navigateur, avec la session de l'owner** (je n'ai pas ses
+  identifiants et ne me suis connecté à aucun compte) : affichage effectif de
+  « Mobs spéciaux & boss », comportement de `/ops`, et l'éditeur du dialogue de
+  Jeff. Voir TC-254 et les fiches #169/#95 existantes.
+- Aucun merge vers `main`, aucune intervention PROD, aucune issue fermée.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` restaurerait le JAR **régressé** — à ne
+pas utiliser tel quel. Pour revenir à l'état d'avant cette session, utiliser
+explicitement `rpgquest-20261006T160901Z-predeploy.jar` (1 850 699 o), qui est le
+dernier JAR sain d'avant la régression. Control Panel :
+`scripts/plugadmin/rollback.sh app`.

@@ -210,6 +210,95 @@ class DialogueSourceMergeTest {
                 "aucune affirmation d'activité runtime");
     }
 
+    // ---- K : rééditer un dialogue riche ne le réduit jamais à un squelette (#145) -------
+
+    /** Dialogue existant à plusieurs nœuds, avec conditions, actions et embranchements. */
+    private static final String RICH_YAML = """
+            id: rpgquest:jeff
+            start: start
+            nodes:
+              start:
+                speaker: "Jeff"
+                text: "<gray>Compris.</gray>"
+                choices:
+                  - text: "Je vais m'en charger"
+                    conditions:
+                      - type: QUEST_STATE
+                        quest: rpgquest:cleanup
+                        state: NOT_STARTED
+                    actions:
+                      - type: START_QUEST
+                        quest: rpgquest:cleanup
+                    next: accepted
+                  - text: "Pas maintenant"
+                    actions:
+                      - type: CLOSE
+              accepted:
+                speaker: "Jeff"
+                text: "<green>Merci.</green>"
+                choices:
+                  - text: "OK"
+                    actions:
+                      - type: CLOSE
+            """;
+
+    @Test
+    void editingAnExistingRichDialogueOnlyChangesTheFieldsOfTheForm() throws Exception {
+        start();
+        writeDialogue("jeff", RICH_YAML);
+
+        String page = get("/dialogues/edit/jeff").body();
+        assertTrue(page.contains("name=\"speaker\" value=\"Jeff\""), "locuteur prérempli depuis le fichier");
+        assertTrue(page.contains("Conservé à l'identique"), "ce qui n'est pas éditable ici est annoncé");
+
+        String token = csrf(page);
+        HttpResponse<String> save = post("/dialogues/save", "slug=jeff&id=jeff&speaker=Jeff&start_text="
+                + enc("<gray>Bien reçu.</gray>") + "&text_color=&_csrf=" + token + "&_action=save"
+                + "&expectedSha=" + sha("dialogues", "jeff"));
+        assertEquals(303, save.statusCode(), save.body());
+
+        String after = Files.readString(contentRoot.resolve("dialogues/jeff.yml"));
+        // Seule la réplique du nœud de départ a changé…
+        assertTrue(after.contains("text: \"<gray>Bien reçu.</gray>\""), "texte de départ mis à jour");
+        assertFalse(after.contains("<gray>Compris.</gray>"), "ancien texte remplacé");
+        // …tout le reste est intact : second nœud, choix, condition, action, embranchement.
+        assertTrue(after.contains("  accepted:"), "le second nœud survit");
+        assertTrue(after.contains("- type: QUEST_STATE"), "la condition survit");
+        assertTrue(after.contains("- type: START_QUEST"), "l'action de quête survit");
+        assertTrue(after.contains("quest: rpgquest:cleanup"), "la quête référencée survit");
+        assertTrue(after.contains("next: accepted"), "l'embranchement survit");
+        assertTrue(after.contains("text: \"Je vais m'en charger\""), "le texte du choix survit");
+    }
+
+    @Test
+    void aDialogueTheEditorCannotReadFaithfullyIsNeverOverwritten() throws Exception {
+        start();
+        // Texte de nœud localisé : le moteur l'accepte, l'éditeur source ne sait pas le représenter.
+        String localized = "id: rpgquest:lily\nstart: start\nnodes:\n  start:\n    speaker: \"Lily\"\n"
+                + "    text:\n      default: \"Bonjour\"\n      en: \"Hello\"\n    choices:\n"
+                + "      - text: \"Bye\"\n        actions:\n          - type: CLOSE\n";
+        writeDialogue("lily", localized);
+
+        String page = get("/dialogues/edit/lily").body();
+        assertTrue(page.contains("n'est pas relu fidèlement"), "la limite est dite avant toute édition");
+
+        HttpResponse<String> save = post("/dialogues/save", "slug=lily&id=lily&speaker=Lily&start_text="
+                + enc("Bonsoir") + "&text_color=&_csrf=" + csrf(page) + "&_action=save"
+                + "&expectedSha=" + sha("dialogues", "lily"));
+        assertEquals(200, save.statusCode(), "pas de redirection : enregistrement refusé");
+        assertEquals(localized, Files.readString(contentRoot.resolve("dialogues/lily.yml")), "fichier intact");
+    }
+
+    private String sha(String kind, String slug) throws Exception {
+        byte[] bytes = Files.readAllBytes(contentRoot.resolve(kind + "/" + slug + ".yml"));
+        java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+        StringBuilder sb = new StringBuilder();
+        for (byte b : md.digest(bytes)) {
+            sb.append(String.format("%02x", b));
+        }
+        return sb.toString();
+    }
+
     // ---- helpers ----------------------------------------------------------------------
 
     private String catalog() throws Exception {

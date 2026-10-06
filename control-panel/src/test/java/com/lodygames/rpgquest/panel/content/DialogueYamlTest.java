@@ -70,6 +70,70 @@ class DialogueYamlTest {
         assertTrue(greeting.choices.get(1).close);
     }
 
+    /** Dialogue riche écrit à la main, au format canonique du moteur (actions + conditions). */
+    private static final String RICH = """
+            id: rpgquest:jeff
+            start: start
+            nodes:
+              start:
+                speaker: "Jeff"
+                text: "<gray>Compris.</gray>"
+                choices:
+                  - text: "Je vais m'en charger"
+                    conditions:
+                      - type: QUEST_STATE
+                        quest: rpgquest:cleanup
+                        state: NOT_STARTED
+                    actions:
+                      - type: START_QUEST
+                        quest: rpgquest:cleanup
+                    next: accepted
+                  - text: "Pas maintenant"
+                    actions:
+                      - type: CLOSE
+              accepted:
+                speaker: "Jeff"
+                text: "<green>Merci.</green>"
+                choices:
+                  - text: "OK"
+                    actions:
+                      - type: CLOSE
+            """;
+
+    @Test
+    void richDialogueRoundTripsByteForByte() {
+        // Conditions et actions font partie du modèle : relire puis ré-émettre ne perd rien (#145).
+        // Seul l'en-tête de provenance s'ajoute — le corps doit être reproduit à l'octet près.
+        String emitted = DialogueYaml.write(DialogueYaml.read(RICH).draft());
+        assertTrue(emitted.endsWith(RICH), () -> "corps divergent :\n" + emitted);
+        assertTrue(DialogueYaml.roundTripProblems(emitted).isEmpty(),
+                () -> "round-trip : " + DialogueYaml.roundTripProblems(emitted));
+    }
+
+    @Test
+    void readKeepsConditionsAndActionsOfEachChoice() {
+        DialogueDraft.Node start = DialogueYaml.read(RICH).draft().startNode();
+        DialogueDraft.Choice first = start.choices.get(0);
+        assertEquals(1, first.conditions.size());
+        assertEquals("QUEST_STATE", first.conditions.get(0).get("type"));
+        assertEquals("NOT_STARTED", first.conditions.get(0).get("state"));
+        assertEquals(1, first.actions.size());
+        assertEquals("START_QUEST", first.actions.get(0).get("type"));
+        assertEquals("rpgquest:cleanup", first.actions.get(0).get("quest"));
+        assertFalse(first.simple);
+        assertTrue(start.choices.get(1).close);
+    }
+
+    @Test
+    void localizedNodeTextIsReportedNeverFlattened() {
+        String yaml = "id: rpgquest:lily\nstart: start\nnodes:\n  start:\n    speaker: \"Lily\"\n"
+                + "    text:\n      default: \"Bonjour\"\n      en: \"Hello\"\n    choices:\n"
+                + "      - text: \"Bye\"\n        actions:\n          - type: CLOSE\n";
+        DialogueYaml.ReadResult r = DialogueYaml.read(yaml);
+        assertFalse(r.ok(), "une table de traductions doit être signalée");
+        assertTrue(r.problems().stream().anyMatch(p -> p.contains("localisé")));
+    }
+
     @Test
     void validatorFlagsMissingStartNodeAndDanglingNext() {
         DialogueDraft d = new DialogueDraft();

@@ -112,4 +112,100 @@ class ContentYamlRoundTripTest {
         assertTrue(diags.stream().anyMatch(d -> d.field().equals("title") && d.level() == Diagnostic.Level.ERROR));
         assertTrue(diags.stream().anyMatch(d -> d.message().contains("does_not_exist")));
     }
+
+    // ---- Récompense monétaire (issue #16) -----------------------------------------------------
+
+    @Test
+    void aMoneyRewardSurvivesTheWriteReadRoundTrip() {
+        QuestDraft q = QuestDraft.blank();
+        q.id = "tc250_money";
+        q.title = "Quête payée";
+        q.description = "Description.";
+        q.steps.get(0).objectives.get(0).put("entity", "ZOMBIE");
+        q.steps.get(0).objectives.get(0).put("amount", "1");
+        q.rewards.add(obj("MONEY", "amount", "250"));
+
+        String yaml = QuestYaml.write(q);
+        // Le YAML écrit doit être celui que le MOTEUR lit : « type: MONEY » + « amount ».
+        assertTrue(yaml.contains("type: MONEY"), () -> yaml);
+        assertTrue(yaml.contains("amount: 250"), () -> yaml);
+        assertTrue(QuestYaml.roundTripProblems(yaml).isEmpty(),
+                () -> "problèmes: " + QuestYaml.roundTripProblems(yaml) + "\n---\n" + yaml);
+
+        QuestYaml.ReadResult r = QuestYaml.read(yaml);
+        assertEquals(1, r.draft().rewards.size());
+        assertEquals("MONEY", r.draft().rewards.get(0).get("kind"));
+        assertEquals("250", r.draft().rewards.get(0).get("amount"));
+    }
+
+    @Test
+    void addingAMoneyRewardPreservesTheRewardsAlreadyThere() {
+        // La crainte réelle en éditant : perdre les récompenses existantes. L'ordre compte aussi,
+        // puisqu'il décide de l'ordre d'affichage côté joueur.
+        QuestDraft q = QuestDraft.blank();
+        q.id = "tc250_mixed";
+        q.title = "Quête mixte";
+        q.description = "Description.";
+        q.steps.get(0).objectives.get(0).put("entity", "ZOMBIE");
+        q.steps.get(0).objectives.get(0).put("amount", "1");
+        q.rewards.add(obj("EXPERIENCE", "amount", "100"));
+        q.rewards.add(obj("MONEY", "amount", "25"));
+        q.rewards.add(obj("ITEM", "material", "IRON_INGOT", "amount", "2"));
+
+        QuestYaml.ReadResult r = QuestYaml.read(QuestYaml.write(q));
+
+        assertEquals(java.util.List.of("EXPERIENCE", "MONEY", "ITEM"),
+                r.draft().rewards.stream().map(m -> m.get("kind")).toList());
+        assertEquals("2", r.draft().rewards.get(2).get("amount"));
+        assertEquals("IRON_INGOT", r.draft().rewards.get(2).get("material"));
+    }
+
+    @Test
+    void aMoneyRewardIsValidatedAsAStrictlyPositiveIntegerByTheBackend() {
+        RefData ref = new RefData(java.util.List.of(), java.util.List.of(), java.util.List.of("world"),
+                true, true, true);
+        for (String amount : new String[] {"0", "-5", "abc", "1.5"}) {
+            QuestDraft q = validQuestWithMoney(amount);
+            assertTrue(QuestValidator.validate(q, ref).stream()
+                            .anyMatch(d -> d.level() == Diagnostic.Level.ERROR),
+                    "montant « " + amount + " » doit produire une erreur de validation");
+        }
+
+        QuestDraft ok = validQuestWithMoney("250");
+        assertTrue(QuestValidator.validate(ok, ref).stream()
+                        .noneMatch(d -> d.level() == Diagnostic.Level.ERROR),
+                () -> "un montant valide ne doit produire aucune erreur : " + QuestValidator.validate(ok, ref));
+    }
+
+    @Test
+    void anUnusuallyLargeMoneyRewardIsWarnedAboutButNeverRefused() {
+        RefData ref = new RefData(java.util.List.of(), java.util.List.of(), java.util.List.of("world"),
+                true, true, true);
+        QuestDraft q = validQuestWithMoney(Long.toString(QuestValidator.MONEY_REWARD_WARNING_THRESHOLD + 1));
+
+        var diags = QuestValidator.validate(q, ref);
+
+        // AVERTISSEMENT et non erreur : l'équilibrage appartient à l'auteur du contenu, pas au
+        // panel. Refuser reviendrait à décider du gain maximum à sa place.
+        assertTrue(diags.stream().anyMatch(d -> d.level() == Diagnostic.Level.WARNING
+                && d.message().contains("inhabituellement élevé")), () -> diags.toString());
+        assertTrue(diags.stream().noneMatch(d -> d.level() == Diagnostic.Level.ERROR), () -> diags.toString());
+
+        // Juste au seuil : rien à signaler.
+        QuestDraft atThreshold = validQuestWithMoney(Long.toString(QuestValidator.MONEY_REWARD_WARNING_THRESHOLD));
+        assertTrue(QuestValidator.validate(atThreshold, ref).stream()
+                .noneMatch(d -> d.level() == Diagnostic.Level.WARNING
+                        && d.message().contains("inhabituellement élevé")));
+    }
+
+    private static QuestDraft validQuestWithMoney(String amount) {
+        QuestDraft q = QuestDraft.blank();
+        q.id = "tc250_money";
+        q.title = "Quête payée";
+        q.description = "Description.";
+        q.steps.get(0).objectives.get(0).put("entity", "ZOMBIE");
+        q.steps.get(0).objectives.get(0).put("amount", "1");
+        q.rewards.add(obj("MONEY", "amount", amount));
+        return q;
+    }
 }

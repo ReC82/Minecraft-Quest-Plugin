@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 24;
+    public static final int CURRENT_VERSION = 25;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -56,7 +56,8 @@ public final class SchemaMigrator {
             new SchemaMigration(21, "travel_beacons.biome_instance", SchemaMigrator::applyV21),
             new SchemaMigration(22, "waypoints.display_name", SchemaMigrator::applyV22),
             new SchemaMigration(23, "waypoints.display_name noms lisibles", SchemaMigrator::applyV23),
-            new SchemaMigration(24, "dialogue_node_reads", SchemaMigrator::applyV24));
+            new SchemaMigration(24, "dialogue_node_reads", SchemaMigrator::applyV24),
+            new SchemaMigration(25, "quest_reward_grants", SchemaMigrator::applyV25));
 
     private SchemaMigrator() {
     }
@@ -960,6 +961,44 @@ public final class SchemaMigrator {
             statement.execute(dialect.ddl(
                     "CREATE INDEX IF NOT EXISTS idx_dialogue_node_reads_player "
                             + "ON dialogue_node_reads (player_uuid, dialogue_id)"));
+        }
+    }
+
+    private static void applyV25(Connection connection, SqlDialect dialect) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Récompenses MONÉTAIRES de quête réellement créditées (issue #16). Une ligne = « cette
+            // occurrence de complétion a été payée », et c'est tout : cette table ne contient
+            // AUCUN solde. Le solde reste dans « wallets », seule source de vérité — ici on ne
+            // garde que de quoi répondre « a-t-on déjà payé ceci ? » et « quand, combien ».
+            //
+            // grant_id est fourni par l'appelant et porte la clé primaire : c'est lui qui rend le
+            // crédit IDEMPOTENT. Un INSERT OR IGNORE qui n'insère rien signifie « déjà payé », et
+            // comme l'insertion et la mise à jour du portefeuille vivent dans la MÊME transaction
+            // SQL, il n'existe aucune fenêtre où l'argent serait crédité sans trace, ni tracé sans
+            // être crédité — donc ni double paiement sur retry, ni paiement perdu sur panne.
+            //
+            // occurrence numérote les complétions successives d'une même quête par un même joueur
+            // (quêtes répétables) : la 2e complétion est une occurrence distincte, légitimement
+            // payée à nouveau. Identité par UUID : un changement de pseudo ne perd pas l'historique.
+            //
+            // Volontairement SANS clé étrangère vers player_profiles, contrairement à transactions :
+            // un ON DELETE CASCADE rendrait un profil supprimé puis recréé payable une seconde fois
+            // pour les mêmes occurrences. Une ligne orpheline ne coûte rien ; un double paiement, si.
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS quest_reward_grants (
+                        grant_id TEXT PRIMARY KEY,
+                        player_uuid TEXT NOT NULL,
+                        quest_id TEXT NOT NULL,
+                        occurrence INTEGER NOT NULL,
+                        amount INTEGER NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """));
+            // Accès réel : « quelles occurrences ce joueur a-t-il déjà pour cette quête ? », fait
+            // par joueur et par quête au moment de payer — jamais un balayage global.
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_quest_reward_grants_player_quest "
+                            + "ON quest_reward_grants (player_uuid, quest_id)"));
         }
     }
 }

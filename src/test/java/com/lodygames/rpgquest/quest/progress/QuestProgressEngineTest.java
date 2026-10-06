@@ -17,6 +17,8 @@ import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.QuestState;
+import com.lodygames.rpgquest.economy.QuestRewardPayer;
+import com.lodygames.rpgquest.economy.QuestRewardReceipt;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -53,6 +55,7 @@ class QuestProgressEngineTest {
     private QuestProgressRepository progressRepository;
     private PlayerProfileRepository profileRepository;
     private QuestProgressEngine engine;
+    private RecordingRewardPayer rewardPayer;
     private Path questsDir;
 
     @BeforeEach
@@ -78,7 +81,9 @@ class QuestProgressEngineTest {
         NpcIdentityService npcIdentityService = new NpcIdentityService(
                 plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
 
-        engine = new QuestProgressEngine(plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService);
+        rewardPayer = new RecordingRewardPayer();
+        engine = new QuestProgressEngine(plugin, questEngine, progressRepository, variableRepository, messagesService,
+                npcIdentityService, rewardPayer);
         engine.start();
     }
 
@@ -759,5 +764,205 @@ class QuestProgressEngineTest {
                     amount: 10
                 """.formatted(id);
         Files.writeString(questsDir.resolve(fileName), yaml);
+    }
+
+    // ---- Récompenses monétaires (issue #16) ---------------------------------------------------
+    //
+    // Ce que ces tests verrouillent, c'est le comportement du MOTEUR : combien de fois il demande
+    // le paiement, avec quelle occasion, et ce qu'il annonce selon la réponse. L'idempotence
+    // elle-même est garantie en SQL et vérifiée dans WalletRepositoryTest — la tester deux fois ne
+    // la rendrait pas plus vraie, alors que la confondre avec « le moteur n'appelle qu'une fois »
+    // masquerait un vrai risque.
+
+    @Test
+    void aMoneyRewardIsRequestedOnceWithTheQuestAndTheOccasion() throws Exception {
+        NamespacedKey questId = writeMoneyQuest("money_quest.yml", "rpgquest:money_quest", 250, false);
+        PlayerMock player = addPlayer();
+        engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        assertEquals(1, rewardPayer.calls.size(), "une complétion = une seule demande de paiement");
+        RecordingRewardPayer.Call call = rewardPayer.calls.get(0);
+        assertEquals(player.getUniqueId(), call.playerId());
+        assertEquals("rpgquest:money_quest", call.questId());
+        assertEquals(250L, call.amount());
+        assertFalse(call.grantId().isBlank(), "l'occasion de paiement doit être identifiée");
+    }
+
+    @Test
+    void theSuccessMessageArrivesOnlyAfterTheCreditIsConfirmedAndCarriesTheNewBalance() throws Exception {
+        NamespacedKey questId = writeMoneyQuest("money_quest.yml", "rpgquest:money_quest", 250, false);
+        PlayerMock player = addPlayer();
+        engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        rewardPayer.answer = new QuestRewardReceipt(QuestRewardReceipt.Status.CREDITED, 250L, 1250L, 1);
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        String message = awaitMessageContaining(player, "250");
+        assertTrue(message.contains("Titre Monnaie"), () -> "le message doit citer la quête : " + message);
+        assertTrue(message.contains("1250"), () -> "le nouveau solde doit venir du reçu, pas d'un calcul local : " + message);
+    }
+
+    @Test
+    void aFailedCreditIsSaidHonestlyAndNeverPresentedAsAGain() throws Exception {
+        NamespacedKey questId = writeMoneyQuest("money_quest.yml", "rpgquest:money_quest", 250, false);
+        PlayerMock player = addPlayer();
+        engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        rewardPayer.answer = QuestRewardReceipt.failed();
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        // Le joueur doit APPRENDRE l'échec : un silence le laisserait croire qu'il a été payé.
+        String message = awaitMessageContaining(player, "pas pu être créditée");
+        assertFalse(message.contains("250"), () -> "un échec ne doit jamais citer un montant gagné : " + message);
+    }
+
+    @Test
+    void anAlreadyCreditedOccasionSaysNothingToThePlayer() throws Exception {
+        NamespacedKey questId = writeMoneyQuest("money_quest.yml", "rpgquest:money_quest", 250, false);
+        PlayerMock player = addPlayer();
+        engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        rewardPayer.answer = new QuestRewardReceipt(QuestRewardReceipt.Status.ALREADY_CREDITED, 250L, 250L, 1);
+
+        // Vider ce que d'autres services ont pu dire à la connexion : ce test ne parle que d'argent.
+        while (player.nextMessage() != null) {
+            // on jette
+        }
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        server.getScheduler().performTicks(20);
+
+        // Rien pour le joueur (il n'a rien reçu à l'instant), mais la trace reste côté serveur.
+        String message;
+        while ((message = player.nextMessage()) != null) {
+            assertFalse(message.contains("250"),
+                    () -> "une occasion déjà payée ne doit annoncer aucun gain : ce serait un gain fantôme");
+            assertFalse(message.contains("pas pu être créditée"),
+                    "déjà payé n'est pas un échec : le dire comme tel inquiéterait pour rien");
+        }
+    }
+
+    @Test
+    void aMoneyRewardAddsNoLineToTheSynchronousRewardSummary() throws Exception {
+        // La quête donne 10 XP ET 500 pièces. Le résumé immédiat ne peut citer que l'XP : à cet
+        // instant, le crédit n'est pas encore confirmé.
+        NamespacedKey questId = new NamespacedKey("rpgquest", "xp_and_money");
+        Files.writeString(questsDir.resolve("xp_and_money.yml"), """
+                id: rpgquest:xp_and_money
+                title: "Titre Mixte"
+                description: "Description"
+                category: test
+                steps:
+                  - id: kill_step
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 1
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 10
+                  - type: MONEY
+                    amount: 500
+                """);
+        engine.reloadQuestDefinitions();
+        PlayerMock player = addPlayer();
+        engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        rewardPayer.answer = new QuestRewardReceipt(QuestRewardReceipt.Status.CREDITED, 500L, 500L, 1);
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        player.nextMessage(); // en-tête du résumé
+        String xpLine = player.nextMessage();
+        assertTrue(xpLine.contains("10 XP"), () -> xpLine);
+        assertNull(player.nextMessage(), "le résumé immédiat ne peut pas encore parler du crédit");
+
+        // …et le message monétaire arrive bien ensuite, séparément.
+        assertTrue(awaitMessageContaining(player, "500").contains("500"));
+    }
+
+    @Test
+    void eachCompletionOfARepeatableQuestIsANewOccasion() throws Exception {
+        NamespacedKey questId = writeMoneyQuest("money_repeat.yml", "rpgquest:money_repeat", 50, true);
+        PlayerMock player = addPlayer();
+
+        engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        assertEquals(2, rewardPayer.calls.size(), "une quête répétable se paie à chaque complétion");
+        assertFalse(rewardPayer.calls.get(0).grantId().equals(rewardPayer.calls.get(1).grantId()),
+                "deux complétions distinctes doivent porter deux occasions distinctes, sinon la seconde "
+                        + "serait refusée comme un doublon et le joueur ne serait jamais repayé");
+    }
+
+    @Test
+    void aQuestWithoutAMoneyRewardNeverAsksTheEconomyForAnything() throws Exception {
+        // writeKillQuest ne donne que de l'XP : toucher au portefeuille ici serait un bug.
+        PlayerMock player = addPlayer();
+        engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        assertTrue(rewardPayer.calls.isEmpty());
+    }
+
+    /**
+     * Pompe les ticks jusqu'à voir passer le message attendu. Le crédit est asynchrone et son
+     * message est posté sur le thread principal : attendre un nombre FIXE de ticks rendrait le test
+     * vert au calme et rouge sous charge.
+     */
+    private String awaitMessageContaining(PlayerMock player, String needle) {
+        for (int i = 0; i < 100; i++) {
+            String message;
+            while ((message = player.nextMessage()) != null) {
+                if (message.contains(needle)) {
+                    return message;
+                }
+            }
+            server.getScheduler().performTicks(2);
+        }
+        throw new AssertionError("aucun message contenant « " + needle + " » après 100 tours de boucle");
+    }
+
+    private NamespacedKey writeMoneyQuest(String fileName, String id, int amount, boolean repeatable) throws Exception {
+        Files.writeString(questsDir.resolve(fileName), """
+                id: %s
+                title: "Titre Monnaie"
+                description: "Description"
+                category: test
+                repeatable: %s
+                steps:
+                  - id: kill_step
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 1
+                rewards:
+                  - type: MONEY
+                    amount: %d
+                """.formatted(id, repeatable, amount));
+        engine.reloadQuestDefinitions();
+        return NamespacedKey.fromString(id);
+    }
+
+    /** Payeur enregistreur : retient ce qui lui a été demandé et répond ce qu'on lui dit de répondre. */
+    private static final class RecordingRewardPayer implements QuestRewardPayer {
+
+        record Call(java.util.UUID playerId, String questId, String grantId, long amount) {
+        }
+
+        private final List<Call> calls = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private volatile QuestRewardReceipt answer =
+                new QuestRewardReceipt(QuestRewardReceipt.Status.CREDITED, 0L, 0L, 1);
+
+        @Override
+        public java.util.concurrent.CompletableFuture<QuestRewardReceipt> payQuestReward(
+                java.util.UUID playerId, String questId, String grantId, long amount) {
+            calls.add(new Call(playerId, questId, grantId, amount));
+            return java.util.concurrent.CompletableFuture.completedFuture(answer);
+        }
     }
 }

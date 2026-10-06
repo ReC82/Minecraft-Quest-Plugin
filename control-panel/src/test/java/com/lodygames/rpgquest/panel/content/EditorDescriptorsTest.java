@@ -19,7 +19,8 @@ class EditorDescriptorsTest {
     private static final Set<String> ENGINE_OBJECTIVES = Set.of(
             "BREAK_BLOCK", "PLACE_BLOCK", "KILL_ENTITY", "COLLECT_ITEM", "CRAFT_ITEM",
             "TALK_TO_NPC", "REACH_LOCATION");
-    private static final Set<String> ENGINE_REWARDS = Set.of("EXPERIENCE", "ITEM", "VARIABLE", "COMMAND");
+    private static final Set<String> ENGINE_REWARDS =
+            Set.of("EXPERIENCE", "ITEM", "VARIABLE", "COMMAND", "MONEY");
 
     /** Noms de champ YAML réellement lus par {@code QuestDefinitionParser}. */
     private static final Set<String> ENGINE_FIELDS = Set.of(
@@ -118,5 +119,29 @@ class EditorDescriptorsTest {
     private static Descriptors.Field field(String kind, String name) {
         return Descriptors.any(kind).orElseThrow().fields().stream()
                 .filter(f -> f.name().equals(name)).findFirst().orElseThrow();
+    }
+
+    @Test
+    void theMoneyRewardCarriesOnlyAnAmountAndSaysItCreditsAWalletNotAnItem() {
+        Descriptors.Descriptor money = Descriptors.reward("MONEY").orElseThrow();
+
+        // Un seul champ : un montant. Pas de « matériau de la monnaie », pas de nom d'objet —
+        // la monnaie RPGQuest est un solde, et le confondre avec un item est l'erreur à empêcher.
+        assertEquals(1, money.fields().size());
+        assertEquals("amount", money.fields().get(0).name());
+        assertEquals(Descriptors.FieldType.INT, money.fields().get(0).type());
+        assertTrue(money.fields().get(0).required());
+
+        String hint = money.hint().toLowerCase(java.util.Locale.ROOT);
+        assertTrue(hint.contains("portefeuille"), money.hint());
+        assertTrue(hint.contains("aucun objet"), () -> "l'aide doit dire qu'aucun objet n'est donné : " + money.hint());
+    }
+
+    @Test
+    void theMoneyRewardIsFoundByItsKindAndItsFieldsAreWhitelisted() {
+        assertTrue(Descriptors.any("MONEY").isPresent());
+        assertEquals(java.util.Set.of("kind", "amount"), Descriptors.fieldNames("MONEY"));
+        // Changer de type ne doit jamais conserver un champ d'un autre type (#46, point 17).
+        assertFalse(Descriptors.fieldNames("MONEY").contains("material"));
     }
 }

@@ -1,0 +1,22 @@
+# QUÊTE DE TEST MANUEL — récompense MONÉTAIRE sur une quête RÉPÉTABLE (issue #16).
+# Sert à vérifier le point le plus délicat : chaque complétion est une occasion
+# distincte, donc payée à nouveau, alors qu'un rejeu de la MÊME complétion ne
+# doit jamais payer deux fois. Montant de test, aucune décision d'équilibrage.
+# Voir docs/MANUAL_TEST_PLAN.md, TC-250.
+id: rpgquest:test_money_repeatable
+title: "<red>[TEST] Pièces, quête répétable</red>"
+description: "<gray>Quête de test manuel — récompense MONEY répétable. Casse 1 bloc de terre, puis reprends la quête.</gray>"
+category: test
+icon: GOLD_NUGGET
+repeatable: true
+
+steps:
+  - id: break_dirt
+    objectives:
+      - type: BREAK_BLOCK
+        material: DIRT
+        amount: 1
+
+rewards:
+  - type: MONEY
+    amount: 25

@@ -70,8 +70,27 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   d'inventaire n'est de la monnaie, aucune monnaie reconnue par nom ou lore. Une monnaie physique
   (#138) serait une **seconde source** : décision de gameplay non prise, et **aucune conversion ni
   migration** n'a eu lieu. `TESTER`/`READ_ONLY` lisent sans créer ; `BUILDER`/`CONTENT_EDITOR` n'ont
-  aucun accès. Manque identifié : `RewardType` n'a pas de type monnaie, donc une quête ne peut pas
-  encore créditer.
+  aucun accès.
+- **Récompense monétaire de quête et bourse en jeu (issue #16)** — nouveau `RewardType.MONEY`
+  (`MoneyReward`, champ `amount` entier > 0), lu par `QuestDefinitionParser`, éditable depuis
+  l'éditeur de quête du panel (descripteur `MONEY`, icône de pièce), exporté dans les content packs
+  et décrit dans les relevés de l'agent. **Crédité au plus une fois par occasion de complétion** :
+  le moteur fournit un identifiant d'occasion stable (`ActiveQuestProgress#rewardGrantId`) et
+  `WalletRepository#creditQuestReward` réserve cet identifiant dans `quest_reward_grants` (**schéma
+  V25**) *dans la même transaction SQL* que la mise à jour du portefeuille — donc ni double
+  paiement sur un retry, ni récompense perdue sur une panne ; une quête répétable ouvre une
+  nouvelle occasion à chaque reprise (`occurrence` numérotée par joueur et par quête). **Aucune
+  seconde source de vérité** : `wallets` reste le seul solde, `quest_reward_grants` ne répond qu'à
+  « cette occasion a-t-elle déjà été payée ? ». Trace `transactions` de type `QUEST_REWARD`,
+  contexte `quest:<id>#<occasion>`. **Le message de gain part seulement après confirmation de la
+  base** (`quest.reward-money-credited`, avec le solde relu) ; un échec est dit explicitement
+  (`quest.reward-money-failed`) et une occasion déjà payée ne dit **rien** au joueur. Les deux
+  messages passent par le chat, jamais par l'ActionBar (réservée à la progression des objectifs).
+  **Bourse** affichée dans le journal de quêtes (liste et vue détail, emplacement inerte), relue
+  après chaque transaction, « indisponible » en cas d'erreur plutôt qu'un `0` trompeur. **Aucun
+  plafond moteur** sur le montant (équilibrage = décision de jeu) ; le panel **avertit** au-delà de
+  1 000 000. Restent non décidés : monnaie physique et conversion solde ↔ objet (#138), perte à la
+  mort, prix et règles d'échange.
 - **Rechargement du contenu dans le runtime (issue #131)** — service **central**
   `content.reload.ContentReloadService`, seul point qui permute un ensemble actif : dry-run de
   chaque famille, **annulation totale** sur la moindre erreur de contenu (l'ancien runtime valide
@@ -556,7 +575,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (« Créer une story »), ou « Modifier » sur une carte : formulaire guidé multi-sections
   (Général / Prérequis / Objectifs / Récompenses / Variables ; Général / Chaîne de quêtes),
   **sans JavaScript** (aller-retour serveur, boutons `_action` pour ajouter / supprimer /
-  réordonner). Les 7 types d'objectifs et 4 récompenses **réels** du moteur sont décrits par des
+  réordonner). Les 7 types d'objectifs et 5 récompenses **réels** du moteur sont décrits par des
   descripteurs (`Descriptors`) avec champs adaptés ; les valeurs (entité / matériau / PNJ /
   quête / monde) sont proposées par `<datalist>` alimentées par le dernier relevé de l'agent +
   des listes curées. `QuestValidator` / `StoryValidator` produisent des diagnostics

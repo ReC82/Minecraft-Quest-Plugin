@@ -20,6 +20,7 @@ import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.story.StoryRegistry;
 import com.lodygames.rpgquest.story.StoryService;
 import com.lodygames.rpgquest.story.model.StoryState;
+import com.lodygames.rpgquest.economy.QuestRewardPayer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
@@ -90,7 +91,8 @@ class RpgAdminTestShortcutsCommandTest {
         NpcIdentityService npcIdentityService = new NpcIdentityService(
                 plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
         questProgressEngine = new QuestProgressEngine(
-                plugin, questEngine, questProgressRepository, variableRepository, messagesService, npcIdentityService);
+                plugin, questEngine, questProgressRepository, variableRepository, messagesService, npcIdentityService,
+                QuestRewardPayer.unavailable());
         questProgressEngine.start();
 
         Path storiesDir = tempDir.resolve("stories");

@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.LocalizedText;
+import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.ObjectiveType;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
@@ -430,6 +431,15 @@ final class QuestDefinitionParser {
                     yield null;
                 }
                 yield new CommandReward(command);
+            }
+            // Aucun plafond imposé ici : le montant d'une récompense est une décision de gameplay
+            // (équilibrage), pas une règle technique. Seul l'invariant vérifiable est appliqué —
+            // strictement positif, car créditer 0 ou un négatif n'a pas de sens et le portefeuille
+            // le refuserait de toute façon. Le garde-fou contre la faute de frappe vit côté panel,
+            // sous forme d'AVERTISSEMENT, pour ne jamais refuser un montant volontairement élevé.
+            case MONEY -> {
+                Integer amount = parsePositiveInt(section, "amount", context, errors);
+                yield amount != null ? new MoneyReward(amount) : null;
             }
         };
     }

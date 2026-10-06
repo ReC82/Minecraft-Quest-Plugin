@@ -143,6 +143,9 @@ public final class QuestValidator {
                 out.add(Diagnostic.warning(ctx, "Récompense « commande console » : sensible. Elle sera validée "
                         + "strictement côté serveur au chargement ; pas de console générique."));
             }
+            if ("MONEY".equalsIgnoreCase(r.getOrDefault("kind", ""))) {
+                moneyRewardWarnings(out, ctx, r.get("amount"));
+            }
         }
 
         // --- Variables ---
@@ -153,6 +156,37 @@ public final class QuestValidator {
             }
         }
         return out;
+    }
+
+    /**
+     * Seuil au-delà duquel un montant de récompense monétaire est <strong>signalé</strong>
+     * (issue #16). Ce n'est pas un plafond : l'équilibrage économique est une décision de jeu, pas
+     * une règle technique, et refuser un gros montant reviendrait à la prendre à la place de
+     * l'auteur. L'avertissement n'existe que pour attraper la faute de frappe à six zéros, qui est
+     * la seule erreur réellement coûteuse ici.
+     */
+    static final long MONEY_REWARD_WARNING_THRESHOLD = 1_000_000L;
+
+    private static void moneyRewardWarnings(List<Diagnostic> out, String ctx, String rawAmount) {
+        out.add(Diagnostic.info(ctx, "Récompense en pièces : crédite le portefeuille persistant du joueur "
+                + "(aucun objet donné, aucun item compté comme monnaie). Le crédit est tracé au journal "
+                + "des transactions et ne peut pas avoir lieu deux fois pour la même complétion."));
+        Long amount = parseLong(rawAmount);
+        if (amount != null && amount > MONEY_REWARD_WARNING_THRESHOLD) {
+            out.add(Diagnostic.warning(ctx, "Montant de " + amount + " pièces : inhabituellement élevé. "
+                    + "Rien ne l'interdit — vérifie seulement qu'il ne s'agit pas d'une faute de frappe."));
+        }
+    }
+
+    private static Long parseLong(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private interface DescriptorLookup {

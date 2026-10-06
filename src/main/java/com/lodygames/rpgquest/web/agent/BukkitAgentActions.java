@@ -74,6 +74,7 @@ import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.CraftItemObjective;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
+import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
@@ -2027,6 +2028,7 @@ public final class BukkitAgentActions implements AgentActions {
                 case ItemReward r -> "+" + r.amount() + "x " + r.material();
                 case VariableReward r -> "variable " + r.key() + " = " + r.value();
                 case CommandReward r -> "commande console : " + truncate(r.command(), 60);
+                case MoneyReward r -> "+" + r.amount() + " pièce(s)";
             });
         }
         return out;
@@ -2062,6 +2064,8 @@ public final class BukkitAgentActions implements AgentActions {
                         "variable " + r.key() + " = " + r.value());
                 case CommandReward r -> new RewardSummary("COMMAND", 0, null, null, r.command(),
                         "commande console : " + r.command());
+                case MoneyReward r -> new RewardSummary("MONEY", r.amount(), null, null, null,
+                        "+" + r.amount() + " pièce(s)");
             });
         }
         return out;

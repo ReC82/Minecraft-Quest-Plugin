@@ -5,6 +5,8 @@ import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.QuestProgressRecord;
 import com.lodygames.rpgquest.database.QuestProgressRepository;
+import com.lodygames.rpgquest.economy.QuestRewardPayer;
+import com.lodygames.rpgquest.economy.QuestRewardReceipt;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.QuestLoadReport;
 import com.lodygames.rpgquest.quest.QuestMessagesService;
@@ -13,6 +15,7 @@ import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
+import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.ObjectiveType;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
@@ -74,6 +77,7 @@ public final class QuestProgressEngine implements PluginService {
     private final PlayerVariableRepository variableRepository;
     private final QuestMessagesService messagesService;
     private final NpcIdentityService npcIdentityService;
+    private final QuestRewardPayer rewardPayer;
     private final Logger logger;
 
     private final Map<UUID, Map<NamespacedKey, ActiveQuestProgress>> activeByPlayer = new ConcurrentHashMap<>();
@@ -83,13 +87,14 @@ public final class QuestProgressEngine implements PluginService {
 
     public QuestProgressEngine(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressRepository repository,
                                 PlayerVariableRepository variableRepository, QuestMessagesService messagesService,
-                                NpcIdentityService npcIdentityService) {
+                                NpcIdentityService npcIdentityService, QuestRewardPayer rewardPayer) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.repository = repository;
         this.variableRepository = variableRepository;
         this.messagesService = messagesService;
         this.npcIdentityService = npcIdentityService;
+        this.rewardPayer = rewardPayer;
         this.logger = plugin.getSLF4JLogger();
     }
 
@@ -736,7 +741,7 @@ public final class QuestProgressEngine implements PluginService {
             return null;
         });
 
-        List<Component> rewardLines = grantRewards(player, quest);
+        List<Component> rewardLines = grantRewards(player, quest, progress.rewardGrantId());
         showQuestCompleted(player, quest, rewardLines);
         notifyChanged(playerId);
     }
@@ -799,8 +804,13 @@ public final class QuestProgressEngine implements PluginService {
      * ce qui a été réellement accordé (pour {@link #showQuestCompleted}). {@code VariableReward} n'a
      * pas de ligne : c'est un état interne du plugin (ex. un drapeau consulté par une condition de
      * dialogue), jamais quelque chose que le joueur reçoit visiblement.
+     *
+     * <p>{@code MoneyReward} n'a pas de ligne ici non plus, et pour une raison différente et
+     * importante (issue #16) : son crédit est <strong>asynchrone</strong>. Une ligne construite
+     * maintenant annoncerait un gain avant d'avoir la moindre preuve qu'il a eu lieu. Le message
+     * part donc plus tard, depuis {@link #payMoneyReward}, et seulement si la base a confirmé.</p>
      */
-    private List<Component> grantRewards(Player player, QuestDefinition quest) {
+    private List<Component> grantRewards(Player player, QuestDefinition quest, String grantId) {
         List<Component> lines = new ArrayList<>();
         for (QuestReward reward : quest.rewards()) {
             switch (reward) {
@@ -828,9 +838,61 @@ public final class QuestProgressEngine implements PluginService {
                     plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), command);
                     lines.add(messagesService.current().format("quest.reward-line-special"));
                 }
+                case MoneyReward r -> payMoneyReward(player, quest, grantId, r.amount());
             }
         }
         return lines;
+    }
+
+    /**
+     * Crédite la récompense monétaire puis — <strong>seulement si la base l'a confirmé</strong> —
+     * annonce le gain et le nouveau solde (issue #16).
+     *
+     * <p>Trois propriétés tenues ici, chacune pour une raison concrète :</p>
+     * <ul>
+     *   <li><strong>jamais deux fois</strong> : {@code grantId} vient de la progression du joueur et
+     *       ne change pas pour une même complétion, donc un rejeu se heurte à la réservation en
+     *       base et ressort {@code ALREADY_CREDITED}, sans toucher au solde ;</li>
+     *   <li><strong>jamais annoncé sans crédit</strong> : un échec de persistance produit un message
+     *       d'échec explicite, pas un silence et pas un faux succès. Le joueur sait qu'il doit le
+     *       signaler, et l'administrateur peut créditer depuis le panel avec une raison ;</li>
+     *   <li><strong>le chat, jamais l'ActionBar</strong> : la progression des objectifs occupe
+     *       l'ActionBar et se remplace en place. Y écrire une notification d'économie effacerait
+     *       durablement l'affichage de progression — exactement ce qu'il ne faut pas.</li>
+     * </ul>
+     */
+    private void payMoneyReward(Player player, QuestDefinition quest, String grantId, int amount) {
+        UUID playerId = player.getUniqueId();
+        String questId = quest.id().toString();
+        rewardPayer.payQuestReward(playerId, questId, grantId, amount)
+                .exceptionally(error -> {
+                    logger.error("Échec du crédit de la récompense monétaire de {} pour {} (occasion {})",
+                            questId, playerId, grantId, error);
+                    return QuestRewardReceipt.failed();
+                })
+                .thenAccept(receipt -> runOnMainThread(() -> {
+                    Player online = plugin.getServer().getPlayer(playerId);
+                    if (online == null) {
+                        // Déconnecté entre la remise et la confirmation : l'argent est bel et bien
+                        // en base (le portefeuille est persistant), seul le message est perdu. Il
+                        // reverra son solde dans le journal ou avec /money.
+                        return;
+                    }
+                    switch (receipt.status()) {
+                        case CREDITED -> online.sendMessage(messagesService.current().format("quest.reward-money-credited",
+                                Placeholder.parsed("quest", quest.title().base()),
+                                Placeholder.unparsed("amount", String.valueOf(receipt.amount())),
+                                Placeholder.unparsed("balance", String.valueOf(receipt.balanceAfter()))));
+                        case ALREADY_CREDITED -> logger.warn(
+                                "Récompense monétaire de {} déjà créditée pour {} (occasion {}, complétion n°{}) : "
+                                        + "aucun second crédit, aucun message au joueur.",
+                                questId, playerId, grantId, receipt.occurrence());
+                        case FAILED -> online.sendMessage(
+                                messagesService.current().format("quest.reward-money-failed"));
+                    }
+                    // Un solde affiché doit suivre la transaction : le journal ouvert se recompose.
+                    notifyChanged(playerId);
+                }));
     }
 
     private int requiredAmount(QuestObjective objective) {

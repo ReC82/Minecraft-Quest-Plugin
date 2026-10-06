@@ -30,7 +30,17 @@ Deux familles :
 ```
 
 - `start … force` ignore les prérequis.
-- `complete` applique les récompenses **une seule fois**.
+- `complete` applique les récompenses **une seule fois**. Une récompense **monétaire** (`MONEY`,
+  issue #16) est en plus idempotente **en base** : la même complétion ne peut pas être payée deux
+  fois, même en cas de double clic ou de retry.
+- Une récompense `MONEY` crédite le **portefeuille persistant** (le solde lu par le bloc
+  « Monnaie » de la fiche joueur, par `/money` et par les marchands). Elle ne donne **aucun
+  objet** : aucun objet d'inventaire n'est jamais compté comme de la monnaie. Le montant est une
+  décision d'équilibrage — rien ne le plafonne côté serveur, l'éditeur se contente d'avertir
+  au-delà d'un million.
+- **Un montant saisi dans l'éditeur n'agit pas tout seul** : la quête doit être *publiée* sur le
+  serveur, puis *rechargée* (voir « Rechargement du contenu »). Tant qu'elle n'est que dans la
+  source, le joueur ne sera pas payé — et aucune erreur ne s'affichera en jeu.
 - `reset` remet la quête à zéro (état + compteurs d'objectifs) ; **n'annule pas** les récompenses
   déjà données ; utilisable joueur hors ligne.
 

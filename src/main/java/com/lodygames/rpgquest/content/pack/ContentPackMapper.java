@@ -33,6 +33,7 @@ import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.LocalizedText;
+import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
@@ -107,6 +108,7 @@ public final class ContentPackMapper {
             case ItemReward x -> QuestPackEntry.Reward.item(x.material().name(), x.amount());
             case VariableReward x -> QuestPackEntry.Reward.variable(x.key(), x.value());
             case CommandReward x -> QuestPackEntry.Reward.command(x.command());
+            case MoneyReward x -> QuestPackEntry.Reward.money(x.amount());
         };
     }
 

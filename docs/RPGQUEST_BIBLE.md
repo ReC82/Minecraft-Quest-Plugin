@@ -144,7 +144,7 @@ Détail complet : [docs/ADMIN_TEST_SHORTCUTS.md](ADMIN_TEST_SHORTCUTS.md). Outil
 | Commande | Effet | Cible | Récompenses |
 |---|---|---|---|
 | `/rpgadmin quest start <joueur> <quest-id> [force]` | Démarre la quête (`QuestProgressEngine.accept`). Prérequis respectés sauf `force`. Id inconnu refusé ; pas de doublon d'une quête active. | en ligne | aucune (l'acceptation n'en donne jamais) |
-| `/rpgadmin quest complete <joueur> <quest-id>` | Complète sans simuler les objectifs (`forceComplete`). | en ligne | **appliquées une seule fois** : `VARIABLE` (ex. `CLAIM_TIER_1=true`), `EXPERIENCE`, `ITEM`, `COMMAND`. Quête déjà `COMPLETED` → « déjà terminée », rien re-crédité. |
+| `/rpgadmin quest complete <joueur> <quest-id>` | Complète sans simuler les objectifs (`forceComplete`). | en ligne | **appliquées une seule fois** : `VARIABLE` (ex. `CLAIM_TIER_1=true`), `EXPERIENCE`, `ITEM`, `COMMAND`, `MONEY` (le crédit monétaire est en plus idempotent **en base**, par occasion de complétion — voir « Récompense monétaire `MONEY` »). Quête déjà `COMPLETED` → « déjà terminée », rien re-crédité. |
 | `/rpgadmin quest reset <joueur> <quest-id>` | Supprime progression + compteurs → quête rejouable (`resetQuest`). | en ligne **ou** hors ligne | **n'annule pas** les récompenses déjà données (XP, objets, variables, effets de commande) — limite documentée. |
 | `/rpgadmin story advance <joueur> <storyId>` | Démarre la story si besoin, `forceComplete` de sa quête courante, avance d'un cran (accepte la suivante ou termine la story). Le message dit quelle étape tester. | en ligne | via `forceComplete`, une seule fois par quête |
 | `/rpgadmin story complete <joueur> <storyId>` | Enchaîne `advance` jusqu'au bout, dans l'ordre, borné. | en ligne | via `forceComplete`, une seule fois par quête |
@@ -393,7 +393,54 @@ Champ `giver` (optionnel, racine de la quête) : id logique stable du **PNJ donn
 
 Récompenses (`rewards[].type`, hors périmètre strict de la question mais nécessaires à tout exemple complet) : `EXPERIENCE` (`amount`), `ITEM`, `VARIABLE` (`key`/`value`), `COMMAND` (`command`, liste blanche via `dialogue.allowed-commands` **non requise** ici — seules les actions `RUN_SAFE_COMMAND` de dialogue sont filtrées, une récompense `COMMAND` de quête ne l'est pas, vérifié dans `QUEST_FORMAT.md`/`QuestDefinitionParser`).
 
+**Récompense monétaire `MONEY` (`amount`, entier > 0 — issue #16).** Crédite le **portefeuille
+persistant** du joueur (`wallets`, la même source que `/money`, les marchands, le marché et le
+Control Panel). Elle ne donne **aucun objet** : la monnaie RPGQuest est un solde, et aucun objet
+d'inventaire n'est jamais compté comme de l'argent.
+
+- **Aucun plafond côté moteur.** Le montant est une décision d'équilibrage, pas une règle
+  technique : seul l'invariant vérifiable est appliqué (strictement positif). Le panel
+  **avertit** au-delà de 1 000 000 (`QuestValidator.MONEY_REWARD_WARNING_THRESHOLD`) pour attraper
+  la faute de frappe, sans jamais refuser.
+- **Créditée au plus une fois par occasion de complétion.** Le moteur fournit un identifiant
+  d'occasion stable (`ActiveQuestProgress#rewardGrantId`) ; `WalletRepository#creditQuestReward`
+  réserve cet identifiant dans `quest_reward_grants` **et** met à jour le portefeuille dans la
+  **même transaction SQL**. Il n'existe donc aucun instant où l'argent serait crédité sans trace
+  (un retry doublerait le gain) ni tracé sans être crédité (le joueur perdrait sa récompense).
+  Rejouer la même occasion ne recrédite rien ; une erreur SQL annule tout et laisse l'occasion
+  payable.
+- **Quête répétable** : chaque acceptation crée une nouvelle progression, donc une nouvelle
+  occasion, légitimement payée. `quest_reward_grants.occurrence` numérote ces complétions par
+  joueur et par quête.
+- **Traçabilité** : une ligne `transactions` de type `QUEST_REWARD` avec le contexte
+  `quest:<id>#<occasion>` — rattachable à une complétion précise des mois plus tard, et non à un
+  « gain de jeu » anonyme.
+- **Table `quest_reward_grants` (schéma V25)** : elle ne contient **aucun solde**. `wallets` reste
+  la seule source de vérité ; cette table ne répond qu'à « cette occasion a-t-elle déjà été
+  payée ? ». Volontairement **sans** clé étrangère vers `player_profiles`, contrairement à
+  `transactions` : un `ON DELETE CASCADE` rendrait un profil supprimé puis recréé payable une
+  seconde fois pour les mêmes occasions.
+- **Hors périmètre à ce jour** (décisions de gameplay non prises) : monnaie physique et conversion
+  solde ↔ objet, perte à la mort, prix, règles d'échange.
+
 **Feedback de remise** (`QuestProgressEngine#turnIn`) : un Title/Subtitle bref (`quest.completed-title`/`-subtitle`, `messages.yml`) annonce la fin, puis un résumé est envoyé dans le chat (`quest.reward-summary-header` + une ligne par récompense **réellement accordée** — `quest.reward-line-experience`/`-item`/`-special`). `VARIABLE` n'a pas de ligne (état interne, pas une récompense visible du joueur) ; `COMMAND` affiche une ligne générique (« Récompense spéciale ») car le contenu d'une commande arbitraire n'est pas inspectable — jamais de nom d'objet inventé. Une quête sans `rewards` n'envoie aucun résumé chat. Le journal (`QuestJournalService`) continue d'afficher les récompenses **prévues** dans le lore de chaque quête, y compris avant complétion.
+
+`MONEY` n'a **pas** de ligne dans ce résumé synchrone, et pour une raison précise : son crédit est
+asynchrone. Une ligne construite à cet instant annoncerait un gain avant d'avoir la moindre preuve
+qu'il a eu lieu. Le message part donc **séparément**, un court instant plus tard, et seulement
+après la réponse de la base : `quest.reward-money-credited` (montant **et** nouveau solde relu en
+base) en cas de succès, `quest.reward-money-failed` en cas d'échec de persistance — jamais de
+silence et jamais de faux succès. Si l'occasion était déjà payée, **rien** n'est dit au joueur
+(ce serait un gain fantôme) et un avertissement part dans les logs serveur. Ces deux messages
+passent par le **chat** et jamais par l'ActionBar, qui appartient à la progression des objectifs :
+une notification d'économie y effacerait l'avancement affiché.
+
+**Bourse dans le journal de quêtes** (`QuestJournalService`, issue #16) : le solde réel est affiché
+dans un emplacement **inerte** de la barre du haut de la liste (`BALANCE_SLOT`) et de la vue détail
+(`DETAIL_BALANCE_SLOT`) — l'objectif explicite étant que le solde soit lisible dans une interface
+déjà utilisée, sans imposer de connaître `/money`. Il est relu à chaque ouverture et après chaque
+transaction (le crédit déclenche `notifyChanged`, qui recompose un menu ouvert). Une erreur de
+lecture affiche « indisponible » avec son motif : jamais un `0` inventé, qui ferait croire à un vol.
 
 ### Éditeur guidé de quêtes et de stories dans PlugAdmin (issue #46)
 
@@ -406,7 +453,7 @@ Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et
 - **Formulaire guidé** : sections Général / Prérequis / Objectifs / Récompenses /
   Variables (quête) et Général / Chaîne de quêtes (story). Chaque type d'objectif
   (`KILL_ENTITY`, `COLLECT_ITEM`, `CRAFT_ITEM`, `BREAK_BLOCK`, `PLACE_BLOCK`, `TALK_TO_NPC`,
-  `REACH_LOCATION`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`) est décrit par
+  `REACH_LOCATION`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`, `MONEY`) est décrit par
   **un seul descripteur** (`Descriptors`) qui pilote ensemble libellé, description, champs, aide,
   listes proposées et validation. **Choisir le type n'affiche que les champs pertinents** ; le
   changement est immédiat (JavaScript progressif — `panel.js`) et **efface** les valeurs saisies

@@ -20,6 +20,7 @@ import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.travel.model.Destination;
 import com.lodygames.rpgquest.travel.model.PortalDefinition;
+import com.lodygames.rpgquest.economy.QuestRewardPayer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
@@ -93,7 +94,8 @@ class PortalServiceTest {
         NpcIdentityService npcIdentityService = new NpcIdentityService(
                 plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
         questProgressEngine = new QuestProgressEngine(
-                plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService);
+                plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService,
+                QuestRewardPayer.unavailable());
         questProgressEngine.start();
 
         portalRegistry = new YamlPortalRegistry(tempDir.resolve("portals"), plugin.getSLF4JLogger());

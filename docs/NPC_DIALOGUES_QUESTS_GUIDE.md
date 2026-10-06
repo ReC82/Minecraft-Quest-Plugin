@@ -395,6 +395,7 @@ requis pour terminer l'étape) ; une quête peut avoir plusieurs étapes
 | `ITEM` | `material`, `amount` | Objet vanilla donné (au sol si inventaire plein). |
 | `VARIABLE` | `key`, `value` | Écrit une variable joueur persistante. |
 | `COMMAND` | `command` | Commande console exécutée à la remise, `%player%` substitué. **Aucune liste blanche** ici (contrairement à `RUN_SAFE_COMMAND` des dialogues) — à utiliser avec prudence. |
+| `MONEY` | `amount` | Crédite le **portefeuille persistant** du joueur (même solde que `/money`, les marchands et le Control Panel). **Aucun objet donné** : la monnaie est un solde, et aucun objet d'inventaire n'est reconnu comme de l'argent. Crédité **au plus une fois par complétion** ; une quête `repeatable` se paie à chaque reprise. Le message de gain arrive **après** confirmation de la base, un court instant après le résumé. |
 
 **Note indépendante du système de récompenses :** terminer *n'importe
 quelle* quête accorde aussi automatiquement un bonus fixe d'XP RPG (piste

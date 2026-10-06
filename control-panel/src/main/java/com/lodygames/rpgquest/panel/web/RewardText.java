@@ -38,6 +38,9 @@ public final class RewardText {
 
     private static final Pattern XP = Pattern.compile("^\\+?\\s*(\\d+)\\s*XP$", Pattern.CASE_INSENSITIVE);
     private static final Pattern ITEM = Pattern.compile("^\\+?\\s*(\\d+)\\s*x\\s+(.+)$", Pattern.CASE_INSENSITIVE);
+    /** Format produit par {@code BukkitAgentActions.describeRewards} pour une récompense MONEY (#16). */
+    private static final Pattern MONEY =
+            Pattern.compile("^\\+?\\s*(\\d+)\\s*pièce\\(s\\)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern VARIABLE = Pattern.compile("^variable\\s+(\\S+)\\s*=\\s*(.+)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern COMMAND = Pattern.compile("^commande console\\s*:\\s*(.+)$", Pattern.CASE_INSENSITIVE);
 
@@ -73,6 +76,9 @@ public final class RewardText {
                         : "Variable : " + MiniText.prettifyId(key) + " → " + value;
                 yield new Reward(label, "variable " + key + " = " + value);
             }
+            // Issue #16 : « pièces » et non « objet ». La distinction compte pour un admin — une
+            // récompense monétaire ne remplit pas l'inventaire, elle crédite un solde persistant.
+            case "MONEY" -> new Reward(asLong(summary.get("amount")) + " pièce(s)", null);
             case "COMMAND" -> fromCommand(str(summary.get("command")).trim());
             default -> parse(str(summary.get("raw")));
         };
@@ -102,6 +108,12 @@ public final class RewardText {
         Matcher m = XP.matcher(s);
         if (m.matches()) {
             return new Reward("+" + m.group(1) + " XP", null);
+        }
+
+        // AVANT le motif ITEM : « 100 pièce(s) » ne doit pas être lu comme un objet nommé.
+        m = MONEY.matcher(s);
+        if (m.matches()) {
+            return new Reward(m.group(1) + " pièce(s)", null);
         }
 
         m = ITEM.matcher(s);

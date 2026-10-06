@@ -147,8 +147,10 @@ class PlayerResetServiceTest {
         messagesService.start();
         NpcIdentityService npcIdentityService = new NpcIdentityService(
                 plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
+        EconomyService economyService = new EconomyService(new WalletRepository(database));
         questProgressEngine = new QuestProgressEngine(
-                plugin, questEngine, questProgressRepository, variableRepository, messagesService, npcIdentityService);
+                plugin, questEngine, questProgressRepository, variableRepository, messagesService, npcIdentityService,
+                economyService);
         questProgressEngine.start();
 
         StoryRegistry storyRegistry = new StoryRegistry(tempDir.resolve("stories"), plugin.getSLF4JLogger());
@@ -185,13 +187,13 @@ class PlayerResetServiceTest {
         customItemRegistry.start();
 
         questJournalService = new QuestJournalService(
-                plugin, questEngine, questProgressEngine, variableRepository, customItemRegistry, new JournalConfig(true));
+                plugin, questEngine, questProgressEngine, variableRepository, customItemRegistry, economyService,
+                new JournalConfig(true));
         questJournalService.start();
 
         YamlDestinationRegistry destinationRegistry =
                 new YamlDestinationRegistry(tempDir.resolve("destinations"), plugin.getSLF4JLogger());
         destinationRegistry.start();
-        EconomyService economyService = new EconomyService(new WalletRepository(database));
         portalService = new PortalService(plugin, portalRegistry, destinationRegistry, economyService,
                 questProgressEngine, portalCooldownRepository);
         portalService.start();

@@ -27,8 +27,10 @@ steps:
         npc: woodcutter_bob
 
 rewards:
-  - type: EXPERIENCE               # EXPERIENCE | ITEM | VARIABLE | COMMAND
+  - type: EXPERIENCE               # EXPERIENCE | ITEM | VARIABLE | COMMAND | MONEY
     amount: 30
+  - type: MONEY                    # crédite le portefeuille persistant (aucun objet donné)
+    amount: 100
   - type: VARIABLE
     key: woodcutter_reputation
     value: "1"
@@ -38,6 +40,31 @@ rewards:
 variables:
   wood_collected: "0"
 ```
+
+## Récompense `MONEY`
+
+`MONEY` crédite le **portefeuille persistant** du joueur : le même solde que
+`/money`, les marchands, le marché et le Control Panel. Elle ne donne
+**aucun objet** — la monnaie RPGQuest est un solde, et aucun objet
+d'inventaire n'est jamais reconnu comme de l'argent.
+
+`amount:` est un entier **strictement positif**. Le moteur n'impose aucun
+plafond : le montant est une décision d'équilibrage, pas une règle technique.
+L'éditeur du Control Panel se contente d'**avertir** au-delà d'un million,
+pour attraper la faute de frappe à six zéros.
+
+Le crédit a lieu **au plus une fois par complétion** : la réservation de
+l'occasion (table `quest_reward_grants`) et la mise à jour du portefeuille
+vivent dans la **même transaction SQL**, donc ni double paiement sur un
+retry, ni récompense perdue sur une panne. Une quête `repeatable: true` ouvre
+une nouvelle occasion à chaque reprise et se paie donc à nouveau. Chaque
+crédit laisse une ligne `transactions` de type `QUEST_REWARD` dont le
+contexte cite la quête et l'occasion.
+
+Le message de gain arrive **séparément** du résumé de fin de quête, un court
+instant plus tard, et seulement après confirmation de la base : il n'est
+jamais affiché pour un gain qui n'a pas eu lieu. Un échec de persistance est
+dit explicitement au joueur.
 
 ## Champ `giver` (optionnel)
 

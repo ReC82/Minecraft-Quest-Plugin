@@ -2916,6 +2916,116 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-250 — Récompense monétaire de quête et solde dans l'interface joueur (issue #16)
+
+-   **Fonctionnalité testée :** nouveau type de récompense `MONEY` (YAML, éditeur de quête du
+    panel, validation backend), crédit **unique** à la remise, confirmation lisible, solde visible
+    dans le journal de quêtes, et persistance après redémarrage.
+-   **Préconditions :** JAR de cette session déployé, serveur redémarré, panel déployé.
+-   **IMPORTANT — contenu et identités de test uniquement.**
+    -   Ne posez **aucun** montant sur une quête réelle. Les deux quêtes de test sont fournies :
+        `docs/manual-tests/rewards/test_money_reward.yml` et `test_money_repeatable.yml`.
+    -   **Ne créditez ni ne débitez votre propre compte.** Utilisez un joueur de test.
+    -   Les montants des fichiers de test sont des valeurs de **test**, pas des décisions
+        d'équilibrage économique.
+
+-   **A. Éditeur de quête du panel (le chemin que vous utiliserez vraiment) :**
+    1.  `/quests` → **Nouvelle quête**. Dans « Récompenses », ouvrir la liste des types.
+        **Attendu** : un type **« Pièces (monnaie) »** apparaît, avec une icône de pièce, et son
+        aide dit que le crédit va au **portefeuille persistant**, qu'**aucun objet n'est donné** et
+        qu'aucun objet d'inventaire n'est compté comme de la monnaie.
+    2.  Ajouter cette récompense, saisir `250`, enregistrer. **Attendu** : enregistrement accepté,
+        et la bannière dit explicitement **source → publié → rechargé** (et non « au prochain
+        chargement du serveur »).
+    3.  Rouvrir la quête. **Attendu** : la récompense monétaire est toujours là avec `250` — rien
+        n'a été perdu ni transformé.
+    4.  Ajouter aussi une récompense d'**XP** et une d'**objet**, enregistrer, rouvrir.
+        **Attendu** : les trois récompenses sont présentes, **dans le même ordre**.
+    5.  Mettre le montant à `0`, puis `-5`, puis `abc`. **Attendu** : à chaque fois une **erreur**
+        de validation côté serveur, l'enregistrement est refusé.
+    6.  Mettre `1000001`. **Attendu** : un **avertissement** « inhabituellement élevé » — mais
+        l'enregistrement **reste possible** : l'équilibrage est votre décision, pas celle du panel.
+    7.  Retirer la récompense monétaire, enregistrer, rouvrir. **Attendu** : elle a disparu, les
+        autres récompenses sont intactes.
+    8.  Supprimer la quête de test créée à l'étape 1 (bouton « Supprimer… », #194).
+
+-   **B. États source / publié / chargé (workflow #131) :**
+    9.  Copier `test_money_reward.yml` dans `plugins/RPGQuest/quests/` sur le serveur, **sans**
+        redémarrer.
+    10. Sur `/quests`, lancer **Aperçu** puis **Recharger en jeu**. **Attendu** : le rechargement
+        réussit et la quête devient active sans redémarrage.
+    11. **Point important** : vérifier qu'une quête enregistrée **uniquement** dans la source (non
+        publiée sur le serveur) est bien signalée comme telle, et qu'un rechargement **ne la rend
+        pas** active — un reload ne transporte aucun fichier.
+
+-   **C. Crédit réel en jeu (le cœur du test) :**
+    12. Avec le joueur de test, noter le solde (`/money`).
+    13. Accepter puis terminer `rpgquest:test_money_reward` (casser 1 bloc de terre).
+        **Attendu** : le Title « Quête terminée », puis **un court instant après**, un message de
+        chat du type « Récompense de … : **+100 pièce(s)** — solde : <nouveau solde> ».
+    14. **Attendu** : le solde cité est le solde **réel** (`/money` donne la même valeur), et il
+        vaut exactement l'ancien **+100**.
+    15. **Attendu** : le message arrive dans le **chat**, et l'affichage de progression des
+        objectifs (ActionBar) n'a **pas** été écrasé durablement.
+    16. Ouvrir le journal (`/quests`). **Attendu** : la **bourse** est visible en haut à droite de
+        la liste (et aussi dans la vue détail d'une quête), avec le solde réel.
+    17. Ouvrir les détails de la quête. **Attendu** : la récompense apparaît comme **« 100
+        pièce(s) »**.
+
+-   **D. Crédit unique — la garantie à ne pas manquer :**
+    18. Retenter de terminer la même quête non répétable (recasser un bloc). **Attendu** : **aucun
+        second crédit**, aucun second message de gain.
+    19. Depuis le panel, forcer la complétion de cette quête (`/players` → action quête).
+        **Attendu** : « déjà terminée — aucune récompense re-créditée », et le solde **ne bouge
+        pas**.
+    20. Cliquer **deux fois très vite** sur l'action de complétion forcée. **Attendu** : un seul
+        crédit au maximum, jamais deux.
+    21. Dans le panel, lire le **journal des transactions** du joueur de test. **Attendu** : **une
+        seule** ligne `QUEST_REWARD`, dont le contexte cite la quête.
+
+-   **E. Quête répétable :**
+    22. Publier et recharger `test_money_repeatable.yml`.
+    23. Terminer la quête, **reprendre** la quête, la terminer à nouveau. **Attendu** : **deux**
+        crédits de 25, deux messages, **deux** lignes `QUEST_REWARD` au journal.
+    24. **Attendu** : le solde final vaut l'ancien **+50**.
+
+-   **F. Persistance et redémarrage :**
+    25. Noter le solde, **redémarrer** le serveur (workflow #95). **Attendu** : solde identique,
+        aucune ligne dupliquée au journal, aucune récompense re-créditée au redémarrage.
+    26. Déconnecter/reconnecter le joueur de test, rouvrir le journal. **Attendu** : solde
+        inchangé, bourse correcte.
+
+-   **G. Erreur honnête (optionnel, à faire seulement si vous savez revenir en arrière) :**
+    27. Si vous pouvez provoquer une indisponibilité de la base, terminer une quête monétaire.
+        **Attendu** : un message **explicite** disant que la récompense n'a pas pu être créditée —
+        et **jamais** un message de gain. Le joueur ne doit pas croire avoir été payé.
+
+-   **Nettoyage :** retirer `test_money_reward.yml` et `test_money_repeatable.yml` de
+    `plugins/RPGQuest/quests/`, recharger (#131), supprimer la quête créée à l'étape 1 si elle
+    existe encore, et remettre le solde du joueur de test à sa valeur d'origine par une opération
+    inverse depuis le panel avec une raison (le journal gardera trace des deux — c'est voulu).
+-   **Couverture automatisée :** `WalletRepositoryTest` (+8 cas : crédit unique tracé au journal,
+    **rejeu du même grant qui ne recrédite rien**, rejeu avec un montant différent qui rapporte le
+    montant **réellement** payé, nouvelle occurrence payée pour une quête répétable, occurrences
+    comptées par joueur **et** par quête, montant non positif et `grantId` manquant refusés,
+    addition à un solde existant, **survie à un redémarrage sans second paiement**, et **20 rejeux
+    concurrents qui créditent exactement une fois**) ; `SchemaMigratorTest` (+2 : table créée, et
+    **la contrainte d'unicité refuse deux lignes pour la même occasion**) ;
+    `QuestProgressEngineTest` (+7 : une seule demande de paiement par complétion, message de succès
+    **après** confirmation et portant le solde du reçu, échec dit honnêtement, occasion déjà payée
+    silencieuse, aucune ligne monétaire dans le résumé synchrone, occasions distinctes pour une
+    quête répétable, aucune sollicitation de l'économie sans récompense monétaire) ;
+    `QuestMoneyRewardIntegrationTest` (5 cas de bout en bout avec un **vrai** portefeuille SQLite) ;
+    `QuestDefinitionParserTest` (+4), `QuestJournalServiceTest` (+5 : solde réel, bourse en vue
+    détail, portefeuille vierge affiché `0` et non une panne, slot inerte, récompense prévue dans
+    l'infobulle), `ManualTestQuestPackTest` (+3), `EditorDescriptorsTest` (+2),
+    `ContentYamlRoundTripTest` (+4), `RewardTextTest` (+3).
+    **Non couvert automatiquement** : le rendu visuel réel de la bourse et des infobulles en jeu,
+    l'ordre perçu des messages, le parcours de l'éditeur dans un navigateur, et la persistance
+    après un vrai redémarrage — c'est l'objet des étapes A à G.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -2995,3 +3105,4 @@ le résumé de récompenses de TC-014).
 | TC-247 | Rechargement du contenu : 3 états, contenu lié, runtime préservé #131 (PENDING) | | | |
 | TC-248 | OP/DEOP, renvoi Hub, kick, whitelist #210 (PENDING) | | | |
 | TC-249 | Monnaie : solde, journal, crédit/débit, plancher à zéro #140 (PENDING) | | | |
+| TC-250 | Récompense monétaire de quête, bourse dans le journal #16 (PENDING) | | | |

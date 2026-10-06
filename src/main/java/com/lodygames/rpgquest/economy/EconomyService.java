@@ -12,7 +12,7 @@ import java.util.concurrent.CompletableFuture;
  * simple sans cycle de vie propre (pas de {@code PluginService}) — même
  * conception que {@code PlayerProfileService}.
  */
-public final class EconomyService {
+public final class EconomyService implements QuestRewardPayer {
 
     private final WalletRepository wallets;
 
@@ -43,6 +43,27 @@ public final class EconomyService {
         }
         return wallets.pay(from, to, amount, null)
                 .thenApply(success -> success ? PayOutcome.PAID : PayOutcome.INSUFFICIENT_FUNDS);
+    }
+
+    /**
+     * Récompense monétaire de quête (issue #16), créditée <strong>au plus une fois par occasion</strong>.
+     *
+     * <p>Le {@code context} écrit au journal des transactions porte la quête <em>et</em> l'occasion
+     * ({@code quest:<id>#<grantId>}) : des mois plus tard, une ligne de journal reste rattachable à
+     * une complétion précise, et non à un vague « gain de jeu ». Une erreur de persistance laisse
+     * le futur <strong>en échec</strong> plutôt que de fabriquer un reçu : rien n'est crédité, rien
+     * n'est réservé, et l'appelant doit traduire cela en
+     * {@link QuestRewardReceipt.Status#FAILED} après avoir journalisé la cause.</p>
+     */
+    @Override
+    public CompletableFuture<QuestRewardReceipt> payQuestReward(UUID playerId, String questId, String grantId,
+                                                                long amount) {
+        return wallets.creditQuestReward(playerId, questId, grantId, amount,
+                        TransactionType.QUEST_REWARD.name(), "quest:" + questId + "#" + grantId)
+                .thenApply(grant -> new QuestRewardReceipt(
+                        grant.credited() ? QuestRewardReceipt.Status.CREDITED
+                                : QuestRewardReceipt.Status.ALREADY_CREDITED,
+                        grant.amount(), grant.balanceAfter(), grant.occurrence()));
     }
 
     /** Outil admin : fixe le solde exact, jamais négatif. */

@@ -108,6 +108,111 @@ public final class WalletRepository {
         }));
     }
 
+    /**
+     * Résultat d'un crédit de récompense monétaire de quête (issue #16).
+     *
+     * @param credited     {@code true} si CE crédit vient d'avoir lieu ; {@code false} si cette
+     *                     occurrence avait déjà été payée (rien n'a été modifié)
+     * @param amount       montant de l'occurrence — celui qui vient d'être crédité, ou celui qui
+     *                     l'avait été la première fois
+     * @param balanceAfter solde relu dans la même transaction, donc jamais une estimation
+     * @param occurrence   numéro de la complétion payée pour ce joueur et cette quête (1 = la 1re)
+     */
+    public record QuestRewardGrant(boolean credited, long amount, long balanceAfter, int occurrence) {
+    }
+
+    private static final String SELECT_GRANT =
+            "SELECT occurrence, amount FROM quest_reward_grants WHERE grant_id = ?";
+    private static final String NEXT_OCCURRENCE =
+            "SELECT COALESCE(MAX(occurrence), 0) + 1 FROM quest_reward_grants "
+                    + "WHERE player_uuid = ? AND quest_id = ?";
+    private static final String CLAIM_GRANT =
+            "INSERT OR IGNORE INTO quest_reward_grants "
+                    + "(grant_id, player_uuid, quest_id, occurrence, amount, created_at) VALUES (?, ?, ?, ?, ?, ?)";
+
+    /**
+     * Crédite <strong>une seule fois</strong> la récompense monétaire d'une occurrence de
+     * complétion de quête (issue #16).
+     *
+     * <p>Toute la garantie tient dans un seul fait : la réservation de {@code grantId} et la
+     * mise à jour du portefeuille vivent dans la <strong>même transaction SQL</strong>. Il n'existe
+     * donc aucun instant où l'argent serait crédité sans trace (un retry doublerait le paiement) ni
+     * tracé sans être crédité (le joueur perdrait sa récompense). Rejouer l'appel avec le même
+     * {@code grantId} ne recrédite rien et retourne {@code credited=false} ; en cas d'erreur SQL,
+     * la transaction est annulée en entier et un nouvel appel peut encore payer.</p>
+     *
+     * <p>Cette table n'est <strong>pas</strong> un second solde : {@code wallets} reste la seule
+     * source de vérité. {@code quest_reward_grants} ne répond qu'à « cette occasion a-t-elle déjà
+     * été payée ? ».</p>
+     */
+    public CompletableFuture<QuestRewardGrant> creditQuestReward(UUID uuid, String questId, String grantId,
+                                                                 long amount, String type, String context) {
+        if (amount <= 0) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("« amount » doit être strictement positif : " + amount));
+        }
+        if (grantId == null || grantId.isBlank()) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("« grantId » est obligatoire : c'est lui qui rend le crédit idempotent."));
+        }
+        return database.execute(connection -> inTransaction(connection, () -> {
+            ensureWallet(connection, uuid);
+            int occurrence = nextOccurrence(connection, uuid, questId);
+            if (!claimGrant(connection, grantId, uuid, questId, occurrence, amount)) {
+                // Déjà payé : on relit la ligne existante plutôt que de supposer que le montant
+                // demandé aujourd'hui est celui qui a été crédité (une quête a pu être rééditée
+                // entre-temps — le journal doit refléter ce qui s'est réellement passé).
+                QuestRewardGrant existing = readGrant(connection, grantId);
+                return new QuestRewardGrant(false, existing.amount(), readBalance(connection, uuid),
+                        existing.occurrence());
+            }
+            long balance = readBalance(connection, uuid);
+            long balanceAfter = addExact(balance, amount);
+            writeBalance(connection, uuid, balanceAfter);
+            insertTransaction(connection, uuid, type, amount, context);
+            return new QuestRewardGrant(true, amount, balanceAfter, occurrence);
+        }));
+    }
+
+    private int nextOccurrence(Connection connection, UUID uuid, String questId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(NEXT_OCCURRENCE)) {
+            statement.setString(1, uuid.toString());
+            statement.setString(2, questId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? resultSet.getInt(1) : 1;
+            }
+        }
+    }
+
+    private boolean claimGrant(Connection connection, String grantId, UUID uuid, String questId,
+                                int occurrence, long amount) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(CLAIM_GRANT))) {
+            statement.setString(1, grantId);
+            statement.setString(2, uuid.toString());
+            statement.setString(3, questId);
+            statement.setInt(4, occurrence);
+            statement.setLong(5, amount);
+            statement.setString(6, Instant.now().toString());
+            return statement.executeUpdate() > 0;
+        }
+    }
+
+    private QuestRewardGrant readGrant(Connection connection, String grantId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(SELECT_GRANT)) {
+            statement.setString(1, grantId);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) {
+                    return new QuestRewardGrant(false, resultSet.getLong("amount"), 0L,
+                            resultSet.getInt("occurrence"));
+                }
+            }
+        }
+        // Inatteignable en pratique : claimGrant n'a pas inséré, donc la ligne existe. Ne jamais
+        // lever ici pour autant — une exception annulerait la transaction et laisserait croire à un
+        // échec de paiement alors que rien n'était dû.
+        return new QuestRewardGrant(false, 0L, 0L, 0);
+    }
+
     /** Fixe le solde à une valeur exacte (outil admin), jamais négatif. */
     public CompletableFuture<Void> setBalance(UUID uuid, long amount, String type, String context) {
         if (amount < 0) {

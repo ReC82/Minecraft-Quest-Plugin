@@ -1,10 +1,12 @@
 package com.lodygames.rpgquest.quest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.quest.model.ObjectiveType;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
+import com.lodygames.rpgquest.quest.model.MoneyReward;
 import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.Set;
@@ -20,6 +22,13 @@ import org.junit.jupiter.api.Test;
 class ManualTestQuestPackTest {
 
     private static final Path MANUAL_TEST_QUESTS_DIR = Path.of("docs", "manual-tests", "quests");
+
+    /**
+     * Pack séparé (issue #16) : ces quêtes testent des <strong>récompenses</strong>, pas des
+     * objectifs. Les mettre dans un dossier à part préserve l'invariant « une quête par type
+     * d'objectif, ni plus ni moins » du pack ci-dessus, qui perdrait tout son sens sinon.
+     */
+    private static final Path MANUAL_TEST_REWARDS_DIR = Path.of("docs", "manual-tests", "rewards");
 
     private final QuestLoader loader = new QuestLoader();
 
@@ -55,5 +64,43 @@ class ManualTestQuestPackTest {
 
         assertEquals(EnumSet.allOf(ObjectiveType.class), covered,
                 "chaque type d'objectif réellement implémenté doit avoir sa quête de test manuel, aucun type inventé");
+    }
+
+    // ---- Pack « récompenses » (issue #16) -----------------------------------------------------
+
+    @Test
+    void everyManualTestRewardQuestLoadsWithoutError() {
+        QuestLoadReport report = loader.loadDirectory(MANUAL_TEST_REWARDS_DIR);
+
+        assertTrue(report.issues().isEmpty(),
+                () -> "le pack de récompenses de test manuel doit rester chargeable : " + report.issues());
+        assertFalse(report.loaded().isEmpty(), "le pack ne doit pas être vide");
+    }
+
+    @Test
+    void theRewardPackCoversAMoneyRewardOnBothARepeatableAndANonRepeatableQuest() {
+        QuestLoadReport report = loader.loadDirectory(MANUAL_TEST_REWARDS_DIR);
+
+        // Les deux cas sont nécessaires : c'est la répétabilité qui distingue « nouvelle occasion
+        // légitimement payée » de « rejeu qui ne doit rien payer », et c'est là qu'un défaut
+        // coûterait de l'argent au serveur ou en priverait un joueur.
+        assertTrue(report.loaded().stream().anyMatch(q -> !q.repeatable() && hasMoneyReward(q)),
+                "il manque une quête NON répétable avec récompense monétaire");
+        assertTrue(report.loaded().stream().anyMatch(q -> q.repeatable() && hasMoneyReward(q)),
+                "il manque une quête RÉPÉTABLE avec récompense monétaire");
+    }
+
+    @Test
+    void everyRewardPackQuestIsClearlyMarkedAsATestQuest() {
+        for (QuestDefinition quest : loader.loadDirectory(MANUAL_TEST_REWARDS_DIR).loaded()) {
+            assertTrue(quest.id().getKey().startsWith("test_"),
+                    () -> "id de quête de test attendu avec le préfixe « test_ », obtenu : " + quest.id());
+            assertEquals("test", quest.category(),
+                    () -> "catégorie « test » attendue pour ne pas polluer le contenu réel : " + quest.id());
+        }
+    }
+
+    private static boolean hasMoneyReward(QuestDefinition quest) {
+        return quest.rewards().stream().anyMatch(r -> r instanceof MoneyReward);
     }
 }

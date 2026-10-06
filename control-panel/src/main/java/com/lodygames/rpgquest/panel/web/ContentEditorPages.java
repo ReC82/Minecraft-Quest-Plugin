@@ -87,8 +87,15 @@ public final class ContentEditorPages {
             }
             expectedSha = cf.get().sha256();
         }
-        String note = saved ? Ui.banner("ok", "Quête enregistrée dans la source. "
-                + "Le fichier sera validé par le moteur RPGQuest au prochain chargement du serveur.") : "";
+        // Trois états, et c'est volontairement explicite depuis #131 : enregistrer écrit dans la
+        // SOURCE, pas sur le serveur de jeu. Dire « le serveur validera au prochain chargement »
+        // laissait croire qu'un redémarrage suffisait, alors qu'un fichier jamais déployé ne
+        // deviendrait jamais actif. C'est d'autant plus sensible pour une récompense monétaire :
+        // un joueur ne serait tout simplement pas payé, sans erreur visible.
+        String note = saved ? Ui.banner("ok", "Quête enregistrée dans la <strong>source</strong>. "
+                + "Pour qu'elle agisse en jeu, il faut qu'elle soit <strong>publiée</strong> sur le "
+                + "serveur, puis <strong>rechargée</strong> : la page « Quêtes » affiche l'état réel "
+                + "et propose l'aperçu et le rechargement.") : "";
         return new Result.Html(note + renderQuest(ref, draft, slug, expectedSha, List.of(), false, null));
     }
 

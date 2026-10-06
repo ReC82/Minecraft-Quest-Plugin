@@ -3,12 +3,14 @@ package com.lodygames.rpgquest.ui;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.config.JournalConfig;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
+import com.lodygames.rpgquest.economy.EconomyService;
 import com.lodygames.rpgquest.item.RpgItemKeys;
 import com.lodygames.rpgquest.item.YamlCustomItemRegistry;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
+import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.QuestReward;
@@ -24,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -71,10 +74,20 @@ public final class QuestJournalService implements QuestJournalUi {
     static final int PREV_PAGE_SLOT = 3;
     private static final int PAGE_INDICATOR_SLOT = 4;
     static final int NEXT_PAGE_SLOT = 5;
+    /**
+     * Bourse du joueur (issue #16) : un emplacement <strong>inerte</strong> de la barre du haut,
+     * placé là pour que le solde soit visible dans une interface déjà ouverte par les joueurs
+     * plutôt que derrière une commande à connaître. Cliquer dessus ne fait rien — c'est un
+     * indicateur, pas un bouton, et {@link #handleListClick} l'ignore comme les autres slots
+     * décoratifs.
+     */
+    static final int BALANCE_SLOT = 7;
     static final int CLOSE_SLOT = 8;
     private static final int CONTENT_START_SLOT = 9;
     static final int[] CONTENT_SLOTS = buildContentSlots();
 
+    /** Même bourse que {@link #BALANCE_SLOT}, dans la vue détail : le solde suit le joueur. */
+    static final int DETAIL_BALANCE_SLOT = 4;
     static final int DETAIL_ICON_SLOT = 13;
     static final int DETAIL_BACK_SLOT = 18;
     static final int DETAIL_TRACK_SLOT = 22;
@@ -88,6 +101,7 @@ public final class QuestJournalService implements QuestJournalUi {
     private final QuestProgressEngine questProgressEngine;
     private final PlayerVariableRepository variableRepository;
     private final YamlCustomItemRegistry customItemRegistry;
+    private final EconomyService economyService;
     private final TrackedQuestDisplay trackedDisplay;
     private final Logger logger;
 
@@ -96,12 +110,13 @@ public final class QuestJournalService implements QuestJournalUi {
 
     public QuestJournalService(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressEngine questProgressEngine,
                                 PlayerVariableRepository variableRepository, YamlCustomItemRegistry customItemRegistry,
-                                JournalConfig config) {
+                                EconomyService economyService, JournalConfig config) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
         this.variableRepository = variableRepository;
         this.customItemRegistry = customItemRegistry;
+        this.economyService = economyService;
         this.trackedDisplay = new TrackedQuestDisplay(config.trackerEnabled());
         this.logger = plugin.getSLF4JLogger();
     }
@@ -261,7 +276,8 @@ public final class QuestJournalService implements QuestJournalUi {
 
     void showList(Player player, JournalTab tab, int requestedPage) {
         UUID playerId = player.getUniqueId();
-        questProgressEngine.allStates(playerId).thenAccept(states -> runOnMainThread(() -> {
+        questProgressEngine.allStates(playerId).thenAcceptBoth(readBalance(playerId),
+                (states, balance) -> runOnMainThread(() -> {
             List<QuestDefinition> matching = questEngine.quests().stream()
                     .filter(quest -> tabMatches(tab, states.getOrDefault(quest.id(), QuestState.NOT_STARTED)))
                     .sorted(Comparator.comparing(quest -> quest.title().base(), String.CASE_INSENSITIVE_ORDER))
@@ -276,7 +292,7 @@ public final class QuestJournalService implements QuestJournalUi {
             Inventory inventory = Bukkit.createInventory(holder, LIST_SIZE, MM.deserialize(TITLE_LIST));
             holder.bind(inventory);
 
-            renderChrome(inventory, tab, page, pageCount);
+            renderChrome(inventory, tab, page, pageCount, balance);
             for (int i = 0; i < pageItems.size(); i++) {
                 QuestDefinition quest = pageItems.get(i);
                 QuestState state = states.getOrDefault(quest.id(), QuestState.NOT_STARTED);
@@ -304,7 +320,7 @@ public final class QuestJournalService implements QuestJournalUi {
         };
     }
 
-    private void renderChrome(Inventory inventory, JournalTab tab, int page, int pageCount) {
+    private void renderChrome(Inventory inventory, JournalTab tab, int page, int pageCount, Optional<Long> balance) {
         inventory.setItem(TAB_IN_PROGRESS_SLOT, tabIcon("Quêtes en cours", Material.BOOK, tab == JournalTab.IN_PROGRESS));
         inventory.setItem(TAB_COMPLETED_SLOT, tabIcon("Quêtes terminées", Material.ENCHANTED_BOOK, tab == JournalTab.COMPLETED));
         if (page > 0) {
@@ -314,7 +330,43 @@ public final class QuestJournalService implements QuestJournalUi {
         if (page < pageCount - 1) {
             inventory.setItem(NEXT_PAGE_SLOT, navIcon(Material.ARROW, "Page suivante »"));
         }
+        inventory.setItem(BALANCE_SLOT, balanceIcon(balance));
         inventory.setItem(CLOSE_SLOT, navIcon(Material.BARRIER, "Fermer"));
+    }
+
+    /**
+     * Lecture du solde qui <strong>ne peut pas faire échouer le journal</strong> (issue #16) : une
+     * erreur de base rend un {@link Optional#empty()}, jamais un futur en échec et jamais un
+     * « 0 pièce » inventé — un zéro affiché à la place d'une panne serait un mensonge, et un joueur
+     * croirait avoir été volé.
+     */
+    private CompletableFuture<Optional<Long>> readBalance(UUID playerId) {
+        return economyService.balance(playerId)
+                .thenApply(Optional::of)
+                .exceptionally(error -> {
+                    logger.error("Impossible de lire le solde de {} pour le journal", playerId, error);
+                    return Optional.empty();
+                });
+    }
+
+    /**
+     * Indicateur de bourse. Le montant vient du <strong>portefeuille persistant</strong> (la même
+     * source que {@code /money} et que le panel), jamais d'un objet d'inventaire : aucun item n'est
+     * compté comme de la monnaie.
+     */
+    private ItemStack balanceIcon(Optional<Long> balance) {
+        ItemStack stack = new ItemStack(Material.GOLD_INGOT);
+        ItemMeta meta = stack.getItemMeta();
+        if (balance.isPresent()) {
+            meta.displayName(MM.deserialize("<gold>Bourse :</gold> <white><amount> pièce(s)</white>",
+                    Placeholder.unparsed("amount", String.valueOf(balance.get()))));
+            meta.lore(List.of(MM.deserialize("<dark_gray>Mis à jour à chaque transaction.</dark_gray>")));
+        } else {
+            meta.displayName(MM.deserialize("<gold>Bourse :</gold> <red>indisponible</red>"));
+            meta.lore(List.of(MM.deserialize("<dark_gray>Le solde n'a pas pu être lu. Réessaie plus tard.</dark_gray>")));
+        }
+        stack.setItemMeta(meta);
+        return stack;
     }
 
     private ItemStack tabIcon(String label, Material material, boolean active) {
@@ -356,7 +408,8 @@ public final class QuestJournalService implements QuestJournalUi {
             return;
         }
 
-        questProgressEngine.allStates(playerId).thenAccept(states -> runOnMainThread(() -> {
+        questProgressEngine.allStates(playerId).thenAcceptBoth(readBalance(playerId),
+                (states, balance) -> runOnMainThread(() -> {
             QuestDefinition quest = questOpt.get();
             QuestState state = states.getOrDefault(questId, QuestState.NOT_STARTED);
             boolean tracked = questId.equals(trackedByPlayer.get(playerId));
@@ -365,6 +418,7 @@ public final class QuestJournalService implements QuestJournalUi {
             Inventory inventory = Bukkit.createInventory(holder, DETAIL_SIZE, MM.deserialize(TITLE_DETAIL));
             holder.bind(inventory);
 
+            inventory.setItem(DETAIL_BALANCE_SLOT, balanceIcon(balance));
             inventory.setItem(DETAIL_ICON_SLOT, buildIcon(playerId, quest, state, tracked, true));
             inventory.setItem(DETAIL_BACK_SLOT, navIcon(Material.ARROW, "« Retour"));
             inventory.setItem(DETAIL_TRACK_SLOT, trackToggleIcon(tracked));
@@ -670,6 +724,10 @@ public final class QuestJournalService implements QuestJournalUi {
                     .append(Component.translatable(r.material())));
             case VariableReward r -> Optional.empty();
             case CommandReward r -> Optional.of(Component.text("Bonus spécial"));
+            // Issue #16 : annoncé comme PRÉVU, pas comme reçu. C'est bien l'objet de cette
+            // infobulle (elle décrit la définition de la quête, pas l'historique du joueur) ; la
+            // confirmation du crédit, elle, arrive dans le chat et seulement après la base.
+            case MoneyReward r -> Optional.of(Component.text(r.amount() + " pièce(s)"));
         };
     }
 

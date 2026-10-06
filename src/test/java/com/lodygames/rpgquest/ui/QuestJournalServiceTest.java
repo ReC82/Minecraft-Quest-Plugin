@@ -22,6 +22,8 @@ import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.QuestState;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
+import com.lodygames.rpgquest.database.WalletRepository;
+import com.lodygames.rpgquest.economy.EconomyService;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -65,6 +67,8 @@ class QuestJournalServiceTest {
     private PlayerVariableRepository variableRepository;
     private PlayerProfileRepository profileRepository;
     private YamlCustomItemRegistry customItemRegistry;
+    private WalletRepository walletRepository;
+    private EconomyService economyService;
     private QuestJournalService service;
     private QuestJournalListener listener;
 
@@ -88,15 +92,19 @@ class QuestJournalServiceTest {
         messagesService.start();
         NpcIdentityService npcIdentityService = new NpcIdentityService(
                 plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
+        walletRepository = new WalletRepository(database);
+        economyService = new EconomyService(walletRepository);
         progressEngine = new QuestProgressEngine(
-                plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService);
+                plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService,
+                economyService);
         progressEngine.start();
 
         customItemRegistry = new YamlCustomItemRegistry(tempDir.resolve("items"), plugin.getSLF4JLogger());
         customItemRegistry.start();
 
         service = new QuestJournalService(
-                plugin, questEngine, progressEngine, variableRepository, customItemRegistry, new JournalConfig(true));
+                plugin, questEngine, progressEngine, variableRepository, customItemRegistry, economyService,
+                new JournalConfig(true));
         service.start();
         listener = new QuestJournalListener(service);
     }
@@ -546,6 +554,115 @@ class QuestJournalServiceTest {
         // Une récompense VARIABLE est un état interne : son nom de clé ne doit jamais être montré.
         assertFalse(joined.contains("CLAIM_TIER_1"), "la variable interne ne doit pas fuiter : " + joined);
         assertFalse(joined.contains("step_one"), "pas d'id technique non plus dans les détails : " + joined);
+    }
+
+    // ---- Bourse et récompense monétaire (issue #16) --------------------------------------------
+
+    @Test
+    void theJournalShowsTheRealWalletBalance() throws Exception {
+        PlayerMock player = addPlayer();
+        walletRepository.credit(player.getUniqueId(), 1234, "ADMIN_GRANT", "test")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        service.open(player);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+
+        var purse = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.BALANCE_SLOT);
+        assertNotNull(purse, "le solde doit être visible dans une interface déjà utilisée, pas seulement via une commande");
+        String name = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                .serialize(purse.getItemMeta().displayName());
+        // 1234 vient du PORTEFEUILLE, pas d'un objet d'inventaire : aucun item n'est de la monnaie.
+        assertTrue(name.contains("1234"), () -> "le solde réel doit s'afficher : " + name);
+    }
+
+    @Test
+    void theBalanceIsAlsoVisibleInTheDetailView() throws Exception {
+        writeQuests(1);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        walletRepository.credit(player.getUniqueId(), 77, "ADMIN_GRANT", "test")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        setState(player, new NamespacedKey("rpgquest", "quest_0"), QuestState.ACTIVE);
+
+        service.open(player);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        service.handleListClick(player, service.sessionOf(player), QuestJournalService.CONTENT_SLOTS[0], false);
+        // Attendre l'ICÔNE DE DÉTAIL, pas le slot de bourse : le slot 4 porte l'indicateur de page
+        // dans la vue LISTE, donc l'attendre rendrait le test vert sans avoir changé de vue.
+        waitUntil(() -> player.getOpenInventory().getTopInventory()
+                .getItem(QuestJournalService.DETAIL_ICON_SLOT) != null);
+
+        var purse = player.getOpenInventory().getTopInventory()
+                .getItem(QuestJournalService.DETAIL_BALANCE_SLOT);
+        String name = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                .serialize(purse.getItemMeta().displayName());
+        assertTrue(name.contains("77"), () -> name);
+    }
+
+    @Test
+    void anUntouchedWalletShowsZeroAndNotAnError() throws Exception {
+        PlayerMock player = addPlayer();
+
+        service.open(player);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+
+        var purse = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.BALANCE_SLOT);
+        String name = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                .serialize(purse.getItemMeta().displayName());
+        assertTrue(name.contains("0"), () -> "un portefeuille jamais touché vaut 0, ce n'est pas une panne : " + name);
+        assertFalse(name.toLowerCase(java.util.Locale.ROOT).contains("indisponible"), name);
+    }
+
+    @Test
+    void theBalanceSlotIsInertAndDoesNotCloseOrNavigate() throws Exception {
+        writeQuests(1);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        setState(player, new NamespacedKey("rpgquest", "quest_0"), QuestState.ACTIVE);
+
+        service.open(player);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        JournalSession before = service.sessionOf(player);
+
+        service.handleListClick(player, before, QuestJournalService.BALANCE_SLOT, false);
+        server.getScheduler().performTicks(5);
+
+        JournalSession after = service.sessionOf(player);
+        assertNotNull(after, "cliquer un indicateur ne doit rien fermer");
+        assertEquals(before.tab(), after.tab());
+        assertFalse(after.isDetail(), "l'indicateur de bourse n'est pas un bouton de navigation");
+    }
+
+    @Test
+    void aMoneyRewardAppearsInTheDetailTooltipAsPlannedCoins() throws Exception {
+        Files.writeString(questsDir.resolve("paid.yml"), """
+                id: rpgquest:paid
+                title: "Quête payée"
+                description: "Description"
+                category: test
+                steps:
+                  - id: step_one
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 1
+                rewards:
+                  - type: MONEY
+                    amount: 250
+                """);
+        questEngine.reload();
+        PlayerMock player = addPlayer();
+        setState(player, new NamespacedKey("rpgquest", "paid"), QuestState.ACTIVE);
+
+        service.open(player);
+        showAndAwait(player, JournalTab.IN_PROGRESS);
+        service.handleListClick(player, service.sessionOf(player), QuestJournalService.CONTENT_SLOTS[0], false);
+        waitUntil(() -> player.getOpenInventory().getTopInventory()
+                .getItem(QuestJournalService.DETAIL_ICON_SLOT) != null);
+
+        var detail = player.getOpenInventory().getTopInventory().getItem(QuestJournalService.DETAIL_ICON_SLOT);
+        String joined = String.join("\n", loreText(detail));
+        assertTrue(joined.contains("250 pièce(s)"), () -> "la récompense prévue doit être lisible : " + joined);
     }
 
     private void writeQuests(int count) throws Exception {

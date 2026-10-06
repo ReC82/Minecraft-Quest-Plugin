@@ -656,6 +656,36 @@ class SchemaMigratorTest {
         }
     }
 
+    @Test
+    void migrateCreatesQuestRewardGrantsTable() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema25.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement();
+                 ResultSet resultSet = statement.executeQuery(
+                         "SELECT name FROM sqlite_master WHERE type='table' AND name = 'quest_reward_grants'")) {
+                assertTrue(resultSet.next(), "la table des récompenses monétaires déjà payées doit exister");
+            }
+        }
+    }
+
+    @Test
+    void questRewardGrantsRefusesTwoRowsForTheSameOccasion() throws Exception {
+        // La garantie « jamais créditée deux fois » repose entièrement sur cette contrainte : si
+        // elle disparaissait, le code applicatif continuerait de compiler et paierait deux fois.
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + tempDir.resolve("schema25dup.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO quest_reward_grants "
+                        + "(grant_id, player_uuid, quest_id, occurrence, amount, created_at) "
+                        + "VALUES ('g1', 'p1', 'rpgquest:q', 1, 100, '2026-10-06T00:00:00Z')");
+                assertThrows(java.sql.SQLException.class, () -> statement.execute(
+                        "INSERT INTO quest_reward_grants "
+                                + "(grant_id, player_uuid, quest_id, occurrence, amount, created_at) "
+                                + "VALUES ('g1', 'p1', 'rpgquest:q', 2, 100, '2026-10-06T00:00:00Z')"));
+            }
+        }
+    }
+
     private int userVersion(Connection connection) throws Exception {
         try (Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery("PRAGMA user_version")) {

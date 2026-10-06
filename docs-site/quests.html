@@ -92,8 +92,17 @@ rewards:                    # optionnel
         <tr><td><code>ITEM</code></td><td><code>material</code>, <code>amount</code></td><td>Objet vanilla donné.</td></tr>
         <tr><td><code>VARIABLE</code></td><td><code>key</code>, <code>value</code></td><td>Écrit une variable joueur persistante.</td></tr>
         <tr><td><code>COMMAND</code></td><td><code>command</code></td><td>Commande console (<code>%player%</code> substitué). Aucune liste blanche ici.</td></tr>
+        <tr><td><code>MONEY</code></td><td><code>amount</code></td><td>Crédite le <strong>portefeuille persistant</strong> du joueur (même solde que <code>/money</code>, les marchands et le Control Panel). <strong>Aucun objet n'est donné</strong> : la monnaie est un solde, et aucun objet d'inventaire n'est compté comme de l'argent.</td></tr>
       </tbody>
     </table>
+    <p class="text-body-secondary">
+      <code>MONEY</code> est crédité <strong>au plus une fois par complétion</strong> : la réservation
+      de l'occasion et la mise à jour du portefeuille se font dans la même transaction SQL, donc ni
+      double paiement sur un retry, ni récompense perdue sur une panne. Une quête <code>repeatable</code>
+      ouvre une nouvelle occasion à chaque reprise et se paie donc à nouveau. Le moteur n'impose
+      <strong>aucun plafond</strong> au montant (c'est une décision d'équilibrage) ; l'éditeur du Control
+      Panel se contente d'<em>avertir</em> au-delà d'un million, pour attraper la faute de frappe.
+    </p>
   </section>
 
   <section class="my-5">
@@ -130,6 +139,22 @@ rewards:                    # optionnel
       inspectable ; une <code>VARIABLE</code> n'affiche rien, c'est un état interne du plugin, pas
       quelque chose que le joueur reçoit). Le journal de quêtes (<code>/quests</code>) continue, lui,
       d'afficher les récompenses <em>prévues</em> pour n'importe quelle quête, même non commencée.
+    </p>
+    <p class="text-body-secondary">
+      Une récompense <code>MONEY</code> ne figure pas dans ce résumé : son crédit est
+      <strong>asynchrone</strong>, et une ligne écrite à cet instant annoncerait un gain avant toute
+      preuve qu'il a eu lieu. Son message arrive donc <strong>séparément</strong>, un court instant
+      plus tard, et seulement après la réponse de la base
+      (<code>quest.reward-money-credited</code>, qui cite le montant <em>et</em> le nouveau solde relu
+      en base). Si le crédit échoue, <code>quest.reward-money-failed</code> le dit explicitement —
+      jamais un faux succès, jamais un silence. Les deux passent par le <strong>chat</strong> et
+      jamais par l'ActionBar, réservée à la progression des objectifs.
+    </p>
+    <p class="text-body-secondary">
+      Le journal de quêtes affiche aussi la <strong>bourse</strong> du joueur (emplacement inerte de
+      la barre du haut, en liste comme en vue détail) : le solde réel y est lisible sans connaître
+      <code>/money</code>, et il est relu après chaque transaction. En cas d'erreur de lecture, la
+      bourse affiche « indisponible » plutôt qu'un <code>0</code> trompeur.
     </p>
   </section>
 

@@ -374,8 +374,15 @@ public final class RPGQuestBootstrap {
 
         QuestProgressRepository progressRepository = new QuestProgressRepository(databaseService.databaseManager());
         variableRepository = new PlayerVariableRepository(databaseService.databaseManager());
+        // Portefeuille construit AVANT le moteur de quêtes, et non plus avec les marchands : depuis
+        // l'issue #16, une quête peut payer une récompense monétaire, donc le moteur a besoin du
+        // service économique. Ces deux lignes ne dépendent que du gestionnaire de base de données —
+        // les remonter ici ne change donc aucun ordre d'initialisation réel.
+        walletRepository = new WalletRepository(databaseService.databaseManager());
+        economyService = new EconomyService(walletRepository);
         questProgressEngine = new QuestProgressEngine(
-                plugin, questEngine, progressRepository, variableRepository, questMessagesService, npcIdentityService);
+                plugin, questEngine, progressRepository, variableRepository, questMessagesService, npcIdentityService,
+                economyService);
         registry.start(questProgressEngine);
         registry.start(new PlayerListenerService(plugin, questProgressEngine.connectionListener()));
 
@@ -438,8 +445,6 @@ public final class RPGQuestBootstrap {
                 () -> configService.current().backpacks(), plugin.getSLF4JLogger());
         registry.start(storeDeliveryService);
 
-        walletRepository = new WalletRepository(databaseService.databaseManager());
-        economyService = new EconomyService(walletRepository);
         registry.start(merchantRegistry);
         merchantTradeService = new MerchantTradeService(
                 plugin, merchantRegistry, economyService, customItemRegistry, questProgressEngine);
@@ -663,7 +668,7 @@ public final class RPGQuestBootstrap {
         // Ne liste jamais les quêtes non découvertes (pas de catalogue) — voir docs/RPGQUEST_BIBLE.md.
         questJournalService = new QuestJournalService(
                 plugin, questEngine, questProgressEngine, variableRepository, customItemRegistry,
-                configService.current().journal());
+                economyService, configService.current().journal());
         registry.start(questJournalService);
         registry.start(new PlayerListenerService(plugin, questJournalService.listener()));
 

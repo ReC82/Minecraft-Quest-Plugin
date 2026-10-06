@@ -104,5 +104,10 @@ public record QuestPackEntry(
         public static Reward command(String command) {
             return new Reward("COMMAND", null, null, null, null, command);
         }
+
+        /** Récompense monétaire (issue #16) : seul {@code amount} est porteur de sens. */
+        public static Reward money(int amount) {
+            return new Reward("MONEY", amount, null, null, null, null);
+        }
     }
 }

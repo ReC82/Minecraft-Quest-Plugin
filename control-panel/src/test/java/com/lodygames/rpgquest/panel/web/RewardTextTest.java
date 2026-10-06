@@ -116,4 +116,31 @@ class RewardTextTest {
         assertEquals("—", RewardText.parse(null).label());
         assertEquals("—", RewardText.parse("   ").label());
     }
+
+    // ---- Récompense monétaire (issue #16) -----------------------------------------------------
+
+    @Test
+    void structuredMoneyRewardReadsAsCoinsNotAsAnItem() {
+        RewardText.Reward r = RewardText.fromSummary(summary("MONEY", 250L, null, null, null));
+
+        // « 250 pièce(s) » et non « Objet : … ×250 » : un admin doit voir d'un coup d'œil que
+        // cette récompense crédite un solde au lieu de remplir un inventaire.
+        assertEquals("250 pièce(s)", r.label());
+        assertNull(r.rawDetail(), "rien à cacher : le libellé EST la donnée");
+    }
+
+    @Test
+    void theLegacyFlatMoneyStringIsAlsoUnderstood() {
+        // Chaîne produite par describeRewards d'un plugin antérieur au payload structuré.
+        assertEquals("250 pièce(s)", RewardText.parse("+250 pièce(s)").label());
+        assertEquals("7 pièce(s)", RewardText.parse("7 pièce(s)").label());
+    }
+
+    @Test
+    void aCoinStringIsNeverMistakenForAnItemReward() {
+        RewardText.Reward money = RewardText.parse("+250 pièce(s)");
+        assertFalse(money.label().startsWith("Objet"), () -> money.label());
+        // Et l'inverse reste vrai : un objet reste un objet.
+        assertTrue(RewardText.parse("+3x IRON_INGOT").label().startsWith("Objet"));
+    }
 }

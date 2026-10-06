@@ -73,6 +73,9 @@ public final class Icons {
             Map.entry("book", "book"),
             Map.entry("target", "bullseye"),
             Map.entry("gift", "gift"),
+            // Issue #16 : récompense monétaire de quête et outils de monnaie. Glyphe vérifié
+            // présent dans la police embarquée (.bi-coin), donc jamais le repli info-circle.
+            Map.entry("money", "coin"),
             Map.entry("lock", "lock"),
             Map.entry("clock", "clock"));
 

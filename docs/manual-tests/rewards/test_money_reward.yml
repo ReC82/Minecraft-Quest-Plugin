@@ -1,0 +1,22 @@
+# QUÊTE DE TEST MANUEL — récompense MONÉTAIRE (issue #16).
+# Ne jamais copier telle quelle dans une procédure de production VeryGames
+# permanente. Voir docs/MANUAL_TEST_PLAN.md, TC-250, pour l'activation et le
+# retrait. Le montant ci-dessous est une valeur de TEST : il ne constitue
+# aucune décision d'équilibrage économique.
+id: rpgquest:test_money_reward
+title: "<red>[TEST] Récompense en pièces</red>"
+description: "<gray>Quête de test manuel — vérifie qu'une récompense MONEY crédite bien le portefeuille. Casse 1 bloc de terre.</gray>"
+category: test
+icon: GOLD_INGOT
+repeatable: false
+
+steps:
+  - id: break_dirt
+    objectives:
+      - type: BREAK_BLOCK
+        material: DIRT
+        amount: 1
+
+rewards:
+  - type: MONEY
+    amount: 100

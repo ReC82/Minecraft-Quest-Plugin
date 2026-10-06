@@ -5,8 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
+import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
+import com.lodygames.rpgquest.quest.model.RewardType;
 import java.io.StringReader;
+import java.util.List;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -200,6 +203,76 @@ class QuestDefinitionParserTest {
                         material: STONE
                         amount: 1
                 """) + extraYaml;
+    }
+
+    // ---- Récompense monétaire (issue #16) -----------------------------------------------------
+
+    @Test
+    void aMoneyRewardIsParsedWithItsAmount() {
+        QuestDefinitionParser.ParseResult result = parser.parse("money.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: MONEY
+                    amount: 250
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        assertEquals(1, result.quest().rewards().size());
+        MoneyReward reward = (MoneyReward) result.quest().rewards().get(0);
+        assertEquals(250, reward.amount());
+        assertEquals(RewardType.MONEY, reward.type());
+    }
+
+    @Test
+    void aMoneyRewardRefusesANonPositiveOrMissingAmount() {
+        for (String amount : new String[] {"0", "-50"}) {
+            QuestDefinitionParser.ParseResult result = parser.parse("money.yml", load(minimalQuestWithStepsAnd("""
+                    rewards:
+                      - type: MONEY
+                        amount: %s
+                    """.formatted(amount))));
+            assertFalse(result.isSuccess(), "montant « " + amount + " » doit être refusé");
+            assertTrue(result.issues().stream().anyMatch(i -> i.message().contains("amount")));
+        }
+
+        QuestDefinitionParser.ParseResult missing = parser.parse("money.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: MONEY
+                """)));
+        assertFalse(missing.isSuccess(), "sans montant, il n'y a rien à créditer");
+    }
+
+    @Test
+    void aLargeMoneyRewardIsAcceptedBecauseBalancingIsNotATechnicalRule() {
+        // Aucun plafond côté moteur : décider du gain maximum serait prendre une décision de
+        // gameplay à la place de l'auteur. Le garde-fou contre la faute de frappe est un
+        // AVERTISSEMENT côté panel, et il n'empêche rien.
+        QuestDefinitionParser.ParseResult result = parser.parse("money.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: MONEY
+                    amount: 5000000
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        assertEquals(5_000_000, ((MoneyReward) result.quest().rewards().get(0)).amount());
+    }
+
+    @Test
+    void aMoneyRewardCoexistsWithTheOtherRewardTypes() {
+        QuestDefinitionParser.ParseResult result = parser.parse("money.yml", load(minimalQuestWithStepsAnd("""
+                rewards:
+                  - type: EXPERIENCE
+                    amount: 10
+                  - type: MONEY
+                    amount: 25
+                  - type: ITEM
+                    material: IRON_INGOT
+                    amount: 2
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        // L'ORDRE est préservé : il décide de l'ordre d'affichage du résumé de fin de quête.
+        assertEquals(List.of(RewardType.EXPERIENCE, RewardType.MONEY, RewardType.ITEM),
+                result.quest().rewards().stream().map(r -> r.type()).toList());
     }
 
     private ConfigurationSection load(String yaml) {

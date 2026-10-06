@@ -87,7 +87,8 @@ class MerchantTradeServiceTest {
         NpcIdentityService npcIdentityService = new NpcIdentityService(
                 plugin, new NpcIdRepository(database), new NpcBindingRepository(database));
         questProgressEngine = new QuestProgressEngine(
-                plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService);
+                plugin, questEngine, progressRepository, variableRepository, messagesService, npcIdentityService,
+                economyService);
         questProgressEngine.start();
 
         Path merchantsDir = tempDir.resolve("merchants");

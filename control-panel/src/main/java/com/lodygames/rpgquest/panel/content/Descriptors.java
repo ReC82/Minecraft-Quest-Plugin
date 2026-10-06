@@ -118,7 +118,17 @@ public final class Descriptors {
                             Field.text("value", "Valeur", "Valeur brute (ex. true).", true))),
             new Descriptor("COMMAND", "Commande console", "admin",
                     "Exécute une commande console à la fin de la quête. Sensible : validée strictement côté serveur au chargement.",
-                    List.of(Field.text("command", "Commande", "Commande sans le « / » initial (ex. give %player% diamond 1).", true))));
+                    List.of(Field.text("command", "Commande", "Commande sans le « / » initial (ex. give %player% diamond 1).", true))),
+            new Descriptor("MONEY", "Pièces (monnaie)", "money",
+                    "Crédite le portefeuille persistant du joueur à la fin de la quête. Aucun objet n'est "
+                            + "donné : la monnaie RPGQuest est un solde, pas un item, et aucun objet "
+                            + "d'inventaire n'est jamais compté comme de l'argent. Le crédit est tracé au "
+                            + "journal des transactions et ne peut pas avoir lieu deux fois pour la même "
+                            + "complétion.",
+                    List.of(Field.integer("amount", "Montant en pièces",
+                            "Nombre de pièces créditées (entier > 0). Le montant est une décision "
+                                    + "d'équilibrage : rien ne le plafonne côté serveur, un montant "
+                                    + "inhabituellement élevé est seulement signalé."))));
 
     /** Descripteur d'un {@code kind}, qu'il soit objectif ou récompense. */
     public static Optional<Descriptor> any(String kind) {

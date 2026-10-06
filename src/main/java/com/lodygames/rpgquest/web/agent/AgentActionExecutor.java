@@ -1,6 +1,9 @@
 package com.lodygames.rpgquest.web.agent;
 
 import com.lodygames.rpgquest.content.pack.ContentFamily;
+import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
+import com.lodygames.rpgquest.dialogue.model.ActionType;
+import com.lodygames.rpgquest.quest.model.QuestState;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -806,11 +809,94 @@ public final class AgentActionExecutor {
         String next = close ? null : dialogueNodeRef(action.param("next_node_id"));
         if (!close && next == null) {
             return done(AgentActionOutcome.rejected(action.id(),
-                    "Un choix simple redirige vers un nœud (« next_node_id ») OU ferme le dialogue (« close=true »)."));
+                    "Un choix redirige vers un nœud (« next_node_id ») OU ferme le dialogue (« close=true »)."));
         }
-        return actions.dialogueChoiceUpdate(dialogueId, nodeId, index, choiceText, next, close)
+
+        // Édition structurée optionnelle. Paramètre absent = « keep » : on ne touche à rien, et le
+        // choix garde son action de quête / sa condition d'état telles quelles.
+        DialogueDefinitionEditor.QuestActionEdit questAction;
+        try {
+            questAction = questActionEdit(action);
+        } catch (IllegalArgumentException e) {
+            return done(AgentActionOutcome.rejected(action.id(), e.getMessage()));
+        }
+        DialogueDefinitionEditor.QuestConditionEdit questCondition;
+        try {
+            questCondition = questConditionEdit(action);
+        } catch (IllegalArgumentException e) {
+            return done(AgentActionOutcome.rejected(action.id(), e.getMessage()));
+        }
+
+        return actions.dialogueChoiceUpdate(dialogueId, nodeId, index, choiceText, next, close,
+                        questAction, questCondition)
                 .thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code quest_action} ∈ {@code keep} (défaut) / {@code none} / {@code START_QUEST} /
+     * {@code ADVANCE_QUEST} / {@code TURN_IN_QUEST}, avec {@code quest_id} pour les trois derniers.
+     */
+    private static DialogueDefinitionEditor.QuestActionEdit questActionEdit(AgentAction action) {
+        String mode = trimOrNull(action.param("quest_action"));
+        if (mode == null || mode.equalsIgnoreCase("keep")) {
+            return DialogueDefinitionEditor.QuestActionEdit.keep();
+        }
+        if (mode.equalsIgnoreCase("none")) {
+            return DialogueDefinitionEditor.QuestActionEdit.remove();
+        }
+        ActionType type;
+        try {
+            type = ActionType.valueOf(mode.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Paramètre « quest_action » inconnu : « " + mode + " ».");
+        }
+        if (!DialogueDefinitionEditor.QUEST_ACTION_TYPES.contains(type)) {
+            throw new IllegalArgumentException("« quest_action » doit être START_QUEST, ADVANCE_QUEST ou TURN_IN_QUEST.");
+        }
+        String questId = questRef(action.param("quest_id"));
+        if (questId == null) {
+            throw new IllegalArgumentException("Paramètre « quest_id » manquant ou invalide pour l'action de quête.");
+        }
+        return DialogueDefinitionEditor.QuestActionEdit.set(type, questId);
+    }
+
+    /**
+     * {@code quest_condition} ∈ {@code keep} (défaut) / {@code none} / un {@link QuestState}, avec
+     * {@code condition_quest_id} et l'option {@code condition_negate}.
+     */
+    private static DialogueDefinitionEditor.QuestConditionEdit questConditionEdit(AgentAction action) {
+        String mode = trimOrNull(action.param("quest_condition"));
+        if (mode == null || mode.equalsIgnoreCase("keep")) {
+            return DialogueDefinitionEditor.QuestConditionEdit.keep();
+        }
+        if (mode.equalsIgnoreCase("none")) {
+            return DialogueDefinitionEditor.QuestConditionEdit.remove();
+        }
+        QuestState state;
+        try {
+            state = QuestState.valueOf(mode.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Paramètre « quest_condition » inconnu : « " + mode + " ».");
+        }
+        String questId = questRef(action.param("condition_quest_id"));
+        if (questId == null) {
+            throw new IllegalArgumentException("Paramètre « condition_quest_id » manquant ou invalide pour la condition.");
+        }
+        return DialogueDefinitionEditor.QuestConditionEdit.set(state, questId, isTrue(action.param("condition_negate")));
+    }
+
+    /** Référence de quête normalisée en {@code namespace:key} minuscule, ou {@code null} si invalide. */
+    private static String questRef(String raw) {
+        String value = trimOrNull(raw);
+        if (value == null) {
+            return null;
+        }
+        value = value.toLowerCase(java.util.Locale.ROOT);
+        if (!DIALOGUE_REF.matcher(value).matches()) {
+            return null;
+        }
+        return value.contains(":") ? value : "rpgquest:" + value;
     }
 
     private CompletableFuture<AgentActionOutcome> dialogueChoiceDelete(AgentAction action) {

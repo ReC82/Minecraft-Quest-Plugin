@@ -334,6 +334,38 @@ class AgentActionExecutorTest {
     }
 
     @Test
+    void dialogueChoiceUpdateCarriesTheStructuredQuestEdits() {
+        AgentActionOutcome ok = run(new AgentAction("dcs0", "dialogue.choice.update",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "greeting", "choice_index", "0",
+                        "choice_text", "Je vais m'en charger", "next_node_id", "accepted",
+                        "quest_action", "start_quest", "quest_id", "cleanup",
+                        "quest_condition", "not_started", "condition_quest_id", "rpgquest:cleanup",
+                        "condition_negate", "true")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals(com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor.EditMode.SET,
+                actions.lastQuestAction.mode());
+        assertEquals("rpgquest:cleanup", actions.lastQuestAction.questId(), "clé simple préfixée");
+        assertEquals(com.lodygames.rpgquest.dialogue.model.ActionType.START_QUEST, actions.lastQuestAction.type());
+        assertEquals(com.lodygames.rpgquest.quest.model.QuestState.NOT_STARTED, actions.lastQuestCondition.state());
+        assertTrue(actions.lastQuestCondition.negate());
+    }
+
+    @Test
+    void dialogueChoiceUpdateRejectsAStructuredEditWithoutQuest() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dcs1", "dialogue.choice.update",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "greeting", "choice_index", "0",
+                        "choice_text", "X", "close", "true", "quest_action", "start_quest"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dcs2", "dialogue.choice.update",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "greeting", "choice_index", "0",
+                        "choice_text", "X", "close", "true", "quest_action", "give_item",
+                        "quest_id", "rpgquest:x"))).status());
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dcs3", "dialogue.choice.update",
+                Map.of("dialogue_id", "rpgquest:guard", "node_id", "greeting", "choice_index", "0",
+                        "choice_text", "X", "close", "true", "quest_condition", "nowhere",
+                        "condition_quest_id", "rpgquest:x"))).status());
+    }
+
+    @Test
     void dialogueChoiceUpdateAndDeleteValidateIndex() {
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dcu0", "dialogue.choice.update",
                 Map.of("dialogue_id", "rpgquest:guard", "node_id", "greeting", "choice_index", "-1",
@@ -344,6 +376,11 @@ class AgentActionExecutorTest {
         assertEquals(AgentActionOutcome.SUCCESS, upd.status());
         assertEquals("choice.update", actions.lastEdit);
         assertEquals(1, actions.lastEditChoiceIndex);
+        // Sans paramètre structuré, l'action et la condition de quête du choix ne sont pas touchées.
+        assertEquals(com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor.EditMode.KEEP,
+                actions.lastQuestAction.mode());
+        assertEquals(com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor.EditMode.KEEP,
+                actions.lastQuestCondition.mode());
 
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dcd0", "dialogue.choice.delete",
                 Map.of("dialogue_id", "rpgquest:guard", "node_id", "greeting", "choice_index", "999"))).status());
@@ -739,6 +776,8 @@ class AgentActionExecutorTest {
         int lastEditChoiceIndex = -1;
         String lastEditNext;
         boolean lastEditClose;
+        com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor.QuestActionEdit lastQuestAction;
+        com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor.QuestConditionEdit lastQuestCondition;
 
         @Override
         public CompletableFuture<MutationResult> dialogueNodeUpdate(String dialogueId, String nodeId, String speaker,
@@ -774,14 +813,18 @@ class AgentActionExecutorTest {
         }
 
         @Override
-        public CompletableFuture<MutationResult> dialogueChoiceUpdate(String dialogueId, String nodeId, int choiceIndex,
-                                                                      String choiceText, String nextNodeId, boolean close) {
+        public CompletableFuture<MutationResult> dialogueChoiceUpdate(
+                String dialogueId, String nodeId, int choiceIndex, String choiceText, String nextNodeId, boolean close,
+                com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor.QuestActionEdit questAction,
+                com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor.QuestConditionEdit questCondition) {
             lastEdit = "choice.update";
             lastEditDialogueId = dialogueId;
             lastEditNodeId = nodeId;
             lastEditChoiceIndex = choiceIndex;
             lastEditNext = nextNodeId;
             lastEditClose = close;
+            lastQuestAction = questAction;
+            lastQuestCondition = questCondition;
             return mutation("choice.update " + nodeId + "#" + choiceIndex);
         }
 

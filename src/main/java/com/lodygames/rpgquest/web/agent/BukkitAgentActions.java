@@ -869,9 +869,12 @@ public final class BukkitAgentActions implements AgentActions {
     }
 
     @Override
-    public CompletableFuture<MutationResult> dialogueChoiceUpdate(String dialogueId, String nodeId, int choiceIndex,
-                                                                  String choiceText, String nextNodeId, boolean close) {
-        return applyEdit(dialogueEditor.updateChoice(dialogueId, nodeId, choiceIndex, choiceText, nextNodeId, close));
+    public CompletableFuture<MutationResult> dialogueChoiceUpdate(
+            String dialogueId, String nodeId, int choiceIndex, String choiceText, String nextNodeId, boolean close,
+            DialogueDefinitionEditor.QuestActionEdit questAction,
+            DialogueDefinitionEditor.QuestConditionEdit questCondition) {
+        return applyEdit(dialogueEditor.updateChoice(dialogueId, nodeId, choiceIndex, choiceText, nextNodeId, close,
+                questAction, questCondition));
     }
 
     @Override

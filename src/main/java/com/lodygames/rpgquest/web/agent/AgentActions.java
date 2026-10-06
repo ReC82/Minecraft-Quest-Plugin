@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.web.agent;
 
+import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -312,12 +313,13 @@ public interface AgentActions {
      */
     CompletableFuture<MutationResult> dialogueDefinitionCreate(String key, String speaker, String text);
 
-    // ---- Édition guidée d'un dialogue existant (issue #82 phase 1) -----------------------------
+    // ---- Édition guidée d'un dialogue existant (issue #82) -------------------------------------
     //
-    // Périmètre volontairement restreint : locuteur/texte d'un nœud, nœud simple, choix simple
-    // (sans condition, sans action autre que « fermer »). Chaque écriture réécrit le fichier au
-    // format canonique du panel, est re-parsée puis rechargée ; en cas d'échec le contenu d'origine
-    // est restauré. Jamais de YAML brut, jamais de chemin — seulement des champs métier validés.
+    // Périmètre : locuteur/texte d'un nœud, nœud simple, choix (texte, cible, action de quête,
+    // condition d'état de quête). Chaque écriture réécrit le fichier au format canonique du panel,
+    // est re-parsée puis rechargée ; en cas d'échec le contenu d'origine est restauré. Jamais de
+    // YAML brut, jamais de chemin — seulement des champs métier validés. Tout ce que l'appelant ne
+    // nomme pas explicitement (autres actions, autres conditions, traductions) est reconduit.
 
     /** Modifie le locuteur et le texte d'un nœud existant (les choix sont conservés). */
     CompletableFuture<MutationResult> dialogueNodeUpdate(String dialogueId, String nodeId, String speaker, String text);
@@ -329,9 +331,18 @@ public interface AgentActions {
     CompletableFuture<MutationResult> dialogueChoiceAdd(String dialogueId, String nodeId, String choiceText,
                                                         String nextNodeId, boolean close);
 
-    /** Modifie le texte et la cible d'un choix simple existant (repéré par son index dans le nœud). */
-    CompletableFuture<MutationResult> dialogueChoiceUpdate(String dialogueId, String nodeId, int choiceIndex,
-                                                           String choiceText, String nextNodeId, boolean close);
+    /**
+     * Modifie un choix existant (repéré par son index dans le nœud) : texte, cible, et — si les
+     * intentions le demandent — son action de quête et sa condition {@code QUEST_STATE}. Les autres
+     * actions et conditions du choix sont reconduites à l'identique.
+     *
+     * @param questAction    intention sur l'action de quête ({@code KEEP} ne touche à rien)
+     * @param questCondition intention sur la condition d'état de quête
+     */
+    CompletableFuture<MutationResult> dialogueChoiceUpdate(
+            String dialogueId, String nodeId, int choiceIndex, String choiceText, String nextNodeId, boolean close,
+            DialogueDefinitionEditor.QuestActionEdit questAction,
+            DialogueDefinitionEditor.QuestConditionEdit questCondition);
 
     /** Supprime un choix simple (si le nœud garde au moins un choix). */
     CompletableFuture<MutationResult> dialogueChoiceDelete(String dialogueId, String nodeId, int choiceIndex);

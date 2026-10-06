@@ -1,11 +1,19 @@
 package com.lodygames.rpgquest.dialogue;
 
+import com.lodygames.rpgquest.dialogue.model.ActionType;
+import com.lodygames.rpgquest.dialogue.model.AdvanceQuestAction;
 import com.lodygames.rpgquest.dialogue.model.CloseAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
+import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
+import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
+import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
+import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
+import com.lodygames.rpgquest.dialogue.model.TurnInQuestAction;
 import com.lodygames.rpgquest.quest.model.LocalizedText;
+import com.lodygames.rpgquest.quest.model.QuestState;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -26,11 +34,20 @@ import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 /**
- * Édition <strong>guidée et sûre</strong> d'un dialogue déjà chargé — phase 1 de l'éditeur
- * {@code /dialogues} (issue #82). Périmètre volontairement restreint : modifier le locuteur / le
- * texte d'un nœud, ajouter un nœud simple, ajouter / modifier / supprimer un <em>choix simple</em>
- * (sans condition, sans action autre que {@code CLOSE}). L'édition fine des actions et conditions
- * riches, le renommage de nœud et la suppression de nœud restent hors périmètre.
+ * Édition <strong>guidée et sûre</strong> d'un dialogue déjà chargé — éditeur {@code /dialogues}
+ * (issue #82). Périmètre : modifier le locuteur / le texte d'un nœud, ajouter un nœud simple,
+ * ajouter / modifier / supprimer un choix. Le renommage et la suppression de nœud restent hors
+ * périmètre.
+ *
+ * <p><strong>Phase 2</strong> : {@link #updateChoice} ne refuse plus un choix « riche ». Le texte
+ * et la cible d'un choix sont modifiables même s'il porte des conditions et des actions, et ces
+ * dernières sont <em>reconduites à l'identique</em> (même ordre, mêmes valeurs). Deux propriétés
+ * structurées sont en plus éditables explicitement — l'action de quête
+ * ({@code START_QUEST} / {@code ADVANCE_QUEST} / {@code TURN_IN_QUEST}, voir {@link QuestActionEdit})
+ * et la condition {@code QUEST_STATE} ({@link QuestConditionEdit}) — chacune pilotée par un
+ * {@link EditMode} dont la valeur par défaut, {@link EditMode#KEEP}, ne touche à rien. Tout ce que
+ * l'appelant ne nomme pas est conservé : aucune simplification silencieuse n'est possible par ce
+ * chemin.</p>
  *
  * <p>Discipline d'écriture, pour chaque mutation :</p>
  * <ol>
@@ -162,17 +179,55 @@ public final class DialogueDefinitionEditor {
         });
     }
 
-    /** Modifie le texte et la cible ({@code next} / fermeture) d'un choix simple existant. */
+    /**
+     * Modifie le texte et la cible ({@code next} / fermeture) d'un choix existant, en reconduisant
+     * à l'identique ses conditions et ses actions. Surcharge de compatibilité : équivaut à
+     * {@link #updateChoice(String, String, int, String, String, boolean, QuestActionEdit, QuestConditionEdit)}
+     * avec deux intentions {@link EditMode#KEEP}.
+     */
     public Result updateChoice(String dialogueId, String nodeId, int choiceIndex, String choiceText,
                                String nextNodeId, boolean close) {
+        return updateChoice(dialogueId, nodeId, choiceIndex, choiceText, nextNodeId, close,
+                QuestActionEdit.keep(), QuestConditionEdit.keep());
+    }
+
+    /**
+     * Modifie un choix existant : texte, cible, et — si l'appelant le demande — son action de quête
+     * et sa condition {@code QUEST_STATE}. Tout le reste du choix (autres actions, autres
+     * conditions, leur ordre) est conservé tel quel.
+     *
+     * @param questAction    intention sur l'action de quête du choix ({@link EditMode#KEEP} par défaut)
+     * @param questCondition intention sur la condition {@code QUEST_STATE} du choix
+     */
+    public Result updateChoice(String dialogueId, String nodeId, int choiceIndex, String choiceText,
+                               String nextNodeId, boolean close, QuestActionEdit questAction,
+                               QuestConditionEdit questCondition) {
         String text = clean(choiceText);
         String next = clean(nextNodeId);
         if (text == null) {
             return Result.fail("INVALID", "Texte du choix obligatoire.");
         }
         if (close == (next != null)) {
-            return Result.fail("INVALID", "Un choix simple redirige vers un nœud OU ferme le dialogue — pas les deux, pas aucun.");
+            return Result.fail("INVALID", "Un choix redirige vers un nœud OU ferme le dialogue — pas les deux, pas aucun.");
         }
+        QuestActionEdit qa = questAction == null ? QuestActionEdit.keep() : questAction;
+        QuestConditionEdit qc = questCondition == null ? QuestConditionEdit.keep() : questCondition;
+        NamespacedKey actionQuest = null;
+        if (qa.mode() == EditMode.SET) {
+            actionQuest = normalizeId(qa.questId());
+            if (actionQuest == null || qa.type() == null || !QUEST_ACTION_TYPES.contains(qa.type())) {
+                return Result.fail("INVALID", "Action de quête invalide : type et identifiant de quête obligatoires.");
+            }
+        }
+        NamespacedKey conditionQuest = null;
+        if (qc.mode() == EditMode.SET) {
+            conditionQuest = normalizeId(qc.questId());
+            if (conditionQuest == null || qc.state() == null) {
+                return Result.fail("INVALID", "Condition de quête invalide : état et identifiant de quête obligatoires.");
+            }
+        }
+        NamespacedKey finalActionQuest = actionQuest;
+        NamespacedKey finalConditionQuest = conditionQuest;
         return mutate(dialogueId, "dialogue.choice.update", def -> {
             DialogueNode node = def.nodes().get(nodeId);
             if (node == null) {
@@ -181,22 +236,194 @@ public final class DialogueDefinitionEditor {
             if (choiceIndex < 0 || choiceIndex >= node.choices().size()) {
                 return Edit.fail("UNKNOWN_CHOICE", "Choix #" + choiceIndex + " introuvable dans le nœud « " + nodeId + " ».");
             }
-            if (!isSimple(node.choices().get(choiceIndex))) {
-                return Edit.fail("UNSAFE_CHOICE", "Ce choix porte des conditions ou des actions avancées — "
-                        + "édition réservée à une phase ultérieure de l'éditeur.");
-            }
             if (next != null && !def.nodes().containsKey(next)) {
                 return Edit.fail("UNKNOWN_TARGET", "Nœud cible « " + next + " » introuvable dans ce dialogue.");
             }
-            DialogueChoice replacement = close
-                    ? new DialogueChoice(LocalizedText.of(text), List.of(), List.of(new CloseAction()), null)
-                    : new DialogueChoice(LocalizedText.of(text), List.of(), List.of(), next);
+            DialogueChoice current = node.choices().get(choiceIndex);
+            List<String> effects = new ArrayList<>();
+            effects.add("choix #" + choiceIndex + " du nœud « " + nodeId + " » mis à jour");
+
+            List<DialogueAction> actions = applyClose(new ArrayList<>(current.actions()), close, effects);
+            actions = applyQuestAction(actions, qa, finalActionQuest, effects);
+            List<DialogueCondition> conditions =
+                    applyQuestCondition(new ArrayList<>(current.conditions()), qc, finalConditionQuest, effects);
+
+            DialogueChoice replacement =
+                    new DialogueChoice(LocalizedText.of(text), conditions, actions, close ? null : next);
             List<DialogueChoice> choices = new ArrayList<>(node.choices());
             choices.set(choiceIndex, replacement);
+            int kept = countPreserved(current);
+            if (kept > 0) {
+                effects.add(kept + " propriété(s) avancée(s) du choix conservée(s) à l'identique");
+            }
             return Edit.of(replaceNode(def, new DialogueNode(node.id(), node.speaker(), node.text(), choices)), null,
-                    List.of("choix #" + choiceIndex + " du nœud « " + nodeId + " » mis à jour"));
+                    effects);
         });
     }
+
+    // ---- Intentions d'édition structurée d'un choix -------------------------------------------
+
+    /** Quoi faire d'une propriété structurée d'un choix : ne pas y toucher, la retirer, la poser. */
+    public enum EditMode {
+        KEEP, REMOVE, SET
+    }
+
+    /** Les trois actions de dialogue qui pilotent une quête — les seules éditables structurellement. */
+    public static final java.util.Set<ActionType> QUEST_ACTION_TYPES =
+            java.util.Set.of(ActionType.START_QUEST, ActionType.ADVANCE_QUEST, ActionType.TURN_IN_QUEST);
+
+    /** Intention sur l'action de quête d'un choix. {@code type} / {@code questId} servent en {@link EditMode#SET}. */
+    public record QuestActionEdit(EditMode mode, ActionType type, String questId) {
+
+        public static QuestActionEdit keep() {
+            return new QuestActionEdit(EditMode.KEEP, null, null);
+        }
+
+        public static QuestActionEdit remove() {
+            return new QuestActionEdit(EditMode.REMOVE, null, null);
+        }
+
+        public static QuestActionEdit set(ActionType type, String questId) {
+            return new QuestActionEdit(EditMode.SET, type, questId);
+        }
+    }
+
+    /** Intention sur la condition {@code QUEST_STATE} d'un choix. */
+    public record QuestConditionEdit(EditMode mode, QuestState state, String questId, boolean negate) {
+
+        public static QuestConditionEdit keep() {
+            return new QuestConditionEdit(EditMode.KEEP, null, null, false);
+        }
+
+        public static QuestConditionEdit remove() {
+            return new QuestConditionEdit(EditMode.REMOVE, null, null, false);
+        }
+
+        public static QuestConditionEdit set(QuestState state, String questId, boolean negate) {
+            return new QuestConditionEdit(EditMode.SET, state, questId, negate);
+        }
+    }
+
+    /** Pose ou retire le {@link CloseAction} — sans réordonner la liste quand l'état ne change pas. */
+    private static List<DialogueAction> applyClose(List<DialogueAction> actions, boolean close, List<String> effects) {
+        boolean had = actions.stream().anyMatch(a -> a instanceof CloseAction);
+        if (close && !had) {
+            actions.add(new CloseAction());
+            effects.add("le choix ferme désormais le dialogue");
+        } else if (!close && had) {
+            actions.removeIf(a -> a instanceof CloseAction);
+            effects.add("le choix ne ferme plus le dialogue");
+        }
+        return actions;
+    }
+
+    /**
+     * Applique l'intention sur l'action de quête. En {@link EditMode#SET}, la nouvelle action prend
+     * la <em>place</em> de la première action de quête existante (ordre préservé) et les éventuels
+     * doublons sont retirés ; les actions non liées à une quête ne sont jamais touchées.
+     */
+    private static List<DialogueAction> applyQuestAction(List<DialogueAction> actions, QuestActionEdit edit,
+                                                         NamespacedKey questId, List<String> effects) {
+        if (edit.mode() == EditMode.KEEP) {
+            return actions;
+        }
+        if (edit.mode() == EditMode.REMOVE) {
+            if (actions.removeIf(DialogueDefinitionEditor::isQuestAction)) {
+                effects.add("action de quête retirée du choix");
+            }
+            return actions;
+        }
+        DialogueAction replacement = switch (edit.type()) {
+            case START_QUEST -> new StartQuestAction(questId);
+            case ADVANCE_QUEST -> new AdvanceQuestAction(questId);
+            default -> new TurnInQuestAction(questId);
+        };
+        int first = -1;
+        for (int i = 0; i < actions.size(); i++) {
+            if (isQuestAction(actions.get(i))) {
+                first = i;
+                break;
+            }
+        }
+        if (first < 0) {
+            actions.add(replacement);
+        } else {
+            actions.set(first, replacement);
+            for (int i = actions.size() - 1; i > first; i--) {
+                if (isQuestAction(actions.get(i))) {
+                    actions.remove(i);
+                }
+            }
+        }
+        effects.add("action " + edit.type() + " « " + questId + " » posée sur le choix");
+        return actions;
+    }
+
+    /** Idem pour la condition {@code QUEST_STATE} : les autres conditions restent intactes. */
+    private static List<DialogueCondition> applyQuestCondition(List<DialogueCondition> conditions,
+                                                               QuestConditionEdit edit, NamespacedKey questId,
+                                                               List<String> effects) {
+        if (edit.mode() == EditMode.KEEP) {
+            return conditions;
+        }
+        if (edit.mode() == EditMode.REMOVE) {
+            if (conditions.removeIf(DialogueDefinitionEditor::isQuestStateCondition)) {
+                effects.add("condition d'état de quête retirée du choix");
+            }
+            return conditions;
+        }
+        DialogueCondition replacement = new QuestStateCondition(questId, edit.state());
+        if (edit.negate()) {
+            replacement = new NegatedCondition(replacement);
+        }
+        int first = -1;
+        for (int i = 0; i < conditions.size(); i++) {
+            if (isQuestStateCondition(conditions.get(i))) {
+                first = i;
+                break;
+            }
+        }
+        if (first < 0) {
+            conditions.add(replacement);
+        } else {
+            conditions.set(first, replacement);
+            for (int i = conditions.size() - 1; i > first; i--) {
+                if (isQuestStateCondition(conditions.get(i))) {
+                    conditions.remove(i);
+                }
+            }
+        }
+        effects.add("condition QUEST_STATE « " + questId + " » = " + (edit.negate() ? "NON " : "") + edit.state()
+                + " posée sur le choix");
+        return conditions;
+    }
+
+    /** Conditions et actions du choix que l'éditeur guidé n'expose pas et reconduit telles quelles. */
+    private static int countPreserved(DialogueChoice choice) {
+        int kept = 0;
+        for (DialogueAction a : choice.actions()) {
+            if (!(a instanceof CloseAction) && !isQuestAction(a)) {
+                kept++;
+            }
+        }
+        for (DialogueCondition c : choice.conditions()) {
+            if (!isQuestStateCondition(c)) {
+                kept++;
+            }
+        }
+        return kept;
+    }
+
+    private static boolean isQuestAction(DialogueAction action) {
+        return action instanceof StartQuestAction || action instanceof AdvanceQuestAction
+                || action instanceof TurnInQuestAction;
+    }
+
+    private static boolean isQuestStateCondition(DialogueCondition condition) {
+        DialogueCondition inner = condition instanceof NegatedCondition n ? n.inner() : condition;
+        return inner instanceof QuestStateCondition;
+    }
+
 
     /** Supprime un choix simple si le nœud garde au moins un choix (invariant du modèle). */
     public Result deleteChoice(String dialogueId, String nodeId, int choiceIndex) {
@@ -213,8 +440,9 @@ public final class DialogueDefinitionEditor {
                         + "(un nœud doit garder au moins un choix).");
             }
             if (!isSimple(node.choices().get(choiceIndex))) {
-                return Edit.fail("UNSAFE_CHOICE", "Ce choix porte des conditions ou des actions avancées — "
-                        + "suppression réservée à une phase ultérieure de l'éditeur.");
+                return Edit.fail("UNSAFE_CHOICE", "Ce choix porte des conditions ou des actions — sa suppression "
+                        + "effacerait aussi celles-ci. Retirer d'abord son action de quête et sa condition depuis "
+                        + "« Modifier ce choix », puis le supprimer.");
             }
             List<DialogueChoice> choices = new ArrayList<>(node.choices());
             choices.remove(choiceIndex);

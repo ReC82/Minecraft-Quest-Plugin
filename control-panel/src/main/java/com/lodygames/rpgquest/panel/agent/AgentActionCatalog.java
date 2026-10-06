@@ -443,6 +443,10 @@ public final class AgentActionCatalog {
                         return Validation.fail("Index de choix manquant ou hors bornes.");
                     }
                     params.put("choice_index", idx.toString());
+                    Validation structured = dialogueChoiceStructuredParams(form, params);
+                    if (structured != null) {
+                        return structured;
+                    }
                 }
             }
             case "dialogue.choice.delete" -> {
@@ -537,6 +541,58 @@ public final class AgentActionCatalog {
             return null;
         }
         return value.contains(":") ? value : "rpgquest:" + value;
+    }
+
+    /**
+     * Valeurs acceptées par {@code quest_action} / {@code quest_condition} de
+     * {@code dialogue.choice.update}. {@code keep} (ou l'absence du champ) laisse la propriété
+     * intacte côté serveur — c'est le défaut qui garantit qu'un formulaire partiel ne simplifie
+     * jamais un choix.
+     */
+    private static final java.util.Set<String> QUEST_ACTION_MODES =
+            java.util.Set.of("keep", "none", "start_quest", "advance_quest", "turn_in_quest");
+    private static final java.util.Set<String> QUEST_STATE_MODES =
+            java.util.Set.of("keep", "none", "not_started", "active", "ready_to_turn_in", "completed",
+                    "failed", "abandoned");
+
+    /**
+     * Valide la partie « édition structurée » de {@code dialogue.choice.update} (action de quête et
+     * condition d'état de quête) et l'ajoute à {@code params}. Retourne {@code null} si tout va
+     * bien, un {@link Validation} en échec sinon.
+     */
+    private static Validation dialogueChoiceStructuredParams(Map<String, String> form, Map<String, String> params) {
+        String questAction = trim(form.get("quest_action")).toLowerCase(java.util.Locale.ROOT);
+        if (!questAction.isEmpty()) {
+            if (!QUEST_ACTION_MODES.contains(questAction)) {
+                return Validation.fail("Action de quête inconnue (keep, none, start_quest, advance_quest, turn_in_quest).");
+            }
+            params.put("quest_action", questAction);
+            if (!questAction.equals("keep") && !questAction.equals("none")) {
+                String questId = normalizeDialogueId(trim(form.get("quest_id")));
+                if (questId == null) {
+                    return Validation.fail("Quête à démarrer / avancer / rendre manquante ou invalide.");
+                }
+                params.put("quest_id", questId);
+            }
+        }
+        String questCondition = trim(form.get("quest_condition")).toLowerCase(java.util.Locale.ROOT);
+        if (!questCondition.isEmpty()) {
+            if (!QUEST_STATE_MODES.contains(questCondition)) {
+                return Validation.fail("État de quête inconnu pour la condition du choix.");
+            }
+            params.put("quest_condition", questCondition);
+            if (!questCondition.equals("keep") && !questCondition.equals("none")) {
+                String questId = normalizeDialogueId(trim(form.get("condition_quest_id")));
+                if (questId == null) {
+                    return Validation.fail("Quête de la condition d'état manquante ou invalide.");
+                }
+                params.put("condition_quest_id", questId);
+                if ("true".equals(trim(form.get("condition_negate")))) {
+                    params.put("condition_negate", "true");
+                }
+            }
+        }
+        return null;
     }
 
     private static Integer parseIndex(String raw) {

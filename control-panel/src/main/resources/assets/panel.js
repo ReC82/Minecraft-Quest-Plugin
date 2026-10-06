@@ -577,6 +577,122 @@
     }
   }
 
+  /* ---- Champ MiniMessage de l'éditeur guidé : aperçu rendu + palette (#82) ---------- */
+
+  /*
+   * Table de couleurs volontairement alignée sur MiniText.NAMED_COLORS (côté serveur) : l'aperçu
+   * live doit donner exactement la même teinte que le texte déjà rendu dans la page. Toute
+   * modification ici doit être reportée dans MiniText.java (et réciproquement).
+   */
+  var MM_COLORS = {
+    black: "#3b3b3b", dark_blue: "#3b5bd6", dark_green: "#2f9e44", dark_aqua: "#22a5a5",
+    dark_red: "#c0392b", dark_purple: "#9b59b6", gold: "#d4a017", gray: "#aab1bd", grey: "#aab1bd",
+    dark_gray: "#8a929e", dark_grey: "#8a929e", blue: "#5b8dff", green: "#43c463", aqua: "#4bd6d6",
+    red: "#f06663", light_purple: "#e06bd6", yellow: "#e3c33b", white: "#e6e8ec"
+  };
+  var MM_DECOR = { bold: "b", b: "b", italic: "i", i: "i", em: "i", underlined: "u", u: "u",
+    strikethrough: "s", st: "s", s: "s" };
+  var MM_TAG = /<(\/?)([a-zA-Z0-9_#:]+)(?::([^>]*))?>/g;
+  /* Le texte entier est-il enrobé d'une seule balise de couleur nommée ? */
+  var MM_WRAPPED = /^<([a-z_]+)>([\s\S]*)<\/\1>$/;
+
+  function mmEscape(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  /** Rendu HTML sûr d'un sous-ensemble de MiniMessage — équivalent client de MiniText.html. */
+  function mmHtml(raw) {
+    if (!raw) { return ""; }
+    var out = "";
+    var open = [];
+    var pos = 0;
+    var m;
+    MM_TAG.lastIndex = 0;
+    while ((m = MM_TAG.exec(raw)) !== null) {
+      out += mmEscape(raw.substring(pos, m.index));
+      pos = MM_TAG.lastIndex;
+      var closing = m[1] === "/";
+      var name = m[2].toLowerCase();
+      var arg = m[3];
+      if (closing || name === "reset" || name === "r") {
+        while (open.length) { out += open.pop(); }
+        continue;
+      }
+      var color = MM_COLORS[name] || null;
+      if (!color && (name === "color" || name === "colour" || name === "c") && arg) {
+        color = MM_COLORS[arg.toLowerCase()] || (/^#?[0-9a-fA-F]{6}$/.test(arg) ? "#" + arg.replace("#", "") : null);
+      }
+      if (!color && /^#[0-9a-fA-F]{6}$/.test(name)) { color = name; }
+      if (color) {
+        out += '<span style="color:' + color + '">';
+        open.push("</span>");
+      } else if (MM_DECOR[name]) {
+        out += "<" + MM_DECOR[name] + ">";
+        open.push("</" + MM_DECOR[name] + ">");
+      }
+      /* balise inconnue (gradient, hover, font…) : ignorée, jamais affichée brute */
+    }
+    out += mmEscape(raw.substring(pos));
+    while (open.length) { out += open.pop(); }
+    return out;
+  }
+
+  function initMiniMessageFields() {
+    var fields = document.querySelectorAll("[data-mm-field]");
+    for (var i = 0; i < fields.length; i++) {
+      (function (field) {
+        var input = field.querySelector("[data-mm-text]");
+        var preview = field.querySelector("[data-mm-preview]");
+        var mixedNote = field.querySelector("[data-mm-mixed]");
+        var swatches = field.querySelectorAll(".dlg-swatch");
+        if (!input) { return; }
+
+        /* Couleur englobante actuelle, ou "" ; null = balises composites (palette désactivée). */
+        function outerColor() {
+          var v = input.value;
+          if (v.indexOf("<") < 0) { return ""; }
+          var m = MM_WRAPPED.exec(v);
+          if (m && MM_COLORS[m[1]]) { return m[1]; }
+          return null;
+        }
+
+        function refresh() {
+          if (preview) { preview.innerHTML = mmHtml(input.value); }
+          var current = outerColor();
+          var mixed = current === null;
+          if (mixedNote) { mixedNote.hidden = !mixed; }
+          for (var k = 0; k < swatches.length; k++) {
+            var sw = swatches[k];
+            sw.disabled = mixed;
+            var on = !mixed && (sw.getAttribute("data-color") || "") === current;
+            sw.classList.toggle("on", on);
+            sw.setAttribute("aria-pressed", on ? "true" : "false");
+          }
+        }
+
+        function apply(color) {
+          var current = outerColor();
+          if (current === null) { return; }
+          var body = input.value;
+          if (current !== "") {
+            body = body.substring(current.length + 2, body.length - current.length - 3);
+          }
+          input.value = color === "" ? body : "<" + color + ">" + body + "</" + color + ">";
+          refresh();
+        }
+
+        for (var s = 0; s < swatches.length; s++) {
+          (function (sw) {
+            sw.addEventListener("click", function () { apply(sw.getAttribute("data-color") || ""); });
+          })(swatches[s]);
+        }
+        input.addEventListener("input", refresh);
+        refresh();
+      })(fields[i]);
+    }
+  }
+
   function applyType(sel) {
     var row = sel.closest ? sel.closest(".rowitem") : null;
     if (!row) { return; }
@@ -612,6 +728,7 @@
     run("initCombo", initCombo);
     run("initEditorForms", initEditorForms);
     run("initColorPalette", initColorPalette);
+    run("initMiniMessageFields", initMiniMessageFields);
     run("initDrawer", initDrawer);
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.

@@ -158,16 +158,58 @@ class DialoguesCatalogTest {
         assertTrue(page.contains("name=\"type\" value=\"dialogue.node.update\""), "édition de nœud");
         assertTrue(page.contains("name=\"type\" value=\"dialogue.choice.add\""), "ajout de choix");
         assertTrue(page.contains("name=\"type\" value=\"dialogue.node.create\""), "ajout de nœud");
-        assertTrue(page.contains("name=\"type\" value=\"dialogue.choice.update\""), "édition de choix simple");
+        assertTrue(page.contains("name=\"type\" value=\"dialogue.choice.update\""), "édition de choix");
         assertTrue(page.contains("name=\"type\" value=\"dialogue.choice.delete\""), "suppression de choix simple");
         // Cible d'un choix : select des nœuds existants du dialogue, pas un champ libre.
         assertTrue(page.contains("<option value=\"accepted\""));
-        // Le choix « J'accepte » porte une action START_QUEST + une condition -> non simple : pas de form d'édition,
-        // mais la note « édition avancée » à la place.
-        assertTrue(page.contains("édition prévue dans une phase"), "note choix avancé");
+        // Le choix « J'accepte » porte une action START_QUEST + une condition QUEST_STATE : il est
+        // désormais éditable, et ces deux propriétés sont offertes en sélecteurs pré-remplis (#82).
+        assertFalse(page.contains("édition prévue dans une phase"), "plus de cul-de-sac sur un choix riche");
+        assertTrue(page.contains("name=\"quest_action\""), "sélecteur d'action de quête");
+        assertTrue(page.contains("name=\"quest_condition\""), "sélecteur de condition d'état");
+        assertTrue(page.contains("<option value=\"start_quest\" selected>"), "action de quête pré-remplie");
+        assertTrue(page.contains("<option value=\"not_started\" selected>"), "état de quête pré-rempli");
+        assertTrue(page.contains("name=\"condition_negate\""), "négation de la condition");
+        // Champ MiniMessage : source brute éditable + palette + aperçu rendu.
+        assertTrue(page.contains("data-mm-text"), "champ MiniMessage");
+        assertTrue(page.contains("data-mm-palette"), "palette de couleurs");
+        assertTrue(page.contains("data-mm-preview"), "aperçu du texte");
         // Bandeau explicatif du format canonique.
         assertTrue(page.contains("canonique</strong>"), "bandeau format canonique");
     }
+
+    @Test
+    void richChoiceKeepsItsUneditablePropertiesAndSaysSo() throws Exception {
+        start();
+        runListWithSuccess(RICH_CHOICE_DETAILS);
+        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
+
+        // L'action GIVE_ITEM et la condition HAS_PERMISSION ne sont pas éditables ici : elles sont
+        // annoncées comme conservées à l'identique, jamais perdues en silence.
+        assertTrue(page.contains("Conservé à l'identique par l'enregistrement"), "limites annoncées");
+        assertTrue(page.contains("action donne"), "action non éditable listée");
+        assertTrue(page.contains("condition permission"), "condition non éditable listée");
+        // Le formulaire ne porte aucun champ pour ces propriétés : il ne peut pas les écraser.
+        assertFalse(page.contains("name=\"give_item\""));
+        // Deux actions de quête sur un même choix : l'éditeur n'y touche pas du tout.
+        assertTrue(page.contains("<input type=\"hidden\" name=\"quest_action\" value=\"keep\">"),
+                "deux actions de quête : conservées telles quelles");
+    }
+
+    /** Un choix riche : 2 actions de quête (non représentables), + GIVE_ITEM et HAS_PERMISSION. */
+    private static final String RICH_CHOICE_DETAILS = "{"
+            + "\"total\":1,\"withWarnings\":0,\"nodeTotal\":1,\"loadIssues\":[],\"declaredButMissing\":[],"
+            + "\"dialogues\":[{"
+            + "\"id\":\"rpgquest:jo\",\"key\":\"jo\",\"startNodeId\":\"start\","
+            + "\"linkedNpcIds\":[\"jo\"],\"nodeCount\":1,\"choiceCount\":1,"
+            + "\"referencedQuestIds\":[],\"startsQuestIds\":[],\"warnings\":[],"
+            + "\"nodes\":[{\"id\":\"start\",\"speaker\":\"Jo\",\"text\":\"Salut.\",\"start\":true,\"reachable\":true,"
+            + "\"choices\":[{\"text\":\"Merci\",\"nextNodeId\":\"\",\"actions\":["
+            + "{\"kind\":\"START_QUEST\",\"target\":\"rpgquest:a\",\"value\":\"\",\"raw\":\"\"},"
+            + "{\"kind\":\"ADVANCE_QUEST\",\"target\":\"rpgquest:b\",\"value\":\"\",\"raw\":\"\"},"
+            + "{\"kind\":\"GIVE_ITEM\",\"target\":\"BREAD\",\"value\":\"3\",\"raw\":\"\"}],"
+            + "\"conditions\":[{\"kind\":\"HAS_PERMISSION\",\"target\":\"rpgquest.vip\",\"value\":\"\",\"raw\":\"\","
+            + "\"negated\":false}]}]}]}]}";
 
     @Test
     void nodeUpdateActionIsValidatedAndQueued() throws Exception {

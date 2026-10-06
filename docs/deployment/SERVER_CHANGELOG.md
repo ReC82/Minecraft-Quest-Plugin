@@ -4633,3 +4633,62 @@ pour le JAR. **Attention au rollback du JAR** : un JAR V25 ne connaît pas les n
 Elles restent en place sans le gêner (il ne les lit pas) et `PRAGMA user_version` reste à 26, donc
 la migration ne sera pas rejouée ; en revanche une dette `PENDING` écrite par V26 ne serait **pas**
 reprise par un JAR antérieur — elle le redeviendrait au retour sur V26, sans double paiement.
+
+---
+
+## 2026-10-06 (lot 14) - #199 : groupes multiples et droits effectifs PlugAdmin
+
+### Changement
+
+Nouvelle page **`/groups`** : création, modification et suppression de **groupes** de permissions
+PlugAdmin, appartenance d'un compte à **plusieurs** groupes, et affichage des **droits effectifs
+avec leur provenance** sur la fiche de chaque compte.
+
+- **Combinaison = UNION** du rôle et des groupes. Aucun refus explicite n'existe dans le modèle,
+  donc un groupe ne peut jamais *réduire* les droits d'un rôle.
+- **Anti-élévation** : on ne peut ni accorder ni retirer une permission qu'on ne détient pas
+  soi-même. `PLAYER_OP_WRITE` reste donc inatteignable pour un ADMIN, même par un groupe.
+- **Révocation immédiate** : droits effectifs recalculés à chaque requête, donc effet sur les
+  sessions déjà ouvertes sans reconnexion.
+
+### Action serveur
+
+**Une seule cible : le Control Panel AWS** (`scripts/plugadmin/deploy.sh`). **Aucun JAR, aucun
+redémarrage Minecraft** — ce lot ne touche pas le plugin.
+
+### ⚠️ Migration automatique — OUI (base du panel uniquement)
+
+Trois `CREATE TABLE IF NOT EXISTS` **additifs** dans `control-panel.db` : `panel_group`,
+`panel_group_permission`, `panel_user_group`, plus un index sur l'appartenance. **`panel_user` n'est
+pas touché**, les rôles ne sont **pas** convertis en groupes, et une installation existante démarre
+avec **zéro groupe** — donc des droits effectifs strictement égaux à ceux du rôle. Aucun droit n'est
+élargi, aucun accès propriétaire n'est perdu. `data.db` du plugin n'est pas concerné.
+
+### Déploiement effectué
+
+| Cible | Empreinte | Vérification |
+|---|---|---|
+| Control Panel AWS | distribution `20261006-112436` | `PANEL_EXIT=0`, `/health` → `{"panel":"ONLINE"}`, service `active` |
+
+**Vérifié sur l'instance déployée** : les tables `panel_group`, `panel_group_permission` et
+`panel_user_group` existent réellement dans `/var/lib/plugadmin/control-panel.db`, et `/groups`
+appelée **sans session** répond **303** (redirection vers la connexion) — la garde backend est bien
+en place.
+
+**Tests** : `:control-panel:test` — **638** tests (1 ignoré), **0 échec, 0 erreur**.
+
+### Ce que ce déploiement ne fait PAS
+
+- **Il ne touche pas au plugin** ni à `data.db` : aucun redémarrage Minecraft.
+- **Il ne change aucun droit existant** : zéro groupe au départ.
+- **Aucun lien avec OP Minecraft, Paper ou LuckPerms.** Les groupes PlugAdmin n'accordent rien en
+  jeu. Le pont vers les droits Minecraft par monde est l'issue #200.
+
+### Validation
+
+TC-252 (nouveau, 30 étapes, 9 sections) dans `docs/MANUAL_TEST_PLAN.md`. **Aucune case cochée.**
+Les sections les plus importantes sont **E** (révocation sur une session active, avec deux fenêtres)
+et **F** (anti-élévation, dont le forçage de formulaire).
+
+Rollback : `scripts/plugadmin/rollback.sh`. Les trois tables peuvent rester en place sans effet avec
+une distribution antérieure du panel : aucune version précédente ne les lit.

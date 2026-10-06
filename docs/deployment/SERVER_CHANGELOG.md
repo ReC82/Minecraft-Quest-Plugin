@@ -4535,3 +4535,101 @@ complétion forcée depuis le panel et double clic rapide ne doivent produire **
 Rollback : `scripts/plugadmin/rollback.sh` pour le panel, `scripts/rollback-verygames.sh --latest`
 pour le JAR. Un JAR antérieur ignore simplement `type: MONEY` (récompense refusée au chargement de
 la quête concernée) ; la table `quest_reward_grants` reste en place sans effet et ne gêne rien.
+
+---
+
+## 2026-10-06 (lot 13) - #16 : une récompense monétaire due n'est plus perdue après un crash
+
+### Changement
+
+Le premier lot ne gardait trace que de ce qui avait **déjà** été payé : une récompense due mais non
+créditée (arrêt du serveur, panne SQL) ne laissait **aucune** trace et devenait invisible. Trois
+défauts corrigés, dont un **mesuré** :
+
+1. l'identité de paiement vivait **uniquement en mémoire** → perdue au redémarrage ;
+2. l'état `COMPLETED` était persisté dans une transaction **séparée** du crédit → fenêtre
+   « terminée mais jamais payée, sans trace » ;
+3. **mesuré** : plusieurs récompenses `MONEY` sur une même complétion partageaient une identité →
+   une quête `100 + 30` créditait **100**, la seconde étant avalée comme « déjà payée ».
+
+Désormais : la complétion et une ligne de dette par récompense sont écrites dans la **même
+transaction** ; le paiement fait passer la ligne `PENDING → PAID` **avec** le crédit et la ligne de
+journal ; les dettes restées dues sont **reprises** au chargement du joueur avec leur identité
+initiale, de façon **bornée**.
+
+**Panel** : fiche joueur → « Récompenses en attente » (`economy.debts` en lecture,
+`economy.debt.retry` et `economy.debt.settle` sensibles), avec l'état réel (« en échec (N
+tentatives) » + motif) et la distinction explicite entre **reprendre** et **créditer manuellement**.
+
+### Action serveur
+
+**Deux cibles** :
+
+1. **Control Panel AWS** — `scripts/plugadmin/deploy.sh` (distribution `20261006-104128`).
+2. **JAR RPGQuest** sur VeryGames + **un seul redémarrage** Minecraft.
+
+### ⚠️ Migration automatique — OUI
+
+**Schéma V25 → V26** au premier démarrage : six colonnes ajoutées à `quest_reward_grants`
+(`status`, `reward_index`, `attempts`, `last_error`, `updated_at`, `settled_reason`) + un index sur
+`status`. Migration **idempotente** (garde `columnExists`) et **additive** : aucune table existante
+n'est modifiée, aucune donnée réécrite, aucun solde touché.
+
+**Aucun paiement rétroactif.** Les lignes existantes prennent `status = 'PAID'` — ce n'est pas une
+supposition : par construction de V25, une ligne n'était écrite que *dans* la transaction qui
+créditait. **Aucune dette n'est inventée** pour les quêtes terminées avant cette mise à jour, et le
+panel le dit à l'écran.
+
+La table ne contient toujours **aucun solde** : `wallets` reste la seule source de vérité.
+
+### Sauvegarde préalable
+
+- JAR précédent : `rpgquest-20261006T084211Z-predeploy.jar` (1 807 514 octets, SHA-256
+  `6fe99525…`). **Le backup précédent n'a pas été écrasé.**
+- Distribution du panel conservée dans `/opt/plugadmin/releases/` par le script.
+
+### Déploiement effectué
+
+| Cible | Empreinte réelle | Vérification |
+|---|---|---|
+| JAR | SHA-256 `5b2d7b85857711e7cd4bf2cd75d535e103a986697fa33d5e5153c9dd45c61f81` (1 825 931 o, commit `9f3b28d`) | `DEPLOY_EXIT=0`, `JAR en ligne : 1825931 octets (== local)` |
+| Panel | distribution `20261006-104128` | `/health` → `{"panel":"ONLINE"}`, service `active` |
+
+**Un seul redémarrage** (`RESTART_EXIT=0`) : arrêt **constaté OFFLINE**, retour **constaté ONLINE**.
+Par RCON : `plugins` → **4 plugins verts** ; `rpgquest version` → `v0.1.0-SNAPSHOT`.
+
+**Tests** : `./gradlew test` puis `./gradlew build` — **1660** plugin (34 ignorés), **595**
+control-panel (1 ignoré), **30** web-api, **0 échec, 0 erreur**.
+
+### Chargement réellement vérifié
+
+Copie de `RPGQuest/data.db` récupérée **en lecture seule**, lue localement puis **supprimée** :
+
+- `PRAGMA user_version` → **26** (était 25) ;
+- les **six** nouvelles colonnes présentes sur `quest_reward_grants` ;
+- **aucune ligne** dans la table → aucune dette rétroactive, aucun paiement rétroactif.
+
+Aucune écriture sur le serveur, aucun solde touché. **Aucune panne provoquée sur la base DEV.**
+
+### Ce que ce déploiement ne fait PAS
+
+- **Il ne paie rien rétroactivement.** Une récompense perdue avant cette mise à jour n'a laissé
+  aucune trace exploitable ; aucun montant n'est deviné.
+- **Il ne modifie aucun solde, aucune transaction, aucune progression existante.**
+- **Il ne pose aucun montant sur une quête réelle** : aucune quête du serveur n'utilise `MONEY`.
+- **Aucune monnaie physique, aucune conversion** : le lien solde ↔ objet (#138) reste une décision
+  de gameplay non prise.
+
+### Validation
+
+TC-251 (nouveau, 24 étapes, 7 sections) dans `docs/MANUAL_TEST_PLAN.md`. **Aucun test en jeu n'a été
+exécuté, aucune case cochée.** La section **B** est la plus importante (deux récompenses sur une
+complétion : le solde doit augmenter de **130**, pas de 100). La section **E** (échec réel de
+paiement) est **optionnelle et explicitement à ne pas faire sur la base DEV réelle** — elle est
+entièrement couverte par les tests automatisés.
+
+Rollback : `scripts/plugadmin/rollback.sh` pour le panel, `scripts/rollback-verygames.sh --latest`
+pour le JAR. **Attention au rollback du JAR** : un JAR V25 ne connaît pas les nouvelles colonnes.
+Elles restent en place sans le gêner (il ne les lit pas) et `PRAGMA user_version` reste à 26, donc
+la migration ne sera pas rejouée ; en revanche une dette `PENDING` écrite par V26 ne serait **pas**
+reprise par un JAR antérieur — elle le redeviendrait au retour sur V26, sans double paiement.

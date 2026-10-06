@@ -328,6 +328,122 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-06 (lot 13 — #16 second lot : récupération des récompenses monétaires)
+Branche de départ: feature/169-special-mobs-boss @ 503cf97 (lot 12, #16 premier lot déployé)
+Étape de départ: le propriétaire demande de fiabiliser la RÉCUPÉRATION des récompenses monétaires
+  après échec ou crash, AVANT tout autre chantier économique, et donne la liste des points à
+  auditer : persistance de rewardGrantId ; ordre entre sauvegarde de COMPLETED et crédit SQL ;
+  crash avant paiement, pendant la transaction et après crédit avant notification ; reconnexion,
+  redémarrage et quêtes répétables ; plusieurs récompenses MONEY sur une même complétion.
+  Constat qu'il formule lui-même et qui s'est vérifié : « le grant_id unique protège le crédit
+  contre les doublons, mais il faut aussi conserver durablement ce qui reste à payer ».
+  Sept exigences dures, dont : identité de paiement INITIALE réutilisée par une reprise ; montants
+  dus conservés même si la définition change ; reprises bornées sans boucle par tick ni répétition
+  infinie de messages ; une récupération ne rejoue ni les récompenses non monétaires ni la
+  complétion ; aucun succès annoncé avant confirmation réelle ; pas de seconde source de vérité du
+  solde ; aucun paiement rétroactif des anciennes quêtes COMPLETED.
+Étapes terminées:
+(1) DONE — AUDIT du parcours réel. Trois défauts, dont un MESURÉ avant d'être affirmé :
+  * rewardGrantId n'était PAS persisté : champ en mémoire sur ActiveQuestProgress, généré
+    paresseusement, jamais écrit. Un arrêt du serveur le perdait définitivement, donc aucune
+    reprise ne pouvait réutiliser l'identité initiale.
+  * upsertState(COMPLETED) partait AVANT le crédit, en fire-and-forget, dans une transaction
+    SÉPARÉE : fenêtre réelle « quête terminée, crédit jamais fait, AUCUNE trace de la dette » — et
+    pour une quête non répétable, plus jamais rejouable.
+  * MESURÉ : plusieurs récompenses MONEY d'une même complétion partageaient la même identité de
+    paiement, donc la clé primaire rejetait les suivantes comme « déjà payées ». Test écrit AVANT
+    correction : une quête 100 + 30 créditait 100, sans aucune erreur visible.
+  * Déjà corrects et donc non modifiés : le rollback pendant la transaction ; le crédit survivant à
+    un crash après paiement (seul le message est perdu) ; les quêtes répétables (nouvelle
+    progression = nouvelle identité).
+  * loadForPlayer ne recharge que ACTIVE/READY_TO_TURN_IN : une quête COMPLETED non payée n'était
+    JAMAIS reprise, ni à la reconnexion ni au redémarrage.
+(2) DONE — schéma V26 : quest_reward_grants devient « ce qui est DÛ et ce qui est PAYÉ ».
+  * status PENDING/PAID/SETTLED_MANUALLY, reward_index, attempts, last_error, settled_reason,
+    updated_at + index sur status. Migration ADDITIVE et idempotente (garde columnExists).
+  * TOUJOURS pas un second solde : wallets reste la seule source de vérité ; cette table répond à
+    deux questions et seulement celles-là — « que reste-t-il à payer ? » et « cette occasion
+    a-t-elle déjà été payée ? ».
+  * AUCUN paiement rétroactif : les lignes existantes prennent PAID, et c'est un CONSTAT et non une
+    supposition — par construction de V25, une ligne n'était écrite que DANS la transaction qui
+    créditait. Aucune dette inventée pour les quêtes déjà COMPLETED.
+(3) DONE — atomicité de la complétion. QuestProgressRepository#completeQuestWithMoneyDebts écrit
+  l'état COMPLETED ET une ligne PENDING par récompense dans UNE seule transaction. Nécessaire dans
+  les DEUX sens, et c'est le point de conception du lot :
+  * dettes d'abord => un arrêt entre les deux laisse des dettes pour une quête PAS terminée : le
+    joueur la refait, une seconde dette naît, il est payé DEUX FOIS au total ;
+  * état d'abord => c'est exactement le défaut d'origine.
+  Le SQL des dettes reste défini dans WalletRepository (seul propriétaire des tables d'argent) et
+  est appelé via deux méthodes package-private : une seule définition de chaque requête, une seule
+  transaction.
+(4) DONE — paiement atomique et idempotent. WalletRepository#payQuestRewardDebt : PENDING -> PAID
+  + crédit + ligne de journal dans une transaction, sous un WHERE status = 'PENDING' qui empêche
+  deux reprises concurrentes de l'emporter toutes les deux. Le MONTANT et le CONTEXTE du journal
+  viennent de la LIGNE, jamais de l'appelant : « les montants dus sont conservés même si la
+  définition change » devient vrai PAR CONSTRUCTION, pas par vigilance. Un statut inconnu en base
+  est lu comme PAID : en cas de donnée inattendue, ne rien payer est le choix sûr.
+(5) DONE — identité par récompense : <jeton de complétion>#<index>. Plusieurs MONEY sur une même
+  complétion sont donc toutes payées (100 + 30 + 5 = 135 vérifié).
+(6) DONE — reprise BORNÉE (QuestProgressEngine#recoverPendingMoneyRewards) : une relecture par
+  chargement de joueur, jamais par tick, jamais sur le thread principal ; RECOVERY_BATCH = 20 ;
+  au-delà de RECOVERY_MAX_ATTEMPTS = 5 échecs la dette est LAISSÉE AU PANEL (s'acharner ne
+  corrigerait pas la cause et noierait les logs) ; et surtout une reprise échouée ne parle PAS au
+  joueur — sans cette règle, une base en panne lui enverrait le même message d'échec à CHAQUE
+  reconnexion. Une reprise ne rejoue QUE le crédit monétaire : ni XP, ni objets, ni variables, ni
+  commandes, ni la complétion (vérifié en comparant l'XP avant/après).
+(7) DONE — panel : economy.debts (lecture, ECONOMY_READ), economy.debt.retry et
+  economy.debt.settle (sensibles, ECONOMY_WRITE, confirmation + audit).
+  * état RÉEL affiché : « en échec (N tentative(s)) » avec son motif, jamais un « en attente » qui
+    cacherait trois échecs ;
+  * la reprise n'accepte AUCUN montant — un test vérifie qu'un amount glissé dans le formulaire
+    n'est même pas transmis ; en accepter un permettrait d'en inventer un ;
+  * la différence entre REPRENDRE et CRÉDITER MANUELLEMENT est écrite dans les DEUX sens : le bloc
+    des dettes dit qu'un crédit manuel ne règle aucune dette, et le bloc Monnaie renvoie vers
+    « marquez-la réglée à la main, sinon elle resterait payable une seconde fois » ;
+  * SETTLED_MANUALLY ne touche AUCUN solde et rend la dette non payable ;
+  * une reprise qui ne paie rien est rapportée comme ÉCHEC et non comme succès, sinon l'audit
+    laisserait croire que le joueur a été crédité ;
+  * limite historique affichée à l'écran : seules les complétions postérieures peuvent apparaître.
+Tests: 1660 plugin (34 ignorés) + 595 control-panel (1 ignoré) + 30 web-api = 2285, 0 échec,
+  0 erreur. ./gradlew test (25 min 56 s) ET ./gradlew build BUILD SUCCESSFUL. +31 cas, plusieurs
+  anciens RÉÉCRITS sur la nouvelle API plutôt qu'ajoutés. Totaux relevés dans les XML JUnit réels.
+  WalletRepositoryTest : 19 cas sur une VRAIE base SQLite ROUVERTE (dette créée avant tout
+  paiement, complétion et dette écrites ENSEMBLE, survie au redémarrage puis paiement unique,
+  dette payée qui reste payée, montant pris sur la dette et non sur la définition, répétable,
+  ré-enregistrement sans doublon, 20 REPRISES CONCURRENTES qui créditent exactement une fois,
+  dette inconnue jamais payée, échec enregistré avec motif qui BORNE les reprises, échec tardif
+  sans effet, règlement manuel non payable sans toucher au solde, raison obligatoire, bornes,
+  complétion sans argent, jeton manquant refusé).
+  QuestProgressEngineTest : 12 cas, dont reprise au chargement avec l'identité INITIALE, dette trop
+  souvent en échec laissée au panel, et reprise qui ne rejoue aucune récompense non monétaire.
+  AgentActionExecutorTest +6, EconomyAdminTest +9, QuestMoneyRewardIntegrationTest 6 (dont le test
+  qui a MESURÉ le défaut : 100 + 30 = 130).
+  UNE RÉGRESSION QUE J'AI INTRODUITE, attrapée par un test existant : en déplaçant le paiement vers
+  la dette, le contexte du journal avait perdu l'identifiant de quête — exactement la traçabilité
+  documentée la veille. Corrigée en le composant DEPUIS LA LIGNE (source autoritative), ce qui est
+  de toute façon la bonne conception.
+Déploiement: JAR DEV SHA-256 5b2d7b85857711e7cd4bf2cd75d535e103a986697fa33d5e5153c9dd45c61f81
+  (1 825 931 o, commit 9f3b28d) ; panel distribution 20261006-104128 (/health 200). UN SEUL
+  redémarrage, arrêt ET retour CONSTATÉS, plugins -> 4 verts. Backup préalable
+  rpgquest-20261006T084211Z-predeploy.jar (6fe99525…), backup précédent non écrasé.
+  Procédure documentée suivie (./gradlew --stop, RPGQUEST_TEST_MAX_HEAP=768m, -y) : AUCUN échec de
+  déploiement cette fois, les deux pièges de la session précédente étaient bien ceux-là.
+  CHARGEMENT PROUVÉ : copie de RPGQuest/data.db lue EN LECTURE SEULE puis SUPPRIMÉE —
+  PRAGMA user_version = 26 (était 25), les SIX nouvelles colonnes présentes, et AUCUNE ligne dans
+  la table, donc aucune dette rétroactive inventée. Aucune écriture serveur, aucun solde touché,
+  AUCUNE panne provoquée sur la base DEV.
+Blocages: aucun.
+Tests manuels en attente: TC-251 (#16 second lot, 24 étapes, 7 sections). Section B la plus
+  importante (deux récompenses sur une complétion : +130 et non +100). Section E (échec réel de
+  paiement) OPTIONNELLE et explicitement à NE PAS faire sur la base DEV réelle — entièrement
+  couverte par les tests automatisés, la sauter ne laisse aucun trou. TC-243 à TC-250 restent
+  également en attente.
+Première étape à reprendre: attendre le choix du propriétaire. Côté économie, la suite dépend de
+  DÉCISIONS GAMEPLAY encore à prendre (monnaie physique et conversion solde <-> objet #138, perte à
+  la mort, prix, règles d'échange) ; rien d'indépendant et utile ne reste sans elles sur ce chantier.
+```
+
+```text
 Date: 2026-10-06 (lot 12 — #16 récompense monétaire de quête + bourse en jeu)
 Branche de départ: feature/169-special-mobs-boss @ b9cb971 (lot 11, nuit #131/#210/économie déployée)
 Étape de départ: le propriétaire choisit explicitement #16 et uniquement #16 : récompenses

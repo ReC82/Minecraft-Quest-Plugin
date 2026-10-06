@@ -304,18 +304,42 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   guidée réellement utilisable. Cinq mutations agent (`DIALOGUE_WRITE`, `confirm`, audit) via
   `DialogueDefinitionEditor` : `dialogue.node.update` (locuteur/texte d'un nœud, choix conservés),
   `dialogue.node.create` (nœud simple orphelin + choix « fermer »), `dialogue.choice.add` /
-  `dialogue.choice.update` / `dialogue.choice.delete` (**choix simple** uniquement : ni condition
-  ni action hors « fermer » ; redirige vers un nœud existant *ou* termine le dialogue ; refuse le
-  dernier choix d'un nœud). Écriture sûre : localisation du fichier par `id`, refus d'un fichier
+  `dialogue.choice.update` / `dialogue.choice.delete` (redirige vers un nœud existant *ou* termine
+  le dialogue ; `delete` refuse le dernier choix d'un nœud et un choix porteur d'effets de jeu).
+  Écriture sûre : localisation du fichier par `id`, refus d'un fichier
   déjà invalide, **sérialisation fidèle du dialogue complet** (`DialogueDefinitionWriter` — 10
   actions + 8 conditions + négation, aucune perte), **garde-fou round-trip** (re-parse en mémoire
   + égalité sémantique) avant écriture atomique, **rechargement** puis **restauration du contenu
   d'origine** si le fichier ne recharge pas. Le fichier édité adopte le **format canonique** du
   panel (commentaires / mise en forme d'origine non conservés — choix assumé). Cibles de choix =
   `<select>` des nœuds du dialogue (jamais un champ libre). Formulaires `<details>` semi-inline
-  par nœud, aucun JS (conforme CSP `default-src 'self'`). **Non fait** (suite de #82) : édition
-  des actions/conditions riches, renommage / déplacement / suppression de nœud, réordonnancement
-  des choix, rendu graphe interactif.
+  par nœud, aucun JS inline (conforme CSP `default-src 'self'`).
+- **Édition d'un choix porteur d'actions / conditions (#82)** *(branche
+  `feat/control-panel-admin-tools`)* — `dialogue.choice.update` n'est plus réservé aux « choix
+  simples » : le texte et la cible d'un choix s'éditent même s'il porte une condition
+  `QUEST_STATE` et une action `START_QUEST`, et **ces propriétés sont reconduites à l'identique**
+  (la mutation repart du modèle métier du fichier, pas du formulaire). Deux propriétés sont en
+  plus éditables par sélecteurs pré-remplis : l'**action de quête** (`quest_action` ∈ `keep` /
+  `none` / `start_quest` / `advance_quest` / `turn_in_quest` + `quest_id`) et la **condition
+  d'état** (`quest_condition` ∈ `keep` / `none` / un `QuestState` + `condition_quest_id` +
+  `condition_negate`) — défaut `keep` : un paramètre absent ne touche à rien. Les actions et
+  conditions non représentables sont **listées sous le choix** (« conservé à l'identique ») et,
+  si un choix porte deux actions de quête, le formulaire bascule en `keep` plutôt que d'en perdre
+  une. Champs de texte = source MiniMessage brute + **aperçu rendu** + **palette de couleurs**
+  (réécrit seulement la balise englobante ; désactivée et annoncée sur un texte composite ;
+  module `panel.js`, aucun JS inline). `dialogue.choice.delete` reste gardé.
+  **Non fait** (suite de #82) : renommage / déplacement / suppression de nœud, réordonnancement
+  des choix, édition des autres types d'actions et de conditions, rendu graphe interactif.
+- **Aucune simplification silencieuse à l'enregistrement (#145 / #46)** *(branche
+  `feat/control-panel-admin-tools`)* — `/dialogues/edit/<id>` repartait d'un formulaire à trois
+  champs et réécrivait le fichier comme un **squelette à un nœud**, détruisant les autres nœuds,
+  les choix, les conditions et les actions. Corrigé : le modèle `DialogueDraft` / `DialogueYaml`
+  porte désormais les conditions et les actions (listes ordonnées de couples clé → valeur, format
+  d'émission identique au moteur), l'enregistrement **repart du fichier réel** et n'applique que
+  les champs du formulaire, et la page annonce ce qu'elle conserve. Si la relecture signale
+  quelque chose de non représentable (table de traductions `title` / `description` / `text`,
+  construction YAML exotique), l'enregistrement est **refusé** avec la raison — pour les dialogues
+  comme pour les quêtes (`/quests/edit/<id>`, dont le formulaire reconstruit toute la quête).
 - **Centre de documentation `/docs` — MVP (issue #49)** *(branche `feat/control-panel-admin-tools`)*
   — wiki d'administration **privé** dans le Control Panel : entrée « Documentation » dans le menu,
   page d'accueil (gros champ de recherche + catégories + raccourcis « Comment faire ? »),

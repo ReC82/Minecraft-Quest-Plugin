@@ -3370,3 +3370,69 @@ obligatoire sur cette box) **OK** — suite complète 1799 tests, 1764 exécuté
 Rollback : `scripts/rollback-verygames.sh --latest` (restaure
 `rpgquest-20261004T102126Z-predeploy.jar`) ; `scripts/plugadmin/rollback.sh app` pour le Control
 Panel (restaure `/opt/plugadmin/releases/20261004-122329`).
+
+---
+
+## 2026-10-06 - Édition d'un choix de dialogue porteur d'actions/conditions + aucune simplification silencieuse (#82 / #145)
+
+### Changement
+
+**Plugin.** `DialogueDefinitionEditor.updateChoice` n'est plus réservé aux « choix
+simples ». Le texte et la cible d'un choix sont modifiables même s'il porte une
+condition `QUEST_STATE` et une action `START_QUEST` : ses conditions et ses actions
+sont **reconduites à l'identique** (mêmes valeurs, même ordre), la mutation partant
+du modèle métier relu du fichier et non du formulaire. Deux propriétés deviennent
+éditables de façon structurée, via de nouveaux paramètres **optionnels** de l'action
+agent `dialogue.choice.update` :
+
+- `quest_action` ∈ `keep` (défaut) / `none` / `start_quest` / `advance_quest` /
+  `turn_in_quest`, avec `quest_id` ;
+- `quest_condition` ∈ `keep` (défaut) / `none` / un `QuestState`, avec
+  `condition_quest_id` et l'option `condition_negate`.
+
+`keep` ne touche à rien : un client qui n'envoie pas ces paramètres (toute version
+antérieure du Control Panel) conserve le comportement d'avant, conditions et actions
+intactes. `dialogue.choice.delete` reste refusé sur un choix porteur d'effets de jeu,
+avec un message qui explique comment procéder.
+
+**Control Panel.** La page `/dialogues` remplace la note « édition prévue dans une
+phase ultérieure » par un vrai formulaire pour **chaque** choix (sélecteurs d'action
+de quête et de condition d'état pré-remplis, négation, liste explicite des propriétés
+conservées à l'identique). Les champs de texte montrent la source MiniMessage brute,
+avec aperçu rendu et palette de couleurs (réécrit seulement la balise englobante ;
+désactivée et annoncée sur un texte composite). Correction d'une perte de données :
+`/dialogues/edit/<id>` réécrivait le fichier comme un squelette à un nœud et
+détruisait les autres nœuds, choix, conditions et actions — l'enregistrement repart
+désormais du fichier réel et n'applique que les champs du formulaire. Un fichier que
+l'éditeur ne sait pas relire fidèlement (table de traductions, YAML exotique) n'est
+plus jamais réécrit : l'enregistrement est refusé avec la raison, pour les dialogues
+comme pour les quêtes.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest uniquement — aucune action manuelle autre que
+remplacement du JAR. Côté AWS, redéploiement du Control Panel (`plugadmin`).
+
+**Aucune migration de données**, **aucun changement de schéma SQLite**, **aucun
+fichier de contenu modifié par le déploiement** : les dialogues et quêtes déjà
+présents sur le serveur ne sont pas touchés (le JAR ne sème que les fichiers
+d'exemple absents — voir la note « exemples embarqués » de ce changelog).
+
+### Sauvegarde préalable
+
+Backup daté du JAR actuellement déployé (le script officiel le fait) ; `data.db`
+inchangé mais sauvegardé par prudence. Côté AWS, la release précédente de
+`plugadmin` est sauvegardée par `scripts/plugadmin/deploy.sh`.
+
+### Déploiement
+
+`RPGQUEST_TEST_MAX_HEAP=768m scripts/deploy-verygames.sh -y` (plugin, DEV) puis
+`scripts/plugadmin/deploy.sh` (Control Panel, AWS). Redémarrage du serveur requis
+pour que le nouveau JAR soit chargé.
+
+### Validation
+
+Tests automatisés (suite complète) + contrôles de démarrage. **La vérification en
+jeu / en navigateur de l'édition d'un choix de Jeff reste à faire par un humain** —
+voir la section « Déploiement / Exécution réelle » ci-dessous et
+`docs/MANUAL_TEST_PLAN.md`.

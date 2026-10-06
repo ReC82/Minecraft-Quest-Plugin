@@ -4692,3 +4692,121 @@ et **F** (anti-élévation, dont le forçage de formulaire).
 
 Rollback : `scripts/plugadmin/rollback.sh`. Les trois tables peuvent rester en place sans effet avec
 une distribution antérieure du panel : aucune version précédente ne les lit.
+
+---
+
+## 2026-10-06 (lot 15) - #200 : droits Minecraft par groupe et par monde, LuckPerms installé
+
+### Changement
+
+**Découpage des permissions du plugin** (dépendance #27) et **pont vers LuckPerms** piloté depuis le
+Control Panel.
+
+Avant ce lot, un seul nœud — `rpgquest.admin.world` — gouvernait la construction dans le Hub, le
+bypass des claims, le bypass des zones, l'accès au monde des claims **et** l'intégralité de
+`/rpgadmin`. Deux exigences étaient donc impossibles : séparer « créer un PNJ » de « construire », et
+autoriser le Hub sans autoriser les claims.
+
+**Nœuds ajoutés** (tous `default: false`) : `rpgquest.admin.command` (entrer dans `/rpgadmin` sans
+autoriser aucune branche), `rpgquest.admin.npc[.tag|.untag|.info]`,
+`rpgquest.build.hub.<monde>` / `.hub.*`, `rpgquest.build.wild` (**sans effet à ce jour**, voir
+limites), `rpgquest.bypass.claim` / `.zone` / `.claimworld`.
+
+**`rpgquest.admin.world` reste l'ombrelle explicite** : chaque contrôle accepte « nouveau nœud OU
+ombrelle ». Un administrateur déjà autorisé garde exactement ses droits, **sans rien reconfigurer**.
+
+**Panel** : liaison compte ↔ joueur par UUID (hors ligne inclus), droits par groupe **et par monde**,
+distinction entre état **voulu** et état **réel**, et quatre actions `mc.*` avec permission,
+confirmation et audit.
+
+### Action serveur
+
+**Trois cibles, un seul redémarrage** :
+
+1. **LuckPerms** déposé dans `plugins/` (nouveau plugin).
+2. **JAR RPGQuest** remplacé.
+3. **Control Panel AWS** redéployé.
+
+### ⚠️ Nouveau plugin sur le serveur
+
+**LuckPerms 5.5.87** (`LuckPerms-Bukkit-5.5.87.jar`, SHA-256
+`09d07b68965717976d2bab2f8d10436676f7c68d90bf6d24628cc0e5228bf406`, 1 509 479 o) est désormais
+installé sur DEV. Il était **absent** : première installation, rien d'écrasé. L'inventaire du dossier
+`plugins/` **avant** installation est conservé dans le dossier de backups.
+
+**RPGQuest n'en dépend pas** : l'API est en `compileOnly`, la dépendance est `softdepend`, et en
+l'absence de LuckPerms le pont se déclare indisponible avec son motif — le plugin démarre et
+fonctionne exactement comme avant.
+
+### Migration automatique
+
+**Aucune côté plugin** (schéma V26 inchangé, `data.db` non touché). Côté panel : deux
+`CREATE TABLE IF NOT EXISTS` **additifs** (`panel_user_minecraft`, `panel_group_mc_node`). Une
+installation existante démarre **sans aucune liaison et sans aucun droit Minecraft géré** : rien ne
+change en jeu tant qu'un administrateur n'a rien configuré.
+
+### Sauvegarde préalable
+
+- JAR précédent : `rpgquest-20261006T104448Z-predeploy.jar` (1 825 931 o, SHA-256 `5b2d7b85…`).
+- Inventaire `plugins/` avant installation de LuckPerms, dans le dossier de backups.
+- Distribution du panel conservée dans `/opt/plugadmin/releases/`.
+
+### Déploiement effectué
+
+| Cible | Empreinte réelle | Vérification |
+|---|---|---|
+| JAR | SHA-256 `bdd8b0007500f4d45a208e9f1d1505af4701b2cae31a14b1225f01eaba929f09` (1 849 640 o, commit `b94b689`) | `DEPLOY_EXIT=0`, `JAR en ligne : 1849640 octets (== local)` |
+| LuckPerms | voir ci-dessus | taille en ligne identique au local |
+| Panel | distribution `20261006-124521` | `/health` → `{"panel":"ONLINE"}` |
+
+**Un seul redémarrage** (`RESTART_EXIT=0`) : arrêt **constaté OFFLINE**, retour **constaté ONLINE**.
+Par RCON : `plugins` → **5 plugins verts** (Citizens, **LuckPerms**, Multiverse-Core, RPGQuest,
+WorldEdit) ; `rpgquest version` → `v0.1.0-SNAPSHOT`.
+
+**Tests** : **1688** plugin (37 ignorés), **661** control-panel (1 ignoré), **30** web-api,
+**0 échec**, sur une exécution **propre** attestée par 184 fichiers XML.
+
+### Chargement réellement vérifié
+
+Trois sondes enfilées puis supprimées, sur un groupe de test :
+
+- `mc.group.sync` → **SUCCESS**, « 1 droit(s) ajouté(s) » : le type est reconnu et LuckPerms écrit ;
+- la **même** action rejouée → **SUCCESS**, « déjà conforme : aucun droit modifié » →
+  **idempotence prouvée sur le serveur réel** ;
+- `mc.group.delete` → **SUCCESS**.
+
+Aucun compte réel, aucun droit du propriétaire, aucun joueur touché.
+
+### Ce que ce déploiement ne fait PAS
+
+- **Il n'accorde aucun droit à personne.** Tous les nouveaux nœuds sont `default: false`, aucune
+  liaison n'existe, aucun groupe n'a de droit Minecraft configuré.
+- **Il ne retire aucun droit existant** : l'ombrelle `rpgquest.admin.world` reste `default: op` et
+  est acceptée par tous les contrôles.
+- **Aucun OP automatique**, nulle part.
+- **`rpgquest.build.wild` n'a aucun effet** : le Wild est déjà libre à la construction. Déclaré pour
+  la convention, volontairement non câblé — le brancher sur la protection de zone en ferait un
+  bypass interdit.
+- **#22 intact** : l'entrée dans le monde des claims n'est jamais refusée à un porteur du bypass, et
+  la Pierre de retour reste garantie.
+
+### Limites à connaître
+
+- **Plusieurs Hubs dans un même monde ne sont pas distinguables** : l'identifiant de Hub *est* le nom
+  du monde (seul identifiant existant). Il faudrait un id en configuration et une résolution par
+  zone.
+- **Renommer le monde du Hub** change le nœud : les droits accordés sur l'ancien nom deviennent
+  **silencieusement** sans effet. À inclure dans toute procédure de renommage de monde.
+- Le reste de `/rpgadmin` n'est pas découpé (backlog #27).
+
+### Validation
+
+TC-253 (nouveau, 34 étapes, 7 sections). **Aucun test en jeu exécuté, aucune case cochée.** La
+section **C** est la plus importante : accorder à la main le **même** nœud et le **même** monde que
+le pont, retirer le groupe, dissocier, **redémarrer**, et vérifier que le droit externe survit.
+
+Rollback : `scripts/plugadmin/rollback.sh` pour le panel, `scripts/rollback-verygames.sh --latest`
+pour le JAR. **Retirer LuckPerms** se fait en supprimant son JAR de `plugins/` puis en redémarrant :
+RPGQuest continue de fonctionner, le pont se déclarant simplement indisponible. Les groupes
+`rpgq-…` déjà créés disparaîtraient avec les données de LuckPerms — les droits qu'ils portaient
+cesseraient donc de s'appliquer, ce qui est le comportement voulu.

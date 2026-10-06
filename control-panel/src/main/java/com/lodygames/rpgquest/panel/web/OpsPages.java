@@ -64,9 +64,17 @@ public final class OpsPages {
         AgentLiveness liveness = AgentLiveness.of(heartbeat, thresholds, now);
 
         StringBuilder sb = new StringBuilder();
+        // data-pa-selfrefresh (correctif #95) : cette page rafraîchit chacun de ses blocs — état,
+        // console, carte d'opération, résultats d'action — par des appels ciblés. Le mécanisme de
+        // rechargement mutualisé du panel doit donc l'épargner, sinon il reconstruirait les
+        // formulaires et effacerait une annonce en cours de saisie.
+        sb.append("<div data-pa-selfrefresh=\"ops\"></div>");
         sb.append(Ui.pageHeader("server", "Exploitation serveur",
                 "État réel, annonce aux joueurs, redémarrage vérifié et console récente.", ""));
-        sb.append(stateBlock(heartbeat, liveness, now, agentId));
+        // Conteneur dédié : le bloc d'état est remplacé EN PLACE par /ops/state.json (correctif
+        // #95). Avant, sa seule façon de vieillir proprement était le rechargement complet de la
+        // page — celui-là même qui effaçait l'annonce en cours de saisie.
+        sb.append("<div data-ops-state>").append(stateBlock(heartbeat, liveness, now, agentId)).append("</div>");
         sb.append(restartBlock(session, agentId));
         if (permissions.can(session.effective(), Permission.OPS_ANNOUNCE)) {
             sb.append(announceBlock(session, agentId, liveness, heartbeat));
@@ -184,6 +192,19 @@ public final class OpsPages {
         return operation.phase() == RestartService.Phase.IDLE ? "" : operationCard(session, operation);
     }
 
+    /**
+     * Bloc « État du serveur » seul, pour le rafraîchissement ciblé de {@code /ops/state.json}
+     * (correctif #95). Ne contient aucun formulaire : il peut être remplacé à volonté sans
+     * détruire de saisie.
+     */
+    String stateBlockHtml(Map<String, String> query) {
+        String agentId = agentOf(query);
+        Instant now = Instant.now();
+        Optional<HeartbeatRecord> heartbeat = agentId == null
+                ? Optional.empty() : agentStore.latestHeartbeat(agentId);
+        return stateBlock(heartbeat, AgentLiveness.of(heartbeat, thresholds, now), now, agentId);
+    }
+
     private String operationCard(Session session, RestartService.Operation operation) {
         String kind = switch (operation.phase()) {
             case DONE -> "ok";
@@ -191,8 +212,15 @@ public final class OpsPages {
             case CANCELLED -> "info";
             default -> "warn";
         };
+        // data-ops-phase / data-ops-terminal (correctif #95) : le navigateur doit savoir, DÈS le
+        // chargement, si l'opération est déjà finie. Sans cette information il ne pouvait que
+        // demander l'état au serveur, le trouver « terminal » et recharger la page — en boucle,
+        // puisque la carte restait terminale après chaque rechargement.
+        boolean terminal = operation.phase().terminal() || operation.phase() == RestartService.Phase.IDLE;
         StringBuilder sb = new StringBuilder("<div class=\"panelbox\" data-ops-operation=\"")
-                .append(Http.esc(operation.id())).append("\">");
+                .append(Http.esc(operation.id()))
+                .append("\" data-ops-phase=\"").append(operation.phase().name())
+                .append("\" data-ops-terminal=\"").append(terminal).append("\">");
         sb.append(Ui.banner(kind, "<strong>" + Http.esc(phaseLabel(operation.phase())) + "</strong> — "
                 + Http.esc(nz(operation.detail())) + " " + Ui.id(operation.id())));
         if (operation.executeAt() != null && operation.phase() == RestartService.Phase.SCHEDULED) {

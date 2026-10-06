@@ -13,7 +13,8 @@
  *   - initOpsAnnounce()   : compteur, aperçu et modèles rapides de l'annonce globale (#95) ;
  *   - initOpsConsole()    : console de logs en lecture seule — recherche, filtres de niveau,
  *                           pause/reprise, suivi automatique, retour en bas (#95) ;
- *   - initOpsRestart()    : suit une opération de redémarrage jusqu'à son terme, sans F5 (#95) ;
+ *   - initOpsState()      : rafraîchit l'état du serveur et suit une opération de redémarrage
+ *                           jusqu'à son terme, bloc par bloc, sans jamais recharger la page (#95) ;
  *   - initDrawer()        : ferme le tiroir mobile au clic sur un lien.
  *
  * Pas de WebSocket (MVP #93). Le polling s'arrête tout seul (garde-fou de durée).
@@ -58,9 +59,22 @@
   function alreadyReloadedFor(id) {
     return reloadedActionIds().indexOf(id) !== -1;
   }
+  /**
+   * Une vue qui se réconcilie TOUTE SEULE ne doit jamais être rechargée : la recharger
+   * détruirait une saisie en cours. C'est le cas de /ops (correctif #95), dont chaque bloc —
+   * état, console, carte d'opération, résultats d'action — a déjà son propre rafraîchissement
+   * ciblé. Le marqueur est posé par le serveur sur la page.
+   */
+  function selfRefreshingView() {
+    return !!document.querySelector("[data-pa-selfrefresh]");
+  }
+
   function runReload() {
+    // Les identifiants sont marqués AVANT toute sortie : sans cela, la vue se réarmerait au
+    // prochain cycle et on retomberait dans une boucle.
     if (reloadPlan.ids.length) { markReloadedFor(reloadPlan.ids); }
     reloadPlan.armed = false;
+    if (selfRefreshingView()) { return; }
     try { window.location.reload(); } catch (e) { window.location.href = window.location.href; }
   }
 
@@ -134,6 +148,42 @@
       : group === "failed" ? "bi-x-circle" : "bi-clock";
   }
 
+  /**
+   * Drapeaux de résultat à USAGE UNIQUE portés par l'URL après une redirection POST :
+   * `ok` / `err` (résultat synchrone) et `toast` (action agent à suivre).
+   */
+  var ONE_SHOT_FLAGS = ["ok", "err", "toast"];
+
+  /**
+   * Les retire de l'URL une fois le toast rendu (correctif #95).
+   *
+   * <p>Ces drapeaux décrivent « ce qui vient de se passer ». Les laisser dans l'URL les rend
+   * éternels : tout rechargement — F5, retour arrière, ou le rechargement automatique qui vient
+   * d'être supprimé — réaffiche le même résultat comme s'il venait d'arriver. On remplace donc
+   * l'entrée d'historique SANS recharger : le toast déjà rendu reste à l'écran et continue d'être
+   * suivi par son identifiant d'action, mais il ne peut plus ressusciter. Une nouvelle action
+   * produit sa propre redirection, donc son propre drapeau, donc sa propre notification.</p>
+   *
+   * <p>Ce n'est pas une protection contre un rejeu : aucune soumission n'est renvoyée ici. Le
+   * drapeau ne fait que décrire un POST déjà traité ; le retirer supprime la répétition
+   * <em>visuelle</em>, et l'historique des actions reste la preuve qu'une seule action a bien été
+   * exécutée.</p>
+   */
+  function dropOneShotResultFlags() {
+    try {
+      if (!window.history || !window.history.replaceState || !window.location.search) { return; }
+      var params = new URLSearchParams(window.location.search);
+      var found = false;
+      for (var i = 0; i < ONE_SHOT_FLAGS.length; i++) {
+        if (params.has(ONE_SHOT_FLAGS[i])) { params.delete(ONE_SHOT_FLAGS[i]); found = true; }
+      }
+      if (!found) { return; }
+      var query = params.toString();
+      window.history.replaceState(null, "",
+        window.location.pathname + (query ? "?" + query : "") + window.location.hash);
+    } catch (e) { /* URL non manipulable : le toast reste, sans plus de dégât */ }
+  }
+
   /* ---- Centre de notifications ------------------------------------------------------- */
 
   function initNotifications() {
@@ -197,7 +247,10 @@
           } else if (match) {
             updateToast(entry, match);
             // Vue pending -> succès pendant cette page : la vue serveur peut être périmée.
-            if (entry.sawPending && match.group === "success" && !alreadyReloadedFor(entry.actionId)) {
+            // Sauf sur une vue qui se réconcilie seule (/ops) : y armer un rechargement
+            // détruirait la saisie en cours, et ses blocs se remettent déjà à jour tout seuls.
+            if (entry.sawPending && match.group === "success" && !selfRefreshingView()
+                && !alreadyReloadedFor(entry.actionId)) {
               reloadPlan.armed = true;
               reloadPlan.deadline = Date.now() + 30000;
               if (reloadPlan.ids.indexOf(entry.actionId) === -1) { reloadPlan.ids.push(entry.actionId); }
@@ -416,40 +469,66 @@
     tick();
   }
 
-  /* ---- Exploitation serveur : suivi d'une opération de redémarrage (#95) -------------- */
+  /* ---- Exploitation serveur : état et suivi d'opération (#95) ------------------------- */
 
   /**
-   * Tant qu'une opération est active, la carte d'état est rafraîchie sans F5 : l'administrateur
-   * voit l'arrêt puis le retour en ligne. Dès qu'elle est terminée, on recharge une seule fois
-   * pour afficher l'état serveur à jour, puis on s'arrête.
+   * Rafraîchit EN PLACE le bloc « État du serveur » et, quand une opération de redémarrage est
+   * en cours, sa carte de suivi — l'administrateur voit l'arrêt puis le retour en ligne sans F5.
+   *
+   * <p>CORRECTIF #95 — les deux bugs reproduits avaient la MÊME cause : cette fonction
+   * rechargeait TOUTE la page dès que le serveur répondait {@code terminal: true}. Elle démarrait
+   * aussi quand l'opération était déjà terminale au chargement (DONE / FAILED / CANCELLED /
+   * IDLE) : état demandé → « terminal » → rechargement → la page revenait avec la même carte
+   * terminale → rechargement, toutes les 3 secondes, sans fin. D'où (1) le texte d'annonce vidé
+   * et les cases décochées en pleine saisie et (2) la notification de résultat qui réapparaissait
+   * indéfiniment — c'était ce rechargement qui la re-rendait depuis {@code ?ok=} dans l'URL.</p>
+   *
+   * <p>Règles qui tiennent maintenant :</p>
+   * <ul>
+   *   <li><strong>aucun rechargement de page</strong> ici, dans aucune branche : seuls des
+   *       conteneurs SANS formulaire sont remplacés, donc message, cases, canal, focus et aperçu
+   *       survivent à autant de cycles que nécessaire ;</li>
+   *   <li>cadence lente par défaut (le bloc d'état décrit un relevé reçu toutes les ~20 s),
+   *       rapide seulement pendant une opération active, où chaque seconde compte ;</li>
+   *   <li>la carte de suivi n'est remplacée que si le serveur en renvoie une : une opération
+   *       retombée à IDLE ne laisse pas un conteneur vide à la place du dernier état connu.</li>
+   * </ul>
    */
-  function initOpsRestart() {
-    if (!document.querySelector("[data-ops-operation]")) { return; }
-    var POLL_MS = 3000;
+  function initOpsState() {
+    var stateBox = document.querySelector("[data-ops-state]");
+    var card = document.querySelector("[data-ops-operation]");
+    if (!stateBox && !card) { return; }
+
+    var FAST = 3000;
+    var SLOW = 20000;
+    var MAX = 900;
     var ticks = 0;
+
+    // « true » explicite : un attribut absent (page servie par une version antérieure) est traité
+    // comme NON terminal — on surveille, ce qui reste sans danger puisque plus rien ne recharge.
+    function cardActive() {
+      var el = document.querySelector("[data-ops-operation]");
+      return !!el && el.getAttribute("data-ops-terminal") !== "true";
+    }
 
     function tick() {
       ticks += 1;
-      if (ticks > 400) { return; }
-      fetch("/ops/state.json", {
+      if (ticks > MAX) { return; }
+      fetch("/ops/state.json" + (window.location.search || ""), {
         headers: { "Accept": "application/json" }, credentials: "same-origin"
       }).then(function (res) { return res.ok ? res.json() : null; })
         .then(function (data) {
           if (!data) { return; }
-          if (data.terminal) {
-            // Réutilise le point de rechargement MUTUALISÉ : il n'en existe qu'un dans ce
-            // fichier, et c'est une règle que CatalogResyncTest fait respecter — un reload
-            // par fonctionnalité redeviendrait vite plusieurs mécanismes concurrents.
-            runReload();
-            return;
+          if (stateBox && typeof data.stateHtml === "string" && data.stateHtml) {
+            stateBox.innerHTML = data.stateHtml;
           }
-          var card = document.querySelector("[data-ops-operation]");
-          if (card && data.html) { card.outerHTML = data.html; }
-          window.setTimeout(tick, POLL_MS);
-        }).catch(function () { window.setTimeout(tick, POLL_MS * 2); });
+          var current = document.querySelector("[data-ops-operation]");
+          if (current && data.html) { current.outerHTML = data.html; }
+          window.setTimeout(tick, cardActive() ? FAST : SLOW);
+        }).catch(function () { window.setTimeout(tick, SLOW); });
     }
 
-    window.setTimeout(tick, POLL_MS);
+    window.setTimeout(tick, cardActive() ? FAST : SLOW);
   }
 
   /* ---- Copie d'un identifiant technique -------------------------------------------- */
@@ -1311,6 +1390,9 @@
 
   function init() {
     run("initToasts", initToasts);       // affiche les toasts (repli manuel si Bootstrap JS pas encore là)
+    // APRÈS initToasts : la bannière et le toast ont été rendus, on peut retirer le drapeau
+    // à usage unique de l'URL pour qu'aucun rechargement ne les fasse revivre (#95).
+    run("dropOneShotResultFlags", dropOneShotResultFlags);
     run("initNotifications", initNotifications);
     run("initCopy", initCopy);
     run("initFilters", initFilters);
@@ -1322,7 +1404,7 @@
     run("initColorPalette", initColorPalette);
     run("initOpsAnnounce", initOpsAnnounce);
     run("initOpsConsole", initOpsConsole);
-    run("initOpsRestart", initOpsRestart);
+    run("initOpsState", initOpsState);
     run("initDrawer", initDrawer);
     // Filet de sécurité : au cas où Bootstrap JS finirait de charger après nous, on
     // « promeut » les toasts encore affichés manuellement en vraies instances Bootstrap.

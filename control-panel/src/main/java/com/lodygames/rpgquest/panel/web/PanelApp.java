@@ -1825,6 +1825,9 @@ public final class PanelApp {
         root.put("detail", operation.detail() == null ? "" : operation.detail());
         root.put("terminal", operation.phase().terminal() || operation.phase() == RestartService.Phase.IDLE);
         root.put("html", opsPages.operationCardHtml(session, operation));
+        // stateHtml (correctif #95) : le bloc d'état se renouvelle par ce même appel, à la place
+        // du rechargement complet de /ops qui effaçait les formulaires en cours de saisie.
+        root.put("stateHtml", opsPages.stateBlockHtml(Http.query(exchange)));
         Http.json(exchange, 200, com.lodygames.rpgquest.panel.json.Json.write(root));
     }
 

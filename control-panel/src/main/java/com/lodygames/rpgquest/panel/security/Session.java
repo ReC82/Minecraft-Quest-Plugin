@@ -1,5 +1,7 @@
 package com.lodygames.rpgquest.panel.security;
 
+import com.lodygames.rpgquest.panel.authz.EffectivePermissions;
+import com.lodygames.rpgquest.panel.authz.Role;
 import java.time.Instant;
 
 /**
@@ -13,6 +15,14 @@ public final class Session {
     private final String userId;
     private final String username;
     private volatile String role;
+    /**
+     * Droits <strong>effectifs</strong> (rôle ∪ groupes), recalculés à CHAQUE requête par
+     * {@code PanelApp#currentSession} (issue #199). C'est ce qui fait qu'une révocation — retrait
+     * d'un groupe, retrait d'une permission d'un groupe, suppression d'un groupe — prend effet
+     * immédiatement sur les sessions actives, sans attendre une reconnexion et sans cache à
+     * invalider : il n'existe aucun cache plus long qu'une requête.
+     */
+    private volatile EffectivePermissions effective;
     private final String csrfToken;
     private final Instant createdAt;
     private volatile Instant lastSeenAt;
@@ -22,6 +32,7 @@ public final class Session {
         this.userId = userId;
         this.username = username;
         this.role = role;
+        this.effective = EffectivePermissions.ofRoleOnly(Role.byNameOrNull(role));
         this.csrfToken = csrfToken;
         this.createdAt = now;
         this.lastSeenAt = now;
@@ -50,6 +61,25 @@ public final class Session {
      */
     public void refreshRole(String currentRole) {
         this.role = currentRole;
+    }
+
+    /**
+     * Droits effectifs de cette session, relus à chaque requête. Jamais {@code null} : un montage
+     * sans groupes rend exactement les droits du rôle.
+     */
+    public EffectivePermissions effective() {
+        return effective;
+    }
+
+    /**
+     * Réaligne rôle <strong>et</strong> droits effectifs sur l'état réel du compte (issue #199).
+     * Appelé une fois par requête : rien n'est mis en cache au-delà.
+     */
+    public void refreshAuthz(String currentRole, EffectivePermissions currentEffective) {
+        this.role = currentRole;
+        this.effective = currentEffective == null
+                ? EffectivePermissions.ofRoleOnly(Role.byNameOrNull(currentRole))
+                : currentEffective;
     }
 
     public String csrfToken() {

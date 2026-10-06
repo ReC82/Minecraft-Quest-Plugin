@@ -29,6 +29,11 @@ import com.lodygames.rpgquest.panel.security.Session;
 import com.lodygames.rpgquest.panel.security.SessionStore;
 import com.lodygames.rpgquest.panel.users.PanelUser;
 import com.lodygames.rpgquest.panel.users.SqliteUserRepository;
+import com.lodygames.rpgquest.panel.authz.PanelGroup;
+import com.lodygames.rpgquest.panel.users.GroupDirectory;
+import com.lodygames.rpgquest.panel.users.GroupRepository;
+import com.lodygames.rpgquest.panel.users.InMemoryGroupRepository;
+import com.lodygames.rpgquest.panel.users.SqliteGroupRepository;
 import com.lodygames.rpgquest.panel.users.UserDirectory;
 import com.lodygames.rpgquest.panel.users.UserRepository;
 import com.sun.net.httpserver.HttpExchange;
@@ -41,10 +46,14 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 
@@ -65,6 +74,7 @@ public final class PanelApp {
     private final AuthService authService;
     private final SessionStore sessions;
     private final UserDirectory users;
+    private final GroupDirectory groups;
     private final PermissionService permissions = new PermissionService();
     private final AgentStore agentStore;
     private final AgentRegistry agentRegistry;
@@ -88,7 +98,8 @@ public final class PanelApp {
     private HttpServer server;
 
     public PanelApp(PanelConfig config, AuditLog audit, BridgeClient bridge, AgentStore agentStore) {
-        this(config, audit, bridge, agentStore, new SqliteUserRepository(config.panelDbPath()));
+        this(config, audit, bridge, agentStore, new SqliteUserRepository(config.panelDbPath()),
+                new SqliteGroupRepository(config.panelDbPath()));
     }
 
     /**
@@ -98,6 +109,12 @@ public final class PanelApp {
      */
     public PanelApp(PanelConfig config, AuditLog audit, BridgeClient bridge, AgentStore agentStore,
                     UserRepository userRepository) {
+        this(config, audit, bridge, agentStore, userRepository, new InMemoryGroupRepository());
+    }
+
+    /** Variante avec comptes <strong>et</strong> groupes injectés (tests, issue #199). */
+    public PanelApp(PanelConfig config, AuditLog audit, BridgeClient bridge, AgentStore agentStore,
+                    UserRepository userRepository, GroupRepository groupRepository) {
         this.config = config;
         this.audit = audit;
         this.bridge = bridge;
@@ -152,6 +169,7 @@ public final class PanelApp {
                 config.agents().actionExpiry(), config::disabled);
         PasswordHasher hasher = new PasswordHasher();
         this.users = new UserDirectory(userRepository, hasher);
+        this.groups = new GroupDirectory(groupRepository);
         this.users.ensureBootstrapOwner(config.ownerUsername(), config.ownerPasswordHash());
         this.authService = new AuthService(userRepository, hasher);
         this.sessions = new SessionStore(config.sessionSecret(),
@@ -225,6 +243,12 @@ public final class PanelApp {
         route("/diagnostics/refresh", this::handleDiagnosticsRefresh);
         route("/users", this::handleUsers);
         route("/users/create", this::handleUserCreate);
+        route("/users/groups", this::handleUserGroups);
+        route("/groups", this::handleGroups);
+        route("/groups/create", this::handleGroupCreate);
+        route("/groups/rename", this::handleGroupRename);
+        route("/groups/permissions", this::handleGroupPermissions);
+        route("/groups/delete", this::handleGroupDelete);
         for (String path : new String[] {"/admin", "/dev"}) {
             route(path, exchange -> handlePlaceholder(exchange, path));
         }
@@ -397,7 +421,7 @@ public final class PanelApp {
                 : AgentLiveness.of(agentStore.latestHeartbeat(agentId), config.agents().thresholds(), Instant.now()).name();
         AgentPages.HomeSummary summary = agentPages.homeSummary(agentId);
         com.lodygames.rpgquest.panel.diag.DiagnosticsReport diag = diagnostics.collect(agentId);
-        String body = homePages.render(session.role(), serverState, summary,
+        String body = homePages.render(session.effective(), serverState, summary,
                 new HomePages.DiagSummary(diag.errors(), diag.warnings(), diag.anyDataLoaded()));
         Http.html(exchange, 200, renderPage("Accueil", session, "/home", body,
                 Layout.Shell.of(target.label(), serverState, session.username())));
@@ -409,7 +433,7 @@ public final class PanelApp {
             return;
         }
         Session session = maybe.get();
-        if (!permissions.can(session.role(), Permission.DASHBOARD_VIEW)) {
+        if (!permissions.can(session.effective(), Permission.DASHBOARD_VIEW)) {
             forbidden(exchange, session, "/dashboard");
             return;
         }
@@ -427,7 +451,7 @@ public final class PanelApp {
             serverState = d.state();
             body.append(d.html());
         }
-        if (permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+        if (permissions.can(session.effective(), Permission.DIAGNOSTICS_READ)) {
             body.append(diagnosticsSummarySection(diagnostics.collect(agentId)));
         }
         body.append(localBridgeSection(target, !agentIsPrimary));
@@ -563,7 +587,7 @@ public final class PanelApp {
             return;
         }
         Session session = maybe.get();
-        if (!permissions.can(session.role(), Permission.DOCS_READ)) {
+        if (!permissions.can(session.effective(), Permission.DOCS_READ)) {
             forbidden(exchange, session, "/docs");
             return;
         }
@@ -598,7 +622,7 @@ public final class PanelApp {
             Http.redirect(exchange, "/content/export");
             return;
         }
-        if (!permissions.can(session.role(), Permission.CONTENT_EXPORT)) {
+        if (!permissions.can(session.effective(), Permission.CONTENT_EXPORT)) {
             forbidden(exchange, session, "/content/export");
             return;
         }
@@ -614,7 +638,7 @@ public final class PanelApp {
             return;
         }
         Session session = maybe.get();
-        if (!permissions.can(session.role(), Permission.CONTENT_EXPORT)) {
+        if (!permissions.can(session.effective(), Permission.CONTENT_EXPORT)) {
             forbidden(exchange, session, "/content/export");
             return;
         }
@@ -672,7 +696,7 @@ public final class PanelApp {
             return;
         }
         Session session = maybe.get();
-        if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+        if (!permissions.can(session.effective(), Permission.DIAGNOSTICS_READ)) {
             forbidden(exchange, session, "/diagnostics");
             return;
         }
@@ -705,7 +729,7 @@ public final class PanelApp {
             Http.html(exchange, 403, Layout.bare("CSRF", "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
             return;
         }
-        if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+        if (!permissions.can(session.effective(), Permission.DIAGNOSTICS_READ)) {
             forbidden(exchange, session, "/diagnostics");
             return;
         }
@@ -721,7 +745,7 @@ public final class PanelApp {
         int enqueued = 0;
         for (String type : com.lodygames.rpgquest.panel.diag.DiagnosticsService.REFRESH_TYPES) {
             var spec = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.spec(type);
-            if (spec.isEmpty() || !permissions.can(session.role(), spec.get().permission())) {
+            if (spec.isEmpty() || !permissions.can(session.effective(), spec.get().permission())) {
                 continue;
             }
             String id = agentStore.createAction(agentId, type, Map.of(), session.username());
@@ -756,7 +780,7 @@ public final class PanelApp {
             return;
         }
         Session session = maybe.get();
-        if (!permissions.can(session.role(), Permission.CONTENT_DELETE)) {
+        if (!permissions.can(session.effective(), Permission.CONTENT_DELETE)) {
             forbidden(exchange, session, base);
             return;
         }
@@ -836,7 +860,7 @@ public final class PanelApp {
             return;
         }
         Session session = maybe.get();
-        if (!permissions.can(session.role(), Permission.USER_MANAGE)) {
+        if (!permissions.can(session.effective(), Permission.USER_MANAGE)) {
             forbidden(exchange, session, "/users");
             return;
         }
@@ -879,13 +903,279 @@ public final class PanelApp {
                 String errMsg = q.get("err");
                 String body = (okMsg == null ? "" : Ui.banner("ok", Http.esc(trimTo(okMsg, 200))))
                         + UsersPages.detail(target.get(), currentPanelUser(session), users.activeOwnerCount(),
-                        errMsg == null ? null : trimTo(errMsg, 200));
+                        errMsg == null ? null : trimTo(errMsg, 200))
+                        // Issue #199 : appartenances + droits effectifs AVEC leur provenance.
+                        + GroupsPages.membershipBlock(target.get(), groups.list(),
+                                groups.effectiveFor(target.get()), session.effective());
                 Http.html(exchange, 200, renderPage("Compte", session, "/users", body));
             }
             case "role" -> handleUserRole(exchange, session, target.get());
             case "active" -> handleUserActive(exchange, session, target.get());
             default -> Http.redirect(exchange, "/users/" + enc(id));
         }
+    }
+
+
+    // ---- Groupes (issue #199) ------------------------------------------------------------------
+    //
+    // Chaque route revérifie USER_MANAGE côté backend, sur les droits EFFECTIFS : une URL atteinte
+    // directement, sans passer par un lien de l'interface, est contrôlée exactement comme les
+    // autres. Et chaque mutation est journalisée, y compris quand elle est REFUSÉE — un refus est
+    // précisément ce qu'on veut pouvoir relire après coup.
+
+    /** Garde commune : session valide + {@code USER_MANAGE} effectif. */
+    private Optional<Session> requireGroupAdmin(HttpExchange exchange, String back) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return Optional.empty();
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.USER_MANAGE)) {
+            forbidden(exchange, session, back);
+            return Optional.empty();
+        }
+        return maybe;
+    }
+
+    /** POST avec jeton CSRF valide, sinon 403. */
+    private Map<String, String> csrfCheckedForm(HttpExchange exchange, Session session) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "POST requis");
+            return null;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF",
+                    "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return null;
+        }
+        return form;
+    }
+
+    private void handleGroups(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireGroupAdmin(exchange, "/groups");
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        String path = exchange.getRequestURI().getPath();
+        if (path.equals("/groups") || path.equals("/groups/")) {
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                Http.text(exchange, 405, "GET requis");
+                return;
+            }
+            Map<String, String> q = Http.query(exchange);
+            String err = q.get("err");
+            String ok = q.get("ok");
+            String flash = err != null ? trimTo(err, 200) : ok != null ? trimTo(ok, 200) : null;
+            List<PanelGroup> all = groups.list();
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            all.forEach(group -> counts.put(group.id(), groups.membersOf(group.id()).size()));
+            String body = GroupsPages.list(all, counts, session.effective(), flash, err != null);
+            Http.html(exchange, 200, renderPage("Groupes", session, "/groups", body));
+            return;
+        }
+        String id = path.substring("/groups/".length());
+        if (id.isEmpty() || !USER_ID.matcher(id).matches()) {
+            Http.redirect(exchange, "/groups");
+            return;
+        }
+        Optional<PanelGroup> group = groups.byId(id);
+        if (group.isEmpty()) {
+            Http.html(exchange, 404, renderPage("Introuvable", session, "/groups",
+                    Ui.banner("err", "Groupe introuvable.")));
+            return;
+        }
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "GET requis");
+            return;
+        }
+        Map<String, String> q = Http.query(exchange);
+        String okMsg = q.get("ok");
+        String errMsg = q.get("err");
+        List<PanelUser> members = new ArrayList<>();
+        for (String userId : groups.membersOf(id)) {
+            users.byId(userId).ifPresent(members::add);
+        }
+        String body = (okMsg == null ? "" : Ui.banner("ok", Http.esc(trimTo(okMsg, 200))))
+                + GroupsPages.detail(group.get(), members, session.effective(),
+                        errMsg == null ? null : trimTo(errMsg, 200));
+        Http.html(exchange, 200, renderPage("Groupe", session, "/groups", body));
+    }
+
+    /** Permissions cochées dans un formulaire. Un nom par permission : {@code perm_<NOM>}. */
+    private static Set<Permission> submittedPermissions(Map<String, String> form) {
+        Set<Permission> wanted = EnumSet.noneOf(Permission.class);
+        for (Permission permission : Permission.values()) {
+            if (form.containsKey("perm_" + permission.name())) {
+                wanted.add(permission);
+            }
+        }
+        return wanted;
+    }
+
+    private void handleGroupCreate(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireGroupAdmin(exchange, "/groups");
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        Map<String, String> form = csrfCheckedForm(exchange, session);
+        if (form == null) {
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String name = form.getOrDefault("name", "");
+        GroupDirectory.Outcome o = groups.create(session.effective(), name,
+                form.get("description"), submittedPermissions(form));
+        if (!o.ok()) {
+            audit.record(session.username(), "group.create", "name=" + trimTo(name, 48), "DENIED", o.error(), rid);
+            Http.redirect(exchange, "/groups?err=" + enc(o.error()));
+            return;
+        }
+        audit.record(session.username(), "group.create", "name=" + o.after().name(), "OK",
+                "permissions=" + permissionNames(o.after().permissions()), rid);
+        Http.redirect(exchange, "/groups/" + enc(o.after().id()) + "?ok=" + enc("Groupe créé."));
+    }
+
+    private void handleGroupRename(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireGroupAdmin(exchange, "/groups");
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        Map<String, String> form = csrfCheckedForm(exchange, session);
+        if (form == null) {
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String groupId = form.getOrDefault("group", "");
+        GroupDirectory.Outcome o = groups.rename(session.effective(), groupId,
+                form.getOrDefault("name", ""), form.get("description"));
+        if (!o.ok()) {
+            audit.record(session.username(), "group.rename", "group=" + trimTo(groupId, 48), "DENIED", o.error(), rid);
+            Http.redirect(exchange, "/groups/" + enc(groupId) + "?err=" + enc(o.error()));
+            return;
+        }
+        audit.record(session.username(), "group.rename", "group=" + o.after().name(), "OK",
+                "from=" + o.before().name(), rid);
+        Http.redirect(exchange, "/groups/" + enc(groupId) + "?ok=" + enc("Groupe enregistré."));
+    }
+
+    private void handleGroupPermissions(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireGroupAdmin(exchange, "/groups");
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        Map<String, String> form = csrfCheckedForm(exchange, session);
+        if (form == null) {
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String groupId = form.getOrDefault("group", "");
+        GroupDirectory.Outcome o = groups.setPermissions(session.effective(), groupId,
+                submittedPermissions(form));
+        if (!o.ok()) {
+            audit.record(session.username(), "group.permissions", "group=" + trimTo(groupId, 48),
+                    "DENIED", o.error(), rid);
+            Http.redirect(exchange, "/groups/" + enc(groupId) + "?err=" + enc(o.error()));
+            return;
+        }
+        audit.record(session.username(), "group.permissions", "group=" + o.after().name(), "OK",
+                "from=[" + permissionNames(o.before().permissions()) + "] to=["
+                        + permissionNames(o.after().permissions()) + "]", rid);
+        Http.redirect(exchange, "/groups/" + enc(groupId) + "?ok="
+                + enc("Permissions enregistrées : effet immédiat sur les sessions ouvertes."));
+    }
+
+    private void handleGroupDelete(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireGroupAdmin(exchange, "/groups");
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        Map<String, String> form = csrfCheckedForm(exchange, session);
+        if (form == null) {
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String groupId = form.getOrDefault("group", "");
+        Optional<PanelGroup> existing = groups.byId(groupId);
+        if (existing.isEmpty()) {
+            Http.redirect(exchange, "/groups?err=" + enc("Groupe introuvable."));
+            return;
+        }
+        // Le nom retapé protège contre le clic de trop : supprimer un groupe retire des droits à
+        // tous ses membres d'un coup.
+        if (!existing.get().name().equals(form.get("confirm"))) {
+            audit.record(session.username(), "group.delete", "group=" + existing.get().name(),
+                    "DENIED", "confirmation du nom incorrecte", rid);
+            Http.redirect(exchange, "/groups/" + enc(groupId) + "?err="
+                    + enc("Nom de confirmation incorrect : rien n'a été supprimé."));
+            return;
+        }
+        int members = groups.membersOf(groupId).size();
+        GroupDirectory.Outcome o = groups.delete(session.effective(), groupId);
+        if (!o.ok()) {
+            audit.record(session.username(), "group.delete", "group=" + existing.get().name(),
+                    "DENIED", o.error(), rid);
+            Http.redirect(exchange, "/groups/" + enc(groupId) + "?err=" + enc(o.error()));
+            return;
+        }
+        audit.record(session.username(), "group.delete", "group=" + o.before().name(), "OK",
+                "permissions=[" + permissionNames(o.before().permissions()) + "] members=" + members, rid);
+        Http.redirect(exchange, "/groups?ok=" + enc("Groupe supprimé : " + members
+                + " membre(s) ont perdu ses droits, immédiatement."));
+    }
+
+    /** {@code POST /users/groups} — appartenances d'un compte. */
+    private void handleUserGroups(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireGroupAdmin(exchange, "/users");
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        Map<String, String> form = csrfCheckedForm(exchange, session);
+        if (form == null) {
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String userId = form.getOrDefault("user", "");
+        Optional<PanelUser> target = users.byId(userId);
+        if (target.isEmpty()) {
+            Http.redirect(exchange, "/users?err=" + enc("Compte introuvable."));
+            return;
+        }
+        Set<String> wanted = new LinkedHashSet<>();
+        for (PanelGroup group : groups.list()) {
+            if (form.containsKey("group_" + group.id())) {
+                wanted.add(group.id());
+            }
+        }
+        GroupDirectory.MembershipOutcome o = groups.setMemberships(session.effective(), target.get(), wanted);
+        if (!o.ok()) {
+            audit.record(session.username(), "user.groups", "username=" + target.get().username(),
+                    "DENIED", o.error(), rid);
+            Http.redirect(exchange, "/users/" + enc(userId) + "?err=" + enc(o.error()));
+            return;
+        }
+        audit.record(session.username(), "user.groups", "username=" + target.get().username(), "OK",
+                "from=[" + groupNames(o.before()) + "] to=[" + groupNames(o.after()) + "]", rid);
+        Http.redirect(exchange, "/users/" + enc(userId) + "?ok="
+                + enc("Groupes enregistrés : effet immédiat, sans reconnexion."));
+    }
+
+    private static String permissionNames(Set<Permission> permissions) {
+        List<String> out = new ArrayList<>();
+        permissions.forEach(permission -> out.add(permission.name()));
+        return String.join(",", out);
+    }
+
+    private static String groupNames(List<PanelGroup> list) {
+        List<String> out = new ArrayList<>();
+        list.forEach(group -> out.add(group.name()));
+        return String.join(",", out);
     }
 
     /** {@code POST /users/create} — routé à part car {@code /users/create} est un contexte plus long. */
@@ -903,7 +1193,7 @@ public final class PanelApp {
             Http.text(exchange, 405, "POST requis");
             return;
         }
-        if (!permissions.can(session.role(), Permission.USER_MANAGE)) {
+        if (!permissions.can(session.effective(), Permission.USER_MANAGE)) {
             forbidden(exchange, session, "/users");
             return;
         }
@@ -1014,7 +1304,7 @@ public final class PanelApp {
             return;
         }
         Session session = maybe.get();
-        if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+        if (!permissions.can(session.effective(), Permission.DIAGNOSTICS_READ)) {
             forbidden(exchange, session, "/agents");
             return;
         }
@@ -1060,7 +1350,7 @@ public final class PanelApp {
                     "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
             return;
         }
-        if (!permissions.can(session.role(), Permission.OPS_RESTART)) {
+        if (!permissions.can(session.effective(), Permission.OPS_RESTART)) {
             forbidden(exchange, session, "/ops");
             return;
         }
@@ -1118,7 +1408,7 @@ public final class PanelApp {
                     "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
             return;
         }
-        if (!permissions.can(session.role(), Permission.OPS_RESTART)) {
+        if (!permissions.can(session.effective(), Permission.OPS_RESTART)) {
             forbidden(exchange, session, "/ops");
             return;
         }
@@ -1150,7 +1440,7 @@ public final class PanelApp {
             Http.json(exchange, 401, "{\"error\":\"unauthorized\"}");
             return;
         }
-        if (!permissions.can(maybe.get().role(), Permission.OPS_LOGS)) {
+        if (!permissions.can(maybe.get().effective(), Permission.OPS_LOGS)) {
             Http.json(exchange, 403, "{\"error\":\"forbidden\"}");
             return;
         }
@@ -1247,7 +1537,7 @@ public final class PanelApp {
             return;
         }
         Session session = maybe.get();
-        if (!permissions.can(session.role(), Permission.OPS_VIEW)) {
+        if (!permissions.can(session.effective(), Permission.OPS_VIEW)) {
             Http.json(exchange, 403, "{\"error\":\"forbidden\"}");
             return;
         }
@@ -1328,7 +1618,7 @@ public final class PanelApp {
             Http.json(exchange, 401, "{\"error\":\"unauthorized\"}");
             return;
         }
-        if (!permissions.can(maybe.get().role(), Permission.DIAGNOSTICS_READ)) {
+        if (!permissions.can(maybe.get().effective(), Permission.DIAGNOSTICS_READ)) {
             Http.json(exchange, 403, "{\"error\":\"forbidden\"}");
             return;
         }
@@ -1391,7 +1681,7 @@ public final class PanelApp {
             return;
         }
         Session session = maybe.get();
-        if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+        if (!permissions.can(session.effective(), Permission.DIAGNOSTICS_READ)) {
             forbidden(exchange, session, "/actions");
             return;
         }
@@ -1513,7 +1803,7 @@ public final class PanelApp {
             return;
         }
         Session session = maybe.get();
-        if (!permissions.can(session.role(), permission)) {
+        if (!permissions.can(session.effective(), permission)) {
             forbidden(exchange, session, path);
             return;
         }
@@ -1561,7 +1851,7 @@ public final class PanelApp {
             return;
         }
         Session session = maybe.get();
-        if (!permissions.can(session.role(), permission)) {
+        if (!permissions.can(session.effective(), permission)) {
             forbidden(exchange, session, base);
             return;
         }
@@ -1713,7 +2003,7 @@ public final class PanelApp {
             Http.redirect(exchange, withError(returnPath, agentId, null, "Type d'action non autorisé."));
             return;
         }
-        if (!permissions.can(session.role(), spec.get().permission())) {
+        if (!permissions.can(session.effective(), spec.get().permission())) {
             audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED", "permission manquante", rid);
             forbidden(exchange, session, returnPath);
             return;
@@ -1804,7 +2094,7 @@ public final class PanelApp {
                     + "<code>control-panel.properties</code>). Voir <code>docs/control-panel/AGENT.md</code>.</p>");
             return sb.toString();
         }
-        boolean canSend = permissions.can(session.role(), Permission.ACTION_VARIABLE_GET);
+        boolean canSend = permissions.can(session.effective(), Permission.ACTION_VARIABLE_GET);
         Instant now = Instant.now();
         for (AgentIdentity agent : agentRegistry.all()) {
             Optional<HeartbeatRecord> hb = agentStore.latestHeartbeat(agent.id());
@@ -1983,7 +2273,7 @@ public final class PanelApp {
 
     /** Filtre de navigation : un lien n'est rendu que si sa permission est accordée au rôle (#50). */
     private java.util.function.Predicate<Layout.NavItem> navFilter(Session session) {
-        return it -> it.permission() == null || permissions.can(session.role(), it.permission());
+        return it -> it.permission() == null || permissions.can(session.effective(), it.permission());
     }
 
     private static String roleLabel(Session session) {
@@ -2008,7 +2298,7 @@ public final class PanelApp {
 
     /** Cloche + centre de notifications de la topbar — visible seulement avec {@code DIAGNOSTICS_READ}. */
     private String notifBell(Session session) {
-        if (!permissions.can(session.role(), Permission.DIAGNOSTICS_READ)) {
+        if (!permissions.can(session.effective(), Permission.DIAGNOSTICS_READ)) {
             return "";
         }
         return notifications.bellHtml(config.agents().defaultAgentId(), Instant.now());
@@ -2029,9 +2319,13 @@ public final class PanelApp {
             sessions.invalidate(session.id());
             return Optional.empty();
         }
-        if (!user.get().role().name().equals(session.role())) {
-            session.refreshRole(user.get().role().name());
-        }
+        // Droits effectifs recalculés à CHAQUE requête (issue #199) : rôle ∪ groupes. C'est ce qui
+        // fait qu'une révocation prend effet immédiatement sur une session active — retirer un
+        // groupe, retirer une permission d'un groupe ou supprimer un groupe agit à la requête
+        // suivante, sans reconnexion. Il n'existe volontairement AUCUN cache plus long qu'une
+        // requête : un cache serait une seconde source de vérité à invalider, donc un bug en
+        // attente.
+        session.refreshAuthz(user.get().role().name(), groups.effectiveFor(user.get()));
         return maybe;
     }
 

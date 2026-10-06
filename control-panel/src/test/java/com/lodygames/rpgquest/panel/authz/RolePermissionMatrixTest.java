@@ -17,7 +17,7 @@ class RolePermissionMatrixTest {
     private final PermissionService authz = new PermissionService();
 
     private boolean can(Role role, Permission p) {
-        return authz.can(role.name(), p);
+        return authz.canByRoleOnly(role.name(), p);
     }
 
     // ---- OWNER ----------------------------------------------------------------------------
@@ -139,9 +139,9 @@ class RolePermissionMatrixTest {
 
     @Test
     void unknownOrNullRoleGrantsNothing() {
-        assertFalse(authz.can(null, Permission.DASHBOARD_VIEW));
-        assertFalse(authz.can("SUPERADMIN", Permission.DASHBOARD_VIEW));
-        assertFalse(authz.can("owner", Permission.DASHBOARD_VIEW), "sensible à la casse : le nom exact est requis");
+        assertFalse(authz.canByRoleOnly(null, Permission.DASHBOARD_VIEW));
+        assertFalse(authz.canByRoleOnly("SUPERADMIN", Permission.DASHBOARD_VIEW));
+        assertFalse(authz.canByRoleOnly("owner", Permission.DASHBOARD_VIEW), "sensible à la casse : le nom exact est requis");
     }
 
     // ---- Exploitation serveur (issue #95) -------------------------------------------------

@@ -820,12 +820,41 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `login.success` porte `role=…`. **Navigation** : `Layout.nav()` et les tuiles `HomePages` sont
   filtrées par permission (groupe entièrement masqué s'il est vide) ; la topbar affiche
   l'utilisateur **et** son rôle (`userbox-r`). **Hors périmètre** (assumé, prévu plus tard sans
-  bloquer l'architecture) : multi-rôles par compte, permissions par environnement/serveur, droits
-  temporaires, approbation à deux niveaux, groupes/équipes, 2FA, SSO/OAuth, invitations, reset de
+  bloquer l'architecture) : permissions par environnement/serveur, droits
+  temporaires, approbation à deux niveaux, 2FA, SSO/OAuth, invitations, reset de
   mot de passe en self-service, suppression de compte (désactivation seulement). Tests :
   `RolePermissionMatrixTest`, `UserDirectoryTest`, `SqliteUserRepositoryTest`, `AuthServiceTest`,
   `UserManagementTest` (bout-en-bout : 403 backend, CSRF, audit, dernier OWNER, session d'un
   compte désactivé, navigation filtrée).
+- **Groupes multiples et droits effectifs (issue #199)** — `PanelGroup` + trois tables additives
+  (`panel_group`, `panel_group_permission`, `panel_user_group`) dans `control-panel.db`. Un compte
+  appartient à **plusieurs** groupes ; ses droits effectifs sont l'**UNION** de son rôle et de ses
+  groupes (`EffectivePermissions`). **La règle d'union est explicite et documentée** : le modèle
+  existant n'a **aucun refus explicite** (`Role` est un `EnumSet`, `has` est un `contains`), donc
+  rien à arbitrer — en introduire un rendrait « retirer un droit » ambigu. Conséquence assumée :
+  **un groupe ne peut jamais réduire les droits d'un rôle**. **Anti-élévation de privilège par une
+  seule règle générale** (`GroupDirectory`) : on ne peut ni accorder ni retirer une permission qu'on
+  ne détient pas soi-même — ce qui ferme d'un coup la création d'un groupe `PLAYER_OP_WRITE` par un
+  ADMIN, son ajout à un groupe existant, son retrait d'un groupe réservé, et son attribution ; la
+  règle couvre automatiquement toute permission ajoutée demain. Second verrou redondant :
+  `USER_MANAGE` reste OWNER-only. **Révocation immédiate** : les droits effectifs sont recalculés à
+  **chaque requête** (`Session#refreshAuthz` depuis `PanelApp.currentSession`), donc retirer un
+  groupe, le vider ou le supprimer agit sur les **sessions déjà ouvertes** sans reconnexion — et il
+  n'existe volontairement **aucun cache** plus long qu'une requête. **Provenance** affichée sur
+  `/users/<id>` : chaque droit accordé liste **toutes** ses origines (« rôle ADMIN », « groupe
+  « Console » »), y compris quand il arrive par plusieurs chemins. **Migration sans élargissement** :
+  `panel_user` n'est pas touché, les rôles ne sont pas convertis, une base existante démarre avec
+  zéro groupe donc des droits strictement égaux à ceux du rôle ; une permission disparue du code est
+  ignorée à la lecture plutôt que de casser la page. **Routes** `/groups`, `/groups/<id>`,
+  `POST /groups/create|rename|permissions|delete` et `POST /users/groups`, toutes gardées par
+  `USER_MANAGE` **sur les droits effectifs** côté backend, CSRF exigé, suppression confirmée par
+  **ressaisie du nom**, et **audit de chaque mutation y compris refusée**. **Mobile** : grilles de
+  cases à cocher `row-cols-1 row-cols-sm-2 row-cols-lg-3` et tables en `.table-responsive`, sans
+  introduire un second style de mise en page. Tests : `EffectivePermissionsTest` (9),
+  `GroupDirectoryTest` (20, dont 8 sur l'anti-élévation), `GroupAdminHttpTest` (14 de bout en bout
+  en HTTP, dont la révocation sur session active par les trois chemins). **Aucun lien avec OP
+  Minecraft ni LuckPerms** : le pont vers les droits Minecraft par monde est l'issue #200, **non
+  livrée** — voir son rapport d'audit pour le blocage identifié.
 
 ## Bugs connus et corrigés
 

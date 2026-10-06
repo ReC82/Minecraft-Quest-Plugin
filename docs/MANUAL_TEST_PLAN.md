@@ -3146,6 +3146,126 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-252 — Groupes multiples et permissions PlugAdmin (issue #199)
+
+-   **Fonctionnalité testée :** création / modification / suppression de groupes, appartenance d'un
+    compte à plusieurs groupes, attribution des permissions aux groupes, affichage des droits
+    effectifs **et de leur provenance**, révocation prenant effet sur une **session active**,
+    contrôle backend de chaque route, et protection du dernier propriétaire.
+-   **Préconditions :** panel de cette session déployé. **Aucun redéploiement du plugin n'est
+    nécessaire** : ce lot est entièrement côté panel.
+-   **IMPORTANT — identités dédiées.**
+    -   **Ne modifiez jamais les droits de votre propre compte propriétaire pour tester.** Créez
+        deux comptes de test et désactivez-les à la fin.
+    -   Les groupes PlugAdmin n'ont **aucun** rapport avec OP Minecraft ni avec les droits de
+        construction en jeu : rien de ce test ne touche au serveur de jeu.
+-   **Préparation :** créer `tc252-lecteur` (rôle **READ_ONLY**) et `tc252-admin` (rôle **ADMIN**),
+    avec des mots de passe jetables.
+
+-   **A. Migration — rien n'a changé pour l'existant :**
+    1.  Ouvrir `/groups`. **Attendu** : « Aucun groupe », et deux encadrés expliquant la règle de
+        l'**union** et l'interdiction d'accorder un droit qu'on ne détient pas.
+    2.  Ouvrir la fiche de votre compte. **Attendu** : les droits effectifs listés correspondent
+        exactement à ceux de votre rôle, chacun avec la provenance « rôle … ».
+    3.  **Attendu** : votre accès de propriétaire est intact (la page `/users` répond).
+
+-   **B. Cycle de vie d'un groupe :**
+    4.  Créer un groupe `TC252 Console` en cochant `OPS_LOGS`. **Attendu** : création, puis la fiche
+        du groupe montre 1 droit et 0 membre.
+    5.  Créer un second groupe nommé `tc252 console` (casse différente). **Attendu** : **refus**
+        pour nom déjà pris.
+    6.  Renommer le groupe en `TC252 Exploitation`. **Attendu** : enregistré, permissions inchangées.
+    7.  Tenter de supprimer en tapant un nom **incorrect**. **Attendu** : refus, le groupe est
+        toujours là.
+    8.  Créer un groupe `TC252 Rédaction` avec `QUEST_CONTENT_WRITE`.
+
+-   **C. Plusieurs groupes et droits effectifs (le point central) :**
+    9.  Fiche de `tc252-lecteur` → cocher **les deux** groupes → enregistrer. **Attendu** :
+        confirmation mentionnant un effet immédiat.
+    10. **Attendu** : la section « Droits effectifs » liste `OPS_LOGS` avec la provenance
+        « groupe « TC252 Exploitation » », `QUEST_CONTENT_WRITE` avec « groupe « TC252 Rédaction » »,
+        et les droits de `READ_ONLY` avec « rôle READ_ONLY ».
+    11. Ajouter `OPS_LOGS` **aussi** au groupe Rédaction. Recharger la fiche. **Attendu** :
+        `OPS_LOGS` affiche **deux** provenances — c'est l'information utile pour savoir qu'il faudra
+        le retirer des deux endroits.
+    12. Décocher le groupe Rédaction sur la fiche du compte. **Attendu** : `QUEST_CONTENT_WRITE`
+        disparaît, `OPS_LOGS` **reste** (il vient encore de l'autre groupe), et les droits du rôle
+        sont intacts.
+
+-   **D. Conflits et absence de refus explicite :**
+    13. Créer un groupe `TC252 Minimal` ne cochant **que** `DASHBOARD_VIEW`, et l'attribuer à
+        `tc252-admin`. **Attendu** : `tc252-admin` **conserve tous** ses droits d'ADMIN. Un groupe
+        **n'enlève rien** — c'est la règle de l'union, et la page le dit.
+    14. Attribuer ce même groupe à **votre** compte propriétaire, puis le retirer. **Attendu** :
+        votre accès reste complet à chaque étape.
+
+-   **E. Révocation sur une session ACTIVE (à faire avec deux navigateurs ou deux fenêtres privées) :**
+    15. Dans une **seconde** fenêtre, se connecter comme `tc252-lecteur`. Tenter d'ouvrir `/users`.
+        **Attendu** : refus (READ_ONLY n'a pas `USER_MANAGE`).
+    16. Depuis votre fenêtre de propriétaire : créer `TC252 Comptes` avec `USER_MANAGE` et
+        l'attribuer à `tc252-lecteur`.
+    17. Dans la fenêtre de `tc252-lecteur`, **sans se reconnecter**, recharger `/users`.
+        **Attendu** : la page s'affiche. Le droit est arrivé par le groupe, immédiatement.
+    18. Depuis votre fenêtre : retirer le groupe du compte. Dans l'autre fenêtre, recharger.
+        **Attendu** : **refus immédiat**, toujours sans reconnexion. C'est la propriété clé du
+        ticket.
+    19. Refaire 16-17, puis cette fois **vider les permissions du groupe** (décocher tout).
+        **Attendu** : refus immédiat dans l'autre fenêtre.
+    20. Refaire 16-17, puis **supprimer le groupe**. **Attendu** : refus immédiat.
+
+-   **F. Anti-élévation de privilège (le point de sécurité) :**
+    21. Donner à `tc252-admin` le groupe `TC252 Comptes` (`USER_MANAGE`) pour qu'il atteigne les
+        écrans de groupes. Se connecter comme `tc252-admin`.
+    22. Ouvrir `/groups` → formulaire de création. **Attendu** : la case `PLAYER_OP_WRITE` est
+        **désactivée** avec la mention « vous ne détenez pas ce droit » — montrée et non cachée.
+    23. Depuis ce compte, tenter de créer un groupe avec `PLAYER_OP_WRITE` en **forçant** le
+        formulaire (outil de développement du navigateur, ou requête POST directe).
+        **Attendu** : **refus** explicite, et **aucun** groupe créé.
+    24. Depuis votre compte propriétaire, créer `TC252 Pouvoirs` avec `PLAYER_OP_WRITE`. Puis depuis
+        `tc252-admin` : tenter de le renommer, de le vider, de le supprimer, et de l'attribuer à
+        quelqu'un. **Attendu** : **refus** dans les quatre cas, et la fiche du groupe affiche qu'il
+        est consultable mais non modifiable.
+    25. **Attendu** : `tc252-admin` peut en revanche créer un groupe avec `ECONOMY_WRITE` (droit
+        qu'ADMIN détient) — l'anti-élévation ne bloque pas tout, elle bloque exactement ce qu'il
+        faut.
+
+-   **G. Routes atteintes directement :**
+    26. Avec `tc252-lecteur` (sans `USER_MANAGE`), appeler directement `/groups` en GET.
+        **Attendu** : **403**.
+    27. Poster directement sur `/groups/create`, `/groups/rename`, `/groups/permissions`,
+        `/groups/delete` et `/users/groups`. **Attendu** : **403** à chaque fois, et **aucun** effet.
+    28. Déconnecté, appeler `/groups`. **Attendu** : redirection vers la connexion.
+
+-   **H. Mobile :**
+    29. Ouvrir `/groups` et une fiche de compte sur un téléphone. **Attendu** : les listes de cases
+        à cocher passent sur une colonne, les libellés sont cliquables confortablement, les tables
+        défilent horizontalement sans casser la page, et aucun bouton n'est hors écran.
+
+-   **I. Audit :**
+    30. Ouvrir la page d'audit. **Attendu** : chaque création, renommage, changement de permissions,
+        suppression et changement d'appartenance figure avec son auteur — **et** les tentatives
+        **refusées** de l'étape 23/24 apparaissent avec le résultat `DENIED`.
+
+-   **Nettoyage :** supprimer les groupes `TC252 *`, puis **désactiver** les comptes `tc252-lecteur`
+    et `tc252-admin`. Vérifier pour finir que votre compte propriétaire a toujours tous ses droits
+    et que `/users` répond.
+-   **Couverture automatisée :** `EffectivePermissionsTest` (9 cas : rôle seul = droits du rôle,
+    groupes qui ajoutent sans retirer, union de plusieurs groupes, groupe vide sans effet,
+    **un groupe ne peut pas retirer un droit du rôle**, provenances multiples, droit non accordé sans
+    provenance, libellés de provenance, compte sans rôle) ; `GroupDirectoryTest` (20 cas, dont
+    **8 sur l'anti-élévation** : création, ajout, retrait, renommage, suppression et attribution
+    refusés sur un droit non détenu, acteur sans droit qui ne peut rien, et le pendant indispensable
+    — un ADMIN peut gérer un groupe dans la limite de ses propres droits) ;
+    `GroupAdminHttpTest` (14 cas de bout en bout en HTTP : migration, cycle de vie, doublon de nom,
+    **révocation sur session active par les trois chemins** (retrait d'appartenance, vidage du
+    groupe, suppression du groupe), **toutes les routes refusées côté backend**, non authentifié,
+    CSRF absent, provenance affichée, appartenances multiples, dernier propriétaire, et **audit des
+    refus**).
+    **Non couvert automatiquement** : le rendu mobile réel, le forçage de formulaire depuis un
+    navigateur, et le confort d'usage — c'est l'objet des sections F (23), G et H.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -3227,3 +3347,4 @@ le résumé de récompenses de TC-014).
 | TC-249 | Monnaie : solde, journal, crédit/débit, plancher à zéro #140 (PENDING) | | | |
 | TC-250 | Récompense monétaire de quête, bourse dans le journal #16 (PENDING) | | | |
 | TC-251 | Récupération d'une récompense monétaire non payée #16 (PENDING) | | | |
+| TC-252 | Groupes multiples, droits effectifs et provenance #199 (PENDING) | | | |

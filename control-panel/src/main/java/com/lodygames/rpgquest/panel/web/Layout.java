@@ -56,6 +56,7 @@ public final class Layout {
                         new NavItem("Diagnostics", "/diagnostics", "diagnostics", Permission.DIAGNOSTICS_READ, true))),
                 new NavGroup("Administration", List.of(
                         new NavItem("Utilisateurs", "/users", "users", Permission.USER_MANAGE, true),
+                        new NavItem("Groupes", "/groups", "users", Permission.USER_MANAGE, true),
                         new NavItem("Développement", "/dev", "dev", Permission.DEV_MODULE, false))));
     }
 

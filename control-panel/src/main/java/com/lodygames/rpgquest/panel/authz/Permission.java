@@ -106,8 +106,30 @@ public enum Permission {
     OPS_LOGS,
     /**
      * Gérer les comptes PlugAdmin : créer un utilisateur, changer son rôle, l'activer / le
-     * désactiver, consulter la page {@code /users} (issue #50). Réservée à {@code OWNER} par
-     * défaut ; jamais accordée à {@code ADMIN} sans décision explicite.
+     * désactiver, consulter la page {@code /users} (issue #50). Couvre aussi, depuis l'issue #199,
+     * la gestion des <strong>groupes</strong> et des appartenances — c'est la même surface
+     * administrative, et la séparer donnerait l'illusion d'un cloisonnement qui n'existe pas :
+     * créer un groupe, c'est distribuer des droits.
+     *
+     * <p>Réservée à {@code OWNER} par défaut ; jamais accordée à {@code ADMIN} sans décision
+     * explicite. Un deuxième garde-fou existe indépendamment d'elle : on ne peut jamais accorder
+     * une permission que l'on ne détient pas soi-même (voir {@code GroupDirectory}).</p>
      */
-    USER_MANAGE
+    USER_MANAGE;
+
+    /**
+     * Permission portant ce nom, ou vide si le nom est inconnu. Utilisé à la lecture d'un groupe en
+     * base : une permission disparue du code ne doit ni faire échouer la lecture ni accorder quoi
+     * que ce soit.
+     */
+    public static java.util.Optional<Permission> byNameOrNull(String name) {
+        if (name == null) {
+            return java.util.Optional.empty();
+        }
+        try {
+            return java.util.Optional.of(Permission.valueOf(name.trim()));
+        } catch (IllegalArgumentException e) {
+            return java.util.Optional.empty();
+        }
+    }
 }

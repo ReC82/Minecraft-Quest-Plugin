@@ -308,9 +308,9 @@ class ContentEditorPagesTest {
     @Test
     void readOnlyRoleLacksContentWritePermission() {
         PermissionService p = new PermissionService();
-        assertFalse(p.can(Role.READ_ONLY.name(), Permission.QUEST_CONTENT_WRITE));
-        assertTrue(p.can(Role.OWNER.name(), Permission.QUEST_CONTENT_WRITE));
-        assertTrue(p.can(Role.CONTENT_EDITOR.name(), Permission.STORY_CONTENT_WRITE));
+        assertFalse(p.canByRoleOnly(Role.READ_ONLY.name(), Permission.QUEST_CONTENT_WRITE));
+        assertTrue(p.canByRoleOnly(Role.OWNER.name(), Permission.QUEST_CONTENT_WRITE));
+        assertTrue(p.canByRoleOnly(Role.CONTENT_EDITOR.name(), Permission.STORY_CONTENT_WRITE));
     }
 
     // ---- #46 passe UX : brouillon jamais bloqué, scroll, combos ---------------------------

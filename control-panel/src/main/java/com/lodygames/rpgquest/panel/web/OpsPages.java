@@ -68,13 +68,13 @@ public final class OpsPages {
                 "État réel, annonce aux joueurs, redémarrage vérifié et console récente.", ""));
         sb.append(stateBlock(heartbeat, liveness, now, agentId));
         sb.append(restartBlock(session, agentId));
-        if (permissions.can(session.role(), Permission.OPS_ANNOUNCE)) {
+        if (permissions.can(session.effective(), Permission.OPS_ANNOUNCE)) {
             sb.append(announceBlock(session, agentId, liveness, heartbeat));
         }
-        if (permissions.can(session.role(), Permission.ACTION_CONTENT_RELOAD)) {
+        if (permissions.can(session.effective(), Permission.ACTION_CONTENT_RELOAD)) {
             sb.append(reloadBlock(session, agentId));
         }
-        if (permissions.can(session.role(), Permission.OPS_LOGS)) {
+        if (permissions.can(session.effective(), Permission.OPS_LOGS)) {
             sb.append(consoleBlock(agentId));
         }
         sb.append(unavailableBlock());
@@ -138,7 +138,7 @@ public final class OpsPages {
             return sb.append(Ui.banner("warn", "<strong>Redémarrage indisponible.</strong> "
                     + Http.esc(nz(availability.reason())))).toString();
         }
-        if (!permissions.can(session.role(), Permission.OPS_RESTART)) {
+        if (!permissions.can(session.effective(), Permission.OPS_RESTART)) {
             return sb.append(Ui.banner("info",
                     "Votre rôle ne permet pas de redémarrer le serveur.")).toString();
         }
@@ -207,7 +207,7 @@ public final class OpsPages {
             sb.append("</ul></details>");
         }
         if (operation.phase() == RestartService.Phase.SCHEDULED
-                && permissions.can(session.role(), Permission.OPS_RESTART)) {
+                && permissions.can(session.effective(), Permission.OPS_RESTART)) {
             sb.append("<form method=\"post\" action=\"/ops/restart/cancel\" class=\"mt-2\">");
             sb.append(csrf(session));
             sb.append("<input type=\"hidden\" name=\"operation\" value=\"").append(Http.esc(operation.id())).append("\">");

@@ -225,8 +225,8 @@ class ActionsCenterTest {
 
         PermissionService perms = new PermissionService();
         // La cloche et /actions sont gardés par DIAGNOSTICS_READ (jamais « role == OWNER » en dur).
-        assertTrue(perms.can("OWNER", Permission.DIAGNOSTICS_READ));
-        assertFalse(perms.can("__no_such_role__", Permission.DIAGNOSTICS_READ), "un rôle inconnu ne passe pas");
+        assertTrue(perms.canByRoleOnly("OWNER", Permission.DIAGNOSTICS_READ));
+        assertFalse(perms.canByRoleOnly("__no_such_role__", Permission.DIAGNOSTICS_READ), "un rôle inconnu ne passe pas");
     }
 
     // ---- infra --------------------------------------------------------------------------

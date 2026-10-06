@@ -24,6 +24,7 @@ progression, reload de contenu, plus tard édition et déploiement). La sécurit
 | Rate limiting login / backoff | ⏳ à ajouter (délai constant PBKDF2 déjà payé sur échec ; nginx devant) |
 | HTTPS + reverse proxy | ✅ #44 — `https://plugadmin.lodylands.com`, TLS Let's Encrypt, 80→443, backend `127.0.0.1:8090` non exposé ([DEPLOYMENT_AWS.md](DEPLOYMENT_AWS.md)) |
 | RBAC multi-rôles | ✅ #50 — `Role` (OWNER/ADMIN/TESTER/BUILDER/CONTENT_EDITOR/READ_ONLY) → `Set<Permission>`, `PermissionService.can`, comptes `panel_user` dans `control-panel.db`, page `/users` (voir « Rôles et permissions #50 » plus bas) |
+| Groupes multiples | ✅ #199 — `PanelGroup` + `panel_group` / `panel_group_permission` / `panel_user_group`, page `/groups`, droits effectifs **avec provenance** sur `/users/<id>` (voir « Groupes #199 » plus bas) |
 
 ## Modèle de menace (V1)
 
@@ -74,6 +75,71 @@ Table append-only `audit_log` dans `control-panel.db` :
 - Écrit **avant** (intention) et **après** (résultat) pour les actions.
 - Consultable dans le module « Admin » (lecture seule, filtrable).
 - Jamais purgé automatiquement en V1.
+
+## Groupes #199 (implémenté)
+
+### Règle de combinaison : l'UNION, et rien d'autre
+
+Un compte a une permission s'il la tient de son **rôle** <em>ou</em> d'au moins un de ses
+**groupes**. Ce n'est pas un défaut : le modèle existant **n'a aucun refus explicite** (`Role` est
+un `EnumSet`, `Role#has` est un `contains`), donc il n'y a rien à arbitrer. Introduire un refus
+rendrait « retirer un droit » ambigu — faut-il le retirer de tous les groupes, ou ajouter un refus
+qui écrase ? — et transformerait chaque écran en question de priorité.
+
+**Conséquence assumée : un groupe ne peut jamais réduire les droits d'un rôle.** Pour retirer un
+droit, on le retire du groupe, ou on retire le compte du groupe. Un geste, un effet.
+
+### Anti-élévation de privilège : une seule règle générale
+
+**On ne peut jamais accorder — ni retirer — une permission que l'on ne détient pas soi-même**
+(`GroupDirectory`). Cette règle unique ferme toutes les portes d'un coup au lieu d'énumérer des cas
+particuliers qui se périment :
+
+- un administrateur ne peut pas créer un groupe portant `PLAYER_OP_WRITE` pour se l'attribuer ;
+- il ne peut pas l'ajouter à un groupe existant, ni le retirer d'un groupe réservé (ce qui serait un
+  moyen détourné de modifier une décision du propriétaire) ;
+- il ne peut pas attribuer ni retirer un groupe qui accorde un droit qu'il ne détient pas ;
+- la règle couvre automatiquement toute permission ajoutée demain.
+
+Un **second verrou**, volontairement redondant : `USER_MANAGE` n'est détenue que par `OWNER`
+aujourd'hui, donc seul un propriétaire atteint ces écrans. Le premier verrou survit à une future
+décision d'accorder `USER_MANAGE` à un autre rôle.
+
+### Révocation immédiate, sans cache
+
+Les droits effectifs sont recalculés à **chaque requête** dans `PanelApp.currentSession`
+(`Session#refreshAuthz`). Retirer un groupe, vider ses permissions ou le supprimer agit donc sur les
+**sessions déjà ouvertes**, à la requête suivante, sans reconnexion. Il n'existe volontairement
+**aucun cache plus long qu'une requête** : un cache serait une seconde source de vérité à invalider,
+donc un bug en attente. Vérifié de bout en bout en HTTP (`GroupAdminHttpTest`).
+
+### Protection du propriétaire
+
+Un groupe ne peut qu'**ajouter**. Il est donc structurellement impossible de verrouiller un
+propriétaire en jouant sur les groupes. Les protections du dernier `OWNER` (rôle non abaissable,
+compte non désactivable) restent celles de `UserDirectory` et restent nécessaires : c'est le *rôle*
+qui porte l'accès.
+
+### Migration
+
+Trois `CREATE TABLE IF NOT EXISTS` **additifs**. `panel_user` n'est pas touché : un compte garde
+exactement le rôle et les droits qu'il avait. Une base existante démarre avec **zéro groupe**, donc
+des droits effectifs strictement égaux à ceux du rôle. Une permission disparue du code est ignorée à
+la lecture d'un groupe (elle n'accorde rien) plutôt que de faire échouer la page.
+
+### Routes et audit
+
+`/groups` (liste, création), `/groups/<id>` (détail), et les POST `/groups/create`,
+`/groups/rename`, `/groups/permissions`, `/groups/delete`, `/users/groups`. **Chaque** route
+revérifie `USER_MANAGE` sur les droits **effectifs** côté backend, jeton CSRF exigé, et **chaque**
+mutation est journalisée — y compris lorsqu'elle est **refusée**, car un refus est précisément ce
+qu'on veut pouvoir relire après coup.
+
+**Ces groupes sont propres à PlugAdmin** — aucune correspondance automatique avec OP Minecraft,
+Paper ou LuckPerms. Le pont vers les droits Minecraft par monde est l'objet de l'issue #200, non
+livrée à ce jour (voir le rapport d'audit correspondant).
+
+---
 
 ## Rôles et permissions #50 (implémenté)
 

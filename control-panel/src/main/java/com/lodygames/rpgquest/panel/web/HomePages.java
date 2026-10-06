@@ -77,7 +77,10 @@ public final class HomePages {
                             Permission.DOCS_READ, true))),
             new Group("Administration", List.of(
                     new Tile("users", "/users", "users", "Utilisateurs",
-                            "Comptes PlugAdmin, rôles et activation — accès réservé au propriétaire.",
+                            "Comptes PlugAdmin, rôles, groupes et droits effectifs.",
+                            Permission.USER_MANAGE, true),
+                    new Tile("groups", "/groups", "users", "Groupes",
+                            "Ensembles de permissions attribuables à plusieurs comptes (union des droits).",
                             Permission.USER_MANAGE, true),
                     new Tile("dev", "/dev", "dev", "Développement",
                             "GitHub, rapports Claude, tests, build et déploiements.",
@@ -90,15 +93,17 @@ public final class HomePages {
     }
 
     /**
-     * @param role         nom de rôle de la session
+     * @param effective    droits effectifs de la session (rôle ∪ groupes, issue #199)
      * @param serverState  ONLINE / OFFLINE / STALE / UNKNOWN (tuiles Dashboard et Agents)
      * @param summary      comptes synthétiques (voir {@link AgentPages#homeSummary})
      */
-    public String render(String role, String serverState, AgentPages.HomeSummary summary) {
-        return render(role, serverState, summary, DiagSummary.UNKNOWN);
+    public String render(com.lodygames.rpgquest.panel.authz.EffectivePermissions effective,
+                         String serverState, AgentPages.HomeSummary summary) {
+        return render(effective, serverState, summary, DiagSummary.UNKNOWN);
     }
 
-    public String render(String role, String serverState, AgentPages.HomeSummary summary, DiagSummary diag) {
+    public String render(com.lodygames.rpgquest.panel.authz.EffectivePermissions effective,
+                         String serverState, AgentPages.HomeSummary summary, DiagSummary diag) {
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"home-head\">");
         sb.append("<h1>PlugAdmin</h1>");
@@ -111,7 +116,7 @@ public final class HomePages {
 
         for (Group g : GROUPS) {
             List<Tile> visible = g.tiles().stream()
-                    .filter(t -> t.permission() == null || perms.can(role, t.permission()))
+                    .filter(t -> t.permission() == null || perms.can(effective, t.permission()))
                     .toList();
             if (visible.isEmpty()) {
                 continue;

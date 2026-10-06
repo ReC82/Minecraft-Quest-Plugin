@@ -250,7 +250,7 @@ public final class AgentPages {
      */
     private String reloadHint(Session session, String agentId, List<MergedRow> merged, String noun,
                               String... families) {
-        if (agentId == null || !perms.can(session.role(), Permission.ACTION_CONTENT_RELOAD)) {
+        if (agentId == null || !perms.can(session.effective(), Permission.ACTION_CONTENT_RELOAD)) {
             return "";
         }
         long sourceOnly = merged.stream().filter(row -> row.state() == CatalogState.SOURCE_ONLY).count();
@@ -338,16 +338,16 @@ public final class AgentPages {
             return sb.append(noAgent()).toString();
         }
         String agentId = agent.get().id();
-        boolean canModerate = perms.can(session.role(), Permission.PLAYER_MODERATE);
-        boolean canVarGet = perms.can(session.role(), Permission.ACTION_VARIABLE_GET);
-        boolean canVarSet = perms.can(session.role(), Permission.ACTION_VARIABLE_SET);
-        boolean canGive = perms.can(session.role(), Permission.ACTION_ITEM_GIVE);
-        boolean canReset = perms.can(session.role(), Permission.ACTION_PLAYER_RESET);
+        boolean canModerate = perms.can(session.effective(), Permission.PLAYER_MODERATE);
+        boolean canVarGet = perms.can(session.effective(), Permission.ACTION_VARIABLE_GET);
+        boolean canVarSet = perms.can(session.effective(), Permission.ACTION_VARIABLE_SET);
+        boolean canGive = perms.can(session.effective(), Permission.ACTION_ITEM_GIVE);
+        boolean canReset = perms.can(session.effective(), Permission.ACTION_PLAYER_RESET);
         // Issue #210 : permission DÉDIÉE, la plus restreinte du panel (OWNER uniquement).
-        boolean canOp = perms.can(session.role(), Permission.PLAYER_OP_WRITE);
+        boolean canOp = perms.can(session.effective(), Permission.PLAYER_OP_WRITE);
         // Issue #140 : lire un solde et en créer sont deux gestes distincts.
-        boolean canEcoRead = perms.can(session.role(), Permission.ECONOMY_READ);
-        boolean canEcoWrite = perms.can(session.role(), Permission.ECONOMY_WRITE);
+        boolean canEcoRead = perms.can(session.effective(), Permission.ECONOMY_READ);
+        boolean canEcoWrite = perms.can(session.effective(), Permission.ECONOMY_WRITE);
         String focus = cleanPlayer(q.get("player"));
 
         sb.append(agentPicker(agentId, "/players", ""));
@@ -1160,9 +1160,9 @@ public final class AgentPages {
     public String quests(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
-        boolean canEditQuests = perms.can(session.role(), Permission.QUEST_CONTENT_WRITE);
+        boolean canEditQuests = perms.can(session.effective(), Permission.QUEST_CONTENT_WRITE);
         // Issue #194 : permission DÉDIÉE, distincte de l'écriture de contenu.
-        boolean canDeleteContent = perms.can(session.role(), Permission.CONTENT_DELETE);
+        boolean canDeleteContent = perms.can(session.effective(), Permission.CONTENT_DELETE);
         sb.append(Ui.pageHeader("quests", "Quêtes",
                 "Catalogue des quêtes, état d'un joueur, et raccourcis d'administration "
                         + "(démarrer / compléter / réinitialiser).",
@@ -1177,14 +1177,14 @@ public final class AgentPages {
 
         sb.append("<h2>Catalogue</h2>");
         String questBar = compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-primary", "/quests");
-        if (perms.can(session.role(), Permission.NPC_READ)) {
+        if (perms.can(session.effective(), Permission.NPC_READ)) {
             questBar += compactRefresh(session, agentId, "npc.list", "PNJ", "btn-outline-secondary", "/quests");
         }
         // Issue #196 : catalogue des objets de la version installée, utilisé par les icônes et les
         // récompenses de l'éditeur. En orange tant qu'il manque, parce que sans lui l'éditeur ne
         // propose qu'une courte liste de dépannage — et le disait mal.
         boolean itemsLoaded = itemCatalog(agentId).known();
-        if (perms.can(session.role(), Permission.CONTENT_READ)) {
+        if (perms.can(session.effective(), Permission.CONTENT_READ)) {
             questBar += compactRefresh(session, agentId, "item.catalogs", "Objets Minecraft",
                     itemsLoaded ? "btn-outline-secondary" : "btn-warning", "/quests");
         }
@@ -1481,8 +1481,8 @@ public final class AgentPages {
     public String stories(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
-        boolean canEditStories = perms.can(session.role(), Permission.STORY_CONTENT_WRITE);
-        boolean canDeleteStories = perms.can(session.role(), Permission.CONTENT_DELETE);
+        boolean canEditStories = perms.can(session.effective(), Permission.STORY_CONTENT_WRITE);
+        boolean canDeleteStories = perms.can(session.effective(), Permission.CONTENT_DELETE);
         sb.append(Ui.pageHeader("stories", "Stories",
                 "Suites ordonnées de quêtes. Avancer d'une étape ou compléter toute la story.",
                 (canEditStories ? Ui.primaryLink("/stories/new", "plus", "Créer une story") : "")
@@ -1927,11 +1927,11 @@ public final class AgentPages {
             return sb.append(noAgent()).toString();
         }
         String agentId = agent.get().id();
-        boolean canWrite = perms.can(session.role(), Permission.NPC_WRITE);
-        boolean canSetGiver = perms.can(session.role(), Permission.QUEST_GIVER_WRITE);
-        boolean canLink = perms.can(session.role(), Permission.NPC_BIND_WRITE);
-        boolean canSpawn = perms.can(session.role(), Permission.NPC_SPAWN_WRITE);
-        boolean canWriteDialogue = perms.can(session.role(), Permission.DIALOGUE_WRITE);
+        boolean canWrite = perms.can(session.effective(), Permission.NPC_WRITE);
+        boolean canSetGiver = perms.can(session.effective(), Permission.QUEST_GIVER_WRITE);
+        boolean canLink = perms.can(session.effective(), Permission.NPC_BIND_WRITE);
+        boolean canSpawn = perms.can(session.effective(), Permission.NPC_SPAWN_WRITE);
+        boolean canWriteDialogue = perms.can(session.effective(), Permission.DIALOGUE_WRITE);
         List<String> spawnWorlds = loadedWorldNames(agentId);
         sb.append(agentPicker(agentId, "/npcs", ""));
 
@@ -3002,7 +3002,7 @@ public final class AgentPages {
     public String dialogues(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
-        boolean canWrite = perms.can(session.role(), Permission.DIALOGUE_WRITE);
+        boolean canWrite = perms.can(session.effective(), Permission.DIALOGUE_WRITE);
         sb.append(Ui.pageHeader("dialogues", "Dialogues",
                 "Lecture structurée des dialogues à embranchements (dialogues/<id>.yml) : nœuds, "
                         + "choix, actions et conditions typées, relations PNJ / quêtes, diagnostics.",
@@ -3016,10 +3016,10 @@ public final class AgentPages {
 
         sb.append("<h2>Catalogue</h2>");
         String dlgBar = compactRefresh(session, agentId, "dialogue.list", "Dialogues", "btn-outline-primary", "/dialogues");
-        if (perms.can(session.role(), Permission.CONTENT_READ)) {
+        if (perms.can(session.effective(), Permission.CONTENT_READ)) {
             dlgBar += compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-secondary", "/dialogues");
         }
-        if (perms.can(session.role(), Permission.NPC_READ)) {
+        if (perms.can(session.effective(), Permission.NPC_READ)) {
             dlgBar += compactRefresh(session, agentId, "npc.list", "PNJ", "btn-outline-secondary", "/dialogues");
         }
         sb.append(listCatbar("Catalogue", dlgBar));
@@ -4139,8 +4139,8 @@ public final class AgentPages {
             return sb.append(noAgent()).toString();
         }
         String agentId = agent.get().id();
-        boolean canWrite = perms.can(session.role(), Permission.MOB_WRITE);
-        boolean canTest = perms.can(session.role(), Permission.MOB_TEST_SPAWN);
+        boolean canWrite = perms.can(session.effective(), Permission.MOB_WRITE);
+        boolean canTest = perms.can(session.effective(), Permission.MOB_TEST_SPAWN);
         sb.append(agentPicker(agentId, "/mobs", ""));
 
         // Issue #172 : catalogues réels du serveur, émis une fois pour toute la page (ils alimentent

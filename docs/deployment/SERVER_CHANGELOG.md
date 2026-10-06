@@ -4810,3 +4810,64 @@ pour le JAR. **Retirer LuckPerms** se fait en supprimant son JAR de `plugins/` p
 RPGQuest continue de fonctionner, le pont se déclarant simplement indisponible. Les groupes
 `rpgq-…` déjà créés disparaîtraient avec les données de LuckPerms — les droits qu'ils portaient
 cesseraient donc de s'appliquer, ce qui est le comportement voulu.
+
+------------------------------------------------------------------------
+
+## 2026-10-06 (lot 16) - #95 : le refresh de /ops n'efface plus la saisie et n'empile plus le résultat
+
+**Panel AWS uniquement. Aucun transfert vers VeryGames, aucun redémarrage Minecraft.** Le JAR du
+plugin en place reste `ba6c4e3c7147…` (lot 15).
+
+### Ce qui n'allait pas
+
+La page `/ops` démarrait son suivi d'opération dès qu'une **carte d'opération** était affichée, sans
+distinguer une opération **en cours** d'une opération **déjà terminée** (`DONE`, `FAILED`,
+`CANCELLED`). `/ops/state.json` répondait `terminal: true`, le script rechargeait **toute** la page,
+le serveur re-rendait la même carte terminale, et le cycle repartait : un rechargement toutes les
+3 secondes, sans fin.
+
+Les deux symptômes signalés en venaient tous les deux :
+
+- l'annonce en cours de saisie était effacée et les cases décochées, puisqu'un rechargement
+  reconstruit le formulaire ;
+- la notification de résultat réapparaissait sans cesse : elle vient d'un drapeau laissé dans l'URL
+  par la redirection après POST (`?toast=`, `?ok=`, `?err=`), donc chaque rechargement la recréait.
+
+**Aucune réexécution n'a eu lieu** : vérifié sur l'historique réel (`agent_action`), trois annonces
+de l'exploitant espacées de minutes, et rien de plus. Le rechargement rejouait une **redirection
+GET**, jamais la soumission.
+
+### Ce qui change
+
+- Plus **aucun** rechargement de page depuis le suivi d'opération. Seuls des conteneurs **sans
+  formulaire** sont remplacés : le bloc d'état et la carte d'opération.
+- `/ops/state.json` renvoie un champ `stateHtml` : le bloc « État du serveur » se renouvelle tout
+  seul (20 s au repos, 3 s pendant une opération active). Il ne contient ni `<form>`, ni `<input>`,
+  ni jeton CSRF — un test l'interdit.
+- Une opération **déjà terminale au chargement** n'est plus surveillée.
+- Les drapeaux de résultat de l'URL deviennent à **usage unique** (`history.replaceState`) : le
+  résultat s'affiche une fois, et une nouvelle action produit sa propre notification.
+
+### Déployé
+
+- `scripts/plugadmin/deploy.sh` — release précédente sauvegardée sous
+  `/opt/plugadmin/releases/20261006-152004`.
+- `control-panel-0.1.0-SNAPSHOT.jar` SHA-256 `bb705a8b53a1e5325ae88441a0f4d3b77c1d2dd107552a5400ebc575efe165e5`.
+- `panel.js` **réellement servi** : SHA-256 `3ae4b2b3fdcd026750e11a126684807d5602be35ffcdf1e7a677ed7b5d5fb114`,
+  identique au fichier du dépôt.
+- `/health` local et public : `ONLINE`. `/ops` authentifiée : 200, marqueurs présents.
+
+### Chargement réellement vérifié
+
+Le `panel.js` servi par le panel déployé a été exécuté dans un DOM sur le **vrai HTML de `/ops`**,
+dans deux variantes (page telle que servie, puis avec une carte `DONE` réinjectée — le cas qui
+bouclait) : **0 tentative de rechargement**, saisie/canal/focus/aperçu intacts après ~23 cycles,
+bloc d'état réellement remplacé, drapeau `toast` retiré de l'URL, **uniquement des GET**. Contrôle
+négatif sur la version d'avant le correctif : les tentatives de navigation réapparaissent.
+
+### Validation
+
+Validation navigateur par l'exploitant restante (5 points, détaillés dans le rapport
+`2026-10-06_1522_refresh-ops-plugadmin-95.md`). Aucune case cochée, aucun ticket fermé.
+
+Rollback : `scripts/plugadmin/rollback.sh app`.

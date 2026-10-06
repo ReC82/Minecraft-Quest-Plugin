@@ -125,6 +125,10 @@ public final class AgentActionExecutor {
                 case ECONOMY_DEBTS -> questRewardDebts(action);
                 case ECONOMY_DEBT_RETRY -> questRewardRetry(action);
                 case ECONOMY_DEBT_SETTLE -> questRewardSettle(action);
+                case MC_RIGHTS_READ -> mcRightsRead(action);
+                case MC_GROUP_SYNC -> mcGroupSync(action);
+                case MC_GROUP_DELETE -> mcGroupDelete(action);
+                case MC_RIGHTS_SYNC -> mcRightsSync(action);
                 case PLAYER_ITEM_GIVE -> itemGive(action);
                 case QUEST_START -> questStart(action);
                 case QUEST_COMPLETE -> questMutation(action, AgentActionType.QUEST_COMPLETE);
@@ -889,6 +893,91 @@ public final class AgentActionExecutor {
     private static final long MAX_ECONOMY_AMOUNT = 1_000_000L;
 
     /** {@code economy.balance} — solde réel et journal récent. Lecture seule. */
+    // ---- Pont vers les droits Minecraft (issue #200) -------------------------------------------
+
+    private CompletableFuture<AgentActionOutcome> mcRightsRead(AgentAction action) {
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.mcRightsRead(uuid).thenApply(view -> {
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    details.put("bridgeAvailable", view.bridgeAvailable());
+                    details.put("reason", view.reason());
+                    details.put("effective", view.effective());
+                    if (!view.ok()) {
+                        return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED,
+                                "READ_FAILED", name + " : " + view.message(), details,
+                                java.time.Instant.now());
+                    }
+                    return AgentActionOutcome.success(action.id(),
+                            view.bridgeAvailable() ? "AVAILABLE" : "UNAVAILABLE",
+                            name + " : " + view.message(), details);
+                }));
+    }
+
+    /**
+     * Lecture des couples {@code nœud}/{@code monde} du formulaire. Un nom distinct par droit
+     * ({@code node0}, {@code world0}, {@code node1}…) : {@code Http.formBody} côté panel ne conserve
+     * qu'une valeur par clé, donc des champs homonymes perdraient tout sauf un.
+     */
+    private static List<AgentActions.McNodeSpec> readNodeSpecs(AgentAction action) {
+        List<AgentActions.McNodeSpec> out = new ArrayList<>();
+        for (int i = 0; i < 64; i++) {
+            String node = trimOrEmpty(action.param("node" + i));
+            if (node.isEmpty()) {
+                continue;
+            }
+            out.add(new AgentActions.McNodeSpec(node, trimOrEmpty(action.param("world" + i))));
+        }
+        return out;
+    }
+
+    private CompletableFuture<AgentActionOutcome> mcGroupSync(AgentAction action) {
+        String groupId = trimOrEmpty(action.param("group"));
+        if (groupId.isEmpty()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Identifiant de groupe manquant."));
+        }
+        String displayName = trimOrEmpty(action.param("label"));
+        return actions.mcGroupSync(groupId, displayName, readNodeSpecs(action))
+                .thenApply(view -> toSyncOutcome(action, view, "groupe " + groupId));
+    }
+
+    private CompletableFuture<AgentActionOutcome> mcGroupDelete(AgentAction action) {
+        String groupId = trimOrEmpty(action.param("group"));
+        if (groupId.isEmpty()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Identifiant de groupe manquant."));
+        }
+        return actions.mcGroupDelete(groupId)
+                .thenApply(view -> toSyncOutcome(action, view, "groupe " + groupId));
+    }
+
+    private CompletableFuture<AgentActionOutcome> mcRightsSync(AgentAction action) {
+        List<String> groupIds = new ArrayList<>();
+        for (int i = 0; i < 64; i++) {
+            String groupId = trimOrEmpty(action.param("group" + i));
+            if (!groupId.isEmpty()) {
+                groupIds.add(groupId);
+            }
+        }
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.mcRightsSync(uuid, groupIds).thenApply(view -> toSyncOutcome(action, view, name)));
+    }
+
+    private static AgentActionOutcome toSyncOutcome(AgentAction action, AgentActions.McSyncView view,
+                                                     String target) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("added", view.added());
+        details.put("removed", view.removed());
+        details.put("unchanged", view.unchanged());
+        details.put("preserved", view.preserved());
+        if (!view.ok()) {
+            // Une synchronisation qui n'a rien appliqué n'est PAS un succès : sinon un
+            // administrateur croirait qu'un builder a ses droits alors qu'il ne les a pas.
+            return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, "SYNC_FAILED",
+                    target + " : " + view.message(), details, java.time.Instant.now());
+        }
+        String code = view.added().isEmpty() && view.removed().isEmpty() ? "UNCHANGED" : "APPLIED";
+        return AgentActionOutcome.success(action.id(), code, target + " : " + view.message(), details);
+    }
+
     // ---- Récompenses monétaires restées dues (issue #16, second lot) ---------------------------
 
     private CompletableFuture<AgentActionOutcome> questRewardDebts(AgentAction action) {

@@ -353,4 +353,90 @@ class HubWorldProtectionListenerTest {
 
         assertFalse(creeper.isDead(), "le nettoyage est scoped au Hub uniquement");
     }
+
+    // ---- Construction par monde, sans OP (issues #27/#200) ------------------------------------
+    //
+    // Le scénario demandé : un builder de Hub SANS OP. Il construit dans SON Hub, et nulle part
+    // ailleurs — et surtout il n'obtient aucun bypass de protection ni aucune commande admin.
+
+    @Test
+    void aHubBuilderWithoutOpCanBuildInItsOwnHub() {
+        PlayerMock builder = server.addPlayer();
+        assertFalse(builder.isOp(), "le scénario exige explicitement un compte NON opéré");
+        builder.addAttachment(plugin, "rpgquest.build.hub.world_hub", true);
+        Block block = hub.getBlockAt(0, 64, 0);
+        BlockBreakEvent event = new BlockBreakEvent(block, builder);
+
+        listener.onBreak(event);
+
+        assertFalse(event.isCancelled(), "le nœud du Hub concerné doit suffire à construire");
+    }
+
+    @Test
+    void aHubBuilderOfAnotherHubIsRefusedHere() {
+        // L'identifiant de Hub vient de la configuration réelle : un nœud portant un AUTRE monde
+        // ne doit rien autoriser ici, sinon « par Hub » ne voudrait rien dire.
+        PlayerMock builder = server.addPlayer();
+        builder.addAttachment(plugin, "rpgquest.build.hub.world_hub_autre", true);
+        Block block = hub.getBlockAt(0, 64, 0);
+        BlockBreakEvent event = new BlockBreakEvent(block, builder);
+
+        listener.onBreak(event);
+
+        assertTrue(event.isCancelled(), "un droit de construire dans un autre Hub ne s'applique pas ici");
+    }
+
+    @Test
+    void theAllHubsWildcardIsHonouredExplicitly() {
+        // Bukkit ne développe pas « .* » tout seul : le joker est testé explicitement, sinon il ne
+        // marcherait qu'avec LuckPerms installé.
+        PlayerMock builder = server.addPlayer();
+        builder.addAttachment(plugin, "rpgquest.build.hub.*", true);
+        Block block = hub.getBlockAt(0, 64, 0);
+        BlockBreakEvent event = new BlockBreakEvent(block, builder);
+
+        listener.onBreak(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void aHubBuilderGetsNoCombatBypass() {
+        PlayerMock builder = server.addPlayer();
+        builder.addAttachment(plugin, "rpgquest.build.hub.world_hub", true);
+        Cow cow = hub.spawn(new Location(hub, 0.5, 64, 0.5), Cow.class);
+        EntityDamageByEntityEvent event = new EntityDamageByEntityEvent(
+                builder, cow, EntityDamageEvent.DamageCause.ENTITY_ATTACK, 5.0);
+
+        listener.onEntityDamage(event);
+
+        assertTrue(event.isCancelled(), "construire n'a jamais voulu dire tuer");
+    }
+
+    @Test
+    void theLegacyUmbrellaStillWorksForExistingAdmins() {
+        // Compatibilité explicite : un administrateur déjà autorisé ne doit rien reconfigurer.
+        PlayerMock admin = server.addPlayer();
+        admin.addAttachment(plugin, "rpgquest.admin.world", true);
+        Block block = hub.getBlockAt(0, 64, 0);
+        BlockBreakEvent event = new BlockBreakEvent(block, admin);
+
+        listener.onBreak(event);
+
+        assertFalse(event.isCancelled());
+    }
+
+    @Test
+    void aWildBuildNodeGrantsNothingInTheHub() {
+        // rpgquest.build.wild est volontairement sans effet ailleurs que dans le Wild — et le Wild
+        // n'a aucune restriction. Ce test fige qu'il ne devient pas un passe-partout.
+        PlayerMock builder = server.addPlayer();
+        builder.addAttachment(plugin, "rpgquest.build.wild", true);
+        Block block = hub.getBlockAt(0, 64, 0);
+        BlockBreakEvent event = new BlockBreakEvent(block, builder);
+
+        listener.onBreak(event);
+
+        assertTrue(event.isCancelled());
+    }
 }

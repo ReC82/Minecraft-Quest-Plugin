@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.hub;
 
 import com.lodygames.rpgquest.config.HubConfig;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.function.Supplier;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
@@ -190,7 +191,13 @@ public final class HubWorldProtectionListener implements Listener {
         return world != null && world.getName().equals(config.get().world());
     }
 
+    /**
+     * Construction autorisée dans CE Hub (issue #200) : le monde précis
+     * ({@code rpgquest.build.hub.<monde>}), tous les Hubs ({@code rpgquest.build.hub.*}), ou
+     * l'ombrelle historique. L'identifiant de Hub vient de la configuration réelle
+     * ({@code hub.world}), jamais d'une constante en dur.
+     */
     private boolean isBypassingBuild(Player player) {
-        return player != null && player.hasPermission(BUILD_BYPASS_PERMISSION);
+        return RpgPermissions.canBuildInHub(player, config.get().world());
     }
 }

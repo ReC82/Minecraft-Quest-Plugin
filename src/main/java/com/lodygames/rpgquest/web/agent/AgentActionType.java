@@ -170,7 +170,28 @@ public enum AgentActionType {
      * (compensation administrative). Ne touche <strong>pas</strong> au portefeuille : elle empêche
      * seulement la même récompense d'être payée une seconde fois par une reprise.
      */
-    ECONOMY_DEBT_SETTLE("economy.debt.settle");
+    ECONOMY_DEBT_SETTLE("economy.debt.settle"),
+    /**
+     * Issue #200 — état réel du pont vers les droits Minecraft : LuckPerms est-il là, et quels
+     * droits gérés un joueur porte-t-il réellement, avec leur provenance. Lecture seule.
+     */
+    MC_RIGHTS_READ("mc.rights.read"),
+    /**
+     * Issue #200 — pousse la définition d'un groupe du pont dans LuckPerms (ses droits gérés, avec
+     * contexte de monde). Idempotente : rejouée, elle ne change rien et le dit.
+     */
+    MC_GROUP_SYNC("mc.group.sync"),
+    /**
+     * Issue #200 — retire un groupe du pont dans LuckPerms. Ses membres perdent exactement les
+     * droits qu'il portait, et rien d'autre.
+     */
+    MC_GROUP_DELETE("mc.group.delete"),
+    /**
+     * Issue #200 — fait correspondre les appartenances <strong>du pont</strong> d'un joueur à
+     * l'état voulu. Ne touche jamais un nœud posé directement sur l'utilisateur, ni une
+     * appartenance à un groupe externe.
+     */
+    MC_RIGHTS_SYNC("mc.rights.sync");
 
     private final String wire;
 

@@ -338,4 +338,25 @@ class StubAgentActions implements AgentActions {
                                                                    String reason) {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
     }
+
+    @Override
+    public CompletableFuture<McRightsView> mcRightsRead(java.util.UUID playerId) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
+
+    @Override
+    public CompletableFuture<McSyncView> mcGroupSync(String groupId, String displayName,
+                                                     java.util.List<McNodeSpec> nodes) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
+
+    @Override
+    public CompletableFuture<McSyncView> mcGroupDelete(String groupId) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
+
+    @Override
+    public CompletableFuture<McSyncView> mcRightsSync(java.util.UUID playerId, java.util.List<String> groupIds) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
 }

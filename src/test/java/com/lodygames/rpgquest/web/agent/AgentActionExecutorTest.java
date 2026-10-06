@@ -1503,6 +1503,54 @@ class AgentActionExecutorTest {
                     "Récompense marquée réglée à la main."));
         }
 
+        // ---- Pont vers les droits Minecraft (issue #200) -----------------------------
+
+        boolean bridgeAvailable = true;
+        String lastSyncGroupId;
+        java.util.List<McNodeSpec> lastSyncNodes = java.util.List.of();
+        java.util.List<String> lastUserGroupIds = java.util.List.of();
+        java.util.List<String> preserved = java.util.List.of();
+        boolean syncOk = true;
+
+        @Override
+        public CompletableFuture<McRightsView> mcRightsRead(UUID playerId) {
+            return CompletableFuture.completedFuture(new McRightsView(true,
+                    bridgeAvailable ? "1 droit(s) géré(s) porté(s)." : "Pont indisponible.",
+                    bridgeAvailable, bridgeAvailable ? null : "LuckPerms n'est pas installé.",
+                    bridgeAvailable
+                            ? java.util.List.of("rpgquest.build.hub.world_hub (monde world_hub) ← rpgq-abc")
+                            : java.util.List.of()));
+        }
+
+        @Override
+        public CompletableFuture<McSyncView> mcGroupSync(String groupId, String displayName,
+                                                          java.util.List<McNodeSpec> nodes) {
+            lastSyncGroupId = groupId;
+            lastSyncNodes = java.util.List.copyOf(nodes);
+            return CompletableFuture.completedFuture(new McSyncView(syncOk,
+                    syncOk ? "1 droit(s) ajouté(s), 0 retiré(s)." : "Pont indisponible. Aucun droit modifié.",
+                    syncOk ? java.util.List.of("rpgquest.build.hub.world_hub (monde world_hub)") : java.util.List.of(),
+                    java.util.List.of(), java.util.List.of(), preserved));
+        }
+
+        @Override
+        public CompletableFuture<McSyncView> mcGroupDelete(String groupId) {
+            lastSyncGroupId = groupId;
+            return CompletableFuture.completedFuture(new McSyncView(syncOk,
+                    syncOk ? "Groupe LuckPerms supprimé." : "Pont indisponible. Aucun droit modifié.",
+                    java.util.List.of(), java.util.List.of("rpgq-" + groupId),
+                    java.util.List.of(), preserved));
+        }
+
+        @Override
+        public CompletableFuture<McSyncView> mcRightsSync(UUID playerId, java.util.List<String> groupIds) {
+            lastUserGroupIds = java.util.List.copyOf(groupIds);
+            return CompletableFuture.completedFuture(new McSyncView(syncOk,
+                    syncOk ? "1 appartenance(s) ajoutée(s), 0 retirée(s)." : "Pont indisponible.",
+                    syncOk ? java.util.List.of("groupe rpgq-abc") : java.util.List.of(),
+                    java.util.List.of(), java.util.List.of(), preserved));
+        }
+
         // ---- Administration de joueur (issue #210) -----------------------------------
 
         Boolean lastOpValue;

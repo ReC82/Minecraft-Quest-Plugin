@@ -3870,6 +3870,24 @@ public final class AgentPages {
         return Optional.empty();
     }
 
+    /**
+     * Dernier résultat d'un type d'action pour un joueur donné (issue #200) — exposé pour que
+     * {@code PanelApp} affiche l'état RÉEL du pont sans dupliquer la lecture du journal d'actions.
+     */
+    public Optional<AgentActionRow> latestForPlayerPublic(String agentId, String type, String player) {
+        return latestForPlayer(agentId, type, player);
+    }
+
+    /** Dernier résultat d'un type d'action, tous joueurs confondus (issue #200). */
+    public Optional<AgentActionRow> latestOfTypePublic(String agentId, String type) {
+        return store.latestActionOfType(agentId, type);
+    }
+
+    /** Ligne de résultat formatée, réutilisée par les blocs du pont (issue #200). */
+    public String resultLinePublic(String label, AgentActionRow row) {
+        return resultLine(label, row);
+    }
+
     public com.lodygames.rpgquest.panel.content.RefData referenceData(String agentId) {
         if (agentId == null || agentId.isBlank()) {
             return com.lodygames.rpgquest.panel.content.RefData.empty();

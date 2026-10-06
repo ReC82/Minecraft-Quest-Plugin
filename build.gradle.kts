@@ -34,6 +34,12 @@ configurations {
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
     compileOnly("net.citizensnpcs:citizensapi:2.0.43-SNAPSHOT")
+    // LuckPerms : API SEULE, fournie à l'exécution par le plugin LuckPerms s'il est installé
+    // (compileOnly, soft-dependency dans plugin.yml — voir
+    // com.lodygames.rpgquest.permission.LuckPermsBridge). Même conception que CitizensAPI : le
+    // plugin démarre et fonctionne normalement SANS LuckPerms, et le pont se déclare alors
+    // indisponible avec son motif plutôt que d'échouer.
+    compileOnly("net.luckperms:api:5.4")
 
     // Issue #95 — capture de la console serveur pour la page « Exploitation serveur » du Control
     // Panel. `log4j-api` vient déjà de paper-api, mais attacher un appender exige `log4j-core`,

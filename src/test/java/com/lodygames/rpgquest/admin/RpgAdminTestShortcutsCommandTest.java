@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.admin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -124,12 +125,28 @@ class RpgAdminTestShortcutsCommandTest {
     // ---- Permissions ---------------------------------------------------------------------------
 
     @Test
-    void everySubcommandRequiresTheWorldAdminPermission() throws Exception {
+    void everySubcommandRequiresAnAdminPermissionAndDoesNothingWithout() throws Exception {
         PlayerMock player = addPlayer(false, false);
 
         run(player, "quest", "complete", player.getName(), BASE_QUEST.toString());
 
-        assertTrue(nextMessage(player).contains(WORLD_PERM), "sans rpgquest.admin.world : refus explicite");
+        // Depuis l'issue #200, le refus nomme le nœud d'ENTRÉE : sans lui, on n'ouvre même pas la
+        // commande. La garantie de ce test est inchangée — un joueur sans droit ne peut rien faire.
+        assertTrue(nextMessage(player).contains("rpgquest.admin.command"),
+                "sans droit d'administration : refus explicite nommant le nœud manquant");
+        assertEquals(QuestState.NOT_STARTED, questState(player, BASE_QUEST), "rien ne doit se passer");
+    }
+
+    @Test
+    void theEntryNodeDoesNotAuthoriseTheQuestShortcut() throws Exception {
+        // Le pendant du test ci-dessus, et l'exigence explicite du ticket : entrer ≠ exécuter.
+        PlayerMock player = addPlayer(false, false);
+        player.addAttachment(plugin, "rpgquest.admin.command", true);
+
+        run(player, "quest", "complete", player.getName(), BASE_QUEST.toString());
+
+        assertTrue(nextMessage(player).contains(WORLD_PERM),
+                "la branche exige encore l'ombrelle : entrer dans la commande ne suffit pas");
         assertEquals(QuestState.NOT_STARTED, questState(player, BASE_QUEST), "rien ne doit se passer");
     }
 
@@ -386,5 +403,101 @@ class RpgAdminTestShortcutsCommandTest {
                     key: CLAIM_TIER_1
                     value: "true"
                 """.formatted(REWARD_QUEST));
+    }
+
+    // ---- Entrer dans /rpgadmin n'autorise aucune branche (issues #27/#200) --------------------
+    //
+    // Le scénario demandé : un éditeur PNJ SANS build, sans accès aux resets, à l'économie, ni aux
+    // autres opérations d'administration.
+
+    @Test
+    void anNpcEditorCanRunTheNpcBranch() {
+        PlayerMock editor = server.addPlayer();
+        editor.addAttachment(plugin, "rpgquest.admin.command", true);
+        editor.addAttachment(plugin, "rpgquest.admin.npc", true);
+
+        run(editor, "npc", "info");
+
+        // L'action est atteinte : le message n'est PAS un refus de permission.
+        String message = nextMessage(editor);
+        assertFalse(message.contains("Permission manquante"), () -> message);
+    }
+
+    @Test
+    void anNpcEditorCannotReachAnyOtherAdminBranch() {
+        PlayerMock editor = server.addPlayer();
+        editor.addAttachment(plugin, "rpgquest.admin.command", true);
+        editor.addAttachment(plugin, "rpgquest.admin.npc", true);
+
+        // Reset joueur, raccourcis de quête/story, aplatissement, claims, contenu, économie…
+        for (String[] args : new String[][] {
+                {"player", "resetnew", "Steve"},
+                {"quest", "complete", "Steve", "rpgquest:shortcut_base"},
+                {"story", "advance", "Steve", "shortcut_story"},
+                {"flatten"},
+                {"claim", "resettier1", "Steve"},
+                {"content", "reload"},
+                {"mob", "reload"},
+                {"spawn"}}) {
+            run(editor, args);
+            String message = nextMessage(editor);
+            assertTrue(message.contains("Permission manquante"),
+                    () -> "branche « " + args[0] + " » ne doit pas être exécutable : " + message);
+        }
+    }
+
+    @Test
+    void theEntryNodeAloneOpensTheCommandAndNothingElse() {
+        PlayerMock entrant = server.addPlayer();
+        entrant.addAttachment(plugin, "rpgquest.admin.command", true);
+
+        // Il entre : le refus n'est PAS celui du nœud d'entrée…
+        run(entrant, "npc", "info");
+        String npcMessage = nextMessage(entrant);
+        assertFalse(npcMessage.contains("rpgquest.admin.command"), () -> npcMessage);
+        // …mais la sous-action PNJ lui est refusée faute de son nœud précis.
+        assertTrue(npcMessage.contains("Permission manquante"), () -> npcMessage);
+
+        run(entrant, "flatten");
+        assertTrue(nextMessage(entrant).contains("Permission manquante"));
+    }
+
+    @Test
+    void withoutTheEntryNodeTheCommandItselfIsRefused() {
+        PlayerMock stranger = server.addPlayer();
+
+        run(stranger, "npc", "info");
+
+        String message = nextMessage(stranger);
+        assertTrue(message.contains("rpgquest.admin.command"),
+                () -> "le refus doit nommer le nœud d'ENTRÉE : " + message);
+    }
+
+    @Test
+    void aPreciseNpcNodeAuthorisesOnlyItsOwnSubAction() {
+        PlayerMock tagger = server.addPlayer();
+        tagger.addAttachment(plugin, "rpgquest.admin.command", true);
+        tagger.addAttachment(plugin, "rpgquest.admin.npc.info", true);
+
+        run(tagger, "npc", "info");
+        assertFalse(nextMessage(tagger).contains("Permission manquante"));
+
+        run(tagger, "npc", "untag");
+        String refusal = nextMessage(tagger);
+        assertTrue(refusal.contains("rpgquest.admin.npc.untag"),
+                () -> "chaque sous-action PNJ a son propre nœud : " + refusal);
+    }
+
+    @Test
+    void theLegacyUmbrellaStillAuthorisesEverything() {
+        // Compatibilité : un administrateur déjà autorisé ne reconfigure rien.
+        PlayerMock admin = server.addPlayer();
+        admin.addAttachment(plugin, "rpgquest.admin.world", true);
+
+        run(admin, "npc", "info");
+        assertFalse(nextMessage(admin).contains("Permission manquante"));
+
+        run(admin, "flatten");
+        assertFalse(nextMessage(admin).contains("Permission manquante"));
     }
 }

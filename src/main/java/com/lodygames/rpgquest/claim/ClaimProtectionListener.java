@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.claim;
 
 import com.lodygames.rpgquest.claim.model.Claim;
+import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -210,6 +211,8 @@ public final class ClaimProtectionListener implements Listener {
     }
 
     private boolean isBypassing(Player player) {
-        return player != null && player.hasPermission(BYPASS_PERMISSION);
+        // Issue #200 : nœud DÉDIÉ au bypass des claims d'autrui. Un builder du Hub ne
+        // l'obtient jamais par sa permission de construction.
+        return RpgPermissions.hasBypass(player, RpgPermissions.BYPASS_CLAIM);
     }
 }

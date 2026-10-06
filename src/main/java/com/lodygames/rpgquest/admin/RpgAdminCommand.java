@@ -43,6 +43,7 @@ import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.zone.ZoneSelectionService;
 import com.lodygames.rpgquest.zone.model.ZoneDefinition;
 import com.lodygames.rpgquest.zone.model.ZoneFlags;
+import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -76,7 +77,12 @@ import org.jetbrains.annotations.Nullable;
  * joueur, et raccourcis de test quêtes/stories (issue #36), ajoutés comme
  * autant de branches de {@link #onCommand}.
  *
- * <p>Toutes les sous-commandes exigent {@code rpgquest.admin.world} ;
+ * <p><strong>Autorisation en deux temps depuis l'issue #200</strong> : entrer dans la commande
+ * exige {@code rpgquest.admin.command} (ou l'ombrelle {@code rpgquest.admin.world}), et cela
+ * n'autorise <strong>aucune</strong> branche. La branche {@code npc} a ses propres nœuds
+ * ({@code rpgquest.admin.npc.tag|untag|info}) ; toutes les autres exigent encore l'ombrelle
+ * {@code rpgquest.admin.world}. Un compte ne portant que le nœud d'entrée et les nœuds PNJ ouvre
+ * donc la commande sans pouvoir toucher aux resets joueur, à l'économie ni au reste.
  * {@code /rpgadmin player variable set} exige <strong>en plus</strong>
  * {@code rpgquest.admin.debug} (écriture bas niveau). La plupart des branches
  * exigent un joueur en jeu (elles utilisent sa position/sélection, jamais de
@@ -86,7 +92,6 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
-    private static final String PERMISSION = "rpgquest.admin.world";
     /** Permission supplémentaire, plus stricte, pour les écritures bas niveau (voir {@code /rpgadmin player variable set}). */
     private static final String DEBUG_PERMISSION = "rpgquest.admin.debug";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
@@ -194,12 +199,43 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         this.plugin = plugin;
     }
 
+    /**
+     * Refuse une sous-action PNJ avec son nœud précis, et dit lequel manque. Retourne {@code true}
+     * si l'action est autorisée.
+     */
+    private boolean requireNpcAction(Player player, String node) {
+        if (RpgPermissions.canRunNpcAction(player, node)) {
+            return true;
+        }
+        player.sendMessage(MM.deserialize(
+                "<red>Permission manquante :</red> <white><permission></white>",
+                Placeholder.unparsed("permission", node)));
+        return false;
+    }
+
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,
                               @NotNull String label, String @NotNull [] args) {
-        if (!sender.hasPermission(PERMISSION)) {
+        // Issue #200 : ENTRER dans /rpgadmin et EXÉCUTER une branche sont deux autorisations
+        // distinctes. Ce contrôle n'ouvre que la porte ; chaque branche revérifie son propre nœud
+        // plus bas. Un compte ne portant que rpgquest.admin.command entre donc ici et ne peut
+        // exécuter ni reset joueur, ni économie, ni aucune autre opération d'administration.
+        if (!RpgPermissions.canEnterAdminCommand(sender)) {
             sender.sendMessage(MM.deserialize(
-                    "<red>Permission manquante :</red> <white><permission></white>", Placeholder.unparsed("permission", PERMISSION)));
+                    "<red>Permission manquante :</red> <white><permission></white>",
+                    Placeholder.unparsed("permission", RpgPermissions.ADMIN_COMMAND)));
+            return true;
+        }
+        // Issue #200 : toute branche AUTRE que « npc » exige encore l'ombrelle historique. Le
+        // découpage fin du reste de /rpgadmin appartient au backlog #27 et n'est pas nécessaire
+        // ici ; ce qui compte pour ce lot, c'est qu'un éditeur de PNJ ne puisse PAS atteindre les
+        // resets joueur, l'économie ni les autres opérations d'administration.
+        if (args.length > 0 && !args[0].equalsIgnoreCase("npc")
+                && !RpgPermissions.canRunLegacyAdminBranch(sender)) {
+            sender.sendMessage(MM.deserialize(
+                    "<red>Permission manquante pour cette sous-commande :</red> <white><permission></white>"
+                            + "<gray> — vous pouvez entrer dans /rpgadmin, mais pas exécuter celle-ci.</gray>",
+                    Placeholder.unparsed("permission", RpgPermissions.LEGACY_ADMIN_WORLD)));
             return true;
         }
         // "story" cible un joueur passé en argument (pas la position de l'exécutant, contrairement à
@@ -802,10 +838,28 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
+        // Issue #200 : les trois sous-actions PNJ réellement disponibles en jeu ont chacune leur
+        // nœud. AUCUNE ne crée un PNJ Citizens : « tag » marque une entité existante d'un
+        // identifiant RPGQuest stable. La création, le déplacement et la suppression de PNJ
+        // Citizens passent par le Control Panel (actions npc.citizens.*, permissions PlugAdmin) ou
+        // par les commandes de Citizens, qui ont leurs propres nœuds — c'est documenté, parce que
+        // confondre les deux parcours mènerait à croire un éditeur PNJ incapable de créer.
         switch (args[1].toLowerCase(Locale.ROOT)) {
-            case "tag" -> handleNpcTag(player, args);
-            case "untag" -> handleNpcUntag(player);
-            case "info" -> handleNpcInfo(player);
+            case "tag" -> {
+                if (requireNpcAction(player, RpgPermissions.ADMIN_NPC_TAG)) {
+                    handleNpcTag(player, args);
+                }
+            }
+            case "untag" -> {
+                if (requireNpcAction(player, RpgPermissions.ADMIN_NPC_UNTAG)) {
+                    handleNpcUntag(player);
+                }
+            }
+            case "info" -> {
+                if (requireNpcAction(player, RpgPermissions.ADMIN_NPC_INFO)) {
+                    handleNpcInfo(player);
+                }
+            }
             default -> sendNpcUsage(player);
         }
     }

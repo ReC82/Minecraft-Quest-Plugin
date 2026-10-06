@@ -3266,6 +3266,125 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-253 — Droits Minecraft par groupe et par monde, via LuckPerms (issue #200)
+
+-   **Fonctionnalité testée :** découpage des permissions du plugin, liaison compte PlugAdmin ↔
+    joueur par UUID, droits Minecraft d'un groupe par monde, provenance, synchronisation idempotente
+    et **révocation ciblée** qui ne détruit aucun droit externe.
+-   **Préconditions :** JAR et panel de cette session déployés, serveur redémarré, **LuckPerms
+    installé** sur DEV.
+-   **IMPORTANT — identités dédiées.**
+    -   **Ne modifiez jamais vos propres droits pour tester.** Utilisez un compte Minecraft de test
+        **non opéré** et un compte PlugAdmin de test ; restaurez-les à la fin.
+    -   `rpgquest.admin.world` reste l'ombrelle des administrateurs existants : **ne la retirez à
+        personne** pendant ce test.
+
+-   **A. Builder de Hub sans OP (le scénario central) :**
+    1.  Créer un groupe PlugAdmin `TC253 Builder Hub`, lui donner le droit Minecraft **« Construire
+        dans le Hub « <votre monde de hub> » »**. **Attendu** : la case exige un monde, et la page
+        indique qu'aucun droit de construction ne donne de bypass.
+    2.  Lier le compte PlugAdmin de test au joueur de test par **UUID**. **Attendu** : la page dit
+        que le pseudonyme n'est pas une preuve et qu'un joueur hors ligne peut être lié.
+    3.  Mettre le compte dans le groupe, puis **Appliquer les droits de ce groupe**, puis
+        **Synchroniser les droits en jeu**. **Attendu** : succès avec le détail « ajouté(s) ».
+    4.  En jeu avec le joueur de test, **sans OP** : casser/poser un bloc **dans le Hub**.
+        **Attendu** : **autorisé**.
+    5.  Aller dans le **monde des claims** et tenter de casser un bloc dans le claim d'un autre.
+        **Attendu** : **refusé**. Le droit de construire n'est pas un bypass de claim.
+    6.  Tenter de casser un bloc dans une **zone protégée**. **Attendu** : **refusé**.
+    7.  Tenter de casser un **waypoint / une borne de voyage**. **Attendu** : **refusé**.
+    8.  Taper `/rpgadmin flatten`. **Attendu** : **refus de permission**. Aucune commande admin
+        supplémentaire n'a été accordée.
+    9.  Frapper une entité paisible du Hub. **Attendu** : **refusé** (le bypass combat est un autre
+        nœud).
+    10. Si vous avez un second monde de Hub : tenter d'y construire. **Attendu** : **refusé**, le
+        droit est limité au monde nommé.
+
+-   **B. Éditeur de PNJ sans build :**
+    11. Créer un groupe `TC253 PNJ` avec **« Entrer dans /rpgadmin »** et **« Branche PNJ de
+        /rpgadmin »**, et **aucun** droit de construction. L'appliquer et synchroniser.
+    12. En jeu : `/rpgadmin npc info` en visant une entité. **Attendu** : **fonctionne**.
+    13. `/rpgadmin player resetnew <joueur>`, `/rpgadmin flatten`, `/rpgadmin content reload`,
+        `/rpgadmin quest complete …`. **Attendu** : **refus** à chaque fois — entrer dans la commande
+        n'autorise aucune branche.
+    14. Casser un bloc dans le Hub. **Attendu** : **refusé** (aucun droit de build).
+    15. **Attendu** : aucun accès à l'économie ni aux resets.
+    16. **Point à vérifier explicitement** : `/rpgadmin npc tag` **ne crée pas** un PNJ Citizens. La
+        création passe par le panel (actions `npc.citizens.*`, permissions PlugAdmin) ou par les
+        commandes de Citizens. Vérifier que ce groupe ne permet **pas** de créer un PNJ Citizens.
+
+-   **C. Collision avec un droit externe identique (le point de sécurité) :**
+    17. Dans LuckPerms, accorder **à la main** au joueur de test, directement sur l'utilisateur, le
+        **même** nœud et le **même** monde que celui du groupe :
+        `lp user <joueur> permission set rpgquest.build.hub.<monde> true world=<monde>`.
+    18. **Attendu** : `lp user <joueur> info` montre **deux** sources — le groupe `rpgq-…` du pont
+        et le nœud direct.
+    19. Retirer le compte du groupe PlugAdmin, puis **Synchroniser**. **Attendu** : le pont retire
+        **l'appartenance** `group.rpgq-…` et **laisse le nœud direct en place**. Le joueur construit
+        **toujours** dans le Hub, par son droit externe.
+    20. **Attendu** : le résultat de la synchronisation liste ce nœud direct dans « préservé ».
+    21. **Dissocier** le compte, puis synchroniser à zéro groupe. **Attendu** : même conclusion — le
+        droit externe survit.
+    22. **Redémarrer le serveur**, puis `lp user <joueur> info`. **Attendu** : le nœud direct est
+        **toujours là**. C'est la persistance demandée.
+    23. Accorder aussi au joueur un droit **sans rapport** (ex. appartenance à un groupe LuckPerms
+        `vip`, ou `essentials.fly`). Relancer une synchronisation. **Attendu** : **intact**.
+    24. Nettoyage de cette section : retirer à la main le nœud direct et le droit sans rapport.
+
+-   **D. Idempotence et état réel :**
+    25. Relancer **deux fois** la même synchronisation sans rien changer. **Attendu** : la seconde
+        dit « déjà conforme », 0 ajouté, 0 retiré.
+    26. Cliquer **Lire l'état réel en jeu**. **Attendu** : la liste des droits gérés avec, pour
+        chacun, le **groupe du pont** d'où il vient.
+    27. Comparer avec la ligne « voulu par le panel ». **Attendu** : identiques après une
+        synchronisation réussie, et le panel distingue clairement les deux.
+
+-   **E. Pont indisponible — aucun faux succès :**
+    28. Arrêter LuckPerms (ou tester **avant** son installation). Lancer une synchronisation.
+        **Attendu** : résultat en **échec** avec le motif « LuckPerms n'est pas installé… », et
+        **jamais** un succès. Le relevé d'état affiche « Pont indisponible » avec son motif.
+    29. **Attendu** : le serveur fonctionne normalement par ailleurs — le plugin n'exige pas
+        LuckPerms.
+
+-   **F. Compatibilité des administrateurs existants :**
+    30. Avec un compte **administrateur existant** (porteur de `rpgquest.admin.world`, ou OP) :
+        construire dans le Hub, utiliser `/rpgadmin`, entrer dans le monde des claims.
+        **Attendu** : **tout fonctionne comme avant**, sans aucune reconfiguration.
+    31. **Attendu** : le correctif #22 est intact — entrer dans le monde des claims n'est jamais
+        refusé à un porteur du bypass, et une Pierre de retour est garantie.
+
+-   **G. Permissions du panel et audit :**
+    32. Avec un compte panel **sans** `USER_MANAGE` : appeler directement les routes `/groups/mc`,
+        `/users/mc/link`, `/users/mc/unlink`. **Attendu** : **403** à chaque fois.
+    33. Tenter d'enfiler `type=mc.rights.sync` depuis ce compte. **Attendu** : **403**.
+    34. Page d'audit. **Attendu** : `mc.link`, `mc.unlink`, `mc.group.nodes` et les actions
+        `mc.*` figurent avec leur auteur, l'avant/après, **et les refus**.
+
+-   **Nettoyage :** supprimer les groupes `TC253 *` (ce qui retire aussi leurs droits Minecraft),
+    retirer le groupe LuckPerms du pont via **Retirer le groupe LuckPerms**, dissocier le compte de
+    test, vérifier avec `lp user <joueur> info` qu'il ne reste **aucun** nœud `rpgq-`, et vérifier
+    que vos propres droits d'administrateur sont intacts.
+-   **Couverture automatisée :** côté plugin — `RpgAdminTestShortcutsCommandTest` (+6 : branche PNJ
+    accessible, **8 autres branches refusées**, nœud d'entrée qui n'autorise rien, refus nommant le
+    nœud manquant, nœud précis par sous-action, ombrelle qui autorise tout),
+    `HubWorldProtectionListenerTest` (+6 : **builder sans OP** autorisé dans son Hub, refusé dans un
+    autre Hub, joker explicite, aucun bypass combat, ombrelle, et `build.wild` qui n'autorise rien
+    dans le Hub), `BridgeProvenanceTest` (16 : nommage stable des groupes du pont, **un groupe
+    externe accordant les mêmes droits n'est jamais reconnu comme le nôtre**, ombrelle et
+    `admin.debug` non distribuables, nœuds externes refusés avec motif, **le monde fait partie de
+    l'identité du droit**, et absence de LuckPerms qui ne produit jamais un faux succès) ; côté
+    panel — `McBridgeDirectoryTest` (22 : liaison par UUID, joueur hors ligne, UUID invalide,
+    **conflit impossible**, modification, dissociation, droits par monde, **build sans monde
+    refusé**, ombrelle et nœuds externes refusés, remplacement exact, même nœud dans deux mondes,
+    union des groupes, **survie à la réouverture de la base**, catalogue sans monde deviné),
+    `AgentActionExecutorTest` (+5 sur les actions du pont).
+    **Non couvert automatiquement, et c'est l'objet de ce protocole** : la collision avec un droit
+    externe réel, sa persistance après redémarrage, le comportement des listeners en jeu, et la
+    création de PNJ Citizens — aucun de ces points n'est simulable sans un vrai LuckPerms et un vrai
+    serveur.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -3348,3 +3467,4 @@ le résumé de récompenses de TC-014).
 | TC-250 | Récompense monétaire de quête, bourse dans le journal #16 (PENDING) | | | |
 | TC-251 | Récupération d'une récompense monétaire non payée #16 (PENDING) | | | |
 | TC-252 | Groupes multiples, droits effectifs et provenance #199 (PENDING) | | | |
+| TC-253 | Droits Minecraft par groupe/monde, collision externe #200 (PENDING) | | | |

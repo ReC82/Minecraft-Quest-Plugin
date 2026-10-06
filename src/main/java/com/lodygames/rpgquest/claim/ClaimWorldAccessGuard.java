@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.config.ClaimConfig;
 import com.lodygames.rpgquest.travel.PortalTeleporter;
 import com.lodygames.rpgquest.travel.WorldPortalEntryGuard;
 import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
+import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -81,7 +82,9 @@ public final class ClaimWorldAccessGuard implements WorldPortalEntryGuard {
         if (cleared.remove(playerId)) {
             return true; // contrôle réussi tout juste effectué : ce passage-ci est le nôtre.
         }
-        if (player.hasPermission(BYPASS_PERMISSION)) {
+        // Issue #200 : nœud dédié OU ombrelle historique. Le correctif #22 est intégralement
+        // préservé — le bypass n'est jamais refusé, et il ne dispense jamais du moyen de repartir.
+        if (RpgPermissions.hasBypass(player, RpgPermissions.BYPASS_CLAIM_WORLD)) {
             // Trace explicite (issues #21/#22) : un test « en jeu » d'un compte OP passe par ici et
             // *contourne* volontairement le contrôle — c'est la cause la plus fréquente d'un « je
             // peux entrer sans avoir débloqué le claim ». Le parcours d'un vrai nouveau joueur doit

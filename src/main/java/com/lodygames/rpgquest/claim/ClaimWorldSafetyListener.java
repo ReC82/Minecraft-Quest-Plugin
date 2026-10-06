@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.claim;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.config.ClaimConfig;
 import com.lodygames.rpgquest.item.RpgItemKeys;
+import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -81,7 +82,9 @@ public final class ClaimWorldSafetyListener implements Listener {
 
     private void handleArrival(Player player) {
         UUID playerId = player.getUniqueId();
-        if (player.hasPermission(ClaimWorldAccessGuard.BYPASS_PERMISSION)) {
+        // Issue #200 : même règle que le garde d'accès — nœud dédié OU ombrelle historique.
+        // Le correctif #22 est préservé : un porteur du bypass reçoit malgré tout sa Pierre.
+        if (RpgPermissions.hasBypass(player, RpgPermissions.BYPASS_CLAIM_WORLD)) {
             // Issue #22, cause racine du blocage signalé le 05/10. Le bypass dispensait de TOUT :
             // ni renvoi au Hub, ni Pierre de retour. Un administrateur éligible, arrivé ici par
             // portail, se retrouvait donc sans aucune sortie — exactement ce que ce filet existe

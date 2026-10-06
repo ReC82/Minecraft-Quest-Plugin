@@ -30,7 +30,10 @@ import com.lodygames.rpgquest.panel.security.SessionStore;
 import com.lodygames.rpgquest.panel.users.PanelUser;
 import com.lodygames.rpgquest.panel.users.SqliteUserRepository;
 import com.lodygames.rpgquest.panel.authz.PanelGroup;
+import com.lodygames.rpgquest.panel.authz.McRight;
 import com.lodygames.rpgquest.panel.users.GroupDirectory;
+import com.lodygames.rpgquest.panel.users.McBridgeDirectory;
+import com.lodygames.rpgquest.panel.users.McBridgeRepository;
 import com.lodygames.rpgquest.panel.users.GroupRepository;
 import com.lodygames.rpgquest.panel.users.InMemoryGroupRepository;
 import com.lodygames.rpgquest.panel.users.SqliteGroupRepository;
@@ -75,6 +78,7 @@ public final class PanelApp {
     private final SessionStore sessions;
     private final UserDirectory users;
     private final GroupDirectory groups;
+    private final McBridgeDirectory mcBridge;
     private final PermissionService permissions = new PermissionService();
     private final AgentStore agentStore;
     private final AgentRegistry agentRegistry;
@@ -170,6 +174,7 @@ public final class PanelApp {
         PasswordHasher hasher = new PasswordHasher();
         this.users = new UserDirectory(userRepository, hasher);
         this.groups = new GroupDirectory(groupRepository);
+        this.mcBridge = new McBridgeDirectory(new McBridgeRepository(config.panelDbPath()));
         this.users.ensureBootstrapOwner(config.ownerUsername(), config.ownerPasswordHash());
         this.authService = new AuthService(userRepository, hasher);
         this.sessions = new SessionStore(config.sessionSecret(),
@@ -249,6 +254,9 @@ public final class PanelApp {
         route("/groups/rename", this::handleGroupRename);
         route("/groups/permissions", this::handleGroupPermissions);
         route("/groups/delete", this::handleGroupDelete);
+        route("/groups/mc", this::handleGroupMcNodes);
+        route("/users/mc/link", this::handleMcLink);
+        route("/users/mc/unlink", this::handleMcUnlink);
         for (String path : new String[] {"/admin", "/dev"}) {
             route(path, exchange -> handlePlaceholder(exchange, path));
         }
@@ -906,7 +914,10 @@ public final class PanelApp {
                         errMsg == null ? null : trimTo(errMsg, 200))
                         // Issue #199 : appartenances + droits effectifs AVEC leur provenance.
                         + GroupsPages.membershipBlock(target.get(), groups.list(),
-                                groups.effectiveFor(target.get()), session.effective());
+                                groups.effectiveFor(target.get()), session.effective())
+                        // Issue #200 : liaison joueur + état RÉEL du pont + synchronisation.
+                        + McBridgePages.linkBlock(target.get(), mcBridge.linkOf(target.get().id()),
+                                mcBridgeStateHtml(session, target.get()));
                 Http.html(exchange, 200, renderPage("Compte", session, "/users", body));
             }
             case "role" -> handleUserRole(exchange, session, target.get());
@@ -999,7 +1010,9 @@ public final class PanelApp {
         }
         String body = (okMsg == null ? "" : Ui.banner("ok", Http.esc(trimTo(okMsg, 200))))
                 + GroupsPages.detail(group.get(), members, session.effective(),
-                        errMsg == null ? null : trimTo(errMsg, 200));
+                        errMsg == null ? null : trimTo(errMsg, 200))
+                + McBridgePages.groupNodesBlock(group.get(), mcBridge.nodesOf(id), knownWorlds(),
+                        mcGroupSyncHtml(session, group.get()));
         Http.html(exchange, 200, renderPage("Groupe", session, "/groups", body));
     }
 
@@ -1176,6 +1189,269 @@ public final class PanelApp {
         List<String> out = new ArrayList<>();
         list.forEach(group -> out.add(group.name()));
         return String.join(",", out);
+    }
+
+
+    // ---- Pont vers les droits Minecraft (issue #200) -------------------------------------------
+    //
+    // Ces trois routes ne touchent que l'état LOCAL du panel (quel compte est lié à quel joueur,
+    // quels droits un groupe accorde). L'application réelle dans LuckPerms passe par les actions
+    // agent mc.group.sync / mc.rights.sync, enfilées depuis les formulaires via /agents/action :
+    // c'est le seul canal vers le serveur de jeu, et il porte déjà permission, CSRF et audit.
+
+    private void handleGroupMcNodes(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireGroupAdmin(exchange, "/groups");
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        Map<String, String> form = csrfCheckedForm(exchange, session);
+        if (form == null) {
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String groupId = form.getOrDefault("group", "");
+        Optional<PanelGroup> group = groups.byId(groupId);
+        if (group.isEmpty()) {
+            Http.redirect(exchange, "/groups?err=" + enc("Groupe introuvable."));
+            return;
+        }
+        Set<McBridgeRepository.GroupNode> wanted = new LinkedHashSet<>();
+        for (McRight.Definition definition : McRight.catalogue(knownWorlds())) {
+            String key = McBridgePages.sanitise(definition.node());
+            if (!form.containsKey("mcr_" + key)) {
+                continue;
+            }
+            wanted.add(new McBridgeRepository.GroupNode(groupId, definition.node(),
+                    form.getOrDefault("mcw_" + key, "")));
+        }
+        McBridgeDirectory.NodeOutcome o = mcBridge.setNodes(groupId, wanted);
+        if (!o.ok()) {
+            audit.record(session.username(), "mc.group.nodes", "group=" + group.get().name(),
+                    "DENIED", o.error(), rid);
+            Http.redirect(exchange, "/groups/" + enc(groupId) + "?err=" + enc(o.error()));
+            return;
+        }
+        audit.record(session.username(), "mc.group.nodes", "group=" + group.get().name(), "OK",
+                "from=[" + describeNodes(o.before()) + "] to=[" + describeNodes(o.after()) + "]", rid);
+        Http.redirect(exchange, "/groups/" + enc(groupId) + "?ok="
+                + enc("Droits Minecraft enregistrés dans le panel. Lancez la synchronisation pour "
+                        + "les appliquer en jeu : tant qu'elle n'a pas réussi, rien n'a changé sur le serveur."));
+    }
+
+    private void handleMcLink(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireGroupAdmin(exchange, "/users");
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        Map<String, String> form = csrfCheckedForm(exchange, session);
+        if (form == null) {
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String userId = form.getOrDefault("user", "");
+        Optional<PanelUser> target = users.byId(userId);
+        if (target.isEmpty()) {
+            Http.redirect(exchange, "/users?err=" + enc("Compte introuvable."));
+            return;
+        }
+        McBridgeDirectory.Outcome o = mcBridge.link(target.get(), form.get("uuid"),
+                form.get("name"), session.username());
+        if (!o.ok()) {
+            audit.record(session.username(), "mc.link", "username=" + target.get().username(),
+                    "DENIED", o.error(), rid);
+            Http.redirect(exchange, "/users/" + enc(userId) + "?err=" + enc(o.error()));
+            return;
+        }
+        audit.record(session.username(), "mc.link", "username=" + target.get().username(), "OK",
+                "from=" + (o.before() == null ? "aucun" : o.before().mcUuid())
+                        + " to=" + o.after().mcUuid(), rid);
+        Http.redirect(exchange, "/users/" + enc(userId) + "?ok="
+                + enc("Joueur lié. Lancez la synchronisation pour appliquer ses droits en jeu."));
+    }
+
+    private void handleMcUnlink(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireGroupAdmin(exchange, "/users");
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        Map<String, String> form = csrfCheckedForm(exchange, session);
+        if (form == null) {
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String userId = form.getOrDefault("user", "");
+        Optional<PanelUser> target = users.byId(userId);
+        if (target.isEmpty()) {
+            Http.redirect(exchange, "/users?err=" + enc("Compte introuvable."));
+            return;
+        }
+        Optional<McBridgeRepository.Link> existing = mcBridge.linkOf(userId);
+        if (existing.isEmpty()) {
+            Http.redirect(exchange, "/users/" + enc(userId) + "?err="
+                    + enc("Ce compte n'est lié à aucun joueur."));
+            return;
+        }
+        // UUID retapé : dissocier est un geste qui laisse un joueur avec des droits à révoquer.
+        if (!existing.get().mcUuid().equalsIgnoreCase(trimTo(form.getOrDefault("confirm", ""), 40).trim())) {
+            audit.record(session.username(), "mc.unlink", "username=" + target.get().username(),
+                    "DENIED", "confirmation de l'UUID incorrecte", rid);
+            Http.redirect(exchange, "/users/" + enc(userId) + "?err="
+                    + enc("UUID de confirmation incorrect : rien n'a été dissocié."));
+            return;
+        }
+        McBridgeDirectory.Outcome o = mcBridge.unlink(target.get());
+        if (!o.ok()) {
+            Http.redirect(exchange, "/users/" + enc(userId) + "?err=" + enc(o.error()));
+            return;
+        }
+        audit.record(session.username(), "mc.unlink", "username=" + target.get().username(), "OK",
+                "uuid=" + o.before().mcUuid(), rid);
+        Http.redirect(exchange, "/users/" + enc(userId) + "?ok="
+                + enc("Joueur dissocié dans le panel. ATTENTION : ses droits gérés sont TOUJOURS "
+                        + "en place en jeu — lancez une synchronisation à zéro groupe pour les révoquer."));
+    }
+
+    /**
+     * Mondes connus du serveur, d'après le dernier relevé de l'agent — même source que l'éditeur de
+     * contenu. Vide si aucun relevé : on ne devine jamais un nom de monde, car un droit de
+     * construction accordé sur un monde inexistant ne ferait rien, en silence.
+     */
+    private List<String> knownWorlds() {
+        return agentPages.referenceData(config.agents().defaultAgentId()).worlds();
+    }
+
+    private static String describeNodes(List<McBridgeRepository.GroupNode> nodes) {
+        List<String> out = new ArrayList<>();
+        for (McBridgeRepository.GroupNode node : nodes) {
+            out.add(node.isGlobal() ? node.node() : node.node() + "@" + node.world());
+        }
+        return String.join(",", out);
+    }
+
+
+    /**
+     * État <strong>réel</strong> du pont pour ce compte, plus le bouton de synchronisation.
+     *
+     * <p>Deux états sont distingués à l'écran, et c'est le point important : ce que le panel
+     * <em>veut</em> (union des droits de ses groupes) et ce que le serveur <em>porte</em> (dernier
+     * relevé {@code mc.rights.read}). S'ils diffèrent, ou si aucun relevé n'existe, le panel le dit
+     * plutôt que d'afficher l'état voulu comme s'il était appliqué.</p>
+     */
+    private String mcBridgeStateHtml(Session session, PanelUser target) {
+        String agentId = config.agents().defaultAgentId();
+        Optional<McBridgeRepository.Link> link = mcBridge.linkOf(target.id());
+        StringBuilder sb = new StringBuilder();
+
+        List<McBridgeRepository.GroupNode> desired =
+                mcBridge.desiredFor(groups.groupsOf(target.id()));
+        sb.append("<h3>Droits Minecraft</h3>");
+        sb.append("<p class=\"muted\">Voulu par le panel : <strong>").append(desired.size())
+                .append("</strong> droit(s), somme de ses groupes. L'état réel vient du serveur.</p>");
+        if (!desired.isEmpty()) {
+            sb.append("<ul class=\"muted\">");
+            for (McBridgeRepository.GroupNode node : desired) {
+                sb.append("<li><code>").append(Http.esc(node.node())).append("</code>")
+                        .append(node.isGlobal() ? "" : " <span class=\"muted\">(monde "
+                                + Http.esc(node.world()) + ")</span>").append("</li>");
+            }
+            sb.append("</ul>");
+        }
+
+        if (link.isEmpty()) {
+            return sb.append(Ui.banner("info", "Aucun joueur lié : rien ne peut être appliqué en jeu."))
+                    .toString();
+        }
+        if (agentId == null) {
+            return sb.append(Ui.banner("warn", "Aucun agent configuré : l'état réel en jeu est "
+                    + "inconnu et aucune synchronisation n'est possible.")).toString();
+        }
+
+        Optional<AgentActionRow> survey = agentPages.latestForPlayerPublic(agentId, "mc.rights.read",
+                link.get().mcUuid());
+        if (survey.isEmpty()) {
+            sb.append(Ui.banner("info", "État réel <strong>inconnu</strong> : aucun relevé encore "
+                    + "demandé. Le bouton ci-dessous interroge le serveur."));
+        } else {
+            sb.append(agentPages.resultLinePublic("Dernier relevé", survey.get()));
+        }
+
+        sb.append(mcForm(session, agentId, "mc.rights.read", "/users/" + target.id(),
+                "<input type=\"hidden\" name=\"player\" value=\"" + Http.esc(link.get().mcUuid()) + "\">",
+                "refresh", "Lire l'état réel en jeu", false));
+
+        StringBuilder groupFields = new StringBuilder();
+        groupFields.append("<input type=\"hidden\" name=\"player\" value=\"")
+                .append(Http.esc(link.get().mcUuid())).append("\">");
+        int index = 0;
+        for (PanelGroup group : groups.groupsOf(target.id())) {
+            if (mcBridge.nodesOf(group.id()).isEmpty()) {
+                continue;
+            }
+            groupFields.append("<input type=\"hidden\" name=\"group").append(index)
+                    .append("\" value=\"").append(Http.esc(group.id())).append("\">");
+            index++;
+        }
+        sb.append("<p class=\"muted\">La synchronisation applique exactement les groupes ci-dessus. "
+                + "Elle ne touche <strong>jamais</strong> un droit posé directement sur le joueur ni "
+                + "une appartenance à un groupe externe, même de même nom et même monde.</p>");
+        sb.append(mcForm(session, agentId, "mc.rights.sync", "/users/" + target.id(),
+                groupFields.toString(), "save", "Synchroniser les droits en jeu", true));
+        return sb.toString();
+    }
+
+    /** Bouton de synchronisation de la définition d'un groupe, avec ses droits en champs cachés. */
+    private String mcGroupSyncHtml(Session session, PanelGroup group) {
+        String agentId = config.agents().defaultAgentId();
+        List<McBridgeRepository.GroupNode> nodes = mcBridge.nodesOf(group.id());
+        StringBuilder sb = new StringBuilder("<h3>Appliquer en jeu</h3>");
+        if (agentId == null) {
+            return sb.append(Ui.banner("warn", "Aucun agent configuré : impossible d'appliquer ces "
+                    + "droits en jeu.")).toString();
+        }
+        StringBuilder fields = new StringBuilder();
+        fields.append("<input type=\"hidden\" name=\"group\" value=\"").append(Http.esc(group.id())).append("\">");
+        fields.append("<input type=\"hidden\" name=\"label\" value=\"").append(Http.esc(group.name())).append("\">");
+        int index = 0;
+        for (McBridgeRepository.GroupNode node : nodes) {
+            fields.append("<input type=\"hidden\" name=\"node").append(index).append("\" value=\"")
+                    .append(Http.esc(node.node())).append("\">");
+            if (!node.isGlobal()) {
+                fields.append("<input type=\"hidden\" name=\"world").append(index).append("\" value=\"")
+                        .append(Http.esc(node.world())).append("\">");
+            }
+            index++;
+        }
+        sb.append("<p class=\"muted\">Crée ou met à jour le groupe LuckPerms dédié à ce groupe "
+                + "PlugAdmin. Idempotent : relancé sans changement, il ne modifie rien et le dit.</p>");
+        sb.append(mcForm(session, agentId, "mc.group.sync", "/groups/" + group.id(),
+                fields.toString(), "save", "Appliquer les droits de ce groupe", false));
+        sb.append("<p class=\"muted\">Retirer le groupe LuckPerms fait perdre à ses membres "
+                + "exactement les droits qu'il portait, et rien d'autre.</p>");
+        sb.append(mcForm(session, agentId, "mc.group.delete", "/groups/" + group.id(),
+                "<input type=\"hidden\" name=\"group\" value=\"" + Http.esc(group.id()) + "\">",
+                "trash", "Retirer le groupe LuckPerms", false));
+        for (String type : new String[] {"mc.group.sync", "mc.group.delete"}) {
+            agentPages.latestOfTypePublic(agentId, type)
+                    .ifPresent(row -> sb.append(agentPages.resultLinePublic("Dernière opération", row)));
+        }
+        return sb.toString();
+    }
+
+    /** Formulaire d'action agent minimal, posté sur la route générique déjà gardée. */
+    private String mcForm(Session session, String agentId, String type, String returnPath,
+                          String hiddenFields, String icon, String label, boolean danger) {
+        return "<form method=\"post\" action=\"/agents/action\" class=\"actform\">"
+                + "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(session.csrfToken()) + "\">"
+                + "<input type=\"hidden\" name=\"agent\" value=\"" + Http.esc(agentId) + "\">"
+                + "<input type=\"hidden\" name=\"type\" value=\"" + Http.esc(type) + "\">"
+                + "<input type=\"hidden\" name=\"return\" value=\"" + Http.esc(returnPath) + "\">"
+                + "<input type=\"hidden\" name=\"confirm\" value=\"true\">"
+                + hiddenFields
+                + "<button class=\"btn btn-sm " + (danger ? "btn-outline-warning" : "btn-outline-secondary")
+                + "\" type=\"submit\">" + Icons.icon(icon) + Http.esc(label) + "</button></form>";
     }
 
     /** {@code POST /users/create} — routé à part car {@code /users/create} est un contexte plus long. */

@@ -822,4 +822,56 @@ public interface AgentActions {
      * <strong>obligatoire</strong> et conservée avec la ligne.</p>
      */
     CompletableFuture<MutationResult> settleQuestRewardDebt(UUID playerId, String grantId, String reason);
+
+    // ---- Pont vers les droits Minecraft (issue #200) -------------------------------------------
+
+    /**
+     * État réel du pont pour un joueur ({@code mc.rights.read}) — lecture seule.
+     *
+     * <p>Renvoie la disponibilité de LuckPerms <strong>et</strong> les droits gérés réellement
+     * portés, avec le groupe du pont d'où ils viennent. Si le pont est indisponible, c'est dit avec
+     * son motif : jamais un état voulu présenté comme un état réel.</p>
+     */
+    CompletableFuture<McRightsView> mcRightsRead(UUID playerId);
+
+    /**
+     * @param bridgeAvailable {@code false} si LuckPerms est absent ou incompatible
+     * @param reason          motif d'indisponibilité, ou {@code null}
+     * @param effective       droits gérés réellement portés, chacun avec sa provenance
+     */
+    record McRightsView(boolean ok, String message, boolean bridgeAvailable, String reason,
+                        List<String> effective) {
+    }
+
+    /**
+     * Pousse la définition d'un groupe du pont ({@code mc.group.sync}) : ses droits gérés, avec
+     * contexte de monde. Idempotente.
+     *
+     * @param nodes couples {@code nœud} / {@code monde} ({@code monde} vide = partout)
+     */
+    CompletableFuture<McSyncView> mcGroupSync(String groupId, String displayName, List<McNodeSpec> nodes);
+
+    /** Un droit à écrire. {@code world} vide ou {@code null} = partout. */
+    record McNodeSpec(String node, String world) {
+    }
+
+    /** Retire un groupe du pont ({@code mc.group.delete}). */
+    CompletableFuture<McSyncView> mcGroupDelete(String groupId);
+
+    /**
+     * Fait correspondre les appartenances du pont d'un joueur à {@code groupIds}
+     * ({@code mc.rights.sync}).
+     */
+    CompletableFuture<McSyncView> mcRightsSync(UUID playerId, List<String> groupIds);
+
+    /**
+     * @param added     ce qui a été ajouté par cet appel
+     * @param removed   ce qui a été retiré
+     * @param unchanged ce qui était déjà conforme — preuve d'idempotence
+     * @param preserved droits et appartenances <strong>externes</strong> laissés intacts
+     */
+    record McSyncView(boolean ok, String message, List<String> added, List<String> removed,
+                      List<String> unchanged, List<String> preserved) {
+    }
+
 }

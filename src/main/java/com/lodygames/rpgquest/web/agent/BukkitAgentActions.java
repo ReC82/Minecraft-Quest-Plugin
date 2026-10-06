@@ -13,6 +13,8 @@ import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.database.WalletRepository;
 import com.lodygames.rpgquest.economy.EconomyService;
 import com.lodygames.rpgquest.economy.QuestRewardDue;
+import com.lodygames.rpgquest.permission.LuckPermsBridge;
+import com.lodygames.rpgquest.permission.ManagedNode;
 import com.lodygames.rpgquest.economy.TransactionType;
 import com.lodygames.rpgquest.dialogue.DialogueCatalog;
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
@@ -101,6 +103,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -174,6 +177,11 @@ public final class BukkitAgentActions implements AgentActions {
     private final WalletRepository walletRepository;
     /** Issue #194 — suppression d'une définition de quête/story sur le serveur, avec sauvegarde. */
     private final com.lodygames.rpgquest.content.ContentDefinitionDeleter contentDeleter;
+    /**
+     * Issue #200 — pont vers LuckPerms. Construit ici et non injecté : il est sans état, et son
+     * indisponibilité (LuckPerms absent) est un état normal qu'il rapporte lui-même.
+     */
+    private final LuckPermsBridge luckPermsBridge;
 
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
                               QuestProgressEngine questProgressEngine, StoryService storyService,
@@ -224,6 +232,7 @@ public final class BukkitAgentActions implements AgentActions {
         this.contentDeleter = new com.lodygames.rpgquest.content.ContentDefinitionDeleter(
                 data.resolve("quests"), data.resolve("stories"),
                 data.resolve("content-backups"));
+        this.luckPermsBridge = new LuckPermsBridge(plugin.getSLF4JLogger());
     }
 
     // ---- Lectures -------------------------------------------------------------------------------
@@ -2019,6 +2028,62 @@ public final class BukkitAgentActions implements AgentActions {
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    // ---- Pont vers les droits Minecraft (issue #200) -------------------------------------------
+
+    @Override
+    public CompletableFuture<McRightsView> mcRightsRead(UUID playerId) {
+        LuckPermsBridge.Availability availability = luckPermsBridge.availability();
+        if (!availability.available()) {
+            // État RÉEL et non un échec technique : le pont est simplement absent, et le panel doit
+            // pouvoir l'afficher tel quel plutôt que de montrer une erreur énigmatique.
+            return CompletableFuture.completedFuture(new McRightsView(true,
+                    "Pont indisponible.", false, availability.reason(), List.of()));
+        }
+        return luckPermsBridge.readBridgeProvenance(playerId)
+                .thenApply(lines -> new McRightsView(true,
+                        lines.isEmpty() ? "Aucun droit géré porté par ce joueur."
+                                : lines.size() + " droit(s) géré(s) porté(s).",
+                        true, null, List.copyOf(lines)))
+                .exceptionally(err -> new McRightsView(false,
+                        "Lecture impossible : " + rootName(err), true, rootName(err), List.of()));
+    }
+
+    @Override
+    public CompletableFuture<McSyncView> mcGroupSync(String groupId, String displayName,
+                                                     List<McNodeSpec> nodes) {
+        Set<ManagedNode> wanted = new LinkedHashSet<>();
+        for (McNodeSpec spec : nodes) {
+            wanted.add(new ManagedNode(spec.node(), spec.world()));
+        }
+        return luckPermsBridge.syncGroupDefinition(groupId, displayName, wanted)
+                .thenApply(BukkitAgentActions::toSyncView)
+                .exceptionally(err -> failedSync("Écriture impossible : " + rootName(err)));
+    }
+
+    @Override
+    public CompletableFuture<McSyncView> mcGroupDelete(String groupId) {
+        return luckPermsBridge.deleteGroup(groupId)
+                .thenApply(BukkitAgentActions::toSyncView)
+                .exceptionally(err -> failedSync("Suppression impossible : " + rootName(err)));
+    }
+
+    @Override
+    public CompletableFuture<McSyncView> mcRightsSync(UUID playerId, List<String> groupIds) {
+        return luckPermsBridge.syncUserGroups(playerId, new LinkedHashSet<>(groupIds))
+                .thenApply(BukkitAgentActions::toSyncView)
+                .exceptionally(err -> failedSync("Synchronisation impossible : " + rootName(err)));
+    }
+
+    private static McSyncView toSyncView(LuckPermsBridge.SyncResult result) {
+        return new McSyncView(result.ok(), result.message(), result.added(), result.removed(),
+                result.unchanged(), result.preserved());
+    }
+
+    private static McSyncView failedSync(String message) {
+        return new McSyncView(false, message + " Aucun droit n'a été modifié.",
+                List.of(), List.of(), List.of(), List.of());
     }
 
     // ---- Récompenses monétaires restées dues (issue #16, second lot) ---------------------------

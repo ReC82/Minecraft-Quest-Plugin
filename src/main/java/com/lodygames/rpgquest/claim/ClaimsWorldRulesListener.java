@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.claim;
 import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.claim.model.Claim;
 import com.lodygames.rpgquest.config.ClaimConfig;
+import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Optional;
@@ -161,6 +162,6 @@ public final class ClaimsWorldRulesListener implements Listener {
     }
 
     private boolean isBypassing(Player player) {
-        return player != null && player.hasPermission(BYPASS_PERMISSION);
+        return RpgPermissions.hasBypass(player, RpgPermissions.BYPASS_CLAIM_WORLD);
     }
 }

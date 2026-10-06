@@ -248,6 +248,16 @@ public final class AgentActionCatalog {
                 "Reprendre le paiement d'une récompense due", "player.catalog");
         addSensitiveWrite("economy.debt.settle", Permission.ECONOMY_WRITE, true,
                 "Marquer une récompense due comme réglée à la main", "player.catalog");
+        // Issue #200 — pont vers les droits Minecraft. Distribuer un droit de construction ou un
+        // bypass est au moins aussi sensible que gérer un groupe du panel : même permission.
+        add("mc.rights.read", Permission.USER_MANAGE, false, true,
+                "Lire les droits Minecraft réellement portés par un joueur");
+        addSensitiveWrite("mc.group.sync", Permission.USER_MANAGE, false,
+                "Appliquer les droits Minecraft d'un groupe");
+        addSensitiveWrite("mc.group.delete", Permission.USER_MANAGE, false,
+                "Retirer le groupe de droits Minecraft");
+        addSensitiveWrite("mc.rights.sync", Permission.USER_MANAGE, true,
+                "Synchroniser les droits Minecraft d'un joueur", "player.catalog");
         addSensitiveWrite("player.ban", Permission.PLAYER_MODERATE, true, "Bannir un joueur", "player.catalog");
         addSensitiveWrite("player.unban", Permission.PLAYER_MODERATE, true, "Débannir un joueur", "player.catalog");
         add("quest.start", Permission.ACTION_QUEST, true, true, "Démarrer une quête");
@@ -970,6 +980,54 @@ public final class AgentActionCatalog {
                 }
                 params.put("grant", grant);
                 params.put("reason", reason);
+            }
+            case "mc.rights.read" -> {
+                // Aucun paramètre au-delà du joueur : c'est un relevé.
+            }
+            case "mc.group.sync" -> {
+                String group = trim(form.get("group"));
+                if (group.isEmpty()) {
+                    return Validation.fail("Identifiant de groupe manquant.");
+                }
+                params.put("group", group);
+                String label = trim(form.get("label"));
+                if (!label.isEmpty()) {
+                    params.put("label", label);
+                }
+                // Un nom DISTINCT par droit : Http.formBody ne garde qu'une valeur par clé, donc
+                // des champs homonymes perdraient tous leurs droits sauf un.
+                int index = 0;
+                for (int i = 0; i < 64; i++) {
+                    String node = trim(form.get("node" + i));
+                    if (node.isEmpty()) {
+                        continue;
+                    }
+                    params.put("node" + index, node);
+                    String world = trim(form.get("world" + i));
+                    if (!world.isEmpty()) {
+                        params.put("world" + index, world);
+                    }
+                    index++;
+                }
+            }
+            case "mc.group.delete" -> {
+                String group = trim(form.get("group"));
+                if (group.isEmpty()) {
+                    return Validation.fail("Identifiant de groupe manquant.");
+                }
+                params.put("group", group);
+            }
+            case "mc.rights.sync" -> {
+                int index = 0;
+                for (int i = 0; i < 64; i++) {
+                    String group = trim(form.get("group" + i));
+                    if (group.isEmpty()) {
+                        continue;
+                    }
+                    params.put("group" + index, group);
+                    index++;
+                }
+                // Zéro groupe est LÉGITIME : c'est la révocation complète d'un joueur.
             }
             case "player.kick" -> {
                 String reason = trim(form.get("reason"));

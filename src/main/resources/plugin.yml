@@ -11,8 +11,12 @@ folia-supported: false
 # continuent de fonctionner comme avant. softdepend (pas depend) garantit que, quand Citizens est
 # installé, il est déjà activé avant RPGQuest (ordre requis pour détecter sa présence correctement),
 # sans jamais empêcher RPGQuest de démarrer en son absence.
+# LuckPerms (issue #200) : jamais requis. Présent, le pont du Control Panel peut écrire des droits
+# Minecraft par monde via son API ; absent, le plugin démarre et fonctionne exactement comme avant,
+# et le pont se déclare INDISPONIBLE avec son motif plutôt que de prétendre avoir réussi.
 softdepend:
   - Citizens
+  - LuckPerms
 
 libraries:
   - org.xerial:sqlite-jdbc:3.53.2.1
@@ -79,8 +83,42 @@ permissions:
     description: Accès aux commandes d'objets personnalisés joueur (/customitem inspect).
     default: true
   rpgquest.admin.world:
-    description: Accès aux commandes d'administration du monde (/rpgadmin), dont l'aplatissement de terrain et les raccourcis de test quêtes/stories (/rpgadmin quest|story).
+    description: "OMBRELLE HISTORIQUE (issues #27/#200). La détenir implique TOUS les droits découpés ci-dessous : construction dans les Hubs, bypass claims/zones/monde des claims, et toutes les branches de /rpgadmin. Conservée pour ne casser aucun administrateur existant. NE JAMAIS l'attribuer à un groupe builder ou éditeur de PNJ : elle donne tout."
     default: op
+  rpgquest.admin.command:
+    description: "Entrer dans /rpgadmin, SANS autoriser aucune branche (issue #200). Chaque sous-commande exige en plus son propre nœud, ou l'ombrelle rpgquest.admin.world. Un compte ne portant que ce nœud peut ouvrir la commande et n'exécuter aucune opération."
+    default: false
+  rpgquest.admin.npc:
+    description: "Parent de la branche PNJ de /rpgadmin (issue #200) : autorise les trois sous-actions ci-dessous. Ne donne AUCUN droit de construction, aucun bypass de protection, et aucune autre branche de /rpgadmin."
+    default: false
+    children:
+      rpgquest.admin.npc.tag: true
+      rpgquest.admin.npc.untag: true
+      rpgquest.admin.npc.info: true
+  rpgquest.admin.npc.tag:
+    description: "/rpgadmin npc tag — marque l'entité visée d'un identifiant RPGQuest stable. ATTENTION : ceci ne crée AUCUN PNJ Citizens ; la création passe par le Control Panel (npc.citizens.create) ou par les commandes de Citizens, qui ont leurs propres permissions."
+    default: false
+  rpgquest.admin.npc.untag:
+    description: "/rpgadmin npc untag — retire le marquage RPGQuest de l'entité visée."
+    default: false
+  rpgquest.admin.npc.info:
+    description: "/rpgadmin npc info — lecture seule du marquage de l'entité visée."
+    default: false
+  rpgquest.build.hub.*:
+    description: "Construire dans TOUS les mondes de Hub (issue #200). N'accorde aucun bypass de claim, de zone protégée, de waypoint, ni aucune commande d'administration."
+    default: false
+  rpgquest.build.wild:
+    description: "Construire dans le Wild (issue #200). SANS EFFET à ce jour : le Wild n'a aucune restriction de construction, un joueur ordinaire y construit déjà librement. Ce nœud existe pour la convention et pour un éventuel verrou futur ; il n'accorde AUCUN bypass de zone protégée, de claim ou de waypoint — or le Wild en contient."
+    default: false
+  rpgquest.bypass.claim:
+    description: "Contourner la protection des claims d'autrui (issue #200). Strictement distinct de toute permission de construction : un builder de Hub ne l'obtient jamais par sa permission de build."
+    default: false
+  rpgquest.bypass.zone:
+    description: "Contourner la protection des zones (issue #200). Distinct des claims et de la construction."
+    default: false
+  rpgquest.bypass.claimworld:
+    description: "Accès et règles administratifs du MONDE des claims (issue #200) : entrer sans être éligible et ignorer les règles de ce monde. Préserve le correctif #22 — l'entrée n'est jamais refusée à un porteur, et il reçoit malgré tout une Pierre de retour."
+    default: false
   rpgquest.admin.travel.maintenance:
     description: "Autorise, APRÈS activation explicite via /rpgadmin travel maintenance on, à casser les blocs d'un waypoint ou d'une borne de voyage (issue #191). Volontairement PAS accordée aux opérateurs : un bypass implicite par statut OP permettait de détruire ces structures sans geste délibéré."
     default: false

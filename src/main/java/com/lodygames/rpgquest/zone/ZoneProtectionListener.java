@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.zone;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.zone.model.ZoneDefinition;
 import com.lodygames.rpgquest.zone.model.ZoneFlags;
+import com.lodygames.rpgquest.permission.RpgPermissions;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -400,6 +401,8 @@ public final class ZoneProtectionListener implements Listener {
     }
 
     private boolean isBypassing(Player player) {
-        return player != null && player.hasPermission(BYPASS_PERMISSION);
+        // Issue #200 : nœud DÉDIÉ au bypass de zone. Aucune permission de construction ne
+        // passe par ici — construire et contourner une protection sont deux droits distincts.
+        return RpgPermissions.hasBypass(player, RpgPermissions.BYPASS_ZONE);
     }
 }

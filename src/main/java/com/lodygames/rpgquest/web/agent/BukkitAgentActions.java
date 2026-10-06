@@ -12,6 +12,7 @@ import com.lodygames.rpgquest.content.reload.ReloadFamily;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
 import com.lodygames.rpgquest.database.WalletRepository;
 import com.lodygames.rpgquest.economy.EconomyService;
+import com.lodygames.rpgquest.economy.QuestRewardDue;
 import com.lodygames.rpgquest.economy.TransactionType;
 import com.lodygames.rpgquest.dialogue.DialogueCatalog;
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
@@ -2018,6 +2019,97 @@ public final class BukkitAgentActions implements AgentActions {
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    // ---- Récompenses monétaires restées dues (issue #16, second lot) ---------------------------
+
+    @Override
+    public CompletableFuture<QuestRewardDebtsView> questRewardDebts(UUID playerId, int limit) {
+        if (economyService == null) {
+            return CompletableFuture.completedFuture(new QuestRewardDebtsView(false,
+                    "Économie indisponible sur ce serveur.", List.of()));
+        }
+        return economyService.pendingQuestRewards(playerId, limit).thenApply(dues -> {
+            List<QuestRewardDebtView> out = new ArrayList<>();
+            for (QuestRewardDue due : dues) {
+                out.add(new QuestRewardDebtView(due.grantId(), due.questId(), questTitleOrId(due.questId()),
+                        due.occurrence(), due.rewardIndex(), due.amount(), due.attempts(),
+                        due.lastError(), null));
+            }
+            return new QuestRewardDebtsView(true,
+                    out.isEmpty() ? "Aucune récompense monétaire en attente."
+                            : out.size() + " récompense(s) monétaire(s) en attente.",
+                    List.copyOf(out));
+        }).exceptionally(err -> new QuestRewardDebtsView(false,
+                "Lecture des récompenses dues impossible : " + rootName(err), List.of()));
+    }
+
+    /**
+     * Titre lisible de la quête, ou son identifiant si la définition n'existe plus. On ne devine
+     * <strong>jamais</strong> un titre : une quête supprimée laisse une dette bien réelle, et
+     * afficher son identifiant est plus honnête qu'un nom inventé.
+     */
+    private String questTitleOrId(String questId) {
+        NamespacedKey key = NamespacedKey.fromString(questId);
+        if (key == null) {
+            return questId;
+        }
+        return questEngine.find(key).map(quest -> quest.title().base()).orElse(questId);
+    }
+
+    @Override
+    public CompletableFuture<QuestRewardRetryView> retryQuestRewardDebt(UUID playerId, String grantId) {
+        if (economyService == null) {
+            return CompletableFuture.completedFuture(new QuestRewardRetryView(false, "ERROR",
+                    "Économie indisponible sur ce serveur.", 0L, 0L));
+        }
+        // La dette est relue d'abord pour vérifier qu'elle appartient BIEN au joueur ciblé : sans
+        // ce contrôle, un identifiant copié d'une autre fiche créditerait le mauvais joueur.
+        return economyService.questRewardDebt(grantId).thenCompose(found -> {
+            if (found.isEmpty()) {
+                return CompletableFuture.completedFuture(new QuestRewardRetryView(false, "UNKNOWN_DEBT",
+                        "Aucune récompense due sous cet identifiant.", 0L, 0L));
+            }
+            if (!found.get().playerId().equals(playerId)) {
+                return CompletableFuture.completedFuture(new QuestRewardRetryView(false, "WRONG_PLAYER",
+                        "Cette récompense due appartient à un autre joueur : rien n'a été fait.", 0L, 0L));
+            }
+            return economyService.payQuestReward(playerId, grantId).thenApply(receipt -> switch (receipt.status()) {
+                case CREDITED -> new QuestRewardRetryView(true, "PAID",
+                        "Récompense créditée : " + receipt.amount() + " pièce(s). Nouveau solde : "
+                                + receipt.balanceAfter() + ".", receipt.amount(), receipt.balanceAfter());
+                case ALREADY_CREDITED -> new QuestRewardRetryView(false, "ALREADY_PAID",
+                        "Déjà réglée : aucun second crédit.", receipt.amount(), receipt.balanceAfter());
+                case FAILED -> new QuestRewardRetryView(false, "ERROR",
+                        "Le crédit a échoué : rien n'a été modifié, la récompense reste due.", 0L, 0L);
+            });
+        }).exceptionally(err -> new QuestRewardRetryView(false, "ERROR",
+                "Reprise impossible : " + rootName(err) + ". Rien n'a été modifié.", 0L, 0L));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> settleQuestRewardDebt(UUID playerId, String grantId, String reason) {
+        if (economyService == null) {
+            return CompletableFuture.completedFuture(
+                    MutationResult.of(false, "ERROR", "Économie indisponible sur ce serveur."));
+        }
+        return economyService.questRewardDebt(grantId).thenCompose(found -> {
+            if (found.isEmpty()) {
+                return CompletableFuture.completedFuture(MutationResult.of(false, "UNKNOWN_DEBT",
+                        "Aucune récompense due sous cet identifiant."));
+            }
+            if (!found.get().playerId().equals(playerId)) {
+                return CompletableFuture.completedFuture(MutationResult.of(false, "WRONG_PLAYER",
+                        "Cette récompense due appartient à un autre joueur : rien n'a été fait."));
+            }
+            return economyService.settleQuestRewardManually(grantId, reason).thenApply(settled -> settled
+                    ? MutationResult.of(true, "SETTLED",
+                            "Récompense marquée réglée à la main : elle ne sera plus jamais payée "
+                                    + "automatiquement. Aucun solde n'a été modifié par cette action.")
+                    : MutationResult.of(false, "NOT_PENDING",
+                            "Cette récompense n'était plus en attente (déjà payée ou déjà réglée)."));
+        }).exceptionally(err -> MutationResult.of(false, "ERROR",
+                "Règlement impossible : " + rootName(err) + ". Rien n'a été modifié."));
     }
 
     private static List<String> describeRewards(List<QuestReward> rewards) {

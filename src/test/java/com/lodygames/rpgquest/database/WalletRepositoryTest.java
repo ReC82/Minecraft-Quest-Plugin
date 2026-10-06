@@ -5,11 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.quest.model.QuestState;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import org.bukkit.NamespacedKey;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ class WalletRepositoryTest {
     private DatabaseManager database;
     private PlayerProfileRepository profiles;
     private WalletRepository wallets;
+    private QuestProgressRepository progress;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -32,6 +35,7 @@ class WalletRepositoryTest {
         database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         profiles = new PlayerProfileRepository(database);
         wallets = new WalletRepository(database);
+        progress = new QuestProgressRepository(database);
     }
 
     @AfterEach
@@ -249,168 +253,363 @@ class WalletRepositoryTest {
         assertEquals("avant fermeture", history.get(0).context());
     }
 
-    // ---- Récompenses monétaires de quête (issue #16) ------------------------------------------
+    // ---- Récompenses monétaires de quête : dette puis paiement (issue #16) --------------------
     //
-    // C'est ICI que vit la garantie du ticket (« jamais créditée deux fois, ni perdue après une
-    // réussite annoncée ») : elle est en SQL, pas dans le moteur de quêtes. D'où des tests sur une
-    // vraie base SQLite plutôt que sur un double.
+    // C'est ICI que vivent les garanties du ticket, parce qu'elles sont en SQL et nulle part
+    // ailleurs : « une récompense due reste identifiable après redémarrage », « une reprise
+    // réutilise l'identité initiale », « crédit, journal et preuve de paiement restent atomiques ».
+    // D'où une vraie base SQLite, rouverte pour de bon, plutôt qu'un double.
+
+    private static final String QUEST = "rpgquest:tc251";
+
+    /** Enregistre une complétion et ses dettes, comme le fait le moteur. */
+    private List<String> recordCompletion(UUID player, String questId, String token, long... amounts)
+            throws Exception {
+        List<Long> owed = new java.util.ArrayList<>();
+        for (long amount : amounts) {
+            owed.add(amount);
+        }
+        return progress.completeQuestWithMoneyDebts(player, NamespacedKey.fromString(questId), token, owed)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    private WalletRepository.QuestRewardPayment pay(String grantId) throws Exception {
+        return wallets.payQuestRewardDebt(grantId, "QUEST_REWARD")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
 
     @Test
-    void aQuestRewardIsCreditedOnceAndRecordedInTheLedger() throws Exception {
+    void aCompletionRecordsADebtBeforeAnythingIsPaid() throws Exception {
         UUID player = createPlayer("Steve");
 
-        WalletRepository.QuestRewardGrant grant = wallets
-                .creditQuestReward(player, "rpgquest:tc250", "grant-1", 250, "QUEST_REWARD", "quest:rpgquest:tc250#grant-1")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        List<String> grants = recordCompletion(player, QUEST, "token-a", 250);
 
-        assertTrue(grant.credited());
-        assertEquals(250L, grant.amount());
-        assertEquals(250L, grant.balanceAfter());
-        assertEquals(1, grant.occurrence());
+        // L'argent n'est PAS encore crédité : la dette est seulement reconnue.
+        assertEquals(1, grants.size());
+        assertEquals(0L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertTrue(wallets.history(player, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+
+        List<WalletRepository.QuestRewardDebt> dues =
+                wallets.pendingQuestRewardDebts(player, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(1, dues.size());
+        WalletRepository.QuestRewardDebt due = dues.get(0);
+        // Tout ce qu'il faut pour reprendre : joueur, quête, occurrence, montant, état.
+        assertEquals(player, due.playerId());
+        assertEquals(QUEST, due.questId());
+        assertEquals(1, due.occurrence());
+        assertEquals(0, due.rewardIndex());
+        assertEquals(250L, due.amount());
+        assertEquals(WalletRepository.DebtStatus.PENDING, due.status());
+        assertEquals(0, due.attempts());
+    }
+
+    @Test
+    void theCompletionStateAndItsDebtAreWrittenTogether() throws Exception {
+        UUID player = createPlayer("Steve");
+
+        recordCompletion(player, QUEST, "token-a", 250);
+
+        // Les deux faits sont dans la même transaction : la quête est terminée ET la dette existe.
+        // C'est ce qui empêche « terminée mais jamais payée, sans aucune trace ».
+        assertEquals(QuestState.COMPLETED,
+                progress.find(player, NamespacedKey.fromString(QUEST))
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow().state());
+        assertEquals(1, wallets.pendingQuestRewardDebts(player, 10)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+    }
+
+    @Test
+    void payingADebtCreditsTheWalletAndLeavesExactlyOneLedgerLine() throws Exception {
+        UUID player = createPlayer("Steve");
+        String grant = recordCompletion(player, QUEST, "token-a", 250).get(0);
+
+        WalletRepository.QuestRewardPayment payment = pay(grant);
+
+        assertTrue(payment.paid());
+        assertEquals(250L, payment.amount());
+        assertEquals(250L, payment.balanceAfter());
+        assertEquals(1, payment.occurrence());
         assertEquals(250L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
 
         List<WalletRepository.LedgerEntry> history =
                 wallets.history(player, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         assertEquals(1, history.size());
         assertEquals("QUEST_REWARD", history.get(0).type());
-        // Traçable jusqu'à la quête ET à l'occasion : une ligne de journal reste rattachable des
-        // mois plus tard, au lieu d'être un « gain de jeu » anonyme.
-        assertEquals("quest:rpgquest:tc250#grant-1", history.get(0).context());
+        // La trace porte la quête ET l'occasion : rattachable des mois plus tard.
+        assertTrue(history.get(0).context().contains(QUEST), history.get(0).context());
+        assertTrue(history.get(0).context().contains(grant), history.get(0).context());
+
+        // Et la dette a disparu de ce qui reste à payer.
+        assertTrue(wallets.pendingQuestRewardDebts(player, 10)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
     }
 
     @Test
-    void replayingTheSameGrantNeverCreditsTwice() throws Exception {
+    void replayingAPaymentNeverCreditsTwice() throws Exception {
         UUID player = createPlayer("Steve");
-        wallets.creditQuestReward(player, "rpgquest:tc250", "grant-1", 250, "QUEST_REWARD", "ctx")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        String grant = recordCompletion(player, QUEST, "token-a", 250).get(0);
+        pay(grant);
 
-        // Le même grant_id rejoué : double-clic, retry, relecture d'un événement, peu importe.
-        WalletRepository.QuestRewardGrant replay = wallets
-                .creditQuestReward(player, "rpgquest:tc250", "grant-1", 250, "QUEST_REWARD", "ctx")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        WalletRepository.QuestRewardPayment replay = pay(grant);
 
-        assertFalse(replay.credited(), "une occasion déjà payée ne doit jamais recréditer");
-        assertEquals(1, replay.occurrence());
+        assertFalse(replay.paid());
+        assertEquals("ALREADY_PAID", replay.code());
         assertEquals(250L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
-        // Et surtout : pas de seconde ligne au journal, sinon l'audit mentirait.
         assertEquals(1, wallets.history(player, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
     }
 
     @Test
-    void replayingWithADifferentAmountStillPaysNothingAndReportsTheOriginalAmount() throws Exception {
+    void severalMoneyRewardsOnOneCompletionEachGetTheirOwnDebt() throws Exception {
+        // Le défaut du premier lot : identité de paiement partagée, donc seule la première payée.
         UUID player = createPlayer("Steve");
-        wallets.creditQuestReward(player, "rpgquest:tc250", "grant-1", 250, "QUEST_REWARD", "ctx")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-        // La quête a été rééditée entre-temps : le montant demandé aujourd'hui n'est plus celui
-        // qui a été payé. On doit lire la réalité, pas la demande.
-        WalletRepository.QuestRewardGrant replay = wallets
-                .creditQuestReward(player, "rpgquest:tc250", "grant-1", 999, "QUEST_REWARD", "ctx")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        List<String> grants = recordCompletion(player, QUEST, "token-a", 100, 30, 5);
 
-        assertFalse(replay.credited());
-        assertEquals(250L, replay.amount(), "le reçu doit porter le montant réellement crédité");
+        assertEquals(3, grants.size());
+        assertEquals(3, new java.util.HashSet<>(grants).size(), "trois identités distinctes");
+        for (String grant : grants) {
+            assertTrue(pay(grant).paid(), grant);
+        }
+        assertEquals(135L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertEquals(3, wallets.history(player, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+
+        // Même occurrence (une seule complétion), index distincts.
+        List<WalletRepository.QuestRewardDebt> all = new java.util.ArrayList<>();
+        for (String grant : grants) {
+            all.add(wallets.questRewardDebt(grant).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow());
+        }
+        assertEquals(List.of(1, 1, 1), all.stream().map(WalletRepository.QuestRewardDebt::occurrence).toList());
+        assertEquals(List.of(0, 1, 2), all.stream().map(WalletRepository.QuestRewardDebt::rewardIndex).toList());
+    }
+
+    @Test
+    void aDebtSurvivesARestartAndIsThenPaidExactlyOnce() throws Exception {
+        UUID player = createPlayer("Steve");
+        String grant = recordCompletion(player, QUEST, "token-a", 250).get(0);
+
+        // Frontière de crash : dette enregistrée, crash AVANT paiement. Vraie base rouverte.
+        database.shutdown();
+        database = new DatabaseManager(tempDir.resolve("data.db"));
+        database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        wallets = new WalletRepository(database);
+        progress = new QuestProgressRepository(database);
+
+        List<WalletRepository.QuestRewardDebt> dues =
+                wallets.pendingQuestRewardDebts(player, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(1, dues.size(), "la dette doit survivre au redémarrage, sinon elle est perdue");
+        assertEquals(grant, dues.get(0).grantId(), "la reprise doit réutiliser l'identité INITIALE");
+        assertEquals(250L, dues.get(0).amount());
+
+        assertTrue(pay(grant).paid());
+        assertEquals(250L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        // Et une seconde reprise après ce rattrapage ne paie rien.
+        assertFalse(pay(grant).paid());
         assertEquals(250L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     }
 
     @Test
-    void aRepeatableQuestPaysAgainOnANewOccurrence() throws Exception {
+    void aPaidDebtSurvivesARestartAndIsNotPaidAgain() throws Exception {
         UUID player = createPlayer("Steve");
-        wallets.creditQuestReward(player, "rpgquest:daily", "grant-1", 50, "QUEST_REWARD", "ctx1")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        String grant = recordCompletion(player, QUEST, "token-a", 250).get(0);
+        pay(grant);
 
-        WalletRepository.QuestRewardGrant second = wallets
-                .creditQuestReward(player, "rpgquest:daily", "grant-2", 50, "QUEST_REWARD", "ctx2")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-        assertTrue(second.credited(), "une nouvelle complétion est une nouvelle occasion : elle se paie");
-        assertEquals(2, second.occurrence(), "les occurrences se numérotent par joueur et par quête");
-        assertEquals(100L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
-    }
-
-    @Test
-    void occurrencesAreCountedPerQuestAndPerPlayer() throws Exception {
-        UUID steve = createPlayer("Steve");
-        UUID alex = createPlayer("Alex");
-        wallets.creditQuestReward(steve, "rpgquest:a", "g1", 10, "QUEST_REWARD", "c")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-        // Autre quête du même joueur, et même quête d'un autre joueur : deux premières fois.
-        assertEquals(1, wallets.creditQuestReward(steve, "rpgquest:b", "g2", 10, "QUEST_REWARD", "c")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).occurrence());
-        assertEquals(1, wallets.creditQuestReward(alex, "rpgquest:a", "g3", 10, "QUEST_REWARD", "c")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).occurrence());
-    }
-
-    @Test
-    void aQuestRewardRefusesANonPositiveAmountAndAMissingGrantId() throws Exception {
-        UUID player = createPlayer("Steve");
-        assertThrows(ExecutionException.class, () -> wallets
-                .creditQuestReward(player, "rpgquest:tc250", "g", 0, "QUEST_REWARD", "c")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
-        assertThrows(ExecutionException.class, () -> wallets
-                .creditQuestReward(player, "rpgquest:tc250", "g", -5, "QUEST_REWARD", "c")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
-        // Sans grant_id, l'idempotence n'existe plus : refuser est la seule réponse honnête.
-        assertThrows(ExecutionException.class, () -> wallets
-                .creditQuestReward(player, "rpgquest:tc250", "  ", 10, "QUEST_REWARD", "c")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
-    }
-
-    @Test
-    void aQuestRewardAddsToAnExistingBalanceWithoutReplacingIt() throws Exception {
-        UUID player = createPlayer("Steve");
-        wallets.credit(player, 40, "ADMIN_GRANT", "solde de départ").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-        WalletRepository.QuestRewardGrant grant = wallets
-                .creditQuestReward(player, "rpgquest:tc250", "g1", 60, "QUEST_REWARD", "c")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-        assertEquals(100L, grant.balanceAfter(), "le solde est relu dans la transaction, jamais estimé");
-        assertEquals(100L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
-    }
-
-    @Test
-    void aQuestRewardAndItsClaimBothSurviveARestart() throws Exception {
-        UUID player = createPlayer("Steve");
-        wallets.creditQuestReward(player, "rpgquest:tc250", "grant-1", 250, "QUEST_REWARD", "ctx")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
+        // Frontière de crash : crédit effectué, crash AVANT la notification du joueur.
         database.shutdown();
         database = new DatabaseManager(tempDir.resolve("data.db"));
         database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         wallets = new WalletRepository(database);
 
-        // Ni perte (le solde est là) ni duplication (le rejeu ne paie pas) après redémarrage —
-        // les deux moitiés de l'exigence, vérifiées ensemble parce qu'elles ne valent qu'ensemble.
         assertEquals(250L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
-        assertFalse(wallets.creditQuestReward(player, "rpgquest:tc250", "grant-1", 250, "QUEST_REWARD", "ctx")
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).credited());
-        assertEquals(250L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertTrue(wallets.pendingQuestRewardDebts(player, 10)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty(), "rien ne reste dû");
+        assertFalse(pay(grant).paid());
+        assertEquals(1, wallets.history(player, 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
     }
 
     @Test
-    void manyConcurrentReplaysOfTheSameGrantCreditExactlyOnce() throws Exception {
+    void theAmountPaidComesFromTheDebtNotFromTheCurrentQuestDefinition() throws Exception {
+        // Exigence explicite : les montants dus sont conservés même si la définition change.
         UUID player = createPlayer("Steve");
+        String grant = recordCompletion(player, QUEST, "token-a", 250).get(0);
 
-        // Vingt demandes identiques lancées sans attendre : c'est la forme d'un double-clic ou
-        // d'un retry en rafale. L'exécuteur de base est séquentiel, mais ce qui est vérifié ici
-        // c'est le RÉSULTAT, pas l'ordonnancement.
-        List<java.util.concurrent.CompletableFuture<WalletRepository.QuestRewardGrant>> calls =
+        // La quête est rééditée entre-temps (montant porté à 9999) : la dette ne bouge pas, car
+        // le paiement ne prend AUCUN montant en paramètre — il relit la ligne.
+        assertTrue(pay(grant).paid());
+
+        assertEquals(250L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertEquals(250L, wallets.questRewardDebt(grant)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow().amount());
+    }
+
+    @Test
+    void aRepeatableQuestCreatesANewOccurrenceAndIsPaidAgain() throws Exception {
+        UUID player = createPlayer("Steve");
+        String first = recordCompletion(player, QUEST, "token-a", 50).get(0);
+        pay(first);
+
+        String second = recordCompletion(player, QUEST, "token-b", 50).get(0);
+
+        assertFalse(first.equals(second), "deux complétions = deux identités de paiement");
+        WalletRepository.QuestRewardPayment payment = pay(second);
+        assertTrue(payment.paid());
+        assertEquals(2, payment.occurrence(), "les occurrences se numérotent par joueur et par quête");
+        assertEquals(100L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void reRecordingTheSameCompletionCreatesNoSecondDebt() throws Exception {
+        UUID player = createPlayer("Steve");
+        recordCompletion(player, QUEST, "token-a", 250);
+
+        // Même jeton rejoué (reprise d'une remise interrompue) : aucun doublon, aucune erreur.
+        recordCompletion(player, QUEST, "token-a", 250);
+
+        assertEquals(1, wallets.pendingQuestRewardDebts(player, 10)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+    }
+
+    @Test
+    void twentyConcurrentRetriesOfTheSameDebtCreditExactlyOnce() throws Exception {
+        UUID player = createPlayer("Steve");
+        String grant = recordCompletion(player, QUEST, "token-a", 250).get(0);
+
+        List<java.util.concurrent.CompletableFuture<WalletRepository.QuestRewardPayment>> calls =
                 new java.util.ArrayList<>();
         for (int i = 0; i < 20; i++) {
-            calls.add(wallets.creditQuestReward(player, "rpgquest:tc250", "grant-1", 250,
-                    "QUEST_REWARD", "ctx"));
+            calls.add(wallets.payQuestRewardDebt(grant, "QUEST_REWARD"));
         }
-        long credited = 0;
+        long paid = 0;
         for (var call : calls) {
-            if (call.get(TIMEOUT_SECONDS, TimeUnit.SECONDS).credited()) {
-                credited++;
+            if (call.get(TIMEOUT_SECONDS, TimeUnit.SECONDS).paid()) {
+                paid++;
             }
         }
 
-        assertEquals(1, credited, "une seule des 20 demandes identiques doit créditer");
+        assertEquals(1, paid, "une seule des 20 reprises concurrentes doit créditer");
         assertEquals(250L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
         assertEquals(1, wallets.history(player, 50).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+    }
+
+    @Test
+    void anUnknownDebtIsNeverPaidAndNeverPretendsOtherwise() throws Exception {
+        WalletRepository.QuestRewardPayment payment = pay("jeton-inexistant#0");
+
+        assertFalse(payment.paid());
+        assertEquals("UNKNOWN", payment.code());
+        assertEquals(0L, payment.amount());
+    }
+
+    @Test
+    void aFailureIsRecordedWithItsReasonAndBoundsTheRetries() throws Exception {
+        UUID player = createPlayer("Steve");
+        String grant = recordCompletion(player, QUEST, "token-a", 250).get(0);
+
+        wallets.recordQuestRewardFailure(grant, "SQLException: disk I/O error")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        wallets.recordQuestRewardFailure(grant, "SQLException: disk I/O error")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        WalletRepository.QuestRewardDebt debt =
+                wallets.questRewardDebt(grant).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow();
+        assertEquals(2, debt.attempts(), "le compteur borne les reprises automatiques");
+        assertTrue(debt.lastError().contains("disk I/O"), debt.lastError());
+        // Un échec n'a RIEN crédité et la dette reste payable : c'est tout l'intérêt.
+        assertEquals(WalletRepository.DebtStatus.PENDING, debt.status());
+        assertEquals(0L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertTrue(pay(grant).paid());
+    }
+
+    @Test
+    void recordingAFailureOnAPaidDebtChangesNothing() throws Exception {
+        UUID player = createPlayer("Steve");
+        String grant = recordCompletion(player, QUEST, "token-a", 250).get(0);
+        pay(grant);
+
+        wallets.recordQuestRewardFailure(grant, "erreur tardive").get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        WalletRepository.QuestRewardDebt debt =
+                wallets.questRewardDebt(grant).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow();
+        assertEquals(WalletRepository.DebtStatus.PAID, debt.status(), "une dette payée reste payée");
+        assertEquals(0, debt.attempts());
+    }
+
+    @Test
+    void aManuallySettledDebtIsNeverPayableAgain() throws Exception {
+        // Exigence explicite : une compensation ne doit pas laisser la même récompense payable.
+        UUID player = createPlayer("Steve");
+        String grant = recordCompletion(player, QUEST, "token-a", 250).get(0);
+
+        assertTrue(wallets.settleQuestRewardDebtManually(grant, "compensé à la main, ticket #16")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+        // Le règlement manuel ne touche PAS au portefeuille : l'admin a déjà crédité comme il
+        // l'entendait. Il rend seulement la dette non payable.
+        assertEquals(0L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        WalletRepository.QuestRewardPayment payment = pay(grant);
+        assertFalse(payment.paid());
+        assertEquals("ALREADY_SETTLED", payment.code());
+        assertEquals(0L, wallets.balance(player).get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertTrue(wallets.pendingQuestRewardDebts(player, 10)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+    }
+
+    @Test
+    void settlingRequiresAReasonAndCannotTouchAnAlreadyPaidDebt() throws Exception {
+        UUID player = createPlayer("Steve");
+        String grant = recordCompletion(player, QUEST, "token-a", 250).get(0);
+
+        assertThrows(ExecutionException.class, () -> wallets.settleQuestRewardDebtManually(grant, "  ")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+
+        pay(grant);
+        assertFalse(wallets.settleQuestRewardDebtManually(grant, "trop tard")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS), "une dette déjà payée ne se règle pas à la main");
+    }
+
+    @Test
+    void pendingDebtsAreScopedPerPlayerAndBounded() throws Exception {
+        UUID steve = createPlayer("Steve");
+        UUID alex = createPlayer("Alex");
+        recordCompletion(steve, QUEST, "token-s", 10);
+        recordCompletion(alex, QUEST, "token-a", 20);
+
+        assertEquals(1, wallets.pendingQuestRewardDebts(steve, 10)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+        assertEquals(2, wallets.pendingQuestRewardDebts(50)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size(), "vue d'administration, tous joueurs");
+        // Bornes dures : jamais une lecture non bornée.
+        assertEquals(1, wallets.pendingQuestRewardDebts(0)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
+    }
+
+    @Test
+    void aCompletionWithoutMoneyRewardCreatesNoDebtAtAll() throws Exception {
+        UUID player = createPlayer("Steve");
+
+        List<String> grants = recordCompletion(player, QUEST, "token-a");
+
+        assertTrue(grants.isEmpty());
+        assertTrue(wallets.pendingQuestRewardDebts(player, 10)
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
+        // La quête est tout de même marquée terminée : la complétion n'a pas besoin d'argent.
+        assertEquals(QuestState.COMPLETED,
+                progress.find(player, NamespacedKey.fromString(QUEST))
+                        .get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow().state());
+    }
+
+    @Test
+    void recordingACompletionWithoutATokenIsRefused() {
+        UUID player = createPlayer2("Steve");
+        assertThrows(ExecutionException.class, () -> progress
+                .completeQuestWithMoneyDebts(player, NamespacedKey.fromString(QUEST), "  ", List.of(10L))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+    }
+
+    private UUID createPlayer2(String name) {
+        try {
+            return createPlayer(name);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

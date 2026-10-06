@@ -767,4 +767,59 @@ public interface AgentActions {
                              long balanceBefore, long balanceAfter) {
     }
 
+    // ---- Récompenses monétaires restées dues (issue #16, second lot) ---------------------------
+
+    /**
+     * Récompenses monétaires de quête <strong>encore dues</strong> pour un joueur
+     * ({@code economy.debts}) — lecture seule.
+     *
+     * <p>Une dette naît avec la complétion, dans la même transaction qu'elle, et survit donc à un
+     * crash ou à une panne SQL. Son montant est <strong>figé</strong> à ce moment : rééditer la
+     * quête ensuite ne change pas ce qui est dû.</p>
+     */
+    CompletableFuture<QuestRewardDebtsView> questRewardDebts(UUID playerId, int limit);
+
+    /**
+     * @param ok      {@code false} seulement en cas d'échec technique de lecture
+     * @param debts   dettes encore dues, les plus anciennes d'abord
+     */
+    record QuestRewardDebtsView(boolean ok, String message, List<QuestRewardDebtView> debts) {
+    }
+
+    /**
+     * @param grantId   identité de paiement <strong>initiale</strong> — une reprise la réutilise
+     * @param attempts  nombre d'échecs déjà enregistrés ({@code 0} = jamais échouée)
+     * @param lastError dernier motif d'échec, ou {@code null}
+     */
+    record QuestRewardDebtView(String grantId, String questId, String questTitle, int occurrence,
+                               int rewardIndex, long amount, int attempts, String lastError,
+                               String createdAt) {
+    }
+
+    /**
+     * Reprend le paiement d'une récompense due ({@code economy.debt.retry}).
+     *
+     * <p>Réutilise l'identité de paiement initiale et le montant enregistré : une reprise ne peut
+     * donc <strong>jamais</strong> payer deux fois, ni payer un montant différent de ce qui était
+     * dû. Codes : {@code PAID}, {@code ALREADY_PAID}, {@code ALREADY_SETTLED}, {@code UNKNOWN_DEBT},
+     * {@code WRONG_PLAYER}, {@code ERROR}.</p>
+     */
+    CompletableFuture<QuestRewardRetryView> retryQuestRewardDebt(UUID playerId, String grantId);
+
+    /**
+     * @param balanceAfter solde <strong>relu</strong> après l'opération ({@code 0} si rien n'a été
+     *                     crédité)
+     */
+    record QuestRewardRetryView(boolean ok, String code, String message, long amount, long balanceAfter) {
+    }
+
+    /**
+     * Marque une récompense due comme <strong>réglée à la main</strong> ({@code economy.debt.settle}).
+     *
+     * <p>Ne touche <strong>pas</strong> au portefeuille, et c'est tout l'intérêt : l'administrateur
+     * a déjà compensé le joueur comme il l'entendait, et cette opération empêche la même récompense
+     * d'être payée une seconde fois par une reprise ultérieure. La raison est
+     * <strong>obligatoire</strong> et conservée avec la ligne.</p>
+     */
+    CompletableFuture<MutationResult> settleQuestRewardDebt(UUID playerId, String grantId, String reason);
 }

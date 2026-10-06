@@ -56,6 +56,7 @@ class QuestMoneyRewardIntegrationTest {
     private PlayerProfileRepository profileRepository;
     private WalletRepository wallets;
     private QuestProgressEngine engine;
+    private Path questsDir;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -67,7 +68,7 @@ class QuestMoneyRewardIntegrationTest {
         profileRepository = new PlayerProfileRepository(database);
         wallets = new WalletRepository(database);
 
-        Path questsDir = tempDir.resolve("quests");
+        questsDir = tempDir.resolve("quests");
         Files.createDirectories(questsDir);
         Files.writeString(questsDir.resolve("paid.yml"), questYaml(PAID_QUEST.toString(), 250, false));
         Files.writeString(questsDir.resolve("daily.yml"), questYaml(DAILY_QUEST.toString(), 50, true));
@@ -244,5 +245,39 @@ class QuestMoneyRewardIntegrationTest {
                   - type: MONEY
                     amount: %d
                 """.formatted(id, repeatable, amount);
+    }
+
+    @Test
+    void twoMoneyRewardsOnTheSameCompletionAreBothPaid() throws Exception {
+        // Mesure du défaut signalé : si les deux récompenses partagent la même identité de
+        // paiement, la clé primaire rejette la seconde comme « déjà payée » et le joueur ne
+        // reçoit que la première, SANS aucune erreur visible.
+        Files.writeString(questsDir.resolve("double.yml"), """
+                id: rpgquest:tc250_double
+                title: "Deux récompenses"
+                description: "Description"
+                category: test
+                repeatable: false
+                steps:
+                  - id: kill_step
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 1
+                rewards:
+                  - type: MONEY
+                    amount: 100
+                  - type: MONEY
+                    amount: 30
+                """);
+        engine.reloadQuestDefinitions();
+        PlayerMock player = addPlayer();
+        engine.accept(player, NamespacedKey.fromString("rpgquest:tc250_double"))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+
+        awaitBalance(player.getUniqueId(), 130L);
+        assertEquals(2, wallets.history(player.getUniqueId(), 10).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).size());
     }
 }

@@ -402,22 +402,53 @@ d'inventaire n'est jamais compté comme de l'argent.
   technique : seul l'invariant vérifiable est appliqué (strictement positif). Le panel
   **avertit** au-delà de 1 000 000 (`QuestValidator.MONEY_REWARD_WARNING_THRESHOLD`) pour attraper
   la faute de frappe, sans jamais refuser.
-- **Créditée au plus une fois par occasion de complétion.** Le moteur fournit un identifiant
-  d'occasion stable (`ActiveQuestProgress#rewardGrantId`) ; `WalletRepository#creditQuestReward`
-  réserve cet identifiant dans `quest_reward_grants` **et** met à jour le portefeuille dans la
-  **même transaction SQL**. Il n'existe donc aucun instant où l'argent serait crédité sans trace
-  (un retry doublerait le gain) ni tracé sans être crédité (le joueur perdrait sa récompense).
-  Rejouer la même occasion ne recrédite rien ; une erreur SQL annule tout et laisse l'occasion
-  payable.
+- **Enregistrée comme une dette avant d'être payée (schéma V26).** À la remise,
+  `QuestProgressRepository#completeQuestWithMoneyDebts` écrit dans **une seule transaction** l'état
+  `COMPLETED` de la quête **et** une ligne `PENDING` par récompense monétaire. Cette atomicité
+  ferme une fenêtre précise : avec deux transactions séparées, un arrêt brutal entre les deux
+  laisse soit une quête terminée **sans aucune trace** de la récompense due (perdue en silence,
+  et jamais rejouable si la quête n'est pas répétable), soit des dettes pour une quête **pas
+  terminée** (le joueur la refait et est payé deux fois).
+- **Créditée au plus une fois.** `WalletRepository#payQuestRewardDebt` fait passer la ligne
+  `PENDING → PAID` **et** met à jour le portefeuille **et** écrit la ligne `transactions`, dans la
+  même transaction. Le passage est conditionnel (`WHERE status = 'PENDING'`), donc deux reprises
+  concurrentes ne peuvent pas l'emporter toutes les deux. Une erreur SQL annule tout : la dette
+  reste `PENDING`, donc encore payable.
+- **Une récompense par ligne.** L'identité de paiement est `<jeton de complétion>#<index>` : une
+  quête portant plusieurs récompenses `MONEY` les paie **toutes**. Avec une identité partagée
+  (premier lot), la clé primaire rejetait toutes sauf la première — défaut mesuré : `100 + 30`
+  créditait **100**.
+- **Le montant et le contexte du journal viennent de la LIGNE**, jamais de l'appelant. C'est ce qui
+  rend vraie l'exigence « les montants dus sont conservés même si la définition de quête change
+  ensuite » : rééditer la quête ne touche pas une dette déjà née.
+- **Reprise bornée.** Les dettes restées `PENDING` sont relues **une fois par chargement de
+  joueur** (`QuestProgressEngine#recoverPendingMoneyRewards`, jamais une tâche par tick, jamais sur
+  le thread principal), au plus `RECOVERY_BATCH = 20` à la fois, et une dette ayant déjà échoué
+  `RECOVERY_MAX_ATTEMPTS = 5` fois est **laissée au panel** au lieu d'être réessayée indéfiniment.
+  Une reprise échouée ne parle **pas** au joueur : sans cela, une base en panne produirait le même
+  message d'échec à chaque reconnexion. Une reprise ne rejoue **que** le crédit monétaire — ni XP,
+  ni objets, ni variables, ni commandes, ni la complétion elle-même.
+- **Règlement manuel.** `SETTLED_MANUALLY` existe pour un cas précis : un administrateur a compensé
+  le joueur par un crédit libre. Ce statut rend la dette **non payable**, sinon une reprise
+  ultérieure paierait la même récompense une seconde fois. Il ne touche **aucun** solde.
+- **Limite historique assumée.** Les complétions antérieures à V26 n'ont laissé aucune trace d'une
+  récompense non payée : la migration marque les lignes existantes `PAID` (elles l'étaient, par
+  construction de V25) et n'invente **aucune** dette rétroactive. Rien n'est payé rétroactivement,
+  et le panel le dit à l'écran.
 - **Quête répétable** : chaque acceptation crée une nouvelle progression, donc une nouvelle
   occasion, légitimement payée. `quest_reward_grants.occurrence` numérote ces complétions par
   joueur et par quête.
 - **Traçabilité** : une ligne `transactions` de type `QUEST_REWARD` avec le contexte
-  `quest:<id>#<occasion>` — rattachable à une complétion précise des mois plus tard, et non à un
-  « gain de jeu » anonyme.
-- **Table `quest_reward_grants` (schéma V25)** : elle ne contient **aucun solde**. `wallets` reste
-  la seule source de vérité ; cette table ne répond qu'à « cette occasion a-t-elle déjà été
-  payée ? ». Volontairement **sans** clé étrangère vers `player_profiles`, contrairement à
+  `quest:<id>#<identité de paiement>`, **composé depuis la ligne de dette** — rattachable à une
+  complétion précise des mois plus tard, et non à un « gain de jeu » anonyme.
+- **Administration** : trois actions agent, `economy.debts` (lecture, `ECONOMY_READ`),
+  `economy.debt.retry` et `economy.debt.settle` (sensibles, `ECONOMY_WRITE`, confirmation + audit).
+  La reprise **n'accepte aucun montant** — en accepter un permettrait d'en inventer un.
+- **Table `quest_reward_grants` (schéma V25, étendue en V26)** : elle ne contient **aucun solde**.
+  `wallets` reste la seule source de vérité ; cette table ne répond qu'à deux questions — « que
+  reste-t-il à payer ? » et « cette occasion a-t-elle déjà été payée ? ». Statuts réels :
+  `PENDING` / `PAID` / `SETTLED_MANUALLY`, plus `attempts` et `last_error` pour afficher un état
+  honnête (« en échec », avec son motif) au lieu d'un « en attente » qui cacherait des échecs. Volontairement **sans** clé étrangère vers `player_profiles`, contrairement à
   `transactions` : un `ON DELETE CASCADE` rendrait un profil supprimé puis recréé payable une
   seconde fois pour les mêmes occasions.
 - **Hors périmètre à ce jour** (décisions de gameplay non prises) : monnaie physique et conversion

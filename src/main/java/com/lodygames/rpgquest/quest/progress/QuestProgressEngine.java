@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import com.lodygames.rpgquest.database.QuestProgressRecord;
 import com.lodygames.rpgquest.database.QuestProgressRepository;
+import com.lodygames.rpgquest.economy.QuestRewardDue;
 import com.lodygames.rpgquest.economy.QuestRewardPayer;
 import com.lodygames.rpgquest.economy.QuestRewardReceipt;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
@@ -70,6 +71,18 @@ public final class QuestProgressEngine implements PluginService {
      */
     private static final Title.Times FEEDBACK_TITLE_TIMES =
             Title.Times.times(Duration.ofMillis(250), Duration.ofMillis(2500), Duration.ofMillis(500));
+
+    /**
+     * Nombre maximal de récompenses monétaires dues reprises en une fois, à la connexion d'un
+     * joueur. Borne volontaire : une reprise est un rattrapage, pas un traitement par lots.
+     */
+    private static final int RECOVERY_BATCH = 20;
+
+    /**
+     * Au-delà de ce nombre d'échecs, une dette n'est plus reprise automatiquement et attend une
+     * action du panel. S'acharner ne corrigerait pas la cause et noierait les logs.
+     */
+    private static final int RECOVERY_MAX_ATTEMPTS = 5;
 
     private final RPGQuestPlugin plugin;
     private final YamlQuestEngine questEngine;
@@ -204,7 +217,13 @@ public final class QuestProgressEngine implements PluginService {
             }
 
             return CompletableFuture.allOf(counterLoads.toArray(CompletableFuture[]::new))
-                    .thenRun(() -> activeByPlayer.put(playerId, map));
+                    .thenRun(() -> {
+                        activeByPlayer.put(playerId, map);
+                        // Rattrapage des récompenses monétaires restées dues (crash, panne SQL).
+                        // Ici et nulle part ailleurs : une seule fois par chargement, asynchrone,
+                        // borné — jamais une tâche répétitive.
+                        recoverPendingMoneyRewards(playerId);
+                    });
         }).exceptionally(error -> {
             logger.error("Impossible de charger la progression de quêtes pour {}", playerId, error);
             return null;
@@ -736,14 +755,48 @@ public final class QuestProgressEngine implements PluginService {
             playerActive.remove(quest.id());
         }
 
-        repository.upsertState(playerId, quest.id(), QuestState.COMPLETED, null).exceptionally(error -> {
-            logger.error("Impossible de persister la fin de quête {} pour {}", quest.id(), playerId, error);
-            return null;
-        });
+        // Montants monétaires de CETTE quête, dans leur ordre de déclaration. Chacun devient une
+        // dette distincte : plusieurs récompenses MONEY sur une même complétion doivent toutes
+        // être payées, et non pas la seule première (défaut mesuré du premier lot).
+        List<Long> owed = new ArrayList<>();
+        for (QuestReward reward : quest.rewards()) {
+            if (reward instanceof MoneyReward money) {
+                owed.add((long) money.amount());
+            }
+        }
 
-        List<Component> rewardLines = grantRewards(player, quest, progress.rewardGrantId());
+        // Complétion ET dettes dans la MÊME transaction (voir
+        // QuestProgressRepository#completeQuestWithMoneyDebts) : sans cela, un arrêt brutal entre
+        // les deux perd soit la récompense, soit la garantie de ne pas la payer deux fois.
+        repository.completeQuestWithMoneyDebts(playerId, quest.id(), progress.rewardGrantId(), owed)
+                .thenAccept(grantIds -> payRecordedMoneyRewards(playerId, quest, grantIds))
+                .exceptionally(error -> {
+                    logger.error("Impossible de persister la fin de quête {} pour {}", quest.id(), playerId, error);
+                    // La complétion n'est pas persistée : surtout ne rien annoncer comme payé. Le
+                    // joueur est averti, et sa quête reste à reprendre au prochain chargement.
+                    runOnMainThread(() -> {
+                        Player online = plugin.getServer().getPlayer(playerId);
+                        if (online != null && !owed.isEmpty()) {
+                            online.sendMessage(messagesService.current().format("quest.reward-money-failed"));
+                        }
+                    });
+                    return null;
+                });
+
+        List<Component> rewardLines = grantRewards(player, quest);
         showQuestCompleted(player, quest, rewardLines);
         notifyChanged(playerId);
+    }
+
+    /**
+     * Paie les dettes tout juste enregistrées pour cette complétion. Appelé une fois, après que la
+     * complétion et les dettes sont <strong>durablement</strong> en base : si le serveur s'arrête
+     * ici, les dettes survivent et la reprise les retrouvera.
+     */
+    private void payRecordedMoneyRewards(UUID playerId, QuestDefinition quest, List<String> grantIds) {
+        for (String grantId : grantIds) {
+            payMoneyReward(playerId, quest.title().base(), grantId, true);
+        }
     }
 
     // ---- Notifications sobres (Title/ActionBar Adventure, jamais le chat) ----------------------
@@ -810,7 +863,7 @@ public final class QuestProgressEngine implements PluginService {
      * maintenant annoncerait un gain avant d'avoir la moindre preuve qu'il a eu lieu. Le message
      * part donc plus tard, depuis {@link #payMoneyReward}, et seulement si la base a confirmé.</p>
      */
-    private List<Component> grantRewards(Player player, QuestDefinition quest, String grantId) {
+    private List<Component> grantRewards(Player player, QuestDefinition quest) {
         List<Component> lines = new ArrayList<>();
         for (QuestReward reward : quest.rewards()) {
             switch (reward) {
@@ -838,61 +891,106 @@ public final class QuestProgressEngine implements PluginService {
                     plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), command);
                     lines.add(messagesService.current().format("quest.reward-line-special"));
                 }
-                case MoneyReward r -> payMoneyReward(player, quest, grantId, r.amount());
+                // MoneyReward : rien ici. Son crédit est asynchrone ET passe par une dette
+                // durable enregistrée avec la complétion — voir payRecordedMoneyRewards.
+                case MoneyReward r -> { }
             }
         }
         return lines;
     }
 
     /**
-     * Crédite la récompense monétaire puis — <strong>seulement si la base l'a confirmé</strong> —
-     * annonce le gain et le nouveau solde (issue #16).
+     * Paie une dette monétaire puis — <strong>seulement si la base l'a confirmé</strong> — annonce
+     * le gain et le nouveau solde (issue #16).
      *
-     * <p>Trois propriétés tenues ici, chacune pour une raison concrète :</p>
+     * <p>Quatre propriétés tenues ici, chacune pour une raison concrète :</p>
      * <ul>
-     *   <li><strong>jamais deux fois</strong> : {@code grantId} vient de la progression du joueur et
-     *       ne change pas pour une même complétion, donc un rejeu se heurte à la réservation en
-     *       base et ressort {@code ALREADY_CREDITED}, sans toucher au solde ;</li>
-     *   <li><strong>jamais annoncé sans crédit</strong> : un échec de persistance produit un message
-     *       d'échec explicite, pas un silence et pas un faux succès. Le joueur sait qu'il doit le
-     *       signaler, et l'administrateur peut créditer depuis le panel avec une raison ;</li>
+     *   <li><strong>jamais deux fois</strong> : {@code grantId} est l'identité de paiement
+     *       enregistrée en base à la complétion. Une reprise réutilise la MÊME, donc le passage
+     *       conditionnel {@code PENDING → PAID} ne peut l'emporter qu'une fois ;</li>
+     *   <li><strong>jamais annoncé sans crédit</strong> : un échec produit un message explicite,
+     *       pas un silence et pas un faux succès, et la dette reste payable ;</li>
+     *   <li><strong>jamais de répétition infinie de messages</strong> : une reprise réussie parle
+     *       une fois ; une reprise qui échoue ne parle <strong>pas</strong> au joueur
+     *       ({@code announceFailure} est faux), elle incrémente le compteur de tentatives et laisse
+     *       la main au panel. Sans cela, un joueur dont la base est en panne recevrait le même
+     *       message d'échec à chaque reconnexion ;</li>
      *   <li><strong>le chat, jamais l'ActionBar</strong> : la progression des objectifs occupe
-     *       l'ActionBar et se remplace en place. Y écrire une notification d'économie effacerait
-     *       durablement l'affichage de progression — exactement ce qu'il ne faut pas.</li>
+     *       l'ActionBar et se remplace en place.</li>
      * </ul>
      */
-    private void payMoneyReward(Player player, QuestDefinition quest, String grantId, int amount) {
-        UUID playerId = player.getUniqueId();
-        String questId = quest.id().toString();
-        rewardPayer.payQuestReward(playerId, questId, grantId, amount)
+    private void payMoneyReward(UUID playerId, String questTitle, String grantId, boolean announceFailure) {
+        rewardPayer.payQuestReward(playerId, grantId)
                 .exceptionally(error -> {
-                    logger.error("Échec du crédit de la récompense monétaire de {} pour {} (occasion {})",
-                            questId, playerId, grantId, error);
+                    logger.error("Échec du paiement de la récompense monétaire {} pour {}", grantId, playerId, error);
+                    rewardPayer.recordQuestRewardFailure(grantId, error.getClass().getSimpleName()
+                            + ": " + error.getMessage());
                     return QuestRewardReceipt.failed();
                 })
                 .thenAccept(receipt -> runOnMainThread(() -> {
+                    if (receipt.status() == QuestRewardReceipt.Status.FAILED && announceFailure) {
+                        rewardPayer.recordQuestRewardFailure(grantId, "paiement refusé ou dette introuvable");
+                    }
                     Player online = plugin.getServer().getPlayer(playerId);
                     if (online == null) {
-                        // Déconnecté entre la remise et la confirmation : l'argent est bel et bien
-                        // en base (le portefeuille est persistant), seul le message est perdu. Il
-                        // reverra son solde dans le journal ou avec /money.
+                        // Déconnecté entre la remise et la confirmation : l'argent est en base (le
+                        // portefeuille est persistant), seul le message est perdu. Il reverra son
+                        // solde dans le journal ou avec /money.
                         return;
                     }
                     switch (receipt.status()) {
                         case CREDITED -> online.sendMessage(messagesService.current().format("quest.reward-money-credited",
-                                Placeholder.parsed("quest", quest.title().base()),
+                                Placeholder.parsed("quest", questTitle),
                                 Placeholder.unparsed("amount", String.valueOf(receipt.amount())),
                                 Placeholder.unparsed("balance", String.valueOf(receipt.balanceAfter()))));
                         case ALREADY_CREDITED -> logger.warn(
-                                "Récompense monétaire de {} déjà créditée pour {} (occasion {}, complétion n°{}) : "
-                                        + "aucun second crédit, aucun message au joueur.",
-                                questId, playerId, grantId, receipt.occurrence());
-                        case FAILED -> online.sendMessage(
-                                messagesService.current().format("quest.reward-money-failed"));
+                                "Récompense monétaire {} déjà réglée pour {} (complétion n°{}) : aucun second "
+                                        + "crédit, aucun message au joueur.", grantId, playerId, receipt.occurrence());
+                        case FAILED -> {
+                            if (announceFailure) {
+                                online.sendMessage(messagesService.current().format("quest.reward-money-failed"));
+                            }
+                        }
                     }
                     // Un solde affiché doit suivre la transaction : le journal ouvert se recompose.
                     notifyChanged(playerId);
                 }));
+    }
+
+    /**
+     * Reprend les récompenses monétaires restées dues pour ce joueur (issue #16, second lot).
+     *
+     * <p>Appelée <strong>une fois par chargement de joueur</strong>, jamais dans une boucle par
+     * tick : c'est le seul moment où une dette oubliée a une chance d'être payée sans intervention.
+     * La lecture est <strong>bornée</strong> ({@link #RECOVERY_BATCH}) et les dettes ayant déjà
+     * échoué {@link #RECOVERY_MAX_ATTEMPTS} fois sont <strong>laissées au panel</strong> plutôt que
+     * réessayées indéfiniment — si le paiement échoue encore et encore, la cause est ailleurs et
+     * s'acharner ne ferait que remplir les logs.</p>
+     *
+     * <p>Une reprise ne rejoue <strong>que</strong> le crédit monétaire : ni l'XP, ni les objets,
+     * ni les variables, ni les commandes, ni la complétion de quête elle-même. Elle ne touche
+     * qu'aux lignes de dette déjà écrites.</p>
+     */
+    private void recoverPendingMoneyRewards(UUID playerId) {
+        rewardPayer.pendingQuestRewards(playerId, RECOVERY_BATCH).thenAccept(dues -> {
+            for (QuestRewardDue due : dues) {
+                if (due.attempts() >= RECOVERY_MAX_ATTEMPTS) {
+                    logger.warn("Récompense monétaire {} laissée en attente pour {} : {} tentatives "
+                                    + "déjà échouées ({}). Reprise manuelle depuis PlugAdmin.",
+                            due.grantId(), playerId, due.attempts(), due.lastError());
+                    continue;
+                }
+                String title = questEngine.find(NamespacedKey.fromString(due.questId()))
+                        .map(quest -> quest.title().base())
+                        // La quête a pu être supprimée depuis : la dette reste due, et son montant
+                        // est celui figé à la complétion. On ne devine aucun titre.
+                        .orElse(due.questId());
+                payMoneyReward(playerId, title, due.grantId(), false);
+            }
+        }).exceptionally(error -> {
+            logger.error("Impossible de relire les récompenses monétaires dues de {}", playerId, error);
+            return null;
+        });
     }
 
     private int requiredAmount(QuestObjective objective) {

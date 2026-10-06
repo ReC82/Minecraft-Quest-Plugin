@@ -41,6 +41,30 @@ Deux familles :
 - **Un montant saisi dans l'éditeur n'agit pas tout seul** : la quête doit être *publiée* sur le
   serveur, puis *rechargée* (voir « Rechargement du contenu »). Tant qu'elle n'est que dans la
   source, le joueur ne sera pas payé — et aucune erreur ne s'affichera en jeu.
+
+## Récompenses monétaires en attente
+
+Si une récompense monétaire n'a pas pu être créditée (arrêt du serveur, panne de base), elle **n'est
+pas perdue** : elle reste enregistrée avec son joueur, sa quête, son occurrence et son **montant
+figé à la complétion**. Elle est reprise automatiquement à la prochaine connexion du joueur, avec la
+**même identité de paiement** — un double paiement est donc impossible.
+
+Fiche joueur → **Récompenses en attente** :
+
+- **Lire les récompenses en attente** interroge le serveur et affiche l'état **réel** : « En
+  attente », ou « En échec (N tentative(s)) » **avec son motif**.
+- **Reprendre le paiement** paie le montant enregistré. Il n'y a **aucun montant à saisir** — donc
+  aucun à inventer. Rejouer la reprise ne crédite rien une seconde fois.
+- **Marquer réglée à la main** s'utilise **après** avoir compensé le joueur par un crédit manuel.
+  Elle ne touche **aucun** solde : elle empêche seulement cette même récompense d'être payée une
+  seconde fois.
+
+**Ne confondez pas les deux gestes.** Un crédit manuel est une compensation libre et **ne règle
+aucune dette** : si vous compensez sans marquer la récompense réglée, elle resterait payable.
+
+**Limite** : seules les complétions **postérieures** à la mise à jour qui a introduit ce mécanisme
+peuvent apparaître. Une récompense perdue avant n'a laissé aucune trace exploitable ; aucun montant
+n'est deviné, et rien n'est payé rétroactivement.
 - `reset` remet la quête à zéro (état + compteurs d'objectifs) ; **n'annule pas** les récompenses
   déjà données ; utilisable joueur hors ligne.
 

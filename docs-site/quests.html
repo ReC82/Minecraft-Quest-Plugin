@@ -96,12 +96,24 @@ rewards:                    # optionnel
       </tbody>
     </table>
     <p class="text-body-secondary">
-      <code>MONEY</code> est crédité <strong>au plus une fois par complétion</strong> : la réservation
-      de l'occasion et la mise à jour du portefeuille se font dans la même transaction SQL, donc ni
-      double paiement sur un retry, ni récompense perdue sur une panne. Une quête <code>repeatable</code>
-      ouvre une nouvelle occasion à chaque reprise et se paie donc à nouveau. Le moteur n'impose
-      <strong>aucun plafond</strong> au montant (c'est une décision d'équilibrage) ; l'éditeur du Control
-      Panel se contente d'<em>avertir</em> au-delà d'un million, pour attraper la faute de frappe.
+      <code>MONEY</code> est crédité <strong>au plus une fois par complétion</strong>, et une
+      récompense due n'est jamais perdue. À la remise, la complétion de la quête <strong>et</strong>
+      une ligne de dette par récompense monétaire sont écrites dans la <strong>même transaction</strong> ;
+      le paiement fait ensuite passer cette ligne de « due » à « payée » <em>avec</em> le crédit du
+      portefeuille et la ligne de journal. Un arrêt brutal avant le paiement laisse donc une dette
+      identifiable, <strong>reprise</strong> à la prochaine connexion du joueur avec la
+      <strong>même</strong> identité de paiement — jamais un nouvel identifiant, donc jamais deux
+      crédits. Une quête portant <strong>plusieurs</strong> récompenses <code>MONEY</code> les paie
+      toutes, chacune ayant sa propre identité.
+    </p>
+    <p class="text-body-secondary">
+      Le montant payé est celui <strong>enregistré à la complétion</strong> : rééditer la quête
+      ensuite ne change pas une dette déjà née. Le moteur n'impose <strong>aucun plafond</strong> au
+      montant (c'est une décision d'équilibrage) ; l'éditeur du Control Panel se contente
+      d'<em>avertir</em> au-delà d'un million, pour attraper la faute de frappe. Les reprises sont
+      <strong>bornées</strong> : une relecture par chargement de joueur, et au-delà de quelques
+      échecs la récompense attend une action d'administrateur plutôt que d'être réessayée
+      indéfiniment.
     </p>
   </section>
 

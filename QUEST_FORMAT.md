@@ -53,13 +53,30 @@ plafond : le montant est une décision d'équilibrage, pas une règle technique.
 L'éditeur du Control Panel se contente d'**avertir** au-delà d'un million,
 pour attraper la faute de frappe à six zéros.
 
-Le crédit a lieu **au plus une fois par complétion** : la réservation de
-l'occasion (table `quest_reward_grants`) et la mise à jour du portefeuille
-vivent dans la **même transaction SQL**, donc ni double paiement sur un
-retry, ni récompense perdue sur une panne. Une quête `repeatable: true` ouvre
-une nouvelle occasion à chaque reprise et se paie donc à nouveau. Chaque
-crédit laisse une ligne `transactions` de type `QUEST_REWARD` dont le
-contexte cite la quête et l'occasion.
+Le crédit a lieu **au plus une fois par complétion**, et une récompense due
+n'est jamais perdue. À la remise, la complétion de la quête **et** une ligne
+de dette par récompense monétaire sont écrites dans la **même transaction**
+(table `quest_reward_grants`) ; le paiement fait ensuite passer cette ligne
+`PENDING → PAID` **avec** le crédit du portefeuille et la ligne de journal,
+toujours dans une seule transaction. Conséquences :
+
+- un arrêt brutal **avant** le paiement laisse une dette identifiable
+  (joueur, quête, occurrence, montant, état) : elle est **reprise** à la
+  prochaine connexion du joueur, avec la **même** identité de paiement, donc
+  sans risque de payer deux fois ;
+- une quête portant **plusieurs** récompenses `MONEY` les paie toutes :
+  chacune a sa propre identité (`<jeton>#<index>`) ;
+- le montant payé est celui **enregistré à la complétion**, jamais celui de
+  la définition courante : rééditer la quête ne change pas une dette déjà née.
+
+Une quête `repeatable: true` ouvre une nouvelle occurrence à chaque reprise et
+se paie donc à nouveau. Chaque crédit laisse une ligne `transactions` de type
+`QUEST_REWARD` dont le contexte cite la quête et l'identité de paiement.
+
+Les reprises sont **bornées** : une relecture par chargement de joueur, 20
+dettes au plus, et au-delà de 5 échecs la dette attend une action
+d'administrateur (PlugAdmin → fiche joueur → « Récompenses en attente »)
+plutôt que d'être réessayée indéfiniment.
 
 Le message de gain arrive **séparément** du résumé de fin de quête, un court
 instant plus tard, et seulement après confirmation de la base : il n'est

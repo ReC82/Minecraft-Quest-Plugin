@@ -240,6 +240,14 @@ public final class AgentActionCatalog {
                 "Créditer un joueur", "player.catalog");
         addSensitiveWrite("economy.debit", Permission.ECONOMY_WRITE, true,
                 "Débiter un joueur", "player.catalog");
+        // Issue #16 (second lot) — récompenses monétaires restées dues. La lecture est un relevé ;
+        // la reprise et le règlement manuel touchent à l'argent, donc sensibles et confirmés.
+        add("economy.debts", Permission.ECONOMY_READ, false, true,
+                "Lire les récompenses monétaires en attente d'un joueur");
+        addSensitiveWrite("economy.debt.retry", Permission.ECONOMY_WRITE, true,
+                "Reprendre le paiement d'une récompense due", "player.catalog");
+        addSensitiveWrite("economy.debt.settle", Permission.ECONOMY_WRITE, true,
+                "Marquer une récompense due comme réglée à la main", "player.catalog");
         addSensitiveWrite("player.ban", Permission.PLAYER_MODERATE, true, "Bannir un joueur", "player.catalog");
         addSensitiveWrite("player.unban", Permission.PLAYER_MODERATE, true, "Débannir un joueur", "player.catalog");
         add("quest.start", Permission.ACTION_QUEST, true, true, "Démarrer une quête");
@@ -916,6 +924,52 @@ public final class AgentActionCatalog {
                     }
                     params.put("history", Integer.toString(n));
                 }
+            }
+            case "economy.debts" -> {
+                String limit = trim(form.get("limit"));
+                if (!limit.isEmpty()) {
+                    int n;
+                    try {
+                        n = Integer.parseInt(limit);
+                    } catch (NumberFormatException e) {
+                        return Validation.fail("Nombre de récompenses dues invalide.");
+                    }
+                    if (n < 1 || n > 100) {
+                        return Validation.fail("Nombre de récompenses dues hors bornes (1 à 100).");
+                    }
+                    params.put("limit", Integer.toString(n));
+                }
+            }
+            case "economy.debt.retry" -> {
+                String grant = trim(form.get("grant"));
+                if (grant.isEmpty()) {
+                    return Validation.fail("Identifiant de récompense due manquant.");
+                }
+                if (grant.length() > 128) {
+                    return Validation.fail("Identifiant de récompense due invalide (trop long).");
+                }
+                // AUCUN montant ici, volontairement : une reprise paie ce qui a été enregistré à la
+                // complétion. Laisser saisir un montant permettrait d'en inventer un.
+                params.put("grant", grant);
+            }
+            case "economy.debt.settle" -> {
+                String grant = trim(form.get("grant"));
+                if (grant.isEmpty()) {
+                    return Validation.fail("Identifiant de récompense due manquant.");
+                }
+                if (grant.length() > 128) {
+                    return Validation.fail("Identifiant de récompense due invalide (trop long).");
+                }
+                String reason = trim(form.get("reason"));
+                if (reason.isEmpty()) {
+                    return Validation.fail("Une raison est obligatoire : elle est conservée avec la "
+                            + "récompense réglée, et c'est la seule trace de la compensation.");
+                }
+                if (reason.length() > 200 || reason.indexOf('\n') >= 0) {
+                    return Validation.fail("Raison trop longue (max 200) ou multi-ligne.");
+                }
+                params.put("grant", grant);
+                params.put("reason", reason);
             }
             case "player.kick" -> {
                 String reason = trim(form.get("reason"));

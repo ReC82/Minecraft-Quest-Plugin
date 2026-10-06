@@ -625,6 +625,10 @@ public final class AgentPages {
             toggles.add(new String[] {slug + "-f-eco", "Monnaie", "box", "btn-outline-secondary"});
             forms.append(actionCollapse(slug + "-f-eco", "<div class=\"card card-body npc-formcard\">"
                     + playerEconomyTools(session, agentId, uuid, name, canEcoWrite) + "</div>"));
+            toggles.add(new String[] {slug + "-f-debt", "Récompenses en attente", "money",
+                    "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-debt", "<div class=\"card card-body npc-formcard\">"
+                    + playerRewardDebtTools(session, agentId, uuid, name, canEcoWrite) + "</div>"));
         }
         // ---- Issue #210 : OP/DEOP, secours, expulsion, whitelist ----
         if (canOp) {
@@ -669,7 +673,8 @@ public final class AgentPages {
         for (String type : new String[] {"player.ban", "player.unban", "player.resetnew.confirm",
                 "player.op", "player.deop", "player.send.hub", "player.kick",
                 "player.whitelist.add", "player.whitelist.remove",
-                "economy.balance", "economy.credit", "economy.debit"}) {
+                "economy.balance", "economy.credit", "economy.debit",
+                "economy.debts", "economy.debt.retry", "economy.debt.settle"}) {
             latestForPlayer(agentId, type, uuid).ifPresent(row -> sb.append(resultLine("Dernière action", row)));
         }
 
@@ -796,6 +801,11 @@ public final class AgentPages {
             if (credit) {
                 sb.append("<p class=\"muted\">Un crédit <strong>crée de la monnaie</strong>. "
                         + "L'opération est tracée avec sa raison.</p>");
+                sb.append("<p class=\"muted\">Ce n'est <strong>pas</strong> la même chose que "
+                        + "reprendre une récompense de quête : un crédit manuel est une compensation "
+                        + "libre et ne règle aucune dette. Si vous compensez une récompense non payée, "
+                        + "marquez-la ensuite <strong>réglée à la main</strong> dans « Récompenses en "
+                        + "attente », sinon elle resterait payable une seconde fois.</p>");
             } else {
                 sb.append("<p class=\"muted\">Un débit ne peut <strong>jamais</strong> rendre le "
                         + "solde négatif : si les fonds sont insuffisants, rien n'est modifié et le "
@@ -820,6 +830,136 @@ public final class AgentPages {
                     .ifPresent(row -> sb.append(resultLine("Dernière opération", row)));
         }
         return sb.toString();
+    }
+
+    /**
+     * Récompenses monétaires de quête <strong>restées dues</strong> (issue #16, second lot) : état
+     * réel, motif d'échec, et deux actions qu'il ne faut surtout pas confondre.
+     *
+     * <p>La page explicite la différence, parce qu'elle décide de ce que touche l'argent :</p>
+     * <ul>
+     *   <li><strong>Reprendre</strong> paie exactement ce qui a été enregistré à la complétion, avec
+     *       l'identité de paiement initiale. Aucun montant n'est saisissable, donc aucun ne peut
+     *       être inventé, et un double paiement est impossible ;</li>
+     *   <li><strong>Créditer manuellement</strong> (bloc « Monnaie » ci-dessus) est une
+     *       compensation libre : elle ne règle <strong>pas</strong> la dette, qui resterait donc
+     *       payable une seconde fois. Après une compensation, il faut marquer la récompense
+     *       <strong>réglée à la main</strong> — c'est exactement ce que fait le second bouton.</li>
+     * </ul>
+     */
+    private String playerRewardDebtTools(Session session, String agentId, String uuid, String name,
+                                         boolean canWrite) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("money"))
+                .append("Récompenses en attente — ").append(Http.esc(name)).append("</p>");
+        sb.append("<p class=\"muted\">Une récompense monétaire de quête qui n'a pas pu être créditée "
+                + "(arrêt du serveur, panne de base) reste <strong>enregistrée</strong> avec son "
+                + "joueur, sa quête, son occurrence et son montant. Ce montant est celui <strong>figé "
+                + "à la complétion</strong> : rééditer la quête ensuite ne change pas ce qui est dû.</p>");
+        // Limite HISTORIQUE, dite franchement : avant ce mécanisme, une récompense perdue ne
+        // laissait aucune trace. Rien ne permet de la reconstituer, et inventer un montant serait
+        // pire que de ne rien faire.
+        sb.append(debtHistoryNote());
+
+        sb.append(formStart(session, agentId, "economy.debts", "/players", uuid));
+        sb.append("<input type=\"hidden\" name=\"limit\" value=\"20\">");
+        sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">")
+                .append(Icons.icon("refresh")).append("Lire les récompenses en attente</button></form>");
+
+        Optional<AgentActionRow> survey = latestForPlayer(agentId, "economy.debts", uuid);
+        survey.ifPresent(row -> sb.append(resultLine("Dernier relevé", row)));
+        List<Object> debts = survey.flatMap(this::detailsOf)
+                .map(details -> asList(details.get("debts"))).orElse(List.of());
+
+        if (survey.isEmpty()) {
+            sb.append(Ui.banner("info", "Aucun relevé encore demandé pour ce joueur : le bouton "
+                    + "ci-dessus interroge le serveur."));
+        } else if (debts.isEmpty()) {
+            sb.append(Ui.banner("ok", "Aucune récompense monétaire en attente au dernier relevé."));
+        } else {
+            sb.append("<table class=\"table table-sm align-middle\"><thead><tr>"
+                    + "<th>Quête</th><th>Occurrence</th><th>Montant</th><th>État</th></tr></thead><tbody>");
+            for (Object raw : debts) {
+                Map<String, Object> debt = asMap(raw);
+                String grant = str(debt.get("grantId"));
+                long attempts = asLong(debt.get("attempts"));
+                String lastError = str(debt.get("lastError"));
+                sb.append("<tr><td>").append(Http.esc(str(debt.get("questTitle"))))
+                        .append("<br><span class=\"muted\">").append(Http.esc(str(debt.get("questId"))))
+                        .append("</span></td>");
+                sb.append("<td>n°").append(asLong(debt.get("occurrence")));
+                sb.append("<span class=\"muted\"> / récompense ").append(asLong(debt.get("rewardIndex")) + 1)
+                        .append("</span></td>");
+                sb.append("<td><strong>").append(asLong(debt.get("amount"))).append("</strong> pièce(s)</td>");
+                // État RÉEL : jamais « en attente » tout court quand il y a eu des échecs.
+                if (attempts == 0) {
+                    sb.append("<td><span class=\"badge text-bg-secondary\">En attente</span></td>");
+                } else {
+                    sb.append("<td><span class=\"badge text-bg-warning\">En échec (")
+                            .append(attempts).append(" tentative(s))</span>");
+                    if (!lastError.isBlank()) {
+                        sb.append("<br><span class=\"muted\">").append(Http.esc(lastError)).append("</span>");
+                    }
+                    sb.append("</td>");
+                }
+                sb.append("</tr>");
+                if (canWrite) {
+                    sb.append("<tr><td colspan=\"4\">").append(debtActionForms(session, agentId, uuid, name, grant))
+                            .append("</td></tr>");
+                }
+            }
+            sb.append("</tbody></table>");
+            if (!canWrite) {
+                sb.append("<p class=\"muted\">Votre rôle permet de consulter les récompenses dues, "
+                        + "pas de les régler.</p>");
+            }
+        }
+
+        for (String type : new String[] {"economy.debt.retry", "economy.debt.settle"}) {
+            latestForPlayer(agentId, type, uuid)
+                    .ifPresent(row -> sb.append(resultLine("Dernière opération", row)));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Limite historique assumée : les complétions antérieures à ce mécanisme n'ont laissé
+     * <strong>aucune trace</strong> d'une récompense non payée. On le dit, au lieu de reconstituer
+     * une dette à partir d'une définition de quête actuelle — ce qui inventerait un montant.
+     */
+    private static String debtHistoryNote() {
+        return Ui.banner("info", "Seules les complétions <strong>postérieures à cette mise à jour</strong> "
+                + "peuvent apparaître ici. Une récompense perdue avant n'a laissé aucune trace "
+                + "exploitable : rien ne permet de la prouver, et aucun montant n'est deviné. Si un "
+                + "joueur signale un gain manquant plus ancien, la seule voie est un crédit manuel "
+                + "avec sa raison.");
+    }
+
+    /** Les deux gestes possibles sur une dette, côte à côte et explicitement distingués. */
+    private String debtActionForms(Session session, String agentId, String uuid, String name, String grant) {
+        StringBuilder sb = new StringBuilder("<div class=\"d-flex flex-wrap gap-3\">");
+
+        sb.append("<div><p class=\"muted mb-1\"><strong>Reprendre</strong> : paie le montant "
+                + "enregistré, avec l'identité initiale. Aucun montant à saisir — donc aucun à "
+                + "inventer, et un second paiement est impossible.</p>");
+        sb.append(formStart(session, agentId, "economy.debt.retry", "/players", uuid));
+        sb.append("<input type=\"hidden\" name=\"grant\" value=\"").append(Http.esc(grant)).append("\">");
+        sb.append(confirmBox("Je confirme la reprise du paiement pour « " + name + " »."));
+        sb.append("<button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
+                .append(Icons.icon("refresh")).append("Reprendre le paiement</button></form></div>");
+
+        sb.append("<div><p class=\"muted mb-1\"><strong>Réglée à la main</strong> : à utiliser "
+                + "<em>après</em> avoir compensé le joueur par un crédit manuel. Ne touche à "
+                + "<strong>aucun</strong> solde — elle empêche seulement cette même récompense "
+                + "d'être payée une seconde fois.</p>");
+        sb.append(formStart(session, agentId, "economy.debt.settle", "/players", uuid));
+        sb.append("<input type=\"hidden\" name=\"grant\" value=\"").append(Http.esc(grant)).append("\">");
+        sb.append("<label class=\"form-label\">Raison (obligatoire, conservée avec la récompense)</label>");
+        sb.append("<input class=\"form-control mb-2\" name=\"reason\" maxlength=\"200\" required>");
+        sb.append(confirmBox("Je confirme que « " + name + " » a déjà été compensé autrement."));
+        sb.append("<button class=\"btn btn-sm btn-outline-warning\" type=\"submit\">")
+                .append(Icons.icon("check")).append("Marquer réglée à la main</button></form></div>");
+
+        return sb.append("</div>").toString();
     }
 
     private String playerOpForm(Session session, String agentId, String uuid, String name, boolean currentlyOp) {
@@ -4522,6 +4662,18 @@ public final class AgentPages {
             return "";
         }
         return value.length() > max ? value.substring(0, max) : value;
+    }
+
+    /** Lecture numérique tolérante d'un détail de relevé : une valeur absente ou illisible vaut 0. */
+    private static long asLong(Object value) {
+        if (value instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            return value == null ? 0L : Long.parseLong(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     private static String str(Object value) {

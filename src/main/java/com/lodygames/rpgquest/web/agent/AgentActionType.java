@@ -152,7 +152,25 @@ public enum AgentActionType {
      * Issue #140 — débit administratif. Ne peut <strong>jamais</strong> rendre le solde négatif :
      * fonds insuffisants = refus métier lisible, rien n'est modifié.
      */
-    ECONOMY_DEBIT("economy.debit");
+    ECONOMY_DEBIT("economy.debit"),
+    /**
+     * Issue #16 (second lot) — récompenses monétaires de quête <strong>restées dues</strong> après
+     * un crash ou une panne SQL. Lecture seule : montant, occurrence, tentatives et motif d'échec
+     * réels, tels qu'enregistrés à la complétion.
+     */
+    ECONOMY_DEBTS("economy.debts"),
+    /**
+     * Issue #16 (second lot) — reprise d'une récompense due. Réutilise l'identité de paiement
+     * <strong>initiale</strong> : jamais un nouvel identifiant, donc aucun risque de payer deux
+     * fois. Le montant est celui figé à la complétion, pas celui de la définition courante.
+     */
+    ECONOMY_DEBT_RETRY("economy.debt.retry"),
+    /**
+     * Issue #16 (second lot) — marque une récompense due comme <strong>réglée à la main</strong>
+     * (compensation administrative). Ne touche <strong>pas</strong> au portefeuille : elle empêche
+     * seulement la même récompense d'être payée une seconde fois par une reprise.
+     */
+    ECONOMY_DEBT_SETTLE("economy.debt.settle");
 
     private final String wire;
 

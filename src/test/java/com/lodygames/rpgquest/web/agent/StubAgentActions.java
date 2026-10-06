@@ -322,4 +322,20 @@ class StubAgentActions implements AgentActions {
                                                               long amount, boolean credit, String reason) {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
     }
+
+    @Override
+    public CompletableFuture<QuestRewardDebtsView> questRewardDebts(java.util.UUID playerId, int limit) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
+
+    @Override
+    public CompletableFuture<QuestRewardRetryView> retryQuestRewardDebt(java.util.UUID playerId, String grantId) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> settleQuestRewardDebt(java.util.UUID playerId, String grantId,
+                                                                   String reason) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("non utilisé"));
+    }
 }

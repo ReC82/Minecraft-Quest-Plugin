@@ -3026,6 +3026,126 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-251 — Récupération des récompenses monétaires après échec ou crash (issue #16, second lot)
+
+-   **Fonctionnalité testée :** une récompense monétaire de quête qui n'a pas pu être créditée reste
+    **enregistrée** (joueur, quête, occurrence, montant, état), est **reprise automatiquement** à la
+    connexion suivante avec son **identité de paiement initiale**, et peut être reprise ou marquée
+    « réglée à la main » depuis le panel — sans jamais pouvoir être payée deux fois.
+-   **Préconditions :** JAR de cette session déployé, serveur redémarré, panel déployé.
+-   **IMPORTANT — identités et contenus de test uniquement.**
+    -   **Ne provoquez aucune panne sur la base DEV réelle.** La section E est la seule à simuler un
+        échec, et elle se fait **hors du serveur de jeu** (voir son encadré) ; si vous ne pouvez pas
+        la faire sans risque, **sautez-la** : elle est couverte automatiquement.
+    -   Utilisez un joueur de test. **Ne créditez ni ne débitez votre propre compte.**
+    -   Contenus de test : `docs/manual-tests/rewards/test_money_reward.yml` et
+        `test_money_repeatable.yml`, plus la quête à **deux** récompenses décrite en section B.
+    -   Compte panel de test : un compte **TESTER** (lecture) et un compte **ADMIN** ou **OWNER**
+        (écriture). Désactivez-les à la fin.
+
+-   **A. Le cas normal ne change pas (non-régression) :**
+    1.  Publier et recharger `test_money_reward.yml`, puis terminer la quête avec le joueur de test.
+        **Attendu** : message de gain `+100 pièce(s)` avec le solde réel, exactement comme avant.
+    2.  Fiche joueur → **Récompenses en attente** → **Lire les récompenses en attente**.
+        **Attendu** : « Aucune récompense monétaire en attente » — la dette a été créée **et** payée.
+    3.  Lire le journal des transactions. **Attendu** : **une seule** ligne `QUEST_REWARD`, dont le
+        contexte cite la quête **et** l'occasion.
+
+-   **B. Plusieurs récompenses monétaires sur une même complétion (le défaut corrigé) :**
+    4.  Créer depuis le panel une quête de test avec **deux** récompenses « Pièces » : `100` et `30`.
+        La publier et la recharger.
+    5.  La terminer avec le joueur de test. **Attendu** : le solde augmente de **130**, pas de 100.
+    6.  **Attendu** : **deux** lignes `QUEST_REWARD` au journal, et **deux** messages de gain.
+    7.  Relire les récompenses en attente. **Attendu** : aucune.
+    8.  Supprimer la quête de test (bouton « Supprimer… »).
+
+-   **C. Reprise automatique à la connexion :**
+    9.  Avec le joueur de test, terminer `test_money_reward.yml` **puis se déconnecter
+        immédiatement** (dans la seconde). **Attendu** : selon le moment, soit il a vu son message,
+        soit non.
+    10. Se reconnecter et lire les récompenses en attente dans le panel. **Attendu** : si la
+        récompense avait été payée, rien n'apparaît et le solde est correct ; si elle ne l'avait pas
+        été, elle a été **reprise à la connexion** et le solde est correct **sans double crédit**.
+    11. **Point important** : dans les deux cas, le journal ne doit contenir **qu'une** ligne pour
+        cette complétion. C'est la propriété à vérifier, plus que le message vu ou non.
+
+-   **D. Reprise et règlement manuel depuis le panel :**
+    12. Fiche joueur → **Récompenses en attente**. **Attendu** : la page distingue explicitement
+        **« Reprendre »** (paie le montant enregistré, aucun montant à saisir) de **« Créditer
+        manuellement »** (compensation libre qui ne règle aucune dette), et affiche la **limite
+        historique** (rien d'antérieur à cette mise à jour ne peut apparaître).
+    13. S'il existe une dette (créée en section E, ou aucune — dans ce cas passer en 16) : cliquer
+        **Reprendre le paiement**. **Attendu** : succès, montant **exactement** celui enregistré,
+        nouveau solde affiché, et la dette disparaît de la liste.
+    14. Recliquer **Reprendre le paiement** sur la même dette (bouton encore visible avant
+        actualisation). **Attendu** : **échec lisible** « Déjà réglée : aucun second crédit », et le
+        solde **ne bouge pas**.
+    15. Cliquer **deux fois très vite** sur une reprise. **Attendu** : un seul crédit au maximum.
+    16. Sur une dette en attente : marquer **Réglée à la main** **sans** raison. **Attendu** :
+        refus. Avec une raison. **Attendu** : succès, **aucun solde modifié**, et la dette n'est
+        plus payable — recliquer « Reprendre » donne « Déjà réglée ».
+    17. Avec un compte **TESTER** : **Attendu** : la liste est lisible, mais **aucun** bouton de
+        reprise ni de règlement. Poster directement `type=economy.debt.retry` depuis ce compte :
+        **403**.
+
+-   **E. Échec réel de paiement (optionnelle — à ne faire que sur une instance jetable) :**
+    > ⚠️ **Ne faites pas cette section sur la base DEV réelle.** Elle n'a de sens que sur une
+    > instance de test dont la perte est acceptable. Elle est entièrement couverte par les tests
+    > automatisés (base SQLite rouverte, échecs SQL, reprises concurrentes). **Sauter cette section
+    > ne laisse aucun trou de validation.**
+    18. Sur une instance jetable, rendre la base inaccessible en écriture juste après une
+        complétion monétaire. **Attendu** : message d'échec **explicite** au joueur, **jamais** un
+        message de gain.
+    19. Rétablir la base, reconnecter le joueur. **Attendu** : la récompense est **reprise**, le
+        montant est celui d'origine, et le journal ne contient qu'une ligne.
+    20. Dans le panel, la dette affiche **« En échec (N tentative(s)) »** avec le **motif réel**, et
+        non un simple « en attente ».
+
+-   **F. Quête répétable et modification de définition :**
+    21. Publier et recharger `test_money_repeatable.yml` (25 pièces). Terminer, reprendre, terminer
+        à nouveau. **Attendu** : **deux** crédits de 25, deux occurrences distinctes.
+    22. Modifier le montant de la quête à `999`, publier, recharger. **Attendu** : les complétions
+        **déjà faites** ne changent pas de montant ; seules les suivantes valent 999.
+
+-   **G. Redémarrage :**
+    23. Noter le solde et la liste des récompenses en attente. **Redémarrer** le serveur (workflow
+        #95). **Attendu** : solde identique, aucune ligne dupliquée, et toute dette encore en
+        attente est **toujours là** avec son montant — elle n'a pas été inventée ni effacée.
+    24. **Attendu** : aucune récompense d'une quête terminée **avant** cette mise à jour n'apparaît
+        et aucun paiement rétroactif n'a eu lieu.
+
+-   **Nettoyage :** retirer les fichiers de test de `plugins/RPGQuest/quests/` et recharger (#131) ;
+    supprimer la quête à deux récompenses créée en section B ; régler ou reprendre toute dette de
+    test restante pour ne pas laisser de ligne en attente ; remettre le solde du joueur de test à
+    sa valeur d'origine par une opération inverse avec une raison ; désactiver les comptes panel de
+    test.
+-   **Couverture automatisée :** `WalletRepositoryTest` (**19 cas** sur ce mécanisme, avec une vraie
+    base SQLite **rouverte** : dette créée avant tout paiement, complétion et dette écrites
+    **ensemble**, paiement unique avec sa ligne de journal, rejeu sans second crédit, **plusieurs
+    récompenses = plusieurs dettes distinctes**, **survie au redémarrage puis paiement unique**,
+    dette payée qui reste payée après redémarrage, **montant pris sur la dette et non sur la
+    définition**, répétable qui crée une occurrence neuve, ré-enregistrement sans doublon, **20
+    reprises concurrentes qui créditent exactement une fois**, dette inconnue jamais payée, échec
+    enregistré avec son motif qui **borne** les reprises, échec tardif sans effet sur une dette
+    payée, **règlement manuel qui rend la dette non payable sans toucher au solde**, raison
+    obligatoire, bornes de lecture par joueur et globales, complétion sans argent qui ne crée aucune
+    dette, jeton manquant refusé) ; `QuestProgressEngineTest` (**12 cas** : une demande par
+    complétion avec l'identité écrite en base, **deux identités distinctes pour deux récompenses**,
+    message de succès seulement après confirmation, échec dit honnêtement, échec **enregistré** pour
+    borner les reprises, occasion déjà payée silencieuse, aucune ligne monétaire dans le résumé
+    synchrone, occasions distinctes pour une répétable, économie jamais sollicitée sans récompense
+    monétaire, **reprise au chargement du joueur avec l'identité initiale**, **dette trop souvent en
+    échec laissée au panel**, **reprise qui ne rejoue aucune récompense non monétaire**) ;
+    `QuestMoneyRewardIntegrationTest` (6 cas de bout en bout, dont **100 + 30 = 130**) ;
+    `SchemaMigratorTest`, `AgentActionExecutorTest` (**6 cas** : relevé complet, bornes, reprise qui
+    **ignore tout montant soumis**, reprise sans paiement rapportée comme **échec**, identité
+    obligatoire, raison obligatoire) ; `EconomyAdminTest` (**9 cas** de permissions et de validation).
+    **Non couvert automatiquement** : l'ergonomie réelle de la page, la distinction perçue entre
+    reprendre et compenser, et le comportement sur une vraie panne de base — c'est l'objet des
+    sections A à G.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -3106,3 +3226,4 @@ le résumé de récompenses de TC-014).
 | TC-248 | OP/DEOP, renvoi Hub, kick, whitelist #210 (PENDING) | | | |
 | TC-249 | Monnaie : solde, journal, crédit/débit, plancher à zéro #140 (PENDING) | | | |
 | TC-250 | Récompense monétaire de quête, bourse dans le journal #16 (PENDING) | | | |
+| TC-251 | Récupération d'une récompense monétaire non payée #16 (PENDING) | | | |

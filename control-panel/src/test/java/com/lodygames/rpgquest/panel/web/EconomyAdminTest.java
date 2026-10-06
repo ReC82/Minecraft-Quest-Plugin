@@ -162,4 +162,108 @@ class EconomyAdminTest {
                     Map.of("amount", "10", "reason", "test", "confirm", "true")).valid(), type);
         }
     }
+
+    // ---- Récompenses monétaires restées dues (issue #16, second lot) ---------------------------
+
+    @Test
+    void readingPendingRewardsAndSettlingThemAreTwoDifferentPermissions() {
+        assertEquals(Permission.ECONOMY_READ,
+                AgentActionCatalog.spec("economy.debts").orElseThrow().permission());
+        assertEquals(Permission.ECONOMY_WRITE,
+                AgentActionCatalog.spec("economy.debt.retry").orElseThrow().permission());
+        assertEquals(Permission.ECONOMY_WRITE,
+                AgentActionCatalog.spec("economy.debt.settle").orElseThrow().permission());
+    }
+
+    @Test
+    void aTesterSeesWhatIsOwedButCannotSettleIt() {
+        // Diagnostiquer « je n'ai pas été payé » demande de voir la dette ; la régler, non.
+        assertTrue(Role.TESTER.has(Permission.ECONOMY_READ));
+        assertFalse(Role.TESTER.has(Permission.ECONOMY_WRITE));
+        assertTrue(Role.READ_ONLY.has(Permission.ECONOMY_READ));
+        assertFalse(Role.READ_ONLY.has(Permission.ECONOMY_WRITE));
+    }
+
+    @Test
+    void retryingAndSettlingAreSensitiveMutationsThatRefreshTheDirectory() {
+        assertFalse(AgentActionCatalog.spec("economy.debts").orElseThrow().mutation(),
+                "lire ce qui est dû ne change rien");
+
+        for (String type : new String[] {"economy.debt.retry", "economy.debt.settle"}) {
+            var spec = AgentActionCatalog.spec(type).orElseThrow();
+            assertTrue(spec.mutation(), type);
+            assertTrue(spec.sensitive(), type + " touche à l'argent : confirmation exigée");
+            assertTrue(spec.needsPlayer(), type);
+            assertTrue(spec.refreshTypes().contains("player.catalog"), type);
+        }
+    }
+
+    @Test
+    void aRetryTakesNoAmountAtAllSoNoneCanBeInvented() {
+        // Le point de sécurité : une reprise paie ce qui a été enregistré à la complétion. Si un
+        // montant était accepté ici, un administrateur pourrait en inventer un.
+        AgentActionCatalog.Validation ok = AgentActionCatalog.validate("economy.debt.retry",
+                Map.of("player", "Steve", "grant", "token-a#0", "amount", "999999", "confirm", "true"));
+
+        assertTrue(ok.valid(), ok.error());
+        assertEquals("token-a#0", ok.params().get("grant"));
+        assertFalse(ok.params().containsKey("amount"),
+                "aucun montant ne doit être transmis : la dette porte le sien");
+    }
+
+    @Test
+    void anIdentityIsMandatoryForBothOperations() {
+        for (String type : new String[] {"economy.debt.retry", "economy.debt.settle"}) {
+            AgentActionCatalog.Validation missing = AgentActionCatalog.validate(type,
+                    Map.of("player", "Steve", "reason", "test", "confirm", "true"));
+            assertFalse(missing.valid(), type);
+            assertTrue(missing.error().contains("Identifiant"), missing.error());
+        }
+    }
+
+    @Test
+    void settlingManuallyDemandsAReasonBecauseItIsTheOnlyTraceOfTheCompensation() {
+        AgentActionCatalog.Validation missing = AgentActionCatalog.validate("economy.debt.settle",
+                Map.of("player", "Steve", "grant", "token-a#0", "confirm", "true"));
+
+        assertFalse(missing.valid());
+        assertTrue(missing.error().contains("raison"), missing.error());
+
+        assertFalse(AgentActionCatalog.validate("economy.debt.settle",
+                Map.of("player", "Steve", "grant", "token-a#0", "reason", "a\nb", "confirm", "true")).valid());
+        assertFalse(AgentActionCatalog.validate("economy.debt.settle",
+                Map.of("player", "Steve", "grant", "token-a#0", "reason", "x".repeat(201),
+                        "confirm", "true")).valid());
+
+        assertTrue(AgentActionCatalog.validate("economy.debt.settle",
+                Map.of("player", "Steve", "grant", "token-a#0", "reason", "compensé à la main",
+                        "confirm", "true")).valid());
+    }
+
+    @Test
+    void bothOperationsRequireTheExplicitConfirmation() {
+        for (String type : new String[] {"economy.debt.retry", "economy.debt.settle"}) {
+            AgentActionCatalog.Validation missing = AgentActionCatalog.validate(type,
+                    Map.of("player", "Steve", "grant", "token-a#0", "reason", "test"));
+            assertFalse(missing.valid(), type);
+            assertTrue(missing.error().contains("Confirmation"), missing.error());
+        }
+    }
+
+    @Test
+    void theSurveyLengthIsOptionalAndBounded() {
+        assertTrue(AgentActionCatalog.validate("economy.debts", Map.of("player", "Steve")).valid());
+        assertTrue(AgentActionCatalog.validate("economy.debts",
+                Map.of("player", "Steve", "limit", "50")).valid());
+        assertFalse(AgentActionCatalog.validate("economy.debts",
+                Map.of("player", "Steve", "limit", "0")).valid());
+        assertFalse(AgentActionCatalog.validate("economy.debts",
+                Map.of("player", "Steve", "limit", "101")).valid());
+    }
+
+    @Test
+    void anOverlongIdentityIsRefused() {
+        assertFalse(AgentActionCatalog.validate("economy.debt.retry",
+                Map.of("player", "Steve", "grant", "x".repeat(129), "confirm", "true")).valid());
+    }
 }

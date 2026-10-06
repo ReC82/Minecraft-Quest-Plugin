@@ -17,6 +17,7 @@ import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.QuestState;
+import com.lodygames.rpgquest.economy.QuestRewardDue;
 import com.lodygames.rpgquest.economy.QuestRewardPayer;
 import com.lodygames.rpgquest.economy.QuestRewardReceipt;
 import java.nio.file.Files;
@@ -768,26 +769,59 @@ class QuestProgressEngineTest {
 
     // ---- Récompenses monétaires (issue #16) ---------------------------------------------------
     //
-    // Ce que ces tests verrouillent, c'est le comportement du MOTEUR : combien de fois il demande
-    // le paiement, avec quelle occasion, et ce qu'il annonce selon la réponse. L'idempotence
-    // elle-même est garantie en SQL et vérifiée dans WalletRepositoryTest — la tester deux fois ne
-    // la rendrait pas plus vraie, alors que la confondre avec « le moteur n'appelle qu'une fois »
-    // masquerait un vrai risque.
+    // Ces tests verrouillent le comportement du MOTEUR : combien de demandes de paiement il émet,
+    // avec quelle identité, et ce qu'il annonce selon la réponse. L'idempotence et la survie des
+    // dettes vivent en SQL et sont vérifiées dans WalletRepositoryTest.
 
     @Test
-    void aMoneyRewardIsRequestedOnceWithTheQuestAndTheOccasion() throws Exception {
+    void aMoneyRewardIsRequestedOnceWithTheIdentityRecordedInTheDatabase() throws Exception {
         NamespacedKey questId = writeMoneyQuest("money_quest.yml", "rpgquest:money_quest", 250, false);
         PlayerMock player = addPlayer();
         engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         engine.handleKillEntity(player, EntityType.ZOMBIE);
+        awaitCalls(1);
 
         assertEquals(1, rewardPayer.calls.size(), "une complétion = une seule demande de paiement");
         RecordingRewardPayer.Call call = rewardPayer.calls.get(0);
         assertEquals(player.getUniqueId(), call.playerId());
-        assertEquals("rpgquest:money_quest", call.questId());
-        assertEquals(250L, call.amount());
-        assertFalse(call.grantId().isBlank(), "l'occasion de paiement doit être identifiée");
+        // L'identité vient de la dette ÉCRITE EN BASE, pas d'un identifiant jeté en mémoire :
+        // c'est elle qu'une reprise après redémarrage réutilisera.
+        assertFalse(call.grantId().isBlank());
+        assertTrue(call.grantId().endsWith("#0"), () -> call.grantId());
+    }
+
+    @Test
+    void twoMoneyRewardsOnOneCompletionAreRequestedWithTwoDistinctIdentities() throws Exception {
+        NamespacedKey questId = new NamespacedKey("rpgquest", "two_money");
+        Files.writeString(questsDir.resolve("two_money.yml"), """
+                id: rpgquest:two_money
+                title: "Deux récompenses"
+                description: "Description"
+                category: test
+                steps:
+                  - id: kill_step
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 1
+                rewards:
+                  - type: MONEY
+                    amount: 100
+                  - type: MONEY
+                    amount: 30
+                """);
+        engine.reloadQuestDefinitions();
+        PlayerMock player = addPlayer();
+        engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        awaitCalls(2);
+
+        // Avec une identité partagée, la seconde serait avalée comme « déjà payée » et le joueur
+        // ne recevrait que la première — défaut mesuré du premier lot.
+        assertEquals(2, rewardPayer.calls.size());
+        assertFalse(rewardPayer.calls.get(0).grantId().equals(rewardPayer.calls.get(1).grantId()));
     }
 
     @Test
@@ -801,7 +835,7 @@ class QuestProgressEngineTest {
 
         String message = awaitMessageContaining(player, "250");
         assertTrue(message.contains("Titre Monnaie"), () -> "le message doit citer la quête : " + message);
-        assertTrue(message.contains("1250"), () -> "le nouveau solde doit venir du reçu, pas d'un calcul local : " + message);
+        assertTrue(message.contains("1250"), () -> "le nouveau solde doit venir du reçu : " + message);
     }
 
     @Test
@@ -813,9 +847,23 @@ class QuestProgressEngineTest {
 
         engine.handleKillEntity(player, EntityType.ZOMBIE);
 
-        // Le joueur doit APPRENDRE l'échec : un silence le laisserait croire qu'il a été payé.
         String message = awaitMessageContaining(player, "pas pu être créditée");
         assertFalse(message.contains("250"), () -> "un échec ne doit jamais citer un montant gagné : " + message);
+    }
+
+    @Test
+    void aFailedCreditIsRecordedSoRetriesCanBeBounded() throws Exception {
+        NamespacedKey questId = writeMoneyQuest("money_quest.yml", "rpgquest:money_quest", 250, false);
+        PlayerMock player = addPlayer();
+        engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        rewardPayer.answer = QuestRewardReceipt.failed();
+
+        engine.handleKillEntity(player, EntityType.ZOMBIE);
+        awaitMessageContaining(player, "pas pu être créditée");
+
+        // Sans compteur, la reprise automatique tournerait indéfiniment sur une cause qu'elle ne
+        // peut pas corriger.
+        assertFalse(rewardPayer.failures.isEmpty(), "l'échec doit être enregistré sur la dette");
     }
 
     @Test
@@ -833,7 +881,6 @@ class QuestProgressEngineTest {
         engine.handleKillEntity(player, EntityType.ZOMBIE);
         server.getScheduler().performTicks(20);
 
-        // Rien pour le joueur (il n'a rien reçu à l'instant), mais la trace reste côté serveur.
         String message;
         while ((message = player.nextMessage()) != null) {
             assertFalse(message.contains("250"),
@@ -845,8 +892,6 @@ class QuestProgressEngineTest {
 
     @Test
     void aMoneyRewardAddsNoLineToTheSynchronousRewardSummary() throws Exception {
-        // La quête donne 10 XP ET 500 pièces. Le résumé immédiat ne peut citer que l'XP : à cet
-        // instant, le crédit n'est pas encore confirmé.
         NamespacedKey questId = new NamespacedKey("rpgquest", "xp_and_money");
         Files.writeString(questsDir.resolve("xp_and_money.yml"), """
                 id: rpgquest:xp_and_money
@@ -888,12 +933,14 @@ class QuestProgressEngineTest {
 
         engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         engine.handleKillEntity(player, EntityType.ZOMBIE);
+        awaitCalls(1);
         engine.accept(player, questId).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         engine.handleKillEntity(player, EntityType.ZOMBIE);
+        awaitCalls(2);
 
         assertEquals(2, rewardPayer.calls.size(), "une quête répétable se paie à chaque complétion");
         assertFalse(rewardPayer.calls.get(0).grantId().equals(rewardPayer.calls.get(1).grantId()),
-                "deux complétions distinctes doivent porter deux occasions distinctes, sinon la seconde "
+                "deux complétions distinctes doivent porter deux identités distinctes, sinon la seconde "
                         + "serait refusée comme un doublon et le joueur ne serait jamais repayé");
     }
 
@@ -905,8 +952,51 @@ class QuestProgressEngineTest {
 
         engine.handleKillEntity(player, EntityType.ZOMBIE);
         engine.handleKillEntity(player, EntityType.ZOMBIE);
+        server.getScheduler().performTicks(20);
 
         assertTrue(rewardPayer.calls.isEmpty());
+    }
+
+    @Test
+    void aPendingRewardIsRetriedWhenThePlayerLoadsAgain() throws Exception {
+        // Reprise : la dette est lue au chargement du joueur, une seule fois, et payée avec son
+        // identité INITIALE.
+        PlayerMock player = addPlayer();
+        rewardPayer.pending.add(new QuestRewardDue("token-orphelin#0", "rpgquest:money_quest", 1, 0, 70L, 0, null));
+
+        engine.loadForPlayer(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        awaitCalls(1);
+
+        assertEquals("token-orphelin#0", rewardPayer.calls.get(0).grantId(),
+                "une reprise doit réutiliser l'identité initiale, jamais en créer une nouvelle");
+    }
+
+    @Test
+    void aRewardThatFailedTooManyTimesIsLeftToThePanelInsteadOfBeingRetriedForever() throws Exception {
+        PlayerMock player = addPlayer();
+        rewardPayer.pending.add(new QuestRewardDue("token-cassé#0", "rpgquest:money_quest", 1, 0, 70L,
+                5, "SQLException: disk I/O error"));
+
+        engine.loadForPlayer(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(20);
+
+        assertTrue(rewardPayer.calls.isEmpty(),
+                "au-delà de la borne d'essais, s'acharner ne corrigerait pas la cause");
+    }
+
+    @Test
+    void aRecoveryNeverReplaysTheNonMonetaryRewards() throws Exception {
+        // La reprise ne touche qu'aux lignes de dette : pas d'XP re-donnée, pas de résumé rejoué.
+        PlayerMock player = addPlayer();
+        int xpBefore = player.getTotalExperience();
+        rewardPayer.pending.add(new QuestRewardDue("token-orphelin#0", "rpgquest:money_quest", 1, 0, 70L, 0, null));
+        rewardPayer.answer = new QuestRewardReceipt(QuestRewardReceipt.Status.CREDITED, 70L, 70L, 1);
+
+        engine.loadForPlayer(player.getUniqueId()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        awaitCalls(1);
+        server.getScheduler().performTicks(20);
+
+        assertEquals(xpBefore, player.getTotalExperience(), "aucune récompense non monétaire rejouée");
     }
 
     /**
@@ -915,7 +1005,7 @@ class QuestProgressEngineTest {
      * vert au calme et rouge sous charge.
      */
     private String awaitMessageContaining(PlayerMock player, String needle) {
-        for (int i = 0; i < 100; i++) {
+        for (int i = 0; i < 200; i++) {
             String message;
             while ((message = player.nextMessage()) != null) {
                 if (message.contains(needle)) {
@@ -923,8 +1013,31 @@ class QuestProgressEngineTest {
                 }
             }
             server.getScheduler().performTicks(2);
+            sleepBriefly();
         }
-        throw new AssertionError("aucun message contenant « " + needle + " » après 100 tours de boucle");
+        throw new AssertionError("aucun message contenant « " + needle + " » après 200 tours de boucle");
+    }
+
+    /** Attend qu'au moins {@code expected} demandes de paiement soient parvenues au payeur. */
+    private void awaitCalls(int expected) {
+        for (int i = 0; i < 200 && rewardPayer.calls.size() < expected; i++) {
+            server.getScheduler().performTicks(2);
+            sleepBriefly();
+        }
+        assertTrue(rewardPayer.calls.size() >= expected,
+                () -> "attendu au moins " + expected + " demandes, vu " + rewardPayer.calls.size());
+    }
+
+    /**
+     * {@code performTicks} ne consomme AUCUN temps d'horloge : sans ce court sommeil, une boucle
+     * d'attente peut s'épuiser entièrement avant la fin d'une écriture asynchrone en base.
+     */
+    private static void sleepBriefly() {
+        try {
+            Thread.sleep(5);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private NamespacedKey writeMoneyQuest(String fileName, String id, int amount, boolean repeatable) throws Exception {
@@ -951,18 +1064,32 @@ class QuestProgressEngineTest {
     /** Payeur enregistreur : retient ce qui lui a été demandé et répond ce qu'on lui dit de répondre. */
     private static final class RecordingRewardPayer implements QuestRewardPayer {
 
-        record Call(java.util.UUID playerId, String questId, String grantId, long amount) {
+        record Call(java.util.UUID playerId, String grantId) {
         }
 
         private final List<Call> calls = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private final List<String> failures = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private final List<QuestRewardDue> pending = new java.util.concurrent.CopyOnWriteArrayList<>();
         private volatile QuestRewardReceipt answer =
                 new QuestRewardReceipt(QuestRewardReceipt.Status.CREDITED, 0L, 0L, 1);
 
         @Override
         public java.util.concurrent.CompletableFuture<QuestRewardReceipt> payQuestReward(
-                java.util.UUID playerId, String questId, String grantId, long amount) {
-            calls.add(new Call(playerId, questId, grantId, amount));
+                java.util.UUID playerId, String grantId) {
+            calls.add(new Call(playerId, grantId));
             return java.util.concurrent.CompletableFuture.completedFuture(answer);
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<List<QuestRewardDue>> pendingQuestRewards(
+                java.util.UUID playerId, int limit) {
+            return java.util.concurrent.CompletableFuture.completedFuture(List.copyOf(pending));
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<Void> recordQuestRewardFailure(String grantId, String error) {
+            failures.add(grantId + ": " + error);
+            return java.util.concurrent.CompletableFuture.completedFuture(null);
         }
     }
 }

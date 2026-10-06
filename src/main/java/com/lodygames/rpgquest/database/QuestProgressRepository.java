@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.database;
 
 import com.lodygames.rpgquest.quest.model.QuestState;
+import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -163,6 +164,82 @@ public final class QuestProgressRepository {
             }
             return null;
         });
+    }
+
+    /**
+     * Enregistre une complétion de quête <strong>et</strong> les récompenses monétaires qu'elle
+     * fait naître, dans une <strong>seule transaction</strong> (issue #16, second lot).
+     *
+     * <p>Cette méthode existe pour fermer une fenêtre précise, et c'est sa seule raison d'être.
+     * Avec deux transactions séparées, un arrêt brutal entre les deux laisse l'un des deux pires
+     * états :</p>
+     * <ul>
+     *   <li>état persisté d'abord : la quête est terminée et <strong>aucune dette n'existe</strong>
+     *       — la récompense est perdue en silence, et une quête non répétable ne sera jamais
+     *       rejouée ;</li>
+     *   <li>dettes d'abord : des dettes existent pour une quête <strong>pas terminée</strong> — le
+     *       joueur la refait, une seconde dette naît, et il est payé deux fois.</li>
+     * </ul>
+     *
+     * <p>Les deux faits sont donc écrits ensemble, ou pas du tout. L'occurrence est calculée
+     * <strong>dans</strong> la transaction et partagée par toutes les récompenses de cette
+     * complétion ; chacune reçoit son propre {@code reward_index}, sans quoi plusieurs récompenses
+     * monétaires d'une même quête partageraient une identité de paiement et toutes sauf la première
+     * seraient avalées comme « déjà payées ».</p>
+     *
+     * <p>Le SQL des dettes vit dans {@link WalletRepository} (seul propriétaire des tables d'argent)
+     * et est appelé ici via deux méthodes package-private : une seule définition de chaque requête,
+     * une seule transaction.</p>
+     *
+     * @param completionToken identifiant stable de CETTE complétion, qui devient la racine de
+     *                        l'identité de paiement ({@code <jeton>#<index>})
+     * @param amounts         montants des récompenses monétaires, dans l'ordre de la quête
+     * @return les identifiants de paiement créés, dans le même ordre
+     */
+    public CompletableFuture<List<String>> completeQuestWithMoneyDebts(
+            UUID playerUuid, NamespacedKey questId, String completionToken, List<Long> amounts) {
+        if (completionToken == null || completionToken.isBlank()) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException(
+                    "« completionToken » est obligatoire : c'est la racine de l'identité de paiement."));
+        }
+        List<Long> owed = List.copyOf(amounts);
+        return database.execute(connection -> {
+            boolean previousAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+            try {
+                writeState(connection, playerUuid, questId, QuestState.COMPLETED, null);
+                List<String> grantIds = new ArrayList<>();
+                if (!owed.isEmpty()) {
+                    int occurrence = WalletRepository.nextQuestRewardOccurrence(
+                            connection, playerUuid, questId.toString());
+                    for (int index = 0; index < owed.size(); index++) {
+                        String grantId = completionToken + "#" + index;
+                        WalletRepository.insertQuestRewardDebt(connection, dialect, grantId, playerUuid,
+                                questId.toString(), occurrence, index, owed.get(index));
+                        grantIds.add(grantId);
+                    }
+                }
+                connection.commit();
+                return grantIds;
+            } catch (SQLException | RuntimeException e) {
+                connection.rollback();
+                throw e;
+            } finally {
+                connection.setAutoCommit(previousAutoCommit);
+            }
+        });
+    }
+
+    private void writeState(Connection connection, UUID playerUuid, NamespacedKey questId,
+                            QuestState state, String currentStepId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(UPSERT_STATE))) {
+            statement.setString(1, playerUuid.toString());
+            statement.setString(2, questId.toString());
+            statement.setString(3, state.name());
+            statement.setString(4, currentStepId);
+            statement.setString(5, Instant.now().toString());
+            statement.executeUpdate();
+        }
     }
 
     private QuestProgressRecord map(UUID playerUuid, ResultSet resultSet) throws SQLException {

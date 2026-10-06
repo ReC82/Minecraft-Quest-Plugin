@@ -81,7 +81,31 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   paiement sur un retry, ni récompense perdue sur une panne ; une quête répétable ouvre une
   nouvelle occasion à chaque reprise (`occurrence` numérotée par joueur et par quête). **Aucune
   seconde source de vérité** : `wallets` reste le seul solde, `quest_reward_grants` ne répond qu'à
-  « cette occasion a-t-elle déjà été payée ? ». Trace `transactions` de type `QUEST_REWARD`,
+  « cette occasion a-t-elle déjà été payée ? ».
+- **Récupération des récompenses monétaires (issue #16, second lot — schéma V26)** — le premier lot
+  ne gardait trace que de ce qui avait **déjà** été payé : une récompense due mais non créditée
+  (crash, panne SQL) ne laissait **aucune** trace et devenait invisible. Trois défauts corrigés,
+  dont un **mesuré** : (1) l'identité de paiement vivait **uniquement en mémoire**, donc perdue au
+  redémarrage ; (2) l'état `COMPLETED` était persisté dans une transaction **séparée** du crédit,
+  laissant une fenêtre « terminée mais jamais payée, sans trace » ; (3) **plusieurs récompenses
+  `MONEY` sur une même complétion partageaient une identité**, donc `100 + 30` créditait **100**,
+  la seconde étant avalée comme « déjà payée ». Désormais :
+  `QuestProgressRepository#completeQuestWithMoneyDebts` écrit **dans une seule transaction**
+  l'état `COMPLETED` et une ligne `PENDING` par récompense (identité `<jeton>#<index>`), puis
+  `WalletRepository#payQuestRewardDebt` fait passer `PENDING → PAID` **avec** le crédit et la ligne
+  de journal, sous un `WHERE status = 'PENDING'` qui empêche deux reprises concurrentes de
+  l'emporter. **Le montant et le contexte du journal viennent de la ligne**, jamais de l'appelant :
+  rééditer une quête ne change pas une dette déjà née. **Reprise bornée** : relecture une fois par
+  chargement de joueur (jamais par tick, jamais sur le thread principal), 20 dettes au plus, et
+  au-delà de 5 échecs la dette est **laissée au panel** ; une reprise échouée ne parle pas au
+  joueur (sinon message d'échec à chaque reconnexion) et ne rejoue **que** le crédit monétaire.
+  `SETTLED_MANUALLY` empêche qu'une compensation administrative laisse la même récompense payable
+  une seconde fois. **Panel** : `economy.debts` (lecture), `economy.debt.retry` et
+  `economy.debt.settle` (sensibles, confirmation + audit) ; la page distingue explicitement
+  reprendre et compenser, affiche l'état réel (« en échec (N tentatives) » + motif) et la **limite
+  historique**. **Aucun paiement rétroactif** : la migration marque les lignes existantes `PAID`
+  (elles l'étaient, par construction de V25) et n'invente aucune dette pour les quêtes terminées
+  avant cette mise à jour. Trace `transactions` de type `QUEST_REWARD`,
   contexte `quest:<id>#<occasion>`. **Le message de gain part seulement après confirmation de la
   base** (`quest.reward-money-credited`, avec le solde relu) ; un échec est dit explicitement
   (`quest.reward-money-failed`) et une occasion déjà payée ne dit **rien** au joueur. Les deux

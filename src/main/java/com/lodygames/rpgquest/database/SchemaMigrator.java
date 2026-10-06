@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 25;
+    public static final int CURRENT_VERSION = 26;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -57,7 +57,8 @@ public final class SchemaMigrator {
             new SchemaMigration(22, "waypoints.display_name", SchemaMigrator::applyV22),
             new SchemaMigration(23, "waypoints.display_name noms lisibles", SchemaMigrator::applyV23),
             new SchemaMigration(24, "dialogue_node_reads", SchemaMigrator::applyV24),
-            new SchemaMigration(25, "quest_reward_grants", SchemaMigrator::applyV25));
+            new SchemaMigration(25, "quest_reward_grants", SchemaMigrator::applyV25),
+            new SchemaMigration(26, "quest_reward_grants.status (dettes récupérables)", SchemaMigrator::applyV26));
 
     private SchemaMigrator() {
     }
@@ -999,6 +1000,44 @@ public final class SchemaMigrator {
             statement.execute(dialect.ddl(
                     "CREATE INDEX IF NOT EXISTS idx_quest_reward_grants_player_quest "
                             + "ON quest_reward_grants (player_uuid, quest_id)"));
+        }
+    }
+
+    private static void applyV26(Connection connection, SqlDialect dialect) throws SQLException {
+        // Récupération des récompenses monétaires (issue #16, second lot). V25 ne gardait trace que
+        // de ce qui avait DÉJÀ été payé : une récompense due mais non créditée (crash, panne SQL)
+        // ne laissait AUCUNE trace et devenait invisible, donc définitivement perdue. Cette
+        // migration transforme la table en « ce qui est dû ET ce qui est payé », sans jamais
+        // devenir un second solde : le montant d'un dû est figé ici, le solde reste dans wallets.
+        if (dialect.columnExists(connection, "quest_reward_grants", "status")) {
+            return;
+        }
+        try (Statement statement = connection.createStatement()) {
+            // DEFAULT 'PAID' : toute ligne déjà présente correspond, par construction de V25, à un
+            // crédit RÉELLEMENT effectué (la ligne n'était écrite que dans la transaction qui
+            // créditait). Les marquer payées est donc un constat, pas une supposition — et surtout
+            // cela n'invente AUCUNE dette rétroactive.
+            statement.execute(dialect.ddl(
+                    "ALTER TABLE quest_reward_grants ADD COLUMN status TEXT NOT NULL DEFAULT 'PAID'"));
+            // reward_index : une même complétion peut porter PLUSIEURS récompenses monétaires.
+            // Sans cet index, elles partageaient la même identité de paiement et la clé primaire
+            // rejetait toutes sauf la première — défaut mesuré (100 + 30 payait 100).
+            statement.execute(dialect.ddl(
+                    "ALTER TABLE quest_reward_grants ADD COLUMN reward_index INTEGER NOT NULL DEFAULT 0"));
+            statement.execute(dialect.ddl(
+                    "ALTER TABLE quest_reward_grants ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"));
+            statement.execute(dialect.ddl("ALTER TABLE quest_reward_grants ADD COLUMN last_error TEXT"));
+            statement.execute(dialect.ddl("ALTER TABLE quest_reward_grants ADD COLUMN updated_at TEXT"));
+            // Raison d'un règlement MANUEL (compensation admin) : une dette réglée à la main ne
+            // doit plus jamais être payable, sinon le joueur serait payé deux fois.
+            statement.execute(dialect.ddl("ALTER TABLE quest_reward_grants ADD COLUMN settled_reason TEXT"));
+        }
+        // Accès réel de la récupération : « que reste-t-il à payer ? », par statut — jamais un
+        // balayage de toute la table.
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_quest_reward_grants_status "
+                            + "ON quest_reward_grants (status)"));
         }
     }
 }

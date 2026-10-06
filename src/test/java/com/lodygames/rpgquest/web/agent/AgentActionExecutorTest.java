@@ -888,6 +888,93 @@ class AgentActionExecutorTest {
                                 "confirm", "true"))).status());
     }
 
+    // ---- Récompenses monétaires restées dues (issue #16, second lot) ---------------------------
+
+    @Test
+    void thePendingRewardSurveyExposesEverythingNeededToDecide() {
+        actions.debts.add(new AgentActions.QuestRewardDebtView("token-a#0", "rpgquest:q1", "Ma quête",
+                2, 0, 70L, 3, "SQLException: disk I/O error", null));
+
+        AgentActionOutcome outcome = run(new AgentAction("d1", "economy.debts",
+                Map.of("player", "Rondoudou9000")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals(70L, outcome.details().get("total"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) outcome.details().get("debts");
+        assertEquals(1, rows.size());
+        Map<String, Object> row = rows.get(0);
+        // L'état RÉEL, pas un « en attente » qui cacherait trois échecs.
+        assertEquals("token-a#0", row.get("grantId"));
+        assertEquals("rpgquest:q1", row.get("questId"));
+        assertEquals("Ma quête", row.get("questTitle"));
+        assertEquals(2, row.get("occurrence"));
+        assertEquals(70L, row.get("amount"));
+        assertEquals(3, row.get("attempts"));
+        assertTrue(String.valueOf(row.get("lastError")).contains("disk I/O"));
+    }
+
+    @Test
+    void thePendingRewardSurveyIsBounded() {
+        for (String limit : new String[] {"0", "101", "-1"}) {
+            assertEquals(AgentActionOutcome.REJECTED,
+                    run(new AgentAction("d2", "economy.debts",
+                            Map.of("player", "Rondoudou9000", "limit", limit))).status(), limit);
+        }
+    }
+
+    @Test
+    void aRetryForwardsOnlyTheIdentityAndNeverAnAmount() {
+        AgentActionOutcome outcome = run(new AgentAction("d3", "economy.debt.retry",
+                Map.of("player", "Rondoudou9000", "grant", "token-a#0", "confirm", "true",
+                        // Un montant glissé dans le formulaire ne doit avoir AUCUN effet : une
+                        // reprise paie ce qui a été enregistré, pas ce qu'on lui demande.
+                        "amount", "999999")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals("token-a#0", actions.lastRetryGrant);
+        assertEquals("PAID", outcome.details().get("code"));
+        assertEquals(70L, outcome.details().get("amount"));
+    }
+
+    @Test
+    void aRetryThatPaysNothingIsAFailureAndNotASuccess() {
+        actions.retryCode = "ALREADY_PAID";
+
+        AgentActionOutcome outcome = run(new AgentAction("d4", "economy.debt.retry",
+                Map.of("player", "Rondoudou9000", "grant", "token-a#0", "confirm", "true")));
+
+        // Si c'était un succès, l'audit laisserait croire que le joueur a été crédité.
+        assertEquals(AgentActionOutcome.FAILED, outcome.status());
+        assertTrue(outcome.message().contains("Déjà réglée"), outcome.message());
+    }
+
+    @Test
+    void aRetryWithoutAnIdentityIsRejectedBeforeReachingTheServer() {
+        actions.lastRetryGrant = null;
+
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("d5", "economy.debt.retry",
+                        Map.of("player", "Rondoudou9000", "confirm", "true"))).status());
+        assertNull(actions.lastRetryGrant, "rien ne doit atteindre le serveur");
+    }
+
+    @Test
+    void settlingManuallyRequiresAReasonAndKeepsIt() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("d6", "economy.debt.settle",
+                        Map.of("player", "Rondoudou9000", "grant", "token-a#0", "confirm", "true"))).status());
+        assertNull(actions.lastSettleGrant, "rien ne doit atteindre le serveur sans raison");
+
+        AgentActionOutcome outcome = run(new AgentAction("d7", "economy.debt.settle",
+                Map.of("player", "Rondoudou9000", "grant", "token-a#0",
+                        "reason", "compensé à la main", "confirm", "true")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertEquals("token-a#0", actions.lastSettleGrant);
+        assertEquals("compensé à la main", actions.lastSettleReason);
+    }
+
     // ---- Fake façade métier -----------------------------------------------------------
 
     private static final class FakeAgentActions implements AgentActions {
@@ -1382,6 +1469,38 @@ class AgentActionExecutorTest {
             return CompletableFuture.completedFuture(new EconomyAdjustView(ecoOk, ecoCode,
                     ecoOk ? "Solde : 100 → 350." : "Fonds insuffisants : solde inchangé.",
                     100L, ecoOk ? 350L : 100L));
+        }
+
+        // ---- Récompenses monétaires dues (issue #16, second lot) ---------------------
+
+        List<QuestRewardDebtView> debts = new java.util.ArrayList<>();
+        String lastRetryGrant;
+        String lastSettleGrant;
+        String lastSettleReason;
+        String retryCode = "PAID";
+
+        @Override
+        public CompletableFuture<QuestRewardDebtsView> questRewardDebts(UUID playerId, int limit) {
+            return CompletableFuture.completedFuture(new QuestRewardDebtsView(true,
+                    debts.size() + " récompense(s) monétaire(s) en attente.", List.copyOf(debts)));
+        }
+
+        @Override
+        public CompletableFuture<QuestRewardRetryView> retryQuestRewardDebt(UUID playerId, String grantId) {
+            lastRetryGrant = grantId;
+            boolean ok = "PAID".equals(retryCode);
+            return CompletableFuture.completedFuture(new QuestRewardRetryView(ok, retryCode,
+                    ok ? "Récompense créditée : 70 pièce(s). Nouveau solde : 70."
+                            : "Déjà réglée : aucun second crédit.", ok ? 70L : 70L, ok ? 70L : 0L));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> settleQuestRewardDebt(UUID playerId, String grantId,
+                                                                        String reason) {
+            lastSettleGrant = grantId;
+            lastSettleReason = reason;
+            return CompletableFuture.completedFuture(MutationResult.of(true, "SETTLED",
+                    "Récompense marquée réglée à la main."));
         }
 
         // ---- Administration de joueur (issue #210) -----------------------------------

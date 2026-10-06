@@ -122,6 +122,9 @@ public final class AgentActionExecutor {
                 case ECONOMY_BALANCE -> economyBalance(action);
                 case ECONOMY_CREDIT -> economyAdjust(action, true);
                 case ECONOMY_DEBIT -> economyAdjust(action, false);
+                case ECONOMY_DEBTS -> questRewardDebts(action);
+                case ECONOMY_DEBT_RETRY -> questRewardRetry(action);
+                case ECONOMY_DEBT_SETTLE -> questRewardSettle(action);
                 case PLAYER_ITEM_GIVE -> itemGive(action);
                 case QUEST_START -> questStart(action);
                 case QUEST_COMPLETE -> questMutation(action, AgentActionType.QUEST_COMPLETE);
@@ -886,6 +889,81 @@ public final class AgentActionExecutor {
     private static final long MAX_ECONOMY_AMOUNT = 1_000_000L;
 
     /** {@code economy.balance} — solde réel et journal récent. Lecture seule. */
+    // ---- Récompenses monétaires restées dues (issue #16, second lot) ---------------------------
+
+    private CompletableFuture<AgentActionOutcome> questRewardDebts(AgentAction action) {
+        long limit = parseLongParam(action.param("limit"), 20L);
+        if (limit < 1 || limit > 100) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Nombre de récompenses dues hors bornes (1 à 100)."));
+        }
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.questRewardDebts(uuid, (int) limit).thenApply(view -> {
+                    if (!view.ok()) {
+                        return AgentActionOutcome.failed(action.id(), view.message());
+                    }
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    List<Map<String, Object>> rows = new ArrayList<>();
+                    long total = 0;
+                    for (AgentActions.QuestRewardDebtView debt : view.debts()) {
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("grantId", debt.grantId());
+                        row.put("questId", debt.questId());
+                        row.put("questTitle", debt.questTitle());
+                        row.put("occurrence", debt.occurrence());
+                        row.put("rewardIndex", debt.rewardIndex());
+                        row.put("amount", debt.amount());
+                        row.put("attempts", debt.attempts());
+                        row.put("lastError", debt.lastError());
+                        rows.add(row);
+                        total += debt.amount();
+                    }
+                    details.put("debts", rows);
+                    details.put("total", total);
+                    return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
+                            name + " : " + view.message(), details);
+                }));
+    }
+
+    private CompletableFuture<AgentActionOutcome> questRewardRetry(AgentAction action) {
+        String grantId = trimOrEmpty(action.param("grant"));
+        if (grantId.isEmpty()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Identifiant de récompense due manquant."));
+        }
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.retryQuestRewardDebt(uuid, grantId).thenApply(view -> {
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    details.put("code", view.code());
+                    details.put("amount", view.amount());
+                    details.put("balanceAfter", view.balanceAfter());
+                    // Une reprise qui ne paie pas n'est PAS un succès : la distinction compte, sinon
+                    // l'audit laisserait croire que le joueur a été crédité.
+                    if (view.ok()) {
+                        return AgentActionOutcome.success(action.id(), view.code(),
+                                name + " : " + view.message(), details);
+                    }
+                    return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, view.code(),
+                            name + " : " + view.message(), details, java.time.Instant.now());
+                }));
+    }
+
+    private CompletableFuture<AgentActionOutcome> questRewardSettle(AgentAction action) {
+        String grantId = trimOrEmpty(action.param("grant"));
+        if (grantId.isEmpty()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Identifiant de récompense due manquant."));
+        }
+        String reason = trimOrEmpty(action.param("reason"));
+        if (reason.isEmpty()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Raison obligatoire : elle est conservée avec la récompense réglée."));
+        }
+        return withResolvedUuid(action, (uuid, name) ->
+                actions.settleQuestRewardDebt(uuid, grantId, reason)
+                        .thenApply(result -> toOutcome(action, result)));
+    }
+
     private CompletableFuture<AgentActionOutcome> economyBalance(AgentAction action) {
         long historyLimit = parseLongParam(action.param("history"), 20L);
         if (historyLimit < 1 || historyLimit > 100) {
@@ -1634,6 +1712,10 @@ public final class AgentActionExecutor {
         }
         return actions.questGiverSet(questId, npcId).thenApply(r -> toOutcome(action, r))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private static String trimOrEmpty(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private static String trimOrNull(String value) {

@@ -171,9 +171,12 @@ class DialoguesCatalogTest {
         assertTrue(page.contains("<option value=\"not_started\" selected>"), "état de quête pré-rempli");
         assertTrue(page.contains("name=\"condition_negate\""), "négation de la condition");
         // Champ MiniMessage : source brute éditable + palette + aperçu rendu.
-        assertTrue(page.contains("data-mm-text"), "champ MiniMessage");
-        assertTrue(page.contains("data-mm-palette"), "palette de couleurs");
-        assertTrue(page.contains("data-mm-preview"), "aperçu du texte");
+        // Le texte du choix passe par le composant partagé StyleField (#195) — pas une palette
+        // parallèle : couleur au clic, styles, aperçu, et texte multi-styles jamais aplati.
+        assertTrue(page.contains("name=\"choice_text\""), "champ du texte de choix");
+        assertTrue(page.contains("data-sf-store"), "champ stylé partagé (StyleField)");
+        assertTrue(page.contains("data-sf-palette"), "palette de couleurs");
+        assertTrue(page.contains("data-sf-preview"), "aperçu du texte");
         // Bandeau explicatif du format canonique.
         assertTrue(page.contains("canonique</strong>"), "bandeau format canonique");
     }

@@ -824,6 +824,15 @@ tr[hidden]{display:none}
   .dlg-swatch{width:34px;height:34px}
 }
 
+/* Champ MiniMessage de l'éditeur guidé (#82) : source brute + aperçu rendu + palette pleine. */
+.dlg-mm{margin:6px 0 10px}
+.dlg-mm input[data-mm-text]{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+.dlg-mm .dlg-swatch{background:var(--sw);width:24px;height:24px;border-radius:6px}
+.dlg-mm .dlg-swatch-none{background:var(--surface);color:var(--txt-2);font-size:12px}
+.dlg-mm .dlg-swatch:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.dlg-mm .dlg-preview{margin-top:2px}
+.dlg-kept{margin:6px 0 2px}
+
 /* Export de contenu (issue #108) — /content/export */
 .export-row{margin:6px 0 14px}
 .export-sub{margin:14px 0 6px}

@@ -4,16 +4,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Modèle éditable <strong>minimal</strong> d'un dialogue pour le Control Panel (issue #145). Il ne
- * couvre <em>que</em> ce que l'éditeur de création manipule : identité du dialogue, nœud de départ,
- * et — pour la relecture de fichiers existants — la liste des nœuds et de leurs choix simples
- * ({@code text} / {@code next} / fermeture).
+ * Modèle éditable d'un dialogue pour le Control Panel (issue #145). Il porte l'identité du
+ * dialogue, son nœud de départ, ses nœuds et leurs choix.
  *
- * <p>Ce n'est <strong>pas</strong> le modèle complet du moteur de dialogues (conditions, actions de
- * quête typées, embranchements avancés) : #82 couvre l'éditeur avancé. Un fichier qui utilise ces
- * constructions se relit en « best-effort » (les choix avec conditions/actions sont conservés
- * structurellement mais marqués non simples) et n'est jamais réécrit par le Control Panel via ce
- * modèle — la création écrit un squelette neuf, la lecture ne sert qu'au catalogue fusionné.</p>
+ * <p>Depuis #145 le modèle est <strong>fidèle</strong> : les conditions et les actions d'un choix
+ * sont conservées telles quelles (listes ordonnées de couples clé → valeur, {@code type} en tête),
+ * même si l'éditeur du panel ne sait pas les <em>modifier</em>. L'édition d'un dialogue existant
+ * repart donc toujours du fichier réel et ne peut plus le réduire à un squelette : les formulaires
+ * du panel ne touchent qu'aux champs qu'ils affichent. L'édition fine des conditions et des actions
+ * reste du ressort de l'éditeur guidé {@code /dialogues} (#82), qui opère via le moteur.</p>
  */
 public final class DialogueDraft {
 
@@ -24,6 +23,10 @@ public final class DialogueDraft {
         public boolean close = false;
         /** {@code false} dès qu'un choix porte une condition ou une action non {@code CLOSE}. */
         public boolean simple = true;
+        /** Conditions du choix, dans l'ordre du fichier ({@code type} d'abord). Jamais interprétées ici. */
+        public final List<java.util.Map<String, String>> conditions = new ArrayList<>();
+        /** Actions du choix, dans l'ordre du fichier — y compris {@code CLOSE}. */
+        public final List<java.util.Map<String, String>> actions = new ArrayList<>();
 
         public Choice() {
         }
@@ -32,6 +35,11 @@ public final class DialogueDraft {
             this.text = text == null ? "" : text;
             this.next = next == null ? "" : next;
             this.close = close;
+            if (close) {
+                java.util.Map<String, String> closeAction = new java.util.LinkedHashMap<>();
+                closeAction.put("type", "CLOSE");
+                this.actions.add(closeAction);
+            }
         }
     }
 

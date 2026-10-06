@@ -3079,15 +3079,17 @@ public final class AgentPages {
         }
 
         if (canWrite) {
-            sb.append("<p class=\"form-text dlg-editnote\">Édition guidée disponible pour les nœuds, les textes et "
-                    + "les choix simples des dialogues chargés par le serveur. Les opérations avancées (conditions, "
-                    + "actions de quête) restent limitées. ")
+            sb.append("<p class=\"form-text dlg-editnote\">Édition guidée des nœuds, des textes et des choix des "
+                    + "dialogues chargés par le serveur — y compris le démarrage de quête et la condition d'état "
+                    + "d'un choix. Les actions et conditions que cette page n'expose pas sont conservées à "
+                    + "l'identique et listées sous le choix concerné. ")
                     .append(docLink("dialogues", "En savoir plus sur les limites de l'éditeur")).append("</p>");
             sb.append("<details class=\"tech-detail\"><summary>Détails techniques de l'éditeur</summary>"
                     + "<p class=\"muted\">La création écrit <code>dialogues/&lt;id&gt;.yml</code> dans la source au "
                     + "<strong>format canonique</strong> du panel (les commentaires et la mise en forme d'origine ne "
                     + "sont pas conservés). L'édition guidée d'un dialogue déjà chargé le re-parse et le recharge ; "
-                    + "en cas d'échec, le contenu d'origine est restauré.</p></details>");
+                    + "en cas d'échec, le contenu d'origine est restauré. Chaque enregistrement repart du fichier "
+                    + "réel : une propriété absente du formulaire n'est jamais effacée.</p></details>");
         }
 
         if (merged.isEmpty()) {
@@ -3453,7 +3455,8 @@ public final class AgentPages {
                     sb.append(" <span class=\"dlg-cond\">si ").append(Http.esc(label)).append("</span>");
                 }
                 if (canWrite) {
-                    sb.append(dialogueChoiceEditForms(session, agentId, dialogueId, nodeId, i, cm, next, nodeIds));
+                    sb.append(dialogueChoiceEditForms(session, agentId, dialogueId, nodeId, i, cm, next, nodeIds,
+                            questTitles));
                 }
                 sb.append("</li>");
             }
@@ -3552,37 +3555,212 @@ public final class AgentPages {
         return sb.append("</details>").toString();
     }
 
-    /** Sous un choix : édition/suppression si « simple », sinon une note « édition avancée à venir ». */
+    /**
+     * Sous un choix : son formulaire d'édition complet. Depuis l'issue #82, un choix portant une
+     * action de quête ou une condition d'état n'est plus un cul-de-sac — son texte et sa cible sont
+     * modifiables, son action {@code START_QUEST} / {@code ADVANCE_QUEST} / {@code TURN_IN_QUEST} et
+     * sa condition {@code QUEST_STATE} s'éditent par des sélecteurs, et <strong>tout le reste est
+     * reconduit à l'identique par le moteur</strong> (le formulaire ne porte pas ces propriétés : il
+     * ne peut donc pas les écraser). Les propriétés non éditables sont listées explicitement.
+     *
+     * <p>La suppression reste réservée aux choix sans condition ni action autre que « fermer » :
+     * supprimer un choix riche effacerait aussi ses effets de jeu, ce qui doit rester un geste
+     * délibéré (retirer d'abord l'action et la condition).</p>
+     */
     private String dialogueChoiceEditForms(Session session, String agentId, String dialogueId, String nodeId,
-                                           int index, Map<String, Object> choice, String next, List<String> nodeIds) {
-        if (!choiceIsSimple(choice)) {
-            return " <span class=\"muted dlg-adv\">— actions / conditions avancées : édition prévue dans une phase "
-                    + "ultérieure</span>";
-        }
+                                           int index, Map<String, Object> choice, String next, List<String> nodeIds,
+                                           Map<String, String> questTitles) {
         String sourceText = str(choice.get("text")); // source MiniMessage brute (jamais échappée deux fois)
-        StringBuilder sb = new StringBuilder("<details class=\"dlg-edit dlg-edit-choice\"><summary>Modifier / supprimer</summary>");
-        // Modifier
+        boolean simple = choiceIsSimple(choice);
+        List<Map<String, Object>> questActions = questActionsOf(choice);
+        List<Map<String, Object>> stateConditions = questStateConditionsOf(choice);
+        List<String> preserved = preservedChoiceProperties(choice, questTitles);
+        // Plus d'une action de quête (ou d'une condition d'état) sur le même choix : le formulaire ne
+        // saurait en représenter qu'une, donc il n'y touche pas du tout (« keep ») — jamais de
+        // réduction silencieuse de deux effets à un seul.
+        boolean actionEditable = questActions.size() <= 1;
+        boolean conditionEditable = stateConditions.size() <= 1;
+
+        StringBuilder sb = new StringBuilder("<details class=\"dlg-edit dlg-edit-choice\"><summary>"
+                + (simple ? "Modifier / supprimer" : "Modifier ce choix") + "</summary>");
         sb.append(formStart(session, agentId, "dialogue.choice.update", "/dialogues", ""));
         sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
         sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
         sb.append("<input type=\"hidden\" name=\"choice_index\" value=\"").append(index).append("\">");
-        sb.append("<label>Texte du choix</label><input type=\"text\" name=\"choice_text\" maxlength=\"512\" value=\"")
-                .append(Http.esc(sourceText)).append("\">");
+
+        // Issue #195 : le composant partagé — couleur au clic, styles, aperçu — et sa règle
+        // « un texte multi-styles n'est jamais aplati sans geste explicite ».
+        sb.append(StyleField.render("choice_text",
+                "dlg-choice-" + Http.esc(nodeId).replaceAll("[^a-zA-Z0-9_-]", "-") + "-" + index,
+                "Texte du choix", sourceText, true,
+                "Libellé du bouton proposé au joueur. Choisir couleur et styles ci-dessus — aucun "
+                + "code à écrire."));
+
         sb.append("<label>Nœud cible</label>").append(nodeTargetSelect(nodeIds, next));
         sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"close\" value=\"true\"")
                 .append(next.isEmpty() ? " checked" : "").append("> ce choix termine le dialogue</label>");
+
+        // ---- Action de quête ----
+        if (actionEditable) {
+            String kind = questActions.isEmpty() ? "none" : str(questActions.get(0).get("kind")).toLowerCase(Locale.ROOT);
+            String target = questActions.isEmpty() ? "" : str(questActions.get(0).get("target"));
+            sb.append("<label>Action de quête</label>");
+            sb.append("<select name=\"quest_action\">");
+            sb.append(option("none", kind, "Aucune"));
+            sb.append(option("start_quest", kind, "Démarrer la quête"));
+            sb.append(option("advance_quest", kind, "Faire avancer la quête"));
+            sb.append(option("turn_in_quest", kind, "Rendre la quête"));
+            sb.append("</select>");
+            sb.append("<label>Quête concernée</label>").append(questSelect("quest_id", target, questTitles));
+        } else {
+            sb.append("<input type=\"hidden\" name=\"quest_action\" value=\"keep\">");
+            sb.append("<p class=\"faint\" style=\"font-size:12px\">").append(questActions.size())
+                    .append(" actions de quête sur ce choix : conservées telles quelles, non modifiables ici "
+                            + "(l'éditeur n'en représente qu'une).</p>");
+        }
+
+        // ---- Condition d'état de quête ----
+        if (conditionEditable) {
+            Map<String, Object> cond = stateConditions.isEmpty() ? Map.of() : stateConditions.get(0);
+            String state = stateConditions.isEmpty() ? "none" : str(cond.get("value")).toLowerCase(Locale.ROOT);
+            String target = str(cond.get("target"));
+            sb.append("<label>Condition — état de la quête</label>");
+            sb.append("<select name=\"quest_condition\">");
+            sb.append(option("none", state, "Aucune condition"));
+            for (String s : QUEST_STATES) {
+                sb.append(option(s.toLowerCase(Locale.ROOT), state, questStateLabel(s)));
+            }
+            sb.append("</select>");
+            sb.append("<label>Quête de la condition</label>").append(questSelect("condition_quest_id", target, questTitles));
+            sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"condition_negate\" value=\"true\"")
+                    .append(Boolean.TRUE.equals(cond.get("negated")) ? " checked" : "")
+                    .append("> inverser la condition (« sauf si »)</label>");
+        } else {
+            sb.append("<input type=\"hidden\" name=\"quest_condition\" value=\"keep\">");
+            sb.append("<p class=\"faint\" style=\"font-size:12px\">").append(stateConditions.size())
+                    .append(" conditions d'état de quête sur ce choix : conservées telles quelles, non modifiables "
+                            + "ici (l'éditeur n'en représente qu'une).</p>");
+        }
+
+        if (!preserved.isEmpty()) {
+            sb.append("<p class=\"faint dlg-kept\" style=\"font-size:12px\">").append(Icons.icon("check"))
+                    .append("Conservé à l'identique par l'enregistrement (non éditable depuis cette page) : ");
+            sb.append(Http.esc(String.join(" · ", preserved))).append(".</p>");
+        }
+
         sb.append(mutationConsent("dialogue.choice.update", "",
-                "Met à jour le texte et la cible de ce choix. Modification réversible."));
+                "Met à jour le texte, la cible, l'action de quête et la condition d'état de ce choix. Les autres "
+                        + "actions et conditions sont conservées à l'identique. Modification réversible."));
         sb.append("<button class=\"btn\" type=\"submit\">Enregistrer le choix</button></form>");
-        // Supprimer
-        sb.append(formStart(session, agentId, "dialogue.choice.delete", "/dialogues", ""));
-        sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
-        sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
-        sb.append("<input type=\"hidden\" name=\"choice_index\" value=\"").append(index).append("\">");
-        sb.append(mutationConsent("dialogue.choice.delete",
-                "Supprimer définitivement ce choix (impossible si c'est le dernier choix du nœud).", ""));
-        sb.append("<button class=\"btn secondary\" type=\"submit\">Supprimer ce choix</button></form>");
+
+        if (simple) {
+            sb.append(formStart(session, agentId, "dialogue.choice.delete", "/dialogues", ""));
+            sb.append("<input type=\"hidden\" name=\"dialogue_id\" value=\"").append(Http.esc(dialogueId)).append("\">");
+            sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
+            sb.append("<input type=\"hidden\" name=\"choice_index\" value=\"").append(index).append("\">");
+            sb.append(mutationConsent("dialogue.choice.delete",
+                    "Supprimer définitivement ce choix (impossible si c'est le dernier choix du nœud).", ""));
+            sb.append("<button class=\"btn secondary\" type=\"submit\">Supprimer ce choix</button></form>");
+        } else {
+            sb.append("<p class=\"faint\" style=\"font-size:12px\">Suppression indisponible tant que ce choix porte "
+                    + "une action ou une condition : les retirer ci-dessus d'abord, pour que leur perte soit un "
+                    + "geste explicite.</p>");
+        }
         return sb.append("</details>").toString();
+    }
+
+    /** États de quête proposés par la condition {@code QUEST_STATE} (ordre de {@code QuestState}). */
+    private static final List<String> QUEST_STATES = List.of(
+            "NOT_STARTED", "ACTIVE", "READY_TO_TURN_IN", "COMPLETED", "FAILED", "ABANDONED");
+
+    private static String questStateLabel(String state) {
+        return switch (state) {
+            case "NOT_STARTED" -> "Pas encore commencée";
+            case "ACTIVE" -> "En cours";
+            case "READY_TO_TURN_IN" -> "Prête à rendre";
+            case "COMPLETED" -> "Terminée";
+            case "FAILED" -> "Échouée";
+            case "ABANDONED" -> "Abandonnée";
+            default -> state;
+        };
+    }
+
+    /**
+     * {@code <select>} de quête : les quêtes du dernier relevé, plus — toujours — la quête
+     * actuellement référencée même si le serveur ne la connaît pas (sinon l'enregistrement
+     * remplacerait une référence inconnue par une autre).
+     */
+    private static String questSelect(String name, String selected, Map<String, String> questTitles) {
+        StringBuilder sb = new StringBuilder("<select name=\"" + Http.esc(name) + "\">");
+        sb.append("<option value=\"\"").append(selected.isEmpty() ? " selected" : "")
+                .append(">— (choisir une quête) —</option>");
+        boolean known = false;
+        for (Map.Entry<String, String> e : questTitles.entrySet()) {
+            String id = e.getKey();
+            boolean on = id.equalsIgnoreCase(selected);
+            known |= on;
+            String title = e.getValue() == null || e.getValue().isBlank()
+                    ? MiniText.prettifyId(id) : MiniText.plain(e.getValue());
+            sb.append("<option value=\"").append(Http.esc(id)).append("\"").append(on ? " selected" : "")
+                    .append(">").append(Http.esc(title)).append(" (").append(Http.esc(id)).append(")</option>");
+        }
+        if (!known && !selected.isEmpty()) {
+            sb.append("<option value=\"").append(Http.esc(selected)).append("\" selected>")
+                    .append(Http.esc(MiniText.prettifyId(selected))).append(" (").append(Http.esc(selected))
+                    .append(" — inconnue du serveur)</option>");
+        }
+        return sb.append("</select>").toString();
+    }
+
+    /** Actions {@code START_QUEST} / {@code ADVANCE_QUEST} / {@code TURN_IN_QUEST} portées par un choix. */
+    private static List<Map<String, Object>> questActionsOf(Map<String, Object> choice) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object a : asList(choice.get("actions"))) {
+            Map<String, Object> am = asMap(a);
+            String kind = str(am.get("kind"));
+            if ("START_QUEST".equals(kind) || "ADVANCE_QUEST".equals(kind) || "TURN_IN_QUEST".equals(kind)) {
+                out.add(am);
+            }
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> questStateConditionsOf(Map<String, Object> choice) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object c : asList(choice.get("conditions"))) {
+            Map<String, Object> cm = asMap(c);
+            if ("QUEST_STATE".equals(str(cm.get("kind")))) {
+                out.add(cm);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Libellés des propriétés d'un choix que le formulaire ne porte pas et que le moteur reconduit
+     * telles quelles : à afficher pour que la limite de l'éditeur soit lue, jamais devinée.
+     */
+    private static List<String> preservedChoiceProperties(Map<String, Object> choice, Map<String, String> questTitles) {
+        List<String> out = new ArrayList<>();
+        for (Object a : asList(choice.get("actions"))) {
+            Map<String, Object> am = asMap(a);
+            String kind = str(am.get("kind"));
+            if ("CLOSE".equals(kind) || "START_QUEST".equals(kind) || "ADVANCE_QUEST".equals(kind)
+                    || "TURN_IN_QUEST".equals(kind)) {
+                continue;
+            }
+            out.add("action " + dialogueEffectLabel(kind, str(am.get("target")), str(am.get("value")), questTitles));
+        }
+        for (Object c : asList(choice.get("conditions"))) {
+            Map<String, Object> cm = asMap(c);
+            String kind = str(cm.get("kind"));
+            if ("QUEST_STATE".equals(kind)) {
+                continue;
+            }
+            out.add("condition " + (Boolean.TRUE.equals(cm.get("negated")) ? "non " : "")
+                    + dialogueEffectLabel(kind, str(cm.get("target")), str(cm.get("value")), questTitles));
+        }
+        return out;
     }
 
     private String dialogueNodeCreateForm(Session session, String agentId, String dialogueId) {

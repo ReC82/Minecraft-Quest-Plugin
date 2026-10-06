@@ -152,8 +152,10 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
-    public CompletableFuture<MutationResult> dialogueChoiceUpdate(String dialogueId, String nodeId, int choiceIndex,
-                                                                 String choiceText, String nextNodeId, boolean close) {
+    public CompletableFuture<MutationResult> dialogueChoiceUpdate(
+            String dialogueId, String nodeId, int choiceIndex, String choiceText, String nextNodeId, boolean close,
+            com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor.QuestActionEdit questAction,
+            com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor.QuestConditionEdit questCondition) {
         return unsupported();
     }
 

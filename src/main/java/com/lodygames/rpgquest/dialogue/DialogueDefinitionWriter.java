@@ -33,8 +33,9 @@ import java.util.Map;
  * en texte YAML re-parsable à l'identique par {@link DialogueDefinitionParser} — base de l'éditeur
  * guidé {@code /dialogues} (issue #82). Contrairement à {@link DialogueDefinitionYaml} (limité au
  * squelette {@code DialogueDraft}), cette classe sérialise <strong>tous</strong> les types
- * d'actions (10) et de conditions (8 + négation) : une édition qui passe par ici ne perd donc
- * jamais une action {@code START_QUEST}, une condition {@code QUEST_STATE}, etc.
+ * d'actions (10) et de conditions (8 + négation), ainsi que les textes localisés d'un nœud : une
+ * édition qui passe par ici ne perd donc jamais une action {@code START_QUEST}, une condition
+ * {@code QUEST_STATE} ni une traduction de nœud.
  *
  * <p>Purement fonctionnel : aucune dépendance Bukkit à l'exécution (au-delà de
  * {@code Material.name()} / {@code NamespacedKey.toString()}), aucun accès disque. Les
@@ -102,6 +103,11 @@ public final class DialogueDefinitionWriter {
                 .forEach(k -> sb.append("      ").append(k).append(": ").append(quote(byLocale.get(k))).append('\n'));
     }
 
+    /**
+     * Le texte d'un <em>choix</em> est toujours un scalaire : {@code DialogueDefinitionParser} lit
+     * les choix via {@code getMapList}, où une table de traductions n'est pas reconnue (le fichier
+     * est alors rejeté au chargement). Rien à perdre ici, donc — contrairement au texte d'un nœud.
+     */
     private static void renderChoice(StringBuilder sb, DialogueChoice choice) {
         sb.append("      - text: ").append(quote(choice.text().base())).append('\n');
         if (!choice.conditions().isEmpty()) {

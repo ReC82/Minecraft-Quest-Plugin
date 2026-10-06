@@ -149,8 +149,11 @@ public final class QuestYaml {
         }
         QuestDraft d = new QuestDraft();
         d.id = plainId(str(m.get("id")));
-        d.title = str(m.get("title"));
-        d.description = str(m.get("description"));
+        // « title » / « description » acceptent aussi une table de traductions côté moteur
+        // (LocalizedText). L'éditeur ne sait pas la représenter : on le signale plutôt que de la
+        // réduire à sa forme texte — un enregistrement l'écraserait sinon silencieusement.
+        d.title = localizable(m.get("title"), "title", problems);
+        d.description = localizable(m.get("description"), "description", problems);
         d.category = str(m.get("category"));
         d.icon = str(m.get("icon")).isBlank() ? "BOOK" : str(m.get("icon"));
         d.repeatable = bool(m.get("repeatable"));
@@ -182,6 +185,16 @@ public final class QuestYaml {
             }
         }
         return new ReadResult(d, problems);
+    }
+
+    /** Champ texte qui peut être une table de traductions : non pris en charge, jamais aplati en silence. */
+    private static String localizable(Object raw, String field, List<String> problems) {
+        if (raw instanceof Map<?, ?>) {
+            problems.add("« " + field + " » est une table de traductions : non prise en charge par l'éditeur "
+                    + "(modifier ce fichier à la main pour ne pas perdre les locales).");
+            return "";
+        }
+        return str(raw);
     }
 
     private static Map<String, String> kvMap(Object o, List<String> problems, String what) {

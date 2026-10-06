@@ -3382,6 +3382,43 @@ le résumé de récompenses de TC-014).
     externe réel, sa persistance après redémarrage, le comportement des listeners en jeu, et la
     création de PNJ Citizens — aucun de ces points n'est simulable sans un vrai LuckPerms et un vrai
     serveur.
+### TC-254 — Édition d'un choix de dialogue porteur d'actions/conditions (issue #82, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `DialogueDefinitionEditor#updateChoice` (préservation + édition
+    structurée), action agent `dialogue.choice.update` (`quest_action` / `quest_condition`),
+    formulaire de choix et champ MiniMessage de `/dialogues`, garde-fou de `/dialogues/edit/<id>`.
+-   **Préconditions :** JAR de cette session déployé sur DEV et redémarré ; Control Panel
+    redéployé ; un dialogue chargé par le serveur dont un choix porte une action `START_QUEST` et
+    une condition `QUEST_STATE` (le dialogue de **Jeff** en DEV).
+-   **Scénario principal :**
+    1.  `/dialogues` → déplier le dialogue de Jeff → graphe des nœuds → sous le choix
+        « Je vais m'en charger », « Modifier ce choix » ouvre bien un formulaire (plus de note
+        « édition prévue dans une phase ultérieure »).
+    2.  Le sélecteur « Action de quête » affiche **Démarrer la quête** et la quête
+        « Nettoyage des alentours » ; le sélecteur de condition affiche **Pas encore commencée**
+        sur la même quête. Rien n'est vide ni « à choisir ».
+    3.  Modifier **uniquement** le texte du choix → enregistrer → rafraîchir `dialogue.list` :
+        le texte a changé, l'action `START_QUEST` et la condition `QUEST_STATE` sont toujours là,
+        la flèche vers le nœud suivant aussi.
+    4.  Changer l'état de la condition (ex. → *Terminée*), enregistrer, rafraîchir : seule la
+        condition a changé ; l'action de quête n'a pas bougé.
+    5.  Palette de couleurs : cliquer une pastille sur le texte d'un nœud réécrit la balise
+        englobante, l'aperçu change de couleur, et le champ montre toujours la source. Sur un
+        texte à plusieurs balises différentes, la palette est grisée avec sa note.
+    6.  **Non-régression source :** `/dialogues/edit/<id>` sur un dialogue de la source à
+        plusieurs nœuds → modifier la réplique de départ → enregistrer → le fichier garde tous
+        ses autres nœuds, choix, conditions et actions.
+-   **Reset :** aucun. Ne pas utiliser le dialogue réel de Jeff comme bac à sable : dupliquer le
+    scénario sur un dialogue de test si le texte doit rester tel quel.
+-   **Couverture automatisée :** `DialogueDefinitionEditorTest` (texte d'un choix riche sans
+    toucher conditions/actions, `SET` / `REMOVE` / `KEEP` de l'action et de la condition,
+    bascule « ferme le dialogue » sans perdre l'action, format canonique identique entre moteur et
+    panel) ; `AgentActionExecutorTest` (paramètres structurés transportés, rejets) ;
+    `DialoguesCatalogTest` (formulaire rendu, sélecteurs pré-remplis, propriétés conservées
+    annoncées, `keep` forcé sur deux actions de quête) ; `DialogueYamlTest` et
+    `DialogueSourceMergeTest` (round-trip fidèle, réédition sans perte, refus d'écrasement).
+-   **Limites :** le rendu visuel réel de la palette et de l'aperçu, et le comportement en jeu du
+    dialogue après édition, restent `PENDING MANUAL VALIDATION`.
 
 ---
 
@@ -3468,3 +3505,4 @@ le résumé de récompenses de TC-014).
 | TC-251 | Récupération d'une récompense monétaire non payée #16 (PENDING) | | | |
 | TC-252 | Groupes multiples, droits effectifs et provenance #199 (PENDING) | | | |
 | TC-253 | Droits Minecraft par groupe/monde, collision externe #200 (PENDING) | | | |
+| TC-254 | Édition d'un choix de dialogue avec actions/conditions #82 (PENDING) | | | |

@@ -73,6 +73,7 @@ public final class ContentEditorPages {
     public Result questPage(RefData ref, String slug, boolean saved) {
         QuestDraft draft;
         String expectedSha = "";
+        List<String> sourceProblems = List.of();
         if (slug == null) {
             draft = QuestDraft.blank();
         } else {
@@ -86,6 +87,7 @@ public final class ContentEditorPages {
                 draft.id = slug;
             }
             expectedSha = cf.get().sha256();
+            sourceProblems = rr.problems();
         }
         // Trois états, et c'est volontairement explicite depuis #131 : enregistrer écrit dans la
         // SOURCE, pas sur le serveur de jeu. Dire « le serveur validera au prochain chargement »
@@ -96,6 +98,7 @@ public final class ContentEditorPages {
                 + "Pour qu'elle agisse en jeu, il faut qu'elle soit <strong>publiée</strong> sur le "
                 + "serveur, puis <strong>rechargée</strong> : la page « Quêtes » affiche l'état réel "
                 + "et propose l'aperçu et le rechargement.") : "";
+        note += sourceReadBanner(sourceProblems);
         return new Result.Html(note + renderQuest(ref, draft, slug, expectedSha, List.of(), false, null));
     }
 
@@ -114,7 +117,10 @@ public final class ContentEditorPages {
         if (wantSave) {
             List<Diagnostic> diags = QuestValidator.validate(draft, refPlus);
             String yaml = QuestYaml.write(draft);
-            List<String> rtp = QuestYaml.roundTripProblems(yaml);
+            // Le formulaire reconstruit toute la quête : si le fichier d'origine contenait quelque
+            // chose que la relecture n'a pas su représenter, écrire l'effacerait (#145 / #46).
+            List<String> rtp = new ArrayList<>(sourceReadProblems("quests", slug));
+            rtp.addAll(QuestYaml.roundTripProblems(yaml));
             String targetSlug = QuestYaml.plainId(draft.id);
             String blocker = saveBlocker("quests", diags, rtp, targetSlug);
             if (blocker != null) {
@@ -721,6 +727,7 @@ public final class ContentEditorPages {
         DialogueDraft draft;
         String expectedSha = "";
         String speaker = "";
+        List<String> sourceProblems = List.of();
         if (slug == null) {
             draft = DialogueDraft.blank();
         } else {
@@ -730,6 +737,7 @@ public final class ContentEditorPages {
             }
             DialogueYaml.ReadResult rr = DialogueYaml.read(cf.get().text());
             draft = rr.draft() != null ? rr.draft() : DialogueDraft.blank();
+            sourceProblems = rr.problems();
             if (draft.id == null || draft.id.isBlank()) {
                 draft.id = slug;
             }
@@ -745,6 +753,7 @@ public final class ContentEditorPages {
         String note = saved ? Ui.banner("ok", "Dialogue enregistré dans la source. Il apparaît dans "
                 + "« Dialogues » avec le badge « Source uniquement » ; le moteur RPGQuest le validera au "
                 + "prochain rechargement du serveur.") : "";
+        note += sourceReadBanner(sourceProblems);
         return new Result.Html(note + renderDialogue(r, draft, slug, expectedSha, speaker, "", npc,
                 List.of(), false, null));
     }
@@ -762,14 +771,41 @@ public final class ContentEditorPages {
         String npc = form.getOrDefault("npc", "").trim();
         String text = applyColor(textRaw, color);
 
-        DialogueDraft draft = new DialogueDraft();
+        // Édition d'un dialogue existant : on repart TOUJOURS du fichier réel et on n'y applique que
+        // les champs du formulaire (locuteur + réplique du nœud de départ). Les autres nœuds, les
+        // choix, leurs conditions et leurs actions sont reconduits tels quels — ce formulaire ne
+        // peut pas réduire un dialogue à un squelette (#145 / #46).
+        DialogueDraft draft = null;
+        List<String> sourceProblems = List.of();
+        if (slug != null) {
+            Optional<ContentWorkspace.ContentFile> cf = workspace.read("dialogues", slug);
+            if (cf.isPresent()) {
+                DialogueYaml.ReadResult rr = DialogueYaml.read(cf.get().text());
+                if (rr.draft() != null) {
+                    draft = rr.draft();
+                    sourceProblems = rr.problems();
+                }
+            }
+        }
+        if (draft == null) {
+            draft = new DialogueDraft();
+            draft.start = "start";
+            DialogueDraft.Node start = new DialogueDraft.Node("start");
+            start.choices.add(new DialogueDraft.Choice("Au revoir", "", true));
+            draft.nodes.add(start);
+        }
         draft.id = DialogueYaml.plainId(rawId);
-        draft.start = "start";
-        DialogueDraft.Node start = new DialogueDraft.Node("start");
-        start.speaker = speaker;
-        start.text = text;
-        start.choices.add(new DialogueDraft.Choice("Au revoir", "", true));
-        draft.nodes.add(start);
+        DialogueDraft.Node startNode = draft.startNode();
+        if (startNode == null) {
+            startNode = draft.nodes.isEmpty() ? null : draft.nodes.get(0);
+        }
+        if (startNode == null) {
+            startNode = new DialogueDraft.Node(draft.start);
+            startNode.choices.add(new DialogueDraft.Choice("Au revoir", "", true));
+            draft.nodes.add(startNode);
+        }
+        startNode.speaker = speaker;
+        startNode.text = text;
 
         boolean wantSave = action.equals("save");
         boolean showChecks = wantSave || action.equals("validate");
@@ -777,7 +813,8 @@ public final class ContentEditorPages {
         if (wantSave) {
             List<Diagnostic> diags = DialogueValidator.validate(draft);
             String yaml = DialogueYaml.write(draft);
-            List<String> rtp = DialogueYaml.roundTripProblems(yaml);
+            List<String> rtp = new ArrayList<>(sourceProblems);
+            rtp.addAll(DialogueYaml.roundTripProblems(yaml));
             String targetSlug = DialogueYaml.plainId(draft.id);
             String blocker = saveBlocker("dialogues", diags, rtp, targetSlug);
             if (blocker != null) {
@@ -819,13 +856,23 @@ public final class ContentEditorPages {
         StringBuilder sb = new StringBuilder();
 
         sb.append(Ui.pageHeader("dialogues", editing ? "Modifier un dialogue" : "Créer un dialogue",
-                editing ? "Dialogue « " + Http.esc(slug) + " »"
+                editing ? "Dialogue « " + Http.esc(slug) + " » — ce formulaire ne modifie que le locuteur et la "
+                        + "réplique du nœud de départ ; le reste du fichier est conservé tel quel."
                         : "Un dialogue minimal : identité, locuteur, couleur et réplique de départ. "
                         + "L'ajout de nœuds et de choix se fait ensuite sur le dialogue chargé par le serveur.",
                 "<a class=\"btn secondary\" href=\"/dialogues\">" + Icons.icon("back") + "Retour au catalogue</a>"));
 
         if (!writable) {
             sb.append(readOnlyBanner("dialogues"));
+        }
+        if (editing) {
+            int otherNodes = Math.max(0, d.nodes.size() - 1);
+            int choices = d.choiceCount();
+            sb.append("<p class=\"form-text\">").append(Icons.icon("check"))
+                    .append("Conservé à l'identique par l'enregistrement : ").append(otherNodes)
+                    .append(" autre(s) nœud(s), ").append(choices)
+                    .append(" choix et toutes leurs conditions et actions. Pour les modifier, utiliser l'éditeur "
+                            + "guidé de « Dialogues » sur le dialogue chargé par le serveur.</p>");
         }
 
         sb.append("<form method=\"post\" action=\"/dialogues/save\" class=\"editor\" novalidate>%CSRF%");
@@ -968,6 +1015,42 @@ public final class ContentEditorPages {
         sb.append("<div class=\"codeblock\"><pre>").append(Http.esc(yaml)).append("</pre></div>");
         sb.append("<p class=\"field-help\">Aperçu en lecture seule — le YAML est un diagnostic, pas un champ éditable.</p>");
         return sb.toString();
+    }
+
+    /**
+     * Bandeau affiché quand la <em>relecture du fichier source</em> a signalé quelque chose que
+     * l'éditeur ne sait pas représenter (table de traductions, construction YAML exotique…). Dit
+     * avant toute tentative d'édition : l'enregistrement sera refusé plutôt que d'écraser ce que le
+     * panel n'a pas su relire (#145 / #46).
+     */
+    /** Problèmes de relecture du fichier source existant ({@code slug == null} = création : aucun). */
+    private List<String> sourceReadProblems(String kind, String slug) {
+        if (slug == null) {
+            return List.of();
+        }
+        Optional<ContentWorkspace.ContentFile> cf = workspace.read(kind, slug);
+        if (cf.isEmpty()) {
+            return List.of();
+        }
+        return switch (kind) {
+            case "quests" -> QuestYaml.read(cf.get().text()).problems();
+            case "dialogues" -> DialogueYaml.read(cf.get().text()).problems();
+            default -> List.of();
+        };
+    }
+
+    private static String sourceReadBanner(List<String> sourceProblems) {
+        if (sourceProblems == null || sourceProblems.isEmpty()) {
+            return "";
+        }
+        StringBuilder b = new StringBuilder("<strong>Ce fichier n'est pas relu fidèlement par l'éditeur — "
+                + "l'enregistrement est bloqué pour ne rien perdre :</strong><ul>");
+        for (String p : sourceProblems) {
+            b.append("<li>").append(Http.esc(p)).append("</li>");
+        }
+        b.append("</ul><p class=\"muted\">Modifier ce fichier à la main dans la source, ou passer par l'éditeur "
+                + "guidé du catalogue sur le contenu chargé par le serveur.</p>");
+        return Ui.banner("err", b.toString());
     }
 
     private String saveBlocker(String kind, List<Diagnostic> diags, List<String> rtp, String slug) {

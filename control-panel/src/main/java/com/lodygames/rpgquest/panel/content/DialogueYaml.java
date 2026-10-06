@@ -17,6 +17,11 @@ import java.util.Map;
  * {@code next} / {@code actions} / {@code conditions}). Un fichier qui utilise des constructions non
  * supportées par {@link MiniYaml} (scalaires repliés {@code >}, ancres…) ressort avec
  * {@code problems} non vide — jamais masqué, jamais réécrit à l'aveugle.</p>
+ *
+ * <p>Depuis #145, les conditions et les actions d'un choix font partie du modèle relu <em>et</em>
+ * émis : réenregistrer un dialogue existant depuis {@code /dialogues/edit} ne les efface plus. Le
+ * garde-fou round-trip couvre donc réellement le contenu du fichier, et un fichier dont la
+ * relecture signale un problème n'est jamais réécrit (voir {@code ContentEditorPages}).</p>
  */
 public final class DialogueYaml {
 
@@ -39,16 +44,46 @@ public final class DialogueYaml {
             sb.append("    choices:\n");
             for (DialogueDraft.Choice choice : node.choices) {
                 sb.append("      - text: ").append(quote(choice.text)).append('\n');
-                if (choice.close) {
-                    sb.append("        actions:\n");
-                    sb.append("          - type: CLOSE\n");
-                } else if (choice.next != null && !choice.next.isBlank()) {
+                writeEntries(sb, "conditions", choice.conditions);
+                writeEntries(sb, "actions", choice.actions);
+                if (choice.next != null && !choice.next.isBlank()) {
                     sb.append("        next: ").append(choice.next.trim()).append('\n');
                 }
             }
         }
         return sb.toString();
     }
+
+    /**
+     * {@code conditions:} / {@code actions:} d'un choix, à l'indentation du moteur
+     * ({@code DialogueDefinitionWriter}) : le {@code type} porte le tiret, les autres clés suivent.
+     */
+    private static void writeEntries(StringBuilder sb, String key, List<Map<String, String>> entries) {
+        if (entries.isEmpty()) {
+            return;
+        }
+        sb.append("        ").append(key).append(":\n");
+        for (Map<String, String> entry : entries) {
+            boolean first = true;
+            for (Map.Entry<String, String> e : entry.entrySet()) {
+                sb.append(first ? "          - " : "            ")
+                        .append(e.getKey()).append(": ").append(entryScalar(e.getKey(), e.getValue())).append('\n');
+                first = false;
+            }
+        }
+    }
+
+    /**
+     * Même règle de citation que le moteur : seuls les champs de texte libre
+     * ({@code key} / {@code value} / {@code permission} / {@code command}) sont mis entre
+     * guillemets ; les identifiants et les nombres restent nus.
+     */
+    private static String entryScalar(String field, String value) {
+        return QUOTED_ENTRY_FIELDS.contains(field) ? quote(value) : (value == null ? "" : value.trim());
+    }
+
+    private static final java.util.Set<String> QUOTED_ENTRY_FIELDS =
+            java.util.Set.of("key", "value", "permission", "command");
 
     // ---- relecture --------------------------------------------------------------------
 
@@ -124,12 +159,23 @@ public final class DialogueYaml {
             problems.add("choix mal formé (nœud « " + nodeId + " »).");
             return c;
         }
-        c.text = str(cm.get("text"));
+        Object text = cm.get("text");
+        if (text instanceof Map<?, ?>) {
+            problems.add("choix du nœud « " + nodeId + " » : texte localisé multi-locale non pris en charge "
+                    + "par l'éditeur.");
+            c.text = "";
+        } else {
+            c.text = str(text);
+        }
         c.next = str(cm.get("next"));
         List<Object> conditions = asList(cm.get("conditions"));
         List<Object> actions = asList(cm.get("actions"));
-        for (Object a : actions) {
-            if (a instanceof Map<?, ?> am && "CLOSE".equalsIgnoreCase(str(am.get("type")))) {
+        for (Object o : conditions) {
+            c.conditions.add(readEntry(o, nodeId, "condition", problems));
+        }
+        for (Object o : actions) {
+            c.actions.add(readEntry(o, nodeId, "action", problems));
+            if (o instanceof Map<?, ?> am && "CLOSE".equalsIgnoreCase(str(am.get("type")))) {
                 c.close = true;
             }
         }
@@ -137,6 +183,25 @@ public final class DialogueYaml {
                 a -> a instanceof Map<?, ?> am && "CLOSE".equalsIgnoreCase(str(am.get("type"))));
         c.simple = conditions.isEmpty() && onlyClose;
         return c;
+    }
+
+    /** Une entrée {@code conditions[]} / {@code actions[]} relue telle quelle, ordre des clés préservé. */
+    private static Map<String, String> readEntry(Object raw, String nodeId, String what, List<String> problems) {
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        if (!(raw instanceof Map<?, ?> m)) {
+            problems.add(what + " mal formée dans le nœud « " + nodeId + " ».");
+            return out;
+        }
+        for (Map.Entry<?, ?> e : m.entrySet()) {
+            Object v = e.getValue();
+            if (v instanceof Map<?, ?> || v instanceof List<?>) {
+                problems.add(what + " du nœud « " + nodeId + " » : valeur imbriquée non prise en charge "
+                        + "pour « " + e.getKey() + " ».");
+                continue;
+            }
+            out.put(String.valueOf(e.getKey()).trim(), v == null ? "" : String.valueOf(v).trim());
+        }
+        return out;
     }
 
     // ---- helpers -----------------------------------------------------------------------

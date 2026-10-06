@@ -4,7 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.dialogue.model.ActionType;
+import com.lodygames.rpgquest.dialogue.model.CloseAction;
+import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
+import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
+import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
+import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
+import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
+import com.lodygames.rpgquest.dialogue.model.TurnInQuestAction;
+import com.lodygames.rpgquest.quest.model.QuestState;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,8 +24,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Édition guidée d'un dialogue : round-trip fidèle (actions/conditions riches conservées), écriture
- * atomique, restauration en cas de rechargement invalide, garde-fous des choix « non simples ».
+ * Édition guidée d'un dialogue : round-trip fidèle (actions/conditions riches conservées), édition
+ * structurée de l'action de quête et de la condition d'état, écriture atomique, restauration en cas
+ * de rechargement invalide, suppression toujours réservée aux choix sans effet de jeu.
  */
 class DialogueDefinitionEditorTest {
 
@@ -56,6 +66,19 @@ class DialogueDefinitionEditorTest {
                   - text: "OK"
                     actions:
                       - type: CLOSE
+              rich:
+                speaker: "Garde"
+                text: "<white>Tiens, prends ça.</white>"
+                choices:
+                  - text: "Merci"
+                    conditions:
+                      - type: HAS_PERMISSION
+                        permission: "rpgquest.vip"
+                    actions:
+                      - type: GIVE_ITEM
+                        material: BREAD
+                        amount: 3
+                      - type: CLOSE
             """;
 
     private DialogueDefinitionEditor editor;
@@ -86,7 +109,7 @@ class DialogueDefinitionEditorTest {
         assertEquals(1, d.nodes().get("greeting").choices().get(0).conditions().size());
         assertEquals(1, d.nodes().get("greeting").choices().get(0).actions().size());
         assertEquals("accepted", d.nodes().get("greeting").choices().get(0).next());
-        assertEquals(3, d.nodes().size());
+        assertEquals(4, d.nodes().size());
     }
 
     @Test
@@ -96,7 +119,7 @@ class DialogueDefinitionEditorTest {
         assertTrue(r.ok(), r.message());
 
         DialogueDefinition d = reload("rpgquest:guard");
-        assertEquals(4, d.nodes().size());
+        assertEquals(5, d.nodes().size());
         assertTrue(d.nodes().containsKey("farewell"));
         assertEquals(1, d.nodes().get("farewell").choices().size());
         assertTrue(d.nodes().get("farewell").choices().get(0).actions().get(0)
@@ -142,13 +165,93 @@ class DialogueDefinitionEditorTest {
     }
 
     @Test
-    void updateChoiceRefusesNonSimpleChoice() {
-        // greeting choix #0 porte une condition + une action START_QUEST -> non simple.
+    void updateChoiceEditsTextOfARichChoiceWithoutTouchingItsConditionsOrActions() {
+        // greeting choix #0 porte une condition QUEST_STATE + une action START_QUEST.
+        DialogueChoice before = reload("rpgquest:guard").nodes().get("greeting").choices().get(0);
+
         DialogueDefinitionEditor.Result r = editor.updateChoice("rpgquest:guard", "greeting", 0,
-                "Texte modifié", "accepted", false);
+                "<gray>Je vais m'en charger.</gray>", "accepted", false);
+        assertTrue(r.ok(), r.message());
+
+        DialogueChoice after = reload("rpgquest:guard").nodes().get("greeting").choices().get(0);
+        assertEquals("<gray>Je vais m'en charger.</gray>", after.text().base());
+        assertEquals("accepted", after.next());
+        assertEquals(before.conditions(), after.conditions(), "conditions intactes");
+        assertEquals(before.actions(), after.actions(), "actions intactes");
+    }
+
+    @Test
+    void updateChoiceKeepsEveryOtherPropertyUntouchedByDefault() {
+        // Un choix qui porte aussi une action non gérée par l'éditeur : elle traverse l'édition.
+        DialogueDefinition before = reload("rpgquest:guard");
+        assertTrue(editor.updateChoice("rpgquest:guard", "rich", 0, "Texte neuf", null, true).ok());
+        DialogueChoice after = reload("rpgquest:guard").nodes().get("rich").choices().get(0);
+        assertEquals("Texte neuf", after.text().base());
+        assertEquals(before.nodes().get("rich").choices().get(0).conditions(), after.conditions());
+        // GIVE_ITEM conservé, CLOSE toujours présent (le choix fermait déjà le dialogue).
+        assertTrue(after.actions().stream().anyMatch(a -> a instanceof GiveItemAction));
+        assertTrue(after.actions().stream().anyMatch(a -> a instanceof CloseAction));
+    }
+
+    @Test
+    void updateChoiceSetsTheQuestActionInPlaceAndKeepsTheRest() {
+        DialogueDefinitionEditor.Result r = editor.updateChoice("rpgquest:guard", "greeting", 0,
+                "J'accepte", "accepted", false,
+                DialogueDefinitionEditor.QuestActionEdit.set(ActionType.TURN_IN_QUEST, "rpgquest:crystal_hunt"),
+                DialogueDefinitionEditor.QuestConditionEdit.keep());
+        assertTrue(r.ok(), r.message());
+
+        DialogueChoice after = reload("rpgquest:guard").nodes().get("greeting").choices().get(0);
+        assertEquals(1, after.actions().size());
+        assertTrue(after.actions().get(0) instanceof TurnInQuestAction t
+                && t.questId().toString().equals("rpgquest:crystal_hunt"));
+        // La condition QUEST_STATE n'était pas visée : elle n'a pas bougé.
+        assertEquals(1, after.conditions().size());
+        assertTrue(after.conditions().get(0) instanceof QuestStateCondition c
+                && c.state() == QuestState.NOT_STARTED);
+    }
+
+    @Test
+    void updateChoiceRemovesTheQuestActionOnDemandOnly() {
+        assertTrue(editor.updateChoice("rpgquest:guard", "greeting", 0, "J'accepte", "accepted", false,
+                DialogueDefinitionEditor.QuestActionEdit.remove(),
+                DialogueDefinitionEditor.QuestConditionEdit.keep()).ok());
+        DialogueChoice after = reload("rpgquest:guard").nodes().get("greeting").choices().get(0);
+        assertTrue(after.actions().isEmpty());
+        assertEquals(1, after.conditions().size(), "la condition reste");
+    }
+
+    @Test
+    void updateChoiceEditsTheQuestStateConditionIncludingNegation() {
+        assertTrue(editor.updateChoice("rpgquest:guard", "greeting", 0, "J'accepte", "accepted", false,
+                DialogueDefinitionEditor.QuestActionEdit.keep(),
+                DialogueDefinitionEditor.QuestConditionEdit.set(QuestState.COMPLETED, "rpgquest:first_steps", true)).ok());
+
+        DialogueChoice after = reload("rpgquest:guard").nodes().get("greeting").choices().get(0);
+        assertEquals(1, after.conditions().size());
+        assertTrue(after.conditions().get(0) instanceof NegatedCondition n
+                && n.inner() instanceof QuestStateCondition c && c.state() == QuestState.COMPLETED);
+        assertEquals(1, after.actions().size(), "l'action START_QUEST reste");
+    }
+
+    @Test
+    void updateChoiceRejectsAStructuredEditWithoutQuestId() {
+        DialogueDefinitionEditor.Result r = editor.updateChoice("rpgquest:guard", "greeting", 0,
+                "J'accepte", "accepted", false,
+                DialogueDefinitionEditor.QuestActionEdit.set(ActionType.START_QUEST, "  "),
+                DialogueDefinitionEditor.QuestConditionEdit.keep());
         assertFalse(r.ok());
-        assertEquals("UNSAFE_CHOICE", r.code());
+        assertEquals("INVALID", r.code());
         assertEquals("J'accepte", reload("rpgquest:guard").nodes().get("greeting").choices().get(0).text().base());
+    }
+
+    @Test
+    void updateChoiceTogglingCloseKeepsTheQuestAction() {
+        assertTrue(editor.updateChoice("rpgquest:guard", "greeting", 0, "J'accepte", null, true).ok());
+        DialogueChoice after = reload("rpgquest:guard").nodes().get("greeting").choices().get(0);
+        assertEquals(null, after.next());
+        assertTrue(after.actions().stream().anyMatch(a -> a instanceof StartQuestAction));
+        assertTrue(after.actions().stream().anyMatch(a -> a instanceof CloseAction));
     }
 
     @Test
@@ -169,10 +272,94 @@ class DialogueDefinitionEditorTest {
     }
 
     @Test
+    void deleteChoiceStillRefusesAChoiceCarryingActionsOrConditions() {
+        // Supprimer effacerait aussi le START_QUEST : le geste doit rester explicite (retirer d'abord).
+        DialogueDefinitionEditor.Result r = editor.deleteChoice("rpgquest:guard", "greeting", 0);
+        assertFalse(r.ok());
+        assertEquals("UNSAFE_CHOICE", r.code());
+        assertEquals(2, reload("rpgquest:guard").nodes().get("greeting").choices().size());
+    }
+
+    @Test
+    void localizedNodeTextSurvivesAnEditOfTheSameDialogue() throws IOException {
+        Files.writeString(dir.resolve("multi.yml"), """
+                id: rpgquest:multi
+                start: start
+                nodes:
+                  start:
+                    speaker: "Lily"
+                    text:
+                      default: "<gray>Bonjour.</gray>"
+                      en: "<gray>Hello.</gray>"
+                    choices:
+                      - text: "Au revoir"
+                        actions:
+                          - type: CLOSE
+                  other:
+                    speaker: "Lily"
+                    text: "<gray>Encore toi.</gray>"
+                    choices:
+                      - text: "Au revoir"
+                        actions:
+                          - type: CLOSE
+                """, StandardCharsets.UTF_8);
+        // Une édition ailleurs réécrit tout le fichier : la table de traductions doit survivre.
+        assertTrue(editor.updateNode("rpgquest:multi", "other", "Lily", "<gray>Te revoilà.</gray>").ok());
+
+        DialogueDefinition d = reload("rpgquest:multi");
+        assertEquals("<gray>Hello.</gray>", d.nodes().get("start").text().forLocale("en"));
+        assertEquals("<gray>Bonjour.</gray>", d.nodes().get("start").text().base());
+    }
+
+    @Test
     void deleteChoiceRemovesSimpleChoice() {
         DialogueDefinitionEditor.Result r = editor.deleteChoice("rpgquest:guard", "greeting", 1);
         assertTrue(r.ok(), r.message());
         assertEquals(1, reload("rpgquest:guard").nodes().get("greeting").choices().size());
+    }
+
+    /**
+     * Schéma canonique partagé : ce texte est <strong>exactement</strong> celui qu'émet le Control
+     * Panel ({@code DialogueYaml.write}, cf. {@code DialogueYamlTest.RICH}). Le moteur doit le
+     * charger, et le réécrire à l'octet près — sinon les deux écrivains ont divergé.
+     */
+    private static final String CANONICAL_RICH = """
+            id: rpgquest:jeff
+            start: start
+            nodes:
+              start:
+                speaker: "Jeff"
+                text: "<gray>Compris.</gray>"
+                choices:
+                  - text: "Je vais m'en charger"
+                    conditions:
+                      - type: QUEST_STATE
+                        quest: rpgquest:cleanup
+                        state: NOT_STARTED
+                    actions:
+                      - type: START_QUEST
+                        quest: rpgquest:cleanup
+                    next: accepted
+                  - text: "Pas maintenant"
+                    actions:
+                      - type: CLOSE
+              accepted:
+                speaker: "Jeff"
+                text: "<green>Merci.</green>"
+                choices:
+                  - text: "OK"
+                    actions:
+                      - type: CLOSE
+            """;
+
+    @Test
+    void canonicalPanelFormatLoadsAndIsRewrittenIdentically() throws IOException {
+        Files.writeString(dir.resolve("jeff.yml"), CANONICAL_RICH, StandardCharsets.UTF_8);
+        DialogueDefinition d = reload("rpgquest:jeff");
+
+        String rendered = DialogueDefinitionWriter.render(d, List.of("start", "accepted"));
+        assertTrue(rendered.endsWith(CANONICAL_RICH),
+                () -> "le moteur et le panel n'écrivent plus la même chose :\n" + rendered);
     }
 
     @Test

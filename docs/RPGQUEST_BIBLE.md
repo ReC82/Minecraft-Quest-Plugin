@@ -1225,19 +1225,43 @@ L'action `dialogue.definition.create` (permission dédiée `DIALOGUE_WRITE`) cr�
 un **squelette** de dialogue minimal (`id` + `start` + un nœud avec
 locuteur/texte + un choix « fermer »).
 
-Un **éditeur guidé** (issue #82, phase 1) permet en plus, sous
-`DIALOGUE_WRITE` : modifier le **locuteur / texte** d'un nœud
-(`dialogue.node.update`), **ajouter un nœud simple** (`dialogue.node.create`,
-nœud orphelin à relier ensuite), et **ajouter / modifier / supprimer un choix
-simple** (`dialogue.choice.add` / `.update` / `.delete`) — un choix « simple »
-n'a ni condition ni action autre que « fermer », et redirige vers un nœud
-existant *ou* termine le dialogue. Chaque écriture **réécrit le fichier au format
-canonique** du panel (commentaires et mise en forme d'origine non conservés),
-puis le **re-parse** et le **recharge** ; en cas d'échec le contenu d'origine est
-**restauré**. Les actions/conditions riches d'un choix (`START_QUEST`,
-`QUEST_STATE`…) sont **intégralement préservées** mais pas encore éditables :
-c'est le périmètre des phases suivantes de #82 (avec le renommage / déplacement /
-suppression de nœud et le réordonnancement des choix).
+Un **éditeur guidé** (issue #82) permet en plus, sous `DIALOGUE_WRITE` :
+modifier le **locuteur / texte** d'un nœud (`dialogue.node.update`), **ajouter un
+nœud simple** (`dialogue.node.create`, nœud orphelin à relier ensuite), et
+**ajouter / modifier / supprimer un choix** (`dialogue.choice.add` / `.update` /
+`.delete`). Chaque écriture **réécrit le fichier au format canonique** du panel
+(commentaires et mise en forme d'origine non conservés), puis le **re-parse** et
+le **recharge** ; en cas d'échec le contenu d'origine est **restauré**.
+
+`dialogue.choice.update` édite **n'importe quel choix**, y compris un choix
+porteur de conditions et d'actions : son texte et sa cible sont modifiables, et
+deux propriétés structurées s'éditent par sélecteurs —
+
+- l'**action de quête** du choix (`quest_action` ∈ `keep` / `none` /
+  `start_quest` / `advance_quest` / `turn_in_quest`, avec `quest_id`) ;
+- la **condition d'état de quête** (`quest_condition` ∈ `keep` / `none` / un
+  `QuestState`, avec `condition_quest_id` et l'option `condition_negate`).
+
+La valeur par défaut des deux est `keep` : **un paramètre absent ne touche à
+rien**. Toute autre action et toute autre condition du choix (`GIVE_ITEM`,
+`HAS_PERMISSION`, `RUN_SAFE_COMMAND`…) sont **reconduites à l'identique**, dans
+leur ordre d'origine — l'enregistrement ne peut pas les perdre, et la page les
+liste explicitement sous le choix comme « conservé à l'identique ». Deux actions
+de quête (ou deux conditions `QUEST_STATE`) sur un même choix ne sont pas
+représentables par le formulaire : il bascule alors en `keep` et le dit, plutôt
+que de réduire deux effets à un seul.
+
+`dialogue.choice.delete` reste réservé aux choix **sans condition ni action hors
+« fermer »** : supprimer un choix porteur d'effets de jeu doit rester un geste
+explicite (retirer d'abord son action et sa condition). Restent hors périmètre :
+le renommage / déplacement / suppression de nœud et le réordonnancement des
+choix.
+
+Les champs de texte de l'éditeur montrent la **source MiniMessage brute** (rien
+n'est réécrit à l'insu de l'utilisateur), accompagnée d'un **aperçu rendu** et de
+la **palette de couleurs** du formulaire de création. La palette ne réécrit que
+la balise de couleur **englobante** ; sur un texte à balises composites elle se
+désactive et l'annonce.
 
 ### Présentation des pages métier et diagnostics contextuels (issues #89 / #49)
 
@@ -1313,6 +1337,16 @@ silencieux). La fiche PNJ (`/npcs`) porte un bouton **« Créer un dialogue pour
 PNJ »** → `/dialogues/new?npc=<id>` avec locuteur prérempli, et le `<select>`
 Dialogue de la fiche PNJ propose aussi les dialogues **de la source** (un dialogue
 créé à l'instant est sélectionnable sans redémarrage Minecraft).
+
+**Rééditer** un dialogue depuis `/dialogues/edit/<id>` ne touche qu'au **locuteur
+et à la réplique du nœud de départ**. L'enregistrement repart du **fichier réel** :
+les autres nœuds, les choix, leurs conditions et leurs actions sont reconduits
+tels quels (`DialogueYaml` les porte dans son modèle), et la page annonce ce
+qu'elle conserve. Si la relecture du fichier signale quoi que ce soit que
+l'éditeur ne sait pas représenter (table de traductions, construction YAML
+exotique), l'enregistrement est **refusé** et la raison affichée — jamais un
+écrasement partiel. Même garde-fou sur `/quests/edit/<id>`, dont le formulaire
+reconstruit la quête entière.
 
 Un diagnostic `DIALOGUE_DECLARED_MISSING` (une fiche PNJ pointe vers un dialogue
 que le serveur n'a pas chargé) est **rétrogradé en info** — « rechargement en

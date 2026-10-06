@@ -5,10 +5,10 @@
 * Date : 2026-10-06
 * Issue : [#16](https://github.com/ReC82/Minecraft-Quest-Plugin/issues/16)
 * Branche : `feature/169-special-mobs-boss` (aucun merge)
-* Commit(s) : voir §7
+* Commits : `ee96254` (lot #16), plus le commit de clôture documentaire — voir §7
 * Début de la tâche : 2026-10-06 08:07:52 (heure locale réelle, première action)
-* Fin de la tâche : _à compléter_
-* Durée totale : _à compléter_
+* Fin de la tâche : 2026-10-06 09:45:00 (heure locale réelle)
+* Durée totale : 01:37:08
 
 **Aucun ticket GitHub n'a été modifié ni fermé. Aucun test manuel n'a été coché ni présenté comme
 exécuté. Aucun mail, aucune annonce serveur.**
@@ -164,9 +164,18 @@ implicitement en monnaie. Aucun montant posé sur une quête réelle.
 
 ## 5. Tests
 
-### Suite complète
+### Suite complète — verte
 
-_à compléter_
+| Module | Tests | Ignorés | Échecs | Erreurs |
+|---|---|---|---|---|
+| plugin | **1638** | 34 | 0 | 0 |
+| control-panel | **586** | 1 | 0 | 0 |
+| web-api | **30** | 0 | 0 | 0 |
+| **Total** | **2254** | 35 | **0** | **0** |
+
+`./gradlew test` (22 min 34 s) puis `./gradlew build` : tous deux `BUILD SUCCESSFUL`.
+Progression : 1603 → **1638** côté plugin (**+35**) et 577 → **586** côté panel (**+9**),
+soit **44 cas nouveaux** pour ce lot. Totaux relevés dans les XML JUnit réels, pas estimés.
 
 ### Ce qui est couvert, et où
 
@@ -205,10 +214,127 @@ mis à jour sur la réalité (cinq types), sans l'affaiblir.
 
 ## 6. Déploiement
 
-_à compléter_
+### Déployé et vérifié
+
+| Cible | Empreinte réelle | Vérification |
+|---|---|---|
+| **JAR VeryGames DEV** | SHA-256 `6fe9952576cc9240ccaf4cf1639d603d6739585df56f1ecd309315cb03f26f7d` (1 807 514 octets, commit `ee96254`) | `DEPLOY_EXIT=0`, puis `JAR en ligne : 1807514 octets (== local)` |
+| **Control Panel AWS** | distribution `20261006-090923` | `PANEL_EXIT=0`, `/health` → `{"panel":"ONLINE"}`, service `active` |
+
+**Backup préalable** : `rpgquest-20261006T074047Z-predeploy.jar` (1 796 897 octets, SHA-256
+`3a29b540…` — le JAR du lot économie). **Le backup précédent n'a pas été écrasé.**
+
+**Un seul redémarrage Minecraft** (`RESTART_EXIT=0`) : arrêt **constaté OFFLINE**, retour
+**constaté ONLINE**. Après redémarrage, par RCON : `plugins` → **4 plugins verts** (Citizens,
+Multiverse-Core, RPGQuest, WorldEdit) ; `rpgquest version` → `v0.1.0-SNAPSHOT`.
+
+### Preuve que le code neuf est réellement chargé
+
+Le numéro de version ne change pas d'un lot à l'autre : il ne prouve rien. J'ai donc vérifié la
+seule chose qui ne peut pas mentir — le **schéma de la base du serveur**, puisque ce lot apporte
+une migration. Copie de `RPGQuest/data.db` récupérée **en lecture seule** par FTP, lue localement,
+puis **supprimée** :
+
+| Contrôle | Résultat observé |
+|---|---|
+| `PRAGMA user_version` | **25** (était 24 avant ce lot) |
+| Table `quest_reward_grants` | **présente**, avec exactement le schéma écrit dans la migration V25 |
+| Lignes dans cette table | **0** — personne n'a joué, donc aucune récompense n'a été payée |
+
+Aucune écriture sur le serveur, aucune donnée joueur modifiée, aucun solde touché.
+
+### Les deux échecs de déploiement rencontrés, et ce qu'ils signifiaient
+
+**Le premier a été mal lu de ma part, et je le dis explicitement.** La commande d'attente qui
+enveloppait le script a rendu `exit code 0` — ce qui signifie seulement que *l'attente* s'est
+terminée normalement. Le résultat réel était `DEPLOY_EXIT=1` : le script avait **refusé de
+livrer**. Seul `DEPLOY_EXIT` prouve un déploiement ; le code de sortie de l'enveloppe ne prouve
+rien. C'est la distinction demandée par le propriétaire, et elle est maintenant écrite dans
+`docs/deployment/VERYGAMES.md`.
+
+| Tentative | Pas atteint | Motif réel | Conséquence |
+|---|---|---|---|
+| 1 | **3/8** (`./gradlew test`) | `Java heap space` sur deux workers — le script relance les tests lui-même et héritait d'un shell **sans** `RPGQUEST_TEST_MAX_HEAP=768m`. Échec d'**environnement**, pas de code : la même suite était verte 20 min plus tôt avec le plafond. | **Aucun transfert** : le garde-fou a fait son travail |
+| 2 | **5/8** (confirmation) | `/dev/tty: No such device or address` — le script demande à l'écran si le serveur est arrêté, et il n'y a pas de terminal. | **Aucun transfert** |
+| 3 | **8/8** | — | JAR transféré, taille en ligne relue identique au local |
+
+Dans les deux échecs, le serveur n'a **jamais** été laissé arrêté ni dans un état partiellement
+déployé : les deux interruptions ont eu lieu **avant** la moindre opération FTP.
+
+**Correctif documentaire** (demandé par le propriétaire pour éviter la répétition) :
+`docs/deployment/VERYGAMES.md` porte désormais deux encadrés — le **plafond mémoire obligatoire**
+sur la machine de build AWS (avec le symptôme exact à reconnaître) et le **déploiement non
+interactif** (`-y`), plus la séquence complète réellement utilisée et l'avertissement sur les deux
+codes de sortie. Le script lui-même n'a **pas** été modifié, et n'a jamais été touché pendant son
+exécution.
 
 ---
 
-## 7. Commits, fichiers et validation restante
+## 7. Branche, commits et validation restante
 
-_à compléter_
+### Branche et commits
+
+**Branche : `feature/169-special-mobs-boss`** (la branche d'intégration en cours, conformément à
+`CLAUDE.md`). **Aucun merge**, aucun push vers `main`, aucune intervention sur la PROD.
+
+| Commit | Contenu |
+|---|---|
+| `ee96254` | `feat(quest): récompense monétaire de quête, créditée une seule fois par complétion (#16)` — **tout le lot** : moteur, schéma V25, panel, interface joueur, tests, documentation et contenu de test manuel |
+| _(clôture)_ | `docs`: SHA réellement déployé, changelog serveur, roadmap, index des rapports et procédure de déploiement |
+
+Le lot tient en **un seul commit fonctionnel** : les trois parties (moteur, panel, interface
+joueur) ne sont pas séparables sans laisser le dépôt dans un état où un type de récompense existe
+d'un côté et pas de l'autre.
+
+Commits précédents de la branche, non inclus dans ce lot mais présents sur le serveur :
+`b9cb971` (clôture de la nuit), `b7686c4` (économie lot 1), `50b5aad` (#210), `61623f8` (#131).
+
+### Limites connues
+
+- **Décisions de gameplay non prises** (volontairement) : monnaie physique et conversion
+  solde ↔ objet (#138), perte à la mort, prix, règles d'échange, équilibrage des gains. Aucun
+  montant n'a été posé sur une quête réelle.
+- **Aucun plafond de montant côté moteur.** C'est un choix, pas un oubli : décider du gain maximum
+  serait décider de l'équilibrage. Le panel se contente d'avertir au-delà d'un million.
+- **Un crédit échoué n'est pas réessayé automatiquement.** Il est dit honnêtement au joueur et
+  journalisé côté serveur ; l'administrateur peut créditer depuis le panel avec une raison (lot
+  économie précédent). Un mécanisme de reprise automatique serait un lot à part entière : mal fait,
+  il risquerait précisément le double paiement que ce lot interdit.
+- **Rien ne transporte le contenu du panel AWS vers VeryGames.** Une quête restée dans la source ne
+  paiera personne, sans erreur visible en jeu. C'est pour cela que la bannière d'enregistrement
+  nomme désormais les trois états.
+- **Aucun test en jeu exécuté.** Le rendu visuel de la bourse et des infobulles, l'ordre perçu des
+  messages et le parcours de l'éditeur dans un navigateur restent à valider.
+
+### Protocole manuel ajouté
+
+**TC-250** dans `docs/MANUAL_TEST_PLAN.md` (27 étapes, 7 sections), avec sa ligne dans la table de
+recette. **Aucune case cochée, aucun test présenté comme exécuté.**
+
+- **A — éditeur du panel** (8 étapes) : présence et aide du type « Pièces (monnaie) », aller-retour
+  d'enregistrement, **préservation des récompenses existantes et de leur ordre**, refus des montants
+  invalides, avertissement sans refus au-delà d'un million, retrait propre.
+- **B — états source / publié / chargé** (3 étapes) : publication puis rechargement sans
+  redémarrage, et vérification qu'une quête seulement en source **ne devient pas** active.
+- **C — crédit réel en jeu** (6 étapes) : message de gain **après** le Title, solde cité identique
+  à `/money`, **ActionBar de progression non écrasée**, bourse visible dans le journal, récompense
+  prévue dans l'infobulle.
+- **D — crédit unique** (4 étapes) : recomplétion, complétion forcée depuis le panel, **double clic
+  rapide**, et **une seule** ligne `QUEST_REWARD` au journal.
+- **E — quête répétable** (3 étapes) : deux complétions, deux crédits, deux lignes.
+- **F — persistance** (2 étapes) : redémarrage et reconnexion sans duplication.
+- **G — erreur honnête** (1 étape, optionnelle) : un crédit impossible doit produire un message
+  d'échec explicite, **jamais** un message de gain.
+
+Deux quêtes prêtes à copier sont fournies dans `docs/manual-tests/rewards/`
+(`test_money_reward.yml`, non répétable, 100 pièces ; `test_money_repeatable.yml`, répétable,
+25 pièces) — **hors du JAR**, donc elles n'atterrissent jamais toutes seules dans le contenu du
+serveur. Le nettoyage est décrit étape par étape.
+
+### État final
+
+- **Minecraft DEV** : **ONLINE**, 4 plugins verts, JAR `6fe99525…` chargé (schéma V25 constaté).
+- **Panel AWS** : `active`, `/health` → 200, distribution `20261006-090923`.
+- **Agent** : inchangé, aucune action en attente laissée par ce lot.
+- **Redémarrages Minecraft** : **un seul**.
+- **Dépôt** : arbre de travail propre, branche poussée, tests et build verts.

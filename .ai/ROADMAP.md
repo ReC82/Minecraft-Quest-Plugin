@@ -328,6 +328,123 @@ Première étape à reprendre: validation manuelle de TC-232, puis #179 (parcour
 ```
 
 ```text
+Date: 2026-10-06 (lot 12 — #16 récompense monétaire de quête + bourse en jeu)
+Branche de départ: feature/169-special-mobs-boss @ b9cb971 (lot 11, nuit #131/#210/économie déployée)
+Étape de départ: le propriétaire choisit explicitement #16 et uniquement #16 : récompenses
+  monétaires de quête, gestion dans le Control Panel, affichage du solde dans l'interface joueur.
+  Consignes dures : réutiliser EconomyService et le portefeuille existants ; crédit traçable
+  jusqu'au joueur, à la quête ET à son occurrence de complétion ; vérifier doubles appels, retries,
+  reconnexions et échecs de persistance ; respecter les quêtes répétables et les autres types de
+  récompenses ; montant entier positif validé côté backend ; préserver les récompenses existantes ;
+  intégrer les états source/publié/chargé et le workflow #131 ; afficher le solde depuis une
+  interface EXISTANTE sans imposer une commande comme parcours principal ; ne pas écraser
+  durablement l'affichage de progression des objectifs ; aucune monnaie physique, conversion,
+  migration, perte à la mort, tarification ni échange P2P ; ne recréer aucun service économique ;
+  ne décider d'aucun montant sur une quête réelle ; sans sous-agents ; GitHub géré par ChatGPT.
+Étapes terminées:
+(1) DONE — AUDIT avant conception, quatre constats qui ont décidé l'implémentation :
+  * le socle économique existait COMPLET (EconomyService sur WalletRepository, tables wallets +
+    transactions, débit plancher à zéro, journal lisible depuis le lot précédent). Rien à recréer :
+    le travail était de brancher les quêtes dessus, pas d'inventer une monnaie.
+  * les récompenses sont un SEALED INTERFACE : ajouter un type force le compilateur à signaler
+    TOUS les points de traitement (parseur, moteur, journal joueur, agent, content pack). C'est ce
+    qui a rendu l'ajout sûr — aucun switch n'a pu être oublié en silence.
+  * l'éditeur du panel est ENTIÈREMENT piloté par descripteurs (Descriptors.REWARDS alimente
+    formulaire + écriture YAML + relecture YAML + validation). Ajouter un type = ajouter UN
+    descripteur ; aucun formulaire spécifique écrit.
+  * grantRewards est SYNCHRONE alors que le crédit du portefeuille est ASYNCHRONE. Une ligne de
+    résumé construite à la remise annoncerait un gain AVANT toute preuve qu'il a eu lieu.
+(2) DONE — la garantie « jamais deux fois, jamais perdue » placée EN SQL, pas dans le moteur.
+  * la garde mémoire de turnIn (bascule d'état synchrone) ne protège que les chemins énumérables :
+    elle ne dit rien d'un retry, d'un crash entre crédit et enregistrement, ou d'un appelant futur.
+  * WalletRepository#creditQuestReward : UNE transaction SQL réserve grant_id dans la nouvelle
+    table quest_reward_grants (INSERT OR IGNORE), met à jour wallets et écrit la ligne
+    transactions. Donc : insertion refusée => rien crédité (ALREADY_CREDITED) ; erreur => tout
+    annulé, occasion encore payable ; AUCUN instant intermédiaire où un retry doublerait le gain.
+  * identifiant d'occasion = ActiveQuestProgress#rewardGrantId, généré une fois puis conservé :
+    rejouer la MÊME remise présente le MÊME identifiant et ne paie rien, alors qu'une quête
+    répétable repart d'une nouvelle progression donc d'une nouvelle occasion légitimement payée.
+    quest_reward_grants.occurrence numérote par joueur ET par quête.
+  * AUCUNE seconde source de vérité : la table ne contient AUCUN solde, wallets reste le seul.
+  * table volontairement SANS clé étrangère vers player_profiles (contrairement à transactions) :
+    un ON DELETE CASCADE rendrait un profil supprimé puis recréé payable une seconde fois pour les
+    mêmes occasions. Une ligne orpheline ne coûte rien ; un double paiement, si.
+  * schéma V25, migration ADDITIVE et idempotente : aucune table existante modifiée, aucun solde
+    touché, rien à faire manuellement.
+(3) DONE — moteur : RewardType.MONEY + MoneyReward(int amount) strictement positif ; parseur YAML ;
+  TransactionType.QUEST_REWARD avec contexte quest:<id>#<occasion> ; port QuestRewardPayer +
+  reçu TYPÉ QuestRewardReceipt (CREDITED / ALREADY_CREDITED / FAILED) implémenté par
+  EconomyService — pas un nouveau service économique, une porte étroite sur l'existant ;
+  QuestProgressEngine#payMoneyReward paie puis annonce SEULEMENT si la base a confirmé.
+  Montant en int et non long : c'est un nombre CONÇU par un auteur (comme l'XP), pas un solde
+  ACCUMULÉ ; garde aussi inchangés deux formats publics (QuestPackEntry.Reward, RewardSummary).
+  AUCUN plafond moteur : décider du gain maximum serait décider de l'équilibrage.
+(4) DONE — messages : reward-money-credited (montant + solde RELU en base) et
+  reward-money-failed, envoyés SÉPARÉMENT du résumé et seulement après la base ; occasion déjà
+  payée => RIEN au joueur (gain fantôme) + avertissement serveur. Les deux dans le CHAT et jamais
+  dans l'ActionBar, qui appartient à la progression des objectifs — exigence explicite du ticket,
+  tenue par conception et pas seulement par intention. messages.yml fusionne les clés manquantes
+  au démarrage, donc pas besoin de --also pour ce fichier.
+(5) DONE — interface joueur : bourse (solde réel du portefeuille) dans un emplacement INERTE du
+  journal de quêtes, en liste ET en vue détail, relue à chaque ouverture et après chaque
+  transaction (le crédit déclenche notifyChanged, qui recompose un menu ouvert) ; erreur de
+  lecture => « indisponible » avec son motif, JAMAIS un 0 inventé qui ferait croire à un vol, et
+  l'échec ne fait pas échouer l'ouverture du menu ; récompense PRÉVUE dans l'infobulle de détail.
+(6) DONE — panel : descripteur MONEY (un seul champ, icône de pièce dont le glyphe a été VÉRIFIÉ
+  présent dans la police embarquée, sinon repli silencieux info-circle) ; validation backend entier
+  strictement positif ; AVERTISSEMENT sans refus au-delà de 1 000 000 (garde-fou de frappe, pas
+  règle d'équilibrage) ; RewardText lit MONEY comme « N pièce(s) » et JAMAIS comme un objet, y
+  compris sur l'ancien format texte ; bannière d'enregistrement de quête réécrite en
+  source -> publié -> rechargé (#131) — « au prochain chargement du serveur » laissait croire
+  qu'un redémarrage suffisait, alors qu'une quête jamais déployée ne paierait PERSONNE sans
+  aucune erreur visible en jeu.
+Tests: 1638 plugin (34 ignorés) + 586 control-panel (1 ignoré) + 30 web-api = 2254, 0 échec,
+  0 erreur. ./gradlew test (22 min 34 s) ET ./gradlew build BUILD SUCCESSFUL. +44 cas
+  (1603 -> 1638 plugin, 577 -> 586 panel), totaux relevés dans les XML JUnit réels.
+  Nouveau QuestMoneyRewardIntegrationTest (5 cas) avec vrai moteur + vrai EconomyService + vraie
+  base SQLite : ni le double du moteur ni le test SQL ne prouvent que les morceaux sont BRANCHÉS.
+  WalletRepositoryTest +8 dont 20 rejeux CONCURRENTS du même grant qui créditent exactement une
+  fois, et survie à un redémarrage sans second paiement. SchemaMigratorTest +2 dont la contrainte
+  d'unicité : sans elle, le code applicatif compilerait et paierait deux fois.
+  DEUX défauts de mes propres tests, MESURÉS au lieu d'être supposés : performTicks ne consomme
+  AUCUN temps d'horloge, donc une attente qui ne pompe que des ticks pouvait s'épuiser avant la fin
+  de l'écriture asynchrone (ajout de temps réel) ; et le slot 4 porte l'INDICATEUR DE PAGE en vue
+  liste, donc mon test de la bourse en détail lisait « Page 1/1 » (attente de l'icône de détail).
+  UN test existant a refusé mon code et avait raison : EditorDescriptorsTest comparait les
+  descripteurs aux QUATRE types du moteur -> mis à jour sur la réalité (cinq), sans l'affaiblir.
+Déploiement: JAR DEV SHA-256 6fe9952576cc9240ccaf4cf1639d603d6739585df56f1ecd309315cb03f26f7d
+  (1 807 514 o, commit ee96254) ; panel distribution 20261006-090923 (/health 200). UN SEUL
+  redémarrage, arrêt ET retour CONSTATÉS, plugins -> 4 verts, rpgquest version -> v0.1.0-SNAPSHOT.
+  Backup préalable rpgquest-20261006T074047Z-predeploy.jar (3a29b540…), backup précédent non
+  écrasé.
+  CHARGEMENT PROUVÉ, pas seulement le transfert : le numéro de version ne bouge pas d'un lot à
+  l'autre, mais la migration se constate. Copie de RPGQuest/data.db récupérée EN LECTURE SEULE,
+  lue localement puis SUPPRIMÉE : PRAGMA user_version = 25 (était 24), table quest_reward_grants
+  présente avec le schéma exact, 0 ligne (personne n'a joué). Aucune écriture serveur.
+Blocages: aucun blocage réel, mais DEUX refus de livrer du script, à chaque fois AVANT tout
+  transfert FTP — donc rien livré, rien cassé, serveur jamais laissé arrêté :
+  (a) pas 3/8 « Java heap space » : le script relance test+build et héritait d'un shell sans
+      RPGQUEST_TEST_MAX_HEAP=768m. Échec d'ENVIRONNEMENT, pas de code (la même suite était verte
+      20 min plus tôt avec le plafond).
+  (b) pas 5/8 « /dev/tty: No such device or address » : confirmation interactive sans terminal,
+      contournée par -y (implique --server-stopped).
+  ERREUR DE LECTURE DE MA PART à signaler : la commande d'attente qui enveloppait le script a
+  rendu exit code 0 — ce qui dit seulement que l'ATTENTE s'est terminée. Seul DEPLOY_EXIT prouve
+  un déploiement. Les deux pièges, la séquence complète et cet avertissement sont désormais écrits
+  dans docs/deployment/VERYGAMES.md, et le script n'a PAS été modifié (jamais pendant son
+  exécution).
+Tests manuels en attente: TC-250 (#16, 27 étapes, 7 sections). La section D est la plus
+  importante : recomplétion, complétion forcée depuis le panel et double clic rapide ne doivent
+  produire QU'UNE SEULE ligne QUEST_REWARD. Deux quêtes prêtes à copier dans
+  docs/manual-tests/rewards/ (hors du JAR, donc jamais seedées automatiquement). AUCUNE case
+  cochée. TC-243 à TC-249 des lots précédents restent également en attente.
+Première étape à reprendre: attendre le choix du propriétaire. Côté économie, la suite dépend de
+  DÉCISIONS GAMEPLAY encore à prendre (monnaie physique et conversion solde <-> objet #138, perte
+  à la mort, prix, règles d'échange) ; rien d'indépendant et utile ne reste sans elles sur ce
+  chantier.
+```
+
+```text
 Date: 2026-10-06 (lot 11 — nuit : #131 rechargement du contenu, #210 actions joueurs, premier lot
   économie)
 Branche de départ: feature/169-special-mobs-boss @ 00c2c3e (lot 10, #95 déployé)

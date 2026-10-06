@@ -4428,3 +4428,110 @@ Rollback : `scripts/plugadmin/rollback.sh` pour le panel, `scripts/rollback-very
 pour le JAR (un cran = l'économie retirée, deux crans = #131/#210 retirés également). Un JAR
 antérieur rend simplement les nouvelles actions `REJECTED` côté plugin et le panel les affiche
 indisponibles : aucune autre fonction n'est affectée.
+
+---
+
+## 2026-10-06 (lot 12) - #16 : récompense monétaire de quête et bourse dans le journal
+
+### Changement
+
+Nouveau type de récompense de quête **`MONEY`** (`rewards[] → type: MONEY`, `amount` entier > 0)
+qui crédite le **portefeuille persistant** du joueur. Aucun objet n'est donné : la monnaie
+RPGQuest est un solde, et aucun objet d'inventaire n'est compté comme de l'argent.
+
+- **Crédité au plus une fois par occasion de complétion.** La réservation de l'occasion
+  (`quest_reward_grants`) et la mise à jour de `wallets` vivent dans la **même transaction SQL** :
+  ni double paiement sur un retry, ni récompense perdue sur une panne. Une quête `repeatable`
+  ouvre une nouvelle occasion à chaque reprise et se paie donc à nouveau.
+- **Trace** : ligne `transactions` de type `QUEST_REWARD`, contexte `quest:<id>#<occasion>`.
+- **Message joueur** envoyé **seulement après** confirmation de la base (montant + nouveau solde
+  relu) ; échec dit explicitement ; occasion déjà payée silencieuse. Dans le **chat**, jamais
+  dans l'ActionBar (réservée à la progression des objectifs).
+- **Bourse** affichée dans le journal de quêtes (liste et vue détail), relue après chaque
+  transaction ; « indisponible » en cas d'erreur de lecture plutôt qu'un `0` trompeur.
+- **Panel** : type « Pièces (monnaie) » dans l'éditeur de quête, validation entier > 0,
+  avertissement sans refus au-delà d'un million.
+
+### Action serveur
+
+**Deux cibles** :
+
+1. **Control Panel AWS** — `scripts/plugadmin/deploy.sh` (distribution `20261006-090923`).
+2. **JAR RPGQuest** sur VeryGames + **un seul redémarrage** Minecraft.
+
+### ⚠️ Migration automatique — OUI
+
+**Schéma V24 → V25** au premier démarrage du nouveau JAR : création de la table
+`quest_reward_grants` + son index. Migration **idempotente** et **additive** : aucune table
+existante n'est modifiée, aucune donnée n'est réécrite, aucun solde n'est touché. Rien à faire
+manuellement.
+
+La table ne contient **aucun solde** : `wallets` reste la seule source de vérité. Elle ne répond
+qu'à « cette occasion de complétion a-t-elle déjà été payée ? ». Elle est volontairement **sans
+clé étrangère** vers `player_profiles` : un `ON DELETE CASCADE` rendrait un profil supprimé puis
+recréé payable une seconde fois pour les mêmes occasions.
+
+### Sauvegarde préalable
+
+- JAR précédent : `rpgquest-20261006T074047Z-predeploy.jar` (1 796 897 octets, SHA-256
+  `3a29b540…`). **Le backup précédent n'a pas été écrasé.**
+- Distribution du panel conservée dans `/opt/plugadmin/releases/` par le script.
+
+### Déploiement effectué
+
+| Cible | Empreinte réelle | Vérification |
+|---|---|---|
+| JAR | SHA-256 `6fe9952576cc9240ccaf4cf1639d603d6739585df56f1ecd309315cb03f26f7d` (1 807 514 o, commit `ee96254`) | `DEPLOY_EXIT=0`, `JAR en ligne : 1807514 octets (== local)` |
+| Panel | distribution `20261006-090923` | `/health` → `{"panel":"ONLINE"}`, service `active` |
+
+**Un seul redémarrage** (`RESTART_EXIT=0`) : arrêt **constaté OFFLINE**, retour **constaté
+ONLINE**. Par RCON : `plugins` → **4 plugins verts** ; `rpgquest version` → `v0.1.0-SNAPSHOT`.
+
+**Tests** : `./gradlew test` puis `./gradlew build` — **1638** plugin (34 ignorés), **586**
+control-panel (1 ignoré), **30** web-api, **0 échec, 0 erreur**.
+
+### Chargement réellement vérifié
+
+Le numéro de version ne change pas d'un lot à l'autre. La migration, elle, se constate : copie de
+`RPGQuest/data.db` récupérée **en lecture seule**, lue localement puis **supprimée**.
+
+- `PRAGMA user_version` → **25** (était 24) ;
+- table `quest_reward_grants` **présente**, schéma identique à la migration ;
+- **0 ligne** — personne n'a joué, donc aucune récompense n'a été payée.
+
+Aucune écriture sur le serveur, aucun solde touché, aucune donnée joueur modifiée.
+
+### Ce que ce déploiement ne fait PAS
+
+- **Aucun montant n'est posé sur une quête réelle.** Le type existe ; aucune quête du serveur ne
+  l'utilise. Les deux quêtes d'essai vivent dans `docs/manual-tests/rewards/`, **hors du JAR**, et
+  doivent être copiées à la main pour le test.
+- **Aucune monnaie physique, aucune conversion, aucune migration de solde.** Le lien solde ↔ objet
+  (#138) reste une décision de gameplay non prise.
+- **Aucun solde existant modifié**, aucun objet vanilla transformé implicitement en monnaie.
+- **Aucune progression, quête active ni inventaire affecté.**
+
+### Deux échecs de déploiement, avant tout transfert
+
+Le script a refusé de livrer **deux fois**, et à chaque fois **avant** la moindre opération FTP :
+
+1. pas **3/8** — `Java heap space` : le script relance `test`/`build` et héritait d'un shell sans
+   `RPGQUEST_TEST_MAX_HEAP=768m`. Échec d'environnement, pas de code ;
+2. pas **5/8** — `/dev/tty: No such device or address` : confirmation interactive sans terminal,
+   contournée par `-y`.
+
+Le serveur n'a jamais été laissé arrêté ni partiellement déployé. **Attention** : le code de
+sortie d'une commande d'attente qui enveloppe le script ne prouve **rien** — seul `DEPLOY_EXIT`
+compte. Ces deux pièges et la séquence complète sont désormais écrits dans
+`docs/deployment/VERYGAMES.md`.
+
+### Validation
+
+TC-250 (nouveau, 27 étapes, 7 sections) dans `docs/MANUAL_TEST_PLAN.md`. **Aucun test en jeu n'a
+été exécuté, aucune case cochée.** Le point le plus important est la section **D** : recomplétion,
+complétion forcée depuis le panel et double clic rapide ne doivent produire **qu'une seule** ligne
+`QUEST_REWARD`.
+
+Rollback : `scripts/plugadmin/rollback.sh` pour le panel, `scripts/rollback-verygames.sh --latest`
+pour le JAR. Un JAR antérieur ignore simplement `type: MONEY` (récompense refusée au chargement de
+la quête concernée) ; la table `quest_reward_grants` reste en place sans effet et ne gêne rien.

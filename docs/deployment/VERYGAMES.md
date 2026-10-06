@@ -151,9 +151,62 @@ vérité. Les deux bases peuvent coexister pendant la fenêtre de migration #42.
 
 ## Compiler RPGQuest
 
+### ⚠️ Plafond mémoire obligatoire sur la machine de build AWS
+
+La machine de build AWS est **petite** : sans plafond explicite, les workers
+de test Gradle épuisent le tas et la suite échoue sur
+`Java heap space` — un échec d'**environnement**, pas de code. Il faut donc
+**exporter la variable avant toute commande Gradle**, y compris avant
+`scripts/deploy-verygames.sh` (qui relance `test` puis `build` comme
+garde-fou avant tout transfert, et qui hérite de l'environnement du shell) :
+
+```
+export RPGQUEST_TEST_MAX_HEAP=768m
+```
+
+`build.gradle.kts` la lit directement (`maxHeapSize`). Oublier cet export
+fait échouer le déploiement **au pas 3/8**, c'est-à-dire **avant** tout
+transfert FTP : rien n'est livré, rien n'est cassé, mais une vingtaine de
+minutes est perdue. Le symptôme exact à reconnaître :
+
+```
+> Could not complete execution for Gradle Test Executor N.
+   > Java heap space
+```
+
+Lancer aussi `./gradlew --stop` avant un déploiement, pour qu'aucun démon
+Gradle résiduel ne garde de la mémoire.
+
+### ⚠️ Déploiement non interactif
+
+Au pas **5/8**, `scripts/deploy-verygames.sh` demande à l'écran si le serveur
+est arrêté. Sans terminal (session automatisée, `nohup`, tâche de fond), il
+s'interrompt sur `/dev/tty: No such device or address` — là encore **avant**
+tout transfert. Passer `-y` (qui implique `--server-stopped`) pour sauter la
+question. Le JAR n'est lu qu'au démarrage du serveur : la séquence validée
+sur cette installation est **transfert puis redémarrage**
+(`scripts/verygames-restart.sh`), et non l'inverse.
+
+Commande complète réellement utilisée :
+
+```
+export RPGQUEST_TEST_MAX_HEAP=768m
+./gradlew --stop
+scripts/deploy-verygames.sh -y
+scripts/verygames-restart.sh --timeout 300
+```
+
+**Ne jamais se fier au code de sortie de la commande d'attente** qui
+enveloppe le script : un `exit code 0` signifie seulement que l'attente s'est
+terminée. Seul `DEPLOY_EXIT` (le code de sortie du script lui-même) dit si le
+déploiement a réussi.
+
+### Commande
+
 Depuis la racine du dépôt :
 
 ```
+export RPGQUEST_TEST_MAX_HEAP=768m
 ./gradlew clean build
 ```
 

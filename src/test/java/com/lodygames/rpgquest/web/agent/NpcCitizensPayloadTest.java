@@ -60,7 +60,7 @@ class NpcCitizensPayloadTest {
                         return CompletableFuture.completedFuture(new CitizensRosterView(true, List.of(
                                 new CitizensNpcSummary(12, "12121212-1212-1212-1212-121212121212", "Andy",
                                         "andy", false, true, "world_hub", 12.5, 70.0, -33.5, 90.0f, 0.0f,
-                                        true)),
+                                        true, true, true)),
                                 1, 0, 1));
                     }
                 });
@@ -90,7 +90,7 @@ class NpcCitizensPayloadTest {
                         return CompletableFuture.completedFuture(new CitizensRosterView(true, List.of(
                                 new CitizensNpcSummary(2, "22222222-2222-2222-2222-222222222222", "Tania",
                                         "tania", false, false, "world_hub", -8.5, 64.0, 21.5, 0.0f, 0.0f,
-                                        false)),
+                                        false, true, false)),
                                 1, 0, 1));
                     }
                 });

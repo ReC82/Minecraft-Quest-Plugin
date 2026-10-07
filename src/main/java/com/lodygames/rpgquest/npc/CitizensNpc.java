@@ -14,6 +14,13 @@ import java.util.UUID;
  * @param world     monde de la position connue, ou {@code null} si Citizens n'en connaît aucune.
  * @param x         coordonnées de la position connue (0 si {@code world == null}).
  * @param yaw       orientation horizontale, {@code pitch} verticale (0 si {@code world == null}).
+ * @param shouldSpawn  intention <strong>persistante</strong> enregistrée par Citizens (trait
+ *                  {@code Spawned}) : le PNJ doit-il être matérialisé dès qu'un joueur est à
+ *                  portée. À ne pas confondre avec {@code spawned}, qui est l'état <em>transitoire</em>
+ *                  du moment : sans joueur à proximité, Citizens dématérialise ses PNJ et
+ *                  {@code spawned} vaut légitimement {@code false} alors que tout va bien.
+ * @param chunkLoaded le chunk de la position connue est-il chargé — explique à lui seul la plupart
+ *                  des cas où {@code spawned} est faux.
  * @param liveLocation {@code true} = position lue sur l'entité réellement présente en jeu ;
  *                  {@code false} = <strong>dernière position enregistrée</strong> par Citizens pour
  *                  un PNJ non apparu. La distinction compte : une position enregistrée peut être
@@ -21,14 +28,14 @@ import java.util.UUID;
  */
 public record CitizensNpc(int numericId, UUID uuid, String name, boolean spawned,
                           String world, double x, double y, double z, float yaw, float pitch,
-                          boolean liveLocation) {
+                          boolean liveLocation, boolean shouldSpawn, boolean chunkLoaded) {
 
     /**
      * Entrée de registre dont Citizens n'expose <strong>aucune</strong> position exploitable.
      * Utilisé par les chemins qui n'ont pas besoin de la position (liaison, spawn) et par les tests.
      */
     public CitizensNpc(int numericId, UUID uuid, String name, boolean spawned) {
-        this(numericId, uuid, name, spawned, null, 0, 0, 0, 0f, 0f, false);
+        this(numericId, uuid, name, spawned, null, 0, 0, 0, 0f, 0f, false, spawned, false);
     }
 
     /** Vrai si Citizens expose une position exploitable pour ce PNJ. */

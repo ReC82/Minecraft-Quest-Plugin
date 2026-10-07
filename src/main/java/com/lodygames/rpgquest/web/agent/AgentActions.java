@@ -294,6 +294,17 @@ public interface AgentActions {
      * « skin visuellement confirmé ».
      */
     /**
+     * Déplace le PNJ Citizens lié à {@code npcId}, <strong>sans le recréer</strong> : identité
+     * Citizens, identifiant RPGQuest, skin, traits et liaisons dialogues/quêtes sont conservés.
+     *
+     * <p>Un PNJ non matérialisé n'est jamais fait apparaître : seule sa position enregistrée
+     * change, et le résultat le dit. La position obtenue est <strong>vérifiée</strong> après coup ;
+     * en cas d'écart, l'action échoue en expliquant, plutôt que de rendre un succès trompeur.</p>
+     */
+    CompletableFuture<MutationResult> citizensMove(String npcId, String world,
+                                                   double x, double y, double z, float yaw, float pitch);
+
+    /**
      * Applique un skin au PNJ Citizens lié. {@code byPlayerName} choisit la source : un pseudo
      * Minecraft résolu par Citizens, ou un lien MineSkin. Le <strong>nom en jeu n'est jamais
      * touché</strong>. La source appliquée est enregistrée, pour pouvoir être reconduite lors d'un
@@ -310,17 +321,20 @@ public interface AgentActions {
      * @param liveLocation {@code true} = position de l'entité réellement présente ; {@code false} =
      *                     dernière position enregistrée pour un PNJ non apparu (ne prouve rien sur
      *                     sa présence actuelle).
+     * @param shouldSpawn  intention persistante de Citizens (trait {@code Spawned}) — un PNJ peut
+     *                     légitimement ne pas être matérialisé si aucun joueur n'est à portée.
+     * @param chunkLoaded  le chunk de sa position est-il chargé.
      */
     record CitizensNpcSummary(int numericId, String uuid, String name, String linkedNpcId,
                               boolean availableForBinding, boolean spawned,
                               String world, Double x, Double y, Double z, Float yaw, Float pitch,
-                              boolean liveLocation) {
+                              boolean liveLocation, boolean shouldSpawn, boolean chunkLoaded) {
 
         /** Entrée sans position connue — les chemins qui n'en ont pas besoin, et les tests. */
         CitizensNpcSummary(int numericId, String uuid, String name, String linkedNpcId,
                            boolean availableForBinding, boolean spawned) {
             this(numericId, uuid, name, linkedNpcId, availableForBinding, spawned,
-                    null, null, null, null, null, null, false);
+                    null, null, null, null, null, null, false, spawned, false);
         }
     }
 

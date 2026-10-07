@@ -66,6 +66,9 @@ final class CitizensNpcBridge {
      */
     private static CitizensNpc toSummary(NPC npc) {
         boolean spawned = npc.isSpawned();
+        // Intention persistante, distincte de la présence du moment : Citizens dématérialise ses
+        // PNJ quand aucun joueur n'est à portée, donc « pas spawné » n'est pas une anomalie.
+        boolean shouldSpawn = shouldSpawn(npc, spawned);
         Location location = null;
         boolean live = false;
         if (spawned) {
@@ -80,11 +83,26 @@ final class CitizensNpcBridge {
         }
         if (location == null || location.getWorld() == null) {
             return new CitizensNpc(npc.getId(), npc.getUniqueId(), npc.getName(), spawned,
-                    null, 0, 0, 0, 0f, 0f, false);
+                    null, 0, 0, 0, 0f, 0f, false, shouldSpawn, false);
         }
+        // Chargement du chunk : lu SANS le charger (isChunkLoaded), car sonder un PNJ ne doit
+        // jamais forcer de génération de terrain.
+        boolean chunkLoaded = location.getWorld().isChunkLoaded(
+                location.getBlockX() >> 4, location.getBlockZ() >> 4);
         return new CitizensNpc(npc.getId(), npc.getUniqueId(), npc.getName(), spawned,
                 location.getWorld().getName(), location.getX(), location.getY(), location.getZ(),
-                location.getYaw(), location.getPitch(), live);
+                location.getYaw(), location.getPitch(), live, shouldSpawn, chunkLoaded);
+    }
+
+    /** Trait public {@code Spawned} : l'intention enregistrée. Repli sur l'état courant si absent. */
+    private static boolean shouldSpawn(NPC npc, boolean spawned) {
+        try {
+            net.citizensnpcs.api.trait.trait.Spawned trait =
+                    npc.getTraitNullable(net.citizensnpcs.api.trait.trait.Spawned.class);
+            return trait == null ? spawned : trait.shouldSpawn();
+        } catch (RuntimeException e) {
+            return spawned;
+        }
     }
 
     // ---- Création + rollback (issue #81, phase 2) --------------------------------------------
@@ -174,6 +192,32 @@ final class CitizensNpcBridge {
         npc.setName(newName);
         CitizensAPI.getNPCRegistry().saveToStore();
         return Optional.of(previous);
+    }
+
+    /**
+     * Déplace un PNJ Citizens <strong>existant</strong> vers {@code target}, sans le recréer.
+     *
+     * <p>Utilise {@code NPC#teleport}, l'API publique prévue pour cela : l'identité Citizens
+     * (UUID, id numérique), les traits, le skin et toutes les liaisons RPGQuest sont par
+     * construction préservés — rien n'est détruit ni recréé.</p>
+     *
+     * <p>Un PNJ <strong>non matérialisé</strong> n'est jamais fait apparaître par ce chemin : on
+     * demande le déplacement, puis on <em>vérifie</em> la position enregistrée. Si Citizens ne l'a
+     * pas prise en compte, l'appelant le saura au lieu de croire à un succès.</p>
+     *
+     * @return la position enregistrée APRÈS la tentative, ou vide si le PNJ est introuvable.
+     */
+    Optional<Location> moveByUuid(UUID uuid, Location target) {
+        NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(uuid);
+        if (npc == null) {
+            return Optional.empty();
+        }
+        npc.teleport(target, org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+        CitizensAPI.getNPCRegistry().saveToStore();
+        Location after = npc.isSpawned() && npc.getEntity() != null
+                ? npc.getEntity().getLocation()
+                : npc.getStoredLocation();
+        return Optional.ofNullable(after);
     }
 
     /**

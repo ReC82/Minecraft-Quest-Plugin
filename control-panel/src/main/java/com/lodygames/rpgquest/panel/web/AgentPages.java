@@ -2284,12 +2284,16 @@ public final class AgentPages {
             sb.append("<span class=\"npc-loc\" title=\"")
                     .append(Boolean.TRUE.equals(cRow.get("liveLocation"))
                             ? "Position de l'entité réellement présente en jeu"
-                            : "Dernière position enregistrée par Citizens — le PNJ n'est pas apparu")
+                            : "Dernière position enregistrée par Citizens — le PNJ n'est pas "
+                                    + "matérialisé en ce moment")
                     .append("\">").append(Icons.icon("world")).append(Http.esc(str(cRow.get("world"))))
                     .append(" ").append(coord(cRow.get("x"))).append("/").append(coord(cRow.get("y")))
                     .append("/").append(coord(cRow.get("z")));
             if (!Boolean.TRUE.equals(cRow.get("spawned"))) {
-                sb.append(" <span class=\"faint\">(non apparu)</span>");
+                sb.append(" <span class=\"faint\">(")
+                        .append(Boolean.FALSE.equals(cRow.get("shouldSpawn"))
+                                ? "désactivé" : "en veille")
+                        .append(")</span>");
             }
             sb.append("</span>");
         }
@@ -2462,6 +2466,12 @@ public final class AgentPages {
         // Issue #165 : nom en jeu et apparence. Ne demandent PAS de définition RPGQuest — un PNJ
         // Citizens « orphelin » (cas de Help) doit pouvoir être renommé et habillé. Seule condition
         // réelle : qu'un PNJ Citizens soit effectivement lié, puisque c'est lui qu'on modifie.
+        if (canSpawn && boundCitizens) {
+            toggles.add(new String[] {slug + "-f-move", "Déplacer", "world", "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-move", "<div class=\"card card-body npc-formcard\">"
+                    + citizensMoveForm(session, agentId, id, citizensRowOf(citizensRoster, id, numeric),
+                            spawnWorlds) + "</div>"));
+        }
         if (canLink && boundCitizens) {
             toggles.add(new String[] {slug + "-f-look", "Nom en jeu & apparence", "edit", "btn-outline-secondary"});
             forms.append(actionCollapse(slug + "-f-look", "<div class=\"card card-body npc-formcard\">"
@@ -2866,6 +2876,112 @@ public final class AgentPages {
     }
 
     /**
+     * Déplacer un PNJ Citizens existant. Prérempli depuis sa position <em>réelle</em> si elle est
+     * connue, sinon depuis sa <em>dernière position enregistrée</em> — et le formulaire dit
+     * laquelle, parce que les deux n'engagent pas la même confiance.
+     */
+    private String citizensMoveForm(Session session, String agentId, String npcId,
+                                    Map<String, Object> citizensRow, List<String> spawnWorlds) {
+        String uid = "npc-move-" + Http.esc(npcId).replaceAll("[^a-zA-Z0-9_-]", "-");
+        boolean hasRow = citizensRow != null && !str(citizensRow.get("world")).isEmpty()
+                && !"null".equals(str(citizensRow.get("world")));
+        boolean live = hasRow && Boolean.TRUE.equals(citizensRow.get("liveLocation"));
+        boolean spawned = hasRow && Boolean.TRUE.equals(citizensRow.get("spawned"));
+        String curWorld = hasRow ? str(citizensRow.get("world")) : "";
+
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("world"))
+                .append("Déplacer le PNJ</p>");
+        sb.append("<p class=\"form-text\">Déplace le PNJ <strong>existant</strong> : son identifiant "
+                + "Citizens, son identifiant RPGQuest, son skin, ses traits et ses liaisons "
+                + "dialogues/quêtes sont conservés — il n'est jamais recréé.</p>");
+        if (!hasRow) {
+            sb.append("<p class=\"form-text\">").append(Icons.icon("warning"))
+                    .append("Position actuelle inconnue : aucun relevé Citizens ne couvre ce PNJ. "
+                            + "Rafraîchir « Citizens » pour préremplir les champs.</p>");
+        } else if (!spawned) {
+            sb.append("<p class=\"form-text\">").append(Icons.icon("history"))
+                    .append("Ce PNJ n'est <strong>pas matérialisé</strong> en ce moment. Les champs "
+                            + "viennent de sa <strong>dernière position enregistrée</strong>, et c'est "
+                            + "elle que le déplacement modifiera — le PNJ ne sera "
+                            + "<strong>pas</strong> fait apparaître pour autant.</p>");
+        } else {
+            sb.append("<p class=\"form-text\">").append(Icons.icon("check"))
+                    .append("Champs préremplis depuis sa position ")
+                    .append(live ? "<strong>réelle</strong> (entité présente en jeu)"
+                            : "<strong>enregistrée</strong>").append(".</p>");
+        }
+
+        sb.append(formStart(session, agentId, "npc.citizens.move", "/npcs", ""));
+        sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"npc_ctx\" value=\"").append(Http.esc(npcId)).append("\">");
+
+        sb.append("<label for=\"").append(uid).append("-world\">Monde</label>");
+        sb.append("<select class=\"form-select\" id=\"").append(uid).append("-world\" name=\"world\">");
+        boolean known = false;
+        for (String w : spawnWorlds) {
+            boolean sel = w.equalsIgnoreCase(curWorld);
+            known |= sel;
+            sb.append("<option value=\"").append(Http.esc(w)).append("\"").append(sel ? " selected" : "")
+                    .append(">").append(Http.esc(w)).append("</option>");
+        }
+        if (!known && !curWorld.isEmpty()) {
+            sb.append("<option value=\"").append(Http.esc(curWorld)).append("\" selected>")
+                    .append(Http.esc(curWorld)).append(" (non chargé)</option>");
+        }
+        sb.append("</select>");
+        sb.append(fieldHelp("Mondes réellement chargés, annoncés par le heartbeat. Changer de monde est "
+                        + "permis : le PNJ y est téléporté, sans être recréé.",
+                spawnWorlds.isEmpty() ? "world_hub" : spawnWorlds.get(0),
+                hasRow ? "le monde actuel du PNJ" : "aucun — relevé Citizens manquant", null));
+
+        sb.append("<div class=\"form-grid3\">");
+        for (String[] axis : new String[][] {{"x", "X"}, {"y", "Y"}, {"z", "Z"}}) {
+            String value = hasRow ? coord(citizensRow.get(axis[0])) : "";
+            sb.append("<div><label for=\"").append(uid).append("-").append(axis[0]).append("\">")
+                    .append(axis[1]).append("</label>")
+                    .append("<input class=\"form-control\" id=\"").append(uid).append("-").append(axis[0])
+                    .append("\" type=\"number\" step=\"0.5\" name=\"").append(axis[0])
+                    .append("\" value=\"").append(Http.esc(value)).append("\" required></div>");
+        }
+        sb.append("</div>");
+        sb.append(fieldHelp("Destination. Vérifiée avant tout déplacement : nombres finis, bords du "
+                        + "monde, bornes réelles du monde chargé, et <strong>arrivée sûre</strong> — sol "
+                        + "praticable et deux cases libres, sans liquide ni portail. Aucun bloc n'est "
+                        + "cassé ni posé. Si la destination est refusée, le PNJ ne bouge pas.",
+                "737.5 / 67 / -684.5", "la position actuelle du PNJ", null));
+
+        sb.append("<details class=\"dlg-edit\"><summary>Orientation (avancé)</summary>");
+        sb.append("<div class=\"form-grid3\">");
+        sb.append("<div><label for=\"").append(uid).append("-yaw\">Yaw</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-yaw\" type=\"number\" ")
+                .append("step=\"1\" name=\"yaw\" value=\"")
+                .append(hasRow ? Http.esc(coord(citizensRow.get("yaw"))) : "").append("\"></div>");
+        sb.append("<div><label for=\"").append(uid).append("-pitch\">Pitch</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-pitch\" type=\"number\" ")
+                .append("step=\"1\" name=\"pitch\" value=\"")
+                .append(hasRow ? Http.esc(coord(citizensRow.get("pitch"))) : "").append("\"></div>");
+        sb.append("</div>");
+        sb.append(fieldHelp("Direction du regard. <strong>Yaw</strong> : 0 = sud, 90 = ouest, 180 = nord, "
+                        + "-90 = est. <strong>Pitch</strong> : 0 = horizontal, -90 vers le haut, 90 vers "
+                        + "le bas (bornes -90 à 90).",
+                "yaw 180 pour regarder vers le nord", "l'orientation actuelle du PNJ",
+                "0 pour les deux"));
+        sb.append("</details>");
+
+        sb.append(mutationConsent("npc.citizens.move", "",
+                "Le PNJ Citizens lié à « " + npcId + " » sera déplacé. Réversible : il suffit de le "
+                        + "redéplacer. Aucun identifiant ni aucune liaison n'est touché."));
+        sb.append("<button class=\"btn\" type=\"submit\">Déplacer</button>");
+        sb.append(fieldHelp("La position obtenue est <strong>vérifiée</strong> après coup : si Citizens "
+                        + "n'applique pas le déplacement, l'action échoue en le disant et la position "
+                        + "précédente est conservée — jamais un succès trompeur. La fiche et la liste se "
+                        + "réactualisent au relevé suivant, déclenché automatiquement.",
+                null, "—", null));
+        sb.append("</form>");
+        return sb.toString();
+    }
+
+    /**
      * Formulaire de création complète d'un PNJ (définition + apparition + liaison + skin).
      *
      * <p>Une seule action agent, donc un seul geste et un rollback atomique : si l'apparition
@@ -3055,10 +3171,19 @@ public final class AgentPages {
             return "<span class=\"muted\">Position inconnue — Citizens n'en expose aucune pour ce PNJ"
                     + (spawned ? "" : " (jamais apparu, ou monde non chargé)") + ".</span>";
         }
+        boolean shouldSpawn = !Boolean.FALSE.equals(row.get("shouldSpawn"));
+        boolean chunkLoaded = Boolean.TRUE.equals(row.get("chunkLoaded"));
         StringBuilder sb = new StringBuilder();
-        sb.append(spawned
-                ? "<span class=\"badge text-bg-success\">présent en jeu</span>"
-                : "<span class=\"badge text-bg-secondary\">non apparu</span>");
+        // Trois états, et non deux. « Pas matérialisé » n'est pas une anomalie : Citizens
+        // dématérialise ses PNJ dès qu'aucun joueur n'est à portée. Afficher « non apparu » tout
+        // court laissait croire à un PNJ cassé alors qu'il réapparaît dès qu'on s'approche.
+        if (spawned) {
+            sb.append("<span class=\"badge text-bg-success\">présent en jeu</span>");
+        } else if (shouldSpawn) {
+            sb.append("<span class=\"badge text-bg-secondary\">en veille</span>");
+        } else {
+            sb.append("<span class=\"badge text-bg-warning\">désactivé dans Citizens</span>");
+        }
         sb.append(" <code class=\"tid\">").append(Http.esc(world)).append("</code> ");
         sb.append("<span class=\"npc-xyz\">").append(coord(row.get("x"))).append(" / ")
                 .append(coord(row.get("y"))).append(" / ").append(coord(row.get("z"))).append("</span>");
@@ -3075,7 +3200,18 @@ public final class AgentPages {
                 ? "position de l'entité réellement présente"
                 : "dernière position <strong>enregistrée</strong> par Citizens — elle ne prouve "
                         + "aucune présence actuelle").append("</span>");
-        surveyAge.ifPresent(age -> sb.append("<span><b>Relevé</b> il y a ").append(Http.esc(age)).append("</span>"));
+        if (!spawned && shouldSpawn) {
+            sb.append("<span><b>Pourquoi en veille</b> ")
+                    .append(chunkLoaded
+                            ? "son chunk est chargé mais Citizens ne l'a pas (encore) matérialisé"
+                            : "son chunk n'est pas chargé — aucun joueur à proximité")
+                    .append(". Citizens le fera apparaître dès qu'un joueur approchera : "
+                            + "ce n'est pas une anomalie</span>");
+        } else if (!spawned) {
+            sb.append("<span><b>Pourquoi</b> le trait Citizens « Spawned » est à faux : ce PNJ "
+                    + "n'apparaîtra pas, même si un joueur s'approche</span>");
+        }
+        surveyAge.ifPresent(age -> sb.append("<span><b>Relevé</b> ").append(Http.esc(age)).append("</span>"));
         sb.append("</span>");
         return sb.toString();
     }

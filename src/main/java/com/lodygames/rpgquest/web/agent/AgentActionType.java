@@ -82,6 +82,7 @@ public enum AgentActionType {
     NPC_CITIZENS_CREATE("npc.citizens.create"),
     /** Issue #165 : nom affiché en jeu d'un PNJ Citizens (jamais l'id logique RPGQuest). */
     NPC_CITIZENS_PROVISION("npc.citizens.provision"),
+    NPC_CITIZENS_MOVE("npc.citizens.move"),
     NPC_CITIZENS_RENAME("npc.citizens.rename"),
     /** Issue #165 : skin d'un PNJ Citizens depuis une URL MineSkin validée côté serveur. */
     NPC_CITIZENS_SKIN("npc.citizens.skin"),

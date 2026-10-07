@@ -1133,6 +1133,8 @@ class AgentActionExecutorTest {
         String lastSkinNpcId;
         String lastSkinUrl;
         boolean lastSkinByPlayerName;
+        String lastMoveNpcId;
+        String lastMoveWorld;
         String lastProvisionName;
         String lastProvisionWorld;
         String lastProvisionSkin;
@@ -1195,6 +1197,15 @@ class AgentActionExecutorTest {
                     x == null ? 0.5 : x, y == null ? 65.0 : y, z == null ? 0.5 : z,
                     yaw == null ? 0f : yaw, pitch == null ? 0f : pitch, "skin note", false,
                     java.util.List.of()));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> citizensMove(String npcId, String world,
+                                                              double x, double y, double z,
+                                                              float yaw, float pitch) {
+            lastMoveNpcId = npcId;
+            lastMoveWorld = world;
+            return mutation("move " + npcId + " -> " + world + " " + x + "/" + y + "/" + z);
         }
 
         @Override

@@ -121,7 +121,7 @@ public final class NpcPlacementPlanner {
      * sol plein juste dessous, {@link #REQUIRED_CLEARANCE} cases traversables pour son corps,
      * aucun liquide ni portail dans ces cases, et aucun autre PNJ déjà là.
      */
-    static boolean isAcceptable(int x, int y, int z, Probe probe) {
+    public static boolean isAcceptable(int x, int y, int z, Probe probe) {
         BlockKind ground = probe.kindAt(x, y - 1, z);
         if (ground != BlockKind.SOLID) {
             return false; // vide, liquide, portail ou hors monde : pas de sol praticable

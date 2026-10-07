@@ -90,6 +90,7 @@ public final class AgentActionExecutor {
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
                 case NPC_CITIZENS_CREATE -> npcCitizensCreate(action);
                 case NPC_CITIZENS_PROVISION -> npcCitizensProvision(action);
+                case NPC_CITIZENS_MOVE -> npcCitizensMove(action);
                 case NPC_CITIZENS_RENAME -> npcCitizensRename(action);
                 case NPC_CITIZENS_SKIN -> npcCitizensSkin(action);
                 case DIALOGUE_LIST -> dialogueList(action);
@@ -1241,6 +1242,8 @@ public final class AgentActionExecutor {
                 row.put("yaw", c.yaw());
                 row.put("pitch", c.pitch());
                 row.put("liveLocation", c.liveLocation());
+                row.put("shouldSpawn", c.shouldSpawn());
+                row.put("chunkLoaded", c.chunkLoaded());
                 rows.add(row);
             }
             Map<String, Object> details = new LinkedHashMap<>();
@@ -1292,6 +1295,35 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « name » manquant."));
         }
         return actions.citizensRename(npcId, name)
+                .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code npc.citizens.move} : déplace un PNJ existant, sans le recréer ni le faire apparaître. */
+    private CompletableFuture<AgentActionOutcome> npcCitizensMove(AgentAction action) {
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        String world = firstNonBlank(action.param("world"));
+        if (world == null || !WORLD_NAME.matcher(world).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « world » manquant ou invalide."));
+        }
+        Double x = parseFinite(action.param("x"));
+        Double y = parseFinite(action.param("y"));
+        Double z = parseFinite(action.param("z"));
+        if (x == null || y == null || z == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètres « x » / « y » / « z » manquants ou non finis."));
+        }
+        Double yaw = action.param("yaw") == null || action.param("yaw").isBlank()
+                ? 0.0 : parseFinite(action.param("yaw"));
+        Double pitch = action.param("pitch") == null || action.param("pitch").isBlank()
+                ? 0.0 : parseFinite(action.param("pitch"));
+        if (yaw == null || pitch == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « yaw » / « pitch » non fini."));
+        }
+        return actions.citizensMove(npcId, world, x, y, z, yaw.floatValue(), pitch.floatValue())
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }

@@ -108,6 +108,13 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<MutationResult> citizensMove(String npcId, String world,
+                                                          double x, double y, double z,
+                                                          float yaw, float pitch) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<MutationResult> citizensSkin(String npcId, String value, boolean byPlayerName) {
         return unsupported();
     }

@@ -2317,6 +2317,98 @@ Citizens la lisait, la vue métier la portait, et la sérialisation s'arrêtait 
 tests structurels verrouillent désormais les deux relevés — ils parcourent les composants du
 record par réflexion et exigent une clé pour chacun.
 
+#### État de présence : trois états, pas deux (#165)
+
+**Défaut constaté.** Andy, créé près du Guide et visible en jeu, s'affichait « non apparu » — ce
+qui se lit comme « ce PNJ est cassé ». Diagnostic sur les relevés réellement stockés : à 12:27,
+**12 PNJ sur 13** étaient `spawned=true` (Andy compris) ; après le redémarrage de 12:49, sans aucun
+joueur connecté, **0 sur 13**. `NPC#isSpawned()` est donc exact : Citizens **dématérialise** ses
+PNJ dès qu'aucun joueur n'est à portée, et leurs chunks se déchargent.
+
+Le défaut était donc le **vocabulaire**, pas la donnée. La fiche distingue désormais :
+
+| État | Signification |
+|---|---|
+| **présent en jeu** | `isSpawned()` vrai — entité réellement matérialisée |
+| **en veille** | pas matérialisé, mais le trait Citizens `Spawned` dit qu'il doit l'être → il réapparaîtra dès qu'un joueur approchera. **Ce n'est pas une anomalie**, et la fiche le dit, en précisant si le chunk est chargé |
+| **désactivé dans Citizens** | trait `Spawned` à faux → il n'apparaîtra pas, même avec un joueur à côté |
+
+Le relevé expose donc `spawned` (transitoire), `shouldSpawn` (intention persistante, trait public
+`Spawned`) et `chunkLoaded`, lu **sans** charger le chunk.
+
+#### Déplacer un PNJ existant (#165)
+
+Fiche PNJ → **« Déplacer »**, sous `NPC_SPAWN_WRITE` — le même droit que faire apparaître un PNJ,
+donc aucun droit nouveau.
+
+Le PNJ est déplacé par `NPC#teleport`, l'API publique prévue pour cela : **il n'est jamais
+recréé**, donc son identifiant Citizens, son identifiant RPGQuest, son skin, ses traits et ses
+liaisons dialogues/quêtes sont préservés par construction.
+
+- champs **préremplis** depuis la position réelle si le PNJ est matérialisé, sinon depuis sa
+  dernière position enregistrée — et le formulaire **dit laquelle** ;
+- monde choisi parmi les mondes réellement chargés ; changer de monde est permis ;
+- orientation yaw/pitch en section **avancée**, repliée ;
+- **arrivée validée** avant tout mouvement, avec le même critère que le placement automatique :
+  sol praticable, deux cases libres, ni liquide ni portail. Aucun bloc cassé ni posé ;
+- pour un PNJ **non matérialisé**, c'est sa position **enregistrée** qui change, et il n'est
+  **pas** fait apparaître — le formulaire l'annonce ;
+- la position obtenue est **relue et comparée** à celle demandée : si Citizens n'applique pas le
+  déplacement, l'action échoue (`MOVE_NOT_APPLIED`) en disant la position conservée, plutôt que de
+  rendre un succès trompeur.
+
+#### Ce que Citizens permet — et ce qu'il ne permet pas depuis `citizensapi` (#165)
+
+Relevé sur la build **réellement installée** (Citizens 2.0.43-SNAPSHOT build 4232), en interrogeant
+le serveur, pas la documentation en ligne.
+
+**Déjà exploité par le panel** : `createNPC` / `spawn` / `destroy`, `setName`, `teleport`,
+`getStoredLocation`, trait `MobType`, trait `Spawned`, et la commande structurée `/npc skin`.
+
+**Utile et exploitable plus tard** (API ou commande structurée, sans dépendance nouvelle) :
+
+| Possibilité | Intérêt | Limite connue |
+|---|---|---|
+| Équipement (`Equipment`, trait **public**) | donner casque/arme à un PNJ | l'éditeur `/npc equip` est interactif ; passer par le trait |
+| Visibilité du nom (`/npc name`) | masquer la plaque, ou ne l'afficher qu'au survol | **toggle**, non lisible depuis l'API |
+| Posture (`/npc pose`) | figer un regard, poses nommées | commande, état non lisible |
+| Hologrammes (`/npc hologram`) | lignes au-dessus du PNJ | commande uniquement |
+| `PlayerFilter` (trait **public**) | montrer un PNJ à certains joueurs | demande une règle métier côté RPGQuest |
+
+**Non implémentable aujourd'hui, et pourquoi — précisément.** Les classes `LookClose` et
+`Waypoints` ne sont pas dans `citizensapi` (elles vivent dans `citizens-main`). On peut malgré tout
+les **atteindre** en API publique, via `TraitFactory#getTraitClass("lookclose")` puis
+`NPC#getOrAddTrait(Class)` — ce n'est donc pas l'accès qui bloque. Ce qui bloque est la
+<strong>lecture et l'écriture de leur état</strong> :
+
+- leurs méthodes (`isEnabled()`, `setRange()`…) ne sont pas sur le classpath de compilation : les
+  appeler demande de la **réflexion** sur des signatures non contractuelles ;
+- l'alternative, `Trait#save(DataKey)` / `Trait#load(DataKey)` avec un `MemoryDataKey`, est bien
+  publique, mais dépend des **clés de persistance internes** de chaque trait — non documentées, non
+  vérifiables à la compilation, et susceptibles de changer sans préavis ;
+- aucune des deux voies n'est **testable hors serveur** : MockBukkit n'embarque pas Citizens, donc
+  ce code ne serait couvert par aucun test automatisé.
+
+Conséquences vérifiées sur la build installée :
+
+- **Look Close** : la commande installée est un **toggle** (`/npc lookclose … - Toggle whether a NPC will look when a
+  player is near`) : il n'existe aucun `--enabled true|false`. Exposer cela violerait l'exigence
+  « définir un état explicite, jamais un toggle aveugle qui pourrait inverser l'état lors d'un
+  retry ». Les sous-options, elles, sont explicites (`--range`, `--randomlook true|false`,
+  `--disablewhennavigating true|false`, `--perplayer`, `--targetnpcs`, `--randomswitchtargets`)
+  mais ne servent à rien tant que l'activation reste non pilotable et non lisible.
+- **Wander** : `WanderGoal` existe dans l'API, mais c'est un *goal* ajouté au moteur à l'exécution —
+  il **ne persiste pas** au redémarrage et constituerait un moteur de déplacement parallèle, deux
+  choses explicitement exclues. La commande installée est
+  `/npc wander (add x y z world) | (worldguardregion [region]) | (xyrange [xrange] [yrange])` :
+  `xyrange` couvre bien les bornes horizontale/verticale, `worldguardregion` exigerait WorldGuard,
+  et il n'y a **ni vitesse ni pauses**. Surtout, Wander remplace le fournisseur de points de
+  passage : impossible de **détecter** une patrouille existante pour avertir, puisque le trait
+  `Waypoints` n'est pas lisible.
+
+Les débloquer suppose une décision d'architecture — ajouter le jar complet de Citizens en
+`compileOnly` pour rendre ces traits lisibles — qui n'a pas été prise ici.
+
 #### Créer un PNJ complet depuis le panel (#165)
 
 Fiche PNJ → **« Créer un PNJ »**. Une **seule** action agent,

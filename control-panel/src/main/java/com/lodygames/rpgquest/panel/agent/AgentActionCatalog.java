@@ -236,6 +236,10 @@ public final class AgentActionCatalog {
                 List.of(Permission.NPC_WRITE, Permission.NPC_BIND_WRITE),
                 "Créer un PNJ (définition + apparition + liaison + skin)",
                 "npc.list", "npc.citizens.list");
+        // Déplacer un PNJ existant relève du même droit que le faire apparaître : NPC_SPAWN_WRITE.
+        // Aucun droit nouveau, aucune permission élargie.
+        addSensitiveWrite("npc.citizens.move", Permission.NPC_SPAWN_WRITE, false,
+                "Déplacer le PNJ Citizens", "npc.list", "npc.citizens.list");
         addContentWrite("npc.citizens.rename", Permission.NPC_BIND_WRITE, "Renommer le PNJ en jeu",
                 "npc.list", "npc.citizens.list");
         addContentWrite("npc.citizens.skin", Permission.NPC_BIND_WRITE, "Appliquer un skin",
@@ -496,6 +500,50 @@ public final class AgentActionCatalog {
                 }
                 params.put("npc_id", npcId);
                 params.put("citizens_id", Integer.toString(citizensId));
+            }
+            case "npc.citizens.move" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide.");
+                }
+                String world = trim(form.get("world"));
+                if (!WORLD_NAME.matcher(world).matches()) {
+                    return Validation.fail("Monde manquant ou invalide.");
+                }
+                Double x = finite(form.get("x"));
+                Double y = finite(form.get("y"));
+                Double z = finite(form.get("z"));
+                if (x == null || y == null || z == null) {
+                    return Validation.fail("Coordonnées X / Y / Z manquantes ou non numériques.");
+                }
+                if (Math.abs(x) > HORIZONTAL_LIMIT || Math.abs(z) > HORIZONTAL_LIMIT) {
+                    return Validation.fail("X / Z hors du bord de monde (±" + (long) HORIZONTAL_LIMIT + ").");
+                }
+                if (y < Y_MIN || y > Y_MAX) {
+                    return Validation.fail("Y hors bornes de sécurité (" + (long) Y_MIN + " à "
+                            + (long) Y_MAX + ").");
+                }
+                params.put("npc_id", npcId);
+                params.put("world", world);
+                params.put("x", trimNumber(x));
+                params.put("y", trimNumber(y));
+                params.put("z", trimNumber(z));
+                String rawYaw = trim(form.get("yaw"));
+                String rawPitch = trim(form.get("pitch"));
+                if (!rawYaw.isEmpty()) {
+                    Double yawValue = finite(rawYaw);
+                    if (yawValue == null) {
+                        return Validation.fail("Yaw non numérique.");
+                    }
+                    params.put("yaw", trimNumber(yawValue));
+                }
+                if (!rawPitch.isEmpty()) {
+                    Double pitchValue = finite(rawPitch);
+                    if (pitchValue == null || pitchValue < -90.0 || pitchValue > 90.0) {
+                        return Validation.fail("Pitch hors bornes (-90 à 90).");
+                    }
+                    params.put("pitch", trimNumber(pitchValue));
+                }
             }
             case "npc.citizens.rename" -> {
                 String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);

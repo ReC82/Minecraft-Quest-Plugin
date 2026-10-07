@@ -1188,6 +1188,101 @@ public final class BukkitAgentActions implements AgentActions {
         });
     }
 
+    @Override
+    public CompletableFuture<MutationResult> citizensMove(String npcId, String world,
+                                                          double x, double y, double z,
+                                                          float yaw, float pitch) {
+        String worldName = world == null ? "" : world.trim();
+        String positionError = CitizensSpawnPlanner.positionError(x, y, z, yaw, pitch);
+        if (positionError != null) {
+            return done(MutationResult.of(false, "INVALID_POSITION", positionError));
+        }
+        Set<String> allowed = allowedSpawnWorlds.get();
+        if (worldName.isEmpty() || allowed.stream().noneMatch(w -> w.equalsIgnoreCase(worldName))) {
+            return done(MutationResult.of(false, "UNKNOWN_WORLD",
+                    "Monde « " + safe(world) + " » hors de la liste blanche RPGQuest " + allowed + "."));
+        }
+        if (!npcIdentityService.citizensAvailable()) {
+            return done(MutationResult.of(false, "CITIZENS_UNAVAILABLE", "Citizens n'est pas disponible."));
+        }
+        return citizensUuidOf(npcId).thenCompose(uuid -> {
+            if (uuid.isEmpty()) {
+                return done(MutationResult.of(false, "NO_CITIZENS_BINDING",
+                        "Aucun PNJ Citizens lié à « " + safe(npcId) + " » — le lier d'abord."));
+            }
+            UUID citizensUuid = uuid.get();
+            return onMain(() -> {
+                World w = plugin.getServer().getWorld(worldName);
+                if (w == null) {
+                    return done(MutationResult.of(false, "UNKNOWN_WORLD",
+                            "Le monde « " + safe(worldName) + " » n'est pas chargé sur le serveur."));
+                }
+                if (y < w.getMinHeight() || y >= w.getMaxHeight()) {
+                    return done(MutationResult.of(false, "INVALID_POSITION",
+                            "Y hors des limites réelles de « " + worldName + " » ("
+                                    + w.getMinHeight() + " à " + (w.getMaxHeight() - 1) + ")."));
+                }
+                // Sûreté de l'arrivée : même critère que le placement automatique — sol praticable
+                // et deux cases libres. On ne casse ni ne pose jamais de bloc pour y arriver.
+                NpcPlacementPlanner.Probe probe = new BukkitNpcPlacementProbe(w, java.util.Set.of());
+                int bx = (int) Math.floor(x);
+                int by = (int) Math.floor(y);
+                int bz = (int) Math.floor(z);
+                if (!NpcPlacementPlanner.isAcceptable(bx, by, bz, probe)) {
+                    return done(MutationResult.of(false, "UNSAFE_DESTINATION",
+                            "Destination refusée : il faut un sol praticable et deux cases libres "
+                                    + "au-dessus, sans liquide ni portail. La position actuelle du PNJ "
+                                    + "est inchangée."));
+                }
+
+                Optional<org.bukkit.Location> before = npcIdentityService.citizensRoster().stream()
+                        .filter(n -> n.uuid().equals(citizensUuid) && n.hasLocation())
+                        .findFirst()
+                        .map(n -> new org.bukkit.Location(plugin.getServer().getWorld(n.world()),
+                                n.x(), n.y(), n.z()));
+
+                org.bukkit.Location target = new org.bukkit.Location(w, x, y, z, yaw, pitch);
+                Optional<org.bukkit.Location> after = npcIdentityService.moveCitizens(citizensUuid, target);
+                if (after.isEmpty()) {
+                    return done(MutationResult.of(false, "CITIZENS_NPC_MISSING",
+                            "Le PNJ Citizens lié est introuvable dans le registre (supprimé ?)."));
+                }
+                org.bukkit.Location reached = after.get();
+                boolean sameWorld = reached.getWorld() != null
+                        && reached.getWorld().getName().equalsIgnoreCase(worldName);
+                boolean close = Math.abs(reached.getX() - x) < 1.0 && Math.abs(reached.getY() - y) < 1.0
+                        && Math.abs(reached.getZ() - z) < 1.0;
+                if (!sameWorld || !close) {
+                    // Vérification réelle plutôt que supposition : Citizens n'a pas appliqué.
+                    return done(MutationResult.of(false, "MOVE_NOT_APPLIED",
+                            "Citizens n'a pas appliqué le déplacement : la position enregistrée reste "
+                                    + describe(reached) + (before.isPresent()
+                                    ? " (demandée : " + worldName + " " + fmt(x) + " / " + fmt(y) + " / "
+                                            + fmt(z) + ")" : "") + "."));
+                }
+                boolean spawned = npcIdentityService.citizensRoster().stream()
+                        .anyMatch(n -> n.uuid().equals(citizensUuid) && n.spawned());
+                return done(new MutationResult(true, "MOVED",
+                        "PNJ déplacé vers " + describe(reached) + "."
+                                + (spawned ? "" : " Ce PNJ n'était pas matérialisé : c'est sa "
+                                        + "position ENREGISTRÉE qui a changé, et il n'a pas été "
+                                        + "fait apparaître pour autant.")
+                                + " Identité Citizens, identifiant RPGQuest, skin, traits et liaisons "
+                                + "dialogues/quêtes inchangés.",
+                        List.of("citizens:moved=" + describe(reached))));
+            });
+        });
+    }
+
+    /** « monde x / y / z », pour un message lisible. */
+    private static String describe(org.bukkit.Location location) {
+        if (location == null || location.getWorld() == null) {
+            return "(position inconnue)";
+        }
+        return location.getWorld().getName() + " " + fmt(location.getX()) + " / "
+                + fmt(location.getY()) + " / " + fmt(location.getZ());
+    }
+
     /** UUID Citizens lié à un id logique RPGQuest, depuis la liaison persistée (base, async). */
     private CompletableFuture<Optional<UUID>> citizensUuidOf(String npcId) {
         String id = npcId == null ? "" : npcId.trim();
@@ -1227,7 +1322,7 @@ public final class BukkitAgentActions implements AgentActions {
                             n.hasLocation() ? n.x() : null, n.hasLocation() ? n.y() : null,
                             n.hasLocation() ? n.z() : null,
                             n.hasLocation() ? n.yaw() : null, n.hasLocation() ? n.pitch() : null,
-                            n.liveLocation()));
+                            n.liveLocation(), n.shouldSpawn(), n.chunkLoaded()));
                 }
                 rows.sort((a, b) -> Integer.compare(a.numericId(), b.numericId()));
                 return done(new CitizensRosterView(true, List.copyOf(rows), rows.size(), available2, linked));

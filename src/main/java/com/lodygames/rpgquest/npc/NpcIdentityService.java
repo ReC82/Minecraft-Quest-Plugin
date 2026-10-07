@@ -176,6 +176,17 @@ public final class NpcIdentityService {
     }
 
     /**
+     * Déplace le PNJ Citizens d'UUID donné, sans le recréer ni le faire apparaître.
+     * <strong>Thread principal.</strong>
+     *
+     * @return la position enregistrée après la tentative, pour que l'appelant puisse la comparer à
+     *         celle demandée plutôt que de supposer un succès.
+     */
+    public Optional<org.bukkit.Location> moveCitizens(UUID citizensUuid, org.bukkit.Location target) {
+        return citizensBridge == null ? Optional.empty() : citizensBridge.moveByUuid(citizensUuid, target);
+    }
+
+    /**
      * Issue #165 — renomme le PNJ Citizens lié à {@code npcId}. Ciblé par l'UUID issu de la
      * liaison persistée, jamais par le nom affiché. <strong>Thread principal.</strong>
      *

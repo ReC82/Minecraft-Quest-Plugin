@@ -539,6 +539,86 @@ class NpcsCatalogTest {
         assertTrue(page.contains("n'accorde aucun droit supplémentaire"), "aucun droit implicite");
     }
 
+    // ---- Déplacement d'un PNJ existant --------------------------------------------------------
+
+    @Test
+    void theMoveFormIsPrefilledFromTheRealPositionAndSaysSo() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_WITH_LOCATION);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("name=\"type\" value=\"npc.citizens.move\""), "action de déplacement");
+        assertTrue(page.contains("value=\"12.2\"") || page.contains("value=\"12.3\""), "X prérempli");
+        assertTrue(page.contains("value=\"70.0\""), "Y prérempli");
+        assertTrue(page.contains("value=\"-33.5\""), "Z prérempli");
+        assertTrue(page.contains("position <strong>réelle</strong>"), "la source du préremplissage est dite");
+        assertTrue(page.contains("jamais recréé"), "la préservation de l'identité est annoncée");
+    }
+
+    @Test
+    void forAnUnspawnedNpcTheFormSaysItEditsTheStoredPositionOnly() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_STORED_ONLY);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("dernière position enregistrée</strong>, et c'est"),
+                "on modifie la position enregistrée");
+        assertTrue(page.contains("pas</strong> fait apparaître"),
+                "aucune apparition implicite n'est promise");
+    }
+
+    @Test
+    void theMoveFormTransmitsTheDestinationExactly() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_WITH_LOCATION);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.move&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&npc_id=tan&world=world_hub&x=100.5&y=72&z=-50.5&yaw=180&confirm=true");
+        assertEquals(303, res.statusCode(), res.body());
+
+        AgentActionRow queued = latestOfType("npc.citizens.move");
+        assertEquals("tan", queued.params().get("npc_id"));
+        assertEquals("world_hub", queued.params().get("world"));
+        assertEquals("100.5", queued.params().get("x"));
+        assertEquals("-50.5", queued.params().get("z"));
+        assertEquals("180", queued.params().get("yaw"));
+    }
+
+    @Test
+    void anInvalidDestinationIsRefusedBeforeReachingTheServer() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_WITH_LOCATION);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        // Y aberrant, puis pitch hors bornes : deux refus distincts, aucune action enfilée.
+        assertTrue(post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.move&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&npc_id=tan&world=world_hub&x=0&y=99999&z=0")
+                .headers().firstValue("Location").orElse("").contains("err="), "Y hors bornes");
+        assertTrue(post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.move&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&npc_id=tan&world=world_hub&x=0&y=70&z=0&pitch=200")
+                .headers().firstValue("Location").orElse("").contains("err="), "pitch hors bornes");
+    }
+
+    @Test
+    void movingRequiresTheSpawnPermissionAndRefreshesBothSurveys() throws Exception {
+        start();
+        AgentActionCatalog.Spec spec = AgentActionCatalog.spec("npc.citizens.move").orElseThrow();
+
+        assertEquals(com.lodygames.rpgquest.panel.authz.Permission.NPC_SPAWN_WRITE, spec.permission(),
+                "même droit que faire apparaître un PNJ — aucun droit nouveau");
+        assertEquals(1, spec.requiredPermissions().size(), "aucune permission supplémentaire implicite");
+        assertTrue(spec.refreshTypes().contains("npc.list"));
+        assertTrue(spec.refreshTypes().contains("npc.citizens.list"), "la position est réactualisée");
+    }
+
     /** La dernière action enfilée d'un type donné, pour inspecter ses paramètres réels. */
     private AgentActionRow latestOfType(String type) {
         return store.latestActionOfType(TestConfig.AGENT_ID, type)
@@ -668,7 +748,8 @@ class NpcsCatalogTest {
             + "\"citizens\":[{\"numericId\":9,\"uuid\":\"33333333-3333-3333-3333-333333333333\","
             + "\"name\":\"Nouveau Nom\",\"linkedNpcId\":\"tan\",\"availableForBinding\":false,"
             + "\"spawned\":true,\"world\":\"world_hub\",\"x\":12.25,\"y\":70.0,\"z\":-33.5,"
-            + "\"yaw\":90.0,\"pitch\":0.0,\"liveLocation\":true}]}";
+            + "\"yaw\":90.0,\"pitch\":0.0,\"liveLocation\":true,\"shouldSpawn\":true,"
+            + "\"chunkLoaded\":true}]}";
 
     /** Même PNJ, non apparu : Citizens n'a qu'une dernière position enregistrée. */
     private static final String CITIZENS_STORED_ONLY = "{"
@@ -676,7 +757,8 @@ class NpcsCatalogTest {
             + "\"citizens\":[{\"numericId\":9,\"uuid\":\"33333333-3333-3333-3333-333333333333\","
             + "\"name\":\"Nouveau Nom\",\"linkedNpcId\":\"tan\",\"availableForBinding\":false,"
             + "\"spawned\":false,\"world\":\"world_hub\",\"x\":12.25,\"y\":70.0,\"z\":-33.5,"
-            + "\"yaw\":90.0,\"pitch\":0.0,\"liveLocation\":false}]}";
+            + "\"yaw\":90.0,\"pitch\":0.0,\"liveLocation\":false,\"shouldSpawn\":true,"
+            + "\"chunkLoaded\":false}]}";
 
     @Test
     void theCardAndTheListShowTheRealCitizensLocation() throws Exception {
@@ -704,9 +786,14 @@ class NpcsCatalogTest {
         runListWithSuccess("npc.citizens.list", CITIZENS_STORED_ONLY);
         String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("non apparu"), "l'absence de présence est dite");
+        assertTrue(page.contains("en veille"), "l'état transitoire est nommé sans alarmer");
         assertTrue(page.contains("ne prouve "), "la position enregistrée ne vaut pas présence");
         assertFalse(page.contains("présent en jeu"), "aucune présence affirmée à tort");
+        // Le point du ticket : ne plus laisser croire à un PNJ cassé.
+        assertTrue(page.contains("Pourquoi en veille"), "la raison est donnée");
+        assertTrue(page.contains("chunk n'est pas chargé"), "la cause réelle est nommée");
+        assertTrue(page.contains("ce n'est pas une anomalie"), "l'état est explicitement normal");
+        assertFalse(page.contains("il y a il y a"), "pas de doublon dans l'âge du relevé");
     }
 
     @Test

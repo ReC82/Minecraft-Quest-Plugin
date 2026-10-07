@@ -5216,3 +5216,64 @@ worktree propre `/srv/rpgquest/worktree-169`. `./gradlew test` + `build` →
 place : elle est inerte pour une version antérieure (le runner de migrations
 ignore toute version déjà appliquée et ne rétrograde jamais).
 `scripts/plugadmin/rollback.sh app` pour le Control Panel.
+
+---
+
+## 2026-10-07 (lot 3) - Correctif : la localisation Citizens disparaissait à la sérialisation du relevé (#165)
+
+### Changement
+
+Andy (créé près du Guide, Citizens #12, présent en jeu) et Tania (Citizens #2)
+affichaient tous deux « Position inconnue — Citizens n'en expose aucune pour ce
+PNJ », alors que définition, liaison et état « lié » étaient corrects.
+
+**Cause, établie de bout en bout.** La position n'était pas absente : elle
+disparaissait en route.
+
+| Étape | Verdict |
+|---|---|
+| `CitizensNpcBridge#toSummary` — entité présente, sinon `NPC#getStoredLocation()` | lit bien la position |
+| `BukkitAgentActions#citizensRoster` → `CitizensNpcSummary` | porte bien la position |
+| `AgentActionExecutor#npcCitizensList` — sérialisation de la ligne | **les 7 clés de position n'étaient jamais émises** |
+| Panel | lisait `world` absent et affichait, correctement, « inconnue » |
+
+Confirmé sur les données réelles : le relevé stocké le 2026-10-07 à 12:27 se
+termine par `"spawned":true` pour chaque PNJ, sans aucune clé de position.
+
+L'angle mort : les tests de rendu du panel partaient d'un JSON écrit à la main
+qui, lui, contenait les clés — ils vérifiaient l'affichage, jamais la
+sérialisation côté serveur.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **uniquement**. Aucun changement du Control Panel
+(non redéployé), **aucune migration**, aucun fichier de contenu touché. Andy,
+Tania, leurs skins et leurs liens sont intacts : seule la lecture du relevé
+change.
+
+### Déploiement / Exécution réelle
+
+Branche `feature/169-special-mobs-boss` @ **`f21424d`**, worktree propre.
+`./gradlew test` + `build` → **1747 tests plugin + 703 tests panel, 0 échec**.
+
+- **JAR déployé** : 1 895 945 o, SHA-256
+  `14703d4c912df3a15781a7faea0de422c2bda9b53bc4b732c1ebb89b12aae86a`.
+- **Backup préalable** : `rpgquest-20261007T124942Z-predeploy.jar`, dont le
+  SHA-256 `db44b220…` correspond exactement au JAR du lot 2 — chaîne de rollback
+  vérifiée.
+- **Redémarrage** : **0 joueur connecté** (aucune annonce nécessaire) ;
+  `save-all`, OFFLINE puis **ONLINE**.
+- **Vérifications** : `/rpgquest version` → `v0.1.0-SNAPSHOT` ; `/plugins` → 5
+  plugins verts dont LuckPerms ; heartbeat `uptime_seconds=5` (redémarrage réel) ;
+  les clés `liveLocation` / `yaw` / `pitch` sont présentes dans la classe
+  `AgentActionExecutor` du JAR livré.
+- **Reste à constater côté owner** : cliquer **« Citizens »** sur `/npcs` pour
+  produire un relevé frais — les relevés stockés d'avant ce correctif ne
+  contiennent pas les clés, donc la fiche continuera d'afficher « inconnue »
+  jusqu'au prochain relevé. C'est le seul geste nécessaire.
+- Aucun merge, aucune issue fermée.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` restaure
+`rpgquest-20261007T124942Z-predeploy.jar` (= le lot 2), puis redémarrer.

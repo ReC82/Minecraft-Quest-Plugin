@@ -43,7 +43,7 @@ import org.bukkit.entity.Player;
  * immédiat (retourne {@code false}), lance la lecture asynchrone, puis — si le joueur est éligible
  * — relance lui-même la téléportation via {@link PortalTeleporter#teleportNow} (qui ne repasse pas
  * par les gardes). Même patron que {@link com.lodygames.rpgquest.travel.WildEntryWarningService}
- * pour son bouton « Continuer ». {@link #pendingChecks} évite de relancer une lecture à chaque
+ * pour son bouton « Entrer dans le Wild ». {@link #pendingChecks} évite de relancer une lecture à chaque
  * {@code PlayerMoveEvent} tant qu'une est déjà en vol ; {@link #cleared} est un laissez-passer à
  * usage unique consommé par le passage relancé.</p>
  */

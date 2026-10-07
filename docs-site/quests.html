@@ -78,12 +78,16 @@ rewards:                    # optionnel
         <tr><td><code>CRAFT_ITEM</code></td><td><code>material</code>, <code>amount</code></td><td>Fabriquer cet objet en table de craft.</td></tr>
         <tr><td><code>TALK_TO_NPC</code></td><td><code>npc</code></td><td>Clic droit sur le PNJ identifié avec cet id — voir la page PNJ. Toujours <code>1/1</code>.</td></tr>
         <tr><td><code>REACH_LOCATION</code></td><td><code>world</code>, <code>x</code>, <code>y</code>, <code>z</code>, <code>radius</code></td><td>Se déplacer à moins de <code>radius</code> blocs (1.0 par défaut).</td></tr>
+        <tr><td><code>SMELT_ITEM</code></td><td><code>material</code>, <code>amount</code></td>
+          <td><strong>Cuire</strong> l'objet dans un four, un haut fourneau ou un fumoir. L'objet
+            indiqué est celui qui <strong>sort</strong> du four. Obtenir l'objet autrement, ou le
+            laisser sortir par un entonnoir, ne compte <strong>jamais</strong>.</td></tr>
         <tr><td><code>DELIVER_ITEM_TO_NPC</code></td><td><code>npc</code>, <code>material</code>, <code>amount</code></td>
           <td><strong>Remettre</strong> l'objet au PNJ, dans son dialogue. Collecter ou posséder ne compte
             <strong>jamais</strong> ; les objets sont réellement consommés. Dépôts partiels conservés.</td></tr>
       </tbody>
     </table>
-    <p class="text-body-secondary small">Huit types au total, aucun autre n'existe actuellement (pas d'objectif « utiliser un objet », par exemple).</p>
+    <p class="text-body-secondary small">Neuf types au total, aucun autre n'existe actuellement (pas d'objectif « utiliser un objet », par exemple).</p>
 
     <div class="alert alert-info">
       <p class="mb-2">

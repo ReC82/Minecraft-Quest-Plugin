@@ -56,6 +56,8 @@ public final class MinecraftNames {
             Map.entry("STONE", "Pierre"),
             Map.entry("COBBLESTONE", "Pierre taillée"),
             Map.entry("WHEAT_SEEDS", "Graines de blé"),
+            Map.entry("GREEN_DYE", "Teinture verte"),
+            Map.entry("CACTUS", "Cactus"),
             Map.entry("DEEPSLATE", "Ardoise des abîmes"),
             Map.entry("SAND", "Sable"),
             Map.entry("GRAVEL", "Gravier"),

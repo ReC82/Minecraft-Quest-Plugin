@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.ReachLocationObjective;
+import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
 import net.kyori.adventure.text.Component;
 
@@ -49,6 +50,10 @@ final class ObjectiveLabels {
             // raison que TALK_TO_NPC ci-dessus), et le dialogue du PNJ, lui, donne le détail.
             case DeliverItemToNpcObjective o -> Component.translatable(o.material())
                     .append(Component.text(" (à remettre)"));
+            // Issue #141 : « (à cuire) » distingue la cuisson d'une collecte ou d'un craft du même
+            // objet — trois objectifs qui attendent trois actions différentes.
+            case SmeltItemObjective o -> Component.translatable(o.material())
+                    .append(Component.text(" (à cuire)"));
         };
     }
 

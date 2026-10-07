@@ -17,6 +17,7 @@ import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
 import com.lodygames.rpgquest.npc.model.NpcDefinition;
 import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
+import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
@@ -63,7 +64,8 @@ class ContentPackMapperTest {
                         new KillEntityObjective(EntityType.ZOMBIE, 5),
                         new BreakBlockObjective(Material.STONE, 12),
                         new ReachLocationObjective("wild", 1.0, 64.0, -2.0, 3.5),
-                        new DeliverItemToNpcObjective("blacksmith", Material.LEATHER, 4)))),
+                        new DeliverItemToNpcObjective("blacksmith", Material.LEATHER, 4),
+                        new SmeltItemObjective(Material.GREEN_DYE, 2)))),
                 List.of((QuestReward) new ExperienceReward(50),
                         new VariableReward("CLAIM_TIER_1", "true"),
                         new CommandReward("say gg")),
@@ -99,6 +101,11 @@ class ContentPackMapperTest {
         assertEquals("LEATHER", objs.get(4).material());
         assertEquals("blacksmith", objs.get(4).npc());
         assertEquals(4, objs.get(4).amount());
+
+        // Issue #141 : objectif quantitatif ordinaire, aucun champ nouveau nécessaire.
+        assertEquals("SMELT_ITEM", objs.get(5).type());
+        assertEquals("GREEN_DYE", objs.get(5).material());
+        assertEquals(2, objs.get(5).amount());
 
         assertEquals("EXPERIENCE", e.rewards().get(0).type());
         assertEquals(50, e.rewards().get(0).amount());

@@ -1,0 +1,27 @@
+# QUÊTE DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md.
+#
+# Objectif SMELT_ITEM (issue #141) : il faut CUIRE l'objet, pas l'obtenir.
+# Procédure : placer un four, du combustible, et faire cuire un CACTUS -> la
+# cuisson donne GREEN_DYE. La progression n'avance QUE lorsque le joueur retire
+# lui-même le résultat du four (un entonnoir ne compte pas, /give ne compte pas,
+# un cactus simplement ramassé ne compte pas).
+#
+# « material » est l'objet OBTENU après cuisson, jamais la matière première.
+id: rpgquest:test_smelt_item
+title: "<red>[TEST] Cuire un objet</red>"
+description: "<gray>Quête de test manuel — objectif SMELT_ITEM. Fais cuire un cactus dans un four et retire la teinture verte.</gray>"
+category: test
+icon: FURNACE
+repeatable: true
+
+steps:
+  - id: cuire_du_cactus
+    objectives:
+      - type: SMELT_ITEM
+        material: GREEN_DYE
+        amount: 2
+
+rewards:
+  - type: EXPERIENCE
+    amount: 5

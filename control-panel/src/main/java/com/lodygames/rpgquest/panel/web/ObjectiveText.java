@@ -44,6 +44,7 @@ public final class ObjectiveText {
             case "KILL_ENTITY" -> countable("Tuer", MinecraftNames.humanize(target), amount, target);
             case "COLLECT_ITEM" -> countable("Collecter", MinecraftNames.humanize(target), amount, target);
             case "CRAFT_ITEM" -> countable("Fabriquer", MinecraftNames.humanize(target), amount, target);
+            case "SMELT_ITEM" -> countable("Cuire", MinecraftNames.humanize(target), amount, target);
             case "BREAK_BLOCK" -> countable("Casser", MinecraftNames.humanize(target), amount, target);
             case "PLACE_BLOCK" -> countable("Placer", MinecraftNames.humanize(target), amount, target);
             case "TALK_TO_NPC" -> new Objective("Parler à " + prettyNpc(target), target);

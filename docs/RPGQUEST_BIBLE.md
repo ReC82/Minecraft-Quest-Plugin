@@ -353,7 +353,7 @@ Permission : `rpgquest.admin` (toutes), sauf `/quest complete` qui est aussi `rp
 
 ### Types d'objectifs (`steps[].objectives[].type`)
 
-Les 8 types existent **tous** réellement dans le code (`ObjectiveType` enum, exactement ces 8 valeurs, aucune de plus) :
+Les 9 types existent **tous** réellement dans le code (`ObjectiveType` enum, exactement ces 9 valeurs, aucune de plus) :
 
 | Type | Champs YAML | Classe | Événement Bukkit déclencheur | Comportement multi-monde |
 |---|---|---|---|---|
@@ -363,6 +363,7 @@ Les 8 types existent **tous** réellement dans le code (`ObjectiveType` enum, ex
 | `COLLECT_ITEM` | `material`, `amount` (> 0) | `CollectItemObjective` | `EntityPickupItemEvent` (`QuestItemPickupListener`, `ignoreCancelled = true`) | Global, idem. **Limite connue** : compte uniquement un ramassage physique au sol par le joueur ; recevoir l'objet autrement (coffre, `/give`, craft, troc marchand) ne progresse jamais cet objectif. |
 | `CRAFT_ITEM` | `material`, `amount` (> 0) | `CraftItemObjective` | `CraftItemEvent` (`QuestCraftItemListener`, `ignoreCancelled = true`) — matériau du résultat de la recette (`event.getRecipe().getResult().getType()`) | Global, idem. **Limite connue** (documentée dans `MANUAL_TEST_PLAN.md` TC-012) : ne distingue pas un objet personnalisé d'un objet vanilla du même `Material`. |
 | `TALK_TO_NPC` | `npc` (id logique RPGQuest attribué par `/rpgadmin npc tag`, **pas** le nom affiché — voir section 5) | `TalkToNpcObjective` | `PlayerInteractEntityEvent` (`QuestNpcInteractListener`, entité vanilla/Citizens non géré) **ou** `NPCRightClickEvent` (`QuestCitizensNpcInteractListener`, uniquement si Citizens est actif et gère l'entité) — jamais les deux sur la même entité | Implicitement lié au monde où se trouve le PNJ visé, mais le champ lui-même ne porte pas de monde. À ne pas confondre avec l'identification par nom affiché utilisée par le système de **dialogue** (section 4/5) : `TALK_TO_NPC` (quête) exige un id logique posé au préalable via `/rpgadmin npc tag`, une entité renommée sans être taguée ne progresse jamais cet objectif. |
+| `SMELT_ITEM` | `material` (objet **obtenu** après cuisson), `amount` (> 0) | `SmeltItemObjective` | `FurnaceExtractEvent` (`QuestSmeltListener`, `ignoreCancelled = true`) — **seul** événement de cuisson qui porte un joueur, et il donne la quantité réellement retirée | Global. Progresse de la quantité extraite, plafonnée au reste à faire. Les trois fours vanilla comptent (`FURNACE`, `BLAST_FURNACE`, `SMOKER`), vérifiés explicitement. **Limite connue** : obtenir l'objet autrement (coffre, `/give`, craft, ramassage) ou le laisser sortir par un entonnoir ne progresse jamais — c'est voulu ; et un joueur qui vide le four d'un autre progresse, seule attribution que l'API publique garantisse. |
 | `DELIVER_ITEM_TO_NPC` | `npc` (id logique RPGQuest, comme `TALK_TO_NPC`), `material`, `amount` (> 0) | `DeliverItemToNpcObjective` | **Aucun** — volontairement. Seule l'action de dialogue `DELIVER_QUEST_ITEMS` sur le bon PNJ fait progresser cet objectif (`QuestProgressEngine#deliverTo`) | Global (le PNJ est où il est). Le compteur porte la quantité **déjà remise** : dépôts partiels acquis définitivement, objets remis **consommés**, jamais restitués. Voir « Remise d'objets à un PNJ » plus bas. |
 | `REACH_LOCATION` | `world`, `x`, `y`, `z`, `radius` (> 0) | `ReachLocationObjective` | `PlayerMoveEvent` (`QuestLocationListener`, `ignoreCancelled = true`, ignore les mouvements qui ne changent pas de bloc) — distance euclidienne comparée à `radius` | **Seul type explicitement lié à un monde précis** — `world` est un simple nom (résolu à l'évaluation, pas au chargement) ; un déplacement dans un autre monde n'est jamais candidat, même avec les mêmes coordonnées. |
 
@@ -393,6 +394,10 @@ Exemples minimaux (champs vérifiés dans le code, valeurs d'illustration) :
   npc: guard                 # même convention d'id que TALK_TO_NPC
   material: LEATHER
   amount: 4
+
+- type: SMELT_ITEM
+  material: GREEN_DYE        # l'objet qui SORT du four, pas le cactus qui y entre
+  amount: 2
 ```
 
 ### Remise d'objets à un PNJ — `DELIVER_ITEM_TO_NPC` (issue #123)
@@ -525,7 +530,7 @@ Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et
 - **Formulaire guidé** : sections Général / Prérequis / Objectifs / Récompenses /
   Variables (quête) et Général / Chaîne de quêtes (story). Chaque type d'objectif
   (`KILL_ENTITY`, `COLLECT_ITEM`, `CRAFT_ITEM`, `BREAK_BLOCK`, `PLACE_BLOCK`, `TALK_TO_NPC`,
-  `REACH_LOCATION`, `DELIVER_ITEM_TO_NPC`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`, `MONEY`) est décrit par
+  `REACH_LOCATION`, `DELIVER_ITEM_TO_NPC`, `SMELT_ITEM`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`, `MONEY`) est décrit par
   **un seul descripteur** (`Descriptors`) qui pilote ensemble libellé, description, champs, aide,
   listes proposées et validation. **Choisir le type n'affiche que les champs pertinents** ; le
   changement est immédiat (JavaScript progressif — `panel.js`) et **efface** les valeurs saisies

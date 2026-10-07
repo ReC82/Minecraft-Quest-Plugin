@@ -92,6 +92,12 @@ class ObjectiveTextTest {
     }
 
     @Test
+    void smeltItemUsesTheObtainedItemName() {
+        assertEquals("Cuire Teinture verte (x2)",
+                ObjectiveText.fromSummary(summary("SMELT_ITEM", "GREEN_DYE", 2)).label());
+    }
+
+    @Test
     void reachLocationUsesTheWorldName() {
         assertEquals("Se rendre dans World Nether",
                 ObjectiveText.fromSummary(summary("REACH_LOCATION", "world_nether", 1)).label());

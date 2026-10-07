@@ -17,6 +17,7 @@ import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.QuestReward;
 import com.lodygames.rpgquest.quest.model.QuestStep;
 import com.lodygames.rpgquest.quest.model.ReachLocationObjective;
+import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.RewardType;
 import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
 import com.lodygames.rpgquest.quest.model.VariableReward;
@@ -305,6 +306,13 @@ final class QuestDefinitionParser {
                 yield new TalkToNpcObjective(npc);
             }
             case REACH_LOCATION -> parseReachLocation(section, context, errors);
+            // Issue #141 : « material » est l'objet OBTENU après cuisson (ex. GREEN_DYE), pas la
+            // matière première — même champ que les autres objectifs quantitatifs.
+            case SMELT_ITEM -> {
+                Material material = parseMaterial(section, "material", context, errors);
+                Integer amount = parsePositiveInt(section, "amount", context, errors);
+                yield (material != null && amount != null) ? new SmeltItemObjective(material, amount) : null;
+            }
             // Issue #123 : les trois champs sont obligatoires et validés séparément, pour que le
             // message d'erreur nomme précisément ce qui manque plutôt qu'un « objectif invalide ».
             case DELIVER_ITEM_TO_NPC -> {

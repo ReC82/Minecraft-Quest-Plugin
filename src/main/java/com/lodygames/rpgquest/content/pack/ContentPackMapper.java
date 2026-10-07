@@ -43,6 +43,7 @@ import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.QuestReward;
 import com.lodygames.rpgquest.quest.model.QuestStep;
 import com.lodygames.rpgquest.quest.model.ReachLocationObjective;
+import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
 import com.lodygames.rpgquest.quest.model.VariableReward;
 import com.lodygames.rpgquest.story.model.StoryDefinition;
@@ -103,6 +104,7 @@ public final class ContentPackMapper {
             case TalkToNpcObjective b -> QuestPackEntry.Objective.talk(b.npcId());
             case ReachLocationObjective b -> QuestPackEntry.Objective.reach(b.world(), b.x(), b.y(), b.z(), b.radius());
             case DeliverItemToNpcObjective b -> QuestPackEntry.Objective.deliver(b.npcId(), b.material().name(), b.amount());
+            case SmeltItemObjective b -> QuestPackEntry.Objective.countable("SMELT_ITEM", b.material().name(), b.amount());
         };
     }
 

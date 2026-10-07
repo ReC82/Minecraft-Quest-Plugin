@@ -193,6 +193,7 @@ public final class QuestProgressEngine implements PluginService {
             // dialogue sur le bon PNJ, le fait. Un écouteur ici rouvrirait exactement la
             // sémantique de COLLECT_ITEM que ce type d'objectif existe pour éviter.
             case DELIVER_ITEM_TO_NPC -> null;
+            case SMELT_ITEM -> new QuestSmeltListener(this);
         };
         if (primary == null) {
             return List.of();
@@ -789,6 +790,15 @@ public final class QuestProgressEngine implements PluginService {
         handleCandidates(player, index.craftItem(material));
     }
 
+    /**
+     * Issue #141 : une extraction de four peut sortir <strong>plusieurs</strong> objets d'un coup
+     * (shift-clic sur le slot de résultat). La progression avance donc de {@code amount} et non de
+     * 1 — compter un seul objet rendrait une quête « cuire 8 objets » bien plus longue qu'annoncé.
+     */
+    void handleSmeltItem(Player player, Material material, int amount) {
+        handleCandidates(player, index.smeltItem(material), amount);
+    }
+
     void handleTalkToNpc(Player player, String npcId) {
         handleCandidates(player, index.talkToNpc(npcId));
     }
@@ -885,6 +895,15 @@ public final class QuestProgressEngine implements PluginService {
     }
 
     private void handleCandidates(Player player, List<ObjectiveRef> candidates) {
+        handleCandidates(player, candidates, 1);
+    }
+
+    /**
+     * {@code step} est le nombre de pas à ajouter en une fois (1 pour un événement unitaire). Le
+     * compteur est toujours <strong>plafonné</strong> à la quantité requise : un lot plus grand que
+     * le reliquat ne « dépasse » jamais, et l'étape ne se termine pas deux fois.
+     */
+    private void handleCandidates(Player player, List<ObjectiveRef> candidates, int step) {
         if (candidates.isEmpty()) {
             return;
         }
@@ -907,7 +926,8 @@ public final class QuestProgressEngine implements PluginService {
                 continue;
             }
 
-            int updated = progress.increment(ref.objectiveIndex());
+            int updated = Math.min(required, progress.counter(ref.objectiveIndex()) + Math.max(1, step));
+            progress.setCounter(ref.objectiveIndex(), updated);
             repository.setObjectiveProgress(playerId, ref.questId(), ref.stepId(), ref.objectiveIndex(), updated)
                     .exceptionally(error -> {
                         logger.error("Impossible de persister la progression de {} pour {}", ref.questId(), playerId, error);

@@ -11,7 +11,7 @@ import java.util.Optional;
  * Abstraction volontairement légère : un {@code switch} géant spécifique à une quête serait
  * l'anti-pattern ; ajouter un type = ajouter un descripteur.
  *
- * <p>Types calqués sur {@code quest.model.ObjectiveType} (8) et {@code quest.model.RewardType} (5)
+ * <p>Types calqués sur {@code quest.model.ObjectiveType} (9) et {@code quest.model.RewardType} (5)
  * du moteur RPGQuest — voir {@code QuestDefinitionParser}.</p>
  */
 public final class Descriptors {
@@ -68,6 +68,15 @@ public final class Descriptors {
                     List.of(Field.select("material", "Objet", "material",
                             "Chercher par nom français (« améthyste ») ou par identifiant "
                                     + "(« AMETHYST_SHARD »).", true), AMOUNT)),
+            new Descriptor("SMELT_ITEM", "Cuire un objet", "uptime",
+                    "Faire CUIRE N exemplaires d'un objet dans un four, un haut fourneau ou un fumoir. "
+                            + "L'objet indiqué est celui qui SORT du four (ex. « Teinture verte » pour un "
+                            + "cactus cuit), pas la matière première. Obtenir l'objet autrement (coffre, "
+                            + "craft, /give) ou le laisser sortir par un entonnoir ne compte jamais : "
+                            + "la progression se fait quand un joueur retire lui-même le résultat.",
+                    List.of(Field.select("material", "Objet obtenu après cuisson", "material",
+                            "Chercher par nom français (« teinture verte ») ou par identifiant "
+                                    + "(« GREEN_DYE »).", true), AMOUNT)),
             new Descriptor("CRAFT_ITEM", "Fabriquer un objet", "gift",
                     "Fabriquer N exemplaires d'un objet (table de craft ou grille 2×2).",
                     List.of(Field.select("material", "Objet", "material",

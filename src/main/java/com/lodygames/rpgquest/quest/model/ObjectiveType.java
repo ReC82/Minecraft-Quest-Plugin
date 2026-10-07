@@ -9,5 +9,7 @@ public enum ObjectiveType {
     TALK_TO_NPC,
     REACH_LOCATION,
     /** Remise réelle d'objets à un PNJ, avec dépôts partiels persistants (issue #123). */
-    DELIVER_ITEM_TO_NPC
+    DELIVER_ITEM_TO_NPC,
+    /** Cuisson réelle d'un objet dans un four (issue #141). */
+    SMELT_ITEM
 }

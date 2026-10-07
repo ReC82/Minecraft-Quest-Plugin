@@ -61,13 +61,6 @@ final class ActiveQuestProgress {
         objectiveCounters.put(objectiveIndex, value);
     }
 
-    /** @return la nouvelle valeur du compteur */
-    int increment(int objectiveIndex) {
-        int updated = counter(objectiveIndex) + 1;
-        objectiveCounters.put(objectiveIndex, updated);
-        return updated;
-    }
-
     void advanceToStep(int stepIndex) {
         this.currentStepIndex = stepIndex;
         this.objectiveCounters.clear();

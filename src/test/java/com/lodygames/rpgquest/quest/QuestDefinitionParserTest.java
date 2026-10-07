@@ -9,6 +9,7 @@ import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
+import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.RewardType;
 import java.io.StringReader;
 import java.util.List;
@@ -400,6 +401,49 @@ class QuestDefinitionParserTest {
                 """));
 
         assertFalse(result.isSuccess());
+    }
+
+    // ---- Cuisson (issue #141) ------------------------------------------------------------------
+
+    @Test
+    void aSmeltObjectiveIsParsedWithTheObtainedItem() {
+        QuestDefinitionParser.ParseResult result = parser.parse("smelt.yml", load("""
+                id: rpgquest:smelt
+                title: "Titre"
+                description: "Description"
+                category: test
+
+                steps:
+                  - id: smelt_step
+                    objectives:
+                      - type: SMELT_ITEM
+                        material: GREEN_DYE
+                        amount: 2
+                """));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        assertEquals(new SmeltItemObjective(Material.GREEN_DYE, 2),
+                result.quest().steps().get(0).objectives().get(0));
+    }
+
+    @Test
+    void aSmeltObjectiveWithoutMaterialOrAmountIsRejected() {
+        QuestDefinitionParser.ParseResult result = parser.parse("smelt_broken.yml", load("""
+                id: rpgquest:smelt_broken
+                title: "Titre"
+                description: "Description"
+                category: test
+
+                steps:
+                  - id: smelt_step
+                    objectives:
+                      - type: SMELT_ITEM
+                """));
+
+        assertFalse(result.isSuccess());
+        String combined = String.join(" | ", result.issues().stream().map(QuestLoadIssue::message).toList());
+        assertTrue(combined.contains("material"), combined);
+        assertTrue(combined.contains("amount"), combined);
     }
 
     private ConfigurationSection load(String yaml) {

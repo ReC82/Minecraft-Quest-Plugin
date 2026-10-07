@@ -11,6 +11,7 @@ import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.QuestStep;
 import com.lodygames.rpgquest.quest.model.ReachLocationObjective;
+import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.TalkToNpcObjective;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -38,6 +39,7 @@ public final class QuestObjectiveIndex {
     private final Map<String, List<ObjectiveRef>> talkToNpc = new HashMap<>();
     private final Map<String, List<ObjectiveRef>> reachLocationByWorld = new HashMap<>();
     private final Map<String, List<ObjectiveRef>> deliverToNpc = new HashMap<>();
+    private final Map<Material, List<ObjectiveRef>> smeltItem = new HashMap<>();
 
     public QuestObjectiveIndex(List<QuestDefinition> quests) {
         for (QuestDefinition quest : quests) {
@@ -62,6 +64,7 @@ public final class QuestObjectiveIndex {
             case TalkToNpcObjective o -> add(talkToNpc, o.npcId(), ref);
             case ReachLocationObjective o -> add(reachLocationByWorld, o.world(), ref);
             case DeliverItemToNpcObjective o -> add(deliverToNpc, o.npcId(), ref);
+            case SmeltItemObjective o -> add(smeltItem, o.material(), ref);
         }
     }
 
@@ -107,6 +110,11 @@ public final class QuestObjectiveIndex {
         return deliverToNpc.getOrDefault(npcId, List.of());
     }
 
+    /** Objectifs de cuisson (issue #141) portant sur l'objet OBTENU après cuisson. */
+    public List<ObjectiveRef> smeltItem(Material material) {
+        return smeltItem.getOrDefault(material, List.of());
+    }
+
     public boolean isEmpty(ObjectiveType type) {
         return switch (type) {
             case BREAK_BLOCK -> breakBlock.isEmpty();
@@ -117,6 +125,7 @@ public final class QuestObjectiveIndex {
             case TALK_TO_NPC -> talkToNpc.isEmpty();
             case REACH_LOCATION -> reachLocationByWorld.isEmpty();
             case DELIVER_ITEM_TO_NPC -> deliverToNpc.isEmpty();
+            case SMELT_ITEM -> smeltItem.isEmpty();
         };
     }
 }

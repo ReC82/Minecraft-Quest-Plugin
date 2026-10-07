@@ -124,6 +124,42 @@ nodes:
   </section>
 
   <section class="my-5">
+    <h2 class="h4">Valeurs dynamiques dans le texte</h2>
+    <p>
+      Le <code>text</code> d'un nœud peut contenir un marqueur <code>%clé%</code>, remplacé
+      <strong>juste avant l'affichage</strong> par une valeur lue en direct — même convention que
+      <code>%player%</code> de <code>RUN_SAFE_COMMAND</code>, jamais une balise MiniMessage.
+    </p>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Marqueur</th><th>Valeur affichée</th></tr></thead>
+      <tbody>
+        <tr><td><code>%wild_conditions%</code></td>
+          <td>État réel du monde d'exploration (<code>config.yml</code> → <code>travel.wild-world</code>) :
+            « Il fait jour dans le Wild. Le temps est clair. », « … Il pleut. », « … Un orage est en cours. »,
+            ou « Je n'ai pas de nouvelles du Wild pour le moment. » si le monde n'est pas chargé.
+            <strong>Lecture seule</strong> : ni l'heure, ni la météo, ni le cycle jour/nuit du Wild ne sont modifiés.</td></tr>
+      </tbody>
+    </table>
+    <p class="mb-0">
+      Une clé non reconnue est laissée <strong>visible telle quelle</strong> (une faute de frappe se
+      voit en jeu plutôt que d'effacer du texte), et la substitution n'est faite qu'une fois : une
+      valeur contenant elle-même un <code>%</code> n'est jamais réinterprétée. Exemple livré, dans
+      <code>dialogues/guard.yml</code> :
+    </p>
+<pre class="bg-body-tertiary p-3 rounded"><code>  greeting:
+    choices:
+      - text: "Comment est le Wild actuellement ?"   # choix permanent : aucune condition
+        next: wild_conditions
+
+  wild_conditions:
+    speaker: "Garde"
+    text: "&lt;white&gt;%wild_conditions%&lt;/white&gt;"
+    choices:
+      - text: "Merci pour l'information"
+        next: greeting</code></pre>
+  </section>
+
+  <section class="my-5">
     <h2 class="h4">Renderer utilisé</h2>
     <p>
       Contrôlé par <code>config.yml</code> → <code>dialogue.renderer</code>. Deux renderers

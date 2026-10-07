@@ -350,6 +350,28 @@ level-type=minecraft:normal
       automatique sur le spawn du monde (journalisé en avertissement côté console), le joueur est
       toujours téléporté proprement.
     </p>
+    <div class="alert alert-warning">
+      <p class="mb-2">
+        <strong>Avertissement de danger avant le départ (issue #161).</strong> Un portail simple dont
+        la destination est <code>travel.wild-world</code> n'emmène jamais le joueur sans confirmation
+        explicite : une fenêtre annonce que le Wild est dangereux, que le PvP y est autorisé et que la
+        mort peut faire perdre l'inventaire, puis propose <em>Entrer dans le Wild</em>,
+        <em>Entrer et ne plus afficher cet avertissement</em> et <em>Annuler</em>. Fermer la fenêtre
+        équivaut à annuler.
+      </p>
+      <p class="mb-2">
+        Rien n'est lu dans l'inventaire du joueur : l'avertissement est le même pour tous. Le choix
+        « ne plus afficher » est enregistré par joueur et survit à une reconnexion comme à un
+        redémarrage, mais <strong>uniquement</strong> s'il part réellement ; il masque l'avertissement
+        seul, jamais le retour d'attente « Recherche d'un point d'arrivée sûr… » ni les contrôles de
+        sécurité ci-dessus. <code>/rpgadmin player resetnew</code> le rétablit.
+      </p>
+      <p class="mb-0">
+        L'état du Wild (jour/nuit, météo) n'est pas affiché ici : le joueur le demande au
+        <strong>Garde</strong> du Hub (choix de dialogue permanent « Comment est le Wild
+        actuellement ? », issue #24).
+      </p>
+    </div>
     <ol class="text-body-secondary">
       <li>
         <strong>Se placer à un coin du portail</strong> (dans le Hub), puis obtenir l'outil de

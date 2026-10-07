@@ -187,8 +187,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   Libraire, clic droit → GUI deux onglets, voir ligne « Guide / journal » ci-dessus) ; Rune de
   rappel (`rpgquest:rune_rappel`,
   Wild → Hub, canalisation 10 s, cooldown 30 min persistant, remise à chaque nouveau joueur, filet
-  via le Guide) ; avertissement compact cliquable [Continuer]/[Annuler] à l'entrée du Wild sans
-  Rune ; Waystones générées paresseusement et de façon déterministe dans le Wild
+  via le Guide) ; Waystones générées paresseusement et de façon déterministe dans le Wild
   (`waystone.WaystoneService`), découverte individuelle par joueur, retour au Hub par canalisation
   courte. Système **soulbound générique** (`item.SoulboundItemService`) : un seul écouteur anti-perte
   pour tous les objets permanents (Acte, Pierre de retour, Journal, Rune).
@@ -203,6 +202,27 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   double-clic. `/rpgadmin player resetnew` restaure le droit initial (variables déjà toutes
   effacées — aucun code dédié). Distinct de la Rune de rappel (`player.StarterKitListener`, remise
   unique à vie, automatique à la connexion).
+- **Entrée dans le Wild : avertissement de danger et retour d'attente** *(issue #161, couvre la
+  partie B de #26)* — `travel.WildEntryWarningService` suspend tout passage vers
+  `travel.wild-world` et demande une confirmation explicite. Avertissement **générique**, **aucune
+  inspection d'inventaire** (décision du 2026-10-07 : ni nourriture, ni arme, ni outil, ni Rune, ni
+  kit, ni gear score — l'ancien message « sans moyen de rappel » a été retiré) : zone dangereuse,
+  PvP autorisé, mort = perte d'inventaire, + renvoi vers le Garde pour les conditions actuelles.
+  Trois actions (« Entrer dans le Wild », « Entrer et ne plus afficher cet avertissement »,
+  « Annuler ») ; fermer la fenêtre = annuler. Option persistée par joueur
+  (`WILD_ENTRY_WARNING_HIDDEN`) écrite **uniquement** sur un départ réel, masquant l'avertissement
+  seul. Retour immédiat « Recherche d'un point d'arrivée sûr… Téléportation en préparation. » puis
+  réussite **ou échec explicite** (le listener n'annonce plus « réussie » après un échec). Une seule
+  demande en vol par joueur, pas de réouverture tant que le joueur reste dans le portail, aucune
+  téléportation tardive après déconnexion. `RANDOM_SAFE`, les contrôles de sécurité et le répit
+  d'arrivée de 40 ticks sont inchangés ; chaque passage émet une ligne `[TP-LATENCY]` séparant
+  recherche / chargement de chunks / téléportation.
+- **État du Wild demandé au Garde** *(issue #24)* — `travel.WildConditionsService` lit l'état réel
+  du monde d'exploration (jour/nuit depuis l'horloge, météo globale `clair`/`pluie`/`orage`) sans
+  jamais le modifier. Exposé **sans commande** par un choix permanent du dialogue du Garde
+  (« Comment est le Wild actuellement ? ») dont la réponse porte le marqueur dynamique
+  `%wild_conditions%` (`dialogue.DialogueTextPlaceholders`, substitué au moment du rendu). Jamais
+  injecté dans l'avertissement du portail : le Garde est la source volontaire d'information.
 - **Waypoints par instance de biome** *(issue #124, MVP)* — `com.lodygames.rpgquest.waypoint`,
   **distinct des Waystones**. Repères physiques persistants et partagés générés **par instance
   réelle de biome** dans `travel.wild-world` : à l'entrée d'un joueur dans une zone de biome sans

@@ -3488,6 +3488,92 @@ le résumé de récompenses de TC-014).
     manifesterait par un message `CITIZENS_INCOMPATIBLE` à l'étape 2 ou 8, **sans** affecter les
     autres fonctions PNJ. Le signaler tel quel plutôt que d'insister.
 
+### TC-256 — Entrée dans le Wild : avertissement, préparation, état du Wild au Garde (issues #161/#26/#24, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** `travel.WildEntryWarningService` (avertissement générique,
+    confirmation explicite, option persistante « ne plus afficher », retour d'attente),
+    `travel.WildConditionsService` + marqueur `%wild_conditions%` du dialogue du Garde, et
+    **non-régression** du kit du Guide (#26 partie A).
+-   **Préconditions :** JAR déployé **et serveur redémarré**. Un World-Portal `world_hub → wild`
+    existe et est activé (`/rpgadmin worldportal list`). Les PNJ **Garde** et **Guide** sont liés à
+    leurs dialogues. `dialogues/guard.yml` du serveur doit contenir le nœud `wild_conditions` et son
+    choix (un redéploiement de JAR **ne met jamais à jour** un `guard.yml` déjà présent : vérifier
+    ou transférer le fichier). Faire le parcours principal avec un compte **non OP**.
+-   **Pourquoi c'est manuel :** la fenêtre Paper, la fermeture au clavier, la latence réelle de
+    génération de chunks et l'horloge/météo d'un vrai monde ne sont pas simulables par MockBukkit.
+    Les règles elles-mêmes (blocage, persistance, single-flight, substitution dynamique) sont
+    couvertes par des tests automatisés.
+
+**Avertissement et annulation**
+
+1.  Entrer dans le passage Hub → Wild. **Attendu** : une fenêtre (ou, si `dialogue.renderer: chat`,
+    un message cliquable) annonce que le Wild est dangereux, que le **PvP y est autorisé** et que la
+    mort fait perdre l'inventaire, puis demande « Voulez-vous continuer ? ». Une phrase indique que
+    **le Garde** peut renseigner sur les conditions actuelles. **Aucune téléportation.**
+2.  Vérifier que **jour/nuit et météo ne sont PAS affichés** dans cette fenêtre.
+3.  Cliquer **Annuler**. **Attendu** : message « Vous restez au Hub. », aucune téléportation.
+4.  **Point clé — pas de boucle.** Rester dans le portail et bouger dedans quelques secondes.
+    **Attendu** : la fenêtre **ne se rouvre jamais** d'elle-même.
+5.  Sortir du portail puis y rentrer. **Attendu** : l'avertissement réapparaît (nouvelle
+    intervention explicite).
+6.  Rouvrir l'avertissement et le **fermer au clavier** (Échap). **Attendu** : équivalent à annuler
+    — aucun départ, aucun message de préparation, et l'avertissement réapparaîtra à la prochaine
+    entrée (la fermeture ne mémorise rien).
+
+**Départ confirmé**
+
+7.  Entrer puis cliquer **Entrer dans le Wild**. **Attendu** : immédiatement « Recherche d'un point
+    d'arrivée sûr… Téléportation en préparation. », **avant** l'attente.
+8.  **Attendu** : arrivée dans le Wild sur un sol sûr, puis « Téléportation réussie. ».
+9.  Dans la console serveur, relever la ligne `[TP-LATENCY]` correspondante. **Attendu** :
+    `strategy=RANDOM_SAFE`, un `attempts=` plausible, et `chunks_ms` / `search_ms` / `teleport_ms`
+    renseignés. **Noter ces valeurs dans le rapport** : c'est la mesure de latence demandée.
+10. Revenir au Hub (Rune de rappel ou Waystone).
+
+**Option « Ne plus afficher »**
+
+11. Entrer dans le portail, cliquer **Entrer et ne plus afficher cet avertissement**. **Attendu** :
+    départ normal avec le message de préparation.
+12. Revenir au Hub et entrer de nouveau. **Attendu** : **aucun avertissement**, mais le message
+    « Recherche d'un point d'arrivée sûr… » reste affiché, puis arrivée normale.
+13. Se déconnecter/reconnecter, puis **redémarrer le serveur**, et refaire un passage.
+    **Attendu** : l'avertissement reste masqué (préférence persistée).
+14. `/rpgadmin player resetnew <joueur>` puis nouveau passage. **Attendu** : l'avertissement est de
+    retour.
+
+**Demander l'état du Wild au Garde**
+
+15. Parler au **Garde** au Hub. **Attendu** : le choix « Comment est le Wild actuellement ? » est
+    présent, **quelle que soit** la progression du joueur (quête acceptée ou non, paliers faits ou
+    non).
+16. Le choisir. **Attendu** : une phrase du type « Il fait jour dans le Wild. Le temps est clair. »
+    — cohérente avec l'heure réelle du Wild.
+17. **Point clé — l'état est réel.** Depuis la console : `time set night` **dans le monde wild**
+    (ex. `execute in minecraft:wild run time set night`), puis redemander. **Attendu** : « Il fait
+    nuit dans le Wild. ». Idem avec `weather rain` → « Il pleut. », puis `weather thunder` →
+    « Un orage est en cours. », puis `weather clear` → « Le temps est clair. ».
+18. **Point clé — rien n'est modifié par la lecture.** Noter l'heure du Wild
+    (`execute in minecraft:wild run time query daytime`) avant et après plusieurs demandes au
+    Garde. **Attendu** : seule la progression normale du cycle, aucun saut, et la météo inchangée.
+    Le **Hub** reste en plein jour comme avant.
+19. Si le monde `wild` est déchargé, redemander. **Attendu** : « Je n'ai pas de nouvelles du Wild
+    pour le moment. » — jamais une météo inventée.
+
+**Non-régression du kit du Guide (#26 partie A)**
+
+20. Parler au **Guide**, choisir « Demander mon kit de départ ». **Attendu** : exactement une épée,
+    une pioche, une pelle et une hache en bois, comme avant ce lot.
+21. Redemander sans être mort. **Attendu** : refus expliqué. Mourir puis redemander. **Attendu** :
+    nouvelle remise.
+22. Remplir l'inventaire (moins de 4 emplacements libres) et demander. **Attendu** : refus complet,
+    **aucun objet** distribué, droit conservé.
+
+-   **Limites :** `time set` / `weather` sont des commandes **de test** : ne jamais les laisser
+    appliquées sur le serveur de production après la recette (`weather clear` pour terminer, et
+    laisser le cycle reprendre). La latence mesurée à l'étape 9 dépend de l'état de génération du
+    Wild : une première exploration d'une zone neuve sera naturellement plus lente qu'un retour sur
+    une zone déjà générée — comparer plusieurs passages avant de conclure.
+
 ---
 
 ## Table de recette
@@ -3575,3 +3661,4 @@ le résumé de récompenses de TC-014).
 | TC-253 | Droits Minecraft par groupe/monde, collision externe #200 (PENDING) | | | |
 | TC-254 | Édition d'un choix de dialogue avec actions/conditions #82 (PENDING) | | | |
 | TC-255 | PNJ : regarder les joueurs et promenade depuis le panel #165 (PENDING) | | | |
+| TC-256 | Entrée dans le Wild : avertissement, préparation, état au Garde #161/#26/#24 (PENDING) | | | |

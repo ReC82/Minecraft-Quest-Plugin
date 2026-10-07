@@ -1011,6 +1011,33 @@ dialogue lui-même :
   à vie, automatique à la connexion) — même motif de nommage « kit de
   départ », mécanismes et objets totalement indépendants.
 
+### Valeurs dynamiques dans le texte d'un nœud (issue #24)
+
+Le `text` d'un nœud peut contenir un marqueur `%clé%`, remplacé **juste
+avant l'affichage** par une valeur lue en direct — même convention que
+`%player%` de `RUN_SAFE_COMMAND`, jamais une balise MiniMessage.
+Implémentation : `dialogue.DialogueTextPlaceholders`, appelée par
+`DialogueSessionEngine#openNode` (le seul point de rendu).
+
+| Clé | Valeur substituée |
+|---|---|
+| `%wild_conditions%` | État réel du monde `travel.wild-world` : « Il fait jour dans le Wild. Le temps est clair. », « Il fait nuit dans le Wild. Il pleut. », « Il fait nuit dans le Wild. Un orage est en cours. », ou « Je n'ai pas de nouvelles du Wild pour le moment. » si le monde n'est pas chargé. Lecture seule (`travel.WildConditionsService`) : ni l'heure, ni la météo, ni le cycle jour/nuit du Wild ne sont modifiés. |
+
+Règles : une clé **non enregistrée** est laissée visible telle quelle (une
+faute de frappe se voit en jeu plutôt que d'effacer du texte) ; une seule
+passe de substitution, donc une valeur contenant elle-même un `%` n'est
+jamais re-substituée ; toutes les traductions du texte sont traitées, pas
+seulement `default`. Un nœud sans `%` n'est jamais copié (coût nul).
+
+Utilisation livrée : `dialogues/guard.yml`, choix **permanent** (aucune
+condition, aucune action) « Comment est le Wild actuellement ? » → nœud
+`wild_conditions` dont le texte vaut `%wild_conditions%`. Le joueur obtient
+donc l'information **sans commande**, et uniquement quand il la demande —
+elle n'est jamais injectée dans l'avertissement du portail (voir
+section 6). Ajouter plus tard un niveau de danger ou un événement actif =
+un champ de plus dans `travel.model.WildConditions`, rien à changer dans le
+moteur de dialogue.
+
 **Renderer** : `config.yml` → `dialogue.renderer`, défaut réel
 **`paper-dialog`** (API Dialog native Paper, marquée expérimentale par
 Paper) ; alternative `chat` (liens cliquables `ClickEvent.callback`,
@@ -1605,6 +1632,19 @@ Page docs-site : `worlds.html` (mais voir la note d'obsolescence en section 19).
 Stratégies de destination (`travel.model.DestinationStrategy`, vérifié dans le code) :
 -   **`WORLD_SPAWN`** — `World#getSpawnLocation()` du monde destination, résolue à chaque activation.
 -   **`RANDOM_SAFE`** — position aléatoire sûre autour du spawn du monde destination (`travel.RandomSafeLocationFinder`), repli automatique sur `WORLD_SPAWN` si aucune position sûre trouvée. Réglages (`config.yml` → `travel.random-safe-arrival`, vérifiés dans `RandomSafeArrivalConfig`/`config.yml`) : `min-radius: 500`, `max-radius: 5000`, `max-attempts: 20` (distance autour du **spawn du monde**, pas du portail).
+
+### Avertissement avant l'entrée dans le Wild (issue #161)
+
+Avant toute téléportation vers `travel.wild-world`, le joueur reçoit un avertissement de danger **générique** et doit confirmer explicitement. Implémentation : `travel.WildEntryWarningService` (un `WorldPortalEntryGuard`, composé avec `ClaimWorldAccessGuard`). Détail complet : [docs/TRAVEL.md](TRAVEL.md).
+
+-   **Aucune inspection d'inventaire** (décision du 2026-10-07, qui remplace la conception initiale de #26 partie B) : ni nourriture, ni arme, ni outil, ni Rune de rappel, ni kit de départ, ni « gear score ». L'ancien avertissement « vous partez sans moyen de rappel », qui lisait l'inventaire, a été retiré.
+-   **Texte** : « Le Wild est une zone dangereuse. Le PvP y est autorisé : d'autres joueurs peuvent vous attaquer. Vous pouvez mourir et perdre les objets de votre inventaire. Voulez-vous continuer ? » + « Le Garde peut vous renseigner sur les conditions actuelles du Wild. » L'état jour/nuit/météo n'est **jamais** affiché ici (c'est le Garde qui renseigne, section 4).
+-   **Trois actions** : « Entrer dans le Wild », « Entrer et ne plus afficher cet avertissement », « Annuler ». **Fermer la fenêtre n'exécute rien** = annulation.
+-   **Option persistante** : `player_variables` → `WILD_ENTRY_WARNING_HIDDEN` = `"true"` (aucune migration de schéma ; absente = avertissement affiché). Écrite **uniquement** sur une confirmation réelle de départ, jamais sur une annulation/fermeture. Masque l'avertissement **seul** : préparation, messages de réussite/échec et contrôles de sécurité restent en place. `/rpgadmin player resetnew` la rétablit (il efface toutes les variables).
+-   **Retour d'attente** : « Recherche d'un point d'arrivée sûr… Téléportation en préparation. » dès la confirmation (ou directement si l'avertissement est masqué), puis réussite ou échec explicite — jamais un faux « Téléportation réussie. » après un échec.
+-   **Pas de boucle de menu, une seule demande en vol** : un joueur qui annule et reste dans le portail ne revoit pas la fenêtre (les gardes ne sont consultés que sur une vraie transition extérieur → intérieur) ; un double-clic ou plusieurs pas dans la zone ne lancent jamais deux recherches/téléportations ; une déconnexion annule le départ différé.
+-   **Présentation** : fenêtre Paper native ou chat cliquable selon `config.yml` → `dialogue.renderer` (même préférence que les dialogues), avec repli chat automatique.
+-   **Latence** : chaque passage émet une ligne `[TP-LATENCY]` distinguant recherche / chargement de chunks / téléportation (voir [docs/TRAVEL.md](TRAVEL.md)). Aucun contrôle de sécurité n'a été allégé.
 
 **Investigation en cours (bug de téléportation automatique dans le Hub)** : `WorldPortalTeleportListener` applique un répit d'arrivée global de 40 ticks (2 s) après connexion/téléportation externe avant qu'un portail simple ne puisse se déclencher automatiquement. Ce répit **retarde** un déclenchement plutôt que de le supprimer si la zone couvre réellement le point d'arrivée — voir [docs/TRAVEL.md](TRAVEL.md) pour l'analyse complète et les outils de diagnostic (`here`/`debug`/logs `TP-TRACE`) ajoutés pour confirmer la cause exacte sur le serveur réel avant tout correctif définitif.
 

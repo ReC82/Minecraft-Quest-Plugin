@@ -252,6 +252,29 @@ plus bas) :
 vraie transition (même filtre que la logique de jeu elle-même, voir « Performance » plus haut) —
 jamais à chaque micro-mouvement d'un joueur immobile dans/hors d'une zone.
 
+### Logs `TP-LATENCY` (diagnostic de latence, issue #161)
+
+Mesure **permanente** (contrairement à `TP-TRACE`, temporaire), émise par
+`WorldPortalTeleportListener` une fois par téléportation de portail simple, niveau `INFO` :
+
+```
+[TP-LATENCY] uuid=<uuid> player=<pseudo> portal=<id> world=<monde destination> strategy=<WORLD_SPAWN|RANDOM_SAFE> attempts=<n> search_ms=<ms> chunks_ms=<ms> teleport_ms=<ms> total_ms=<ms>
+```
+
+Les trois étapes du passage sont **distinguées**, ce qui permet d'attribuer une latence observée
+sans supposition :
+
+| Champ | Sens |
+|---|---|
+| `attempts` | Nombre de colonnes candidates réellement tirées par `RandomSafeLocationFinder` (0 pour `WORLD_SPAWN`). |
+| `chunks_ms` | Temps cumulé passé dans `World#getChunkAt` — c'est-à-dire le **chargement ou la génération** de terrain à la demande. En pratique le poste dominant pour une arrivée `RANDOM_SAFE` dans un Wild peu exploré. |
+| `search_ms` | Temps d'**évaluation** des colonnes (bordure du monde, hauteur du sol, sécurité pieds/tête), hors chargement de chunk. |
+| `teleport_ms` | L'appel `Player#teleport` lui-même. |
+| `total_ms` | Somme réelle mesurée de bout en bout (inclut le reste : résolution du monde, journalisation). |
+
+Aucun contrôle de sécurité n'a été allégé pour réduire cette latence : la mesure sert à décider, sur
+données réelles, s'il faut agir (et où) plutôt qu'à justifier un raccourci.
+
 ### Procédure de diagnostic sur VeryGames
 
 1.  `/rpgadmin worldportal list` puis `/rpgadmin worldportal here` à l'endroit signalé (le joueur
@@ -354,18 +377,101 @@ libère ; si l'inventaire reste plein, il ouvre un **accès de secours purement 
 vanilla 1 bouton « Retour au spawn du Hub », aucun mod/resource pack) — jamais une commande requise
 pour le parcours normal.
 
-## Avertissement avant entrée dans le Wild
+## Avertissement avant entrée dans le Wild (issue #161)
 
 `travel.WildEntryWarningService` implémente `travel.WorldPortalEntryGuard`, une politique
 **optionnelle** consultée par `WorldPortalTeleportListener` juste avant chaque téléportation de
 portail simple (installée via `setEntryGuard`, jamais codée dans le listener — le portail simple
-reste générique). Quand un joueur **sans Rune de rappel** entre dans un portail dont la destination
-est `travel.wild-world`, la téléportation est suspendue et un message compact et **cliquable** est
-envoyé dans le chat (jamais un titre plein écran) : « Vous partez sans moyen de rappel. Pour revenir
-au Hub, vous devrez trouver une Pierre de voyage. » `[Continuer]` (callback Adventure) accorde un
-laissez-passer bref à usage unique puis relance la téléportation (`PortalTeleporter#teleportNow`) ;
-`[Annuler]` le laisse au Hub. Un joueur qui possède une Rune n'est jamais averti ; les portails dont
-la destination n'est pas le Wild ne sont jamais concernés ; anti-spam de 4 s par joueur.
+reste générique). Elle ne concerne que les portails dont la destination est `travel.wild-world` ;
+les autres passent sans contrôle.
+
+> **Décision du 2026-10-07 (issue #161, remplace la conception initiale de #26 partie B)** :
+> l'avertissement est **générique** et ne fait **aucune inspection d'inventaire**. Ni nourriture, ni
+> arme, ni outil, ni Rune de rappel, ni kit de départ, ni « gear score », ni estimation de
+> préparation — la version précédente, qui n'avertissait qu'un joueur « sans Rune de rappel », a été
+> retirée. Le texte énonce le risque de la zone, il ne juge jamais le joueur.
+
+### Parcours
+
+1. L'entrée immédiate est toujours refusée (`allowEntry` renvoie `false`) : la préférence « ne plus
+   afficher » vit en base, aucune décision ne peut être rendue de façon synchrone. Le service devient
+   propriétaire de la suite.
+2. **Avertissement** (fenêtre Paper, ou chat cliquable — voir ci-dessous) :
+   « Le Wild est une zone dangereuse. Le PvP y est autorisé : d'autres joueurs peuvent vous attaquer.
+   Vous pouvez mourir et perdre les objets de votre inventaire. Voulez-vous continuer ? », suivi de
+   « Le Garde peut vous renseigner sur les conditions actuelles du Wild. » (seul lien avec #24 :
+   l'état jour/nuit/météo n'est **jamais** injecté ici, le joueur le demande au Garde).
+3. Trois actions explicites : **Entrer dans le Wild**, **Entrer et ne plus afficher cet
+   avertissement**, **Annuler**. Fermer la fenêtre n'exécute aucune action : c'est donc exactement
+   une annulation (aucun départ, aucune préférence mémorisée).
+4. Après confirmation — ou directement si l'avertissement est masqué — retour immédiat
+   « Recherche d'un point d'arrivée sûr… Téléportation en préparation. », puis téléportation au tick
+   suivant via `PortalTeleporter#teleportNow`, qui annonce lui-même la réussite (« Téléportation
+   réussie. ») ou l'échec (« La téléportation a échoué : vous n'avez pas quitté cet endroit. Vous
+   pouvez réessayer. »).
+
+`RANDOM_SAFE`, les contrôles de sécurité de `RandomSafeLocationFinder` et le répit d'arrivée de
+40 ticks sont **inchangés**.
+
+### Option « Ne plus afficher cet avertissement »
+
+Persistée par joueur dans `player_variables`, clé `WILD_ENTRY_WARNING_HIDDEN` = `"true"` (réutilise
+la table existante : aucune migration de schéma). Absence de ligne = avertissement affiché. Elle
+n'est écrite **que** sur une confirmation réelle de départ — jamais sur une annulation ni sur une
+fermeture de fenêtre. Elle masque l'avertissement seul : le retour de préparation, les messages de
+réussite/échec et tous les contrôles de sécurité restent en place. `/rpgadmin player resetnew`
+rétablit l'avertissement sans code dédié (il efface toutes les variables du joueur).
+
+### Pas de boucle de menu
+
+Aucun minuteur anti-spam. `WorldPortalTeleportListener` ne consulte les gardes que sur une
+**transition réelle** extérieur → intérieur d'une zone de portail : un joueur qui annule et reste
+dans le portail ne revoit donc jamais la fenêtre, même en bougeant dedans. Il faut ressortir et
+rentrer (nouvelle intervention explicite). Un seul jeton par joueur (`inFlight`) garantit qu'un
+double-clic, plusieurs pas dans la zone ou une relance ne déclenchent jamais deux lectures, deux
+recherches de point sûr ou deux téléportations ; une déconnexion le relâche et annule le départ
+différé — jamais de téléportation tardive.
+
+### Présentation
+
+`travel.WildEntryPromptPresenter` suit exactement la même conception que
+`dialogue.render.DialogueRenderer` : `PaperDialogWildEntryPromptPresenter` (fenêtre Paper native,
+`canCloseWithEscape(true)`, boutons `uses(1)`) décoré par `FallbackWildEntryPromptPresenter`, avec
+`ChatWildEntryPromptPresenter` comme repli stable. Le choix suit la préférence serveur
+`dialogue.renderer` de `config.yml` : un serveur qui a volontairement choisi `chat` pour éviter
+l'API expérimentale ne la voit pas réapparaître ici.
+
+## État du Wild demandé au Garde (issue #24)
+
+`travel.WildConditionsService` lit — et **rien que** lit — l'état réel du monde
+`travel.wild-world` : jour/nuit depuis l'horloge du monde (`World#getTime()`, bornes de nuit
+12300–23850, volontairement indépendantes de la météo pour qu'un orage de midi reste « il fait
+jour ») et météo **globale** depuis `World#isThundering()` / `World#hasStorm()`. Ni l'heure, ni la
+météo, ni le cycle jour/nuit du Wild ne sont jamais modifiés. Le monde est résolu à chaque appel :
+un Wild déchargé donne « Je n'ai pas de nouvelles du Wild pour le moment. », jamais une valeur
+périmée ou inventée.
+
+La météo est un état **du monde** dans Minecraft, jamais du biome : la réponse annonce donc l'état
+global, même si certains biomes rendent la précipitation différemment. Aucune prédiction de la météo
+du point d'arrivée n'est tentée.
+
+Réponses possibles :
+
+- « Il fait jour dans le Wild. Le temps est clair. »
+- « Il fait nuit dans le Wild. Il pleut. »
+- « Il fait nuit dans le Wild. Un orage est en cours. »
+
+**Accès sans commande** : le dialogue du Garde (`dialogues/guard.yml`) porte un choix **permanent**
+(aucune condition) « Comment est le Wild actuellement ? » menant à un nœud dont le texte vaut
+`%wild_conditions%`. Ce marqueur est substitué juste avant le rendu par
+`dialogue.DialogueTextPlaceholders` (même convention que `%player%` de `RUN_SAFE_COMMAND`, jamais une
+balise MiniMessage) : la donnée YAML reste statique, la réponse lue par le joueur non. Une clé non
+enregistrée est laissée visible telle quelle plutôt qu'effacée, et une valeur contenant elle-même un
+`%` n'est jamais re-substituée (une seule passe).
+
+**Extension future** (niveau de danger, événements actifs, saison) : ajouter un champ à
+`travel.model.WildConditions` et une phrase à `description()`. Ni le moteur de dialogue, ni le
+dialogue du Garde, ni le portail n'ont à changer.
 
 ## Waystones (`waystone.WaystoneService`)
 
@@ -683,9 +789,29 @@ Système soulbound générique : `SoulboundItemListenerTest` (remplace `ReturnSt
 tout objet soulbound enregistré est intombable au drop et à la mort, restauré tel quel à la
 réapparition sans jamais dupliquer, un objet quelconque jamais concerné.
 
-Avertissement Wild : `WildEntryWarningServiceTest` — joueur sans Rune bloqué + averti avec les deux
-boutons, joueur avec Rune jamais averti, portail hors Wild jamais concerné, anti-spam, `[Continuer]`
-= laissez-passer à usage unique puis téléportation, `[Annuler]` = reste au Hub.
+Avertissement Wild (issue #161) : `WildEntryWarningServiceTest` — première entrée avertie avec
+inventaire vide (donc sans aucune inspection d'inventaire) et texte complet des trois actions,
+aucune téléportation avant confirmation, annulation et fermeture silencieuse qui laissent le joueur
+au Hub sans rien mémoriser, retour de préparation envoyé *avant* tout tick, « ne plus afficher »
+persisté uniquement sur un départ réel et relu par un service neuf (≈ redémarrage), avertissement
+masqué qui téléporte directement mais montre toujours la préparation, une seule demande en vol
+(trois entrées rapprochées → un seul avertissement ; double-clic → une seule téléportation),
+déconnexion sans téléportation tardive, portail hors Wild jamais concerné, et rendu réel du repli
+chat. `WorldPortalTeleportListenerTest` — un garde qui refuse n'est pas reconsulté tant que le
+joueur reste dans la même zone (pas de boucle de menu) mais l'est de nouveau après une sortie/entrée,
+et `teleportNow` contourne volontairement le garde.
+
+État du Wild (issue #24) : `WildConditionsServiceTest` — jour/nuit depuis l'horloge réelle, bornes de
+nuit, pluie et orage distingués (l'orage n'est jamais annoncé comme une simple averse), météo qui ne
+change jamais le verdict jour/nuit, lecture qui ne modifie ni l'heure ni la météo, Wild non chargé
+jamais inventé. `DialogueTextPlaceholdersTest` + `DialogueSessionEngineTest` — substitution de
+`%wild_conditions%` au moment du rendu, clé inconnue laissée visible, aucune récursion, toutes les
+langues traitées. `BundledDialoguesValidityTest` — le Garde expose en permanence le choix « Comment
+est le Wild actuellement ? » vers un nœud dynamique, sans condition ni action.
+
+Latence de portail (issue #161) : `RandomSafeLocationFinderTest` (tentatives et temps de chargement
+de chunk réellement comptés, résultat inchangé) et `TpTraceLoggerTest` (ligne `[TP-LATENCY]`,
+conversion ns → ms).
 
 Waystones : `WaystoneCellPlannerTest` (décision déterministe seed+cellule, idempotente, `chance`
 0/1, candidat toujours dans sa cellule) ; `WaystoneServiceTest` (génération non dupliquée / unicité

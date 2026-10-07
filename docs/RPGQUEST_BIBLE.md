@@ -2309,6 +2309,14 @@ le nom en jeu à côté du nom de définition **quand ils diffèrent** (les deux
 Sans relevé Citizens récent, le champ est **laissé vide** avec la raison — jamais prérempli avec un
 autre nom.
 
+**Sérialisation du relevé : les lignes sont écrites à la main.** `npc.citizens.list` et `npc.list`
+construisent chaque ligne clé par clé. Ajouter un champ à `CitizensNpcSummary` ou à `NpcSummary`
+sans l'émettre le fait **disparaître en silence** entre le serveur, qui le connaît, et le panel,
+qui affiche alors « inconnu ». C'est exactement ce qui est arrivé à la localisation : le pont
+Citizens la lisait, la vue métier la portait, et la sérialisation s'arrêtait à `spawned`. Deux
+tests structurels verrouillent désormais les deux relevés — ils parcourent les composants du
+record par réflexion et exigent une clé pour chacun.
+
 #### Créer un PNJ complet depuis le panel (#165)
 
 Fiche PNJ → **« Créer un PNJ »**. Une **seule** action agent,

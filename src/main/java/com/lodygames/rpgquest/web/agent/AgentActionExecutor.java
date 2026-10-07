@@ -1230,6 +1230,17 @@ public final class AgentActionExecutor {
                 row.put("linkedNpcId", c.linkedNpcId());
                 row.put("availableForBinding", c.availableForBinding());
                 row.put("spawned", c.spawned());
+                // Localisation : copiée explicitement, comme le reste de la ligne. Oublier ces
+                // clés ici faisait disparaître la position entre le registre Citizens (qui la
+                // connaît) et le panel (qui affichait « position inconnue ») — le défaut constaté
+                // sur Andy et Tania. Les clés absentes resteraient silencieusement nulles.
+                row.put("world", c.world());
+                row.put("x", c.x());
+                row.put("y", c.y());
+                row.put("z", c.z());
+                row.put("yaw", c.yaw());
+                row.put("pitch", c.pitch());
+                row.put("liveLocation", c.liveLocation());
                 rows.add(row);
             }
             Map<String, Object> details = new LinkedHashMap<>();

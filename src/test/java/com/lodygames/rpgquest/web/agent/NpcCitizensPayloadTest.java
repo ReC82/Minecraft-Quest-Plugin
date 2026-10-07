@@ -39,6 +39,143 @@ class NpcCitizensPayloadTest {
                 && json.contains("\"availableForBinding\":true"));
     }
 
+    /**
+     * La position doit <strong>survivre au payload</strong>.
+     *
+     * <p>Ce test existe à cause d'un défaut constaté en production : le registre Citizens
+     * connaissait la position d'Andy et de Tania, la vue métier la portait, mais la sérialisation
+     * de {@code npc.citizens.list} recopiait la ligne champ par champ et s'arrêtait à
+     * {@code spawned}. Les clés de localisation n'étaient donc jamais émises, et le panel affichait
+     * « Position inconnue ». Les tests du panel ne pouvaient pas le voir : ils partaient d'un JSON
+     * écrit à la main qui, lui, contenait les clés.</p>
+     */
+    @Test
+    void citizensListCarriesTheLocationOfASpawnedNpc() {
+        AgentActionExecutor exec = new AgentActionExecutor(
+                ref -> CompletableFuture.completedFuture(Optional.empty()),
+                (uuid, key) -> CompletableFuture.completedFuture(Optional.empty()),
+                new StubAgentActions() {
+                    @Override
+                    public CompletableFuture<CitizensRosterView> citizensRoster() {
+                        return CompletableFuture.completedFuture(new CitizensRosterView(true, List.of(
+                                new CitizensNpcSummary(12, "12121212-1212-1212-1212-121212121212", "Andy",
+                                        "andy", false, true, "world_hub", 12.5, 70.0, -33.5, 90.0f, 0.0f,
+                                        true)),
+                                1, 0, 1));
+                    }
+                });
+
+        AgentActionOutcome outcome = exec.execute(new AgentAction("a", "npc.citizens.list", Map.of())).join();
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        String json = Json.write(outcome.details());
+
+        assertTrue(json.contains("\"world\":\"world_hub\""), "le monde traverse le payload : " + json);
+        assertTrue(json.contains("\"x\":12.5"), "X traverse le payload");
+        assertTrue(json.contains("\"y\":70"), "Y traverse le payload");
+        assertTrue(json.contains("\"z\":-33.5"), "Z traverse le payload");
+        assertTrue(json.contains("\"yaw\":90"), "yaw traverse le payload");
+        assertTrue(json.contains("\"pitch\":0"), "pitch traverse le payload");
+        assertTrue(json.contains("\"liveLocation\":true"), "la position vient de l'entité présente");
+    }
+
+    /** Un PNJ non apparu : sa dernière position enregistrée traverse aussi, mais marquée comme telle. */
+    @Test
+    void citizensListCarriesTheStoredLocationOfAnUnspawnedNpc() {
+        AgentActionExecutor exec = new AgentActionExecutor(
+                ref -> CompletableFuture.completedFuture(Optional.empty()),
+                (uuid, key) -> CompletableFuture.completedFuture(Optional.empty()),
+                new StubAgentActions() {
+                    @Override
+                    public CompletableFuture<CitizensRosterView> citizensRoster() {
+                        return CompletableFuture.completedFuture(new CitizensRosterView(true, List.of(
+                                new CitizensNpcSummary(2, "22222222-2222-2222-2222-222222222222", "Tania",
+                                        "tania", false, false, "world_hub", -8.5, 64.0, 21.5, 0.0f, 0.0f,
+                                        false)),
+                                1, 0, 1));
+                    }
+                });
+
+        AgentActionOutcome outcome = exec.execute(new AgentAction("a", "npc.citizens.list", Map.of())).join();
+        String json = Json.write(outcome.details());
+
+        assertTrue(json.contains("\"spawned\":false"), "non apparu");
+        assertTrue(json.contains("\"world\":\"world_hub\""), "la dernière position enregistrée traverse");
+        assertTrue(json.contains("\"liveLocation\":false"),
+                "elle est marquée comme enregistrée, pas comme une présence");
+    }
+
+    /** Aucune position connue : les clés sont émises à {@code null}, jamais omises. */
+    @Test
+    void citizensListEmitsNullLocationKeysRatherThanOmittingThem() {
+        AgentActionExecutor exec = new AgentActionExecutor(
+                ref -> CompletableFuture.completedFuture(Optional.empty()),
+                (uuid, key) -> CompletableFuture.completedFuture(Optional.empty()),
+                new StubAgentActions() {
+                    @Override
+                    public CompletableFuture<CitizensRosterView> citizensRoster() {
+                        return CompletableFuture.completedFuture(new CitizensRosterView(true, List.of(
+                                new CitizensNpcSummary(5, "55555555-5555-5555-5555-555555555555", "Sans Lieu",
+                                        null, true, false)),
+                                1, 1, 0));
+                    }
+                });
+
+        AgentActionOutcome outcome = exec.execute(new AgentAction("a", "npc.citizens.list", Map.of())).join();
+        String json = Json.write(outcome.details());
+
+        assertTrue(json.contains("\"world\":null"), "la clé existe et vaut null : " + json);
+        assertTrue(json.contains("\"liveLocation\":false"));
+    }
+
+    /**
+     * Garde-fou structurel : toute propriété de {@code CitizensNpcSummary} doit avoir une clé dans
+     * la ligne sérialisée. C'est exactement l'oubli qui a causé le défaut — ajouter un champ au
+     * record sans l'émettre le faisait disparaître en silence.
+     */
+    @Test
+    void everySummaryComponentIsPresentInTheSerialisedRow() {
+        AgentActionOutcome outcome = run("npc.citizens.list", Map.of());
+        assertEveryComponentSerialised(outcome, "citizens", AgentActions.CitizensNpcSummary.class);
+    }
+
+    /** Même garde-fou pour {@code npc.list} : les deux relevés sont sérialisés à la main. */
+    @Test
+    void everyNpcSummaryComponentIsPresentInTheSerialisedRow() {
+        AgentActionExecutor exec = new AgentActionExecutor(
+                ref -> CompletableFuture.completedFuture(Optional.empty()),
+                (uuid, key) -> CompletableFuture.completedFuture(Optional.empty()),
+                new StubAgentActions() {
+                    @Override
+                    public CompletableFuture<NpcCatalogView> npcDefinitions() {
+                        return CompletableFuture.completedFuture(new NpcCatalogView(
+                                List.of(new NpcSummary("andy", "Andy", true, true, 12, 1, true,
+                                        null, "villager", null, false, null, 0, 0,
+                                        List.of(), List.of(), List.of(), List.of("DEFINITION"), "LINKED",
+                                        List.of())),
+                                List.of("andy"), List.of("andy"), true, 1, 1, 0, 1, 0));
+                    }
+                });
+
+        AgentActionOutcome outcome = exec.execute(new AgentAction("a", "npc.list", Map.of())).join();
+        assertEveryComponentSerialised(outcome, "npcs", AgentActions.NpcSummary.class);
+    }
+
+    private static void assertEveryComponentSerialised(AgentActionOutcome outcome, String listKey,
+                                                       Class<?> recordType) {
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        @SuppressWarnings("unchecked")
+        List<Object> rows = (List<Object>) outcome.details().get(listKey);
+        assertTrue(rows != null && !rows.isEmpty(), "le relevé « " + listKey + " » doit avoir une ligne");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstRow = (Map<String, Object>) rows.get(0);
+
+        for (var component : recordType.getRecordComponents()) {
+            assertTrue(firstRow.containsKey(component.getName()),
+                    "composant « " + component.getName() + " » absent de la ligne sérialisée de « "
+                            + listKey + " » — il disparaîtrait en silence entre le serveur et le panel");
+        }
+    }
+
     @Test
     void citizensListKeepsEveryRegistryEntry_freeOnes_andHomonyms() {
         // #101 : la sérialisation est une LISTE 1:1 du registre — aucune clé par nom, aucun

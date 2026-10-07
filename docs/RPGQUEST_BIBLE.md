@@ -353,7 +353,7 @@ Permission : `rpgquest.admin` (toutes), sauf `/quest complete` qui est aussi `rp
 
 ### Types d'objectifs (`steps[].objectives[].type`)
 
-Les 7 types demandés existent **tous** réellement dans le code (`ObjectiveType` enum, exactement ces 7 valeurs, aucune de plus) :
+Les 8 types existent **tous** réellement dans le code (`ObjectiveType` enum, exactement ces 8 valeurs, aucune de plus) :
 
 | Type | Champs YAML | Classe | Événement Bukkit déclencheur | Comportement multi-monde |
 |---|---|---|---|---|
@@ -363,6 +363,7 @@ Les 7 types demandés existent **tous** réellement dans le code (`ObjectiveType
 | `COLLECT_ITEM` | `material`, `amount` (> 0) | `CollectItemObjective` | `EntityPickupItemEvent` (`QuestItemPickupListener`, `ignoreCancelled = true`) | Global, idem. **Limite connue** : compte uniquement un ramassage physique au sol par le joueur ; recevoir l'objet autrement (coffre, `/give`, craft, troc marchand) ne progresse jamais cet objectif. |
 | `CRAFT_ITEM` | `material`, `amount` (> 0) | `CraftItemObjective` | `CraftItemEvent` (`QuestCraftItemListener`, `ignoreCancelled = true`) — matériau du résultat de la recette (`event.getRecipe().getResult().getType()`) | Global, idem. **Limite connue** (documentée dans `MANUAL_TEST_PLAN.md` TC-012) : ne distingue pas un objet personnalisé d'un objet vanilla du même `Material`. |
 | `TALK_TO_NPC` | `npc` (id logique RPGQuest attribué par `/rpgadmin npc tag`, **pas** le nom affiché — voir section 5) | `TalkToNpcObjective` | `PlayerInteractEntityEvent` (`QuestNpcInteractListener`, entité vanilla/Citizens non géré) **ou** `NPCRightClickEvent` (`QuestCitizensNpcInteractListener`, uniquement si Citizens est actif et gère l'entité) — jamais les deux sur la même entité | Implicitement lié au monde où se trouve le PNJ visé, mais le champ lui-même ne porte pas de monde. À ne pas confondre avec l'identification par nom affiché utilisée par le système de **dialogue** (section 4/5) : `TALK_TO_NPC` (quête) exige un id logique posé au préalable via `/rpgadmin npc tag`, une entité renommée sans être taguée ne progresse jamais cet objectif. |
+| `DELIVER_ITEM_TO_NPC` | `npc` (id logique RPGQuest, comme `TALK_TO_NPC`), `material`, `amount` (> 0) | `DeliverItemToNpcObjective` | **Aucun** — volontairement. Seule l'action de dialogue `DELIVER_QUEST_ITEMS` sur le bon PNJ fait progresser cet objectif (`QuestProgressEngine#deliverTo`) | Global (le PNJ est où il est). Le compteur porte la quantité **déjà remise** : dépôts partiels acquis définitivement, objets remis **consommés**, jamais restitués. Voir « Remise d'objets à un PNJ » plus bas. |
 | `REACH_LOCATION` | `world`, `x`, `y`, `z`, `radius` (> 0) | `ReachLocationObjective` | `PlayerMoveEvent` (`QuestLocationListener`, `ignoreCancelled = true`, ignore les mouvements qui ne changent pas de bloc) — distance euclidienne comparée à `radius` | **Seul type explicitement lié à un monde précis** — `world` est un simple nom (résolu à l'évaluation, pas au chargement) ; un déplacement dans un autre monde n'est jamais candidat, même avec les mêmes coordonnées. |
 
 Dans tous les cas, la progression n'a lieu que si, au moment de l'événement, la quête est `ACTIVE` pour ce joueur **et** l'objectif appartient à l'étape actuellement active (`QuestProgressEngine#handleCandidates`, couvert par `QuestProgressEngineTest#objectiveEventBeforeAcceptingTheQuestIsIgnored` et `#objectiveOnALaterStepIsIgnoredUntilItsOwnStepIsActive`) — un événement pour une quête non acceptée, abandonnée, terminée, ou pour une étape pas encore atteinte, est silencieusement ignoré.
@@ -387,7 +388,47 @@ Exemples minimaux (champs vérifiés dans le code, valeurs d'illustration) :
   y: 64.0
   z: -40.0
   radius: 5.0
+
+- type: DELIVER_ITEM_TO_NPC
+  npc: guard                 # même convention d'id que TALK_TO_NPC
+  material: LEATHER
+  amount: 4
 ```
+
+### Remise d'objets à un PNJ — `DELIVER_ITEM_TO_NPC` (issue #123)
+
+Le joueur doit **réellement remettre** les objets au PNJ configuré, dans son dialogue. Implémenté
+par `QuestProgressEngine#deliverTo` + `QuestItemWithdrawal`. Page docs-site : `quests.html`
+(objectifs) et `dialogues.html` (action/condition).
+
+-   **Posséder ne suffit jamais.** Cet objectif n'écoute **aucun** événement de jeu : ramasser,
+    fabriquer, acheter ou porter l'objet ne le fait pas avancer d'un seul point. C'est exactement ce
+    qui le distingue de `COLLECT_ITEM`.
+-   **Dépôts partiels persistants.** Le compteur de l'objectif *est* la quantité déjà remise, stockée
+    comme n'importe quel compteur (`quest_objective_progress`) : **aucune migration de schéma**, et la
+    progression survit à la mort, à une reconnexion et à un redémarrage. 2 cuirs remis sur 4 restent
+    acquis ; le joueur revient déposer le reliquat plus tard.
+-   **Objets consommés, jamais restitués** — ils sont « en sécurité auprès du PNJ ». Aucun mécanisme
+    de reprise n'existe (hors périmètre de #123).
+-   **Une seule interaction remet tout l'utile** : tous les objectifs de remise de ce PNJ, y compris
+    ceux de plusieurs quêtes, sont traités en une fois. Pour chacun, le reliquat est calculé puis
+    `QuestItemWithdrawal` retire **au plus** ce reliquat et renvoie ce qu'il a *réellement* retiré ;
+    le compteur n'avance que de cette quantité. Impossible de progresser sans retrait, impossible de
+    consommer au-delà du besoin, surplus laissé au joueur.
+-   **Plusieurs piles** additionnées emplacement par emplacement, **stockage normal uniquement**
+    (ni armure, ni main secondaire).
+-   **Aucun objet personnalisé consommé** : une pile portant une identité RPGQuest dans son PDC est
+    ignorée même si son `Material` correspond (sans cette règle, une remise de `BOOK` détruirait le
+    journal de quêtes). C'est aussi le point d'extension prévu pour accepter des objets
+    personnalisés en V2.
+-   **Mauvais PNJ = rien.** Un PNJ qui n'est destinataire d'aucun objectif actif du joueur ne peut
+    rien accepter ; seule l'étape **courante** est remisable.
+-   **Anti double-remise** : un jeton par joueur refuse toute remise réentrante (double-clic, spam,
+    cascade d'événements), et la mise à jour mémoire précède toute écriture asynchrone. La complétion
+    d'étape n'est évaluée qu'une fois **toute** la remise appliquée.
+-   **Journal** : la ligne affiche `<objet> (à remettre) remis/demandé` — le verbe distingue la
+    remise d'une collecte. Le PNJ n'y est pas nommé (son id est une donnée interne, même raison que
+    `TALK_TO_NPC`) ; le dialogue, lui, donne le détail complet.
 
 Champ `giver` (optionnel, racine de la quête) : id logique stable du **PNJ donneur** (même convention que `objectives[].npc`, posé via `/rpgadmin npc tag`), jamais le nom affiché. Purement informatif — n'affecte ni la progression ni l'acceptation ; exposé tel quel dans le catalogue du Control Panel (`quest.list` → `giverId`, issue #75). Absent = aucun donneur ; présent mais vide = erreur de chargement. Vérifié dans `QuestDefinitionParser#parseGiver` / `QuestDefinition`.
 
@@ -484,7 +525,7 @@ Le Control Panel (« PlugAdmin ») permet de **créer et modifier des quêtes et
 - **Formulaire guidé** : sections Général / Prérequis / Objectifs / Récompenses /
   Variables (quête) et Général / Chaîne de quêtes (story). Chaque type d'objectif
   (`KILL_ENTITY`, `COLLECT_ITEM`, `CRAFT_ITEM`, `BREAK_BLOCK`, `PLACE_BLOCK`, `TALK_TO_NPC`,
-  `REACH_LOCATION`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`, `MONEY`) est décrit par
+  `REACH_LOCATION`, `DELIVER_ITEM_TO_NPC`) et de récompense (`EXPERIENCE`, `ITEM`, `VARIABLE`, `COMMAND`, `MONEY`) est décrit par
   **un seul descripteur** (`Descriptors`) qui pilote ensemble libellé, description, champs, aide,
   listes proposées et validation. **Choisir le type n'affiche que les champs pertinents** ; le
   changement est immédiat (JavaScript progressif — `panel.js`) et **efface** les valeurs saisies
@@ -946,6 +987,10 @@ Champs : `id`/`start`/`nodes` obligatoires ; `nodes.<id>.speaker`/`text`/
 `VARIABLE_EQUALS` (`key`, `value`), `NO_MAIN_CLAIM` (aucun paramètre — vrai
 si le joueur ne possède encore aucun claim, source de vérité directement
 `claim.ClaimService#claimsOwnedBy`, voir [docs/CLAIMS.md](CLAIMS.md)),
+`HAS_PENDING_DELIVERY` (`npc` optionnel — vrai s'il reste au moins un objet
+à remettre à ce PNJ pour une quête active, issue #123 ; avec
+`negate: true`, exprime « ce PNJ n'attend plus rien » et sert à basculer
+vers un nœud de fin),
 `HAS_MAIN_CLAIM` (aucun paramètre — strict opposé de `NO_MAIN_CLAIM`, même
 source de vérité via `ClaimService#mainClaimOf`, utilisé par Jo pour « Me
 rendre sur ma propriété »), `LACKS_CUSTOM_ITEM` (`item` — id namespacé,
@@ -971,7 +1016,19 @@ clic, pas seulement à l'affichage.
 (`dialogue`) ; `OPEN_MERCHANT` (`merchant`, voir section 12) ;
 `GIVE_STARTER_KIT` (aucun paramètre — remet le kit d'outils en bois de
 départ si le joueur y a droit, voir « Kit d'outils en bois » ci-dessous) ;
+`DELIVER_QUEST_ITEMS` (`npc` **optionnel** — remet en une fois tous les
+objets utiles aux objectifs `DELIVER_ITEM_TO_NPC` de ce PNJ, issue #123 ;
+voir « Remise d'objets à un PNJ » en section 3) ;
 `CLOSE`. `OPEN_DIALOGUE`/`CLOSE` prennent le pas sur `next`.
+
+**PNJ implicite** (issue #123) : `DELIVER_QUEST_ITEMS` et la condition
+`HAS_PENDING_DELIVERY` acceptent un `npc` vide, auquel cas le destinataire
+est la **clé du dialogue courant** (`rpgquest:guard` → PNJ `guard`, voir
+« Convention id dialogue ↔ id PNJ »). C'est ce qui rend la branche de
+remise générique : recopiée dans le dialogue d'un autre PNJ, elle remet à
+cet autre PNJ sans qu'aucune donnée ne nomme qui que ce soit. Un `npc`
+explicite reste possible pour un dialogue partagé, ou ouvert par
+`OPEN_DIALOGUE` depuis un PNJ différent du destinataire.
 
 ### Kit d'outils en bois (issue #26, partie A)
 
@@ -1021,6 +1078,7 @@ Implémentation : `dialogue.DialogueTextPlaceholders`, appelée par
 
 | Clé | Valeur substituée |
 |---|---|
+| `%delivery_status%` | Issue #123 — état de remise du PNJ **porteur du dialogue courant** : une ligne par matériau, `déjà remis/demandé`, nom d'objet traduit côté client. « Je n'attends aucun matériau de ta part. » si ce PNJ n'attend rien. Lecture pure de la progression en mémoire. |
 | `%wild_conditions%` | État réel du monde `travel.wild-world` : « Il fait jour dans le Wild. Le temps est clair. », « Il fait nuit dans le Wild. Il pleut. », « Il fait nuit dans le Wild. Un orage est en cours. », ou « Je n'ai pas de nouvelles du Wild pour le moment. » si le monde n'est pas chargé. Lecture seule (`travel.WildConditionsService`) : ni l'heure, ni la météo, ni le cycle jour/nuit du Wild ne sont modifiés. |
 
 Règles : une clé **non enregistrée** est laissée visible telle quelle (une

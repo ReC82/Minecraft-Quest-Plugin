@@ -3574,6 +3574,98 @@ le résumé de récompenses de TC-014).
     Wild : une première exploration d'une zone neuve sera naturellement plus lente qu'un retour sur
     une zone déjà générée — comparer plusieurs passages avant de conclure.
 
+### TC-257 — Rapporter des objets à un PNJ : dépôts partiels persistants (issue #123, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** objectif `DELIVER_ITEM_TO_NPC`, action de dialogue
+    `DELIVER_QUEST_ITEMS`, condition `HAS_PENDING_DELIVERY`, marqueur `%delivery_status%`, et le type
+    « Rapporter des objets à un PNJ » de l'éditeur guidé du Control Panel.
+-   **Préconditions :** JAR déployé **et serveur redémarré**. Le PNJ **Garde** est lié à
+    `rpgquest:guard` et son `dialogues/guard.yml` côté serveur doit contenir les nœuds `delivery`,
+    `delivery_after` et `delivery_done` (un redéploiement de JAR **ne met jamais à jour** un dialogue
+    déjà présent : vérifier ou transférer le fichier). Jouer avec un compte **non OP**.
+-   **Pourquoi c'est manuel :** la fenêtre de dialogue réelle, le rendu des noms d'objets traduits
+    par le client, et le comportement d'un véritable redémarrage ne sont pas simulables. Les règles
+    (retrait exact, multi-piles, multi-objectifs, mauvais PNJ, double-clic, persistance) sont
+    couvertes par des tests automatisés.
+
+**Créer la quête depuis le Control Panel**
+
+1.  `/quests` → **Créer une quête**. Id `test_remise`, titre et description libres, catégorie
+    `test`. **Attendu** : dans la liste des types d'objectif, « **Rapporter des objets à un PNJ** »
+    est proposé.
+2.  Choisir ce type. **Attendu** : trois champs apparaissent — **PNJ destinataire**, **Objet à
+    rapporter**, **Quantité à remettre** — chacun avec son aide ; l'aide dit explicitement que
+    collecter ne suffit pas et que les dépôts partiels sont conservés.
+3.  Renseigner PNJ = `guard`, objet = `LEATHER`, quantité = `4`. Ajouter **trois autres** objectifs
+    de remise dans la **même étape** : `STICK` × 1, `COBBLESTONE` × 2, `WHEAT_SEEDS` × 3.
+4.  Enregistrer. **Attendu** : aucune erreur de validation, et le résumé de l'étape affiche quatre
+    lignes du type « **Rapporter Cuir (x4) à Guard** ».
+5.  Rouvrir la quête en édition. **Attendu** : les quatre objectifs sont **relus intacts** (PNJ,
+    objet, quantité) et restent éditables séparément — c'est l'aller-retour.
+6.  Recharger le contenu (`/ops` → rechargement, ou redémarrage) puis `/quest accept rpgquest:test_remise`
+    en jeu avec le compte de test.
+
+**Posséder ne suffit pas**
+
+7.  Se donner 64 cuirs, puis ouvrir le journal (`/quests` ou l'objet Journal). **Attendu** : la ligne
+    affiche `Cuir (à remettre) 0/4` — **pas** de progression, bien que l'inventaire soit plein de
+    cuir. Vérifier aussi que ramasser du cuir au sol ne change rien.
+
+**Dépôt partiel**
+
+8.  Ne garder que **2 cuirs** et rien d'autre d'utile. Parler au **Garde**. **Attendu** : le choix
+    « J'ai des matériaux à te remettre » est présent.
+9.  Le choisir. **Attendu** : l'état s'affiche, une ligne par matériau, avec les noms d'objets en
+    français et les compteurs `0/1`, `0/2`, `0/4`, `0/3`.
+10. Choisir « Donner les matériaux que j'ai ». **Attendu** : message « Matériaux remis : 2 × Cuir »
+    puis « Il te manque encore : … » listant le reste. Les **2 cuirs ont disparu** de l'inventaire,
+    et l'écran affiche maintenant `Cuir 2/4`.
+11. Ouvrir le journal. **Attendu** : `Cuir (à remettre) 2/4`.
+
+**Point clé — la progression est acquise**
+
+12. **Mourir** (par exemple dans le Wild), perdre l'inventaire, puis reparler au Garde. **Attendu** :
+    toujours `Cuir 2/4` — les 2 cuirs remis ne sont **jamais** perdus.
+13. Se déconnecter, se reconnecter, reparler au Garde. **Attendu** : `Cuir 2/4`.
+14. **Redémarrer le serveur**, se reconnecter, reparler au Garde. **Attendu** : `Cuir 2/4`.
+
+**Point clé — une seule interaction pour tout**
+
+15. Se procurer 1 bâton, 1 pierre, 2 cuirs et 3 graines, **plus** 10 cuirs en trop.
+16. Parler au Garde → « Donner les matériaux que j'ai », **une seule fois**. **Attendu** : les quatre
+    compteurs avancent ensemble ; le message liste les quatre matériaux. Il reste **1 pierre** à
+    remettre (2 demandées, 1 donnée).
+17. **Attendu — jamais plus que le besoin** : exactement 2 cuirs ont été pris, les **8 cuirs
+    excédentaires sont toujours dans l'inventaire**.
+18. Répartir les objets restants sur **plusieurs piles** séparées de l'inventaire avant de remettre
+    la dernière pierre. **Attendu** : les piles sont additionnées correctement.
+19. Donner la dernière pierre. **Attendu** : « Tu as remis tout ce qui était demandé. », le choix
+    « Et voilà, tout est remis » apparaît et mène au nœud de remerciement ; la quête se termine si
+    c'était sa dernière étape.
+
+**Points clés — abus et mauvais PNJ**
+
+20. Reprendre une quête de remise en cours et **spammer** le bouton « Donner les matériaux que j'ai »
+    (clics très rapides). **Attendu** : la progression correspond **exactement** aux objets réellement
+    possédés — jamais le double —, et aucun objet ne disparaît sans contrepartie.
+21. Avec des objets utiles en poche, parler au **Guide** ou au **Libraire**. **Attendu** : aucun choix
+    de remise n'apparaît chez eux, et rien n'est retiré. Un mauvais PNJ ne peut pas accepter.
+22. Quand tout est remis, reparler au Garde avec encore des cuirs. **Attendu** : « Tu m'as déjà remis
+    tout ce que je t'avais demandé. » et **aucun** objet consommé.
+23. Placer un **objet personnalisé RPGQuest** fait du même matériau si disponible (ex. un objet
+    `LEATHER` custom) à côté de cuirs ordinaires, puis remettre. **Attendu** : seul le cuir ordinaire
+    part ; l'objet personnalisé reste en place.
+
+**Nettoyage**
+
+24. Supprimer la quête de test depuis le Control Panel (`/quests` → supprimer), et vérifier que le
+    choix de remise disparaît du dialogue du Garde.
+
+-   **Limites :** l'étape 20 (spam) dépend du rythme de clic réel ; elle détecte un double retrait
+    grossier, pas une course de quelques millisecondes — celle-ci est couverte par le test automatisé
+    d'appel réentrant. L'étape 23 n'est faisable que s'il existe un objet personnalisé partageant le
+    matériau demandé ; sinon la garde reste couverte par les tests automatisés uniquement.
+
 ---
 
 ## Table de recette
@@ -3662,3 +3754,4 @@ le résumé de récompenses de TC-014).
 | TC-254 | Édition d'un choix de dialogue avec actions/conditions #82 (PENDING) | | | |
 | TC-255 | PNJ : regarder les joueurs et promenade depuis le panel #165 (PENDING) | | | |
 | TC-256 | Entrée dans le Wild : avertissement, préparation, état au Garde #161/#26/#24 (PENDING) | | | |
+| TC-257 | Rapporter des objets à un PNJ : dépôts partiels persistants #123 (PENDING) | | | |

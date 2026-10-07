@@ -78,9 +78,34 @@ rewards:                    # optionnel
         <tr><td><code>CRAFT_ITEM</code></td><td><code>material</code>, <code>amount</code></td><td>Fabriquer cet objet en table de craft.</td></tr>
         <tr><td><code>TALK_TO_NPC</code></td><td><code>npc</code></td><td>Clic droit sur le PNJ identifié avec cet id — voir la page PNJ. Toujours <code>1/1</code>.</td></tr>
         <tr><td><code>REACH_LOCATION</code></td><td><code>world</code>, <code>x</code>, <code>y</code>, <code>z</code>, <code>radius</code></td><td>Se déplacer à moins de <code>radius</code> blocs (1.0 par défaut).</td></tr>
+        <tr><td><code>DELIVER_ITEM_TO_NPC</code></td><td><code>npc</code>, <code>material</code>, <code>amount</code></td>
+          <td><strong>Remettre</strong> l'objet au PNJ, dans son dialogue. Collecter ou posséder ne compte
+            <strong>jamais</strong> ; les objets sont réellement consommés. Dépôts partiels conservés.</td></tr>
       </tbody>
     </table>
-    <p class="text-body-secondary small">Sept types au total, aucun autre n'existe actuellement (pas d'objectif « utiliser un objet », par exemple).</p>
+    <p class="text-body-secondary small">Huit types au total, aucun autre n'existe actuellement (pas d'objectif « utiliser un objet », par exemple).</p>
+
+    <div class="alert alert-info">
+      <p class="mb-2">
+        <strong>Rapporter des objets à un PNJ (<code>DELIVER_ITEM_TO_NPC</code>).</strong> Le joueur
+        dépose ce qu'il a, quand il l'a : 2 cuirs sur 4 font passer l'objectif à <code>2/4</code>, les
+        2 cuirs sont consommés, et cette progression est <strong>définitivement acquise</strong> — elle
+        survit à une mort, à une déconnexion et à un redémarrage du serveur. Il revient déposer le
+        reliquat plus tard. Rien n'est jamais rendu.
+      </p>
+      <p class="mb-2">
+        Une même étape peut contenir <strong>plusieurs</strong> objectifs de remise (par exemple
+        1 bâton, 2 pierres, 4 cuirs, 3 graines). Une <strong>seule</strong> interaction avec le PNJ
+        remet tout ce que le joueur possède d'utile : il ne clique pas une fois par matériau, et le
+        serveur ne retire jamais plus que ce qui manque encore.
+      </p>
+      <p class="mb-0">
+        Côté dialogue du PNJ, il faut une branche avec la condition
+        <code>HAS_PENDING_DELIVERY</code> et l'action <code>DELIVER_QUEST_ITEMS</code> — voir la page
+        <a href="dialogues.html">Dialogues</a>. Un PNJ qui n'est destinataire d'aucun objectif actif
+        ne peut rien accepter.
+      </p>
+    </div>
   </section>
 
   <section class="my-5">

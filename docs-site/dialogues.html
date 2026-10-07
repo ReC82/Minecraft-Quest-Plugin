@@ -99,6 +99,11 @@ nodes:
           <td>Vrai si le joueur a cette permission Bukkit.</td></tr>
         <tr><td><code>VARIABLE_EQUALS</code></td><td><code>key</code>, <code>value</code></td>
           <td>Vrai si la variable joueur <code>key</code> vaut <code>value</code>.</td></tr>
+        <tr><td><code>HAS_PENDING_DELIVERY</code></td><td><code>npc</code> (optionnel)</td>
+          <td>Vrai s'il reste au moins un objet à remettre à ce PNJ pour une quête active du joueur.
+            Avec <code>negate: true</code>, exprime « ce PNJ n'attend plus rien » — pratique pour
+            basculer vers un nœud de remerciement. <code>npc</code> vide = le PNJ du dialogue
+            courant.</td></tr>
       </tbody>
     </table>
   </section>
@@ -118,6 +123,12 @@ nodes:
         <tr><td><code>OPEN_DIALOGUE</code></td><td><code>dialogue</code></td><td>Ferme le nœud courant et ouvre un autre dialogue.</td></tr>
         <tr><td><code>OPEN_MERCHANT</code></td><td><code>merchant</code></td><td>Ferme le dialogue et ouvre la vitrine du marchand désigné.</td></tr>
         <tr><td><code>GIVE_STARTER_KIT</code></td><td>—</td><td>Remet le kit d'outils en bois de départ si le joueur y a droit (sans remise automatique ailleurs, droit renouvelé à chaque mort) — voir <code>config.yml</code> → <code>starter-tool-kit</code>.</td></tr>
+        <tr><td><code>DELIVER_QUEST_ITEMS</code></td><td><code>npc</code> (optionnel)</td>
+          <td>Remet en <strong>une fois</strong> tous les objets que le joueur possède et qui manquent
+            encore aux objectifs <code>DELIVER_ITEM_TO_NPC</code> de ce PNJ (voir la page
+            <a href="quests.html">Quêtes</a>). Jamais plus que le reliquat, objets réellement
+            consommés, progression persistée immédiatement. <code>npc</code> vide = le PNJ du
+            dialogue courant.</td></tr>
         <tr><td><code>CLOSE</code></td><td>—</td><td>Ferme le dialogue immédiatement.</td></tr>
       </tbody>
     </table>
@@ -133,6 +144,10 @@ nodes:
     <table class="table table-sm align-middle">
       <thead><tr><th>Marqueur</th><th>Valeur affichée</th></tr></thead>
       <tbody>
+        <tr><td><code>%delivery_status%</code></td>
+          <td>État de remise du PNJ qui porte ce dialogue : une ligne par matériau,
+            <em>déjà remis / demandé</em>, nom d'objet traduit par le client. Affiche
+            « Je n'attends aucun matériau de ta part. » si ce PNJ n'attend rien.</td></tr>
         <tr><td><code>%wild_conditions%</code></td>
           <td>État réel du monde d'exploration (<code>config.yml</code> → <code>travel.wild-world</code>) :
             « Il fait jour dans le Wild. Le temps est clair. », « … Il pleut. », « … Un orage est en cours. »,
@@ -157,6 +172,58 @@ nodes:
     choices:
       - text: "Merci pour l'information"
         next: greeting</code></pre>
+  </section>
+
+  <section class="my-5">
+    <h2 class="h4">Brancher la remise d'objets sur un PNJ</h2>
+    <p>
+      Rien n'est à coder : la branche ci-dessous est <strong>générique</strong>. Recopiée dans le
+      dialogue d'un autre PNJ, elle remet à cet autre PNJ — aucun id n'y est écrit, le destinataire
+      étant déduit de la clé du dialogue. Le choix d'entrée reste <strong>invisible</strong> tant
+      qu'aucune quête active du joueur ne demande de lui remettre quelque chose.
+    </p>
+<pre class="bg-body-tertiary p-3 rounded"><code>  greeting:
+    choices:
+      - text: "J'ai des matériaux à te remettre"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        next: delivery
+
+  delivery:
+    speaker: "Garde"
+    text: "&lt;white&gt;Voilà où nous en sommes :&lt;/white&gt;&lt;newline&gt;%delivery_status%"
+    choices:
+      - text: "Donner les matériaux que j'ai"
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      - text: "Je reviendrai plus tard"
+        actions:
+          - type: CLOSE
+
+  delivery_after:
+    speaker: "Garde"
+    text: "&lt;white&gt;%delivery_status%&lt;/white&gt;"
+    choices:
+      - text: "Donner encore des matériaux"      # dépôt partiel : on peut enchaîner
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      - text: "Et voilà, tout est remis"         # la même condition niée = tout est fait
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+            negate: true
+        next: delivery_done
+      - text: "Je reviendrai plus tard"
+        actions:
+          - type: CLOSE</code></pre>
+    <p class="mb-0 text-body-secondary small">
+      Exemple réellement livré dans <code>dialogues/guard.yml</code>. Le texte des messages de remise
+      (« Matériaux remis : … », « Il te manque encore : … ») vit dans <code>messages.yml</code>,
+      section <code>quest.delivery-*</code>.
+    </p>
   </section>
 
   <section class="my-5">

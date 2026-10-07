@@ -217,6 +217,26 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   téléportation tardive après déconnexion. `RANDOM_SAFE`, les contrôles de sécurité et le répit
   d'arrivée de 40 ticks sont inchangés ; chaque passage émet une ligne `[TP-LATENCY]` séparant
   recherche / chargement de chunks / téléportation.
+- **Remise d'objets à un PNJ** *(issue #123)* — nouveau type d'objectif `DELIVER_ITEM_TO_NPC`
+  (`npc` + `material` + `amount`) : le joueur doit **réellement remettre** les objets au PNJ, dans
+  son dialogue. Cet objectif n'écoute **aucun** événement de jeu — ramasser, fabriquer ou posséder
+  ne le fait jamais avancer, ce qui le distingue de `COLLECT_ITEM`. **Dépôts partiels persistants** :
+  le compteur de l'objectif *est* la quantité déjà remise, stockée dans `quest_objective_progress`
+  (aucune migration), donc acquise après une mort, une reconnexion ou un redémarrage ; le reliquat
+  se dépose plus tard. Objets **consommés**, jamais restitués. Une **seule** interaction remet tout
+  l'utile pour tous les objectifs de ce PNJ (plusieurs matériaux, plusieurs quêtes) :
+  `QuestItemWithdrawal` retire au plus le reliquat et renvoie ce qu'il a réellement retiré, le
+  compteur n'avance que de cette quantité (jamais de progression sans retrait, jamais de
+  consommation au-delà du besoin, surplus laissé au joueur), plusieurs piles additionnées, stockage
+  normal uniquement, et **aucun objet personnalisé RPGQuest consommé** (identité PDC). Un jeton par
+  joueur refuse toute remise réentrante (double-clic, spam, cascade) ; la complétion d'étape n'est
+  évaluée qu'une fois toute la remise appliquée. Côté dialogue : action `DELIVER_QUEST_ITEMS` et
+  condition `HAS_PENDING_DELIVERY`, à PNJ **optionnel** (vide = PNJ porteur du dialogue, convention
+  id de dialogue = id de PNJ) — la branche livrée dans `dialogues/guard.yml` ne nomme donc ni quête,
+  ni matériau, ni PNJ, et se recopie telle quelle. `%delivery_status%` affiche remis/restant par
+  matériau ; wording des messages dans `messages.yml` (`quest.delivery-*`). Control Panel : type
+  « Rapporter des objets à un PNJ » dans l'éditeur guidé (PNJ, objet, quantité), résumé
+  « Rapporter Cuir (x4) à Garde », aller-retour YAML complet.
 - **État du Wild demandé au Garde** *(issue #24)* — `travel.WildConditionsService` lit l'état réel
   du monde d'exploration (jour/nuit depuis l'horloge, météo globale `clair`/`pluie`/`orage`) sans
   jamais le modifier. Exposé **sans commande** par un choix permanent du dialogue du Garde

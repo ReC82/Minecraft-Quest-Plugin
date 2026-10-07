@@ -5690,3 +5690,84 @@ levé.
 `scripts/plugadmin/rollback.sh app` (ou restauration manuelle de
 `/opt/plugadmin/releases/20261007-222157/`), puis `systemctl restart plugadmin`. Le plugin et les
 données du serveur Minecraft ne sont pas concernés par ce lot.
+
+---
+
+## 2026-10-07 (lot 7c) - PNJ destinataire perdu à l'affichage, et publication de la quête de recette (#123)
+
+### Changement
+
+Deux choses, constatées en recette TC-257.
+
+**1. Correctif de rendu (code).** Une quête de remise « Source uniquement » s'affichait
+« Rapporter Cuir (x4) **à ?** » alors que son YAML enregistré portait bien `npc: guard` sur les
+quatre objectifs — la source et l'aller-retour étaient corrects. `AgentPages#objectiveDetail`
+convertit un objectif de la **source** dans la même forme que le relevé runtime de l'agent et
+n'émettait pas `npc` : une remise a **deux** cibles (l'objet compté et le PNJ qui le reçoit) et
+`target` ne peut en porter qu'une. Le champ avait été ajouté au relevé de l'agent au lot 7, mais pas
+à ce convertisseur. Un destinataire réellement absent s'affiche désormais « **(PNJ non défini)** »
+plutôt que « ? », et le nom français de `WHEAT_SEEDS` a été ajouté (il s'affichait « Wheat Seeds »).
+
+**2. Publication d'une donnée de contenu (aucun code).** La quête de recette
+`rpgquest:test_remise`, créée depuis le Control Panel, existait dans la source éditable mais
+**jamais sur le serveur** — d'où son badge « Source uniquement » et un `/quest accept` en
+« Quête inconnue ». C'est le comportement **normal** : le panel édite la source sur la machine AWS,
+le serveur DEV est chez VeryGames et n'est joignable que par déploiement. La bannière du panel le
+dit déjà (« … ou il n'a **jamais été déployé** depuis AWS — un rechargement n'y changerait rien »).
+
+### Action serveur
+
+- **Control Panel** : redéployé (`scripts/plugadmin/deploy.sh`).
+- **Serveur Minecraft** : transfert du **seul** fichier de données
+  `RPGQuest/quests/test_remise.yml`, puis `/quest admin reload`. **Aucun redémarrage** : le JAR est
+  inchangé (empreinte identique à celle du lot 7) et un rechargement de quêtes suffit pour une
+  définition ajoutée.
+
+### Sauvegarde préalable
+
+Panel : application précédente dans `/opt/plugadmin/releases/20261007-233237/`.
+Serveur : `scripts/deploy-verygames.sh` a sauvegardé le JAR (identique) sous
+`rpgquest-20261007T213349Z-predeploy.jar`, et le dossier `extra-20261007T213349Z/` porte le
+manifeste du fichier `--also`. La quête étant **nouvelle** en ligne, le script a d'abord **refusé**
+le transfert (« absent en ligne : rien à sauvegarder ») : c'est son garde-fou, et `--allow-no-backup`
+est l'option documentée pour créer un fichier — pas un contournement.
+
+### Déploiement
+
+**Effectué le 2026-10-07 entre 23:32 et 23:36 (heure locale).**
+
+- Branche `feature/123-deliver-item-to-npc`, commit `b2359db`.
+- `./gradlew build` sur ce commit, dans un worktree propre : **1851 tests plugin + 729 panel +
+  30 web-api, 0 échec**.
+- JAR panel installé : SHA-256
+  `4735bfb001748521b886fd6906e13e881a0b911a0a0b1ef18866a2445f43cef7` ; service actif depuis
+  23:32:40 ; `/health` → `{"panel":"ONLINE","disabled":false}` (le script a de nouveau rapporté
+  `/health KO` : il interroge le port ~2 s après le redémarrage — vérifié réellement ensuite).
+- `RPGQuest/quests/test_remise.yml` transféré : **644 octets**, taille distante == locale. Le
+  fichier reste **non suivi par Git** (contenu local du propriétaire), comme les autres.
+- JAR RPGQuest : re-téléversé à l'identique par le script (même empreinte
+  `58cc3a8e…`), donc **aucun changement de plugin** et aucun redémarrage Minecraft.
+
+### Validation
+
+- `/quest admin validate` (lecture du disque serveur, sans rien recharger) → **16 quête(s), 0
+  erreur** ; `/quest admin reload` → **16 quête(s) chargée(s), 0 erreur**, contre 15 avant
+  publication.
+- Vérifié sur le panel réellement servi (compte jetable `OWNER` créé puis **supprimé**) : après un
+  rafraîchissement `quest.list`, le bloc `rpgquest:test_remise` ne porte **plus** le badge « Source
+  uniquement » (ni « Hors source ») — source et runtime fusionnés — et ses quatre objectifs
+  s'affichent « Rapporter Cuir (x4) **à Guard** », « Rapporter Bâton **à Guard** », « Rapporter
+  Pierre taillée (x2) **à Guard** », « Rapporter **Graines de blé** (x3) **à Guard** ».
+- **Non vérifié** : `/quest accept rpgquest:test_remise`. Cette commande exige un **joueur
+  connecté** (`/quest list` et `/quest accept` refusent la console) et il n'y avait aucun joueur en
+  ligne. La quête est chargée par le runtime — le comptage 15 → 16 avec 0 erreur le prouve — mais
+  l'acceptation elle-même reste à constater en jeu, au point 6 de TC-257.
+
+`PENDING MANUAL VALIDATION` — **TC-257** reprend à son point 1.
+
+### Rollback
+
+Panel : `scripts/plugadmin/rollback.sh app` (release `20261007-233237`) puis
+`systemctl restart plugadmin`. Quête de recette : supprimer
+`RPGQuest/quests/test_remise.yml` du serveur puis `/quest admin reload` (c'est une quête de **test**,
+elle n'a pas à rester en production). Le JAR et les données joueur ne sont pas concernés.

@@ -284,6 +284,22 @@ Issues: #123 LAISSÉE OUVERTE — tout le périmètre est livré et déployé, m
   nécessaires. Fermeture possible dès que TC-257 passe. #218 NON touchée, conformément à la consigne.
 Première étape à reprendre: dérouler TC-257 (compte non OP), puis fermer #123, et seulement ensuite
   attaquer #218 — qui est le consommateur prévu de ce mécanisme.
+RATTRAPAGE 2 (2026-10-07 22:42-23:40) : deux constats de recette TC-257. (a) Le PNJ destinataire
+  d'une remise était PERDU à l'affichage d'une quête « source » (« à ? ») alors que le YAML portait
+  bien npc: guard — source et aller-retour hors de cause. Cause : AgentPages#objectiveDetail
+  convertit un objectif de la SOURCE dans la forme du relevé runtime et n'émettait pas « npc ». Une
+  remise a DEUX cibles ; j'avais ajouté le champ au relevé de l'agent au lot 7, pas à ce
+  convertisseur. Mes tests ne pouvaient pas le voir : ils partaient d'un résumé déjà pourvu du
+  champ. Corrigé (b2359db), un destinataire absent s'affiche « (PNJ non défini) », et le nouveau
+  test part du YAML pour vérifier le HTML servi. La validation refusait DÉJÀ un enregistrement sans
+  destinataire (verrouillé par deux tests). Les diagnostics disaient vrai : QuestDiagnosticProvider
+  ne lit que le relevé runtime, où la quête n'était pas. (b) « Source uniquement » est le
+  comportement NORMAL : le panel édite la source sur AWS, le serveur DEV n'est joignable que par
+  déploiement, et la bannière du panel énonce déjà les deux causes. Quête publiée par le mécanisme
+  normal (--allow-no-backup est l'option documentée pour CRÉER un fichier en ligne), runtime passé
+  de 15 à 16 quêtes 0 erreur, et la quête n'est plus « Source uniquement » dans le panel servi.
+  /quest accept NON vérifié : exige un joueur connecté. Signalés non corrigés : badge « 1 objectif »
+  qui compte en fait les étapes, et COBBLESTONE rendu « Pierre taillée » au lieu de « Pierre ».
 RATTRAPAGE (2026-10-07 22:21-22:25) : le Control Panel n'avait JAMAIS été déployé avec #123 — seul
   le JAR plugin et guard.yml l'avaient été, alors que le commit 10ce149 porte toute la partie panel.
   TC-257 bloquait donc à son premier point (liste d'objectifs limitée aux 7 anciens types). Panel et

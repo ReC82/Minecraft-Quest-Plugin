@@ -284,6 +284,18 @@ Issues: #123 LAISSÉE OUVERTE — tout le périmètre est livré et déployé, m
   nécessaires. Fermeture possible dès que TC-257 passe. #218 NON touchée, conformément à la consigne.
 Première étape à reprendre: dérouler TC-257 (compte non OP), puis fermer #123, et seulement ensuite
   attaquer #218 — qui est le consommateur prévu de ce mécanisme.
+RATTRAPAGE (2026-10-07 22:21-22:25) : le Control Panel n'avait JAMAIS été déployé avec #123 — seul
+  le JAR plugin et guard.yml l'avaient été, alors que le commit 10ce149 porte toute la partie panel.
+  TC-257 bloquait donc à son premier point (liste d'objectifs limitée aux 7 anciens types). Panel et
+  plugin sont DEUX déploiements distincts, par deux scripts différents : scripts/plugadmin/deploy.sh
+  (local AWS) et scripts/deploy-verygames.sh (VeryGames). Un lot qui touche les deux doit exécuter
+  les deux ; rien ne le rattrape automatiquement, et aucune vérification côté Minecraft ne peut
+  révéler l'oubli. Diagnostic AVANT action (service actif depuis le déploiement du lot 5 + bytecode
+  installé ne contenant que 7 types) : déploiement manquant, aucun code modifié. Panel redéployé
+  depuis f574a74, release précédente sauvegardée en 20261007-222157, /health ONLINE, et les 8 types
+  vérifiés sur la page RÉELLEMENT servie (compte jetable supprimé ensuite ; le login HTTPS exige le
+  jeton _csrf du formulaire, sinon 403). JAR et serveur Minecraft NON retouchés. #123 toujours
+  ouvert, TC-257 entièrement à faire.
 ```
 
 ```text

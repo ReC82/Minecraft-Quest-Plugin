@@ -5623,3 +5623,70 @@ inconnu) et le Garde n'aurait plus de dialogue du tout.
 Aucune donnée joueur n'est perdue par un rollback : les compteurs de remise déjà écrits restent dans
 `quest_objective_progress` et redeviendront lisibles si le JAR est redéployé. En revanche les objets
 déjà consommés ne reviennent pas — c'est la sémantique voulue du ticket.
+
+---
+
+## 2026-10-07 (lot 7b) - Rattrapage : Control Panel jamais déployé avec #123
+
+### Changement
+
+**Aucun changement de code.** Correction d'un déploiement **manquant** : le lot 7 (#123) a déployé le
+JAR du plugin et `dialogues/guard.yml` sur VeryGames, mais **pas** le Control Panel — alors que le
+commit `10ce149` contient toute la partie panel de #123 (type d'objectif « Rapporter des objets à un
+PNJ »).
+
+Symptôme constaté par le propriétaire : dans `/quests` → Créer une quête → Objectifs, la liste ne
+proposait que les 7 anciens types. TC-257 bloquait donc dès son premier point.
+
+### Action serveur
+
+Déploiement du **Control Panel uniquement**, via `scripts/plugadmin/deploy.sh`. **Aucun redéploiement
+du JAR RPGQuest, aucun redémarrage du serveur Minecraft** : rien n'a changé côté plugin depuis le
+lot 7 (JAR en ligne vérifié : 1 954 747 o, soit `58cc3a8e…`, inchangé).
+
+### Sauvegarde préalable
+
+Automatique : l'ancienne application a été déplacée vers
+`/opt/plugadmin/releases/20261007-222157/` (rétention de 5 releases assurée par le script).
+
+### Déploiement
+
+**Effectué le 2026-10-07 entre 22:21 et 22:25 (heure locale).**
+
+- Branche `feature/123-deliver-item-to-npc`, commit `f574a74` (contient `10ce149` et les suivants).
+  Le module `control-panel` était propre dans le dépôt : la distribution bâtie correspond donc
+  exactement à ce commit.
+- **Diagnostic d'abord, déploiement ensuite.** La version réellement installée a été identifiée avant
+  toute action : service `plugadmin` actif depuis **17:44:15** (déploiement du lot 5, #165), et
+  inspection du JAR installé → `Descriptors.class` ne contenait **que** les 7 anciens types, aucune
+  trace de `DELIVER_ITEM_TO_NPC`. Confirmation qu'il s'agissait d'un déploiement manquant, pas d'un
+  défaut de code (les tests panel du lot 7 étaient verts, dont `EditorDescriptorsTest` qui exige
+  l'ensemble des 8 types).
+- JAR panel installé : **1 161 184 → nouvelle version**, SHA-256
+  `5e3bea4bb17c5186637504bbc36e0a3f441d8d4568d6f4909240d9d8a87822b6`.
+- `systemctl restart plugadmin` : service **actif** depuis 22:22:00.
+- **`/health` → `{"panel":"ONLINE","disabled":false}`.** Le script a d'abord rapporté `/health KO`
+  parce qu'il interroge le port ~2 s après le redémarrage, avant que la JVM ne l'ait lié — même
+  comportement déjà noté au lot 5. Vérifié ensuite réellement, service actif et `/health` ONLINE.
+  Aucun rollback nécessaire.
+
+### Validation
+
+Vérifié **de bout en bout sur la page réellement servie** (et pas seulement dans le fichier installé),
+avec un compte PlugAdmin jetable `CONTENT_EDITOR` créé puis **supprimé** immédiatement après :
+
+- `GET /quests/new` → **HTTP 200**, et la liste des types d'objectifs contient désormais les **8**
+  types, dont `DELIVER_ITEM_TO_NPC` → « Rapporter des objets à un PNJ » ;
+- l'aide du type est servie (« … REMETTRE N exemplaires … Collecter ou posséder l'objet ne suffit
+  pas … Les dépôts partiels comptent et sont conservés … ») ;
+- les trois champs attendus sont présents : « PNJ destinataire », « Objet à rapporter »,
+  « Quantité à remettre ».
+
+`PENDING MANUAL VALIDATION` — **TC-257** reste entièrement à dérouler ; seul son blocage initial est
+levé.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (ou restauration manuelle de
+`/opt/plugadmin/releases/20261007-222157/`), puis `systemctl restart plugadmin`. Le plugin et les
+données du serveur Minecraft ne sont pas concernés par ce lot.

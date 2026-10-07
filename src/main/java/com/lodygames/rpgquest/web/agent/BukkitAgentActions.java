@@ -65,7 +65,9 @@ import com.lodygames.rpgquest.npc.CitizensSpawnCoordinator;
 import com.lodygames.rpgquest.npc.CitizensSpawnPlanner;
 import com.lodygames.rpgquest.npc.NpcCatalog;
 import com.lodygames.rpgquest.npc.NpcDefinitionStore;
+import com.lodygames.rpgquest.npc.BukkitNpcPlacementProbe;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.npc.NpcPlacementPlanner;
 import com.lodygames.rpgquest.npc.SkinPreservationPlanner;
 import com.lodygames.rpgquest.npc.NpcLoadIssue;
 import com.lodygames.rpgquest.npc.QuestGiverStore;
@@ -154,6 +156,9 @@ public final class BukkitAgentActions implements AgentActions {
     private final NpcBindingRepository npcBindingRepository;
     /** Source d'apparence enregistrée par RPGQuest, pour la reconduire au travers d'un renommage. */
     private final NpcSkinSourceRepository npcSkinSourceRepository;
+    /** Même forme d'identifiant logique que l'exécuteur et le panel. */
+    private static final java.util.regex.Pattern NPC_ID_PATTERN =
+            java.util.regex.Pattern.compile("[a-z0-9._-]{1,64}");
     private final YamlNpcEngine npcEngine;
     private final NpcDefinitionStore npcStore;
     private final QuestGiverStore questGiverStore;
@@ -167,6 +172,8 @@ public final class BukkitAgentActions implements AgentActions {
     private final SpecialMobDefinitionStore mobDefinitionStore;
     private final MobSpawnSettingsStore mobSpawnSettingsStore;
     private final Supplier<String> wildWorldSupplier;
+    /** Réglages du Hub : monde, id logique du Guide, bornes de recherche d'emplacement. */
+    private final Supplier<com.lodygames.rpgquest.config.HubConfig> hubConfig;
     /** Issue #95 — annonce globale et tampon de console (exploitation serveur). */
     private final ServerOpsService serverOpsService;
     /** Issue #131 — service central de rechargement du contenu. */
@@ -199,6 +206,7 @@ public final class BukkitAgentActions implements AgentActions {
                               TravelBeaconService travelBeaconService, SpecialMobRegistry mobRegistry,
                               SpecialMobService mobService, SpecialMobDefinitionStore mobDefinitionStore,
                               MobSpawnSettingsStore mobSpawnSettingsStore, Supplier<String> wildWorldSupplier,
+                              Supplier<com.lodygames.rpgquest.config.HubConfig> hubConfig,
                               ServerOpsService serverOpsService,
                               ContentReloadService contentReloadService,
                               Supplier<java.util.Optional<org.bukkit.Location>> hubRescueTarget,
@@ -227,6 +235,7 @@ public final class BukkitAgentActions implements AgentActions {
         this.mobDefinitionStore = mobDefinitionStore;
         this.mobSpawnSettingsStore = mobSpawnSettingsStore;
         this.wildWorldSupplier = wildWorldSupplier;
+        this.hubConfig = hubConfig;
         this.serverOpsService = serverOpsService;
         this.contentReloadService = contentReloadService;
         this.hubRescueTarget = hubRescueTarget;
@@ -921,6 +930,261 @@ public final class BukkitAgentActions implements AgentActions {
                                     raw)
                             .thenApply(ignored -> result)
                     : done(result));
+        });
+    }
+
+    // ---- Création complète d'un PNJ depuis le panel (définition + spawn + lien + skin) --------
+
+    /** Identifiant logique dérivé d'un nom affiché : minuscules ASCII, « _ » comme séparateur. */
+    static String slugify(String displayName) {
+        String plain = displayName == null ? "" : displayName.replaceAll("<[^>]*>", "");
+        String ascii = java.text.Normalizer.normalize(plain, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "");
+        String slug = ascii.toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", "_")
+                .replaceAll("^_+|_+$", "");
+        return slug.length() > 48 ? slug.substring(0, 48).replaceAll("_+$", "") : slug;
+    }
+
+    @Override
+    public CompletableFuture<CitizensProvisionResult> citizensProvision(
+            String displayName, String skinValue, boolean skinByPlayerName,
+            String world, Double x, Double y, Double z, Float yaw, Float pitch) {
+
+        String name = displayName == null ? "" : displayName.trim();
+        if (name.isEmpty() || name.length() > 128 || name.indexOf('\n') >= 0) {
+            return done(CitizensProvisionResult.reject("INVALID_NAME",
+                    "Nom manquant, trop long (128 maximum) ou multi-ligne."));
+        }
+        String npcId = slugify(name);
+        if (npcId.isEmpty() || !NPC_ID_PATTERN.matcher(npcId).matches()) {
+            return done(CitizensProvisionResult.reject("INVALID_NAME",
+                    "Impossible de déduire un identifiant technique de « " + safe(name) + " » : "
+                            + "ajouter au moins une lettre ou un chiffre."));
+        }
+        // Le skin est validé AVANT toute création : une URL invalide ne doit jamais laisser un PNJ
+        // derrière elle, ni être silencieusement remplacée par autre chose.
+        String skin = skinValue == null ? "" : skinValue.trim();
+        if (!skin.isEmpty()) {
+            boolean valid = skinByPlayerName
+                    ? NpcIdentityService.isValidSkinPlayerName(skin)
+                    : NpcIdentityService.isValidMineSkinUrl(skin);
+            if (!valid) {
+                return done(CitizensProvisionResult.reject("INVALID_SKIN", skinByPlayerName
+                        ? "Pseudo Minecraft invalide : 3 à 16 caractères, lettres, chiffres et « _ »."
+                        : "Lien MineSkin invalide. Format accepté : https://minesk.in/<identifiant>."));
+            }
+        }
+        if (npcEngine.find(npcId).isPresent()) {
+            // Garde-fou anti-doublon : un double clic ou une requête rejouée retombe ici.
+            return done(CitizensProvisionResult.reject("NPC_ID_TAKEN",
+                    "Une définition « " + npcId + " » existe déjà (déduite du nom « " + safe(name)
+                            + " »). Choisir un autre nom, ou modifier le PNJ existant."));
+        }
+
+        boolean explicit = world != null && !world.isBlank();
+        if (explicit != (x != null && y != null && z != null)) {
+            return done(CitizensProvisionResult.reject("PARTIAL_LOCATION",
+                    "Localisation incomplète : renseigner le monde ET X, Y, Z ensemble, ou laisser "
+                            + "le tout vide pour un placement automatique près du Guide."));
+        }
+
+        float finalYaw = yaw == null ? 0f : yaw;
+        float finalPitch = pitch == null ? 0f : pitch;
+
+        CompletableFuture<ResolvedSpot> target = explicit
+                ? done(new ResolvedSpot(true, null, null, world.trim(), x, y, z))
+                : resolveSpotNearGuide();
+
+        return target.thenCompose(spot -> {
+            if (!spot.ok()) {
+                return done(CitizensProvisionResult.reject(spot.code(), spot.message()));
+            }
+            // 1) Définition RPGQuest, via le chemin d'écriture habituel.
+            return writeDefinition(npcId, name, null, null, true, true).thenCompose(defResult -> {
+                if (!defResult.ok()) {
+                    return done(CitizensProvisionResult.reject(defResult.code(), defResult.message()));
+                }
+                // 2) Apparition + liaison, par le parcours canonique (avec son propre rollback).
+                return citizensCreate(npcId, spot.world(), spot.x(), spot.y(), spot.z(), finalYaw, finalPitch)
+                        .thenCompose(created -> {
+                            if (!created.ok()) {
+                                return compensate(npcId, name, created.code(), created.message());
+                            }
+                            return applyOptionalSkin(npcId, skin, skinByPlayerName).thenApply(skinOutcome ->
+                                    new CitizensProvisionResult(true,
+                                            skinOutcome.applied() ? "PROVISIONED" : "PROVISIONED_SKIN_FAILED",
+                                            "PNJ « " + name + " » créé : identifiant RPGQuest « " + npcId
+                                                    + " », Citizens #" + created.citizensNumericId() + ", "
+                                                    + spot.describe() + ". " + skinOutcome.note(),
+                                            npcId, created.citizensNumericId(), name,
+                                            spot.world(), spot.x(), spot.y(), spot.z(), finalYaw, finalPitch,
+                                            skinOutcome.note(), false, created.effects()));
+                        });
+            });
+        });
+    }
+
+    /**
+     * Nettoyage compensatoire d'une tentative de création qui a échoué après l'écriture de la
+     * définition — et <strong>gestion des échecs du nettoyage lui-même</strong>.
+     *
+     * <p>Deux garde-fous avant de supprimer quoi que ce soit :</p>
+     * <ul>
+     *   <li>la définition n'est retirée que si <strong>aucune liaison Citizens</strong> ne la
+     *       référence. Sans cela, une tentative concurrente ayant réussi verrait son travail
+     *       détruit par le nettoyage de celle qui a échoué ;</li>
+     *   <li>si le retrait échoue, on ne prétend pas avoir nettoyé : le code devient
+     *       {@code PROVISION_CLEANUP_INCOMPLETE} et le message nomme <em>exactement</em> ce qui
+     *       reste à retirer à la main.</li>
+     * </ul>
+     */
+    private CompletableFuture<CitizensProvisionResult> compensate(String npcId, String displayName,
+                                                                  String failureCode, String failureMessage) {
+        return npcBindingRepository.loadAll().thenApply(bindings -> {
+            boolean stillLinked = bindings.stream().anyMatch(b -> b.npcId().equalsIgnoreCase(npcId));
+            if (stillLinked) {
+                return new CitizensProvisionResult(false, "PROVISION_CLEANUP_SKIPPED",
+                        failureMessage + " La définition « " + npcId + " » a été CONSERVÉE : une liaison "
+                                + "Citizens la référence déjà (une autre tentative a abouti). Rien n'a été "
+                                + "supprimé — vérifier la fiche de ce PNJ avant toute action.",
+                        npcId, null, displayName, null, null, null, null, null, null, null, false, List.of());
+            }
+            NpcDefinitionStore.Result removed = npcStore.deleteForRollback(npcId);
+            npcEngine.reload();
+            if (removed.ok()) {
+                return new CitizensProvisionResult(false, "PROVISION_ROLLED_BACK",
+                        failureMessage + " Nettoyage complet : la définition « " + npcId + " » créée par "
+                                + "cette tentative a été retirée. Aucun PNJ partiel ne subsiste.",
+                        null, null, displayName, null, null, null, null, null, null, null, true,
+                        List.of("rollback: npcs/" + npcId + ".yml retiré"));
+            }
+            return new CitizensProvisionResult(false, "PROVISION_CLEANUP_INCOMPLETE",
+                    failureMessage + " ATTENTION : le nettoyage a ÉCHOUÉ. La définition « " + npcId
+                            + " » subsiste et doit être retirée à la main (" + removed.message() + ").",
+                    npcId, null, displayName, null, null, null, null, null, null, null, false,
+                    List.of("rollback incomplet: npcs/" + npcId + ".yml"));
+        }).exceptionally(err -> new CitizensProvisionResult(false, "PROVISION_CLEANUP_INCOMPLETE",
+                failureMessage + " ATTENTION : le nettoyage n'a pas pu être évalué (" + rootName(err)
+                        + "). Vérifier si une définition « " + npcId + " » subsiste.",
+                npcId, null, displayName, null, null, null, null, null, null, null, false, List.of()));
+    }
+
+    /** Ce que le skin est devenu : appliqué ou non, et le texte à montrer dans les deux cas. */
+    private record SkinOutcome(boolean applied, String note) {
+    }
+
+    /**
+     * Applique le skin demandé, et décrit honnêtement ce qui s'est passé — jamais un succès muet.
+     *
+     * <p>Un refus de Citizens ici ne détruit pas le PNJ : il est créé, lié et valide. On le dit, on
+     * marque le résultat d'un code distinct ({@code PROVISIONED_SKIN_FAILED}) et on indique où
+     * réappliquer le skin. Détruire un PNJ correct parce qu'une texture n'a pas été acceptée serait
+     * un nettoyage disproportionné.</p>
+     */
+    private CompletableFuture<SkinOutcome> applyOptionalSkin(String npcId, String skin, boolean byPlayerName) {
+        if (skin.isEmpty()) {
+            return done(new SkinOutcome(true,
+                    "Aucun skin demandé : le PNJ garde l'apparence par défaut de Citizens pour un PNJ "
+                            + "de type joueur. Aucun appel réseau n'a été fait."));
+        }
+        return citizensSkin(npcId, skin, byPlayerName).thenApply(r -> r.ok()
+                ? new SkinOutcome(true, "Skin demandé à Citizens (" + (byPlayerName ? "pseudo " : "lien ")
+                        + skin + ") : résolution asynchrone, à vérifier en jeu.")
+                : new SkinOutcome(false, "ATTENTION : le PNJ est bien créé et lié, mais le skin n'a PAS "
+                        + "été appliqué (" + r.message() + "). Le réappliquer depuis « Nom en jeu & "
+                        + "apparence » — le PNJ lui-même n'a pas besoin d'être recréé."));
+    }
+
+    /** Emplacement résolu, ou refus explicite. */
+    private record ResolvedSpot(boolean ok, String code, String message,
+                                String world, Double x, Double y, Double z) {
+        String describe() {
+            return world + " " + fmt(x) + " / " + fmt(y) + " / " + fmt(z);
+        }
+    }
+
+    /**
+     * Cherche un emplacement libre et sûr près du <strong>Guide</strong>, identifié par sa
+     * définition stable ({@code hub.guide-npc-id}) et jamais par son nom affiché.
+     *
+     * <p>Chaque impossibilité a son propre code et son propre message : Guide absent, Guide non lié
+     * à un PNJ Citizens, Guide hors du Hub configuré, ou aucun emplacement sûr dans les bornes.
+     * Aucun PNJ partiel n'est jamais créé.</p>
+     */
+    private CompletableFuture<ResolvedSpot> resolveSpotNearGuide() {
+        String guideId = hubConfig.get().guideNpcId();
+        String hubWorld = hubConfig.get().world();
+        if (npcEngine.find(guideId).isEmpty()) {
+            return done(new ResolvedSpot(false, "GUIDE_MISSING",
+                    "Aucune définition « " + guideId + " » (le Guide) : impossible de placer un PNJ "
+                            + "automatiquement. Donner une position explicite, ou créer le Guide.",
+                    null, null, null, null));
+        }
+        return npcBindingRepository.loadAll().thenCompose(bindings -> {
+            Optional<UUID> guideUuid = bindings.stream()
+                    .filter(b -> b.npcId().equalsIgnoreCase(guideId))
+                    .map(NpcBindingRepository.Binding::citizensUuid)
+                    .findFirst();
+            if (guideUuid.isEmpty()) {
+                return done(new ResolvedSpot(false, "GUIDE_NOT_LINKED",
+                        "Le Guide « " + guideId + " » n'est lié à aucun PNJ Citizens : sa position est "
+                                + "inconnue. Donner une position explicite, ou lier le Guide d'abord.",
+                        null, null, null, null));
+            }
+            return onMain(() -> {
+                Optional<CitizensNpc> guide = npcIdentityService.citizensRoster().stream()
+                        .filter(n -> n.uuid().equals(guideUuid.get())).findFirst();
+                if (guide.isEmpty() || !guide.get().hasLocation()) {
+                    return done(new ResolvedSpot(false, "GUIDE_LOCATION_UNKNOWN",
+                            "Citizens n'expose aucune position pour le Guide « " + guideId + " » : "
+                                    + "impossible de placer un PNJ à côté. Donner une position explicite.",
+                            null, null, null, null));
+                }
+                CitizensNpc g = guide.get();
+                if (!g.world().equalsIgnoreCase(hubWorld)) {
+                    return done(new ResolvedSpot(false, "GUIDE_OUTSIDE_HUB",
+                            "Le Guide « " + guideId + " » est dans « " + g.world() + " », alors que le Hub "
+                                    + "configuré est « " + hubWorld + " » : le placement automatique est "
+                                    + "ambigu. Donner une position explicite, ou corriger « hub.world ».",
+                            null, null, null, null));
+                }
+                World w = plugin.getServer().getWorld(hubWorld);
+                if (w == null) {
+                    return done(new ResolvedSpot(false, "HUB_NOT_LOADED",
+                            "Le monde Hub « " + hubWorld + " » n'est pas chargé.", null, null, null, null));
+                }
+                // Cases déjà occupées par un PNJ Citizens, pour ne jamais en superposer deux.
+                java.util.Set<String> occupied = new java.util.HashSet<>();
+                for (CitizensNpc other : npcIdentityService.citizensRoster()) {
+                    if (other.hasLocation() && other.world().equalsIgnoreCase(hubWorld)) {
+                        int ox = (int) Math.floor(other.x());
+                        int oy = (int) Math.floor(other.y());
+                        int oz = (int) Math.floor(other.z());
+                        for (int dy = 0; dy < NpcPlacementPlanner.REQUIRED_CLEARANCE; dy++) {
+                            occupied.add(BukkitNpcPlacementProbe.cellKey(ox, oy + dy, oz));
+                        }
+                    }
+                }
+                NpcPlacementPlanner.Limits limits = new NpcPlacementPlanner.Limits(
+                        hubConfig.get().placementRadius(), hubConfig.get().placementVertical(),
+                        hubConfig.get().placementAttempts());
+                NpcPlacementPlanner.Result found = NpcPlacementPlanner.findNearest(
+                        (int) Math.floor(g.x()), (int) Math.floor(g.y()), (int) Math.floor(g.z()),
+                        limits, new BukkitNpcPlacementProbe(w, occupied));
+                if (!found.found()) {
+                    return done(new ResolvedSpot(false, "NO_SAFE_SPOT",
+                            "Aucun emplacement libre et sûr près du Guide (" + found.inspected()
+                                    + " emplacements examinés, rayon " + limits.horizontalRadius()
+                                    + " blocs" + (found.failure() == NpcPlacementPlanner.Failure.BUDGET_EXHAUSTED
+                                    ? ", budget d'essais épuisé" : "") + "). Donner une position explicite, "
+                                    + "ou dégager l'espace autour du Guide.",
+                            null, null, null, null));
+                }
+                NpcPlacementPlanner.Spot s = found.spot().orElseThrow();
+                return done(new ResolvedSpot(true, null, null, hubWorld,
+                        s.x() + 0.5, (double) s.y(), s.z() + 0.5));
+            });
         });
     }
 

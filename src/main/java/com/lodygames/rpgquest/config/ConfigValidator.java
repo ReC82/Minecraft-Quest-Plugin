@@ -715,7 +715,26 @@ public final class ConfigValidator {
         if (world.isBlank()) {
             throw new ConfigValidationException("« hub.world » ne peut pas être vide.");
         }
-        return new HubConfig(world);
+        String guide = hub != null ? hub.getString("guide-npc-id", "guide") : "guide";
+        if (guide == null || guide.isBlank()) {
+            throw new ConfigValidationException("« hub.guide-npc-id » ne peut pas être vide.");
+        }
+        int radius = hub != null ? hub.getInt("placement.search-radius", 8) : 8;
+        int vertical = hub != null ? hub.getInt("placement.vertical-radius", 3) : 3;
+        int attempts = hub != null ? hub.getInt("placement.max-attempts", 2000) : 2000;
+        if (radius < 1 || radius > 64) {
+            throw new ConfigValidationException(
+                    "« hub.placement.search-radius » doit être compris entre 1 et 64 (trouvé : " + radius + ").");
+        }
+        if (vertical < 0 || vertical > 32) {
+            throw new ConfigValidationException(
+                    "« hub.placement.vertical-radius » doit être compris entre 0 et 32 (trouvé : " + vertical + ").");
+        }
+        if (attempts < 1 || attempts > 100000) {
+            throw new ConfigValidationException(
+                    "« hub.placement.max-attempts » doit être compris entre 1 et 100000 (trouvé : " + attempts + ").");
+        }
+        return new HubConfig(world, guide.trim().toLowerCase(java.util.Locale.ROOT), radius, vertical, attempts);
     }
 
     private static TravelConfig validateTravel(ConfigurationSection section) throws ConfigValidationException {

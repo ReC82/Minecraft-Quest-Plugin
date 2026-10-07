@@ -1133,6 +1133,9 @@ class AgentActionExecutorTest {
         String lastSkinNpcId;
         String lastSkinUrl;
         boolean lastSkinByPlayerName;
+        String lastProvisionName;
+        String lastProvisionWorld;
+        String lastProvisionSkin;
 
         @Override
         public CompletableFuture<MutationResult> questGiverSet(String questId, String npcId) {
@@ -1178,6 +1181,20 @@ class AgentActionExecutorTest {
             lastRenameNpcId = npcId;
             lastRenameName = newName;
             return mutation("rename " + npcId + " -> " + newName);
+        }
+
+        @Override
+        public CompletableFuture<CitizensProvisionResult> citizensProvision(
+                String displayName, String skinValue, boolean skinByPlayerName,
+                String world, Double x, Double y, Double z, Float yaw, Float pitch) {
+            lastProvisionName = displayName;
+            lastProvisionWorld = world;
+            lastProvisionSkin = skinValue;
+            return CompletableFuture.completedFuture(new CitizensProvisionResult(true, "PROVISIONED",
+                    "ok", "bob", 42, displayName, world == null ? "world_hub" : world,
+                    x == null ? 0.5 : x, y == null ? 65.0 : y, z == null ? 0.5 : z,
+                    yaw == null ? 0f : yaw, pitch == null ? 0f : pitch, "skin note", false,
+                    java.util.List.of()));
         }
 
         @Override

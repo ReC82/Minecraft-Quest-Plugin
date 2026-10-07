@@ -1362,6 +1362,31 @@
     }
   }
 
+  /* ---- Garde anti double-soumission (#165) ------------------------------------------- */
+
+  /*
+   * Un double clic sur « Créer le PNJ » envoyait deux requêtes, donc deux actions distinctes.
+   * Le serveur les arbitre déjà (création de définition atomique, la seconde est refusée), mais
+   * autant ne pas la provoquer : le bouton se désactive dès la première soumission, avec un
+   * libellé qui dit ce qui se passe. Sans JavaScript, la garde serveur reste la seule — et elle
+   * suffit.
+   */
+  function initSubmitOnce() {
+    var forms = document.querySelectorAll("[data-submit-once]");
+    for (var i = 0; i < forms.length; i++) {
+      (function (form) {
+        form.addEventListener("submit", function () {
+          var buttons = form.querySelectorAll("button[type='submit']");
+          for (var b = 0; b < buttons.length; b++) {
+            var btn = buttons[b];
+            if (btn.dataset.busyLabel) { btn.textContent = btn.dataset.busyLabel; }
+            btn.disabled = true;
+          }
+        });
+      })(forms[i]);
+    }
+  }
+
   function applyType(sel) {
     var row = sel.closest ? sel.closest(".rowitem") : null;
     if (!row) { return; }
@@ -1401,6 +1426,7 @@
     run("initMultiSel", initMultiSel);
     run("initEditorForms", initEditorForms);
     run("initStyleFields", initStyleFields);
+    run("initSubmitOnce", initSubmitOnce);
     run("initColorPalette", initColorPalette);
     run("initOpsAnnounce", initOpsAnnounce);
     run("initOpsConsole", initOpsConsole);

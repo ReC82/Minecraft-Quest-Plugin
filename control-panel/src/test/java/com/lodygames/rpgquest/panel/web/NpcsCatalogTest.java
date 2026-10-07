@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.panel.agent.AgentActionCatalog;
+import com.lodygames.rpgquest.panel.agent.AgentActionRow;
 import com.lodygames.rpgquest.panel.agent.AgentStore;
 import com.lodygames.rpgquest.panel.audit.InMemoryAuditLog;
 import com.lodygames.rpgquest.panel.bridge.BridgeClient;
@@ -509,6 +511,40 @@ class NpcsCatalogTest {
         return URLEncoder.encode(v, StandardCharsets.UTF_8);
     }
 
+    @Test
+    void theFormGuardsAgainstDoubleClicksAndExplainsTheServerSideArbitration() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // Garde navigateur : le formulaire est marqué, le bouton porte son libellé d'attente.
+        assertTrue(page.contains("data-submit-once"), "formulaire marqué pour la garde");
+        assertTrue(page.contains("data-busy-label"), "libellé d'attente du bouton");
+        // Et surtout, l'arbitrage serveur est expliqué : c'est lui qui garantit l'absence de doublon.
+        assertTrue(page.contains("double clic</strong> ne crée jamais deux PNJ"), "promesse énoncée");
+        assertTrue(page.contains("sans rien créer ni rien supprimer"),
+                "le nettoyage de la 2e tentative ne touche pas la 1re");
+        assertTrue(page.contains("requête rejouée renvoie le résultat de la première"), "retries");
+    }
+
+    @Test
+    void theFormStatesTheThreePermissionsItRequiresIncludingTheSkinOne() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Droits requis"), "les droits sont annoncés");
+        assertTrue(page.contains("liaison Citizens</strong> (ce dernier couvre aussi le skin)"),
+                "la permission qui couvre le skin est nommée");
+        assertTrue(page.contains("n'accorde aucun droit supplémentaire"), "aucun droit implicite");
+    }
+
+    /** La dernière action enfilée d'un type donné, pour inspecter ses paramètres réels. */
+    private AgentActionRow latestOfType(String type) {
+        return store.latestActionOfType(TestConfig.AGENT_ID, type)
+                .orElseThrow(() -> new IllegalStateException("aucune action « " + type + " » enfilée"));
+    }
+
     private int pendingFor(String agent) throws Exception {
         Map<String, Object> body = Json.parseObject(get("/agents/actions.json?agent=" + agent).body());
         return ((Number) body.get("pending")).intValue();
@@ -713,6 +749,137 @@ class NpcsCatalogTest {
         assertTrue(page.contains("rpgquest:crystal_hunt"), "lien quête conservé");
     }
 
+    // ---- Création complète d'un PNJ depuis le panel -----------------------------------------
+
+    @Test
+    void theCreationFormExposesEveryFieldWithItsHelpAndDefault() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("name=\"type\" value=\"npc.citizens.provision\""), "action de création");
+        // Nom via StyleField, obligatoire.
+        assertTrue(page.contains("name=\"display_name\""), "champ nom");
+        assertTrue(page.contains("data-sf-palette"), "couleur au clic sur le nom");
+        // Skin optionnel, deux sources, limites dites.
+        assertTrue(page.contains("name=\"skin_source\""), "source du skin");
+        assertTrue(page.contains("name=\"skin_url\""), "lien MineSkin");
+        assertTrue(page.contains("name=\"skin_player\""), "pseudo Minecraft");
+        assertTrue(page.contains("apparence par défaut de Citizens"), "comportement si vide documenté");
+        // Localisation optionnelle, non partielle.
+        assertTrue(page.contains("placement automatique près du Guide"), "défaut de localisation");
+        assertTrue(page.contains("une saisie partielle est"), "la saisie partielle est annoncée refusée");
+        // Orientation et son défaut.
+        assertTrue(page.contains("name=\"yaw\""), "yaw");
+        assertTrue(page.contains("name=\"pitch\""), "pitch");
+        assertTrue(page.contains("<b>Défaut</b> 0 pour les deux"), "défaut d'orientation expliqué");
+        // Chaque champ porte son bloc d'aide étiqueté.
+        assertTrue(page.contains("<b>Exemple</b>") && page.contains("<b>Si vide</b>"), "aides étiquetées");
+    }
+
+    @Test
+    void partialCoordinatesAreRefusedWithoutCreatingAnything() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        // Monde fourni, Y et Z manquants : refus explicite, aucune action enfilée.
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.provision&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&display_name=" + enc("Marchand de Lune") + "&world=world_hub&x=10");
+        assertTrue(res.headers().firstValue("Location").orElse("").contains("err="),
+                "localisation partielle refusée");
+        assertEquals(0, pendingFor(TestConfig.AGENT_ID), "aucune action enfilée");
+    }
+
+    @Test
+    void anInvalidSkinUrlIsRefusedBeforeAnythingIsCreated() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.provision&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&display_name=" + enc("Marchand") + "&skin_source=url"
+                + "&skin_url=" + enc("https://example.com/skin.png"));
+        assertTrue(res.headers().firstValue("Location").orElse("").contains("err="), "URL hors MineSkin refusée");
+        assertEquals(0, pendingFor(TestConfig.AGENT_ID));
+    }
+
+    @Test
+    void aValidCreationWithoutLocationIsQueuedAndAsksForAGuidePlacement() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.provision&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&display_name=" + enc("<gold>Marchand de Lune</gold>") + "&confirm=true");
+        assertEquals(303, res.statusCode());
+        assertFalse(res.headers().firstValue("Location").orElse("").contains("err="), res.body());
+
+        AgentActionRow queued = latestOfType("npc.citizens.provision");
+        assertEquals("<gold>Marchand de Lune</gold>", queued.params().get("display_name"),
+                "le nom stylé est transmis tel quel");
+        assertFalse(queued.params().containsKey("world"), "aucune position imposée");
+        assertFalse(queued.params().containsKey("x"));
+    }
+
+    @Test
+    void anExplicitLocationIsTransmittedExactlyAsGiven() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.provision&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&display_name=" + enc("Marchand") + "&world=world_hub&x=12.5&y=70&z=-33.5"
+                + "&yaw=180&pitch=0&confirm=true");
+        assertEquals(303, res.statusCode());
+
+        AgentActionRow queued = latestOfType("npc.citizens.provision");
+        assertEquals("world_hub", queued.params().get("world"));
+        assertEquals("12.5", queued.params().get("x"));
+        assertEquals("-33.5", queued.params().get("z"));
+        assertEquals("180", queued.params().get("yaw"));
+    }
+
+    @Test
+    void anOutOfBoundsHeightIsRefused() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.provision&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&display_name=" + enc("Marchand") + "&world=world_hub&x=0&y=99999&z=0");
+        assertTrue(res.headers().firstValue("Location").orElse("").contains("err="), "Y hors bornes refusé");
+    }
+
+    @Test
+    void theCreationActionRefreshesBothSurveysSoTheListShowsTheNewNpc() throws Exception {
+        start();
+        AgentActionCatalog.Spec spec = AgentActionCatalog.spec("npc.citizens.provision").orElseThrow();
+
+        assertTrue(spec.refreshTypes().contains("npc.list"), "catalogue RPGQuest réactualisé");
+        assertTrue(spec.refreshTypes().contains("npc.citizens.list"), "relevé Citizens réactualisé");
+    }
+
+    @Test
+    void theCreationActionRequiresAllThreePermissionsAndGrantsNoneImplicitly() throws Exception {
+        start();
+        AgentActionCatalog.Spec spec = AgentActionCatalog.spec("npc.citizens.provision").orElseThrow();
+
+        // Les effets produits sont ceux de trois permissions : les trois sont exigées.
+        assertTrue(spec.requiredPermissions().contains(
+                com.lodygames.rpgquest.panel.authz.Permission.NPC_SPAWN_WRITE), "apparition");
+        assertTrue(spec.requiredPermissions().contains(
+                com.lodygames.rpgquest.panel.authz.Permission.NPC_WRITE), "définition");
+        assertTrue(spec.requiredPermissions().contains(
+                com.lodygames.rpgquest.panel.authz.Permission.NPC_BIND_WRITE), "liaison / skin");
+        assertEquals(3, spec.requiredPermissions().size(), "ni plus, ni moins");
+    }
+
     private void runListWithSuccess(String details) throws Exception {
         runListWithSuccess("npc.list", details);
     }
@@ -735,11 +902,14 @@ class NpcsCatalogTest {
                 .POST(HttpRequest.BodyPublishers.ofString(result)).build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    private AgentStore store;
+
     private void start() throws Exception {
         String db = tmp.resolve("cp.db").toString();
+        store = new AgentStore(db);
         app = new PanelApp(TestConfig.withAgent(db, "http://127.0.0.1:1/admin/v1"),
                 new InMemoryAuditLog(), new BridgeClient(Duration.ofMillis(300), Duration.ofMillis(400)),
-                new AgentStore(db));
+                store);
         port = app.start();
         client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
         jar.clear();

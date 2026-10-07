@@ -115,10 +115,34 @@ public final class AgentActionCatalog {
      *                     quand cette action réussit — ré-enfilés automatiquement (issues #112 /
      *                     #115 / #116 / #119 / #120). Jamais de refresh ad hoc par écran.
      */
+    /**
+     * @param permission   permission principale, telle qu'historiquement contrôlée
+     * @param alsoRequires permissions <strong>supplémentaires</strong> exigées en plus de la
+     *                     principale. Sert aux actions qui en orchestrent plusieurs en une seule
+     *                     opération atomique : l'opérateur doit détenir <em>toutes</em> les
+     *                     permissions des effets produits, sinon l'action lui accorderait un droit
+     *                     implicite (par exemple créer une définition en ne détenant que le droit
+     *                     de faire apparaître un PNJ).
+     */
     public record Spec(String type, Permission permission, boolean mutation, boolean needsPlayer,
-                       boolean sensitive, String label, List<String> refreshTypes) {
+                       boolean sensitive, String label, List<String> refreshTypes,
+                       List<Permission> alsoRequires) {
         public Spec {
             refreshTypes = refreshTypes == null ? List.of() : List.copyOf(refreshTypes);
+            alsoRequires = alsoRequires == null ? List.of() : List.copyOf(alsoRequires);
+        }
+
+        public Spec(String type, Permission permission, boolean mutation, boolean needsPlayer,
+                    boolean sensitive, String label, List<String> refreshTypes) {
+            this(type, permission, mutation, needsPlayer, sensitive, label, refreshTypes, List.of());
+        }
+
+        /** Toutes les permissions nécessaires : la principale puis les supplémentaires, sans doublon. */
+        public List<Permission> requiredPermissions() {
+            java.util.LinkedHashSet<Permission> all = new java.util.LinkedHashSet<>();
+            all.add(permission);
+            all.addAll(alsoRequires);
+            return List.copyOf(all);
         }
     }
 
@@ -136,6 +160,16 @@ public final class AgentActionCatalog {
      */
     private static void addContentWrite(String type, Permission p, String label, String... refresh) {
         SPECS.put(type, new Spec(type, p, true, false, false, label, List.of(refresh)));
+    }
+
+    /**
+     * Mutation sensible qui <strong>orchestre plusieurs effets</strong> en une seule opération
+     * atomique, et exige donc l'ensemble des permissions correspondantes — jamais un droit
+     * implicite accordé par le regroupement.
+     */
+    private static void addOrchestratedWrite(String type, Permission primary, List<Permission> also,
+                                             String label, String... refresh) {
+        SPECS.put(type, new Spec(type, primary, true, false, true, label, List.of(refresh), also));
     }
 
     /** Mutation sensible qui invalide malgré tout des catalogues (spawn d'entité, bannissement…). */
@@ -195,6 +229,13 @@ public final class AgentActionCatalog {
         // Issue #165 : opérations purement cosmétiques sur un PNJ Citizens existant. Réutilisent
         // la permission de liaison (NPC_BIND_WRITE) : elles ne créent ni ne détruisent rien, et ne
         // touchent jamais l'identité logique RPGQuest ni les liaisons de contenu.
+        // Création complète : définition + apparition + liaison + skin, en une seule opération
+        // atomique. Elle produit les effets de TROIS permissions, donc elle les exige toutes les
+        // trois — regrouper ne doit jamais accorder un droit que l'opérateur n'a pas.
+        addOrchestratedWrite("npc.citizens.provision", Permission.NPC_SPAWN_WRITE,
+                List.of(Permission.NPC_WRITE, Permission.NPC_BIND_WRITE),
+                "Créer un PNJ (définition + apparition + liaison + skin)",
+                "npc.list", "npc.citizens.list");
         addContentWrite("npc.citizens.rename", Permission.NPC_BIND_WRITE, "Renommer le PNJ en jeu",
                 "npc.list", "npc.citizens.list");
         addContentWrite("npc.citizens.skin", Permission.NPC_BIND_WRITE, "Appliquer un skin",
@@ -499,6 +540,89 @@ public final class AgentActionCatalog {
                                 + "https://minesk.in/<identifiant> (coller le lien, pas la commande).");
                     }
                     params.put("skin_url", url);
+                }
+            }
+            case "npc.citizens.provision" -> {
+                String displayName = trim(form.get("display_name"));
+                if (displayName.isEmpty() || displayName.length() > 128 || displayName.indexOf('\n') >= 0) {
+                    return Validation.fail("Nom du PNJ manquant, trop long (128 maximum) ou multi-ligne.");
+                }
+                params.put("display_name", displayName);
+
+                // Skin optionnel. Une source renseignée sans valeur, ou l'inverse, est refusée :
+                // mieux vaut un message clair qu'une création au skin par défaut inattendu.
+                String source = trim(form.get("skin_source")).toLowerCase(java.util.Locale.ROOT);
+                String skinUrl = trim(form.get("skin_url"));
+                String skinPlayer = trim(form.get("skin_player"));
+                if (source.equals("player")) {
+                    if (!skinPlayer.isEmpty()) {
+                        if (!MINECRAFT_NAME.matcher(skinPlayer).matches()) {
+                            return Validation.fail("Pseudo Minecraft invalide : 3 à 16 caractères, "
+                                    + "lettres, chiffres et « _ » uniquement.");
+                        }
+                        params.put("skin_source", "player");
+                        params.put("skin_player", skinPlayer);
+                    }
+                } else if (!skinUrl.isEmpty()) {
+                    if (!MINESKIN_URL.matcher(skinUrl).matches()) {
+                        return Validation.fail("Lien MineSkin invalide. Format attendu : "
+                                + "https://minesk.in/<identifiant> (coller le lien, pas la commande).");
+                    }
+                    params.put("skin_source", "url");
+                    params.put("skin_url", skinUrl);
+                }
+
+                // Localisation optionnelle, mais jamais partielle : monde ET X/Y/Z ensemble.
+                String world = trim(form.get("world"));
+                String rawX = trim(form.get("x"));
+                String rawY = trim(form.get("y"));
+                String rawZ = trim(form.get("z"));
+                boolean anyLocation = !world.isEmpty() || !rawX.isEmpty() || !rawY.isEmpty() || !rawZ.isEmpty();
+                boolean allLocation = !world.isEmpty() && !rawX.isEmpty() && !rawY.isEmpty() && !rawZ.isEmpty();
+                if (anyLocation && !allLocation) {
+                    return Validation.fail("Localisation incomplète : renseigner le monde ET X, Y, Z "
+                            + "ensemble, ou laisser les quatre champs vides pour un placement "
+                            + "automatique près du Guide.");
+                }
+                if (allLocation) {
+                    if (!WORLD_NAME.matcher(world).matches()) {
+                        return Validation.fail("Nom de monde invalide.");
+                    }
+                    Double x = finite(rawX);
+                    Double y = finite(rawY);
+                    Double z = finite(rawZ);
+                    if (x == null || y == null || z == null) {
+                        return Validation.fail("Coordonnées X / Y / Z non numériques.");
+                    }
+                    if (Math.abs(x) > HORIZONTAL_LIMIT || Math.abs(z) > HORIZONTAL_LIMIT) {
+                        return Validation.fail("X / Z hors du bord de monde (±" + (long) HORIZONTAL_LIMIT + ").");
+                    }
+                    if (y < Y_MIN || y > Y_MAX) {
+                        return Validation.fail("Y hors bornes de sécurité (" + (long) Y_MIN + " à "
+                                + (long) Y_MAX + ").");
+                    }
+                    params.put("world", world);
+                    params.put("x", trimNumber(x));
+                    params.put("y", trimNumber(y));
+                    params.put("z", trimNumber(z));
+                }
+
+                // Orientation optionnelle : absente = 0 / 0, documenté dans le formulaire.
+                String rawYaw = trim(form.get("yaw"));
+                String rawPitch = trim(form.get("pitch"));
+                if (!rawYaw.isEmpty()) {
+                    Double yawValue = finite(rawYaw);
+                    if (yawValue == null) {
+                        return Validation.fail("Yaw non numérique.");
+                    }
+                    params.put("yaw", trimNumber(yawValue));
+                }
+                if (!rawPitch.isEmpty()) {
+                    Double pitchValue = finite(rawPitch);
+                    if (pitchValue == null || pitchValue < -90.0 || pitchValue > 90.0) {
+                        return Validation.fail("Pitch manquant ou hors bornes (-90 à 90).");
+                    }
+                    params.put("pitch", trimNumber(pitchValue));
                 }
             }
             case "npc.citizens.create" -> {

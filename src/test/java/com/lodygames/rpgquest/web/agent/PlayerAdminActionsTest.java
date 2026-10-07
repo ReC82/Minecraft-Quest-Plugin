@@ -50,6 +50,7 @@ class PlayerAdminActionsTest {
         actions = new BukkitAgentActions(plugin, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null, null, null,
                 () -> "wild",
+                () -> new com.lodygames.rpgquest.config.HubConfig("world_hub"),
                 new ServerOpsService(plugin, new ServerLogBuffer(50), Optional::empty),
                 null,
                 () -> hubTarget,

@@ -328,6 +328,38 @@ public interface AgentActions {
                               int total, int available, int linked) {
     }
 
+    /**
+     * Résultat d'un approvisionnement complet de PNJ : définition + apparition + liaison + skin.
+     *
+     * @param npcId      identifiant logique RPGQuest créé, ou {@code null} si rien n'a été créé
+     * @param citizensId identifiant Citizens obtenu, ou {@code null}
+     * @param world      position réellement retenue (jamais celle demandée si elle a été refusée)
+     * @param skinNote   ce qui a été fait du skin, dit explicitement même en cas de non-application
+     * @param rolledBack un échec a-t-il été nettoyé intégralement
+     */
+    record CitizensProvisionResult(boolean ok, String code, String message, String npcId, Integer citizensId,
+                                   String displayName, String world, Double x, Double y, Double z,
+                                   Float yaw, Float pitch, String skinNote, boolean rolledBack,
+                                   List<String> effects) {
+        static CitizensProvisionResult reject(String code, String message) {
+            return new CitizensProvisionResult(false, code, message, null, null, null, null, null, null,
+                    null, null, null, null, false, List.of());
+        }
+    }
+
+    /**
+     * Crée un PNJ de bout en bout depuis le panel : définition RPGQuest, apparition Citizens,
+     * liaison, et skin optionnel — en réutilisant le parcours canonique existant, jamais un second
+     * système. Position explicite si {@code world} est fourni, sinon recherche d'un emplacement
+     * libre et sûr près du Guide du Hub.
+     *
+     * <p>Atomique du point de vue de l'appelant : tout échec nettoie <strong>uniquement</strong> ce
+     * que cette tentative a créé.</p>
+     */
+    CompletableFuture<CitizensProvisionResult> citizensProvision(
+            String displayName, String skinValue, boolean skinByPlayerName,
+            String world, Double x, Double y, Double z, Float yaw, Float pitch);
+
     /** Catalogue Citizens <strong>physique</strong> (séparé du catalogue logique {@code npc.list}). */
     CompletableFuture<CitizensRosterView> citizensRoster();
 

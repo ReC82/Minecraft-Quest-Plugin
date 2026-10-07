@@ -89,6 +89,7 @@ public final class AgentActionExecutor {
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
                 case NPC_CITIZENS_CREATE -> npcCitizensCreate(action);
+                case NPC_CITIZENS_PROVISION -> npcCitizensProvision(action);
                 case NPC_CITIZENS_RENAME -> npcCitizensRename(action);
                 case NPC_CITIZENS_SKIN -> npcCitizensSkin(action);
                 case DIALOGUE_LIST -> dialogueList(action);
@@ -1321,6 +1322,56 @@ public final class AgentActionExecutor {
     }
 
     /** {@code npc.citizens.create} (#81 phase 2) : paramètres métier stricts, aucun spawn si un contrôle échoue. */
+    /**
+     * {@code npc.citizens.provision} : création complète d'un PNJ — définition, apparition, liaison
+     * et skin optionnel — en une seule opération atomique. La position est optionnelle : fournie,
+     * elle est validée telle quelle ; omise, le moteur cherche un emplacement sûr près du Guide.
+     */
+    private CompletableFuture<AgentActionOutcome> npcCitizensProvision(AgentAction action) {
+        String displayName = trimOrNull(action.param("display_name"));
+        if (displayName == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « display_name » manquant."));
+        }
+        boolean byPlayerName = "player".equalsIgnoreCase(trimOrNull(action.param("skin_source")));
+        String skin = byPlayerName
+                ? trimOrNull(action.param("skin_player"))
+                : trimOrNull(action.param("skin_url"));
+
+        String world = trimOrNull(action.param("world"));
+        Double x = parseFinite(action.param("x"));
+        Double y = parseFinite(action.param("y"));
+        Double z = parseFinite(action.param("z"));
+        Double yaw = action.param("yaw") == null || action.param("yaw").isBlank()
+                ? null : parseFinite(action.param("yaw"));
+        Double pitch = action.param("pitch") == null || action.param("pitch").isBlank()
+                ? null : parseFinite(action.param("pitch"));
+
+        return actions.citizensProvision(displayName, skin, byPlayerName, world, x, y, z,
+                        yaw == null ? null : yaw.floatValue(), pitch == null ? null : pitch.floatValue())
+                .thenApply(r -> {
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    details.put("code", r.code());
+                    details.put("npc_id", r.npcId() == null ? "" : r.npcId());
+                    details.put("citizens_id", r.citizensId() == null ? -1 : r.citizensId());
+                    details.put("display_name", r.displayName() == null ? "" : r.displayName());
+                    details.put("world", r.world() == null ? "" : r.world());
+                    details.put("x", r.x() == null ? 0.0 : r.x());
+                    details.put("y", r.y() == null ? 0.0 : r.y());
+                    details.put("z", r.z() == null ? 0.0 : r.z());
+                    details.put("skin_note", r.skinNote() == null ? "" : r.skinNote());
+                    details.put("rolled_back", r.rolledBack());
+                    details.put("effects", r.effects());
+                    if (r.ok()) {
+                        return AgentActionOutcome.success(action.id(),
+                                r.citizensId() == null ? r.code() : String.valueOf(r.citizensId()),
+                                r.message(), details);
+                    }
+                    return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, r.code(), r.message(),
+                            details, java.time.Instant.now());
+                })
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
     private CompletableFuture<AgentActionOutcome> npcCitizensCreate(AgentAction action) {
         String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
         if (npcId == null || !NPC_ID.matcher(npcId).matches()) {

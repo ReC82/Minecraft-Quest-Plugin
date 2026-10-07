@@ -722,6 +722,23 @@ public final class PanelApp {
      * les quelques relevés {@code *.list} dont dépendent les diagnostics (jamais dix). Feedback via
      * toast (#93). Aucun recalcul serveur ici : l'agent renverra les catalogues à jour.
      */
+    /**
+     * Toutes les permissions d'une action sont-elles détenues ?
+     *
+     * <p>Une action qui orchestre plusieurs effets (créer une définition, faire apparaître un PNJ,
+     * poser un skin) en exige <strong>l'ensemble</strong> : les regrouper ne doit jamais accorder
+     * implicitement un droit que l'opérateur n'a pas. Voir
+     * {@code AgentActionCatalog.Spec#requiredPermissions()}.</p>
+     */
+    private boolean hasAllPermissions(Session session, com.lodygames.rpgquest.panel.agent.AgentActionCatalog.Spec spec) {
+        for (com.lodygames.rpgquest.panel.authz.Permission required : spec.requiredPermissions()) {
+            if (!permissions.can(session.effective(), required)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private void handleDiagnosticsRefresh(HttpExchange exchange) throws IOException {
         Optional<Session> maybe = requireSession(exchange);
         if (maybe.isEmpty()) {
@@ -753,7 +770,7 @@ public final class PanelApp {
         int enqueued = 0;
         for (String type : com.lodygames.rpgquest.panel.diag.DiagnosticsService.REFRESH_TYPES) {
             var spec = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.spec(type);
-            if (spec.isEmpty() || !permissions.can(session.effective(), spec.get().permission())) {
+            if (spec.isEmpty() || !hasAllPermissions(session, spec.get())) {
                 continue;
             }
             String id = agentStore.createAction(agentId, type, Map.of(), session.username());
@@ -2282,7 +2299,7 @@ public final class PanelApp {
             Http.redirect(exchange, withError(returnPath, agentId, null, "Type d'action non autorisé."));
             return;
         }
-        if (!permissions.can(session.effective(), spec.get().permission())) {
+        if (!hasAllPermissions(session, spec.get())) {
             audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED", "permission manquante", rid);
             forbidden(exchange, session, returnPath);
             return;

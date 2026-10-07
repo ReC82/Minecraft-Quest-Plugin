@@ -964,3 +964,7 @@ tr[hidden]{display:none}
 @media(max-width:575.98px){
   .npc-loc{margin-left:0;margin-top:2px;display:flex}
 }
+
+/* Trois champs côte à côte (X/Y/Z, yaw/pitch) — empilés sur téléphone (#165). */
+.form-grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+@media(max-width:575.98px){ .form-grid3{grid-template-columns:1fr} }

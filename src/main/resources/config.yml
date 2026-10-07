@@ -191,6 +191,21 @@ hub:
   # avant ou après RPGQuest (ex. par Multiverse-Core).
   world: world_hub
 
+  # Identifiant LOGIQUE du PNJ Guide (fichier npcs/<id>.yml), pas son nom affiché : c'est le repère
+  # autour duquel un PNJ créé depuis le Control Panel sans position explicite est placé. Le renommer
+  # en jeu ne casse donc rien.
+  guide-npc-id: guide
+
+  # Recherche d'un emplacement libre et sûr autour du Guide (création de PNJ sans position).
+  # Toujours bornée : la recherche s'arrête et le dit plutôt que d'explorer indéfiniment.
+  placement:
+    # Rayon horizontal exploré, en blocs (1 à 64).
+    search-radius: 8
+    # Écart vertical exploré autour de la hauteur du Guide, en blocs (0 à 32).
+    vertical-radius: 3
+    # Nombre maximum d'emplacements examinés (1 à 100000).
+    max-attempts: 2000
+
 travel:
   # Nom exact du monde d'exploration (voir config.TravelConfig) : la Rune de rappel n'y fonctionne
   # que là, l'avertissement d'entrée ne concerne que les portails qui y mènent, et c'est le seul

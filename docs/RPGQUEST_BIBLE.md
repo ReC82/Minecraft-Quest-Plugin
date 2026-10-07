@@ -2309,6 +2309,83 @@ le nom en jeu à côté du nom de définition **quand ils diffèrent** (les deux
 Sans relevé Citizens récent, le champ est **laissé vide** avec la raison — jamais prérempli avec un
 autre nom.
 
+#### Créer un PNJ complet depuis le panel (#165)
+
+Fiche PNJ → **« Créer un PNJ »**. Une **seule** action agent,
+`npc.citizens.provision`, qui enchaîne la **définition RPGQuest**, l'**apparition**
+Citizens, leur **liaison** et le **skin** optionnel, en réutilisant le parcours canonique
+existant (`CitizensSpawnPlanner` / `CitizensSpawnCoordinator`) — jamais un second système.
+
+**Permissions : l'union, jamais un droit implicite.** L'action produit les effets de trois
+permissions, donc elle les exige toutes les trois (`NPC_WRITE`, `NPC_SPAWN_WRITE`,
+`NPC_BIND_WRITE`). Le catalogue des actions sait désormais déclarer des permissions
+**supplémentaires** (`Spec#alsoRequires`), vérifiées à l'exécution comme au rendu : le bouton
+n'apparaît pas si l'une manque, et une requête forgée est refusée. Regrouper des effets ne doit
+jamais accorder un droit que l'opérateur n'a pas.
+
+**Identifiant déduit du nom.** Aucun identifiant technique n'est demandé : il est dérivé du nom
+(« Bob le Bûcheron » → `bob_le_bucheron`), sans accents ni balises de couleur. C'est aussi le
+**garde-fou anti-doublon** : un double clic retombe sur le même identifiant, et la seconde
+tentative est refusée parce que la définition existe déjà.
+
+**Localisation optionnelle, jamais partielle.** Monde **et** X/Y/Z ensemble, ou les quatre vides.
+Une saisie partielle est refusée des deux côtés (panel et plugin). Les coordonnées sont validées
+(nombres finis, bords de monde, bornes réelles du monde chargé), et la création n'est jamais
+déplacée en silence ailleurs.
+
+**Sans localisation : placement près du Guide.** Le Guide est identifié par sa **définition
+stable** (`hub.guide-npc-id`, défaut `guide`), jamais par son nom affiché — le renommer ne casse
+rien. La recherche est portée par `NpcPlacementPlanner`, classe **pure** : le monde n'y est vu qu'à
+travers une interface `Probe`, ce qui rend testables les cas qu'on ne peut pas provoquer à la
+demande (vide intégral, lave partout, portail, PNJ superposés, budget épuisé). Elle visite les
+candidats par **distance totale croissante** (un emplacement à côté est préféré à un emplacement
+perché), exige un **sol plein** et **deux cases libres** pour le corps, évite liquides, portails,
+vide et chevauchement avec un autre PNJ, et **ne casse ni ne pose aucun bloc**. Les bornes sont
+configurables : `hub.placement.search-radius` (1–64), `vertical-radius` (0–32), `max-attempts`
+(1–100000).
+
+Chaque impossibilité a son code et son message : Guide absent, Guide non lié, position du Guide
+inconnue, Guide hors du Hub configuré, Hub non chargé, aucun emplacement sûr. **Aucun PNJ partiel
+n'est créé** dans ces cas.
+
+**Skin optionnel, formats réellement supportés.** Deux sources, et seulement deux : un lien
+`https://minesk.in/<identifiant>` ou un **pseudo Minecraft** (`[A-Za-z0-9_]{3,16}`). Le format est
+validé **avant** toute création, donc une URL invalide ne laisse jamais un PNJ derrière elle.
+RPGQuest ne fait **aucun appel réseau** : Citizens résout et télécharge lui-même, de façon
+asynchrone — un succès signifie « demande transmise ». Champ vide = apparence par défaut de
+Citizens, sans aucun appel. Si Citizens refuse le skin après la création, le PNJ existe et le
+message le **dit** au lieu de laisser croire que tout s'est bien passé.
+
+**Nettoyage compensatoire, et gestion de ses propres échecs.** Si l'apparition échoue, la
+définition que cette tentative vient de créer est retirée — mais jamais à l'aveugle. Trois issues,
+chacune avec son code :
+
+| Code | Situation |
+|---|---|
+| `PROVISION_ROLLED_BACK` | nettoyage complet : plus rien de cette tentative ne subsiste |
+| `PROVISION_CLEANUP_SKIPPED` | une liaison Citizens référence déjà cet identifiant (une autre tentative a abouti) → **rien n'est supprimé**, et c'est dit |
+| `PROVISION_CLEANUP_INCOMPLETE` | le retrait a échoué → le message nomme exactement ce qui reste à retirer à la main |
+
+Un **échec de skin** ne détruit pas un PNJ correct : il est créé et lié, le résultat porte le code
+`PROVISIONED_SKIN_FAILED`, et le message dit où réappliquer le skin. Détruire un PNJ valide parce
+qu'une texture n'a pas été acceptée serait un nettoyage disproportionné.
+
+**Doubles clics et requêtes rejouées.** Trois niveaux, du plus fiable au plus cosmétique :
+
+1. une action **rejouée** (même identifiant d'action) renvoie le résultat mémorisé sans
+   réexécution (`ProcessedActionCache`) ;
+2. un **double clic** produit deux actions distinctes : `NpcDefinitionStore#create` écrit avec
+   `CREATE_NEW`, donc le système de fichiers arbitre et une seule réussit. Auparavant un
+   `exists()` suivi d'une écriture `REPLACE_EXISTING` laissait les deux passer — la seconde
+   écrasait la première, puis son nettoyage supprimait la définition que la première venait de
+   créer. Couvert par un test à 8 créations concurrentes ;
+3. côté navigateur, le bouton se désactive à l'envoi (`data-submit-once`) — confort seulement, la
+   garantie vient du serveur.
+
+**Après succès**, la réponse porte l'identifiant RPGQuest, l'identifiant Citizens, le nom et la
+**position réellement retenue** ; l'action déclare `npc.list` et `npc.citizens.list` en relevés de
+suivi, donc la fiche et la liste se réactualisent.
+
 ### Hache du kit interceptée par WorldEdit (issue #192) — correctif de **configuration serveur**
 
 Symptôme en jeu : casser une bûche avec la **hache en bois du kit** (#26) affiche « Première position définie en (…) » et ne casse pas le bloc.

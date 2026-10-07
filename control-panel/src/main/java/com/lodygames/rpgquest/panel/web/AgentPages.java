@@ -1942,9 +1942,18 @@ public final class AgentPages {
         sb.append(compactRefresh(session, agentId, "npc.list", "Catalogue RPGQuest", "btn-outline-primary"));
         sb.append(compactRefresh(session, agentId, "npc.citizens.list", "Citizens", "btn-outline-secondary"));
         if (canWrite) {
-            sb.append("<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+            sb.append("<button class=\"btn btn-sm btn-outline-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
                     + "data-bs-target=\"#npc-new-def\" aria-expanded=\"false\" aria-controls=\"npc-new-def\">")
                     .append(Icons.icon("plus")).append("Nouvelle définition PNJ</button>");
+        }
+        // Création complète : exige les TROIS permissions des effets produits (définition,
+        // apparition, liaison + skin). Le bouton n'apparaît pas si l'une manque — jamais un
+        // formulaire qui échouera au dernier moment, jamais un droit accordé par regroupement.
+        boolean canProvision = canWrite && canSpawn && canLink;
+        if (canProvision) {
+            sb.append("<button class=\"btn btn-sm btn-primary\" type=\"button\" data-bs-toggle=\"collapse\" "
+                    + "data-bs-target=\"#npc-provision\" aria-expanded=\"false\" aria-controls=\"npc-provision\">")
+                    .append(Icons.icon("npc")).append("Créer un PNJ</button>");
         }
         sb.append("</div>");
         if (canWrite) {
@@ -1952,6 +1961,17 @@ public final class AgentPages {
             sb.append(npcDefForm(session, agentId, "create", "", "", "", "", true,
                     dialogueSelectOptions(agentId), "npc-new-def"));
             sb.append("</div></div>");
+        }
+        if (canProvision) {
+            sb.append("<div class=\"collapse\" id=\"npc-provision\"><div class=\"card card-body npc-formcard\">");
+            sb.append(npcProvisionForm(session, agentId, spawnWorlds));
+            sb.append("</div></div>");
+        } else if (canWrite) {
+            sb.append("<p class=\"form-text\">").append(Icons.icon("warning"))
+                    .append("La création complète d'un PNJ (définition + apparition + liaison + skin) "
+                            + "exige aussi les droits d'<strong>apparition</strong> et de "
+                            + "<strong>liaison Citizens</strong>. Avec les droits actuels, seule la "
+                            + "définition est possible — elle devra être liée par quelqu'un d'autre.</p>");
         }
 
         Map<String, String> questTitles = titleIndex(
@@ -2842,6 +2862,133 @@ public final class AgentPages {
         sb.append(mutationConsent("quest.giver.set", "",
                 "La quête choisie sera donnée par « " + npcId + " ». Réversible en la réattribuant à un autre PNJ."));
         sb.append("<button class=\"btn\" type=\"submit\">Attribuer</button></form>");
+        return sb.toString();
+    }
+
+    /**
+     * Formulaire de création complète d'un PNJ (définition + apparition + liaison + skin).
+     *
+     * <p>Une seule action agent, donc un seul geste et un rollback atomique : si l'apparition
+     * échoue, la définition que cette tentative vient de créer est retirée. Le formulaire n'est
+     * rendu que si l'opérateur détient les trois permissions correspondantes.</p>
+     *
+     * <p>L'identifiant technique n'est pas demandé : il est <strong>déduit du nom</strong>, ce qui
+     * sert aussi de garde-fou anti-doublon (un double clic retombe sur le même identifiant et la
+     * seconde tentative est refusée).</p>
+     */
+    private String npcProvisionForm(Session session, String agentId, List<String> spawnWorlds) {
+        String uid = "npc-prov";
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("npc"))
+                .append("Créer un PNJ</p>");
+        sb.append("<p class=\"form-text\">Crée en une seule opération : la <strong>définition "
+                + "RPGQuest</strong>, le <strong>PNJ Citizens</strong>, leur <strong>liaison</strong>, et "
+                + "le skin si vous en donnez un. En cas d'échec, ce qui vient d'être créé est retiré — "
+                + "jamais de PNJ à moitié créé.</p>");
+        sb.append(formStart(session, agentId, "npc.citizens.provision", "/npcs", "")
+                .replaceFirst("<form ", "<form data-submit-once "));
+        sb.append("<p class=\"form-text\">").append(Icons.icon("check"))
+                .append("Droits requis : <strong>définition</strong>, <strong>apparition</strong> et "
+                        + "<strong>liaison Citizens</strong> (ce dernier couvre aussi le skin). Les trois "
+                        + "sont vérifiés à l'envoi : ce formulaire n'accorde aucun droit supplémentaire.</p>");
+
+        sb.append(StyleField.render("display_name", uid + "-name", "Nom du PNJ", "", true,
+                "Nom affiché aux joueurs. Choisir une couleur et des styles ci-dessus — aucune balise "
+                + "à écrire. <strong>L'identifiant technique en est déduit</strong> (« Bob le Bûcheron » "
+                + "donne <code>bob_le_bucheron</code>) : les accents et les balises de couleur n'y "
+                + "entrent pas, et un nom déjà utilisé est refusé plutôt que dupliqué."
+                + "<span class=\"fmeta\"><span><b>Exemple</b> Marchand de Lune</span>"
+                + "<span><b>Défaut</b> Obligatoire</span></span>"));
+
+        // ---- Skin, optionnel ----
+        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Apparence (optionnelle)</p>");
+        sb.append("<label for=\"").append(uid).append("-src\">Source du skin</label>");
+        sb.append("<select class=\"form-select\" id=\"").append(uid).append("-src\" name=\"skin_source\">")
+                .append("<option value=\"url\" selected>Lien MineSkin</option>")
+                .append("<option value=\"player\">Pseudo Minecraft</option></select>");
+        sb.append(fieldHelp("Choisit lequel des deux champs ci-dessous est utilisé. Laisser les deux vides "
+                        + "pour ne pas poser de skin.",
+                "Lien MineSkin pour une texture sur mesure, pseudo pour reprendre un skin existant",
+                "Lien MineSkin", "aucun skin posé"));
+        sb.append("<label for=\"").append(uid).append("-url\">Lien MineSkin</label>");
+        sb.append("<input class=\"form-control\" id=\"").append(uid).append("-url\" type=\"url\" ")
+                .append("name=\"skin_url\" pattern=\"https://minesk\\.in/[A-Za-z0-9]{8,64}\">");
+        sb.append(fieldHelp("Seul le format <code>https://minesk.in/&lt;identifiant&gt;</code> est accepté — "
+                        + "pas la commande <code>/npc skin --url …</code>, pas une autre URL. RPGQuest ne "
+                        + "télécharge rien lui-même : Citizens résout le lien, de façon asynchrone. Un lien "
+                        + "invalide est refusé <strong>avant</strong> toute création, donc sans laisser de PNJ.",
+                "https://minesk.in/a1b2c3d4", "aucun",
+                "le PNJ garde l'apparence par défaut de Citizens pour un PNJ joueur"));
+        sb.append("<label for=\"").append(uid).append("-player\">Pseudo Minecraft</label>");
+        sb.append("<input class=\"form-control\" id=\"").append(uid).append("-player\" type=\"text\" ")
+                .append("name=\"skin_player\" maxlength=\"16\" pattern=\"[A-Za-z0-9_]{3,16}\" ")
+                .append("autocomplete=\"off\">");
+        sb.append(fieldHelp("Pseudo du compte dont le skin doit être repris. Seule la <strong>forme</strong> "
+                        + "est vérifiée (3 à 16 caractères, lettres, chiffres, « _ ») : si Citizens ne "
+                        + "résout pas le compte, le PNJ est créé et le skin signalé comme non appliqué.",
+                "Notch", "aucun", "le PNJ garde l'apparence par défaut"));
+        sb.append("</div>");
+
+        // ---- Localisation, optionnelle mais jamais partielle ----
+        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Localisation (optionnelle)</p>");
+        sb.append("<p class=\"form-text\">Laisser les <strong>quatre</strong> champs vides pour un "
+                + "placement automatique près du <strong>Guide</strong> du Hub. Sinon, renseigner le monde "
+                + "<strong>et</strong> X, Y, Z <strong>ensemble</strong> : une saisie partielle est "
+                + "refusée, et la création n'est jamais déplacée en silence dans un autre monde ou à une "
+                + "autre position.</p>");
+        sb.append("<label for=\"").append(uid).append("-world\">Monde</label>");
+        sb.append("<select class=\"form-select\" id=\"").append(uid).append("-world\" name=\"world\">")
+                .append("<option value=\"\" selected>— placement automatique près du Guide —</option>");
+        for (String w : spawnWorlds) {
+            sb.append("<option value=\"").append(Http.esc(w)).append("\">").append(Http.esc(w))
+                    .append("</option>");
+        }
+        sb.append("</select>");
+        sb.append(fieldHelp("Mondes réellement chargés sur le serveur, annoncés par le heartbeat. Un monde "
+                        + "inconnu ou non chargé est refusé.",
+                spawnWorlds.isEmpty() ? "world_hub" : spawnWorlds.get(0),
+                "placement automatique près du Guide",
+                "le moteur cherche un emplacement libre et sûr autour du Guide, dans le Hub configuré"));
+        sb.append("<div class=\"form-grid3\">");
+        for (String[] axis : new String[][] {{"x", "X"}, {"y", "Y"}, {"z", "Z"}}) {
+            sb.append("<div><label for=\"").append(uid).append("-").append(axis[0]).append("\">")
+                    .append(axis[1]).append("</label>")
+                    .append("<input class=\"form-control\" id=\"").append(uid).append("-").append(axis[0])
+                    .append("\" type=\"number\" step=\"0.5\" name=\"").append(axis[0]).append("\"></div>");
+        }
+        sb.append("</div>");
+        sb.append(fieldHelp("Coordonnées du bloc où le PNJ apparaît. Validées : nombres finis, X/Z dans les "
+                        + "bords du monde, Y dans les bornes réelles du monde chargé.",
+                "12.5 / 70 / -33.5", "aucune", "placement automatique près du Guide"));
+        sb.append("<div class=\"form-grid3\">");
+        sb.append("<div><label for=\"").append(uid).append("-yaw\">Yaw</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid)
+                .append("-yaw\" type=\"number\" step=\"1\" name=\"yaw\"></div>");
+        sb.append("<div><label for=\"").append(uid).append("-pitch\">Pitch</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid)
+                .append("-pitch\" type=\"number\" step=\"1\" name=\"pitch\"></div>");
+        sb.append("</div>");
+        sb.append(fieldHelp("Orientation du regard. <strong>Yaw</strong> : 0 = sud, 90 = ouest, 180 = nord, "
+                        + "-90 = est. <strong>Pitch</strong> : 0 = horizontal, -90 = vers le haut, "
+                        + "90 = vers le bas (bornes -90 à 90).",
+                "yaw 180 pour un PNJ qui regarde vers le nord", "0 pour les deux",
+                "le PNJ regarde vers le sud, à l'horizontale"));
+        sb.append("</div>");
+
+        sb.append(mutationConsent("npc.citizens.provision", "",
+                "Une définition RPGQuest sera créée, un PNJ Citizens fera son apparition et les deux "
+                        + "seront liés. Réversible : le PNJ peut être supprimé ensuite."));
+        sb.append("<button class=\"btn btn-primary\" type=\"submit\" data-busy-label=\"Création en cours…\">")
+                .append(Icons.icon("save")).append("Créer le PNJ</button>");
+        sb.append(fieldHelp("Un <strong>double clic</strong> ne crée jamais deux PNJ : le bouton se "
+                        + "désactive à l'envoi, et surtout le serveur arbitre — l'identifiant étant déduit "
+                        + "du nom, la seconde tentative est refusée sans rien créer ni rien supprimer. "
+                        + "Une requête rejouée renvoie le résultat de la première.",
+                null, "—", null));
+        sb.append(fieldHelp("Après succès, la réponse indique l'identifiant RPGQuest, l'identifiant "
+                        + "Citizens, le nom et la <strong>position réellement retenue</strong> ; la fiche et "
+                        + "la liste se réactualisent au relevé suivant, déclenché automatiquement.",
+                null, "—", null));
+        sb.append("</form>");
         return sb.toString();
     }
 

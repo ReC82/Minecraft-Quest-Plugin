@@ -100,6 +100,14 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<CitizensProvisionResult> citizensProvision(
+            String displayName, String skinValue, boolean skinByPlayerName,
+            String world, Double x, Double y, Double z, Float yaw, Float pitch) {
+        return CompletableFuture.completedFuture(
+                CitizensProvisionResult.reject("UNSUPPORTED", "non implémenté dans ce stub"));
+    }
+
+    @Override
     public CompletableFuture<MutationResult> citizensSkin(String npcId, String value, boolean byPlayerName) {
         return unsupported();
     }

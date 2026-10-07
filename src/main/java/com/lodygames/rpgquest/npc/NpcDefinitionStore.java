@@ -33,13 +33,41 @@ public final class NpcDefinitionStore {
         }
     }
 
+    /**
+     * Crée une définition, en échouant si elle existe déjà.
+     *
+     * <p><strong>Atomique.</strong> Le fichier est créé avec {@code CREATE_NEW} : c'est le système
+     * de fichiers qui arbitre, pas un {@code exists()} suivi d'une écriture. Deux créations
+     * simultanées du même identifiant — un double clic, une requête rejouée, deux administrateurs —
+     * ne peuvent donc pas réussir toutes les deux. Sans cela, la seconde écrasait la première,
+     * puis son propre nettoyage supprimait la définition que la première venait légitimement de
+     * créer.</p>
+     */
     public Result create(NpcDefinition definition) {
         Path target = directory.resolve(definition.id() + ".yml");
-        if (Files.exists(target) || Files.exists(directory.resolve(definition.id() + ".yaml"))) {
+        if (Files.exists(directory.resolve(definition.id() + ".yaml"))) {
             return Result.fail("EXISTS", "Une définition « " + definition.id() + " » existe déjà — "
                     + "utiliser la modification, jamais l'écrasement.");
         }
-        return writeAndReload(target, definition, "CREATED", "Définition PNJ « " + definition.id() + " » créée.");
+        try {
+            Files.createDirectories(directory);
+            Files.writeString(target, NpcDefinitionYaml.render(definition), StandardCharsets.UTF_8,
+                    java.nio.file.StandardOpenOption.CREATE_NEW, java.nio.file.StandardOpenOption.WRITE);
+        } catch (java.nio.file.FileAlreadyExistsException exists) {
+            return Result.fail("EXISTS", "Une définition « " + definition.id() + " » existe déjà — "
+                    + "utiliser la modification, jamais l'écrasement.");
+        } catch (IOException | UncheckedIOException e) {
+            return Result.fail("ERROR", "Écriture impossible : " + e.getMessage());
+        }
+        NpcLoadReport report = loader.loadDirectory(directory);
+        boolean present = report.loaded().stream().anyMatch(d -> d.id().equals(definition.id()));
+        if (!present) {
+            return new Result(false, "ERROR",
+                    "Définition « " + definition.id() + " » écrite mais non rechargeable — à vérifier.",
+                    target.getFileName().toString(), report);
+        }
+        return new Result(true, "CREATED", "Définition PNJ « " + definition.id() + " » créée.",
+                target.getFileName().toString(), report);
     }
 
     public Result update(NpcDefinition definition) {
@@ -48,6 +76,30 @@ public final class NpcDefinitionStore {
             return Result.fail("NOT_FOUND", "Aucune définition « " + definition.id() + " » à modifier.");
         }
         return writeAndReload(target, definition, "UPDATED", "Définition PNJ « " + definition.id() + " » modifiée.");
+    }
+
+    /**
+     * Supprime le fichier de définition d'un PNJ — <strong>réservé au rollback</strong> d'une
+     * création qui vient d'échouer, jamais une suppression de contenu à la demande.
+     *
+     * <p>Ne supprime que le fichier dont l'id correspond exactement, et ne touche à rien d'autre :
+     * ni liaison, ni dialogue, ni quête. Un fichier absent n'est pas une erreur (le rollback doit
+     * rester idempotent).</p>
+     */
+    public Result deleteForRollback(String id) {
+        Path target = existingFileFor(id);
+        if (target == null) {
+            return new Result(true, "ABSENT", "Aucune définition « " + id + " » à retirer.", null, null);
+        }
+        try {
+            Files.delete(target);
+        } catch (IOException e) {
+            return Result.fail("DELETE_FAILED",
+                    "Définition « " + id + " » non supprimée : " + e.getMessage());
+        }
+        NpcLoadReport report = loader.loadDirectory(directory);
+        return new Result(true, "DELETED", "Définition PNJ « " + id + " » retirée (rollback).",
+                target.getFileName().toString(), report);
     }
 
     public Optional<NpcDefinition> find(String id) {

@@ -216,6 +216,82 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-07 (soirée — #161 / #26 partie B / #24 : entrée dans le Wild et état du Wild)
+Branche de départ: feature/169-special-mobs-boss @ 21fea61 (branche d'intégration réelle — l'audit a
+  confirmé que feat/control-panel-admin-tools y est déjà intégrée ; CLAUDE.md mentionne encore
+  feature/23-mod-prototype, qui n'est plus la bonne)
+Étape de départ: tickets #161, #26 et #24 traités ensemble (ils se recouvrent), avec des décisions
+  fonctionnelles explicites reçues en conversation qui MODIFIENT les tickets : #161 devient la
+  référence de l'UX d'entrée dans le Wild, la partie B de #26 est révisée pour INTERDIRE toute
+  inspection d'inventaire, et l'état du Wild (#24) se demande au Garde au lieu d'être injecté dans
+  l'avertissement du portail. Autorisations : coder, tester, commit, push, déployer DEV, redémarrer.
+  Aucun merge.
+Étapes terminées:
+(1) DONE — #161 : travel.WildEntryWarningService réécrit. L'ancienne version LISAIT L'INVENTAIRE
+  (recherche d'une Rune de rappel) et n'avertissait que les joueurs sans Rune : comportement,
+  documentation et tests retirés. Avertissement générique identique pour tous, trois actions
+  explicites, fermeture de fenêtre = annulation (l'API Dialog de Paper n'expose aucun rappel de
+  fermeture : aucune détection n'a été simulée, simplement aucune action par défaut). allowEntry
+  renvoie toujours false pour le Wild et le service prend la main, la préférence vivant en base.
+(2) DONE — Option « ne plus afficher » persistée dans player_variables (WILD_ENTRY_WARNING_HIDDEN,
+  AUCUNE migration), écrite uniquement par le bouton « Entrer et ne plus afficher » — mémorisation
+  sans départ réel structurellement impossible. resetnew la rétablit sans code dédié.
+(3) DONE — Jeton inFlight unique (lecture + départ), relâché dès l'affichage pour qu'une fermeture
+  silencieuse ne bloque jamais l'accès ; départ au tick suivant pour que le message d'attente parte
+  AVANT la génération de chunks ; joueur relu avant la TP (aucune TP tardive) ; onQuit relâche.
+  Ancien cooldown anti-spam de 4 s SUPPRIMÉ : l'anti-boucle du listener suffit et n'empêche pas de
+  ressortir/rentrer volontairement (verrouillé par un test du listener).
+(4) DONE — Faux succès corrigé : WorldPortalTeleportListener envoyait « Téléportation réussie. »
+  même quand Player#teleport renvoyait false. Message d'échec explicite désormais.
+(5) DONE — Diagnostic de latence : RandomSafeLocationFinder.SearchMetrics (tentatives + temps
+  getChunkAt) et ligne [TP-LATENCY] séparant évaluation / chunks / téléportation. MESURE SEULE :
+  aucun contrôle de sécurité allégé, RANDOM_SAFE et le répit de 40 ticks inchangés.
+(6) DONE — #24 : travel.WildConditionsService en lecture pure (jour/nuit depuis getTime() + bornes
+  12300/23850, volontairement INDÉPENDANT de la météo car World#isDayTime() compte un orage de midi
+  comme la nuit ; météo globale assumée comme un état du monde, jamais du biome). Exposé sans
+  commande par un choix PERMANENT du Garde, via le nouveau marqueur %wild_conditions%
+  (dialogue.DialogueTextPlaceholders, substitué au rendu, une seule passe, clé inconnue laissée
+  visible, toutes les langues traitées). Jamais injecté dans l'avertissement du portail.
+(7) DONE — #26 partie A NON TOUCHÉE (aucun fichier du kit dans le diff) ; partie B livrée sous sa
+  forme révisée par #161 ; plus aucun test ni aucune doc n'impose d'inspection d'inventaire, et un
+  test vide explicitement l'inventaire pour verrouiller la règle.
+(8) DONE — Présentation calquée sur dialogue.render : WildEntryPromptPresenter + Paper + repli chat
+  + décorateur de repli, pilotés par la préférence serveur existante dialogue.renderer.
+Tests: suite complète dans un worktree PROPRE (les fichiers de contenu non suivis du propriétaire
+  cassent CrystalHuntIntegrationTest) : plugin 1801 / 0 échec / 37 ignorés ; control-panel 722 / 0 /
+  1 ; web-api 30 / 0 / 0. ./gradlew build vert ; :compileJava/:test/:jar confirmés à jour sur le
+  commit déployé. Nouveaux : WildConditionsServiceTest (9), DialogueTextPlaceholdersTest (6),
+  WildEntryWarningServiceTest réécrit (12), +3 WorldPortalTeleportListenerTest, +2
+  RandomSafeLocationFinderTest, +1 TpTraceLoggerTest, +1 DialogueSessionEngineTest, +1
+  BundledDialoguesValidityTest.
+Branche finale: feature/161-wild-entry-ux (poussée, AUCUN merge)
+Dernier commit: 4f9af35
+Build: vert.
+Déploiement: DEV réel le 2026-10-07 19:41-19:45 — JAR b234c594… (1 935 862 o) ET
+  RPGQuest/dialogues/guard.yml via --also (obligatoire : un redéploiement de JAR ne met jamais à
+  jour un dialogue déjà présent). Version en ligne de guard.yml comparée AVANT transfert : identique
+  au dépôt, donc aucune édition Control Panel écrasée. Backup JAR 71020c82… confirmé identique au
+  JAR du lot 5. 1 joueur connecté prévenu deux fois, redémarrage RCON OK, 5 plugins verts.
+Tests manuels en attente: TC-256 (NOUVEAU, 22 points — avertissement, annulation, fermeture clavier,
+  absence de boucle, « ne plus afficher » après reconnexion ET redémarrage, relevé [TP-LATENCY],
+  état du Wild au Garde sans modification de l'heure/météo, non-régression du kit du Guide), plus
+  TC-236 à TC-255 déjà en attente.
+Blocages: aucun. LIMITES ASSUMÉES : (a) le chargement du dialogue déployé n'a PAS été constaté en
+  jeu (logs serveur inaccessibles depuis la machine de build, /dialogue open exige un joueur
+  connecté, aucun ne l'était après le redémarrage) — le fichier est néanmoins identique à celui que
+  BundledDialoguesValidityTest charge sans problème ; (b) la latence réelle n'est pas mesurable sous
+  MockBukkit (aucune génération de terrain) ; (c) le texte affirme que le PvP est autorisé dans le
+  Wild : vérifié qu'AUCUNE annulation de dégâts PvP n'existe pour ce monde, mais server.properties
+  n'est pas lisible via FTP.
+Issues: #161, #26 et #24 LAISSÉES OUVERTES. Chacune porte un critère de validation manuelle en jeu,
+  et #161 exige en plus que la latence observée soit DOCUMENTÉE — l'outil est livré, la mesure
+  demande un vrai passage. Fermeture possible dès que TC-256 passe.
+Première étape à reprendre: dérouler TC-256 (compte non OP), relever les valeurs [TP-LATENCY], puis
+  fermer les trois tickets. Si la latence est dominée par la génération de chunks, ouvrir un ticket
+  distinct pour une recherche de point d'arrivée hors du thread principal — jamais en effet de bord.
+```
+
+```text
 Date: 2026-10-07 (lot 5 — #165 : Citizens compileOnly complet, Look Close et Wander)
 Branche de départ: feature/169-special-mobs-boss @ 2f181fd (lot 4, état de présence + déplacement)
 Étape de départ: FEU VERT du propriétaire pour ajouter le JAR complet de Citizens en compileOnly,

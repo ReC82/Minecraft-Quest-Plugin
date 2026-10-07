@@ -5409,3 +5409,101 @@ non-écrasement, la validation des actions et le rendu du panel le sont.
 
 `scripts/rollback-verygames.sh --latest` restaure le JAR du lot 4, puis redémarrer. Côté panel,
 `scripts/plugadmin/deploy.sh` conserve la release précédente.
+
+---
+
+## 2026-10-07 (lot 6) - Entrée dans le Wild : avertissement de danger, retour d'attente, état du Wild au Garde (#161, #26, #24)
+
+### Changement
+
+Le passage Hub → Wild demande désormais une **confirmation explicite** du joueur, avec un
+avertissement **générique** : zone dangereuse, PvP autorisé, mort = perte de l'inventaire, plus une
+phrase renvoyant au Garde pour les conditions actuelles. Trois actions (« Entrer dans le Wild »,
+« Entrer et ne plus afficher cet avertissement », « Annuler ») ; fermer la fenêtre n'exécute rien et
+vaut donc annulation. L'option « ne plus afficher » est persistée par joueur et n'est écrite que sur
+un départ réel.
+
+**Comportement retiré** : l'avertissement précédent lisait l'inventaire du joueur pour y chercher une
+Rune de rappel et ne prévenait que ceux qui n'en avaient pas (« Vous partez sans moyen de rappel »).
+Plus aucune inspection d'inventaire n'a lieu — décision du 2026-10-07 qui remplace la conception
+initiale de #26 partie B.
+
+Ajouts visibles en jeu : retour immédiat « Recherche d'un point d'arrivée sûr… Téléportation en
+préparation. » ; message d'**échec** réel quand la téléportation échoue (le plugin annonçait
+« Téléportation réussie. » même dans ce cas) ; choix permanent du Garde « Comment est le Wild
+actuellement ? » répondant avec l'heure et la météo **réelles** du monde `wild`.
+
+Côté exploitation : chaque passage de portail simple émet une ligne `[TP-LATENCY]` séparant
+l'évaluation des colonnes candidates, le chargement/génération des chunks et la téléportation.
+
+`RANDOM_SAFE`, les contrôles de sécurité d'arrivée et le répit d'arrivée de 40 ticks sont
+**inchangés**. L'heure, la météo et le cycle jour/nuit du Wild ne sont jamais modifiés par la
+lecture du Garde.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** du fichier de données `RPGQuest/dialogues/guard.yml`.
+
+⚠️ `guard.yml` est **obligatoire** : un redéploiement de JAR ne met jamais à jour un dialogue déjà
+présent (les exemples embarqués ne sont semés que s'ils manquent). Sans ce fichier, le choix
+« Comment est le Wild actuellement ? » n'apparaîtrait pas, bien que le code soit en place.
+
+Aucune autre action : pas de migration, pas de nouvelle clé de configuration, aucun monde touché.
+
+### Sauvegarde préalable
+
+Automatique via `scripts/deploy-verygames.sh` (JAR + chaque fichier `--also`). Ne pas écraser le
+backup du lot 5.
+
+### Déploiement
+
+**Effectué le 2026-10-07 entre 19:41 et 19:45 (heure locale).**
+
+- Branche `feature/161-wild-entry-ux`, commit `4f9af35`, construit et déployé depuis un **worktree
+  Git propre** (les fichiers de contenu non suivis du propriétaire restent intacts dans le dépôt
+  principal).
+- `./gradlew test` : **1801 tests plugin + 722 panel + 30 web-api, 0 échec** (37 + 1 ignorés,
+  limitations MockBukkit déjà documentées). `./gradlew build` : succès. `:test`/`:jar` confirmés
+  à jour sur le commit déployé.
+- JAR transféré : **1 935 862 o**, SHA-256
+  `b234c5946a7a3f09425fa4c44d0e55556a6ec543843da234f5d08a950d0120c8`.
+- Backup préalable : `rpgquest-20261007T174129Z-predeploy.jar` (1 917 683 o, SHA-256
+  `71020c82…031dc2572`) — **empreinte identique au JAR du lot 5**, ce qui confirme que la version
+  déployée était bien celle-là et que la chaîne de rollback est intacte.
+- `RPGQuest/dialogues/guard.yml` : backup `extra-20261007T174129Z/RPGQuest/dialogues/guard.yml`
+  (5 897 o, SHA-256 `36531b66…37618a4`) puis transfert de 6 638 o, SHA-256
+  `a984f15badf95c0beea37a295de4aa98d56bcc3b02b834963c257dd14228b067` — **identique octet pour octet
+  au fichier du dépôt**. Vérifié **avant** le transfert : la version en ligne était identique à celle
+  du dépôt d'avant ce lot, donc aucune édition faite depuis le Control Panel n'a été écrasée.
+- **Redémarrage Minecraft effectué.** 1 joueur connecté (`LoDyMcFly`), **prévenu deux fois** par
+  `say` avant l'arrêt. `save-all`, `stop` RCON, OFFLINE constaté, retour **ONLINE**.
+- Vérifications après redémarrage : `/plugins` → 5 plugins verts (Citizens, LuckPerms,
+  Multiverse-Core, RPGQuest, WorldEdit) ; `/rpgquest version` → `v0.1.0-SNAPSHOT`.
+- **Non vérifié** : le chargement du dialogue `rpgquest:guard` constaté en jeu, et l'absence d'un
+  avertissement de chargement dans les logs. Les logs serveur ne sont pas accessibles depuis la
+  machine de build (racine FTP = `plugins/`), et `/dialogue open` exige un joueur connecté — aucun
+  ne l'était après le redémarrage. Le fichier déployé est néanmoins **identique** à celui que
+  `BundledDialoguesValidityTest` charge sans aucun problème.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` — **TC-256** de `docs/MANUAL_TEST_PLAN.md` (avertissement, annulation,
+fermeture au clavier, absence de boucle, « ne plus afficher » après reconnexion **et** redémarrage,
+relevé `[TP-LATENCY]`, état du Wild au Garde avec vérification que la lecture ne change ni l'heure ni
+la météo, non-régression du kit du Guide).
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` restaure le JAR du lot 5, puis redémarrer. Pour
+`guard.yml` :
+
+```bash
+scripts/rollback-verygames.sh --also \
+  /home/ubuntu/.local/share/rpgquest/verygames-backups/extra-20261007T174129Z/RPGQuest/dialogues/guard.yml:RPGQuest/dialogues/guard.yml
+```
+
+Le rollback du JAR seul est **sans danger** avec le nouveau `guard.yml` en place : l'ancien code
+ignore simplement le nœud `wild_conditions`, et le marqueur `%wild_conditions%` s'afficherait
+littéralement si un joueur empruntait ce choix. Pour éviter ce détail cosmétique, restaurer les deux.
+Aucune donnée joueur n'est concernée (la seule écriture est une ligne inerte dans
+`player_variables`).

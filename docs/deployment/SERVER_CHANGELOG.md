@@ -5129,3 +5129,90 @@ worktree propre `/srv/rpgquest/worktree-169`. `./gradlew :control-panel:test` �
 `scripts/plugadmin/rollback.sh app` (restaure
 `/opt/plugadmin/releases/20261007-112510`). Aucun rollback de plugin à prévoir :
 le JAR RPGQuest n'a pas été touché.
+
+---
+
+## 2026-10-07 (lot 2) - PNJ : nom/skin/localisation corrigés + création complète depuis le panel (#165)
+
+### Changement
+
+**Trois correctifs** et **une fonctionnalité**, livrés ensemble en un seul
+redémarrage.
+
+1. **Renommer ne change plus le skin — ou refuse proprement.** La cause était
+   Citizens : un PNJ de type `PLAYER` sans skin explicite dérive son apparence de
+   son **nom**, donc `setName()` la change par effet de bord. Vérification des
+   capacités réelles avant toute promesse : l'artefact `citizensapi` (seule
+   dépendance Citizens du projet) n'expose **aucune** API de skin — 0 classe
+   « Skin », aucune clé de skin dans l'enum public `NPC.Metadata`, constaté sur
+   2.0.43. Lire le skin en place est donc impossible. Règle appliquée : PNJ non
+   joueur → renommage libre ; source connue de RPGQuest → réappliquée avant le
+   renommage ; **skin inconnu → refus explicite** avec la marche à suivre. Jamais
+   de remplacement silencieux.
+2. **Couleurs du nom** : le nom de définition passe sur le composant partagé
+   `StyleField`, noms multi-styles préservés.
+3. **Nom et localisation réels.** Le champ « Nom en jeu » vient du relevé
+   Citizens (il affichait le nom de la *définition*, qui ne change jamais au
+   renommage). Monde, X/Y/Z, yaw/pitch, état présent/non apparu et fraîcheur du
+   relevé sont affichés ; une position de PNJ non apparu est annoncée comme
+   « dernière position enregistrée ».
+4. **Création complète d'un PNJ** depuis `/npcs` : une seule action
+   `npc.citizens.provision` (définition + apparition + liaison + skin optionnel),
+   exigeant l'**union** de trois permissions, avec placement sûr près du Guide si
+   aucune position n'est donnée, et nettoyage compensatoire à trois issues
+   distinctes.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du Control Panel.
+**Migration automatique V27** (`npc_citizens_skins`) appliquée au démarrage :
+table neuve, aucune donnée existante touchée, aucune action manuelle.
+
+Nouvelles clés de configuration, toutes avec un défaut (aucune édition requise) :
+`hub.guide-npc-id` (défaut `guide`), `hub.placement.search-radius` (8),
+`vertical-radius` (3), `max-attempts` (2000).
+
+### Sauvegarde préalable
+
+Backup daté du JAR en ligne par le script officiel ; release précédente du panel
+sauvegardée par `scripts/plugadmin/deploy.sh`.
+
+### Déploiement / Exécution réelle
+
+Branche `feature/169-special-mobs-boss` @ **`2c9db65`**, construite depuis le
+worktree propre `/srv/rpgquest/worktree-169`. `./gradlew test` + `build` →
+**1742 tests plugin + 703 tests panel, 0 échec**, 37 + 1 ignorés.
+
+- **Plugin (VeryGames DEV)** :
+  - **JAR déployé** : 1 895 818 o, SHA-256
+    `db44b220dbd936709d9869c158695e1f716617c04b8c00f0f8767aadaf85d239`.
+  - **Backup préalable** : `rpgquest-20261007T120918Z-predeploy.jar`.
+  - **Redémarrage unique** : 1 joueur connecté (`LoDyMcFly`), **prévenu deux fois
+    en jeu** (préavis ~30 s puis annonce immédiate) ; `save-all`, OFFLINE puis
+    **ONLINE**.
+  - **Vérifications** : `/rpgquest version` → `v0.1.0-SNAPSHOT` ; `/plugins` → 5
+    plugins verts dont LuckPerms ; heartbeat agent `uptime_seconds=5`
+    (redémarrage réel), état `ONLINE`. Le plugin ayant démarré proprement, la
+    migration V27 s'est appliquée sans erreur (même niveau de preuve que les
+    migrations précédentes : aucun accès direct aux logs par ce compte).
+- **Control Panel (AWS)** : `scripts/plugadmin/deploy.sh` → release précédente
+  sauvegardée, `systemctl restart plugadmin`, `/health` →
+  `{"panel":"ONLINE","disabled":false,…}`. L'artefact installé contient bien
+  l'action `npc.citizens.provision`.
+- **Routes** : `/npcs`, `/mobs`, `/ops` répondent `303` (protégées).
+- **Aucun contenu serveur transféré** (aucun `--also`) : Tan et tous les autres
+  PNJ réels sont intacts — aucun n'a servi d'essai.
+- **Reste à valider, avec la session de l'owner et en jeu** : renommage avec
+  conservation du skin (et le refus quand le skin est inconnu), skin seul, nom
+  coloré, actualisation du nom et de la position, création avec et sans position,
+  skin invalide, coordonnées partielles, Guide absent, aucun emplacement libre.
+  Je ne me suis connecté à aucun compte et n'ai créé aucun PNJ de test en jeu.
+- Aucun merge vers `main`, aucune issue fermée.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` restaure
+`rpgquest-20261007T120918Z-predeploy.jar`, puis redémarrer. La table V27 reste en
+place : elle est inerte pour une version antérieure (le runner de migrations
+ignore toute version déjà appliquée et ne rétrograde jamais).
+`scripts/plugadmin/rollback.sh app` pour le Control Panel.

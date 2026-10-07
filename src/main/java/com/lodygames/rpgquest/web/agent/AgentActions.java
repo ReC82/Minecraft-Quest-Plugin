@@ -313,6 +313,30 @@ public interface AgentActions {
     CompletableFuture<MutationResult> citizensSkin(String npcId, String value, boolean byPlayerName);
 
     /**
+     * Issue #165 — « regarder les joueurs » (trait Citizens {@code lookclose}) sur le PNJ lié.
+     *
+     * <p>{@code enabled} est un état <strong>explicite</strong>, jamais une bascule : rejouer la
+     * requête (double clic, retry réseau, action rejouée) ne peut pas inverser l'état obtenu.
+     * {@code range} nul laisse la portée inchangée.</p>
+     */
+    CompletableFuture<MutationResult> citizensLookClose(String npcId, boolean enabled, Double range);
+
+    /**
+     * Issue #165 — promenade (fournisseur {@code wander} du trait Citizens {@code waypoints}).
+     *
+     * <p>Dans Citizens, un PNJ n'a qu'un seul fournisseur de parcours : activer la promenade sur un
+     * PNJ qui patrouille <strong>détruirait</strong> sa patrouille. L'action refuse donc tant que
+     * {@code confirmReplace} n'est pas vrai, en nommant ce qui serait perdu.</p>
+     *
+     * <p>À l'activation, {@code world}/{@code x}/{@code y}/{@code z} définissent l'<strong>ancre</strong>
+     * de la zone — sans ancre, Citizens ne borne pas la promenade. {@code null} reprend la position
+     * actuelle du PNJ. {@code xRange}/{@code yRange} sont des demi-côtés en blocs.</p>
+     */
+    CompletableFuture<MutationResult> citizensWander(String npcId, boolean enabled,
+                                                     String world, Double x, Double y, Double z,
+                                                     int xRange, int yRange, boolean confirmReplace);
+
+    /**
      * Un PNJ Citizens du registre (action {@code npc.citizens.list}). {@code linkedNpcId} = id
      * logique RPGQuest déjà lié à ce PNJ, ou {@code null}. Aucune position/monde (registre seul).
      */
@@ -324,17 +348,33 @@ public interface AgentActions {
      * @param shouldSpawn  intention persistante de Citizens (trait {@code Spawned}) — un PNJ peut
      *                     légitimement ne pas être matérialisé si aucun joueur n'est à portée.
      * @param chunkLoaded  le chunk de sa position est-il chargé.
+     * @param lookCloseEnabled « regarder les joueurs » est-il actif ; {@code null} = <strong>inconnu</strong>
+     *                     (build Citizens n'exposant pas le trait), jamais « désactivé ».
+     * @param lookCloseRange portée du regard en blocs, {@code null} si inconnue.
+     * @param wanderEnabled la promenade est-elle active ; {@code null} = inconnu.
+     * @param wanderProvider fournisseur de parcours Citizens réellement en place ({@code linear},
+     *                     {@code wander}, {@code guided}, ou celui d'un plugin tiers). C'est lui qui
+     *                     dit ce qu'une activation de promenade écraserait.
+     * @param wanderWaypoints nombre de points du fournisseur courant quand il en expose.
+     * @param wanderWorld  <strong>ancre</strong> de la zone de promenade — distincte de la position
+     *                     actuelle du PNJ, qu'un déplacement manuel ne change pas.
+     * @param wanderXRange demi-côté horizontal de la zone, {@code wanderYRange} demi-hauteur, en blocs.
      */
     record CitizensNpcSummary(int numericId, String uuid, String name, String linkedNpcId,
                               boolean availableForBinding, boolean spawned,
                               String world, Double x, Double y, Double z, Float yaw, Float pitch,
-                              boolean liveLocation, boolean shouldSpawn, boolean chunkLoaded) {
+                              boolean liveLocation, boolean shouldSpawn, boolean chunkLoaded,
+                              Boolean lookCloseEnabled, Double lookCloseRange,
+                              Boolean wanderEnabled, String wanderProvider, Integer wanderWaypoints,
+                              String wanderWorld, Double wanderX, Double wanderY, Double wanderZ,
+                              Integer wanderXRange, Integer wanderYRange) {
 
         /** Entrée sans position connue — les chemins qui n'en ont pas besoin, et les tests. */
         CitizensNpcSummary(int numericId, String uuid, String name, String linkedNpcId,
                            boolean availableForBinding, boolean spawned) {
             this(numericId, uuid, name, linkedNpcId, availableForBinding, spawned,
-                    null, null, null, null, null, null, false, spawned, false);
+                    null, null, null, null, null, null, false, spawned, false,
+                    null, null, null, null, null, null, null, null, null, null, null);
         }
     }
 

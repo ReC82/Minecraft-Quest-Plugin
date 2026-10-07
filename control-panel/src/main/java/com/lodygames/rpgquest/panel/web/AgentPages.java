@@ -2352,6 +2352,8 @@ public final class AgentPages {
         if (boundCitizens) {
             dlRow(sb, "Localisation",
                     citizensLocation(citizensRowOf(citizensRoster, id, numeric), citizensSurveyAge, true));
+            // Issue #165 — comportements relus sur Citizens, jamais supposés.
+            dlRow(sb, "Comportement", citizensBehaviour(citizensRowOf(citizensRoster, id, numeric)));
         }
         sb.append("</dl>");
 
@@ -2471,6 +2473,21 @@ public final class AgentPages {
             forms.append(actionCollapse(slug + "-f-move", "<div class=\"card card-body npc-formcard\">"
                     + citizensMoveForm(session, agentId, id, citizensRowOf(citizensRoster, id, numeric),
                             spawnWorlds) + "</div>"));
+        }
+        // Issue #165 — comportements Citizens. « Regarder les joueurs » est cosmétique (même droit
+        // que renommer/habiller) ; la promenade fait bouger le PNJ (même droit que le déplacer).
+        if (canSpawn && boundCitizens) {
+            toggles.add(new String[] {slug + "-f-wander", "Promenade", "world", "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-wander", "<div class=\"card card-body npc-formcard\">"
+                    + citizensWanderForm(session, agentId, id, citizensRowOf(citizensRoster, id, numeric),
+                            spawnWorlds) + "</div>"));
+        }
+        if (canLink && boundCitizens) {
+            toggles.add(new String[] {slug + "-f-lookclose", "Regarder les joueurs", "eye",
+                "btn-outline-secondary"});
+            forms.append(actionCollapse(slug + "-f-lookclose", "<div class=\"card card-body npc-formcard\">"
+                    + citizensLookCloseForm(session, agentId, id,
+                            citizensRowOf(citizensRoster, id, numeric)) + "</div>"));
         }
         if (canLink && boundCitizens) {
             toggles.add(new String[] {slug + "-f-look", "Nom en jeu & apparence", "edit", "btn-outline-secondary"});
@@ -2982,6 +2999,228 @@ public final class AgentPages {
     }
 
     /**
+     * Issue #165 — « regarder les joueurs » (trait Citizens {@code lookclose}).
+     *
+     * <p>Deux boutons porteurs d'un <strong>état explicite</strong> plutôt qu'un interrupteur
+     * unique : « Activer » envoie {@code enabled=true}, « Désactiver » envoie {@code enabled=false}.
+     * Rejouer l'un ou l'autre — double clic, retry réseau — redonne le même état. Un bouton
+     * « basculer » aurait, lui, inversé l'état à chaque rejeu.</p>
+     */
+    private String citizensLookCloseForm(Session session, String agentId, String npcId,
+                                         Map<String, Object> citizensRow) {
+        String uid = "npc-look-" + Http.esc(npcId).replaceAll("[^a-zA-Z0-9_-]", "-");
+        Object current = citizensRow == null ? null : citizensRow.get("lookCloseEnabled");
+        String currentRange = citizensRow == null ? "" : coord(citizensRow.get("lookCloseRange"));
+
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("eye"))
+                .append("Regarder les joueurs</p>");
+        sb.append("<p class=\"form-text\">Quand c'est actif, le PNJ tourne la tête vers le joueur le "
+                + "plus proche tant qu'il reste dans la portée. Purement visuel : ni déplacement, ni "
+                + "dialogue, ni quête n'en dépendent.</p>");
+        if (current == null) {
+            sb.append("<p class=\"form-text\">").append(Icons.icon("warning"))
+                    .append("État actuel <strong>inconnu</strong> : le relevé ne le contient pas "
+                            + "(build Citizens qui n'expose pas ce trait, ou relevé antérieur à cette "
+                            + "fonctionnalité). Ce n'est pas « désactivé ».</p>");
+        } else {
+            sb.append("<p class=\"form-text\">").append(Icons.icon("check"))
+                    .append("État actuel relu sur Citizens : <strong>")
+                    .append(Boolean.TRUE.equals(current) ? "activé" : "désactivé").append("</strong>")
+                    .append(currentRange.isEmpty() ? "" : ", portée " + currentRange + " bloc(s)")
+                    .append(".</p>");
+        }
+
+        for (String[] variant : new String[][] {
+            {"true", "Activer", "Le PNJ suivra les joueurs du regard."},
+            {"false", "Désactiver", "Le PNJ gardera son orientation fixe."}}) {
+            sb.append(formStart(session, agentId, "npc.citizens.lookclose", "/npcs", "")
+                    .replaceFirst("<form ", "<form data-submit-once "));
+            sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
+            sb.append("<input type=\"hidden\" name=\"npc_ctx\" value=\"").append(Http.esc(npcId)).append("\">");
+            sb.append("<input type=\"hidden\" name=\"enabled\" value=\"").append(variant[0]).append("\">");
+            if ("true".equals(variant[0])) {
+                sb.append("<label for=\"").append(uid).append("-range\">Portée</label>");
+                sb.append("<input class=\"form-control\" id=\"").append(uid).append("-range\" type=\"number\" ")
+                        .append("step=\"1\" min=\"1\" max=\"64\" name=\"range\" value=\"")
+                        .append(Http.esc(currentRange)).append("\">");
+                sb.append(fieldHelp("Distance maximale, en <strong>blocs</strong>, à laquelle le PNJ "
+                                + "remarque un joueur. Au-delà de 64 le panel refuse : l'effet n'est plus "
+                                + "visible en jeu et le trait compare la distance de chaque joueur à "
+                                + "chaque tick.",
+                        "10 pour un PNJ de place de village, 4 pour un marchand derrière un comptoir",
+                        currentRange.isEmpty() ? "10 (défaut Citizens)" : currentRange + " (valeur actuelle)",
+                        "la portée actuelle est conservée, elle n'est pas remise au défaut"));
+            }
+            sb.append(mutationConsent("npc.citizens.lookclose", "",
+                    variant[2] + " Réversible à tout moment par l'autre bouton. "
+                            + "Aucun identifiant ni aucune liaison n'est touché."));
+            sb.append("<button class=\"btn\" type=\"submit\">").append(variant[1]).append("</button>");
+            sb.append("</form>");
+        }
+        sb.append(fieldHelp("Chaque bouton envoie un <strong>état</strong>, jamais une bascule : "
+                        + "recliquer « Activer » laisse le PNJ activé au lieu de l'éteindre. La fiche se "
+                        + "réactualise au relevé suivant, déclenché automatiquement.",
+                null, "—", null));
+        return sb.toString();
+    }
+
+    /**
+     * Issue #165 — promenade (fournisseur {@code wander} du trait Citizens {@code waypoints}).
+     *
+     * <p>Citizens n'accorde qu'un seul parcours par PNJ : activer la promenade sur un PNJ qui
+     * patrouille détruirait sa patrouille. Le formulaire annonce donc ce qui serait perdu et exige
+     * une case de confirmation, et le serveur refuse l'action sans elle.</p>
+     */
+    private String citizensWanderForm(Session session, String agentId, String npcId,
+                                      Map<String, Object> citizensRow, List<String> spawnWorlds) {
+        String uid = "npc-wander-" + Http.esc(npcId).replaceAll("[^a-zA-Z0-9_-]", "-");
+        Object current = citizensRow == null ? null : citizensRow.get("wanderEnabled");
+        boolean active = Boolean.TRUE.equals(current);
+        String provider = citizensRow == null ? "" : str(citizensRow.get("wanderProvider"));
+        String points = citizensRow == null ? "" : str(citizensRow.get("wanderWaypoints"));
+        boolean conflict = !active && (
+                (!provider.isEmpty() && !"null".equals(provider) && !"linear".equalsIgnoreCase(provider))
+                || (!points.isEmpty() && !"null".equals(points) && !"0".equals(points)));
+
+        // Ancre préremplie : celle déjà enregistrée si la promenade tourne, sinon la position
+        // connue du PNJ — et le formulaire dit laquelle, les deux n'engagent pas la même confiance.
+        boolean anchored = citizensRow != null && !str(citizensRow.get("wanderWorld")).isEmpty()
+                && !"null".equals(str(citizensRow.get("wanderWorld")));
+        String aWorld = anchored ? str(citizensRow.get("wanderWorld"))
+                : (citizensRow == null ? "" : cleanNull(str(citizensRow.get("world"))));
+        String aX = anchored ? coord(citizensRow.get("wanderX"))
+                : (citizensRow == null ? "" : coord(citizensRow.get("x")));
+        String aY = anchored ? coord(citizensRow.get("wanderY"))
+                : (citizensRow == null ? "" : coord(citizensRow.get("y")));
+        String aZ = anchored ? coord(citizensRow.get("wanderZ"))
+                : (citizensRow == null ? "" : coord(citizensRow.get("z")));
+        String xRange = citizensRow == null ? "" : cleanNull(str(citizensRow.get("wanderXRange")));
+        String yRange = citizensRow == null ? "" : cleanNull(str(citizensRow.get("wanderYRange")));
+
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("world"))
+                .append("Promenade</p>");
+        sb.append("<p class=\"form-text\">Le PNJ se déplace au hasard dans une zone bornée autour "
+                + "d'une <strong>ancre</strong>, en utilisant le système de parcours natif de Citizens "
+                + "— aucun moteur de déplacement ajouté. Il ne peut pas sortir de sa zone ni changer "
+                + "de monde : les destinations sont tirées à l'intérieur de la zone, dans son monde.</p>");
+        if (current == null) {
+            sb.append("<p class=\"form-text\">").append(Icons.icon("warning"))
+                    .append("État actuel <strong>inconnu</strong> : le relevé ne le contient pas. "
+                            + "Ce n'est pas « désactivée ».</p>");
+        } else if (active) {
+            sb.append("<p class=\"form-text\">").append(Icons.icon("check"))
+                    .append("Promenade <strong>active</strong>. Les champs ci-dessous viennent de "
+                            + "l'ancre et de la zone <strong>réellement enregistrées</strong>.</p>");
+        } else if (conflict) {
+            sb.append("<p class=\"form-text\">").append(Icons.icon("warning"))
+                    .append("Ce PNJ a déjà un parcours Citizens")
+                    .append(provider.isEmpty() || "null".equals(provider) ? ""
+                            : " (<code class=\"tid\">" + Http.esc(provider) + "</code>)")
+                    .append(points.isEmpty() || "null".equals(points) || "0".equals(points) ? ""
+                            : " de " + Http.esc(points) + " point(s)")
+                    .append(". Citizens n'en accorde qu'un seul : activer la promenade le "
+                            + "<strong>remplacerait définitivement</strong>. Cocher la case de "
+                            + "confirmation plus bas pour l'accepter — sinon l'action est refusée et "
+                            + "rien n'est modifié.</p>");
+        } else {
+            sb.append("<p class=\"form-text\">").append(Icons.icon("history"))
+                    .append("Promenade inactive. Les champs d'ancre sont préremplis depuis la "
+                            + "<strong>position actuelle</strong> du PNJ.</p>");
+        }
+
+        // ---- Activer ----
+        sb.append(formStart(session, agentId, "npc.citizens.wander", "/npcs", "")
+                .replaceFirst("<form ", "<form data-submit-once "));
+        sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"npc_ctx\" value=\"").append(Http.esc(npcId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"enabled\" value=\"true\">");
+
+        sb.append("<div class=\"form-grid3\">");
+        sb.append("<div><label for=\"").append(uid).append("-xr\">Rayon horizontal</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-xr\" type=\"number\" ")
+                .append("step=\"1\" min=\"1\" max=\"64\" name=\"x_range\" value=\"")
+                .append(Http.esc(xRange.isEmpty() ? "12" : xRange)).append("\" required></div>");
+        sb.append("<div><label for=\"").append(uid).append("-yr\">Amplitude verticale</label>")
+                .append("<input class=\"form-control\" id=\"").append(uid).append("-yr\" type=\"number\" ")
+                .append("step=\"1\" min=\"0\" max=\"32\" name=\"y_range\" value=\"")
+                .append(Http.esc(yRange.isEmpty() ? "2" : yRange)).append("\" required></div>");
+        sb.append("</div>");
+        sb.append(fieldHelp("Demi-côtés de la zone, en <strong>blocs</strong>, mesurés depuis l'ancre : "
+                        + "un rayon de 12 donne une zone de 25 blocs de côté. L'amplitude verticale "
+                        + "autorise le PNJ à monter ou descendre d'autant ; <strong>0</strong> le garde "
+                        + "sur un seul plan. Bornes du panel : 1 à 64 horizontalement, 0 à 32 "
+                        + "verticalement — au-delà la zone ne borne plus rien.",
+                "12 et 2 pour une place de village",
+                xRange.isEmpty() ? "25 et 3 (défaut Citizens) ; le formulaire propose 12 et 2"
+                        : xRange + " et " + yRange + " (valeurs actuelles)",
+                "Obligatoire"));
+
+        sb.append("<details class=\"dlg-edit\"><summary>Ancre de la zone (avancé)</summary>");
+        sb.append("<label for=\"").append(uid).append("-world\">Monde</label>");
+        sb.append("<select class=\"form-select\" id=\"").append(uid).append("-world\" name=\"world\">");
+        sb.append("<option value=\"\">— position actuelle du PNJ —</option>");
+        for (String w : spawnWorlds) {
+            sb.append("<option value=\"").append(Http.esc(w)).append("\"")
+                    .append(w.equalsIgnoreCase(aWorld) ? " selected" : "")
+                    .append(">").append(Http.esc(w)).append("</option>");
+        }
+        sb.append("</select>");
+        sb.append("<div class=\"form-grid3\">");
+        for (String[] axis : new String[][] {{"x", "X", aX}, {"y", "Y", aY}, {"z", "Z", aZ}}) {
+            sb.append("<div><label for=\"").append(uid).append("-").append(axis[0]).append("\">")
+                    .append(axis[1]).append("</label>")
+                    .append("<input class=\"form-control\" id=\"").append(uid).append("-").append(axis[0])
+                    .append("\" type=\"number\" step=\"0.5\" name=\"").append(axis[0])
+                    .append("\" value=\"").append(Http.esc(axis[2])).append("\"></div>");
+        }
+        sb.append("</div>");
+        sb.append(fieldHelp("Centre de la zone. <strong>Ce n'est pas la position du PNJ</strong> : "
+                        + "déplacer le PNJ ensuite ne déplace pas son ancre, il faut réappliquer la "
+                        + "promenade pour la réancrer. Monde, X, Y et Z vont ensemble — une ancre "
+                        + "partielle est refusée, jamais complétée au jugé.",
+                "world_hub 737.5 / 67 / -684.5",
+                anchored ? "l'ancre déjà enregistrée" : "la position actuelle du PNJ",
+                "la position actuelle du PNJ est utilisée comme ancre"));
+        sb.append("</details>");
+
+        if (conflict) {
+            sb.append("<label class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" ")
+                    .append("name=\"confirm_replace\" value=\"true\"> ")
+                    .append("<span>Je confirme le remplacement du parcours existant</span></label>");
+            sb.append(fieldHelp("Sans cette case, le serveur refuse l'activation et ne modifie rien. "
+                            + "Le remplacement est <strong>définitif</strong> : Citizens ne conserve pas "
+                            + "le parcours précédent.",
+                    null, "non cochée", "l'action est refusée, rien n'est modifié"));
+        }
+        sb.append(mutationConsent("npc.citizens.wander", "",
+                "Le PNJ Citizens lié à « " + npcId + " » se promènera dans la zone indiquée. "
+                        + "Réversible par « Arrêter la promenade »."
+                        + (conflict ? " ATTENTION : son parcours actuel sera remplacé définitivement." : "")));
+        sb.append("<button class=\"btn\" type=\"submit\">")
+                .append(active ? "Mettre à jour la promenade" : "Activer la promenade").append("</button>");
+        sb.append("</form>");
+
+        // ---- Désactiver ----
+        sb.append(formStart(session, agentId, "npc.citizens.wander", "/npcs", "")
+                .replaceFirst("<form ", "<form data-submit-once "));
+        sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"npc_ctx\" value=\"").append(Http.esc(npcId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"enabled\" value=\"false\">");
+        sb.append(mutationConsent("npc.citizens.wander", "",
+                "La promenade s'arrête et le déplacement en cours est interrompu ; la position "
+                        + "finale est indiquée dans le résultat. Si ce PNJ suit un autre parcours "
+                        + "Citizens, rien n'est touché."));
+        sb.append("<button class=\"btn\" type=\"submit\">Arrêter la promenade</button>");
+        sb.append("</form>");
+        sb.append(fieldHelp("« Arrêter » ne retire <strong>que</strong> la promenade : si le PNJ suit "
+                        + "une patrouille configurée ailleurs, elle est laissée intacte et l'action le "
+                        + "dit. Les dialogues et les quêtes restent utilisables pendant la promenade — "
+                        + "le PNJ reste cliquable, il bouge seulement.",
+                null, "—", null));
+        return sb.toString();
+    }
+
+    /**
      * Formulaire de création complète d'un PNJ (définition + apparition + liaison + skin).
      *
      * <p>Une seule action agent, donc un seul geste et un rollback atomique : si l'apparition
@@ -3212,6 +3451,75 @@ public final class AgentPages {
                     + "n'apparaîtra pas, même si un joueur s'approche</span>");
         }
         surveyAge.ifPresent(age -> sb.append("<span><b>Relevé</b> ").append(Http.esc(age)).append("</span>"));
+        sb.append("</span>");
+        return sb.toString();
+    }
+
+    /**
+     * Issue #165 — comportements Citizens d'un PNJ : « regarder les joueurs » et promenade.
+     *
+     * <p>Trois états et non deux, comme pour la localisation : actif, inactif, ou
+     * <strong>inconnu</strong>. Une clé absente du relevé signifie que la build Citizens installée
+     * n'expose pas le trait — ce n'est pas « désactivé », et le confondre ferait croire à un réglage
+     * qui n'a jamais été lu.</p>
+     *
+     * <p>L'<strong>ancre</strong> de promenade est affichée séparément de la position : ce sont deux
+     * choses distinctes, et déplacer le PNJ ne déplace pas son ancre.</p>
+     */
+    private static String citizensBehaviour(Map<String, Object> row) {
+        if (row == null) {
+            return "<span class=\"muted\">Inconnu — aucun relevé Citizens ne couvre ce PNJ.</span>";
+        }
+        Object look = row.get("lookCloseEnabled");
+        Object walk = row.get("wanderEnabled");
+        if (look == null && walk == null) {
+            return "<span class=\"muted\">Inconnu — la build Citizens installée n'expose pas ces "
+                    + "traits. Ce n'est pas « désactivé » : rien n'a pu être lu.</span>";
+        }
+        StringBuilder sb = new StringBuilder();
+        if (Boolean.TRUE.equals(look)) {
+            String range = coord(row.get("lookCloseRange"));
+            sb.append("<span class=\"badge text-bg-success\">regarde les joueurs</span>");
+            if (!range.isEmpty()) {
+                sb.append(" <span class=\"faint\">portée ").append(range).append(" bloc(s)</span>");
+            }
+        } else if (Boolean.FALSE.equals(look)) {
+            sb.append("<span class=\"badge text-bg-secondary\">ne regarde pas</span>");
+        }
+        if (Boolean.TRUE.equals(walk)) {
+            sb.append(" <span class=\"badge text-bg-success\">promenade</span>");
+        } else if (Boolean.FALSE.equals(walk)) {
+            sb.append(" <span class=\"badge text-bg-secondary\">immobile</span>");
+        }
+        sb.append("<span class=\"fmeta\">");
+        if (Boolean.TRUE.equals(walk)) {
+            String aw = str(row.get("wanderWorld"));
+            boolean anchored = !aw.isEmpty() && !"null".equals(aw);
+            sb.append("<span><b>Ancre</b> ").append(anchored
+                            ? "<code class=\"tid\">" + Http.esc(aw) + "</code> " + coord(row.get("wanderX"))
+                                    + " / " + coord(row.get("wanderY")) + " / " + coord(row.get("wanderZ"))
+                                    + " — distincte de la position ci-dessus : déplacer le PNJ ne "
+                                    + "déplace pas son ancre"
+                            : "aucune — sans ancre, Citizens ne borne pas la promenade")
+                    .append("</span>");
+            String xr = str(row.get("wanderXRange"));
+            String yr = str(row.get("wanderYRange"));
+            if (!xr.isEmpty() && !"null".equals(xr)) {
+                sb.append("<span><b>Zone</b> ±").append(Http.esc(xr)).append(" bloc(s) horizontalement, ±")
+                        .append(Http.esc(yr)).append(" verticalement, autour de l'ancre</span>");
+            }
+        } else {
+            // Ce qui occupe la place compte : c'est lui qu'une activation de promenade écraserait.
+            String provider = str(row.get("wanderProvider"));
+            String points = str(row.get("wanderWaypoints"));
+            if (!provider.isEmpty() && !"null".equals(provider) && !"linear".equalsIgnoreCase(provider)) {
+                sb.append("<span><b>Parcours Citizens</b> <code class=\"tid\">").append(Http.esc(provider))
+                        .append("</code> — activer la promenade le remplacerait</span>");
+            } else if (!points.isEmpty() && !"null".equals(points) && !"0".equals(points)) {
+                sb.append("<span><b>Patrouille</b> ").append(Http.esc(points))
+                        .append(" point(s) enregistrés — activer la promenade les remplacerait</span>");
+            }
+        }
         sb.append("</span>");
         return sb.toString();
     }

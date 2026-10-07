@@ -58,6 +58,13 @@ public final class NpcIdentityService {
     private final NpcBindingRepository citizensBindingRepository;
     private final NamespacedKey idKey;
     private final @Nullable CitizensNpcBridge citizensBridge;
+    /**
+     * Issue #165 — comportements du PLUGIN Citizens (LookClose, promenade). Pont distinct de
+     * {@link CitizensNpcBridge} : ses types viennent de {@code citizens-main}, pas de
+     * {@code citizensapi}. Si la build installée ne les fournit pas, ce pont seul échoue — le reste
+     * de l'intégration PNJ continue de fonctionner.
+     */
+    private final @Nullable CitizensBehaviourBridge behaviourBridge;
     private final Map<UUID, String> citizensCache = new ConcurrentHashMap<>();
 
     public NpcIdentityService(RPGQuestPlugin plugin, NpcIdRepository sequenceRepository,
@@ -67,6 +74,7 @@ public final class NpcIdentityService {
         this.citizensBindingRepository = citizensBindingRepository;
         this.idKey = new NamespacedKey(plugin, "npc_id");
         this.citizensBridge = citizensActive(plugin) ? new CitizensNpcBridge() : null;
+        this.behaviourBridge = this.citizensBridge == null ? null : newBehaviourBridge(plugin);
 
         if (citizensBridge != null) {
             citizensBindingRepository.loadAll().thenAccept(bindings ->
@@ -117,7 +125,21 @@ public final class NpcIdentityService {
      * <strong>À appeler sur le thread principal</strong> (API Citizens).
      */
     public List<CitizensNpc> citizensRoster() {
-        return citizensBridge == null ? List.of() : citizensBridge.roster();
+        if (citizensBridge == null) {
+            return List.of();
+        }
+        List<CitizensNpc> roster = citizensBridge.roster();
+        if (behaviourBridge == null) {
+            // Comportements inconnus (build Citizens incompatible) — et non « désactivés ».
+            return roster;
+        }
+        List<CitizensNpc> enriched = new java.util.ArrayList<>(roster.size());
+        for (CitizensNpc npc : roster) {
+            enriched.add(npc.withBehaviour(
+                    behaviourBridge.readLookClose(npc.uuid()).orElse(null),
+                    behaviourBridge.readWander(npc.uuid()).orElse(null)));
+        }
+        return enriched;
     }
 
     /** Un PNJ Citizens par son id numérique, ou vide. <strong>Thread principal</strong>. */
@@ -184,6 +206,59 @@ public final class NpcIdentityService {
      */
     public Optional<org.bukkit.Location> moveCitizens(UUID citizensUuid, org.bukkit.Location target) {
         return citizensBridge == null ? Optional.empty() : citizensBridge.moveByUuid(citizensUuid, target);
+    }
+
+    /**
+     * Instancie le pont des comportements. Le chargement de la classe touche des types de
+     * {@code citizens-main} : si la build installée ne les fournit pas, on retient le motif et on
+     * se déclare indisponible plutôt que d'empêcher le plugin de démarrer.
+     */
+    private static @Nullable CitizensBehaviourBridge newBehaviourBridge(RPGQuestPlugin plugin) {
+        try {
+            return new CitizensBehaviourBridge();
+        } catch (LinkageError e) {
+            plugin.getSLF4JLogger().warn("Build Citizens incompatible : « regarder les joueurs » et "
+                    + "« promenade » resteront indisponibles dans le panel ({}). Le reste de "
+                    + "l'intégration PNJ fonctionne normalement.", e.toString());
+            return null;
+        }
+    }
+
+    /** Issue #165 — état réel du trait {@code lookclose}. <strong>Thread principal.</strong> */
+    public Optional<LookCloseState> lookCloseOf(UUID citizensUuid) {
+        return behaviourBridge == null ? Optional.empty() : behaviourBridge.readLookClose(citizensUuid);
+    }
+
+    /** Issue #165 — état réel de la promenade. <strong>Thread principal.</strong> */
+    public Optional<WanderState> wanderOf(UUID citizensUuid) {
+        return behaviourBridge == null ? Optional.empty() : behaviourBridge.readWander(citizensUuid);
+    }
+
+    /**
+     * Pose un état <strong>explicite</strong> pour « regarder les joueurs ». Jamais un toggle :
+     * rejouer la requête ne doit pas inverser l'état. <strong>Thread principal.</strong>
+     */
+    public NpcBehaviourOutcome setLookClose(UUID citizensUuid, boolean enabled, @Nullable Double range) {
+        return behaviourBridge == null ? behaviourUnavailable()
+                : behaviourBridge.applyLookClose(citizensUuid, enabled, range);
+    }
+
+    /** Active la promenade sur une zone bornée autour de {@code anchor}. <strong>Thread principal.</strong> */
+    public NpcBehaviourOutcome enableWander(UUID citizensUuid, org.bukkit.Location anchor,
+                                            int xRange, int yRange, boolean confirmReplace) {
+        return behaviourBridge == null ? behaviourUnavailable()
+                : behaviourBridge.applyWanderEnable(citizensUuid, anchor, xRange, yRange, confirmReplace);
+    }
+
+    /** Désactive la promenade et revient au fournisseur neutre. <strong>Thread principal.</strong> */
+    public NpcBehaviourOutcome disableWander(UUID citizensUuid) {
+        return behaviourBridge == null ? behaviourUnavailable()
+                : behaviourBridge.applyWanderDisable(citizensUuid);
+    }
+
+    private static NpcBehaviourOutcome behaviourUnavailable() {
+        return new NpcBehaviourOutcome(false, "CITIZENS_INCOMPATIBLE",
+                "Citizens est absent ou sa build n'expose pas ce comportement : rien n'a été modifié.");
     }
 
     /**

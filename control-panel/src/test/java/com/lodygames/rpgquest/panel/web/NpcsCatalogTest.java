@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.panel.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.panel.agent.AgentActionCatalog;
@@ -1043,5 +1044,258 @@ class NpcsCatalogTest {
             }
         }
         return res;
+    }
+
+    // ---- Comportements Citizens : « regarder les joueurs » et promenade (issue #165) -----------
+
+    /** Relevé portant les comportements : regard actif, promenade active et ancrée. */
+    private static final String CITIZENS_BEHAVIOUR_ACTIVE = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"available\":0,\"linked\":1,"
+            + "\"citizens\":[{\"numericId\":9,\"uuid\":\"33333333-3333-3333-3333-333333333333\","
+            + "\"name\":\"Nouveau Nom\",\"linkedNpcId\":\"tan\",\"availableForBinding\":false,"
+            + "\"spawned\":true,\"world\":\"world_hub\",\"x\":12.25,\"y\":70.0,\"z\":-33.5,"
+            + "\"yaw\":90.0,\"pitch\":0.0,\"liveLocation\":true,\"shouldSpawn\":true,"
+            + "\"chunkLoaded\":true,\"lookCloseEnabled\":true,\"lookCloseRange\":8.0,"
+            + "\"wanderEnabled\":true,\"wanderProvider\":\"wander\",\"wanderWaypoints\":0,"
+            + "\"wanderWorld\":\"world_hub\",\"wanderX\":100.0,\"wanderY\":64.0,\"wanderZ\":-20.0,"
+            + "\"wanderXRange\":12,\"wanderYRange\":2}]}";
+
+    /** Même PNJ, mais porteur d'une PATROUILLE linéaire : activer la promenade l'écraserait. */
+    private static final String CITIZENS_WITH_PATROL = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"available\":0,\"linked\":1,"
+            + "\"citizens\":[{\"numericId\":9,\"uuid\":\"33333333-3333-3333-3333-333333333333\","
+            + "\"name\":\"Nouveau Nom\",\"linkedNpcId\":\"tan\",\"availableForBinding\":false,"
+            + "\"spawned\":true,\"world\":\"world_hub\",\"x\":12.25,\"y\":70.0,\"z\":-33.5,"
+            + "\"yaw\":90.0,\"pitch\":0.0,\"liveLocation\":true,\"shouldSpawn\":true,"
+            + "\"chunkLoaded\":true,\"lookCloseEnabled\":false,\"lookCloseRange\":10.0,"
+            + "\"wanderEnabled\":false,\"wanderProvider\":\"linear\",\"wanderWaypoints\":7,"
+            + "\"wanderWorld\":null,\"wanderX\":null,\"wanderY\":null,\"wanderZ\":null,"
+            + "\"wanderXRange\":25,\"wanderYRange\":3}]}";
+
+    @Test
+    void theCardShowsTheBehaviourStateReadBackFromCitizens() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Comportement"), "la fiche a une section Comportement");
+        assertTrue(page.contains("regarde les joueurs"), "l'état du regard est relu, pas supposé");
+        assertTrue(page.contains("portée 8.0 bloc(s)"), "la portée réellement enregistrée est affichée");
+        assertTrue(page.contains("promenade"), "l'état de promenade est relu");
+        assertTrue(page.contains("<b>Ancre</b>"), "l'ancre est affichée");
+        assertTrue(page.contains("distincte de la position ci-dessus"),
+                "l'ancre est explicitement distinguée de la position");
+        assertTrue(page.contains("±12 bloc(s) horizontalement"), "la zone bornée est affichée");
+    }
+
+    @Test
+    void anUnknownBehaviourIsNeverShownAsDisabled() throws Exception {
+        // Relevé antérieur à la fonctionnalité, ou build Citizens n'exposant pas les traits :
+        // confondre « inconnu » et « désactivé » ferait croire à un réglage jamais lu.
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_WITH_LOCATION);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("n'expose pas ces "), "l'état inconnu est nommé comme tel");
+        assertFalse(page.contains("ne regarde pas"), "jamais présenté comme désactivé");
+    }
+
+    @Test
+    void theLookCloseFormOffersTwoExplicitStatesAndNoToggle() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("name=\"type\" value=\"npc.citizens.lookclose\""), "action présente");
+        assertTrue(page.contains("name=\"enabled\" value=\"true\""), "un bouton pose l'état actif");
+        assertTrue(page.contains("name=\"enabled\" value=\"false\""), "l'autre pose l'état inactif");
+        assertFalse(page.contains("name=\"enabled\" value=\"toggle\""), "aucune bascule n'est proposée");
+        assertTrue(page.contains("jamais une bascule"), "la garantie est expliquée à l'opérateur");
+        assertTrue(page.contains("value=\"8.0\""), "la portée actuelle est préremplie, pas remise au défaut");
+    }
+
+    @Test
+    void theLookCloseActionTransmitsTheStateAndTheRange() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        assertEquals(303, post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.lookclose&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&npc_id=tan&enabled=true&range=16&confirm=true").statusCode());
+
+        AgentActionRow queued = latestOfType("npc.citizens.lookclose");
+        assertEquals("tan", queued.params().get("npc_id"));
+        assertEquals("true", queued.params().get("enabled"));
+        assertEquals("16", queued.params().get("range"));
+    }
+
+    @Test
+    void anAmbiguousLookCloseStateIsRefusedBeforeReachingTheServer() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+        int before = pendingFor(TestConfig.AGENT_ID);
+
+        for (String enabled : new String[] {"", "toggle", "oui"}) {
+            post("/agents/action", "_csrf=" + token
+                    + "&type=npc.citizens.lookclose&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                    + "&npc_id=tan&enabled=" + enabled + "&confirm=true");
+        }
+        assertEquals(before, pendingFor(TestConfig.AGENT_ID), "aucune action ne doit être enfilée");
+    }
+
+    @Test
+    void anOutOfBoundsLookCloseRangeIsRefused() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+        int before = pendingFor(TestConfig.AGENT_ID);
+
+        for (String range : new String[] {"0", "-5", "65", "abc"}) {
+            post("/agents/action", "_csrf=" + token
+                    + "&type=npc.citizens.lookclose&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                    + "&npc_id=tan&enabled=true&range=" + range + "&confirm=true");
+        }
+        assertEquals(before, pendingFor(TestConfig.AGENT_ID));
+    }
+
+    @Test
+    void theWanderFormWarnsBeforeReplacingAnExistingPatrol() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_WITH_PATROL);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("name=\"type\" value=\"npc.citizens.wander\""), "action présente");
+        assertTrue(page.contains("remplacerait définitivement"), "la perte est annoncée avant l'action");
+        assertTrue(page.contains("7 point(s)"), "ce qui serait perdu est chiffré");
+        assertTrue(page.contains("name=\"confirm_replace\""), "une confirmation explicite est demandée");
+    }
+
+    @Test
+    void theWanderFormAsksNoConfirmationWhenThereIsNothingToLose() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertFalse(page.contains("name=\"confirm_replace\""),
+                "un PNJ déjà en promenade n'a rien à perdre : on ne lui demande pas de confirmer");
+        assertTrue(page.contains("Mettre à jour la promenade"), "le bouton dit qu'on reconfigure");
+    }
+
+    @Test
+    void theWanderFormIsPrefilledFromTheRecordedAnchorAndZone() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("name=\"x_range\" value=\"12\""),
+                "rayon horizontal prérempli depuis l'enregistré");
+        assertTrue(page.contains("name=\"y_range\" value=\"2\""), "amplitude verticale préremplie");
+        assertTrue(page.contains("name=\"x\" value=\"100.0\""),
+                "X de l'ANCRE prérempli — et non le X de la position du PNJ (12.2)");
+        assertFalse(page.contains("name=\"x\" value=\"12.2\""),
+                "la position du PNJ ne doit pas être proposée comme ancre quand une ancre existe");
+        assertTrue(page.contains("l'ancre déjà enregistrée"), "la source du préremplissage est dite");
+        assertTrue(page.contains("ne déplace pas son ancre"),
+                "l'effet d'un déplacement manuel sur l'ancre est défini");
+    }
+
+    @Test
+    void theWanderActionTransmitsStateAnchorAndZone() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        assertEquals(303, post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.wander&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&npc_id=tan&enabled=true&world=world_hub&x=100.5&y=64&z=-20.5"
+                + "&x_range=10&y_range=1&confirm=true").statusCode());
+
+        AgentActionRow queued = latestOfType("npc.citizens.wander");
+        assertEquals("true", queued.params().get("enabled"));
+        assertEquals("world_hub", queued.params().get("world"));
+        assertEquals("100.5", queued.params().get("x"));
+        assertEquals("10", queued.params().get("x_range"));
+        assertEquals("1", queued.params().get("y_range"));
+        assertNull(queued.params().get("confirm_replace"), "non coché = non confirmé");
+    }
+
+    @Test
+    void disablingWanderCarriesNeitherAnchorNorZone() throws Exception {
+        // Ne transmettre que l'état évite de laisser croire qu'un réglage a été enregistré au passage.
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        assertEquals(303, post("/agents/action", "_csrf=" + token
+                + "&type=npc.citizens.wander&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&npc_id=tan&enabled=false&confirm=true").statusCode());
+
+        AgentActionRow queued = latestOfType("npc.citizens.wander");
+        assertEquals("false", queued.params().get("enabled"));
+        assertNull(queued.params().get("world"));
+        assertNull(queued.params().get("x_range"));
+    }
+
+    @Test
+    void aPartialWanderAnchorIsRefusedByThePanel() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+        int before = pendingFor(TestConfig.AGENT_ID);
+
+        for (String anchor : new String[] {"&world=world_hub", "&world=world_hub&x=10",
+            "&x=10&y=64&z=10"}) {
+            post("/agents/action", "_csrf=" + token
+                    + "&type=npc.citizens.wander&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                    + "&npc_id=tan&enabled=true&x_range=10&y_range=1" + anchor + "&confirm=true");
+        }
+        assertEquals(before, pendingFor(TestConfig.AGENT_ID), "aucune ancre partielle ne passe");
+    }
+
+    @Test
+    void anUnboundedWanderZoneIsRefused() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+        int before = pendingFor(TestConfig.AGENT_ID);
+
+        for (String zone : new String[] {"&x_range=0&y_range=1", "&x_range=65&y_range=1",
+            "&x_range=10&y_range=33", "&x_range=&y_range=1", "&x_range=10&y_range=-1"}) {
+            post("/agents/action", "_csrf=" + token
+                    + "&type=npc.citizens.wander&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                    + "&npc_id=tan&enabled=true" + zone + "&confirm=true");
+        }
+        assertEquals(before, pendingFor(TestConfig.AGENT_ID));
+    }
+
+    @Test
+    void replayingTheSameWanderRequestNeverInvertsTheState() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_BEHAVIOUR_ACTIVE);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        for (int i = 0; i < 3; i++) {
+            post("/agents/action", "_csrf=" + token
+                    + "&type=npc.citizens.wander&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                    + "&npc_id=tan&enabled=false&confirm=true");
+            assertEquals("false", latestOfType("npc.citizens.wander").params().get("enabled"),
+                    "chaque rejeu enfile le MÊME état, jamais son inverse");
+        }
     }
 }

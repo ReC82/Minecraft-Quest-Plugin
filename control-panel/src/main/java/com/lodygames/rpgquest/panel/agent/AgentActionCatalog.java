@@ -46,6 +46,14 @@ public final class AgentActionCatalog {
     private static final double HORIZONTAL_LIMIT = 29_999_984.0;
     private static final double Y_MIN = -2048.0;
     private static final double Y_MAX = 2048.0;
+    /**
+     * Issue #165 — bornes propres au panel, Citizens n'en impose aucune. Au-delà, « regarder les
+     * joueurs » compare la distance de chaque joueur à chaque tick pour un effet invisible en jeu,
+     * et une zone de promenade plus large n'est plus une zone.
+     */
+    private static final double LOOKCLOSE_MAX_RANGE = 64.0;
+    private static final int WANDER_MAX_X_RANGE = 64;
+    private static final int WANDER_MAX_Y_RANGE = 32;
 
     /**
      * Plafond d'une opération monétaire administrative unique (issue #140). Garde-fou de
@@ -244,6 +252,13 @@ public final class AgentActionCatalog {
                 "npc.list", "npc.citizens.list");
         addContentWrite("npc.citizens.skin", Permission.NPC_BIND_WRITE, "Appliquer un skin",
                 "npc.list", "npc.citizens.list");
+        // Issue #165 — comportements Citizens. « Regarder les joueurs » est purement cosmétique :
+        // même droit que renommer ou habiller (NPC_BIND_WRITE). La promenade fait bouger le PNJ
+        // dans le monde : même droit que le déplacer (NPC_SPAWN_WRITE). Aucun droit nouveau.
+        addContentWrite("npc.citizens.lookclose", Permission.NPC_BIND_WRITE,
+                "Regarder les joueurs à proximité", "npc.list", "npc.citizens.list");
+        addSensitiveWrite("npc.citizens.wander", Permission.NPC_SPAWN_WRITE, false,
+                "Promenade du PNJ", "npc.list", "npc.citizens.list");
         addContentWrite("dialogue.definition.create", Permission.DIALOGUE_WRITE, "Créer un dialogue (squelette)",
                 "dialogue.list");
         addContentWrite("dialogue.node.create", Permission.DIALOGUE_WRITE, "Ajouter un nœud", "dialogue.list");
@@ -543,6 +558,92 @@ public final class AgentActionCatalog {
                         return Validation.fail("Pitch hors bornes (-90 à 90).");
                     }
                     params.put("pitch", trimNumber(pitchValue));
+                }
+            }
+            // Issue #165 — « regarder les joueurs ». `enabled` porte un ÉTAT, jamais une bascule :
+            // le formulaire envoie « true » ou « false », et rien d'autre n'est accepté. C'est ce
+            // qui garantit qu'un double clic ou un rejeu ne peut pas inverser l'état obtenu.
+            case "npc.citizens.lookclose" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide.");
+                }
+                String enabled = trim(form.get("enabled"));
+                if (!"true".equals(enabled) && !"false".equals(enabled)) {
+                    return Validation.fail("État manquant : choisir « activé » ou « désactivé ».");
+                }
+                params.put("npc_id", npcId);
+                params.put("enabled", enabled);
+                String rawRange = trim(form.get("range"));
+                if (!rawRange.isEmpty()) {
+                    Double range = finite(rawRange);
+                    if (range == null || range <= 0 || range > LOOKCLOSE_MAX_RANGE) {
+                        return Validation.fail("Portée hors bornes (0 exclu à "
+                                + (long) LOOKCLOSE_MAX_RANGE + " blocs).");
+                    }
+                    params.put("range", trimNumber(range));
+                }
+            }
+            // Issue #165 — promenade. Même discipline d'état explicite. L'ancre est facultative,
+            // mais jamais partielle : on refuse plutôt que de compléter une coordonnée manquante.
+            case "npc.citizens.wander" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide.");
+                }
+                String enabled = trim(form.get("enabled"));
+                if (!"true".equals(enabled) && !"false".equals(enabled)) {
+                    return Validation.fail("État manquant : choisir « activée » ou « désactivée ».");
+                }
+                params.put("npc_id", npcId);
+                params.put("enabled", enabled);
+                if ("false".equals(enabled)) {
+                    // Désactiver ne demande ni ancre ni zone : on ne transmet rien d'autre, pour ne
+                    // pas laisser croire qu'un réglage a été enregistré au passage.
+                    break;
+                }
+                Integer xRange = positiveInt(form.get("x_range"));
+                if (xRange == null || xRange > WANDER_MAX_X_RANGE) {
+                    return Validation.fail("Rayon horizontal manquant ou hors bornes (1 à "
+                            + WANDER_MAX_X_RANGE + " blocs).");
+                }
+                Integer yRange = nonNegativeInt(form.get("y_range"));
+                if (yRange == null || yRange > WANDER_MAX_Y_RANGE) {
+                    return Validation.fail("Amplitude verticale manquante ou hors bornes (0 à "
+                            + WANDER_MAX_Y_RANGE + " blocs).");
+                }
+                params.put("x_range", Integer.toString(xRange));
+                params.put("y_range", Integer.toString(yRange));
+
+                String world = trim(form.get("world"));
+                Double x = finite(form.get("x"));
+                Double y = finite(form.get("y"));
+                Double z = finite(form.get("z"));
+                boolean any = !world.isEmpty() || x != null || y != null || z != null;
+                boolean full = !world.isEmpty() && x != null && y != null && z != null;
+                if (any && !full) {
+                    return Validation.fail("Ancre incomplète : monde, X, Y et Z vont ensemble. "
+                            + "Tout laisser vide reprend la position actuelle du PNJ.");
+                }
+                if (full) {
+                    if (!WORLD_NAME.matcher(world).matches()) {
+                        return Validation.fail("Monde de l'ancre invalide.");
+                    }
+                    if (Math.abs(x) > HORIZONTAL_LIMIT || Math.abs(z) > HORIZONTAL_LIMIT) {
+                        return Validation.fail("Ancre hors du bord de monde (±"
+                                + (long) HORIZONTAL_LIMIT + ").");
+                    }
+                    if (y < Y_MIN || y > Y_MAX) {
+                        return Validation.fail("Ancre : Y hors bornes de sécurité ("
+                                + (long) Y_MIN + " à " + (long) Y_MAX + ").");
+                    }
+                    params.put("world", world);
+                    params.put("x", trimNumber(x));
+                    params.put("y", trimNumber(y));
+                    params.put("z", trimNumber(z));
+                }
+                if ("true".equals(trim(form.get("confirm_replace")))) {
+                    params.put("confirm_replace", "true");
                 }
             }
             case "npc.citizens.rename" -> {
@@ -1359,6 +1460,26 @@ public final class AgentActionCatalog {
         try {
             double v = Double.parseDouble(t);
             return Double.isFinite(v) ? v : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** Entier strictement positif, ou {@code null} si absent / illisible / négatif. */
+    private static Integer positiveInt(String value) {
+        Integer v = nonNegativeInt(value);
+        return v == null || v == 0 ? null : v;
+    }
+
+    /** Entier {@code >= 0}, ou {@code null} si absent ou illisible. */
+    private static Integer nonNegativeInt(String value) {
+        String t = trim(value);
+        if (t.isEmpty()) {
+            return null;
+        }
+        try {
+            int v = Integer.parseInt(t);
+            return v < 0 ? null : v;
         } catch (NumberFormatException e) {
             return null;
         }

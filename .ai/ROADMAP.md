@@ -216,6 +216,74 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-07 (lot 5 — #165 : Citizens compileOnly complet, Look Close et Wander)
+Branche de départ: feature/169-special-mobs-boss @ 2f181fd (lot 4, état de présence + déplacement)
+Étape de départ: FEU VERT du propriétaire pour ajouter le JAR complet de Citizens en compileOnly,
+  afin d'implémenter Look Close et Wander que j'avais conclus — à tort — non implémentables.
+  Cadre imposé : vérifier classes/signatures/sources RÉELLES, appels typés (ni réflexion ni clés de
+  persistance internes), ne pas embarquer Citizens, ne pas ajouter WorldGuard/Denizen, isoler dans
+  un adaptateur, documenter la compatibilité, erreur claire si la version ne convient pas, aucun
+  toggle aveugle au retry, terminer D'ABORD le déploiement déjà lancé sans déploiement concurrent,
+  et ne pas considérer la suite verte avec l'échec RestartServiceTest.
+Étapes terminées:
+(1) DONE — Déploiement du lot 4 terminé. Le précédent n'avait RIEN transféré (sortie de 49 octets,
+  arrêt à l'étape 3/8, AUCUN backup créé — or le script sauvegarde avant de transférer). Ma
+  relance a échoué à son tour parce que la tâche de fond précédente tournait encore : deux Gradle
+  sur le même répertoire de build -> NoSuchFileException sur in-progress-results-generic.bin.
+  Démons arrêtés, résultats nettoyés, relance SEUL : passée. JAR 1 899 262 o, SHA-256 9b27134e… ;
+  backup rpgquest-20261007T145132Z-predeploy.jar (14703d4c…). Redémarrage NON fait, groupé.
+(2) DONE — RestartServiceTest, échec initial et résultat final rapportés distinctement. Diagnostic
+  VÉRIFIÉ dans le code du test (et non supposé) : FAST_TIMEOUT = 3 s réelles et await() de 6 s
+  réelles, donc sensible à la charge par construction ; l'échec a eu lieu sous contention Gradle.
+  Suite relancée en exécution unique : BUILD SUCCESSFUL, RestartServiceTest 24/0. Je ne prétends
+  PAS avoir prouvé quelle assertion avait cédé — le message n'avait pas été conservé.
+(3) DONE — citizens-main en compileOnly strict (isTransitive = false pour écarter libby-bukkit,
+  non résolvable). Vérifié empiriquement par `gradlew dependencies --configuration compileClasspath`
+  qu'aucune dépendance implicite n'entre : WorldGuard, Denizen, PlaceholderAPI, Vault, Spigot,
+  packetevents sont tous en scope `provided` dans le POM, non résolu par Gradle.
+(4) DONE — CORRECTION de trois affirmations fausses que j'avais écrites dans la Bible, démenties
+  par les sources réelles : (a) le toggle n'est une limite que de la COMMANDE /npc lookclose, le
+  trait expose lookClose(boolean) ; (b) Wander PERSISTE — c'est le fournisseur `wander` du trait
+  `waypoints`, pas un goal posé à la main ; (c) une patrouille existante EST détectable via
+  Waypoints#getCurrentProviderName. La Bible porte désormais la correction explicitement.
+(5) DONE — CitizensBehaviourBridge : SEUL fichier référençant citizens-main, distinct de
+  CitizensNpcBridge. Instanciation et appels gardés contre LinkageError -> CITIZENS_INCOMPATIBLE,
+  le reste de l'intégration PNJ continue de fonctionner. Appels typés uniquement.
+  Look Close : état explicite + portée, défauts effectifs lus sur Settings.Setting (pas recopiés),
+  relecture sur le trait après écriture (LOOKCLOSE_NOT_APPLIED plutôt qu'un succès trompeur).
+  Wander : ordre zone-puis-ancre IMPOSÉ par le code de Citizens (setXYRange ne recalcule pas
+  l'arbre de régions) ; désactivation -> fournisseur neutre + annulation de navigation + position
+  finale rapportée.
+(6) DONE — WanderChangePlanner (pur, testable sans serveur) : distingue l'état NEUTRE (linear vide,
+  ce dans quoi Citizens laisse tout PNJ jamais configuré) d'un comportement réel, et refuse
+  (WANDER_CONFLICT) en NOMMANT ce qui serait perdu tant que confirm_replace n'est pas donné.
+  Réactiver = RECONFIGURE (idempotent) ; désactiver ne retire QUE la promenade.
+(7) DONE — Chaîne agent : npc.citizens.lookclose + npc.citizens.wander. `enabled` ne connaît que
+  true/false — ni vide, ni « toggle », ni défaut implicite — donc un rejeu n'inverse jamais l'état.
+  Ancre jamais partielle (refus des deux côtés). Permissions INCHANGÉES : regard = NPC_BIND_WRITE
+  (cosmétique), promenade = NPC_SPAWN_WRITE (déplacement). Aucun droit nouveau.
+(8) DONE — Panel : ligne « Comportement » (trois états, « inconnu » JAMAIS affiché « désactivé »),
+  deux formulaires à boutons d'état, ancre explicitement distinguée de la position avec l'effet
+  d'un déplacement manuel énoncé, aide visible sous chaque champ.
+Tests: plugin 1772 / 0 échec / 37 ignorés ; control-panel 722 / 0 échec / 1 ignoré (XML JUnit).
+  Nouveaux : WanderChangePlannerTest (10), NpcBehaviourActionTest (15), +14 dans NpcsCatalogTest (53 au total),
+  fixtures étendues de NpcCitizensPayloadTest (la garde structurelle par réflexion couvre
+  automatiquement les 11 composants nouveaux).
+Branche finale: feature/169-special-mobs-boss (aucun merge)
+Dernier commit: @@COMMIT@@
+Build: vert.
+Tests manuels en attente: TC-255 (NOUVEAU — regarder les joueurs + promenade, 20 points, avec un
+  PNJ de test à supprimer ensuite), plus TC-236 à TC-254 déjà en attente.
+Blocages: aucun. LIMITES ASSUMÉES, non acquises : (a) MockBukkit n'embarque pas Citizens, donc
+  CitizensBehaviourBridge n'est couvert par AUCUN test automatisé ; (b) la build installée est
+  numérotée Jenkins (4232) et le snapshot Maven compilé est horodaté (2026-09-11) — les deux
+  numérotations ne se recoupent pas, donc la correspondance exacte n'est pas garantie ; une
+  divergence se manifesterait par un CITIZENS_INCOMPATIBLE explicite, sans affecter le reste.
+Première étape à reprendre: dérouler TC-255 après le redémarrage groupé des lots 4 et 5, en
+  commençant par le point 6 (remplacement de patrouille refusé sans confirmation).
+```
+
+```text
 Date: 2026-10-04 (suite overnight — round 2, retours joueur après déploiement #152/#154)
 Branche de départ: feat/control-panel-admin-tools @ 22d4ed2/fdb0926 (entrée précédente)
 Étape de départ: validations reçues (faim Wild OK, Rune Hub OK, noms avec espaces OK, reclic

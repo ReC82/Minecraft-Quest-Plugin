@@ -120,6 +120,18 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<MutationResult> citizensLookClose(String npcId, boolean enabled, Double range) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> citizensWander(String npcId, boolean enabled,
+                                                            String world, Double x, Double y, Double z,
+                                                            int xRange, int yRange, boolean confirmReplace) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<CitizensRosterView> citizensRoster() {
         return CompletableFuture.completedFuture(new CitizensRosterView(false, List.of(), 0, 0, 0));
     }

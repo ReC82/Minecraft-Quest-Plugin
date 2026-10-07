@@ -1133,6 +1133,8 @@ class AgentActionExecutorTest {
         String lastSkinNpcId;
         String lastSkinUrl;
         boolean lastSkinByPlayerName;
+        final List<String> lookCloseCalls = new java.util.ArrayList<>();
+        final List<String> wanderCalls = new java.util.ArrayList<>();
         String lastMoveNpcId;
         String lastMoveWorld;
         String lastProvisionName;
@@ -1214,6 +1216,21 @@ class AgentActionExecutorTest {
             lastSkinUrl = value;
             lastSkinByPlayerName = byPlayerName;
             return mutation("skin " + npcId + " -> " + (byPlayerName ? "pseudo " : "") + value);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> citizensLookClose(String npcId, boolean enabled, Double range) {
+            lookCloseCalls.add(npcId + " enabled=" + enabled + " range=" + range);
+            return mutation("lookclose " + npcId);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> citizensWander(String npcId, boolean enabled,
+                                                                String world, Double x, Double y, Double z,
+                                                                int xRange, int yRange, boolean confirmReplace) {
+            wanderCalls.add(npcId + " enabled=" + enabled + " anchor=" + world + "/" + x + "/" + y + "/" + z
+                    + " zone=" + xRange + "x" + yRange + " confirm=" + confirmReplace);
+            return mutation("wander " + npcId);
         }
 
         @Override

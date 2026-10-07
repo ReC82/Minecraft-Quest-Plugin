@@ -46,6 +46,8 @@ public final class Icons {
             Map.entry("search", "search"),
             Map.entry("filter", "funnel"),
             Map.entry("edit", "pencil"),
+            // Issue #165 — « regarder les joueurs » d'un PNJ Citizens.
+            Map.entry("eye", "eye"),
             Map.entry("plus", "plus-lg"),
             Map.entry("trash", "trash"),
             Map.entry("copy", "clipboard"),

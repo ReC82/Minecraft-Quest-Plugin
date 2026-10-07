@@ -25,17 +25,28 @@ import java.util.UUID;
  *                  {@code false} = <strong>dernière position enregistrée</strong> par Citizens pour
  *                  un PNJ non apparu. La distinction compte : une position enregistrée peut être
  *                  ancienne, et ne prouve aucune présence actuelle.
+ * @param lookClose état réel du trait {@code lookclose} (issue #165), ou {@code null} si la build
+ *                  Citizens installée ne l'expose pas. {@code null} veut dire « inconnu », jamais
+ *                  « désactivé » : le panel doit pouvoir faire la différence.
+ * @param wander    état réel de la promenade (issue #165), ou {@code null} pour la même raison.
  */
 public record CitizensNpc(int numericId, UUID uuid, String name, boolean spawned,
                           String world, double x, double y, double z, float yaw, float pitch,
-                          boolean liveLocation, boolean shouldSpawn, boolean chunkLoaded) {
+                          boolean liveLocation, boolean shouldSpawn, boolean chunkLoaded,
+                          LookCloseState lookClose, WanderState wander) {
 
     /**
      * Entrée de registre dont Citizens n'expose <strong>aucune</strong> position exploitable.
      * Utilisé par les chemins qui n'ont pas besoin de la position (liaison, spawn) et par les tests.
      */
     public CitizensNpc(int numericId, UUID uuid, String name, boolean spawned) {
-        this(numericId, uuid, name, spawned, null, 0, 0, 0, 0f, 0f, false, spawned, false);
+        this(numericId, uuid, name, spawned, null, 0, 0, 0, 0f, 0f, false, spawned, false, null, null);
+    }
+
+    /** Même entrée, enrichie des comportements relus sur Citizens. */
+    public CitizensNpc withBehaviour(LookCloseState look, WanderState walk) {
+        return new CitizensNpc(numericId, uuid, name, spawned, world, x, y, z, yaw, pitch,
+                liveLocation, shouldSpawn, chunkLoaded, look, walk);
     }
 
     /** Vrai si Citizens expose une position exploitable pour ce PNJ. */

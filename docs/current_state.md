@@ -880,6 +880,32 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   Minecraft ni LuckPerms** : le pont vers les droits Minecraft par monde est l'issue #200, **non
   livrée** — voir son rapport d'audit pour le blocage identifié.
 
+- **PNJ — « regarder les joueurs » et promenade administrables depuis le panel (#165).** Deux
+  nouvelles actions agent, `npc.citizens.lookclose` (trait Citizens `lookclose`) et
+  `npc.citizens.wander` (fournisseur `wander` du trait Citizens `waypoints`). Toutes deux portent un
+  état **explicite** `true`/`false` — il n'existe aucune valeur « inverser » — de sorte qu'un double
+  clic, un retry réseau ou un rejeu par le cache d'idempotence aboutit au **même** état. Le regard
+  expose la portée en blocs et est **relu sur le trait** après écriture (`LOOKCLOSE_NOT_APPLIED`
+  plutôt qu'un succès trompeur). La promenade est **bornée** par une ancre et une zone
+  (`x_range` 1-64, `y_range` 0-32) : `WanderGoal` filtre ses destinations par cette boîte, dans le
+  monde du PNJ, qui ne peut donc ni en sortir ni changer de monde. L'**ancre est distincte de la
+  position** et un déplacement manuel ne la déplace pas — la fiche et l'aide le disent. **Aucun
+  écrasement silencieux** : Citizens n'accorde qu'un fournisseur de parcours par PNJ, donc
+  `WanderChangePlanner` (pur, testé) distingue l'état neutre (`linear` vide, ce dans quoi Citizens
+  laisse tout PNJ jamais configuré) d'une patrouille réelle, et refuse (`WANDER_CONFLICT`) en
+  nommant ce qui serait perdu tant que la confirmation n'est pas donnée ; désactiver ne retire
+  **que** la promenade et laisse intact un autre parcours. Permissions **inchangées** : le regard
+  relève de `NPC_BIND_WRITE` (cosmétique, comme renommer/habiller), la promenade de
+  `NPC_SPAWN_WRITE` (comme déplacer). **Nouvelle dépendance de compilation** :
+  `net.citizensnpcs:citizens-main` en `compileOnly` strict (`isTransitive = false`), jamais
+  empaqueté, sans amener WorldGuard ni Denizen ; toute la surface est confinée à
+  `CitizensBehaviourBridge`, qui intercepte `LinkageError` et renvoie `CITIZENS_INCOMPATIBLE` sur une
+  build inadaptée — le reste de l'intégration PNJ continue de fonctionner. Voir
+  `docs/deployment/CITIZENS.md`. Tests : `WanderChangePlannerTest` (10), `NpcBehaviourActionTest`
+  (14), ajouts à `NpcsCatalogTest` (12) et `NpcCitizensPayloadTest`. **Limite assumée** :
+  `MockBukkit` n'embarque pas Citizens, donc le pont lui-même n'est couvert par **aucun** test
+  automatisé — validation manuelle TC-255.
+
 ## Bugs connus et corrigés
 
 - **Sélection RPGQuest vs WorldEdit** : l'outil `/rpgadmin zone wand` utilisait le même matériau

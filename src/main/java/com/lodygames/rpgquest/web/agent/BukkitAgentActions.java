@@ -1292,6 +1292,81 @@ public final class BukkitAgentActions implements AgentActions {
                 .findFirst());
     }
 
+    /**
+     * Issue #165 — « regarder les joueurs ». État <strong>explicite</strong> : {@code enabled} est
+     * posé tel quel, jamais inversé. Rejouer la requête donne donc le même résultat.
+     */
+    @Override
+    public CompletableFuture<MutationResult> citizensLookClose(String npcId, boolean enabled, Double range) {
+        return withBoundCitizens(npcId, uuid ->
+                toMutation(npcIdentityService.setLookClose(uuid, enabled, range)));
+    }
+
+    /**
+     * Issue #165 — promenade. Activer exige une ancre : sans elle, Citizens ne borne pas la zone.
+     * Quand aucune n'est fournie, on prend la position <strong>actuellement connue</strong> du PNJ
+     * et on le dit — on n'invente jamais un point de départ.
+     */
+    @Override
+    public CompletableFuture<MutationResult> citizensWander(String npcId, boolean enabled,
+                                                            String world, Double x, Double y, Double z,
+                                                            int xRange, int yRange, boolean confirmReplace) {
+        if (!enabled) {
+            return withBoundCitizens(npcId, uuid -> toMutation(npcIdentityService.disableWander(uuid)));
+        }
+        return withBoundCitizens(npcId, uuid -> {
+            org.bukkit.Location anchor = resolveAnchor(uuid, world, x, y, z);
+            if (anchor == null) {
+                return MutationResult.of(false, "NO_ANCHOR",
+                        "Aucune ancre utilisable : ce PNJ n'a pas de position connue et aucune n'a été "
+                                + "fournie. Sans ancre, Citizens ne bornerait pas la promenade — rien "
+                                + "n'a été modifié.");
+            }
+            return toMutation(npcIdentityService.enableWander(uuid, anchor, xRange, yRange, confirmReplace));
+        });
+    }
+
+    /**
+     * Ancre explicite si les quatre champs sont donnés et le monde chargé ; sinon la position
+     * actuellement connue du PNJ. Jamais une position inventée.
+     */
+    private org.bukkit.Location resolveAnchor(UUID citizensUuid, String world, Double x, Double y, Double z) {
+        if (world != null && !world.isBlank() && x != null && y != null && z != null) {
+            World w = plugin.getServer().getWorld(world.trim());
+            return w == null ? null : new org.bukkit.Location(w, x, y, z);
+        }
+        return npcIdentityService.citizensRoster().stream()
+                .filter(n -> n.uuid().equals(citizensUuid) && n.hasLocation())
+                .findFirst()
+                .map(n -> {
+                    World w = plugin.getServer().getWorld(n.world());
+                    return w == null ? null : new org.bukkit.Location(w, n.x(), n.y(), n.z());
+                })
+                .orElse(null);
+    }
+
+    /**
+     * Garde commune aux écritures de comportement : Citizens disponible, PNJ effectivement lié,
+     * puis exécution sur le thread principal — l'API Citizens l'exige.
+     */
+    private CompletableFuture<MutationResult> withBoundCitizens(
+            String npcId, java.util.function.Function<UUID, MutationResult> body) {
+        if (!npcIdentityService.citizensAvailable()) {
+            return done(MutationResult.of(false, "CITIZENS_UNAVAILABLE", "Citizens n'est pas disponible."));
+        }
+        return citizensUuidOf(npcId).thenCompose(uuid -> {
+            if (uuid.isEmpty()) {
+                return done(MutationResult.of(false, "NO_CITIZENS_BINDING",
+                        "Aucun PNJ Citizens lié à « " + safe(npcId) + " » — le lier d'abord."));
+            }
+            return onMain(() -> done(body.apply(uuid.get())));
+        });
+    }
+
+    private static MutationResult toMutation(com.lodygames.rpgquest.npc.NpcBehaviourOutcome outcome) {
+        return MutationResult.of(outcome.ok(), outcome.code(), outcome.message());
+    }
+
     @Override
     public CompletableFuture<CitizensRosterView> citizensRoster() {
         boolean available = npcIdentityService.citizensAvailable();
@@ -1322,7 +1397,20 @@ public final class BukkitAgentActions implements AgentActions {
                             n.hasLocation() ? n.x() : null, n.hasLocation() ? n.y() : null,
                             n.hasLocation() ? n.z() : null,
                             n.hasLocation() ? n.yaw() : null, n.hasLocation() ? n.pitch() : null,
-                            n.liveLocation(), n.shouldSpawn(), n.chunkLoaded()));
+                            n.liveLocation(), n.shouldSpawn(), n.chunkLoaded(),
+                            // Comportements (issue #165) : null = INCONNU (build Citizens qui ne les
+                            // expose pas), jamais « désactivé ». La fiche doit pouvoir le dire.
+                            n.lookClose() == null ? null : n.lookClose().enabled(),
+                            n.lookClose() == null ? null : n.lookClose().range(),
+                            n.wander() == null ? null : n.wander().enabled(),
+                            n.wander() == null ? null : n.wander().provider(),
+                            n.wander() == null ? null : n.wander().waypointCount(),
+                            n.wander() == null || !n.wander().hasAnchor() ? null : n.wander().anchorWorld(),
+                            n.wander() == null || !n.wander().hasAnchor() ? null : n.wander().anchorX(),
+                            n.wander() == null || !n.wander().hasAnchor() ? null : n.wander().anchorY(),
+                            n.wander() == null || !n.wander().hasAnchor() ? null : n.wander().anchorZ(),
+                            n.wander() == null ? null : n.wander().xRange(),
+                            n.wander() == null ? null : n.wander().yRange()));
                 }
                 rows.sort((a, b) -> Integer.compare(a.numericId(), b.numericId()));
                 return done(new CitizensRosterView(true, List.copyOf(rows), rows.size(), available2, linked));

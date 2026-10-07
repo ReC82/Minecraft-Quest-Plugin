@@ -5277,3 +5277,116 @@ Branche `feature/169-special-mobs-boss` @ **`f21424d`**, worktree propre.
 
 `scripts/rollback-verygames.sh --latest` restaure
 `rpgquest-20261007T124942Z-predeploy.jar` (= le lot 2), puis redémarrer.
+
+---
+
+## 2026-10-07 (lot 4) - PNJ : état de présence exact et déplacement sans recréation (#165)
+
+### Changement
+
+Trois états de présence distincts au lieu de deux (« présent en jeu » / « en veille » /
+« désactivé dans Citizens ») : un PNJ non matérialisé n'est plus présenté comme une anomalie,
+puisque Citizens dématérialise ses PNJ dès qu'aucun joueur n'est à portée. Le relevé porte
+désormais le trait `Spawned` (intention persistante) et l'état de chargement du chunk, qui
+expliquent à eux seuls la plupart des cas. Correction du doublon « Relevé il y a il y a 1 s ».
+
+Nouvelle action `npc.citizens.move` : déplacer un PNJ **existant** sans le recréer (via
+`NPC#teleport`), donc en conservant identité Citizens, identifiant RPGQuest, skin, traits et
+liaisons dialogues/quêtes. Arrivée validée (sol praticable, deux cases libres, ni liquide ni
+portail) ; aucun bloc cassé ni posé ; position relue et comparée après coup.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du Control Panel. Aucune migration de schéma,
+aucune donnée touchée.
+
+### Sauvegarde préalable
+
+Automatique via `scripts/deploy-verygames.sh` (backup horodaté du JAR déployé + méta).
+
+### Déploiement
+
+**Effectué le 2026-10-07 à 15:01 (heure locale).**
+
+- Branche `feature/169-special-mobs-boss`, commit `2f181fd`.
+- `./gradlew test` : 1747 tests plugin, 0 échec, 37 ignorés ; 708 tests panel, 0 échec, 1 ignoré.
+- `./gradlew build` : OK.
+- JAR transféré : `1 899 262 o`,
+  SHA-256 `9b27134e684173bea4d77b3c64c73404b9f8000f304872c793c543c71c3d0a09`.
+- Backup de la version précédente :
+  `rpgquest-20261007T145132Z-predeploy.jar` (`1 895 945 o`,
+  SHA-256 `14703d4c912df3a15781a7faea0de422c2bda9b53bc4b732c1ebb89b12aae86a`).
+- **Redémarrage Minecraft requis** — groupé avec le lot 5 ci-dessous.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` — voir TC-238 et la section PNJ de `docs/MANUAL_TEST_PLAN.md`.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` restaure
+`rpgquest-20261007T145132Z-predeploy.jar` (= le lot 3), puis redémarrer.
+
+---
+
+## 2026-10-07 (lot 5) - PNJ : « regarder les joueurs » et promenade pilotables depuis le panel (#165)
+
+### Changement
+
+Deux comportements Citizens deviennent administrables depuis la fiche PNJ du Control Panel :
+
+- **« Regarder les joueurs »** (trait Citizens `lookclose`) : état activé/désactivé **explicite** et
+  portée en blocs, relus sur le trait après écriture.
+- **Promenade** (fournisseur `wander` du trait Citizens `waypoints`) : activation/désactivation,
+  **ancre** et **zone bornée** (rayon horizontal, amplitude verticale). Le PNJ ne peut ni sortir de
+  sa zone ni changer de monde. Aucun moteur de déplacement ajouté : c'est le système natif de
+  Citizens.
+
+Deux garanties structurantes : **aucune bascule** — les actions portent un état `true`/`false`, donc
+un double clic ou un rejeu n'inverse jamais l'état — et **aucun écrasement silencieux** — activer la
+promenade sur un PNJ portant déjà une patrouille est refusé en nommant ce qui serait perdu, tant
+qu'une confirmation explicite n'est pas donnée.
+
+Le relevé `npc.citizens.list` transporte désormais ces états ; une valeur absente est affichée
+« inconnu », **jamais** « désactivé ».
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du Control Panel.
+
+**Aucune migration de schéma** (`SchemaMigrator.CURRENT_VERSION` inchangé, 27). **Aucune donnée
+touchée** : ni `data.db`, ni les PNJ existants, ni leurs skins, ni leurs liaisons. Aucun comportement
+Citizens n'est modifié tant qu'un administrateur ne le demande pas explicitement depuis le panel.
+
+### Nouvelle dépendance de compilation (sans effet sur le serveur)
+
+`net.citizensnpcs:citizens-main` est ajouté en **`compileOnly` strict** : il n'est **pas** empaqueté
+dans `rpgquest-*.jar`, dont la taille ne varie que des classes propres au lot. Aucun plugin nouveau
+n'est requis sur le serveur, et **ni WorldGuard ni Denizen** ne sont ajoutés (toutes les dépendances
+de `citizens-main` autres que `citizensapi` sont en scope `provided`, non résolu par Gradle).
+
+Citizens reste une **dépendance optionnelle** : le plugin démarre normalement sans lui. Si la build
+Citizens installée n'exposait pas ces traits, ces deux options seules renverraient
+`CITIZENS_INCOMPATIBLE` et tout le reste de l'intégration PNJ continuerait de fonctionner. Détail
+dans `docs/deployment/CITIZENS.md`.
+
+### Sauvegarde préalable
+
+Automatique via `scripts/deploy-verygames.sh`. Ne pas écraser le backup du lot 4.
+
+### Déploiement
+
+1. `scripts/deploy-verygames.sh -y` depuis un worktree propre.
+2. `scripts/plugadmin/deploy.sh` pour le panel.
+3. **Redémarrage Minecraft requis**, groupé avec le lot 4 — prévenir les joueurs avant.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` — **TC-255** de `docs/MANUAL_TEST_PLAN.md`. Le pont Citizens n'est
+couvert par aucun test automatisé (`MockBukkit` n'embarque pas Citizens) : seuls la règle de
+non-écrasement, la validation des actions et le rendu du panel le sont.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` restaure le JAR du lot 4, puis redémarrer. Côté panel,
+`scripts/plugadmin/deploy.sh` conserve la release précédente.

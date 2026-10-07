@@ -18,9 +18,9 @@ repositories {
     maven("https://repo.papermc.io/repository/maven-public/") {
         name = "papermc"
     }
-    // CitizensAPI uniquement (pas le plugin complet citizens-main) : l'implémentation réelle est
-    // fournie à l'exécution par le plugin Citizens lui-même, s'il est installé (compileOnly,
-    // soft-dependency déclarée dans plugin.yml — voir com.lodygames.rpgquest.npc.NpcIdentityService).
+    // Citizens : API et plugin, tous deux en compileOnly. L'implémentation réelle est fournie à
+    // l'exécution par le plugin Citizens lui-même, s'il est installé (soft-dependency déclarée dans
+    // plugin.yml — voir com.lodygames.rpgquest.npc.NpcIdentityService).
     maven("https://maven.citizensnpcs.co/repo") {
         name = "citizensnpcs"
     }
@@ -34,6 +34,30 @@ configurations {
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
     compileOnly("net.citizensnpcs:citizensapi:2.0.43-SNAPSHOT")
+    // Issue #165 — « regarder les joueurs » (LookClose) et « promenade » (fournisseur `wander` du
+    // trait `waypoints`) vivent dans le PLUGIN Citizens, pas dans citizensapi. Les piloter exige
+    // donc `citizens-main`, en compileOnly STRICT : jamais empaqueté dans notre JAR, fourni à
+    // l'exécution par le plugin installé — exactement comme citizensapi, paper-api ou log4j-core.
+    //
+    // Pourquoi une dépendance plutôt que de la réflexion : les accesseurs nécessaires sont publics
+    // et typés (LookClose#lookClose(boolean)/setRange(double), WanderWaypointProvider#setXYRange/
+    // addRegionCentre, Waypoints#setWaypointProvider). Les appeler par réflexion ou par les clés de
+    // persistance internes coûterait la vérification du compilateur sans rien gagner.
+    //
+    // Pas de dépendance implicite ajoutée : dans le POM de citizens-main, WorldGuard, Denizen,
+    // PlaceholderAPI, Vault, Spigot et packetevents sont tous en scope `provided`, que Gradle ne
+    // résout pas transitivement. Seul `citizensapi` (scope `compile`) remonte — et il est déjà là.
+    //
+    // Compatibilité : toute la surface Citizens « plugin » est confinée à
+    // com.lodygames.rpgquest.npc.CitizensBehaviourBridge, qui intercepte LinkageError et renvoie un
+    // refus nommé si la build installée ne correspond pas. Voir docs/deployment/CITIZENS.md.
+    //
+    // `isTransitive = false` : la seule dépendance que Gradle remonterait est `libby-bukkit`, le
+    // chargeur de bibliothèques d'exécution de Citizens — absent de nos dépôts et sans aucun rôle à
+    // la compilation. `citizensapi` est déclaré explicitement juste au-dessus, donc rien n'est perdu.
+    compileOnly("net.citizensnpcs:citizens-main:2.0.43-SNAPSHOT") {
+        isTransitive = false
+    }
     // LuckPerms : API SEULE, fournie à l'exécution par le plugin LuckPerms s'il est installé
     // (compileOnly, soft-dependency dans plugin.yml — voir
     // com.lodygames.rpgquest.permission.LuckPermsBridge). Même conception que CitizensAPI : le

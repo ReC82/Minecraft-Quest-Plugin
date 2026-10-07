@@ -83,7 +83,7 @@ final class CitizensNpcBridge {
         }
         if (location == null || location.getWorld() == null) {
             return new CitizensNpc(npc.getId(), npc.getUniqueId(), npc.getName(), spawned,
-                    null, 0, 0, 0, 0f, 0f, false, shouldSpawn, false);
+                    null, 0, 0, 0, 0f, 0f, false, shouldSpawn, false, null, null);
         }
         // Chargement du chunk : lu SANS le charger (isChunkLoaded), car sonder un PNJ ne doit
         // jamais forcer de génération de terrain.
@@ -91,7 +91,7 @@ final class CitizensNpcBridge {
                 location.getBlockX() >> 4, location.getBlockZ() >> 4);
         return new CitizensNpc(npc.getId(), npc.getUniqueId(), npc.getName(), spawned,
                 location.getWorld().getName(), location.getX(), location.getY(), location.getZ(),
-                location.getYaw(), location.getPitch(), live, shouldSpawn, chunkLoaded);
+                location.getYaw(), location.getPitch(), live, shouldSpawn, chunkLoaded, null, null);
     }
 
     /** Trait public {@code Spawned} : l'intention enregistrée. Repli sur l'état courant si absent. */

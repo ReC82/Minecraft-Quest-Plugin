@@ -3422,6 +3422,74 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-255 — PNJ : « regarder les joueurs » et promenade depuis le panel (issue #165, PENDING MANUAL VALIDATION)
+
+-   **Fonctionnalité testée :** actions agent `npc.citizens.lookclose` et `npc.citizens.wander`,
+    pont `CitizensBehaviourBridge` (trait Citizens `LookClose`, fournisseur `wander` du trait
+    `Waypoints`), affichage « Comportement » de la fiche PNJ.
+-   **Préconditions :** Control Panel déployé, JAR déployé **et serveur redémarré**, Citizens
+    2.0.43 actif. **Utiliser un PNJ de test** créé pour l'occasion depuis « Créer un PNJ », jamais
+    Andy, Tania, Tan, Help ni le Guide. Le supprimer à la fin.
+-   **Pourquoi c'est manuel :** `MockBukkit` n'embarque pas Citizens. Rien de ce qui touche aux
+    traits réels n'est couvert par un test automatisé — seules la règle de non-écrasement, la
+    validation des actions et le rendu du panel le sont.
+
+**Regarder les joueurs**
+
+1.  Fiche du PNJ de test → **« Regarder les joueurs »**. **Attendu** : l'état actuel est annoncé
+    comme relu sur Citizens (« désactivé » par défaut), et la portée préremplie à 10.
+2.  Mettre la portée à 6, cliquer **Activer**. Rafraîchir « Citizens ». **Attendu** : la fiche
+    affiche « regarde les joueurs », « portée 6.0 bloc(s) ».
+3.  En jeu, s'approcher à moins de 6 blocs. **Attendu** : le PNJ tourne la tête vers le joueur.
+    S'éloigner au-delà de 6 blocs : il cesse de suivre.
+4.  **Point clé — pas de bascule.** Recliquer **Activer** deux fois de suite. **Attendu** : le PNJ
+    reste activé. Il ne doit **jamais** s'éteindre parce qu'on a recliqué.
+5.  Cliquer **Désactiver**, puis **Désactiver** de nouveau. **Attendu** : reste désactivé.
+6.  Redémarrer le serveur. **Attendu** : l'état et la portée sont conservés.
+
+**Promenade**
+
+7.  Fiche → **« Promenade »**. **Attendu** : rayon 12 et amplitude 2 proposés ; l'ancre repliée est
+    préremplie depuis la **position actuelle** du PNJ, et le texte le dit.
+8.  Cliquer **Activer la promenade**. Rafraîchir « Citizens ». **Attendu** : la fiche affiche
+    « promenade », l'**ancre** avec ses coordonnées, et « ±12 bloc(s) horizontalement ».
+9.  Observer le PNJ quelques minutes. **Attendu** : il se déplace au hasard et **ne sort jamais**
+    d'environ 12 blocs autour de l'ancre, ni de son monde.
+10. Lui parler pendant qu'il se promène. **Attendu** : le dialogue s'ouvre normalement ; une quête
+    qu'il donne reste donnable.
+11. **Point clé — ancre ≠ position.** Utiliser « Déplacer » pour l'emmener 30 blocs plus loin.
+    Rafraîchir. **Attendu** : l'ancre affichée est **inchangée**, et le PNJ revient se promener
+    autour de son ancre d'origine.
+12. Réappliquer la promenade (bouton « Mettre à jour la promenade ») sans toucher à l'ancre.
+    **Attendu** : aucune demande de confirmation — le PNJ est déjà en promenade.
+13. Cliquer **Arrêter la promenade**. **Attendu** : le PNJ s'immobilise immédiatement (navigation
+    interrompue), le message donne sa **position finale**, et la fiche affiche « immobile ».
+14. Recliquer **Arrêter la promenade**. **Attendu** : message « la promenade n'est pas active »,
+    rien n'est modifié.
+15. Redémarrer le serveur avec la promenade active. **Attendu** : elle reprend, même ancre, même
+    zone.
+
+**Point clé — jamais d'écrasement silencieux**
+
+16. En jeu, donner une patrouille au PNJ de test : `/npc select <id>` puis `/npc path`, poser
+    2-3 points, quitter l'éditeur. Rafraîchir « Citizens ».
+17. Fiche → **« Promenade »**. **Attendu** : un avertissement annonce la patrouille existante **et
+    le nombre de points**, et une case « Je confirme le remplacement » est présente.
+18. Cliquer **Activer la promenade** **sans** cocher la case. **Attendu** : l'action **échoue**
+    (`WANDER_CONFLICT`), la patrouille est **intacte**, le PNJ patrouille toujours.
+19. Cocher la case puis activer. **Attendu** : la promenade remplace la patrouille, et le message
+    dit explicitement ce qui a été remplacé.
+20. Supprimer le PNJ de test.
+
+-   **Limites :** l'exactitude du bornage de zone s'observe statistiquement — quelques minutes
+    d'observation ne prouvent pas une borne stricte, elles détectent une fuite grossière. La
+    correspondance exacte entre le snapshot Maven `2.0.43` compilé et la build Jenkins `4232`
+    installée n'est pas garantie par les numéros : si une incompatibilité existait, elle se
+    manifesterait par un message `CITIZENS_INCOMPATIBLE` à l'étape 2 ou 8, **sans** affecter les
+    autres fonctions PNJ. Le signaler tel quel plutôt que d'insister.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -3506,3 +3574,4 @@ le résumé de récompenses de TC-014).
 | TC-252 | Groupes multiples, droits effectifs et provenance #199 (PENDING) | | | |
 | TC-253 | Droits Minecraft par groupe/monde, collision externe #200 (PENDING) | | | |
 | TC-254 | Édition d'un choix de dialogue avec actions/conditions #82 (PENDING) | | | |
+| TC-255 | PNJ : regarder les joueurs et promenade depuis le panel #165 (PENDING) | | | |

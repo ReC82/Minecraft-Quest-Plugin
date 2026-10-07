@@ -2375,39 +2375,95 @@ le serveur, pas la documentation en ligne.
 | Hologrammes (`/npc hologram`) | lignes au-dessus du PNJ | commande uniquement |
 | `PlayerFilter` (trait **public**) | montrer un PNJ à certains joueurs | demande une règle métier côté RPGQuest |
 
-**Non implémentable aujourd'hui, et pourquoi — précisément.** Les classes `LookClose` et
-`Waypoints` ne sont pas dans `citizensapi` (elles vivent dans `citizens-main`). On peut malgré tout
-les **atteindre** en API publique, via `TraitFactory#getTraitClass("lookclose")` puis
-`NPC#getOrAddTrait(Class)` — ce n'est donc pas l'accès qui bloque. Ce qui bloque est la
-<strong>lecture et l'écriture de leur état</strong> :
+**Décision prise (#165) : `citizens-main` en `compileOnly`.** Les classes `LookClose` et
+`Waypoints` ne sont pas dans `citizensapi` — elles vivent dans le plugin Citizens lui-même. Le dépôt
+déclare donc désormais `net.citizensnpcs:citizens-main` en **`compileOnly` strict** (`isTransitive =
+false`), au même titre que `citizensapi`, `paper-api` ou `log4j-core` : jamais empaqueté dans notre
+JAR, fourni à l'exécution par le plugin installé. Rien d'autre n'entre : dans le POM de
+`citizens-main`, WorldGuard, Denizen, PlaceholderAPI, Vault, Spigot et packetevents sont tous en
+scope `provided`, que Gradle ne résout pas.
 
-- leurs méthodes (`isEnabled()`, `setRange()`…) ne sont pas sur le classpath de compilation : les
-  appeler demande de la **réflexion** sur des signatures non contractuelles ;
-- l'alternative, `Trait#save(DataKey)` / `Trait#load(DataKey)` avec un `MemoryDataKey`, est bien
-  publique, mais dépend des **clés de persistance internes** de chaque trait — non documentées, non
-  vérifiables à la compilation, et susceptibles de changer sans préavis ;
-- aucune des deux voies n'est **testable hors serveur** : MockBukkit n'embarque pas Citizens, donc
-  ce code ne serait couvert par aucun test automatisé.
+Ce choix permet des **appels typés** (`LookClose#lookClose(boolean)`,
+`WanderWaypointProvider#setXYRange`) au lieu de réflexion ou de clés de persistance internes : le
+compilateur vérifie les signatures.
 
-Conséquences vérifiées sur la build installée :
+**Correction d'une analyse antérieure.** Une version précédente de cette page concluait que ces deux
+options étaient « non implémentables ». Les sources complètes la contredisent sur trois points, et
+c'est la version ci-dessous qui fait foi :
 
-- **Look Close** : la commande installée est un **toggle** (`/npc lookclose … - Toggle whether a NPC will look when a
-  player is near`) : il n'existe aucun `--enabled true|false`. Exposer cela violerait l'exigence
-  « définir un état explicite, jamais un toggle aveugle qui pourrait inverser l'état lors d'un
-  retry ». Les sous-options, elles, sont explicites (`--range`, `--randomlook true|false`,
-  `--disablewhennavigating true|false`, `--perplayer`, `--targetnpcs`, `--randomswitchtargets`)
-  mais ne servent à rien tant que l'activation reste non pilotable et non lisible.
-- **Wander** : `WanderGoal` existe dans l'API, mais c'est un *goal* ajouté au moteur à l'exécution —
-  il **ne persiste pas** au redémarrage et constituerait un moteur de déplacement parallèle, deux
-  choses explicitement exclues. La commande installée est
-  `/npc wander (add x y z world) | (worldguardregion [region]) | (xyrange [xrange] [yrange])` :
-  `xyrange` couvre bien les bornes horizontale/verticale, `worldguardregion` exigerait WorldGuard,
-  et il n'y a **ni vitesse ni pauses**. Surtout, Wander remplace le fournisseur de points de
-  passage : impossible de **détecter** une patrouille existante pour avertir, puisque le trait
-  `Waypoints` n'est pas lisible.
+- le **toggle** n'est une limite que de la *commande* `/npc lookclose` ; le trait expose
+  `lookClose(boolean)`, un setter d'état explicite ;
+- Wander **persiste** bel et bien : il n'est pas ajouté comme *goal* à la main, c'est le fournisseur
+  `wander` du trait `waypoints`, que Citizens sauvegarde ;
+- une patrouille existante **est** détectable, via `Waypoints#getCurrentProviderName()` et
+  `WaypointProvider.EnumerableWaypointProvider#waypoints()`.
 
-Les débloquer suppose une décision d'architecture — ajouter le jar complet de Citizens en
-`compileOnly` pour rendre ces traits lisibles — qui n'a pas été prise ici.
+**Isolation et compatibilité.** Toute la surface « plugin Citizens » est confinée à
+`CitizensBehaviourBridge`, distinct de `CitizensNpcBridge` (qui, lui, ne touche que `citizensapi`).
+Chaque appel est enveloppé dans une garde qui intercepte `LinkageError` : sur une build Citizens qui
+n'exposerait pas ces classes, ces deux options seules renvoient `CITIZENS_INCOMPATIBLE` avec un
+message explicite, et **tout le reste de l'intégration PNJ continue de fonctionner**. Même
+discipline que `ops.ConsoleTap` pour Log4j.
+
+**Ce qui reste hors périmètre, et pourquoi.** `MockBukkit` n'embarque pas Citizens : le pont
+lui-même n'est donc couvert par aucun test automatisé. Ce qui est testé est tout ce qui a pu être
+rendu pur — la règle de non-écrasement (`WanderChangePlanner`), la validation des paramètres des
+deux actions, leur idempotence, et le rendu du panel. Le comportement des traits réels demande une
+validation en jeu, listée dans `docs/MANUAL_TEST_PLAN.md`.
+
+#### « Regarder les joueurs » et promenade depuis le panel (#165)
+
+Fiche PNJ → **« Regarder les joueurs »** et **« Promenade »**. Un PNJ Citizens doit être lié ;
+aucune permission nouvelle n'est créée : le regard est cosmétique et relève de `NPC_BIND_WRITE`
+(comme renommer ou habiller), la promenade fait bouger le PNJ et relève de `NPC_SPAWN_WRITE`
+(comme le déplacer).
+
+**Aucune bascule, nulle part.** Les deux actions portent un paramètre `enabled` valant `true` ou
+`false`, et rien d'autre n'est accepté — ni vide, ni `toggle`. Le formulaire propose donc deux
+boutons d'état plutôt qu'un interrupteur. C'est ce qui garantit qu'un double clic, un retry réseau
+ou un rejeu par le cache d'idempotence aboutit au **même** état, et non à son inverse.
+
+**Look Close** (`npc.citizens.lookclose`) : état activé/désactivé et **portée** en blocs
+(`LookClose#setRange`). Après écriture, l'état est **relu sur le trait** ; s'il ne correspond pas,
+l'action échoue (`LOOKCLOSE_NOT_APPLIED`) au lieu de rendre un succès trompeur. La fiche affiche
+l'état réellement enregistré — et, quand le relevé ne le porte pas, « **inconnu** », jamais
+« désactivé ». Défauts effectifs lus sur la configuration Citizens installée (`Settings.Setting`),
+pas recopiés : par défaut `npc.default.look-close.enabled` = faux et `…range` = 10 blocs. Bornes du
+panel : 1 à 64 blocs (Citizens n'en impose aucune).
+
+**Promenade** (`npc.citizens.wander`) : le PNJ se déplace au hasard dans une zone bornée autour
+d'une **ancre**, via le fournisseur `wander` natif — aucun moteur de déplacement ajouté.
+
+- **Ancre** obligatoire côté effet : sans elle, `WanderWaypointProvider` ne transmet aucune région
+  et le PNJ errerait sans limite. Le formulaire la préremplit depuis l'ancre enregistrée si la
+  promenade tourne, sinon depuis la position du PNJ — et dit laquelle. Monde + X/Y/Z vont ensemble ;
+  une ancre partielle est refusée des deux côtés, jamais complétée au jugé.
+- **L'ancre n'est pas la position.** Déplacer le PNJ (« Déplacer ») ne déplace pas son ancre : il
+  faut réappliquer la promenade pour la réancrer. La fiche et l'aide le disent explicitement.
+- **Zone bornée** : `x_range` (1–64) et `y_range` (0–32) sont des demi-côtés en blocs autour de
+  l'ancre. `WanderGoal` filtre ses destinations par cette boîte, dans le monde du PNJ : il ne peut
+  ni en sortir, ni changer de monde. `y_range = 0` est légitime — promenade sur un seul plan.
+- **Jamais d'écrasement silencieux.** Citizens n'accorde qu'un fournisseur de parcours par PNJ :
+  `Waypoints#setWaypointProvider` retire le précédent. `WanderChangePlanner` (classe pure, testée)
+  distingue l'état **neutre** — aucun fournisseur, ou `linear` sans aucun point, ce dans quoi
+  Citizens laisse tout PNJ jamais configuré — d'un **comportement réel** : patrouille `linear`
+  garnie, `guided`, ou fournisseur d'un plugin tiers. Dans ce second cas l'action est refusée
+  (`WANDER_CONFLICT`) en **nommant ce qui serait perdu**, tant que `confirm_replace` n'est pas coché.
+- **Réactiver est idempotent** : sur un PNJ déjà en promenade, la décision est `RECONFIGURE` — on
+  règle ancre et zone, sans retirer ni réinstaller le fournisseur.
+- **Désactiver ne retire que la promenade.** Si le PNJ suit un autre parcours, l'action répond
+  `WANDER_NOT_ACTIVE` et ne touche à rien : désactiver ne doit pas devenir une façon détournée
+  d'effacer la patrouille d'autrui. Quand elle s'applique, elle revient au fournisseur neutre, la
+  navigation en cours est annulée et le message donne la **position finale**.
+- **Ordre d'application volontaire** : dans Citizens 2.0.43, `setXYRange` ne recalcule pas l'arbre
+  de régions — seul `addRegionCentre`/`removeRegionCentres` le fait. La zone est donc réglée
+  **avant** que l'ancre soit posée, sinon la zone effective resterait l'ancienne alors que la fiche
+  afficherait la nouvelle.
+- **Non exposé, et pourquoi** : `worldguardregion` exigerait WorldGuard (exclu) ; la **vitesse**
+  n'est pas un réglage de promenade mais de navigation globale du PNJ (`/npc speed`) ; `delay` (les
+  pauses, en ticks, défaut `-1` = aucune) et `pathfind` existent et pourront être exposés, mais
+  n'ont pas été jugés nécessaires à ce premier lot.
+
 
 #### Créer un PNJ complet depuis le panel (#165)
 

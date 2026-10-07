@@ -86,6 +86,17 @@ public enum AgentActionType {
     NPC_CITIZENS_RENAME("npc.citizens.rename"),
     /** Issue #165 : skin d'un PNJ Citizens depuis une URL MineSkin validée côté serveur. */
     NPC_CITIZENS_SKIN("npc.citizens.skin"),
+    /**
+     * Issue #165 : « regarder les joueurs » (trait Citizens {@code lookclose}). Le paramètre
+     * {@code enabled} porte un état <strong>explicite</strong> — jamais une bascule, pour qu'un
+     * rejeu ne puisse pas inverser l'état.
+     */
+    NPC_CITIZENS_LOOKCLOSE("npc.citizens.lookclose"),
+    /**
+     * Issue #165 : promenade (fournisseur {@code wander} du trait Citizens {@code waypoints}).
+     * Refuse d'écraser une patrouille existante sans {@code confirm_replace}.
+     */
+    NPC_CITIZENS_WANDER("npc.citizens.wander"),
     DIALOGUE_LIST("dialogue.list"),
     DIALOGUE_DEFINITION_CREATE("dialogue.definition.create"),
     DIALOGUE_NODE_CREATE("dialogue.node.create"),

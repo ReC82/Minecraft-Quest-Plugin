@@ -93,6 +93,8 @@ public final class AgentActionExecutor {
                 case NPC_CITIZENS_MOVE -> npcCitizensMove(action);
                 case NPC_CITIZENS_RENAME -> npcCitizensRename(action);
                 case NPC_CITIZENS_SKIN -> npcCitizensSkin(action);
+                case NPC_CITIZENS_LOOKCLOSE -> npcCitizensLookClose(action);
+                case NPC_CITIZENS_WANDER -> npcCitizensWander(action);
                 case DIALOGUE_LIST -> dialogueList(action);
                 case DIALOGUE_DEFINITION_CREATE -> dialogueDefinitionCreate(action);
                 case DIALOGUE_NODE_CREATE -> dialogueNodeWrite(action, true);
@@ -1244,6 +1246,20 @@ public final class AgentActionExecutor {
                 row.put("liveLocation", c.liveLocation());
                 row.put("shouldSpawn", c.shouldSpawn());
                 row.put("chunkLoaded", c.chunkLoaded());
+                // Comportements (issue #165). Copiés explicitement comme le reste de la ligne — la
+                // localisation avait disparu exactement pour avoir été oubliée ici. Une valeur nulle
+                // veut dire INCONNU (build Citizens qui n'expose pas le trait), jamais « désactivé ».
+                row.put("lookCloseEnabled", c.lookCloseEnabled());
+                row.put("lookCloseRange", c.lookCloseRange());
+                row.put("wanderEnabled", c.wanderEnabled());
+                row.put("wanderProvider", c.wanderProvider());
+                row.put("wanderWaypoints", c.wanderWaypoints());
+                row.put("wanderWorld", c.wanderWorld());
+                row.put("wanderX", c.wanderX());
+                row.put("wanderY", c.wanderY());
+                row.put("wanderZ", c.wanderZ());
+                row.put("wanderXRange", c.wanderXRange());
+                row.put("wanderYRange", c.wanderYRange());
                 rows.add(row);
             }
             Map<String, Object> details = new LinkedHashMap<>();
@@ -1326,6 +1342,124 @@ public final class AgentActionExecutor {
         return actions.citizensMove(npcId, world, x, y, z, yaw.floatValue(), pitch.floatValue())
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code npc.citizens.lookclose} (#165). {@code enabled} est un <strong>état</strong>, pas une
+     * bascule : il n'y a volontairement aucune valeur « inverser ». Une action rejouée — double
+     * clic, retry réseau, rejeu par le cache d'idempotence — aboutit donc au même état.
+     */
+    private CompletableFuture<AgentActionOutcome> npcCitizensLookClose(AgentAction action) {
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        Boolean enabled = parseExplicitBoolean(action.param("enabled"));
+        if (enabled == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « enabled » manquant : il doit valoir « true » ou « false ». "
+                            + "Aucune bascule implicite n'est acceptée."));
+        }
+        String rawRange = trimOrNull(action.param("range"));
+        Double range = null;
+        if (rawRange != null) {
+            range = parseFinite(rawRange);
+            if (range == null || range <= 0 || range > LOOKCLOSE_MAX_RANGE) {
+                return done(AgentActionOutcome.rejected(action.id(),
+                        "Paramètre « range » hors bornes (0 exclu à " + (int) LOOKCLOSE_MAX_RANGE + " blocs)."));
+            }
+        }
+        return actions.citizensLookClose(npcId, enabled, range)
+                .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code npc.citizens.wander} (#165). Même discipline d'état explicite que
+     * {@link #npcCitizensLookClose}. L'ancre est optionnelle : absente, le plugin reprend la
+     * position actuellement connue du PNJ — jamais une position inventée.
+     */
+    private CompletableFuture<AgentActionOutcome> npcCitizensWander(AgentAction action) {
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        Boolean enabled = parseExplicitBoolean(action.param("enabled"));
+        if (enabled == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « enabled » manquant : il doit valoir « true » ou « false »."));
+        }
+        String world = trimOrNull(action.param("world"));
+        if (world != null && !WORLD_NAME.matcher(world).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « world » invalide."));
+        }
+        Double x = parseFinite(action.param("x"));
+        Double y = parseFinite(action.param("y"));
+        Double z = parseFinite(action.param("z"));
+        // Ancre partielle = refus net : on ne complète jamais une coordonnée manquante par une
+        // supposition, et on ne déplace jamais l'ancre « à peu près ».
+        boolean anyAnchor = world != null || x != null || y != null || z != null;
+        boolean fullAnchor = world != null && x != null && y != null && z != null;
+        if (anyAnchor && !fullAnchor) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Ancre incomplète : « world », « x », « y » et « z » vont ensemble. "
+                            + "Les laisser tous vides reprend la position actuelle du PNJ."));
+        }
+        Integer xRange = parsePositiveInt(trimOrNull(action.param("x_range")));
+        Integer yRange = parseNonNegativeInt(trimOrNull(action.param("y_range")));
+        if (xRange == null || xRange > WANDER_MAX_X_RANGE) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « x_range » manquant ou hors bornes (1 à " + WANDER_MAX_X_RANGE + " blocs)."));
+        }
+        if (yRange == null || yRange > WANDER_MAX_Y_RANGE) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « y_range » manquant ou hors bornes (0 à " + WANDER_MAX_Y_RANGE + " blocs)."));
+        }
+        boolean confirmReplace = Boolean.TRUE.equals(parseExplicitBoolean(action.param("confirm_replace")));
+        return actions.citizensWander(npcId, enabled, world, x, y, z, xRange, yRange, confirmReplace)
+                .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * Borne de portée du regard propre au panel (Citizens n'en impose aucune) : au-delà, le trait
+     * compare la distance de chaque joueur à chaque tick pour un effet invisible en jeu.
+     */
+    private static final double LOOKCLOSE_MAX_RANGE = 64.0;
+
+    /** Bornes de zone de promenade propres au panel : une zone plus large n'est plus « bornée ». */
+    private static final int WANDER_MAX_X_RANGE = 64;
+
+    private static final int WANDER_MAX_Y_RANGE = 32;
+
+    /**
+     * {@code true}/{@code false} uniquement — jamais « inverser », jamais de défaut implicite.
+     * C'est ce qui garantit qu'un rejeu de l'action ne bascule pas l'état.
+     */
+    private static Boolean parseExplicitBoolean(String raw) {
+        String v = trimOrNull(raw);
+        if (v == null) {
+            return null;
+        }
+        if ("true".equalsIgnoreCase(v) || "1".equals(v) || "on".equalsIgnoreCase(v)) {
+            return Boolean.TRUE;
+        }
+        if ("false".equalsIgnoreCase(v) || "0".equals(v) || "off".equalsIgnoreCase(v)) {
+            return Boolean.FALSE;
+        }
+        return null;
+    }
+
+    private static Integer parseNonNegativeInt(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        try {
+            int v = Integer.parseInt(raw.trim());
+            return v < 0 ? null : v;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

@@ -59,6 +59,9 @@ class ContentYamlRoundTripTest {
         QuestDraft.Step s2 = new QuestDraft.Step("gather");
         s2.objectives.add(obj("COLLECT_ITEM", "material", "AMETHYST_SHARD", "amount", "2"));
         s2.objectives.add(obj("TALK_TO_NPC", "npc", "guard"));
+        // Issue #123 : un objectif de remise porte TROIS champs (PNJ, objet, quantité) et doit
+        // survivre à l'aller-retour comme n'importe quel autre.
+        s2.objectives.add(obj("DELIVER_ITEM_TO_NPC", "npc", "guard", "material", "LEATHER", "amount", "4"));
         q.steps.add(s1);
         q.steps.add(s2);
 
@@ -73,7 +76,12 @@ class ContentYamlRoundTripTest {
 
         QuestYaml.ReadResult r = QuestYaml.read(yaml);
         assertEquals(2, r.draft().steps.size());
-        assertEquals(2, r.draft().steps.get(1).objectives.size());
+        assertEquals(3, r.draft().steps.get(1).objectives.size());
+        Map<String, String> delivery = r.draft().steps.get(1).objectives.get(2);
+        assertEquals("DELIVER_ITEM_TO_NPC", delivery.get("kind"));
+        assertEquals("guard", delivery.get("npc"));
+        assertEquals("LEATHER", delivery.get("material"));
+        assertEquals("4", delivery.get("amount"));
         assertEquals(3, r.draft().rewards.size());
         assertEquals("true", r.draft().variables.get("crystal_hunt_started"));
         assertEquals("first_steps", r.draft().prerequisites.get(0));

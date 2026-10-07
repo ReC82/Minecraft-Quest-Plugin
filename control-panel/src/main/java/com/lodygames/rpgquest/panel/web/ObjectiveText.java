@@ -38,6 +38,7 @@ public final class ObjectiveText {
         String kind = str(summary.get("kind")).toUpperCase(Locale.ROOT);
         String target = str(summary.get("target"));
         int amount = asInt(summary.get("amount"));
+        String npc = str(summary.get("npc"));
 
         return switch (kind) {
             case "KILL_ENTITY" -> countable("Tuer", MinecraftNames.humanize(target), amount, target);
@@ -46,6 +47,14 @@ public final class ObjectiveText {
             case "BREAK_BLOCK" -> countable("Casser", MinecraftNames.humanize(target), amount, target);
             case "PLACE_BLOCK" -> countable("Placer", MinecraftNames.humanize(target), amount, target);
             case "TALK_TO_NPC" -> new Objective("Parler à " + prettyNpc(target), target);
+            // #123 : deux cibles — l'objet compté (« target ») et le PNJ qui le reçoit (« npc »).
+            // Le libellé nomme les deux, sinon « Rapporter du cuir » ne dirait pas à qui.
+            case "DELIVER_ITEM_TO_NPC" -> {
+                String item = MinecraftNames.humanize(target);
+                String label = "Rapporter " + item + (amount > 1 ? " (x" + amount + ")" : "")
+                        + " à " + prettyNpc(npc);
+                yield new Objective(label, target);
+            }
             case "REACH_LOCATION" -> new Objective("Se rendre dans " + prettyNpc(target), target);
             default -> {
                 String raw = str(summary.get("raw"));

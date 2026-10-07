@@ -56,6 +56,37 @@ class ObjectiveTextTest {
         assertEquals("woodcutter_bob", o.rawTarget());
     }
 
+    // ---- Remise d'objets à un PNJ (issue #123) ------------------------------------------------
+
+    @Test
+    void deliverItemNamesBothTheItemAndTheReceivingNpc() {
+        Map<String, Object> m = summary("DELIVER_ITEM_TO_NPC", "LEATHER", 4);
+        m.put("npc", "woodcutter_bob");
+
+        ObjectiveText.Objective o = ObjectiveText.fromSummary(m);
+
+        assertEquals("Rapporter Cuir (x4) à Woodcutter Bob", o.label());
+        assertEquals("LEATHER", o.rawTarget(), "la cible technique reste l'objet compté");
+    }
+
+    @Test
+    void deliverItemOfASingleUnitOmitsTheCount() {
+        Map<String, Object> m = summary("DELIVER_ITEM_TO_NPC", "STICK", 1);
+        m.put("npc", "guard");
+
+        // L'id du PNJ est seulement embelli (« guard » -> « Guard ») : le panel ne dispose pas ici
+        // de son nom affiché, et inventer « Garde » serait une correspondance en dur.
+        assertEquals("Rapporter Bâton à Guard", ObjectiveText.fromSummary(m).label());
+    }
+
+    /** Un agent déployé plus ancien n'envoie pas encore « npc » : le libellé doit rester lisible. */
+    @Test
+    void deliverItemWithoutAnNpcFieldStillRendersWithoutThrowing() {
+        ObjectiveText.Objective o = ObjectiveText.fromSummary(summary("DELIVER_ITEM_TO_NPC", "LEATHER", 4));
+
+        assertEquals("Rapporter Cuir (x4) à ?", o.label());
+    }
+
     @Test
     void reachLocationUsesTheWorldName() {
         assertEquals("Se rendre dans World Nether",

@@ -11,7 +11,7 @@ import java.util.Optional;
  * Abstraction volontairement légère : un {@code switch} géant spécifique à une quête serait
  * l'anti-pattern ; ajouter un type = ajouter un descripteur.
  *
- * <p>Types calqués sur {@code quest.model.ObjectiveType} (7) et {@code quest.model.RewardType} (4)
+ * <p>Types calqués sur {@code quest.model.ObjectiveType} (8) et {@code quest.model.RewardType} (5)
  * du moteur RPGQuest — voir {@code QuestDefinitionParser}.</p>
  */
 public final class Descriptors {
@@ -83,6 +83,21 @@ public final class Descriptors {
                     List.of(Field.select("material", "Bloc", "material",
                             "Chercher par nom français (« terre ») ou par identifiant "
                                     + "(« DIRT »).", true), AMOUNT)),
+            new Descriptor("DELIVER_ITEM_TO_NPC", "Rapporter des objets à un PNJ", "gift",
+                    "Le joueur doit REMETTRE N exemplaires d'un objet au PNJ choisi, dans son dialogue. "
+                            + "Collecter ou posséder l'objet ne suffit pas : les objets sont réellement "
+                            + "consommés à la remise. Les dépôts partiels comptent et sont conservés "
+                            + "(2 cuirs remis sur 4 restent acquis après une mort ou un redémarrage).",
+                    List.of(Field.select("npc", "PNJ destinataire", "npc",
+                                    "PNJ logique RPGQuest qui reçoit les objets — chercher par nom "
+                                            + "(« Garde ») ou par id (« guard »). Un autre PNJ ne peut "
+                                            + "jamais accepter la remise.", true),
+                            Field.select("material", "Objet à rapporter", "material",
+                                    "Chercher par nom français (« cuir ») ou par identifiant "
+                                            + "(« LEATHER »). Objets Minecraft standards uniquement.", true),
+                            Field.integer("amount", "Quantité à remettre",
+                                    "Total à remettre au PNJ (entier > 0). Le joueur peut le déposer en "
+                                            + "plusieurs fois."))),
             new Descriptor("TALK_TO_NPC", "Parler à un PNJ", "npc",
                     "Interagir avec un PNJ identifié RPGQuest (id posé via /rpgadmin npc tag).",
                     List.of(Field.select("npc", "PNJ", "npc",

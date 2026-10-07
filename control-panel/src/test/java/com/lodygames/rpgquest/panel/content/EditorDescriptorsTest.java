@@ -18,7 +18,7 @@ class EditorDescriptorsTest {
     /** Types réels du moteur : {@code quest.model.ObjectiveType} / {@code quest.model.RewardType}. */
     private static final Set<String> ENGINE_OBJECTIVES = Set.of(
             "BREAK_BLOCK", "PLACE_BLOCK", "KILL_ENTITY", "COLLECT_ITEM", "CRAFT_ITEM",
-            "TALK_TO_NPC", "REACH_LOCATION");
+            "TALK_TO_NPC", "REACH_LOCATION", "DELIVER_ITEM_TO_NPC");
     private static final Set<String> ENGINE_REWARDS =
             Set.of("EXPERIENCE", "ITEM", "VARIABLE", "COMMAND", "MONEY");
 

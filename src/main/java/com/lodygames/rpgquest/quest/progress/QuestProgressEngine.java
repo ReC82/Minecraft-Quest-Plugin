@@ -10,10 +10,12 @@ import com.lodygames.rpgquest.economy.QuestRewardPayer;
 import com.lodygames.rpgquest.economy.QuestRewardReceipt;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.quest.QuestLoadReport;
+import com.lodygames.rpgquest.quest.QuestMessages;
 import com.lodygames.rpgquest.quest.QuestMessagesService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
+import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
@@ -96,6 +98,8 @@ public final class QuestProgressEngine implements PluginService {
     private final Map<UUID, Map<NamespacedKey, ActiveQuestProgress>> activeByPlayer = new ConcurrentHashMap<>();
     private final Map<ObjectiveType, List<Listener>> registeredListeners = new EnumMap<>(ObjectiveType.class);
     private final List<Consumer<UUID>> progressListeners = new CopyOnWriteArrayList<>();
+    /** Jeton anti double-clic / spam / appel concurrent d'une remise d'objets (issue #123), par joueur. */
+    private final java.util.Set<UUID> deliveriesInFlight = ConcurrentHashMap.newKeySet();
     private volatile QuestObjectiveIndex index = new QuestObjectiveIndex(List.of());
 
     public QuestProgressEngine(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressRepository repository,
@@ -183,7 +187,16 @@ public final class QuestProgressEngine implements PluginService {
             case CRAFT_ITEM -> new QuestCraftItemListener(this);
             case TALK_TO_NPC -> new QuestNpcInteractListener(this, npcIdentityService);
             case REACH_LOCATION -> new QuestLocationListener(this);
+            // Issue #123 : DELIVER_ITEM_TO_NPC n'écoute AUCUN événement de jeu, volontairement.
+            // Posséder, ramasser, fabriquer ou porter l'objet ne doit jamais faire progresser une
+            // remise : seul l'appel explicite de deliverTo(...), déclenché par une action de
+            // dialogue sur le bon PNJ, le fait. Un écouteur ici rouvrirait exactement la
+            // sémantique de COLLECT_ITEM que ce type d'objectif existe pour éviter.
+            case DELIVER_ITEM_TO_NPC -> null;
         };
+        if (primary == null) {
+            return List.of();
+        }
         if (type == ObjectiveType.TALK_TO_NPC && npcIdentityService.citizensAvailable()) {
             return List.of(primary, new QuestCitizensNpcInteractListener(this, npcIdentityService));
         }
@@ -556,6 +569,200 @@ public final class QuestProgressEngine implements PluginService {
             objectives.add(new ObjectiveProgressView(describeObjective(objective), progress.counter(i), requiredAmount(objective)));
         }
         return Optional.of(new QuestStepProgressView(step.id(), objectives));
+    }
+
+    // ---- Remise d'objets à un PNJ (issue #123) ---------------------------
+
+    /**
+     * État de remise, en lecture seule, des objectifs {@code DELIVER_ITEM_TO_NPC} que {@code npcId}
+     * attend <strong>réellement</strong> de ce joueur ici et maintenant : quête {@code ACTIVE},
+     * étape courante. Liste vide = ce PNJ n'attend rien (mauvais PNJ, quête non acceptée, ou étape
+     * différente) — c'est ce que le dialogue consulte pour n'afficher l'option de remise que
+     * lorsqu'elle a un sens.
+     *
+     * <p>Ne modifie rien, ne touche pas à l'inventaire, ne journalise pas : appelable à chaque
+     * ouverture de nœud de dialogue sans effet de bord.</p>
+     */
+    public List<DeliveryLine> pendingDeliveries(UUID playerId, String npcId) {
+        List<DeliveryLine> lines = new ArrayList<>();
+        for (ObjectiveRef ref : activeDeliveryRefs(playerId, npcId)) {
+            DeliverItemToNpcObjective objective = (DeliverItemToNpcObjective) ref.objective();
+            int delivered = counterOf(playerId, ref);
+            lines.add(new DeliveryLine(objective.material(), delivered, objective.amount()));
+        }
+        return lines;
+    }
+
+    /** {@code true} s'il reste au moins un objet à remettre à ce PNJ — raccourci pour les conditions de dialogue. */
+    public boolean hasPendingDelivery(UUID playerId, String npcId) {
+        return pendingDeliveries(playerId, npcId).stream().anyMatch(line -> !line.complete());
+    }
+
+    /**
+     * Remet en <strong>une seule opération</strong> tout ce que le joueur possède d'utile pour les
+     * objectifs de remise de {@code npcId} (issue #123) : plusieurs matériaux, plusieurs objectifs
+     * et plusieurs quêtes à la fois, sans obliger le joueur à cliquer une fois par matériau.
+     *
+     * <p>Ordre des opérations, volontairement rigide :</p>
+     * <ol>
+     *   <li>jeton anti-concurrence par joueur ({@link #deliveriesInFlight}) — un double-clic, un
+     *       spam ou un appel réentrant est refusé avec {@link DeliveryOutcome.Status#BUSY} sans rien
+     *       retirer ;</li>
+     *   <li>pour chaque objectif, le reliquat est calculé depuis le compteur <em>en mémoire</em>
+     *       (déjà à jour, synchrone) ;</li>
+     *   <li>{@link QuestItemWithdrawal#withdraw} retire au plus ce reliquat et renvoie ce qu'il a
+     *       <strong>réellement</strong> retiré ;</li>
+     *   <li>le compteur n'avance que de cette quantité, puis est persisté. Il est donc impossible de
+     *       progresser sans retrait, ou de retirer plus que nécessaire ;</li>
+     *   <li>la complétion d'étape n'est évaluée qu'une fois toute la remise appliquée — une étape à
+     *       quatre matériaux ne se termine pas au milieu de l'opération.</li>
+     * </ol>
+     *
+     * <p>Les objets remis ne sont jamais restitués : ils sont « en sécurité auprès du PNJ ». La
+     * progression est persistée immédiatement, donc acquise après une mort, une déconnexion ou un
+     * redémarrage.</p>
+     */
+    public DeliveryOutcome deliverTo(Player player, String npcId) {
+        UUID playerId = player.getUniqueId();
+        List<ObjectiveRef> refs = activeDeliveryRefs(playerId, npcId);
+        if (refs.isEmpty()) {
+            player.sendMessage(messagesService.current().format("quest.delivery-none"));
+            return DeliveryOutcome.of(DeliveryOutcome.Status.NO_OBJECTIVE, List.of(), false);
+        }
+        if (!deliveriesInFlight.add(playerId)) {
+            // Déjà en cours pour ce joueur : ne rien retirer, ne rien progresser, ne rien dire de
+            // plus (la remise en cours parlera elle-même) — jamais un second retrait.
+            return DeliveryOutcome.of(DeliveryOutcome.Status.BUSY, pendingDeliveries(playerId, npcId), false);
+        }
+        try {
+            return applyDelivery(player, refs);
+        } finally {
+            deliveriesInFlight.remove(playerId);
+        }
+    }
+
+    private DeliveryOutcome applyDelivery(Player player, List<ObjectiveRef> refs) {
+        UUID playerId = player.getUniqueId();
+        List<DeliveryLine> lines = new ArrayList<>();
+        Map<NamespacedKey, ActiveQuestProgress> touchedQuests = new LinkedHashMap<>();
+        int totalTaken = 0;
+
+        for (ObjectiveRef ref : refs) {
+            DeliverItemToNpcObjective objective = (DeliverItemToNpcObjective) ref.objective();
+            ActiveQuestProgress progress = activeProgress(playerId, ref.questId());
+            if (progress == null) {
+                continue; // la quête a cessé d'être active entre-temps : ne jamais retirer pour rien.
+            }
+            int delivered = progress.counter(ref.objectiveIndex());
+            int remaining = objective.amount() - delivered;
+            int taken = QuestItemWithdrawal.withdraw(player.getInventory(), objective.material(), remaining);
+            if (taken > 0) {
+                int updated = delivered + taken;
+                progress.setCounter(ref.objectiveIndex(), updated);
+                persistCounter(playerId, ref, updated);
+                touchedQuests.put(ref.questId(), progress);
+                totalTaken += taken;
+                lines.add(new DeliveryLine(objective.material(), updated, objective.amount(), taken));
+            } else {
+                lines.add(new DeliveryLine(objective.material(), delivered, objective.amount(), 0));
+            }
+        }
+
+        boolean allComplete = lines.stream().allMatch(DeliveryLine::complete);
+        if (totalTaken == 0) {
+            DeliveryOutcome.Status status = allComplete
+                    ? DeliveryOutcome.Status.ALREADY_COMPLETE
+                    : DeliveryOutcome.Status.NOTHING_USEFUL;
+            player.sendMessage(messagesService.current().format(allComplete
+                    ? "quest.delivery-already-complete"
+                    : "quest.delivery-nothing-useful"));
+            return DeliveryOutcome.of(status, lines, allComplete);
+        }
+
+        DeliveryOutcome outcome = DeliveryOutcome.of(DeliveryOutcome.Status.DELIVERED, lines, allComplete);
+        sendDeliveryFeedback(player, outcome);
+
+        // Après TOUTE la remise seulement : une étape à plusieurs matériaux ne doit pas se terminer
+        // au milieu de l'opération, et une quête terminée ici sort de activeByPlayer.
+        touchedQuests.forEach((questId, progress) ->
+                questEngine.find(questId).ifPresent(quest -> checkStepCompletion(player, quest, progress)));
+        notifyChanged(playerId);
+        return outcome;
+    }
+
+    /**
+     * Récapitulatif dans le CHAT (jamais l'ActionBar) : une remise groupée touche plusieurs
+     * objectifs d'un coup, et autant de messages d'ActionBar s'écraseraient l'un l'autre — le
+     * joueur ne verrait que le dernier. Les noms d'objets utilisent leur clé de traduction vanilla,
+     * donc s'affichent dans la langue du client.
+     */
+    private void sendDeliveryFeedback(Player player, DeliveryOutcome outcome) {
+        QuestMessages messages = messagesService.current();
+        player.sendMessage(messages.format("quest.delivery-delivered",
+                Placeholder.component("items", joinItems(outcome.justDelivered(), DeliveryLine::justNow))));
+        List<DeliveryLine> missing = outcome.stillMissing();
+        if (missing.isEmpty()) {
+            player.sendMessage(messages.format("quest.delivery-all-done"));
+        } else {
+            player.sendMessage(messages.format("quest.delivery-remaining",
+                    Placeholder.component("missing", joinItems(missing, DeliveryLine::remaining))));
+        }
+    }
+
+    /** « 2 × Cuir, 1 × Pierre » — quantité puis nom traduit côté client, séparés par des virgules. */
+    private static Component joinItems(List<DeliveryLine> lines, java.util.function.ToIntFunction<DeliveryLine> count) {
+        Component joined = Component.empty();
+        boolean first = true;
+        for (DeliveryLine line : lines) {
+            if (!first) {
+                joined = joined.append(Component.text(", "));
+            }
+            first = false;
+            joined = joined.append(Component.text(count.applyAsInt(line) + " × "))
+                    .append(Component.translatable(line.material()));
+        }
+        return joined;
+    }
+
+    /**
+     * Objectifs de remise que {@code npcId} attend réellement de ce joueur : quête {@code ACTIVE}
+     * et <strong>étape courante</strong> uniquement. Un objectif d'une étape future ou passée n'est
+     * jamais remisable, et un PNJ qui n'est destinataire de rien ne reçoit jamais rien.
+     */
+    private List<ObjectiveRef> activeDeliveryRefs(UUID playerId, String npcId) {
+        if (npcId == null || npcId.isBlank()) {
+            return List.of();
+        }
+        List<ObjectiveRef> out = new ArrayList<>();
+        for (ObjectiveRef ref : index.deliverToNpc(npcId)) {
+            ActiveQuestProgress progress = activeProgress(playerId, ref.questId());
+            if (progress != null && progress.currentStepIndex() == ref.stepIndex()) {
+                out.add(ref);
+            }
+        }
+        return out;
+    }
+
+    private ActiveQuestProgress activeProgress(UUID playerId, NamespacedKey questId) {
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
+        if (playerActive == null) {
+            return null;
+        }
+        ActiveQuestProgress progress = playerActive.get(questId);
+        return (progress != null && progress.state() == QuestState.ACTIVE) ? progress : null;
+    }
+
+    private int counterOf(UUID playerId, ObjectiveRef ref) {
+        ActiveQuestProgress progress = activeProgress(playerId, ref.questId());
+        return progress == null ? 0 : progress.counter(ref.objectiveIndex());
+    }
+
+    private void persistCounter(UUID playerId, ObjectiveRef ref, int value) {
+        repository.setObjectiveProgress(playerId, ref.questId(), ref.stepId(), ref.objectiveIndex(), value)
+                .exceptionally(error -> {
+                    logger.error("Impossible de persister la remise de {} pour {}", ref.questId(), playerId, error);
+                    return null;
+                });
     }
 
     // ---- Événements de jeu (appelés par les listeners du même package) ---

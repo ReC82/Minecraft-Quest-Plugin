@@ -198,6 +198,7 @@ public final class ContentPackSerializer {
         opt(sb, 9, "key", a.key() == null ? null : quote(a.key()));
         opt(sb, 9, "value", a.value() == null ? null : quote(a.value()));
         opt(sb, 9, "command", a.command() == null ? null : quote(a.command()));
+        opt(sb, 9, "npc", a.npc() == null ? null : id(a.npc()));
     }
 
     private static void writeCondition(StringBuilder sb, DialoguePackEntry.Condition c) {
@@ -210,6 +211,7 @@ public final class ContentPackSerializer {
         opt(sb, 9, "key", c.key() == null ? null : quote(c.key()));
         opt(sb, 9, "value", c.value() == null ? null : quote(c.value()));
         opt(sb, 9, "item", c.item() == null ? null : id(c.item()));
+        opt(sb, 9, "npc", c.npc() == null ? null : id(c.npc()));
         if (c.negate()) {
             kv(sb, 9, "negate", "true");
         }

@@ -11,5 +11,7 @@ public enum ActionType {
     OPEN_DIALOGUE,
     OPEN_MERCHANT,
     GIVE_STARTER_KIT,
+    /** Remise groupée des objets attendus par ce PNJ (issue #123). */
+    DELIVER_QUEST_ITEMS,
     CLOSE
 }

@@ -35,74 +35,90 @@ public record DialoguePackEntry(String id, String start, List<Node> nodes) {
      * Action de choix. {@code type} ∈ {@code START_QUEST}, {@code ADVANCE_QUEST},
      * {@code TURN_IN_QUEST}, {@code GIVE_ITEM}, {@code TAKE_ITEM}, {@code SET_VARIABLE},
      * {@code RUN_SAFE_COMMAND}, {@code OPEN_DIALOGUE}, {@code OPEN_MERCHANT}, {@code GIVE_STARTER_KIT},
-     * {@code CLOSE}.
+     * {@code DELIVER_QUEST_ITEMS}, {@code CLOSE}.
      */
     public record Action(String type, String quest, String dialogue, String merchant, String material,
-                         Integer amount, String key, String value, String command) {
+                         Integer amount, String key, String value, String command, String npc) {
 
         public static Action quest(String type, String questId) {
-            return new Action(type, questId, null, null, null, null, null, null, null);
+            return new Action(type, questId, null, null, null, null, null, null, null, null);
         }
 
         public static Action item(String type, String material, int amount) {
-            return new Action(type, null, null, null, material, amount, null, null, null);
+            return new Action(type, null, null, null, material, amount, null, null, null, null);
         }
 
         public static Action variable(String key, String value) {
-            return new Action("SET_VARIABLE", null, null, null, null, null, key, value, null);
+            return new Action("SET_VARIABLE", null, null, null, null, null, key, value, null, null);
         }
 
         public static Action command(String command) {
-            return new Action("RUN_SAFE_COMMAND", null, null, null, null, null, null, null, command);
+            return new Action("RUN_SAFE_COMMAND", null, null, null, null, null, null, null, command, null);
         }
 
         public static Action openDialogue(String dialogueId) {
-            return new Action("OPEN_DIALOGUE", null, dialogueId, null, null, null, null, null, null);
+            return new Action("OPEN_DIALOGUE", null, dialogueId, null, null, null, null, null, null, null);
         }
 
         public static Action openMerchant(String merchantId) {
-            return new Action("OPEN_MERCHANT", null, null, merchantId, null, null, null, null, null);
+            return new Action("OPEN_MERCHANT", null, null, merchantId, null, null, null, null, null, null);
+        }
+
+        /**
+         * Remise d'objets à un PNJ (issue #123). {@code npc} reste souvent {@code null} : le
+         * destinataire est alors déduit du dialogue, et l'export doit préserver cette absence
+         * plutôt que de figer un id — sinon un pack réimporté viserait un PNJ en dur.
+         */
+        public static Action deliverQuestItems(String npc) {
+            return new Action("DELIVER_QUEST_ITEMS", null, null, null, null, null, null, null, null, npc);
         }
 
         public static Action close() {
-            return new Action("CLOSE", null, null, null, null, null, null, null, null);
+            return new Action("CLOSE", null, null, null, null, null, null, null, null, null);
         }
 
         public static Action giveStarterKit() {
-            return new Action("GIVE_STARTER_KIT", null, null, null, null, null, null, null, null);
+            return new Action("GIVE_STARTER_KIT", null, null, null, null, null, null, null, null, null);
         }
     }
 
     /**
      * Condition de choix. {@code type} ∈ {@code QUEST_STATE}, {@code HAS_ITEM},
      * {@code HAS_PERMISSION}, {@code VARIABLE_EQUALS}, {@code NO_MAIN_CLAIM}, {@code HAS_MAIN_CLAIM},
-     * {@code LACKS_CUSTOM_ITEM}. {@code negate} rend la condition inverse.
+     * {@code LACKS_CUSTOM_ITEM}, {@code HAS_PENDING_DELIVERY}. {@code negate} rend la condition
+     * inverse.
      */
     public record Condition(String type, String quest, String state, String material, Integer amount,
-                            String permission, String key, String value, String item, boolean negate) {
+                            String permission, String key, String value, String item, boolean negate,
+                            String npc) {
 
         public static Condition questState(String questId, String state, boolean negate) {
-            return new Condition("QUEST_STATE", questId, state, null, null, null, null, null, null, negate);
+            return new Condition("QUEST_STATE", questId, state, null, null, null, null, null, null, negate, null);
         }
 
         public static Condition hasItem(String material, int amount, boolean negate) {
-            return new Condition("HAS_ITEM", null, null, material, amount, null, null, null, null, negate);
+            return new Condition("HAS_ITEM", null, null, material, amount, null, null, null, null, negate, null);
         }
 
         public static Condition hasPermission(String permission, boolean negate) {
-            return new Condition("HAS_PERMISSION", null, null, null, null, permission, null, null, null, negate);
+            return new Condition("HAS_PERMISSION", null, null, null, null, permission, null, null, null, negate, null);
         }
 
         public static Condition variableEquals(String key, String value, boolean negate) {
-            return new Condition("VARIABLE_EQUALS", null, null, null, null, null, key, value, null, negate);
+            return new Condition("VARIABLE_EQUALS", null, null, null, null, null, key, value, null, negate, null);
         }
 
         public static Condition flag(String type, boolean negate) {
-            return new Condition(type, null, null, null, null, null, null, null, null, negate);
+            return new Condition(type, null, null, null, null, null, null, null, null, negate, null);
         }
 
         public static Condition lacksCustomItem(String item, boolean negate) {
-            return new Condition("LACKS_CUSTOM_ITEM", null, null, null, null, null, null, null, item, negate);
+            return new Condition("LACKS_CUSTOM_ITEM", null, null, null, null, null, null, null, item, negate, null);
+        }
+
+        /** Il reste des objets à remettre à ce PNJ (issue #123) ; {@code npc} nul = PNJ du dialogue. */
+        public static Condition pendingDelivery(String npc, boolean negate) {
+            return new Condition("HAS_PENDING_DELIVERY", null, null, null, null, null, null, null, null, negate, npc);
         }
     }
 }

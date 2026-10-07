@@ -2,13 +2,16 @@ package com.lodygames.rpgquest.dialogue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
+import com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction;
 import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
+import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
 import com.lodygames.rpgquest.dialogue.model.VariableEqualsCondition;
 import java.io.StringReader;
@@ -213,6 +216,91 @@ class DialogueDefinitionParserTest {
         assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
         var action = result.dialogue().nodes().get("greeting").choices().get(0).actions().get(0);
         assertTrue(action instanceof GiveStarterKitAction);
+    }
+
+    // ---- Remise d'objets à un PNJ (issue #123) -------------------------------------------------
+
+    @Test
+    void deliverQuestItemsActionIsParsedWithoutAnyNpcByDefault() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("deliver.yml", load(minimalDialogueWithChoice("""
+                      - text: "Donner les matériaux que j'ai"
+                        actions:
+                          - type: DELIVER_QUEST_ITEMS
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        var action = result.dialogue().nodes().get("greeting").choices().get(0).actions().get(0);
+        assertTrue(action instanceof DeliverQuestItemsAction);
+        assertNull(((DeliverQuestItemsAction) action).npcId(),
+                "sans « npc », le destinataire est déduit du dialogue — jamais figé au chargement");
+    }
+
+    @Test
+    void deliverQuestItemsActionKeepsAnExplicitNpc() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("deliver-npc.yml", load(minimalDialogueWithChoice("""
+                      - text: "Donner"
+                        actions:
+                          - type: DELIVER_QUEST_ITEMS
+                            npc: blacksmith
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        var action = result.dialogue().nodes().get("greeting").choices().get(0).actions().get(0);
+        assertEquals("blacksmith", ((DeliverQuestItemsAction) action).npcId());
+    }
+
+    @Test
+    void anEmptyNpcOnADeliverActionIsTreatedAsNotProvided() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("deliver-blank.yml", load(minimalDialogueWithChoice("""
+                      - text: "Donner"
+                        actions:
+                          - type: DELIVER_QUEST_ITEMS
+                            npc: "  "
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        var action = result.dialogue().nodes().get("greeting").choices().get(0).actions().get(0);
+        assertNull(((DeliverQuestItemsAction) action).npcId(),
+                "un id vide ne doit jamais viser un PNJ nommé « » ");
+    }
+
+    @Test
+    void pendingDeliveryConditionIsParsedWithAndWithoutNpc() {
+        DialogueDefinitionParser.ParseResult implicit = parser.parse("pending.yml", load(minimalDialogueWithChoice("""
+                      - text: "J'ai des matériaux"
+                        conditions:
+                          - type: HAS_PENDING_DELIVERY
+                """)));
+        assertTrue(implicit.isSuccess(), () -> "issues: " + implicit.issues());
+        var condition = implicit.dialogue().nodes().get("greeting").choices().get(0).conditions().get(0);
+        assertTrue(condition instanceof PendingDeliveryCondition);
+        assertNull(((PendingDeliveryCondition) condition).npcId());
+
+        DialogueDefinitionParser.ParseResult explicit = parser.parse("pending-npc.yml", load(minimalDialogueWithChoice("""
+                      - text: "J'ai des matériaux"
+                        conditions:
+                          - type: HAS_PENDING_DELIVERY
+                            npc: blacksmith
+                """)));
+        assertTrue(explicit.isSuccess(), () -> "issues: " + explicit.issues());
+        assertEquals("blacksmith", ((PendingDeliveryCondition) explicit.dialogue().nodes()
+                .get("greeting").choices().get(0).conditions().get(0)).npcId());
+    }
+
+    /** {@code negate: true} doit fonctionner comme sur n'importe quelle autre condition. */
+    @Test
+    void aNegatedPendingDeliveryConditionIsParsed() {
+        DialogueDefinitionParser.ParseResult result = parser.parse("pending-negate.yml", load(minimalDialogueWithChoice("""
+                      - text: "Tout est remis"
+                        conditions:
+                          - type: HAS_PENDING_DELIVERY
+                            negate: true
+                """)));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        var condition = result.dialogue().nodes().get("greeting").choices().get(0).conditions().get(0);
+        assertTrue(condition instanceof NegatedCondition negated
+                && negated.inner() instanceof PendingDeliveryCondition);
     }
 
     @Test

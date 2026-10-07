@@ -23,6 +23,7 @@ import com.lodygames.rpgquest.dialogue.DialogueDefinitionStore;
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
 import com.lodygames.rpgquest.dialogue.model.AdvanceQuestAction;
 import com.lodygames.rpgquest.dialogue.model.CloseAction;
+import com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
@@ -37,6 +38,7 @@ import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
+import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
 import com.lodygames.rpgquest.dialogue.model.RunSafeCommandAction;
 import com.lodygames.rpgquest.dialogue.model.SetVariableAction;
@@ -77,6 +79,7 @@ import com.lodygames.rpgquest.player.PlayerResetService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.CollectItemObjective;
+import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.CraftItemObjective;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
@@ -375,7 +378,8 @@ public final class BukkitAgentActions implements AgentActions {
                     int amount = QuestObjective.requiredAmount(o);
                     String raw = QuestObjective.describe(o) + " (x" + amount + ")";
                     objectives.add(raw);
-                    objectiveDetails.add(new ObjectiveSummary(o.type().name(), objectiveTarget(o), amount, raw));
+                    objectiveDetails.add(new ObjectiveSummary(
+                            o.type().name(), objectiveTarget(o), amount, raw, objectiveNpc(o)));
                 }
                 steps.add(new QuestStepSummary(s.id(), objectives, objectiveDetails));
             }
@@ -1619,6 +1623,8 @@ public final class BukkitAgentActions implements AgentActions {
                     "OPEN_MERCHANT " + x.merchantId());
             case GiveStarterKitAction ignored ->
                     new DialogueCatalog.Action("GIVE_STARTER_KIT", null, null, "GIVE_STARTER_KIT");
+            case DeliverQuestItemsAction x -> new DialogueCatalog.Action("DELIVER_QUEST_ITEMS", x.npcId(), null,
+                    x.npcId() == null ? "DELIVER_QUEST_ITEMS (PNJ du dialogue)" : "DELIVER_QUEST_ITEMS " + x.npcId());
             case CloseAction ignored -> new DialogueCatalog.Action("CLOSE", null, null, "CLOSE");
         };
     }
@@ -1640,6 +1646,9 @@ public final class BukkitAgentActions implements AgentActions {
                     "VARIABLE_EQUALS " + x.key() + " = " + x.value(), false);
             case LacksCustomItemCondition x -> new DialogueCatalog.Condition("LACKS_CUSTOM_ITEM",
                     x.itemId().toString(), null, "LACKS_CUSTOM_ITEM " + x.itemId(), false);
+            case PendingDeliveryCondition x -> new DialogueCatalog.Condition("HAS_PENDING_DELIVERY", x.npcId(), null,
+                    x.npcId() == null ? "HAS_PENDING_DELIVERY (PNJ du dialogue)" : "HAS_PENDING_DELIVERY " + x.npcId(),
+                    false);
             case NegatedCondition ignored -> throw new IllegalStateException("négation déjà traitée");
             default -> new DialogueCatalog.Condition(c.type().name(), null, null, c.type().name(), false);
         };
@@ -2757,6 +2766,11 @@ public final class BukkitAgentActions implements AgentActions {
     }
 
     /** Jeton technique de la cible d'un objectif : entité, matériau, id de PNJ, ou nom de monde (#78). */
+    /** PNJ destinataire d'une remise (issue #123), {@code null} pour tout autre type d'objectif. */
+    private static String objectiveNpc(QuestObjective objective) {
+        return objective instanceof DeliverItemToNpcObjective deliver ? deliver.npcId() : null;
+    }
+
     private static String objectiveTarget(QuestObjective objective) {
         return switch (objective) {
             case BreakBlockObjective o -> o.material().name();
@@ -2766,6 +2780,8 @@ public final class BukkitAgentActions implements AgentActions {
             case CraftItemObjective o -> o.material().name();
             case TalkToNpcObjective o -> o.npcId();
             case ReachLocationObjective o -> o.world();
+            // La cible comptée d'une remise est l'OBJET ; le PNJ voyage à part (voir objectiveNpc).
+            case DeliverItemToNpcObjective o -> o.material().name();
         };
     }
 

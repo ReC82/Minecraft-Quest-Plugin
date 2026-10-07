@@ -72,6 +72,8 @@ class DialogueSessionEngineTest {
     private PlayerProfileRepository profileRepository;
     private YamlDialogueEngine dialogueEngine;
     private Path dialoguesDir;
+    private Path questsDir;
+    private YamlQuestEngine questEngine;
     private PlayerVariableRepository variableRepository;
     private YamlCustomItemRegistry customItemRegistry;
     private StarterToolKitService starterToolKitService;
@@ -85,7 +87,7 @@ class DialogueSessionEngineTest {
         database.initialize().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
         profileRepository = new PlayerProfileRepository(database);
 
-        Path questsDir = tempDir.resolve("quests");
+        questsDir = tempDir.resolve("quests");
         Files.createDirectories(questsDir);
         Files.writeString(questsDir.resolve("first_steps.yml"), """
                 id: rpgquest:first_steps
@@ -99,7 +101,7 @@ class DialogueSessionEngineTest {
                         entity: ZOMBIE
                         amount: 1
                 """);
-        YamlQuestEngine questEngine = new YamlQuestEngine(questsDir, plugin.getSLF4JLogger());
+        questEngine = new YamlQuestEngine(questsDir, plugin.getSLF4JLogger());
         questEngine.reload();
 
         QuestProgressRepository progressRepository = new QuestProgressRepository(database);
@@ -670,6 +672,127 @@ class DialogueSessionEngineTest {
 
         assertEquals("<white>Il fait nuit dans le Wild. Il pleut.</white>", renderer.lastNode.text().base());
         assertEquals("info", renderer.lastNode.id(), "le nœud reste le même, seul son texte est enrichi");
+    }
+
+    // ---- Remise d'objets à un PNJ depuis le dialogue (issue #123) ---------------------
+
+    /**
+     * Installe une quête de remise vers le PNJ {@code guard} et une branche de dialogue générique
+     * (choix conditionné par {@code HAS_PENDING_DELIVERY}, action {@code DELIVER_QUEST_ITEMS} sans
+     * PNJ nommé) sur le dialogue {@code rpgquest:guard} — donc destinataire déduit de la clé.
+     */
+    private void installDeliveryContent() throws Exception {
+        Files.writeString(questsDir.resolve("deliver.yml"), """
+                id: rpgquest:deliver
+                title: "Titre"
+                description: "Description"
+                category: test
+                steps:
+                  - id: deliver_step
+                    objectives:
+                      - type: DELIVER_ITEM_TO_NPC
+                        npc: guard
+                        material: LEATHER
+                        amount: 4
+                """);
+        questEngine.reload();
+        questProgressEngine.reloadQuestDefinitions();
+        Files.writeString(dialoguesDir.resolve("smith.yml"), """
+                id: rpgquest:guard_delivery
+                start: deliver
+                nodes:
+                  deliver:
+                    speaker: "Garde"
+                    text: "<white>%delivery_status%</white>"
+                    choices:
+                      - text: "Donner les matériaux que j'ai"
+                        conditions:
+                          - type: HAS_PENDING_DELIVERY
+                            npc: guard
+                        actions:
+                          - type: DELIVER_QUEST_ITEMS
+                            npc: guard
+                        next: deliver
+                      - text: "Tout est remis"
+                        conditions:
+                          - type: HAS_PENDING_DELIVERY
+                            npc: guard
+                            negate: true
+                        actions:
+                          - type: CLOSE
+                """);
+        dialogueEngine.reload();
+    }
+
+    private static final NamespacedKey DELIVERY_DIALOGUE = new NamespacedKey("rpgquest", "guard_delivery");
+
+    @Test
+    void theDeliveryChoiceIsOnlyVisibleWhileSomethingIsStillExpected() throws Exception {
+        installDeliveryContent();
+        PlayerMock player = addPlayer();
+
+        // Sans la quête : seul le choix « tout est remis » (condition niée) est visible.
+        sessionEngine.open(player, DELIVERY_DIALOGUE);
+        awaitRendered();
+        assertEquals(List.of("Tout est remis"),
+                renderer.lastVisibleChoices.stream().map(VisibleChoice::label).toList());
+
+        questProgressEngine.accept(player, new NamespacedKey("rpgquest", "deliver"))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        renderer.lastNode = null;
+        sessionEngine.open(player, DELIVERY_DIALOGUE);
+        awaitRendered();
+        assertEquals(List.of("Donner les matériaux que j'ai"),
+                renderer.lastVisibleChoices.stream().map(VisibleChoice::label).toList(),
+                "une quête de remise active doit faire apparaître l'option de remise");
+    }
+
+    @Test
+    void choosingTheDeliveryOptionActuallyConsumesTheItemsAndProgresses() throws Exception {
+        installDeliveryContent();
+        PlayerMock player = addPlayer();
+        questProgressEngine.accept(player, new NamespacedKey("rpgquest", "deliver"))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        player.getInventory().clear();
+        player.getInventory().addItem(new org.bukkit.inventory.ItemStack(Material.LEATHER, 2));
+
+        sessionEngine.open(player, DELIVERY_DIALOGUE);
+        awaitRendered();
+        int index = renderer.lastVisibleChoices.get(0).index();
+        renderer.lastNode = null;
+        sessionEngine.onChoiceSelected(player, DELIVERY_DIALOGUE, "deliver", index);
+        awaitRendered();
+
+        assertEquals(2, questProgressEngine.pendingDeliveries(player.getUniqueId(), "guard").get(0).delivered(),
+                "le clic doit réellement remettre les 2 cuirs");
+        assertEquals(0, player.getInventory().all(Material.LEATHER).size(), "les cuirs sont consommés");
+    }
+
+    /** Le texte du nœud affiche l'état réel de la remise, substitué au moment du rendu. */
+    @Test
+    void theDeliveryStatusIsSubstitutedInTheNodeText() throws Exception {
+        installDeliveryContent();
+        sessionEngine.setPlaceholders(new com.lodygames.rpgquest.dialogue.DialogueTextPlaceholders(
+                java.util.Map.of("delivery_status", context ->
+                        com.lodygames.rpgquest.quest.progress.DeliveryStatusText.render(
+                                questProgressEngine.pendingDeliveries(
+                                        context.player().getUniqueId(), context.npcId())))));
+        PlayerMock player = addPlayer();
+        questProgressEngine.accept(player, new NamespacedKey("rpgquest", "deliver"))
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        player.getInventory().clear();
+        player.getInventory().addItem(new org.bukkit.inventory.ItemStack(Material.LEATHER, 1));
+        questProgressEngine.deliverTo(player, "guard");
+
+        sessionEngine.open(player, DELIVERY_DIALOGUE);
+        awaitRendered();
+
+        // Le PNJ est déduit de la clé du dialogue « rpgquest:guard_delivery »... qui n'est PAS
+        // « guard » : l'état rendu est donc celui d'un PNJ qui n'attend rien, ce qui prouve que la
+        // résolution vient bien de la clé du dialogue et non d'une devinette.
+        assertTrue(renderer.lastNode.text().base().contains(
+                        com.lodygames.rpgquest.quest.progress.DeliveryStatusText.NOTHING_EXPECTED),
+                () -> "obtenu : " + renderer.lastNode.text().base());
     }
 
     private static final class RecordingRenderer implements DialogueRenderer {

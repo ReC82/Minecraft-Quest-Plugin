@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.ui;
 import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.CollectItemObjective;
 import com.lodygames.rpgquest.quest.model.CraftItemObjective;
+import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
@@ -41,6 +42,13 @@ final class ObjectiveLabels {
             // l'identifiant logique (« libraire »), qui est une donnée interne.
             case TalkToNpcObjective o -> Component.text("Parler au PNJ");
             case ReachLocationObjective o -> Component.text("Atteindre le lieu");
+            // Issue #123 : le nom de l'objet reste traduit côté client, mais il faut distinguer
+            // « ramasser du cuir » de « remettre du cuir au PNJ » — sinon deux lignes du journal
+            // seraient identiques alors qu'elles n'attendent pas du tout la même action. Le PNJ
+            // destinataire n'est pas nommé ici : son id logique est une donnée interne (même
+            // raison que TALK_TO_NPC ci-dessus), et le dialogue du PNJ, lui, donne le détail.
+            case DeliverItemToNpcObjective o -> Component.translatable(o.material())
+                    .append(Component.text(" (à remettre)"));
         };
     }
 

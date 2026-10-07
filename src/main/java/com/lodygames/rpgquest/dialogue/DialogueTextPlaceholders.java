@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 
 /**
@@ -15,6 +16,10 @@ import org.bukkit.entity.Player;
  * %wild_conditions%} dans le YAML, le moteur le remplace par l'état réel lu juste avant le rendu.
  * Même convention que {@code %player%} de {@code RUN_SAFE_COMMAND} — jamais une balise MiniMessage,
  * qui serait soit validée soit affichée littéralement par le parseur.
+ *
+ * <p>Chaque valeur reçoit un {@link DialoguePlaceholderContext} (joueur + dialogue courant) plutôt
+ * que le seul joueur : certaines dépendent du PNJ qui parle, comme l'état de remise d'objets
+ * {@code %delivery_status%} (issue #123). Une valeur qui n'en a pas besoin ignore le contexte.
  *
  * <ul>
  *   <li>Seules les clés <em>enregistrées</em> sont remplacées ; un {@code %inconnu%} est laissé tel
@@ -31,9 +36,9 @@ public final class DialogueTextPlaceholders {
 
     private static final Pattern TOKEN = Pattern.compile("%([a-z0-9_]+)%");
 
-    private final Map<String, Function<Player, String>> values;
+    private final Map<String, Function<DialoguePlaceholderContext, String>> values;
 
-    public DialogueTextPlaceholders(Map<String, Function<Player, String>> values) {
+    public DialogueTextPlaceholders(Map<String, Function<DialoguePlaceholderContext, String>> values) {
         this.values = Map.copyOf(values);
     }
 
@@ -47,15 +52,16 @@ public final class DialogueTextPlaceholders {
      * à substituer. Seul le <em>texte</em> du nœud est concerné : les libellés de choix restent
      * statiques (le moteur les indexe par position, un libellé dynamique n'apporterait rien ici).
      */
-    public DialogueNode apply(Player player, DialogueNode node) {
+    public DialogueNode apply(Player player, NamespacedKey dialogueId, DialogueNode node) {
         if (values.isEmpty()) {
             return node;
         }
+        DialoguePlaceholderContext context = new DialoguePlaceholderContext(player, dialogueId);
         LocalizedText text = node.text();
         Map<String, String> substituted = new LinkedHashMap<>();
         boolean changed = false;
         for (Map.Entry<String, String> entry : text.byLocale().entrySet()) {
-            String resolved = apply(player, entry.getValue());
+            String resolved = apply(context, entry.getValue());
             changed |= !resolved.equals(entry.getValue());
             substituted.put(entry.getKey(), resolved);
         }
@@ -65,17 +71,17 @@ public final class DialogueTextPlaceholders {
     }
 
     /** Substitution sur un texte brut — exposée pour les tests et une réutilisation future. */
-    public String apply(Player player, String raw) {
+    public String apply(DialoguePlaceholderContext context, String raw) {
         if (raw == null || raw.indexOf('%') < 0) {
             return raw;
         }
         Matcher matcher = TOKEN.matcher(raw);
         StringBuilder out = new StringBuilder(raw.length());
         while (matcher.find()) {
-            Function<Player, String> value = values.get(matcher.group(1));
+            Function<DialoguePlaceholderContext, String> value = values.get(matcher.group(1));
             matcher.appendReplacement(out, value == null
                     ? Matcher.quoteReplacement(matcher.group())
-                    : Matcher.quoteReplacement(value.apply(player)));
+                    : Matcher.quoteReplacement(value.apply(context)));
         }
         matcher.appendTail(out);
         return out.toString();

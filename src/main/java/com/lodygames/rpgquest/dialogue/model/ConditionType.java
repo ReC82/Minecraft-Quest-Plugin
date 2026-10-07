@@ -7,5 +7,7 @@ public enum ConditionType {
     VARIABLE_EQUALS,
     NO_MAIN_CLAIM,
     HAS_MAIN_CLAIM,
-    LACKS_CUSTOM_ITEM
+    LACKS_CUSTOM_ITEM,
+    /** Il reste des objets à remettre à ce PNJ (issue #123). */
+    HAS_PENDING_DELIVERY
 }

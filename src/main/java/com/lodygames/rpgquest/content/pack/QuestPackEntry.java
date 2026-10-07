@@ -75,6 +75,14 @@ public record QuestPackEntry(
         public static Objective reach(String world, double x, double y, double z, double radius) {
             return new Objective("REACH_LOCATION", null, null, null, world, null, x, y, z, radius);
         }
+
+        /**
+         * Remise d'objets à un PNJ (issue #123) : le seul objectif qui porte à la fois
+         * {@code material} et {@code npc} — les deux champs existaient déjà, aucun n'est ajouté.
+         */
+        public static Objective deliver(String npc, String material, int amount) {
+            return new Objective("DELIVER_ITEM_TO_NPC", material, null, npc, null, amount, null, null, null, null);
+        }
     }
 
     /**

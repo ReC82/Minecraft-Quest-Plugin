@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.content.pack;
 
 import com.lodygames.rpgquest.dialogue.model.AdvanceQuestAction;
 import com.lodygames.rpgquest.dialogue.model.CloseAction;
+import com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
@@ -15,6 +16,7 @@ import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
 import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
+import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
@@ -29,6 +31,7 @@ import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.CollectItemObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.CraftItemObjective;
+import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
@@ -99,6 +102,7 @@ public final class ContentPackMapper {
             case KillEntityObjective b -> QuestPackEntry.Objective.kill(b.entity().name(), b.amount());
             case TalkToNpcObjective b -> QuestPackEntry.Objective.talk(b.npcId());
             case ReachLocationObjective b -> QuestPackEntry.Objective.reach(b.world(), b.x(), b.y(), b.z(), b.radius());
+            case DeliverItemToNpcObjective b -> QuestPackEntry.Objective.deliver(b.npcId(), b.material().name(), b.amount());
         };
     }
 
@@ -161,6 +165,7 @@ public final class ContentPackMapper {
             case OpenDialogueAction a -> DialoguePackEntry.Action.openDialogue(a.dialogueId().toString());
             case OpenMerchantAction a -> DialoguePackEntry.Action.openMerchant(a.merchantId().toString());
             case GiveStarterKitAction ignored -> DialoguePackEntry.Action.giveStarterKit();
+            case DeliverQuestItemsAction a -> DialoguePackEntry.Action.deliverQuestItems(a.npcId());
             case CloseAction ignored -> DialoguePackEntry.Action.close();
         };
     }
@@ -177,6 +182,7 @@ public final class ContentPackMapper {
             case NoMainClaimCondition ignored -> DialoguePackEntry.Condition.flag("NO_MAIN_CLAIM", negate);
             case HasMainClaimCondition ignored -> DialoguePackEntry.Condition.flag("HAS_MAIN_CLAIM", negate);
             case LacksCustomItemCondition c -> DialoguePackEntry.Condition.lacksCustomItem(c.itemId().toString(), negate);
+            case PendingDeliveryCondition c -> DialoguePackEntry.Condition.pendingDelivery(c.npcId(), negate);
             case NegatedCondition ignored -> throw new IllegalStateException("négation déjà dépliée");
         };
     }

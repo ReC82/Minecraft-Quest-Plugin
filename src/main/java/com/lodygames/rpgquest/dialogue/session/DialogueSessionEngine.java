@@ -4,10 +4,12 @@ import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.claim.ClaimService;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
+import com.lodygames.rpgquest.dialogue.DialogueNpcResolution;
 import com.lodygames.rpgquest.dialogue.DialogueTextPlaceholders;
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
 import com.lodygames.rpgquest.dialogue.model.AdvanceQuestAction;
 import com.lodygames.rpgquest.dialogue.model.CloseAction;
+import com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
@@ -23,6 +25,7 @@ import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
+import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
 import com.lodygames.rpgquest.dialogue.model.RunSafeCommandAction;
 import com.lodygames.rpgquest.dialogue.model.SetVariableAction;
@@ -162,11 +165,11 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
 
     private void openNode(Player player, DialogueDefinition dialogue, String nodeId) {
         DialogueNode node = dialogue.nodes().get(nodeId);
-        visibleChoices(player, node).thenAccept(visible -> runOnMainThread(() -> {
+        visibleChoices(player, dialogue, node).thenAccept(visible -> runOnMainThread(() -> {
             sessions.put(player.getUniqueId(), new DialogueSession(dialogue.id(), node.id()));
             // Substitution juste avant le rendu, sur le thread principal : la valeur affichée est
             // donc lue au plus tard possible (état réel au moment où le joueur voit le texte).
-            renderer.render(player, dialogue, placeholders.apply(player, node), visible);
+            renderer.render(player, dialogue, placeholders.apply(player, dialogue.id(), node), visible);
             // Issue #12 : c'est le SEUL endroit où un nœud est réellement affiché au joueur, donc
             // le seul endroit où « lu » a un sens. Ouvrir un PNJ ne présente que le nœud de
             // départ : les branches non parcourues restent non lues, et donc toujours signalées.
@@ -220,7 +223,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             if (node == null) {
                 continue;
             }
-            perNode.add(visibleChoices(player, node).thenApply(visible -> {
+            perNode.add(visibleChoices(player, dialogue, node).thenApply(visible -> {
                 java.util.List<String> next = new ArrayList<>();
                 for (VisibleChoice choice : visible) {
                     DialogueChoice original = node.choices().get(choice.index());
@@ -269,7 +272,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         DialogueChoice choice = node.choices().get(choiceIndex);
 
         // Re-vérification défensive : la visibilité initiale garantit l'affichage, pas la validité au moment du clic.
-        evaluateAll(player, choice.conditions()).thenAccept(stillVisible -> runOnMainThread(() -> {
+        evaluateAll(player, dialogueId, choice.conditions()).thenAccept(stillVisible -> runOnMainThread(() -> {
             if (!stillVisible) {
                 return;
             }
@@ -292,7 +295,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
                 merchantTradeService.openShop(player, openMerchant.merchantId());
                 return;
             }
-            executeAction(player, action);
+            executeAction(player, dialogue, action);
         }
 
         if (choice.next() != null) {
@@ -307,7 +310,7 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         player.closeDialog();
     }
 
-    private void executeAction(Player player, DialogueAction action) {
+    private void executeAction(Player player, DialogueDefinition dialogue, DialogueAction action) {
         switch (action) {
             case StartQuestAction a -> questProgressEngine.accept(player, a.questId()).exceptionally(error -> {
                 logger.error("Échec de START_QUEST {} pour {}", a.questId(), player.getUniqueId(), error);
@@ -327,6 +330,11 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
                     });
             case RunSafeCommandAction a -> runSafeCommand(player, a.command());
             case GiveStarterKitAction ignored -> starterToolKitService.requestKit(player);
+            // Issue #123 : la remise elle-même vit dans le moteur de quêtes (retrait exact,
+            // anti double-clic, persistance) ; le dialogue ne fait que la déclencher pour le PNJ
+            // porteur de ce dialogue, ou celui explicitement nommé.
+            case DeliverQuestItemsAction a -> questProgressEngine.deliverTo(
+                    player, DialogueNpcResolution.resolve(a.npcId(), dialogue.id()));
             case OpenDialogueAction ignored -> {
                 // Géré par l'appelant (transition, arrêt anticipé) : jamais atteint ici.
             }
@@ -354,7 +362,8 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
 
     // ---- Conditions ----------------------------------------------------
 
-    private CompletableFuture<Boolean> evaluateCondition(Player player, DialogueCondition condition) {
+    private CompletableFuture<Boolean> evaluateCondition(Player player, NamespacedKey dialogueId,
+                                                         DialogueCondition condition) {
         return switch (condition) {
             case QuestStateCondition c -> questProgressEngine.stateOf(player.getUniqueId(), c.questId())
                     .thenApply(state -> state == c.state());
@@ -368,7 +377,12 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
             case HasMainClaimCondition ignored -> CompletableFuture.completedFuture(
                     claimService.mainClaimOf(player.getUniqueId()).isPresent());
             case LacksCustomItemCondition c -> CompletableFuture.completedFuture(!hasCustomItem(player, c.itemId()));
-            case NegatedCondition c -> evaluateCondition(player, c.inner()).thenApply(result -> !result);
+            // Issue #123 : lecture pure de l'état de remise, déjà en mémoire — aucune requête, donc
+            // un future déjà complété, évalué à chaque ouverture de nœud sans coût.
+            case PendingDeliveryCondition c -> CompletableFuture.completedFuture(
+                    questProgressEngine.hasPendingDelivery(
+                            player.getUniqueId(), DialogueNpcResolution.resolve(c.npcId(), dialogueId)));
+            case NegatedCondition c -> evaluateCondition(player, dialogueId, c.inner()).thenApply(result -> !result);
         };
     }
 
@@ -381,22 +395,24 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         return false;
     }
 
-    private CompletableFuture<Boolean> evaluateAll(Player player, List<DialogueCondition> conditions) {
+    private CompletableFuture<Boolean> evaluateAll(Player player, NamespacedKey dialogueId,
+                                                   List<DialogueCondition> conditions) {
         if (conditions.isEmpty()) {
             return CompletableFuture.completedFuture(true);
         }
         List<CompletableFuture<Boolean>> checks = conditions.stream()
-                .map(condition -> evaluateCondition(player, condition))
+                .map(condition -> evaluateCondition(player, dialogueId, condition))
                 .toList();
         return CompletableFuture.allOf(checks.toArray(CompletableFuture[]::new))
                 .thenApply(v -> checks.stream().allMatch(CompletableFuture::join));
     }
 
     /** Choix réellement visibles pour ce joueur : source unique d'évaluation des conditions. */
-    public CompletableFuture<List<VisibleChoice>> visibleChoices(Player player, DialogueNode node) {
+    public CompletableFuture<List<VisibleChoice>> visibleChoices(Player player, DialogueDefinition dialogue,
+                                                                 DialogueNode node) {
         List<DialogueChoice> choices = node.choices();
         List<CompletableFuture<Boolean>> checks = choices.stream()
-                .map(choice -> evaluateAll(player, choice.conditions()))
+                .map(choice -> evaluateAll(player, dialogue.id(), choice.conditions()))
                 .toList();
         return CompletableFuture.allOf(checks.toArray(CompletableFuture[]::new)).thenApply(v -> {
             List<VisibleChoice> visible = new ArrayList<>();

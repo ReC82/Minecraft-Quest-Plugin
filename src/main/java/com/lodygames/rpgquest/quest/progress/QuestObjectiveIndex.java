@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.quest.progress;
 import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.CollectItemObjective;
 import com.lodygames.rpgquest.quest.model.CraftItemObjective;
+import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.ObjectiveType;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
@@ -36,6 +37,7 @@ public final class QuestObjectiveIndex {
     private final Map<Material, List<ObjectiveRef>> craftItem = new HashMap<>();
     private final Map<String, List<ObjectiveRef>> talkToNpc = new HashMap<>();
     private final Map<String, List<ObjectiveRef>> reachLocationByWorld = new HashMap<>();
+    private final Map<String, List<ObjectiveRef>> deliverToNpc = new HashMap<>();
 
     public QuestObjectiveIndex(List<QuestDefinition> quests) {
         for (QuestDefinition quest : quests) {
@@ -59,6 +61,7 @@ public final class QuestObjectiveIndex {
             case CraftItemObjective o -> add(craftItem, o.material(), ref);
             case TalkToNpcObjective o -> add(talkToNpc, o.npcId(), ref);
             case ReachLocationObjective o -> add(reachLocationByWorld, o.world(), ref);
+            case DeliverItemToNpcObjective o -> add(deliverToNpc, o.npcId(), ref);
         }
     }
 
@@ -94,6 +97,16 @@ public final class QuestObjectiveIndex {
         return reachLocationByWorld.getOrDefault(world, List.of());
     }
 
+    /**
+     * Objectifs de remise (issue #123) dont {@code npcId} est le destinataire — dans l'ordre de
+     * déclaration par quête puis par étape, ce qui donne au dialogue un récapitulatif stable.
+     * Un PNJ qui n'est destinataire de rien renvoie une liste vide : c'est exactement ce qui fait
+     * qu'un mauvais PNJ ne peut jamais accepter une remise.
+     */
+    public List<ObjectiveRef> deliverToNpc(String npcId) {
+        return deliverToNpc.getOrDefault(npcId, List.of());
+    }
+
     public boolean isEmpty(ObjectiveType type) {
         return switch (type) {
             case BREAK_BLOCK -> breakBlock.isEmpty();
@@ -103,6 +116,7 @@ public final class QuestObjectiveIndex {
             case CRAFT_ITEM -> craftItem.isEmpty();
             case TALK_TO_NPC -> talkToNpc.isEmpty();
             case REACH_LOCATION -> reachLocationByWorld.isEmpty();
+            case DELIVER_ITEM_TO_NPC -> deliverToNpc.isEmpty();
         };
     }
 }

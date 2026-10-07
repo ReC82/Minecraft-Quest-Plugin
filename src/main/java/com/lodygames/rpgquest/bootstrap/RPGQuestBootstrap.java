@@ -117,6 +117,7 @@ import com.lodygames.rpgquest.resource.ResourceNodeRegistry;
 import com.lodygames.rpgquest.resource.ResourceNodeService;
 import com.lodygames.rpgquest.spawn.SpawnService;
 import com.lodygames.rpgquest.quest.YamlQuestEngine;
+import com.lodygames.rpgquest.quest.progress.DeliveryStatusText;
 import com.lodygames.rpgquest.quest.progress.QuestProgressEngine;
 import com.lodygames.rpgquest.store.StoreClient;
 import com.lodygames.rpgquest.store.StoreDeliveryService;
@@ -656,8 +657,12 @@ public final class RPGQuestBootstrap {
         // l'heure, ni la météo, ni le cycle jour/nuit du Wild ne sont modifiés.
         WildConditionsService wildConditionsService = new WildConditionsService(
                 worldService::find, () -> configService.current().travel().wildWorld());
-        dialogueSessionEngine.setPlaceholders(new DialogueTextPlaceholders(
-                Map.of("wild_conditions", player -> wildConditionsService.describe())));
+        // Issue #123 : %delivery_status% rend, pour le PNJ porteur du dialogue courant, ce qui a
+        // déjà été remis et ce qui manque — lecture pure de la progression en mémoire.
+        dialogueSessionEngine.setPlaceholders(new DialogueTextPlaceholders(Map.of(
+                "wild_conditions", context -> wildConditionsService.describe(),
+                "delivery_status", context -> DeliveryStatusText.render(questProgressEngine.pendingDeliveries(
+                        context.player().getUniqueId(), context.npcId())))));
         registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));
         var citizensDialogueListener = dialogueSessionEngine.citizensNpcInteractListener();
         if (citizensDialogueListener != null) {

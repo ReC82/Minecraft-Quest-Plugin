@@ -82,8 +82,17 @@ public interface AgentActions {
      * @param target      jeton technique : entité, matériau, id de PNJ, ou nom de monde
      * @param amount      quantité requise (1 pour les objectifs binaires)
      * @param raw         description héritée ({@code "Tuer SPIDER (x5)"}), conservée pour debug
+     * @param npc         PNJ destinataire d'une remise {@code DELIVER_ITEM_TO_NPC} (issue #123),
+     *                    {@code null} pour tous les autres types. Champ distinct de {@code target}
+     *                    parce qu'une remise a DEUX cibles : l'objet compté et le PNJ qui le reçoit
+     *                    — les écraser dans un seul champ rendrait le libellé du panel faux.
      */
-    record ObjectiveSummary(String kind, String target, int amount, String raw) {
+    record ObjectiveSummary(String kind, String target, int amount, String raw, String npc) {
+
+        /** Objectif sans PNJ destinataire : tous les types sauf {@code DELIVER_ITEM_TO_NPC}. */
+        ObjectiveSummary(String kind, String target, int amount, String raw) {
+            this(kind, target, amount, raw, null);
+        }
     }
 
     /**

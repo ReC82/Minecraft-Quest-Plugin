@@ -7,6 +7,7 @@ import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
+import com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
 import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
@@ -16,6 +17,7 @@ import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
+import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
 import com.lodygames.rpgquest.dialogue.model.RunSafeCommandAction;
@@ -169,6 +171,14 @@ public final class DialogueDefinitionWriter {
                 line(sb, "merchant: " + a.merchantId());
             }
             case GiveStarterKitAction ignored -> line(sb, "type: GIVE_STARTER_KIT");
+            case DeliverQuestItemsAction a -> {
+                line(sb, "type: DELIVER_QUEST_ITEMS");
+                if (a.npcId() != null) {
+                    // Jamais écrit quand il est déduit du dialogue : réécrire un id implicite
+                    // figerait le destinataire et casserait la réutilisation du même dialogue.
+                    line(sb, "npc: " + quote(a.npcId()));
+                }
+            }
             case CloseAction ignored -> line(sb, "type: CLOSE");
         }
     }
@@ -201,6 +211,12 @@ public final class DialogueDefinitionWriter {
             case LacksCustomItemCondition c -> {
                 line(sb, "type: LACKS_CUSTOM_ITEM");
                 line(sb, "item: " + c.itemId());
+            }
+            case PendingDeliveryCondition c -> {
+                line(sb, "type: HAS_PENDING_DELIVERY");
+                if (c.npcId() != null) {
+                    line(sb, "npc: " + quote(c.npcId()));
+                }
             }
             case NegatedCondition ignored -> throw new IllegalStateException("négation déjà dépliée");
         }

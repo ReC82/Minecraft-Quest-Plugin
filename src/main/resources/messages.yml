@@ -53,6 +53,17 @@ quest:
   reward-money-credited: "<gold>Récompense de</gold> <white><quest></white> <gold>:</gold> <yellow>+<amount> pièce(s)</yellow> <gray>— solde :</gray> <white><balance></white>"
   reward-money-failed: "<red>Ta récompense en pièces n'a pas pu être créditée. Rien n'a été perdu de ta progression : signale-le à un administrateur.</red>"
 
+  # Remise d'objets à un PNJ (issue #123, DELIVER_ITEM_TO_NPC). Envoyés dans le CHAT, jamais en
+  # ActionBar : une remise groupée touche plusieurs objectifs d'un coup et autant de messages
+  # d'ActionBar s'écraseraient l'un l'autre. <items> et <missing> sont des listes déjà rendues
+  # (« 2 × Cuir, 1 × Pierre »), avec les noms d'objets traduits par le client.
+  delivery-delivered: "<green>Matériaux remis :</green> <white><items></white>"
+  delivery-remaining: "<gray>Il te manque encore :</gray> <white><missing></white>"
+  delivery-all-done: "<gold>Tu as remis tout ce qui était demandé.</gold>"
+  delivery-nothing-useful: "<gray>Tu n'as rien d'utile à me remettre pour l'instant.</gray>"
+  delivery-already-complete: "<gray>Tu m'as déjà remis tout ce que je t'avais demandé.</gray>"
+  delivery-none: "<gray>Je n'attends aucun matériau de ta part.</gray>"
+
 permission:
   denied: "<red>Permission manquante :</red> <white><permission></white>"
 

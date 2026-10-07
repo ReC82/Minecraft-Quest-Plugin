@@ -315,6 +315,9 @@ public final class AgentActionExecutor {
             m.put("target", o.target());
             m.put("amount", o.amount());
             m.put("raw", o.raw());
+            // Issue #123 : jamais omis quand il est présent — le panel ne peut pas deviner le PNJ
+            // destinataire d'une remise, et un libellé sans lui serait ambigu.
+            m.put("npc", o.npc());
             out.add(m);
         }
         return out;

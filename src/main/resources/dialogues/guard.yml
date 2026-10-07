@@ -94,6 +94,15 @@ nodes:
       # Wild, l'information n'est jamais poussée dans l'avertissement du portail (issue #161).
       - text: "Comment est le Wild actuellement ?"
         next: wild_conditions
+      # Issue #123 : branche de remise d'objets, entièrement GÉNÉRIQUE — aucune quête, aucun
+      # matériau et aucun PNJ n'est nommé ici. HAS_PENDING_DELIVERY n'est vraie que si une quête
+      # active du joueur demande de remettre des objets à CE PNJ (déduit de la clé du dialogue,
+      # « rpgquest:guard » → PNJ « guard ») : le choix reste donc invisible le reste du temps, et
+      # ces trois nœuds peuvent être recopiés tels quels dans le dialogue d'un autre PNJ.
+      - text: "J'ai des matériaux à te remettre"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        next: delivery
       - text: "Parle-moi de la récompense"
         next: reward_info
       - text: "Non merci"
@@ -109,6 +118,53 @@ nodes:
     choices:
       - text: "Merci pour l'information"
         next: greeting
+
+  # Issue #123 — %delivery_status% liste ce qui a déjà été remis et ce qui manque, matériau par
+  # matériau, lu sur la progression réelle juste avant l'affichage. « Donner les matériaux que
+  # j'ai » traite TOUS les objectifs de remise de ce PNJ en une seule fois : il ne retire jamais
+  # plus que le reliquat, et ce qui est remis est acquis définitivement (survit à la mort, à une
+  # reconnexion et à un redémarrage).
+  delivery:
+    speaker: "Garde"
+    text: "<white>Voilà où nous en sommes :</white><newline>%delivery_status%"
+    choices:
+      - text: "Donner les matériaux que j'ai"
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      - text: "Je reviendrai plus tard"
+        actions:
+          - type: CLOSE
+
+  delivery_after:
+    speaker: "Garde"
+    text: "<white>%delivery_status%</white>"
+    choices:
+      # Dépôt partiel : le joueur peut enchaîner s'il a encore quelque chose d'utile.
+      - text: "Donner encore des matériaux"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      # Tout est remis : la même condition niée fait basculer vers le nœud de fin, sans qu'aucun
+      # second type de condition soit nécessaire.
+      - text: "Et voilà, tout est remis"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+            negate: true
+        next: delivery_done
+      - text: "Je reviendrai plus tard"
+        actions:
+          - type: CLOSE
+
+  delivery_done:
+    speaker: "Garde"
+    text: "<gold>Tu as remis tout ce que je t'avais demandé. C'est en sécurité ici.</gold>"
+    choices:
+      - text: "Parfait"
+        actions:
+          - type: CLOSE
 
   accepted:
     speaker: "Garde"

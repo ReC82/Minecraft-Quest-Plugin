@@ -2,7 +2,8 @@ package com.lodygames.rpgquest.quest.model;
 
 public sealed interface QuestObjective
         permits BreakBlockObjective, PlaceBlockObjective, KillEntityObjective,
-                CollectItemObjective, CraftItemObjective, TalkToNpcObjective, ReachLocationObjective {
+                CollectItemObjective, CraftItemObjective, TalkToNpcObjective, ReachLocationObjective,
+                DeliverItemToNpcObjective {
 
     ObjectiveType type();
 
@@ -16,6 +17,7 @@ public sealed interface QuestObjective
             case CraftItemObjective o -> o.amount();
             case TalkToNpcObjective o -> 1;
             case ReachLocationObjective o -> 1;
+            case DeliverItemToNpcObjective o -> o.amount();
         };
     }
 
@@ -29,6 +31,7 @@ public sealed interface QuestObjective
             case CraftItemObjective o -> "Fabriquer " + o.material();
             case TalkToNpcObjective o -> "Parler à " + o.npcId();
             case ReachLocationObjective o -> "Se rendre dans " + o.world();
+            case DeliverItemToNpcObjective o -> "Remettre " + o.material() + " à " + o.npcId();
         };
     }
 }

@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.dialogue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.dialogue.model.ActionType;
@@ -376,6 +377,56 @@ class DialogueDefinitionEditorTest {
         assertFalse(r.ok());
         assertEquals("SOURCE_INVALID", r.code());
         assertEquals("id: rpgquest:broken\nstart: x\n", Files.readString(dir.resolve("broken.yml")));
+    }
+
+    /**
+     * Issue #123 : la branche de remise doit faire l'aller-retour <strong>sans perte</strong> —
+     * PNJ implicite conservé implicite (le réécrire figerait le destinataire), PNJ explicite
+     * conservé, condition niée conservée.
+     */
+    private static final String CANONICAL_DELIVERY = """
+            id: rpgquest:smith
+            start: deliver
+            nodes:
+              deliver:
+                speaker: "Forgeron"
+                text: "<white>%delivery_status%</white>"
+                choices:
+                  - text: "Donner les matériaux que j'ai"
+                    conditions:
+                      - type: HAS_PENDING_DELIVERY
+                    actions:
+                      - type: DELIVER_QUEST_ITEMS
+                    next: deliver
+                  - text: "Et pour l'autre PNJ"
+                    conditions:
+                      - type: HAS_PENDING_DELIVERY
+                        npc: "blacksmith"
+                    actions:
+                      - type: DELIVER_QUEST_ITEMS
+                        npc: "blacksmith"
+                  - text: "Tout est remis"
+                    conditions:
+                      - type: HAS_PENDING_DELIVERY
+                        negate: true
+                    actions:
+                      - type: CLOSE
+            """;
+
+    @Test
+    void theDeliveryBranchRoundTripsWithoutLoss() throws IOException {
+        Files.writeString(dir.resolve("smith.yml"), CANONICAL_DELIVERY, StandardCharsets.UTF_8);
+        DialogueDefinition d = reload("rpgquest:smith");
+
+        var choices = d.nodes().get("deliver").choices();
+        assertNull(((com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction)
+                choices.get(0).actions().get(0)).npcId(), "PNJ implicite : jamais résolu au chargement");
+        assertEquals("blacksmith", ((com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction)
+                choices.get(1).actions().get(0)).npcId());
+
+        String rendered = DialogueDefinitionWriter.render(d, List.of("deliver"));
+        assertTrue(rendered.endsWith(CANONICAL_DELIVERY),
+                () -> "aller-retour de la branche de remise non fidèle :\n" + rendered);
     }
 
     @Test

@@ -7,5 +7,7 @@ public enum ObjectiveType {
     COLLECT_ITEM,
     CRAFT_ITEM,
     TALK_TO_NPC,
-    REACH_LOCATION
+    REACH_LOCATION,
+    /** Remise réelle d'objets à un PNJ, avec dépôts partiels persistants (issue #123). */
+    DELIVER_ITEM_TO_NPC
 }

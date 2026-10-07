@@ -10,6 +10,7 @@ import com.lodygames.rpgquest.dialogue.model.DialogueCondition;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveItemAction;
+import com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction;
 import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
@@ -17,6 +18,7 @@ import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
 import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
+import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.OpenDialogueAction;
 import com.lodygames.rpgquest.dialogue.model.OpenMerchantAction;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
@@ -246,6 +248,7 @@ final class DialogueDefinitionParser {
                 }
                 yield new VariableEqualsCondition(key, value == null ? "" : value);
             }
+            case HAS_PENDING_DELIVERY -> new PendingDeliveryCondition(section.getString("npc"));
             case NO_MAIN_CLAIM -> new NoMainClaimCondition();
             case HAS_MAIN_CLAIM -> new HasMainClaimCondition();
             case LACKS_CUSTOM_ITEM -> {
@@ -361,6 +364,10 @@ final class DialogueDefinitionParser {
                 yield new OpenMerchantAction(merchantId);
             }
             case GIVE_STARTER_KIT -> new GiveStarterKitAction();
+            // Issue #123 : « npc » optionnel — absent, le destinataire est déduit de la clé du
+            // dialogue courant (convention id de dialogue = id de PNJ), ce qui garde la donnée
+            // générique et réutilisable telle quelle pour un autre PNJ.
+            case DELIVER_QUEST_ITEMS -> new DeliverQuestItemsAction(section.getString("npc"));
             case CLOSE -> new CloseAction();
         };
     }

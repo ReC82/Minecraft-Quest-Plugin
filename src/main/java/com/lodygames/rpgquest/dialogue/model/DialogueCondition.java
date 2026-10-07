@@ -2,7 +2,8 @@ package com.lodygames.rpgquest.dialogue.model;
 
 public sealed interface DialogueCondition
         permits QuestStateCondition, HasItemCondition, HasPermissionCondition, VariableEqualsCondition,
-        NoMainClaimCondition, HasMainClaimCondition, LacksCustomItemCondition, NegatedCondition {
+        NoMainClaimCondition, HasMainClaimCondition, LacksCustomItemCondition, PendingDeliveryCondition,
+        NegatedCondition {
 
     ConditionType type();
 }

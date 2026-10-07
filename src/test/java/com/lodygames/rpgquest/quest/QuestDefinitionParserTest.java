@@ -4,9 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
+import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.RewardType;
 import java.io.StringReader;
 import java.util.List;
@@ -273,6 +275,131 @@ class QuestDefinitionParserTest {
         // L'ORDRE est préservé : il décide de l'ordre d'affichage du résumé de fin de quête.
         assertEquals(List.of(RewardType.EXPERIENCE, RewardType.MONEY, RewardType.ITEM),
                 result.quest().rewards().stream().map(r -> r.type()).toList());
+    }
+
+    // ---- Remise d'objets à un PNJ (issue #123) -------------------------------------------------
+
+    @Test
+    void aDeliverObjectiveIsParsedWithItsNpcMaterialAndAmount() {
+        QuestDefinitionParser.ParseResult result = parser.parse("deliver.yml", load("""
+                id: rpgquest:deliver
+                title: "Titre"
+                description: "Description"
+                category: test
+
+                steps:
+                  - id: deliver_step
+                    objectives:
+                      - type: DELIVER_ITEM_TO_NPC
+                        npc: blacksmith
+                        material: LEATHER
+                        amount: 4
+                """));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        assertEquals(new DeliverItemToNpcObjective("blacksmith", Material.LEATHER, 4),
+                result.quest().steps().get(0).objectives().get(0));
+        assertEquals(4, QuestObjective.requiredAmount(result.quest().steps().get(0).objectives().get(0)));
+    }
+
+    @Test
+    void severalDeliverObjectivesCoexistInTheSameStep() {
+        QuestDefinitionParser.ParseResult result = parser.parse("deliver_multi.yml", load("""
+                id: rpgquest:deliver_multi
+                title: "Titre"
+                description: "Description"
+                category: test
+
+                steps:
+                  - id: deliver_step
+                    objectives:
+                      - type: DELIVER_ITEM_TO_NPC
+                        npc: guard
+                        material: STICK
+                        amount: 1
+                      - type: DELIVER_ITEM_TO_NPC
+                        npc: guard
+                        material: COBBLESTONE
+                        amount: 2
+                      - type: DELIVER_ITEM_TO_NPC
+                        npc: guard
+                        material: LEATHER
+                        amount: 4
+                      - type: DELIVER_ITEM_TO_NPC
+                        npc: guard
+                        material: WHEAT_SEEDS
+                        amount: 3
+                """));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        // L'ORDRE est préservé : il décide de l'ordre du récapitulatif lu par le joueur.
+        assertEquals(List.of(Material.STICK, Material.COBBLESTONE, Material.LEATHER, Material.WHEAT_SEEDS),
+                result.quest().steps().get(0).objectives().stream()
+                        .map(o -> ((DeliverItemToNpcObjective) o).material())
+                        .toList());
+    }
+
+    @Test
+    void aDeliverObjectiveWithoutNpcMaterialOrAmountIsRejectedWithEveryReason() {
+        QuestDefinitionParser.ParseResult result = parser.parse("deliver_broken.yml", load("""
+                id: rpgquest:deliver_broken
+                title: "Titre"
+                description: "Description"
+                category: test
+
+                steps:
+                  - id: deliver_step
+                    objectives:
+                      - type: DELIVER_ITEM_TO_NPC
+                """));
+
+        assertFalse(result.isSuccess());
+        String combined = String.join(" | ", result.issues().stream().map(QuestLoadIssue::message).toList());
+        assertTrue(combined.contains("npc"), combined);
+        assertTrue(combined.contains("material"), combined);
+        assertTrue(combined.contains("amount"), combined);
+    }
+
+    @Test
+    void aDeliverObjectiveWithAnUnknownMaterialIsRejected() {
+        QuestDefinitionParser.ParseResult result = parser.parse("deliver_bad_material.yml", load("""
+                id: rpgquest:deliver_bad
+                title: "Titre"
+                description: "Description"
+                category: test
+
+                steps:
+                  - id: deliver_step
+                    objectives:
+                      - type: DELIVER_ITEM_TO_NPC
+                        npc: guard
+                        material: PAS_UN_OBJET
+                        amount: 1
+                """));
+
+        assertFalse(result.isSuccess());
+        assertTrue(String.join(" ", result.issues().stream().map(QuestLoadIssue::message).toList())
+                .contains("PAS_UN_OBJET"));
+    }
+
+    @Test
+    void aDeliverObjectiveWithANonPositiveAmountIsRejected() {
+        QuestDefinitionParser.ParseResult result = parser.parse("deliver_zero.yml", load("""
+                id: rpgquest:deliver_zero
+                title: "Titre"
+                description: "Description"
+                category: test
+
+                steps:
+                  - id: deliver_step
+                    objectives:
+                      - type: DELIVER_ITEM_TO_NPC
+                        npc: guard
+                        material: LEATHER
+                        amount: 0
+                """));
+
+        assertFalse(result.isSuccess());
     }
 
     private ConfigurationSection load(String yaml) {

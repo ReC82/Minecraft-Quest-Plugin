@@ -5,15 +5,18 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.dialogue.model.CloseAction;
+import com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction;
 import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
 import com.lodygames.rpgquest.dialogue.model.DialogueNode;
 import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
+import com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition;
 import com.lodygames.rpgquest.dialogue.model.QuestStateCondition;
 import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
 import com.lodygames.rpgquest.npc.model.NpcDefinition;
 import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
+import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
@@ -59,7 +62,8 @@ class ContentPackMapperTest {
                         new TalkToNpcObjective("guide"),
                         new KillEntityObjective(EntityType.ZOMBIE, 5),
                         new BreakBlockObjective(Material.STONE, 12),
-                        new ReachLocationObjective("wild", 1.0, 64.0, -2.0, 3.5)))),
+                        new ReachLocationObjective("wild", 1.0, 64.0, -2.0, 3.5),
+                        new DeliverItemToNpcObjective("blacksmith", Material.LEATHER, 4)))),
                 List.of((QuestReward) new ExperienceReward(50),
                         new VariableReward("CLAIM_TIER_1", "true"),
                         new CommandReward("say gg")),
@@ -89,6 +93,12 @@ class ContentPackMapperTest {
         assertEquals("REACH_LOCATION", objs.get(3).type());
         assertEquals("wild", objs.get(3).world());
         assertEquals(3.5, objs.get(3).radius());
+
+        // Issue #123 : le seul objectif qui porte DEUX cibles — l'objet remis et le PNJ qui le reçoit.
+        assertEquals("DELIVER_ITEM_TO_NPC", objs.get(4).type());
+        assertEquals("LEATHER", objs.get(4).material());
+        assertEquals("blacksmith", objs.get(4).npc());
+        assertEquals(4, objs.get(4).amount());
 
         assertEquals("EXPERIENCE", e.rewards().get(0).type());
         assertEquals(50, e.rewards().get(0).amount());
@@ -132,6 +142,36 @@ class ContentPackMapperTest {
         assertEquals("GIVE_STARTER_KIT", c.actions().get(1).type());
         assertEquals("CLOSE", c.actions().get(2).type());
         assertNull(c.next());
+    }
+
+    /** Issue #123 : le PNJ implicite d'une remise doit rester implicite dans un content pack. */
+    @Test
+    void dialogueMappingKeepsTheDeliveryNpcExactlyAsDeclared() {
+        DialogueChoice implicitChoice = new DialogueChoice(
+                LocalizedText.of("Donner"),
+                List.of(new PendingDeliveryCondition()),
+                List.of(new DeliverQuestItemsAction()),
+                null);
+        DialogueChoice explicitChoice = new DialogueChoice(
+                LocalizedText.of("Donner au forgeron"),
+                List.of(new NegatedCondition(new PendingDeliveryCondition("blacksmith"))),
+                List.of(new DeliverQuestItemsAction("blacksmith")),
+                null);
+        DialogueDefinition def = new DialogueDefinition(key("rpgquest:g"), "start",
+                Map.of("start", new DialogueNode("start", "Garde", LocalizedText.of("Salut"),
+                        List.of(implicitChoice, explicitChoice))));
+
+        DialoguePackEntry e = ContentPackMapper.toDialogueEntry(def);
+        DialoguePackEntry.Choice implicitOut = e.nodes().get(0).choices().get(0);
+        assertEquals("DELIVER_QUEST_ITEMS", implicitOut.actions().get(0).type());
+        assertNull(implicitOut.actions().get(0).npc(), "un PNJ implicite ne doit jamais être figé");
+        assertEquals("HAS_PENDING_DELIVERY", implicitOut.conditions().get(0).type());
+        assertNull(implicitOut.conditions().get(0).npc());
+
+        DialoguePackEntry.Choice explicitOut = e.nodes().get(0).choices().get(1);
+        assertEquals("blacksmith", explicitOut.actions().get(0).npc());
+        assertEquals("blacksmith", explicitOut.conditions().get(0).npc());
+        assertTrue(explicitOut.conditions().get(0).negate());
     }
 
     @Test

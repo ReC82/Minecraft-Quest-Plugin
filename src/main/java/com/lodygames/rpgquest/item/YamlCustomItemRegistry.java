@@ -205,6 +205,18 @@ public final class YamlCustomItemRegistry implements CustomItemRegistry {
      * correspond encore à une définition chargée — voir {@link #resolve}.
      */
     public Optional<NamespacedKey> identify(ItemStack stack) {
+        return identityOf(stack);
+    }
+
+    /**
+     * Variante <strong>statique</strong> de {@link #identify(ItemStack)} : même clé PDC, même
+     * règle, aucune dépendance à un registre chargé — pour le code qui doit seulement savoir
+     * « cette pile porte-t-elle une identité RPGQuest ? » sans avoir le registre sous la main (voir
+     * {@code quest.progress.QuestItemWithdrawal}, qui refuse de consommer un objet personnalisé
+     * dans une remise de quête). Volontairement une délégation plutôt qu'une seconde lecture du
+     * PDC : {@link #ID_KEY} reste l'unique source de vérité.
+     */
+    public static Optional<NamespacedKey> identityOf(ItemStack stack) {
         if (stack == null || !stack.hasItemMeta()) {
             return Optional.empty();
         }

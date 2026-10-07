@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.dialogue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
@@ -82,6 +83,51 @@ class BundledDialoguesValidityTest {
         assertTrue(answer != null, "le choix doit mener à un nœud de réponse : " + choice.next());
         assertTrue(answer.text().base().contains("%wild_conditions%"),
                 () -> "la réponse doit être dynamique, trouvé : " + answer.text().base());
+    }
+
+    /**
+     * Issue #123 : la branche de remise livrée avec le Garde doit rester <strong>générique</strong> —
+     * aucune quête, aucun matériau, aucun PNJ nommé. C'est ce qui permet de la recopier telle quelle
+     * dans le dialogue d'un autre PNJ, et c'est ce qu'un passage par le Control Panel pourrait
+     * casser par inadvertance.
+     */
+    @Test
+    void theGuardDeliveryBranchIsGenericAndNeverNamesAQuestOrAMaterial() {
+        DialogueLoadReport report = loader.load(Map.of("guard.yml", read("/dialogues/guard.yml")));
+        assertTrue(report.issues().isEmpty(), () -> "guard.yml doit rester valide : " + report.issues());
+
+        DialogueDefinition guard = report.loaded().stream()
+                .filter(d -> d.id().equals(new NamespacedKey("rpgquest", "guard")))
+                .findFirst().orElseThrow();
+
+        // L'entrée dans la branche n'est proposée que s'il reste quelque chose à remettre.
+        var entry = guard.nodes().get(guard.startNodeId()).choices().stream()
+                .filter(c -> "delivery".equals(c.next()))
+                .toList();
+        assertEquals(1, entry.size(), "une seule entrée vers la branche de remise");
+        assertEquals(1, entry.get(0).conditions().size());
+        assertTrue(entry.get(0).conditions().get(0)
+                        instanceof com.lodygames.rpgquest.dialogue.model.PendingDeliveryCondition pending
+                        && pending.npcId() == null,
+                "la condition doit être HAS_PENDING_DELIVERY sans PNJ nommé (déduit du dialogue)");
+
+        // La remise elle-même : une seule action, sans PNJ nommé.
+        var deliverChoices = guard.nodes().values().stream()
+                .flatMap(node -> node.choices().stream())
+                .filter(choice -> choice.actions().stream()
+                        .anyMatch(a -> a instanceof com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction))
+                .toList();
+        assertTrue(deliverChoices.size() >= 1, "au moins un choix doit déclencher la remise");
+        for (var choice : deliverChoices) {
+            assertEquals(1, choice.actions().size(), "la remise ne doit rien faire d'autre");
+            var action = (com.lodygames.rpgquest.dialogue.model.DeliverQuestItemsAction) choice.actions().get(0);
+            assertNull(action.npcId(), "aucun PNJ ne doit être codé en dur dans la donnée livrée");
+        }
+
+        // Le nœud d'état affiche la progression réelle, jamais un texte figé.
+        assertTrue(guard.nodes().get("delivery").text().base().contains("%delivery_status%"));
+        assertTrue(guard.nodes().get("delivery_after").text().base().contains("%delivery_status%"));
+        assertTrue(guard.nodes().containsKey("delivery_done"), "un nœud de fin doit exister");
     }
 
     /**

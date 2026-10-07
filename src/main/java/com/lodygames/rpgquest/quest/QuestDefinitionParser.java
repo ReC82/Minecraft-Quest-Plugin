@@ -9,6 +9,7 @@ import com.lodygames.rpgquest.quest.model.ItemReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.LocalizedText;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
+import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.ObjectiveType;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
@@ -304,6 +305,19 @@ final class QuestDefinitionParser {
                 yield new TalkToNpcObjective(npc);
             }
             case REACH_LOCATION -> parseReachLocation(section, context, errors);
+            // Issue #123 : les trois champs sont obligatoires et validés séparément, pour que le
+            // message d'erreur nomme précisément ce qui manque plutôt qu'un « objectif invalide ».
+            case DELIVER_ITEM_TO_NPC -> {
+                String npc = section.getString("npc");
+                if (npc == null || npc.isBlank()) {
+                    errors.add(context + ": « npc » est obligatoire.");
+                }
+                Material material = parseMaterial(section, "material", context, errors);
+                Integer amount = parsePositiveInt(section, "amount", context, errors);
+                yield (npc != null && !npc.isBlank() && material != null && amount != null)
+                        ? new DeliverItemToNpcObjective(npc, material, amount)
+                        : null;
+            }
         };
     }
 

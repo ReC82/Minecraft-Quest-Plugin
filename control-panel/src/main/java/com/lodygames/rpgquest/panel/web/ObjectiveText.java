@@ -51,8 +51,11 @@ public final class ObjectiveText {
             // Le libellé nomme les deux, sinon « Rapporter du cuir » ne dirait pas à qui.
             case "DELIVER_ITEM_TO_NPC" -> {
                 String item = MinecraftNames.humanize(target);
+                // Un destinataire réellement absent est NOMMÉ comme tel : « à ? » laissait croire à
+                // un défaut d'affichage alors que la définition serait, elle, incomplète.
+                String receiver = npc.isBlank() ? "(PNJ non défini)" : prettyNpc(npc);
                 String label = "Rapporter " + item + (amount > 1 ? " (x" + amount + ")" : "")
-                        + " à " + prettyNpc(npc);
+                        + " à " + receiver;
                 yield new Objective(label, target);
             }
             case "REACH_LOCATION" -> new Objective("Se rendre dans " + prettyNpc(target), target);

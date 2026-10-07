@@ -79,12 +79,16 @@ class ObjectiveTextTest {
         assertEquals("Rapporter Bâton à Guard", ObjectiveText.fromSummary(m).label());
     }
 
-    /** Un agent déployé plus ancien n'envoie pas encore « npc » : le libellé doit rester lisible. */
+    /**
+     * Un agent déployé plus ancien n'envoie pas encore « npc », et une définition peut réellement
+     * en être dépourvue : le libellé doit rester lisible ET explicable — « à ? » laissait croire à
+     * un défaut d'affichage (c'est exactement ce qu'il a fait en recette TC-257).
+     */
     @Test
-    void deliverItemWithoutAnNpcFieldStillRendersWithoutThrowing() {
+    void deliverItemWithoutAnNpcFieldSaysTheReceiverIsUndefined() {
         ObjectiveText.Objective o = ObjectiveText.fromSummary(summary("DELIVER_ITEM_TO_NPC", "LEATHER", 4));
 
-        assertEquals("Rapporter Cuir (x4) à ?", o.label());
+        assertEquals("Rapporter Cuir (x4) à (PNJ non défini)", o.label());
     }
 
     @Test

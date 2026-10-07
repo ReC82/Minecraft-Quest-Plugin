@@ -55,6 +55,7 @@ public final class MinecraftNames {
             Map.entry("GRASS_BLOCK", "Bloc d'herbe"),
             Map.entry("STONE", "Pierre"),
             Map.entry("COBBLESTONE", "Pierre taillée"),
+            Map.entry("WHEAT_SEEDS", "Graines de blé"),
             Map.entry("DEEPSLATE", "Ardoise des abîmes"),
             Map.entry("SAND", "Sable"),
             Map.entry("GRAVEL", "Gravier"),

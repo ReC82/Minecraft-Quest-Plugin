@@ -202,12 +202,24 @@ public final class AgentPages {
         return m;
     }
 
+    /**
+     * Convertit un objectif de la <strong>source</strong> (brouillon relu depuis le YAML) dans la
+     * même forme que le relevé runtime de l'agent, pour que {@link ObjectiveText} rende les deux
+     * origines identiquement.
+     *
+     * <p>{@code npc} est émis <strong>en plus</strong> de {@code target} : une remise
+     * ({@code DELIVER_ITEM_TO_NPC}, issue #123) a deux cibles — l'objet compté et le PNJ qui le
+     * reçoit — et {@code target} ne peut en porter qu'une. L'oublier ici affichait « Rapporter Cuir
+     * (x4) à ? » pour une quête « Source uniquement » dont le YAML contenait pourtant
+     * {@code npc: guard} : le défaut était dans ce convertisseur, jamais dans la donnée.</p>
+     */
     private static Map<String, Object> objectiveDetail(Map<String, String> obj) {
         Map<String, Object> o = new LinkedHashMap<>();
         String kind = obj.getOrDefault("kind", "").trim().toUpperCase(Locale.ROOT);
         o.put("kind", kind);
         o.put("target", firstNonBlank(obj.get("entity"), obj.get("material"), obj.get("npc"), obj.get("world")));
         o.put("amount", intOr(obj.get("amount"), 0));
+        o.put("npc", nz(obj.get("npc")));
         o.put("raw", "");
         return o;
     }

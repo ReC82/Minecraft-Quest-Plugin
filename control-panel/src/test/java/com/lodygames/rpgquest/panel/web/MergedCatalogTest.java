@@ -42,6 +42,32 @@ class MergedCatalogTest {
     private Path contentRoot;
     private final Map<String, String> jar = new LinkedHashMap<>();
 
+    /**
+     * Issue #123 : quête de remise telle que l'éditeur guidé l'écrit réellement (quatre objectifs
+     * vers le même PNJ). Reproduit le cas signalé en recette TC-257 : la quête vit d'abord
+     * uniquement dans la source, et c'est ce rendu-là qui perdait le PNJ destinataire.
+     */
+    private static final String DELIVERY_YAML = """
+            id: rpgquest:test_remise
+            title: "Livraison"
+            description: "apporte les resources"
+            category: "delivery"
+            icon: CRAFTER
+            repeatable: false
+
+            steps:
+              - id: step_1
+                objectives:
+                  - type: DELIVER_ITEM_TO_NPC
+                    npc: guard
+                    material: LEATHER
+                    amount: 4
+                  - type: DELIVER_ITEM_TO_NPC
+                    npc: guard
+                    material: WHEAT_SEEDS
+                    amount: 3
+            """;
+
     private static final String LILY_PUMPKIN_YAML = """
             id: rpgquest:lily_pumpkin
             title: "Une citrouille pour Lily"
@@ -95,6 +121,41 @@ class MergedCatalogTest {
         // objectif relu depuis la source (verbe FR + jeton technique conservé)
         assertTrue(cat.contains("Collecter"), "objectif source rendu en clair");
         assertTrue(cat.contains("PUMPKIN"), "jeton technique de l'objectif conservé");
+    }
+
+    /**
+     * Issue #123 — le défaut constaté en recette : une quête de remise « Source uniquement »
+     * affichait « Rapporter Cuir (x4) à ? » alors que son YAML portait bien {@code npc: guard}. Le
+     * convertisseur source → résumé n'émettait pas le PNJ, qui est la <em>seconde</em> cible de ce
+     * type d'objectif. Ce test rend la régression impossible : il part du YAML et vérifie le HTML
+     * réellement servi.
+     */
+    @Test
+    void aSourceOnlyDeliveryQuestNamesItsReceivingNpc() throws Exception {
+        start();
+        writeQuest("test_remise", DELIVERY_YAML);
+        runQuestList("[]"); // relevé runtime vide : la quête n'existe que dans la source
+
+        String cat = questCatalog();
+        assertTrue(cat.contains(">Source uniquement</span>"), "badge d'état source-only");
+        assertTrue(cat.contains("Rapporter Cuir (x4) à Guard"),
+                () -> "le PNJ destinataire doit être nommé, pas « ? »");
+        assertTrue(cat.contains("Rapporter Graines de blé (x3) à Guard"),
+                () -> "nom français de l'objet et PNJ nommé");
+        assertFalse(cat.contains("Rapporter Cuir (x4) à ?"), "le PNJ ne doit jamais être perdu");
+    }
+
+    /** Un PNJ réellement absent de la définition doit être NOMMÉ comme tel, jamais réduit à « ? ». */
+    @Test
+    void aDeliveryObjectiveWithoutAnyNpcSaysSoExplicitly() throws Exception {
+        start();
+        // L'indentation du text block est retirée à l'exécution : viser la ligne, pas des espaces.
+        writeQuest("test_sans_pnj", DELIVERY_YAML.replaceAll("(?m)^\\s*npc: guard\\R", ""));
+        runQuestList("[]");
+
+        String cat = questCatalog();
+        assertTrue(cat.contains("(PNJ non défini)"),
+                () -> "un destinataire manquant doit être explicable, obtenu : " + cat);
     }
 
     // ---- C : quête source + runtime = une seule entrée ---------------------------------

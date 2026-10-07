@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.panel.content;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.LinkedHashMap;
@@ -119,6 +120,58 @@ class ContentYamlRoundTripTest {
         assertTrue(Diagnostic.hasError(diags));
         assertTrue(diags.stream().anyMatch(d -> d.field().equals("title") && d.level() == Diagnostic.Level.ERROR));
         assertTrue(diags.stream().anyMatch(d -> d.message().contains("does_not_exist")));
+    }
+
+    // ---- Remise d'objets à un PNJ (issue #123) -------------------------------------------------
+
+    /**
+     * Le PNJ destinataire est <strong>obligatoire</strong> : une définition qui en est dépourvue
+     * doit être refusée à l'enregistrement, et non enregistrée pour n'être signalée qu'à
+     * l'affichage. Verrouillé ici parce que c'est la question posée en recette TC-257 — si le PNJ
+     * est réellement absent, la validation doit le dire.
+     */
+    @Test
+    void aDeliveryObjectiveWithoutItsReceivingNpcIsRefused() {
+        RefData ref = new RefData(java.util.List.of(), java.util.List.of("guard"),
+                java.util.List.of("world"), true, true, true);
+        QuestDraft q = validDeliveryQuest();
+        q.steps.get(0).objectives.get(0).remove("npc");
+
+        var diags = QuestValidator.validate(q, ref);
+
+        assertTrue(Diagnostic.hasError(diags), () -> "doit être refusé, obtenu : " + diags);
+        assertTrue(diags.stream().anyMatch(d -> d.message().contains("PNJ destinataire")),
+                () -> "le message doit nommer le champ manquant, obtenu : " + diags);
+    }
+
+    /** Un PNJ inconnu du serveur est signalé, mais une quête complète ne produit aucune erreur. */
+    @Test
+    void aCompleteDeliveryQuestValidatesAndAnUnknownNpcIsReported() {
+        RefData ref = new RefData(java.util.List.of(), java.util.List.of("guard"),
+                java.util.List.of("world"), true, true, true);
+
+        assertTrue(QuestValidator.validate(validDeliveryQuest(), ref).stream()
+                        .noneMatch(d -> d.level() == Diagnostic.Level.ERROR),
+                () -> "une quête de remise complète ne doit produire aucune erreur : "
+                        + QuestValidator.validate(validDeliveryQuest(), ref));
+
+        QuestDraft unknown = validDeliveryQuest();
+        unknown.steps.get(0).objectives.get(0).put("npc", "pnj_qui_nexiste_pas");
+        assertFalse(QuestValidator.validate(unknown, ref).isEmpty(),
+                "un PNJ destinataire inconnu doit être signalé");
+    }
+
+    private static QuestDraft validDeliveryQuest() {
+        QuestDraft q = new QuestDraft();
+        q.id = "test_remise";
+        q.title = "Livraison";
+        q.description = "apporte les resources";
+        q.category = "delivery";
+        q.icon = "CRAFTER";
+        QuestDraft.Step step = new QuestDraft.Step("step_1");
+        step.objectives.add(obj("DELIVER_ITEM_TO_NPC", "npc", "guard", "material", "LEATHER", "amount", "4"));
+        q.steps.add(step);
+        return q;
     }
 
     // ---- Récompense monétaire (issue #16) -----------------------------------------------------

@@ -1103,6 +1103,45 @@ compatible tout client, aucune API instable). ⚠️ Divergence constatée :
 `README.md` (racine) affirme à tort que `chat` est la valeur par défaut —
 c'est `paper-dialog` dans le `config.yml` généré réellement ; `docs-site/dialogues.html` a la bonne valeur.
 
+### Paliers du kit de départ (issue #218)
+
+Le kit de #26 devient le **palier 1** d'une progression. Une quête par montée de palier améliore le
+kit que le joueur récupère auprès du Guide après une mort. Implémentation :
+`player.StarterToolKitService` + `config.yml` → `starter-tool-kit.tiers`.
+
+-   **Palier 1 acquis d'office** (aucune quête) : `WOODEN_SWORD`, `WOODEN_PICKAXE`, `WOODEN_SHOVEL`,
+    `WOODEN_AXE`.
+-   **Palier 2** (`rpgquest:kit_tier2`) : `STONE_SWORD`, `WOODEN_PICKAXE`, `WOODEN_SHOVEL`,
+    `WOODEN_AXE`, `LEATHER_BOOTS`, `BREAD`. Sa quête demande **1 `STICK` + 2 `COBBLESTONE`**
+    (recette de l'épée en pierre), **4 `LEATHER`** (recette des bottes) et **3 `WHEAT_SEEDS`**.
+    ⚠️ Les **graines** sont une décision de gameplay assumée, pas une erreur : produire du blé
+    suppose déjà un endroit sécurisé pour cultiver, alors que des graines se trouvent immédiatement
+    dans le Wild. **Ne pas « corriger » en `WHEAT`.**
+-   **Paliers 3 à 5** : l'architecture les accepte (il suffit de les déclarer en configuration), mais
+    leur contenu exact **n'est pas décidé** et n'a donc pas été inventé.
+-   **Palier persistant** : variable joueur `STARTER_KIT_TIER` (absente = palier 1). Survit à la
+    mort, à la reconnexion et au redémarrage. `/rpgadmin player resetnew` la remet à zéro avec les
+    autres variables.
+-   **Impossible de sauter un palier** : le déblocage passe par
+    `/rpgadmin kit grant-tier <joueur> <niveau>`, appelé en **récompense `COMMAND`** de la quête du
+    palier. Le moteur refuse tout niveau non contigu (`SKIPPED`), tout niveau non défini
+    (`UNKNOWN_TIER`), et ne fait rien si le palier est déjà atteint (`ALREADY_AT_LEAST`, donc une
+    quête rejouée ne redonne rien). **Ne jamais débloquer en écrivant la variable** : ce serait
+    contourner exactement ce garde-fou.
+-   **Niveaux contigus exigés en configuration** : un trou (1, 2, 4) ferait du palier 4 une
+    impasse — le plugin refuse de démarrer et le dit.
+-   **Emplacements requis calculés sur le contenu réel** du palier (6 pour le palier 2, pas 4), et le
+    message au joueur annonce le bon chiffre. Remise toujours **tout ou rien**.
+-   **Une seule remise réussie par vie**, inchangé depuis #26 : monter de palier au milieu d'une vie
+    ne réouvre pas le droit ; c'est la mort suivante qui le fait, et le kit servi est alors celui du
+    nouveau palier.
+-   **Matériaux déjà remis** pour la quête du palier : sécurisés par `DELIVER_ITEM_TO_NPC` (#123),
+    indépendamment du kit — une mort ne les perd jamais.
+-   **Valeur aberrante en base** (palier retiré de la configuration, variable éditée à la main) :
+    le meilleur palier **défini** est servi, jamais une absence de kit.
+-   `/rpgadmin kit status <joueur>` affiche le palier et son contenu. Côté Control Panel, la variable
+    `STARTER_KIT_TIER` est proposée par l'outil « Lire une variable » de la fiche joueur.
+
 ### Signal visuel sur les PNJ (issue #12, première version)
 
 Particules **discrètes** au-dessus d'un PNJ quand une **quête est réellement disponible** pour

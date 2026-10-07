@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.config.StarterKitTier;
 import com.lodygames.rpgquest.config.StarterToolKitConfig;
 import com.lodygames.rpgquest.database.DatabaseManager;
 import com.lodygames.rpgquest.database.PlayerProfileRepository;
@@ -72,7 +73,7 @@ class StarterToolKitServiceTest {
         variableRepository = new PlayerVariableRepository(database);
         profileRepository = new PlayerProfileRepository(database);
 
-        config = new AtomicReference<>(new StarterToolKitConfig(true, KIT_ITEMS));
+        config = new AtomicReference<>(tierOneOnly(true));
         service = new StarterToolKitService(plugin, variableRepository, config::get);
     }
 
@@ -187,6 +188,12 @@ class StarterToolKitServiceTest {
         for (int i = 0; i < storage.length - freeSlots; i++) {
             player.getInventory().setItem(i, new ItemStack(Material.COBBLESTONE, 64));
         }
+    }
+
+    /** Issue #218 : configuration à un seul palier, équivalente au kit unique de #26. */
+    private static StarterToolKitConfig tierOneOnly(boolean enabled) {
+        return new StarterToolKitConfig(enabled,
+                List.of(new StarterKitTier(1, "Nouveau venu", KIT_ITEMS, null)));
     }
 
     private void simulateDeath(PlayerMock player) {
@@ -325,7 +332,7 @@ class StarterToolKitServiceTest {
 
     @Test
     void disabledKitNeverGrantsAnything() throws Exception {
-        config.set(new StarterToolKitConfig(false, KIT_ITEMS));
+        config.set(tierOneOnly(false));
         PlayerMock player = addPlayer();
 
         service.requestKit(player);

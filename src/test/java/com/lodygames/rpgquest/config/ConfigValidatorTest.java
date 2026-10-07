@@ -699,8 +699,10 @@ class ConfigValidatorTest {
 
         var kit = config.starterToolKit();
         assertTrue(kit.enabled());
+        // Issue #218 : « items » seul (format #26) devient le palier 1, rien n'est perdu.
         assertEquals(List.of(org.bukkit.Material.WOODEN_SWORD, org.bukkit.Material.WOODEN_PICKAXE,
-                org.bukkit.Material.WOODEN_SHOVEL, org.bukkit.Material.WOODEN_AXE), kit.items());
+                org.bukkit.Material.WOODEN_SHOVEL, org.bukkit.Material.WOODEN_AXE),
+                kit.tier(1).orElseThrow().items());
     }
 
     @Test
@@ -715,7 +717,8 @@ class ConfigValidatorTest {
 
         var kit = config.starterToolKit();
         assertFalse(kit.enabled());
-        assertEquals(List.of(org.bukkit.Material.STONE_SWORD, org.bukkit.Material.STONE_AXE), kit.items());
+        assertEquals(List.of(org.bukkit.Material.STONE_SWORD, org.bukkit.Material.STONE_AXE),
+                kit.tier(1).orElseThrow().items());
     }
 
     @Test

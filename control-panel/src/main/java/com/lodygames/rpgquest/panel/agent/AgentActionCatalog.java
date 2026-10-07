@@ -98,7 +98,15 @@ public final class AgentActionCatalog {
 
     /** Suggestions de clés de variables pour les listes déroulantes (jamais imposées). */
     public static final List<String> KNOWN_VARIABLE_KEYS = List.of(
-            "CLAIM_TIER_1", "tutorial_started", "crystal_hunt_started", "RUNE_RAPPEL_GRANTED");
+            "CLAIM_TIER_1", "tutorial_started", "crystal_hunt_started", "RUNE_RAPPEL_GRANTED",
+            // Issue #218 : palier du kit de départ (absent = palier 1). Lisible avec l'outil
+            // « Lire une variable » ; se débloque par /rpgadmin kit grant-tier, jamais en l'écrivant
+            // à la main — l'écriture directe contournerait le refus de saut de palier.
+            "STARTER_KIT_TIER",
+            // Issue #161 : avertissement d'entrée dans le Wild masqué par le joueur ("true").
+            "WILD_ENTRY_WARNING_HIDDEN",
+            // Issue #26 : droit au kit de départ pour la vie en cours ("false" = déjà reçu).
+            "STARTER_TOOL_KIT_AVAILABLE");
 
     /**
      * Couleurs MiniMessage proposées par la palette du formulaire de dialogue (issue #118) : l'ordre

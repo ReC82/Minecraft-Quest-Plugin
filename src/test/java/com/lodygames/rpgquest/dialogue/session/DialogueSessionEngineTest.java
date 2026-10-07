@@ -183,7 +183,9 @@ class DialogueSessionEngineTest {
         claimService.start();
 
         starterToolKitService = new StarterToolKitService(plugin, variableRepository, () -> new StarterToolKitConfig(
-                true, List.of(Material.WOODEN_SWORD, Material.WOODEN_PICKAXE, Material.WOODEN_SHOVEL, Material.WOODEN_AXE)));
+                true, List.of(new com.lodygames.rpgquest.config.StarterKitTier(1, "Nouveau venu",
+                        List.of(Material.WOODEN_SWORD, Material.WOODEN_PICKAXE, Material.WOODEN_SHOVEL,
+                                Material.WOODEN_AXE), null))));
 
         sessionEngine = new DialogueSessionEngine(
                 plugin, dialogueEngine, questProgressEngine, variableRepository, merchantTradeService, npcIdentityService,

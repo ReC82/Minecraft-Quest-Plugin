@@ -859,6 +859,20 @@ public final class ConfigValidator {
     private static final List<Material> DEFAULT_STARTER_TOOL_KIT_ITEMS = List.of(
             Material.WOODEN_SWORD, Material.WOODEN_PICKAXE, Material.WOODEN_SHOVEL, Material.WOODEN_AXE);
 
+    /** Palier 1 par défaut (issue #26) : les quatre outils en bois. */
+    private static final List<Material> DEFAULT_TIER_1_ITEMS = DEFAULT_STARTER_TOOL_KIT_ITEMS;
+
+    /**
+     * Palier 2 par défaut (issue #218, contenu décidé) : l'épée passe en pierre, les bottes de cuir
+     * et un pain s'ajoutent, les trois autres outils restent en bois. Les ressources demandées par
+     * sa quête correspondent aux recettes vanilla des nouveautés (1 bâton + 2 pierres pour l'épée,
+     * 4 cuirs pour les bottes), plus 3 graines de blé comme ressource d'onboarding à la place du
+     * blé — trouvables immédiatement dans le Wild, sans agriculture sécurisée.
+     */
+    private static final List<Material> DEFAULT_TIER_2_ITEMS = List.of(
+            Material.STONE_SWORD, Material.WOODEN_PICKAXE, Material.WOODEN_SHOVEL, Material.WOODEN_AXE,
+            Material.LEATHER_BOOTS, Material.BREAD);
+
     private static StarterToolKitConfig validateStarterToolKit(ConfigurationSection section) throws ConfigValidationException {
         ConfigurationSection kit = section.getConfigurationSection("starter-tool-kit");
         if (kit == null) {
@@ -866,26 +880,103 @@ public final class ConfigValidator {
         }
 
         boolean enabled = kit.getBoolean("enabled", true);
+        List<StarterKitTier> tiers = parseKitTiers(kit);
+        if (tiers.isEmpty()) {
+            // Aucune section « tiers » : config.yml antérieur à #218. « items » devient le palier 1,
+            // et rien n'est perdu sur un serveur déjà déployé.
+            tiers = List.of(new StarterKitTier(1, "Nouveau venu", parseLegacyKitItems(kit), null));
+        }
+        return new StarterToolKitConfig(enabled, tiers);
+    }
 
+    /** {@code starter-tool-kit.items} (format #26) — liste vide si la clé est absente. */
+    private static List<Material> parseLegacyKitItems(ConfigurationSection kit) throws ConfigValidationException {
         List<String> rawItems = kit.getStringList("items");
         if (rawItems.isEmpty()) {
             throw new ConfigValidationException(
-                    "« starter-tool-kit.items » ne peut pas être vide : au moins un objet doit composer le kit.");
+                    "« starter-tool-kit.items » ne peut pas être vide : définis soit « starter-tool-kit.tiers » "
+                            + "(paliers, issue #218), soit « starter-tool-kit.items » (kit unique) — sans l'un des "
+                            + "deux, le kit de départ ne remettrait rien.");
         }
+        return parseKitMaterials(rawItems, "starter-tool-kit.items");
+    }
+
+    /**
+     * {@code starter-tool-kit.tiers} (issue #218). Les niveaux doivent être strictement positifs,
+     * uniques et <strong>contigus depuis 1</strong> : un trou (1, 2, 4) rendrait le palier 4
+     * inatteignable, puisque la progression refuse tout saut. Mieux vaut le dire au démarrage que
+     * de laisser un joueur coincé.
+     */
+    private static List<StarterKitTier> parseKitTiers(ConfigurationSection kit) throws ConfigValidationException {
+        List<java.util.Map<?, ?>> raw = kit.getMapList("tiers");
+        if (raw.isEmpty()) {
+            return List.of();
+        }
+        List<StarterKitTier> tiers = new ArrayList<>();
+        java.util.Set<Integer> seen = new java.util.LinkedHashSet<>();
+        for (java.util.Map<?, ?> entry : raw) {
+            Object rawLevel = entry.get("level");
+            if (!(rawLevel instanceof Number number)) {
+                throw new ConfigValidationException(
+                        "« starter-tool-kit.tiers » : chaque palier doit porter un « level » entier.");
+            }
+            int level = number.intValue();
+            if (level <= 0) {
+                throw new ConfigValidationException(
+                        "« starter-tool-kit.tiers » : « level » doit être strictement positif, trouvé " + level + ".");
+            }
+            if (!seen.add(level)) {
+                throw new ConfigValidationException(
+                        "« starter-tool-kit.tiers » : le palier " + level + " est défini deux fois.");
+            }
+            Object rawName = entry.get("name");
+            String name = rawName == null ? ("Palier " + level) : String.valueOf(rawName);
+            Object rawUnlock = entry.get("unlock-quest");
+            String unlockQuest = rawUnlock == null ? null : String.valueOf(rawUnlock).trim();
+
+            Object rawTierItems = entry.get("items");
+            if (!(rawTierItems instanceof List<?> list) || list.isEmpty()) {
+                throw new ConfigValidationException(
+                        "« starter-tool-kit.tiers » : le palier " + level + " doit lister au moins un objet.");
+            }
+            List<String> itemNames = new ArrayList<>();
+            for (Object item : list) {
+                itemNames.add(item == null ? "" : String.valueOf(item));
+            }
+            List<Material> items = parseKitMaterials(itemNames, "starter-tool-kit.tiers[" + level + "].items");
+            try {
+                tiers.add(new StarterKitTier(level, name, items, unlockQuest));
+            } catch (IllegalArgumentException e) {
+                throw new ConfigValidationException("« starter-tool-kit.tiers » : " + e.getMessage());
+            }
+        }
+        tiers.sort((a, b) -> Integer.compare(a.level(), b.level()));
+        for (int i = 0; i < tiers.size(); i++) {
+            if (tiers.get(i).level() != i + 1) {
+                throw new ConfigValidationException(
+                        "« starter-tool-kit.tiers » : les niveaux doivent être contigus depuis 1 (trouvé "
+                                + tiers.stream().map(t -> String.valueOf(t.level())).toList()
+                                + ") — un palier inatteignable bloquerait la progression.");
+            }
+        }
+        return List.copyOf(tiers);
+    }
+
+    private static List<Material> parseKitMaterials(List<String> rawItems, String path)
+            throws ConfigValidationException {
         List<Material> items = new ArrayList<>();
         for (String raw : rawItems) {
             if (raw == null || raw.isBlank()) {
-                throw new ConfigValidationException("« starter-tool-kit.items » contient une entrée vide.");
+                throw new ConfigValidationException("« " + path + " » contient une entrée vide.");
             }
             Material material = Material.matchMaterial(raw);
             if (material == null) {
                 throw new ConfigValidationException(
-                        "« starter-tool-kit.items » contient un matériau inconnu : \"" + raw + "\".");
+                        "« " + path + " » contient un matériau inconnu : \"" + raw + "\".");
             }
             items.add(material);
         }
-
-        return new StarterToolKitConfig(enabled, List.copyOf(items));
+        return List.copyOf(items);
     }
 
     /** Espèces diurnes par défaut (issue #168) : les hostiles de surface les plus courants. */
@@ -960,7 +1051,9 @@ public final class ConfigValidator {
     }
 
     private static StarterToolKitConfig defaultStarterToolKit() {
-        return new StarterToolKitConfig(true, DEFAULT_STARTER_TOOL_KIT_ITEMS);
+        return new StarterToolKitConfig(true, List.of(
+                new StarterKitTier(1, "Nouveau venu", DEFAULT_TIER_1_ITEMS, null),
+                new StarterKitTier(2, "Premiers pas dans le Wild", DEFAULT_TIER_2_ITEMS, "rpgquest:kit_tier2")));
     }
 
     private static int positiveInt(ConfigurationSection section, String path, int defaultValue)

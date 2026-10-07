@@ -1,14 +1,19 @@
 package com.lodygames.rpgquest.player;
 
 import com.lodygames.rpgquest.RPGQuestPlugin;
+import com.lodygames.rpgquest.config.StarterKitTier;
 import com.lodygames.rpgquest.config.StarterToolKitConfig;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -18,34 +23,40 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 
 /**
- * Kit d'outils en bois demandé explicitement au Guide (issue #26, partie A) — distinct du kit
- * "Rune de rappel" de {@link StarterKitListener} (remis une seule fois à vie, sans rapport). Règles :
+ * Kit de départ demandé explicitement au Guide (issue #26, partie A), à <strong>paliers
+ * progressifs</strong> (issue #218). Règles conservées à l'identique depuis #26 :
  *
  * <ul>
- *   <li>aucune remise automatique : ni clic simple sur le PNJ, ni connexion, ni réapparition — seul
- *       {@link #requestKit(Player)} (appelé par l'action de dialogue {@code GIVE_STARTER_KIT})
- *       déclenche quoi que ce soit ;</li>
- *   <li>droit persistant par joueur ({@link PlayerVariableRepository}, clé {@link #AVAILABLE_KEY}) :
- *       {@code "false"} = déjà reçu depuis la dernière mort, absent/toute autre valeur = droit
- *       disponible (un nouveau joueur, sans ligne, a donc le droit dès le début) ;</li>
- *   <li>{@link #onDeath} restaure le droit ({@code "true"}) à chaque mort, y compris avant toute
- *       première remise (idempotent : remettre un droit déjà présent ne change rien) ;</li>
- *   <li>remise tout ou rien : les emplacements libres du stockage normal (hors armure et main
- *       secondaire, voir {@link PlayerInventory#getStorageContents()}) sont comptés <strong>avant</strong>
- *       toute écriture d'inventaire ; en dessous du nombre d'objets du kit, aucun objet n'est donné
- *       et le droit n'est jamais consommé ;</li>
- *   <li>anti double-clic : {@link #pendingRequests} empêche deux demandes concurrentes du même
- *       joueur de passer toutes les deux la vérification du droit avant que l'une des deux ne l'ait
- *       consommé.</li>
+ *   <li>aucune remise automatique : ni clic simple sur un PNJ, ni connexion, ni réapparition — seul
+ *       {@link #requestKit(Player)} (action de dialogue {@code GIVE_STARTER_KIT}) déclenche quoi que
+ *       ce soit ;</li>
+ *   <li>droit persistant par joueur ({@link #AVAILABLE_KEY}) : {@code "false"} = déjà reçu depuis la
+ *       dernière mort, absent/autre valeur = droit disponible ;</li>
+ *   <li>{@link #onDeath} rouvre le droit à chaque mort, y compris avant toute première remise ;</li>
+ *   <li>remise <strong>tout ou rien</strong> : les emplacements libres du stockage normal (hors
+ *       armure et main secondaire) sont comptés avant toute écriture ;</li>
+ *   <li>anti double-clic via {@link #pendingRequests}.</li>
  * </ul>
  *
- * <p>{@code /rpgadmin player resetnew} restaure le droit initial gratuitement : il efface
- * <strong>toutes</strong> les variables du joueur ({@link PlayerVariableRepository#deleteAllForPlayer}),
- * donc aussi {@link #AVAILABLE_KEY} — absence de ligne = droit disponible, sans code dédié ici.</p>
+ * <p><strong>Ce que #218 ajoute</strong> : le contenu remis dépend du <em>meilleur palier
+ * débloqué</em>, persisté dans {@link #TIER_KEY} (absent = palier 1, acquis d'office à l'arrivée).
+ * Le nombre d'emplacements requis est donc calculé sur le contenu réel de ce palier, jamais sur une
+ * constante. Un palier se débloque par {@link #grantTier}, appelé en récompense de la quête du
+ * palier — et <strong>jamais</strong> en écrivant la variable directement, parce que c'est cette
+ * méthode qui refuse de sauter un palier.</p>
+ *
+ * <p>Les matériaux déjà remis à un PNJ pour la quête du palier suivant ne passent pas par ici : ils
+ * sont sécurisés par {@code DELIVER_ITEM_TO_NPC} (issue #123) et survivent à la mort indépendamment
+ * du kit.</p>
+ *
+ * <p>{@code /rpgadmin player resetnew} efface <strong>toutes</strong> les variables du joueur, donc
+ * aussi {@link #TIER_KEY} : un joueur réinitialisé repart au palier 1, sans code dédié ici.</p>
  */
 public final class StarterToolKitService implements Listener {
 
     static final String AVAILABLE_KEY = "STARTER_TOOL_KIT_AVAILABLE";
+    /** Meilleur palier débloqué (issue #218). Absent = palier 1, acquis automatiquement. */
+    public static final String TIER_KEY = "STARTER_KIT_TIER";
     private static final String NOT_AVAILABLE = "false";
     private static final String AVAILABLE_AGAIN = "true";
 
@@ -74,6 +85,66 @@ public final class StarterToolKitService implements Listener {
         });
     }
 
+    // ---- Paliers (issue #218) -------------------------------------------
+
+    /** Palier actuellement débloqué, lu en base. 1 si aucune valeur (ou valeur illisible). */
+    public CompletableFuture<Integer> unlockedTier(UUID playerId) {
+        return variableRepository.get(playerId, TIER_KEY).thenApply(StarterToolKitService::parseTier);
+    }
+
+    /**
+     * Résultat d'une tentative de déblocage de palier. {@code SKIPPED} est le refus qui compte :
+     * c'est lui qui rend un saut de palier impossible, même si une quête mal écrite demandait le
+     * palier 4 à un joueur encore au palier 1.
+     */
+    public enum GrantOutcome { GRANTED, ALREADY_AT_LEAST, SKIPPED, UNKNOWN_TIER, DISABLED }
+
+    /** Résultat d'un déblocage, avec le palier effectif après l'opération. */
+    public record GrantResult(GrantOutcome outcome, int tier) {
+    }
+
+    /**
+     * Débloque {@code level} pour ce joueur. Appelé en récompense de la quête du palier (via
+     * {@code /rpgadmin kit grant-tier}), jamais par une écriture de variable directe.
+     *
+     * <ul>
+     *   <li>palier déjà atteint ou dépassé → {@code ALREADY_AT_LEAST}, aucune écriture (idempotent,
+     *       donc une quête répétable ne « redonne » rien) ;</li>
+     *   <li>palier non contigu (plus de +1) → {@code SKIPPED}, refusé ;</li>
+     *   <li>palier non défini en configuration → {@code UNKNOWN_TIER}.</li>
+     * </ul>
+     */
+    public CompletableFuture<GrantResult> grantTier(UUID playerId, int level) {
+        StarterToolKitConfig config = configSupplier.get();
+        if (!config.enabled()) {
+            return CompletableFuture.completedFuture(new GrantResult(GrantOutcome.DISABLED, 1));
+        }
+        if (config.tier(level).isEmpty()) {
+            return unlockedTier(playerId)
+                    .thenApply(current -> new GrantResult(GrantOutcome.UNKNOWN_TIER, current));
+        }
+        return unlockedTier(playerId).thenCompose(current -> {
+            if (level <= current) {
+                return CompletableFuture.completedFuture(new GrantResult(GrantOutcome.ALREADY_AT_LEAST, current));
+            }
+            if (level > current + 1) {
+                return CompletableFuture.completedFuture(new GrantResult(GrantOutcome.SKIPPED, current));
+            }
+            return variableRepository.set(playerId, TIER_KEY, Integer.toString(level))
+                    .thenApply(ignored -> new GrantResult(GrantOutcome.GRANTED, level));
+        });
+    }
+
+    private static int parseTier(Optional<String> stored) {
+        try {
+            return Math.max(1, Integer.parseInt(stored.orElse("1").trim()));
+        } catch (NumberFormatException e) {
+            return 1; // Valeur illisible : jamais une absence de kit, toujours le palier de base.
+        }
+    }
+
+    // ---- Remise ---------------------------------------------------------
+
     /** Déclenché uniquement par le choix de dialogue « Demander mon kit de départ » du Guide. */
     public void requestKit(Player player) {
         UUID playerId = player.getUniqueId();
@@ -83,30 +154,37 @@ public final class StarterToolKitService implements Listener {
         }
 
         StarterToolKitConfig config = configSupplier.get();
-        if (!config.enabled() || config.items().isEmpty()) {
+        if (!config.enabled()) {
             pendingRequests.remove(playerId);
             return;
         }
 
-        variableRepository.get(playerId, AVAILABLE_KEY).whenComplete((storedValue, error) -> {
-            if (error != null) {
-                plugin.getSLF4JLogger().error("Impossible de vérifier le droit au kit de départ de {}", playerId, error);
-                pendingRequests.remove(playerId);
-                return;
-            }
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                if (!player.isOnline()) {
-                    pendingRequests.remove(playerId);
-                    return;
-                }
-                handleRequest(player, config, storedValue.orElse(""));
-            });
-        });
+        variableRepository.get(playerId, AVAILABLE_KEY)
+                .thenCombine(unlockedTier(playerId), KitRequestState::new)
+                .whenComplete((state, error) -> {
+                    if (error != null) {
+                        plugin.getSLF4JLogger().error("Impossible de vérifier le droit au kit de départ de {}",
+                                playerId, error);
+                        pendingRequests.remove(playerId);
+                        return;
+                    }
+                    plugin.getServer().getScheduler().runTask(plugin, () -> {
+                        if (!player.isOnline()) {
+                            pendingRequests.remove(playerId);
+                            return;
+                        }
+                        handleRequest(player, config, state);
+                    });
+                });
     }
 
-    private void handleRequest(Player player, StarterToolKitConfig config, String storedValue) {
+    /** Les deux lectures nécessaires à une demande : le droit, et le palier débloqué. */
+    private record KitRequestState(Optional<String> available, int tier) {
+    }
+
+    private void handleRequest(Player player, StarterToolKitConfig config, KitRequestState state) {
         UUID playerId = player.getUniqueId();
-        boolean available = !NOT_AVAILABLE.equalsIgnoreCase(storedValue);
+        boolean available = !NOT_AVAILABLE.equalsIgnoreCase(state.available().orElse(""));
         if (!available) {
             player.sendMessage(MM.deserialize(
                     "<gray>Tu as déjà reçu ton kit de départ. Il te sera redonné après ta prochaine mort.</gray>"));
@@ -114,12 +192,26 @@ public final class StarterToolKitService implements Listener {
             return;
         }
 
-        List<Material> items = config.items();
+        Optional<StarterKitTier> tierOpt = config.effectiveTier(state.tier());
+        if (tierOpt.isEmpty()) {
+            plugin.getSLF4JLogger().error(
+                    "Aucun palier de kit applicable pour {} (palier débloqué {}) — configuration incohérente.",
+                    playerId, state.tier());
+            pendingRequests.remove(playerId);
+            return;
+        }
+        StarterKitTier tier = tierOpt.get();
+
+        List<Material> items = tier.items();
         PlayerInventory inventory = player.getInventory();
         int[] freeSlots = findFreeStorageSlots(inventory, items.size());
         if (freeSlots.length < items.size()) {
+            // Le nombre d'emplacements requis vient du contenu RÉEL du palier : un palier plus
+            // généreux exige plus de place, et le message doit dire le bon chiffre.
             player.sendMessage(MM.deserialize(
-                    "<red>Tu n'as pas assez de place dans ton inventaire. Libère 4 emplacements pour recevoir ton kit de départ.</red>"));
+                    "<red>Tu n'as pas assez de place dans ton inventaire. Libère <slots> emplacements pour "
+                            + "recevoir ton kit de départ.</red>",
+                    Placeholder.unparsed("slots", Integer.toString(items.size()))));
             pendingRequests.remove(playerId);
             return;
         }
@@ -128,7 +220,9 @@ public final class StarterToolKitService implements Listener {
             inventory.setItem(freeSlots[i], new ItemStack(items.get(i), 1));
         }
         player.sendMessage(MM.deserialize(
-                "<aqua>Tu reçois ton kit de départ :</aqua> <gray>une épée, une pioche, une pelle et une hache en bois.</gray>"));
+                "<aqua>Tu reçois ton kit de départ</aqua> <gray>(<tier>) :</gray> <white><items></white>",
+                Placeholder.unparsed("tier", tier.name()),
+                Placeholder.component("items", describeItems(items))));
 
         variableRepository.set(playerId, AVAILABLE_KEY, NOT_AVAILABLE).whenComplete((v, error) -> {
             if (error != null) {
@@ -136,6 +230,21 @@ public final class StarterToolKitService implements Listener {
             }
             pendingRequests.remove(playerId);
         });
+    }
+
+    /**
+     * « Épée en pierre, Pioche en bois, … » — noms traduits par le client via la clé de traduction
+     * vanilla, pour que le message suive le contenu réel du palier sans table à maintenir.
+     */
+    private static Component describeItems(List<Material> items) {
+        Component joined = Component.empty();
+        for (int i = 0; i < items.size(); i++) {
+            if (i > 0) {
+                joined = joined.append(Component.text(", "));
+            }
+            joined = joined.append(Component.translatable(items.get(i)));
+        }
+        return joined;
     }
 
     /**

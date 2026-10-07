@@ -1,0 +1,55 @@
+# Quête de montée au palier 2 du kit de départ (issue #218).
+#
+# Elle utilise le moteur normal de quêtes et l'objectif DELIVER_ITEM_TO_NPC (issue #123) : rien
+# n'est codé en dur dans le Guide. Le joueur remet ses matériaux AU FUR ET À MESURE — les dépôts
+# partiels sont persistants, donc une mort entre deux visites ne lui fait rien perdre.
+#
+# Ressources demandées = recettes vanilla des NOUVEAUTÉS du palier 2 :
+#   - épée en pierre : 1 STICK + 2 COBBLESTONE
+#   - bottes en cuir : 4 LEATHER
+#   - pain          : 3 WHEAT_SEEDS (exception d'onboarding ASSUMÉE — voir ci-dessous)
+#
+# Pourquoi des GRAINES et non du blé : produire du blé de façon fiable suppose déjà un endroit
+# sécurisé pour cultiver (donc un claim), alors que des graines se trouvent immédiatement dans le
+# Wild en cassant de l'herbe. La quête doit rester faisable AVANT l'agriculture sécurisée. Ne pas
+# « corriger » ceci en WHEAT : c'est une décision de gameplay.
+#
+# Le déblocage passe par la récompense COMMAND, qui appelle le moteur de paliers — lui seul refuse
+# un saut de palier. Ne jamais remplacer cette récompense par une écriture de variable.
+id: rpgquest:kit_tier2
+title: "<gold>Premiers pas dans le Wild</gold>"
+description: >
+  <gray>Rapporte au Guide de quoi améliorer ton équipement de secours : un bâton et deux pierres
+  pour une épée, quatre cuirs pour des bottes, et trois graines de blé pour du pain. Tu peux lui
+  donner tes matériaux au fur et à mesure : ce qui est remis est gardé en sécurité, même si tu
+  meurs.</gray>
+category: kit
+icon: STONE_SWORD
+giver: guide
+repeatable: false
+
+steps:
+  - id: rapporter_les_materiaux
+    objectives:
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guide
+        material: STICK
+        amount: 1
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guide
+        material: COBBLESTONE
+        amount: 2
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guide
+        material: LEATHER
+        amount: 4
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guide
+        material: WHEAT_SEEDS
+        amount: 3
+
+rewards:
+  - type: COMMAND
+    command: "rpgadmin kit grant-tier %player% 2"
+  - type: EXPERIENCE
+    amount: 20

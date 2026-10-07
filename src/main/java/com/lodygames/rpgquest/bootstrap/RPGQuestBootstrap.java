@@ -212,6 +212,8 @@ public final class RPGQuestBootstrap {
     private PlayerProfileService playerProfileService;
     private QuestProgressEngine questProgressEngine;
     private PlayerVariableRepository variableRepository;
+    /** Kit de départ à paliers (issue #218) — partagé entre le dialogue du Guide et /rpgadmin kit. */
+    private StarterToolKitService starterToolKitService;
     private YamlDialogueEngine dialogueEngine;
     private DialogueSessionEngine dialogueSessionEngine;
     private HubGuideRegistry hubGuideRegistry;
@@ -643,7 +645,7 @@ public final class RPGQuestBootstrap {
 
         // Kit d'outils en bois (issue #26, partie A) : demandé explicitement au Guide, droit
         // renouvelé à chaque mort — distinct de StarterKitListener (Rune de rappel, remise unique).
-        StarterToolKitService starterToolKitService = new StarterToolKitService(
+        starterToolKitService = new StarterToolKitService(
                 plugin, variableRepository, () -> configService.current().starterToolKit());
         registry.start(new PlayerListenerService(plugin, starterToolKitService));
 
@@ -1084,7 +1086,7 @@ public final class RPGQuestBootstrap {
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
                 worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry,
                 questProgressEngine, questEngine, variableRepository, travelBeaconService, waypointService,
-                travelMaintenanceMode, claimService, contentReloadService, plugin);
+                travelMaintenanceMode, claimService, contentReloadService, starterToolKitService, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

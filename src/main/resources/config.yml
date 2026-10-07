@@ -287,6 +287,47 @@ starter-tool-kit:
   # main secondaire) sont vérifiés avant toute remise ; en cas de refus, aucun objet n'est distribué
   # et le droit reste intact. /rpgadmin player resetnew restaure ce droit initial.
   enabled: true
+  # Paliers du kit (issue #218) : une quête par montée de palier améliore le kit que le joueur
+  # récupère après une mort. Le palier 1 est acquis AUTOMATIQUEMENT à l'arrivée et n'a donc pas de
+  # quête ; chaque palier suivant est débloqué par la récompense COMMAND de sa quête
+  # (« rpgadmin kit grant-tier %player% <niveau> »), jamais par une écriture de variable — c'est
+  # cette commande qui refuse de sauter un palier.
+  #
+  # Règles :
+  #   - « level » doit être strictement positif, unique, et CONTIGU depuis 1 (un trou rendrait le
+  #     palier suivant inatteignable : le plugin refuse de démarrer dans ce cas) ;
+  #   - « items » liste le contenu COMPLET du kit de ce palier, un exemplaire par entrée — le
+  #     nombre d'emplacements libres exigé au joueur en découle automatiquement ;
+  #   - « unlock-quest » est l'id de la quête du palier : purement informatif pour le moteur (c'est
+  #     la récompense qui débloque), il sert à l'afficher et à vérifier la cohérence du contenu.
+  #
+  # Les ressources demandées par la quête d'un palier suivent les recettes vanilla des NOUVEAUTÉS
+  # de ce palier (épée en pierre = 1 bâton + 2 pierres, bottes en cuir = 4 cuirs), avec une
+  # exception assumée pour l'onboarding : le palier 2 demande 3 WHEAT_SEEDS et non 3 WHEAT, parce
+  # que des graines se trouvent immédiatement dans le Wild alors que produire du blé suppose déjà
+  # un endroit sécurisé pour cultiver.
+  #
+  # « items: » (format d'avant #218, kit unique) reste lu si « tiers: » est absent et devient alors
+  # le palier 1 : un serveur déjà déployé ne perd rien.
+  tiers:
+    - level: 1
+      name: "Nouveau venu"
+      items:
+        - WOODEN_SWORD
+        - WOODEN_PICKAXE
+        - WOODEN_SHOVEL
+        - WOODEN_AXE
+    - level: 2
+      name: "Premiers pas dans le Wild"
+      unlock-quest: rpgquest:kit_tier2
+      items:
+        - STONE_SWORD
+        - WOODEN_PICKAXE
+        - WOODEN_SHOVEL
+        - WOODEN_AXE
+        - LEATHER_BOOTS
+        - BREAD
+  # Conservé pour compatibilité : utilisé UNIQUEMENT si « tiers: » ci-dessus est absent.
   items:
     - WOODEN_SWORD
     - WOODEN_PICKAXE

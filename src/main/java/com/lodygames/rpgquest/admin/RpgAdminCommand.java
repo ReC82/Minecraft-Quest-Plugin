@@ -159,6 +159,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final ClaimService claimService;
     private final RPGQuestPlugin plugin;
 
+    /** Kit de départ à paliers (issue #218) : /rpgadmin kit status|grant-tier. */
+    private final com.lodygames.rpgquest.player.StarterToolKitService starterToolKitService;
+
     public RpgAdminCommand(FlattenService flattenService, ZoneRegistry zoneRegistry, ZoneSelectionService zoneSelectionService,
                             YamlPortalRegistry portalRegistry, YamlDestinationRegistry destinationRegistry,
                             SpecialMobRegistry mobRegistry, SpecialMobService mobService, NpcIdentityService npcIdentityService,
@@ -171,8 +174,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             WaypointService waypointService,
                             com.lodygames.rpgquest.travel.TravelMaintenanceMode travelMaintenanceMode,
                             ClaimService claimService, ContentReloadService contentReloadService,
+                            com.lodygames.rpgquest.player.StarterToolKitService starterToolKitService,
                             RPGQuestPlugin plugin) {
         this.contentReloadService = contentReloadService;
+        this.starterToolKitService = starterToolKitService;
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
@@ -267,6 +272,13 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         // depuis la console comme "story"/"player"/"quest"/"guide".
         if (args.length > 0 && args[0].equalsIgnoreCase("claim")) {
             handleClaimAdmin(sender, args);
+            return true;
+        }
+        // "kit" : paliers du kit de départ (issue #218) — cible un joueur passé en argument, donc
+        // utilisable depuis la console ET comme récompense COMMAND d'une quête, qui est précisément
+        // la façon dont un palier se débloque.
+        if (args.length > 0 && args[0].equalsIgnoreCase("kit")) {
+            handleKitAdmin(sender, args);
             return true;
         }
         if (!(sender instanceof Player player)) {
@@ -2244,6 +2256,91 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
      * la récompense {@code VARIABLE} de la même quête — {@link ClaimService#highestEntitledTier}
      * posera directement le bon palier dès la première pose de l'Acte.
      */
+    // ---- Kit de départ à paliers (issue #218) --------------------------------------------------
+
+    private void handleKitAdmin(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            sendKitAdminUsage(sender);
+            return;
+        }
+        String sub = args[1].toLowerCase(Locale.ROOT);
+        Player target = resolveOnlineTarget(sender, args[2]);
+        if (target == null) {
+            return;
+        }
+        switch (sub) {
+            case "status" -> handleKitStatus(sender, target);
+            case "grant-tier" -> handleKitGrantTier(sender, target, args);
+            default -> sendKitAdminUsage(sender);
+        }
+    }
+
+    private void handleKitStatus(CommandSender sender, Player target) {
+        starterToolKitService.unlockedTier(target.getUniqueId()).thenAccept(tier -> runOnMainThread(() -> {
+            var config = plugin.bootstrap().configService().current().starterToolKit();
+            var effective = config.effectiveTier(tier);
+            sender.sendMessage(MM.deserialize(
+                    "<gold>Kit de départ de</gold> <white><p></white> <gray>:</gray> <white>palier <t>/<max></white>"
+                            + "<gray> — <name> (<count> objet(s))</gray>",
+                    Placeholder.unparsed("p", target.getName()),
+                    Placeholder.unparsed("t", Integer.toString(tier)),
+                    Placeholder.unparsed("max", Integer.toString(config.maxLevel())),
+                    Placeholder.unparsed("name", effective.map(t -> t.name()).orElse("aucun")),
+                    Placeholder.unparsed("count", Integer.toString(effective.map(t -> t.items().size()).orElse(0)))));
+        }));
+    }
+
+    private void handleKitGrantTier(CommandSender sender, Player target, String[] args) {
+        if (args.length < 4) {
+            sender.sendMessage(MM.deserialize("<yellow>/rpgadmin kit grant-tier <joueur> <niveau></yellow>"));
+            return;
+        }
+        int level;
+        try {
+            level = Integer.parseInt(args[3].trim());
+        } catch (NumberFormatException e) {
+            sender.sendMessage(MM.deserialize("<red>Niveau de palier invalide :</red> <white><v></white>",
+                    Placeholder.unparsed("v", args[3])));
+            return;
+        }
+        plugin.getSLF4JLogger().info("[admin] {} : /rpgadmin kit grant-tier {} {}",
+                senderName(sender), target.getName(), level);
+        starterToolKitService.grantTier(target.getUniqueId(), level)
+                .thenAccept(result -> runOnMainThread(() -> {
+                    switch (result.outcome()) {
+                        case GRANTED -> {
+                            sender.sendMessage(MM.deserialize(
+                                    "<green>Palier de kit débloqué :</green> <white><p></white> <gray>→ palier</gray> <white><t></white>",
+                                    Placeholder.unparsed("p", target.getName()),
+                                    Placeholder.unparsed("t", Integer.toString(result.tier()))));
+                            if (target.isOnline()) {
+                                target.sendMessage(MM.deserialize(
+                                        "<gold>Ton kit de départ s'améliore !</gold> <gray>Demande-le au Guide "
+                                                + "après ta prochaine mort.</gray>"));
+                            }
+                        }
+                        case ALREADY_AT_LEAST -> sender.sendMessage(MM.deserialize(
+                                "<gray>Palier déjà atteint (ou dépassé) :</gray> <white><p></white> <gray>est au palier</gray> <white><t></white>",
+                                Placeholder.unparsed("p", target.getName()),
+                                Placeholder.unparsed("t", Integer.toString(result.tier()))));
+                        case SKIPPED -> sender.sendMessage(MM.deserialize(
+                                "<red>Saut de palier refusé :</red> <white><p></white> <gray>est au palier</gray> "
+                                        + "<white><t></white><gray>, le palier suivant est le seul attribuable.</gray>",
+                                Placeholder.unparsed("p", target.getName()),
+                                Placeholder.unparsed("t", Integer.toString(result.tier()))));
+                        case UNKNOWN_TIER -> sender.sendMessage(MM.deserialize(
+                                "<red>Palier inexistant en configuration</red><gray> — voir config.yml → starter-tool-kit.tiers.</gray>"));
+                        case DISABLED -> sender.sendMessage(MM.deserialize(
+                                "<red>Le kit de départ est désactivé</red><gray> (config.yml → starter-tool-kit.enabled).</gray>"));
+                    }
+                }));
+    }
+
+    private void sendKitAdminUsage(CommandSender sender) {
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin kit status <joueur></yellow>"));
+        sender.sendMessage(MM.deserialize("<yellow>/rpgadmin kit grant-tier <joueur> <niveau></yellow>"));
+    }
+
     private void handleClaimAdmin(CommandSender sender, String[] args) {
         if (args.length < 2) {
             sendClaimAdminUsage(sender);

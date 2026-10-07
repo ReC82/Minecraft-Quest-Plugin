@@ -20,7 +20,9 @@ public final class YamlQuestEngine implements QuestEngine {
 
     private static final String[] BUNDLED_EXAMPLES =
             {"premiers_pas.yml", "first_steps.yml", "woodcutters_request.yml", "crystal_hunt.yml",
-                    "guard_tier1.yml", "guard_tier2.yml", "guard_tier3.yml", "guard_tier4.yml", "guard_tier5.yml"};
+                    "guard_tier1.yml", "guard_tier2.yml", "guard_tier3.yml", "guard_tier4.yml", "guard_tier5.yml",
+                    // Issue #218 : quête de montée au palier 2 du kit de départ.
+                    "kit_tier2.yml"};
 
     private final Path questsDirectory;
     private final Logger logger;

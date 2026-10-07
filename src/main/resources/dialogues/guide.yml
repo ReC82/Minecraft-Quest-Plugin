@@ -54,6 +54,16 @@ nodes:
           - type: GIVE_STARTER_KIT
           - type: CLOSE
 
+      # Issue #123/#218 : branche de remise GÉNÉRIQUE — aucune quête, aucun matériau et aucun PNJ
+      # n'est nommé ici. HAS_PENDING_DELIVERY n'est vraie que si une quête active du joueur demande
+      # de remettre des objets à CE PNJ (déduit de la clé du dialogue, « rpgquest:guide » → PNJ
+      # « guide ») : le choix reste donc invisible le reste du temps. C'est par ici que passent les
+      # matériaux du palier suivant du kit.
+      - text: "J'ai des matériaux à te remettre"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        next: delivery
+
       - text: "D'accord !"
         actions:
           - type: CLOSE
@@ -135,5 +145,48 @@ nodes:
       - text: "← Autres questions"
         next: help_menu
       - text: "Fermer"
+        actions:
+          - type: CLOSE
+
+  # Issue #123 — %delivery_status% liste ce qui a déjà été remis et ce qui manque, lu sur la
+  # progression réelle juste avant l'affichage. « Donner les matériaux que j'ai » traite TOUS les
+  # objectifs de remise de ce PNJ en une seule fois, ne retire jamais plus que le reliquat, et ce
+  # qui est remis est acquis définitivement (survit à la mort, à une reconnexion, à un redémarrage).
+  delivery:
+    speaker: "Guide"
+    text: "<white>Voyons ce que tu m'apportes :</white><newline>%delivery_status%"
+    choices:
+      - text: "Donner les matériaux que j'ai"
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      - text: "Je reviendrai plus tard"
+        actions:
+          - type: CLOSE
+
+  delivery_after:
+    speaker: "Guide"
+    text: "<white>%delivery_status%</white>"
+    choices:
+      - text: "Donner encore des matériaux"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        actions:
+          - type: DELIVER_QUEST_ITEMS
+        next: delivery_after
+      - text: "Et voilà, tout est remis"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+            negate: true
+        next: delivery_done
+      - text: "Je reviendrai plus tard"
+        actions:
+          - type: CLOSE
+
+  delivery_done:
+    speaker: "Guide"
+    text: "<gold>Tout est là. Ton équipement de secours s'améliorera dès ta prochaine demande.</gold>"
+    choices:
+      - text: "Parfait"
         actions:
           - type: CLOSE

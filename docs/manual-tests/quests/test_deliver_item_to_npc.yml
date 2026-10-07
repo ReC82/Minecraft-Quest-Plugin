@@ -1,0 +1,51 @@
+# QUÊTE DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md, section
+# « Pack de quêtes de test manuel » pour la procédure d'activation/retrait,
+# et TC-257 pour la recette complète de cet objectif.
+#
+# « npc » est un id logique RPGQuest (posé via /rpgadmin npc tag), jamais le
+# nom affiché de l'entité — voir docs/RPGQUEST_BIBLE.md section 3/5. Ici
+# « guard » est utilisé parce que le dialogue livré dialogues/guard.yml porte
+# déjà la branche de remise ; avec un autre PNJ, il faut lui ajouter la même
+# branche (condition HAS_PENDING_DELIVERY + action DELIVER_QUEST_ITEMS), qui
+# est générique et se recopie telle quelle.
+#
+# IMPORTANT (issue #123) : posséder ou ramasser les objets ne fait JAMAIS
+# avancer cet objectif. Il faut parler au PNJ et choisir « Donner les
+# matériaux que j'ai ». Les objets sont alors réellement consommés, les
+# dépôts partiels comptent, et ce qui est remis reste acquis après une mort,
+# une reconnexion ou un redémarrage du serveur.
+#
+# Les quatre objectifs ci-dessous reproduisent volontairement l'exemple cible
+# de l'issue #218 : une SEULE interaction avec le PNJ doit faire avancer les
+# quatre compteurs à la fois.
+id: rpgquest:test_deliver_item_to_npc
+title: "<red>[TEST] Rapporter des objets à un PNJ</red>"
+description: "<gray>Quête de test manuel — objectif DELIVER_ITEM_TO_NPC. Parle au Garde et choisis « Donner les matériaux que j'ai ». Les dépôts partiels sont conservés.</gray>"
+category: test
+icon: LEATHER
+repeatable: true
+
+steps:
+  - id: deliver_materials
+    objectives:
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guard
+        material: STICK
+        amount: 1
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guard
+        material: COBBLESTONE
+        amount: 2
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guard
+        material: LEATHER
+        amount: 4
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guard
+        material: WHEAT_SEEDS
+        amount: 3
+
+rewards:
+  - type: EXPERIENCE
+    amount: 5

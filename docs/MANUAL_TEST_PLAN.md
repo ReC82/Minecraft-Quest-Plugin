@@ -261,7 +261,7 @@ Deux joueurs (ou deux comptes) sont nécessaires pour certains tests
 
 ### Pack de quêtes de test manuel — un objectif de chaque type
 
-Sept quêtes minimalistes, une par type d'`ObjectiveType` implémenté,
+Huit quêtes minimalistes, une par type d'`ObjectiveType` implémenté,
 destinées **uniquement** au test manuel sur un serveur réel (y compris
 VeryGames) — jamais à la production. Fichiers dans
 `docs/manual-tests/quests/` (racine du dépôt, **jamais copiés
@@ -278,6 +278,7 @@ pas soi-même) :
 | `test_craft_item.yml` | `rpgquest:test_craft_item` | `CRAFT_ITEM` | Fabriquer 1 `STICK` (grille 2×2 de l'inventaire, aucun établi requis). |
 | `test_talk_to_npc.yml` | `rpgquest:test_talk_to_npc` | `TALK_TO_NPC` | Taguer une entité avec `/rpgadmin npc tag test_dummy` puis clic droit dessus. |
 | `test_reach_location.yml` | `rpgquest:test_reach_location` | `REACH_LOCATION` | S'approcher à moins de 20 blocs de `world 0,64,0` (ajuster `x`/`y`/`z` dans le fichier avec ses propres coordonnées `F3` si le spawn réel est ailleurs). |
+| `test_deliver_item_to_npc.yml` | `rpgquest:test_deliver_item_to_npc` | `DELIVER_ITEM_TO_NPC` | **Remettre** 1 `STICK`, 2 `COBBLESTONE`, 4 `LEATHER` et 3 `WHEAT_SEEDS` au PNJ `guard` : parler au Garde → « Donner les matériaux que j'ai ». Posséder ou ramasser ne compte **jamais** ; les objets sont consommés et les dépôts partiels restent acquis. Recette détaillée : **TC-257**. |
 
 Toutes `repeatable: true` (rejouables sans `/quest admin reset`), avec une
 récompense symbolique de 5 XP chacune (permet aussi de vérifier au passage
@@ -285,26 +286,26 @@ le résumé de récompenses de TC-014).
 
 **Procédure d'activation (test manuel uniquement, à retirer ensuite) :**
 
-1.  Copier les 7 fichiers de `docs/manual-tests/quests/` vers
+1.  Copier les 8 fichiers de `docs/manual-tests/quests/` vers
     `plugins/RPGQuest/quests/` sur le serveur de test.
-2.  `/quest admin reload` (ou redémarrer) → le rapport doit annoncer 7
+2.  `/quest admin reload` (ou redémarrer) → le rapport doit annoncer 8
     quêtes de plus chargées, 0 erreur.
 3.  Pour chaque type : `/quest accept rpgquest:test_<type>`, réaliser
     l'action décrite ci-dessus, vérifier `/quest progress
     rpgquest:test_<type>` puis la remise automatique (Title + résumé chat,
     voir TC-014). Pour `test_talk_to_npc`, taguer l'entité **avant**
     d'accepter ou après, peu importe — seul l'ordre clic-après-tag compte.
-4.  Une fois les 7 types validés, **supprimer les 7 fichiers** de
+4.  Une fois les 8 types validés, **supprimer les 8 fichiers** de
     `plugins/RPGQuest/quests/` puis `/quest admin reload` à nouveau (le
     rapport doit annoncer leur disparition, 0 erreur) — ces quêtes ne
     doivent **jamais** rester dans une installation VeryGames de
     production entre deux sessions de test.
-5.  Optionnel : `/quest admin reset <joueur> all` (ou juste les 7 ids) pour
+5.  Optionnel : `/quest admin reset <joueur> all` (ou juste les 8 ids) pour
     nettoyer la progression de test avant de retirer les fichiers, si le
     même compte sert aussi à des tests de production.
 
 -   **Couverture automatisée :** `ManualTestQuestPackTest` (le pack reste
-    chargeable sans erreur, un id `test_*` par quête, les 7 types
+    chargeable sans erreur, un id `test_*` par quête, les 8 types
     d'`ObjectiveType` sont couverts exactement une fois — échoue si le
     format de quête ou la liste des types change sans que ce pack soit mis
     à jour en conséquence).

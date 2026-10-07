@@ -56,6 +56,35 @@ class BundledDialoguesValidityTest {
     }
 
     /**
+     * Issue #24 : le Garde doit proposer <strong>en permanence</strong> (aucune condition, donc
+     * quelle que soit la progression du joueur) de renseigner l'état du Wild, et la réponse doit
+     * être rendue dynamiquement — c'est-à-dire porter le marqueur {@code %wild_conditions%}, jamais
+     * une météo écrite en dur dans la donnée.
+     */
+    @Test
+    void theGuardAlwaysOffersToReportTheCurrentWildConditions() {
+        DialogueLoadReport report = loader.load(Map.of("guard.yml", read("/dialogues/guard.yml")));
+        assertTrue(report.issues().isEmpty(), () -> "guard.yml doit rester valide : " + report.issues());
+
+        DialogueDefinition guard = report.loaded().stream()
+                .filter(d -> d.id().equals(new NamespacedKey("rpgquest", "guard")))
+                .findFirst().orElseThrow();
+
+        var choices = guard.nodes().get(guard.startNodeId()).choices().stream()
+                .filter(choice -> choice.text().base().contains("Comment est le Wild"))
+                .toList();
+        assertEquals(1, choices.size(), "un seul choix « état du Wild » au nœud d'accueil du Garde");
+        var choice = choices.get(0);
+        assertTrue(choice.conditions().isEmpty(), "ce choix doit être permanent : aucune condition");
+        assertTrue(choice.actions().isEmpty(), "demander l'état du Wild ne doit rien exécuter ni rien modifier");
+
+        var answer = guard.nodes().get(choice.next());
+        assertTrue(answer != null, "le choix doit mener à un nœud de réponse : " + choice.next());
+        assertTrue(answer.text().base().contains("%wild_conditions%"),
+                () -> "la réponse doit être dynamique, trouvé : " + answer.text().base());
+    }
+
+    /**
      * Récupération du journal de quêtes : le Libraire doit pouvoir en <strong>redonner</strong> un
      * sans jamais en donner deux, et sans toucher à la progression.
      *

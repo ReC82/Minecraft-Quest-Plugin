@@ -641,6 +641,37 @@ class DialogueSessionEngineTest {
         assertTrue(renderer.lastNode != null, "le renderer n'a rien reçu avant le délai");
     }
 
+    /**
+     * Issue #24 : le texte d'un nœud peut porter une valeur dynamique ({@code %wild_conditions%}),
+     * substituée au moment du rendu — la donnée YAML reste statique, la réponse lue par le joueur
+     * non.
+     */
+    @Test
+    void aDynamicPlaceholderIsSubstitutedJustBeforeRendering() throws Exception {
+        Files.writeString(dialoguesDir.resolve("meteo.yml"), """
+                id: rpgquest:meteo
+                start: info
+                nodes:
+                  info:
+                    speaker: "Garde"
+                    text: "<white>%wild_conditions%</white>"
+                    choices:
+                      - text: "Merci"
+                        actions:
+                          - type: CLOSE
+                """);
+        dialogueEngine.reload();
+        sessionEngine.setPlaceholders(new com.lodygames.rpgquest.dialogue.DialogueTextPlaceholders(
+                java.util.Map.of("wild_conditions", p -> "Il fait nuit dans le Wild. Il pleut.")));
+        PlayerMock player = addPlayer();
+
+        sessionEngine.open(player, new NamespacedKey("rpgquest", "meteo"));
+        awaitRendered();
+
+        assertEquals("<white>Il fait nuit dans le Wild. Il pleut.</white>", renderer.lastNode.text().base());
+        assertEquals("info", renderer.lastNode.id(), "le nœud reste le même, seul son texte est enrichi");
+    }
+
     private static final class RecordingRenderer implements DialogueRenderer {
         private volatile DialogueNode lastNode;
         private volatile List<VisibleChoice> lastVisibleChoices;

@@ -90,10 +90,25 @@ nodes:
             quest: rpgquest:guard_tier5
             state: COMPLETED
         next: guard_tiers_done
+      # Issue #24 : choix PERMANENT (aucune condition) — le joueur demande lui-même l'état du
+      # Wild, l'information n'est jamais poussée dans l'avertissement du portail (issue #161).
+      - text: "Comment est le Wild actuellement ?"
+        next: wild_conditions
       - text: "Parle-moi de la récompense"
         next: reward_info
       - text: "Non merci"
         next: refused
+
+  # Le texte est rendu dynamiquement : %wild_conditions% est remplacé juste avant l'affichage par
+  # l'état RÉEL du monde d'exploration (jour/nuit + météo globale), voir
+  # travel.WildConditionsService et dialogue.DialogueTextPlaceholders. Rien n'est modifié dans le
+  # Wild par cette lecture.
+  wild_conditions:
+    speaker: "Garde"
+    text: "<white>%wild_conditions%</white>"
+    choices:
+      - text: "Merci pour l'information"
+        next: greeting
 
   accepted:
     speaker: "Garde"

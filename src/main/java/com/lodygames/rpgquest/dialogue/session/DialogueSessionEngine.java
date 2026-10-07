@@ -4,6 +4,7 @@ import com.lodygames.rpgquest.RPGQuestPlugin;
 import com.lodygames.rpgquest.bootstrap.PluginService;
 import com.lodygames.rpgquest.claim.ClaimService;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
+import com.lodygames.rpgquest.dialogue.DialogueTextPlaceholders;
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
 import com.lodygames.rpgquest.dialogue.model.AdvanceQuestAction;
 import com.lodygames.rpgquest.dialogue.model.CloseAction;
@@ -79,6 +80,8 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
 
     private final Map<UUID, DialogueSession> sessions = new ConcurrentHashMap<>();
     private volatile DialogueRenderer renderer;
+    /** Valeurs dynamiques substituées dans le texte d'un nœud juste avant son rendu (issue #24). */
+    private volatile DialogueTextPlaceholders placeholders = DialogueTextPlaceholders.none();
     /** Issue #12 — notifie le service de signal visuel qu'un nœud vient d'être affiché. */
     private volatile NodePresentedListener nodePresented;
 
@@ -102,6 +105,17 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
     /** Câblé après construction par le bootstrap (dépendance circulaire évitée : voir dialogue.render.DialogueChoiceHandler). */
     public void setRenderer(DialogueRenderer renderer) {
         this.renderer = renderer;
+    }
+
+    /**
+     * Installe les valeurs dynamiques disponibles dans le texte des nœuds (issue #24 : {@code
+     * %wild_conditions%}). Même patron que {@link #setRenderer} plutôt qu'un argument de
+     * constructeur : les sources de ces valeurs (état d'un monde, services métier) sont construites
+     * ailleurs dans le bootstrap, et l'absence de substitution reste un comportement valide
+     * ({@link DialogueTextPlaceholders#none()} par défaut).
+     */
+    public void setPlaceholders(DialogueTextPlaceholders placeholders) {
+        this.placeholders = placeholders;
     }
 
     @Override
@@ -150,7 +164,9 @@ public final class DialogueSessionEngine implements PluginService, DialogueChoic
         DialogueNode node = dialogue.nodes().get(nodeId);
         visibleChoices(player, node).thenAccept(visible -> runOnMainThread(() -> {
             sessions.put(player.getUniqueId(), new DialogueSession(dialogue.id(), node.id()));
-            renderer.render(player, dialogue, node, visible);
+            // Substitution juste avant le rendu, sur le thread principal : la valeur affichée est
+            // donc lue au plus tard possible (état réel au moment où le joueur voit le texte).
+            renderer.render(player, dialogue, placeholders.apply(player, node), visible);
             // Issue #12 : c'est le SEUL endroit où un nœud est réellement affiché au joueur, donc
             // le seul endroit où « lu » a un sens. Ouvrir un PNJ ne présente que le nœud de
             // départ : les branches non parcourues restent non lues, et donc toujours signalées.

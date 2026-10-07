@@ -2065,6 +2065,38 @@ pour mondes et biomes (même composant que les prérequis de quête, #163 ; le c
 liste CSV attendue par l'action, le contrat serveur ne change pas). Sans relevé disponible, un
 bandeau le dit et les champs restent en saisie libre — jamais une liste inventée.
 
+### Aide par champ des formulaires de mobs (issue #169)
+
+Chaque champ des formulaires « Mobs spéciaux & boss » porte une aide **rendue sous le champ**
+(jamais un simple `placeholder` ni une infobulle : invisibles sur mobile, et un placeholder
+disparaît dès la première frappe). L'aide énonce quatre choses, dans cet ordre : ce que le champ
+contrôle **en jeu**, un **exemple**, le **défaut réellement appliqué par le moteur**, et — pour un
+champ optionnel — ce qui se passe **s'il reste vide**.
+
+Règles tenues par ce bloc d'aide :
+
+- **Aucun défaut inventé.** Les valeurs annoncées sont relevées dans le code
+  (`SpecialMobDefinition`, `SpecialMobDefinitionParser`, `MobSpawnSettings.defaults()`,
+  `AgentActionCatalog`). Quand il n'existe pas de défaut, l'aide écrit « Obligatoire » ou
+  « Aucun » — par exemple les cinq réglages d'« Invocation de renforts » sont *obligatoires dès que
+  la case est cochée*, le moteur n'ayant aucune valeur de repli.
+- **Bornes et valeurs spéciales seulement si elles existent.** `xp-reward: 0` signifie
+  explicitement *aucune XP* (distinct du champ vide, qui laisse l'XP vanilla) ;
+  `summon_cooldown_seconds: 0` signifie *aucun délai* ; le seuil de rage est **strictement** entre
+  0 et 1 (ni 0 ni 1) ; la chance d'invocation est supérieure à 0 et au plus 1.
+- **Préremplissage uniquement là où le moteur a un défaut.** À la création, seuls « Profil actif »
+  (coché) et la catégorie (Spécial) le sont ; les statistiques restent **vides**, parce que
+  `mob.definition.update` **remplace le profil entier** — une valeur préremplie serait enregistrée
+  et le mob cesserait d'hériter de l'attribut vanilla. La chance individuelle est préremplie à 0.01
+  et l'aide précise que c'est une **suggestion du panel**, pas un défaut du moteur.
+- **À la modification, rien n'est substitué** : chaque champ reçoit la valeur du profil, un champ
+  absent reste vide, et les exemples vivent dans l'aide — jamais dans un attribut `value`.
+
+**Deux imprécisions de l'ancienne aide corrigées au passage**, après relecture de
+`SpecialMobService` : le champ *Particule* n'est **pas** une aura continue de boss mais une bouffée
+émise **une seule fois à l'apparition** (l'aura d'un boss est un effet fixe du moteur, indépendant
+de ce champ) ; et *Rayon d'explosion* n'est retenu qu'en **partie entière** (`intValue()`).
+
 **Piège de soumission silencieuse également corrigé** : deux sections de capacités sont repliées
 par défaut et contiennent des champs numériques contraints. Dès qu'une valeur devenait invalide, le
 navigateur refusait de soumettre **et** ne pouvait pas focaliser un champ caché dans un `<details>`

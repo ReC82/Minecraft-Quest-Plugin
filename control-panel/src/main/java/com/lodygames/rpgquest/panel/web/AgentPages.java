@@ -4432,19 +4432,32 @@ public final class AgentPages {
         sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" role=\"switch\" "
                 + "id=\"mob-ss-en\" name=\"enabled\" value=\"true\"").append(enabled ? " checked" : "")
                 .append(canWrite ? "" : " disabled").append("><label class=\"form-check-label\" for=\"mob-ss-en\">"
-                + "Tirage aléatoire actif</label></div>");
+                + "Tirage aléatoire actif</label></div>")
+                .append(fieldHelp("Interrupteur général. Décoché, <strong>aucun mob spécial n'apparaît plus "
+                        + "naturellement</strong> dans le Wild, quels que soient les profils : rien n'est "
+                        + "supprimé, le tirage est simplement suspendu. Les apparitions de test et les boss "
+                        + "restent possibles.",
+                        null, "activé", null));
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"mob-ss-chance\">Chance globale (0 à 1)</label>")
                 .append("<input class=\"form-control\" id=\"mob-ss-chance\" type=\"number\" name=\"chance\" "
                         + "step=\"0.001\" min=\"0\" max=\"1\" value=\"").append(Http.esc(chance))
                 .append("\"").append(canWrite ? " required" : " readonly").append(">")
-                .append("<div class=\"form-text\">Ex. 0.05 = 5% des spawns naturels éligibles sont même "
-                        + "considérés pour une transformation.</div></div>");
+                .append(fieldHelp("Filtre global évalué <strong>une seule fois par apparition naturelle</strong>, "
+                        + "avant d'examiner les profils : 0.05 = seules 5 % des apparitions éligibles sont même "
+                        + "candidates à une transformation. Baisser cette valeur raréfie tous les mobs spéciaux "
+                        + "d'un coup, sans toucher aux profils. De 0 à 1 inclus — 0 revient à tout bloquer.",
+                        "0.05", "1 — toute apparition éligible est examinée", null))
+                .append("</div>");
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"mob-ss-max\">Plafond simultané (optionnel)</label>")
                 .append("<input class=\"form-control\" id=\"mob-ss-max\" type=\"number\" name=\"max_simultaneous_special\" "
                         + "min=\"0\" value=\"").append("null".equals(max) ? "" : Http.esc(max)).append("\"")
                 .append(canWrite ? "" : " readonly").append(">")
-                .append("<div class=\"form-text\">Nombre total de mobs SPECIAL vivants, toutes définitions "
-                        + "confondues. Laisser vide = pas de plafond global.</div></div>");
+                .append(fieldHelp("Plafond du nombre total de mobs <strong>Spécial</strong> vivants en même "
+                        + "temps, tous profils confondus. Au plafond, le tirage s'arrête jusqu'à ce que certains "
+                        + "meurent. Les profils <strong>Boss</strong> ne sont jamais comptés ici. Nombre entier, "
+                        + "0 ou plus.",
+                        "20", "aucun", "aucun plafond global"))
+                .append("</div>");
         sb.append("</div>");
         if (canWrite) {
             sb.append("<button class=\"btn btn-primary\" type=\"submit\">")
@@ -4544,7 +4557,12 @@ public final class AgentPages {
             sb.append("</select>");
         }
         sb.append("<button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
-                .append(Icons.icon("target")).append("Apparaître (test, Wild)</button></form>");
+                .append(Icons.icon("target")).append("Apparaître (test, Wild)</button>");
+        sb.append("<div class=\"form-text\">Fait apparaître une instance près du joueur choisi. Celui-ci doit "
+                + "être <strong>connecté</strong> et <strong>dans le monde Wild</strong>, sinon l'action est "
+                + "refusée avec la raison. L'instance est marquée comme test et reste supprimable par "
+                + "« Nettoyer les instances de test ».</div>");
+        sb.append("</form>");
         return sb.toString();
     }
 
@@ -4592,32 +4610,54 @@ public final class AgentPages {
         } else {
             sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-id\">ID technique</label>")
                     .append("<input class=\"form-control\" id=\"").append(uid).append("-id\" type=\"text\" name=\"mob_id\" "
-                            + "pattern=\"[a-z0-9._-]{1,64}\" placeholder=\"Exemple : swamp_king\" required>")
-                    .append("<div class=\"form-text\">Minuscules, chiffres, « . _ - ». Non modifiable après création.</div></div>");
+                            + "pattern=\"[a-z0-9._-]{1,64}\" required>")
+                    .append(fieldHelp("Identifiant interne du profil, jamais vu par les joueurs. Sert de nom de "
+                            + "fichier et de référence dans les commandes. Minuscules, chiffres et « . _ - », "
+                            + "64 caractères au plus. <strong>Non modifiable après création.</strong>",
+                            "swamp_king", "Obligatoire", null))
+                    .append("</div>");
         }
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-cat\">Catégorie</label>")
                 .append("<select class=\"form-select\" id=\"").append(uid).append("-cat\" name=\"category\">")
                 .append(option("SPECIAL", str(existing == null ? null : existing.get("category")), "Spécial (tirage aléatoire Wild)"))
                 .append(option("BOSS", str(existing == null ? null : existing.get("category")), "Boss (jamais tiré au hasard)"))
-                .append("</select><div class=\"form-text\">BOSS : nom + particules colorées en continu + barre de vie, "
-                        + "jamais dans le tirage automatique.</div></div>");
+                .append("</select>")
+                .append(fieldHelp("Décide si le profil entre dans le tirage aléatoire du Wild. "
+                        + "<strong>Spécial</strong> : remplace parfois un mob qui apparaît naturellement. "
+                        + "<strong>Boss</strong> : n'apparaît jamais tout seul — il se fait apparaître "
+                        + "volontairement (bouton de test, commande) et reçoit en plus une barre de vie visible "
+                        + "à 48 blocs et une aura de particules rafraîchie chaque seconde.",
+                        "Spécial pour une variante de mob courante, Boss pour une rencontre unique",
+                        "Spécial", null))
+                .append("</div>");
         sb.append(catalogCombo(uid, "entity_type", "et", "Type d'entité Minecraft",
                 str(existing == null ? null : existing.get("entityType")), "dl-mob-entity", true,
-                "Créature vanilla servant de base. <strong>Liste réelle du serveur</strong> : taper « zomb » "
-                + "ou « ZOMBIE » filtre. Les bases passives (PIG, CHICKEN, FROG…) sont autorisées — sans "
-                + "capacité agressive ajoutée, un tel profil reste <strong>aussi passif que la base "
-                + "vanilla</strong> (rien ne le rend hostile implicitement)."));
+                fieldHelp("Créature vanilla servant de base : apparence, comportement et attributs de départ. "
+                                + "<strong>Liste réelle du serveur</strong> — taper « zomb » filtre. Doit être une "
+                                + "entité <strong>vivante</strong>. Les bases passives (PIG, CHICKEN…) sont "
+                                + "autorisées : sans capacité agressive ajoutée, le profil reste "
+                                + "<strong>aussi passif que la base vanilla</strong>, rien ne le rend hostile "
+                                + "implicitement.",
+                        "CREEPER (profil « Creeper Rouge »)", "Obligatoire", null)));
         // Issue #195 : couleur au clic + cases de style + aperçu. MiniMessage reste le format
         // stocké, mais il n'est plus nécessaire d'en écrire pour un usage courant.
         sb.append(StyleField.render("display_name", uid + "-name", "Nom affiché",
                 str(existing == null ? null : existing.get("displayName")), true,
-                "Nom vu par les joueurs. Choisir une couleur et des styles ci-dessus : "
-                + "aucun code à écrire. Un nom déjà écrit avec <strong>plusieurs styles</strong> "
-                + "est conservé tel quel et n'est jamais simplifié sans action explicite."));
+                "Nom affiché au-dessus du mob, toujours visible en jeu. Choisir une couleur et des "
+                + "styles ci-dessus : aucun code à écrire. Un nom déjà écrit avec <strong>plusieurs "
+                + "styles</strong> est conservé tel quel et n'est jamais simplifié sans action explicite. "
+                + "128 caractères au plus, sur une seule ligne."
+                + "<span class=\"fmeta\"><span><b>Exemple</b> Roi des Marais</span>"
+                + "<span><b>Défaut</b> Obligatoire</span></span>"));
         sb.append("<div class=\"form-check form-switch\"><input class=\"form-check-input\" type=\"checkbox\" role=\"switch\" "
                 + "id=\"").append(uid).append("-en\" name=\"enabled\" value=\"true\"")
                 .append(!update || Boolean.TRUE.equals(existing.get("enabled")) ? " checked" : "")
-                .append("><label class=\"form-check-label\" for=\"").append(uid).append("-en\">Profil actif</label></div>");
+                .append("><label class=\"form-check-label\" for=\"").append(uid).append("-en\">Profil actif</label></div>")
+                .append(fieldHelp("Décoché, le profil est <strong>retiré du tirage aléatoire du Wild</strong> "
+                        + "mais jamais supprimé : il reste modifiable et le bouton d'apparition de test "
+                        + "continue de fonctionner. Un profil BOSS n'étant de toute façon jamais tiré au "
+                        + "hasard, cette case ne change rien pour lui.",
+                        null, "coché à la création", null));
         sb.append("</div>");
 
         // #190 : bouton dupliqué tôt dans le formulaire -- le reste (tirage/statistiques/capacités)
@@ -4632,47 +4672,109 @@ public final class AgentPages {
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-sc\">Chance individuelle (0 à 1)</label>")
                 .append("<input class=\"form-control\" id=\"").append(uid).append("-sc\" type=\"number\" step=\"0.0001\" "
                         + "min=\"0\" max=\"1\" name=\"spawn_chance\" value=\"")
-                .append(Http.esc(str(existing == null ? "0.01" : existing.get("spawnChance")))).append("\" required>"
-                        + "<div class=\"form-text\">Ignorée pour un profil BOSS (jamais tiré au hasard).</div></div>");
+                .append(Http.esc(str(existing == null ? "0.01" : existing.get("spawnChance")))).append("\" required>")
+                .append(fieldHelp("Probabilité propre à ce profil, évaluée <strong>après</strong> la chance "
+                        + "globale ci-dessus : 0.02 = 2 % des spawns retenus par le tirage global donnent ce "
+                        + "mob. Si plusieurs profils réussissent en même temps, un tirage pondéré par cette "
+                        + "valeur en choisit un. De 0 à 1 inclus. <strong>Ignorée pour un profil BOSS</strong>, "
+                        + "jamais tiré au hasard.",
+                        "0.02 (profil « Creeper Rouge »)",
+                        "aucun côté moteur — obligatoire ; le panel propose 0.01 à la création", null))
+                .append("</div>");
         sb.append(catalogMulti(uid, "worlds", "Mondes autorisés",
                 existing == null ? null : existing.get("worlds"), "dl-mob-world",
-                "Mondes où ce profil peut apparaître. <strong>Vide = aucune restriction de monde</strong>, "
-                + "donc tous les mondes où le tirage s'applique — à éviter : préférer cocher "
-                + "explicitement le Wild. Ajouter le Hub ou un monde de claims doit rester un choix "
-                + "délibéré (leurs propres règles continuent de s'appliquer et peuvent annuler "
-                + "l'apparition)."));
+                fieldHelp("Mondes où ce profil peut apparaître au tirage. Préférer cocher explicitement le "
+                                + "Wild : ajouter le Hub ou un monde de claims doit rester un choix délibéré "
+                                + "(leurs propres règles continuent de s'appliquer et peuvent annuler "
+                                + "l'apparition). Liste réelle du serveur.",
+                        "wild", "aucune restriction",
+                        "tous les mondes où le tirage s'applique")));
         sb.append(catalogMulti(uid, "biomes", "Biomes autorisés",
                 existing == null ? null : existing.get("biomes"), "dl-mob-biome",
-                "Biomes où ce profil peut apparaître. <strong>Vide = tous les biomes.</strong> "
-                + "Liste réelle du serveur."));
+                fieldHelp("Biomes où ce profil peut apparaître, comparés par nom au moment de l'apparition. "
+                                + "Liste réelle du serveur.",
+                        "swamp", "aucune restriction", "tous les biomes sont autorisés")));
         sb.append(csvField(uid, "zones", "Zones autorisées", existing,
-                "Zones protégées RPGQuest (/rpgadmin zone), par identifiant. Vide = aucune "
-                + "restriction de zone. À ne pas confondre avec les mondes (ci-dessus) ni avec les "
-                + "biomes : une zone est un cuboïde nommé défini par un administrateur."));
+                fieldHelp("Zones RPGQuest autorisées, par identifiant, séparées par des virgules. Une zone "
+                                + "est un volume nommé défini par un administrateur avec <code>/rpgadmin zone</code> "
+                                + "— à ne pas confondre avec un monde ni un biome. Les identifiants ne sont "
+                                + "vérifiés qu'au moment de l'apparition : une zone supprimée depuis ne bloque pas "
+                                + "l'enregistrement du profil.",
+                        "marais_maudit", "aucune restriction",
+                        "aucune restriction de zone")));
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-mp\">Population maximale simultanée</label>")
                 .append("<input class=\"form-control\" id=\"").append(uid).append("-mp\" type=\"number\" min=\"0\" "
                         + "name=\"max_population\" value=\"").append(Http.esc(str(existing == null ? null : existing.get("maxPopulation"))))
-                .append("\"><div class=\"form-text\">Laisser vide = pas de plafond pour ce profil.</div></div>");
+                .append("\">")
+                .append(fieldHelp("Nombre maximum de mobs issus de <strong>ce profil</strong> vivants en même "
+                        + "temps. Au plafond, le tirage ignore ce profil jusqu'à ce que l'un d'eux meure. "
+                        + "Nombre entier, 0 ou plus. Ce plafond s'ajoute au plafond global de la section "
+                        + "« Tirage aléatoire » de la page.",
+                        "8 (profil « Creeper Rouge »)", "aucun",
+                        "aucun plafond propre à ce profil"))
+                .append("</div>");
         sb.append("</div>");
 
-        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Statistiques (laisser vide = valeur vanilla)</p>");
-        sb.append(numField(uid, "health", "Vie max", existing, "0.01", null));
-        sb.append(numField(uid, "damage", "Dégâts", existing, "0.01", null));
-        sb.append(numField(uid, "speed", "Vitesse", existing, "0.01", null));
-        sb.append(numField(uid, "armor", "Armure", existing, "0.01", null));
-        sb.append(numField(uid, "knockback_resistance", "Résistance au recul (0 à 1)", existing, "0.01", null));
-        sb.append(numField(uid, "scale", "Taille relative (1 = normale)", existing, "0.01", null));
-        sb.append(numField(uid, "creeper_explosion_radius", "Rayon d'explosion (CREEPER uniquement)", existing, "0.1", null));
+        sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Statistiques</p>");
+        sb.append("<p class=\"form-text\">Chaque statistique laissée vide n'est <strong>pas touchée</strong> : "
+                + "l'attribut vanilla du type d'entité choisi s'applique tel quel. Un champ rempli remplace "
+                + "l'attribut de base au moment de l'apparition.</p>");
+        sb.append(numField(uid, "health", "Vie max (points de vie)", existing, "0.01",
+                fieldHelp("Points de vie maximum. La vie courante est fixée à ce maximum à l'apparition, "
+                                + "donc le mob apparaît toujours en pleine vie. 2 points = 1 cœur.",
+                        "40 (20 cœurs)", "aucun — la vie vanilla du type choisi",
+                        "attribut de vie inchangé")));
+        sb.append(numField(uid, "damage", "Dégâts d'attaque (points de vie)", existing, "0.01",
+                fieldHelp("Dégâts infligés par une attaque au corps à corps. Sans effet sur un type qui "
+                                + "n'attaque pas au contact (un squelette tire des flèches).",
+                        "7", "aucun — les dégâts vanilla du type choisi",
+                        "attribut de dégâts inchangé")));
+        sb.append(numField(uid, "speed", "Vitesse de déplacement", existing, "0.01",
+                fieldHelp("Attribut vanilla de vitesse de déplacement. À titre de repère, les profils fournis "
+                                + "avec le plugin vont de 0,25 (Zombie Fissible) à 1,1 (Cochon Creeper).",
+                        "1.0", "aucun — la vitesse vanilla du type choisi",
+                        "attribut de vitesse inchangé")));
+        sb.append(numField(uid, "armor", "Armure (points d'armure)", existing, "0.01",
+                fieldHelp("Réduit les dégâts reçus, comme une armure portée. 20 correspond à une protection "
+                                + "très élevée.",
+                        "8", "aucun — l'armure vanilla du type choisi",
+                        "attribut d'armure inchangé")));
+        sb.append(numField(uid, "knockback_resistance", "Résistance au recul", existing, "0.01",
+                fieldHelp("Part du recul annulée quand le mob est frappé. <strong>0 = projeté normalement, "
+                                + "1 = totalement immobile face aux coups.</strong> Valeurs acceptées : de 0 à 1 "
+                                + "inclus.",
+                        "0.5", "aucun — la résistance vanilla du type choisi",
+                        "attribut de recul inchangé")));
+        sb.append(numField(uid, "scale", "Taille relative", existing, "0.01",
+                fieldHelp("Multiplie la taille du modèle et sa boîte de collision. <strong>1 = taille "
+                                + "normale</strong>, 2 = deux fois plus grand. Doit rester strictement supérieur à 0.",
+                        "1.5", "aucun — la taille normale du type choisi",
+                        "taille vanilla inchangée")));
+        sb.append(numField(uid, "creeper_explosion_radius", "Rayon d'explosion (CREEPER uniquement)", existing, "0.1",
+                fieldHelp("Portée de l'explosion, en blocs. <strong>Réservé au type CREEPER</strong> : sur tout "
+                                + "autre type, le profil est refusé au chargement plutôt que l'option ignorée en "
+                                + "silence. Le moteur n'en retient que la <strong>partie entière</strong> (4,7 → 4).",
+                        "6", "aucun — le rayon d'explosion vanilla du creeper",
+                        "rayon d'explosion vanilla")));
         sb.append(catalogCombo(uid, "particle", "pt", "Particule (optionnel)",
                 str(existing == null ? null : existing.get("particle")), "dl-mob-particle", false,
-                "Effet visuel émis en continu par un BOSS. <strong>Vide = aucune particule.</strong> "
-                + "Liste réelle du serveur. Une couleur n'est applicable que sur les types qui "
-                + "l'acceptent (voir la mention « colorable » dans la liste) — pour les autres, "
-                + "Minecraft ignore toute couleur, ce n'est pas un défaut du panel."));
+                fieldHelp("Bouffée de particules émise <strong>une seule fois, à l'apparition</strong> du mob "
+                                + "(10 particules au-dessus de lui) — c'est un effet d'entrée, pas une aura "
+                                + "permanente. L'aura continue d'un BOSS est un effet fixe du moteur, "
+                                + "indépendant de ce champ. Liste réelle du serveur : taper « flam » filtre.",
+                        "FLAME (profil « Creeper Rouge »)", "aucune", "aucune particule à l'apparition")));
         sb.append(catalogCombo(uid, "sound", "sd", "Son (optionnel)",
                 str(existing == null ? null : existing.get("sound")), "dl-mob-sound", false,
-                "Son joué à l'apparition. <strong>Vide = aucun son.</strong> Liste réelle du serveur."));
-        sb.append(numField(uid, "xp_reward", "XP à la mort", existing, "1", null));
+                fieldHelp("Son joué <strong>une seule fois, à l'apparition</strong>, à la position du mob et "
+                                + "audible par tous les joueurs à portée. Liste réelle du serveur.",
+                        "ENTITY_CREEPER_PRIMED (profil « Creeper Rouge »)", "aucun",
+                        "aucun son à l'apparition")));
+        sb.append(numField(uid, "xp_reward", "XP lâchée à la mort", existing, "1",
+                fieldHelp("Points d'expérience lâchés quand le mob meurt, en remplacement de ceux du type "
+                                + "vanilla. Nombre entier, 0 ou plus : <strong>0 signifie explicitement aucune "
+                                + "XP</strong>, ce qui n'est pas la même chose que laisser le champ vide.",
+                        "10 (profil « Creeper Rouge »)", "aucun — l'XP vanilla du type choisi",
+                        "l'XP vanilla est lâchée, sans modification")));
         sb.append("</div>");
 
         // #190 : repliées par défaut (<details> natif, sans JS) pour raccourcir le formulaire par
@@ -4683,9 +4785,22 @@ public final class AgentPages {
         sb.append("<div class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" id=\"").append(uid)
                 .append("-rg-en\" name=\"enraged_enabled\" value=\"true\"").append(hasEnraged ? " checked" : "")
                 .append("><label class=\"form-check-label\" for=\"").append(uid).append("-rg-en\">Activer cette capacité</label></div>");
-        sb.append(numField(uid, "enraged_health_fraction", "Seuil de vie (0 à 1, ex. 0.3 = sous 30%)", existing, "0.01", null));
-        sb.append(numField(uid, "enraged_speed_multiplier", "Multiplicateur de vitesse", existing, "0.1", null));
-        sb.append(numField(uid, "enraged_damage_multiplier", "Multiplicateur de dégâts", existing, "0.1", null));
+        sb.append("<p class=\"form-text\">Sous un seuil de vie, le mob passe en rage : vitesse et dégâts "
+                + "multipliés, une seule fois au franchissement du seuil (jamais cumulé coup après coup). "
+                + "<strong>Les trois réglages ci-dessous sont obligatoires dès que la case est cochée</strong> — "
+                + "le moteur n'a aucune valeur de repli, l'enregistrement est refusé s'il en manque un.</p>");
+        sb.append(numField(uid, "enraged_health_fraction", "Seuil de vie déclencheur", existing, "0.01",
+                fieldHelp("Fraction de la vie maximum sous laquelle la rage se déclenche : 0.3 = sous 30 % de "
+                                + "vie. <strong>Strictement entre 0 et 1</strong> — ni 0 ni 1 ne sont acceptés.",
+                        "0.3", "Obligatoire si la capacité est activée", null)));
+        sb.append(numField(uid, "enraged_speed_multiplier", "Multiplicateur de vitesse en rage", existing, "0.1",
+                fieldHelp("Multiplie la vitesse une fois enragé. 1 = vitesse inchangée, 1.5 = moitié plus "
+                                + "rapide. Doit être strictement supérieur à 0.",
+                        "1.5", "Obligatoire si la capacité est activée", null)));
+        sb.append(numField(uid, "enraged_damage_multiplier", "Multiplicateur de dégâts en rage", existing, "0.1",
+                fieldHelp("Multiplie les dégâts une fois enragé. 1 = dégâts inchangés, 2 = dégâts doublés. "
+                                + "Doit être strictement supérieur à 0.",
+                        "2", "Obligatoire si la capacité est activée", null)));
         sb.append("</div></details>");
 
         boolean hasSummon = existing != null && existing.get("summonEntityType") != null;
@@ -4695,16 +4810,39 @@ public final class AgentPages {
         sb.append("<div class=\"form-check\"><input class=\"form-check-input\" type=\"checkbox\" id=\"").append(uid)
                 .append("-sm-en\" name=\"summon_enabled\" value=\"true\"").append(hasSummon ? " checked" : "")
                 .append("><label class=\"form-check-label\" for=\"").append(uid).append("-sm-en\">Activer cette capacité</label></div>");
+        sb.append("<p class=\"form-text\">Quand le mob subit des dégâts <strong>effectifs</strong> (coup non "
+                + "annulé, dégâts réellement supérieurs à 0), il peut invoquer des renforts. Jamais de "
+                + "cascade : les renforts eux-mêmes n'invoquent rien. <strong>Les cinq réglages ci-dessous "
+                + "sont obligatoires dès que la case est cochée</strong> — le moteur n'a aucune valeur de "
+                + "repli, l'enregistrement est refusé s'il en manque un.</p>");
+        String summonType = str(existing == null ? null : existing.get("summonEntityType"));
         sb.append("<div class=\"mb-2\"><label class=\"form-label\" for=\"").append(uid).append("-sm-t\">Type de renfort</label>")
                 .append("<input class=\"form-control\" id=\"").append(uid).append("-sm-t\" type=\"text\" name=\"summon_entity_type\" "
-                        + "value=\"").append(Http.esc(str(existing == null ? null : existing.get("summonEntityType"))))
-                .append("\" placeholder=\"Exemple : ZOMBIE\"></div>");
-        sb.append(numField(uid, "summon_amount", "Nombre invoqué par déclenchement", existing, "1", null));
-        sb.append(numField(uid, "summon_chance", "Chance par coup reçu (0 à 1)", existing, "0.01", null));
-        sb.append(numField(uid, "summon_cooldown_seconds", "Cooldown (secondes)", existing, "1", null));
-        sb.append(numField(uid, "summon_max_alive", "Renforts vivants max", existing, "1", null));
-        sb.append("<div class=\"form-text\">Ne se déclenche que sur des dégâts effectifs ; jamais de cascade "
-                + "(les renforts eux-mêmes n'invoquent jamais).</div>");
+                        + "value=\"").append(Http.esc("null".equals(summonType) ? "" : summonType))
+                .append("\" list=\"dl-mob-entity\" autocomplete=\"off\">")
+                .append(fieldHelp("Créature invoquée en renfort. Doit être une entité <strong>vivante</strong> "
+                        + "(un projectile ou un wagonnet est refusé). Même liste que le type d'entité du profil.",
+                        "ZOMBIE", "Obligatoire si la capacité est activée", null))
+                .append("</div>");
+        sb.append(numField(uid, "summon_amount", "Nombre de renforts par déclenchement", existing, "1",
+                fieldHelp("Combien de renforts apparaissent à chaque invocation réussie. Nombre entier "
+                                + "strictement supérieur à 0.",
+                        "2", "Obligatoire si la capacité est activée", null)));
+        sb.append(numField(uid, "summon_chance", "Probabilité par coup reçu", existing, "0.01",
+                fieldHelp("Chance de déclencher l'invocation à chaque coup effectivement reçu : 0.25 = une "
+                                + "fois sur quatre en moyenne. <strong>Supérieur à 0 et au plus 1</strong> — 0 est "
+                                + "refusé (une capacité qui ne se déclenche jamais), 1 signifie à chaque coup.",
+                        "0.25", "Obligatoire si la capacité est activée", null)));
+        sb.append(numField(uid, "summon_cooldown_seconds", "Délai minimum entre deux invocations", existing, "1",
+                fieldHelp("Temps d'attente en <strong>secondes</strong> avant qu'une nouvelle invocation soit "
+                                + "possible, même si le tirage réussit. Nombre entier, 0 ou plus : "
+                                + "<strong>0 = aucun délai</strong>, chaque coup peut invoquer.",
+                        "10", "Obligatoire si la capacité est activée", null)));
+        sb.append(numField(uid, "summon_max_alive", "Renforts vivants simultanés", existing, "1",
+                fieldHelp("Plafond de renforts encore en vie <strong>pour ce mob précis</strong> : au plafond, "
+                                + "plus aucune invocation jusqu'à ce que certains meurent. Nombre entier "
+                                + "strictement supérieur à 0.",
+                        "4", "Obligatoire si la capacité est activée", null)));
         sb.append("</div></details>");
 
         sb.append("<button class=\"btn btn-primary\" type=\"submit\">")
@@ -4722,7 +4860,7 @@ public final class AgentPages {
         return "<div class=\"mb-2\"><label class=\"form-label\" for=\"" + uid + "-" + name + "\">" + Http.esc(label) + "</label>"
                 + "<input class=\"form-control\" id=\"" + uid + "-" + name + "\" type=\"text\" name=\"" + name + "\" "
                 + "value=\"" + Http.esc(join(current).equals("—") ? "" : String.join(",", current.stream().map(AgentPages::str).toList()))
-                + "\" placeholder=\"séparés par des virgules\"><div class=\"form-text\">" + Http.esc(help) + "</div></div>";
+                + "\" placeholder=\"séparés par des virgules\">" + help + "</div>";
     }
 
 
@@ -4820,14 +4958,54 @@ public final class AgentPages {
                 .filter(x -> !x.isEmpty()).toList()).orElse(List.of());
     }
 
-    private String numField(String uid, String name, String label, Map<String, Object> existing, String step, String unused) {
+    /**
+     * Champ numérique d'un profil de mob. {@code help} est le bloc d'aide rendu <em>sous</em> le
+     * champ (voir {@link #fieldHelp}) : jamais un placeholder ni une infobulle, qui sont invisibles
+     * sur mobile et disparaissent dès la saisie.
+     *
+     * <p>À la modification, la valeur vient du profil existant ; à la création, le champ reste
+     * <strong>vide</strong> quand le moteur n'a pas de défaut — un préremplissage inventé serait
+     * enregistré tel quel, puisque {@code mob.definition.update} remplace le profil entier.</p>
+     */
+    private String numField(String uid, String name, String label, Map<String, Object> existing, String step,
+                            String help) {
         String value = existing == null ? "" : str(existing.get(toCamel(name)));
         if ("null".equals(value)) {
             value = "";
         }
         return "<div class=\"mb-2\"><label class=\"form-label\" for=\"" + uid + "-" + name + "\">" + Http.esc(label) + "</label>"
                 + "<input class=\"form-control\" id=\"" + uid + "-" + name + "\" type=\"number\" step=\"" + step + "\" "
-                + "name=\"" + name + "\" value=\"" + Http.esc(value) + "\"></div>";
+                + "name=\"" + name + "\" value=\"" + Http.esc(value) + "\">"
+                + (help == null ? "" : help) + "</div>";
+    }
+
+    /**
+     * Bloc d'aide d'un champ de profil de mob : une phrase sur ce que le champ contrôle en jeu,
+     * puis des méta-données courtes et étiquetées — exemple, défaut réellement appliqué par le
+     * moteur, et comportement à vide pour un champ optionnel.
+     *
+     * <p>Les quatre parties sont séparées visuellement et se replient l'une sous l'autre sur
+     * téléphone (voir {@code .fmeta} dans la feuille de style). Toute valeur annoncée ici est
+     * <strong>relevée dans le code du plugin</strong> : quand il n'existe pas de défaut, on écrit
+     * « Obligatoire » ou « Aucun » plutôt que d'en inventer un.</p>
+     *
+     * @param what    ce que le champ contrôle et son effet en jeu (HTML déjà sûr)
+     * @param example exemple de valeur, distinct de ce qui est enregistré ; {@code null} = aucun
+     * @param def     défaut appliqué par le moteur, ou « Obligatoire » / « Aucun »
+     * @param empty   comportement quand le champ est laissé vide ; {@code null} pour un champ obligatoire
+     */
+    private static String fieldHelp(String what, String example, String def, String empty) {
+        StringBuilder sb = new StringBuilder("<div class=\"form-text\">");
+        sb.append(what);
+        sb.append("<span class=\"fmeta\">");
+        if (example != null) {
+            sb.append("<span><b>Exemple</b> ").append(example).append("</span>");
+        }
+        sb.append("<span><b>Défaut</b> ").append(def).append("</span>");
+        if (empty != null) {
+            sb.append("<span><b>Si vide</b> ").append(empty).append("</span>");
+        }
+        return sb.append("</span></div>").toString();
     }
 
     /** {@code creeper_explosion_radius} -> {@code creeperExplosionRadius} (clés JSON de {@code MobProfileSummary}). */

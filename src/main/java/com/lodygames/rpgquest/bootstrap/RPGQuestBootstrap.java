@@ -720,6 +720,8 @@ public final class RPGQuestBootstrap {
                                 customItemRegistry, playerResetService, variableRepository::set,
                                 dialogueEngine, npcIdentityService,
                                 new NpcBindingRepository(databaseService.databaseManager()),
+                                new com.lodygames.rpgquest.database.NpcSkinSourceRepository(
+                                        databaseService.databaseManager()),
                                 npcEngine, new NpcDefinitionStore(npcEngine.directory()),
                                 new QuestGiverStore(plugin.getDataFolder().toPath().resolve("quests")),
                                 this::rpgWorldWhitelist,

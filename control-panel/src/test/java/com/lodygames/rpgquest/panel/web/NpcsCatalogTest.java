@@ -529,6 +529,190 @@ class NpcsCatalogTest {
         }
     }
 
+    // ---- #165 bis : nom en jeu, nom de définition, et couleur du nom ------------------------
+
+    /**
+     * Le cas « Tan » : le PNJ a été renommé en jeu, mais la définition RPGQuest garde son ancien
+     * nom. Le relevé {@code npc.list} ne connaît que la définition — afficher ce nom-là sous le
+     * libellé « Nom en jeu » montrait un nom périmé indéfiniment.
+     */
+    private static final String NPC_RENAMED_IN_GAME = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"withDefinition\":1,\"withoutDefinition\":0,"
+            + "\"bound\":1,\"withWarnings\":0,\"definedIds\":[\"tan\"],\"canonicalIds\":[\"tan\"],"
+            + "\"npcs\":[{\"id\":\"tan\",\"displayName\":\"Ancien Nom\",\"logicalDefinitionPresent\":true,"
+            + "\"citizensBindingPresent\":true,\"citizensNumericId\":9,\"bindingCount\":1,\"enabled\":true,"
+            + "\"description\":null,\"role\":\"villager\",\"definedDialogueId\":\"rpgquest:tan\","
+            + "\"hasDialogue\":true,\"dialogueId\":\"rpgquest:tan\",\"dialogueNodes\":3,\"dialogueChoices\":4,"
+            + "\"dialogueStartsQuests\":[\"rpgquest:first_steps\"],\"questsGiven\":[\"rpgquest:crystal_hunt\"],"
+            + "\"questsReferenced\":[\"rpgquest:crystal_hunt\"],\"sources\":[\"DEFINITION\",\"BINDING\"],"
+            + "\"state\":\"LINKED\",\"warnings\":[]}]}";
+
+    /** Citizens connaît le nom réellement appliqué en jeu. */
+    private static final String CITIZENS_RENAMED = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"available\":0,\"linked\":1,"
+            + "\"citizens\":[{\"numericId\":9,\"uuid\":\"33333333-3333-3333-3333-333333333333\","
+            + "\"name\":\"Nouveau Nom\",\"linkedNpcId\":\"tan\",\"availableForBinding\":false,"
+            + "\"spawned\":true}]}";
+
+    @Test
+    void theInGameNameFieldShowsWhatCitizensReallyAppliedNotTheDefinitionName() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_RENAMED);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // Le champ « Nom en jeu » est prérempli avec le nom Citizens, jamais celui de la définition.
+        assertTrue(page.contains("name=\"name\" maxlength=\"48\" required value=\"Nouveau Nom\"")
+                        || page.contains("value=\"Nouveau Nom\""),
+                "le champ « Nom en jeu » doit porter le nom réellement appliqué");
+        assertFalse(page.contains("name=\"name\" maxlength=\"48\" required value=\"Ancien Nom\""),
+                "le nom de définition ne doit plus servir de nom en jeu");
+        // Les deux noms sont présentés, et distingués par leur fonction.
+        assertTrue(page.contains("nom de la définition RPGQuest"), "la distinction est explicitée");
+        assertTrue(page.contains("npc-ingame"), "le nom en jeu apparaît dans la liste");
+    }
+
+    @Test
+    void theListStaysSearchableByTheNewInGameName() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_RENAMED);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        int item = page.indexOf("data-res-id=\"tan\"");
+        assertTrue(item >= 0, "la fiche du PNJ est rendue");
+        String filterText = page.substring(page.indexOf("data-filter-text=\"", item - 400),
+                page.indexOf("data-res-id=\"tan\"", item));
+        assertTrue(filterText.contains("Nouveau Nom"), "le nouveau nom est cherchable");
+        assertTrue(filterText.contains("Ancien Nom"), "l'ancien nom de définition reste cherchable");
+    }
+
+    @Test
+    void withoutAFreshCitizensSurveyTheFieldIsLeftEmptyRatherThanWrong() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME); // aucun relevé Citizens
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertFalse(page.contains("required value=\"Ancien Nom\""),
+                "mieux vaut un champ vide qu'un nom faux");
+        assertTrue(page.contains("Nom en jeu inconnu"), "l'absence de relevé est dite");
+    }
+
+    @Test
+    void theDefinitionNameUsesTheSharedStyleFieldNotRawTags() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_DETAILS);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // Composant partagé #195 : couleur au clic, aperçu — et le champ soumis garde son nom.
+        assertTrue(page.contains("data-sf-store"), "StyleField rendu");
+        assertTrue(page.contains("data-sf-palette"), "palette de couleurs");
+        assertTrue(page.contains("data-sf-preview"), "aperçu");
+        assertTrue(page.contains("name=\"display_name\""), "le contrat serveur ne change pas");
+        // Un nom déjà écrit en MiniMessage est conservé tel quel dans le champ soumis.
+        assertTrue(page.contains("value=\"&lt;yellow&gt;Garde&lt;/yellow&gt;\""),
+                "le format avancé existant est préservé sans perte");
+    }
+
+    @Test
+    void renamingAnnouncesThatTheSkinIsKept() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_RENAMED);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("ne peut le conserver que s'il connaît sa source"),
+                "la règle réelle de conservation du skin est énoncée");
+        assertTrue(page.contains("renommage est refusé"), "le refus est annoncé avant la tentative");
+    }
+
+    /** Localisation Citizens réelle, avec l'état de présence et la fraîcheur du relevé. */
+    private static final String CITIZENS_WITH_LOCATION = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"available\":0,\"linked\":1,"
+            + "\"citizens\":[{\"numericId\":9,\"uuid\":\"33333333-3333-3333-3333-333333333333\","
+            + "\"name\":\"Nouveau Nom\",\"linkedNpcId\":\"tan\",\"availableForBinding\":false,"
+            + "\"spawned\":true,\"world\":\"world_hub\",\"x\":12.25,\"y\":70.0,\"z\":-33.5,"
+            + "\"yaw\":90.0,\"pitch\":0.0,\"liveLocation\":true}]}";
+
+    /** Même PNJ, non apparu : Citizens n'a qu'une dernière position enregistrée. */
+    private static final String CITIZENS_STORED_ONLY = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"available\":0,\"linked\":1,"
+            + "\"citizens\":[{\"numericId\":9,\"uuid\":\"33333333-3333-3333-3333-333333333333\","
+            + "\"name\":\"Nouveau Nom\",\"linkedNpcId\":\"tan\",\"availableForBinding\":false,"
+            + "\"spawned\":false,\"world\":\"world_hub\",\"x\":12.25,\"y\":70.0,\"z\":-33.5,"
+            + "\"yaw\":90.0,\"pitch\":0.0,\"liveLocation\":false}]}";
+
+    @Test
+    void theCardAndTheListShowTheRealCitizensLocation() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_WITH_LOCATION);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Localisation"), "la fiche a une section Localisation");
+        assertTrue(page.contains("world_hub"), "le monde réel est affiché");
+        assertTrue(page.contains("12.2") || page.contains("12.3"), "X affiché (arrondi au dixième)");
+        assertTrue(page.contains("70.0"), "Y affiché");
+        assertTrue(page.contains("-33.5"), "Z affiché");
+        assertTrue(page.contains("yaw 90.0"), "orientation dans la fiche");
+        assertTrue(page.contains("présent en jeu"), "état de présence");
+        assertTrue(page.contains("npc-loc"), "résumé compact dans la liste");
+        assertTrue(page.contains("<b>Relevé</b> il y a"), "fraîcheur du relevé");
+        assertTrue(page.contains("position de l'entité réellement présente"), "source de la position");
+    }
+
+    @Test
+    void anUnspawnedNpcShowsAStoredPositionNotAPresence() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_STORED_ONLY);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("non apparu"), "l'absence de présence est dite");
+        assertTrue(page.contains("ne prouve "), "la position enregistrée ne vaut pas présence");
+        assertFalse(page.contains("présent en jeu"), "aucune présence affirmée à tort");
+    }
+
+    @Test
+    void withoutACitizensSurveyTheLocationSaysWhyItIsUnknown() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME); // aucun relevé Citizens
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Position inconnue"), "l'absence de position est dite");
+        assertTrue(page.contains("aucun relevé Citizens"), "et sa raison");
+    }
+
+    @Test
+    void theSkinFormOffersBothSupportedSourcesWithTheirLimits() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_WITH_LOCATION);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("name=\"skin_source\""), "sélecteur de source");
+        assertTrue(page.contains("name=\"skin_url\""), "champ lien MineSkin");
+        assertTrue(page.contains("name=\"skin_player\""), "champ pseudo Minecraft");
+        assertTrue(page.contains("RPGQuest ne télécharge rien"), "aucun appel réseau côté RPGQuest");
+        assertTrue(page.contains("ne peut pas garantir que le compte"), "limite du pseudo énoncée");
+        assertTrue(page.contains("enregistre sa source"), "le lien avec le renommage est dit");
+    }
+
+    @Test
+    void renamingNeverTouchesTheLogicalIdNorTheDialogueAndQuestLinks() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_RENAMED);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // L'action postée ne porte que l'id logique et le nouveau nom : rien d'autre ne peut bouger.
+        assertTrue(page.contains("name=\"type\" value=\"npc.citizens.rename\""), "action de renommage");
+        assertTrue(page.contains("name=\"npc_id\" value=\"tan\""), "ciblage par id logique");
+        // Et les liens restent affichés sur la fiche.
+        assertTrue(page.contains("rpgquest:tan"), "lien dialogue conservé");
+        assertTrue(page.contains("rpgquest:crystal_hunt"), "lien quête conservé");
+    }
+
     private void runListWithSuccess(String details) throws Exception {
         runListWithSuccess("npc.list", details);
     }

@@ -48,7 +48,7 @@ class PlayerAdminActionsTest {
         hubTarget = Optional.of(new Location(hubWorld, 100.5, 70, -200.5));
 
         actions = new BukkitAgentActions(plugin, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null,
                 () -> "wild",
                 new ServerOpsService(plugin, new ServerLogBuffer(50), Optional::empty),
                 null,

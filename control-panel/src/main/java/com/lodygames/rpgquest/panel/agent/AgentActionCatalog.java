@@ -22,6 +22,8 @@ public final class AgentActionCatalog {
     private static final Pattern RESOURCE_ID = Pattern.compile("[a-zA-Z0-9_.:\\-/]{1,128}");
     private static final Pattern STORY_ID = Pattern.compile("[a-z0-9_-]{1,64}");
     private static final Pattern NPC_ID = Pattern.compile("[a-z0-9._-]{1,64}");
+    /** Pseudo Minecraft : même forme que côté plugin (revalidée là-bas). */
+    private static final Pattern MINECRAFT_NAME = Pattern.compile("[A-Za-z0-9_]{3,16}");
     /** Clé courte (auto-préfixée {@code rpgquest:} à la création) OU identifiant namespacé complet
      * ({@code NamespacedKey#asString()}, ex. {@code rpgquest:creeper_pig}) tel que renvoyé par
      * {@code mob.list} et réinjecté par les formulaires d'édition/bascule/spawn de test -- le « : »
@@ -195,7 +197,7 @@ public final class AgentActionCatalog {
         // touchent jamais l'identité logique RPGQuest ni les liaisons de contenu.
         addContentWrite("npc.citizens.rename", Permission.NPC_BIND_WRITE, "Renommer le PNJ en jeu",
                 "npc.list", "npc.citizens.list");
-        addContentWrite("npc.citizens.skin", Permission.NPC_BIND_WRITE, "Appliquer un skin MineSkin",
+        addContentWrite("npc.citizens.skin", Permission.NPC_BIND_WRITE, "Appliquer un skin",
                 "npc.list", "npc.citizens.list");
         addContentWrite("dialogue.definition.create", Permission.DIALOGUE_WRITE, "Créer un dialogue (squelette)",
                 "dialogue.list");
@@ -471,15 +473,33 @@ public final class AgentActionCatalog {
                 if (!NPC_ID.matcher(npcId).matches()) {
                     return Validation.fail("Identifiant de PNJ manquant ou invalide.");
                 }
-                // Uniquement un lien MineSkin : jamais une commande libre, jamais une autre URL.
-                // Revalidé côté plugin — le navigateur n'est pas une source de confiance.
-                String url = trim(form.get("skin_url"));
-                if (!MINESKIN_URL.matcher(url).matches()) {
-                    return Validation.fail("Lien MineSkin invalide. Format attendu : "
-                            + "https://minesk.in/<identifiant> (coller le lien, pas la commande).");
+                // Deux sources, et seulement deux : un lien MineSkin, ou un pseudo Minecraft que
+                // Citizens résout lui-même. Jamais une commande libre, jamais une autre URL.
+                // Tout est revalidé côté plugin — le navigateur n'est pas une source de confiance.
+                String source = trim(form.get("skin_source")).toLowerCase(java.util.Locale.ROOT);
+                if (source.isEmpty()) {
+                    source = "url";
+                }
+                if (!source.equals("url") && !source.equals("player")) {
+                    return Validation.fail("Source de skin inconnue (lien MineSkin ou pseudo Minecraft).");
                 }
                 params.put("npc_id", npcId);
-                params.put("skin_url", url);
+                params.put("skin_source", source);
+                if (source.equals("player")) {
+                    String player = trim(form.get("skin_player"));
+                    if (!MINECRAFT_NAME.matcher(player).matches()) {
+                        return Validation.fail("Pseudo Minecraft invalide : 3 à 16 caractères, "
+                                + "lettres, chiffres et « _ » uniquement.");
+                    }
+                    params.put("skin_player", player);
+                } else {
+                    String url = trim(form.get("skin_url"));
+                    if (!MINESKIN_URL.matcher(url).matches()) {
+                        return Validation.fail("Lien MineSkin invalide. Format attendu : "
+                                + "https://minesk.in/<identifiant> (coller le lien, pas la commande).");
+                    }
+                    params.put("skin_url", url);
+                }
             }
             case "npc.citizens.create" -> {
                 String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);

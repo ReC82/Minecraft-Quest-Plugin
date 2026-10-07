@@ -49,7 +49,7 @@ class BukkitAgentActionsMobTest {
         MobSpawnSettingsStore mobSpawnSettingsStore = new MobSpawnSettingsStore(mobsDir, plugin.getSLF4JLogger());
 
         actions = new BukkitAgentActions(plugin, null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, mobRegistry, null, mobDefinitionStore, mobSpawnSettingsStore,
+                null, null, null, null, null, null, null, mobRegistry, null, mobDefinitionStore, mobSpawnSettingsStore,
                 () -> "wild",
                 new ServerOpsService(plugin, new ServerLogBuffer(50), java.util.Optional::empty),
                 null, java.util.Optional::empty, null, null);

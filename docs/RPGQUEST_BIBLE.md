@@ -2259,6 +2259,56 @@ commande `/npc skin --url …` est explicitement refusé : l'action n'est pas un
 visuelle reste un test en jeu. En cas de refus (PNJ introuvable, type sans skin), le skin précédent
 est conservé.
 
+#### Nom et apparence réellement indépendants (correctif)
+
+**Trois défauts constatés en production, sur le PNJ « Tan ».**
+
+**1. Renommer changeait aussi le skin.** Ce n'était ni le panel ni l'action agent — les deux
+chemins sont bien séparés — mais Citizens lui-même : un PNJ de type `PLAYER` **sans skin
+explicite dérive son apparence de son nom**, donc `NPC#setName(...)` la change par effet de bord.
+
+Correctif : avant tout renommage, l'apparence est **rattachée explicitement**, puis le nom est
+changé. Deux cas, et aucun n'applique un skin neuf :
+
+- une **source enregistrée** existe (un lien MineSkin posé depuis le panel) → elle est réappliquée ;
+- aucune source connue → l'apparence est rattachée à l'**ancien nom**, dont elle était déjà
+  dérivée : les joueurs voient exactement la même chose qu'avant.
+
+Pour savoir quoi réappliquer, RPGQuest mémorise **sa propre** source d'apparence
+(`npc_citizens_skins`, migration **V27**) plutôt que de lire les métadonnées internes de Citizens,
+dont les clés ne font pas partie de `citizensapi` et changeraient en silence. Rien n'est appliqué
+proactivement : **un PNJ existant n'est jamais rhabillé tant qu'on ne le renomme pas**.
+
+Symétriquement, appliquer un skin ne touche pas au nom — l'action ne fait que poser le skin — et
+les deux réglages survivent à un rechargement comme à un redémarrage (Citizens persiste les siens,
+la table V27 persiste la source).
+
+Si l'ancrage échoue, le renommage réussit quand même mais le message le **dit explicitement** au
+lieu de laisser croire que le skin est conservé.
+
+**2. Colorer le nom imposait d'écrire des balises.** Le champ « Nom du PNJ » de la définition
+utilise désormais le composant partagé **`StyleField`** (#195), comme les noms de mobs et les
+textes de dialogue : couleur au clic, styles, aperçu. Le champ soumis garde son nom et sa valeur
+MiniMessage — ni l'action agent ni le plugin ne voient de différence — et un nom déjà écrit en
+plusieurs styles est conservé tel quel. Aucun composant parallèle n'a été créé.
+
+**3. Le panel affichait un nom périmé.** Ce n'était pas un cache : le `displayName` d'une ligne
+`npc.list` est le nom de la **définition** RPGQuest (ou, à défaut, le locuteur du dialogue), et
+n'est **jamais** lu depuis Citizens. L'afficher sous le libellé « Nom en jeu » montrait donc un nom
+qui ne pouvait pas changer, quel que soit le nombre de rafraîchissements.
+
+Les deux noms ont des fonctions différentes et sont désormais présentés comme tels :
+
+| | Sert à | Se change dans |
+|---|---|---|
+| **Nom de définition** (`npcs/<id>.yml`) | catalogues du panel, locuteur par défaut des dialogues | « Modifier » |
+| **Nom en jeu** (Citizens) | ce que les joueurs lisent au-dessus du PNJ | « Nom en jeu & apparence » |
+
+Le champ « Nom en jeu » est prérempli depuis le relevé **`npc.citizens.list`**, et la liste affiche
+le nom en jeu à côté du nom de définition **quand ils diffèrent** (les deux restent cherchables).
+Sans relevé Citizens récent, le champ est **laissé vide** avec la raison — jamais prérempli avec un
+autre nom.
+
 ### Hache du kit interceptée par WorldEdit (issue #192) — correctif de **configuration serveur**
 
 Symptôme en jeu : casser une bûche avec la **hache en bois du kit** (#26) affiche « Première position définie en (…) » et ne casse pas le bloc.

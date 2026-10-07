@@ -56,8 +56,35 @@ final class CitizensNpcBridge {
         return npc == null ? Optional.empty() : Optional.of(toSummary(npc));
     }
 
+    /**
+     * Vue admin d'un PNJ Citizens, position comprise.
+     *
+     * <p>Deux sources de position, volontairement distinguées : l'entité réellement présente quand
+     * le PNJ est apparu, sinon {@code NPC#getStoredLocation()} — la <strong>dernière position
+     * enregistrée</strong> par Citizens, qui ne prouve aucune présence. Aucun monde n'est chargé et
+     * aucun chunk n'est forcé : on ne lit que ce que Citizens a déjà en mémoire.</p>
+     */
     private static CitizensNpc toSummary(NPC npc) {
-        return new CitizensNpc(npc.getId(), npc.getUniqueId(), npc.getName(), npc.isSpawned());
+        boolean spawned = npc.isSpawned();
+        Location location = null;
+        boolean live = false;
+        if (spawned) {
+            Entity entity = npc.getEntity();
+            if (entity != null) {
+                location = entity.getLocation();
+                live = true;
+            }
+        }
+        if (location == null) {
+            location = npc.getStoredLocation();
+        }
+        if (location == null || location.getWorld() == null) {
+            return new CitizensNpc(npc.getId(), npc.getUniqueId(), npc.getName(), spawned,
+                    null, 0, 0, 0, 0f, 0f, false);
+        }
+        return new CitizensNpc(npc.getId(), npc.getUniqueId(), npc.getName(), spawned,
+                location.getWorld().getName(), location.getX(), location.getY(), location.getZ(),
+                location.getYaw(), location.getPitch(), live);
     }
 
     // ---- Création + rollback (issue #81, phase 2) --------------------------------------------
@@ -101,6 +128,33 @@ final class CitizensNpcBridge {
         return true;
     }
 
+    /** Nom en jeu actuel du PNJ Citizens, lu dans le registre. <strong>Thread principal.</strong> */
+    Optional<String> nameByUuid(UUID uuid) {
+        NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(uuid);
+        return npc == null ? Optional.empty() : Optional.ofNullable(npc.getName());
+    }
+
+    /**
+     * Type d'entité du PNJ, lu par le trait public {@code MobType}.
+     *
+     * <p>Sert à savoir si l'apparence est <strong>pilotée par un skin</strong> : seul un PNJ de type
+     * {@code PLAYER} porte un skin, et c'est le seul dont le nom influence l'apparence. Un PNJ
+     * villageois ou zombie n'a pas de skin du tout — son renommage est donc sans risque.</p>
+     */
+    Optional<EntityType> typeByUuid(UUID uuid) {
+        NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(uuid);
+        if (npc == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.ofNullable(npc.getOrAddTrait(net.citizensnpcs.api.trait.trait.MobType.class))
+                    .map(net.citizensnpcs.api.trait.trait.MobType::getType);
+        } catch (RuntimeException e) {
+            // Trait indisponible : on préfère « inconnu » à une supposition.
+            return Optional.empty();
+        }
+    }
+
     /**
      * Issue #165 — change le <strong>nom affiché en jeu</strong> d'un PNJ Citizens, ciblé par son
      * UUID (identité stable), jamais par son nom ni par une sélection globale.
@@ -120,6 +174,33 @@ final class CitizensNpcBridge {
         npc.setName(newName);
         CitizensAPI.getNPCRegistry().saveToStore();
         return Optional.of(previous);
+    }
+
+    /**
+     * Réapplique une apparence par la commande structurée {@code /npc skin <nom>}.
+     *
+     * <p>Sert uniquement à <strong>reconduire</strong> ce qui s'appliquait déjà : un PNJ Citizens
+     * de type {@code PLAYER} sans skin explicite dérive son apparence de son nom, donc après un
+     * renommage il faut rattacher explicitement l'ancien nom pour que les joueurs voient la même
+     * chose qu'avant. Ce n'est jamais un skin neuf.</p>
+     *
+     * <p>Même discipline de ciblage que {@link #applySkinUrlByUuid} : on sélectionne explicitement
+     * le PNJ visé pour la console juste avant et on désélectionne juste après, dans le même passage
+     * sur le thread principal — jamais à la merci d'une sélection préexistante.</p>
+     */
+    boolean applySkinNameByUuid(UUID uuid, String skinName) {
+        NPC npc = CitizensAPI.getNPCRegistry().getByUniqueId(uuid);
+        if (npc == null) {
+            return false;
+        }
+        var console = org.bukkit.Bukkit.getConsoleSender();
+        var selector = CitizensAPI.getDefaultNPCSelector();
+        try {
+            selector.select(console, npc);
+            return org.bukkit.Bukkit.dispatchCommand(console, "npc skin " + skinName);
+        } finally {
+            selector.deselect(console);
+        }
     }
 
     /**

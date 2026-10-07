@@ -1284,17 +1284,24 @@ public final class AgentActionExecutor {
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
-    /** {@code npc.citizens.skin} (#165) : URL MineSkin uniquement, validée côté plugin. */
+    /**
+     * {@code npc.citizens.skin} (#165) : lien MineSkin <em>ou</em> pseudo Minecraft, revalidé côté
+     * plugin. {@code skin_source} vaut {@code url} (défaut, rétrocompatible) ou {@code player}.
+     */
     private CompletableFuture<AgentActionOutcome> npcCitizensSkin(AgentAction action) {
         String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
         if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
         }
-        String url = firstNonBlank(action.param("skin_url"), action.param("url"));
-        if (url == null) {
-            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « skin_url » manquant."));
+        boolean byPlayerName = "player".equalsIgnoreCase(trimOrNull(action.param("skin_source")));
+        String value = byPlayerName
+                ? firstNonBlank(action.param("skin_player"), action.param("skin_url"), action.param("url"))
+                : firstNonBlank(action.param("skin_url"), action.param("url"));
+        if (value == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    byPlayerName ? "Paramètre « skin_player » manquant." : "Paramètre « skin_url » manquant."));
         }
-        return actions.citizensSkin(npcId, url)
+        return actions.citizensSkin(npcId, value, byPlayerName)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }

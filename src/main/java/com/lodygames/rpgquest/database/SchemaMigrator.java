@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 26;
+    public static final int CURRENT_VERSION = 27;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -58,7 +58,8 @@ public final class SchemaMigrator {
             new SchemaMigration(23, "waypoints.display_name noms lisibles", SchemaMigrator::applyV23),
             new SchemaMigration(24, "dialogue_node_reads", SchemaMigrator::applyV24),
             new SchemaMigration(25, "quest_reward_grants", SchemaMigrator::applyV25),
-            new SchemaMigration(26, "quest_reward_grants.status (dettes récupérables)", SchemaMigrator::applyV26));
+            new SchemaMigration(26, "quest_reward_grants.status (dettes récupérables)", SchemaMigrator::applyV26),
+            new SchemaMigration(27, "npc_citizens_skins", SchemaMigrator::applyV27));
 
     private SchemaMigrator() {
     }
@@ -403,6 +404,36 @@ public final class SchemaMigrator {
                         citizens_numeric_id INTEGER NOT NULL,
                         npc_id TEXT NOT NULL,
                         created_at TEXT NOT NULL
+                    )
+                    """));
+        }
+    }
+
+    /**
+     * Issue #165 bis — source de skin d'un PNJ Citizens, telle que RPGQuest l'a appliquée.
+     *
+     * <p><strong>Pourquoi mémoriser ce que Citizens sait déjà.</strong> Un PNJ Citizens de type
+     * {@code PLAYER} sans skin explicite tire son apparence de son <em>nom</em> : le renommer
+     * change donc le skin, ce qui n'est jamais ce qu'un administrateur demande en renommant. Pour
+     * reconduire l'apparence au travers d'un renommage, il faut savoir quel skin était appliqué.
+     * Citizens le stocke dans des métadonnées internes dont les clés ne font pas partie de
+     * {@code citizensapi} : s'y coupler serait fragile. On enregistre donc notre propre source,
+     * celle que nous avons nous-mêmes appliquée, et on la réapplique par la commande structurée
+     * officielle.</p>
+     *
+     * <p>{@code source_kind} vaut {@code URL} (lien MineSkin appliqué depuis le panel) ou
+     * {@code NAME} (nom dont l'apparence était dérivée avant un renommage — reconduite à
+     * l'identique, jamais un skin neuf). {@code citizens_uuid} est la même clé stable que
+     * {@code npc_citizens_bindings}.</p>
+     */
+    private static void applyV27(Connection connection, SqlDialect dialect) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS npc_citizens_skins (
+                        citizens_uuid TEXT PRIMARY KEY,
+                        source_kind TEXT NOT NULL,
+                        source_value TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
                     )
                     """));
         }

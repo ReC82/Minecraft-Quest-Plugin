@@ -293,14 +293,35 @@ public interface AgentActions {
      * façon asynchrone, donc le succès renvoyé signifie « demande acceptée et transmise », pas
      * « skin visuellement confirmé ».
      */
-    CompletableFuture<MutationResult> citizensSkin(String npcId, String minesSkinUrl);
+    /**
+     * Applique un skin au PNJ Citizens lié. {@code byPlayerName} choisit la source : un pseudo
+     * Minecraft résolu par Citizens, ou un lien MineSkin. Le <strong>nom en jeu n'est jamais
+     * touché</strong>. La source appliquée est enregistrée, pour pouvoir être reconduite lors d'un
+     * renommage ultérieur.
+     */
+    CompletableFuture<MutationResult> citizensSkin(String npcId, String value, boolean byPlayerName);
 
     /**
      * Un PNJ Citizens du registre (action {@code npc.citizens.list}). {@code linkedNpcId} = id
      * logique RPGQuest déjà lié à ce PNJ, ou {@code null}. Aucune position/monde (registre seul).
      */
+    /**
+     * @param world        monde de la position connue, {@code null} si Citizens n'en a aucune.
+     * @param liveLocation {@code true} = position de l'entité réellement présente ; {@code false} =
+     *                     dernière position enregistrée pour un PNJ non apparu (ne prouve rien sur
+     *                     sa présence actuelle).
+     */
     record CitizensNpcSummary(int numericId, String uuid, String name, String linkedNpcId,
-                              boolean availableForBinding, boolean spawned) {
+                              boolean availableForBinding, boolean spawned,
+                              String world, Double x, Double y, Double z, Float yaw, Float pitch,
+                              boolean liveLocation) {
+
+        /** Entrée sans position connue — les chemins qui n'en ont pas besoin, et les tests. */
+        CitizensNpcSummary(int numericId, String uuid, String name, String linkedNpcId,
+                           boolean availableForBinding, boolean spawned) {
+            this(numericId, uuid, name, linkedNpcId, availableForBinding, spawned,
+                    null, null, null, null, null, null, false);
+        }
     }
 
     record CitizensRosterView(boolean citizensAvailable, List<CitizensNpcSummary> citizens,

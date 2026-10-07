@@ -1132,6 +1132,7 @@ class AgentActionExecutorTest {
         String lastRenameName;
         String lastSkinNpcId;
         String lastSkinUrl;
+        boolean lastSkinByPlayerName;
 
         @Override
         public CompletableFuture<MutationResult> questGiverSet(String questId, String npcId) {
@@ -1180,10 +1181,11 @@ class AgentActionExecutorTest {
         }
 
         @Override
-        public CompletableFuture<MutationResult> citizensSkin(String npcId, String minesSkinUrl) {
+        public CompletableFuture<MutationResult> citizensSkin(String npcId, String value, boolean byPlayerName) {
             lastSkinNpcId = npcId;
-            lastSkinUrl = minesSkinUrl;
-            return mutation("skin " + npcId + " -> " + minesSkinUrl);
+            lastSkinUrl = value;
+            lastSkinByPlayerName = byPlayerName;
+            return mutation("skin " + npcId + " -> " + (byPlayerName ? "pseudo " : "") + value);
         }
 
         @Override

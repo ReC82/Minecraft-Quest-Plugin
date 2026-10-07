@@ -10,6 +10,7 @@ import com.lodygames.rpgquest.content.pack.ContentPackSerializer;
 import com.lodygames.rpgquest.content.reload.ContentReloadService;
 import com.lodygames.rpgquest.content.reload.ReloadFamily;
 import com.lodygames.rpgquest.database.NpcBindingRepository;
+import com.lodygames.rpgquest.database.NpcSkinSourceRepository;
 import com.lodygames.rpgquest.database.WalletRepository;
 import com.lodygames.rpgquest.economy.EconomyService;
 import com.lodygames.rpgquest.economy.QuestRewardDue;
@@ -65,6 +66,7 @@ import com.lodygames.rpgquest.npc.CitizensSpawnPlanner;
 import com.lodygames.rpgquest.npc.NpcCatalog;
 import com.lodygames.rpgquest.npc.NpcDefinitionStore;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
+import com.lodygames.rpgquest.npc.SkinPreservationPlanner;
 import com.lodygames.rpgquest.npc.NpcLoadIssue;
 import com.lodygames.rpgquest.npc.QuestGiverStore;
 import com.lodygames.rpgquest.npc.YamlNpcEngine;
@@ -150,6 +152,8 @@ public final class BukkitAgentActions implements AgentActions {
     private final YamlDialogueEngine dialogueEngine;
     private final NpcIdentityService npcIdentityService;
     private final NpcBindingRepository npcBindingRepository;
+    /** Source d'apparence enregistrée par RPGQuest, pour la reconduire au travers d'un renommage. */
+    private final NpcSkinSourceRepository npcSkinSourceRepository;
     private final YamlNpcEngine npcEngine;
     private final NpcDefinitionStore npcStore;
     private final QuestGiverStore questGiverStore;
@@ -188,6 +192,7 @@ public final class BukkitAgentActions implements AgentActions {
                               YamlCustomItemRegistry customItemRegistry, PlayerResetService playerResetService,
                               PlayerVariableWriter variableWriter, YamlDialogueEngine dialogueEngine,
                               NpcIdentityService npcIdentityService, NpcBindingRepository npcBindingRepository,
+                              NpcSkinSourceRepository npcSkinSourceRepository,
                               YamlNpcEngine npcEngine, NpcDefinitionStore npcStore, QuestGiverStore questGiverStore,
                               Supplier<Set<String>> allowedSpawnWorlds, DialogueDefinitionStore dialogueStore,
                               DialogueDefinitionEditor dialogueEditor, WaypointService waypointService,
@@ -208,6 +213,7 @@ public final class BukkitAgentActions implements AgentActions {
         this.dialogueEngine = dialogueEngine;
         this.npcIdentityService = npcIdentityService;
         this.npcBindingRepository = npcBindingRepository;
+        this.npcSkinSourceRepository = npcSkinSourceRepository;
         this.npcEngine = npcEngine;
         this.npcStore = npcStore;
         this.questGiverStore = questGiverStore;
@@ -764,18 +770,103 @@ public final class BukkitAgentActions implements AgentActions {
                 return done(MutationResult.of(false, "NO_CITIZENS_BINDING",
                         "Aucun PNJ Citizens lié à « " + safe(npcId) + " » — le lier d'abord."));
             }
-            return onMain(() -> {
-                Optional<String> previous = npcIdentityService.renameCitizensFor(uuid.get(), name);
-                if (previous.isEmpty()) {
-                    return done(MutationResult.of(false, "CITIZENS_NPC_MISSING",
-                            "Le PNJ Citizens lié est introuvable dans le registre (supprimé ?)."));
-                }
-                return done(new MutationResult(true, "RENAMED",
-                        "Nom en jeu : « " + previous.get() + " » → « " + name + " ». "
-                                + "Identifiant logique et liaisons inchangés.",
-                        List.of("citizens:name=" + name)));
-            });
+            UUID citizensUuid = uuid.get();
+            // Le skin doit survivre au renommage. Un PNJ Citizens de type PLAYER sans skin explicite
+            // dérive son apparence de son NOM : setName() la changerait donc aussi, ce que personne
+            // ne demande en corrigeant un nom. On rattache l'apparence AVANT de renommer — à la
+            // source enregistrée si nous en avons une, sinon à l'ancien nom, ce qui reconduit à
+            // l'identique ce que les joueurs voyaient déjà (jamais un skin neuf).
+            return npcSkinSourceRepository.find(citizensUuid)
+                    .thenCompose(recorded -> onMain(() -> done(renameKeepingSkin(citizensUuid, name, recorded))))
+                    .thenCompose(outcome -> outcome.record() == null
+                            ? done(outcome.result())
+                            : npcSkinSourceRepository
+                                    .save(citizensUuid, outcome.record().kind(), outcome.record().value())
+                                    .thenApply(ignored -> outcome.result()));
         });
+    }
+
+    /**
+     * Résultat d'un renommage, plus — le cas échéant — la source d'apparence à mémoriser une fois
+     * l'opération réussie. La base est asynchrone et le registre Citizens est strictement
+     * thread-principal : séparer les deux évite d'écrire une source qui n'aurait jamais été
+     * appliquée.
+     */
+    private record RenameOutcome(MutationResult result, NpcSkinSourceRepository.SkinSource record) {
+    }
+
+    /**
+     * Thread principal : décide si le renommage est sûr pour l'apparence, puis renomme.
+     *
+     * <p><strong>Ce que Citizens permet réellement de savoir.</strong> L'artefact
+     * {@code citizensapi} — la seule dépendance Citizens de ce projet — <strong>n'expose aucune
+     * API de skin</strong> : ni {@code SkinTrait}, ni clé de skin dans l'enum public
+     * {@code NPC.Metadata} (vérifié sur {@code citizensapi:2.0.43}). Il est donc
+     * <strong>impossible</strong> de lire le skin actuellement appliqué à un PNJ, et donc de le
+     * restituer, sauf si c'est nous qui l'avons posé et enregistré.</p>
+     *
+     * <p>Conséquence assumée, plutôt qu'une préservation prétendue :</p>
+     * <ul>
+     *   <li>PNJ <strong>non joueur</strong> (villageois, zombie…) : aucun skin en jeu, le nom
+     *       n'influence rien → renommage libre ;</li>
+     *   <li>PNJ joueur avec une <strong>source enregistrée</strong> par le panel : elle est
+     *       réappliquée avant le renommage → apparence réellement conservée ;</li>
+     *   <li>PNJ joueur <strong>sans source connue</strong> (skin posé directement via Citizens, ou
+     *       antérieur à la migration V27) : on <strong>refuse</strong>. Rattacher l'ancien nom
+     *       écraserait un éventuel skin explicite par une texture dérivée d'un pseudo — un
+     *       remplacement silencieux. Mieux vaut refuser et dire quoi faire.</li>
+     * </ul>
+     */
+    private RenameOutcome renameKeepingSkin(UUID citizensUuid, String name,
+                                            Optional<NpcSkinSourceRepository.SkinSource> recorded) {
+        Optional<String> before = npcIdentityService.citizensNameOf(citizensUuid);
+        if (before.isEmpty()) {
+            return new RenameOutcome(MutationResult.of(false, "CITIZENS_NPC_MISSING",
+                    "Le PNJ Citizens lié est introuvable dans le registre (supprimé ?)."), null);
+        }
+        String previousName = before.get();
+
+        // Décision isolée dans une classe pure (testable sans Citizens) : voir SkinPreservationPlanner.
+        SkinPreservationPlanner.Plan plan = SkinPreservationPlanner.plan(
+                npcIdentityService.citizensIsPlayerType(citizensUuid), recorded.isPresent());
+        if (!plan.allowsRename()) {
+            return new RenameOutcome(MutationResult.of(false, plan.code(), plan.message()), null);
+        }
+        if (plan.decision() == SkinPreservationPlanner.Decision.RENAME_FREELY) {
+            return renameOnly(citizensUuid, name, previousName, " " + plan.message(),
+                    "citizens:skin-preserved=not-applicable");
+        }
+
+        NpcSkinSourceRepository.SkinSource source = recorded.orElseThrow();
+        boolean anchored = source.kind() == NpcSkinSourceRepository.Kind.URL
+                ? npcIdentityService.applyCitizensSkin(citizensUuid, source.value())
+                : npcIdentityService.pinCitizensSkinToName(citizensUuid, source.value());
+        if (!anchored) {
+            // Échec d'ancrage : ne jamais renommer derrière, et ne jamais rendre un faux succès.
+            return new RenameOutcome(MutationResult.of(false, "SKIN_ANCHOR_FAILED",
+                    "Renommage annulé : Citizens a refusé de réappliquer le skin enregistré avant "
+                            + "le renommage. Aucun nom n'a été changé, l'apparence est intacte."), null);
+        }
+        return renameOnly(citizensUuid, name, previousName,
+                " Skin conservé : la source enregistrée a été réappliquée avant le renommage.",
+                "citizens:skin-preserved=recorded");
+    }
+
+    /** Renomme, une fois la question de l'apparence tranchée. Thread principal. */
+    private RenameOutcome renameOnly(UUID citizensUuid, String name, String previousName,
+                                     String note, String effect) {
+        Optional<String> previous = npcIdentityService.renameCitizensFor(citizensUuid, name);
+        if (previous.isEmpty()) {
+            return new RenameOutcome(MutationResult.of(false, "CITIZENS_NPC_MISSING",
+                    "Le PNJ Citizens lié est introuvable dans le registre (supprimé ?)."), null);
+        }
+        List<String> effects = new ArrayList<>();
+        effects.add("citizens:name=" + name);
+        effects.add(effect);
+        return new RenameOutcome(new MutationResult(true, "RENAMED",
+                "Nom en jeu : « " + previousName + " » → « " + name + " ». "
+                        + "Identifiant logique et liaisons inchangés." + note,
+                effects), null);
     }
 
     /**
@@ -783,9 +874,15 @@ public final class BukkitAgentActions implements AgentActions {
      * commande libre venue du navigateur) et le PNJ est ciblé par la liaison persistée.
      */
     @Override
-    public CompletableFuture<MutationResult> citizensSkin(String npcId, String minesSkinUrl) {
-        String url = minesSkinUrl == null ? "" : minesSkinUrl.trim();
-        if (!NpcIdentityService.isValidMineSkinUrl(url)) {
+    public CompletableFuture<MutationResult> citizensSkin(String npcId, String value, boolean byPlayerName) {
+        String raw = value == null ? "" : value.trim();
+        if (byPlayerName) {
+            if (!NpcIdentityService.isValidSkinPlayerName(raw)) {
+                return done(MutationResult.of(false, "INVALID_PLAYER_NAME",
+                        "Pseudo Minecraft invalide. Format accepté : 3 à 16 caractères, lettres, "
+                                + "chiffres et « _ »."));
+            }
+        } else if (!NpcIdentityService.isValidMineSkinUrl(raw)) {
             return done(MutationResult.of(false, "INVALID_URL",
                     "Lien MineSkin invalide. Format accepté : https://minesk.in/<identifiant>."));
         }
@@ -797,20 +894,33 @@ public final class BukkitAgentActions implements AgentActions {
                 return done(MutationResult.of(false, "NO_CITIZENS_BINDING",
                         "Aucun PNJ Citizens lié à « " + safe(npcId) + " » — le lier d'abord."));
             }
+            UUID citizensUuid = uuid.get();
             return onMain(() -> {
-                boolean accepted = npcIdentityService.applyCitizensSkin(uuid.get(), url);
+                boolean accepted = byPlayerName
+                        ? npcIdentityService.pinCitizensSkinToName(citizensUuid, raw)
+                        : npcIdentityService.applyCitizensSkin(citizensUuid, raw);
                 if (!accepted) {
                     return done(MutationResult.of(false, "SKIN_REFUSED",
                             "Citizens a refusé la demande de skin (PNJ introuvable, ou type de PNJ "
                                     + "sans skin). Le skin précédent est conservé."));
                 }
-                // Citizens télécharge le skin de façon asynchrone : on ne peut honnêtement
-                // confirmer que la PRISE EN COMPTE, pas le rendu visuel.
+                // Citizens résout et télécharge lui-même, de façon asynchrone : RPGQuest ne fait
+                // aucun appel réseau et ne peut donc honnêtement confirmer que la PRISE EN COMPTE,
+                // jamais le rendu visuel ni l'existence du compte visé.
                 return done(new MutationResult(true, "SKIN_REQUESTED",
-                        "Demande de skin transmise à Citizens. L'application est asynchrone : "
-                                + "vérifier en jeu (reconnexion éventuelle du client).",
-                        List.of("citizens:skin-url=" + url)));
-            });
+                        "Demande de skin transmise à Citizens (" + (byPlayerName ? "pseudo " : "lien ")
+                                + raw + "). La résolution est asynchrone et faite par Citizens : "
+                                + "vérifier en jeu. Le nom en jeu n'est pas modifié, et cette source "
+                                + "sera reconduite lors d'un renommage.",
+                        List.of(byPlayerName ? "citizens:skin-player=" + raw : "citizens:skin-url=" + raw)));
+            }).thenCompose(result -> result.ok()
+                    ? npcSkinSourceRepository
+                            .save(citizensUuid,
+                                    byPlayerName ? NpcSkinSourceRepository.Kind.NAME
+                                            : NpcSkinSourceRepository.Kind.URL,
+                                    raw)
+                            .thenApply(ignored -> result)
+                    : done(result));
         });
     }
 
@@ -848,7 +958,12 @@ public final class BukkitAgentActions implements AgentActions {
                         linked++;
                     }
                     rows.add(new CitizensNpcSummary(n.numericId(), n.uuid().toString(), n.name(),
-                            linkedNpcId, free, n.spawned()));
+                            linkedNpcId, free, n.spawned(),
+                            n.hasLocation() ? n.world() : null,
+                            n.hasLocation() ? n.x() : null, n.hasLocation() ? n.y() : null,
+                            n.hasLocation() ? n.z() : null,
+                            n.hasLocation() ? n.yaw() : null, n.hasLocation() ? n.pitch() : null,
+                            n.liveLocation()));
                 }
                 rows.sort((a, b) -> Integer.compare(a.numericId(), b.numericId()));
                 return done(new CitizensRosterView(true, List.copyOf(rows), rows.size(), available2, linked));

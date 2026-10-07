@@ -140,6 +140,42 @@ public final class NpcIdentityService {
     }
 
     /**
+     * Pseudo Minecraft accepté comme source de skin : {@code [A-Za-z0-9_]{3,16}}, le format des
+     * comptes Minecraft. Citizens résout le pseudo lui-même ({@code /npc skin <pseudo>}) ; RPGQuest
+     * ne fait <strong>aucun appel réseau</strong> et ne peut donc pas garantir que le compte existe.
+     */
+    private static final java.util.regex.Pattern MINECRAFT_NAME =
+            java.util.regex.Pattern.compile("^[A-Za-z0-9_]{3,16}$");
+
+    /** {@code true} si {@code name} a la forme d'un pseudo Minecraft (validation de forme seule). */
+    public static boolean isValidSkinPlayerName(String name) {
+        return name != null && MINECRAFT_NAME.matcher(name.trim()).matches();
+    }
+
+    /**
+     * Nom réellement affiché en jeu par le PNJ Citizens lié. <strong>Thread principal.</strong>
+     *
+     * <p>Distinct du nom de la <em>définition</em> RPGQuest ({@code npcs/<id>.yml}) : la définition
+     * sert aux catalogues et au locuteur des dialogues, celui-ci est ce que les joueurs lisent
+     * au-dessus du PNJ. Les deux peuvent légitimement différer.</p>
+     */
+    public Optional<String> citizensNameOf(UUID citizensUuid) {
+        return citizensBridge == null ? Optional.empty() : citizensBridge.nameByUuid(citizensUuid);
+    }
+
+    /**
+     * {@code true} si ce PNJ est de type {@code PLAYER}, donc porteur d'un skin dont l'apparence
+     * dépend du nom quand aucun skin explicite n'est posé. {@code false} pour tout autre type
+     * (villageois, zombie…), qui n'a pas de skin du tout. Vide = indéterminable.
+     * <strong>Thread principal.</strong>
+     */
+    public Optional<Boolean> citizensIsPlayerType(UUID citizensUuid) {
+        return citizensBridge == null ? Optional.empty()
+                : citizensBridge.typeByUuid(citizensUuid)
+                        .map(type -> type == org.bukkit.entity.EntityType.PLAYER);
+    }
+
+    /**
      * Issue #165 — renomme le PNJ Citizens lié à {@code npcId}. Ciblé par l'UUID issu de la
      * liaison persistée, jamais par le nom affiché. <strong>Thread principal.</strong>
      *
@@ -155,6 +191,19 @@ public final class NpcIdentityService {
      */
     public boolean applyCitizensSkin(UUID citizensUuid, String minesSkinUrl) {
         return citizensBridge != null && citizensBridge.applySkinUrlByUuid(citizensUuid, minesSkinUrl);
+    }
+
+    /**
+     * Rattache explicitement l'apparence d'un PNJ au skin d'un <em>nom</em> donné.
+     * <strong>Thread principal.</strong>
+     *
+     * <p>Utilisé pour <strong>reconduire</strong> l'apparence au travers d'un renommage, quand
+     * aucune source explicite n'a jamais été enregistrée : avant le renommage, Citizens dérivait
+     * déjà l'apparence de ce nom-là. Les joueurs voient donc exactement la même chose qu'avant —
+     * aucun skin nouveau n'est appliqué.</p>
+     */
+    public boolean pinCitizensSkinToName(UUID citizensUuid, String skinName) {
+        return citizensBridge != null && citizensBridge.applySkinNameByUuid(citizensUuid, skinName);
     }
 
     /**

@@ -1,9 +1,9 @@
 package com.lodygames.rpgquest.quest.progress;
 
 import com.lodygames.rpgquest.quest.model.QuestState;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.bukkit.NamespacedKey;
 
 /**
@@ -18,7 +18,16 @@ final class ActiveQuestProgress {
 
     private final NamespacedKey questId;
     private int currentStepIndex;
-    private final Map<Integer, Integer> objectiveCounters = new HashMap<>();
+    /**
+     * {@link java.util.concurrent.ConcurrentHashMap} et non {@code HashMap} : ces compteurs sont
+     * écrits sur le thread principal mais <strong>lus</strong> aussi depuis un thread de base de
+     * données — l'évaluation des conditions de dialogue se poursuit sur le thread qui termine la
+     * lecture précédente (voir {@code npc.hint.NpcHintService}, qui chaîne {@code reachableNodes}
+     * après une requête), et la condition {@code HAS_PENDING_DELIVERY} (issue #123) lit ces
+     * compteurs. Une lecture concurrente d'un {@code HashMap} en cours d'écriture n'a aucune
+     * garantie ; ici la valeur lue peut être d'un tick en retard, jamais incohérente.
+     */
+    private final Map<Integer, Integer> objectiveCounters = new ConcurrentHashMap<>();
     private QuestState state;
     private String rewardGrantId;
 

@@ -574,6 +574,32 @@ class QuestItemDeliveryTest {
         assertTrue(rendered.contains("<lang:"), "le nom de l'objet doit être traduit côté client");
     }
 
+    /**
+     * Le nom d'objet est injecté comme une balise MiniMessage {@code <lang:…>} : si cette balise
+     * n'était pas reconnue, le joueur lirait littéralement « <lang:item.minecraft.leather> ». Ce
+     * test désérialise réellement le texte et exige un composant traduisible dans l'arbre.
+     */
+    @Test
+    void theRenderedStatusProducesARealTranslatableComponentNotLiteralText() throws Exception {
+        PlayerMock player = playerWithActiveQuest(LEATHER_QUEST);
+
+        Component rendered = net.kyori.adventure.text.minimessage.MiniMessage.miniMessage()
+                .deserialize(DeliveryStatusText.render(engine.pendingDeliveries(player.getUniqueId(), NPC)));
+
+        String plain = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
+                .plainText().serialize(rendered);
+        assertFalse(plain.contains("<lang:"), () -> "balise non interprétée, le joueur la verrait : " + plain);
+        assertTrue(containsTranslatable(rendered), "le nom de l'objet doit être un composant traduisible");
+        assertTrue(plain.contains("0/4"), () -> "compteur attendu, obtenu : " + plain);
+    }
+
+    private static boolean containsTranslatable(Component component) {
+        if (component instanceof net.kyori.adventure.text.TranslatableComponent) {
+            return true;
+        }
+        return component.children().stream().anyMatch(QuestItemDeliveryTest::containsTranslatable);
+    }
+
     @Test
     void theStatusOfANpcThatExpectsNothingIsExplicit() throws Exception {
         PlayerMock player = addPlayer();

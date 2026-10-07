@@ -275,4 +275,61 @@ class WorldPortalTeleportListenerTest {
 
         assertEquals(wild, player.getWorld(), "répit expiré, toujours dans la zone : le portail reste fonctionnel");
     }
+
+    // ---- Garde d'entrée (issue #161) -------------------------------------------------------------
+
+    /**
+     * Issue #161 — pas de boucle de menu : un garde qui refuse (ex. l'avertissement d'entrée dans le
+     * Wild en attente de confirmation) n'est <strong>pas</strong> reconsulté tant que le joueur
+     * reste dans la même zone de portail, même en bougeant dedans. Il faut ressortir et rentrer —
+     * une nouvelle intervention explicite — pour qu'il soit sollicité de nouveau.
+     */
+    @Test
+    void aRefusingEntryGuardIsNotConsultedAgainWhileThePlayerStaysInsideTheSameZone() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger consultations = new java.util.concurrent.atomic.AtomicInteger();
+        listener.setEntryGuard((player, portal) -> {
+            consultations.incrementAndGet();
+            return false; // le garde prend la main (avertissement affiché, attente de confirmation).
+        });
+        PlayerMock player = server.addPlayer();
+        Location outside = new Location(hub, 1000.5, 64, 1000.5);
+        Location inside = new Location(hub, 0.5, 65, 0.5);
+        Location deeperInside = new Location(hub, 1.5, 65, 0.5);
+
+        listener.onMove(new PlayerMoveEvent(player, outside, inside));
+        assertEquals(1, consultations.get(), "première entrée : garde consulté une fois");
+        assertEquals(hub, player.getWorld(), "garde refusant : aucune téléportation");
+
+        listener.onMove(new PlayerMoveEvent(player, inside, deeperInside));
+        listener.onMove(new PlayerMoveEvent(player, deeperInside, inside));
+        assertEquals(1, consultations.get(), "toujours dans la même zone : jamais de seconde sollicitation");
+
+        // Sortie puis nouvelle entrée volontaire : le garde est de nouveau sollicité.
+        listener.onMove(new PlayerMoveEvent(player, inside, outside));
+        listener.onMove(new PlayerMoveEvent(player, outside, inside));
+        assertEquals(2, consultations.get(), "nouvelle entrée explicite : garde consulté de nouveau");
+        assertEquals(hub, player.getWorld());
+    }
+
+    @Test
+    void anEntryGuardThatAllowsEntryLetsTheTeleportationHappenNormally() throws Exception {
+        listener.setEntryGuard((player, portal) -> true);
+        PlayerMock player = server.addPlayer();
+
+        listener.onMove(new PlayerMoveEvent(player,
+                new Location(hub, 1000.5, 64, 1000.5), new Location(hub, 0.5, 65, 0.5)));
+
+        assertEquals(wild, player.getWorld());
+    }
+
+    /** {@code teleportNow} contourne volontairement le garde : c'est le chemin « Entrer dans le Wild ». */
+    @Test
+    void teleportNowBypassesTheEntryGuardOnPurpose() throws Exception {
+        listener.setEntryGuard((player, portal) -> false);
+        PlayerMock player = server.addPlayer();
+
+        listener.teleportNow(player, registry.find("hub_to_wild").orElseThrow());
+
+        assertEquals(wild, player.getWorld(), "une confirmation explicite doit toujours aboutir");
+    }
 }

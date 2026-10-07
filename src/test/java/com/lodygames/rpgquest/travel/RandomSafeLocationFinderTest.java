@@ -247,6 +247,35 @@ class RandomSafeLocationFinderTest {
                 "un seul voisin praticable à un bloc d'écart doit suffire à valider l'accès");
     }
 
+    /**
+     * Issue #161 (diagnostic de latence) : la recherche renseigne le nombre de colonnes réellement
+     * tirées et le temps passé à charger/générer des chunks, sans changer son résultat.
+     */
+    @Test
+    void theSearchReportsItsAttemptsAndChunkLoadingTime() {
+        setGround(2750, 64, 0, Material.STONE);
+        RandomSafeLocationFinder finder = new RandomSafeLocationFinder(500, 5000, 20, new FixedDoubleRandom(0.0, 0.5));
+        RandomSafeLocationFinder.SearchMetrics metrics = new RandomSafeLocationFinder.SearchMetrics();
+
+        assertTrue(finder.find(world, center, metrics).isPresent());
+
+        assertEquals(1, metrics.attempts(), "une seule colonne a suffi");
+        assertTrue(metrics.chunkLoadNanos() > 0, "le temps de chargement de chunk doit être mesuré");
+    }
+
+    @Test
+    void anExhaustedSearchReportsEveryAttempt() {
+        // Bordure minuscule : aucun candidat n'est jamais valide, toutes les tentatives sont brûlées.
+        world.getWorldBorder().setCenter(center);
+        world.getWorldBorder().setSize(10);
+        RandomSafeLocationFinder finder = new RandomSafeLocationFinder(500, 5000, 7);
+        RandomSafeLocationFinder.SearchMetrics metrics = new RandomSafeLocationFinder.SearchMetrics();
+
+        assertTrue(finder.find(world, center, metrics).isEmpty());
+
+        assertEquals(7, metrics.attempts(), "toutes les tentatives configurées doivent être comptées");
+    }
+
     /** Retourne une séquence fixe de valeurs à chaque appel de {@code nextDouble()} (0.0 au-delà de la séquence). */
     private static final class FixedDoubleRandom extends Random {
         private final Deque<Double> values;

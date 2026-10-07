@@ -50,9 +50,38 @@ public final class RandomSafeLocationFinder {
         this.random = random;
     }
 
+    /**
+     * Compteurs de la dernière recherche, remplis par {@link #find(World, Location, SearchMetrics)}
+     * pour distinguer dans les logs le temps réellement passé à <em>charger/générer des chunks</em>
+     * de celui passé à <em>évaluer</em> les colonnes (issue #161, diagnostic de latence du passage
+     * Hub → Wild). Accumulateur possédé par l'appelant plutôt qu'état de l'instance : aucune
+     * surprise si deux recherches se suivent, et {@link #find(World, Location)} reste inchangé.
+     */
+    public static final class SearchMetrics {
+
+        private int attempts;
+        private long chunkLoadNanos;
+
+        /** Nombre de colonnes réellement tirées (≤ {@code maxAttempts}). */
+        public int attempts() {
+            return attempts;
+        }
+
+        /** Temps cumulé passé dans {@code World#getChunkAt} (chargement ou génération à la demande). */
+        public long chunkLoadNanos() {
+            return chunkLoadNanos;
+        }
+    }
+
     /** {@code Optional.empty()} si aucune position sûre n'a été trouvée en {@code maxAttempts} tentatives — jamais de boucle infinie. */
     public Optional<Location> find(World world, Location center) {
+        return find(world, center, new SearchMetrics());
+    }
+
+    /** Comme {@link #find(World, Location)}, en renseignant {@code metrics} au passage. */
+    public Optional<Location> find(World world, Location center, SearchMetrics metrics) {
         for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            metrics.attempts++;
             double angle = random.nextDouble() * 2 * Math.PI;
             double distance = minRadius + random.nextDouble() * (maxRadius - minRadius);
             int x = center.getBlockX() + (int) Math.round(Math.cos(angle) * distance);
@@ -63,7 +92,9 @@ public final class RandomSafeLocationFinder {
                 continue;
             }
 
+            long chunkStart = System.nanoTime();
             world.getChunkAt(x >> 4, z >> 4);
+            metrics.chunkLoadNanos += System.nanoTime() - chunkStart;
             int groundY = world.getHighestBlockYAt(x, z);
             if (groundY <= world.getMinHeight()) {
                 continue; // colonne vide (vide, ou hors monde généré) : jamais une arrivée valide.

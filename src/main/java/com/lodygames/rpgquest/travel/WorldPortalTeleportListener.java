@@ -235,9 +235,21 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
         }
         World world = destination.get();
         Location source = player.getLocation();
-        Location target = portal.destinationStrategy() == DestinationStrategy.RANDOM_SAFE
-                ? resolveRandomSafeLocation(portal, world)
-                : world.getSpawnLocation();
+
+        // Diagnostic de latence (issue #161) : les trois étapes du passage sont mesurées séparément
+        // — recherche d'une colonne sûre, chargement/génération des chunks, téléportation. Aucun
+        // contrôle de sécurité n'est allégé pour aller plus vite ; seule la mesure est ajoutée.
+        long startNanos = System.nanoTime();
+        RandomSafeLocationFinder.SearchMetrics searchMetrics = new RandomSafeLocationFinder.SearchMetrics();
+        long searchNanos = 0L;
+        Location target;
+        if (portal.destinationStrategy() == DestinationStrategy.RANDOM_SAFE) {
+            long searchStart = System.nanoTime();
+            target = resolveRandomSafeLocation(portal, world, searchMetrics);
+            searchNanos = System.nanoTime() - searchStart;
+        } else {
+            target = world.getSpawnLocation();
+        }
 
         UUID playerId = player.getUniqueId();
         TpTraceLogger.log(logger, "teleport_start", playerId, player.getName(), portal.id(),
@@ -250,8 +262,11 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
         // colonne déjà chargée/générée à la demande par RandomSafeLocationFinder juste au-dessus).
         selfInitiatedTeleport.add(playerId);
         boolean success;
+        long teleportNanos;
         try {
+            long teleportStart = System.nanoTime();
             success = player.teleport(target);
+            teleportNanos = System.nanoTime() - teleportStart;
         } finally {
             selfInitiatedTeleport.remove(playerId);
         }
@@ -259,10 +274,21 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
         TpTraceLogger.log(logger, success ? "teleport_success" : "teleport_failed", playerId, player.getName(), portal.id(),
                 world.getName(), target.getBlockX(), target.getBlockY(), target.getBlockZ(),
                 null, null, null, null, portalLocationString(source), portalLocationString(target));
+        TpTraceLogger.logLatency(logger, playerId, player.getName(), portal.id(), world.getName(),
+                portal.destinationStrategy().name(), searchMetrics.attempts(),
+                TpTraceLogger.toMillis(searchNanos - searchMetrics.chunkLoadNanos()),
+                TpTraceLogger.toMillis(searchMetrics.chunkLoadNanos()),
+                TpTraceLogger.toMillis(teleportNanos),
+                TpTraceLogger.toMillis(System.nanoTime() - startNanos));
 
         if (!success) {
             logger.warn("player.teleport() a renvoyé false pour le portail simple {} (joueur {}) — "
                     + "un autre plugin a probablement annulé la téléportation.", portal.id(), player.getName());
+            // Issue #161 : un retour d'échec compréhensible, jamais un faux « réussie » — le joueur
+            // reste là où il était et peut réessayer en reprenant le portail.
+            player.sendMessage(MM.deserialize(
+                    "<red>La téléportation a échoué : vous n'avez pas quitté cet endroit. Vous pouvez réessayer.</red>"));
+            return;
         }
         player.sendMessage(MM.deserialize("<green>Téléportation réussie.</green>"));
     }
@@ -273,10 +299,11 @@ public final class WorldPortalTeleportListener implements Listener, PortalTelepo
      * position sûre n'est trouvée en {@code max-attempts} tentatives (jamais de boucle infinie, et
      * le joueur est toujours téléporté proprement).
      */
-    private Location resolveRandomSafeLocation(WorldPortalDefinition portal, World world) {
+    private Location resolveRandomSafeLocation(WorldPortalDefinition portal, World world,
+                                                RandomSafeLocationFinder.SearchMetrics metrics) {
         RandomSafeArrivalConfig config = randomSafeArrivalConfig.get();
         RandomSafeLocationFinder finder = new RandomSafeLocationFinder(config.minRadius(), config.maxRadius(), config.maxAttempts());
-        return finder.find(world, world.getSpawnLocation()).orElseGet(() -> {
+        return finder.find(world, world.getSpawnLocation(), metrics).orElseGet(() -> {
             logger.warn(
                     "Portail simple {} (RANDOM_SAFE) : aucune position sûre trouvée en {} tentative(s) (rayon {}-{}) dans « {} », repli sur son spawn.",
                     portal.id(), config.maxAttempts(), config.minRadius(), config.maxRadius(), world.getName());

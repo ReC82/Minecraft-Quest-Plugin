@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.travel;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -24,5 +25,14 @@ class TpTraceLoggerTest {
     void logNeverThrowsWithEveryFieldPopulated() {
         assertDoesNotThrow(() -> TpTraceLogger.log(NOPLogger.NOP_LOGGER, "portal_enter", UUID.randomUUID(), "Steve",
                 "hub_to_wild", "world", 0, 64, 0, true, false, 40L, "3s", "world:1,2,3", "wild:4,5,6"));
+    }
+
+    /** Diagnostic de latence (issue #161) : trois étapes distinctes sur une seule ligne. */
+    @Test
+    void latencyNeverThrowsAndConvertsNanosToMillis() {
+        assertDoesNotThrow(() -> TpTraceLogger.logLatency(NOPLogger.NOP_LOGGER, UUID.randomUUID(), "Steve",
+                "hub_to_wild", "wild", "RANDOM_SAFE", 7, 12L, 340L, 5L, 357L));
+        assertEquals(0L, TpTraceLogger.toMillis(999_999L), "arrondi bas : moins d'une milliseconde reste 0");
+        assertEquals(42L, TpTraceLogger.toMillis(42_000_000L));
     }
 }

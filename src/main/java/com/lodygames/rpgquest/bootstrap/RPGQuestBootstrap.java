@@ -56,6 +56,7 @@ import com.lodygames.rpgquest.database.ResourceNodeRepository;
 import com.lodygames.rpgquest.database.StoreDeliveryRepository;
 import com.lodygames.rpgquest.database.StoryProgressRepository;
 import com.lodygames.rpgquest.database.WalletRepository;
+import com.lodygames.rpgquest.dialogue.DialogueTextPlaceholders;
 import com.lodygames.rpgquest.dialogue.YamlDialogueEngine;
 import com.lodygames.rpgquest.dialogue.render.ChatDialogueRenderer;
 import com.lodygames.rpgquest.dialogue.render.DialogueRenderer;
@@ -122,11 +123,16 @@ import com.lodygames.rpgquest.store.StoreDeliveryService;
 import com.lodygames.rpgquest.store.StoreProductRegistry;
 import com.lodygames.rpgquest.story.StoryRegistry;
 import com.lodygames.rpgquest.story.StoryService;
+import com.lodygames.rpgquest.travel.ChatWildEntryPromptPresenter;
 import com.lodygames.rpgquest.travel.CompositeWorldPortalEntryGuard;
+import com.lodygames.rpgquest.travel.FallbackWildEntryPromptPresenter;
 import com.lodygames.rpgquest.travel.ItemTravelService;
 import com.lodygames.rpgquest.travel.PortalService;
 import com.lodygames.rpgquest.travel.WorldPortalRegistry;
 import com.lodygames.rpgquest.travel.WorldPortalDebugService;
+import com.lodygames.rpgquest.travel.PaperDialogWildEntryPromptPresenter;
+import com.lodygames.rpgquest.travel.WildConditionsService;
+import com.lodygames.rpgquest.travel.WildEntryPromptPresenter;
 import com.lodygames.rpgquest.travel.WildEntryWarningService;
 import com.lodygames.rpgquest.travel.WorldPortalTeleportListener;
 import com.lodygames.rpgquest.travel.YamlDestinationRegistry;
@@ -161,6 +167,7 @@ import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.zone.ZoneSelectionService;
 import com.lodygames.rpgquest.zone.ZoneWandListener;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -514,10 +521,17 @@ public final class RPGQuestBootstrap {
         ClaimWorldAccessGuard claimWorldAccessGuard = new ClaimWorldAccessGuard(
                 plugin, claimService, claimReturnService, () -> configService.current().claims(),
                 worldPortalTeleportListener);
+        // Avertissement de danger avant l'entrée dans le Wild (issue #161, qui couvre la partie B de
+        // #26) : générique, sans aucune inspection d'inventaire, avec confirmation explicite et
+        // option persistante « ne plus afficher ». Même choix de renderer que les dialogues
+        // (config.yml → dialogue.renderer), avec repli chat automatique.
+        WildEntryWarningService wildEntryWarningService = new WildEntryWarningService(
+                plugin, variableRepository, () -> configService.current().travel().wildWorld(),
+                worldPortalTeleportListener, createWildEntryPromptPresenter());
+        registry.start(new PlayerListenerService(plugin, wildEntryWarningService));
         worldPortalTeleportListener.setEntryGuard(new CompositeWorldPortalEntryGuard(List.of(
                 claimWorldAccessGuard,
-                new WildEntryWarningService(plugin, customItemRegistry,
-                        () -> configService.current().travel().wildWorld(), worldPortalTeleportListener))));
+                wildEntryWarningService)));
         // Filet de sécurité : personne ne reste coincé dans le monde des claims, et un retour Hub
         // sans commande y est toujours possible (Pierre de retour donnée si absente ; joueur non
         // éligible arrivé autrement que par le portail renvoyé au village).
@@ -637,6 +651,13 @@ public final class RPGQuestBootstrap {
                 claimService, customItemRegistry, starterToolKitService);
         registry.start(dialogueSessionEngine);
         dialogueSessionEngine.setRenderer(createRenderer(dialogueSessionEngine));
+        // Issue #24 : le Garde peut renseigner l'état RÉEL du Wild (jour/nuit + météo globale) sur
+        // demande du joueur, via %wild_conditions% dans dialogues/guard.yml. Lecture seule — ni
+        // l'heure, ni la météo, ni le cycle jour/nuit du Wild ne sont modifiés.
+        WildConditionsService wildConditionsService = new WildConditionsService(
+                worldService::find, () -> configService.current().travel().wildWorld());
+        dialogueSessionEngine.setPlaceholders(new DialogueTextPlaceholders(
+                Map.of("wild_conditions", player -> wildConditionsService.describe())));
         registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));
         var citizensDialogueListener = dialogueSessionEngine.citizensNpcInteractListener();
         if (citizensDialogueListener != null) {
@@ -766,6 +787,21 @@ public final class RPGQuestBootstrap {
         ChatDialogueRenderer chat = new ChatDialogueRenderer(handler);
         if (configService.current().dialogue().renderer() == RendererKind.PAPER_DIALOG) {
             return new FallbackDialogueRenderer(new PaperDialogRenderer(handler), chat, plugin.getSLF4JLogger());
+        }
+        return chat;
+    }
+
+    /**
+     * Même règle que {@link #createRenderer} pour l'avertissement d'entrée dans le Wild (issue
+     * #161) : la préférence {@code dialogue.renderer} du serveur décide fenêtre Paper ou chat
+     * cliquable, avec repli automatique — un serveur qui a volontairement choisi {@code chat} pour
+     * éviter l'API expérimentale ne doit pas la voir réapparaître ici.
+     */
+    private WildEntryPromptPresenter createWildEntryPromptPresenter() {
+        ChatWildEntryPromptPresenter chat = new ChatWildEntryPromptPresenter();
+        if (configService.current().dialogue().renderer() == RendererKind.PAPER_DIALOG) {
+            return new FallbackWildEntryPromptPresenter(
+                    new PaperDialogWildEntryPromptPresenter(), chat, plugin.getSLF4JLogger());
         }
         return chat;
     }

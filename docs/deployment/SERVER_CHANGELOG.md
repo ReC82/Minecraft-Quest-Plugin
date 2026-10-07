@@ -5376,9 +5376,28 @@ Automatique via `scripts/deploy-verygames.sh`. Ne pas écraser le backup du lot 
 
 ### Déploiement
 
-1. `scripts/deploy-verygames.sh -y` depuis un worktree propre.
-2. `scripts/plugadmin/deploy.sh` pour le panel.
-3. **Redémarrage Minecraft requis**, groupé avec le lot 4 — prévenir les joueurs avant.
+**Effectué le 2026-10-07 entre 17:43 et 17:45 (heure locale).**
+
+- Branche `feature/169-special-mobs-boss`, commit `14ac882` (code : `993c615`), worktree propre.
+- `./gradlew test` + `build` : **1772 tests plugin + 722 tests panel, 0 échec** (exécution unique).
+- JAR transféré : **1 917 683 o**, SHA-256
+  `71020c82514de40d513a4cae7755c49421a493368c7906d002ebabf031dc2572`.
+- Backup préalable : `rpgquest-20261007T154346Z-predeploy.jar` (1 899 262 o, SHA-256
+  `9b27134e…c3d0a09`) — **son empreinte correspond exactement au JAR du lot 4**, ce qui confirme
+  que celui-ci était bien en place et que la chaîne de rollback est intacte.
+- Control Panel redéployé ; release précédente sauvegardée en `20261007-174413`. Le script a
+  rapporté `/health KO` parce que son contrôle s'exécute ~2 s après le redémarrage du service,
+  avant que la JVM n'ait lié le port ; vérifié ensuite réellement : service `active`, `/health`
+  → `{"panel":"ONLINE"}`. Aucun rollback nécessaire.
+- **Redémarrage Minecraft effectué**, groupé pour les lots 4 et 5 : `save-all`, `stop` RCON,
+  OFFLINE constaté, retour **ONLINE**. **0 joueur connecté** avant comme après — aucune annonce
+  n'a donc été diffusée.
+- Vérifications après redémarrage : `/plugins` → 5 plugins verts (Citizens, LuckPerms,
+  Multiverse-Core, RPGQuest, WorldEdit) ; `/rpgquest version` → `v0.1.0-SNAPSHOT` ;
+  **`/version Citizens` → `2.0.43-SNAPSHOT (build 4232)`**.
+- **Non vérifié** : l'absence d'un `WARN` d'incompatibilité Citizens au démarrage — les logs du
+  serveur ne sont pas accessibles depuis la machine de build (racine FTP = `plugins/`). Le symptôme
+  éventuel apparaîtrait dès le premier point de TC-255.
 
 ### Validation
 

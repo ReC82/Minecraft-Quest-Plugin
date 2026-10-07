@@ -9,7 +9,7 @@
   l'instabilité de `RestartServiceTest` (#165)
 * Statut : DONE (fonctionnalité livrée ; validation en jeu PENDING MANUAL VALIDATION — TC-255)
 * Branche Git : `feature/169-special-mobs-boss`
-* Commit actuel si disponible : 993c615
+* Commit actuel si disponible : `993c615` (code), `14ac882` (documentation)
 * Début de la tâche : 2026-10-07 16:27:09
 * Fin de la tâche : 2026-10-07 17:40:16
 * Durée totale : 01:13:07
@@ -328,12 +328,48 @@ sans demande explicite.
 
 ### Redémarrage requis
 
-**Oui** — redémarrage Minecraft requis, **groupé** pour les lots 4 et 5 (un seul redémarrage).
-Prévenir les joueurs avant. Le panel, lui, ne demande aucun redémarrage Minecraft.
+**Oui** — un seul redémarrage, **groupé** pour les lots 4 et 5.
 
 ### Migration automatique
 
 Aucune. `CURRENT_VERSION` = 27, inchangé.
+
+### Exécution réelle
+
+**Plugin** — `scripts/deploy-verygames.sh -y` depuis le worktree propre, `DEPLOY_EXIT=0` :
+
+* Branche `feature/169-special-mobs-boss` @ `14ac882` (code : `993c615`).
+* JAR transféré : **1 917 683 o**, SHA-256
+  `71020c82514de40d513a4cae7755c49421a493368c7906d002ebabf031dc2572`.
+* Backup préalable : `rpgquest-20261007T154346Z-predeploy.jar`, 1 899 262 o, SHA-256
+  `9b27134e684173bea4d77b3c64c73404b9f8000f304872c793c543c71c3d0a09`. **Ce backup confirme que le
+  lot 4 était bien en place sur le serveur** : son empreinte correspond exactement au JAR transféré
+  plus tôt dans la session. La chaîne de rollback est donc vérifiée, pas supposée.
+
+**Control Panel** — `scripts/plugadmin/deploy.sh` :
+
+* Release précédente sauvegardée : `/opt/plugadmin/releases/20261007-174413`.
+* Le script a rapporté `/health KO` : son contrôle s'exécute ~2 s après `systemctl restart`, avant
+  que la JVM n'ait lié le port 8090. C'est l'incident déjà observé le 2026-10-06, sans gravité.
+  **Vérifié réellement ensuite** : `systemctl is-active` → `active`, et
+  `GET /health` → `{"panel":"ONLINE","disabled":false}`. Aucun rollback nécessaire.
+
+**Redémarrage Minecraft** — `scripts/verygames-restart.sh --timeout 240`, `RESTART_EXIT=0` :
+
+* **0 joueur connecté** avant comme après — il n'y avait donc personne à prévenir, et aucune
+  annonce n'a été diffusée. Je ne prétends pas avoir averti des joueurs absents.
+* `save-all`, `stop` par RCON, OFFLINE constaté, puis retour **ONLINE**.
+* `/plugins` → 5 plugins verts : Citizens, LuckPerms, Multiverse-Core, RPGQuest, WorldEdit.
+* `/rpgquest version` → `v0.1.0-SNAPSHOT`.
+* **Version Citizens réellement installée, relevée en jeu après redémarrage** :
+  `2.0.43-SNAPSHOT (build 4232)`.
+
+**Ce que je n'ai pas pu vérifier.** Les logs du serveur ne sont pas accessibles depuis cette
+machine : la racine FTP VeryGames est `plugins/`. Je **n'ai donc pas constaté** l'absence d'un
+`WARN` d'incompatibilité Citizens au démarrage. Si `CitizensBehaviourBridge` n'avait pas pu se
+charger, le symptôme serait visible dès le premier point de TC-255 : la ligne « Comportement » de la
+fiche PNJ afficherait « inconnu », et toute action renverrait `CITIZENS_INCOMPATIBLE`. Je ne déclare
+donc **pas** cette vérification acquise.
 
 ## Rollback
 

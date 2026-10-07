@@ -215,6 +215,50 @@ public final class TravelBeaconService implements PluginService {
         return Optional.of(Math.max(0L, notBefore - System.currentTimeMillis()));
     }
 
+    /**
+     * Issue #156 — état d'appariement d'une instance Hub encore sans borne. Savoir qu'« il manque des
+     * bornes » n'est pas exploitable&nbsp;; la cause l'est : {@code attempts == 0} dénonce un
+     * déclencheur qui n'est jamais allé jusqu'à l'appariement, un compteur qui monte dénonce le
+     * terrain ou l'espacement, et {@code nearestBeaconDistance} dit si l'espacement minimal peut
+     * seulement être en cause ({@code -1} = aucune autre borne dans ce monde).
+     *
+     * <p>Les compteurs vivent en mémoire : un redémarrage les remet à zéro, ce que l'affichage doit
+     * dire plutôt que de laisser croire qu'aucun essai n'a jamais eu lieu.</p>
+     */
+    public record PairingGap(String waypointId, String biomeInstance, String biomeKey, int x, int z,
+                             int attempts, Long nextRetryEpochMs, boolean inProgress,
+                             int nearestBeaconDistance) {
+    }
+
+    /** Lecture seule, sans aucun accès monde ni base : uniquement les index déjà en mémoire. */
+    public List<PairingGap> hubPairingGaps() {
+        List<PairingGap> gaps = new ArrayList<>();
+        for (Waypoint waypoint : hubWaypointsWithoutBeacon()) {
+            String key = instanceKey(waypoint.world(), waypoint.biomeInstance());
+            gaps.add(new PairingGap(waypoint.id(), waypoint.biomeInstance(), waypoint.biomeKey(),
+                    waypoint.x(), waypoint.z(),
+                    pairRetryCount.getOrDefault(key, 0),
+                    pairRetryNotBefore.get(key),
+                    pairing.contains(key),
+                    nearestBeaconDistance(waypoint.world(), waypoint.x(), waypoint.z())));
+        }
+        return gaps;
+    }
+
+    /** Distance horizontale à la borne la plus proche du même monde, en blocs, ou -1 s'il n'y en a aucune. */
+    private int nearestBeaconDistance(String world, int x, int z) {
+        long bestSq = Long.MAX_VALUE;
+        for (TravelBeacon existing : byId.values()) {
+            if (!existing.world().equals(world)) {
+                continue;
+            }
+            long dx = existing.x() - x;
+            long dz = existing.z() - z;
+            bestSq = Math.min(bestSq, dx * dx + dz * dz);
+        }
+        return bestSq == Long.MAX_VALUE ? -1 : (int) Math.round(Math.sqrt((double) bestSq));
+    }
+
     // ---- Diagnostic et réparation (issue #153) : bornes inaccessibles -------------------------
 
     /** Bornes dont l'ancre actuelle échoue désormais le contrôle d'accessibilité (#153). */
@@ -408,10 +452,19 @@ public final class TravelBeaconService implements PluginService {
         String biomeKey = biomeKeyAt(world, bx, by, bz);
         BiomeInstanceKey instance = identityResolver.resolve(wc.regionSize(), hub, biomeKey, bx, bz);
         String instanceKey = instanceKey(hub, instance.serialize());
-        if (instanceKey.equals(lastHubInstanceByPlayer.get(playerId))) {
+        // Issue #156 : on ne sort PAS simplement parce que le joueur est déjà dans cette instance.
+        // La génération du waypoint (étape 1) persiste de façon asynchrone : au tout premier passage,
+        // l'appariement de l'étape 2 ne trouve encore rien et abandonne. Avec une sortie anticipée sur
+        // « même instance », l'instance ne pouvait plus JAMAIS être appariée avant que le joueur la
+        // quitte puis y revienne — sur le Hub DEV, les 13 bornes existantes ont toutes été créées
+        // 17 s à 11 h APRÈS leur waypoint, et 9 instances visitées une seule fois n'en avaient aucune.
+        // Tant que l'instance n'a pas sa borne, on laisse donc passer : le coût reste borné par le
+        // throttle ci-dessus, par le verrou « pairing » et par le backoff de pairRetryNotBefore.
+        boolean sameInstance = instanceKey.equals(lastHubInstanceByPlayer.get(playerId));
+        lastHubInstanceByPlayer.put(playerId, instanceKey);
+        if (sameInstance && byBiomeInstance.containsKey(instanceKey)) {
             return;
         }
-        lastHubInstanceByPlayer.put(playerId, instanceKey);
 
         // 1) même mécanisme exact que le Wild (#124), réutilisé tel quel — jamais réécrit ici.
         waypointService.ensureGenerated(world, to);

@@ -1175,10 +1175,28 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         } else {
             player.sendMessage(MM.deserialize("<red><n> waypoint(s) du Hub sans borne appariée :</red>",
                     Placeholder.unparsed("n", Integer.toString(unpaired.size()))));
+            // Issue #156 : « jamais tenté » et « en cours » étaient confondus dans un même libellé, ce
+            // qui empêchait de distinguer un déclencheur en défaut d'un refus de terrain. Même source
+            // que le Control Panel (action travel.catalog) : un seul état d'appariement, pas deux.
+            var gapsByWaypoint = travelBeaconService.hubPairingGaps().stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            TravelBeaconService.PairingGap::waypointId, g -> g, (a, b) -> a));
             for (var w : unpaired) {
-                var retry = travelBeaconService.pairingRetryRemainingMillis(w.world(), w.biomeInstance());
-                String status = retry.isEmpty() ? "jamais tenté/en cours"
-                        : "réessai dans " + (retry.get() / 1000) + " s";
+                var gap = gapsByWaypoint.get(w.id());
+                String status;
+                if (gap == null) {
+                    status = "état d'appariement indisponible";
+                } else if (gap.inProgress()) {
+                    status = "appariement en cours";
+                } else if (gap.attempts() == 0) {
+                    status = "jamais tenté depuis le démarrage";
+                } else {
+                    var retry = travelBeaconService.pairingRetryRemainingMillis(w.world(), w.biomeInstance());
+                    status = gap.attempts() + " essai(s), candidats refusés"
+                            + (retry.isEmpty() ? "" : " — réessai dans " + (retry.get() / 1000) + " s")
+                            + (gap.nearestBeaconDistance() < 0 ? ""
+                                    : " — borne la plus proche à " + gap.nearestBeaconDistance() + " blocs");
+                }
                 player.sendMessage(MM.deserialize(
                         "  <yellow><id></yellow> <white><name></white> <gray>(<x>,<y>,<z>) — <status></gray>",
                         Placeholder.unparsed("id", w.id()), Placeholder.unparsed("name", w.displayName()),

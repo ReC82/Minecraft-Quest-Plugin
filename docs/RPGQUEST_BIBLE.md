@@ -1978,6 +1978,29 @@ vs **vérifié physiquement** (`/rpgadmin travel diagnose`). Permission dédiée
 associée »/« Waypoint associé », affichant directement l'id réel de l'association plutôt qu'un
 simple booléen, avec une phrase explicative au-dessus de chaque tableau.
 
+**Densité des bornes du Hub — audit et correction (issue #156)** : l'appariement d'une borne n'est
+jamais déclenché par un balayage du monde, uniquement par le passage d'un joueur dans une instance
+de biome du Hub (`TravelBeaconService#handleHubMovement`, throttlé par
+`travel.waypoint.move-throttle-millis`). Un **défaut du déclencheur** laissait des instances
+durablement sans borne : la persistance du waypoint est asynchrone, donc le tout premier passage ne
+peut jamais apparier, et une sortie anticipée « le joueur est déjà dans cette instance » empêchait
+ensuite toute nouvelle tentative jusqu'à ce qu'il quitte l'instance puis y revienne. Mesure sur le
+serveur DEV avant correction : **22 waypoints du Hub pour 13 bornes**, les 13 bornes toutes créées
+entre 17 secondes et 11 h 50 **après** leur waypoint (jamais simultanément), et les 9 instances
+sans borne toutes situées à **88 blocs ou plus** de la borne la plus proche — donc jamais bloquées
+par l'espacement minimal. L'évaluation se poursuit désormais tant que l'instance n'a pas sa borne ;
+le coût reste borné par le throttle, le verrou mono-vol et le backoff de réessai. **Aucun ratio
+borne/waypoint n'a été introduit et aucune politique de génération n'a été modifiée** : la densité
+reste celle d'« une borne par instance de biome visitée ».
+
+Le diagnostic correspondant est administrable et strictement en lecture seule, exposé par la même
+source des deux côtés (`TravelBeaconService#hubPairingGaps`) : section **« Appariements manquants
+dans le Hub »** de `/travel` (via `travel.catalog`) et `/rpgadmin travel diagnose`. Pour chaque
+instance encore sans borne il indique la **cause** — *jamais tenté depuis le démarrage* (déclencheur),
+*appariement en cours*, ou *N essai(s), candidats refusés* (terrain ou espacement) — avec la distance
+à la borne la plus proche et le délai avant le prochain essai. Ces compteurs vivent en mémoire : un
+redémarrage les remet à zéro, ce que l'affichage annonce explicitement.
+
 ---
 
 ## 8. Claims

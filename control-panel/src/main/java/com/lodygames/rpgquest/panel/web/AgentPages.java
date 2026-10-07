@@ -1748,7 +1748,7 @@ public final class AgentPages {
         Map<String, Object> d = latest.get();
         List<Object> waypoints = asList(d.get("waypoints"));
         List<Object> beacons = asList(d.get("beacons"));
-        List<Object> unpaired = asList(d.get("unpairedHubWaypointIds"));
+        List<Object> unpaired = asList(d.get("unpairedHubInstances"));
         long generatedAt = d.get("generatedAtEpochMs") instanceof Number n ? n.longValue() : 0L;
 
         sb.append("<p class=\"npc-summary\">")
@@ -1779,6 +1779,52 @@ public final class AgentPages {
         sb.append(Ui.sectionTitle("travel", "Bornes (" + filteredBeacons.size() + "/" + beacons.size() + ")"));
         sb.append(renderBeaconTable(agentId, query, worldFilter, filteredBeacons, parsePageParam(q.get("bp"))));
 
+        sb.append(Ui.sectionTitle("travel", "Appariements manquants dans le Hub (" + unpaired.size() + ")"));
+        sb.append(renderUnpairedTable(unpaired));
+
+        return sb.toString();
+    }
+
+    /**
+     * Issue #156 — pourquoi ces instances n'ont pas de borne. Sans la cause, la liste ne permettait
+     * que de constater un manque. « Jamais tenté » désigne le déclencheur, « candidats refusés »
+     * désigne le terrain ou l'espacement minimal.
+     */
+    private String renderUnpairedTable(List<Object> rows) {
+        if (rows.isEmpty()) {
+            return Ui.empty("travel", "Chaque instance de biome du Hub ayant un waypoint a sa borne.");
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("<p class=\"muted\">Les compteurs d'essai vivent en mémoire : un redémarrage du serveur "
+                + "les remet à zéro, « jamais tenté » peut donc signifier « plus depuis le redémarrage ». "
+                + "L'appariement est tenté quand un joueur traverse l'instance, jamais par un balayage du monde.</p>");
+        sb.append(Ui.tableOpen("Waypoint", "Biome", "X", "Z", "Essais", "Borne la plus proche", "État"));
+        for (Object o : rows) {
+            Map<String, Object> m = asMap(o);
+            int attempts = m.get("attempts") instanceof Number n ? n.intValue() : 0;
+            int nearest = m.get("nearestBeaconDistance") instanceof Number n ? n.intValue() : -1;
+            String state;
+            if (Boolean.TRUE.equals(m.get("inProgress"))) {
+                state = "<span class=\"badge text-bg-info\">appariement en cours</span>";
+            } else if (attempts == 0) {
+                state = "<span class=\"badge text-bg-secondary\">jamais tenté</span>";
+            } else {
+                state = "<span class=\"badge text-bg-warning\">candidats refusés</span>";
+            }
+            Object nextRetry = m.get("nextRetryEpochMs");
+            if (nextRetry instanceof Number n && n.longValue() > System.currentTimeMillis()) {
+                state += " <span class=\"muted\">· nouvel essai dans "
+                        + ((n.longValue() - System.currentTimeMillis()) / 1000) + " s</span>";
+            }
+            sb.append("<tr><td><code>").append(Http.esc(str(m.get("waypointId")))).append("</code></td><td>")
+                    .append(Http.esc(str(m.get("biomeKey")))).append("</td><td>")
+                    .append(Http.esc(str(m.get("x")))).append("</td><td>")
+                    .append(Http.esc(str(m.get("z")))).append("</td><td>")
+                    .append(attempts).append("</td><td>")
+                    .append(nearest < 0 ? "<span class=\"muted\">aucune</span>" : nearest + " blocs")
+                    .append("</td><td>").append(state).append("</td></tr>");
+        }
+        sb.append(Ui.tableClose());
         return sb.toString();
     }
 

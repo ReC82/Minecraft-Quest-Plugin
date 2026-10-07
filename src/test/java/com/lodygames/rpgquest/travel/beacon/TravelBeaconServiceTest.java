@@ -554,6 +554,37 @@ class TravelBeaconServiceTest {
         assertEquals(1, service.all().size());
     }
 
+    /**
+     * Issue #156 — un joueur <strong>seul</strong> doit suffire à obtenir la borne. La persistance du
+     * waypoint étant asynchrone, le tout premier passage ne peut jamais apparier ; tant que la sortie
+     * anticipée « instance déjà vue » coupait l'évaluation, l'instance restait définitivement sans
+     * borne jusqu'à ce que le joueur en sorte puis y revienne. Sur le Hub DEV cela laissait 9 des 22
+     * instances sans borne, et les 13 bornes existantes étaient toutes nées bien après leur waypoint.
+     */
+    @Test
+    void aLoneHubPlayerStayingInTheInstanceStillGetsThePairedBeacon() throws Exception {
+        waypointService.start();
+        service.start();
+        prepareHubArea(1000, 1000, Biome.PLAINS);
+        Location entry = new Location(hub, 1000.5, 65, 1000.5);
+
+        PlayerMock lone = addPlayer();
+        service.handleHubMovement(lone, entry);
+        await(() -> waypointNear(1000, 1000).isPresent());
+        assertTrue(beaconNear(1000, 1000).isEmpty(), "le waypoint vient tout juste d'apparaître");
+
+        // Même joueur, même instance : exactement le cas qui ne s'appariait jamais.
+        service.handleHubMovement(lone, entry);
+        await(() -> beaconNear(1000, 1000).isPresent());
+
+        // Une fois appariée, l'instance n'est plus réévaluée : aucun doublon, aucune borne en trop.
+        service.handleHubMovement(lone, entry);
+        service.handleHubMovement(lone, entry);
+        server.getScheduler().performTicks(10);
+        assertEquals(1, waypointService.all().size());
+        assertEquals(1, service.all().size());
+    }
+
     @Test
     void twoDistinctHubBiomeInstancesEachGetTheirOwnDistinctWaypointAndBeaconPair() throws Exception {
         waypointService.start();

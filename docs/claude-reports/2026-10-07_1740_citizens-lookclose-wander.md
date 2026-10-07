@@ -9,7 +9,7 @@
   l'instabilité de `RestartServiceTest` (#165)
 * Statut : DONE (fonctionnalité livrée ; validation en jeu PENDING MANUAL VALIDATION — TC-255)
 * Branche Git : `feature/169-special-mobs-boss`
-* Commit actuel si disponible : @@COMMIT@@
+* Commit actuel si disponible : 993c615
 * Début de la tâche : 2026-10-07 16:27:09
 * Fin de la tâche : 2026-10-07 17:40:16
 * Durée totale : 01:13:07

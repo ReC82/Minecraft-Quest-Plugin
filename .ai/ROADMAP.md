@@ -270,7 +270,7 @@ Tests: plugin 1772 / 0 échec / 37 ignorés ; control-panel 722 / 0 échec / 1 i
   fixtures étendues de NpcCitizensPayloadTest (la garde structurelle par réflexion couvre
   automatiquement les 11 composants nouveaux).
 Branche finale: feature/169-special-mobs-boss (aucun merge)
-Dernier commit: @@COMMIT@@
+Dernier commit: 993c615
 Build: vert.
 Tests manuels en attente: TC-255 (NOUVEAU — regarder les joueurs + promenade, 20 points, avec un
   PNJ de test à supprimer ensuite), plus TC-236 à TC-254 déjà en attente.

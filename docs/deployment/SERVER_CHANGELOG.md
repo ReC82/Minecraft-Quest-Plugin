@@ -5078,3 +5078,54 @@ pas utiliser tel quel. Pour revenir à l'état d'avant cette session, utiliser
 explicitement `rpgquest-20261006T160901Z-predeploy.jar` (1 850 699 o), qui est le
 dernier JAR sain d'avant la régression. Control Panel :
 `scripts/plugadmin/rollback.sh app`.
+
+---
+
+## 2026-10-07 - Aide par champ des formulaires de mobs et boss (#169) — Control Panel uniquement
+
+### Changement
+
+Chaque champ des formulaires « Mobs spéciaux & boss » de `/mobs` porte une aide
+rendue sous le champ : ce qu'il contrôle en jeu, un exemple, le défaut réellement
+appliqué par le moteur, et le comportement s'il reste vide. Les valeurs annoncées
+sont relevées dans le code du plugin ; là où aucun défaut n'existe, l'aide écrit
+« Obligatoire » ou « Aucun ». Deux imprécisions de l'ancienne aide sont corrigées
+(la particule d'un profil est une bouffée à l'apparition, pas l'aura continue d'un
+boss ; le rayon d'explosion n'est retenu qu'en partie entière).
+
+### Action serveur
+
+**Aucune.** Modification exclusivement Control Panel : aucun fichier du serveur
+Minecraft n'est touché, **aucun remplacement de JAR**, **aucun redémarrage
+Minecraft**. Les noms et les valeurs des champs soumis sont inchangés, donc les
+actions agent `mob.*` et le plugin ne voient aucune différence.
+
+### Sauvegarde préalable
+
+Release précédente du panel sauvegardée automatiquement par
+`scripts/plugadmin/deploy.sh`.
+
+### Déploiement / Exécution réelle
+
+Branche `feature/169-special-mobs-boss` @ **`484ece7`**, construite depuis le
+worktree propre `/srv/rpgquest/worktree-169`. `./gradlew :control-panel:test` →
+**683 tests, 0 échec**, 1 ignoré.
+
+- `scripts/plugadmin/deploy.sh` : `:control-panel:installDist` → release
+  précédente sauvegardée dans `/opt/plugadmin/releases/20261007-112510` →
+  `systemctl restart plugadmin` → service `active (running)` → `/health` →
+  `{"panel":"ONLINE","disabled":false,…}`.
+- **Vérifications** : artefact installé daté du 2026-10-07 11:25 ; les libellés
+  d'aide et les 6 règles CSS `.fmeta` sont présents dans le JAR déployé ; la
+  feuille de style servie en production contient bien ces règles ; `/mobs`
+  répond toujours `303` (route protégée).
+- **Reste à valider en navigateur, avec la session de l'owner** : lisibilité de
+  l'aide sur téléphone et exactitude perçue des libellés. Non déclaré validé sur
+  la seule base des tests automatisés.
+- Aucun merge vers `main`, aucune issue fermée.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` (restaure
+`/opt/plugadmin/releases/20261007-112510`). Aucun rollback de plugin à prévoir :
+le JAR RPGQuest n'a pas été touché.

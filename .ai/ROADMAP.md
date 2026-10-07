@@ -216,6 +216,77 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-07 (soirée, 2e lot — #123 : remise d'objets à un PNJ avec dépôts partiels)
+Branche de départ: feature/161-wild-entry-ux @ 4a99bff — volontairement, et PAS la branche
+  d'intégration : c'est la ligne réellement déployée en DEV depuis le lot précédent, donc partir
+  d'ailleurs aurait fait régresser #161/#24 au premier déploiement de ce lot.
+Étape de départ: issue #123 seule (DELIVER_ITEM_TO_NPC complet, administrable depuis le Control
+  Panel, déployé DEV, recette manuelle), avec décisions fonctionnelles explicites reçues en
+  conversation : dépôts partiels persistants, consommation réelle, jamais plus que le reliquat,
+  plusieurs objectifs par étape, UNE interaction pour tous les matériaux, mécanisme générique jamais
+  codé pour un PNJ précis, #218 non touchée.
+Étapes terminées:
+(1) DONE — Objectif DELIVER_ITEM_TO_NPC (8e valeur d'ObjectiveType, interface scellée : tous les
+  switch exhaustifs du dépôt ont dû être complétés, donc aucun oubli possible par construction).
+  AUCUN écouteur d'événement pour ce type, volontairement : il n'existe littéralement aucun chemin
+  par lequel ramasser/fabriquer/posséder ferait avancer une remise.
+(2) DONE — AUCUNE MIGRATION DE SCHÉMA : la quantité déjà remise EST le compteur d'objectif, dans la
+  table quest_objective_progress existante que loadForPlayer relit déjà. La persistance après mort /
+  reconnexion / redémarrage est donc obtenue en réutilisant le mécanisme existant, et resetnew la
+  remet à zéro sans code dédié. C'est la décision d'architecture centrale du lot.
+(3) DONE — QuestItemWithdrawal : retrait exact (jamais plus que le reliquat), plusieurs piles
+  additionnées, stockage normal uniquement (ni armure ni main secondaire), et renvoie le nombre
+  RÉELLEMENT retiré — le compteur n'avance que de cette valeur, donc impossible de progresser sans
+  retrait. Aucun objet personnalisé RPGQuest consommé (identité PDC) : sans cette règle, une quête
+  demandant BOOK détruirait le journal de quêtes du joueur. Lecture du PDC exposée en statique sur
+  YamlCustomItemRegistry pour ne pas dupliquer la clé.
+(4) DONE — deliverTo : une seule interaction traite tous les objectifs de ce PNJ (plusieurs
+  matériaux, plusieurs quêtes), jeton par joueur refusant toute remise réentrante (BUSY), et
+  complétion d'étape évaluée seulement APRÈS toute la remise (sinon le 4e retrait porterait sur une
+  quête déjà sortie des actives).
+(5) DONE — Dialogue : action DELIVER_QUEST_ITEMS + condition HAS_PENDING_DELIVERY, npc OPTIONNEL —
+  vide, le destinataire est la clé du dialogue (convention id de dialogue = id de PNJ). La branche
+  livrée dans guard.yml ne nomme donc ni quête, ni matériau, ni PNJ, et un test verrouille cette
+  généricité. La condition niée exprime « ce PNJ n'attend plus rien » sans nouveau type.
+(6) DONE — %delivery_status% : les valeurs dynamiques de texte reçoivent désormais un CONTEXTE
+  (joueur + dialogue) au lieu du seul joueur, parce que celle-ci dépend du PNJ qui parle. Évolution
+  directe du mécanisme livré pour #24 le même jour.
+(7) DONE — Control Panel : descripteur DELIVER_ITEM_TO_NPC (PNJ, objet, quantité). Formulaire,
+  sérialisation, aller-retour et validation en découlent sans code spécifique. Champ « npc » ajouté
+  au relevé structuré de l'agent (une remise a DEUX cibles) de façon ADDITIVE, avec constructeur de
+  compatibilité pour tous les appelants existants.
+(8) DONE — Journal : « Cuir (à remettre) 2/4 », le verbe distinguant la remise d'une collecte.
+(9) DONE — Correctif trouvé en relisant le chemin de la condition : les compteurs d'une quête active
+  vivaient dans un HashMap écrit sur le thread principal mais lu depuis un thread de base
+  (NpcHintService chaîne reachableNodes après une requête) -> ConcurrentHashMap.
+Tests: suite complète dans un worktree PROPRE. PREMIER passage ÉCHOUÉ : ManualTestQuestPackTest
+  exige une quête de docs/manual-tests/quests/ par type d'objectif, ni plus ni moins — le 8e type
+  n'en avait pas. Exactement ce que ce filet est conçu à attraper, invisible pour les tests ciblés.
+  Corrigé (test_deliver_item_to_npc.yml + pack 7 -> 8 dans MANUAL_TEST_PLAN.md), puis passage vert.
+  Nouveaux : QuestItemDeliveryTest (23), QuestItemWithdrawalTest (8), ObjectiveLabelsTest (2), plus
+  des cas ajoutés aux parsers de quête et de dialogue, à l'aller-retour YAML, au content pack et au
+  panel. Un test désérialise réellement l'état de remise en MiniMessage : la balise <lang:…> doit
+  produire un composant traduisible, sinon le joueur lirait « <lang:item.minecraft.leather> ».
+Branche finale: feature/123-deliver-item-to-npc (poussée, AUCUN merge)
+Build: vert.
+Tests manuels en attente: TC-257 (NOUVEAU, 24 points), plus TC-236 à TC-256 déjà en attente.
+Blocages: aucun. LIMITES ASSUMÉES : (a) items custom non acceptés en V1 (conforme au ticket) —
+  l'architecture est prête (QuestItemWithdrawal#matches est la seule règle d'éligibilité) mais rien
+  n'est testé pour ce cas et le champ item: n'existe pas ; (b) aucune restitution des objets remis
+  (hors périmètre explicite) ; (c) le nom du PNJ n'apparaît pas dans le journal, seulement
+  « (à remettre) » — deux quêtes de remise vers deux PNJ différents ne se distinguent que par
+  l'objet ; (d) le relevé de l'agent a changé de forme (champ npc), jamais vérifié avec deux
+  versions réellement désynchronisées ; (e) guard.yml est désormais COUPLÉ au nouveau JAR — un
+  rollback du JAR seul ferait rejeter ce dialogue au chargement, il faut restaurer les deux.
+Issues: #123 LAISSÉE OUVERTE — tout le périmètre est livré et déployé, mais la validation manuelle
+  en jeu (parcours Control Panel dans un navigateur, fenêtre de dialogue réelle, vrai redémarrage)
+  n'a pas été faite, et CLAUDE.md interdit de fermer une issue tant que des tests manuels restent
+  nécessaires. Fermeture possible dès que TC-257 passe. #218 NON touchée, conformément à la consigne.
+Première étape à reprendre: dérouler TC-257 (compte non OP), puis fermer #123, et seulement ensuite
+  attaquer #218 — qui est le consommateur prévu de ce mécanisme.
+```
+
+```text
 Date: 2026-10-07 (soirée — #161 / #26 partie B / #24 : entrée dans le Wild et état du Wild)
 Branche de départ: feature/169-special-mobs-boss @ 21fea61 (branche d'intégration réelle — l'audit a
   confirmé que feat/control-panel-admin-tools y est déjà intégrée ; CLAUDE.md mentionne encore

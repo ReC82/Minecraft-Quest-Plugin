@@ -5507,3 +5507,119 @@ ignore simplement le nœud `wild_conditions`, et le marqueur `%wild_conditions%`
 littéralement si un joueur empruntait ce choix. Pour éviter ce détail cosmétique, restaurer les deux.
 Aucune donnée joueur n'est concernée (la seule écriture est une ligne inerte dans
 `player_variables`).
+
+---
+
+## 2026-10-07 (lot 7) - Rapporter des objets à un PNJ : objectif DELIVER_ITEM_TO_NPC (#123)
+
+### Changement
+
+Nouveau type d'objectif de quête **`DELIVER_ITEM_TO_NPC`** : le joueur doit **réellement remettre**
+N exemplaires d'un objet au PNJ configuré, dans son dialogue. Posséder, ramasser ou fabriquer
+l'objet ne fait **jamais** avancer cet objectif — il n'écoute aucun événement de jeu, ce qui est
+exactement ce qui le distingue de `COLLECT_ITEM`.
+
+**Dépôts partiels persistants** : la quantité déjà remise *est* le compteur de l'objectif, stocké
+dans la table `quest_objective_progress` qui existait déjà. Elle survit donc à la mort, à une
+déconnexion et à un redémarrage, et le joueur revient déposer le reliquat plus tard. Les objets
+remis sont **consommés** et ne sont jamais restitués.
+
+Une **seule** interaction (« Donner les matériaux que j'ai ») remet tout ce que le joueur possède
+d'utile, pour tous les objectifs de ce PNJ et même plusieurs quêtes à la fois ; le serveur ne retire
+jamais plus que le reliquat et laisse le surplus au joueur. Plusieurs piles sont additionnées ; seul
+le stockage normal est touché (ni armure, ni main secondaire) ; **aucun objet personnalisé RPGQuest
+n'est consommé** (identité PDC), sans quoi une quête demandant `BOOK` détruirait le journal de
+quêtes d'un joueur.
+
+Côté dialogue : action **`DELIVER_QUEST_ITEMS`** et condition **`HAS_PENDING_DELIVERY`**, toutes deux
+à `npc` **optionnel** — vide, le destinataire est déduit de la clé du dialogue. La branche livrée
+dans `dialogues/guard.yml` (nœuds `delivery`, `delivery_after`, `delivery_done`) ne nomme donc ni
+quête, ni matériau, ni PNJ : elle se recopie telle quelle dans le dialogue d'un autre PNJ. Le
+marqueur `%delivery_status%` affiche, dans le texte d'un nœud, ce qui est déjà remis et ce qui
+manque.
+
+Control Panel : type d'objectif « **Rapporter des objets à un PNJ** » dans l'éditeur guidé (PNJ,
+objet, quantité), résumé « Rapporter Cuir (x4) à Garde », aller-retour YAML complet. Journal :
+« Cuir (à remettre) 2/4 ».
+
+Correctif inclus : les compteurs d'une quête active passaient par un `HashMap` écrit sur le thread
+principal mais lu depuis un thread de base de données (la condition de dialogue est évaluée sur le
+thread qui termine la requête précédente) — désormais un `ConcurrentHashMap`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** du fichier de données `RPGQuest/dialogues/guard.yml`.
+
+⚠️ `guard.yml` est **obligatoire** : un redéploiement de JAR ne met jamais à jour un dialogue déjà
+présent. Sans lui, le code de remise serait en place mais **aucun PNJ ne proposerait de recevoir
+quoi que ce soit**.
+
+`messages.yml` : **ne pas transférer**. Les six nouvelles clés `quest.delivery-*` sont fusionnées
+automatiquement dans le fichier du serveur par `QuestMessagesService#mergeMissingKeys`, ce qui
+préserve les personnalisations existantes — transférer le fichier les écraserait.
+
+Aucune migration, aucune nouvelle clé de `config.yml`, aucun monde touché.
+
+### Sauvegarde préalable
+
+Automatique via `scripts/deploy-verygames.sh` (JAR + chaque fichier `--also`). Ne pas écraser le
+backup du lot 6.
+
+### Déploiement
+
+**Effectué le 2026-10-07 entre 22:01 et 22:05 (heure locale).**
+
+- Branche `feature/123-deliver-item-to-npc`, commit `26a17ea`, construit et déployé depuis un
+  **worktree Git propre** (les fichiers de contenu non suivis du propriétaire restent intacts dans le
+  dépôt principal).
+- `./gradlew build` (inclut `test` des trois modules) : **1851 tests plugin + 725 panel + 30 web-api,
+  0 échec** (37 + 1 ignorés, limitations MockBukkit déjà documentées). **Premier passage échoué** :
+  `ManualTestQuestPackTest` exige une quête de `docs/manual-tests/quests/` par type d'objectif, et le
+  huitième type n'en avait pas ; corrigé (`test_deliver_item_to_npc.yml`) puis passage vert — les
+  chiffres ci-dessus sont ceux du passage après correction.
+- JAR transféré : **1 954 747 o**, SHA-256
+  `58cc3a8e454b4ee355802a0c38980769cdffa3a13439ccad3c7b8574039d2bfd`.
+- Backup préalable : `rpgquest-20261007T200111Z-predeploy.jar` (1 935 862 o) — correspond au JAR du
+  lot 6, la chaîne de rollback est donc intacte.
+- `RPGQuest/dialogues/guard.yml` : backup `extra-20261007T200111Z/RPGQuest/dialogues/guard.yml`
+  (6 638 o, SHA-256 `a984f15b…`) puis transfert de 9 019 o, SHA-256
+  `a9bd55c302833bb3ea6bfc948549bfae0e1c4106e34f79db3b7ca8a63f53d4b0` — **identique octet pour octet**
+  au fichier du dépôt. Vérifié **avant** le transfert : la version en ligne était exactement celle du
+  lot 6, donc aucune édition faite depuis le Control Panel n'a été écrasée.
+- **Redémarrage Minecraft effectué** : `save-all`, `stop` RCON, OFFLINE constaté, retour **ONLINE**.
+  **0 joueur connecté** avant comme après — aucune annonce n'a donc été diffusée.
+- Vérifications après redémarrage : `/plugins` → 5 plugins verts (Citizens, LuckPerms,
+  Multiverse-Core, RPGQuest, WorldEdit) ; `/rpgquest version` → `v0.1.0-SNAPSHOT` ;
+  `/quest admin reload` → **15 quêtes chargées, 0 erreur**.
+- **Non vérifié** : le chargement du dialogue `rpgquest:guard` constaté en jeu. Les logs serveur ne
+  sont pas accessibles depuis la machine de build (racine FTP = `plugins/`), les dialogues ne sont pas
+  rechargeables à chaud, et `/dialogue open` vérifie le joueur **avant** le dialogue — avec 0 joueur
+  connecté, la commande ne peut rien révéler. Le fichier déployé est néanmoins identique octet pour
+  octet à celui que `BundledDialoguesValidityTest` charge sans aucun problème.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` — **TC-257** de `docs/MANUAL_TEST_PLAN.md` (24 points) : création de la
+quête depuis le Control Panel et aller-retour en édition, « posséder ne suffit pas », dépôt partiel,
+survie à la mort / à la reconnexion / au redémarrage, quatre matériaux remis en une seule
+interaction, surplus jamais consommé, spam du bouton, mauvais PNJ, objectif déjà terminé, objet
+personnalisé épargné.
+
+### Rollback
+
+`scripts/rollback-verygames.sh --latest` restaure le JAR du lot 6, puis redémarrer. Pour
+`guard.yml` :
+
+```bash
+scripts/rollback-verygames.sh --also \
+  /home/ubuntu/.local/share/rpgquest/verygames-backups/extra-20261007T200111Z/RPGQuest/dialogues/guard.yml:RPGQuest/dialogues/guard.yml
+```
+
+⚠️ **Restaurer les deux fichiers, pas seulement le JAR.** Contrairement au lot 6, `guard.yml` est
+désormais **couplé** au nouveau JAR : l'ancien code ne connaît ni `DELIVER_QUEST_ITEMS` ni
+`HAS_PENDING_DELIVERY`, donc le dialogue resté en place serait **rejeté au chargement** (type d'action
+inconnu) et le Garde n'aurait plus de dialogue du tout.
+
+Aucune donnée joueur n'est perdue par un rollback : les compteurs de remise déjà écrits restent dans
+`quest_objective_progress` et redeviendront lisibles si le JAR est redéployé. En revanche les objets
+déjà consommés ne reviennent pas — c'est la sémantique voulue du ticket.

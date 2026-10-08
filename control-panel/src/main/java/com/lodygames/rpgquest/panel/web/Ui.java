@@ -192,8 +192,16 @@ public final class Ui {
 
     /** Bannière avec icône selon le type ({@code ok|err|warn|info}). {@code bodyHtml} déjà sûr. */
     public static String banner(String type, String bodyHtml) {
+        // Deux vocabulaires circulent dans les pages : les quatre noms courts historiques et les
+        // noms longs (« error », « warning », « success »). Les seconds retombaient en silence sur
+        // « info », si bien qu'un échec d'appel d'IA ou un refus de validation s'affichait en
+        // bandeau neutre — visible, mais pas comme un problème. On accepte donc les deux plutôt que
+        // de corriger un appel à la fois en attendant le suivant.
         String t = switch (type == null ? "" : type) {
             case "ok", "err", "warn", "info" -> type;
+            case "success" -> "ok";
+            case "error" -> "err";
+            case "warning" -> "warn";
             default -> "info";
         };
         String ic = switch (t) {

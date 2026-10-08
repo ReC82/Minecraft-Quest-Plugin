@@ -240,6 +240,19 @@ public final class AgentActionCatalog {
                 "npc.list", "quest.list");
         addContentWrite("npc.citizens.link", Permission.NPC_BIND_WRITE, "Lier un PNJ Citizens existant",
                 "npc.list", "npc.citizens.list");
+        // Issue #226 — les trois suppressions de PNJ. Permission DÉDIÉE (NPC_DELETE) : créer et
+        // corriger un PNJ est réversible, détruire ne l'est pas, et un PNJ supprimé par erreur
+        // emporte ce qui le référençait. Toutes trois sont des mutations sensibles, donc
+        // confirmées, et toutes trois invalident les deux catalogues PNJ.
+        addSensitiveWrite("npc.definition.delete", Permission.NPC_DELETE, false,
+                "Supprimer la définition logique d'un PNJ", "npc.list", "npc.citizens.list");
+        addSensitiveWrite("npc.citizens.unlink", Permission.NPC_DELETE, false,
+                "Délier un PNJ Citizens (sans le supprimer)", "npc.list", "npc.citizens.list");
+        // Détruire l'entité Citizens est l'inverse exact de sa création : elle exige donc AUSSI
+        // NPC_SPAWN_WRITE. Regrouper ne doit jamais accorder un droit que l'opérateur n'a pas.
+        addOrchestratedWrite("npc.citizens.delete", Permission.NPC_DELETE,
+                List.of(Permission.NPC_SPAWN_WRITE),
+                "Supprimer le PNJ Citizens physique", "npc.list", "npc.citizens.list");
         addSensitiveWrite("npc.citizens.create", Permission.NPC_SPAWN_WRITE, false, "Créer le PNJ Citizens",
                 "npc.list", "npc.citizens.list");
         // Issue #165 : opérations purement cosmétiques sur un PNJ Citizens existant. Réutilisent
@@ -506,6 +519,41 @@ public final class AgentActionCatalog {
                 }
                 params.put("quest_id", questId);
                 params.put("npc_id", npcId);
+            }
+            // Issue #226 — une suppression de PNJ ne part jamais sans cible explicite.
+            case "npc.definition.delete" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide.");
+                }
+                params.put("npc_id", npcId);
+                // Ce que l'écran croyait vrai : le serveur le confronte à la réalité et refuse si
+                // cela ne correspond plus. Facultatif, mais jamais inventé ici.
+                String expect = trim(form.get("expect_dialogue"));
+                if (!expect.isEmpty()) {
+                    if (!DIALOGUE_REF.matcher(expect).matches()) {
+                        return Validation.fail("Identifiant de dialogue attendu invalide.");
+                    }
+                    params.put("expect_dialogue", expect);
+                }
+            }
+            case "npc.citizens.unlink", "npc.citizens.delete" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide.");
+                }
+                int citizensId;
+                try {
+                    citizensId = Integer.parseInt(trim(form.get("citizens_id")));
+                } catch (NumberFormatException e) {
+                    return Validation.fail("Identifiant Citizens manquant ou invalide : une "
+                            + "suppression ne se fait jamais sans cible numérique explicite.");
+                }
+                if (citizensId < 1 || citizensId > 10_000_000) {
+                    return Validation.fail("Identifiant Citizens hors bornes.");
+                }
+                params.put("npc_id", npcId);
+                params.put("citizens_id", String.valueOf(citizensId));
             }
             case "npc.citizens.link" -> {
                 String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);

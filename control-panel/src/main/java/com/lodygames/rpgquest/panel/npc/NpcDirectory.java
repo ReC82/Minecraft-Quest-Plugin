@@ -58,6 +58,7 @@ public record NpcDirectory(List<NpcView> npcs, boolean available) {
                     intOr(m.get("dialogueNodes"), 0), intOr(m.get("dialogueChoices"), 0),
                     strings(m.get("dialogueStartsQuests")),
                     strings(m.get("questsGiven")), strings(m.get("questsReferenced")),
+                    strings(m.get("questsDelivering")),
                     strings(m.get("sources")), str(m.get("state")), warnings));
         }
         return new NpcDirectory(out, true);

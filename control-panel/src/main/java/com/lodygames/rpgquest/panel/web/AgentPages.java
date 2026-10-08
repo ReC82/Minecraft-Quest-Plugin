@@ -2009,6 +2009,8 @@ public final class AgentPages {
         boolean canLink = perms.can(session.effective(), Permission.NPC_BIND_WRITE);
         boolean canSpawn = perms.can(session.effective(), Permission.NPC_SPAWN_WRITE);
         boolean canWriteDialogue = perms.can(session.effective(), Permission.DIALOGUE_WRITE);
+        // Issue #226 : permission DÉDIÉE. Un rôle qui écrit des PNJ n'en supprime pas pour autant.
+        boolean canDelete = perms.can(session.effective(), Permission.NPC_DELETE);
         List<String> spawnWorlds = loadedWorldNames(agentId);
         sb.append(agentPicker(agentId, "/npcs", ""));
 
@@ -2148,7 +2150,7 @@ public final class AgentPages {
         for (Object o : npcs) {
             sb.append(renderNpcAccordionItem(session, agentId, asMap(o), i++, questTitles, questIds, giverRef,
                     dialogueOptions, citizensRoster, citizensSurveyAge, spawnWorlds, canWrite, canSetGiver,
-                    canLink, canSpawn, canWriteDialogue));
+                    canLink, canSpawn, canWriteDialogue, canDelete));
         }
         // #101 : PNJ Citizens présents en jeu mais sans fiche RPGQuest ni liaison.
         int fci = 0;
@@ -2312,7 +2314,8 @@ public final class AgentPages {
                                           List<String[]> dialogueOptions, List<Object> citizensRoster,
                                           Optional<String> citizensSurveyAge,
                                           List<String> spawnWorlds, boolean canWrite, boolean canSetGiver,
-                                          boolean canLink, boolean canSpawn, boolean canWriteDialogue) {
+                                          boolean canLink, boolean canSpawn, boolean canWriteDialogue,
+                                          boolean canDelete) {
         String id = str(n.get("id"));
         String displayName = str(n.get("displayName"));
         boolean hasName = !displayName.isEmpty() && !"null".equals(displayName);
@@ -2598,6 +2601,21 @@ public final class AgentPages {
             sb.append("</div>");
         }
         sb.append(forms);
+
+        // ---- ZONE DE DANGER (issue #226) ----
+        // Un lien, pas un bouton de soumission : il mène à l'aperçu des dépendances, qui est le
+        // seul endroit d'où une suppression peut partir. Rien ne se supprime depuis cette liste.
+        if (canDelete) {
+            sb.append("<div class=\"danger-zone\"><div class=\"dz-title\">")
+                    .append(Icons.icon("warning")).append("Zone de danger</div>")
+                    .append("<p class=\"muted\">La suppression d'un PNJ touche plusieurs couches — "
+                            + "définition, liaison, PNJ Citizens, dialogue, quêtes qui le citent. "
+                            + "L'aperçu les montre toutes avant de proposer quoi que ce soit, et "
+                            + "aucun dialogue n'est jamais supprimé.</p>")
+                    .append("<a class=\"btn btn-sm btn-outline-danger\" href=\"/npcs/delete?npc=")
+                    .append(Http.esc(id)).append("\">").append(Icons.icon("warning"))
+                    .append("Supprimer…</a></div>");
+        }
 
         sb.append("</div></div></div>");
         return sb.toString();

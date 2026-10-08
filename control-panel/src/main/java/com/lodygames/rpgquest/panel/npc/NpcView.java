@@ -29,7 +29,8 @@ import java.util.Locale;
  * @param declaredDialogueId   dialogue déclaré par la définition, ou vide
  * @param loadedDialogueId     dialogue réellement chargé et rattaché à ce PNJ, ou vide
  * @param questsGiven          quêtes dont ce PNJ est le donneur
- * @param questsReferenced     quêtes qui le citent (objectif « parler à », remise…)
+ * @param questsReferenced     quêtes où il est cible d'un objectif {@code TALK_TO_NPC}
+ * @param questsDelivering     quêtes où il est destinataire d'un {@code DELIVER_ITEM_TO_NPC}
  * @param sources              ce qui fait exister cette entrée : {@code DEFINITION}, {@code BINDING},
  *                             {@code DIALOGUE}, {@code QUEST_GIVER}, {@code QUEST_TALK}
  * @param state                état calculé par le moteur ({@code LINKED}, {@code UNDEFINED_REFERENCE}…)
@@ -39,7 +40,8 @@ public record NpcView(String id, String displayName, boolean definitionPresent,
                       boolean enabled, String declaredDialogueId, String loadedDialogueId,
                       int dialogueNodes, int dialogueChoices, List<String> dialogueStartsQuests,
                       List<String> questsGiven, List<String> questsReferenced,
-                      List<String> sources, String state, List<Warning> warnings) {
+                      List<String> questsDelivering, List<String> sources, String state,
+                      List<Warning> warnings) {
 
     /** Anomalie relevée par le moteur. {@code severity} ∈ {@code error|warning|info}. */
     public record Warning(String code, String severity, String message) {
@@ -53,6 +55,7 @@ public record NpcView(String id, String displayName, boolean definitionPresent,
         dialogueStartsQuests = List.copyOf(dialogueStartsQuests == null ? List.of() : dialogueStartsQuests);
         questsGiven = List.copyOf(questsGiven == null ? List.of() : questsGiven);
         questsReferenced = List.copyOf(questsReferenced == null ? List.of() : questsReferenced);
+        questsDelivering = List.copyOf(questsDelivering == null ? List.of() : questsDelivering);
         sources = List.copyOf(sources == null ? List.of() : sources);
         state = state == null ? "" : state;
         warnings = List.copyOf(warnings == null ? List.of() : warnings);
@@ -132,6 +135,9 @@ public record NpcView(String id, String displayName, boolean definitionPresent,
         }
         if (declaresSource("QUEST_TALK")) {
             parts.add("comme cible d'objectif de " + joinQuoted(questsReferenced));
+        }
+        if (declaresSource("QUEST_DELIVER")) {
+            parts.add("comme destinataire d'une remise de " + joinQuoted(questsDelivering));
         }
         if (parts.isEmpty()) {
             parts.add("par une source que le relevé ne précise pas");

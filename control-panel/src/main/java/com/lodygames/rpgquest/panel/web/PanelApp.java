@@ -234,6 +234,9 @@ public final class PanelApp {
         route("/stories/delete", exchange -> handleContentDelete(exchange, "stories"));
         route("/npcs", exchange -> handleBusinessPage(exchange, "/npcs", "PNJ",
                 Permission.NPC_READ, agentPages::npcs));
+        // Issue #226 : GET = aperçu des dépendances couche par couche, POST = une opération précise
+        // après confirmation tapée. Même discipline que #194, sur un objet qui vit sur cinq couches.
+        route("/npcs/delete", this::handleNpcDelete);
         route("/travel", exchange -> handleBusinessPage(exchange, "/travel", "Réseau de voyage",
                 Permission.TRAVEL_READ, agentPages::travel));
         route("/mobs", exchange -> handleBusinessPage(exchange, "/mobs", "Mobs spéciaux & boss",
@@ -1302,6 +1305,173 @@ public final class PanelApp {
 
         Http.html(exchange, 200, renderPage(title, session, base,
                 contentDeletion.result(kind, plan.plainId(), result, queued)));
+    }
+
+    // ---- Suppression d'un PNJ (issue #226) -----------------------------------------------
+
+    /**
+     * {@code /npcs/delete} : aperçu des dépendances (GET), puis <strong>une</strong> opération
+     * choisie et confirmée (POST).
+     *
+     * <p><strong>Trois vérifications indépendantes avant la moindre action.</strong> Le rôle doit
+     * porter {@link Permission#NPC_DELETE} — et {@link Permission#NPC_SPAWN_WRITE} en plus pour
+     * détruire une entité Citizens, parce que c'est l'inverse exact de sa création. Le plan doit
+     * proposer l'opération demandée : une URL forgée ne contourne donc pas un blocage affiché.
+     * Et la confirmation doit être exacte, identifiant Citizens compris.</p>
+     *
+     * <p>Rien n'est écrit ici : les opérations deviennent des actions agent whitelistées, que le
+     * serveur exécute après avoir <strong>revérifié</strong> les dépendances de son côté. Le panel
+     * ne touche ni au disque du serveur, ni au registre Citizens.</p>
+     */
+    private void handleNpcDelete(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.NPC_DELETE)) {
+            forbidden(exchange, session, "/npcs");
+            return;
+        }
+        boolean canDeleteCitizens = permissions.can(session.effective(), Permission.NPC_SPAWN_WRITE);
+
+        String agentId = config.agents().defaultAgentId();
+        boolean post = "POST".equalsIgnoreCase(exchange.getRequestMethod());
+        String rawNpc;
+        String typedId = null;
+        String typedCitizens = null;
+        String rawOp = null;
+        if (post) {
+            Map<String, String> form = Http.formBody(exchange);
+            if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+                Http.html(exchange, 403, Layout.bare("CSRF",
+                        "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+                return;
+            }
+            rawNpc = form.getOrDefault("npc", "").trim();
+            rawOp = form.get("op");
+            typedId = form.get(NpcDeletionPages.CONFIRM_FIELD);
+            typedCitizens = form.get(NpcDeletionPages.CONFIRM_CITIZENS_FIELD);
+        } else {
+            rawNpc = Http.query(exchange).getOrDefault("npc", "").trim();
+        }
+
+        // Le plan est TOUJOURS recalculé sur le dernier relevé, y compris au POST : la décision
+        // n'est jamais prise sur ce que le formulaire prétend, mais sur ce que le catalogue dit.
+        var plan = com.lodygames.rpgquest.panel.npc.NpcDeletionAnalyzer.analyze(
+                agentPages.npcDirectory(agentId), rawNpc);
+
+        if (!post) {
+            Http.html(exchange, 200, renderPage("Supprimer un PNJ", session, "/npcs",
+                    NpcDeletionPages.preview(plan, session.csrfToken(), null, canDeleteCitizens),
+                    Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+            return;
+        }
+
+        var op = com.lodygames.rpgquest.panel.npc.NpcDeletionPlan.Op.of(rawOp).orElse(null);
+        String refusal = refuseNpcDeletion(plan, op, typedId, typedCitizens, canDeleteCitizens);
+        if (refusal != null) {
+            audit.record(session.username(), "npc.delete", "npc=" + plan.npcId() + " op=" + rawOp,
+                    "REFUSED", refusal, UUID.randomUUID().toString().substring(0, 8));
+            Http.html(exchange, 200, renderPage("Supprimer un PNJ", session, "/npcs",
+                    NpcDeletionPages.preview(plan, session.csrfToken(), refusal, canDeleteCitizens),
+                    Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+            return;
+        }
+
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        List<String> queued = queueNpcDeletion(agentId, plan, op, session.username());
+        audit.record(session.username(), "npc.delete",
+                "npc=" + plan.npcId() + " op=" + op.name()
+                        + " citizens=" + plan.citizensNumericId(),
+                "OK", String.join(" + ", queued), rid);
+        LOG.log(System.Logger.Level.INFO, "event=npc_delete rid=" + rid + " npc=" + plan.npcId()
+                + " op=" + op.name() + " citizens=" + plan.citizensNumericId()
+                + " actions=" + String.join(",", queued) + " by=" + session.username());
+
+        Http.html(exchange, 200, renderPage("Supprimer un PNJ", session, "/npcs",
+                NpcDeletionPages.result(plan, op, queued),
+                Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    /**
+     * Pourquoi la suppression est refusée, ou {@code null} si elle peut partir.
+     *
+     * <p>L'ordre compte : on vérifie que l'opération <em>existe et est proposée par le plan</em>
+     * avant de regarder la confirmation. Une URL forgée vers une opération bloquée est donc refusée
+     * pour la bonne raison, et le message le dit.</p>
+     */
+    private String refuseNpcDeletion(com.lodygames.rpgquest.panel.npc.NpcDeletionPlan plan,
+                                     com.lodygames.rpgquest.panel.npc.NpcDeletionPlan.Op op,
+                                     String typedId, String typedCitizens,
+                                     boolean canDeleteCitizens) {
+        if (op == null) {
+            return "Opération inconnue. Rien n'a été fait.";
+        }
+        var proposed = plan.operation(op).orElse(null);
+        if (proposed == null || !proposed.available()) {
+            return "Cette opération n'est pas disponible pour ce PNJ : "
+                    + (proposed == null ? "elle ne s'applique pas ici."
+                            : String.join(" ", proposed.blockers()))
+                    + " Rien n'a été fait.";
+        }
+        if (op.touchesCitizens() && op != com.lodygames.rpgquest.panel.npc.NpcDeletionPlan.Op
+                .UNLINK_CITIZENS && !canDeleteCitizens) {
+            return "Détruire un PNJ Citizens exige le droit d'apparition de PNJ, que votre rôle "
+                    + "n'a pas. Rien n'a été fait.";
+        }
+        if (!NpcDeletionPages.confirmationMatches(plan, op, typedId, typedCitizens)) {
+            return "Confirmation incorrecte : il faut retaper exactement l'identifiant du PNJ"
+                    + (op.touchesCitizens() && plan.citizensNumericId() != null
+                            ? " et l'identifiant numérique Citizens" : "")
+                    + ". Rien n'a été fait.";
+        }
+        return null;
+    }
+
+    /**
+     * Met en file les actions agent de l'opération choisie.
+     *
+     * <p>Le nettoyage complet en enchaîne deux, Citizens d'abord. L'ordre est celui du journal, pas
+     * une dépendance : chaque action vérifie ses propres préconditions côté serveur et reste
+     * correcte même exécutée seule — détruire l'entité retire sa liaison sans avoir besoin de la
+     * définition, et supprimer la définition n'a pas besoin que la liaison ait disparu.</p>
+     */
+    private List<String> queueNpcDeletion(String agentId,
+                                          com.lodygames.rpgquest.panel.npc.NpcDeletionPlan plan,
+                                          com.lodygames.rpgquest.panel.npc.NpcDeletionPlan.Op op,
+                                          String username) {
+        List<String> queued = new ArrayList<>();
+        Integer citizens = plan.citizensNumericId();
+        String npcId = plan.npcId();
+        String dialogue = plan.npc()
+                .map(com.lodygames.rpgquest.panel.npc.NpcView::declaredDialogueId).orElse("");
+
+        if (op == com.lodygames.rpgquest.panel.npc.NpcDeletionPlan.Op.UNLINK_CITIZENS) {
+            agentStore.createAction(agentId, "npc.citizens.unlink",
+                    Map.of("npc_id", npcId, "citizens_id", String.valueOf(citizens)), username);
+            queued.add("npc.citizens.unlink");
+            return queued;
+        }
+        if (op == com.lodygames.rpgquest.panel.npc.NpcDeletionPlan.Op.DELETE_CITIZENS
+                || (op == com.lodygames.rpgquest.panel.npc.NpcDeletionPlan.Op.FULL_CLEANUP
+                        && citizens != null)) {
+            agentStore.createAction(agentId, "npc.citizens.delete",
+                    Map.of("npc_id", npcId, "citizens_id", String.valueOf(citizens)), username);
+            queued.add("npc.citizens.delete");
+        }
+        if (op == com.lodygames.rpgquest.panel.npc.NpcDeletionPlan.Op.DEFINITION_ONLY
+                || op == com.lodygames.rpgquest.panel.npc.NpcDeletionPlan.Op.FULL_CLEANUP) {
+            Map<String, String> params = new java.util.LinkedHashMap<>();
+            params.put("npc_id", npcId);
+            if (!dialogue.isEmpty()) {
+                // Ce que l'écran croyait vrai : le serveur refuse si cela ne correspond plus.
+                params.put("expect_dialogue", dialogue);
+            }
+            agentStore.createAction(agentId, "npc.definition.delete", params, username);
+            queued.add("npc.definition.delete");
+        }
+        return queued;
     }
 
     // ---- Gestion des utilisateurs (issue #50) --------------------------------------------

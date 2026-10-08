@@ -63,6 +63,21 @@ public enum Permission {
      * renommer ; seul un administrateur supprime.
      */
     CONTENT_DELETE,
+    /**
+     * Supprimer un PNJ depuis {@code /npcs} (issue #226) : définition logique, liaison Citizens, PNJ
+     * Citizens physique, ou les trois.
+     *
+     * <p>Permission <strong>dédiée</strong>, et volontairement distincte de {@link #NPC_WRITE} et de
+     * {@link #NPC_SPAWN_WRITE} : créer et corriger un PNJ est réversible, détruire une entité
+     * Citizens ne l'est pas, et un PNJ supprimé par erreur emporte avec lui tout ce qui le
+     * référençait. Même raisonnement que {@link #CONTENT_DELETE} pour les quêtes et les stories :
+     * un éditeur peut désactiver ou renommer ; seul un administrateur supprime.</p>
+     *
+     * <p>Détruire le PNJ Citizens <em>physique</em> exige en plus {@link #NPC_SPAWN_WRITE} — c'est
+     * l'inverse exact de sa création, et regrouper ne doit jamais accorder un droit que l'opérateur
+     * n'a pas.</p>
+     */
+    NPC_DELETE,
     DOCS_READ,
     DIAGNOSTICS_READ,
     AUDIT_READ,

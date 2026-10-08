@@ -81,6 +81,17 @@ public final class DiagnosticHelp {
                 "Le contenu qui pointe vers ce PNJ ne fonctionnera pas correctement.",
                 "Créez sa définition RPGQuest, ou corrigez la référence dans le contenu concerné.",
                 "pnj-depannage");
+        // Issue #225 — l'entrée « fantôme » du cas Mira. Elle n'est la faute de personne : c'est
+        // un dialogue que le catalogue déduit en PNJ, faute de porteur. Le dire est la moitié du
+        // nettoyage, parce qu'on ne corrige pas une anomalie dont on ignore la cause.
+        add("DIALOGUE_WITHOUT_NPC", Level.ERROR, "Dialogue sans PNJ porteur",
+                "{name} n'est pas un vrai PNJ : c'est un dialogue dont aucune fiche RPGQuest ne se "
+                        + "déclare porteuse. Le catalogue en déduit un PNJ du même nom, faute de mieux.",
+                "Personne ne peut déclencher ce dialogue en jeu : aucun PNJ ne le porte.",
+                "Deux remèdes, au choix : créer la fiche RPGQuest de ce nom, ou rattacher ce "
+                        + "dialogue à un PNJ existant en le choisissant dans le champ « Dialogue » "
+                        + "de sa fiche.",
+                "pnj-depannage");
         add("DIALOGUE_MISSING", Level.ERROR, "Dialogue introuvable",
                 "La fiche de {name} pointe vers un dialogue qui n'existe pas (ou qui n'est pas chargé).",
                 "Le PNJ n'ouvrira aucune conversation en jeu.",

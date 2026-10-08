@@ -1443,7 +1443,11 @@ public final class PanelApp {
                                           String username) {
         List<String> queued = new ArrayList<>();
         Integer citizens = plan.citizensNumericId();
-        String npcId = plan.npcId();
+        // L'identifiant envoyé au serveur est celui que le SERVEUR a donné, pas celui que l'URL
+        // portait : le plan a résolu la fiche sans tenir compte de la casse, et c'est son id réel
+        // qui nomme le fichier à supprimer.
+        String npcId = plan.npc().map(com.lodygames.rpgquest.panel.npc.NpcView::id)
+                .orElse(plan.npcId());
         String dialogue = plan.npc()
                 .map(com.lodygames.rpgquest.panel.npc.NpcView::declaredDialogueId).orElse("");
 

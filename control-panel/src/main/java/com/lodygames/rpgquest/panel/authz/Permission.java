@@ -37,6 +37,13 @@ public enum Permission {
     /** Exporter le contenu déclaratif en content pack versionné (issue #108). Lecture — jamais d'écriture. */
     CONTENT_EXPORT,
     /**
+     * Importer un content pack (issue #109). Permission <strong>dédiée</strong> : l'import écrit
+     * dans la source, et peut remplacer plusieurs contenus d'un coup — ce n'est pas la même chose
+     * qu'exporter, et pas la même chose qu'éditer un élément à la fois. Accordée aux rôles qui
+     * écrivent déjà du contenu, jamais à un rôle de lecture ou de test.
+     */
+    CONTENT_IMPORT,
+    /**
      * Supprimer une quête ou une story (issue #194). Permission <strong>dédiée</strong>, et
      * volontairement absente du rôle « Éditeur de contenu » : écrire et corriger du contenu est un
      * geste réversible, le détruire ne l'est pas de la même façon. Un éditeur peut vider ou

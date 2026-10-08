@@ -19,6 +19,7 @@ import com.lodygames.rpgquest.panel.bridge.BridgeException;
 import com.lodygames.rpgquest.panel.bridge.BridgeHealth;
 import com.lodygames.rpgquest.panel.config.PanelConfig;
 import com.lodygames.rpgquest.panel.config.Target;
+import com.lodygames.rpgquest.panel.content.ContentPackImport;
 import com.lodygames.rpgquest.panel.content.ContentPackSchema;
 import com.lodygames.rpgquest.panel.content.ContentPackTemplates;
 import com.lodygames.rpgquest.panel.content.ContentWorkspace;
@@ -242,6 +243,7 @@ public final class PanelApp {
         // Issue #110 — contrat de contenu machine-readable. Trois téléchargements en lecture pure,
         // tous GÉNÉRÉS depuis les descripteurs du moteur : aucun fichier maintenu à la main, donc
         // rien qui puisse décrire un type inexistant ou oublier un type existant.
+        route("/content/import", this::handleContentImport);
         route("/content/schema.json", this::handleContentSchema);
         route("/content/template", this::handleContentTemplate);
         route("/content/contract.md", this::handleContentContractDoc);
@@ -646,6 +648,100 @@ public final class PanelApp {
         Map<String, String> query = Http.query(exchange);
         String body = contentExportPages.render(query.get("toast"), query.get("err"));
         Http.html(exchange, 200, renderPage("Export de contenu", session, "/content/export", body,
+                Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    // ---- Import de content pack (issue #109) ---------------------------------------------
+
+    /**
+     * GET rend la page ; POST analyse, puis — seulement si {@code confirm} est présent et que
+     * l'analyse est importable — enregistre dans la source.
+     *
+     * <p>L'analyse est <strong>refaite à chaque soumission</strong> plutôt que mise en cache : une
+     * analyse conservée entre deux requêtes deviendrait fausse dès qu'un éditeur enregistre en
+     * parallèle, et la confirmation écrirait alors d'après un état périmé. Ici la confirmation
+     * re-valide tout et redétecte les collisions apparues entre-temps.</p>
+     */
+    private void handleContentImport(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.CONTENT_IMPORT)) {
+            forbidden(exchange, session, "/content/import");
+            return;
+        }
+
+        String error = null;
+        String pack = null;
+        ContentPackImport.Analysis analysis = null;
+        List<ContentPackImport.WriteOutcome> applied = null;
+        Map<String, ContentPackImport.Decision> decisions = new LinkedHashMap<>();
+
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            // Lecture bornée qui SIGNALE le dépassement : un pack tronqué en silence serait pire
+            // qu'un refus, car il s'importerait amputé de ses derniers éléments.
+            Optional<Map<String, String>> body = Http.formBody(exchange, 4 * 1024 * 1024);
+            if (body.isEmpty()) {
+                error = "Requête trop volumineuse. Taille maximale d'un pack : "
+                        + (ContentPackImport.MAX_BYTES / 1024) + " Kio.";
+            } else {
+                Map<String, String> form = body.get();
+                if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+                    Http.html(exchange, 403, Layout.bare("CSRF",
+                            "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+                    return;
+                }
+                pack = form.getOrDefault("pack", "");
+                for (Map.Entry<String, String> e : form.entrySet()) {
+                    if (e.getKey().startsWith("decision.")) {
+                        String key = e.getKey().substring("decision.".length());
+                        try {
+                            decisions.put(key, ContentPackImport.Decision.valueOf(e.getValue()));
+                        } catch (IllegalArgumentException ignored) {
+                            // Valeur d'arbitrage inconnue : traitée comme absente, donc la collision
+                            // reste un conflit. Jamais interprétée comme « remplacer ».
+                        }
+                    }
+                }
+                String rid = UUID.randomUUID().toString().substring(0, 8);
+                RefData ref = agentPages.referenceData(config.agents().defaultAgentId());
+                analysis = ContentPackImport.analyze(pack, contentWorkspace, ref, decisions);
+                boolean confirm = "true".equals(form.get("confirm"));
+                audit.record(session.username(), confirm ? "content.import.confirm" : "content.import.analyze",
+                        "bytes=" + pack.getBytes(StandardCharsets.UTF_8).length
+                                + " elements=" + analysis.elements().size()
+                                + " write=" + analysis.writing()
+                                + " conflicts=" + analysis.conflicts()
+                                + " invalid=" + analysis.invalid()
+                                + " decisions=" + decisions.size(),
+                        analysis.importable() ? "OK" : "BLOCKED",
+                        analysis.readable() ? "analyse" : "pack refusé", rid);
+                if (confirm) {
+                    if (!analysis.importable()) {
+                        error = "Import refusé : l'analyse n'est pas confirmable en l'état.";
+                    } else {
+                        applied = ContentPackImport.apply(analysis, contentWorkspace);
+                        for (ContentPackImport.WriteOutcome o : applied) {
+                            if (o.result() != null) {
+                                audit.record(session.username(), "content.import.write",
+                                        o.element().key() + " status=" + o.element().status(),
+                                        o.result().ok() ? "OK" : "FAILED",
+                                        o.result().ok() ? o.result().repoPath() : o.result().message(), rid);
+                            }
+                        }
+                        // Après écriture, on réanalyse pour que la page montre l'état RÉEL de la
+                        // source (les éléments écrits deviennent « inchangé »), au lieu de réafficher
+                        // l'intention d'écrire.
+                        analysis = ContentPackImport.analyze(pack, contentWorkspace, ref, decisions);
+                    }
+                }
+            }
+        }
+
+        String body = ContentImportPages.render(contentWorkspace, pack, analysis, applied, decisions, error);
+        Http.html(exchange, 200, renderPage("Importer un content pack", session, "/content/import", body,
                 Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
 

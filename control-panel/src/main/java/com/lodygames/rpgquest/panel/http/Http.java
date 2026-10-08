@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /** Petites aides autour de {@code com.sun.net.httpserver} : cookies, formulaires, réponses. */
 public final class Http {
@@ -38,6 +39,25 @@ public final class Http {
     public static Map<String, String> formBody(HttpExchange exchange) throws IOException {
         byte[] bytes = exchange.getRequestBody().readNBytes(64 * 1024);
         return parseUrlEncoded(new String(bytes, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Même chose, mais avec une limite explicite et un <strong>dépassement détecté</strong>
+     * (issue #109).
+     *
+     * <p>{@link #formBody(HttpExchange)} tronque en silence à 64 Kio, ce qui convient à un
+     * formulaire d'administration mais pas à l'import d'un fichier : un pack coupé au milieu
+     * donnerait soit un YAML illisible, soit — bien pire — un pack amputé de ses derniers éléments
+     * sans que personne ne le voie. Ici, un corps plus grand que {@code maxBytes} renvoie
+     * {@link Optional#empty()} pour que l'appelant refuse lisiblement.</p>
+     */
+    public static Optional<Map<String, String>> formBody(HttpExchange exchange, int maxBytes)
+            throws IOException {
+        byte[] bytes = exchange.getRequestBody().readNBytes(maxBytes + 1);
+        if (bytes.length > maxBytes) {
+            return Optional.empty();
+        }
+        return Optional.of(parseUrlEncoded(new String(bytes, StandardCharsets.UTF_8)));
     }
 
     public static Map<String, String> query(HttpExchange exchange) {

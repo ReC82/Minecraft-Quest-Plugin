@@ -169,7 +169,6 @@ public final class QuestYaml {
 
     /** Relit le YAML d'une quête (forme émise par {@link #write}). Best-effort ; {@code problems} non vide = divergence. */
     public static ReadResult read(String yaml) {
-        List<String> problems = new ArrayList<>();
         Object root;
         try {
             root = MiniYaml.parse(yaml);
@@ -179,6 +178,17 @@ public final class QuestYaml {
         if (!(root instanceof Map<?, ?> m)) {
             return new ReadResult(null, List.of("Racine YAML inattendue."));
         }
+        return fromMap(m);
+    }
+
+    /**
+     * Construit le brouillon depuis une table déjà désérialisée. Issue #109 : l'import de content
+     * pack passe par <strong>exactement</strong> ce code, puisqu'un pack est un seul document YAML
+     * dont chaque élément est une table de la même forme qu'un fichier source. Il n'existe donc pas
+     * de second lecteur susceptible de diverger.
+     */
+    public static ReadResult fromMap(Map<?, ?> m) {
+        List<String> problems = new ArrayList<>();
         QuestDraft d = new QuestDraft();
         d.id = plainId(str(m.get("id")));
         // « title » / « description » acceptent aussi une table de traductions côté moteur

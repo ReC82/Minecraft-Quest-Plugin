@@ -117,6 +117,14 @@ public final class DialogueYaml {
         if (!(root instanceof Map<?, ?> m)) {
             return new ReadResult(null, List.of("Racine YAML inattendue."));
         }
+        return fromMap(m);
+    }
+
+    /**
+     * Construit le brouillon depuis une table déjà désérialisée (issue #109, même raison que
+     * {@code QuestYaml.fromMap}).
+     */
+    public static ReadResult fromMap(Map<?, ?> m) {
         List<String> problems = new ArrayList<>();
         DialogueDraft d = new DialogueDraft();
         d.id = plainId(str(m.get("id")));

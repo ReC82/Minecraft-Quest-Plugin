@@ -116,6 +116,44 @@ public record RefData(List<String> quests, List<String> npcs, List<String> world
         itemCatalog = itemCatalog == null ? ItemCatalog.empty() : itemCatalog;
     }
 
+    /**
+     * Issue #109 — copie augmentée des éléments <strong>fournis par le pack en cours d'import</strong>.
+     *
+     * <p>Sans cela, une story qui référence une quête du même pack serait signalée comme référence
+     * inconnue : au moment de la validation, cette quête n'existe en effet nulle part encore. Les ids
+     * ajoutés sont marqués d'origine « source » — ils ne sont pas (encore) connus du runtime, et
+     * l'affichage ne doit pas laisser croire le contraire.</p>
+     *
+     * <p>Rien n'est retiré : un id déjà connu du serveur le reste, avec son origine d'origine.</p>
+     */
+    public RefData plus(List<String> packQuests, List<String> packNpcs,
+                        Map<String, List<String>> packQuestPrereqs) {
+        List<String> q = new java.util.ArrayList<>(quests);
+        for (String id : packQuests == null ? List.<String>of() : packQuests) {
+            if (id != null && !id.isBlank() && !q.contains(id)) {
+                q.add(id);
+            }
+        }
+        List<String> n = new java.util.ArrayList<>(npcs);
+        for (String id : packNpcs == null ? List.<String>of() : packNpcs) {
+            if (id != null && !id.isBlank() && !n.contains(id)) {
+                n.add(id);
+            }
+        }
+        Map<String, String> origins = new java.util.LinkedHashMap<>(questOrigins);
+        Map<String, List<String>> prereqs = new java.util.LinkedHashMap<>(questPrereqs);
+        for (String id : packQuests == null ? List.<String>of() : packQuests) {
+            if (id != null && !id.isBlank()) {
+                origins.putIfAbsent(id, ORIGIN_SOURCE);
+            }
+        }
+        if (packQuestPrereqs != null) {
+            prereqs.putAll(packQuestPrereqs);
+        }
+        return new RefData(q, n, worlds, true, npcsKnown || !n.isEmpty(), worldsKnown,
+                npcNames, questNames, origins, prereqs, itemCatalog);
+    }
+
     public static RefData empty() {
         return new RefData(List.of(), List.of(), List.of(), false, false, false);
     }

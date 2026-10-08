@@ -227,6 +227,20 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   d'accepter le champ `text_color`, le formulaire ne l'émet plus. Les seuls champs restés en texte
   simple sont ceux qui ne sont jamais colorés en jeu (locuteur d'un dialogue, valeurs techniques
   des descripteurs).
+- **Atelier IA** *(issue #146, phase 1)* — `/ai/studio` : décrire une quête en français et obtenir
+  une proposition **déjà validée**. Le panel joint automatiquement le contrat de #110, le schéma, les
+  types réellement supportés et les références réellement existantes — l'administrateur ne fournit
+  que son intention. La réponse traverse les **mêmes validateurs** que l'éditeur guidé ; en cas de
+  refus, un bouton renvoie à l'IA sa propre sortie *et* les diagnostics réels. **L'atelier n'écrit
+  jamais** : il s'arrête à l'aperçu, et l'enregistrement passe par la page d'import (#109) avec sa
+  confirmation explicite — il n'existe qu'un seul chemin d'écriture dans le panel.
+  `/ai/providers` (permission **distincte**, administrateurs seulement) configure trois fournisseurs
+  réels derrière l'abstraction `AiProvider` : Anthropic/Claude, OpenAI et API compatibles, Google
+  Gemini. La clé API vit dans la base locale du panel (hors Git, mode 600), n'est **jamais** renvoyée
+  au navigateur (seules sa longueur et une empreinte SHA-256 tronquée sont affichées), **jamais**
+  journalisée, et ne part **jamais** en clair (URL de base HTTP refusée). Plafond de jetons et délai
+  configurables ; un échec ou un délai dépassé ne modifie rien. Limites : une seule quête par
+  génération, pas de dialogues ni de stories, aucun coût monétaire estimé.
 - **Import sécurisé d'un content pack** *(issue #109, phase 2)* — `/content/import`, permission
   dédiée `CONTENT_IMPORT`, CSRF, audit. Le pack est analysé, validé par les validateurs réels et
   comparé à la source ; **rien n'est écrit avant la confirmation**. Un identifiant déjà présent et

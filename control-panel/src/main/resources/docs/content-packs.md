@@ -55,7 +55,37 @@ plutôt qu'écrasé.
 Un pack dont la `schemaVersion` n'est pas celle supportée est refusé avec la version attendue — jamais
 interprété approximativement.
 
-## Faire générer un pack par une IA
+## Créer une quête avec une IA, depuis le panel
+
+Page **Créer avec une IA** (`/ai/studio`). C'est la voie la plus courte : vous décrivez la quête en
+français, le panel joint automatiquement le contrat, le schéma, les types réellement supportés et
+les références réellement existantes, puis affiche la proposition déjà validée.
+
+1. **Décrire** — un seul champ est nécessaire : ce que la quête doit raconter. Les autres (titre,
+   identifiant, PNJ donneur, difficulté, durée, nombre d'étapes, récompense, contraintes) affinent
+   la demande. Le **titre** se met en forme avec la palette habituelle : aucune balise à écrire.
+2. **Demander une proposition** — l'appel part du **serveur du panel**, jamais de votre navigateur.
+   Il peut prendre une minute.
+3. **Relire** — la proposition passe par les **mêmes validateurs** que l'éditeur guidé. Chaque
+   problème est affiché. Si la proposition est refusée, un bouton **« Demander une correction »**
+   renvoie à l'IA sa propre sortie *et* les erreurs exactes.
+4. **Enregistrer** — le bouton ouvre la page d'import, où vous confirmez. **L'atelier n'écrit
+   jamais** : il n'a aucun chemin vers le disque.
+
+Un échec, un délai dépassé ou une réponse illisible ne modifient rien.
+
+### Avant de pouvoir l'utiliser
+
+Page **Fournisseurs d'IA** (`/ai/providers`), réservée aux administrateurs : activer un fournisseur
+(Anthropic, OpenAI ou compatible, Google Gemini), y coller une clé API, puis **tester la
+connexion** — « enregistré » ne prouve pas qu'une clé fonctionne.
+
+La clé reste sur le serveur du panel : elle n'est jamais renvoyée au navigateur, jamais journalisée,
+jamais dans Git. L'écran n'affiche que sa longueur et une empreinte, de quoi reconnaître quelle clé
+est en place sans en révéler un caractère. Un champ clé laissé vide signifie « ne pas y toucher » ;
+effacer est un bouton distinct.
+
+## Faire générer un pack par une IA, à la main
 
 La même page propose trois documents à télécharger. Ils décrivent le format de façon exploitable
 **sans accès au code ni au serveur**, et ils sont **générés** à partir des descripteurs réels du

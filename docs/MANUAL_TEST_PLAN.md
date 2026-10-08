@@ -3880,6 +3880,80 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-265 — Atelier IA : créer une quête avec une IA (issue #146, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier qu'une quête peut réellement être générée, que l'IA ne contourne aucune
+    validation, que **rien** n'est enregistré sans confirmation, et que la **clé API ne fuit
+    jamais**. Au navigateur, puis une vérification en jeu.
+-   **Pré-requis :** Control Panel déployé, une **vraie clé API** chez l'un des trois fournisseurs,
+    et un compte Administrateur (pour la configuration) ainsi qu'un compte Éditeur de contenu (pour
+    les contrôles de permission).
+-   ⚠️ **Ce test consomme des jetons facturés.** Garder le plafond de sortie bas (4000 suffit) et se
+    limiter à quelques générations.
+
+#### Configuration (compte Administrateur)
+
+1.  `/ai/providers` → les trois fournisseurs apparaissent, tous « désactivé » et « aucune clé ».
+2.  Coller la clé d'un fournisseur, cocher « Activer », **Enregistrer** → l'écran affiche « clé
+    enregistrée », une **longueur** et une **empreinte**. Vérifier qu'**aucun caractère** de la clé
+    n'est visible, et que le champ de saisie est **vide**.
+3.  **Afficher le code source de la page** (Ctrl+U) et chercher la clé → elle ne doit apparaître
+    **nulle part**, ni en clair, ni dans un champ caché.
+4.  **Tester la connexion** → succès, avec le modèle et les jetons. Puis saisir une clé volontairement
+    fausse et retester → échec annonçant une clé refusée.
+5.  Changer le modèle en laissant le champ clé **vide**, enregistrer → la clé doit avoir **survécu**
+    (l'écran montre toujours la même empreinte).
+6.  Mettre une URL de base en `http://` et tester → refus mentionnant **HTTPS**.
+7.  **Effacer la clé** → le fournisseur repasse « aucune clé » et « désactivé ».
+8.  Journal d'audit (`/audit`) → les entrées `ai.provider.save`, `ai.provider.test` et
+    `ai.provider.clearKey` existent, avec l'**empreinte** et **jamais** la clé.
+
+#### Génération (compte Éditeur de contenu ou Administrateur)
+
+9.  Avec aucun fournisseur utilisable : `/ai/studio` → la page le dit et renvoie vers
+    `/ai/providers`, **sans** formulaire.
+10. Après configuration : le formulaire apparaît, et seul le fournisseur activé est proposé.
+11. Laisser le champ d'intention **vide** et soumettre → refus, **aucun appel** (vérifiable dans
+    l'audit : aucune entrée `ai.generate`).
+12. Décrire une quête, par exemple : *« une quête donnée par le Guide, où le joueur descend dans une
+    mine abandonnée, casse 20 pierres, puis lui rapporte 3 lingots de fer. Récompense : un peu
+    d'XP. »* Mettre le **titre** en forme avec la palette (couleur + gras) sans taper aucune balise.
+13. **Demander une proposition** → au bout d'un moment, la proposition s'affiche avec le fournisseur,
+    le modèle et les jetons consommés. Vérifier qu'elle est marquée **« nouveau »** et que le contenu
+    proposé correspond à la demande, titre stylé compris.
+14. Vérifier qu'**aucun fichier** n'a été créé : ouvrir `/quests` → la quête ne doit **pas** y être.
+15. **Relire et enregistrer** → la page d'import s'ouvre avec le pack prérempli. Confirmer →
+    le fichier est écrit. Ouvrir la quête dans l'éditeur : elle est éditable normalement, et le titre
+    s'affiche en mode guidé avec sa couleur.
+16. Relancer la **même** génération et enregistrer → la quête existante doit produire un **conflit**
+    exigeant une décision, pas un écrasement.
+17. **Correction** : demander volontairement quelque chose d'impossible (par exemple *« ajoute un
+    objectif qui demande d'utiliser un objet »*) → la proposition doit être refusée par les
+    validateurs, avec le type inconnu nommé, et le bouton **« Demander une correction »** présent.
+    Cliquer dessus → l'IA renvoie une version corrigée.
+18. **Permissions** : avec un compte **Testeur** puis **Lecture seule**, `/ai/studio` et
+    `/ai/providers` doivent être refusés, et les entrées de menu absentes. Avec un compte **Éditeur
+    de contenu**, `/ai/studio` fonctionne mais `/ai/providers` est **refusé**.
+19. **Délai** : régler le délai maximal à 1 seconde et générer → échec « délai dépassé » annonçant
+    que rien n'a été enregistré, et aucun fichier créé.
+20. Journal d'audit → les entrées `ai.generate` / `ai.correct` portent le fournisseur, le modèle, les
+    jetons et le verdict, et **jamais** le prompt complet ni la clé.
+
+#### En jeu
+
+21. Après l'enregistrement d'une quête générée : `/quest admin validate` puis `/quest admin reload`
+    → elle se charge **sans erreur**. C'est la vérification qui compte : ce que l'IA a produit doit
+    être réellement consommable par le serveur.
+22. Accepter la quête et vérifier qu'elle se comporte normalement.
+
+-   **Nettoyage :** supprimer les quêtes générées pendant le test, `/quest admin reload`, et effacer
+    la clé API si elle était temporaire.
+-   **Limites connues :** une seule quête par génération ; pas de génération de dialogues ni de
+    stories ; aucun coût monétaire estimé (les jetons sont affichés, pas convertis en euros) ; la
+    qualité éditoriale de la proposition dépend du modèle et n'est pas un critère de ce test.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -3974,3 +4048,4 @@ le résumé de récompenses de TC-014).
 | TC-262 | Contrat de contenu machine-readable #110 (PENDING) | | | |
 | TC-263 | Texte stylé sans MiniMessage, partout #195 (PENDING) | | | |
 | TC-264 | Import sécurisé d'un content pack #109 (PENDING) | | | |
+| TC-265 | Atelier IA : créer une quête avec une IA #146 (PENDING) | | | |

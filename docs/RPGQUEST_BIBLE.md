@@ -1665,6 +1665,84 @@ pour sauvegarder, archiver ou fournir à une IA. Granularités : *tout le conten
 - **Hors périmètre #108** : import/écriture (#109), familles items/recettes,
   découpage/compression du transport.
 
+### Atelier IA — `/ai/studio` et `/ai/providers` (issue #146, phase 1)
+
+Troisième et dernière phase du pipeline de contenus : **décrire une quête en français** et obtenir
+une proposition validée, prête à être importée. L'atelier s'appuie entièrement sur les deux phases
+précédentes — le contrat de #110 pour le prompt, l'import de #109 pour tout ce qui suit la réponse.
+
+**Deux pages, deux permissions distinctes** :
+
+| Page | Permission | Qui l'a |
+|---|---|---|
+| `/ai/studio` — décrire, générer, relire | `AI_USE` | Propriétaire, Administrateur, Éditeur de contenu |
+| `/ai/providers` — clés API, modèles, plafonds | `AI_CONFIGURE` | Propriétaire, Administrateur **seulement** |
+
+La séparation est voulue : un appel d'IA coûte de l'argent réel et part vers un tiers, ce qui n'est
+pas la même décision que modifier un fichier local ; et manipuler une clé d'API tierce n'est pas un
+geste d'édition de contenu. Un **Testeur** et un rôle **Lecture seule** n'ont ni l'une ni l'autre.
+
+**L'atelier n'écrit jamais.** `AiQuestStudio` s'arrête à l'aperçu validé ; le bouton
+d'enregistrement de la page poste vers `/content/import`, qui applique le pipeline de #109 avec son
+arbitrage des collisions et sa confirmation explicite. Il n'existe donc **qu'un seul chemin
+d'écriture** dans tout le panel, et l'IA n'en obtient aucun raccourci — c'est la dernière exigence
+du ticket (« aucune publication ou modification automatique sans approbation humaine »), obtenue par
+construction et non par vigilance à l'écran.
+
+**Ce que l'administrateur n'a pas à fournir.** Il décrit son intention ; le panel joint
+automatiquement les règles de LodyQuests, la documentation de contenu générée pour #110, le schéma
+JSON, les types d'objectifs et de récompenses **réellement** supportés, et les **références
+réellement existantes** relevées sur le serveur (PNJ, quêtes, mondes). Rien n'est recopié dans
+`QuestPromptBuilder` : un type ajouté au moteur arrive dans le prompt sans qu'une ligne soit
+touchée, et un type qui n'existe pas ne peut pas y apparaître. Les références réelles sont la mesure
+la plus efficace contre les références inventées, que le ticket demande explicitement de limiter.
+
+**L'IA ne remplace pas les validateurs.** La réponse traverse `AiYamlExtractor` (délimitation d'une
+réponse enrobée ou bavarde — on délimite, on ne répare jamais), puis l'analyse d'import, donc les
+validateurs réels. Un type inventé, une référence inconnue, un champ obligatoire manquant sont
+attrapés et affichés. En cas de refus, le bouton **« Demander une correction »** renvoie à l'IA sa
+propre sortie **et** les diagnostics réels — sans quoi elle repartirait de zéro et reproduirait
+souvent la même erreur.
+
+**Abstraction de fournisseur.** `AiProvider` n'expose que trois opérations (identité, test de
+connexion, génération). Tout ce qui est propre à une API — forme du corps JSON, en-tête
+d'authentification, emplacement du texte dans la réponse — reste enfermé dans l'implémentation, et
+`AiProviderRegistry` est le seul endroit qui connaît la liste. Trois fournisseurs réels sont
+livrés : **Anthropic / Claude** (en-tête `x-api-key`, version d'API épinglée, `system` de premier
+niveau, blocs `content` typés), **OpenAI et API compatibles** (Chat Completions, choisie pour sa
+compatibilité avec Azure, les mandataires et les moteurs locaux via l'URL de base), et **Google
+Gemini** (en-tête `x-goog-api-key`, modèle dans le chemin — donc encodé —, `systemInstruction`).
+
+**Sécurité de la clé** :
+
+- stockée dans la base locale du panel (`/var/lib/plugadmin/control-panel.db`), **hors dépôt Git**,
+  en mode `600` lisible par le seul compte du service ;
+- **jamais renvoyée au navigateur** : le champ de saisie est toujours vide, aucun champ caché ne la
+  transporte, et l'écran n'affiche que sa longueur et une **empreinte SHA-256 tronquée** — assez pour
+  reconnaître quelle clé est en place après une rotation, jamais pour la reconstituer ;
+- **jamais journalisée** : l'audit retient le fournisseur, le modèle, les jetons, le verdict et
+  l'empreinte, jamais la clé. `AiProviderSettings.toString()` est **redéfini exprès** — le
+  `toString` généré d'un record aurait imprimé la clé entière, et il suffit d'un message
+  d'exception pour la faire fuir ;
+- **jamais en clair sur le réseau** : une URL de base en HTTP est refusée (une adresse de boucle
+  locale est tolérée pour un mandataire) ;
+- un champ clé vide signifie « ne pas y toucher », jamais « effacer » — sinon changer de modèle
+  effacerait la clé. Effacer est un bouton distinct, qui désactive aussi le fournisseur.
+
+**Garde-fous d'appel** : plafond de jetons en sortie et délai maximal, tous deux configurables par
+fournisseur. Un échec, un délai dépassé ou une réponse illisible ne modifient **rien** et sont
+affichés comme tels. « Tester la connexion » fait un **vrai** aller-retour minimal, parce que
+« configuration enregistrée » ne prouve rien.
+
+**Texte stylé** : le champ « titre exact souhaité » est du texte destiné au joueur ; il utilise donc
+le composant guidé partagé, comme partout ailleurs (voir § 4). Aucune balise MiniMessage n'est
+demandée dans le parcours normal, et l'IA est priée de rester sobre sur la couleur.
+
+**Limites de cette phase** : une seule quête par génération (le ticket demande de commencer par là),
+pas de génération de dialogues ni de stories, et aucun coût monétaire estimé — les jetons rapportés
+par le fournisseur sont affichés et audités, mais inventer un prix supposerait une grille tarifaire
+qui change sans prévenir.
+
 ### Import sécurisé d'un content pack — `/content/import` (issue #109, phase 2)
 
 Phase 2 du pipeline de contenus. Le pack n'est **jamais** copié tel quel : il est analysé, validé,

@@ -152,6 +152,38 @@ class QuestsCatalogTest {
                 "l'ancienne chaîne tronquée legacy n'est pas ce qui est affiché");
     }
 
+    /**
+     * Le badge comptait les <strong>étapes</strong> en les appelant « objectifs » : une quête à une
+     * étape et quatre remises annonçait « 1 objectif », ce qui laissait croire à une définition
+     * incomplète. Les deux nombres sont désormais distincts et nommés correctement.
+     */
+    @Test
+    void theBadgesCountStepsAndObjectivesSeparately() throws Exception {
+        start();
+        runListWithSuccess("quest.list", "quests", QUEST_DETAILS_STRUCTURED);
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains(">2 étapes</span>"), "deux étapes, nommées comme telles");
+        assertTrue(page.contains(">2 objectifs</span>"), "deux objectifs au total");
+        assertFalse(page.contains(">2 objectifs</span>") && page.contains(">2 étapes objectifs"),
+                "les deux badges restent distincts");
+    }
+
+    /** Une seule étape portant plusieurs objectifs : c'est le cas qui révélait le défaut. */
+    @Test
+    void oneStepWithSeveralObjectivesIsNotAnnouncedAsOneObjective() throws Exception {
+        start();
+        runListWithSuccess("quest.list", "quests", "{\"quests\":[{"
+                + "\"id\":\"rpgquest:test_remise\",\"title\":\"Remise\",\"category\":\"test\","
+                + "\"repeatable\":false,\"prerequisites\":[],\"steps\":[{\"id\":\"remettre\","
+                + "\"objectives\":[\"a\",\"b\",\"c\",\"d\"]}],\"rewards\":[]}]}");
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains(">1 étape</span>"), "une seule étape");
+        assertTrue(page.contains(">4 objectifs</span>"), "quatre objectifs, pas un");
+        assertFalse(page.contains(">1 objectif</span>"), "l'ancien libellé trompeur a disparu");
+    }
+
     @Test
     void emptyCatalogUsesTheSharedEmptyState() throws Exception {
         start();

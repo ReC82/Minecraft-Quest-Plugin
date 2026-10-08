@@ -1315,8 +1315,21 @@ public final class AgentPages {
         if (!giverId.isEmpty()) {
             sb.append("<span class=\"badge text-bg-light text-dark\">Donneur</span>");
         }
+        // Le badge comptait les ÉTAPES en les appelant « objectifs » : une quête à une étape et
+        // quatre remises annonçait « 1 objectif ». Les deux nombres sont désormais distincts et
+        // nommés correctement, le compte d'objectifs étant la somme réelle sur toutes les étapes.
+        int objectiveCount = 0;
+        for (Object stObj : steps) {
+            Map<String, Object> st = asMap(stObj);
+            List<Object> structured = asList(st.get("objectiveDetails"));
+            objectiveCount += structured.isEmpty() ? asList(st.get("objectives")).size() : structured.size();
+        }
         sb.append("<span class=\"badge text-bg-secondary\">").append(steps.size())
-                .append(steps.size() > 1 ? " objectifs" : " objectif").append("</span>");
+                .append(steps.size() > 1 ? " étapes" : " étape").append("</span>");
+        if (objectiveCount > 0) {
+            sb.append("<span class=\"badge text-bg-secondary\">").append(objectiveCount)
+                    .append(objectiveCount > 1 ? " objectifs" : " objectif").append("</span>");
+        }
         int rc = !rewardDetails.isEmpty() ? rewardDetails.size() : rewards.size();
         if (rc > 0) {
             sb.append("<span class=\"badge text-bg-secondary\">").append(rc)

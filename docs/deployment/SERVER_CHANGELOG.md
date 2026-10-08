@@ -6000,3 +6000,109 @@ les deux seuls à pouvoir démentir les garanties annoncées.
   la source, il n'y a rien à annuler côté serveur tant qu'aucun déploiement de
   contenu n'a eu lieu.
 - **Données joueur** : aucune touchée, aucune migration.
+
+## 2026-10-08 (matin, 2e lot) - Atelier IA : créer une quête en français (#146)
+
+### Changement
+
+Le Control Panel sait désormais **générer une quête à partir d'une description en
+français**, via une IA configurée par l'administrateur.
+
+- **`/ai/studio`** — « Créer avec une IA ». On décrit l'intention ; le panel joint
+  automatiquement le contrat de contenu, le schéma, les types réellement
+  supportés et les références réellement existantes. La proposition passe par les
+  **mêmes validateurs** que l'éditeur guidé, puis par la page d'import pour
+  l'enregistrement. **L'atelier n'écrit jamais.**
+- **`/ai/providers`** — configuration des fournisseurs (Anthropic/Claude, OpenAI
+  et API compatibles, Google Gemini), avec clé API, modèle, URL de base, plafond
+  de jetons, délai, et un bouton **« Tester la connexion »** qui fait un vrai
+  appel.
+- Deux permissions distinctes : **`AI_USE`** (générer) et **`AI_CONFIGURE`**
+  (clés API, administrateurs seulement).
+
+### Action serveur
+
+1. **Redéployer le Control Panel.** C'est tout.
+2. **Aucun nouveau JAR, aucun redémarrage Minecraft.** Ce lot ne touche
+   strictement rien côté plugin — vérifié : `git status` ne rapporte aucun fichier
+   modifié sous `src/`, et le build confirme `:test` et `:jar` inchangés.
+3. **Aucun fichier de contenu, aucune configuration à transférer.**
+4. **Aucune migration.** La table `ai_provider` est créée au démarrage du panel
+   par un `CREATE TABLE IF NOT EXISTS` idempotent, dans la base locale du panel —
+   pas dans `data.db` du serveur Minecraft.
+
+### Sauvegarde préalable
+
+Automatique : `scripts/plugadmin/deploy.sh` archive l'application précédente dans
+`/opt/plugadmin/releases/<horodatage>/`. La base du panel
+(`/var/lib/plugadmin/control-panel.db`) n'est pas touchée par le déploiement ;
+elle contient désormais aussi les clés API, donc **toute sauvegarde de cette base
+contient des secrets** et doit être traitée comme telle.
+
+### Déploiement
+
+```bash
+cd /srv/rpgquest/worktree-nuit
+scripts/plugadmin/deploy.sh
+```
+
+**Fait le 2026-10-08 à 10:53 (heure locale), commit `703e29a`.**
+`PANEL_DEPLOY_EXIT=0`.
+
+| Élément | Valeur |
+|---|---|
+| Control Panel | nouveau JAR 1 277 146 o (contre 1 219 885) |
+| Release précédente | `/opt/plugadmin/releases/20261008-105331/` |
+| Minecraft | **non touché** — JAR en ligne relu : 1 985 814 o, identique à celui du lot #109 |
+| Redémarrage Minecraft | **aucun** |
+
+Pour une fois le script a lui-même rapporté `/health` ONLINE : il a sondé assez
+tard. Aucun rollback.
+
+### Validation
+
+Vérifié réellement, pas supposé :
+
+- Panel `/health` → `{"panel":"ONLINE"}`.
+- Routes `/ai/studio` et `/ai/providers` → **303 vers /login** : elles existent et
+  sont protégées. Elles n'existaient pas avant ce déploiement.
+- **Bytecode réellement installé inspecté** : les 16 classes du paquet
+  `panel.ai` (dont les trois fournisseurs, le socle HTTP, l'extracteur et le
+  stockage) ainsi que `AiStudioPages` et `AiProviderPages` sont présentes dans le
+  JAR servi.
+- **Table `ai_provider` créée** dans la base de production, et **vide** : aucune
+  clé n'est enregistrée, ce qui est l'état attendu après un déploiement. L'IA est
+  donc inerte jusqu'à ce qu'un administrateur configure un fournisseur.
+- **Minecraft intact** : JAR en ligne relu et identique à celui du lot #109,
+  `/quest admin validate` → **17 quête(s), 0 erreur(s)**, aucun redémarrage.
+
+**Non vérifié** : tout le comportement fonctionnel de l'atelier relève de
+**TC-265** (22 points, `PENDING MANUAL VALIDATION`), qui exige une **vraie clé
+API** et consomme des jetons facturés. Aucune des trois implémentations de
+fournisseur n'a encore été appelée avec une vraie clé — le bouton « Tester la
+connexion » donne cette réponse en quelques secondes, et c'est le point 4 du test.
+
+### Rollback
+
+- **Control Panel** : `scripts/plugadmin/rollback.sh app` puis
+  `systemctl restart plugadmin`. Un rollback retire les deux pages ; la table
+  `ai_provider` et les clés qu'elle contient **restent** dans la base — c'est
+  voulu, un retour en arrière du code ne doit pas détruire une configuration.
+- **Révoquer l'accès sans redéployer** : retirer `AI_USE` ou `AI_CONFIGURE` du
+  rôle ou du groupe concerné.
+- **Neutraliser l'IA immédiatement** : décocher « Activer » sur chaque
+  fournisseur, ou effacer les clés depuis `/ai/providers`. Aucun appel n'est
+  alors possible.
+- **Données joueur et serveur Minecraft** : rien n'est concerné.
+
+### Note de sécurité
+
+La base du panel contient maintenant des **clés d'API tierces**. Elle est en mode
+`600` et appartient au seul compte du service, hors du dépôt Git. Deux
+conséquences pratiques :
+
+- ne pas copier cette base ailleurs sans y penser (une sauvegarde non chiffrée
+  contiendrait les clés en clair) ;
+- en cas de doute sur une fuite, révoquer la clé chez le fournisseur puis en
+  poser une nouvelle depuis `/ai/providers` — l'empreinte affichée permet de
+  vérifier que la rotation a bien eu lieu.

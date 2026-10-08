@@ -216,6 +216,59 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-08 (matin, 2e lot — #146 LOT 4 : atelier IA)
+Branche de départ: feature/218-starter-kit-tiers @ 062c284 (fin du lot #109, déployé)
+Étape de départ: « continue sur le LOT 4 : atelier IA », avec la consigne d'utiliser comme
+  fondation la chaîne #110 -> résultat IA -> import #109. Ticket réel : #146.
+Étapes terminées:
+  - /ai/studio « Créer avec une IA » : formulaire en français (un seul champ nécessaire), prompt
+    assemblé automatiquement (règles + doc de #110 + schéma + types RÉELS + références RÉELLES),
+    extraction du document, validation par les validateurs RÉELS, diagnostics, aperçu, puis
+    bouton qui poste vers /content/import. L'ATELIER N'A AUCUN CODE D'ÉCRITURE : l'exigence
+    « aucune publication automatique » est obtenue par construction.
+  - Bouton « Demander une correction » : renvoie à l'IA sa propre sortie ET les diagnostics réels.
+  - /ai/providers : configuration complète depuis l'IHM (clé, modèle, URL de base, plafond de
+    jetons, délai) + « Tester la connexion » qui fait un VRAI appel minimal.
+  - Abstraction AiProvider (3 opérations) + AiProviderRegistry seul détenteur de la liste ; socle
+    HTTP commun (délais, erreurs lisibles, lecture défensive) ; TROIS fournisseurs réels :
+    Anthropic/Claude, OpenAI + API compatibles, Google Gemini.
+  - Sécurité de la clé : base locale du panel (hors Git, mode 600) ; jamais renvoyée au
+    navigateur ; jamais journalisée ; toString() du record REDÉFINI (le toString généré aurait
+    imprimé la clé entière) ; URL en HTTP refusée ; champ vide = conserver, effacer = bouton
+    distinct ; autocomplete=new-password. Deux permissions distinctes AI_USE / AI_CONFIGURE.
+  - Règle UX : le titre souhaité passe par le composant guidé partagé (#195) ; réponse brute en
+    mode avancé replié seulement.
+Branche finale: feature/218-starter-kit-tiers @ 703e29a (poussée)
+Dernier commit: 703e29a docs: atelier IA, sa sécurité et son test manuel (#146)
+Build: ./gradlew build BUILD SUCCESSFUL en 10 min 52 s (RELANCE), depuis le worktree propre.
+Tests: 1890 plugin + 860 panel + 30 web-api = 2780, 0 échec (+48 pour ce lot). AUCUN appel réseau
+  sortant : fournisseur bouchon. Le PREMIER build avait rapporté 1 échec,
+  RestartServiceTest.aDroppingUptimeProvesTheRestartEvenIfNoProbeEverFailed — rapporté et
+  diagnostiqué, pas masqué : zéro référence au code du lot, panel/ops inchangé depuis #95, attente
+  bornée à 6 s, passe isolément en 15 s, suite verte 15 min plus tôt. Suite relancée en entier.
+  DETTE SIGNALÉE : ce test retombera sous charge, il mériterait une horloge injectable.
+Déploiement: PANEL SEUL, 2026-10-08 10:53 sur 703e29a, 1 277 146 o, /health ONLINE,
+  PANEL_DEPLOY_EXIT=0, release précédente 20261008-105331. AUCUN JAR, AUCUN REDÉMARRAGE MINECRAFT
+  (:test et :jar UP-TO-DATE, JAR en ligne relu inchangé à 1 985 814 o). Table ai_provider créée en
+  production et VIDE : l'IA est inerte jusqu'à configuration. Bytecode installé inspecté (16
+  classes panel.ai + les deux pages).
+Tests manuels en attente: TC-265 (#146, 22 points, EXIGE UNE VRAIE CLÉ API et consomme des jetons
+  facturés) — non exécuté, donc #146 reste OUVERTE. Plus TC-264 (#109), TC-257 (#123) et
+  TC-258..TC-263.
+Blocages: aucun. Limites assumées et documentées : une seule quête par génération ; pas de
+  dialogues ni stories ; AUCUN coût monétaire estimé alors que #146 le demande (les jetons réels
+  sont affichés et audités, mais une conversion en euros supposerait une grille tarifaire qui
+  change sans préavis — un chiffre faux serait pire que pas de chiffre) ; garde-fou de budget PAR
+  APPEL seulement, pas cumulé ; et AUCUN des trois fournisseurs appelé avec une vraie clé.
+Première étape à reprendre: configurer un fournisseur et faire au moins le point 4 de TC-265
+  (« Tester la connexion ») — c'est le seul moyen de savoir si les trois implémentations d'API
+  sont justes, et la réponse arrive en quelques secondes. Puis TC-265 en entier, puis TC-264.
+  Ensuite : décider pour le coût (table de tarifs administrable, ou assumer les jetons seuls),
+  et étendre l'atelier aux dialogues et stories — ce qui demande d'abord de rendre dérivable le
+  vocabulaire des actions et conditions de dialogue (limite déjà notée en #110).
+```
+
+```text
 Date: 2026-10-08 (matin — #109 : import sécurisé d'un content pack)
 Branche de départ: feature/218-starter-kit-tiers @ dda1640 (fin du lot de nuit, déployé en DEV)
 Étape de départ: « continue sur #109 maintenant ». #109 avait été laissée ENTIÈRE la nuit même,

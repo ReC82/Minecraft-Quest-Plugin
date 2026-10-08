@@ -2949,12 +2949,46 @@ public final class PanelApp {
         Http.redirect(exchange, appendContext(returnPath, agentId, v.params().get("player")) + "&toast=" + enc(id));
     }
 
+    /**
+     * Chemins de retour acceptés après une action agent, <strong>dérivés de la navigation</strong>
+     * (issue #227).
+     *
+     * <p>Le but de ce filtre est d'empêcher une redirection ouverte : on ne renvoie l'utilisateur
+     * que vers une page connue du panel, jamais vers une URL fournie par la requête.</p>
+     *
+     * <p><strong>Pourquoi dérivé et non énuméré.</strong> C'était une liste écrite à la main, et
+     * elle a fait exactement ce qu'une liste écrite à la main finit par faire : une page neuve
+     * ({@code /buildings/sites}, issue #213) n'y figurait pas, donc <em>toutes</em> ses actions
+     * renvoyaient silencieusement sur {@code /agents}. Les mutations partaient et s'appliquaient
+     * correctement — le journal d'actions le montre — mais l'utilisateur ne revoyait jamais sa page,
+     * et le bouton « Rafraîchir » souffrant du même défaut, il ne pouvait pas non plus y revenir
+     * constater le résultat. D'où la conclusion, compréhensible et pourtant fausse, que rien
+     * n'était enregistré.</p>
+     *
+     * <p>La navigation est la seule énumération des pages du panel qui soit déjà obligatoire pour
+     * qu'une page existe. L'adosser à elle rend l'oubli <strong>impossible</strong> plutôt
+     * qu'improbable.</p>
+     */
+    private static final java.util.Set<String> RETURN_PATHS = returnPaths();
+
+    private static java.util.Set<String> returnPaths() {
+        java.util.Set<String> paths = new java.util.LinkedHashSet<>();
+        for (Layout.NavGroup group : Layout.nav()) {
+            for (Layout.NavItem item : group.items()) {
+                if (item.href() != null && item.href().startsWith("/")) {
+                    paths.add(item.href());
+                }
+            }
+        }
+        // Pages atteignables sans entrée de navigation propre : elles existent, et une action peut
+        // légitimement vouloir y revenir.
+        paths.add("/content/import");
+        paths.add("/ai/studio");
+        return java.util.Set.copyOf(paths);
+    }
+
     private static String safeReturnPath(String requested, String fallback) {
-        return switch (requested == null ? "" : requested) {
-            case "/players", "/quests", "/stories", "/npcs", "/travel", "/dialogues", "/agents", "/diagnostics",
-                 "/content/export", "/mobs", "/ops" -> requested;
-            default -> fallback;
-        };
+        return RETURN_PATHS.contains(requested == null ? "" : requested) ? requested : fallback;
     }
 
     private static String appendContext(String path, String agentId, String player) {

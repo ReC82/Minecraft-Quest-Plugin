@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -346,6 +347,244 @@ class BuildingSitesPageTest {
 
         assertEquals(303, res.statusCode());
         assertEquals("/login", res.headers().firstValue("Location").orElse(""));
+    }
+
+    // ---- Issue #227 : les VRAIS formulaires, soumis tels que la page les rend -------------------
+
+    /**
+     * Ces tests n'écrivent pas un corps de requête à la main : ils <strong>extraient le formulaire
+     * réellement rendu</strong> et le soumettent tel quel, en ne remplaçant que le champ que
+     * l'utilisateur remplirait.
+     *
+     * <p>C'est ce que #227 exige, et pour une raison concrète : un corps écrit à la main contient
+     * exactement ce que le test croit nécessaire. Il aurait donc porté le bon {@code return} même
+     * quand la page, elle, en émettait un que le serveur refusait — et le défaut serait passé. Ici,
+     * si le formulaire oublie un champ caché ou le nomme mal, le test le voit.</p>
+     */
+    @Test
+    void theRealRenameFormAppliesAndReturnsToTheBuildingSitesPage() throws Exception {
+        start();
+        seed();
+
+        HttpResponse<String> res = submitRealForm("building.site.rename",
+                Map.of("name", "Test hutte renommée"));
+
+        assertEquals(303, res.statusCode());
+        assertTrue(res.headers().firstValue("Location").orElse("").startsWith("/buildings/sites?"),
+                "retour sur la page, pas sur /agents : " + res.headers().firstValue("Location"));
+        AgentActionRow queued = queued("building.site.rename");
+        assertEquals("buildsite_0001", queued.params().get("id"));
+        assertEquals("Test hutte renommée", queued.params().get("name"));
+    }
+
+    @Test
+    void theRealDescribeFormAppliesAndCanClearTheNote() throws Exception {
+        start();
+        seed();
+
+        HttpResponse<String> filled = submitRealForm("building.site.describe",
+                Map.of("description", "Deux étages, entrée au sud."));
+        assertEquals("Deux étages, entrée au sud.",
+                queued("building.site.describe").params().get("description"));
+        assertTrue(filled.headers().firstValue("Location").orElse("")
+                .startsWith("/buildings/sites?"));
+
+        // Vider le champ est un geste valide : « effacer la note ». Les deux demandes doivent être
+        // parties, et sans dépendre de l'ordre de lecture du journal : l'une porte le texte, l'autre
+        // la chaîne vide. Une description vide refusée serait un défaut — on ne pourrait plus
+        // effacer une note.
+        submitRealForm("building.site.describe", Map.of("description", ""));
+
+        List<String> descriptions = store.recentActions(TestConfig.AGENT_ID, 200).stream()
+                .filter(a -> a.type().equals("building.site.describe"))
+                .map(a -> a.params().get("description"))
+                .toList();
+        assertEquals(2, descriptions.size(), descriptions.toString());
+        assertTrue(descriptions.contains("Deux étages, entrée au sud."), descriptions.toString());
+        assertTrue(descriptions.contains(""), descriptions.toString());
+    }
+
+    @Test
+    void theRealFacingFormAppliesAndNeverCarriesCoordinates() throws Exception {
+        start();
+        seed();
+
+        HttpResponse<String> res = submitRealForm("building.site.facing", Map.of("facing", "SOUTH"));
+
+        assertEquals(303, res.statusCode());
+        assertTrue(res.headers().firstValue("Location").orElse("").startsWith("/buildings/sites?"));
+        AgentActionRow queued = queued("building.site.facing");
+        assertEquals("SOUTH", queued.params().get("facing"));
+        assertEquals("buildsite_0001", queued.params().get("id"));
+        // La position n'est pas éditable : aucune coordonnée ne doit voyager avec l'orientation.
+        assertFalse(queued.params().containsKey("x"), queued.params().toString());
+        assertFalse(queued.params().containsKey("y"));
+        assertFalse(queued.params().containsKey("z"));
+    }
+
+    @Test
+    void theRealDeleteFormAppliesAndReturnsToTheBuildingSitesPage() throws Exception {
+        start();
+        seed();
+
+        HttpResponse<String> res = submitRealForm("building.site.delete", Map.of());
+
+        assertEquals(303, res.statusCode());
+        assertTrue(res.headers().firstValue("Location").orElse("").startsWith("/buildings/sites?"));
+        assertEquals(1, count("building.site.delete"));
+        assertEquals("buildsite_0001", queued("building.site.delete").params().get("id"));
+    }
+
+    /** Le bouton « Rafraîchir » : il appelle bien {@code building.site.list} et reste sur la page. */
+    @Test
+    void theRealRefreshFormCallsTheListActionAndStaysOnThePage() throws Exception {
+        start();
+        seed();
+        long before = count("building.site.list");
+
+        HttpResponse<String> res = submitRealForm("building.site.list", Map.of());
+
+        assertEquals(303, res.statusCode());
+        assertTrue(res.headers().firstValue("Location").orElse("").startsWith("/buildings/sites?"),
+                "Rafraîchir ne doit pas envoyer sur /agents : "
+                        + res.headers().firstValue("Location"));
+        assertEquals(before + 1, count("building.site.list"));
+    }
+
+    /** Le toast de suivi accompagne le retour : c'est lui qui donne le verdict de la mutation. */
+    @Test
+    void theReturnCarriesTheActionToastSoTheVerdictIsVisible() throws Exception {
+        start();
+        seed();
+
+        HttpResponse<String> res = submitRealForm("building.site.rename", Map.of("name", "Avec toast"));
+
+        String location = res.headers().firstValue("Location").orElse("");
+        assertTrue(location.contains("toast="), location);
+        assertTrue(location.contains("agent=" + TestConfig.AGENT_ID), location);
+    }
+
+    /** Un refus de validation revient aussi sur la page, avec son message — pas sur /agents. */
+    @Test
+    void aRejectedSubmissionComesBackToThePageWithItsError() throws Exception {
+        start();
+        seed();
+
+        HttpResponse<String> res = submitRealForm("building.site.rename", Map.of("name", ""));
+
+        String location = res.headers().firstValue("Location").orElse("");
+        assertTrue(location.startsWith("/buildings/sites?"), location);
+        assertTrue(location.contains("err="), location);
+        assertEquals(0, count("building.site.rename"), "rien n'est mis en file");
+    }
+
+    /** Double soumission du vrai formulaire : deux demandes, et le serveur est idempotent. */
+    @Test
+    void submittingTheRealDeleteFormTwiceIsHarmless() throws Exception {
+        start();
+        seed();
+
+        submitRealForm("building.site.delete", Map.of());
+        submitRealForm("building.site.delete", Map.of());
+
+        assertEquals(2, count("building.site.delete"));
+        assertEquals(0, count("building.site.rename"), "aucune autre couche touchée");
+    }
+
+    /**
+     * Extrait le formulaire dont le champ caché {@code type} vaut {@code actionType}, et le soumet
+     * tel que la page le rend, en ne remplaçant que les valeurs fournies.
+     */
+    private HttpResponse<String> submitRealForm(String actionType, Map<String, String> filled)
+            throws Exception {
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+        Map<String, String> fields = new LinkedHashMap<>(realFormFields(page, actionType));
+        fields.putAll(filled);
+        StringBuilder body = new StringBuilder();
+        fields.forEach((k, v) -> {
+            if (!body.isEmpty()) {
+                body.append('&');
+            }
+            body.append(enc(k)).append('=').append(enc(v));
+        });
+        return post("/agents/action", body.toString());
+    }
+
+    /**
+     * Les champs du formulaire réel : tous les {@code <input>} (cachés compris), la valeur
+     * sélectionnée de chaque {@code <select>}, et le contenu de chaque {@code <textarea>}. Une case
+     * à cocher obligatoire est considérée cochée — c'est ce que fait l'utilisateur qui valide.
+     */
+    private static Map<String, String> realFormFields(String page, String actionType) {
+        Matcher forms = Pattern.compile("<form[^>]*>(.*?)</form>", Pattern.DOTALL).matcher(page);
+        while (forms.find()) {
+            String form = forms.group(1);
+            if (!form.contains("name=\"type\" value=\"" + actionType + "\"")) {
+                continue;
+            }
+            Map<String, String> fields = new LinkedHashMap<>();
+            Matcher inputs = Pattern.compile("<input\\b[^>]*>").matcher(form);
+            while (inputs.find()) {
+                String tag = inputs.group(0);
+                String name = attribute(tag, "name");
+                if (name == null) {
+                    continue;
+                }
+                String value = attribute(tag, "value");
+                // Une case à cocher ne voyage que si elle est cochée. L'utilisateur qui valide la
+                // coche, donc on la transmet — avec « on » si le formulaire ne fixe pas de valeur,
+                // exactement comme le ferait le navigateur.
+                if ("checkbox".equals(attribute(tag, "type")) && value == null) {
+                    value = "on";
+                }
+                fields.put(name, unescape(value == null ? "" : value));
+            }
+            Matcher selects = Pattern.compile("<select\\b[^>]*>(.*?)</select>", Pattern.DOTALL)
+                    .matcher(form);
+            while (selects.find()) {
+                String name = attribute(selects.group(0), "name");
+                if (name == null) {
+                    continue;
+                }
+                Matcher options = Pattern.compile("<option\\b[^>]*>").matcher(selects.group(1));
+                String chosen = "";
+                boolean first = true;
+                while (options.find()) {
+                    String option = options.group(0);
+                    String value = unescape(
+                            attribute(option, "value") == null ? "" : attribute(option, "value"));
+                    // Un navigateur envoie l'option marquée « selected », ou la première à défaut.
+                    if (first) {
+                        chosen = value;
+                        first = false;
+                    }
+                    if (option.contains("selected")) {
+                        chosen = value;
+                    }
+                }
+                fields.put(name, chosen);
+            }
+            Matcher areas = Pattern.compile(
+                    "<textarea\\b[^>]*>(.*?)</textarea>", Pattern.DOTALL).matcher(form);
+            while (areas.find()) {
+                String name = attribute(areas.group(0), "name");
+                if (name != null) {
+                    fields.put(name, unescape(areas.group(1)));
+                }
+            }
+            return fields;
+        }
+        throw new IllegalStateException("aucun formulaire « " + actionType + " » dans la page");
+    }
+
+    private static String attribute(String tag, String name) {
+        Matcher m = Pattern.compile("\\b" + name + "=\"([^\"]*)\"").matcher(tag);
+        return m.find() ? m.group(1) : null;
+    }
+
+    private static String unescape(String raw) {
+        return raw.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+                .replace("&quot;", "\"").replace("&#39;", "'").trim();
     }
 
     // ---- Harnais -------------------------------------------------------------------------------

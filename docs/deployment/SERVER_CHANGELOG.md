@@ -5895,3 +5895,108 @@ Vérifié réellement, pas supposé :
 - **Control Panel** : `scripts/plugadmin/rollback.sh app` puis
   `systemctl restart plugadmin`.
 - **Données joueur** : aucune n'est touchée, aucune migration, rien à annuler.
+
+## 2026-10-08 (matin) - Import sécurisé d'un content pack, et correction de la clé des stories (#109)
+
+### Changement
+
+- **#109** — le Control Panel sait désormais **importer** un content pack :
+  `/content/import`, permission dédiée `CONTENT_IMPORT`. Le pack est analysé,
+  validé et comparé à la source ; **rien n'est écrit avant confirmation**. Une
+  collision d'identifiant exige un arbitrage explicite (remplacer / garder),
+  avec un diff par élément. L'import **écrit dans la source**, il n'active rien
+  sur le serveur Minecraft.
+- **Correction de format (plugin)** — l'export écrivait la liste des quêtes
+  d'une story sous la clé `questIds`, alors que le moteur lit `quests`. Une
+  story exportée n'était donc **pas relisible** par le serveur. L'export écrit
+  maintenant `quests` ; l'import accepte les deux orthographes, donc les packs
+  déjà exportés restent importables et `schemaVersion` reste à 1.
+
+### Action serveur
+
+1. **Remplacer le JAR RPGQuest** — le correctif de format est côté plugin
+   (`ContentPackSerializer`). Sans ce redéploiement, les exports continueraient
+   d'écrire `questIds` ; rien ne casse (l'import les accepte) mais la correction
+   ne prendrait pas effet.
+2. **Redéployer le Control Panel** — c'est là que vit l'import. Déploiement
+   **distinct**, script distinct.
+3. **Aucun fichier de contenu à transférer.** Aucune quête, aucun dialogue,
+   aucune story embarquée n'a changé.
+4. **Aucun changement de configuration.**
+
+### Sauvegarde préalable
+
+Automatique : `deploy-verygames.sh` sauvegarde le JAR en ligne avant
+remplacement ; `scripts/plugadmin/deploy.sh` archive l'application précédente
+dans `/opt/plugadmin/releases/<horodatage>/`.
+
+`data.db`, `config.yml`, `messages.yml`, `spawn.yml`, les mondes et
+`RPGQuest/Citizens/` ne sont pas touchés.
+
+### Déploiement
+
+Depuis le **worktree Git propre** `/srv/rpgquest/worktree-nuit`, détaché sur le
+commit poussé :
+
+```bash
+cd /srv/rpgquest/worktree-nuit
+RPGQUEST_TEST_MAX_HEAP=768m scripts/deploy-verygames.sh -y
+scripts/verygames-restart.sh
+scripts/plugadmin/deploy.sh
+```
+
+**Fait le 2026-10-08 à 09:49–09:52 (heure locale), commit `63b6b1d`.**
+`DEPLOY_EXIT=0`, `RESTART_EXIT=0`, `PANEL_DEPLOY_EXIT=0`.
+
+| Élément | Valeur |
+|---|---|
+| JAR déployé | 1 985 814 o, SHA-256 `a335db8cd2292792…` |
+| JAR précédent (backup) | `rpgquest-20261008T074902Z-predeploy.jar`, 1 985 816 o |
+| Redémarrage | `save-all` puis stop RCON, retour ONLINE, **0 joueur** avant comme après |
+| Control Panel | nouveau JAR 1 219 885 o (contre 1 188 383) ; release précédente en `/opt/plugadmin/releases/20261008-094944/` |
+
+**Le nouveau JAR est 2 octets PLUS PETIT que le backup** — ce que la règle de
+déploiement traite comme un signal d'arrêt. Il a été expliqué avant de
+continuer, pas écarté : le commit en ligne (`b0c0b8f`) est un **ancêtre strict**
+du commit déployé (`git merge-base --is-ancestor`), le seul changement côté
+plugin est la chaîne `"questIds: "` → `"quests: "` soit exactement 2 caractères
+de moins, et les deux JAR contiennent **845 classes** avec **aucune
+disparition** (comparaison des listes de classes).
+
+Le script du panel a de nouveau rapporté un faux `/health KO` : il sonde le port
+environ 2 secondes après le redémarrage. Vérifié manuellement ensuite.
+
+### Validation
+
+Vérifié réellement, pas supposé :
+
+- `/plugins` → **5 plugins, tous verts**.
+- `/quest admin validate` → **17 quête(s), 0 erreur(s)** — inchangé, et c'est
+  attendu : aucun contenu embarqué n'a été modifié par ce lot.
+- Panel `/health` → `{"panel":"ONLINE"}`.
+- Route `/content/import` → **303 vers /login** : elle existe et est protégée.
+  Elle n'existait pas avant ce déploiement.
+- **Bytecode réellement installé inspecté** (leçon du lot #123) : les classes
+  `ContentPackImport` (et ses 7 types imbriqués) et `ContentImportPages` sont
+  présentes, `CONTENT_IMPORT` figure dans `Permission.class`, et la fiche d'aide
+  `content-packs.md` embarquée contient bien la section « Importer ».
+
+**Non vérifié** : tout le comportement fonctionnel de l'import relève de
+**TC-264** (14 points, `PENDING MANUAL VALIDATION`). En particulier le point 7
+(collision concurrente) et le point 13 (`/quest admin reload` après import) sont
+les deux seuls à pouvoir démentir les garanties annoncées.
+
+### Rollback
+
+- **Minecraft** : `scripts/rollback-verygames.sh --latest`. Aucun fichier de
+  contenu n'étant transféré, le rollback du JAR suffit — pas de couplage avec un
+  dialogue comme au lot précédent.
+- **Control Panel** : `scripts/plugadmin/rollback.sh app` puis
+  `systemctl restart plugadmin`. Un rollback du panel **retire l'import** ; les
+  contenus déjà importés restent dans la source, ils ont été écrits par les mêmes
+  écrivains que l'éditeur guidé.
+- **Contenu importé par erreur** : le supprimer depuis l'éditeur (`/quests`,
+  `/stories`, `/dialogues`) puis `/quest admin reload`. L'import ayant écrit dans
+  la source, il n'y a rien à annuler côté serveur tant qu'aucun déploiement de
+  contenu n'a eu lieu.
+- **Données joueur** : aucune touchée, aucune migration.

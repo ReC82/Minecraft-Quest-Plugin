@@ -216,6 +216,50 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-08 (matin — #109 : import sécurisé d'un content pack)
+Branche de départ: feature/218-starter-kit-tiers @ dda1640 (fin du lot de nuit, déployé en DEV)
+Étape de départ: « continue sur #109 maintenant ». #109 avait été laissée ENTIÈRE la nuit même,
+  avec pour motif qu'un pipeline d'import à moitié construit est plus dangereux que pas d'import.
+Étapes terminées:
+  - #109 livré de bout en bout : ContentPackImport (analyze sans effet de bord / apply seul point
+    d'écriture, qui LÈVE si l'analyse n'est pas importable), page /content/import en trois étapes
+    visibles, permission dédiée CONTENT_IMPORT, CSRF, audit à l'analyse + confirmation + par
+    écriture. États NEW/MODIFIED/UNCHANGED/CONFLICT/SKIPPED/INVALID, diff replié, dépendances
+    classées, références internes au pack résolues (RefData#plus), schemaVersion non supportée
+    refusée explicitement.
+  - Trois propriétés de sécurité par CONSTRUCTION : aucun chemin ne vient du fichier (slug dérivé
+    de l'identifiant, famille en liste blanche) ; aucun octet du pack écrit tel quel (fromMap
+    extrait des trois lecteurs, puis ré-émission par l'écrivain réel) ; aucun écrasement
+    silencieux (conflit bloquant + verrou optimiste au remplacement).
+  - CORRECTION DE FORMAT : le pack écrivait « questIds » pour les quêtes d'une story alors que
+    StoryDefinitionParser lit « quests ». Une story exportée par #108 n'était donc PAS relisible
+    par le moteur — la doc de #108 affirmait le contraire. Export corrigé, import tolérant aux
+    deux orthographes, schemaVersion reste à 1.
+  - CORRECTION DE SÉCURITÉ : Http.formBody tronquait EN SILENCE à 64 Kio ; un pack coupé se serait
+    importé amputé de ses derniers éléments. Lecture bornée qui SIGNALE le dépassement.
+Branche finale: feature/218-starter-kit-tiers @ 63b6b1d (poussée)
+Dernier commit: 63b6b1d docs: import de content pack et correction de la clé des stories (#109)
+Build: ./gradlew build BUILD SUCCESSFUL en 30 min 23 s, depuis le worktree propre
+  /srv/rpgquest/worktree-nuit détaché sur le commit déployé.
+Tests: 1890 plugin + 812 panel + 30 web-api = 2732 tests, 0 échec, 0 erreur, 38 ignorés (tous
+  préexistants). +42 tests pour #109, dont plusieurs écrits à l'envers : ils vérifient que RIEN
+  n'a été écrit.
+Déploiement: DEV fait le 2026-10-08 09:49–09:52 sur 63b6b1d. JAR 1 985 814 o (a335db8cd2…),
+  DEPLOY_EXIT=0, redémarrage RCON RESTART_EXIT=0 avec 0 joueur. Control Panel redéployé
+  séparément (1 219 885 o, /health ONLINE). Le JAR était 2 OCTETS PLUS PETIT que le backup —
+  signal d'arrêt de la règle de déploiement, expliqué avant de continuer : ancêtre strict vérifié
+  par git merge-base, seul changement plugin « questIds: » → « quests: » (2 caractères de moins),
+  845 classes de part et d'autre sans disparition. Bytecode panel installé inspecté.
+Tests manuels en attente: TC-264 (#109, 14 points) — NON exécuté, donc #109 reste OUVERTE.
+  Plus TC-257 (#123) et TC-258..TC-263 (lot de nuit).
+Blocages: aucun. NON livré : LOT 4 (atelier IA), toujours non commencé — son intérêt grandit
+  maintenant que la chaîne contrat #110 -> IA -> import #109 est complète sauf l'appel d'API.
+Première étape à reprendre: dérouler TC-264, en particulier le point 7 (collision concurrente) et
+  le point 13 (/quest admin reload après import) — les deux seuls à pouvoir démentir les garanties
+  annoncées. Puis le LOT 4.
+```
+
+```text
 Date: 2026-10-08 (nuit — MODE NUIT AUTONOME : #218, #141, #156, #185, #110, #195)
 Branche de départ: feature/218-starter-kit-tiers @ f6bcb75 — la ligne réellement déployée en DEV
   (chaîne 123 ← 161 ← 169), volontairement et PAS une branche d'intégration plus ancienne, qui

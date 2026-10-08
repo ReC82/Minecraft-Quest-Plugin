@@ -3829,6 +3829,57 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-264 — Import sécurisé d'un content pack (issue #109, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier qu'un pack s'importe réellement, qu'**aucun contenu existant n'est écrasé
+    sans décision**, et que ce qui est enregistré est relisible par le serveur. **Au navigateur**,
+    puis une vérification en jeu à la fin.
+-   **Pré-requis :** Control Panel déployé, compte avec la permission d'import (Propriétaire,
+    Administrateur ou Éditeur de contenu).
+-   **Préparer un pack :** aller sur **Export de contenu**, exporter la famille **Quêtes**, ouvrir
+    le fichier téléchargé et en garder le contenu sous la main. C'est le cas d'usage n°1 du ticket :
+    réimporter un pack produit par l'export.
+-   **Actions au navigateur :**
+    1.  **Import contenu** (`/content/import`) → la page explique les trois étapes et dit que rien
+        n'est écrit avant la confirmation.
+    2.  Coller le pack exporté, **Analyser** → chaque quête doit apparaître **inchangé** (elle est
+        déjà identique à la source), et le bouton d'enregistrement doit être **absent** : il n'y a
+        rien à écrire.
+    3.  Modifier le titre d'**une** quête dans le texte collé, relancer l'analyse → cette quête
+        passe en **conflit**, avec deux boutons (*Remplacer l'existant* / *Garder l'existant*) et un
+        diff dépliable montrant l'ancien et le nouveau titre. **Vérifier qu'aucun fichier n'a
+        changé** à ce stade.
+    4.  Choisir **Garder l'existant** → l'élément passe en « ignoré », plus rien à écrire.
+    5.  Choisir **Remplacer l'existant**, puis **Enregistrer dans la source** → le tableau de
+        résultat indique le fichier écrit. Ouvrir la quête dans l'éditeur : le nouveau titre est là.
+    6.  Changer l'identifiant d'une quête du pack pour un id inexistant, analyser, confirmer → la
+        quête est créée (**nouveau**), et le fichier apparaît dans l'éditeur.
+    7.  **Collision concurrente** : analyser un pack qui modifie une quête, puis — *avant* de
+        confirmer — modifier cette même quête dans l'éditeur dans un autre onglet. Revenir
+        confirmer → le remplacement doit être **refusé** (conflit de version), et la modification
+        faite dans l'éditeur doit être **intacte**.
+    8.  **Erreurs métier** : remplacer un type d'objectif par `UTILISER_UN_OBJET` → l'élément est
+        **inexploitable**, l'erreur nomme le type, et le bouton d'enregistrement disparaît.
+    9.  **Version** : passer `schemaVersion` à `99` → refus explicite nommant la version attendue ;
+        à `0` → refus mentionnant l'absence de migrateur.
+    10. **Référence interne** : importer un pack contenant une story et la quête qu'elle cite → la
+        story ne doit **pas** signaler de référence inconnue.
+    11. **PNJ** : importer un pack contenant une section `npcs` → elle apparaît « ignorée » avec son
+        motif, et le reste du pack s'importe normalement.
+    12. **Permissions** : se connecter avec un compte **Testeur** ou **Lecture seule** →
+        `/content/import` doit être refusé, et l'entrée de menu absente.
+-   **Actions en jeu (après import) :**
+    13. `/quest admin validate` puis `/quest admin reload` → le contenu importé se charge **sans
+        erreur**. C'est la vérification qui compte : ce que l'import écrit doit être relisible par le
+        plugin.
+    14. Accepter une quête importée et vérifier qu'elle se comporte normalement.
+-   **Nettoyage :** supprimer les quêtes d'essai créées, et `/quest admin reload`.
+-   **Limites connues :** pas de renommage/copie à l'import (l'identifiant est à la fois le nom de
+    fichier et une donnée du contenu) ; pas d'upload de fichier, le pack se colle en texte ; pas
+    d'import de PNJ ; l'import **n'active rien** sur le serveur Minecraft.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -3922,3 +3973,4 @@ le résumé de récompenses de TC-014).
 | TC-261 | Appariement des bornes du Hub #156 (PENDING) | | | |
 | TC-262 | Contrat de contenu machine-readable #110 (PENDING) | | | |
 | TC-263 | Texte stylé sans MiniMessage, partout #195 (PENDING) | | | |
+| TC-264 | Import sécurisé d'un content pack #109 (PENDING) | | | |

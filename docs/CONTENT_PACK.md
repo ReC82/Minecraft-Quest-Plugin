@@ -57,7 +57,7 @@ content:
 
   | Depuis | Champ | Vers |
   |---|---|---|
-  | story | `questIds[]` | quêtes |
+  | story | `quests[]` | quêtes |
   | quête | `prerequisites[]` | quêtes |
   | quête | `giver` | PNJ |
   | quête, objectif `TALK_TO_NPC` | `npc` | PNJ |
@@ -132,10 +132,10 @@ content:
 - id: main
   name: "Histoire principale"        # chaîne OU table de traductions
   secret: false
-  questIds: [rpgquest:first_steps, rpgquest:crystal_hunt]   # >= 1, ordonnées
+  quests: [rpgquest:first_steps, rpgquest:crystal_hunt]     # >= 1, ordonnées
 ```
 
-Une story est un **conteneur ordonné de quêtes existantes** : `questIds` n'est jamais résolu au
+Une story est un **conteneur ordonné de quêtes existantes** : `quests` n'est jamais résolu au
 chargement (les quêtes peuvent être dans le même pack ou déjà sur le serveur).
 
 ---
@@ -257,7 +257,7 @@ content:
     - id: mines
       name: "La mine abandonnée"
       secret: false
-      questIds: [rpgquest:mines_intro]
+      quests: [rpgquest:mines_intro]
   dialogues:
     - id: rpgquest:miner
       start: hello
@@ -339,6 +339,8 @@ Par construction (les modèles source ne portent que du contenu éditorial) et v
 | UI + téléchargement | Control Panel `/content/export` (`ContentExportPages`, `PanelApp`), `Permission.CONTENT_EXPORT` |
 | Schéma officiel JSON (#110) | `panel.content.ContentPackSchema` → `GET /content/schema.json` |
 | Gabarits, exemples, contrat rédigé (#110) | `panel.content.ContentPackTemplates` → `GET /content/template`, `GET /content/contract.md` |
+| Import : analyse pure + écriture (#109) | `panel.content.ContentPackImport` (`analyze` / `apply`) |
+| UI d'import | `panel.web.ContentImportPages` → `GET`/`POST /content/import`, `Permission.CONTENT_IMPORT` |
 
 Ajouter une famille = une constante `ContentFamily` + un `*PackEntry` + un cas dans `ContentPackMapper`
 / `ContentPackSerializer` + un `Supplier` dans `BukkitAgentActions`. Rien d'autre dans le pipeline
@@ -384,3 +386,60 @@ contrat rédigé le dit au lecteur. Le rendre dérivable est la suite directe de
 
 Les exemples utilisent le préfixe d'identifiant `tc110_`, pour être reconnaissables et supprimables
 après un essai.
+
+
+---
+
+## 13. Import (#109, phase 2)
+
+`GET`/`POST /content/import`, permission dédiée `CONTENT_IMPORT`, CSRF, audit.
+
+Pipeline : `IMPORT → ANALYSE → VALIDATION → DIFF → BROUILLON → CONFIRMATION → ENREGISTREMENT
+SOURCE`. `ContentPackImport.analyze` ne touche **jamais** au disque ; `apply` est le seul point
+d'écriture, et il lève si l'analyse n'est pas importable — la confirmation ne peut donc pas
+contourner la validation ni un conflit en attente.
+
+### États par élément
+
+| État | Sens | Bloquant ? |
+|---|---|---|
+| `NEW` | aucun contenu de cet id côté source | non |
+| `MODIFIED` | existe, diffère, remplacement demandé | non |
+| `UNCHANGED` | déjà identique octet pour octet | non (rien à écrire) |
+| `CONFLICT` | existe, diffère, **aucune décision** | **oui** |
+| `SKIPPED` | ignoré volontairement, ou famille non écrivable | non |
+| `INVALID` | inexploitable (validation, id, doublon) | **oui** |
+
+### Ce qui rend l'écriture sûre
+
+- Le `slug` (donc le nom de fichier) est **dérivé de l'identifiant métier** et validé par
+  l'expression régulière de `ContentWorkspace` : aucun chemin ne vient du fichier, et la traversée
+  de chemin est structurellement impossible.
+- Le contenu écrit est **ré-émis** par l'écrivain réel après relecture en brouillon par le lecteur
+  réel : jamais les octets du pack. Ce qui est enregistré est donc relisible par les parseurs du
+  plugin — un test le vérifie sur le fichier réellement écrit.
+- Le remplacement passe par le **verrou optimiste** (empreinte relevée à l'analyse) : un fichier
+  modifié entre-temps est refusé, pas écrasé.
+- Les familles écrivables sont exactement `ContentWorkspace.KINDS` (quêtes, stories, dialogues).
+  `npcs` est rapporté `SKIPPED` avec son motif.
+
+### Références internes au pack
+
+`RefData#plus` ajoute les identifiants fournis par le pack (quêtes, PNJ, prérequis) avec l'origine
+*source*, pour qu'une story citant une quête du même pack ne soit pas signalée comme référence
+inconnue. Rien n'est retiré : un id déjà connu du serveur garde son origine.
+
+### Version de schéma
+
+`schemaVersion` plus récente que supportée → **refus explicite**. Antérieure → refus nommant la
+version attendue (aucun migrateur n'existe encore). Conforme à la stratégie de la section 10.
+
+### Limites de cette phase
+
+- Pas de **renommage/copie** à l'import : l'identifiant *est* le nom de fichier **et** vit dans le
+  contenu, donc « importer sous un autre nom » demanderait de réécrire l'élément. Les deux décisions
+  offertes sont *remplacer* et *ignorer* ; renommer se fait ensuite dans l'éditeur.
+- Pas d'import de **PNJ** (famille non éditable depuis le panel).
+- Pas d'**upload de fichier** : le pack se colle dans un champ texte (le serveur HTTP du panel ne
+  traite pas le `multipart/form-data`).
+- Pas d'**archive** : donc aucune surface de path traversal par archive, comme l'exigeait le ticket.

@@ -34,6 +34,27 @@ exporter alors famille par famille, ou élément par élément.
 Le contenu marqué `secret: true` **est** exporté, avec son flag — une sauvegarde ne doit pas perdre
 de contenu.
 
+## Importer
+
+Page **Import contenu** (`/content/import`). Coller le pack, puis suivre les trois étapes affichées :
+
+1. **Analyser** — le pack est lu, validé par les validateurs réels, et comparé à la source. **Rien
+   n'est écrit à cette étape.** Chaque élément reçoit un état : *nouveau*, *modifié*, *inchangé*,
+   *conflit*, *ignoré* ou *inexploitable*.
+2. **Trancher les collisions** — un identifiant qui existe déjà et diffère devient un **conflit** qui
+   bloque l'import. Il faut choisir explicitement « Remplacer l'existant » ou « Garder l'existant » :
+   rien n'est jamais écrasé sans décision. Un diff par élément est disponible, replié.
+3. **Confirmer** — seul ce bouton écrit, et il n'apparaît que si l'analyse est confirmable (aucune
+   erreur, aucun conflit en attente, au moins un élément à écrire).
+
+Ce qui est enregistré est **ré-émis** par le panel dans sa forme canonique, pas copié depuis le
+fichier : ce qui atterrit dans la source est donc toujours relisible par le serveur. Si un fichier a
+été modifié par quelqu'un d'autre entre l'analyse et la confirmation, le remplacement est **refusé**
+plutôt qu'écrasé.
+
+Un pack dont la `schemaVersion` n'est pas celle supportée est refusé avec la version attendue — jamais
+interprété approximativement.
+
 ## Faire générer un pack par une IA
 
 La même page propose trois documents à télécharger. Ils décrivent le format de façon exploitable
@@ -61,7 +82,7 @@ Marche à suivre typique :
 - **Identifiants de quête** : forme `namespace:clé`, en minuscules, chiffres et `_`
   (ex. `rpgquest:mines_oubliees`). Jamais un chemin de fichier, jamais un titre.
 - **Références** : le `giver` d'une quête, le `npc` d'un objectif, le `dialogue` d'un PNJ et les
-  `questIds` d'une story doivent désigner des éléments **fournis par le pack** ou **déjà présents
+  `quests` d'une story doivent désigner des éléments **fournis par le pack** ou **déjà présents
   sur le serveur**. Sinon, c'est une dépendance manquante — elle doit figurer dans `dependencies`.
 - **Types d'objectifs et de récompenses** : seuls ceux listés dans le contrat existent. Une IA peut
   inventer un type plausible mais inexistant (« utiliser un objet », par exemple) ; le schéma le
@@ -71,8 +92,11 @@ Marche à suivre typique :
 
 ## Limites actuelles, à connaître
 
-- **Import** : il n'existe pas encore d'import de pack dans le Control Panel. Un pack généré se relit
-  et se recopie aujourd'hui élément par élément dans les éditeurs de quêtes, stories et dialogues.
+- **Import** : l'import écrit dans la **source**, pas sur le serveur Minecraft. Activer le contenu
+  importé reste une opération distincte (rechargement ou déploiement).
+- **Familles importables** : quêtes, stories et dialogues. Les **PNJ** font partie du format de pack
+  mais ne sont pas éditables depuis le panel : ils sont listés comme « ignorés », avec leur motif,
+  jamais écrits ni perdus en silence.
 - **Dialogues** : le schéma ne contraint que le squelette d'un dialogue (identifiant, nœud de départ,
   nœuds, choix). Le vocabulaire complet de ses **actions** et **conditions** n'est pas encore décrit
   par le contrat : s'en tenir à ce que montre l'exemple complet, ou demander la liste à jour.

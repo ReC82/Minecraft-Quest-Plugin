@@ -227,6 +227,21 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   d'accepter le champ `text_color`, le formulaire ne l'émet plus. Les seuls champs restés en texte
   simple sont ceux qui ne sont jamais colorés en jeu (locuteur d'un dialogue, valeurs techniques
   des descripteurs).
+- **Import sécurisé d'un content pack** *(issue #109, phase 2)* — `/content/import`, permission
+  dédiée `CONTENT_IMPORT`, CSRF, audit. Le pack est analysé, validé par les validateurs réels et
+  comparé à la source ; **rien n'est écrit avant la confirmation**. Un identifiant déjà présent et
+  différent devient un **conflit** qui bloque l'import jusqu'à un arbitrage explicite (remplacer /
+  garder) — aucun écrasement silencieux — et le remplacement repasse par le verrou optimiste, donc
+  un fichier modifié entre-temps est refusé. États par élément : nouveau / modifié / inchangé /
+  conflit / ignoré / inexploitable, avec diff ligne à ligne replié. Les références internes au pack
+  sont résolues (`RefData#plus`). Le chemin d'écriture est **dérivé de l'identifiant**, jamais du
+  fichier, et le contenu est **ré-émis** par les écrivains réels plutôt que copié — donc toujours
+  relisible par le plugin. Une `schemaVersion` non supportée est refusée explicitement. Familles
+  importables : quêtes, stories, dialogues ; les PNJ sont rapportés « ignorés » avec leur motif.
+  **L'import n'active rien** : il écrit dans la source, le déploiement reste distinct.
+  *Correction de format au passage* : le pack écrivait `questIds` pour la liste des quêtes d'une
+  story alors que le moteur lit `quests` — une story exportée n'était donc pas relisible. L'export
+  écrit désormais `quests`, l'import accepte les deux orthographes.
 - **Contrat de contenu machine-readable** *(issue #110, phase 1)* — `/content/export` publie trois
   documents **générés** et téléchargeables : le schéma officiel du format
   `lodyquests-content-pack` en JSON Schema (`/content/schema.json`), des gabarits YAML commentés par

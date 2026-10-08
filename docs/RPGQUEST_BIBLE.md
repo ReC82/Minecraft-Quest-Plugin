@@ -1665,6 +1665,70 @@ pour sauvegarder, archiver ou fournir à une IA. Granularités : *tout le conten
 - **Hors périmètre #108** : import/écriture (#109), familles items/recettes,
   découpage/compression du transport.
 
+### Import sécurisé d'un content pack — `/content/import` (issue #109, phase 2)
+
+Phase 2 du pipeline de contenus. Le pack n'est **jamais** copié tel quel : il est analysé, validé,
+comparé à la source, puis enregistré seulement sur confirmation explicite —
+`IMPORT → ANALYSE → VALIDATION → DIFF → BROUILLON → CONFIRMATION → ENREGISTREMENT SOURCE`.
+Permission dédiée **`CONTENT_IMPORT`** (Propriétaire, Administrateur, Éditeur de contenu ; jamais un
+rôle de lecture ou de test), CSRF, audit à l'analyse, à la confirmation et à chaque écriture.
+
+**Trois propriétés de sécurité obtenues par construction**, pas par vérification :
+
+1. **Aucun chemin ne vient du fichier.** La destination est calculée par
+   `ContentWorkspace.write(kind, slug, …)` depuis une famille prise dans une liste blanche et un
+   `slug` dérivé de l'identifiant métier, validé par l'expression régulière du workspace. Il n'y a
+   pas de chemin à traverser : un `id` de la forme `rpgquest:../../etc/passwd` est refusé parce
+   qu'il ne peut pas devenir un nom de contenu, pas parce qu'un filtre l'a repéré.
+2. **Aucun octet du fichier n'est écrit tel quel.** Chaque élément est relu en brouillon par le
+   lecteur réel de sa famille (`QuestYaml.fromMap`, `StoryYaml.fromMap`, `DialogueYaml.fromMap` —
+   exactement le code qui lit un fichier source, extrait pour l'occasion) puis **ré-émis** par
+   l'écrivain réel. Ce qui atterrit sur le disque est donc produit par le panel, dans sa forme
+   canonique, et relisible par les parseurs du plugin. Une construction que l'éditeur ne sait pas
+   représenter (table de traductions, par exemple) est signalée, jamais aplatie en silence.
+3. **Aucun écrasement silencieux.** Un identifiant déjà présent et différent devient un **conflit**
+   qui bloque l'import jusqu'à un arbitrage explicite (*Remplacer l'existant* / *Garder l'existant*).
+   Le remplacement repasse par le verrou optimiste du workspace : un fichier modifié entre l'analyse
+   et la confirmation est **refusé**, pas écrasé.
+
+**États par élément**, dans le vocabulaire du ticket : `NEW` (nouveau), `MODIFIED` (modifié),
+`UNCHANGED` (inchangé, rien à écrire), `CONFLICT` (collision en attente de décision), `SKIPPED`
+(ignoré — décision de l'utilisateur, ou famille non écrivable), `INVALID` (inexploitable, bloquant).
+Chaque élément modifié porte son **diff ligne à ligne**, replié par défaut pour rester lisible sur
+mobile — l'exigence du ticket est de ne pas se limiter à un gros dump YAML.
+
+**Validation** : les validateurs réels du panel (`QuestValidator`, `StoryValidator`,
+`DialogueValidator`), donc les mêmes règles que l'éditeur guidé. Les **références internes au pack**
+sont résolues : une story qui cite une quête du même pack ne déclenche pas « référence inconnue »,
+grâce à `RefData#plus`, qui ajoute les identifiants fournis par le pack avec l'origine *source*.
+Doublons dans le pack, identifiants invalides, types d'objectifs inconnus et paramètres obligatoires
+manquants sont des **erreurs** qui bloquent l'import.
+
+**Version de schéma** : une `schemaVersion` plus récente que celle supportée est **refusée
+explicitement** (jamais interprétée approximativement) ; une version antérieure est refusée en
+nommant la version attendue, aucun migrateur n'existant à ce jour.
+
+**Sans état serveur** : le pack est reposté à chaque étape et l'analyse est **refaite** à chaque
+soumission. Une analyse mise en cache deviendrait fausse dès qu'un éditeur enregistre en parallèle,
+et la confirmation écrirait d'après un état périmé ; ici elle re-valide tout et redétecte les
+collisions apparues entre-temps. Le corps de la requête est lu avec une **limite explicite qui
+signale le dépassement** (`Http.formBody(exchange, max)`) : le lecteur historique tronque en silence
+à 64 Kio, ce qui aurait importé un pack amputé de ses derniers éléments sans que personne ne le voie.
+
+**Familles importables** : quêtes, stories et dialogues — exactement celles que `ContentWorkspace`
+sait écrire. Les **PNJ** font partie du format mais ne sont pas éditables depuis le panel : ils sont
+rapportés `SKIPPED` **avec leur motif**, jamais ignorés en silence.
+
+**L'import n'active rien** : il écrit dans la source (le dépôt AWS). Le contenu n'arrive sur le
+serveur Minecraft que par un rechargement ou un déploiement, comme pour l'éditeur guidé.
+
+> **Correction de format au passage (schemaVersion 1).** Le pack écrivait la liste des quêtes d'une
+> story sous la clé `questIds`, alors que le moteur lit `quests` (`StoryDefinitionParser`). Une story
+> exportée par #108 n'était donc **pas relisible** par le serveur, ce qui vide le format de son sens.
+> L'export écrit désormais `quests` ; l'import accepte **les deux** orthographes, pour que les packs
+> déjà exportés restent importables, et refuse qu'elles soient renseignées ensemble. Le schéma, les
+> gabarits et le contrat rédigé de #110 ont été alignés.
+
 ### Contrat de contenu machine-readable (issue #110, phase 1)
 
 Pour qu'une IA ou un outil externe produise un pack valide **sans accès au serveur ni au code**, le

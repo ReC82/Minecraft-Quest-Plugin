@@ -242,10 +242,25 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   configurables ; un échec ou un délai dépassé ne modifie rien. L'atelier couvre les **trois
   familles éditables** — quête, dialogue, story — choisies par un lien, **une à la fois** : un
   élément par demande garde chaque échec petit et chaque correction ciblée. Chaque famille a ses
-  consignes propres (id de dialogue = id du PNJ, nœuds en map, un choix dont une condition est
-  fausse n'est pas affiché ; une story n'ordonne que des quêtes existantes et n'en invente aucune).
+  consignes propres (l'id du dialogue est celui **imposé par le formulaire**, nœuds en map, un choix
+  dont une condition est fausse n'est pas affiché ; une story n'ordonne que des quêtes existantes et
+  n'en invente aucune).
+  **Ce que l'administrateur impose est vérifié, pas espéré** *(issues #223, #224)* : l'identifiant
+  souhaité accepte `clé` comme `rpgquest:clé`, ne double jamais le namespace, refuse un namespace
+  étranger **avant** l'appel, puis est confronté à l'identifiant réellement produit ; un nombre de
+  nœuds non nul est déclaré impératif dans le prompt **et recompté** sur la vraie map `nodes`, avec
+  un refus « 5 nœuds demandés, 4 générés ». Un document valide pour le moteur mais hors demande est
+  refusé aussi fermement qu'une erreur de validation.
+  **« Demander une correction » relance réellement** *(issue #222)* : la sortie refusée, **tous** les
+  diagnostics et **la demande d'origine** repartent ensemble, et le formulaire se rouvre rempli.
+  Avant, les diagnostics voyageaient en champs homonymes — le lecteur de formulaire n'en gardait
+  qu'un —, les consignes d'origine étaient perdues, et le formulaire se vidait.
+  **Un PNJ déjà pourvu d'un dialogue n'en reçoit jamais un second en silence** *(issue #225)* :
+  quand le dialogue lié ne porte pas le nom du PNJ, la génération s'arrête **avant tout appel
+  payant** et demande s'il faut modifier l'existant ou remplacer le lien.
   Limites : un élément par génération, pas de PNJ (famille non éditable depuis le panel), aucun coût
-  monétaire estimé, garde-fous par appel et non budget cumulé.
+  monétaire estimé, garde-fous par appel et non budget cumulé ; le nombre d'**étapes** d'une quête
+  reste une indication non vérifiée, et le formulaire le dit.
 - **Vocabulaire de dialogue déclaré et validé** *(issue #146)* — les 12 actions et 8 conditions du
   moteur sont déclarées dans `Descriptors` et verrouillées sur les énumérations du moteur par un
   test de couverture exacte. Le schéma de content pack les contraint, les gabarits et la
@@ -256,6 +271,31 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   que son propre exemple de référence était inimportable. Limite connue : `MiniYaml` ne lit pas les
   scalaires repliés (`text: >`), donc `dialogues/guard.yml` n'est pas éditable depuis le panel ; la
   troncature est signalée par le garde-fou round-trip, jamais silencieuse.
+- **Catalogue PNJ : le dialogue réellement lié** *(issue #225)* — `NpcCatalog` lit le rattachement
+  PNJ → dialogue dans cet ordre : le dialogue que la définition **déclare** (`dialogue:`), puis à
+  défaut celui qui porte le **nom** du PNJ. N'appliquer que la convention de nom produisait deux
+  défauts sur les données réelles du serveur : `mira_cartographer`, qui déclare
+  `rpgquest:mira_first_map`, apparaissait **sans dialogue** alors que les joueurs l'entendaient ; et
+  ce dialogue, que personne ne réclamait, fabriquait une **seconde entrée** de catalogue — un « PNJ »
+  `mira_first_map` sans définition, incorrigible puisqu'il n'était la faute de personne. Un dialogue
+  revendiqué n'est plus déduit en PNJ ; un dialogue sans porteur l'est toujours, avec une anomalie
+  `DIALOGUE_WITHOUT_NPC` qui nomme sa cause et ses deux remèdes. Les **remises**
+  (`DELIVER_ITEM_TO_NPC`) traversent aussi le relevé désormais (`questsDelivering`) : un PNJ
+  destinataire n'apparaissait dans aucune colonne.
+- **Supprimer un PNJ depuis le panel** *(issue #226)* — `/npcs/delete`, permission **dédiée**
+  `NPC_DELETE` (et `NPC_SPAWN_WRITE` en plus pour détruire l'entité Citizens). Aperçu des **cinq
+  couches** d'un PNJ — définition logique, liaison, PNJ Citizens, dialogue lié, références de contenu
+  (donneur, `TALK_TO_NPC`, `DELIVER_ITEM_TO_NPC`) —, présentes *et* absentes, puis quatre opérations
+  de la moins à la plus destructrice : définition seule, délier (réversible), détruire le Citizens,
+  nettoyage complet. **Jamais de cascade, et jamais de dialogue supprimé** ; un dialogue partagé est
+  signalé nommément. Une référence de contenu active **bloque** et l'opération n'a alors aucun
+  bouton. Confirmation par retape de l'identifiant, et de l'identifiant Citizens quand l'entité est
+  concernée ; la destruction passe par la double clé UUID + identifiant numérique, donc jamais le
+  mauvais PNJ. Le plan est recalculé au POST (une URL forgée ne contourne pas un blocage), le serveur
+  **revalide** les dépendances au moment d'exécuter, et les trois actions agent sont idempotentes.
+  Sans relevé `npc.list`, **aucune** opération n'est proposée. Limites : asynchrone (le verdict se lit
+  dans le journal d'actions), aucune suppression de dialogue depuis le panel, et plusieurs liaisons
+  Citizens sur un même id ne sont traitées que pour celle affichée.
 - **Import sécurisé d'un content pack** *(issue #109, phase 2)* — `/content/import`, permission
   dédiée `CONTENT_IMPORT`, CSRF, audit. Le pack est analysé, validé par les validateurs réels et
   comparé à la source ; **rien n'est écrit avant la confirmation**. Un identifiant déjà présent et

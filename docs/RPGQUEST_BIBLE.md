@@ -729,6 +729,116 @@ toujours le chemin de sauvegarde, pour qu'une restauration ne se devine pas.
 - L'autorité finale sur la validité d'un fichier reste le **chargement du plugin** au démarrage
   du serveur : un fichier incompatible est rejeté à ce moment-là (voir `QUEST_FORMAT.md`).
 
+#### Supprimer un PNJ (issue #226)
+
+**Défaut corrigé** : le panel savait créer une définition PNJ, créer et lier un Citizens, et
+administrer ses propriétés — mais pas supprimer. Un PNJ de test, ou l'entrée fantôme d'un doublon,
+restait là sans autre recours qu'une commande en jeu ou un fichier modifié à la main.
+
+Bouton **« Supprimer… »** dans une **Zone de danger** sur la fiche de `/npcs`, visible seulement
+avec la **permission dédiée `NPC_DELETE`** — accordée à `OWNER` et `ADMIN`, refusée au
+`CONTENT_EDITOR`, au `BUILDER` et au `TESTER`. Détruire l'entité Citizens *physique* exige en plus
+`NPC_SPAWN_WRITE` : c'est l'inverse exact de sa création, et regrouper ne doit jamais accorder un
+droit que l'opérateur n'a pas.
+
+Le bouton n'ouvre pas une suppression : il ouvre un **aperçu des dépendances**. Rien ne se supprime
+depuis la liste.
+
+##### Cinq couches, parce qu'un PNJ n'existe pas en un seul endroit
+
+L'aperçu affiche les couches **présentes et absentes** — « aucun PNJ Citizens lié » est précisément
+ce qu'il faut savoir avant de choisir, et son absence à l'écran se lirait comme un oubli :
+
+1. définition logique RPGQuest (`npcs/<id>.yml`) ;
+2. binding RPGQuest ↔ Citizens ;
+3. PNJ Citizens physique ;
+4. dialogue lié — et s'il est **partagé** par plusieurs définitions ;
+5. références de contenu : donneur de quête, objectif `TALK_TO_NPC`, remise
+   `DELIVER_ITEM_TO_NPC`, quêtes démarrées par son dialogue.
+
+##### Quatre opérations, jamais une cascade
+
+| | Opération | Effets | Ce qu'elle préserve |
+|---|---|---|---|
+| **A** | Définition logique seule | supprime `npcs/<id>.yml`, **après sauvegarde** serveur dans `npc-backups/` | le PNJ Citizens, sa liaison, le dialogue. L'aperçu annonce que le Citizens deviendra « orphelin » |
+| **B** | Délier Citizens | retire la liaison — **seule opération réversible** | l'entité, la définition, le dialogue |
+| **C** | Supprimer le Citizens physique | détruit l'entité et retire sa liaison devenue sans objet | la définition et le dialogue |
+| **D** | Nettoyage complet | A + C, dans l'ordre | **le dialogue, toujours** |
+
+**Aucune opération ne supprime un dialogue**, et la page le répète à chaque étape : un dialogue
+peut être porté par plusieurs PNJ, et de toute façon son auteur n'est pas forcément celui qui
+supprime le PNJ.
+
+##### Ce qui bloque
+
+Une quête qui désigne encore le PNJ — **donneur**, cible d'un **« parler à »**, ou **destinataire
+d'une remise** — bloque la suppression de sa définition, en nommant les quêtes. Les trois sont
+distinguées parce qu'elles ne se corrigent pas de la même façon : une remise qui perd son
+destinataire rend la quête **infinissable**, alors qu'un « parler à » se réaffecte. La remise était
+d'ailleurs la seule des trois qu'aucun écran ne montrait — elle traverse désormais le relevé
+`npc.list` (`questsDelivering`, source `QUEST_DELIVER`).
+
+Une opération bloquée **n'a pas de formulaire** : il n'y a rien à cliquer.
+
+##### Garde-fous
+
+- **Confirmation tapée** : retaper l'identifiant du PNJ, et l'identifiant **numérique Citizens**
+  quand l'opération touche l'entité. Un bouton « Confirmer » seul se clique par réflexe.
+- **Jamais le mauvais Citizens** : le serveur confronte l'identifiant numérique à la liaison
+  réelle, puis détruit par la **double clé UUID + identifiant numérique**. Un identifiant recyclé
+  par Citizens depuis l'affichage de l'écran ne peut donc pas faire détruire un voisin.
+- **Le plan est recalculé au POST** : une URL forgée vers une opération que l'aperçu bloque est
+  refusée, et le refus est audité.
+- **Sans relevé `npc.list`, aucune opération n'est proposée.** « Aucune dépendance » et « on n'a
+  pas regardé » ne sont pas la même phrase, et devant un bouton de suppression la confusion
+  détruit du contenu.
+- **Le serveur revalide** les références de contenu au moment d'exécuter, sur les moteurs en
+  mémoire — pas seulement à l'affichage. Un aperçu a l'âge de son calcul.
+- **Idempotent** : une définition déjà absente ou une liaison déjà retirée renvoient « rien à
+  faire » plutôt qu'une erreur. Un double clic ou un rejeu réseau est inoffensif.
+- **Asynchrone, et dit comme tel** : la demande devient une action agent whitelistée
+  (`npc.definition.delete`, `npc.citizens.unlink`, `npc.citizens.delete`). Le verdict se lit dans
+  le journal d'actions. La page annonce une *demande*, jamais un fait accompli.
+- **Aucune progression de joueur n'est effacée.** La suppression est éditoriale.
+
+##### Une entrée « sans définition »
+
+Elle n'est pas un PNJ cassé : c'est la **trace d'une référence**. L'aperçu en dit la provenance et
+les remèdes. Voir « Catalogue PNJ : le dialogue réellement lié » ci-dessous.
+
+#### Catalogue PNJ : le dialogue réellement lié (issue #225)
+
+**Défaut corrigé** : `/npcs` montrait **deux** entrées « Mira » — `mira_cartographer` (définie,
+Citizens #9) et `mira_first_map` « sans définition » — et la première apparaissait *sans dialogue*
+alors que les joueurs l'entendaient.
+
+Cause, trouvée dans le relevé `npc.list` réel du serveur : `NpcCatalog` ne lisait le rattachement
+PNJ → dialogue que par la **convention de nom**. Or `mira_cartographer` déclare
+`rpgquest:mira_first_map` dans son champ `dialogue:`, et aucun dialogue ne porte son nom. Deux
+conséquences, toutes deux visibles :
+
+1. le PNJ apparaissait sans dialogue, bien qu'il en ait un, chargé ;
+2. ce dialogue, que personne ne « réclamait », fabriquait à son tour une entrée de catalogue — un
+   « PNJ » sans définition portant le nom du dialogue, que rien ne permettait de corriger puisqu'il
+   n'était la faute de personne.
+
+Le rattachement se lit désormais dans cet ordre :
+
+1. le dialogue que la définition **déclare** (`dialogue:`) ;
+2. à défaut, le dialogue qui porte le **nom** du PNJ — la convention historique, qui reste le
+   défaut.
+
+Un dialogue **revendiqué** par une définition n'est plus déduit en PNJ. Un dialogue que personne ne
+revendique l'est toujours — c'est le cas de transition légitime — mais avec une anomalie
+`DIALOGUE_WITHOUT_NPC` qui **nomme sa cause** et ses deux remèdes : créer la définition de ce nom,
+ou rattacher le dialogue à un PNJ existant via son champ `dialogue:`. Dire « à migrer » sans dire
+d'où vient l'entrée était la moitié du problème : on ne corrige pas une anomalie dont on ignore la
+cause.
+
+> La convention « le dialogue porte le nom du PNJ » n'est qu'un **défaut**. La fiche fait autorité,
+> et on ne renomme jamais un dialogue pour « respecter la convention » — cela casserait le lien
+> existant.
+
 ### Rôles, permissions et comptes PlugAdmin (issue #50)
 
 Le contrôle d'accès du Control Panel repose sur un modèle **utilisateur → rôle →
@@ -1731,7 +1841,7 @@ Chaque famille a ses propres consignes, celles que les modèles manquent spontan
 | Famille | Ce que le prompt impose en plus |
 |---|---|
 | Quête | une seule quête, dans `quests` ; ne pas remplir les autres sections |
-| Dialogue | l'id du dialogue **est** l'id du PNJ ; `nodes` est une **map** ; un choix dont une condition est fausse **n'est pas affiché** ; aucune action ni condition ne s'invente ; toujours prévoir une sortie |
+| Dialogue | l'id du dialogue est celui **imposé par le formulaire** — jamais déduit du nom du PNJ (#225) ; `nodes` est une **map** ; un choix dont une condition est fausse **n'est pas affiché** ; aucune action ni condition ne s'invente ; toujours prévoir une sortie |
 | Story | un **enchaînement ordonné de quêtes existantes** ; aucune quête inventée ; **aucune** section `quests` — une quête manquante est une dépendance, pas une quête à écrire |
 
 **Deux pages, deux permissions distinctes** :
@@ -1765,9 +1875,51 @@ la plus efficace contre les références inventées, que le ticket demande expli
 **L'IA ne remplace pas les validateurs.** La réponse traverse `AiYamlExtractor` (délimitation d'une
 réponse enrobée ou bavarde — on délimite, on ne répare jamais), puis l'analyse d'import, donc les
 validateurs réels. Un type inventé, une référence inconnue, un champ obligatoire manquant sont
-attrapés et affichés. En cas de refus, le bouton **« Demander une correction »** renvoie à l'IA sa
-propre sortie **et** les diagnostics réels — sans quoi elle repartirait de zéro et reproduirait
-souvent la même erreur.
+attrapés et affichés.
+
+**Ce que vous imposez est vérifié, pas espéré (issues #223 et #224).** Un document peut être
+parfaitement valide pour le moteur sans être ce qui avait été demandé — cinq nœuds réclamés, quatre
+produits ; un identifiant imposé, un autre inventé. Les validateurs ne peuvent pas le savoir : eux
+ne voient que le document. Le panel compare donc **lui-même** la proposition à la demande, et la
+refuse aussi fermement qu'une erreur de validation :
+
+| Champ | Statut | Ce que fait le backend |
+|---|---|---|
+| **Identifiant souhaité** (quête, story, PNJ porteur) | contrainte | normalisé **avant** l'appel : `clé` et `rpgquest:clé` sont tous deux acceptés, le namespace n'est jamais doublé, un namespace étranger ou un caractère interdit est refusé sans dépenser de jeton. Après génération, l'identifiant produit est confronté à l'identifiant imposé. |
+| **Nombre de nœuds** (`0` = libre) | contrainte dès que `> 0` | le prompt le déclare impératif, puis le panel recompte la **vraie map `nodes`** avec le lecteur réel et refuse l'écart : « 5 nœuds demandés, 4 générés ». |
+| **Nombre d'étapes** d'une quête | indication, et le formulaire le dit | non vérifié : contrairement aux nœuds d'un dialogue, un objectif de plus ou de moins est souvent ce qui rend la quête jouable. |
+
+**« Demander une correction » (issue #222).** En cas de refus — validation ou écart de demande — le
+bouton renvoie à l'IA sa propre sortie, les diagnostics réels **et la demande d'origine**, annoncée
+comme toujours impérative. Les trois comptent :
+
+- sans la sortie précédente, le modèle repart de zéro et reproduit souvent la même erreur ;
+- sans **tous** les diagnostics, il corrige un problème sur cinq. Ils voyagent dans **un seul**
+  champ de formulaire, une ligne par problème : le lecteur de formulaire du panel ne garde qu'une
+  valeur par nom, et une série de champs homonymes n'en transportait donc qu'un ;
+- sans les consignes d'origine, il répare l'erreur signalée **en perdant** l'identifiant imposé ou
+  le nombre de nœuds, et la proposition est refusée pour une autre raison.
+
+Génération et correction lisent le formulaire par le **même** chemin : une correction ne peut donc
+pas perdre un champ, et l'écran se rouvre rempli. Si l'appel de correction échoue lui-même (réseau,
+401, délai), la proposition précédente et ses diagnostics sont conservés et le bouton reste
+disponible.
+
+**Un PNJ qui a déjà un dialogue n'en reçoit jamais un second en silence (issue #225).** Le champ
+demande le **PNJ porteur**, non « l'identifiant du dialogue » : les deux ne coïncident que par
+défaut. Quand le dialogue réellement lié ne porte pas le nom du PNJ — `mira_cartographer` déclare
+`rpgquest:mira_first_map` — la génération **s'arrête avant tout appel payant** et affiche le
+dialogue lié, l'identifiant du PNJ, son Citizens et les entrées apparentées, puis demande :
+
+- **modifier le dialogue existant** (recommandé) — la proposition porte son identifiant, aucun
+  second dialogue n'est créé, et l'import arbitre la collision ;
+- **créer un nouveau dialogue et remplacer le lien** — l'ancien n'est ni supprimé ni délié, et
+  l'écran dit qu'il faut repointer la fiche du PNJ, sinon les joueurs continuent d'entendre
+  l'ancien.
+
+Il n'y a pas de troisième possibilité : le moteur ne rattache un dialogue à un PNJ que par le champ
+`dialogue:` de sa définition ou par la convention de nom. Un dialogue « supplémentaire mais non
+lié » ne serait joignable par personne.
 
 **Abstraction de fournisseur.** `AiProvider` n'expose que trois opérations (identité, test de
 connexion, génération). Tout ce qui est propre à une API — forme du corps JSON, en-tête

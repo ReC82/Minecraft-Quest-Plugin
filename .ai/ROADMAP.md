@@ -2408,3 +2408,68 @@ Première étape à reprendre: configurer un fournisseur et faire le point 4 de 
   connexion ») — quelques secondes, et c'est le seul moyen de savoir si les trois implémentations
   d'API sont justes. Puis TC-265, puis TC-266, puis TC-264.
 ```
+
+```text
+Date: 2026-10-08 (après-midi — #222 #223 #224 #225 #226 : atelier IA corrigé, PNJ ↔ dialogue, suppression de PNJ)
+Branche de départ: feature/218-starter-kit-tiers @ 2eff162
+Branche de travail: fix/222-atelier-ia-et-suppression-pnj
+Étape de départ: cinq tickets ouverts le matin même par les tests réels de l'utilisateur
+  (TC-265 et TC-266). Consigne : « commence par l'audit réel du cas Mira avant tout changement
+  destructif ».
+Étapes terminées:
+  - AUDIT MIRA FAIT D'ABORD, et sur les DONNÉES RÉELLES : snapshot de /var/lib/plugadmin/
+    control-panel.db, extraction du dernier npc.list réussi (action b9c15a45, 2026-10-08T12:13:21Z).
+    Les deux lignes exactes sont dans le rapport. Diagnostic PROUVÉ, pas supposé : l'entrée
+    « mira_first_map / sans définition » est le DIALOGUE lui-même, déduit en PNJ par
+    NpcCatalog.build (canonical.addAll(dialogueByNpc.keySet()) + DialogueLink(d.id().getKey(), …)).
+    Aucune donnée supprimée, aucun fichier touché pendant l'audit.
+  - #222 : trois causes cumulées, toutes corrigées. (1) les diagnostics voyageaient en champs
+    « problem » HOMONYMES, or Http.parseUrlEncoded rend une Map<String,String> — une seule valeur
+    survivait. (2) correctionPrompt ne recevait PAS les consignes d'origine. (3) le formulaire se
+    rouvrait VIDE après une correction (questForm/dialogueForm/storyForm restaient null).
+    Génération et correction partagent désormais UN chemin de lecture du formulaire
+    (ContentPromptBuilder.Demand scellée). Repli ajouté si l'appel de correction échoue lui-même.
+  - #223 : ContentId — normalisation avant appel, les deux écritures acceptées, namespace jamais
+    doublé, règle de saisie LITTÉRALEMENT celle de ContentPackImport.slugOf (constante partagée).
+  - #224 : AiConstraints — le backend recompte la VRAIE map nodes avec DialogueYaml.fromMap, donc
+    le lecteur réel, et refuse l'écart. Identifiant imposé vérifié par le même mécanisme.
+  - #225 (atelier) : DialogueTargetDecision — décision BLOQUANTE avant tout appel payant quand le
+    dialogue lié ne porte pas le nom du PNJ. Deux options seulement, parce que le moteur n'en
+    supporte que deux ; le « dialogue supplémentaire non lié » est refusé et l'écran dit pourquoi.
+  - #225 (moteur) : NpcCatalog lit le dialogue DÉCLARÉ d'abord, la convention de nom ensuite. Un
+    dialogue revendiqué ne fabrique plus d'entrée fantôme. Nouvelle anomalie DIALOGUE_WITHOUT_NPC
+    qui nomme sa cause. Les REMISES (DELIVER_ITEM_TO_NPC) traversent enfin le relevé npc.list —
+    elles n'apparaissaient dans AUCUNE colonne, donc supprimer un destinataire cassait une quête
+    en silence.
+  - #226 : trois actions agent (npc.definition.delete avec sauvegarde serveur + revalidation des
+    références, npc.citizens.unlink, npc.citizens.delete par double clé UUID + id numérique) et la
+    page /npcs/delete : cinq couches affichées, quatre opérations, permission dédiée NPC_DELETE.
+  - Correctif d'affichage trouvé en chemin : Ui.banner retombait en SILENCE sur « info » pour
+    error/warning/success. Les bandeaux d'erreur de l'atelier IA étaient donc neutres depuis #146.
+Branche finale: fix/222-atelier-ia-et-suppression-pnj (poussée, JAMAIS fusionnée)
+Build: voir le rapport de session pour les nombres exacts. UN SEUL Gradle à la fois, depuis un
+  worktree PROPRE (les fichiers de contenu non suivis de l'utilisateur cassent
+  CrystalHuntIntegrationTest et bloquent le déploiement).
+Déploiement: JAR + PANEL cette fois. Contrairement aux trois lots précédents, ce lot touche
+  src/main/java/ : le catalogue PNJ et les trois actions de suppression vivent dans le plugin.
+  Redémarrage Minecraft requis. Aucune migration, aucun fichier de contenu touché.
+Tests manuels en attente: TC-267 (nouveau — correction IA, identifiant, nœuds exacts, fiche Mira,
+  création puis suppression d'un PNJ DE TEST). TC-265 et TC-266 restent à faire, donc #146 RESTE
+  OUVERTE. Aucun des cinq tickets de ce lot ne peut être fermé avant TC-267.
+Blocages: aucun. Limites assumées et documentées :
+  - le nombre d'ÉTAPES d'une quête reste une indication non vérifiée (seuls les nœuds d'un dialogue
+    sont une contrainte). Le formulaire le dit désormais explicitement ;
+  - les suppressions de PNJ sont ASYNCHRONES : le verdict se lit dans le journal d'actions ;
+  - le panel ne sait toujours pas supprimer un DIALOGUE, et c'est volontaire (un dialogue peut être
+    porté par plusieurs PNJ). Conséquence assumée : supprimer la définition d'un PNJ dont le
+    dialogue porte son nom fait réapparaître ce dialogue comme entrée « sans définition » — mais
+    désormais avec une anomalie qui l'explique ;
+  - plusieurs liaisons Citizens sur un même id : seule celle affichée est traitée, et l'aperçu le
+    dit ;
+  - APRÈS LE REDÉMARRAGE, le compteur de PNJ va BAISSER (les entrées fantômes disparaissent). Ce
+    n'est pas une perte de données — c'est la déduction qui était fausse, pas les fichiers.
+  DETTE RAPPELÉE : MiniYaml ne gère pas les scalaires repliés (text: >) — dialogues/guard.yml
+  n'est pas éditable depuis le panel. RestartServiceTest reste sensible au temps réel.
+Première étape à reprendre: déployer (JAR + redémarrage + panel), puis TC-267. Ensuite seulement,
+  reprendre TC-266 et la suite de #146.
+```

@@ -128,6 +128,7 @@ Depuis le Control Panel : la page **PNJ** liste définitions + bindings + anomal
 |---|---|---|
 | `NO_DEFINITION` / `BINDING_NO_DEFINITION` | un binding Citizens existe mais aucune `npcs/<id>.yml` | créer la définition (`npc.definition.create`) |
 | `DIALOGUE_MISSING` | la définition déclare un `dialogue:` qui n'est pas chargé | créer/corriger le dialogue, ou retirer le champ |
+| `DIALOGUE_WITHOUT_NPC` | un dialogue que personne ne porte, déduit en « PNJ » par le catalogue | rattacher le dialogue à un PNJ existant (champ **Dialogue** de sa fiche), ou créer la fiche de ce nom |
 | `DUPLICATE_BINDING` | deux PNJ Citizens liés au même id RPGQuest | `untag` l'un des deux |
 | `NOT_LINKED` | définition présente mais aucun PNJ Citizens tagué avec cet id | taguer le bon PNJ en jeu (`/rpgadmin npc tag <id>`) |
 | `QUEST_REF_NO_NPC` | un YAML référence un id de PNJ qui n'existe nulle part | taguer un PNJ, ou corriger l'id dans le YAML |
@@ -148,3 +149,79 @@ Depuis le Control Panel : la page **PNJ** liste définitions + bindings + anomal
 
 Puis, si besoin, depuis la page PNJ du panel : créer `npcs/guard.yml`, poser le `giver:` d'une
 quête, etc.
+
+## 9. Quel dialogue un PNJ porte-t-il vraiment ?
+
+Le rattachement PNJ → dialogue se lit dans **cet ordre** :
+
+1. le dialogue que la fiche **déclare** dans son champ `dialogue:` ;
+2. à défaut seulement, le dialogue qui porte le **nom** du PNJ.
+
+La convention « le dialogue s'appelle comme le PNJ » n'est donc que le défaut. Un PNJ peut
+parfaitement porter un dialogue nommé autrement — `mira_cartographer` déclare
+`rpgquest:mira_first_map` — et c'est **la fiche qui fait autorité**.
+
+Conséquence pratique dans l'atelier IA : quand on demande un dialogue pour un PNJ qui en a
+déjà un sous un autre nom, le panel **s'arrête et pose la question** avant d'appeler l'IA :
+
+- **modifier le dialogue existant** — la proposition portera son identifiant, aucun second
+  dialogue n'est créé ;
+- **créer un nouveau dialogue et remplacer le lien** — l'ancien n'est ni supprimé ni délié,
+  et il faut repointer la fiche du PNJ ensuite, sinon les joueurs continuent d'entendre
+  l'ancien.
+
+Il n'existe pas de troisième possibilité : un dialogue « supplémentaire mais non lié » ne
+serait joignable par personne, et réapparaîtrait lui-même dans `/npcs` comme une entrée
+sans définition.
+
+## 10. Supprimer un PNJ (issue #226)
+
+Depuis la fiche d'un PNJ, **Zone de danger → « Supprimer… »** ouvre un aperçu des
+dépendances. Rien ne se supprime depuis la liste : l'aperçu est le seul point de départ.
+
+L'aperçu montre les **cinq couches**, présentes *et* absentes — définition logique, liaison
+RPGQuest ↔ Citizens, PNJ Citizens physique, dialogue lié, et les quêtes qui citent le PNJ
+(donneur, `TALK_TO_NPC`, `DELIVER_ITEM_TO_NPC`). Puis il propose quatre opérations, de la
+moins à la plus destructrice :
+
+| | Opération | Ce qu'elle fait | Ce qu'elle ne fait pas |
+|---|---|---|---|
+| **A** | Supprimer la définition logique seulement | supprime `npcs/<id>.yml`, après sauvegarde serveur dans `npc-backups/` | ne touche ni au PNJ Citizens, ni à sa liaison, ni au dialogue |
+| **B** | Délier le PNJ Citizens | retire la liaison (**réversible** : on peut relier) | ne supprime ni l'entité, ni la fiche, ni le dialogue |
+| **C** | Supprimer le PNJ Citizens physique | détruit l'entité et retire sa liaison | ne supprime ni la fiche, ni le dialogue |
+| **D** | Nettoyage complet | définition + liaison + entité | **jamais le dialogue** |
+
+### Ce qui bloque
+
+Une quête qui désigne encore le PNJ — donneur, cible d'un « parler à », ou **destinataire
+d'une remise** — bloque la suppression de sa définition, en nommant les quêtes. Il faut
+corriger ces références d'abord : retirer un donneur ou réaffecter un objectif est une
+décision éditoriale, pas un nettoyage mécanique.
+
+Une opération bloquée **n'a pas de bouton** : il n'y a rien à cliquer.
+
+### Garde-fous
+
+- **Permission dédiée** : supprimer un PNJ n'est pas accordé par le droit d'écriture.
+  Détruire l'entité Citizens exige en plus le droit d'apparition de PNJ.
+- **Confirmation tapée** : il faut retaper l'identifiant du PNJ, et l'identifiant numérique
+  Citizens quand l'opération touche l'entité.
+- **Jamais le mauvais Citizens** : le serveur confronte l'identifiant numérique à la
+  liaison réelle, puis l'UUID de l'entité, avant de détruire quoi que ce soit.
+- **Aucun dialogue n'est jamais supprimé.** Un dialogue partagé par deux fiches est signalé
+  nommément dans l'aperçu.
+- **Sans relevé `npc.list`, aucune opération n'est proposée** : une liste de dépendances
+  vide ne veut pas dire « aucune dépendance » quand on n'a pas regardé. Rafraîchir le
+  catalogue PNJ d'abord.
+- **Asynchrone** : la demande part à l'agent, qui **revérifie les dépendances** au moment
+  d'exécuter et peut refuser même si l'aperçu proposait l'opération. Le verdict se lit dans
+  le journal d'actions.
+- Rejouer la même opération est sans danger : une définition déjà absente ou une liaison
+  déjà retirée renvoient « rien à faire » au lieu d'une erreur.
+
+### Une entrée « sans définition »
+
+Elle n'est pas un PNJ cassé : c'est la **trace d'une référence**. L'aperçu en dit la
+provenance (un dialogue du même nom, un PNJ Citizens tagué, une quête qui le cite) et les
+remèdes possibles. On ne supprime pas une entrée de catalogue — on supprime ou on corrige
+*ce qui la crée*. Voir « Dialogue sans PNJ porteur » dans *Résoudre les problèmes de PNJ*.

@@ -4128,3 +4128,178 @@ le résumé de récompenses de TC-014).
 | TC-264 | Import sécurisé d'un content pack #109 (PENDING) | | | |
 | TC-265 | Atelier IA : créer une quête avec une IA #146 (PENDING) | | | |
 | TC-266 | Atelier IA : dialogue et story #146 (PENDING) | | | |
+| TC-267 | Correction IA, identifiant, nœuds exacts, fiche Mira, suppression d'un PNJ de test #222/#223/#224/#225/#226 (PENDING) | | | |
+
+---
+
+### TC-267 — Correction IA, identifiant, nœuds exacts, fiche Mira, suppression d'un PNJ de test (issues #222, #223, #224, #225, #226, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier les cinq correctifs du lot de l'après-midi du 2026-10-08, dans l'ordre où ils
+    se rencontrent réellement. TC-265 et TC-266 couvrent déjà la sécurité de la clé, le fait que rien
+    n'est enregistré sans confirmation, et la qualité du contenu produit : **ne pas les refaire ici**.
+-   **Pré-requis :** JAR de ce lot déployé **et serveur redémarré**, Control Panel redéployé,
+    catalogue PNJ **rafraîchi** (`PNJ → Rafraîchir`), un fournisseur d'IA fonctionnel, un compte
+    PlugAdmin `OWNER` ou `ADMIN`.
+-   ⚠️ **Ce test consomme des jetons facturés** (étapes 1 à 3).
+-   🚫 **Ne supprimer AUCUN PNJ de gameplay.** Mira, le Garde, le Guide, Jo, Lily, Jeff et tous les
+    autres PNJ du jeu sont **hors périmètre** de la partie suppression : elle se fait exclusivement
+    sur le PNJ de test créé à l'étape 5. Mira n'est **consultée** qu'à l'étape 4.
+
+#### 1. #222 — « Demander une correction » fonctionne vraiment
+
+1.  `/ai/studio?kind=quest`. Remplir l'intention (« une petite quête de test »), **imposer**
+    l'identifiant `tc267_correction`, imposer un **titre** stylé avec la palette, et écrire une
+    contrainte libre reconnaissable (« pas de combat »).
+2.  Provoquer un refus : dans « Contraintes supplémentaires », ajouter une phrase qui pousse le modèle
+    à inventer un type, par exemple « utilise un objectif de type UTILISER_UN_OBJET ».
+3.  **Demander une proposition** → la proposition doit être **refusée**, et le bandeau d'erreur doit
+    être **rouge** (plus « bleu information » : c'était un défaut d'affichage corrigé dans ce lot).
+4.  Vérifier avant de cliquer : le formulaire au-dessus est **toujours rempli** — intention,
+    identifiant, titre, contrainte.
+5.  Cliquer **« Demander une correction à l'IA »**.
+6.  Attendu :
+    -   une **nouvelle** proposition revient, passée par extraction → parsing → validation → aperçu ;
+    -   le formulaire est **encore rempli** (c'est ce qui manquait : il se vidait) ;
+    -   l'identifiant de la proposition corrigée est **toujours** `rpgquest:tc267_correction`, et le
+        titre imposé est **toujours** celui de l'étape 1 — la correction n'a pas « oublié » les
+        consignes ;
+    -   si elle est encore refusée, les diagnostics affichés sont les **nouveaux**, et le bouton de
+        correction est **toujours là**.
+7.  Déplier « Réponse brute du modèle » → consultable.
+8.  Vérifier le **journal d'audit** : une ligne `ai.correct` avec le même fournisseur et le même
+    modèle que la génération initiale.
+9.  Erreur d'API visible : dans `/ai/providers`, mettre temporairement une clé invalide, refaire une
+    correction → bandeau **rouge** « L'appel a échoué … Rien n'a été enregistré », et **la proposition
+    précédente et son bouton sont conservés** (« Relancer la correction »). Remettre la vraie clé.
+10. Vérifier qu'**aucun fichier** n'est apparu dans `src/main/resources/quests/` sur la machine de
+    build pendant toute cette étape.
+
+#### 2. #223 — l'identifiant, dans les deux écritures
+
+11. Saisir `tc267_local` → **Demander une proposition** → la proposition porte
+    `rpgquest:tc267_local`.
+12. Saisir `rpgquest:tc267_namespace` → la proposition porte `rpgquest:tc267_namespace`, et **jamais**
+    `rpgquest:rpgquest:…`.
+13. Saisir `testia:securiser_environs` → **refusé immédiatement**, avant tout appel : le message doit
+    nommer le seul namespace accepté et proposer la clé à écrire. Vérifier qu'**aucun jeton n'a été
+    consommé** (pas de nouvelle ligne `ai.generate` dans l'audit, pas de section « 3. Proposition »).
+14. Saisir `Securiser Environs` (majuscules + espace) → refusé de la même façon, avant appel.
+15. Lire l'aide sous le champ : elle doit dire que le namespace est ajouté automatiquement, et le
+    **placeholder ne doit plus contenir `rpgquest:`**.
+16. Même vérification pour une **story** (`/ai/studio?kind=story`) : l'aide dit qu'une story n'a pas
+    de namespace, et `rpgquest:premiers_pas` est accepté avec le préfixe retiré.
+
+#### 3. #224 — le nombre de nœuds est impératif
+
+17. `/ai/studio?kind=dialogue`. Lire l'aide du champ « Nombre de nœuds » : elle doit dire que la valeur
+    est **impérative** et que le panel **recompte** les nœuds.
+18. Mettre **0**, choisir un PNJ de test (ou laisser vide), générer → la proposition est acceptée quel
+    que soit le nombre de nœuds produit.
+19. Mettre **5**, générer → compter les nœuds de la proposition :
+    -   s'il y en a exactement 5 → acceptée ;
+    -   sinon → **refusée** avec un bandeau rouge « Demande non respectée — 5 nœuds demandés,
+        *N* générés », et le bouton de correction disponible. **C'est le cas que le ticket décrit** :
+        avant ce lot, 4 nœuds pour 5 demandés passaient.
+20. Si refus, cliquer **« Demander une correction »** → la contrainte de 5 nœuds doit être **répétée**
+    dans la nouvelle demande (la proposition corrigée doit en avoir 5).
+21. Mettre **12** (le maximum) et vérifier que le champ ne laisse pas saisir plus.
+22. Vérifier le contraste : le champ « Nombre d'étapes » d'une **quête** doit annoncer, lui, qu'il
+    s'agit d'une **indication** non vérifiée.
+
+#### 4. #225 — la fiche Mira, en lecture seule
+
+> 🚫 **Ne rien modifier et ne rien supprimer à cette étape.** On vérifie seulement que l'affichage
+> dit enfin la vérité.
+
+23. `/npcs` → **Rafraîchir** → chercher « mira ».
+24. Attendu : **une seule** entrée Mira — `mira_cartographer`. L'entrée `mira_first_map` « sans
+    définition » doit avoir **disparu** : elle n'était pas un PNJ, c'était le dialogue, déduit en PNJ
+    faute de porteur.
+25. Ouvrir la fiche `mira_cartographer`. Vérifier :
+    -   badge **« définition »** et badge **« Citizens #9 »** ;
+    -   section **Contenu** → « Dialogue » affiche **`rpgquest:mira_first_map`** avec son nombre de
+        nœuds et de choix (et non « aucun dialogue », ni « pas encore chargé en jeu ») ;
+    -   bouton « Ouvrir le dialogue » → mène bien à `rpgquest:mira_first_map` ;
+    -   section **Diagnostics** → **aucune anomalie**.
+26. En jeu : parler à Mira → le dialogue s'ouvre normalement. **Rien n'a été perdu.**
+27. `/ai/studio?kind=dialogue` → mettre `mira_cartographer` comme PNJ porteur, écrire une intention
+    quelconque, **Demander une proposition**.
+28. Attendu — **aucun appel à l'IA n'a lieu** : une carte « Ce PNJ a déjà un dialogue — que faut-il
+    faire ? » s'affiche, montrant le dialogue lié `rpgquest:mira_first_map`, l'id du PNJ, Citizens #9,
+    et deux choix explicites. Vérifier dans l'audit qu'**aucune ligne `ai.generate` n'a été ajoutée**.
+29. **Ne pas continuer** : revenir en arrière. L'objet de l'étape est l'arrêt, pas la génération.
+
+#### 5. Créer un PNJ de test complet
+
+30. `/npcs` → créer une définition `pnj_de_test_267` (nom affiché « PNJ de test 267 »).
+31. Créer son PNJ Citizens depuis la fiche (ou le lier à un Citizens libre). **Noter son identifiant
+    numérique Citizens** — il servira aux confirmations.
+32. Créer un dialogue `rpgquest:pnj_de_test_267` et le choisir dans le champ **Dialogue** de la fiche.
+33. **Rafraîchir** → la fiche doit afficher : définition, Citizens #N, dialogue lié.
+34. En jeu : le PNJ est visible et son dialogue s'ouvre.
+
+#### 6. #226 — le supprimer, couche par couche
+
+> Tout se fait sur `pnj_de_test_267`. Après **chaque** opération : rafraîchir le catalogue PNJ, et
+> lire le verdict dans le **journal d'actions** (les suppressions sont asynchrones).
+
+35. Fiche du PNJ → **Zone de danger** → **« Supprimer… »**. Attendu sur l'aperçu :
+    -   les **cinq couches** listées, présentes **et** absentes ;
+    -   l'identifiant Citizens affiché ;
+    -   le dialogue lié affiché, avec la mention qu'il **n'est jamais supprimé** ;
+    -   quatre opérations, de la moins à la plus destructrice.
+36. **Confirmation forte** : tenter de valider « Supprimer la définition logique seulement » en tapant
+    un identifiant **approximatif** → refusé, « Confirmation incorrecte », rien n'est fait.
+37. Tenter « Supprimer le PNJ Citizens physique » en tapant le bon identifiant de PNJ mais un **autre**
+    identifiant Citizens → refusé. **C'est le garde-fou contre la destruction du voisin.**
+38. **Délier** (B) : confirmer avec l'identifiant du PNJ **et** l'identifiant Citizens. Attendu :
+    -   l'action `npc.citizens.unlink` réussit dans le journal ;
+    -   après rafraîchissement, la fiche garde sa **définition** et son **dialogue**, et affiche
+        « à lier » ;
+    -   **en jeu, le PNJ Citizens est toujours là** — il ne répond simplement plus comme PNJ RPGQuest.
+39. **Relier** le Citizens depuis la fiche (l'opération est réversible : c'est le point de B).
+40. **Supprimer le Citizens physique** (C) : confirmer avec les deux identifiants. Attendu :
+    -   `npc.citizens.delete` réussit ;
+    -   **en jeu, le PNJ a disparu** ;
+    -   la fiche garde sa **définition** et son **dialogue**, et redevient « à lier ».
+41. **Supprimer la définition seule** (A) : confirmer. Attendu :
+    -   `npc.definition.delete` réussit ;
+    -   `npcs/pnj_de_test_267.yml` a disparu du serveur, et une **copie datée** existe dans
+        `plugins/RPGQuest/npc-backups/` (vérification FTP) ;
+    -   le **dialogue** `rpgquest:pnj_de_test_267` est **toujours là** — et réapparaît donc comme une
+        entrée « sans définition » dans le catalogue, avec l'anomalie **« Dialogue sans PNJ porteur »**
+        qui dit d'où elle vient et comment la corriger. **C'est le comportement attendu**, et c'est
+        exactement ce qui expliquait la seconde entrée Mira.
+42. **Dépendance bloquante** : recréer un PNJ de test `pnj_de_test_267b`, en faire le **destinataire
+    d'une remise** (`DELIVER_ITEM_TO_NPC`) d'une quête de test, puis rouvrir l'aperçu de suppression.
+    Attendu : l'opération « définition seule » et le « nettoyage complet » sont **bloqués**, la quête
+    est **nommée**, et il n'y a **aucun bouton** à cliquer pour elles. Délier reste possible.
+43. **Nettoyage complet** (D) sur un PNJ de test sans dépendance et avec un Citizens lié : les deux
+    actions partent (`npc.citizens.delete` puis `npc.definition.delete`), et le **dialogue survit**.
+44. **Double clic** : relancer deux fois la même suppression. Attendu : la seconde renvoie « rien à
+    supprimer » / « rien à délier » dans le journal, **jamais une erreur**, et rien d'autre n'est
+    touché.
+45. **Permissions** : se connecter avec un compte de rôle **Éditeur de contenu** → la **Zone de
+    danger** ne doit pas apparaître, et `/npcs/delete?npc=…` saisi à la main doit renvoyer
+    « Accès refusé ».
+
+#### 7. Vérification finale — Mira est intacte
+
+46. `/npcs` → **Rafraîchir** → ouvrir `mira_cartographer`. Attendu, identique à l'étape 25 :
+    définition, Citizens #9, dialogue `rpgquest:mira_first_map`, **aucune anomalie**.
+47. En jeu : parler à Mira → le dialogue s'ouvre. **Rien n'a été perdu par les suppressions de test.**
+48. Vérifier qu'aucun autre PNJ de gameplay n'a bougé : le Garde, le Guide, Jo, Lily, Jeff gardent
+    leur définition, leur Citizens et leur dialogue.
+
+#### Critères de réussite
+
+-   #222 : une proposition refusée se corrige **sans ressaisie**, en conservant l'identifiant et le
+    titre imposés ; une erreur d'API est visible **et** ne fait pas perdre la proposition.
+-   #223 : les deux écritures de l'identifiant fonctionnent, un namespace étranger est refusé **avant**
+    l'appel, et `rpgquest:rpgquest:` n'apparaît jamais.
+-   #224 : `0` laisse libre ; une valeur `N > 0` est soit respectée, soit refusée avec le compte exact.
+-   #225 : une seule entrée Mira, son dialogue réel affiché, et aucune génération silencieuse d'un
+    second dialogue.
+-   #226 : un PNJ de test se supprime couche par couche depuis le panel, sans commande Minecraft, sans
+    SQL, sans édition manuelle de YAML ; un dialogue n'est jamais emporté ; une dépendance bloque ; et
+    aucun PNJ de gameplay n'est affecté.

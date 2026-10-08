@@ -6187,3 +6187,148 @@ un test le vérifie désormais fichier par fichier. Ce fichier s'édite à la ma
 `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`. Un
 rollback retire les deux familles de l'atelier et rend au validateur de
 dialogues son silence sur le vocabulaire. Aucune donnée n'est concernée.
+
+---
+
+## 2026-10-08 (après-midi) - Atelier IA corrigé, PNJ ↔ dialogue cohérent, suppression de PNJ (#222 #223 #224 #225 #226)
+
+### Changement
+
+**Côté Control Panel uniquement (#222, #223, #224, et le volet atelier de
+#225)**
+
+- **#222 — « Demander une correction » relance vraiment.** Trois défauts
+  cumulés : les diagnostics voyageaient en champs `problem` **homonymes**, or
+  le lecteur de formulaire du panel ne garde qu'une valeur par nom — l'IA n'en
+  recevait qu'un seul ; la correction repartait **sans les consignes
+  d'origine**, donc le modèle réparait l'erreur signalée en perdant
+  l'identifiant imposé ; et le formulaire se rouvrait **vide**, obligeant à
+  tout retaper. Génération et correction passent désormais par un seul chemin
+  de lecture du formulaire, et un échec d'appel pendant une correction conserve
+  la proposition précédente avec son bouton.
+- **#223 — l'identifiant est normalisé avant l'appel.** `clé` et
+  `rpgquest:clé` sont tous deux acceptés, le namespace n'est jamais doublé, un
+  namespace étranger ou un caractère interdit est refusé **sans dépenser de
+  jeton**, et la règle de saisie est littéralement celle de l'import.
+- **#224 — un nombre de nœuds non nul devient une contrainte.** Le prompt le
+  déclare impératif, puis le panel **recompte la vraie map `nodes`** avec le
+  lecteur réel et refuse l'écart (« 5 nœuds demandés, 4 générés »). Le refus
+  est corrigeable via #222. Le nombre d'étapes d'une quête reste une
+  *indication*, et le formulaire le dit désormais explicitement.
+- **#225 (atelier)** — un PNJ déjà pourvu d'un dialogue ne peut plus en
+  recevoir un second en silence. Le champ demande le **PNJ porteur**, non
+  « l'identifiant du dialogue » : quand le dialogue lié ne porte pas son nom —
+  le cas Mira — la génération **s'arrête avant tout appel payant** et demande
+  s'il faut modifier l'existant ou créer un nouveau dialogue en remplaçant le
+  lien.
+- Correctif d'affichage au passage : `Ui.banner` retombait en silence sur
+  « info » pour les noms longs `error` / `warning` / `success`. Un échec d'appel
+  d'IA s'affichait donc en bandeau **neutre** — visible, mais pas comme un
+  problème.
+
+**Côté plugin — il y a donc un JAR à déployer (#225, #226)**
+
+- **#225 (moteur)** — `NpcCatalog` ne lisait le rattachement PNJ → dialogue que
+  par la **convention de nom**. Conséquence sur les données réelles du serveur :
+  `mira_cartographer`, qui **déclare** `rpgquest:mira_first_map`, apparaissait
+  *sans dialogue* alors que les joueurs l'entendaient ; et ce dialogue, que
+  personne ne « réclamait », fabriquait une **seconde entrée** de catalogue —
+  un « PNJ » `mira_first_map` sans définition, que rien ne permettait de
+  corriger puisqu'il n'était la faute de personne. Le rattachement se lit
+  désormais : dialogue **déclaré** d'abord, convention de nom ensuite. Un
+  dialogue revendiqué par une définition n'est plus déduit en PNJ ; un dialogue
+  sans porteur l'est toujours, avec une anomalie `DIALOGUE_WITHOUT_NPC` qui
+  nomme sa cause et ses deux remèdes.
+- **Les remises deviennent visibles.** Un PNJ destinataire d'un
+  `DELIVER_ITEM_TO_NPC` n'apparaissait dans **aucune** colonne du catalogue : le
+  supprimer rendait la quête infinissable sans qu'aucun écran ait pu
+  l'annoncer. Le champ `questsDelivering` (source `QUEST_DELIVER`) traverse
+  maintenant tout le relevé `npc.list`.
+- **#226 — trois nouvelles actions agent whitelistées** :
+  `npc.definition.delete` (la définition seule, **sauvegardée** côté serveur
+  dans `npc-backups/`, refusée si une quête référence encore le PNJ),
+  `npc.citizens.unlink` (retire la liaison, laisse vivre l'entité) et
+  `npc.citizens.delete` (détruit l'entité et retire sa liaison). Les deux
+  dernières exigent l'identifiant Citizens attendu, confronté à la liaison
+  réelle avant d'agir ; la destruction passe par la **double clé UUID +
+  identifiant numérique**. Les trois sont idempotentes.
+- **#226 (panel)** — page `/npcs/delete` : aperçu des **cinq couches** d'un PNJ
+  (définition, liaison, entité Citizens, dialogue, références de contenu), puis
+  quatre opérations de la moins à la plus destructrice. Permission **dédiée**
+  `NPC_DELETE`, et `NPC_SPAWN_WRITE` en plus pour détruire l'entité. Aucune
+  opération ne supprime un dialogue.
+
+### Action serveur
+
+**Un JAR à remplacer**, cette fois — contrairement aux trois lots précédents,
+ce lot touche `src/main/java/`.
+
+- **Remplacer le JAR RPGQuest**, puis **redémarrer Minecraft** : le catalogue
+  PNJ et les trois nouvelles actions agent vivent dans le plugin.
+- **Redéployer le Control Panel** (`scripts/plugadmin/deploy.sh`).
+- **Aucune migration de base**, aucun fichier de configuration à modifier,
+  aucun monde touché.
+- **Aucun fichier de contenu n'est créé ni modifié** par ce lot. Les
+  définitions PNJ, dialogues, quêtes et stories du serveur sont inchangés.
+
+> **Ce qu'il ne faut PAS altérer** : `plugins/RPGQuest/npcs/`,
+> `plugins/RPGQuest/dialogues/`, `plugins/RPGQuest/quests/`,
+> `plugins/RPGQuest/stories/`, `data.db`, et la configuration Citizens. Ce lot
+> ne demande aucune modification de données.
+
+### Sauvegarde préalable
+
+- JAR RPGQuest actuellement déployé (sauvegarde datée, **ne jamais écraser la
+  dernière**) ;
+- `data.db` — par principe, bien qu'aucune migration n'ait lieu ;
+- `plugins/RPGQuest/npcs/` — par principe : c'est le dossier que la nouvelle
+  action de suppression sait désormais toucher, même si le déploiement
+  lui-même n'y touche pas ;
+- release précédente du panel (conservée automatiquement par le script).
+
+### Déploiement
+
+1. Build depuis un arbre **propre** sur le commit visé.
+2. `scripts/deploy-verygames.sh` (avec `RPGQUEST_TEST_MAX_HEAP=768m` et `-y`) —
+   transfert du JAR + backup daté.
+3. Redémarrage Minecraft.
+4. `scripts/plugadmin/deploy.sh` — Control Panel.
+5. Vérifier `/health`, puis dans PlugAdmin :
+   - **PNJ → Rafraîchir** : la fiche `mira_cartographer` doit afficher son
+     dialogue `rpgquest:mira_first_map`, et l'entrée `mira_first_map` « sans
+     définition » doit **avoir disparu** ;
+   - une fiche PNJ doit montrer une **Zone de danger** avec « Supprimer… ».
+
+### Validation
+
+**Vérifié automatiquement** : suite complète (plugin + control-panel +
+web-api), voir le rapport de session. Le cas Mira est reproduit à l'identique
+depuis le relevé `npc.list` réel du 2026-10-08, côté moteur **et** côté panel.
+
+**Non vérifié** : **TC-267** (`PENDING MANUAL VALIDATION`) — correction IA
+réelle, identifiant local puis namespacé, nombre exact de nœuds, fiche Mira, et
+cycle complet de création puis suppression d'un **PNJ de test**. Exige une
+vraie clé API et un client Minecraft.
+
+### Effet de bord à connaître
+
+**Le catalogue PNJ va changer d'aspect après le redémarrage**, et c'est
+l'objectif : toute entrée « sans définition » qui n'était en fait qu'un
+dialogue déclaré par une fiche va **disparaître**. Chez nous, cela concerne
+`mira_first_map`. Rien n'est supprimé sur le disque — c'est la *déduction* qui
+était fausse, pas les fichiers. Un dialogue réellement sans porteur reste
+affiché, avec sa nouvelle anomalie.
+
+Le compteur de PNJ de la page d'accueil baissera d'autant. Ce n'est pas une
+perte de données.
+
+### Rollback
+
+- Plugin : redéployer le JAR sauvegardé, puis redémarrer Minecraft. Le
+  catalogue retrouve son ancienne déduction (et ses entrées fantômes), et les
+  trois actions de suppression redeviennent inconnues de l'agent — le panel les
+  verrait alors refusées, ce qui est le comportement attendu pour une action
+  qu'un agent ne connaît pas.
+- Panel : `scripts/plugadmin/rollback.sh app` puis
+  `systemctl restart plugadmin`.
+- **Aucune donnée n'est concernée** par un rollback : ce lot n'écrit rien.

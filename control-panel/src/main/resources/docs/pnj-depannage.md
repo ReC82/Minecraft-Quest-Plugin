@@ -49,6 +49,55 @@ Le badge **« sans définition »** disparaît de la ligne du PNJ.
 
 ---
 
+## Dialogue sans PNJ porteur
+
+### Ce que cela signifie
+
+L'entrée que vous regardez **n'est pas un vrai PNJ**. C'est un **dialogue** dont aucune
+fiche RPGQuest ne se déclare porteuse : faute de mieux, le catalogue en déduit un PNJ du
+même nom, et l'affiche « sans définition ».
+
+C'est exactement le cas des **deux entrées « Mira »** observées au test du 2026-10-08 :
+
+| Entrée | Ce que c'est |
+|---|---|
+| `mira_cartographer` | le vrai PNJ — fiche RPGQuest, lié à Citizens #9, déclare le dialogue `rpgquest:mira_first_map` |
+| `mira_first_map` | **le dialogue lui-même**, déduit en PNJ parce que personne ne le réclamait |
+
+Depuis la correction, une fiche qui **déclare** un dialogue le réclame : un dialogue
+déclaré ne produit plus d'entrée fantôme. L'alerte ne reste donc que pour les dialogues
+réellement sans porteur — ceux que personne ne peut déclencher en jeu.
+
+> **Un PNJ peut porter un dialogue qui ne s'appelle pas comme lui.** La convention « le
+> dialogue porte le nom du PNJ » n'est que le *défaut* : le champ **Dialogue** de la fiche
+> fait autorité. Ne renommez rien pour « respecter la convention » — vous casseriez le
+> lien existant.
+
+### Pourquoi il faut corriger
+
+Un dialogue sans porteur est inatteignable : aucun PNJ ne l'ouvre, et il encombre le
+catalogue d'une entrée qui ressemble à un PNJ cassé.
+
+### Comment corriger
+
+Deux remèdes, au choix — **jamais les deux** :
+
+- **Rattacher le dialogue à un PNJ existant** (le plus fréquent). Ouvrir la fiche du PNJ
+  qui doit le porter, **Modifier**, et choisir ce dialogue dans le champ **Dialogue**.
+- **Créer la fiche RPGQuest de ce nom**, si le dialogue correspond bien à un personnage
+  qui n'existe pas encore.
+
+### Vérification
+
+L'entrée sans définition disparaît du catalogue après **« Rafraîchir »**, et le dialogue
+apparaît sur la fiche du PNJ qui le porte.
+
+### Référence technique
+
+`DIALOGUE_WITHOUT_NPC`
+
+---
+
 ## Dialogue introuvable
 
 ### Ce que cela signifie

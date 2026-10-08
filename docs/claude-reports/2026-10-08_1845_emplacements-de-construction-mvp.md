@@ -9,8 +9,8 @@
 * Branche Git : `feature/213-building-sites` (**jamais fusionnée**)
 * Commit actuel si disponible : `e56dc7a` (code) ; documentation dans le commit suivant
 * Début de la tâche : 2026-10-08 17:57:09
-* Fin de la tâche : *(renseignée en fin de session)*
-* Durée totale : *(calculée entre les deux)*
+* Fin de la tâche : 2026-10-08 19:22:16
+* Durée totale : 01:25:07
 
 ---
 
@@ -343,7 +343,8 @@ identifiants. En pratique : supprimer les fiches depuis le panel suffit, et c'es
 
 ## Déploiement VeryGames
 
-*(Renseigné en fin de session : ce lot autorise le déploiement DEV.)*
+**Le déploiement A ÉTÉ effectué** sur le **DEV**, le lot l'autorisant. Détail horodaté en fin de
+section, y compris la vérification de la migration sur la base réelle.
 
 ### À transférer
 
@@ -364,6 +365,34 @@ identifiants. En pratique : supprimer les fiches depuis le panel suffit, et c'es
 
 **Oui**, V28, au démarrage. **Sauvegarder `data.db` avant** — ce n'est pas une précaution de
 principe cette fois.
+
+### Déploiement réellement effectué — 2026-10-08, 19:05 à 19:21 (CEST)
+
+Serveur **RPGQuest DEV** (VeryGames), depuis le worktree propre sur `6f58b78`.
+
+| Étape | Résultat vérifié |
+|---|---|
+| **Sauvegarde de `data.db` AVANT tout** | `data-20261008T170546Z-predeploy.db`, 1 167 360 o. Relue : **schéma V27, 33 tables** — donc une sauvegarde réellement exploitable, pas juste un fichier copié |
+| `deploy-verygames.sh -y` | `DEPLOY_EXIT=0`. JAR en ligne **2 027 547 o — identique au local**, SHA-256 `96fd7ac9…` |
+| Backup du JAR remplacé | `rpgquest-20261008T171841Z-predeploy.jar`, 1 993 126 o, SHA-256 `4abb4d91…` — **exactement le JAR du lot #222 de l'après-midi**, ce qui confirme la ligne déployée |
+| Contrôle de taille | nouveau (2 027 547 o) **plus gros** que le déployé (1 993 126 o) : sens attendu |
+| `verygames-restart.sh` | **un seul** redémarrage. 0 joueur connecté → personne déconnecté. Retour **ONLINE** confirmé |
+| **Migration V28 vérifiée sur la base réelle** | `data.db` relu après redémarrage : **`user_version = 28`**, `building_sites` **présente**, `building_site_ids` **présente**, index `idx_building_sites_world` **présent**, 0 emplacement, **35 tables** (contre 33 avant) |
+| RCON | `/plugins` → **RPGQuest en vert** ; `version RPGQuest` → `0.1.0-SNAPSHOT` ; `/rpgadmin buildsite list` **reconnue** (elle réclame un joueur en jeu, et non « sous-commande inconnue ») |
+| `plugadmin/deploy.sh` | `PANEL_DEPLOY_EXIT=0`, service `active (running)`, `/health` → `{"panel":"ONLINE"}` |
+| Contrôle du panel **réellement servi** | les classes `panel/building/*` sont dans le JAR déployé, la fiche d'aide `docs/batiments-emplacements.md` y est **et** est listée dans le manifeste, et `/buildings/sites` répond **303 → /login** (route enregistrée ; un 404 aurait signalé un panel périmé) |
+
+Aucun fichier de contenu, aucune configuration autre que le schéma touchés.
+
+### Ce qui n'a PAS pu être vérifié depuis la machine de build
+
+**Le parcours en jeu.** Obtenir l'outil, cliquer, vérifier l'ancre et l'orientation exigent un
+client Minecraft : `/rpgadmin buildsite` réclame un joueur (position requise), et aucune commande
+RCON ne peut simuler un clic droit sur un bloc. C'est tout l'objet de TC-268.
+
+Ce qui est établi : le plugin corrigé est **chargé et actif**, la branche de commande **existe**, le
+schéma est **migré**, et le panel sert **bien** le nouveau code avec sa route enregistrée. Ce qui
+reste à constater : qu'un clic crée réellement un emplacement à la bonne ancre.
 
 ## Rollback
 

@@ -6467,3 +6467,23 @@ redéploiement. Le `SchemaMigrationRunner` ne redescend jamais une version.
   ci-dessus).
 - Panel : `scripts/plugadmin/rollback.sh app` puis
   `systemctl restart plugadmin`.
+
+### Déploiement RÉELLEMENT effectué — 2026-10-08 19:05 à 19:21 (CEST)
+
+Serveur **RPGQuest DEV**, depuis un worktree propre sur `6f58b78`.
+
+| Étape | Résultat |
+|---|---|
+| **Sauvegarde `data.db` AVANT** | `data-20261008T170546Z-predeploy.db` (1 167 360 o), relue : **V27, 33 tables** — exploitable, pas juste copiée |
+| JAR | `DEPLOY_EXIT=0`, en ligne **2 027 547 o == local** (SHA-256 `96fd7ac9…`) |
+| Backup du JAR remplacé | `rpgquest-20261008T171841Z-predeploy.jar` (1 993 126 o) — le JAR du lot #222, **la dernière sauvegarde n'a pas été écrasée** |
+| Redémarrage Minecraft | **un seul**, 0 joueur connecté |
+| **Migration V28** | vérifiée sur la base réelle : `user_version = 28`, les deux tables et l'index présents, **35 tables** contre 33 avant |
+| RCON | RPGQuest **en vert** ; `/rpgadmin buildsite list` reconnue |
+| Control Panel | `PANEL_DEPLOY_EXIT=0`, `/health` → `ONLINE`, classes `panel/building/*` et fiche d'aide présentes dans le JAR servi, `/buildings/sites` → **303** (route enregistrée) |
+
+#### Ce qui reste à constater
+
+Le **parcours en jeu** : `/rpgadmin buildsite` réclame un joueur, et aucune commande RCON ne simule
+un clic droit sur un bloc. Le plugin est chargé, la commande existe, le schéma est migré et le panel
+sert le bon code — mais qu'un clic crée un emplacement à la bonne ancre reste à voir. C'est TC-268.

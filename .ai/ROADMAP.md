@@ -2528,9 +2528,13 @@ Build: ./gradlew build BUILD SUCCESSFUL en 34 min 17 s sur e56dc7a, worktree PRO
   Gradle à la fois. 3019 tests, 0 échec, 38 ignorés (+84) : plugin 1956, control-panel 1033,
   web-api 30. Aucun test existant assoupli — seules cinq signatures de constructeur de test
   étendues d'un paramètre.
-Déploiement: JAR + REDÉMARRAGE Minecraft + panel. PREMIÈRE MIGRATION DE BASE de la journée (V28) :
-  additive, automatique au démarrage. Sauvegarder data.db AVANT — ce n'est pas une précaution de
-  principe cette fois.
+Déploiement: FAIT sur le DEV, 19:05-19:21. data.db sauvegardé AVANT (relu : V27, 33 tables, donc
+  exploitable) ; JAR 2 027 547 o identique au local ; JAR remplacé sauvegardé sans écraser le
+  précédent ; UN seul redémarrage, 0 joueur ; MIGRATION V28 VÉRIFIÉE sur la base réelle
+  (user_version=28, les deux tables + l'index, 35 tables contre 33) ; panel redéployé et le JAR
+  SERVI contient bien panel/building/* et la fiche d'aide, /buildings/sites répond 303.
+  NON vérifiable d'ici : le parcours en jeu (clic droit), car /rpgadmin buildsite réclame un joueur
+  et aucun RCON ne simule un clic. C'est TC-268.
 Tests manuels en attente: TC-268 (nouveau, ~5 min). Plus TC-267 (#222..#226), TC-265, TC-266,
   TC-264, TC-257, TC-258..TC-263.
 Blocages: aucun. Limites assumées et documentées :

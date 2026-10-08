@@ -480,8 +480,8 @@ suppressions faites pendant TC-267 :
 
 ## Déploiement VeryGames
 
-> **Aucun déploiement n'a été effectué par cette session.** Ce qui suit est la procédure à
-> exécuter sur demande.
+> **Le déploiement A ÉTÉ effectué**, le lot l'autorisant explicitement. Détail exact, horodaté, en
+> fin de section — y compris ce qui n'a **pas** pu être vérifié depuis cette machine.
 
 Contrairement aux trois lots précédents, ce lot **touche le plugin** : il y a un JAR à déployer et
 un redémarrage Minecraft à faire, **et** un déploiement du Control Panel.
@@ -513,13 +513,35 @@ Le Control Panel se redémarre seul via son script de déploiement.
 
 **Aucune.**
 
-### Vérification après déploiement
+### Déploiement réellement effectué — 2026-10-08, 16:19 à 16:22 (CEST)
 
-1. `/health` du panel ;
-2. `PNJ → Rafraîchir` : la fiche `mira_cartographer` affiche `rpgquest:mira_first_map` avec ses 2
-   nœuds et 3 choix, et l'entrée `mira_first_map` « sans définition » a **disparu** ;
-3. une fiche PNJ montre une **Zone de danger** avec « Supprimer… » ;
-4. en jeu, parler à Mira : le dialogue s'ouvre.
+Serveur **RPGQuest DEV** (VeryGames), depuis le worktree propre sur `e262401`.
+
+| Étape | Résultat vérifié |
+|---|---|
+| `deploy-verygames.sh -y` | `DEPLOY_EXIT=0`. JAR en ligne **1 993 126 o — identique au local**, SHA-256 `4abb4d91…` |
+| Backup de la version remplacée | `rpgquest-20261008T141922Z-predeploy.jar` (1 985 814 o, SHA-256 `a335db8c…`). Le backup précédent **n'a pas été écrasé** |
+| Contrôle de taille avant transfert | nouveau JAR (1 993 126 o) **plus gros** que le déployé (1 985 814 o) — sens attendu pour du code ajouté, donc pas de signal d'arrêt |
+| `verygames-restart.sh` | **un seul** redémarrage. 0 joueur connecté avant l'arrêt → personne déconnecté. `save-all`, `stop` RCON, retour **ONLINE** confirmé |
+| RCON après redémarrage | `/plugins` → **RPGQuest en vert** (donc activé, pas seulement présent) ; `version RPGQuest` → `0.1.0-SNAPSHOT` |
+| `plugadmin/deploy.sh` | `PANEL_DEPLOY_EXIT=0`. Release précédente conservée (`/opt/plugadmin/releases/20261008-162153`), service `active (running)`, `/health` → `{"panel":"ONLINE"}` |
+
+Aucun fichier de contenu, aucune configuration, aucune base touchés.
+
+### Ce qui n'a PAS pu être vérifié depuis la machine de build
+
+**L'effet visible du correctif #225 reste à constater.** La disparition de l'entrée
+`mira_first_map` et l'affichage du dialogue de `mira_cartographer` n'apparaissent qu'après un
+**rafraîchissement du catalogue PNJ**, lequel ne se déclenche que depuis l'interface
+(`PNJ → Rafraîchir`) ou en jeu — aucune commande RCON ne liste le catalogue, et créer l'action à
+la main dans la base du panel aurait été une écriture que rien n'autorise.
+
+Autrement dit : **le plugin corrigé est chargé et actif, mais l'écran montre encore le dernier
+relevé, antérieur au déploiement.** C'est l'étape 23 de TC-267, et ce serait malhonnête de la
+présenter comme faite.
+
+De même, la **Zone de danger** et le parcours de suppression sont déployés mais n'ont été exercés
+que par les tests automatisés, jamais contre le vrai serveur.
 
 ## Rollback
 

@@ -6332,3 +6332,28 @@ perte de données.
 - Panel : `scripts/plugadmin/rollback.sh app` puis
   `systemctl restart plugadmin`.
 - **Aucune donnée n'est concernée** par un rollback : ce lot n'écrit rien.
+
+### Déploiement RÉELLEMENT effectué — 2026-10-08 16:19 à 16:22 (CEST)
+
+Serveur **RPGQuest DEV** (VeryGames), depuis un worktree propre sur `e262401`.
+
+| Étape | Résultat |
+|---|---|
+| `scripts/deploy-verygames.sh -y` | `DEPLOY_EXIT=0` — JAR en ligne **1 993 126 o, identique au local** (SHA-256 `4abb4d91…`) |
+| Backup de la version remplacée | `rpgquest-20261008T141922Z-predeploy.jar`, 1 985 814 o (SHA-256 `a335db8c…`) — **le backup précédent n'a pas été écrasé** |
+| `scripts/verygames-restart.sh` | **un seul** redémarrage. 0 joueur connecté avant l'arrêt, donc personne déconnecté. `save-all` puis `stop` RCON, retour **ONLINE** confirmé |
+| Contrôle RCON après redémarrage | `/plugins` → **RPGQuest en vert** (activé), Citizens en vert ; `version RPGQuest` → `0.1.0-SNAPSHOT` |
+| `scripts/plugadmin/deploy.sh` | `PANEL_DEPLOY_EXIT=0`, release précédente conservée dans `/opt/plugadmin/releases/20261008-162153`, service **active (running)**, `/health` → `{"panel":"ONLINE"}` |
+
+**Aucun fichier de contenu, aucune configuration et aucune base n'ont été
+touchés** — conformément à la section « Ne PAS transférer/altérer ».
+
+#### Ce qui N'A PAS pu être vérifié depuis la machine de build
+
+L'effet visible du correctif #225 — l'entrée `mira_first_map` qui disparaît et
+le dialogue de `mira_cartographer` qui s'affiche — exige un **rafraîchissement
+du catalogue PNJ**, et ce rafraîchissement ne se déclenche que depuis
+l'interface (`PNJ → Rafraîchir`) ou en jeu. Il n'existe aucune commande RCON
+qui liste le catalogue. **Ce point reste donc à vérifier**, et c'est l'étape 23
+de TC-267 : le plugin corrigé est bien chargé et actif, mais l'écran montre
+encore le dernier relevé, antérieur au déploiement.

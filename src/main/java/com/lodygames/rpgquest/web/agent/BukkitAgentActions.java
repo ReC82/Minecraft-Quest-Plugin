@@ -199,6 +199,9 @@ public final class BukkitAgentActions implements AgentActions {
      */
     private final LuckPermsBridge luckPermsBridge;
 
+    /** Issue #213 — emplacements de construction. Source de vérité : sa base, pas ce cache-ci. */
+    private final com.lodygames.rpgquest.building.BuildingSiteService buildingSiteService;
+
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
                               QuestProgressEngine questProgressEngine, StoryService storyService,
                               YamlCustomItemRegistry customItemRegistry, PlayerResetService playerResetService,
@@ -215,7 +218,8 @@ public final class BukkitAgentActions implements AgentActions {
                               ServerOpsService serverOpsService,
                               ContentReloadService contentReloadService,
                               Supplier<java.util.Optional<org.bukkit.Location>> hubRescueTarget,
-                              EconomyService economyService, WalletRepository walletRepository) {
+                              EconomyService economyService, WalletRepository walletRepository,
+                              com.lodygames.rpgquest.building.BuildingSiteService buildingSiteService) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -246,6 +250,7 @@ public final class BukkitAgentActions implements AgentActions {
         this.hubRescueTarget = hubRescueTarget;
         this.economyService = economyService;
         this.walletRepository = walletRepository;
+        this.buildingSiteService = buildingSiteService;
         // Issue #194 : dossiers réels du plugin, et sauvegardes HORS des dossiers de contenu pour
         // ne jamais être relues comme des définitions.
         java.nio.file.Path data = plugin.getDataFolder().toPath();
@@ -757,6 +762,101 @@ public final class BukkitAgentActions implements AgentActions {
                     });
         }).exceptionally(error -> MutationResult.of(false, "ERROR",
                 "Échec de la suppression Citizens : " + rootName(error)));
+    }
+
+    // ---- Emplacements de construction (issue #213) ---------------------------------------------
+
+    /**
+     * Catalogue des emplacements. Lecture du cache mémoire du service, lui-même chargé de la base au
+     * démarrage : aucun accès disque ici, donc aucune latence sur le thread de l'agent.
+     *
+     * <p>{@code worldLoaded} est la seule information que seul le serveur peut donner, et elle
+     * demande le thread principal : un emplacement dans un monde déchargé reste valide, mais le dire
+     * évite qu'un administrateur croie son emplacement perdu.</p>
+     */
+    @Override
+    public CompletableFuture<BuildingSiteCatalogView> buildingSites() {
+        List<com.lodygames.rpgquest.building.model.BuildingSite> sites = buildingSiteService.all();
+        return onMain(() -> {
+            Set<String> loaded = new java.util.HashSet<>();
+            for (World world : plugin.getServer().getWorlds()) {
+                loaded.add(world.getName());
+            }
+            List<BuildingSiteSummary> rows = new ArrayList<>();
+            for (com.lodygames.rpgquest.building.model.BuildingSite site : sites) {
+                rows.add(new BuildingSiteSummary(site.id(), site.name(), site.description(),
+                        site.world(), site.x(), site.y(), site.z(), site.facing().name(),
+                        site.status().name(), site.createdBy(), site.createdAt().toString(),
+                        loaded.contains(site.world())));
+            }
+            return done(new BuildingSiteCatalogView(List.copyOf(rows),
+                    buildingSiteService.worlds(), rows.size()));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingSiteRename(String id, String name) {
+        return buildingSiteService.rename(id, name)
+                .thenApply(updated -> updated
+                        .map(site -> new MutationResult(true, "RENAMED",
+                                "Emplacement « " + site.id() + " » renommé « " + site.name() + " ».",
+                                List.of("name: " + site.name())))
+                        .orElseGet(() -> MutationResult.of(false, "NOT_FOUND",
+                                "Aucun emplacement « " + safe(id) + " » : rien n'a été renommé.")))
+                .exceptionally(error -> MutationResult.of(false, "ERROR",
+                        "Échec du renommage : " + rootName(error)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingSiteDescribe(String id, String description) {
+        return buildingSiteService.describe(id, description)
+                .thenApply(updated -> updated
+                        .map(site -> new MutationResult(true, "DESCRIBED",
+                                site.description().isEmpty()
+                                        ? "Description de « " + site.id() + " » effacée."
+                                        : "Description de « " + site.id() + " » enregistrée.",
+                                List.of()))
+                        .orElseGet(() -> MutationResult.of(false, "NOT_FOUND",
+                                "Aucun emplacement « " + safe(id) + " » : rien n'a été modifié.")))
+                .exceptionally(error -> MutationResult.of(false, "ERROR",
+                        "Échec de l'enregistrement : " + rootName(error)));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingSiteFacing(String id, String rawFacing) {
+        var facing = com.lodygames.rpgquest.building.model.Facing.of(rawFacing);
+        if (facing.isEmpty()) {
+            return done(MutationResult.of(false, "INVALID",
+                    "Orientation inconnue « " + safe(rawFacing) + " » — attendu NORTH, EAST, SOUTH "
+                            + "ou WEST."));
+        }
+        return buildingSiteService.reface(id, facing.get())
+                .thenApply(updated -> updated
+                        .map(site -> new MutationResult(true, "REFACED",
+                                "Emplacement « " + site.id() + " » orienté vers le "
+                                        + site.facing().label() + ".",
+                                List.of("position inchangée : " + site.positionLabel())))
+                        .orElseGet(() -> MutationResult.of(false, "NOT_FOUND",
+                                "Aucun emplacement « " + safe(id) + " » : rien n'a été modifié.")))
+                .exceptionally(error -> MutationResult.of(false, "ERROR",
+                        "Échec du changement d'orientation : " + rootName(error)));
+    }
+
+    /**
+     * Supprime le marqueur logique. <strong>Aucun bloc du monde n'est touché</strong>, et l'effet est
+     * annoncé comme tel : c'est la question que se posera forcément l'administrateur.
+     */
+    @Override
+    public CompletableFuture<MutationResult> buildingSiteDelete(String id) {
+        return buildingSiteService.delete(id)
+                .thenApply(removed -> removed
+                        ? new MutationResult(true, "DELETED",
+                                "Emplacement « " + safe(id) + " » supprimé.",
+                                List.of("aucun bloc du monde n'a été modifié"))
+                        : MutationResult.of(true, "ABSENT",
+                                "Aucun emplacement « " + safe(id) + " » : rien à supprimer."))
+                .exceptionally(error -> MutationResult.of(false, "ERROR",
+                        "Échec de la suppression : " + rootName(error)));
     }
 
     @Override

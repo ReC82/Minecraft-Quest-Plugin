@@ -53,7 +53,7 @@ class BukkitAgentActionsMobTest {
                 () -> "wild",
                 () -> new com.lodygames.rpgquest.config.HubConfig("world_hub"),
                 new ServerOpsService(plugin, new ServerLogBuffer(50), java.util.Optional::empty),
-                null, java.util.Optional::empty, null, null);
+                null, java.util.Optional::empty, null, null, null);
     }
 
     @AfterEach

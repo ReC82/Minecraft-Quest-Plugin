@@ -39,6 +39,8 @@ import com.lodygames.rpgquest.travel.model.WorldPortalDefinition;
 import com.lodygames.rpgquest.waystone.WaystoneService;
 import com.lodygames.rpgquest.waystone.model.Waystone;
 import com.lodygames.rpgquest.world.WorldService;
+import com.lodygames.rpgquest.building.BuildingSiteService;
+import com.lodygames.rpgquest.building.BuildingSiteTool;
 import com.lodygames.rpgquest.zone.ZoneRegistry;
 import com.lodygames.rpgquest.zone.ZoneSelectionService;
 import com.lodygames.rpgquest.zone.model.ZoneDefinition;
@@ -96,7 +98,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String DEBUG_PERMISSION = "rpgquest.admin.debug";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim", "content");
+            List.of("flatten", "zone", "portal", "mob", "npc", "buildsite", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim", "content");
     private static final List<String> TRAVEL_SUBCOMMANDS =
             List.of("beacon", "village", "diagnose", "repair", "restore", "signs", "maintenance");
     private static final List<String> TRAVEL_REPAIR_KINDS = List.of("waypoint", "beacon");
@@ -119,6 +121,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             List.of("CLAIM_TIER_1", "tutorial_started", "crystal_hunt_started", "woodcutter_reputation", "RUNE_RAPPEL_GRANTED");
     private static final List<String> FLATTEN_SUBCOMMANDS = List.of("confirm", "cancel", "undo");
     private static final List<String> ZONE_SUBCOMMANDS = List.of("create", "delete", "list", "info", "wand");
+    /** Issue #213 — l'outil, et une lecture seule pour retrouver un emplacement depuis le jeu. */
+    private static final List<String> BUILD_SITE_SUBCOMMANDS = List.of("tool", "list");
     private static final List<String> PORTAL_SUBCOMMANDS = List.of("create", "delete", "list", "info", "setdestination");
     private static final List<String> MOB_SUBCOMMANDS = List.of("spawn", "list", "inspect", "reload", "metrics");
     private static final List<String> NPC_SUBCOMMANDS = List.of("tag", "untag", "info");
@@ -137,6 +141,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final FlattenService flattenService;
     private final ZoneRegistry zoneRegistry;
     private final ZoneSelectionService zoneSelectionService;
+    /** Issue #213 — emplacements de construction : lecture pour « list », création par l'outil. */
+    private final BuildingSiteService buildingSiteService;
     private final YamlPortalRegistry portalRegistry;
     private final YamlDestinationRegistry destinationRegistry;
     private final SpecialMobRegistry mobRegistry;
@@ -175,12 +181,14 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             com.lodygames.rpgquest.travel.TravelMaintenanceMode travelMaintenanceMode,
                             ClaimService claimService, ContentReloadService contentReloadService,
                             com.lodygames.rpgquest.player.StarterToolKitService starterToolKitService,
+                            BuildingSiteService buildingSiteService,
                             RPGQuestPlugin plugin) {
         this.contentReloadService = contentReloadService;
         this.starterToolKitService = starterToolKitService;
         this.flattenService = flattenService;
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
+        this.buildingSiteService = buildingSiteService;
         this.portalRegistry = portalRegistry;
         this.destinationRegistry = destinationRegistry;
         this.mobRegistry = mobRegistry;
@@ -236,6 +244,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         // ici ; ce qui compte pour ce lot, c'est qu'un éditeur de PNJ ne puisse PAS atteindre les
         // resets joueur, l'économie ni les autres opérations d'administration.
         if (args.length > 0 && !args[0].equalsIgnoreCase("npc")
+                && !args[0].equalsIgnoreCase("buildsite")
                 && !RpgPermissions.canRunLegacyAdminBranch(sender)) {
             sender.sendMessage(MM.deserialize(
                     "<red>Permission manquante pour cette sous-commande :</red> <white><permission></white>"
@@ -303,6 +312,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handleContent(player, args);
         } else if (args[0].equalsIgnoreCase("npc")) {
             handleNpc(player, args);
+        } else if (args[0].equalsIgnoreCase("buildsite")) {
+            handleBuildSite(player, args);
         } else if (args[0].equalsIgnoreCase("spawn")) {
             handleSpawn(player, args);
         } else if (args[0].equalsIgnoreCase("world")) {
@@ -2661,6 +2672,79 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         });
     }
 
+    /**
+     * {@code /rpgadmin buildsite tool|list} (issue #213).
+     *
+     * <p>Derrière son <strong>propre</strong> nœud {@code rpgquest.admin.buildsite}, pas l'ombrelle
+     * historique : un compte dont le seul rôle est de marquer des emplacements n'a aucune raison
+     * d'obtenir les resets joueur et l'économie avec. L'ombrelle l'implique, donc un administrateur
+     * existant ne perd rien.</p>
+     *
+     * <p>Volontairement <strong>pas</strong> de sous-commande de création : le point d'un emplacement
+     * est la position qu'on désigne du doigt, et la taper au clavier serait à la fois plus long et
+     * moins fiable. Pas de renommage non plus — le Control Panel est fait pour ça, et le ticket
+     * demande explicitement de ne pas faire saisir un nom dans le chat.</p>
+     */
+    private void handleBuildSite(Player player, String[] args) {
+        if (!RpgPermissions.canManageBuildingSites(player)) {
+            player.sendMessage(MM.deserialize(
+                    "<red>Permission manquante :</red> <white><permission></white>",
+                    Placeholder.unparsed("permission", RpgPermissions.ADMIN_BUILD_SITE)));
+            return;
+        }
+        if (args.length < 2) {
+            sendBuildSiteUsage(player);
+            return;
+        }
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "tool" -> {
+                player.getInventory().addItem(BuildingSiteTool.create());
+                player.sendMessage(MM.deserialize(
+                        "<green>Outil d'emplacement reçu.</green> <gray>Clic droit sur un bloc : "
+                                + "crée un emplacement sur la case libre contre la face cliquée, "
+                                + "orienté selon votre regard.</gray>"));
+            }
+            case "list" -> handleBuildSiteList(player);
+            default -> sendBuildSiteUsage(player);
+        }
+    }
+
+    /**
+     * Lecture seule, pour retrouver un emplacement sans quitter le jeu. Le Control Panel reste
+     * l'endroit où on les gère ; cette liste existe parce qu'on marque des emplacements en jeu et
+     * qu'on veut vérifier tout de suite ce qui vient d'être créé.
+     */
+    private void handleBuildSiteList(Player player) {
+        var sites = buildingSiteService.all();
+        if (sites.isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<gray>Aucun emplacement de construction. Prenez l'outil avec</gray> "
+                            + "<yellow>/rpgadmin buildsite tool</yellow><gray>.</gray>"));
+            return;
+        }
+        player.sendMessage(MM.deserialize(
+                "<gold><count> emplacement(s) de construction :</gold>",
+                Placeholder.unparsed("count", String.valueOf(sites.size()))));
+        for (var site : sites) {
+            player.sendMessage(MM.deserialize(
+                    "<white><id></white> <gray>« <name> » — <world> <pos>, <facing></gray>",
+                    Placeholder.unparsed("id", site.id()),
+                    Placeholder.unparsed("name", site.name()),
+                    Placeholder.unparsed("world", site.world()),
+                    Placeholder.unparsed("pos", site.positionLabel()),
+                    Placeholder.unparsed("facing", site.facing().label())));
+        }
+    }
+
+    private void sendBuildSiteUsage(Player player) {
+        player.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin buildsite tool</yellow> <gray>— recevoir l'outil de marquage.</gray>"
+                        + "<newline><yellow>/rpgadmin buildsite list</yellow> <gray>— lister les "
+                        + "emplacements.</gray>"
+                        + "<newline><gray>Renommage et suppression : Control Panel → Bâtiments → "
+                        + "Emplacements.</gray>"));
+    }
+
     private void handleZone(Player player, String[] args) {
         if (args.length < 2) {
             sendZoneUsage(player);
@@ -2937,6 +3021,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("flatten")) {
             return FLATTEN_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("buildsite")) {
+            return BUILD_SITE_SUBCOMMANDS.stream()
+                    .filter(c -> c.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("zone")) {
             return ZONE_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();

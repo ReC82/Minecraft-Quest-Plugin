@@ -197,6 +197,12 @@ public final class RPGQuestBootstrap {
     private final FlattenService flattenService;
     private final ZoneRegistry zoneRegistry;
     private final ZoneSelectionService zoneSelectionService;
+    /**
+     * Issue #213 — emplacements de construction. Créé ici (et non dans {@code start()}) parce que
+     * la commande d'administration et le listener de l'outil le partagent : un seul cache, une seule
+     * base.
+     */
+    private com.lodygames.rpgquest.building.BuildingSiteService buildingSiteService;
     private final YamlMerchantRegistry merchantRegistry;
     private final YamlPortalRegistry portalRegistry;
     private final YamlDestinationRegistry destinationRegistry;
@@ -314,6 +320,25 @@ public final class RPGQuestBootstrap {
         registry.start(zoneRegistry);
         registry.start(new PlayerListenerService(plugin, new ZoneProtectionListener(zoneRegistry, npcIdentityService)));
         registry.start(new PlayerListenerService(plugin, new ZoneWandListener(zoneSelectionService)));
+
+        // Issue #213 — emplacements de construction. La base est la source de vérité ; le cache est
+        // chargé ici, une fois, et toute écriture repasse par le repository. Un échec de chargement
+        // n'empêche PAS le serveur de démarrer : les emplacements sont un outil d'administration,
+        // pas une mécanique de jeu, et un plugin qui refuse de démarrer pour ça serait pire.
+        buildingSiteService = new com.lodygames.rpgquest.building.BuildingSiteService(
+                new com.lodygames.rpgquest.database.BuildingSiteRepository(
+                        databaseService.databaseManager()));
+        buildingSiteService.load()
+                .thenAccept(count -> plugin.getSLF4JLogger().info(
+                        "{} emplacement(s) de construction chargé(s).", count))
+                .exceptionally(error -> {
+                    plugin.getSLF4JLogger().error(
+                            "Chargement des emplacements de construction impossible : la page "
+                                    + "« Bâtiments » restera vide jusqu'au prochain démarrage.", error);
+                    return null;
+                });
+        registry.start(new PlayerListenerService(plugin,
+                new com.lodygames.rpgquest.building.BuildingSiteToolListener(buildingSiteService)));
 
         PlayerProfileRepository profileRepository = new PlayerProfileRepository(databaseService.databaseManager());
         playerProfileService = new PlayerProfileService(profileRepository);
@@ -779,7 +804,10 @@ public final class RPGQuestBootstrap {
                                         .map(org.bukkit.World::getSpawnLocation)),
                                 // Issue #140 — administration de la monnaie. Le portefeuille
                                 // persistant reste l'unique source de vérité du solde.
-                                economyService, walletRepository))));
+                                economyService, walletRepository,
+                                // Issue #213 — le MÊME service que l'outil en jeu : le panel et le
+                                // clic lisent et écrivent le même cache et la même base.
+                                buildingSiteService))));
 
         registerCommands();
     }
@@ -1095,7 +1123,8 @@ public final class RPGQuestBootstrap {
                 mobRegistry, mobService, npcIdentityService, spawnService, worldService, worldPortalRegistry,
                 worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry,
                 questProgressEngine, questEngine, variableRepository, travelBeaconService, waypointService,
-                travelMaintenanceMode, claimService, contentReloadService, starterToolKitService, plugin);
+                travelMaintenanceMode, claimService, contentReloadService, starterToolKitService,
+                buildingSiteService, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

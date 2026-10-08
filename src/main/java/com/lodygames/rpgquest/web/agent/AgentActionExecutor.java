@@ -85,6 +85,11 @@ public final class AgentActionExecutor {
                 case STORY_LIST -> storyList(action);
                 case ITEM_LIST -> itemList(action);
                 case NPC_LIST -> npcList(action);
+                case BUILDING_SITE_LIST -> buildingSiteList(action);
+                case BUILDING_SITE_RENAME -> buildingSiteRename(action);
+                case BUILDING_SITE_DESCRIBE -> buildingSiteDescribe(action);
+                case BUILDING_SITE_FACING -> buildingSiteFacing(action);
+                case BUILDING_SITE_DELETE -> buildingSiteDelete(action);
                 case CONTENT_EXPORT -> contentExport(action);
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
@@ -1196,6 +1201,122 @@ public final class AgentActionExecutor {
             }
         }
         return out;
+    }
+
+    // ---- Emplacements de construction (issue #213) ---------------------------------------------
+
+    /** Identifiant d'emplacement : exactement la forme que le serveur attribue. */
+    private static final java.util.regex.Pattern BUILD_SITE_ID =
+            java.util.regex.Pattern.compile("buildsite_[0-9]{1,12}");
+
+    private CompletableFuture<AgentActionOutcome> buildingSiteList(AgentAction action) {
+        return actions.buildingSites().thenApply(view -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (AgentActions.BuildingSiteSummary s : view.sites()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", s.id());
+                row.put("name", s.name());
+                row.put("description", s.description());
+                row.put("world", s.world());
+                row.put("x", s.x());
+                row.put("y", s.y());
+                row.put("z", s.z());
+                row.put("facing", s.facing());
+                row.put("status", s.status());
+                row.put("createdBy", s.createdBy());
+                row.put("createdAt", s.createdAt());
+                row.put("worldLoaded", s.worldLoaded());
+                rows.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("sites", rows);
+            details.put("worlds", view.worlds());
+            details.put("total", view.total());
+            return AgentActionOutcome.success(action.id(), String.valueOf(view.total()),
+                    view.total() + " emplacement(s) de construction.", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> buildingSiteRename(AgentAction action) {
+        String id = buildSiteId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        String name = trimOrNull(action.param("name"));
+        if (name == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « name » manquant : un emplacement garde toujours un libellé."));
+        }
+        if (name.length() > BUILD_SITE_NAME_MAX) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Nom trop long (" + BUILD_SITE_NAME_MAX + " caractères au plus)."));
+        }
+        return actions.buildingSiteRename(id, name)
+                .thenApply(r -> mutationOutcome(action, r, "id", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code building.site.describe}. Une description <strong>vide est une valeur valide</strong> :
+     * c'est le geste « effacer la note », et refuser le paramètre absent reviendrait à rendre
+     * l'effacement impossible.
+     */
+    private CompletableFuture<AgentActionOutcome> buildingSiteDescribe(AgentAction action) {
+        String id = buildSiteId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        String description = action.param("description") == null ? "" : action.param("description").trim();
+        if (description.length() > BUILD_SITE_DESCRIPTION_MAX) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Description trop longue (" + BUILD_SITE_DESCRIPTION_MAX
+                            + " caractères au plus)."));
+        }
+        return actions.buildingSiteDescribe(id, description)
+                .thenApply(r -> mutationOutcome(action, r, "id", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> buildingSiteFacing(AgentAction action) {
+        String id = buildSiteId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        String facing = trimOrNull(action.param("facing"));
+        if (facing == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « facing » manquant — attendu NORTH, EAST, SOUTH ou WEST."));
+        }
+        return actions.buildingSiteFacing(id, facing)
+                .thenApply(r -> mutationOutcome(action, r, "id", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> buildingSiteDelete(AgentAction action) {
+        String id = buildSiteId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        return actions.buildingSiteDelete(id)
+                .thenApply(r -> mutationOutcome(action, r, "id", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Bornes de saisie, miroir de {@code BuildingSite} — revérifiées ici, jamais supposées. */
+    private static final int BUILD_SITE_NAME_MAX = 64;
+    private static final int BUILD_SITE_DESCRIPTION_MAX = 500;
+
+    private static String buildSiteId(AgentAction action) {
+        String raw = firstNonBlank(action.param("id"), action.param("site_id"));
+        if (raw == null) {
+            return null;
+        }
+        String id = raw.trim().toLowerCase(java.util.Locale.ROOT);
+        return BUILD_SITE_ID.matcher(id).matches() ? id : null;
     }
 
     private CompletableFuture<AgentActionOutcome> npcList(AgentAction action) {

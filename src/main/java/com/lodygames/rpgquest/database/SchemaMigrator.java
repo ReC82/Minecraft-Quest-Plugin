@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 27;
+    public static final int CURRENT_VERSION = 28;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -59,7 +59,8 @@ public final class SchemaMigrator {
             new SchemaMigration(24, "dialogue_node_reads", SchemaMigrator::applyV24),
             new SchemaMigration(25, "quest_reward_grants", SchemaMigrator::applyV25),
             new SchemaMigration(26, "quest_reward_grants.status (dettes récupérables)", SchemaMigrator::applyV26),
-            new SchemaMigration(27, "npc_citizens_skins", SchemaMigrator::applyV27));
+            new SchemaMigration(27, "npc_citizens_skins", SchemaMigrator::applyV27),
+            new SchemaMigration(28, "building_sites, building_site_ids", SchemaMigrator::applyV28));
 
     private SchemaMigrator() {
     }
@@ -426,6 +427,58 @@ public final class SchemaMigrator {
      * l'identique, jamais un skin neuf). {@code citizens_uuid} est la même clé stable que
      * {@code npc_citizens_bindings}.</p>
      */
+    /**
+     * Issue #213 — emplacements de construction. Migration <strong>purement additive</strong> : deux
+     * tables neuves, aucune colonne ajoutée ailleurs, aucune donnée existante lue ni réécrite. Un
+     * retour au JAR précédent laisse donc ces tables en place et simplement inutilisées — elles ne
+     * gênent rien, et les emplacements déjà créés réapparaissent au redéploiement.
+     */
+    private static void applyV28(Connection connection, SqlDialect dialect) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // L'identité est « id », attribuée une fois et jamais recalculée depuis la position :
+            // c'est elle qu'un futur placement de bâtiment citera. Le nom est un libellé humain
+            // modifiable, et la position peut être corrigée sans casser une référence.
+            //
+            // Coordonnées en INTEGER : un bâtiment se pose sur la grille de blocs. Les centres de
+            // village (V20) stockent des REAL parce qu'ils sont des destinations de téléportation,
+            // où un demi-bloc compte ; ici la précision flottante serait inutilisable.
+            //
+            // « status » est un TEXT et non une contrainte : ce lot ne produit que EMPTY, et ajouter
+            // RESERVED/OCCUPIED plus tard ne demandera AUCUNE migration. « description » est vide
+            // par défaut plutôt que NULL, pour que la lecture n'ait jamais à distinguer les deux.
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS building_sites (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        description TEXT NOT NULL DEFAULT '',
+                        world TEXT NOT NULL,
+                        x INTEGER NOT NULL,
+                        y INTEGER NOT NULL,
+                        z INTEGER NOT NULL,
+                        facing TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'EMPTY',
+                        created_by TEXT NOT NULL DEFAULT '',
+                        created_at TEXT NOT NULL
+                    )
+                    """));
+            // Recherche et filtre par monde côté Control Panel, et surtout détection d'un
+            // emplacement déjà présent exactement au même bloc (anti-doublon du double clic).
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_building_sites_world "
+                            + "ON building_sites (world, x, y, z)"));
+            // Allocateur d'identifiants « buildsite_<n> », jamais réutilisés (AUTOINCREMENT) — même
+            // procédé que npc_ids (V11). Dériver le prochain numéro d'un MAX() sur building_sites
+            // recyclerait l'identifiant d'un emplacement supprimé, et un identifiant recyclé est
+            // exactement ce qui ferait pointer un futur placement sur le mauvais emplacement.
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS building_site_ids (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        created_at TEXT NOT NULL
+                    )
+                    """));
+        }
+    }
+
     private static void applyV27(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute(dialect.ddl("""

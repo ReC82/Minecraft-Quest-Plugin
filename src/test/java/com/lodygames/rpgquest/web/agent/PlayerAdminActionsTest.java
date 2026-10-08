@@ -54,7 +54,7 @@ class PlayerAdminActionsTest {
                 new ServerOpsService(plugin, new ServerLogBuffer(50), Optional::empty),
                 null,
                 () -> hubTarget,
-                null, null);
+                null, null, null);
     }
 
     @AfterEach

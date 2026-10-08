@@ -118,6 +118,22 @@ public enum AgentActionType {
      * Refuse d'écraser une patrouille existante sans {@code confirm_replace}.
      */
     NPC_CITIZENS_WANDER("npc.citizens.wander"),
+    /**
+     * Issue #213 — emplacements de construction. Lecture seule : la <strong>création</strong> n'a
+     * volontairement pas d'action agent, parce qu'un emplacement est défini par une position choisie
+     * dans le monde. Un formulaire du panel devrait inventer des coordonnées ; le clic en jeu, lui,
+     * les connaît. Les quatre autres actions ne font que modifier ou retirer une fiche existante.
+     */
+    BUILDING_SITE_LIST("building.site.list"),
+    BUILDING_SITE_RENAME("building.site.rename"),
+    BUILDING_SITE_DESCRIBE("building.site.describe"),
+    /** Corrige l'orientation cardinale d'un emplacement — jamais sa position. */
+    BUILDING_SITE_FACING("building.site.facing"),
+    /**
+     * Supprime le <strong>marqueur logique</strong> d'un emplacement. Ne touche aucun bloc du monde :
+     * ce lot ne sait rien poser, donc il n'y a rien à défaire en jeu. Idempotent.
+     */
+    BUILDING_SITE_DELETE("building.site.delete"),
     DIALOGUE_LIST("dialogue.list"),
     DIALOGUE_DEFINITION_CREATE("dialogue.definition.create"),
     DIALOGUE_NODE_CREATE("dialogue.node.create"),

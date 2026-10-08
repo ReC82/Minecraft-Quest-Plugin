@@ -146,6 +146,31 @@ public final class RpgPermissions {
     /** Lire le marquage de l'entité visée ({@code /rpgadmin npc info}) — lecture seule. */
     public static final String ADMIN_NPC_INFO = "rpgquest.admin.npc.info";
 
+    /**
+     * Emplacements de construction (issue #213) : obtenir l'outil, créer un emplacement d'un clic,
+     * et lister les emplacements depuis le jeu.
+     *
+     * <p><strong>Nœud dédié, et pas une permission WorldEdit.</strong> L'outil n'a rien à voir avec
+     * WorldEdit — il ne sélectionne aucune région et ne modifie aucun bloc — et un builder équipé de
+     * WorldEdit n'a aucune raison de pouvoir créer des points d'ancrage de contenu. Réutiliser
+     * {@code worldedit.wand} aurait lié deux surfaces d'autorisation sans rapport, et rendu
+     * impossible d'accorder l'une sans l'autre.</p>
+     *
+     * <p>{@code default: false} : un opérateur ne l'obtient pas automatiquement par son statut OP,
+     * mais il détient déjà {@link #LEGACY_ADMIN_WORLD}, qui l'implique comme toutes les autres
+     * branches. Un compte non-OP peut donc recevoir ce seul nœud sans rien d'autre.</p>
+     */
+    public static final String ADMIN_BUILD_SITE = "rpgquest.admin.buildsite";
+
+    /**
+     * {@code true} si {@code who} peut gérer les emplacements de construction : son nœud dédié, ou
+     * l'ombrelle historique.
+     */
+    public static boolean canManageBuildingSites(Permissible who) {
+        return who != null
+                && (who.hasPermission(ADMIN_BUILD_SITE) || who.hasPermission(LEGACY_ADMIN_WORLD));
+    }
+
     /** {@code true} si {@code who} peut entrer dans {@code /rpgadmin} (sans rien y exécuter). */
     public static boolean canEnterAdminCommand(Permissible who) {
         return who != null && (who.hasPermission(ADMIN_COMMAND) || who.hasPermission(LEGACY_ADMIN_WORLD));

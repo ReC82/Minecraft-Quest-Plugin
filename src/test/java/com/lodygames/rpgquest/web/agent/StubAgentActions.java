@@ -72,6 +72,32 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<BuildingSiteCatalogView> buildingSites() {
+        return CompletableFuture.completedFuture(
+                new BuildingSiteCatalogView(List.of(), List.of(), 0));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingSiteRename(String id, String name) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingSiteDescribe(String id, String description) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingSiteFacing(String id, String facing) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingSiteDelete(String id) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<MutationResult> npcDefinitionDelete(String id, String expectDialogueId) {
         return unsupported();
     }

@@ -104,6 +104,9 @@ permissions:
   rpgquest.admin.npc.info:
     description: "/rpgadmin npc info — lecture seule du marquage de l'entité visée."
     default: false
+  rpgquest.admin.buildsite:
+    description: "Emplacements de construction (issue #213) : obtenir l'outil, créer un emplacement d'un clic droit, et lister les emplacements en jeu. Nœud DÉDIÉ, sans rapport avec WorldEdit — l'outil ne sélectionne aucune région et ne modifie aucun bloc. N'accorde aucun droit de construction, aucun bypass de protection et aucune autre branche de /rpgadmin. L'ombrelle rpgquest.admin.world l'implique."
+    default: false
   rpgquest.build.hub.*:
     description: "Construire dans TOUS les mondes de Hub (issue #200). N'accorde aucun bypass de claim, de zone protégée, de waypoint, ni aucune commande d'administration."
     default: false

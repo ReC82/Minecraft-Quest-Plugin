@@ -302,6 +302,106 @@ class AgentActionExecutorTest {
         assertEquals(14, actions.lastLinkCitizensId);
     }
 
+    // ---- Issue #213 : emplacements de construction ---------------------------------------------
+
+    /** Le payload que le Control Panel lira : tous les champs, dans leur type. */
+    @Test
+    void buildingSiteListCarriesEveryFieldThePanelNeeds() {
+        AgentActionOutcome outcome = run(new AgentAction("bs0", "building.site.list", Map.of()));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        String json = com.lodygames.rpgquest.web.Json.write(outcome.details());
+        assertTrue(json.contains("\"id\":\"buildsite_0001\""), json);
+        assertTrue(json.contains("\"name\":\"Taverne du village\""), json);
+        assertTrue(json.contains("\"world\":\"world_hub\""), json);
+        assertTrue(json.contains("\"x\":712") && json.contains("\"y\":67")
+                && json.contains("\"z\":-702"), json);
+        assertTrue(json.contains("\"facing\":\"WEST\""), json);
+        assertTrue(json.contains("\"status\":\"EMPTY\""), json);
+        assertTrue(json.contains("\"createdBy\":\"Lody\""), json);
+        assertTrue(json.contains("\"worldLoaded\":true"), json);
+        assertTrue(json.contains("\"worlds\":[\"world_hub\"]"), json);
+        assertTrue(json.contains("\"total\":1"), json);
+    }
+
+    /** L'identifiant doit avoir exactement la forme que le serveur attribue. */
+    @Test
+    void buildingSiteActionsRejectAnythingButARealSiteId() {
+        for (String type : new String[] {"building.site.rename", "building.site.describe",
+                "building.site.facing", "building.site.delete"}) {
+            assertEquals(AgentActionOutcome.REJECTED,
+                    run(new AgentAction("x", type, Map.of("name", "n", "facing", "NORTH",
+                            "description", "d"))).status(), type + " sans id");
+            assertEquals(AgentActionOutcome.REJECTED,
+                    run(new AgentAction("x", type, Map.of("id", "../etc/passwd", "name", "n",
+                            "facing", "NORTH", "description", "d"))).status(), type + " id forgé");
+            assertEquals(AgentActionOutcome.REJECTED,
+                    run(new AgentAction("x", type, Map.of("id", "village_tavern_01", "name", "n",
+                            "facing", "NORTH", "description", "d"))).status(),
+                    type + " id d'une autre forme");
+        }
+    }
+
+    @Test
+    void buildingSiteRenameValidatesAndDelegates() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("r0", "building.site.rename",
+                Map.of("id", "buildsite_0001"))).status(), "name obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("r1", "building.site.rename",
+                Map.of("id", "buildsite_0001", "name", "n".repeat(65)))).status(),
+                "nom trop long");
+
+        AgentActionOutcome ok = run(new AgentAction("r2", "building.site.rename",
+                Map.of("id", "buildsite_0001", "name", "Test hutte")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("buildsite_0001", actions.lastBuildSiteId);
+        assertEquals("Test hutte", actions.lastBuildSiteName);
+    }
+
+    /** Une description VIDE est une valeur valide : c'est le geste « effacer la note ». */
+    @Test
+    void buildingSiteDescribeAcceptsAnEmptyDescription() {
+        AgentActionOutcome ok = run(new AgentAction("d0", "building.site.describe",
+                Map.of("id", "buildsite_0001", "description", "")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("", actions.lastBuildSiteDescription);
+
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("d1", "building.site.describe",
+                Map.of("id", "buildsite_0001", "description", "d".repeat(501)))).status(),
+                "description trop longue");
+    }
+
+    @Test
+    void buildingSiteFacingRequiresACardinalValue() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("f0", "building.site.facing",
+                Map.of("id", "buildsite_0001"))).status(), "facing obligatoire");
+
+        AgentActionOutcome ok = run(new AgentAction("f1", "building.site.facing",
+                Map.of("id", "buildsite_0001", "facing", "EAST")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("EAST", actions.lastBuildSiteFacing);
+    }
+
+    @Test
+    void buildingSiteDeleteDelegatesWithTheExactId() {
+        AgentActionOutcome ok = run(new AgentAction("del0", "building.site.delete",
+                Map.of("id", "BUILDSITE_0001")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("buildsite_0001", actions.lastBuildSiteDeletedId,
+                "l'identifiant est normalisé avant d'atteindre le service");
+    }
+
+    /** Il n'existe AUCUNE action de création : un emplacement naît d'un clic en jeu, pas d'un écran. */
+    @Test
+    void thereIsNoBuildingSiteCreateAction() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("c0", "building.site.create",
+                        Map.of("world", "world_hub", "x", "0", "y", "64", "z", "0"))).status());
+    }
+
     // ---- Issue #226 : les trois suppressions, et leurs garde-fous -----------------------------
 
     /**
@@ -1198,6 +1298,48 @@ class AgentActionExecutorTest {
                                                                      String role, boolean enabled) {
             lastNpcUpdateId = id;
             return mutation("update " + id);
+        }
+
+        String lastBuildSiteId;
+        String lastBuildSiteName;
+        String lastBuildSiteDescription;
+        String lastBuildSiteFacing;
+        String lastBuildSiteDeletedId;
+
+        @Override
+        public CompletableFuture<BuildingSiteCatalogView> buildingSites() {
+            return CompletableFuture.completedFuture(new BuildingSiteCatalogView(
+                    List.of(new BuildingSiteSummary("buildsite_0001", "Taverne du village", "",
+                            "world_hub", 712, 67, -702, "WEST", "EMPTY", "Lody",
+                            "2026-10-08T18:00:00Z", true)),
+                    List.of("world_hub"), 1));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> buildingSiteRename(String id, String name) {
+            lastBuildSiteId = id;
+            lastBuildSiteName = name;
+            return mutation("rename " + id);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> buildingSiteDescribe(String id, String description) {
+            lastBuildSiteId = id;
+            lastBuildSiteDescription = description;
+            return mutation("describe " + id);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> buildingSiteFacing(String id, String facing) {
+            lastBuildSiteId = id;
+            lastBuildSiteFacing = facing;
+            return mutation("facing " + id);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> buildingSiteDelete(String id) {
+            lastBuildSiteDeletedId = id;
+            return mutation("delete " + id);
         }
 
         @Override

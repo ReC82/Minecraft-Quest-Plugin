@@ -206,6 +206,54 @@ public interface AgentActions {
     record NpcWarning(String code, String severity, String message) {
     }
 
+    // ---- Emplacements de construction (issue #213) ---------------------------------------------
+
+    /**
+     * Un emplacement de construction, tel que {@code building.site.list} le renvoie.
+     *
+     * <p>Projection en types simples de {@code com.lodygames.rpgquest.building.model.BuildingSite} :
+     * {@code facing} et {@code status} voyagent en texte, parce que le Control Panel ne partage
+     * aucune énumération avec le plugin.</p>
+     *
+     * @param worldLoaded le monde est-il réellement chargé sur le serveur en ce moment ? Un
+     *                    emplacement dans un monde déchargé reste parfaitement valide — il faut
+     *                    simplement le dire plutôt que de laisser croire qu'il est inaccessible
+     */
+    record BuildingSiteSummary(String id, String name, String description, String world,
+                               int x, int y, int z, String facing, String status,
+                               String createdBy, String createdAt, boolean worldLoaded) {
+    }
+
+    /**
+     * Vue complète de {@code building.site.list} : les emplacements + les mondes qui en portent au
+     * moins un (source du filtre du Control Panel, jamais recalculée côté panel).
+     */
+    record BuildingSiteCatalogView(List<BuildingSiteSummary> sites, List<String> worlds, int total) {
+    }
+
+    CompletableFuture<BuildingSiteCatalogView> buildingSites();
+
+    /**
+     * Renomme un emplacement — libellé humain uniquement. L'identifiant, la position et
+     * l'orientation ne bougent pas.
+     */
+    CompletableFuture<MutationResult> buildingSiteRename(String id, String name);
+
+    /** Remplace la note libre d'un emplacement. Une description vide est une valeur valide. */
+    CompletableFuture<MutationResult> buildingSiteDescribe(String id, String description);
+
+    /**
+     * Corrige l'orientation cardinale d'un emplacement. <strong>Jamais la position</strong> : se
+     * tromper de façade est courant, déplacer un point d'ancrage ne se fait pas depuis un écran.
+     */
+    CompletableFuture<MutationResult> buildingSiteFacing(String id, String facing);
+
+    /**
+     * Supprime le marqueur logique d'un emplacement. <strong>Aucun bloc du monde n'est touché.</strong>
+     * Idempotent : un identifiant déjà absent réussit en disant qu'il n'y avait rien.
+     */
+    CompletableFuture<MutationResult> buildingSiteDelete(String id);
+
     /**
      * Vue complète renvoyée par {@code npc.list} : catalogue + registre canonique
      * ({@code definedIds} = ids ayant une définition logique ; {@code canonicalIds} = union avec

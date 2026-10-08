@@ -686,6 +686,88 @@ class SchemaMigratorTest {
         }
     }
 
+    // ---- Issue #213 : emplacements de construction (V28) --------------------------------------
+
+    @Test
+    void migrateCreatesBuildingSiteTables() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:sqlite:" + tempDir.resolve("schema-buildsites.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO building_sites "
+                        + "(id, name, description, world, x, y, z, facing, status, created_by, created_at) "
+                        + "VALUES ('buildsite_0001', 'Taverne du village', '', 'world_hub', "
+                        + "712, 67, -702, 'WEST', 'EMPTY', 'Lody', '2026-10-08T18:00:00Z')");
+                try (ResultSet rs = statement.executeQuery(
+                        "SELECT world, x, y, z, facing, status FROM building_sites "
+                                + "WHERE id = 'buildsite_0001'")) {
+                    assertTrue(rs.next());
+                    assertEquals("world_hub", rs.getString("world"));
+                    assertEquals(712, rs.getInt("x"));
+                    assertEquals(67, rs.getInt("y"));
+                    assertEquals(-702, rs.getInt("z"));
+                    assertEquals("WEST", rs.getString("facing"));
+                    assertEquals("EMPTY", rs.getString("status"));
+                }
+                // L'identité est la clé primaire : deux emplacements du même id sont refusés par la
+                // base, pas seulement par le code.
+                assertThrows(java.sql.SQLException.class, () -> statement.execute(
+                        "INSERT INTO building_sites "
+                                + "(id, name, description, world, x, y, z, facing, status, created_by, created_at) "
+                                + "VALUES ('buildsite_0001', 'Doublon', '', 'world_hub', 0, 64, 0, "
+                                + "'NORTH', 'EMPTY', 'Lody', '2026-10-08T18:00:00Z')"));
+            }
+        }
+    }
+
+    /**
+     * L'allocateur d'identifiants ne recycle jamais un numéro, même après suppression de la ligne
+     * correspondante : c'est la garantie {@code AUTOINCREMENT}, et elle est vérifiée ici parce que
+     * c'est elle qui empêchera un futur placement de viser le mauvais emplacement.
+     */
+    @Test
+    void buildingSiteIdsAreNeverReused() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:sqlite:" + tempDir.resolve("schema-buildsite-ids.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(
+                        "INSERT INTO building_site_ids (created_at) VALUES ('2026-10-08T18:00:00Z')");
+                statement.execute("DELETE FROM building_site_ids");
+                statement.execute(
+                        "INSERT INTO building_site_ids (created_at) VALUES ('2026-10-08T18:00:01Z')");
+                try (ResultSet rs = statement.executeQuery("SELECT MAX(id) AS last FROM building_site_ids")) {
+                    assertTrue(rs.next());
+                    assertEquals(2, rs.getInt("last"),
+                            "AUTOINCREMENT ne doit jamais redonner un identifiant déjà distribué");
+                }
+            }
+        }
+    }
+
+    /** Les colonnes par défaut existent : une description absente n'est pas un NULL à gérer partout. */
+    @Test
+    void buildingSiteDefaultsLetAMinimalInsertSucceed() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:sqlite:" + tempDir.resolve("schema-buildsite-defaults.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO building_sites "
+                        + "(id, name, world, x, y, z, facing, created_at) "
+                        + "VALUES ('buildsite_0002', 'Sans note', 'world_hub', 0, 64, 0, 'NORTH', "
+                        + "'2026-10-08T18:00:00Z')");
+                try (ResultSet rs = statement.executeQuery(
+                        "SELECT description, status, created_by FROM building_sites "
+                                + "WHERE id = 'buildsite_0002'")) {
+                    assertTrue(rs.next());
+                    assertEquals("", rs.getString("description"));
+                    assertEquals("EMPTY", rs.getString("status"));
+                    assertEquals("", rs.getString("created_by"));
+                }
+            }
+        }
+    }
+
     private int userVersion(Connection connection) throws Exception {
         try (Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery("PRAGMA user_version")) {

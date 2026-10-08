@@ -88,6 +88,8 @@ public final class AgentActionExecutor {
                 case CONTENT_EXPORT -> contentExport(action);
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
+                case NPC_CITIZENS_UNLINK -> npcCitizensUnlink(action);
+                case NPC_CITIZENS_DELETE -> npcCitizensDelete(action);
                 case NPC_CITIZENS_CREATE -> npcCitizensCreate(action);
                 case NPC_CITIZENS_PROVISION -> npcCitizensProvision(action);
                 case NPC_CITIZENS_MOVE -> npcCitizensMove(action);
@@ -148,6 +150,7 @@ public final class AgentActionExecutor {
                 case PLAYER_UNBAN -> playerUnban(action);
                 case NPC_DEFINITION_CREATE -> npcDefinitionWrite(action, true);
                 case NPC_DEFINITION_UPDATE -> npcDefinitionWrite(action, false);
+                case NPC_DEFINITION_DELETE -> npcDefinitionDelete(action);
                 case QUEST_GIVER_SET -> questGiverSet(action);
             };
         } catch (RuntimeException e) {
@@ -1217,6 +1220,7 @@ public final class AgentActionExecutor {
                 row.put("dialogueStartsQuests", n.dialogueStartsQuests());
                 row.put("questsGiven", n.questsGiven());
                 row.put("questsReferenced", n.questsReferenced());
+                row.put("questsDelivering", n.questsDelivering());
                 row.put("sources", n.sources());
                 row.put("state", n.state());
                 List<Map<String, Object>> warnings = new ArrayList<>();
@@ -1308,6 +1312,67 @@ public final class AgentActionExecutor {
                     "Paramètre « citizens_id » manquant ou invalide (entier positif)."));
         }
         return actions.citizensLink(npcId, citizensId).thenApply(r -> toOutcome(action, r))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code npc.definition.delete} (#226) : supprime la définition logique SEULE.
+     *
+     * <p>Le paramètre {@code expect_dialogue} n'est pas une option de confort : il porte ce que
+     * l'écran croyait vrai. S'il ne correspond plus, l'opération est refusée — une page périmée ne
+     * doit pas pouvoir décider d'une suppression.</p>
+     */
+    private CompletableFuture<AgentActionOutcome> npcDefinitionDelete(AgentAction action) {
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        String expectDialogue = trimOrNull(action.param("expect_dialogue"));
+        return actions.npcDefinitionDelete(npcId, expectDialogue == null ? "" : expectDialogue)
+                .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code npc.citizens.unlink} (#226) : retire la liaison, laisse vivre le PNJ Citizens. */
+    private CompletableFuture<AgentActionOutcome> npcCitizensUnlink(AgentAction action) {
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        Integer citizensId = parsePositiveInt(firstNonBlank(action.param("citizens_id"),
+                action.param("citizens")));
+        if (citizensId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « citizens_id » manquant ou invalide (entier positif). Il porte la "
+                            + "liaison que l'écran croyait vraie : sans lui, on pourrait délier la "
+                            + "mauvaise."));
+        }
+        return actions.npcCitizensUnlink(npcId, citizensId)
+                .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code npc.citizens.delete} (#226) : détruit le PNJ Citizens physique.
+     *
+     * <p>L'identifiant numérique est <strong>obligatoire</strong>, et il est confronté à la liaison
+     * réelle avant toute destruction. C'est la protection demandée par le ticket contre « supprimer
+     * le mauvais Citizens ».</p>
+     */
+    private CompletableFuture<AgentActionOutcome> npcCitizensDelete(AgentAction action) {
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        Integer citizensId = parsePositiveInt(firstNonBlank(action.param("citizens_id"),
+                action.param("citizens")));
+        if (citizensId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « citizens_id » manquant ou invalide (entier positif) : une "
+                            + "destruction de PNJ Citizens ne se fait jamais sans cible explicite."));
+        }
+        return actions.npcCitizensDelete(npcId, citizensId)
+                .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 

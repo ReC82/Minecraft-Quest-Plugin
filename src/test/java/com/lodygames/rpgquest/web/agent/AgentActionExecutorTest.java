@@ -302,6 +302,66 @@ class AgentActionExecutorTest {
         assertEquals(14, actions.lastLinkCitizensId);
     }
 
+    // ---- Issue #226 : les trois suppressions, et leurs garde-fous -----------------------------
+
+    /**
+     * La définition seule. {@code expect_dialogue} est transmis tel quel : c'est le serveur qui le
+     * confronte à la réalité, et l'exécuteur n'a pas à en juger.
+     */
+    @Test
+    void npcDefinitionDeleteValidatesAndDelegates() {
+        assertEquals(AgentActionOutcome.REJECTED,
+                run(new AgentAction("dd0", "npc.definition.delete", Map.of())).status(),
+                "npc_id obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("dd1", "npc.definition.delete",
+                Map.of("npc_id", "Bad Id"))).status());
+
+        AgentActionOutcome ok = run(new AgentAction("dd2", "npc.definition.delete",
+                Map.of("npc_id", "mira_cartographer", "expect_dialogue", "rpgquest:mira_first_map")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("mira_cartographer", actions.lastNpcDeleteId);
+        assertEquals("rpgquest:mira_first_map", actions.lastNpcDeleteExpectedDialogue);
+    }
+
+    /**
+     * Délier exige l'identifiant Citizens attendu. Sans lui, une page affichée il y a dix minutes
+     * pourrait retirer une liaison créée depuis — c'est-à-dire la mauvaise.
+     */
+    @Test
+    void npcCitizensUnlinkRequiresTheExpectedCitizensId() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("ul0", "npc.citizens.unlink",
+                Map.of("npc_id", "mira_cartographer"))).status(), "citizens_id obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("ul1", "npc.citizens.unlink",
+                Map.of("npc_id", "mira_cartographer", "citizens_id", "0"))).status(),
+                "entier positif requis");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("ul2", "npc.citizens.unlink",
+                Map.of("npc_id", "Bad Id", "citizens_id", "9"))).status());
+
+        AgentActionOutcome ok = run(new AgentAction("ul3", "npc.citizens.unlink",
+                Map.of("npc_id", "mira_cartographer", "citizens_id", "9")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("mira_cartographer", actions.lastUnlinkNpcId);
+        assertEquals(9, actions.lastUnlinkCitizensId);
+    }
+
+    /** Détruire un PNJ Citizens sans cible numérique explicite est refusé. */
+    @Test
+    void npcCitizensDeleteRefusesWithoutAnExplicitTarget() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cd0", "npc.citizens.delete",
+                Map.of("npc_id", "mira_cartographer"))).status(), "citizens_id obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cd1", "npc.citizens.delete",
+                Map.of("npc_id", "mira_cartographer", "citizens_id", "-3"))).status());
+
+        AgentActionOutcome ok = run(new AgentAction("cd2", "npc.citizens.delete",
+                Map.of("npc_id", "mira_cartographer", "citizens_id", "9")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("mira_cartographer", actions.lastCitizensDeleteNpcId);
+        assertEquals(9, actions.lastCitizensDeleteCitizensId);
+    }
+
     @Test
     void npcCitizensCreateValidatesParamsAndDelegates() {
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("cc0", "npc.citizens.create",
@@ -1101,18 +1161,24 @@ class AgentActionExecutorTest {
         String lastNpcUpdateId;
         String lastGiverQuestId;
         String lastGiverNpcId;
+        String lastNpcDeleteId;
+        String lastNpcDeleteExpectedDialogue;
+        String lastUnlinkNpcId;
+        int lastUnlinkCitizensId;
+        String lastCitizensDeleteNpcId;
+        int lastCitizensDeleteCitizensId;
 
         @Override
         public CompletableFuture<NpcCatalogView> npcDefinitions() {
             NpcSummary guard = new NpcSummary("guard", "Garde", true, true, 7, 1, true,
                     "Garde du village", "quest_giver", "rpgquest:guard", true, "rpgquest:guard", 6, 9,
                     List.of("rpgquest:first_steps"), List.of("rpgquest:crystal_hunt"),
-                    List.of("rpgquest:crystal_hunt"),
+                    List.of("rpgquest:crystal_hunt"), List.of(),
                     List.of("DEFINITION", "BINDING", "DIALOGUE", "QUEST_GIVER", "QUEST_TALK"), "LINKED", List.of());
             NpcSummary woodcutter = new NpcSummary("woodcutter_bob", null, false, false, null, 0, true,
                     null, null, null, false, null, 0, 0,
-                    List.of(), List.of(), List.of("rpgquest:woodcutters_request"), List.of("QUEST_TALK"),
-                    "UNDEFINED_REFERENCE",
+                    List.of(), List.of(), List.of("rpgquest:woodcutters_request"), List.of(),
+                    List.of("QUEST_TALK"), "UNDEFINED_REFERENCE",
                     List.of(new NpcWarning("NO_DEFINITION", "error",
                             "Aucune définition logique RPGQuest pour « woodcutter_bob » (référencé par objectif « parler à »).")));
             return CompletableFuture.completedFuture(new NpcCatalogView(
@@ -1132,6 +1198,27 @@ class AgentActionExecutorTest {
                                                                      String role, boolean enabled) {
             lastNpcUpdateId = id;
             return mutation("update " + id);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> npcDefinitionDelete(String id, String expectDialogueId) {
+            lastNpcDeleteId = id;
+            lastNpcDeleteExpectedDialogue = expectDialogueId;
+            return mutation("delete " + id);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> npcCitizensUnlink(String npcId, int expectedCitizensId) {
+            lastUnlinkNpcId = npcId;
+            lastUnlinkCitizensId = expectedCitizensId;
+            return mutation("unlink " + npcId + " #" + expectedCitizensId);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> npcCitizensDelete(String npcId, int expectedCitizensId) {
+            lastCitizensDeleteNpcId = npcId;
+            lastCitizensDeleteCitizensId = expectedCitizensId;
+            return mutation("citizens delete " + npcId + " #" + expectedCitizensId);
         }
 
         String lastRenameNpcId;

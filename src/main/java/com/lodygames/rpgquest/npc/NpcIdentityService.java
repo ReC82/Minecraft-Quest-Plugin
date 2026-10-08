@@ -332,6 +332,87 @@ public final class NpcIdentityService {
     public record BindResult(boolean ok, String code, String message, int citizensNumericId) {
     }
 
+    /**
+     * Retire la liaison {@code npcId} ↔ Citizens, <strong>sans toucher au PNJ Citizens</strong>
+     * (issue #226).
+     *
+     * <p><strong>La double clé est une exigence, pas une précaution.</strong> L'appelant doit
+     * fournir l'identifiant numérique qu'il croit lié ; s'il ne correspond pas à la liaison réelle,
+     * l'opération est refusée. Sans cela, un écran affiché il y a dix minutes pourrait délier une
+     * liaison créée depuis — c'est-à-dire la mauvaise.</p>
+     *
+     * <p>Idempotent : une liaison déjà absente renvoie {@code ABSENT} avec {@code ok() == true}, ce
+     * qui rend un double clic ou un rejeu réseau inoffensif.</p>
+     */
+    public CompletableFuture<BindResult> unbindCitizens(String npcId, int expectedNumericId) {
+        return citizensBindingRepository.loadAll().thenCompose(existing -> {
+            List<NpcBindingRepository.Binding> mine = existing.stream()
+                    .filter(b -> b.npcId().equals(npcId))
+                    .toList();
+            if (mine.isEmpty()) {
+                return CompletableFuture.completedFuture(new BindResult(true, "ABSENT",
+                        "Aucune liaison Citizens pour « " + npcId + " » : rien à délier.",
+                        expectedNumericId));
+            }
+            List<NpcBindingRepository.Binding> matching = mine.stream()
+                    .filter(b -> b.citizensNumericId() == expectedNumericId)
+                    .toList();
+            if (matching.isEmpty()) {
+                String actual = mine.stream().map(b -> "#" + b.citizensNumericId())
+                        .collect(java.util.stream.Collectors.joining(", "));
+                return CompletableFuture.completedFuture(new BindResult(false, "MISMATCH",
+                        "« " + npcId + " » n'est pas lié à Citizens #" + expectedNumericId
+                                + " mais à " + actual + ". Rien n'a été délié — rafraîchissez le "
+                                + "catalogue PNJ et recommencez.", expectedNumericId));
+            }
+            CompletableFuture<Void> all = CompletableFuture.completedFuture(null);
+            for (NpcBindingRepository.Binding b : matching) {
+                all = all.thenCompose(ignored -> citizensBindingRepository.delete(b.citizensUuid()));
+            }
+            return all.thenApply(ignored -> {
+                matching.forEach(b -> citizensCache.remove(b.citizensUuid()));
+                return new BindResult(true, "UNLINKED",
+                        "« " + npcId + " » délié de Citizens #" + expectedNumericId
+                                + ". Le PNJ Citizens existe toujours en jeu.", expectedNumericId);
+            });
+        }).exceptionally(error -> new BindResult(false, "ERROR",
+                "Échec du déliage : " + error.getClass().getSimpleName(), expectedNumericId));
+    }
+
+    /**
+     * L'UUID Citizens réellement lié à {@code npcId}, d'après la base. Vide s'il n'y en a pas, ou si
+     * l'identifiant numérique attendu ne correspond pas.
+     *
+     * <p>C'est le seul chemin autorisé pour passer d'un identifiant logique à l'entité Citizens à
+     * détruire : la suppression exige l'UUID <em>et</em> l'identifiant numérique, donc une
+     * divergence entre les deux arrête l'opération au lieu de détruire un voisin.</p>
+     */
+    public CompletableFuture<Optional<NpcBindingRepository.Binding>> bindingOf(String npcId,
+                                                                               int expectedNumericId) {
+        return citizensBindingRepository.loadAll().thenApply(existing -> existing.stream()
+                .filter(b -> b.npcId().equals(npcId) && b.citizensNumericId() == expectedNumericId)
+                .findFirst());
+    }
+
+    /**
+     * Détruit un PNJ Citizens <strong>désigné par sa liaison</strong> et retire cette liaison
+     * (issue #226). <strong>Thread principal obligatoire</strong> pour la partie Citizens.
+     *
+     * <p>Ne touche ni à la définition logique, ni au dialogue : seules l'entité et la liaison qui la
+     * désignait disparaissent. Retirer la liaison n'est pas une cascade mais la conséquence
+     * nécessaire — une liaison vers une entité détruite rendrait le PNJ « orphelin Citizens » au
+     * prochain relevé.</p>
+     */
+    public boolean destroyBoundCitizens(NpcBindingRepository.Binding binding) {
+        return destroyCitizensNpc(binding.citizensNumericId(), binding.citizensUuid());
+    }
+
+    /** Retire la liaison d'un UUID précis, après destruction de son entité. */
+    public CompletableFuture<Void> forgetBinding(NpcBindingRepository.Binding binding) {
+        citizensCache.remove(binding.citizensUuid());
+        return citizensBindingRepository.delete(binding.citizensUuid());
+    }
+
     // ---- Création physique + rollback (issue #81, phase 2) -------------------------------------
 
     /**

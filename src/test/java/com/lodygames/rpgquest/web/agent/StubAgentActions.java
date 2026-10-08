@@ -72,6 +72,21 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<MutationResult> npcDefinitionDelete(String id, String expectDialogueId) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> npcCitizensUnlink(String npcId, int expectedCitizensId) {
+        return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> npcCitizensDelete(String npcId, int expectedCitizensId) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<MutationResult> questGiverSet(String questId, String npcId) {
         return unsupported();
     }

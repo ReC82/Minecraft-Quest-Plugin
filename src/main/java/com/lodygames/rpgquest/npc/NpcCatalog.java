@@ -27,6 +27,23 @@ import java.util.TreeSet;
  * référencent cet id ; pendant la transition, un id référencé <em>sans</em> définition est signalé
  * comme <strong>erreur de contenu</strong> mais ne casse rien.</p>
  *
+ * <p><strong>Le dialogue d'un PNJ, et pourquoi deux règles au lieu d'une (issue #225).</strong> Le
+ * rattachement se lit dans cet ordre :</p>
+ * <ol>
+ *   <li>le dialogue que la définition <em>déclare</em> par son champ {@code dialogueId} ;</li>
+ *   <li>à défaut, le dialogue qui porte le <em>nom</em> du PNJ — la convention historique.</li>
+ * </ol>
+ *
+ * <p>N'appliquer que la seconde produisait deux défauts visibles. Un PNJ qui déclare un dialogue
+ * nommé autrement apparaissait <em>sans</em> dialogue, bien qu'il en ait un, chargé et entendu par
+ * les joueurs. Et le dialogue déclaré, puisque personne ne le réclamait, fabriquait à son tour une
+ * entrée de catalogue : un « PNJ » sans définition, portant le nom du dialogue, que rien ne
+ * permettait de corriger puisqu'il n'était la faute de personne. C'est l'origine exacte des deux
+ * entrées « Mira » — {@code mira_cartographer} (définition, Citizens #9) déclarant
+ * {@code rpgquest:mira_first_map}, et {@code mira_first_map} « sans définition ». Un dialogue
+ * revendiqué par une définition n'est donc plus déduit en PNJ ; un dialogue que personne ne
+ * revendique l'est toujours, avec une anomalie qui dit désormais d'où elle vient.</p>
+ *
  * <p>Ne lit jamais l'état du monde : position, monde et détection des PNJ Citizens <em>non
  * tagués</em> restent hors périmètre.</p>
  */
@@ -45,8 +62,27 @@ public final class NpcCatalog {
                                List<String> startsQuestIds, String speaker) {
     }
 
-    /** Les références d'une quête vers des PNJ : donneur éventuel + cibles {@code TALK_TO_NPC}. */
-    public record QuestLink(String questId, String giverId, List<String> talkNpcIds) {
+    /**
+     * Les références d'une quête vers des PNJ : donneur éventuel, cibles {@code TALK_TO_NPC} et
+     * destinataires {@code DELIVER_ITEM_TO_NPC}.
+     *
+     * <p>Les remises sont distinguées des conversations depuis #226 : les deux sont des références
+     * bloquantes pour une suppression de PNJ, mais elles ne se corrigent pas de la même façon —
+     * une remise qui perd son destinataire rend la quête <em>infinissable</em>, alors qu'un
+     * « parler à » perdu se réaffecte. Les confondre à l'écran rendait l'une des deux invisible.</p>
+     */
+    public record QuestLink(String questId, String giverId, List<String> talkNpcIds,
+                            List<String> deliverNpcIds) {
+
+        /** Forme historique, sans remise. */
+        public QuestLink(String questId, String giverId, List<String> talkNpcIds) {
+            this(questId, giverId, talkNpcIds, List.of());
+        }
+
+        public QuestLink {
+            talkNpcIds = List.copyOf(talkNpcIds == null ? List.of() : talkNpcIds);
+            deliverNpcIds = List.copyOf(deliverNpcIds == null ? List.of() : deliverNpcIds);
+        }
     }
 
     /** Une liaison Citizens ↔ id RPGQuest (id numérique Citizens pour l'affichage admin). */
@@ -64,14 +100,17 @@ public final class NpcCatalog {
      *              de binding) / {@code DISABLED} / {@code CITIZENS_ORPHAN} (binding sans définition)
      *              / {@code UNDEFINED_REFERENCE} (référencé par du contenu, aucune définition) /
      *              {@code BROKEN} (au moins une erreur : dialogue manquant, doublon…)
+     * @param definedDialogueId dialogue que la <strong>définition déclare</strong>, tel qu'écrit
+     * @param dialogueId        dialogue réellement <strong>chargé</strong> et rattaché à ce PNJ —
+     *                          le déclaré s'il existe, sinon celui qui porte le nom du PNJ (#225)
      */
     public record NpcRow(String id, String displayName, boolean logicalDefinitionPresent,
                          boolean citizensBindingPresent, Integer citizensNumericId, int bindingCount,
                          boolean enabled, String description, String role, String definedDialogueId,
                          boolean hasDialogue, String dialogueId, int dialogueNodes, int dialogueChoices,
                          List<String> dialogueStartsQuests, List<String> questsGiven,
-                         List<String> questsReferenced, List<String> sources, String state,
-                         List<Warning> warnings) {
+                         List<String> questsReferenced, List<String> questsDelivering,
+                         List<String> sources, String state, List<Warning> warnings) {
     }
 
     public record Result(List<NpcRow> npcs, List<String> canonicalIds, List<String> definedIds,
@@ -93,25 +132,52 @@ public final class NpcCatalog {
         }
 
         Map<String, DialogueLink> dialogueByNpc = new LinkedHashMap<>();
+        Map<String, DialogueLink> dialogueById = new LinkedHashMap<>();
         Set<String> loadedDialogueIds = new LinkedHashSet<>();
         for (DialogueLink d : dialogues) {
             if (d.dialogueId() != null) {
                 loadedDialogueIds.add(d.dialogueId().toLowerCase(Locale.ROOT));
+                dialogueById.putIfAbsent(d.dialogueId().toLowerCase(Locale.ROOT), d);
             }
             if (d.npcId() != null && !d.npcId().isBlank()) {
                 dialogueByNpc.putIfAbsent(d.npcId(), d);
             }
         }
 
+        // Issue #225 — les dialogues qu'une définition REVENDIQUE explicitement par son champ
+        // « dialogueId ». Deux conséquences, et c'est tout le ticket :
+        //
+        //  1. le dialogue d'un PNJ est celui qu'il déclare, même s'il ne porte pas son nom. La
+        //     convention « dialogueId == npcId » reste le défaut, elle n'est plus la seule règle ;
+        //  2. un dialogue revendiqué ne fabrique plus une entrée PNJ fantôme. C'est l'origine
+        //     exacte de la seconde entrée « Mira » : « mira_cartographer » déclare
+        //     « rpgquest:mira_first_map », et le catalogue déduisait de ce dialogue un PNJ
+        //     « mira_first_map » sans définition — une anomalie qui n'existait que dans le
+        //     catalogue, et que personne ne pouvait corriger puisqu'elle n'était la faute de
+        //     personne.
+        Map<String, String> dialogueClaimedBy = new LinkedHashMap<>();
+        for (LogicalDefinition d : defById.values()) {
+            if (d.dialogueId() == null || d.dialogueId().isBlank()) {
+                continue;
+            }
+            dialogueClaimedBy.putIfAbsent(d.dialogueId().trim().toLowerCase(Locale.ROOT), d.id());
+        }
+
         Map<String, Set<String>> given = new LinkedHashMap<>();
         Map<String, Set<String>> referenced = new LinkedHashMap<>();
+        Map<String, Set<String>> delivering = new LinkedHashMap<>();
         for (QuestLink q : quests) {
             if (q.giverId() != null && !q.giverId().isBlank()) {
                 given.computeIfAbsent(q.giverId().trim(), k -> new LinkedHashSet<>()).add(q.questId());
             }
-            for (String talk : q.talkNpcIds() == null ? List.<String>of() : q.talkNpcIds()) {
+            for (String talk : q.talkNpcIds()) {
                 if (talk != null && !talk.isBlank()) {
                     referenced.computeIfAbsent(talk.trim(), k -> new LinkedHashSet<>()).add(q.questId());
+                }
+            }
+            for (String deliver : q.deliverNpcIds()) {
+                if (deliver != null && !deliver.isBlank()) {
+                    delivering.computeIfAbsent(deliver.trim(), k -> new LinkedHashSet<>()).add(q.questId());
                 }
             }
         }
@@ -131,9 +197,20 @@ public final class NpcCatalog {
         // Registre canonique : la définition logique d'abord, puis (transition) les ids référencés.
         Set<String> definedIds = new TreeSet<>(defById.keySet());
         Set<String> canonical = new TreeSet<>(definedIds);
-        canonical.addAll(dialogueByNpc.keySet());
+        for (String npcId : dialogueByNpc.keySet()) {
+            // Un dialogue déjà revendiqué par une AUTRE définition n'est pas un PNJ : c'est le
+            // dialogue de ce PNJ-là. En déduire une entrée produisait le doublon « Mira » (#225).
+            DialogueLink d = dialogueByNpc.get(npcId);
+            String claimant = d.dialogueId() == null ? null
+                    : dialogueClaimedBy.get(d.dialogueId().toLowerCase(Locale.ROOT));
+            if (claimant != null && !claimant.equals(npcId)) {
+                continue;
+            }
+            canonical.add(npcId);
+        }
         canonical.addAll(given.keySet());
         canonical.addAll(referenced.keySet());
+        canonical.addAll(delivering.keySet());
 
         Set<String> allIds = new LinkedHashSet<>();
         allIds.addAll(canonical);
@@ -142,11 +219,19 @@ public final class NpcCatalog {
         List<NpcRow> rows = new ArrayList<>();
         for (String id : allIds) {
             LogicalDefinition def = defById.get(id);
-            DialogueLink d = dialogueByNpc.get(id);
+            // Issue #225 — le dialogue de ce PNJ : celui qu'il DÉCLARE d'abord, la convention de
+            // nom ensuite. Dans l'autre ordre, « mira_cartographer » n'avait aucun dialogue (aucun
+            // ne porte son nom) alors qu'elle en déclare un parfaitement chargé, et l'écran
+            // affichait « pas encore chargé en jeu » pour un dialogue que les joueurs entendaient.
+            DialogueLink declared = def == null || def.dialogueId() == null ? null
+                    : dialogueById.get(def.dialogueId().trim().toLowerCase(Locale.ROOT));
+            DialogueLink d = declared != null ? declared : dialogueByNpc.get(id);
             int binds = bindingCount.getOrDefault(id, 0);
             List<String> givenQ = sorted(given.get(id));
             List<String> refQ = sorted(referenced.get(id));
-            boolean referencedByContent = !givenQ.isEmpty() || !refQ.isEmpty() || d != null;
+            List<String> deliverQ = sorted(delivering.get(id));
+            boolean referencedByContent = !givenQ.isEmpty() || !refQ.isEmpty() || !deliverQ.isEmpty()
+                    || d != null;
 
             List<String> sources = new ArrayList<>();
             if (def != null) {
@@ -164,6 +249,9 @@ public final class NpcCatalog {
             if (!refQ.isEmpty()) {
                 sources.add("QUEST_TALK");
             }
+            if (!deliverQ.isEmpty()) {
+                sources.add("QUEST_DELIVER");
+            }
 
             List<Warning> warnings = new ArrayList<>();
             if (defCount.getOrDefault(id, 0) > 1) {
@@ -176,11 +264,26 @@ public final class NpcCatalog {
             }
             if (def == null && (referencedByContent || binds > 0)) {
                 String hint = closestCanonical(id, definedIds);
-                String by = referenceSummary(!givenQ.isEmpty(), !refQ.isEmpty(), d != null, binds > 0);
+                String by = referenceSummary(!givenQ.isEmpty(), !refQ.isEmpty(), !deliverQ.isEmpty(),
+                        d != null, binds > 0);
                 if (binds > 0) {
                     warnings.add(new Warning("BINDING_NO_DEFINITION", "error",
                             "PNJ Citizens tagué « " + id + " » sans définition logique RPGQuest."
                                     + (hint == null ? "" : " Id défini proche : « " + hint + " » ?")));
+                } else if (d != null && givenQ.isEmpty() && refQ.isEmpty() && deliverQ.isEmpty()) {
+                    // Issue #225 — l'entrée n'existe QUE parce qu'un dialogue porte ce nom, et que
+                    // la convention en déduit un PNJ porteur. Dire « créer la définition » sans
+                    // dire d'où vient l'entrée était la moitié du problème : on ne corrige pas une
+                    // anomalie dont on ignore la cause. Les deux remèdes réels sont nommés.
+                    warnings.add(new Warning("DIALOGUE_WITHOUT_NPC", "error",
+                            "Aucune définition logique RPGQuest pour « " + id + " ». Cette entrée "
+                                    + "n'existe que parce que le dialogue « " + d.dialogueId()
+                                    + " » porte ce nom, et que le catalogue en déduit un PNJ "
+                                    + "porteur : personne ne peut déclencher ce dialogue en l'état. "
+                                    + "Deux remèdes — créer la définition « " + id + " », ou "
+                                    + "rattacher ce dialogue à un PNJ existant via son champ "
+                                    + "« dialogueId »."
+                                    + (hint == null ? "" : " PNJ défini proche : « " + hint + " » ?")));
                 } else {
                     warnings.add(new Warning("NO_DEFINITION", "error",
                             "Aucune définition logique RPGQuest pour « " + id + " » (référencé par " + by
@@ -220,7 +323,7 @@ public final class NpcCatalog {
                     d != null, d == null ? null : d.dialogueId(),
                     d == null ? 0 : d.nodeCount(), d == null ? 0 : d.choiceCount(),
                     d == null ? List.of() : List.copyOf(d.startsQuestIds() == null ? List.of() : d.startsQuestIds()),
-                    givenQ, refQ, List.copyOf(sources), state, List.copyOf(warnings)));
+                    givenQ, refQ, deliverQ, List.copyOf(sources), state, List.copyOf(warnings)));
         }
 
         rows.sort((a, b) -> {
@@ -267,13 +370,17 @@ public final class NpcCatalog {
         return binds > 0 ? "LINKED" : "NOT_LINKED";
     }
 
-    private static String referenceSummary(boolean giver, boolean talk, boolean dialogue, boolean binding) {
+    private static String referenceSummary(boolean giver, boolean talk, boolean deliver,
+                                           boolean dialogue, boolean binding) {
         List<String> parts = new ArrayList<>();
         if (giver) {
             parts.add("donneur de quête");
         }
         if (talk) {
             parts.add("objectif « parler à »");
+        }
+        if (deliver) {
+            parts.add("objectif de remise");
         }
         if (dialogue) {
             parts.add("dialogue");

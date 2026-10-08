@@ -76,9 +76,30 @@ public enum AgentActionType {
     PLAYER_UNBAN("player.unban"),
     NPC_DEFINITION_CREATE("npc.definition.create"),
     NPC_DEFINITION_UPDATE("npc.definition.update"),
+    /**
+     * Issue #226 : supprime la <strong>définition logique seule</strong> ({@code npcs/<id>.yml}),
+     * après sauvegarde côté serveur. Ne touche ni au PNJ Citizens, ni à la liaison, ni au dialogue :
+     * la cascade silencieuse est refusée par construction. Le serveur <strong>revalide</strong> les
+     * références de contenu au moment d'exécuter, et refuse si la suppression laisserait une quête
+     * pointant un donneur inexistant.
+     */
+    NPC_DEFINITION_DELETE("npc.definition.delete"),
     QUEST_GIVER_SET("quest.giver.set"),
     NPC_CITIZENS_LIST("npc.citizens.list"),
     NPC_CITIZENS_LINK("npc.citizens.link"),
+    /**
+     * Issue #226 : retire la liaison RPGQuest ↔ Citizens en <strong>laissant le PNJ Citizens
+     * vivre</strong>. Exige l'identifiant numérique attendu : une divergence arrête l'opération au
+     * lieu de délier la mauvaise liaison.
+     */
+    NPC_CITIZENS_UNLINK("npc.citizens.unlink"),
+    /**
+     * Issue #226 : détruit le PNJ Citizens <strong>physique</strong> et retire la liaison qui le
+     * désignait. Exige l'identifiant numérique, et ne détruit que l'entité dont l'UUID <em>et</em>
+     * l'identifiant numérique correspondent à cette liaison — c'est ce qui garantit qu'on ne détruit
+     * jamais le voisin. Ne supprime ni la définition, ni le dialogue.
+     */
+    NPC_CITIZENS_DELETE("npc.citizens.delete"),
     NPC_CITIZENS_CREATE("npc.citizens.create"),
     /** Issue #165 : nom affiché en jeu d'un PNJ Citizens (jamais l'id logique RPGQuest). */
     NPC_CITIZENS_PROVISION("npc.citizens.provision"),

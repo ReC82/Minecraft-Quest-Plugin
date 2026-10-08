@@ -198,8 +198,8 @@ public interface AgentActions {
                       boolean enabled, String description, String role, String definedDialogueId,
                       boolean hasDialogue, String dialogueId, int dialogueNodes, int dialogueChoices,
                       List<String> dialogueStartsQuests, List<String> questsGiven,
-                      List<String> questsReferenced, List<String> sources, String state,
-                      List<NpcWarning> warnings) {
+                      List<String> questsReferenced, List<String> questsDelivering,
+                      List<String> sources, String state, List<NpcWarning> warnings) {
     }
 
     /** Anomalie de configuration d'un PNJ. {@code severity} ∈ {@code error|warning|info}. */
@@ -229,6 +229,42 @@ public interface AgentActions {
     /** Modifie une définition PNJ existante ({@code displayName} / {@code dialogue} / {@code role} / {@code enabled}) — jamais l'id. */
     CompletableFuture<MutationResult> npcDefinitionUpdate(String id, String displayName, String dialogueId,
                                                          String role, boolean enabled);
+
+    /**
+     * Issue #226 — supprime la <strong>définition logique seule</strong>, après l'avoir sauvegardée
+     * côté serveur.
+     *
+     * <p><strong>Jamais de cascade.</strong> Ni le PNJ Citizens, ni sa liaison, ni le dialogue ne
+     * sont touchés : ce sont trois opérations distinctes, avec trois décisions distinctes.</p>
+     *
+     * <p><strong>Les dépendances sont revalidées ici</strong>, au moment d'exécuter, et pas
+     * seulement affichées par l'écran qui a demandé. Un aperçu peut avoir dix minutes ; entre-temps
+     * une quête a pu désigner ce PNJ comme donneur. Dans ce cas la suppression est refusée, en
+     * disant lesquelles.</p>
+     *
+     * @param expectDialogueId dialogue que l'appelant croit lié, ou vide. S'il est fourni et ne
+     *                         correspond pas, l'opération est refusée : c'est le signe que l'écran
+     *                         décrivait un autre état du serveur
+     */
+    CompletableFuture<MutationResult> npcDefinitionDelete(String id, String expectDialogueId);
+
+    /**
+     * Issue #226 — retire la liaison RPGQuest ↔ Citizens, <strong>sans toucher au PNJ Citizens</strong>.
+     *
+     * @param expectedCitizensId identifiant numérique attendu ; une divergence refuse l'opération
+     *                           plutôt que de délier une liaison apparue depuis l'affichage
+     */
+    CompletableFuture<MutationResult> npcCitizensUnlink(String npcId, int expectedCitizensId);
+
+    /**
+     * Issue #226 — détruit le PNJ Citizens <strong>physique</strong> et retire la liaison qui le
+     * désignait. La définition logique et le dialogue restent intacts.
+     *
+     * @param expectedCitizensId identifiant numérique attendu. L'entité n'est détruite que si son
+     *                           UUID <em>et</em> cet identifiant correspondent à la liaison réelle —
+     *                           c'est ce qui rend impossible de détruire le mauvais PNJ
+     */
+    CompletableFuture<MutationResult> npcCitizensDelete(String npcId, int expectedCitizensId);
 
     /**
      * Pose le champ {@code giver:} d'une quête existante (édition texte minimale, commentaires

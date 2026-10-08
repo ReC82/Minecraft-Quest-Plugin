@@ -152,8 +152,8 @@ class NpcCitizensPayloadTest {
                         return CompletableFuture.completedFuture(new NpcCatalogView(
                                 List.of(new NpcSummary("andy", "Andy", true, true, 12, 1, true,
                                         null, "villager", null, false, null, 0, 0,
-                                        List.of(), List.of(), List.of(), List.of("DEFINITION"), "LINKED",
-                                        List.of())),
+                                        List.of(), List.of(), List.of(), List.of(),
+                                        List.of("DEFINITION"), "LINKED", List.of())),
                                 List.of("andy"), List.of("andy"), true, 1, 1, 0, 1, 0));
                     }
                 });

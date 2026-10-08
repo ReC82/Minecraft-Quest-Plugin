@@ -64,4 +64,68 @@ class NpcDefinitionStoreTest {
         NpcDefinitionStore store = new NpcDefinitionStore(dir);
         assertTrue(store.list().hasIssues());
     }
+
+    // ---- Issue #226 : suppression à la demande, avec sauvegarde ------------------------------
+
+    @Test
+    void deletingADefinitionBacksItUpFirstThenRemovesIt() throws Exception {
+        NpcDefinitionStore store = new NpcDefinitionStore(dir);
+        store.create(def("pnj_de_test", "PNJ de test", "rpgquest:pnj_de_test", true));
+        Path backups = dir.resolveSibling("npc-backups");
+
+        NpcDefinitionStore.Result r = store.deleteDefinition("pnj_de_test", backups);
+
+        assertTrue(r.ok(), r.message());
+        assertEquals("DELETED", r.code());
+        assertFalse(Files.exists(dir.resolve("pnj_de_test.yml")));
+        assertTrue(store.find("pnj_de_test").isEmpty());
+        try (var files = Files.list(backups)) {
+            Path backup = files.findFirst().orElseThrow();
+            assertTrue(backup.getFileName().toString().endsWith("-pnj_de_test.yml"),
+                    backup.toString());
+            assertTrue(Files.readString(backup).contains("pnj_de_test"), "la copie doit être réelle");
+        }
+        assertTrue(r.message().contains("Sauvegarde"), r.message());
+    }
+
+    /** Un rejeu ou un double clic aboutit au même état, sans erreur : l'état voulu est atteint. */
+    @Test
+    void deletingTwiceIsIdempotent() {
+        NpcDefinitionStore store = new NpcDefinitionStore(dir);
+        store.create(def("pnj_de_test", "PNJ de test", null, true));
+        Path backups = dir.resolveSibling("npc-backups");
+
+        assertEquals("DELETED", store.deleteDefinition("pnj_de_test", backups).code());
+        NpcDefinitionStore.Result again = store.deleteDefinition("pnj_de_test", backups);
+
+        assertTrue(again.ok(), "rejouer n'est pas une erreur");
+        assertEquals("ABSENT", again.code());
+    }
+
+    /** Sans dossier de sauvegarde, la suppression est refusée — pas faite « quand même ». */
+    @Test
+    void deletingWithoutABackupDirectoryIsRefusedAndChangesNothing() {
+        NpcDefinitionStore store = new NpcDefinitionStore(dir);
+        store.create(def("pnj_de_test", "PNJ de test", null, true));
+
+        NpcDefinitionStore.Result r = store.deleteDefinition("pnj_de_test", null);
+
+        assertFalse(r.ok());
+        assertEquals("NO_BACKUP_DIR", r.code());
+        assertTrue(store.find("pnj_de_test").isPresent(), "le fichier doit être intact");
+    }
+
+    /** La suppression ne touche qu'au PNJ visé : ni un homonyme partiel, ni un voisin. */
+    @Test
+    void deletingOneDefinitionLeavesTheOthersAlone() {
+        NpcDefinitionStore store = new NpcDefinitionStore(dir);
+        store.create(def("mira_cartographer", "Mira la Cartographe", "rpgquest:mira_first_map", true));
+        store.create(def("mira_apprentice", "Apprentie", null, true));
+        Path backups = dir.resolveSibling("npc-backups");
+
+        assertTrue(store.deleteDefinition("mira_cartographer", backups).ok());
+
+        assertTrue(store.find("mira_cartographer").isEmpty());
+        assertTrue(store.find("mira_apprentice").isPresent(), "le voisin ne doit pas bouger");
+    }
 }

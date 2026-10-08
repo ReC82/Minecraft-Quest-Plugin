@@ -526,14 +526,23 @@ public final class BukkitAgentActions implements AgentActions {
         List<NpcCatalog.QuestLink> questLinks = new ArrayList<>();
         for (QuestDefinition q : questEngine.quests()) {
             List<String> talk = new ArrayList<>();
+            // Issue #226 : les remises comptent aussi. Un PNJ destinataire d'un
+            // DELIVER_ITEM_TO_NPC n'apparaissait dans aucune colonne du catalogue, donc le
+            // supprimer rendait la quête infinissable sans qu'aucun écran ne l'ait annoncé.
+            List<String> deliver = new ArrayList<>();
             for (QuestStep step : q.steps()) {
                 for (QuestObjective objective : step.objectives()) {
                     if (objective instanceof TalkToNpcObjective t && !talk.contains(t.npcId())) {
                         talk.add(t.npcId());
                     }
+                    if (objective instanceof DeliverItemToNpcObjective d
+                            && !deliver.contains(d.npcId())) {
+                        deliver.add(d.npcId());
+                    }
                 }
             }
-            questLinks.add(new NpcCatalog.QuestLink(q.id().toString(), q.giver(), List.copyOf(talk)));
+            questLinks.add(new NpcCatalog.QuestLink(q.id().toString(), q.giver(), List.copyOf(talk),
+                    List.copyOf(deliver)));
         }
 
         List<NpcCatalog.LogicalDefinition> defs = new ArrayList<>();
@@ -559,7 +568,8 @@ public final class BukkitAgentActions implements AgentActions {
                         r.citizensBindingPresent(), r.citizensNumericId(), r.bindingCount(), r.enabled(),
                         r.description(), r.role(), r.definedDialogueId(), r.hasDialogue(), r.dialogueId(),
                         r.dialogueNodes(), r.dialogueChoices(), r.dialogueStartsQuests(), r.questsGiven(),
-                        r.questsReferenced(), r.sources(), r.state(), List.copyOf(warnings)));
+                        r.questsReferenced(), r.questsDelivering(), r.sources(), r.state(),
+                        List.copyOf(warnings)));
             }
             return new NpcCatalogView(List.copyOf(npcs), result.canonicalIds(), result.definedIds(),
                     result.citizensAvailable(), result.total(), result.withDefinition(),
@@ -600,6 +610,153 @@ public final class BukkitAgentActions implements AgentActions {
             }
         }
         return done(new MutationResult(r.ok(), r.code(), r.message(), List.copyOf(effects)));
+    }
+
+    /**
+     * Issue #226 — supprime la définition logique seule, après sauvegarde, et <strong>après avoir
+     * revérifié ici</strong> que personne n'en dépend.
+     *
+     * <p><strong>Pourquoi revalider, puisque l'écran l'a déjà fait.</strong> Un aperçu de
+     * dépendances décrit l'état du serveur à l'instant où il a été calculé. Entre cet instant et le
+     * clic de confirmation, une quête a pu désigner ce PNJ comme donneur, un objectif de remise a pu
+     * apparaître. Faire confiance à l'aperçu, c'est accepter de casser du contenu sur la foi d'une
+     * page périmée : on recompte donc sur les moteurs en mémoire, qui sont la vérité du moment.</p>
+     */
+    @Override
+    public CompletableFuture<MutationResult> npcDefinitionDelete(String id, String expectDialogueId) {
+        Optional<NpcDefinition> definition = npcEngine.find(id);
+        if (definition.isEmpty()) {
+            return done(MutationResult.of(true, "ABSENT",
+                    "Aucune définition logique « " + safe(id) + " » : rien à supprimer."));
+        }
+        // Le dialogue attendu : si l'écran décrivait un autre état, on s'arrête. C'est le même
+        // garde-fou que l'identifiant Citizens attendu pour une liaison.
+        String declared = definition.get().dialogueId() == null ? "" : definition.get().dialogueId();
+        String expected = expectDialogueId == null ? "" : expectDialogueId.trim();
+        if (!expected.isEmpty() && !expected.equalsIgnoreCase(declared)) {
+            return done(MutationResult.of(false, "DIALOGUE_MISMATCH",
+                    "« " + id + " » ne déclare pas le dialogue « " + safe(expected) + " » mais "
+                            + (declared.isEmpty() ? "aucun" : "« " + declared + " »")
+                            + ". Rien n'a été supprimé — rafraîchissez le catalogue PNJ."));
+        }
+
+        // Revalidation des références de contenu, sur les moteurs en mémoire.
+        List<String> givers = new ArrayList<>();
+        List<String> talks = new ArrayList<>();
+        List<String> deliveries = new ArrayList<>();
+        for (QuestDefinition q : questEngine.quests()) {
+            if (q.giver() != null && id.equals(q.giver().trim())) {
+                givers.add(q.id().toString());
+            }
+            for (QuestStep step : q.steps()) {
+                for (QuestObjective objective : step.objectives()) {
+                    if (objective instanceof TalkToNpcObjective t && id.equals(t.npcId())
+                            && !talks.contains(q.id().toString())) {
+                        talks.add(q.id().toString());
+                    }
+                    if (objective instanceof DeliverItemToNpcObjective d && id.equals(d.npcId())
+                            && !deliveries.contains(q.id().toString())) {
+                        deliveries.add(q.id().toString());
+                    }
+                }
+            }
+        }
+        if (!givers.isEmpty() || !talks.isEmpty() || !deliveries.isEmpty()) {
+            List<String> why = new ArrayList<>();
+            if (!givers.isEmpty()) {
+                why.add("donneur de " + String.join(", ", givers));
+            }
+            if (!talks.isEmpty()) {
+                why.add("cible d'un objectif « parler à » dans " + String.join(", ", talks));
+            }
+            if (!deliveries.isEmpty()) {
+                why.add("destinataire d'une remise dans " + String.join(", ", deliveries));
+            }
+            return done(MutationResult.of(false, "REFERENCED",
+                    "« " + id + " » est encore référencé (" + String.join(" ; ", why)
+                            + "). Supprimer sa définition rendrait ce contenu injouable : corrigez "
+                            + "d'abord ces références. Rien n'a été supprimé."));
+        }
+
+        NpcDefinitionStore.Result r = npcStore.deleteDefinition(id, npcBackupDirectory());
+        if (!r.ok()) {
+            return done(MutationResult.of(false, r.code(), r.message()));
+        }
+        npcEngine.reload();
+        List<String> effects = new ArrayList<>();
+        if (r.file() != null) {
+            effects.add("npcs/" + r.file() + " supprimé");
+        }
+        if (!declared.isEmpty()) {
+            effects.add("dialogue « " + declared + " » CONSERVÉ");
+        }
+        return done(new MutationResult(true, r.code(), r.message(), List.copyOf(effects)));
+    }
+
+    /**
+     * Dossier des sauvegardes de définitions PNJ supprimées : à côté du dossier {@code npcs/}, donc
+     * dans le dossier de données du plugin, et <strong>jamais</strong> dedans — un fichier de
+     * sauvegarde que le chargeur relirait recréerait le PNJ qu'on vient de supprimer.
+     */
+    private java.nio.file.Path npcBackupDirectory() {
+        return plugin.getDataFolder().toPath().resolve("npc-backups");
+    }
+
+    /** Issue #226 — délier sans détruire : le PNJ Citizens continue d'exister en jeu. */
+    @Override
+    public CompletableFuture<MutationResult> npcCitizensUnlink(String npcId, int expectedCitizensId) {
+        return npcIdentityService.unbindCitizens(npcId, expectedCitizensId).thenApply(r ->
+                new MutationResult(r.ok(), r.code(), r.message(),
+                        r.ok() && "UNLINKED".equals(r.code())
+                                ? List.of("liaison " + npcId + " <-> Citizens #"
+                                        + expectedCitizensId + " retirée",
+                                        "PNJ Citizens #" + expectedCitizensId + " CONSERVÉ")
+                                : List.of()));
+    }
+
+    /**
+     * Issue #226 — détruire le PNJ Citizens désigné par la liaison, et retirer cette liaison.
+     *
+     * <p>L'entité à détruire est résolue par la <strong>liaison en base</strong>, pas par
+     * l'identifiant numérique seul : la destruction exige que l'UUID <em>et</em> l'identifiant
+     * numérique correspondent ({@code destroyIfMatches}). Un identifiant numérique recyclé par
+     * Citizens depuis l'affichage de l'écran ne peut donc pas faire détruire le voisin.</p>
+     */
+    @Override
+    public CompletableFuture<MutationResult> npcCitizensDelete(String npcId, int expectedCitizensId) {
+        if (!npcIdentityService.citizensAvailable()) {
+            return done(MutationResult.of(false, "CITIZENS_UNAVAILABLE",
+                    "Citizens n'est pas actif sur ce serveur."));
+        }
+        return npcIdentityService.bindingOf(npcId, expectedCitizensId).thenCompose(maybe -> {
+            if (maybe.isEmpty()) {
+                return done(MutationResult.of(false, "MISMATCH",
+                        "Aucune liaison « " + safe(npcId) + " » ↔ Citizens #" + expectedCitizensId
+                                + " : rien n'a été détruit. Rafraîchissez le catalogue PNJ — "
+                                + "supprimer un PNJ Citizens sur la foi d'un écran périmé "
+                                + "détruirait peut-être le mauvais."));
+            }
+            NpcBindingRepository.Binding binding = maybe.get();
+            // Registre Citizens -> thread principal obligatoire.
+            return onMain(() -> done(npcIdentityService.destroyBoundCitizens(binding)))
+                    .thenCompose(destroyed -> {
+                        if (!Boolean.TRUE.equals(destroyed)) {
+                            return done(MutationResult.of(false, "NOT_DESTROYED",
+                                    "Le PNJ Citizens #" + expectedCitizensId + " n'a pas pu être "
+                                            + "détruit : son UUID ne correspond plus à la liaison "
+                                            + "enregistrée. Rien n'a été détruit, la liaison est "
+                                            + "conservée."));
+                        }
+                        return npcIdentityService.forgetBinding(binding).thenApply(ignored ->
+                                new MutationResult(true, "DELETED",
+                                        "PNJ Citizens #" + expectedCitizensId + " détruit, et sa "
+                                                + "liaison avec « " + npcId + " » retirée.",
+                                        List.of("Citizens #" + expectedCitizensId + " détruit",
+                                                "liaison retirée",
+                                                "définition logique « " + npcId + " » CONSERVÉE")));
+                    });
+        }).exceptionally(error -> MutationResult.of(false, "ERROR",
+                "Échec de la suppression Citizens : " + rootName(error)));
     }
 
     @Override

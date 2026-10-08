@@ -50,6 +50,19 @@ class NpcListPayloadTest {
         assertTrue(json.contains("\"code\":\"NO_DEFINITION\"") && json.contains("\"severity\":\"error\""));
     }
 
+    /**
+     * Issue #226 — les remises voyagent dans le payload. Sans ce champ, un PNJ destinataire d'un
+     * {@code DELIVER_ITEM_TO_NPC} n'apparaissait dans aucune colonne du catalogue : le supprimer
+     * rendait la quête infinissable sans qu'aucun écran ait pu l'annoncer.
+     */
+    @Test
+    void npcListCarriesDeliveryReferences() {
+        String json = Json.write(run("npc.list").details());
+
+        assertTrue(json.contains("\"questsDelivering\":[\"rpgquest:test_remise\"]"), json);
+        assertTrue(json.contains("\"QUEST_DELIVER\""), json);
+    }
+
     @Test
     void emptyCatalogIsStillSuccess() {
         AgentActionOutcome outcome = new AgentActionExecutor(
@@ -74,12 +87,13 @@ class NpcListPayloadTest {
             NpcSummary guard = new NpcSummary("guard", "Garde", true, true, 7, 1, true,
                     "Garde du village", "quest_giver", "rpgquest:guard", true, "rpgquest:guard", 6, 9,
                     List.of("rpgquest:first_steps"), List.of("rpgquest:crystal_hunt"),
-                    List.of("rpgquest:crystal_hunt"),
-                    List.of("DEFINITION", "BINDING", "DIALOGUE", "QUEST_GIVER", "QUEST_TALK"), "LINKED", List.of());
+                    List.of("rpgquest:crystal_hunt"), List.of("rpgquest:test_remise"),
+                    List.of("DEFINITION", "BINDING", "DIALOGUE", "QUEST_GIVER", "QUEST_TALK",
+                            "QUEST_DELIVER"), "LINKED", List.of());
             NpcSummary woodcutter = new NpcSummary("woodcutter_bob", null, false, false, null, 0, true,
                     null, null, null, false, null, 0, 0,
-                    List.of(), List.of(), List.of("rpgquest:woodcutters_request"), List.of("QUEST_TALK"),
-                    "UNDEFINED_REFERENCE",
+                    List.of(), List.of(), List.of("rpgquest:woodcutters_request"), List.of(),
+                    List.of("QUEST_TALK"), "UNDEFINED_REFERENCE",
                     List.of(new NpcWarning("NO_DEFINITION", "error",
                             "Aucune définition logique RPGQuest pour « woodcutter_bob » (référencé par objectif « parler à »). À migrer : créer la définition.")));
             return CompletableFuture.completedFuture(new NpcCatalogView(

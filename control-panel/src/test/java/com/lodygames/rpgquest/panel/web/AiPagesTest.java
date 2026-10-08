@@ -32,7 +32,7 @@ import org.junit.jupiter.api.io.TempDir;
  * <p><strong>Aucun appel réseau sortant.</strong> Aucun test ne configure de clé valide : ce qui est
  * vérifié ici, c'est le comportement du panel — permissions, CSRF, non-divulgation de la clé, et le
  * fait que l'atelier n'offre aucun chemin d'écriture. Le pipeline de génération lui-même est couvert
- * par {@code AiQuestStudioTest} avec un fournisseur bouchon.</p>
+ * par {@code AiContentStudioTest} avec un fournisseur bouchon.</p>
  */
 class AiPagesTest {
 
@@ -104,6 +104,108 @@ class AiPagesTest {
         assertTrue(page.contains("Demander une proposition"));
         assertTrue(page.contains("name=\"intent\""), "le champ d'intention");
         assertTrue(page.contains("Anthropic"), "le fournisseur utilisable est proposé");
+    }
+
+    // ---- Les trois familles --------------------------------------------------------------------
+
+    @Test
+    void theStudioOffersTheThreeFamiliesAsLinks() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        String page = get("/ai/studio").body();
+
+        assertTrue(page.contains("Que voulez-vous créer"), page.substring(0, 800));
+        for (String kind : new String[] {"quest", "dialogue", "story"}) {
+            assertTrue(page.contains("/ai/studio?kind=" + kind), "lien manquant : " + kind);
+        }
+    }
+
+    /**
+     * Le choix passe par un lien, donc par un GET : la politique de sécurité du panel interdit le
+     * JavaScript en ligne, et c'est le seul moyen d'échanger le formulaire sans script.
+     */
+    @Test
+    void eachFamilyHasItsOwnFormWithItsOwnFields() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        String quest = get("/ai/studio?kind=quest").body();
+        assertTrue(quest.contains("name=\"questId\""), "formulaire de quête");
+        assertFalse(quest.contains("name=\"dialogueId\""), "sans les champs des autres familles");
+
+        String dialogue = get("/ai/studio?kind=dialogue").body();
+        assertTrue(dialogue.contains("name=\"dialogueId\""), "le PNJ porteur");
+        assertTrue(dialogue.contains("name=\"tone\""), "le ton");
+        assertTrue(dialogue.contains("name=\"nodeCount\""));
+        assertFalse(dialogue.contains("name=\"stepCount\""), "pas les étapes d'une quête");
+
+        String story = get("/ai/studio?kind=story").body();
+        assertTrue(story.contains("name=\"quests\""), "les quêtes à enchaîner");
+        assertTrue(story.contains("name=\"storyId\""));
+        assertFalse(story.contains("name=\"rewardIntent\""),
+                "une story n'a pas de récompense : ne pas le suggérer");
+    }
+
+    /** La famille voyage en champ caché : le POST ne dépend jamais de l'URL d'où il part. */
+    @Test
+    void theChosenFamilyTravelsInTheForm() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        String page = get("/ai/studio?kind=dialogue").body();
+
+        assertTrue(page.contains("name=\"kind\" value=\"DIALOGUE\""), "champ caché de famille");
+    }
+
+    /** Une famille inconnue dans l'URL retombe sur la quête, sans erreur ni page vide. */
+    @Test
+    void anUnknownFamilyFallsBackToTheQuestForm() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        String page = get("/ai/studio?kind=n%27importe%20quoi").body();
+
+        assertTrue(page.contains("name=\"questId\""), "repli sur la quête");
+    }
+
+    /**
+     * Les champs vus par le joueur utilisent le composant guidé partagé, dans les trois familles :
+     * c'est la règle d'UX retenue — jamais de balise MiniMessage à taper dans le parcours normal.
+     */
+    @Test
+    void playerFacingFieldsUseTheGuidedStyleComponentInEveryFamily() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        for (String kind : new String[] {"quest", "dialogue", "story"}) {
+            String page = get("/ai/studio?kind=" + kind).body();
+            assertTrue(page.contains("data-stylefield"),
+                    "éditeur de texte stylé absent de la famille " + kind);
+        }
+    }
+
+    /**
+     * Une génération sans intention ne part pas : rien n'est appelé, rien n'est enregistré, et le
+     * message est celui de la famille concernée.
+     */
+    @Test
+    void anEmptyIntentIsRefusedPerFamily() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        String token = csrf(get("/ai/studio?kind=dialogue").body());
+        String body = post("/ai/studio", "kind=DIALOGUE&intent=&provider=anthropic&_csrf=" + token)
+                .body();
+
+        assertTrue(body.contains("conversation"), "le message doit parler de la conversation");
+        assertFalse(body.contains("Proposition de l'IA"), "aucun appel ne doit avoir eu lieu");
     }
 
     // ---- Non-divulgation de la clé -------------------------------------------------------------

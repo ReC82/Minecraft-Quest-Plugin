@@ -1,8 +1,8 @@
 package com.lodygames.rpgquest.panel.web;
 
 import com.lodygames.rpgquest.panel.ai.AiProvider;
-import com.lodygames.rpgquest.panel.ai.AiQuestStudio;
-import com.lodygames.rpgquest.panel.ai.QuestPromptBuilder;
+import com.lodygames.rpgquest.panel.ai.AiContentStudio;
+import com.lodygames.rpgquest.panel.ai.ContentPromptBuilder;
 import com.lodygames.rpgquest.panel.content.ContentPackImport;
 import com.lodygames.rpgquest.panel.content.Diagnostic;
 import com.lodygames.rpgquest.panel.content.RefData;
@@ -10,8 +10,8 @@ import com.lodygames.rpgquest.panel.http.Http;
 import java.util.List;
 
 /**
- * Atelier « Créer avec une IA » (issue #146) : une page séparée, dédiée à la génération d'<strong>une
- * quête</strong>.
+ * Atelier « Créer avec une IA » (issue #146) : une page séparée, dédiée à la génération d'<strong>un
+ * seul élément</strong> à la fois — une quête, un dialogue ou une story.
  *
  * <p>L'administrateur ne remplit qu'un formulaire en français. Le contrat de contenu, le schéma, les
  * types réellement supportés et les références réellement disponibles sont joints automatiquement —
@@ -22,22 +22,30 @@ import java.util.List;
  * Il n'existe donc qu'un seul chemin d'écriture dans le panel, et l'IA n'en obtient aucun
  * raccourci.</p>
  *
- * <p><strong>Texte stylé</strong> : le champ « titre exact souhaité » est du texte destiné au
- * joueur ; il utilise donc le composant guidé partagé (palette, styles, aperçu), comme partout
- * ailleurs. Aucune balise MiniMessage n'est demandée dans le parcours normal.</p>
+ * <p><strong>Texte stylé</strong> : tout champ destiné au joueur — titre de quête, titre de story,
+ * nom affiché du locuteur — utilise le composant guidé partagé (palette, styles, aperçu), comme
+ * partout ailleurs. Aucune balise MiniMessage n'est demandée dans le parcours normal.</p>
+ *
+ * <p>Le choix de la famille se fait par un lien, donc par un GET : la politique de sécurité du
+ * panel interdit le JavaScript en ligne, et un sélecteur qui échangerait le formulaire côté client
+ * exigerait un script. Un lien est aussi partageable et revient par l'historique.</p>
  */
 public final class AiStudioPages {
 
     private AiStudioPages() {
     }
 
-    public static String render(List<AiProvider> usable, QuestPromptBuilder.QuestRequest form,
-                                String selectedProvider, AiQuestStudio.Generation generation,
+    public static String render(List<AiProvider> usable, ContentPromptBuilder.Kind kind,
+                                ContentPromptBuilder.QuestRequest questForm,
+                                ContentPromptBuilder.DialogueRequest dialogueForm,
+                                ContentPromptBuilder.StoryRequest storyForm,
+                                String selectedProvider, AiContentStudio.Generation generation,
                                 RefData refs, boolean canImport, String error) {
+        ContentPromptBuilder.Kind k = kind == null ? ContentPromptBuilder.Kind.QUEST : kind;
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("gift", "Créer avec une IA",
-                "Décrire une quête en français. L'IA propose, les validateurs réels tranchent, "
-                        + "et rien n'est enregistré sans votre confirmation.", ""));
+                "Décrire ce que vous voulez, en français. L'IA propose, les validateurs réels "
+                        + "tranchent, et rien n'est enregistré sans votre confirmation.", ""));
 
         if (error != null && !error.isBlank()) {
             sb.append(Ui.banner("error", Http.esc(error)));
@@ -50,7 +58,12 @@ public final class AiStudioPages {
             return sb.toString();
         }
 
-        sb.append(formCard(usable, form, selectedProvider, refs));
+        sb.append(kindCard(k));
+        sb.append(switch (k) {
+            case QUEST -> questCard(usable, questForm, selectedProvider, refs);
+            case DIALOGUE -> dialogueCard(usable, dialogueForm, selectedProvider, refs);
+            case STORY -> storyCard(usable, storyForm, selectedProvider, refs);
+        });
         if (generation != null) {
             sb.append(resultCard(generation, canImport));
         }
@@ -58,13 +71,44 @@ public final class AiStudioPages {
         return sb.toString();
     }
 
+    // ---- Choix de la famille -------------------------------------------------------------------
+
+    /**
+     * Une famille à la fois, volontairement. Demander « une quête, son dialogue et une story » dans
+     * un seul appel produit un pack dont une partie est bonne et une autre refusée, et il n'existe
+     * aucun moyen simple de ne corriger que la mauvaise. Un élément par appel garde chaque échec
+     * petit, et chaque correction ciblée.
+     */
+    private static String kindCard(ContentPromptBuilder.Kind current) {
+        StringBuilder sb = new StringBuilder("<section class=\"card\">");
+        sb.append(Ui.sectionTitle("docs", "1. Que voulez-vous créer ?"));
+        sb.append("<div class=\"btnrow\">");
+        sb.append(kindLink(ContentPromptBuilder.Kind.QUEST, current, "quests", "Une quête"));
+        sb.append(kindLink(ContentPromptBuilder.Kind.DIALOGUE, current, "dialogues", "Un dialogue"));
+        sb.append(kindLink(ContentPromptBuilder.Kind.STORY, current, "stories", "Une story"));
+        sb.append("</div>");
+        sb.append("<p class=\"field-help\">Un seul élément par demande : un échec reste petit, et "
+                + "une correction reste ciblée. Pour une quête <em>et</em> son dialogue, faites deux "
+                + "demandes — la seconde pourra citer la première, qui existera déjà.</p>");
+        return sb.append("</section>").toString();
+    }
+
+    private static String kindLink(ContentPromptBuilder.Kind kind, ContentPromptBuilder.Kind current,
+                                   String icon, String label) {
+        boolean active = kind == current;
+        return "<a class=\"btn" + (active ? "" : " secondary") + "\" href=\"/ai/studio?kind="
+                + kind.name().toLowerCase(java.util.Locale.ROOT) + "\""
+                + (active ? " aria-current=\"page\"" : "") + ">"
+                + Icons.icon(icon) + Http.esc(label) + "</a>";
+    }
+
     // ---- Formulaire ----------------------------------------------------------------------------
 
-    private static String formCard(List<AiProvider> usable, QuestPromptBuilder.QuestRequest f,
-                                   String selectedProvider, RefData refs) {
+    private static String questCard(List<AiProvider> usable, ContentPromptBuilder.QuestRequest f,
+                                    String selectedProvider, RefData refs) {
         StringBuilder sb = new StringBuilder("<section class=\"card\">");
-        sb.append(Ui.sectionTitle("gift", "1. Décrire la quête"));
-        sb.append("<form method=\"post\" action=\"/ai/studio\" class=\"editor\" novalidate>%CSRF%");
+        sb.append(Ui.sectionTitle("quests", "2. Décrire la quête"));
+        sb.append(openForm(ContentPromptBuilder.Kind.QUEST));
 
         sb.append("<div class=\"form-grid\">");
         sb.append("<div class=\"field full\"><label for=\"f-intent\">Ce que la quête doit raconter "
@@ -115,7 +159,151 @@ public final class AiStudioPages {
                 .append(f != null && f.repeatable() ? " checked" : "")
                 .append("> Quête répétable</label></div>");
 
-        sb.append("<div class=\"field\"><label for=\"f-provider\">Fournisseur</label>");
+        sb.append(providerField(usable, selectedProvider));
+        sb.append("</div>");
+        sb.append(submitRow());
+        sb.append("</form>");
+        sb.append(ContentEditorPages.sharedDatalists(refs, false));
+        return sb.append("</section>").toString();
+    }
+
+    // ---- Formulaire : dialogue -----------------------------------------------------------------
+
+    /**
+     * Le dialogue a sa propre liste de consignes, parce qu'un dialogue ne se décrit pas comme une
+     * quête : ce qui compte est le PNJ porteur, le ton, et la quête que la conversation articule.
+     */
+    private static String dialogueCard(List<AiProvider> usable,
+                                       ContentPromptBuilder.DialogueRequest f,
+                                       String selectedProvider, RefData refs) {
+        StringBuilder sb = new StringBuilder("<section class=\"card\">");
+        sb.append(Ui.sectionTitle("dialogues", "2. Décrire la conversation"));
+        sb.append(openForm(ContentPromptBuilder.Kind.DIALOGUE));
+
+        sb.append("<div class=\"form-grid\">");
+        sb.append("<div class=\"field full\"><label for=\"f-intent\">Ce que la conversation doit "
+                + "raconter ou permettre <span aria-hidden=\"true\">*</span></label>");
+        sb.append("<textarea id=\"f-intent\" name=\"intent\" rows=\"4\" placeholder=\"Ex. : le "
+                + "Guide accueille le joueur, lui propose la quête des mines, et s'il l'a déjà "
+                + "terminée le félicite au lieu de la reproposer.\">")
+                .append(Http.esc(f == null ? "" : f.intent())).append("</textarea>");
+        sb.append("<p class=\"field-help\">Décrivez aussi les cas de figure : « s'il a déjà… », "
+                + "« s'il n'a pas assez de… ». Ce sont eux qui deviennent des conditions, et c'est "
+                + "ce qu'on oublie le plus souvent de demander.</p></div>");
+
+        sb.append(select("f-dialogueId", "dialogueId", "PNJ porteur du dialogue",
+                f == null ? "" : f.dialogueId(), "dl-npc",
+                "L'identifiant du dialogue est celui du PNJ : c'est la convention du moteur. "
+                        + "Laisser vide oblige l'IA à deviner."));
+        // Le nom du locuteur est vu par le joueur : éditeur guidé, jamais de balise à taper.
+        sb.append("<div class=\"full\">").append(StyleField.render("speaker", "ai-speaker",
+                "Nom affiché du locuteur (facultatif)", f == null ? "" : f.speaker(), false,
+                "Ce que le joueur lit avant la réplique. Choisissez la couleur et les styles ici ; "
+                + "l'IA le reprendra tel quel.", false, false)).append("</div>");
+        sb.append(text("f-tone", "tone", "Ton de la conversation", f == null ? "" : f.tone(),
+                "bourru, solennel, inquiet…",
+                "Intention éditoriale : sert à écrire les répliques, ce n'est pas une mécanique."));
+        sb.append(number("f-nodeCount", "nodeCount", "Nombre de nœuds",
+                f == null ? 0 : f.nodeCount(), "0 = l'IA décide. Maximum 12.", 12));
+        sb.append(select("f-quest", "quest", "Quête concernée", f == null ? "" : f.quest(),
+                "dl-quest",
+                "Quête que la conversation propose ou valide. Elle doit déjà exister : un dialogue "
+                        + "ne crée pas de quête."));
+
+        sb.append("<div class=\"field full\"><label for=\"f-constraints\">Contraintes "
+                + "supplémentaires</label>");
+        sb.append("<textarea id=\"f-constraints\" name=\"constraints\" rows=\"2\" placeholder=\"Ex. : "
+                + "ne jamais donner d'objet directement, toujours laisser une porte de sortie.\">")
+                .append(Http.esc(f == null ? "" : f.constraints())).append("</textarea></div>");
+
+        sb.append(providerField(usable, selectedProvider));
+        sb.append("</div>");
+        sb.append(submitRow());
+        sb.append("</form>");
+        sb.append(ContentEditorPages.sharedDatalists(refs, false));
+        return sb.append("</section>").toString();
+    }
+
+    // ---- Formulaire : story --------------------------------------------------------------------
+
+    /**
+     * Une story n'invente rien : elle ordonne des quêtes qui existent. Le formulaire le dit, et la
+     * liste des quêtes réellement disponibles est juste à côté du champ.
+     */
+    private static String storyCard(List<AiProvider> usable, ContentPromptBuilder.StoryRequest f,
+                                    String selectedProvider, RefData refs) {
+        StringBuilder sb = new StringBuilder("<section class=\"card\">");
+        sb.append(Ui.sectionTitle("stories", "2. Décrire l'enchaînement"));
+        sb.append(openForm(ContentPromptBuilder.Kind.STORY));
+
+        boolean noQuests = refs == null || !refs.questsKnown() || refs.quests().isEmpty();
+        if (noQuests) {
+            sb.append(Ui.banner("warning",
+                    "Aucun relevé de quêtes n'est disponible. Une story ne peut citer que des "
+                    + "quêtes existantes : sans ce relevé, la proposition sera presque sûrement "
+                    + "refusée à l'import. Rafraîchissez les données de l'agent d'abord."));
+        }
+
+        sb.append("<div class=\"form-grid\">");
+        sb.append("<div class=\"field full\"><label for=\"f-intent\">Le fil de l'enchaînement "
+                + "<span aria-hidden=\"true\">*</span></label>");
+        sb.append("<textarea id=\"f-intent\" name=\"intent\" rows=\"4\" placeholder=\"Ex. : "
+                + "l'arrivée d'un nouveau joueur : il rencontre le village, apprend à miner, puis "
+                + "part explorer.\">")
+                .append(Http.esc(f == null ? "" : f.intent())).append("</textarea>");
+        sb.append("<p class=\"field-help\">Une story est un <strong>ordre de quêtes existantes</strong>. "
+                + "Elle ne crée ni objectif ni récompense : si une quête manque, elle sera signalée "
+                + "comme dépendance manquante plutôt qu'inventée.</p></div>");
+
+        sb.append("<div class=\"field full\"><label for=\"f-quests\">Quêtes à enchaîner</label>");
+        sb.append("<textarea id=\"f-quests\" name=\"quests\" rows=\"3\" placeholder=\"")
+                .append("rpgquest:premiers_pas, rpgquest:mines_oubliees\">")
+                .append(Http.esc(f == null ? "" : f.quests())).append("</textarea>");
+        sb.append("<p class=\"field-help\">Une par ligne ou séparées par des virgules, dans "
+                + "l'ordre de progression. Vide = l'IA choisit parmi les quêtes existantes. ");
+        if (!noQuests) {
+            List<String> all = refs.quests();
+            List<String> shown = all.size() > 20 ? all.subList(0, 20) : all;
+            sb.append("Disponibles : ").append(Http.esc(String.join(", ", shown)));
+            if (all.size() > shown.size()) {
+                sb.append(" … (+").append(all.size() - shown.size()).append(')');
+            }
+        }
+        sb.append("</p></div>");
+
+        sb.append(text("f-storyId", "storyId", "Identifiant souhaité", f == null ? "" : f.storyId(),
+                "premiers_pas", "Vide = l'IA en propose un. Minuscules, chiffres et « _ »."));
+        // Le titre est vu par le joueur : même composant guidé que partout ailleurs.
+        sb.append("<div class=\"full\">").append(StyleField.render("title", "ai-story-title",
+                "Titre exact souhaité (facultatif)", f == null ? "" : f.title(), false,
+                "Laisser vide pour que l'IA propose un titre. Couleur et styles se choisissent ici, "
+                + "sans écrire de code.", false, false)).append("</div>");
+
+        sb.append("<div class=\"field full\"><label for=\"f-constraints\">Contraintes "
+                + "supplémentaires</label>");
+        sb.append("<textarea id=\"f-constraints\" name=\"constraints\" rows=\"2\" placeholder=\"Ex. : "
+                + "rester jouable en solo, pas plus de quatre quêtes.\">")
+                .append(Http.esc(f == null ? "" : f.constraints())).append("</textarea></div>");
+
+        sb.append(providerField(usable, selectedProvider));
+        sb.append("</div>");
+        sb.append(submitRow());
+        sb.append("</form>");
+        sb.append(ContentEditorPages.sharedDatalists(refs, false));
+        return sb.append("</section>").toString();
+    }
+
+    // ---- Éléments partagés des trois formulaires -----------------------------------------------
+
+    /** La famille voyage en champ caché : le POST ne dépend donc jamais de l'URL d'où il vient. */
+    private static String openForm(ContentPromptBuilder.Kind kind) {
+        return "<form method=\"post\" action=\"/ai/studio\" class=\"editor\" novalidate>%CSRF%"
+                + "<input type=\"hidden\" name=\"kind\" value=\"" + kind.name() + "\">";
+    }
+
+    private static String providerField(List<AiProvider> usable, String selectedProvider) {
+        StringBuilder sb = new StringBuilder(
+                "<div class=\"field\"><label for=\"f-provider\">Fournisseur</label>");
         sb.append("<select id=\"f-provider\" name=\"provider\">");
         for (AiProvider p : usable) {
             sb.append("<option value=\"").append(Http.esc(p.id())).append("\"")
@@ -124,23 +312,22 @@ public final class AiStudioPages {
         }
         sb.append("</select><p class=\"field-help\">Seuls les fournisseurs activés et pourvus d'une "
                 + "clé apparaissent ici.</p></div>");
-        sb.append("</div>");
+        return sb.toString();
+    }
 
-        sb.append("<div class=\"btnrow\"><button class=\"btn\" type=\"submit\" name=\"_action\" "
-                + "value=\"generate\">").append(Icons.icon("gift"))
-                .append("Demander une proposition</button></div>");
-        sb.append("<p class=\"field-help\">L'appel part du serveur du panel, jamais de votre "
-                + "navigateur. Il peut prendre une minute.</p>");
-        sb.append("</form>");
-        sb.append(ContentEditorPages.sharedDatalists(refs, false));
-        return sb.append("</section>").toString();
+    private static String submitRow() {
+        return "<div class=\"btnrow\"><button class=\"btn\" type=\"submit\" name=\"_action\" "
+                + "value=\"generate\">" + Icons.icon("gift")
+                + "Demander une proposition</button></div>"
+                + "<p class=\"field-help\">L'appel part du serveur du panel, jamais de votre "
+                + "navigateur. Il peut prendre une minute.</p>";
     }
 
     // ---- Résultat ------------------------------------------------------------------------------
 
-    private static String resultCard(AiQuestStudio.Generation g, boolean canImport) {
+    private static String resultCard(AiContentStudio.Generation g, boolean canImport) {
         StringBuilder sb = new StringBuilder("<section class=\"card\">");
-        sb.append(Ui.sectionTitle("check", "2. Proposition de l'IA"));
+        sb.append(Ui.sectionTitle("check", "3. Proposition de l'IA"));
 
         if (!g.callOk()) {
             sb.append(Ui.banner("error", "L'appel a échoué : " + Http.esc(g.error())
@@ -148,7 +335,8 @@ public final class AiStudioPages {
             return sb.append("</section>").toString();
         }
 
-        sb.append("<p class=\"muted\">").append(Http.esc(g.providerLabel()));
+        sb.append("<p class=\"muted\">").append(Http.esc(g.kind().label())).append(" &middot; ")
+                .append(Http.esc(g.providerLabel()));
         if (g.model() != null) {
             sb.append(" &middot; modèle <code>").append(Http.esc(g.model())).append("</code>");
         }
@@ -200,6 +388,8 @@ public final class AiStudioPages {
                     + "recevra sa propre sortie et les erreurs exactes."));
             if (g.correctable()) {
                 sb.append("<form method=\"post\" action=\"/ai/studio\" class=\"actform\">%CSRF%");
+                sb.append("<input type=\"hidden\" name=\"kind\" value=\"")
+                        .append(g.kind().name()).append("\">");
                 sb.append("<input type=\"hidden\" name=\"provider\" value=\"")
                         .append(Http.esc(g.providerId())).append("\">");
                 sb.append("<input type=\"hidden\" name=\"previousYaml\" value=\"")
@@ -257,7 +447,7 @@ public final class AiStudioPages {
     }
 
     /** La réponse brute, repliée : utile quand l'IA a mal répondu, inutile le reste du temps. */
-    private static String rawBlock(AiQuestStudio.Generation g) {
+    private static String rawBlock(AiContentStudio.Generation g) {
         if (g.rawResponse() == null || g.rawResponse().isBlank()) {
             return "";
         }
@@ -284,9 +474,14 @@ public final class AiStudioPages {
     }
 
     private static String number(String id, String name, String label, int value, String help) {
+        return number(id, name, label, value, help, 10);
+    }
+
+    private static String number(String id, String name, String label, int value, String help,
+                                 int max) {
         return "<div class=\"field\"><label for=\"" + id + "\">" + Http.esc(label) + "</label>"
-                + "<input id=\"" + id + "\" type=\"number\" min=\"0\" max=\"10\" name=\"" + name
-                + "\" value=\"" + value + "\">"
+                + "<input id=\"" + id + "\" type=\"number\" min=\"0\" max=\"" + max
+                + "\" name=\"" + name + "\" value=\"" + value + "\">"
                 + "<p class=\"field-help\">" + Http.esc(help) + "</p></div>";
     }
 

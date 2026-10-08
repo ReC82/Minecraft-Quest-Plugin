@@ -57,6 +57,24 @@ public enum Permission {
      */
     CONTENT_IMPORT,
     /**
+     * Publier une ressource de contenu vers le serveur DEV (issue #47).
+     *
+     * <p>Permission <strong>dédiée</strong>, et c'est le point du ticket : enregistrer dans la
+     * source et déployer sur DEV ne sont pas le même geste, donc pas le même droit. Un éditeur de
+     * contenu peut écrire et relire ses quêtes sans pour autant pouvoir changer ce qui tourne sur le
+     * serveur de test.</p>
+     */
+    CONTENT_PUBLISH,
+    /**
+     * Défaire une publication (issue #47) : restaurer la version précédente, ou retirer une
+     * ressource nouvellement publiée.
+     *
+     * <p>Séparée de {@link #CONTENT_PUBLISH} pour la même raison que {@code BUILDING_ROLLBACK}
+     * l'est de {@code BUILDING_PLACE} : revenir en arrière réécrit l'état du serveur, et pouvoir
+     * publier n'implique pas pouvoir défaire.</p>
+     */
+    CONTENT_ROLLBACK,
+    /**
      * Supprimer une quête ou une story (issue #194). Permission <strong>dédiée</strong>, et
      * volontairement absente du rôle « Éditeur de contenu » : écrire et corriger du contenu est un
      * geste réversible, le détruire ne l'est pas de la même façon. Un éditeur peut vider ou

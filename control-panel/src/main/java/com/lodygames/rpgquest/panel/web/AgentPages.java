@@ -1206,7 +1206,19 @@ public final class AgentPages {
             questBar += compactRefresh(session, agentId, "item.catalogs", "Objets Minecraft",
                     itemsLoaded ? "btn-outline-secondary" : "btn-warning", "/quests");
         }
+        // Issue #47 : l'état DEV du contenu. En orange tant qu'il manque, parce que sans lui chaque
+        // fiche doit répondre « état inconnu » — ce qui est honnête mais inutilisable.
+        boolean devKnown = devContentIndex(agentId).available();
+        if (perms.can(session.effective(), Permission.CONTENT_READ)) {
+            questBar += compactRefresh(session, agentId, "content.dev.state", "État DEV",
+                    devKnown ? "btn-outline-secondary" : "btn-warning", "/quests");
+        }
         sb.append(listCatbar("Catalogue", questBar));
+        if (!devKnown) {
+            sb.append(Ui.banner("warn", "L'état du contenu sur le serveur DEV n'est pas encore "
+                    + "relevé : chaque fiche affiche « état inconnu » et ne peut pas proposer de "
+                    + "publier. Cliquer sur <strong>« État DEV »</strong> pour le relever."));
+        }
         if (!itemsLoaded) {
             sb.append(Ui.banner("warn", "Le catalogue des objets Minecraft n'est pas encore chargé : "
                     + "les listes <strong>Icône</strong> et <strong>Récompense d'objet</strong> de "
@@ -1239,7 +1251,8 @@ public final class AgentPages {
             int qi = 0;
             for (MergedRow mr : merged) {
                 sb.append(renderQuestAccordionItem(mr.data(), qi++, questTitles, knownQuestKeys, knownNpcKeys,
-                        canEditQuests, canDeleteContent, mr.state()));
+                        canEditQuests, canDeleteContent, mr.state(), session, agentId,
+                        devContentIndex(agentId)));
             }
             sb.append("</div>");
         }
@@ -1268,7 +1281,9 @@ public final class AgentPages {
      */
     private String renderQuestAccordionItem(Map<String, Object> qd, int idx, Map<String, String> questTitles,
                                             java.util.Set<String> knownQuestKeys, java.util.Set<String> knownNpcKeys,
-                                            boolean canEdit, boolean canDelete, CatalogState state) {
+                                            boolean canEdit, boolean canDelete, CatalogState state,
+                                            Session session, String agentId,
+                                            com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex) {
         String id = str(qd.get("id"));
         String title = str(qd.get("title"));
         String category = str(qd.get("category"));
@@ -1434,6 +1449,15 @@ public final class AgentPages {
             }
         }
 
+        // ---- PUBLICATION SUR DEV (issue #47) ----
+        // L'identifiant « nu » sert de nom de fichier ; l'identifiant déclaré (avec son préfixe)
+        // est celui que le moteur doit porter, et c'est lui qu'on vérifie après rechargement.
+        String questSlug = QuestYaml.plainId(id);
+        if (!questSlug.isEmpty()) {
+            sb.append(publishSection(session, agentId, "quests", questSlug, id, devIndex,
+                    "/quests"));
+        }
+
         // ---- ACTIONS ----
         if (canEdit || canDelete) {
             String eslug = editSlug(id);
@@ -1527,7 +1551,10 @@ public final class AgentPages {
 
         sb.append("<h2>Catalogue</h2>");
         String storyBar = compactRefresh(session, agentId, "story.list", "Stories", "btn-outline-primary", "/stories")
-                + compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-secondary", "/stories");
+                + compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-secondary", "/stories")
+                + compactRefresh(session, agentId, "content.dev.state", "État DEV",
+                        devContentIndex(agentId).available() ? "btn-outline-secondary" : "btn-warning",
+                        "/stories");
         sb.append(listCatbar("Catalogue", storyBar));
         List<Object> runtimeStories = latestDetails(agentId, "story.list").map(d -> asList(d.get("stories"))).orElse(List.of());
         List<MergedRow> merged = mergeStoryRows(runtimeStories);
@@ -1568,7 +1595,8 @@ public final class AgentPages {
             int si = 0;
             for (MergedRow mr : merged) {
                 sb.append(renderStoryAccordionItem(mr.data(), si++, questTitles, storyQuestKeys,
-                    canEditStories, canDeleteStories, mr.state()));
+                    canEditStories, canDeleteStories, mr.state(), session, agentId,
+                    devContentIndex(agentId)));
             }
             sb.append("</div>");
         }
@@ -1594,7 +1622,9 @@ public final class AgentPages {
      */
     private String renderStoryAccordionItem(Map<String, Object> sd, int idx, Map<String, String> questTitles,
                                             java.util.Set<String> storyQuestKeys, boolean canEdit,
-                                            boolean canDelete, CatalogState state) {
+                                            boolean canDelete, CatalogState state,
+                                            Session session, String agentId,
+                                            com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex) {
         String id = str(sd.get("id"));
         String title = str(sd.get("title"));
         List<Object> steps = asList(sd.get("stepQuestIds"));
@@ -1677,6 +1707,13 @@ public final class AgentPages {
             for (String sid : unknownSteps) {
                 sb.append(DiagnosticHelp.render("STORY_QUEST_UNKNOWN", "warning", "", human, sid, ""));
             }
+        }
+
+        // ---- PUBLICATION SUR DEV (issue #47) ----
+        String storySlug = plainKey(id);
+        if (!storySlug.isEmpty()) {
+            sb.append(publishSection(session, agentId, "stories", storySlug, id, devIndex,
+                    "/stories"));
         }
 
         // ---- ACTIONS ----
@@ -4533,6 +4570,9 @@ public final class AgentPages {
         String dlgBar = compactRefresh(session, agentId, "dialogue.list", "Dialogues", "btn-outline-primary", "/dialogues");
         if (perms.can(session.effective(), Permission.CONTENT_READ)) {
             dlgBar += compactRefresh(session, agentId, "quest.list", "Quêtes", "btn-outline-secondary", "/dialogues");
+            dlgBar += compactRefresh(session, agentId, "content.dev.state", "État DEV",
+                    devContentIndex(agentId).available() ? "btn-outline-secondary" : "btn-warning",
+                    "/dialogues");
         }
         if (perms.can(session.effective(), Permission.NPC_READ)) {
             dlgBar += compactRefresh(session, agentId, "npc.list", "PNJ", "btn-outline-secondary", "/dialogues");
@@ -4623,7 +4663,8 @@ public final class AgentPages {
             sb.append("<div class=\"accordion npc-accordion\" id=\"dialogues-accordion\">");
             int di = 0;
             for (MergedRow mr : merged) {
-                sb.append(renderDialogueAccordionItem(mr.data(), di++, questTitles, session, agentId, canWrite, mr.state()));
+                sb.append(renderDialogueAccordionItem(mr.data(), di++, questTitles, session, agentId,
+                        canWrite, mr.state(), devContentIndex(agentId)));
             }
             sb.append("</div>");
         }
@@ -4759,7 +4800,8 @@ public final class AgentPages {
      * {@link DiagnosticHelp} (message humain, conséquence, action, lien doc précis).
      */
     private String renderDialogueAccordionItem(Map<String, Object> dg, int idx, Map<String, String> questTitles,
-                                               Session session, String agentId, boolean canWrite, CatalogState state) {
+                                               Session session, String agentId, boolean canWrite, CatalogState state,
+                                               com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex) {
         String id = str(dg.get("id"));
         String key = str(dg.get("key"));
         String start = str(dg.get("startNodeId"));
@@ -4880,6 +4922,25 @@ public final class AgentPages {
             sb.append(dialogueNodeCard(asMap(o), id, nodeIds, questTitles, session, agentId, canEdit));
         }
         sb.append("</div></details>");
+
+        // ---- PUBLICATION SUR DEV (issue #47) ----
+
+        // La publication copie le fichier source TEL QUEL : elle ne passe jamais par MiniYaml,
+
+        // donc elle ne peut pas normaliser un scalaire replié au passage. C'est l'éditeur guidé
+
+        // qui réécrit le YAML, et c'est lui qui porte cette dette — pas le transfert.
+
+        String dialogueSlug = plainKey(key.isEmpty() ? id : key);
+
+        if (!dialogueSlug.isEmpty()) {
+
+            sb.append(publishSection(session, agentId, "dialogues", dialogueSlug,
+
+                    id.isEmpty() ? dialogueSlug : id, devIndex, "/dialogues"));
+
+        }
+
 
         // ---- ACTIONS ----
         if (canEdit) {
@@ -5486,6 +5547,207 @@ public final class AgentPages {
         return store.latestSuccessfulActionOfType(agentId, type)
                 .map(row -> com.lodygames.rpgquest.panel.agent.AgentLiveness.ageHuman(
                         row.completedAt() != null ? row.completedAt() : row.createdAt(), Instant.now()));
+    }
+
+    /**
+     * La section « Publication sur DEV » d'une fiche de contenu (issue #47).
+     *
+     * <h2>Enregistrer et publier sont deux gestes, et l'écran doit le montrer</h2>
+     *
+     * <p>C'est le cœur de l'UX du ticket. L'état est calculé par
+     * {@link com.lodygames.rpgquest.panel.publish.PublishState}, partagé par toutes les familles :
+     * une seule fonction, donc un seul vocabulaire, donc aucune page qui dirait « Synchronisé » là
+     * où une autre dirait « Différent ».</p>
+     *
+     * <p>Le formulaire n'envoie <strong>ni chemin ni contenu</strong> : seulement la famille,
+     * l'identifiant et les deux empreintes vues à l'écran. Le panel lit la source lui-même, et le
+     * serveur résout le fichier depuis sa liste blanche.</p>
+     */
+    private String publishSection(Session session, String agentId, String kind, String slug,
+                                  String declaredId,
+                                  com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex,
+                                  String returnPath) {
+        boolean canPublish = perms.can(session.effective(), Permission.CONTENT_PUBLISH);
+        boolean canRollback = perms.can(session.effective(), Permission.CONTENT_ROLLBACK);
+        String sourceSha = sourceCatalog.sha(kind, slug).orElse("");
+        Optional<Map<String, Object>> lastPublish = lastPublishOf(agentId, kind, slug);
+        String lastDevSha = lastPublish.map(d -> str(d.get("devShaAfter"))).orElse("");
+        String backupPath = lastPublish.map(d -> str(d.get("backupPath"))).orElse("");
+
+        var state = devIndex.stateOf(kind, slug, declaredId, sourceSha,
+                sourceCatalog.available(), lastDevSha);
+        String devSha = devIndex.devSha(kind, slug);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(detailSection("deploy", "Publication sur DEV"));
+        sb.append("<p class=\"publish-state tone-").append(state.tone()).append("\">");
+        sb.append("<span class=\"badge text-bg-").append(toneClass(state.tone())).append("\">")
+                .append(Http.esc(state.label())).append("</span> ");
+        sb.append(Http.esc(state.explanation())).append("</p>");
+
+        sb.append("<dl class=\"npc-dl publish-dl\">");
+        dlRow(sb, "Source", sourceSha.isEmpty()
+                ? "<span class=\"muted\">absente</span>"
+                : "<code class=\"tid\">" + Http.esc(shortSha(sourceSha)) + "</code>");
+        dlRow(sb, "Serveur DEV", devIndex.available()
+                ? (devSha.isEmpty() ? "<span class=\"muted\">absente</span>"
+                        : "<code class=\"tid\">" + Http.esc(shortSha(devSha)) + "</code>")
+                : "<span class=\"muted\">relevé non chargé</span>");
+        dlRow(sb, "Chargée par le moteur", devIndex.available()
+                ? (devIndex.runtimeLoaded(kind, declaredId.isEmpty() ? slug : declaredId)
+                        ? "oui" : "non")
+                : "<span class=\"muted\">inconnu</span>");
+        if (lastPublish.isPresent()) {
+            dlRow(sb, "Dernière publication",
+                    Http.esc(str(lastPublish.get().get("verifiedAt"))) + " — "
+                            + Http.esc(str(lastPublish.get().get("code"))));
+        }
+        sb.append("</dl>");
+
+        if (!devIndex.available()) {
+            sb.append("<p class=\"field-help\">Relevez l'état du serveur pour savoir où en est "
+                    + "cette ressource.</p>");
+            sb.append(compactRefresh(session, agentId, "content.dev.state",
+                    "Analyser l'état DEV", "btn-outline-primary", returnPath));
+            return sb.toString();
+        }
+
+        if (sourceSha.isEmpty()) {
+            sb.append("<p class=\"field-help\">Cette ressource n'existe pas dans la source "
+                    + "éditable : il n'y a rien à publier depuis le panel.</p>");
+            return sb.toString();
+        }
+
+        if (state == com.lodygames.rpgquest.panel.publish.PublishState.CONFLICT) {
+            sb.append(Ui.banner("error", "Le fichier DEV a été modifié hors du panel. "
+                    + "Publier écraserait cette modification — regardez les différences avant de "
+                    + "décider."));
+        }
+
+        if (state.publishable() || state == com.lodygames.rpgquest.panel.publish.PublishState.CONFLICT) {
+            if (!canPublish) {
+                sb.append("<p class=\"field-help\">Vous n'avez pas le droit de publier sur "
+                        + "DEV.</p>");
+            } else {
+                sb.append("<p class=\"field-help\">Publier copie <strong>ce seul fichier</strong> "
+                        + "sur le serveur, recharge la famille concernée, puis vérifie que le moteur "
+                        + "la voit. Aucun build, aucun redémarrage.</p>");
+                sb.append(formStart(session, agentId, "content.publish", returnPath, ""));
+                sb.append("<input type=\"hidden\" name=\"kind\" value=\"")
+                        .append(Http.esc(kind)).append("\">");
+                sb.append("<input type=\"hidden\" name=\"id\" value=\"")
+                        .append(Http.esc(slug)).append("\">");
+                // Les deux empreintes VUES À L'ÉCRAN voyagent avec le formulaire : si l'une des deux
+                // a changé entre-temps, la publication est refusée au lieu d'écraser.
+                sb.append("<input type=\"hidden\" name=\"expected_source_sha\" value=\"")
+                        .append(Http.esc(sourceSha)).append("\">");
+                sb.append("<input type=\"hidden\" name=\"expected_dev_sha\" value=\"")
+                        .append(Http.esc(devSha)).append("\">");
+                sb.append(mutationConsent("content.publish", "", null));
+                sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" "
+                        + "type=\"submit\">").append(Icons.icon("deploy"))
+                        .append(devSha.isEmpty() ? "Publier sur DEV" : "Republier sur DEV")
+                        .append("</button></div></form>");
+            }
+        }
+
+        // Retour arrière : seulement si une publication a RÉELLEMENT eu lieu depuis le panel.
+        if (lastPublish.isPresent() && canRollback && !devSha.isEmpty()) {
+            boolean restorable = !backupPath.isEmpty();
+            sb.append(detailSection("warning", restorable
+                    ? "Restaurer la version précédente" : "Retirer de DEV"));
+            sb.append("<p class=\"field-help\">").append(restorable
+                    ? "Repose la version sauvegardée avant la dernière publication, puis recharge."
+                    : "Cette ressource a été <strong>créée</strong> par la publication : il n'y a "
+                            + "pas de version précédente. Le retour arrière la retire du serveur.")
+                    .append("</p>");
+            sb.append(formStart(session, agentId, "content.publish.rollback", returnPath, ""));
+            sb.append("<input type=\"hidden\" name=\"kind\" value=\"")
+                    .append(Http.esc(kind)).append("\">");
+            sb.append("<input type=\"hidden\" name=\"id\" value=\"")
+                    .append(Http.esc(slug)).append("\">");
+            if (restorable) {
+                sb.append("<input type=\"hidden\" name=\"backup\" value=\"")
+                        .append(Http.esc(backupPath)).append("\">");
+            }
+            sb.append(mutationConsent("content.publish.rollback", "", null));
+            sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-danger\" "
+                    + "type=\"submit\">").append(Icons.icon("warning"))
+                    .append(restorable ? "Restaurer la version précédente" : "Retirer de DEV")
+                    .append("</button></div></form>");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * L'identifiant « nu », sans préfixe de namespace — c'est aussi le nom de fichier (issue #47).
+     *
+     * <p>Le panel raisonne en slugs, le moteur en {@code rpgquest:<id>}. Un seul endroit fait la
+     * conversion, donc une seule façon de la faire.</p>
+     */
+    private static String plainKey(String id) {
+        String clean = id == null ? "" : id.trim().toLowerCase(java.util.Locale.ROOT);
+        int colon = clean.indexOf(':');
+        return colon < 0 ? clean : clean.substring(colon + 1);
+    }
+
+    /** Les douze premiers caractères d'une empreinte : assez pour comparer à l'œil. */
+    private static String shortSha(String sha) {
+        return sha == null || sha.length() <= 12 ? String.valueOf(sha) : sha.substring(0, 12);
+    }
+
+    private static String toneClass(String tone) {
+        return switch (tone) {
+            case "ok" -> "success";
+            case "warn" -> "warning";
+            case "err" -> "danger";
+            default -> "secondary";
+        };
+    }
+
+    /**
+     * L'état du contenu sur DEV, depuis le dernier relevé {@code content.dev.state} réussi
+     * (issue #47).
+     *
+     * <p>Sans relevé, l'index est indisponible et toutes les ressources tombent en « état inconnu ».
+     * C'est volontaire : affirmer « Source uniquement » sans avoir interrogé le serveur serait
+     * exactement le genre de certitude non fondée que #47 corrige.</p>
+     */
+    public com.lodygames.rpgquest.panel.publish.DevContentIndex devContentIndex(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return com.lodygames.rpgquest.panel.publish.DevContentIndex.unavailable();
+        }
+        return latestDetails(agentId, "content.dev.state")
+                .map(com.lodygames.rpgquest.panel.publish.DevContentIndex::from)
+                .orElseGet(com.lodygames.rpgquest.panel.publish.DevContentIndex::unavailable);
+    }
+
+    /**
+     * Le compte rendu de la dernière publication <strong>de cette ressource</strong>.
+     *
+     * <p>C'est de là que viennent le chemin de sauvegarde (donc la possibilité d'un retour arrière)
+     * et l'empreinte DEV que nous avions laissée — celle qui permet de distinguer « différent parce
+     * que je n'ai pas publié » de « différent parce que quelqu'un d'autre a touché au fichier ».</p>
+     */
+    public Optional<Map<String, Object>> lastPublishOf(String agentId, String kind, String slug) {
+        if (agentId == null || agentId.isBlank()) {
+            return Optional.empty();
+        }
+        for (AgentActionRow row : store.recentActions(agentId, 200)) {
+            if (!"content.publish".equals(row.type())) {
+                continue;
+            }
+            if (!kind.equals(row.params().get("kind")) || !slug.equals(row.params().get("id"))) {
+                continue;
+            }
+            Optional<Map<String, Object>> details = detailsOf(row);
+            // Seule une publication RÉUSSIE fait référence : un conflit n'a rien écrit, donc sa
+            // sauvegarde (inexistante) ne doit pas apparaître comme restaurable.
+            if (details.isPresent() && Boolean.TRUE.equals(details.get().get("ok"))) {
+                return details;
+            }
+        }
+        return Optional.empty();
     }
 
     private Optional<Map<String, Object>> latestDetails(String agentId, String type) {

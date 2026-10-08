@@ -25,9 +25,11 @@ import java.util.Set;
  *   <li>{@code BUILDER} — documentation et informations PNJ / contenu nécessaires au travail de
  *       construction. <strong>Pas</strong> d'accès aux données joueurs, pas d'action serveur.</li>
  *   <li>{@code CONTENT_EDITOR} — lecture et édition guidée des quêtes, stories, dialogues et PNJ
- *       logiques ; brouillons et validation. Pas de déploiement (aucune permission de déploiement
- *       n'existe encore), pas de modération joueur, et <strong>pas de suppression de
- *       contenu</strong> : écrire est réversible, détruire ne l'est pas de la même façon.</li>
+ *       logiques ; brouillons et validation. <strong>Pas de publication sur DEV</strong>
+ *       ({@code CONTENT_PUBLISH}/{@code CONTENT_ROLLBACK}, issue #47) : enregistrer dans la source
+ *       et changer ce qui tourne sur le serveur de test sont deux gestes de portée différente, donc
+ *       deux droits. Pas de modération joueur, et <strong>pas de suppression de contenu</strong> :
+ *       écrire est réversible, détruire ne l'est pas de la même façon.</li>
  *   <li>{@code READ_ONLY} — lecture seule sur les modules explicitement autorisés. Aucune
  *       permission de cette liste ne déclenche de mutation.</li>
  * </ul>
@@ -49,6 +51,9 @@ public enum Role {
             Permission.QUEST_CONTENT_WRITE, Permission.STORY_CONTENT_WRITE,
             Permission.CONTENT_READ, Permission.CONTENT_EXPORT, Permission.CONTENT_IMPORT,
             Permission.CONTENT_DELETE, Permission.NPC_DELETE,
+            // Issue #47 : publier sur DEV et défaire font partie de l'exploitation courante d'un
+            // administrateur, mais restent deux droits distincts de l'écriture de la source.
+            Permission.CONTENT_PUBLISH, Permission.CONTENT_ROLLBACK,
             // Issue #213 : les emplacements de construction font partie de l'exploitation courante.
             Permission.BUILDING_READ, Permission.BUILDING_WRITE, Permission.BUILDING_DELETE,
             // Lot « placement » : poser et restaurer écrivent dans le monde, donc administrateurs

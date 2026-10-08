@@ -2947,12 +2947,101 @@ public final class PanelApp {
                     "Contexte de PNJ incohérent — recharger la page et réessayer."));
             return;
         }
-        String id = agentStore.createAction(agentId, type, v.params(), session.username());
+        // Issue #47 — la publication de contenu est enrichie CÔTÉ SERVEUR : le navigateur n'envoie
+        // qu'une famille, un identifiant et deux empreintes ; c'est le panel qui lit la source et
+        // joint le YAML. Deux raisons, et les deux comptent : le navigateur ne peut donc pas forger
+        // le contenu publié, et il n'a jamais besoin de connaître un chemin.
+        java.util.Map<String, String> outgoing = v.params();
+        if ("content.publish".equals(type)) {
+            PublishEnrichment enriched = enrichPublish(outgoing);
+            if (enriched.error() != null) {
+                audit.record(session.username(), "agent.action.create",
+                        "agent=" + agentId + " type=" + type, "DENIED", enriched.error(), rid);
+                Http.redirect(exchange, withError(returnPath, agentId, null, enriched.error()));
+                return;
+            }
+            outgoing = enriched.params();
+        }
+        String id = agentStore.createAction(agentId, type, outgoing, session.username());
         audit.record(session.username(), "agent.action.create",
-                "agent=" + agentId + " type=" + type + " action=" + id, "PENDING", safeParams(v.params()), rid);
+                "agent=" + agentId + " type=" + type + " action=" + id, "PENDING",
+                safeParams(outgoing), rid);
         LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + agentId
                 + " type=" + type + " action=" + id + " by=" + session.username());
         Http.redirect(exchange, appendContext(returnPath, agentId, v.params().get("player")) + "&toast=" + enc(id));
+    }
+
+    /** Résultat de l'enrichissement d'une publication : des paramètres prêts, ou un refus. */
+    private record PublishEnrichment(java.util.Map<String, String> params, String error) {
+    }
+
+    /**
+     * Joint le YAML de la source à une action {@code content.publish} (issue #47).
+     *
+     * <p>Trois choses se passent ici, et chacune évite un défaut précis :</p>
+     * <ol>
+     *   <li>la source est lue <strong>par le serveur</strong> — le navigateur ne peut donc pas
+     *       publier un contenu qu'il aurait fabriqué, ni désigner un fichier ;</li>
+     *   <li>l'empreinte de la source est <strong>revérifiée</strong> contre celle de l'aperçu : si
+     *       quelqu'un a réenregistré la ressource entre-temps, on refuse. #47 exige la même
+     *       protection des deux côtés, et celle-ci est la moitié qu'on oublie ;</li>
+     *   <li>l'identifiant déclaré dans le YAML est transmis séparément, parce que c'est
+     *       <strong>lui</strong> que le moteur devra porter — vérifier le nom du fichier donnerait
+     *       un faux échec quand les deux diffèrent.</li>
+     * </ol>
+     */
+    private PublishEnrichment enrichPublish(java.util.Map<String, String> params) {
+        String kind = params.get("kind");
+        String slug = params.get("id");
+        String expectedSource = params.getOrDefault("expected_source_sha", "");
+        if (!contentWorkspace.configured()) {
+            return new PublishEnrichment(null,
+                    "Aucun espace de travail source configuré : rien à publier.");
+        }
+        java.util.Optional<ContentWorkspace.ContentFile> file = contentWorkspace.read(kind, slug);
+        if (file.isEmpty()) {
+            return new PublishEnrichment(null,
+                    "La ressource « " + slug + " » n'existe pas dans la source : "
+                            + "enregistrez-la avant de publier.");
+        }
+        if (!expectedSource.equals(file.get().sha256())) {
+            return new PublishEnrichment(null,
+                    "La source a changé depuis votre analyse : relancez-la avant de publier, "
+                            + "pour ne pas publier une version que vous n'avez pas vue.");
+        }
+        java.util.Map<String, String> out = new java.util.LinkedHashMap<>(params);
+        // L'empreinte source a joué son rôle ici : inutile de l'envoyer au serveur de jeu.
+        out.remove("expected_source_sha");
+        out.put("yaml", file.get().text());
+        out.put("expected_id", declaredId(kind, file.get().text(), slug));
+        return new PublishEnrichment(out, null);
+    }
+
+    /**
+     * L'identifiant que le moteur portera, lu dans le YAML.
+     *
+     * <p>Lecture volontairement minimale : la première clé {@code id:} de premier niveau. Une
+     * analyse complète n'apporterait rien — si le YAML est invalide, le rechargement côté serveur
+     * le dira mieux que nous, et c'est lui qui a le dernier mot.</p>
+     */
+    private static String declaredId(String kind, String yaml, String fallback) {
+        for (String line : yaml.split("\\R")) {
+            String trimmed = line.strip();
+            if (trimmed.startsWith("id:")) {
+                String value = trimmed.substring(3).strip();
+                if (value.startsWith("\"") || value.startsWith("'")) {
+                    value = value.substring(1, Math.max(1, value.length() - 1));
+                }
+                if (!value.isEmpty()) {
+                    return value;
+                }
+            }
+            // On ne lit que l'en-tête : un « id: » indenté appartient à une étape ou un nœud.
+            if (!trimmed.isEmpty() && !line.startsWith(" ") && trimmed.endsWith(":")) {
+                break;
+            }
+        }
+        return fallback;
     }
 
     /**

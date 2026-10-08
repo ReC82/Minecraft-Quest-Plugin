@@ -37,6 +37,8 @@ public final class Icons {
             Map.entry("dev", "code-slash"),
             // état serveur / infra
             Map.entry("server", "hdd-rack"),
+            // Issue #47 — publier du contenu vers le serveur DEV.
+            Map.entry("deploy", "cloud-arrow-up"),
             Map.entry("online", "broadcast"),
             Map.entry("offline", "wifi-off"),
             Map.entry("world", "globe2"),

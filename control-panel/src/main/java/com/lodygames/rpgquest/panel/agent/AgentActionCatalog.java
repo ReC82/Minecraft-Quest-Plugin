@@ -37,6 +37,22 @@ public final class AgentActionCatalog {
     private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
     /** Issue #213 : exactement la forme que le serveur attribue à un emplacement. */
     private static final Pattern BUILD_SITE_ID = Pattern.compile("buildsite_[0-9]{1,12}");
+    /** Issue #47 — les seules familles publiables, miroir de {@code content.publish.PublishKind}. */
+    private static final java.util.List<String> PUBLISHABLE_KINDS =
+            java.util.List.of("quests", "stories", "dialogues");
+    /** Identifiant de ressource : aucun séparateur, donc impossible d'en faire un chemin. */
+    private static final Pattern PUBLISH_SLUG = Pattern.compile("[a-z0-9][a-z0-9_-]{0,63}");
+    /** Empreinte SHA-256 hexadécimale, ou vide (= ressource absente). */
+    private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
+    /**
+     * Forme EXACTE d'un chemin de sauvegarde produit par le serveur.
+     *
+     * <p>Jamais un chemin libre : le navigateur ne peut désigner qu'une sauvegarde dont la forme
+     * correspond à celle que le serveur fabrique, et le serveur revérifie de toute façon qu'elle est
+     * confinée à son dossier.</p>
+     */
+    private static final Pattern BACKUP_PATH = Pattern.compile(
+            "content-backups/[0-9a-z]{1,40}/(quests|stories|dialogues)/[a-z0-9][a-z0-9_-]{0,63}\\.yml");
     /** Identifiant de bâtiment de bibliothèque — même forme que le reste du contenu du projet. */
     private static final Pattern BUILDING_ID = Pattern.compile("[a-z0-9][a-z0-9_]{0,63}");
     /** Les quatre orientations cardinales, miroir de {@code Facing} côté plugin. */
@@ -175,6 +191,31 @@ public final class AgentActionCatalog {
 
     /** Lecture ou mutation « classique » : une mutation non annotée reste sensible (comportement historique). */
     /** Identifiant d'emplacement normalisé, ou {@code null} si la saisie n'en est pas un. */
+    /** La famille, résolue depuis la liste blanche. {@code null} si inconnue. */
+    private static String publishKind(Map<String, String> form) {
+        String raw = trim(form.get("kind")).toLowerCase(java.util.Locale.ROOT);
+        return PUBLISHABLE_KINDS.contains(raw) ? raw : null;
+    }
+
+    private static String publishSlug(Map<String, String> form) {
+        String fromId = trim(form.get("id"));
+        String raw = (fromId.isEmpty() ? trim(form.get("slug")) : fromId)
+                .toLowerCase(java.util.Locale.ROOT);
+        return PUBLISH_SLUG.matcher(raw).matches() ? raw : null;
+    }
+
+    /** Une empreinte, ou la chaîne vide. {@code null} si la valeur est mal formée. */
+    private static String sha(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String clean = raw.trim().toLowerCase(java.util.Locale.ROOT);
+        if (clean.isEmpty()) {
+            return "";
+        }
+        return SHA256.matcher(clean).matches() ? clean : null;
+    }
+
     private static String buildSiteId(Map<String, String> form) {
         String raw = trim(form.get("id"));
         if (raw.isEmpty()) {
@@ -254,6 +295,20 @@ public final class AgentActionCatalog {
         // Export versionné du contenu déclaratif (issue #108) — lecture seule, aucun effet de bord,
         // aucun catalogue à réenfiler.
         add("content.export", Permission.CONTENT_EXPORT, false, false, "Exporter le contenu (pack versionné)");
+        // Issue #47 — l'état DEV du contenu : fichiers présents, empreintes, identifiants chargés.
+        // Lecture seule, et c'est ce relevé qui permet de distinguer « différent » de « conflit »
+        // AVANT de proposer de publier quoi que ce soit.
+        add("content.dev.state", Permission.CONTENT_READ, false, false,
+                "Relever l'état du contenu sur DEV (fichiers et runtime)");
+        // Publier ÉCRIT un fichier sur le serveur et permute le contenu chargé : mutation sensible,
+        // confirmation exigée, permission dédiée distincte de l'écriture de la source. Les relevés
+        // impactés sont ré-enfilés pour que l'état se réconcilie sans « Rafraîchir + F5 ».
+        addSensitiveWrite("content.publish", Permission.CONTENT_PUBLISH, false,
+                "Publier une ressource de contenu sur DEV",
+                "content.dev.state", "quest.list", "story.list", "dialogue.list");
+        addSensitiveWrite("content.publish.rollback", Permission.CONTENT_ROLLBACK, false,
+                "Défaire une publication de contenu sur DEV",
+                "content.dev.state", "quest.list", "story.list", "dialogue.list");
         // Écritures de contenu (V2 déclarative des PNJ) — réversibles, jamais de YAML brut. Chaque
         // succès ré-enfile le(s) relevé(s) de catalogue impacté(s) pour que la vue métier se
         // réconcilie sans « Rafraîchir catalogue + F5 ».
@@ -624,6 +679,59 @@ public final class AgentActionCatalog {
                     return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
                 }
                 params.put("id", id);
+            }
+            case "content.publish" -> {
+                String kind = publishKind(form);
+                if (kind == null) {
+                    return Validation.fail("Famille de contenu non publiable. Attendu : "
+                            + String.join(", ", PUBLISHABLE_KINDS) + ".");
+                }
+                String slug = publishSlug(form);
+                if (slug == null) {
+                    return Validation.fail("Identifiant de ressource manquant ou invalide.");
+                }
+                // Les deux empreintes sont OBLIGATOIRES, la chaîne vide signifiant « absente ».
+                // Sans elles, une modification faite entre l'aperçu et la publication serait
+                // écrasée en silence — des deux côtés : source ET DEV.
+                String expectedDev = sha(form.get("expected_dev_sha"));
+                if (expectedDev == null) {
+                    return Validation.fail("Empreinte DEV attendue manquante ou mal formée : "
+                            + "relancez l'analyse.");
+                }
+                String expectedSource = sha(form.get("expected_source_sha"));
+                if (expectedSource == null || expectedSource.isEmpty()) {
+                    return Validation.fail("Empreinte source attendue manquante : "
+                            + "relancez l'analyse.");
+                }
+                params.put("kind", kind);
+                params.put("id", slug);
+                params.put("expected_dev_sha", expectedDev);
+                // Non transmis à l'agent : vérifié côté panel juste avant d'enfiler l'action, parce
+                // que c'est le panel qui détient la source. Voir PanelApp#enrichPublish.
+                params.put("expected_source_sha", expectedSource);
+                params.put("confirm", "true");
+            }
+            case "content.publish.rollback" -> {
+                String kind = publishKind(form);
+                if (kind == null) {
+                    return Validation.fail("Famille de contenu non publiable.");
+                }
+                String slug = publishSlug(form);
+                if (slug == null) {
+                    return Validation.fail("Identifiant de ressource manquant ou invalide.");
+                }
+                params.put("kind", kind);
+                params.put("id", slug);
+                // Chemin de sauvegarde : facultatif, et JAMAIS un chemin libre — il doit avoir la
+                // forme produite par le serveur. Absent = « retirer la ressource nouvelle ».
+                String backup = trim(form.get("backup"));
+                if (!backup.isEmpty()) {
+                    if (!BACKUP_PATH.matcher(backup).matches()) {
+                        return Validation.fail("Chemin de sauvegarde invalide.");
+                    }
+                    params.put("backup", backup);
+                }
+                params.put("confirm", "true");
             }
             case "building.placement.preview", "building.placement.place" -> {
                 String id = buildSiteId(form);

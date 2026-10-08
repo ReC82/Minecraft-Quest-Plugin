@@ -53,6 +53,22 @@ public final class SourceCatalog {
         }
     }
 
+    /**
+     * L'empreinte du fichier source d'une ressource (issue #47).
+     *
+     * <p>C'est l'autre moitié de la comparaison : sans elle, on peut dire « présente des deux
+     * côtés » mais pas « identique », et c'est précisément la confusion que #47 corrige.</p>
+     */
+    public java.util.Optional<String> sha(String kind, String slug) {
+        return workspace.read(kind, slug)
+                .map(ContentWorkspace.ContentFile::sha256);
+    }
+
+    /** Le texte source, pour afficher une différence sans la demander au serveur. */
+    public java.util.Optional<String> text(String kind, String slug) {
+        return workspace.read(kind, slug).map(ContentWorkspace.ContentFile::text);
+    }
+
     public boolean available() {
         return workspace != null && workspace.configured();
     }

@@ -38,7 +38,8 @@ public final class ContentDeletionAnalyzer {
      */
     public static final List<String> BUNDLED_QUESTS = List.of(
             "premiers_pas", "first_steps", "woodcutters_request", "crystal_hunt",
-            "guard_tier1", "guard_tier2", "guard_tier3", "guard_tier4", "guard_tier5");
+            "guard_tier1", "guard_tier2", "guard_tier3", "guard_tier4", "guard_tier5",
+            "kit_tier2");
 
     /** Stories livrées comme exemples dans le JAR ({@code StoryRegistry#BUNDLED_EXAMPLES}). */
     public static final List<String> BUNDLED_STORIES = List.of("main_story");

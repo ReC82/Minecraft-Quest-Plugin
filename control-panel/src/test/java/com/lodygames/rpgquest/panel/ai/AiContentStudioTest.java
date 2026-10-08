@@ -121,7 +121,7 @@ class AiContentStudioTest {
     }
 
     private AiContentStudio.Generation generate(AiProvider.Result canned) {
-        return studioReturning(canned).generateQuest("stub", request(), RefData.empty(), workspace);
+        return studioReturning(canned).generate("stub", request(), RefData.empty(), workspace);
     }
 
     // ---- La chaîne complète --------------------------------------------------------------------
@@ -172,7 +172,7 @@ class AiContentStudioTest {
         RefData refs = new RefData(List.of("rpgquest:first_steps"), List.of("guide", "garde"),
                 List.of("world_hub"), true, true, true,
                 Map.of(), Map.of(), Map.of(), Map.of());
-        studioReturning(text(VALID_PACK)).generateQuest("stub", request(), refs, workspace);
+        studioReturning(text(VALID_PACK)).generate("stub", request(), refs, workspace);
 
         AiProvider.Request sent = lastRequest.get();
         assertNotNull(sent);
@@ -189,7 +189,7 @@ class AiContentStudioTest {
     /** Sans relevé de références, l'IA doit être priée de ne rien inventer plutôt que de deviner. */
     @Test
     void withoutAReferenceSurveyThePromptForbidsInventingThem() {
-        studioReturning(text(VALID_PACK)).generateQuest("stub", request(), RefData.empty(), workspace);
+        studioReturning(text(VALID_PACK)).generate("stub", request(), RefData.empty(), workspace);
 
         assertTrue(lastRequest.get().userPrompt().contains("aucun relevé disponible"),
                 lastRequest.get().userPrompt());
@@ -245,7 +245,7 @@ class AiContentStudioTest {
                 Map.of(), Map.of(), Map.of(), Map.of());
         AiContentStudio.Generation g = studioReturning(text(VALID_PACK
                         .replace("category: aventure", "category: aventure\n      giver: inconnu")))
-                .generateQuest("stub", request(), refs, workspace);
+                .generate("stub", request(), refs, workspace);
 
         ContentPackImport.Element e = g.analysis().elements().get(0);
         assertTrue(e.diagnostics().stream().anyMatch(d -> d.message().contains("inconnu")),
@@ -280,7 +280,7 @@ class AiContentStudioTest {
     @Test
     void anUnknownProviderIsRefusedWithoutCallingAnything() {
         AiContentStudio.Generation g = studioReturning(text(VALID_PACK))
-                .generateQuest("inexistant", request(), RefData.empty(), workspace);
+                .generate("inexistant", request(), RefData.empty(), workspace);
 
         assertFalse(g.callOk());
         assertTrue(g.error().contains("Fournisseur inconnu"), g.error());
@@ -293,7 +293,7 @@ class AiContentStudioTest {
         store.save(new AiProviderSettings("stub", false, "sk-test", "", "", 4000, 90), "test");
 
         AiContentStudio.Generation g = new AiContentStudio(registry, store)
-                .generateQuest("stub", request(), RefData.empty(), workspace);
+                .generate("stub", request(), RefData.empty(), workspace);
 
         assertFalse(g.callOk());
         assertTrue(g.error().contains("désactivé"), g.error());
@@ -306,7 +306,7 @@ class AiContentStudioTest {
         store.save(new AiProviderSettings("stub", true, "", "", "", 4000, 90), "test");
 
         AiContentStudio.Generation g = new AiContentStudio(registry, store)
-                .generateQuest("stub", request(), RefData.empty(), workspace);
+                .generate("stub", request(), RefData.empty(), workspace);
 
         assertFalse(g.callOk());
         assertTrue(g.error().contains("Aucune clé"), g.error());
@@ -323,10 +323,10 @@ class AiContentStudioTest {
     void theCorrectionPromptCarriesThePreviousOutputAndTheRealDiagnostics() {
         String broken = VALID_PACK.replace("type: BREAK_BLOCK", "type: UTILISER_UN_OBJET");
         AiContentStudio studio = studioReturning(text(VALID_PACK));
-        AiContentStudio.Generation first = studio.generateQuest("stub", request(), RefData.empty(), workspace);
+        AiContentStudio.Generation first = studio.generate("stub", request(), RefData.empty(), workspace);
 
-        studio.correct(ContentPromptBuilder.Kind.QUEST, "stub", broken,
-                List.of("Type d'objectif inconnu « UTILISER_UN_OBJET »."), RefData.empty(), workspace);
+        studio.correct(new AiContentStudio.Correction(request(), "stub", broken,
+                List.of("Type d'objectif inconnu « UTILISER_UN_OBJET ».")), RefData.empty(), workspace);
 
         String prompt = lastRequest.get().userPrompt();
         assertTrue(prompt.contains("CORRECTION DEMANDÉE"), prompt.substring(0, 200));
@@ -359,6 +359,28 @@ class AiContentStudioTest {
             + "              actions:\n"
             + "                - type: CLOSE\n";
 
+    /** Même dialogue, deux nœuds réels : sert à vérifier N, N-1 et N+1 sans ambiguïté (#224). */
+    private static final String TWO_NODE_DIALOGUE_PACK = "format: " + ContentPackSchema.FORMAT + "\n"
+            + "schemaVersion: " + ContentPackSchema.SCHEMA_VERSION + "\n"
+            + "content:\n"
+            + "  dialogues:\n"
+            + "    - id: tc265_mineur\n"
+            + "      start: accueil\n"
+            + "      nodes:\n"
+            + "        accueil:\n"
+            + "          speaker: \"Vieux mineur\"\n"
+            + "          text: \"Tu viens pour le puits ?\"\n"
+            + "          choices:\n"
+            + "            - text: \"Raconte.\"\n"
+            + "              next: details\n"
+            + "        details:\n"
+            + "          speaker: \"Vieux mineur\"\n"
+            + "          text: \"Il s'est effondré l'an dernier.\"\n"
+            + "          choices:\n"
+            + "            - text: \"Je vois.\"\n"
+            + "              actions:\n"
+            + "                - type: CLOSE\n";
+
     private static final String VALID_STORY_PACK = "format: " + ContentPackSchema.FORMAT + "\n"
             + "schemaVersion: " + ContentPackSchema.SCHEMA_VERSION + "\n"
             + "content:\n"
@@ -371,7 +393,7 @@ class AiContentStudioTest {
     private ContentPromptBuilder.DialogueRequest dialogueRequest() {
         return new ContentPromptBuilder.DialogueRequest(
                 "Le mineur propose la quête du puits, et félicite qui l'a déjà finie.",
-                "tc265_mineur", "<gold>Vieux mineur</gold>", "bourru", 2,
+                "tc265_mineur", "<gold>Vieux mineur</gold>", "bourru", 1,
                 "rpgquest:first_steps", "pas de combat");
     }
 
@@ -384,7 +406,7 @@ class AiContentStudioTest {
     @Test
     void aValidDialogueGoesAllTheWayToAnImportableAnalysis() {
         AiContentStudio.Generation g = studioReturning(text(VALID_DIALOGUE_PACK))
-                .generateDialogue("stub", dialogueRequest(), RefData.empty(), workspace);
+                .generate("stub", dialogueRequest(), RefData.empty(), workspace);
 
         assertEquals(ContentPromptBuilder.Kind.DIALOGUE, g.kind());
         assertNotNull(g.analysis());
@@ -397,7 +419,7 @@ class AiContentStudioTest {
         RefData refs = RefData.empty().plus(List.of("rpgquest:first_steps"), List.of(), Map.of());
 
         AiContentStudio.Generation g = studioReturning(text(VALID_STORY_PACK))
-                .generateStory("stub", storyRequest(), refs, workspace);
+                .generate("stub", storyRequest(), refs, workspace);
 
         assertEquals(ContentPromptBuilder.Kind.STORY, g.kind());
         assertTrue(g.analysis().importable(), () -> "éléments : " + g.analysis().elements());
@@ -407,9 +429,9 @@ class AiContentStudioTest {
     @Test
     void generatingADialogueOrAStoryNeverWritesAnything() throws Exception {
         AiContentStudio studio = studioReturning(text(VALID_DIALOGUE_PACK));
-        studio.generateDialogue("stub", dialogueRequest(), RefData.empty(), workspace);
+        studio.generate("stub", dialogueRequest(), RefData.empty(), workspace);
         studioReturning(text(VALID_STORY_PACK))
-                .generateStory("stub", storyRequest(), RefData.empty(), workspace);
+                .generate("stub", storyRequest(), RefData.empty(), workspace);
 
         for (String kind : List.of("dialogues", "stories", "quests")) {
             try (var files = Files.list(tmp.resolve("content/" + kind))) {
@@ -426,12 +448,15 @@ class AiContentStudioTest {
     @Test
     void theDialoguePromptCarriesTheDialogueSpecificRules() {
         studioReturning(text(VALID_DIALOGUE_PACK))
-                .generateDialogue("stub", dialogueRequest(), RefData.empty(), workspace);
+                .generate("stub", dialogueRequest(), RefData.empty(), workspace);
 
         String system = lastRequest.get().systemPrompt();
         String user = lastRequest.get().userPrompt();
 
-        assertTrue(system.contains("L'identifiant du dialogue EST l'identifiant du PNJ"), system);
+        // #225 — la règle ne dit plus « l'id du dialogue EST celui du PNJ » : c'est faux dès qu'une
+        // définition en déclare un autre, et c'est ce qui créait un second dialogue concurrent.
+        assertTrue(system.contains("celui qui t'est IMPOSÉ"), system);
+        assertTrue(system.contains("ne le déduis pas du nom du PNJ"), system);
         assertTrue(system.contains("N'invente JAMAIS un type d'action ni de condition"), system);
         assertTrue(system.contains("N'EST PAS AFFICHÉ"), "le piège des conditions doit être dit");
         assertTrue(user.contains("« dialogues »"), "la section cible");
@@ -448,7 +473,7 @@ class AiContentStudioTest {
         RefData refs = RefData.empty().plus(List.of("rpgquest:first_steps"), List.of(), Map.of());
 
         studioReturning(text(VALID_STORY_PACK))
-                .generateStory("stub", storyRequest(), refs, workspace);
+                .generate("stub", storyRequest(), refs, workspace);
 
         String system = lastRequest.get().systemPrompt();
         String user = lastRequest.get().userPrompt();
@@ -465,7 +490,7 @@ class AiContentStudioTest {
     /** Une demande de story sans quête imposée doit tout de même interdire d'en inventer. */
     @Test
     void aStoryWithoutImposedQuestsStillRefusesInvention() {
-        studioReturning(text(VALID_STORY_PACK)).generateStory("stub",
+        studioReturning(text(VALID_STORY_PACK)).generate("stub",
                 new ContentPromptBuilder.StoryRequest("Un fil libre.", "", "", "", ""),
                 RefData.empty(), workspace);
 
@@ -478,8 +503,9 @@ class AiContentStudioTest {
     void theCorrectionStaysInTheSameFamily() {
         AiContentStudio studio = studioReturning(text(VALID_DIALOGUE_PACK));
 
-        AiContentStudio.Generation g = studio.correct(ContentPromptBuilder.Kind.DIALOGUE, "stub",
-                VALID_DIALOGUE_PACK, List.of("Type d'action inconnu « TELEPORTER »."),
+        AiContentStudio.Generation g = studio.correct(
+                new AiContentStudio.Correction(dialogueRequest(), "stub", VALID_DIALOGUE_PACK,
+                        List.of("Type d'action inconnu « TELEPORTER ».")),
                 RefData.empty(), workspace);
 
         assertEquals(ContentPromptBuilder.Kind.DIALOGUE, g.kind());
@@ -495,12 +521,237 @@ class AiContentStudioTest {
         AiProvider.Result failure = AiProvider.Result.failure("quota dépassé");
 
         AiContentStudio.Generation g = studioReturning(failure)
-                .generateStory("stub", storyRequest(), RefData.empty(), workspace);
+                .generate("stub", storyRequest(), RefData.empty(), workspace);
 
         assertEquals(ContentPromptBuilder.Kind.STORY, g.kind());
         assertFalse(g.callOk());
         assertNull(g.analysis());
         assertEquals(List.of("quota dépassé"), g.problems());
+    }
+
+    // ---- #222 : la correction transporte réellement tout ---------------------------------------
+
+    /**
+     * Le défaut exact du ticket : la correction repartait sans les consignes d'origine, donc le
+     * modèle réparait l'erreur signalée en perdant l'identifiant imposé — et la proposition était
+     * refusée pour une <em>autre</em> raison, ce qui donnait l'impression que le bouton ne servait à
+     * rien.
+     */
+    @Test
+    void theCorrectionPromptRepeatsTheOriginalInstructions() {
+        ContentPromptBuilder.QuestRequest original = new ContentPromptBuilder.QuestRequest(
+                "Une quête dans une mine abandonnée.", "<gold>Les mines oubliées</gold>",
+                "rpgquest:tc265_ai_securiser_environs", "aventure", "guide", "facile", "courte",
+                3, true, "un peu d'XP", "pas de combat");
+
+        studioReturning(text(VALID_PACK)).correct(new AiContentStudio.Correction(original, "stub",
+                VALID_PACK, List.of("Identifiant « testia:securiser_environs » inutilisable.")),
+                RefData.empty(), workspace);
+
+        String prompt = lastRequest.get().userPrompt();
+        assertTrue(prompt.contains("CORRECTION DEMANDÉE"), prompt.substring(0, 200));
+        assertTrue(prompt.contains("testia:securiser_environs"), "le diagnostic réel");
+        assertTrue(prompt.contains("rpgquest:tc265_ai_securiser_environs"),
+                "l'identifiant imposé doit rester imposé");
+        assertTrue(prompt.contains("<gold>Les mines oubliées</gold>"), "le titre imposé");
+        assertTrue(prompt.contains("pas de combat"), "les contraintes libres");
+        assertTrue(prompt.contains("Une quête dans une mine abandonnée."), "l'intention d'origine");
+        assertTrue(prompt.contains("toujours impératives"), "et le fait qu'elles le restent");
+    }
+
+    /** Une correction ne change jamais de fournisseur en route : c'est celui du contexte. */
+    @Test
+    void theCorrectionKeepsTheChosenProviderAndModel() {
+        AiContentStudio.Generation g = studioReturning(text(VALID_PACK)).correct(
+                new AiContentStudio.Correction(request(), "stub", VALID_PACK,
+                        List.of("Un problème.")),
+                RefData.empty(), workspace);
+
+        assertEquals("stub", g.providerId());
+        assertEquals("stub-1", g.model());
+    }
+
+    /** Une correction valide revient d'elle-même jusqu'à un aperçu acceptable. */
+    @Test
+    void aValidCorrectionComesBackAsAnAcceptableProposal() {
+        String broken = VALID_PACK.replace("type: BREAK_BLOCK", "type: UTILISER_UN_OBJET");
+
+        AiContentStudio.Generation g = studioReturning(text(VALID_PACK)).correct(
+                new AiContentStudio.Correction(request(), "stub", broken,
+                        List.of("Type d'objectif inconnu « UTILISER_UN_OBJET ».")),
+                RefData.empty(), workspace);
+
+        assertTrue(g.callOk(), g.error());
+        assertTrue(g.acceptable(), () -> g.problems().toString());
+    }
+
+    /** Une correction encore invalide ressort avec ses nouveaux diagnostics, et reste corrigeable. */
+    @Test
+    void aStillInvalidCorrectionReportsTheNewDiagnostics() {
+        String stillBroken = VALID_PACK.replace("type: EXPERIENCE", "type: DONNER_UN_CADEAU");
+
+        AiContentStudio.Generation g = studioReturning(text(stillBroken)).correct(
+                new AiContentStudio.Correction(request(), "stub", VALID_PACK,
+                        List.of("Un premier problème.")),
+                RefData.empty(), workspace);
+
+        assertFalse(g.acceptable());
+        assertTrue(g.correctable(), "le bouton doit rester disponible");
+        assertTrue(g.problems().stream().anyMatch(p -> p.contains("DONNER_UN_CADEAU")),
+                g.problems().toString());
+        assertFalse(g.problems().contains("Un premier problème."),
+                "les diagnostics affichés sont ceux de la NOUVELLE proposition");
+    }
+
+    /** Une erreur d'API pendant une correction reste visible, et n'écrit rien. */
+    @Test
+    void anApiErrorDuringACorrectionIsVisibleAndWritesNothing() throws Exception {
+        AiContentStudio.Generation g = studioReturning(
+                AiProvider.Result.failure("HTTP 401 — Clé API refusée par le fournisseur.")).correct(
+                new AiContentStudio.Correction(request(), "stub", VALID_PACK,
+                        List.of("Un problème.")),
+                RefData.empty(), workspace);
+
+        assertFalse(g.callOk());
+        assertTrue(g.error().contains("401"), g.error());
+        try (var files = Files.list(tmp.resolve("content/quests"))) {
+            assertEquals(0, files.count());
+        }
+    }
+
+    /** Un contexte de correction incomplet n'est pas « usable » : la route refuse d'appeler l'IA. */
+    @Test
+    void anIncompleteCorrectionContextIsRefusedBeforeCalling() {
+        assertFalse(new AiContentStudio.Correction(request(), "stub", "", List.of("x")).usable(),
+                "sans la sortie précédente");
+        assertFalse(new AiContentStudio.Correction(request(), "stub", VALID_PACK, List.of()).usable(),
+                "sans diagnostic");
+        assertFalse(new AiContentStudio.Correction(null, "stub", VALID_PACK, List.of("x")).usable(),
+                "sans la demande d'origine");
+        assertTrue(new AiContentStudio.Correction(request(), "stub", VALID_PACK, List.of("x")).usable());
+    }
+
+    // ---- #223 / #224 : le backend vérifie ce qui a été imposé ----------------------------------
+
+    /** L'identifiant imposé est vérifié sur la proposition, pas seulement espéré dans le prompt. */
+    @Test
+    void anImposedQuestIdThatTheModelRenamedIsRefused() {
+        ContentPromptBuilder.QuestRequest imposed = new ContentPromptBuilder.QuestRequest(
+                "Une quête.", "", "rpgquest:tc265_securiser", "aventure", "", "", "", 1, false,
+                "", "");
+
+        AiContentStudio.Generation g = studioReturning(text(VALID_PACK))
+                .generate("stub", imposed, RefData.empty(), workspace);
+
+        assertTrue(g.callOk());
+        assertTrue(g.analysis().importable(), "le document est valide : c'est la demande qui ne l'est pas");
+        assertFalse(g.acceptable(), "une proposition hors demande ne doit pas être enregistrable");
+        assertEquals(1, g.unmet().size(), g.unmet().toString());
+        assertTrue(g.unmet().get(0).contains("tc265_securiser"), g.unmet().toString());
+        assertTrue(g.unmet().get(0).contains("mines_oubliees"), g.unmet().toString());
+        assertTrue(g.correctable(), "l'écart doit être corrigeable via #222");
+        assertTrue(g.problems().get(0).contains("tc265_securiser"),
+                "l'écart passe en tête des problèmes renvoyés à l'IA");
+    }
+
+    /** Les deux écritures du même identifiant sont la même réponse — pas un écart. */
+    @Test
+    void anImposedQuestIdIsAcceptedInEitherWriting() {
+        for (String imposedId : List.of("mines_oubliees", "rpgquest:mines_oubliees")) {
+            ContentPromptBuilder.QuestRequest imposed = new ContentPromptBuilder.QuestRequest(
+                    "Une quête.", "", imposedId, "aventure", "", "", "", 1, false, "", "");
+
+            AiContentStudio.Generation g = studioReturning(text(VALID_PACK))
+                    .generate("stub", imposed, RefData.empty(), workspace);
+
+            assertTrue(g.unmet().isEmpty(), imposedId + " : " + g.unmet());
+            assertTrue(g.acceptable(), imposedId);
+        }
+    }
+
+    /** Aucun identifiant imposé = rien à vérifier : l'IA reste libre de proposer le sien. */
+    @Test
+    void withoutAnImposedIdNothingIsChecked() {
+        AiContentStudio.Generation g = generate(text(VALID_PACK));
+
+        assertTrue(g.unmet().isEmpty());
+        assertTrue(g.acceptable());
+    }
+
+    private AiContentStudio.Generation dialogueWithNodeCount(String pack, int requested) {
+        return studioReturning(text(pack)).generate("stub",
+                new ContentPromptBuilder.DialogueRequest("Le mineur parle.", "tc265_mineur",
+                        "", "bourru", requested, "", ""),
+                RefData.empty(), workspace);
+    }
+
+    /** Le cas réel de #224 : 5 demandés, 4 produits, proposition acceptée. Plus maintenant. */
+    @Test
+    void aDialogueWithTooFewNodesIsRefusedWithTheExactCount() {
+        AiContentStudio.Generation g = dialogueWithNodeCount(VALID_DIALOGUE_PACK, 2);
+
+        assertTrue(g.analysis().importable(), "le dialogue est valide : c'est le compte qui ne l'est pas");
+        assertFalse(g.acceptable());
+        assertEquals(1, g.unmet().size(), g.unmet().toString());
+        assertTrue(g.unmet().get(0).startsWith("2 nœuds demandés, 1 généré"), g.unmet().get(0));
+        assertTrue(g.correctable());
+    }
+
+    @Test
+    void aDialogueWithTooManyNodesIsRefusedToo() {
+        AiContentStudio.Generation g = dialogueWithNodeCount(TWO_NODE_DIALOGUE_PACK, 1);
+
+        assertFalse(g.acceptable());
+        assertTrue(g.unmet().get(0).startsWith("1 nœuds demandés, 2 générés"), g.unmet().get(0));
+    }
+
+    @Test
+    void aDialogueWithExactlyTheRequestedNodesIsAccepted() {
+        assertTrue(dialogueWithNodeCount(VALID_DIALOGUE_PACK, 1).acceptable());
+        assertTrue(dialogueWithNodeCount(TWO_NODE_DIALOGUE_PACK, 2).acceptable());
+    }
+
+    /** {@code 0} laisse le modèle décider : c'est le comportement historique, et il est préservé. */
+    @Test
+    void zeroNodesLetsTheModelDecide() {
+        assertTrue(dialogueWithNodeCount(VALID_DIALOGUE_PACK, 0).acceptable());
+        assertTrue(dialogueWithNodeCount(TWO_NODE_DIALOGUE_PACK, 0).acceptable());
+    }
+
+    /** La borne du formulaire est aussi celle de la contrainte : au-delà, elle est ramenée au max. */
+    @Test
+    void theRequestedNodeCountIsClampedToTheFormMaximum() {
+        ContentPromptBuilder.DialogueRequest beyond = new ContentPromptBuilder.DialogueRequest(
+                "x", "d", "", "", 99, "", "");
+
+        assertEquals(ContentPromptBuilder.DialogueRequest.MAX_NODES, beyond.nodeCount());
+        AiContentStudio.Generation g = dialogueWithNodeCount(VALID_DIALOGUE_PACK,
+                ContentPromptBuilder.DialogueRequest.MAX_NODES);
+        assertTrue(g.unmet().get(0).startsWith(
+                ContentPromptBuilder.DialogueRequest.MAX_NODES + " nœuds demandés, 1 généré"),
+                g.unmet().get(0));
+    }
+
+    /** Le prompt doit dire que le nombre est impératif, pas souhaité. */
+    @Test
+    void theDialoguePromptSaysTheNodeCountIsMandatory() {
+        dialogueWithNodeCount(VALID_DIALOGUE_PACK, 5);
+
+        String user = lastRequest.get().userPrompt();
+        assertTrue(user.contains("Nombre de nœuds IMPÉRATIF : exactement 5"), user);
+        assertTrue(user.contains("recompté après ta réponse"), user);
+    }
+
+    /** Un écart de contrainte n'écrit rien non plus — même garantie que partout ailleurs. */
+    @Test
+    void anUnmetConstraintWritesNothing() throws Exception {
+        dialogueWithNodeCount(VALID_DIALOGUE_PACK, 7);
+
+        for (String kind : List.of("dialogues", "stories", "quests")) {
+            try (var files = Files.list(tmp.resolve("content/" + kind))) {
+                assertEquals(0, files.count(), kind);
+            }
+        }
     }
 
     // ---- Fournisseurs utilisables --------------------------------------------------------------

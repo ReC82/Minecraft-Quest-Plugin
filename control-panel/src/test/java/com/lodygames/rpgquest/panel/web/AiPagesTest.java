@@ -137,7 +137,9 @@ class AiPagesTest {
         assertFalse(quest.contains("name=\"dialogueId\""), "sans les champs des autres familles");
 
         String dialogue = get("/ai/studio?kind=dialogue").body();
-        assertTrue(dialogue.contains("name=\"dialogueId\""), "le PNJ porteur");
+        // #225 — le champ demande le PNJ, non « l'identifiant du dialogue » : les deux ne coïncident
+        // que par défaut, et c'est le panel qui résout lequel viser.
+        assertTrue(dialogue.contains("name=\"npc\""), "le PNJ porteur");
         assertTrue(dialogue.contains("name=\"tone\""), "le ton");
         assertTrue(dialogue.contains("name=\"nodeCount\""));
         assertFalse(dialogue.contains("name=\"stepCount\""), "pas les étapes d'une quête");
@@ -412,6 +414,147 @@ class AiPagesTest {
         try (var files = Files.list(contentRoot.resolve("quests"))) {
             assertEquals(0, files.count(), "aucun fichier ne doit apparaître");
         }
+    }
+
+    // ---- #223 : l'identifiant, avant tout appel payant -----------------------------------------
+
+    /**
+     * Un identifiant inutilisable est refusé <strong>avant</strong> l'appel : le ticket l'exige
+     * explicitement, pour ne pas dépenser de jetons sur une demande qui finira refusée.
+     */
+    @Test
+    void anUnusableQuestIdIsRefusedBeforeCallingTheProvider() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        String page = post("/ai/studio", "kind=QUEST&intent=" + enc("Une quête.")
+                + "&questId=" + enc("testia:securiser environs")
+                + "&provider=anthropic&_action=generate&_csrf=" + csrf(get("/ai/studio").body()))
+                .body();
+
+        assertTrue(page.contains("namespace"), page.substring(0, Math.min(1200, page.length())));
+        assertFalse(page.contains("3. Proposition de l"), "aucun appel ne doit avoir eu lieu");
+    }
+
+    /** Les deux écritures sont acceptées, et l'aide dit laquelle sera produite. */
+    @Test
+    void theQuestIdFieldExplainsTheNamespaceAndNeverDoublesIt() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        String page = get("/ai/studio?kind=quest").body();
+
+        assertTrue(page.contains("rpgquest:") && page.contains("automatiquement"),
+                "l'aide doit annoncer le namespace ajouté");
+        assertFalse(page.contains("placeholder=\"rpgquest:"),
+                "le placeholder ne doit plus montrer de namespace (#223)");
+        assertEquals("rpgquest:tc265_x",
+                com.lodygames.rpgquest.panel.content.ContentId.quest("rpgquest:tc265_x").canonical());
+        assertEquals("rpgquest:tc265_x",
+                com.lodygames.rpgquest.panel.content.ContentId.quest("tc265_x").canonical());
+    }
+
+    // ---- #222 : le bouton de correction transporte tout ----------------------------------------
+
+    /**
+     * Le défaut de transport du ticket : les diagnostics voyagent dans <strong>un seul</strong>
+     * champ. Le lecteur de formulaire du panel ne garde qu'une valeur par nom, donc une série de
+     * champs homonymes {@code problem} n'en transmettait qu'un — l'IA ne voyait qu'un problème sur
+     * cinq.
+     */
+    @Test
+    void repeatedFormFieldsCollapseSoDiagnosticsTravelInASingleField() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        // Le constat, d'abord : deux champs homonymes ne font qu'une valeur côté serveur.
+        String page = post("/ai/studio", "kind=QUEST&intent=&problem=un&problem=deux"
+                + "&provider=anthropic&_action=generate&_csrf=" + csrf(get("/ai/studio").body()))
+                .body();
+        assertTrue(page.contains("Décrivez"), "la requête a bien été traitée");
+
+        // La conséquence, ensuite : la page n'émet plus de champs « problem » homonymes.
+        assertFalse(page.contains("name=\"problem\" value="),
+                "les diagnostics ne doivent plus voyager en champs homonymes");
+    }
+
+    /** Une correction sans la sortie précédente est refusée au lieu d'appeler l'IA à vide. */
+    @Test
+    void aCorrectionWithoutThePreviousOutputIsRefusedWithoutCalling() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        String page = post("/ai/studio", "kind=QUEST&intent=" + enc("Une quête.")
+                + "&previousYaml=&problems=&provider=anthropic&_action=correct&_csrf="
+                + csrf(get("/ai/studio").body())).body();
+
+        assertTrue(page.contains("Impossible de relancer la correction"),
+                page.substring(0, Math.min(1200, page.length())));
+        assertFalse(page.contains("3. Proposition de l"));
+    }
+
+    /**
+     * Une correction réexpose le formulaire <strong>rempli</strong> : c'est ce qui manquait, et qui
+     * obligeait à tout retaper après chaque tentative.
+     */
+    @Test
+    void aCorrectionKeepsTheFormFilled() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        String page = post("/ai/studio", "kind=QUEST&intent=" + enc("Sécuriser les environs.")
+                + "&questId=" + enc("tc265_ai_securiser_environs")
+                + "&difficulty=" + enc("facile")
+                + "&previousYaml=" + enc("format: lodyquests-content-pack\n")
+                + "&problems=" + enc("Identifiant inutilisable.")
+                + "&provider=anthropic&_action=correct&_csrf=" + csrf(get("/ai/studio").body()))
+                .body();
+
+        assertTrue(page.contains("Sécuriser les environs."), "l'intention est réaffichée");
+        assertTrue(page.contains("tc265_ai_securiser_environs"), "l'identifiant imposé est conservé");
+        assertTrue(page.contains("facile"), "et les autres champs aussi");
+    }
+
+    /** Un échec d'appel pendant une correction n'écrit rien et reste visible. */
+    @Test
+    void aFailedCorrectionCallIsVisibleAndWritesNothing() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        String page = post("/ai/studio", "kind=QUEST&intent=" + enc("Une quête.")
+                + "&previousYaml=" + enc("format: lodyquests-content-pack\n")
+                + "&problems=" + enc("Un problème.")
+                + "&provider=anthropic&_action=correct&_csrf=" + csrf(get("/ai/studio").body()))
+                .body();
+
+        assertTrue(page.contains("appel a échoué") || page.contains("appel a &#233;chou"),
+                page.substring(0, Math.min(1500, page.length())));
+        assertTrue(page.contains("Relancer la correction"),
+                "la proposition précédente et son bouton doivent survivre à l'échec (#222)");
+        try (var files = Files.list(contentRoot.resolve("quests"))) {
+            assertEquals(0, files.count());
+        }
+    }
+
+    // ---- #224 : le nombre de nœuds est annoncé comme impératif ---------------------------------
+
+    @Test
+    void theNodeCountFieldSaysItIsMandatoryAndRecounted() throws Exception {
+        start();
+        configureProvider();
+        login();
+
+        String page = get("/ai/studio?kind=dialogue").body();
+
+        assertTrue(page.contains("recompte"), "l'aide doit dire que le panel recompte les nœuds");
+        assertTrue(page.contains("imp&#233;rative") || page.contains("impérative"),
+                "et que la valeur est impérative");
     }
 
     // ---- Harnais -------------------------------------------------------------------------------

@@ -5034,6 +5034,23 @@ public final class AgentPages {
     }
 
     /**
+     * Issues #225 / #226 — le catalogue PNJ du serveur, projeté en types raisonnables.
+     *
+     * <p>Lecture du dernier relevé {@code npc.list} <strong>réussi</strong> uniquement : aucune
+     * requête n'est déclenchée. Sans relevé, l'annuaire est explicitement indisponible, et
+     * l'appelant doit refuser de conclure plutôt que de prendre une liste vide pour une absence de
+     * dépendances — ce qui, devant un bouton « Supprimer », n'est pas la même chose du tout.</p>
+     */
+    public com.lodygames.rpgquest.panel.npc.NpcDirectory npcDirectory(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return com.lodygames.rpgquest.panel.npc.NpcDirectory.unavailable();
+        }
+        return latestDetails(agentId, "npc.list")
+                .map(com.lodygames.rpgquest.panel.npc.NpcDirectory::from)
+                .orElseGet(com.lodygames.rpgquest.panel.npc.NpcDirectory::unavailable);
+    }
+
+    /**
      * Issue #194 — le dernier relevé du serveur connaît-il ce contenu ?
      *
      * <p>Sert à décider s'il faut aussi demander une suppression côté serveur. Lecture du dernier

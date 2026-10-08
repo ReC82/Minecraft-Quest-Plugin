@@ -672,6 +672,15 @@ public final class PanelApp {
      * Le bouton d'enregistrement de la page poste vers {@code /content/import}, qui applique le
      * pipeline de #109 avec sa confirmation explicite. C'est ce qui garantit, par construction et
      * non par vigilance, qu'aucune proposition d'IA ne peut être publiée automatiquement.</p>
+     *
+     * <p><strong>Un seul chemin pour générer et pour corriger (issue #222).</strong> Les deux
+     * actions lisent le formulaire de la même façon et reconstruisent la même demande : une
+     * correction ne peut donc pas perdre les consignes d'origine, et l'écran se rouvre rempli. Seul
+     * le prompt diffère — celui de la correction y ajoute la sortie refusée et les diagnostics.</p>
+     *
+     * <p><strong>Trois refus arrivent avant le moindre appel payant.</strong> Une intention vide
+     * (#146), un identifiant inutilisable (#223) et un PNJ déjà pourvu d'un dialogue sous un autre
+     * nom (#225) sont tranchés ici, à coût nul.</p>
      */
     private void handleAiStudio(HttpExchange exchange) throws IOException {
         Optional<Session> maybe = requireSession(exchange);
@@ -684,13 +693,17 @@ public final class PanelApp {
             return;
         }
 
-        RefData ref = agentPages.referenceData(config.agents().defaultAgentId());
+        String agentId = config.agents().defaultAgentId();
+        RefData ref = agentPages.referenceData(agentId);
         boolean canImport = permissions.can(session.effective(), Permission.CONTENT_IMPORT);
         String error = null;
         com.lodygames.rpgquest.panel.ai.AiContentStudio.Generation generation = null;
         com.lodygames.rpgquest.panel.ai.ContentPromptBuilder.QuestRequest questForm = null;
         com.lodygames.rpgquest.panel.ai.ContentPromptBuilder.DialogueRequest dialogueForm = null;
         com.lodygames.rpgquest.panel.ai.ContentPromptBuilder.StoryRequest storyForm = null;
+        com.lodygames.rpgquest.panel.npc.DialogueTargetDecision.Outcome decision = null;
+        com.lodygames.rpgquest.panel.ai.AiContentStudio.Correction fallback = null;
+        String rawNpc = "";
         // En GET, la famille vient du lien choisi : c'est ce qui permet de changer de formulaire
         // sans une ligne de JavaScript, la politique de sécurité du panel interdisant l'inline.
         com.lodygames.rpgquest.panel.ai.ContentPromptBuilder.Kind kind =
@@ -712,79 +725,122 @@ public final class PanelApp {
                 provider = f.getOrDefault("provider", "").trim();
                 kind = com.lodygames.rpgquest.panel.ai.ContentPromptBuilder.Kind
                         .of(f.getOrDefault("kind", ""));
+                boolean correcting = "correct".equals(f.get("_action"));
                 String rid = UUID.randomUUID().toString().substring(0, 8);
-                if ("correct".equals(f.get("_action"))) {
-                    List<String> problems = new ArrayList<>();
-                    f.forEach((k, v) -> {
-                        if ("problem".equals(k) && v != null && !v.isBlank()) {
-                            problems.add(v);
+
+                com.lodygames.rpgquest.panel.ai.ContentPromptBuilder.Demand request = null;
+                switch (kind) {
+                    case QUEST -> {
+                        // #223 — l'identifiant est normalisé AVANT l'appel : les deux écritures
+                        // sont acceptées, un namespace étranger est refusé sans dépenser de jeton.
+                        var id = com.lodygames.rpgquest.panel.content.ContentId
+                                .quest(f.getOrDefault("questId", ""));
+                        if (!id.ok()) {
+                            error = id.error();
                         }
-                    });
-                    generation = aiStudio.correct(kind, provider,
-                            f.getOrDefault("previousYaml", ""), problems, ref, contentWorkspace);
-                } else {
-                    switch (kind) {
-                        case QUEST -> {
-                            questForm = new com.lodygames.rpgquest.panel.ai.ContentPromptBuilder
-                                    .QuestRequest(
-                                    f.getOrDefault("intent", ""), f.getOrDefault("title", ""),
-                                    f.getOrDefault("questId", ""), f.getOrDefault("category", ""),
-                                    f.getOrDefault("giver", ""), f.getOrDefault("difficulty", ""),
-                                    f.getOrDefault("duration", ""), parseIntOr(f.get("stepCount"), 0),
-                                    "on".equals(f.get("repeatable")),
-                                    f.getOrDefault("rewardIntent", ""),
-                                    f.getOrDefault("constraints", ""));
-                            if (!questForm.valid()) {
-                                error = "Décrivez d'abord ce que la quête doit raconter.";
-                            } else {
-                                generation = aiStudio.generateQuest(provider, questForm, ref,
-                                        contentWorkspace);
-                            }
+                        questForm = new com.lodygames.rpgquest.panel.ai.ContentPromptBuilder
+                                .QuestRequest(
+                                f.getOrDefault("intent", ""), f.getOrDefault("title", ""),
+                                id.canonical(), f.getOrDefault("category", ""),
+                                f.getOrDefault("giver", ""), f.getOrDefault("difficulty", ""),
+                                f.getOrDefault("duration", ""), parseIntOr(f.get("stepCount"), 0),
+                                "on".equals(f.get("repeatable")),
+                                f.getOrDefault("rewardIntent", ""),
+                                f.getOrDefault("constraints", ""));
+                        request = questForm;
+                    }
+                    case DIALOGUE -> {
+                        rawNpc = f.getOrDefault("npc", "").trim();
+                        var id = com.lodygames.rpgquest.panel.content.ContentId.dialogue(rawNpc);
+                        if (!id.ok()) {
+                            error = id.error();
                         }
-                        case DIALOGUE -> {
-                            dialogueForm = new com.lodygames.rpgquest.panel.ai.ContentPromptBuilder
-                                    .DialogueRequest(
-                                    f.getOrDefault("intent", ""),
-                                    f.getOrDefault("dialogueId", ""),
-                                    f.getOrDefault("speaker", ""), f.getOrDefault("tone", ""),
-                                    parseIntOr(f.get("nodeCount"), 0),
-                                    f.getOrDefault("quest", ""),
-                                    f.getOrDefault("constraints", ""));
-                            if (!dialogueForm.valid()) {
-                                error = "Décrivez d'abord ce que la conversation doit raconter.";
-                            } else {
-                                generation = aiStudio.generateDialogue(provider, dialogueForm, ref,
-                                        contentWorkspace);
-                            }
+                        // #225 — quel dialogue viser ? La question est posée avant l'appel quand le
+                        // PNJ porte déjà un dialogue qui ne s'appelle pas comme lui.
+                        decision = com.lodygames.rpgquest.panel.npc.DialogueTargetDecision.resolve(
+                                agentPages.npcDirectory(agentId), id.key(),
+                                f.get("dialogueTarget"));
+                        if (decision.needsDecision() && error == null) {
+                            error = "Ce PNJ porte déjà un dialogue sous un autre nom : choisissez "
+                                    + "ci-dessous ce que l'IA doit faire. Aucun appel n'a été fait.";
                         }
-                        case STORY -> {
-                            storyForm = new com.lodygames.rpgquest.panel.ai.ContentPromptBuilder
-                                    .StoryRequest(
-                                    f.getOrDefault("intent", ""), f.getOrDefault("storyId", ""),
-                                    f.getOrDefault("title", ""), f.getOrDefault("quests", ""),
-                                    f.getOrDefault("constraints", ""));
-                            if (!storyForm.valid()) {
-                                error = "Décrivez d'abord le fil de l'enchaînement.";
-                            } else {
-                                generation = aiStudio.generateStory(provider, storyForm, ref,
-                                        contentWorkspace);
-                            }
+                        dialogueForm = new com.lodygames.rpgquest.panel.ai.ContentPromptBuilder
+                                .DialogueRequest(
+                                f.getOrDefault("intent", ""), decision.dialogueKey(),
+                                f.getOrDefault("speaker", ""), f.getOrDefault("tone", ""),
+                                parseIntOr(f.get("nodeCount"), 0),
+                                f.getOrDefault("quest", ""),
+                                f.getOrDefault("constraints", ""));
+                        request = decision.needsDecision() ? null : dialogueForm;
+                    }
+                    case STORY -> {
+                        var id = com.lodygames.rpgquest.panel.content.ContentId
+                                .story(f.getOrDefault("storyId", ""));
+                        if (!id.ok()) {
+                            error = id.error();
                         }
+                        storyForm = new com.lodygames.rpgquest.panel.ai.ContentPromptBuilder
+                                .StoryRequest(
+                                f.getOrDefault("intent", ""), id.canonical(),
+                                f.getOrDefault("title", ""), f.getOrDefault("quests", ""),
+                                f.getOrDefault("constraints", ""));
+                        request = storyForm;
                     }
                 }
+
+                if (error != null) {
+                    request = null;
+                } else if (request != null && !request.valid()) {
+                    error = switch (kind) {
+                        case QUEST -> "Décrivez d'abord ce que la quête doit raconter.";
+                        case DIALOGUE -> "Décrivez d'abord ce que la conversation doit raconter.";
+                        case STORY -> "Décrivez d'abord le fil de l'enchaînement.";
+                    };
+                    request = null;
+                }
+
+                if (request != null && correcting) {
+                    // #222 — la sortie refusée et les diagnostics voyagent dans le formulaire. Les
+                    // diagnostics tiennent dans UN champ, une ligne par problème : le lecteur de
+                    // formulaire ne garde qu'une valeur par nom, et une série de champs homonymes
+                    // n'en transportait donc qu'un seul.
+                    List<String> problems = new ArrayList<>();
+                    for (String line : f.getOrDefault("problems", "").split("\\R")) {
+                        if (!line.isBlank()) {
+                            problems.add(line.trim());
+                        }
+                    }
+                    var correction = new com.lodygames.rpgquest.panel.ai.AiContentStudio.Correction(
+                            request, provider, f.getOrDefault("previousYaml", ""), problems);
+                    if (!correction.usable()) {
+                        error = "Impossible de relancer la correction : la proposition précédente "
+                                + "ou ses diagnostics n'ont pas été transmis. Relancez une "
+                                + "génération — rien n'a été enregistré.";
+                    } else {
+                        // Conservé pour que l'écran garde le bouton si l'appel lui-même échoue.
+                        fallback = correction;
+                        generation = aiStudio.correct(correction, ref, contentWorkspace);
+                    }
+                } else if (request != null) {
+                    generation = aiStudio.generate(provider, request, ref, contentWorkspace);
+                }
+
                 if (generation != null) {
                     // L'audit retient le fournisseur, le modèle, les jetons et le verdict — jamais
                     // la clé, jamais le prompt complet (contenu éditorial, et volumineux).
-                    audit.record(session.username(),
-                            "correct".equals(f.get("_action")) ? "ai.correct" : "ai.generate",
+                    audit.record(session.username(), correcting ? "ai.correct" : "ai.generate",
                             "kind=" + generation.kind()
                                     + " provider=" + generation.providerId()
                                     + " model=" + generation.model()
-                                    + " usage=" + generation.usage(),
+                                    + " usage=" + generation.usage()
+                                    + " unmet=" + generation.unmet().size(),
                             generation.callOk() ? "OK" : "FAILED",
                             generation.callOk()
-                                    ? (generation.analysis() != null && generation.analysis().importable()
-                                        ? "proposition valide" : "proposition refusée par la validation")
+                                    ? (generation.acceptable() ? "proposition valide"
+                                        : generation.unmet().isEmpty()
+                                            ? "proposition refusée par la validation"
+                                            : "proposition refusée : demande non respectée ("
+                                                    + String.join(" ; ", generation.unmet()) + ")")
                                     : generation.error(),
                             rid);
                 }
@@ -792,7 +848,7 @@ public final class PanelApp {
         }
 
         String body = AiStudioPages.render(aiStudio.usableProviders(), kind, questForm, dialogueForm,
-                storyForm, provider, generation, ref, canImport, error);
+                storyForm, provider, generation, ref, canImport, error, decision, fallback, rawNpc);
         Http.html(exchange, 200, renderPage("Créer avec une IA", session, "/ai/studio", body,
                 Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }

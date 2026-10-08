@@ -394,7 +394,9 @@ public final class ContentPackImport {
     private static String slugOf(String family, String rawId) {
         String id = "quests".equals(family) ? QuestYaml.plainId(rawId) : rawId.trim();
         String lower = id.toLowerCase(Locale.ROOT);
-        return lower.matches("[a-z0-9][a-z0-9_-]{0,63}") ? lower : "";
+        // Même expression que ContentId.KEY_PATTERN : une clé acceptée à la saisie ne peut donc pas
+        // être refusée ici, et inversement (issue #223).
+        return lower.matches(ContentId.KEY_PATTERN) ? lower : "";
     }
 
     // ---- Dépendances --------------------------------------------------------------------------

@@ -16,7 +16,7 @@ import java.util.Map;
  * repliés, pas de flow-maps {@code {a: 1}}. Un fichier écrit ailleurs avec ces constructions se
  * relira mal — l'éditeur le détecte via la comparaison round-trip et refuse d'écraser à l'aveugle.</p>
  */
-final class MiniYaml {
+public final class MiniYaml {
 
     private MiniYaml() {
     }
@@ -24,7 +24,12 @@ final class MiniYaml {
     private record Line(int indent, String text) {
     }
 
-    static Object parse(String yaml) {
+    /**
+     * Public depuis #224 : l'atelier IA doit relire la proposition qu'il vient d'obtenir pour
+     * vérifier lui-même les contraintes du formulaire, et il vit dans un autre paquet. Rien à
+     * protéger ici — la méthode ne fait que lire du texte, sans accès disque ni effet de bord.
+     */
+    public static Object parse(String yaml) {
         List<Line> lines = new ArrayList<>();
         String norm = (yaml == null ? "" : yaml).replace("\r\n", "\n").replace('\r', '\n');
         for (String raw : norm.split("\n", -1)) {

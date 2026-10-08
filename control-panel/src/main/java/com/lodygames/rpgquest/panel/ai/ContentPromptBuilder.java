@@ -43,8 +43,10 @@ public final class ContentPromptBuilder {
                 7. Produis UN seul dialogue, dans la section « dialogues ». N'y ajoute pas de quête :
                    si le dialogue en démarre une, elle doit déjà exister (utilise la liste des
                    quêtes disponibles) ou être déclarée dans « dependencies ».
-                8. L'identifiant du dialogue EST l'identifiant du PNJ qui le porte. C'est une
-                   convention du moteur, pas un choix éditorial.
+                8. L'identifiant du dialogue est celui qui t'est IMPOSÉ dans les consignes
+                   ci-dessous. Ne le renomme pas, et ne le déduis pas du nom du PNJ : un PNJ peut
+                   parfaitement porter un dialogue qui ne s'appelle pas comme lui, et en inventer un
+                   second créerait un doublon.
                 9. N'invente JAMAIS un type d'action ni de condition. Seuls ceux listés dans le
                    contrat existent, avec exactement les champs qui y sont décrits.
                 10. Un choix dont une condition est fausse N'EST PAS AFFICHÉ au joueur. Pour une
@@ -94,6 +96,40 @@ public final class ContentPromptBuilder {
     }
 
     /**
+     * Une demande de contenu, quelle que soit sa famille (issue #222).
+     *
+     * <p><strong>Pourquoi cette interface existe.</strong> « Demander une correction » doit renvoyer
+     * à l'IA sa sortie, les diagnostics <em>et</em> les consignes d'origine — sinon le modèle corrige
+     * l'erreur signalée tout en perdant l'identifiant, le titre ou le nombre de nœuds que
+     * l'administrateur avait imposés, et on recommence. Pour que ce soit vrai des trois familles
+     * sans trois chemins de code, la demande elle-même sait produire son bloc de consignes et les
+     * contraintes que le backend vérifiera ensuite.</p>
+     */
+    public sealed interface Demand permits QuestRequest, DialogueRequest, StoryRequest {
+
+        Kind kind();
+
+        /** Ce que l'administrateur a écrit en français. Seul champ obligatoire. */
+        String intent();
+
+        /** La demande a-t-elle un sens ? Une intention vide n'en a aucun. */
+        boolean valid();
+
+        /**
+         * Le bloc « CONSIGNES PRÉCISES » : tout ce que l'administrateur a imposé. Produit une seule
+         * fois ici, utilisé à la génération <em>et</em> à la correction.
+         */
+        String instructions();
+
+        /**
+         * Ce que le backend vérifiera lui-même sur la proposition (issues #223 et #224). Nommée
+         * {@code imposed()} et non {@code constraints()} : « contraintes » désigne déjà, dans les
+         * formulaires, le champ de texte libre où l'administrateur écrit ce qu'il veut en plus.
+         */
+        AiConstraints imposed();
+    }
+
+    /**
      * La demande humaine, telle que le formulaire la collecte. Tous les champs sont facultatifs sauf
      * {@link #intent()} : c'est le seul dont l'absence rend la demande vide de sens.
      *
@@ -111,7 +147,8 @@ public final class ContentPromptBuilder {
      */
     public record QuestRequest(String intent, String title, String questId, String category,
                                String giver, String difficulty, String duration, int stepCount,
-                               boolean repeatable, String rewardIntent, String constraints) {
+                               boolean repeatable, String rewardIntent, String constraints)
+            implements Demand {
 
         public QuestRequest {
             intent = trim(intent);
@@ -126,8 +163,43 @@ public final class ContentPromptBuilder {
             stepCount = Math.max(0, Math.min(10, stepCount));
         }
 
+        @Override
+        public Kind kind() {
+            return Kind.QUEST;
+        }
+
+        @Override
         public boolean valid() {
             return !intent.isEmpty();
+        }
+
+        @Override
+        public String instructions() {
+            StringBuilder sb = new StringBuilder();
+            line(sb, "Identifiant de quête IMPOSÉ (reprends-le exactement)", questId);
+            line(sb, "Titre exact à utiliser (reprends-le tel quel, balises comprises)", title);
+            line(sb, "Catégorie", category);
+            line(sb, "PNJ donneur (champ « giver »)", giver);
+            line(sb, "Difficulté visée", difficulty);
+            line(sb, "Durée visée", duration);
+            if (stepCount > 0) {
+                line(sb, "Nombre d'étapes souhaité (indication, à respecter si c'est jouable)",
+                        String.valueOf(stepCount));
+            }
+            line(sb, "Quête répétable", repeatable ? "oui" : "non");
+            line(sb, "Récompense souhaitée", rewardIntent);
+            line(sb, "Contraintes supplémentaires", constraints);
+            return sb.toString();
+        }
+
+        /**
+         * Seul l'identifiant est vérifié côté backend. Le nombre d'étapes reste une indication :
+         * le formulaire le dit, et contrairement aux nœuds d'un dialogue, un objectif de plus ou de
+         * moins peut être ce qui rend la quête jouable.
+         */
+        @Override
+        public AiConstraints imposed() {
+            return AiConstraints.forQuest(questId);
         }
     }
 
@@ -145,7 +217,11 @@ public final class ContentPromptBuilder {
      * @param constraints contraintes libres
      */
     public record DialogueRequest(String intent, String dialogueId, String speaker, String tone,
-                                  int nodeCount, String quest, String constraints) {
+                                  int nodeCount, String quest, String constraints)
+            implements Demand {
+
+        /** Borne du formulaire, et donc du nombre de nœuds vérifiable (issue #224). */
+        public static final int MAX_NODES = 12;
 
         public DialogueRequest {
             intent = trim(intent);
@@ -154,11 +230,43 @@ public final class ContentPromptBuilder {
             tone = trim(tone);
             quest = trim(quest);
             constraints = trim(constraints);
-            nodeCount = Math.max(0, Math.min(12, nodeCount));
+            nodeCount = Math.max(0, Math.min(MAX_NODES, nodeCount));
         }
 
+        @Override
+        public Kind kind() {
+            return Kind.DIALOGUE;
+        }
+
+        @Override
         public boolean valid() {
             return !intent.isEmpty();
+        }
+
+        @Override
+        public String instructions() {
+            StringBuilder sb = new StringBuilder();
+            line(sb, "Identifiant du dialogue IMPOSÉ (reprends-le exactement, c'est le champ « id »)",
+                    dialogueId);
+            line(sb, "Nom affiché du locuteur (reprends-le tel quel, balises comprises)", speaker);
+            line(sb, "Ton de la conversation", tone);
+            if (nodeCount > 0) {
+                // #224 — « souhaité » laissait croire à une indication, et le modèle en produisait
+                // un de moins. Le backend recompte la vraie map « nodes » : autant le dire ici.
+                sb.append("- Nombre de nœuds IMPÉRATIF : exactement ").append(nodeCount)
+                        .append(". La map « nodes » doit contenir ").append(nodeCount)
+                        .append(" entrée(s), pas une de plus, pas une de moins. Ce nombre est "
+                                + "recompté après ta réponse et une valeur différente fait refuser "
+                                + "la proposition.\n");
+            }
+            line(sb, "Quête que la conversation doit proposer ou valider (elle existe déjà)", quest);
+            line(sb, "Contraintes supplémentaires", constraints);
+            return sb.toString();
+        }
+
+        @Override
+        public AiConstraints imposed() {
+            return AiConstraints.forDialogue(dialogueId, nodeCount);
         }
     }
 
@@ -174,7 +282,7 @@ public final class ContentPromptBuilder {
      * @param constraints contraintes libres
      */
     public record StoryRequest(String intent, String storyId, String title, String quests,
-                               String constraints) {
+                               String constraints) implements Demand {
 
         public StoryRequest {
             intent = trim(intent);
@@ -184,8 +292,40 @@ public final class ContentPromptBuilder {
             constraints = trim(constraints);
         }
 
+        @Override
+        public Kind kind() {
+            return Kind.STORY;
+        }
+
+        @Override
         public boolean valid() {
             return !intent.isEmpty();
+        }
+
+        @Override
+        public String instructions() {
+            StringBuilder sb = new StringBuilder();
+            line(sb, "Identifiant de story IMPOSÉ (reprends-le exactement)", storyId);
+            line(sb, "Titre exact à utiliser (reprends-le tel quel, balises comprises)", title);
+            line(sb, "Contraintes supplémentaires", constraints);
+            List<String> chained = questList();
+            if (!chained.isEmpty()) {
+                sb.append("- Quêtes à enchaîner, dans cet ordre si cet ordre est cohérent :\n");
+                for (String q : chained) {
+                    sb.append("  - ").append(q).append('\n');
+                }
+                sb.append("  Chacune doit figurer parmi les quêtes disponibles listées plus bas. "
+                        + "N'en ajoute aucune autre.\n");
+            } else {
+                sb.append("- Aucune quête imposée : choisis-les parmi les quêtes disponibles listées "
+                        + "plus bas, et UNIQUEMENT parmi elles.\n");
+            }
+            return sb.toString();
+        }
+
+        @Override
+        public AiConstraints imposed() {
+            return AiConstraints.forStory(storyId);
         }
 
         /** Les quêtes citées, quelle que soit la façon dont l'administrateur les a séparées. */
@@ -242,82 +382,19 @@ public final class ContentPromptBuilder {
                 """;
     }
 
-    /** La demande, le contrat, les références. Dans cet ordre : l'IA lit mieux la consigne en tête. */
-    public static String userPrompt(QuestRequest request, RefData refs) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("# CE QUE JE VEUX\n\n").append(request.intent()).append("\n\n");
-
-        sb.append("# CONSIGNES PRÉCISES\n\n");
-        line(sb, "Identifiant de quête imposé", request.questId());
-        line(sb, "Titre exact à utiliser (reprends-le tel quel, balises comprises)", request.title());
-        line(sb, "Catégorie", request.category());
-        line(sb, "PNJ donneur (champ « giver »)", request.giver());
-        line(sb, "Difficulté visée", request.difficulty());
-        line(sb, "Durée visée", request.duration());
-        if (request.stepCount() > 0) {
-            line(sb, "Nombre d'étapes", String.valueOf(request.stepCount()));
-        }
-        line(sb, "Quête répétable", request.repeatable() ? "oui" : "non");
-        line(sb, "Récompense souhaitée", request.rewardIntent());
-        line(sb, "Contraintes supplémentaires", request.constraints());
-        sb.append('\n');
-
-        appendContractAndFormat(sb, Kind.QUEST, refs);
-        return sb.toString();
-    }
-
     /**
-     * Demande de dialogue. Les références jointes sont les mêmes : ce sont les PNJ et les quêtes
-     * réels qui empêchent l'IA d'inventer un donneur ou une quête à démarrer.
+     * La demande, le contrat, les références. Dans cet ordre : l'IA lit mieux la consigne en tête.
+     *
+     * <p>Un seul chemin pour les trois familles depuis #222 : ce qui les distingue — le bloc de
+     * consignes — est produit par la demande elle-même, et c'est ce même bloc qui sera renvoyé lors
+     * d'une correction. Il n'existe donc plus de version « d'origine » des consignes qui pourrait
+     * diverger de celle de la relance.</p>
      */
-    public static String userPrompt(DialogueRequest request, RefData refs) {
+    public static String userPrompt(Demand request, RefData refs) {
         StringBuilder sb = new StringBuilder();
         sb.append("# CE QUE JE VEUX\n\n").append(request.intent()).append("\n\n");
-
-        sb.append("# CONSIGNES PRÉCISES\n\n");
-        line(sb, "PNJ porteur du dialogue — c'est AUSSI l'id du dialogue", request.dialogueId());
-        line(sb, "Nom affiché du locuteur (reprends-le tel quel, balises comprises)",
-                request.speaker());
-        line(sb, "Ton de la conversation", request.tone());
-        if (request.nodeCount() > 0) {
-            line(sb, "Nombre de nœuds souhaité", String.valueOf(request.nodeCount()));
-        }
-        line(sb, "Quête que la conversation doit proposer ou valider (elle existe déjà)",
-                request.quest());
-        line(sb, "Contraintes supplémentaires", request.constraints());
-        sb.append('\n');
-
-        appendContractAndFormat(sb, Kind.DIALOGUE, refs);
-        return sb.toString();
-    }
-
-    /**
-     * Demande de story. Les quêtes citées sont répétées telles quelles, parce qu'elles sont la
-     * matière première de l'enchaînement — et rappelées comme devant exister.
-     */
-    public static String userPrompt(StoryRequest request, RefData refs) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("# CE QUE JE VEUX\n\n").append(request.intent()).append("\n\n");
-
-        sb.append("# CONSIGNES PRÉCISES\n\n");
-        line(sb, "Identifiant de story imposé", request.storyId());
-        line(sb, "Titre exact à utiliser (reprends-le tel quel, balises comprises)", request.title());
-        line(sb, "Contraintes supplémentaires", request.constraints());
-        List<String> quests = request.questList();
-        if (!quests.isEmpty()) {
-            sb.append("- Quêtes à enchaîner, dans cet ordre si cet ordre est cohérent :\n");
-            for (String q : quests) {
-                sb.append("  - ").append(q).append('\n');
-            }
-            sb.append("  Chacune doit figurer parmi les quêtes disponibles listées plus bas. "
-                    + "N'en ajoute aucune autre.\n");
-        } else {
-            sb.append("- Aucune quête imposée : choisis-les parmi les quêtes disponibles listées "
-                    + "plus bas, et UNIQUEMENT parmi elles.\n");
-        }
-        sb.append('\n');
-
-        appendContractAndFormat(sb, Kind.STORY, refs);
+        sb.append("# CONSIGNES PRÉCISES\n\n").append(request.instructions()).append('\n');
+        appendContractAndFormat(sb, request.kind(), refs);
         return sb.toString();
     }
 
@@ -344,19 +421,32 @@ public final class ContentPromptBuilder {
     }
 
     /**
-     * Demande de correction après un échec de validation : on renvoie à l'IA <strong>sa propre
-     * sortie</strong> et les diagnostics réels, plutôt que de lui redemander à partir de zéro.
-     * C'est ce qui rend le bouton « demander une correction » utile — l'IA voit ce qui n'allait pas.
+     * Demande de correction après un refus : on renvoie à l'IA <strong>sa propre sortie</strong>, les
+     * diagnostics réels <em>et</em> la demande d'origine, plutôt que de lui redemander à partir de
+     * zéro. C'est ce qui rend le bouton « demander une correction » utile — l'IA voit ce qui n'allait
+     * pas, et ce qui ne devait pas changer.
+     *
+     * <p><strong>Les consignes d'origine en font partie (issue #222).</strong> Sans elles, le modèle
+     * corrigeait bien l'erreur signalée mais perdait au passage l'identifiant imposé, le titre exact
+     * ou le nombre de nœuds — produisant une proposition refusée pour une <em>autre</em> raison, et
+     * donnant l'impression que le bouton ne servait à rien. Le bloc réinjecté ici est exactement
+     * celui de la première demande : {@link Demand#instructions()}.</p>
+     *
+     * @param request la demande d'origine, telle que le formulaire l'avait collectée
      */
-    public static String correctionPrompt(Kind kind, String previousYaml, List<String> problems,
+    public static String correctionPrompt(Demand request, String previousYaml, List<String> problems,
                                           RefData refs) {
+        Kind kind = request.kind();
         StringBuilder sb = new StringBuilder();
         sb.append("""
                 # CORRECTION DEMANDÉE
 
-                Le document que tu as produit a été refusé par les validateurs réels du serveur.
-                Voici les problèmes constatés, puis ton document. Corrige-les tous et renvoie le
-                document complet corrigé — toujours du YAML seul, sans explication.
+                Le document que tu as produit a été refusé. Voici les problèmes constatés, la demande
+                d'origine, puis ton document. Corrige TOUS les problèmes et renvoie le document
+                complet corrigé — toujours du YAML seul, sans explication.
+
+                Ne change rien d'autre : ce qui n'est pas listé comme problème était accepté, et les
+                consignes d'origine restent impératives.
 
                 ## Problèmes constatés
 
@@ -364,6 +454,9 @@ public final class ContentPromptBuilder {
         for (String p : problems) {
             sb.append("- ").append(p).append('\n');
         }
+        sb.append("\n## La demande d'origine, inchangée\n\n").append(request.intent()).append("\n\n");
+        sb.append("### Consignes précises, toujours impératives\n\n")
+                .append(request.instructions()).append('\n');
         sb.append("\n## Ton document précédent\n\n```yaml\n").append(previousYaml).append("\n```\n\n");
         sb.append("Le contenu demandé reste un ").append(kind.label())
                 .append(", dans la section « ").append(kind.section()).append(" ».\n\n");

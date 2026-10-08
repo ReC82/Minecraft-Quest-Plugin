@@ -52,6 +52,13 @@ public final class Layout {
                         new NavItem("Import contenu", "/content/import", "export", Permission.CONTENT_IMPORT, true),
                         new NavItem("Créer avec une IA", "/ai/studio", "gift", Permission.AI_USE, true),
                         new NavItem("Fournisseurs d'IA", "/ai/providers", "admin", Permission.AI_CONFIGURE, true))),
+                // Issue #213 — groupe « Bâtiments » : une seule entrée aujourd'hui, et c'est voulu.
+                // Le groupe existe dès maintenant parce que la bibliothèque de bâtiments et les
+                // placements viendront s'y ranger ; les créer sous « RPGQuest » puis les déménager
+                // casserait des liens déjà partagés.
+                new NavGroup("Bâtiments", List.of(
+                        new NavItem("Emplacements", "/buildings/sites", "world",
+                                Permission.BUILDING_READ, true))),
                 new NavGroup("Serveur", List.of(
                         new NavItem("Exploitation", "/ops", "server", Permission.OPS_VIEW, true))),
                 new NavGroup("Ressources", List.of(

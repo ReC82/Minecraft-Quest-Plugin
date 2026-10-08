@@ -49,6 +49,8 @@ public enum Role {
             Permission.QUEST_CONTENT_WRITE, Permission.STORY_CONTENT_WRITE,
             Permission.CONTENT_READ, Permission.CONTENT_EXPORT, Permission.CONTENT_IMPORT,
             Permission.CONTENT_DELETE, Permission.NPC_DELETE,
+            // Issue #213 : les emplacements de construction font partie de l'exploitation courante.
+            Permission.BUILDING_READ, Permission.BUILDING_WRITE, Permission.BUILDING_DELETE,
             Permission.AI_USE, Permission.AI_CONFIGURE,
             Permission.DOCS_READ, Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ,
             Permission.ACTION_QUEST, Permission.ACTION_STORY,
@@ -70,11 +72,18 @@ public enum Role {
             // observe en jeu. Il n'annonce rien et ne redémarre rien.
             Permission.OPS_VIEW, Permission.OPS_LOGS,
             // Issue #140 : lire un solde aide à comprendre un comportement en jeu ; en créer, non.
-            Permission.ECONOMY_READ)),
+            Permission.ECONOMY_READ,
+            // Issue #213 : un testeur doit pouvoir vérifier qu'un emplacement marqué en jeu est
+            // bien arrivé. Lecture seule.
+            Permission.BUILDING_READ)),
 
     BUILDER("Builder", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.NPC_READ, Permission.TRAVEL_READ, Permission.CONTENT_READ,
-            Permission.DIAGNOSTICS_READ, Permission.DOCS_READ, Permission.MOB_READ)),
+            Permission.DIAGNOSTICS_READ, Permission.DOCS_READ, Permission.MOB_READ,
+            // Issue #213 : un emplacement de construction est un repère de construction — c'est
+            // exactement ce que ce rôle a besoin de consulter. Lecture seule : il ne renomme ni ne
+            // supprime rien, et il ne peut de toute façon pas en créer depuis le panel.
+            Permission.BUILDING_READ)),
 
     CONTENT_EDITOR("Éditeur de contenu", EnumSet.of(
             Permission.DASHBOARD_VIEW, Permission.CONTENT_READ, Permission.CONTENT_EXPORT,

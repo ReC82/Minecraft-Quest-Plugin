@@ -78,6 +78,34 @@ public enum Permission {
      * n'a pas.</p>
      */
     NPC_DELETE,
+    /**
+     * Voir les <strong>emplacements de construction</strong> (issue #213) : la page
+     * {@code /buildings/sites} et les fiches. Lecture seule.
+     *
+     * <p>Accordée au rôle <strong>Builder</strong> en plus des administrateurs : un emplacement est
+     * un repère de construction, et c'est précisément ce que ce rôle a besoin de consulter. Elle
+     * n'accorde aucune écriture.</p>
+     */
+    BUILDING_READ,
+    /**
+     * Modifier la fiche d'un emplacement (issue #213) : son libellé, sa note, son orientation.
+     *
+     * <p>Ne permet <strong>pas</strong> de créer un emplacement — aucune permission ne le permet
+     * depuis le panel, parce qu'un emplacement est défini par une position désignée en jeu. La
+     * création a son propre nœud Minecraft ({@code rpgquest.admin.buildsite}), qui n'a aucun rapport
+     * avec celui-ci : l'un gouverne un clic dans le monde, l'autre un formulaire web.</p>
+     */
+    BUILDING_WRITE,
+    /**
+     * Supprimer un emplacement de construction (issue #213). Permission <strong>dédiée</strong>,
+     * comme {@link #CONTENT_DELETE} et {@link #NPC_DELETE} : corriger une fiche est réversible,
+     * retirer le repère ne l'est pas, et l'identifiant ne sera jamais réattribué.
+     *
+     * <p>Aucun bloc du monde n'est touché par cette suppression — elle ne retire qu'un marqueur
+     * logique. Elle devra être repensée le jour où un bâtiment pourra être réellement posé sur un
+     * emplacement.</p>
+     */
+    BUILDING_DELETE,
     DOCS_READ,
     DIAGNOSTICS_READ,
     AUDIT_READ,

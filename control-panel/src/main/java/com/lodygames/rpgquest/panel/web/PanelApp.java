@@ -237,6 +237,10 @@ public final class PanelApp {
         // Issue #226 : GET = aperçu des dépendances couche par couche, POST = une opération précise
         // après confirmation tapée. Même discipline que #194, sur un objet qui vit sur cinq couches.
         route("/npcs/delete", this::handleNpcDelete);
+        // Issue #213 — emplacements de construction. Lecture gardée par BUILDING_READ ; les
+        // mutations passent par /agents/action, donc par le catalogue et ses propres permissions.
+        route("/buildings/sites", exchange -> handleBusinessPage(exchange, "/buildings/sites",
+                "Emplacements de construction", Permission.BUILDING_READ, agentPages::buildingSites));
         route("/travel", exchange -> handleBusinessPage(exchange, "/travel", "Réseau de voyage",
                 Permission.TRAVEL_READ, agentPages::travel));
         route("/mobs", exchange -> handleBusinessPage(exchange, "/mobs", "Mobs spéciaux & boss",

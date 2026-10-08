@@ -35,6 +35,13 @@ public final class AgentActionCatalog {
     private static final int MAX_DIALOGUE_TEXT = 512;
     private static final int MAX_DIALOGUE_CHOICE_INDEX = 199;
     private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
+    /** Issue #213 : exactement la forme que le serveur attribue à un emplacement. */
+    private static final Pattern BUILD_SITE_ID = Pattern.compile("buildsite_[0-9]{1,12}");
+    /** Les quatre orientations cardinales, miroir de {@code Facing} côté plugin. */
+    private static final java.util.Set<String> BUILD_SITE_FACINGS =
+            java.util.Set.of("NORTH", "EAST", "SOUTH", "WEST");
+    private static final int MAX_BUILD_SITE_NAME = 64;
+    private static final int MAX_BUILD_SITE_DESCRIPTION = 500;
     /** Familles de contenu exportables (issue #108) — miroir de {@code ContentFamily} côté plugin. */
     private static final java.util.Set<String> CONTENT_FAMILIES =
             java.util.Set.of("all", "quests", "stories", "dialogues", "npcs");
@@ -165,6 +172,16 @@ public final class AgentActionCatalog {
     private static final Map<String, Spec> SPECS = new LinkedHashMap<>();
 
     /** Lecture ou mutation « classique » : une mutation non annotée reste sensible (comportement historique). */
+    /** Identifiant d'emplacement normalisé, ou {@code null} si la saisie n'en est pas un. */
+    private static String buildSiteId(Map<String, String> form) {
+        String raw = trim(form.get("id"));
+        if (raw.isEmpty()) {
+            raw = trim(form.get("site_id"));
+        }
+        String id = raw.toLowerCase(java.util.Locale.ROOT);
+        return BUILD_SITE_ID.matcher(id).matches() ? id : null;
+    }
+
     private static void add(String type, Permission p, boolean mutation, boolean needsPlayer, String label) {
         SPECS.put(type, new Spec(type, p, mutation, needsPlayer, mutation, label, List.of()));
     }
@@ -206,6 +223,10 @@ public final class AgentActionCatalog {
         add("story.player.status", Permission.PLAYERS_READ, false, true, "État des stories d'un joueur");
         add("item.list", Permission.CONTENT_READ, false, false, "Rafraîchir la liste des objets");
         add("npc.list", Permission.NPC_READ, false, false, "Rafraîchir le catalogue des PNJ");
+        // Issue #213 — emplacements de construction. La CRÉATION n'a volontairement pas d'action :
+        // un emplacement est défini par une position désignée en jeu, pas saisie dans un écran.
+        add("building.site.list", Permission.BUILDING_READ, false, false,
+                "Rafraîchir les emplacements de construction");
         add("travel.catalog", Permission.TRAVEL_READ, false, false,
                 "Rafraîchir le catalogue waypoints/bornes (issue #152)");
         add("npc.citizens.list", Permission.NPC_READ, false, false, "Rafraîchir les PNJ Citizens");
@@ -238,6 +259,17 @@ public final class AgentActionCatalog {
         addContentWrite("npc.definition.update", Permission.NPC_WRITE, "Modifier une définition PNJ", "npc.list");
         addContentWrite("quest.giver.set", Permission.QUEST_GIVER_WRITE, "Attribuer une quête à un PNJ",
                 "npc.list", "quest.list");
+        // Issue #213 — édition de la fiche d'un emplacement : réversible, donc pas de case à cocher.
+        addContentWrite("building.site.rename", Permission.BUILDING_WRITE,
+                "Renommer un emplacement de construction", "building.site.list");
+        addContentWrite("building.site.describe", Permission.BUILDING_WRITE,
+                "Décrire un emplacement de construction", "building.site.list");
+        addContentWrite("building.site.facing", Permission.BUILDING_WRITE,
+                "Corriger l'orientation d'un emplacement", "building.site.list");
+        // Suppression du marqueur logique : aucun bloc du monde n'est touché, mais l'identifiant ne
+        // sera jamais réattribué — donc mutation sensible, avec confirmation explicite.
+        addSensitiveWrite("building.site.delete", Permission.BUILDING_DELETE, false,
+                "Supprimer un emplacement de construction", "building.site.list");
         addContentWrite("npc.citizens.link", Permission.NPC_BIND_WRITE, "Lier un PNJ Citizens existant",
                 "npc.list", "npc.citizens.list");
         // Issue #226 — les trois suppressions de PNJ. Permission DÉDIÉE (NPC_DELETE) : créer et
@@ -521,6 +553,57 @@ public final class AgentActionCatalog {
                 params.put("npc_id", npcId);
             }
             // Issue #226 — une suppression de PNJ ne part jamais sans cible explicite.
+            // Issue #213 — bornes miroir de BuildingSite, revalidées par le serveur.
+            case "building.site.rename" -> {
+                String id = buildSiteId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                String name = trim(form.get("name"));
+                if (name.isEmpty()) {
+                    return Validation.fail("Un emplacement garde toujours un libellé.");
+                }
+                if (name.length() > MAX_BUILD_SITE_NAME) {
+                    return Validation.fail("Nom trop long (" + MAX_BUILD_SITE_NAME
+                            + " caractères au plus).");
+                }
+                params.put("id", id);
+                params.put("name", name);
+            }
+            case "building.site.describe" -> {
+                String id = buildSiteId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                // Une description vide est une valeur valide : c'est « effacer la note ».
+                String description = trim(form.get("description"));
+                if (description.length() > MAX_BUILD_SITE_DESCRIPTION) {
+                    return Validation.fail("Description trop longue (" + MAX_BUILD_SITE_DESCRIPTION
+                            + " caractères au plus).");
+                }
+                params.put("id", id);
+                params.put("description", description);
+            }
+            case "building.site.facing" -> {
+                String id = buildSiteId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                String facing = trim(form.get("facing")).toUpperCase(java.util.Locale.ROOT);
+                if (!BUILD_SITE_FACINGS.contains(facing)) {
+                    return Validation.fail("Orientation inconnue : attendu "
+                            + String.join(", ", BUILD_SITE_FACINGS) + ".");
+                }
+                params.put("id", id);
+                params.put("facing", facing);
+            }
+            case "building.site.delete" -> {
+                String id = buildSiteId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                params.put("id", id);
+            }
             case "npc.definition.delete" -> {
                 String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
                 if (!NPC_ID.matcher(npcId).matches()) {

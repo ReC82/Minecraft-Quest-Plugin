@@ -1741,6 +1741,292 @@ public final class AgentPages {
      * cette page (voir {@code /rpgadmin travel diagnose} côté serveur pour une vérification
      * d'accessibilité réelle, issue #153).</p>
      */
+    // ================================================================================
+    //  Emplacements de construction (issue #213)
+    // ================================================================================
+
+    /**
+     * Issue #213 — les emplacements de construction du serveur, projetés en types raisonnables.
+     *
+     * <p>Lecture du dernier relevé {@code building.site.list} <strong>réussi</strong> uniquement :
+     * aucune requête n'est déclenchée. Sans relevé, l'annuaire est explicitement indisponible, et
+     * l'écran dit « cliquez sur Rafraîchir » — une liste vide se lirait comme « aucun
+     * emplacement », ce qui est une affirmation qu'on n'a pas le droit de faire.</p>
+     */
+    public com.lodygames.rpgquest.panel.building.BuildingSiteDirectory buildingSiteDirectory(
+            String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return com.lodygames.rpgquest.panel.building.BuildingSiteDirectory.unavailable();
+        }
+        return latestDetails(agentId, "building.site.list")
+                .map(com.lodygames.rpgquest.panel.building.BuildingSiteDirectory::from)
+                .orElseGet(com.lodygames.rpgquest.panel.building.BuildingSiteDirectory::unavailable);
+    }
+
+    /**
+     * Page {@code /buildings/sites} : la liste des emplacements, et la fiche de chacun.
+     *
+     * <p><strong>Pas de bouton « Créer ».</strong> Un emplacement est défini par une position
+     * désignée du doigt en jeu ; un formulaire web devrait inventer des coordonnées. La page le dit
+     * en tête, avec la commande qui donne l'outil — c'est la question que se posera forcément
+     * quiconque arrive ici la première fois.</p>
+     */
+    public String buildingSites(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("world", "Emplacements de construction",
+                "Les points d'ancrage marqués en jeu. Un emplacement ne contient encore aucun "
+                        + "bâtiment : ce socle sert à les situer, les nommer et les retrouver.", ""));
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+        boolean canWrite = perms.can(session.effective(), Permission.BUILDING_WRITE);
+        boolean canDelete = perms.can(session.effective(), Permission.BUILDING_DELETE);
+
+        sb.append(agentPicker(agentId, "/buildings/sites", ""));
+        sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Catalogue</span>");
+        sb.append(compactRefresh(session, agentId, "building.site.list", "Rafraîchir",
+                "btn-outline-primary", "/buildings/sites"));
+        sb.append("</div>");
+
+        var directory = buildingSiteDirectory(agentId);
+        if (!directory.available()) {
+            sb.append(Ui.empty("world",
+                    "Aucun relevé chargé — cliquer sur « Rafraîchir »."));
+            sb.append(howToCreateCard());
+            return sb.toString();
+        }
+        if (directory.total() == 0) {
+            sb.append(Ui.empty("world", "Aucun emplacement de construction pour le moment."));
+            sb.append(howToCreateCard());
+            return sb.toString();
+        }
+
+        String worldFilter = str(q.get("world")).trim();
+        var shown = directory.inWorld(worldFilter);
+
+        sb.append("<p class=\"npc-summary\">").append(directory.total())
+                .append(" emplacement(s)");
+        if (!worldFilter.isEmpty()) {
+            sb.append(" &middot; filtre : <code>").append(Http.esc(worldFilter)).append("</code>");
+        }
+        sb.append("</p>");
+        sb.append(worldFilterBar(directory.worlds(), worldFilter));
+
+        var unloaded = directory.inUnloadedWorlds();
+        if (!unloaded.isEmpty()) {
+            sb.append(Ui.banner("info", unloaded.size() + " emplacement(s) se trouvent dans un "
+                    + "monde que le serveur n'a <strong>pas chargé</strong> en ce moment. Ils "
+                    + "restent valides — ils ne sont simplement pas visitables tant que le monde "
+                    + "n'est pas chargé."));
+        }
+
+        sb.append(Ui.searchToolbar("buildsites",
+                "Rechercher un emplacement (identifiant, nom, monde, position…)", ""));
+        sb.append("<div class=\"accordion npc-accordion\" id=\"buildsite-accordion\">");
+        int index = 0;
+        for (var site : shown) {
+            sb.append(buildingSiteItem(session, agentId, site, index++, canWrite, canDelete));
+        }
+        sb.append("</div>");
+        if (shown.isEmpty()) {
+            sb.append(Ui.empty("world", "Aucun emplacement dans ce monde."));
+        }
+        sb.append(howToCreateCard());
+        return sb.toString();
+    }
+
+    /** Les puces de filtre par monde. Un lien par monde : aucun script, et l'URL est partageable. */
+    private String worldFilterBar(List<String> worlds, String active) {
+        if (worlds.size() <= 1) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<div class=\"btnrow\">");
+        sb.append("<a class=\"btn btn-sm ")
+                .append(active.isEmpty() ? "btn-primary" : "btn-outline-secondary")
+                .append("\" href=\"/buildings/sites\">Tous les mondes</a>");
+        for (String world : worlds) {
+            sb.append("<a class=\"btn btn-sm ")
+                    .append(world.equals(active) ? "btn-primary" : "btn-outline-secondary")
+                    .append("\" href=\"/buildings/sites?world=")
+                    .append(java.net.URLEncoder.encode(world,
+                            java.nio.charset.StandardCharsets.UTF_8))
+                    .append("\">")
+                    .append(Http.esc(world)).append("</a>");
+        }
+        return sb.append("</div>").toString();
+    }
+
+    /**
+     * Comment on crée un emplacement — c'est-à-dire pas ici. Cette carte existe parce que l'absence
+     * de bouton « Créer » est un choix, et qu'un choix non expliqué se lit comme un oubli.
+     */
+    private String howToCreateCard() {
+        return "<section class=\"card\">"
+                + Ui.sectionTitle("docs", "Créer un emplacement : en jeu, pas ici")
+                + "<p class=\"muted\">Un emplacement est un point d'ancrage dans le monde. On le "
+                + "désigne du doigt, on ne le tape pas au clavier : il n'y a donc volontairement "
+                + "aucun bouton « Créer » sur cette page.</p>"
+                + "<ol class=\"muted\">"
+                + "<li>En jeu : <code>/rpgadmin buildsite tool</code> pour recevoir l'outil.</li>"
+                + "<li>Se placer, <strong>regarder dans la direction</strong> que devra avoir la "
+                + "façade, puis <strong>clic droit</strong> sur le bloc visé.</li>"
+                + "<li>L'emplacement est créé sur la <strong>case libre contre la face "
+                + "cliquée</strong> — cliquer le dessus du sol ancre juste au-dessus, là où "
+                + "reposera le bâtiment.</li>"
+                + "<li>Revenir ici, <strong>Rafraîchir</strong>, puis renommer la fiche.</li>"
+                + "</ol>"
+                + "<p class=\"field-help\">L'identifiant (<code>buildsite_0001</code>) est "
+                + "attribué par le serveur, ne change jamais et n'est jamais réattribué — c'est lui "
+                + "qu'un futur bâtiment citera. Le nom, lui, se change librement.</p>"
+                + "</section>";
+    }
+
+    /** Une ligne d'accordion : synthèse en bouton, détail et formulaires dans le replié. */
+    private String buildingSiteItem(Session session, String agentId,
+                                    com.lodygames.rpgquest.panel.building.BuildingSiteView site,
+                                    int index, boolean canWrite, boolean canDelete) {
+        String slug = "buildsite-" + index + "-" + site.id().replaceAll("[^a-z0-9_-]", "-");
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"buildsites\" ")
+                .append("data-filter-text=\"").append(Http.esc(site.searchText())).append("\">");
+        sb.append("<h3 class=\"accordion-header\">");
+        sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" ")
+                .append("data-bs-toggle=\"collapse\" data-bs-target=\"#").append(slug)
+                .append("\" aria-expanded=\"false\" aria-controls=\"").append(slug).append("\">");
+        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">")
+                .append(Http.esc(site.name())).append("</span>");
+        sb.append("<code class=\"tid npc-id\">").append(Http.esc(site.id())).append("</code>");
+        sb.append("<span class=\"npc-loc\">").append(Icons.icon("world"))
+                .append(Http.esc(site.world())).append(' ')
+                .append(Http.esc(site.positionLabel())).append("</span>");
+        sb.append("</span><span class=\"npc-head-badges\">");
+        sb.append("<span class=\"badge text-bg-secondary\">")
+                .append(Http.esc(site.facingLabel())).append("</span>");
+        sb.append("<span class=\"badge text-bg-light text-dark\">")
+                .append(Http.esc(site.statusLabel())).append("</span>");
+        if (!site.worldLoaded()) {
+            sb.append("<span class=\"badge text-bg-warning\">monde non chargé</span>");
+        }
+        sb.append("</span></button></h3>");
+
+        sb.append("<div id=\"").append(slug)
+                .append("\" class=\"accordion-collapse collapse\" ")
+                .append("data-bs-parent=\"#buildsite-accordion\"><div class=\"accordion-body npc-detail\">");
+
+        sb.append(detailSection("world", "Emplacement"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Identifiant", Ui.id(site.id()));
+        dlRow(sb, "Nom", Http.esc(site.name()));
+        dlRow(sb, "Monde", Http.esc(site.world()) + (site.worldLoaded() ? ""
+                : " <span class=\"badge text-bg-warning\">non chargé</span>"));
+        dlRow(sb, "Position", "<code class=\"tid\">" + Http.esc(site.positionLabel()) + "</code>");
+        dlRow(sb, "Orientation", Http.esc(site.facingLabel())
+                + " <code class=\"tid\">" + Http.esc(site.facing()) + "</code>");
+        dlRow(sb, "État", Http.esc(site.statusLabel()));
+        dlRow(sb, "Créé le", Http.esc(site.createdAtLabel()));
+        dlRow(sb, "Créé par", site.hasAuthor() ? Http.esc(site.createdBy())
+                : "<span class=\"muted\">inconnu</span>");
+        dlRow(sb, "Description", site.description().isEmpty()
+                ? "<span class=\"muted\">aucune</span>" : Http.esc(site.description()));
+        sb.append("</dl>");
+
+        sb.append("<p class=\"field-help\">Aucun bâtiment n'est encore affecté à cet "
+                + "emplacement : affecter un schematic et le poser appartiennent au lot suivant. "
+                + "L'identifiant est déjà stable, et c'est lui qui sera cité.</p>");
+
+        if (canWrite) {
+            sb.append(detailSection("edit", "Modifier la fiche"));
+            sb.append(buildingSiteRenameForm(session, agentId, site));
+            sb.append(buildingSiteDescribeForm(session, agentId, site));
+            sb.append(buildingSiteFacingForm(session, agentId, site));
+        }
+        if (canDelete) {
+            sb.append(buildingSiteDeleteZone(session, agentId, site));
+        }
+        sb.append("</div></div></div>");
+        return sb.toString();
+    }
+
+    private String buildingSiteRenameForm(Session session, String agentId,
+                                          com.lodygames.rpgquest.panel.building.BuildingSiteView site) {
+        return formStart(session, agentId, "building.site.rename", "/buildings/sites", "")
+                + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(site.id()) + "\">"
+                + "<div class=\"field\"><label>Nom</label>"
+                + "<input type=\"text\" name=\"name\" maxlength=\"64\" value=\""
+                + Http.esc(site.name()) + "\" required>"
+                + "<p class=\"field-help\">Libellé humain. L'identifiant "
+                + "<code>" + Http.esc(site.id()) + "</code> ne change jamais.</p></div>"
+                + mutationConsent("building.site.rename", "", null)
+                + "<div class=\"btnrow\"><button class=\"btn btn-sm\" type=\"submit\">"
+                + Icons.icon("save") + "Renommer</button></div></form>";
+    }
+
+    private String buildingSiteDescribeForm(Session session, String agentId,
+                                            com.lodygames.rpgquest.panel.building.BuildingSiteView site) {
+        return formStart(session, agentId, "building.site.describe", "/buildings/sites", "")
+                + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(site.id()) + "\">"
+                + "<div class=\"field\"><label>Description</label>"
+                + "<textarea name=\"description\" rows=\"2\" maxlength=\"500\" "
+                + "placeholder=\"Ex. : taverne deux étages, entrée au sud.\">"
+                + Http.esc(site.description()) + "</textarea>"
+                + "<p class=\"field-help\">Note libre, pour vous. Vider le champ efface la "
+                + "note.</p></div>"
+                + mutationConsent("building.site.describe", "", null)
+                + "<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
+                + "type=\"submit\">" + Icons.icon("save") + "Enregistrer la description"
+                + "</button></div></form>";
+    }
+
+    /**
+     * Correction de l'orientation. Elle est éditable parce que se tromper de façade au moment du
+     * clic est banal — alors que la <strong>position</strong>, elle, ne s'édite pas depuis un écran :
+     * on retourne la désigner en jeu.
+     */
+    private String buildingSiteFacingForm(Session session, String agentId,
+                                          com.lodygames.rpgquest.panel.building.BuildingSiteView site) {
+        StringBuilder sb = new StringBuilder(
+                formStart(session, agentId, "building.site.facing", "/buildings/sites", ""));
+        sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(site.id()))
+                .append("\">");
+        sb.append("<div class=\"field\"><label>Orientation</label><select name=\"facing\">");
+        for (String facing : com.lodygames.rpgquest.panel.building.BuildingSiteView.FACINGS) {
+            sb.append("<option value=\"").append(facing).append('"')
+                    .append(facing.equals(site.facing()) ? " selected" : "").append('>')
+                    .append(Http.esc(facing)).append("</option>");
+        }
+        sb.append("</select><p class=\"field-help\">Direction de la façade. La position "
+                + "<code>").append(Http.esc(site.positionLabel()))
+                .append("</code> ne change pas : pour la corriger, il faut re-marquer "
+                        + "l'emplacement en jeu.</p></div>");
+        sb.append(mutationConsent("building.site.facing", "", null));
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
+                + "type=\"submit\">").append(Icons.icon("save"))
+                .append("Changer l'orientation</button></div></form>");
+        return sb.toString();
+    }
+
+    /**
+     * Suppression. Case à cocher explicite (l'action est déclarée sensible dans le catalogue), et la
+     * phrase répond à la seule question qui compte : non, aucun bloc du monde n'est touché.
+     */
+    private String buildingSiteDeleteZone(Session session, String agentId,
+                                          com.lodygames.rpgquest.panel.building.BuildingSiteView site) {
+        return "<div class=\"danger-zone\"><div class=\"dz-title\">"
+                + Icons.icon("warning") + "Zone de danger</div>"
+                + "<p class=\"muted\">Supprime le <strong>marqueur</strong> de l'emplacement. "
+                + "<strong>Aucun bloc du monde n'est modifié</strong> — un emplacement n'est qu'un "
+                + "repère. L'identifiant <code>" + Http.esc(site.id()) + "</code> ne sera jamais "
+                + "réattribué à un autre emplacement.</p>"
+                + formStart(session, agentId, "building.site.delete", "/buildings/sites", "")
+                + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(site.id()) + "\">"
+                + confirmBox("Supprimer l'emplacement « " + site.name() + " » (" + site.id() + ")")
+                + "<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-danger\" "
+                + "type=\"submit\">" + Icons.icon("warning") + "Supprimer l'emplacement"
+                + "</button></div></form></div>";
+    }
+
     public String travel(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();

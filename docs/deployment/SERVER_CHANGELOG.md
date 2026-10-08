@@ -6487,3 +6487,125 @@ Serveur **RPGQuest DEV**, depuis un worktree propre sur `6f58b78`.
 Le **parcours en jeu** : `/rpgadmin buildsite` réclame un joueur, et aucune commande RCON ne simule
 un clic droit sur un bloc. Le plugin est chargé, la commande existe, le schéma est migré et le panel
 sert le bon code — mais qu'un clic crée un emplacement à la bonne ancre reste à voir. C'est TC-268.
+
+---
+
+## 2026-10-08 (soir, 2e lot) - Nommer l'emplacement dans une enclume, et retour du panel sur sa page (#227)
+
+### Changement
+
+**Plugin RPGQuest ET Control Panel.** Deux sujets, un seul lot.
+
+**1. Les actions de « Bâtiments → Emplacements » renvoyaient sur « Agents » (#227, Control Panel).**
+La liste des chemins de retour acceptés par `/agents/action` était **écrite à la main** et ignorait
+`/buildings/sites`, livrée le même jour : renommer, décrire, orienter, supprimer **et le bouton
+Rafraîchir** redirigeaient tous vers `/agents`.
+
+> À lire avant de conclure quoi que ce soit sur les données : **les mutations partaient et
+> réussissaient**. Le journal d'actions du serveur DEV les montre toutes en `SUCCESS` avec leur
+> compte rendu (« renommé “Test hutte” », « orienté vers le nord », « supprimé », puis
+> `building.site.list` → « 0 emplacement(s) »). Seul le **retour** était cassé. Mais comme
+> Rafraîchir souffrait du même défaut, il était impossible de revenir constater le résultat — ce qui
+> se lit, très raisonnablement, comme « rien n'est enregistré ». Aucune donnée n'a été perdue, et il
+> n'y a rien à réparer en base.
+
+La liste est désormais **dérivée de `Layout.nav()`** : toute page du menu est un retour accepté par
+construction. Ajouter une page ne demande plus de penser à une seconde liste — l'oubli exact qui a
+produit #227. Le filtre garde son rôle anti-redirection ouverte : une cible hors du panel
+(`https://…`, `//…`, `javascript:`, chemin inconnu) retombe toujours sur `/agents`.
+
+**2. Le clic en jeu n'écrit plus rien ; le nom se saisit dans une enclume (plugin).**
+Avant, un clic droit créait immédiatement un emplacement — donc un clic de travers créait un repère
+qu'il fallait aller supprimer depuis le panel. Le clic calcule maintenant l'ancre et l'orientation,
+les retient **en mémoire** (`PendingBuildingSiteRegistry`, TTL **60 s**, non persistant) et ouvre une
+**enclume vanilla** pour le nom. **Seul un clic sur le résultat crée l'emplacement.**
+
+| Geste | Ce qui est écrit |
+|---|---|
+| clic droit | **rien** |
+| nom validé sur le résultat | l'emplacement, avec son nom |
+| fenêtre fermée (Échap, inventaire) | **rien**, et c'est annoncé |
+| 60 s sans valider | **rien** |
+| déconnexion pendant la saisie | **rien** |
+
+**Aucun identifiant n'est consommé avant l'écriture** : l'allocateur `AUTOINCREMENT` n'est appelé
+qu'à la création réelle. Nom obligatoire, 1 à 64 caractères, Unicode, **jamais tronqué en silence**,
+et **jamais** source de l'identifiant technique. Un nom refusé **ne ferme pas la fenêtre** : le
+joueur corrige sur place.
+
+**API publique Paper uniquement**, auditée sur le JAR réellement installé avant d'écrire la moindre
+ligne — **aucun NMS, aucune réflexion CraftBukkit** : `HumanEntity#openAnvil(Location, boolean)`,
+`AnvilInventory#getRenameText()`, `PrepareAnvilEvent#setResult(ItemStack)`,
+`AnvilView#setRepairCost(int)` / `setMaximumRepairCost(int)`. Les deux derniers ne sont pas
+cosmétiques : sans eux, vanilla ne proposerait un résultat que si le nom diffère de l'original, et
+réclamerait des niveaux — le bouton de validation serait inerte ou payant.
+
+**Anti-missclick** : même bloc → l'enclume ne s'ouvre pas (règle **revérifiée à la confirmation**,
+un autre administrateur ayant pu marquer ce bloc pendant la saisie) ; anti-rebond de 500 ms déplacé
+**sur le chemin du clic** (dans l'écriture, il aurait avalé en silence la confirmation d'un joueur
+rapide — un test le verrouille) ; voisin immédiat → **avertissement** nommant l'emplacement
+concerné, **jamais un refus**. Aucune distance minimale n'est imposée.
+
+Nouveaux fichiers plugin : `building.PendingBuildingSite`, `building.PendingBuildingSiteRegistry`,
+`building.BuildingSiteName`, `building.BuildingSiteNamePrompt`, `building.BuildingSiteNameListener`.
+Modifiés : `building.BuildingSiteService` (`confirm`, `adjacentTo`, `acceptClick` ; `create` ne
+débounce plus), `building.BuildingSiteToolListener`, `building.model.BuildingSite`,
+`bootstrap.RPGQuestBootstrap` (registre, second écouteur, tâche de purge toutes les 30 s).
+Panel : `web.PanelApp` (retour dérivé de la navigation). Docs : Bible, `current_state.md`, fiche
+d'aide `batiments-emplacements.md`, TC-268 **corrigé** (ses étapes de marquage ne décrivaient plus
+le produit) et **TC-269** ajouté.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du Control Panel. **Aucune autre action manuelle :
+aucune migration, aucune configuration à modifier, aucune donnée à corriger.**
+
+`V28` est déjà appliquée (lot précédent du même jour) ; **ce lot n'ajoute aucune migration** et ne
+lit ni ne réécrit aucune donnée existante. `PendingBuildingSiteRegistry` est **purement mémoire** :
+un redémarrage perd au pire une saisie de nom en cours, ce qui est exactement le comportement voulu.
+
+### Sauvegarde préalable
+
+- Ancien JAR `plugins/RPGQuest-<ancienne_version>.jar`.
+- `plugins/RPGQuest/data.db` (pas de migration, mais procédure standard de
+  [mise à jour du seul JAR](VERYGAMES.md#mise-à-jour-du-seul-jar-rpgquest-scénario-2)).
+- Control Panel : sauvegarde automatique par `scripts/plugadmin/deploy.sh`.
+
+### Déploiement
+
+1. Compiler depuis un worktree propre (`./gradlew clean build`).
+2. Déployer le Control Panel (`scripts/plugadmin/deploy.sh`) — il porte le correctif #227.
+3. Arrêter le serveur Minecraft, remplacer uniquement `plugins/RPGQuest-*.jar`, redémarrer.
+
+**Le redémarrage Minecraft est nécessaire** : les deux écouteurs et la tâche de purge sont
+enregistrés au démarrage du plugin.
+
+### Validation
+
+Automatisée : le registre de demandes en attente (expiration, consommation atomique, annulation,
+purge, TTL par défaut), la confirmation (expirée, nom invalide, doublon d'ancre), le voisinage, le
+fait qu'une **écriture n'est jamais anti-rebondie**, et les retours du panel. Les tests de
+`/buildings/sites` **extraient les formulaires rendus par la page** et les soumettent tels quels :
+les six échouent avec le symptôme exact de #227 si le correctif est retiré, ce qui a été vérifié en
+le réintroduisant volontairement le temps d'une exécution.
+
+**Non vérifié** : **TC-269** et **TC-268** (`PENDING MANUAL VALIDATION`). Le **rendu de l'enclume
+chez le client** ne peut pas l'être d'ici — aucune commande RCON ne simule un clic droit ni
+l'ouverture d'une fenêtre d'inventaire.
+
+### Effet de bord à connaître
+
+**Le parcours de création change pour l'administrateur** : un clic droit ne suffit plus, il faut
+valider un nom. C'est l'objet du lot, mais quiconque a pris l'habitude du clic unique doit le savoir.
+
+**Aucun effet sur le contenu ou le gameplay.** Aucun bâtiment, aucun schematic, aucun bloc : ce lot
+ne place toujours **rien**. Les emplacements déjà créés sur le DEV sont intacts et gardent leur nom.
+
+### Rollback
+
+- Plugin : redéployer le JAR sauvegardé, puis redémarrer Minecraft. Le clic droit redevient créateur
+  immédiat (comportement #213), et les emplacements créés entre-temps **restent** — aucune donnée du
+  lot n'est propre au nouveau parcours.
+- Panel : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`. Attention : cela
+  **réarme #227**, donc les actions de la page Emplacements renverront de nouveau sur « Agents »
+  (tout en continuant de s'appliquer).

@@ -24,11 +24,39 @@ doigt ; un formulaire web devrait inventer des coordonnées.
 1. En jeu : `/rpgadmin buildsite tool` → vous recevez l'**outil d'emplacement de construction**
    (une houe en fer).
 2. Placez-vous, puis **regardez dans la direction que devra avoir la façade**.
-3. **Clic droit** sur le bloc visé.
-4. Message de confirmation avec l'identifiant attribué, par exemple `buildsite_0001`.
-5. Dans PlugAdmin : **Bâtiments → Emplacements → Rafraîchir**, puis renommez la fiche.
+3. **Clic droit** sur le bloc visé. Une **enclume** s'ouvre : rien n'est encore enregistré.
+4. **Tapez le nom** de l'emplacement, puis **cliquez l'objet de résultat** (à droite dans l'enclume).
+5. Message de confirmation avec le nom, l'identifiant attribué (par exemple `buildsite_0001`), le
+   monde, la position et l'orientation.
+6. Dans PlugAdmin : **Bâtiments → Emplacements → Rafraîchir**.
 
 Le **clic gauche ne crée rien** : il est seulement neutralisé, pour que l'outil ne casse pas de bloc.
+
+### Le clic seul n'enregistre rien
+
+C'est la protection contre le clic de travers : tant que vous n'avez pas validé le nom, **aucun
+emplacement n'existe**.
+
+| Ce que vous faites | Ce qui est enregistré |
+|---|---|
+| clic droit sur un bloc | **rien** |
+| nom tapé, puis clic sur le résultat | l'emplacement, avec son nom |
+| vous fermez l'enclume (Échap) | **rien**, et le jeu vous le confirme |
+| vous attendez plus de **60 secondes** | **rien** — la demande expire |
+| vous vous déconnectez pendant la saisie | **rien** |
+
+Aucun identifiant n'est « consommé » par une demande abandonnée : vingt clics annulés ne font pas
+sauter vingt numéros.
+
+> [!NOTE]
+> Le nom est **obligatoire** : 1 à 64 caractères, accents et émojis acceptés. Un nom vide ou trop
+> long est refusé **sans fermer la fenêtre** — vous corrigez sur place. Il est toujours modifiable
+> ensuite depuis le panel, et il n'a **aucun lien** avec l'identifiant technique.
+
+> [!TIP]
+> Si un emplacement se trouve **à un bloc** de celui que vous préparez, le jeu vous avertit avant que
+> vous validiez. Ce n'est pas un refus — deux emplacements voisins sont permis — mais à un bloc près,
+> c'est bien plus souvent un clic de travers. Fermez la fenêtre et rien n'aura été créé.
 
 ### Où l'emplacement est enregistré, exactement
 
@@ -62,7 +90,7 @@ en jeu, puis supprimer l'ancien.
 | | Exemple | Rôle |
 |---|---|---|
 | **Identifiant** | `buildsite_0001` | attribué par le serveur, **ne change jamais**, **jamais réattribué**. C'est lui qu'un futur bâtiment citera. |
-| **Nom** | « Taverne du village » | libellé humain, modifiable à volonté. |
+| **Nom** | « Taverne du village » | libellé humain, **saisi dans l'enclume à la création**, modifiable à volonté. L'identifiant n'en est **jamais** dérivé. |
 
 Un emplacement supprimé ne rend **pas** son identifiant : le suivant prend le numéro d'après. C'est
 ce qui garantit qu'un futur placement ne pointera jamais sur le mauvais emplacement.
@@ -99,10 +127,12 @@ simplement signalé, parce qu'il n'est pas visitable tant que le monde dort.
 
 C'est prévu, et c'est normal : les premiers essais tombent rarement au bon endroit.
 
-- **Re-cliquer exactement le même bloc** ne crée pas de second emplacement : le panel vous rappelle
-  celui qui existe déjà.
+- **Re-cliquer exactement le même bloc** n'ouvre même pas la fenêtre de nom : le jeu vous rappelle
+  l'emplacement qui existe déjà.
 - **Un spam de clics** est absorbé : un clic droit Minecraft émet souvent deux événements, et une
   courte fenêtre d'anti-rebond les regroupe.
+- Depuis #227, **le clic seul ne crée rien** : la plupart des erreurs se referment d'elles-mêmes, et
+  il n'y a plus de fiche à aller supprimer dans le panel.
 - Deux emplacements **voisins** sont en revanche autorisés — une maison et son puits sont deux
   points d'ancrage légitimes. Aucune distance minimale n'est imposée.
 

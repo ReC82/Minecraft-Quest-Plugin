@@ -850,7 +850,7 @@ Ce lot ne sait rien poser, et ne prétend rien à leur sujet.
 | Champ | Rôle |
 |---|---|
 | `id` | identité **stable**, attribuée une fois (`buildsite_0001`), jamais recalculée depuis la position ni réutilisée après suppression — c'est elle qu'un futur placement citera |
-| `name` | libellé humain, modifiable à volonté (« Nouvel emplacement » par défaut) |
+| `name` | libellé humain, **saisi à la création** dans l'enclume (prérempli « Nouvel emplacement »), modifiable à volonté |
 | `description` | note libre de l'administrateur, vide par défaut |
 | `world` / `x` / `y` / `z` | l'ancre, en coordonnées de **blocs** |
 | `facing` | `NORTH` / `EAST` / `SOUTH` / `WEST`, corrigeable |
@@ -895,8 +895,8 @@ conversion, donc à la refaire différemment.
 #### L'outil en jeu
 
 `/rpgadmin buildsite tool` donne l'outil ; `/rpgadmin buildsite list` liste les emplacements sans
-quitter le jeu. **Clic droit** sur un bloc crée l'emplacement ; le clic gauche ne crée rien (il est
-simplement annulé, pour ne pas casser de bloc avec l'outil) et rappelle la bonne manipulation.
+quitter le jeu. Le clic gauche ne crée rien (il est simplement annulé, pour ne pas casser de bloc
+avec l'outil) et rappelle la bonne manipulation.
 
 - **Reconnu par son PDC uniquement.** Un joueur peut nommer une houe « Outil d'emplacement de
   construction » dans une enclume : elle ne fera rien.
@@ -904,20 +904,78 @@ simplement annulé, pour ne pas casser de bloc avec l'outil) et rappelle la bonn
   type d'objet* — les deux plugins se disputeraient le clic), ni tige de blaze (outil de zone
   existant, qu'on confondrait dans la barre d'inventaire). Le ticket demande explicitement de ne pas
   perturber WorldEdit.
-- **Aucune saisie dans le chat.** L'identifiant est automatique, le nom est celui par défaut, et le
-  renommage se fait depuis le Control Panel — qui est fait pour ça.
 - La permission est vérifiée **avant** de regarder le clic : un joueur ordinaire qui récupérerait
   l'outil (mort d'un administrateur, coffre, `/give`) ne crée rien, et le comprend plutôt que de
   cliquer dans le vide.
 
-#### Anti-doublon : deux protections, deux problèmes
+#### Créer en deux temps : clic, puis nom (issue #227)
 
-1. **Le même bloc.** Un emplacement existe déjà exactement là ? On ne crée pas le second : on
-   renvoie celui qui existe, en le nommant. C'est la réponse au spam de clics, et aussi la bonne
-   réponse à un double clic légitime — l'administrateur voulait un emplacement ici, il en a un.
-2. **Le même geste.** Un clic droit Minecraft émet couramment deux événements rapprochés, et deux
-   blocs voisins ne sont pas « le même bloc ». Une fenêtre d'anti-rebond de **500 ms par joueur**
-   l'absorbe. Elle est par joueur : deux administrateurs ne se bloquent pas l'un l'autre.
+Le clic droit **n'écrit plus rien**. Il calcule l'ancre et l'orientation, les retient en mémoire, et
+ouvre une **enclume vanilla** pour saisir le nom. Seul un clic sur le résultat crée l'emplacement.
+
+Ce découpage vient directement de la validation manuelle de #213 : un clic de travers créait
+immédiatement un emplacement, qu'il fallait ensuite aller supprimer depuis le Control Panel. Un
+repère nommé n'est pas une chose qu'on crée par accident.
+
+| Geste du joueur | Ce qui est écrit |
+|---|---|
+| clic droit sur un bloc | **rien** — une demande en attente, en mémoire seulement |
+| nom tapé puis clic sur le résultat | l'emplacement, avec son nom |
+| fenêtre fermée (Échap, inventaire, clic hors fenêtre) | **rien**, et c'est dit |
+| 60 secondes sans valider | **rien** — la demande expire |
+| déconnexion pendant la saisie | **rien** |
+
+**Aucun identifiant n'est consommé avant la confirmation** : l'allocateur `AUTOINCREMENT` n'est
+appelé qu'à l'écriture. Cent clics annulés ne font pas sauter cent numéros.
+
+**L'enclume, et pas le chat.** C'est une fenêtre vanilla, sans resource pack, qui offre un champ de
+texte, accepte l'Unicode, et dont la fermeture est un geste naturel d'annulation — là où un « tapez
+le nom dans le chat » laisse une demande ouverte que rien ne vient clore.
+
+API publique utilisée, auditée sur le JAR Paper réellement installé avant d'écrire la moindre ligne
+(aucun NMS, aucune réflexion) :
+
+| Besoin | API publique |
+|---|---|
+| ouvrir la fenêtre | `HumanEntity#openAnvil(Location, boolean force)` |
+| lire le texte tapé | `AnvilInventory#getRenameText()` |
+| forcer un résultat cliquable | `PrepareAnvilEvent#setResult(ItemStack)` |
+| annuler le coût en niveaux | `AnvilView#setRepairCost(int)` / `setMaximumRepairCost(int)` |
+
+> **Deux pièges de l'enclume, et leur traitement.** (1) Vanilla ne propose un résultat que si le nom
+> diffère de l'original, et **réclame des niveaux** : sans `PrepareAnvilEvent`, le bouton de
+> validation serait inerte ou payant. Le résultat est donc forcé et le coût ramené à zéro.
+> (2) Valider implique de **fermer** la fenêtre, donc `InventoryCloseEvent` part *aussi* après un
+> succès. La demande est retirée du registre au moment de confirmer : la fermeture qui suit ne trouve
+> plus rien et se tait, au lieu d'annoncer « annulé » juste après une création réussie. C'est la même
+> mécanique qui rend un double clic sur le résultat inoffensif.
+
+**Le nom est obligatoire**, coupé de ses espaces, limité à 64 caractères, Unicode accepté. Un nom
+vide ou trop long est **refusé sans fermer la fenêtre** : le joueur corrige sa saisie au lieu de
+devoir retourner cliquer dans le monde. Un nom trop long n'est jamais tronqué en silence.
+
+**Le nom ne dérive pas l'identifiant.** `buildsite_0001` reste attribué par l'allocateur : renommer
+« Taverne » en « Auberge » ne change aucune référence, et deux emplacements peuvent porter le même
+nom sans se marcher dessus.
+
+#### Anti-doublon et anti-missclick
+
+1. **Le même bloc.** Un emplacement existe déjà exactement là ? La fenêtre de nom ne s'ouvre même
+   pas : inutile de faire taper un nom pour annoncer ensuite qu'il n'y a rien à créer. La règle est
+   **revérifiée à la confirmation**, car un autre administrateur a pu marquer ce bloc pendant la
+   saisie.
+2. **Le même geste.** Un clic droit Minecraft émet couramment deux événements rapprochés. Une
+   fenêtre d'anti-rebond de **500 ms par joueur** l'absorbe — sans elle, le second clic rouvrirait la
+   fenêtre par-dessus la première, et cette réouverture annulerait la demande en cours de saisie.
+3. **Le bloc voisin.** Un emplacement à un bloc de l'ancre (les 26 cases du cube autour) déclenche un
+   **avertissement avant validation**, nommant l'emplacement concerné et invitant à fermer la fenêtre
+   si c'était un clic de travers. **Ce n'est pas un refus** : deux emplacements voisins peuvent être
+   légitimes.
+
+> **L'anti-rebond appartient au clic, pas à l'écriture.** Il a d'abord été placé dans la création
+> elle-même ; un joueur rapide qui validait son nom moins de 500 ms après avoir cliqué aurait vu sa
+> confirmation avalée en silence. Il vit donc sur le chemin du clic (`acceptClick`), et un test
+> (`writingIsNeverDebounced`) verrouille le fait qu'une confirmation n'est **jamais** anti-rebondie.
 
 **Aucune règle de distance minimale n'est inventée.** Deux emplacements à deux blocs l'un de l'autre
 peuvent être parfaitement légitimes — une maison et son puits. L'interdire demanderait de connaître
@@ -970,6 +1028,36 @@ Sans relevé `building.site.list`, la page dit « cliquez sur Rafraîchir » au 
 liste vide, qui se lirait comme « aucun emplacement » — donc comme une perte de données après un
 redémarrage. Un emplacement situé dans un monde **non chargé** est signalé et reste compté : il est
 parfaitement valide, il n'est simplement pas visitable pour l'instant.
+
+##### Le retour après une action : dérivé de la navigation, jamais écrit à la main (issue #227)
+
+Après une action agent, `/agents/action` renvoie l'utilisateur sur la page d'où il vient. La liste
+des chemins de retour acceptés — un filtre, qui existe pour empêcher une redirection ouverte vers un
+site tiers — était **écrite à la main**, et `/buildings/sites` n'y figurait pas. Conséquence :
+*toutes* les actions de la page (renommer, décrire, orienter, supprimer, **et le bouton
+Rafraîchir**) jetaient l'utilisateur sur `/agents`.
+
+> **Les mutations fonctionnaient.** Le journal d'actions du serveur de validation est sans
+> ambiguïté : chaque `building.site.*` y est en `SUCCESS`, avec son compte rendu (« renommé “Test
+> hutte” », « orienté vers le nord », « supprimé », puis `building.site.list` → « 0 emplacement(s) »).
+> Le défaut était entièrement dans le retour. Mais comme Rafraîchir souffrait du **même** défaut,
+> l'utilisateur ne pouvait jamais revenir constater le résultat — d'où sa conclusion, logique et
+> pourtant fausse, que rien n'était enregistré. Corriger la seule redirection de #213 aurait laissé
+> le défaut armé pour la page suivante.
+
+La liste est désormais **dérivée de `Layout.nav()`** : toute page atteignable par la navigation est
+un retour accepté, par construction. Ajouter une page au menu ne demande plus de penser à une
+seconde liste — ce qui est précisément l'oubli qui a produit #227. Le filtre garde son rôle : une
+cible hors du panel (`https://…`, `//…`, `javascript:`, chemin inconnu) retombe toujours sur
+`/agents`.
+
+Deux familles de tests verrouillent cela. `ActionReturnPathTest#everyNavigablePageIsAnAcceptedReturnPath`
+parcourt la navigation réelle et échoue dès qu'une page y est ajoutée sans être acceptée en retour.
+Et les tests de `/buildings/sites` **extraient le formulaire rendu par la page** — URL d'action,
+champs cachés, jeton CSRF, case de confirmation — et le soumettent tel quel, au lieu d'écrire un
+corps de requête à la main : un corps écrit à la main contient ce que le test croit nécessaire, et
+aurait donc porté le bon `return` même quand la page en émettait un que le serveur refusait. Les six
+passent au vert avec le correctif et échouent toutes avec le symptôme exact de #227 sans lui.
 
 | Permission | Qui l'a | Ce qu'elle donne |
 |---|---|---|

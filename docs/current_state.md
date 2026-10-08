@@ -276,18 +276,29 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (`buildsite_0001`, jamais recalculée depuis la position ni réutilisée après suppression), nom
   humain, description, monde, coordonnées de bloc, orientation cardinale, état, auteur et date. Il
   ne contient **aucun** bâtiment, aucune dimension, aucune emprise et aucun schematic.
-  **Marquage en jeu** : `/rpgadmin buildsite tool` donne un outil reconnu par **PDC seulement**
-  (houe en fer — ni hache en bois, wand WorldEdit reconnue par type d'objet, ni tige de blaze,
-  déjà prise par l'outil de zone) ; **clic droit** crée l'emplacement sur la case libre contre la
-  face cliquée — cliquer le dessus du sol ancre juste au-dessus, là où reposera le bâtiment, pour
-  qu'aucun placement futur n'ait à appliquer un `+1` implicite. L'orientation est déduite du regard
-  et convertie une fois (attention : dans Minecraft le yaw `0` regarde le **sud**). Aucune saisie
-  dans le chat : le renommage est dans le panel. Permission **dédiée**
-  `rpgquest.admin.buildsite`, pas une permission WorldEdit.
-  **Anti-doublon** : même bloc → on renvoie l'emplacement existant au lieu d'en créer un second ;
-  même geste → anti-rebond de 500 ms par joueur (un clic droit émet couramment deux événements).
-  Aucune règle de distance minimale n'est inventée — deux emplacements voisins peuvent être
-  légitimes, et l'interdire demanderait des emprises que ce lot ne connaît pas.
+  **Marquage en jeu, en deux temps depuis #227** : `/rpgadmin buildsite tool` donne un outil reconnu
+  par **PDC seulement** (houe en fer — ni hache en bois, wand WorldEdit reconnue par type d'objet,
+  ni tige de blaze, déjà prise par l'outil de zone). Le **clic droit n'écrit rien** : il calcule
+  l'ancre — la case libre contre la face cliquée, donc cliquer le dessus du sol ancre juste
+  au-dessus, là où reposera le bâtiment, pour qu'aucun placement futur n'ait à appliquer un `+1`
+  implicite — et l'orientation, déduite du regard et convertie une fois (attention : dans Minecraft
+  le yaw `0` regarde le **sud**), retient le tout en mémoire (`PendingBuildingSiteRegistry`, TTL
+  **60 s**, non persistant) et ouvre une **enclume vanilla** pour saisir le nom. **Seul un clic sur
+  le résultat crée l'emplacement** : fermeture, expiration, déconnexion et nom refusé n'écrivent
+  rien et **ne consomment aucun identifiant** (l'allocateur n'est appelé qu'à l'écriture). Nom
+  obligatoire, 1 à 64 caractères, Unicode, jamais tronqué en silence, et **jamais** source de
+  l'identifiant technique. API publique uniquement, auditée sur le JAR Paper installé avant
+  implémentation : `HumanEntity#openAnvil`, `AnvilInventory#getRenameText`,
+  `PrepareAnvilEvent#setResult`, `AnvilView#setRepairCost` (sans quoi le bouton de validation serait
+  inerte et payant) — aucun NMS. Permission **dédiée** `rpgquest.admin.buildsite`, pas une
+  permission WorldEdit.
+  **Anti-doublon et anti-missclick** : même bloc → l'enclume ne s'ouvre pas, on renvoie
+  l'emplacement existant (règle **revérifiée à la confirmation**, un autre administrateur ayant pu
+  marquer ce bloc pendant la saisie) ; même geste → anti-rebond de 500 ms **sur le chemin du clic**
+  (un clic droit émet couramment deux événements ; placé dans l'écriture, il aurait avalé en silence
+  la confirmation d'un joueur rapide) ; voisin immédiat → **avertissement** nommant l'emplacement
+  concerné, jamais un refus. Aucune règle de distance minimale n'est inventée — deux emplacements
+  voisins peuvent être légitimes, et l'interdire demanderait des emprises que ce lot ne connaît pas.
   **Persistance** : `building_sites` + `building_site_ids` (migration V28, purement additive), base
   = source de vérité, cache mémoire rechargé au démarrage. `status` est un `TEXT` à lecture
   tolérante : ajouter `RESERVED`/`OCCUPIED` ne demandera aucune migration.
@@ -298,7 +309,21 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   non. Trois permissions (`BUILDING_READ` — accordée aussi au Builder et au Testeur —,
   `BUILDING_WRITE`, `BUILDING_DELETE`). Limites : aucune dimension/emprise, aucune affectation de
   schematic, aucun placement, aucune téléportation vers un emplacement (aucun service de TP admin
-  réutilisable n'existe), aucun marqueur visuel en jeu.
+  réutilisable n'existe), aucun marqueur visuel en jeu, et aucune prévisualisation de l'ancre avant
+  validation du nom (l'enclume occupe l'écran).
+- **Le retour après une action agent est dérivé de la navigation** *(issue #227)* — la liste des
+  chemins de retour acceptés par `/agents/action` était **écrite à la main** et ignorait
+  `/buildings/sites` : les cinq actions de la page, **bouton Rafraîchir compris**, renvoyaient sur
+  `/agents`. Les mutations partaient et réussissaient (le journal du serveur de validation les
+  montre toutes en `SUCCESS`) ; c'est le seul retour qui était cassé — mais comme Rafraîchir l'était
+  aussi, on ne pouvait jamais revenir constater le résultat, ce qui se lisait comme « rien n'est
+  enregistré ». La liste est désormais **dérivée de `Layout.nav()`** : toute page du menu est un
+  retour accepté par construction, donc ajouter une page ne demande plus de penser à une seconde
+  liste — l'oubli exact qui a produit #227. Le filtre conserve son rôle anti-redirection ouverte
+  (cible hors panel → `/agents`). Verrouillé par `ActionReturnPathTest`, qui parcourt la navigation
+  réelle, et par des tests qui **extraient les formulaires rendus** de `/buildings/sites` et les
+  soumettent tels quels : les six échouent avec le symptôme exact de #227 si le correctif est
+  retiré.
 - **Catalogue PNJ : le dialogue réellement lié** *(issue #225)* — `NpcCatalog` lit le rattachement
   PNJ → dialogue dans cet ordre : le dialogue que la définition **déclare** (`dialogue:`), puis à
   défaut celui qui porte le **nom** du PNJ. N'appliquer que la convention de nom produisait deux

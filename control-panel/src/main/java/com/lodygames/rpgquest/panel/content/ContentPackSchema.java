@@ -134,7 +134,7 @@ public final class ContentPackSchema {
                         + "aucun champ d'un autre type n'est accepté."));
         defs.put("dialogueCondition", oneOfDescriptors(Descriptors.DIALOGUE_CONDITIONS, "type",
                 "Condition d'affichage d'un choix. « negate: true » inverse le verdict de n'importe "
-                        + "laquelle.", List.of(Descriptors.NEGATE)));
+                        + "laquelle.", Map.of(Descriptors.NEGATE.name(), negateSchema())));
         defs.put("story", story());
         defs.put("npc", npc());
         defs.put("dialogue", dialogue());
@@ -274,18 +274,22 @@ public final class ContentPackSchema {
      */
     private static Map<String, Object> oneOfDescriptors(List<Descriptors.Descriptor> catalog,
                                                          String discriminator, String description) {
-        return oneOfDescriptors(catalog, discriminator, description, List.of());
+        return oneOfDescriptors(catalog, discriminator, description, Map.of());
     }
 
     /**
-     * @param commonFields champs acceptés par <strong>toutes</strong> les branches — {@code negate}
-     *                     pour les conditions de dialogue, qui n'appartient à aucun type en
-     *                     particulier. Sans cela, {@code additionalProperties: false} le refuserait
-     *                     partout.
+     * @param commonProps propriétés acceptées par <strong>toutes</strong> les branches —
+     *                    {@code negate} pour les conditions de dialogue, qui n'appartient à aucun
+     *                    type en particulier. Sans cela, {@code additionalProperties: false} le
+     *                    refuserait partout. Ce sont des schémas déjà formés, et non des
+     *                    {@code Field} : {@code negate} est un <strong>booléen</strong> pour le
+     *                    moteur ({@code getBoolean}), alors qu'aucun {@code FieldType} ne décrit un
+     *                    booléen — le dériver d'un descripteur l'aurait déclaré « string », et un
+     *                    pack écrivant {@code negate: true} aurait été refusé par tout validateur.
      */
     private static Map<String, Object> oneOfDescriptors(List<Descriptors.Descriptor> catalog,
                                                          String discriminator, String description,
-                                                         List<Descriptors.Field> commonFields) {
+                                                         Map<String, Object> commonProps) {
         List<Object> branches = new ArrayList<>();
         for (Descriptors.Descriptor d : catalog) {
             Map<String, Object> props = new LinkedHashMap<>();
@@ -298,9 +302,7 @@ public final class ContentPackSchema {
                     required.add(f.name());
                 }
             }
-            for (Descriptors.Field f : commonFields) {
-                props.put(f.name(), fieldSchema(f));
-            }
+            props.putAll(commonProps);
             Map<String, Object> branch = object(props, d.hint());
             branch.put("required", required);
             branch.put("additionalProperties", false);
@@ -309,6 +311,15 @@ public final class ContentPackSchema {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("description", description);
         out.put("oneOf", branches);
+        return out;
+    }
+
+    /** {@code negate} : un booléen, et le seul champ commun à toutes les conditions. */
+    private static Map<String, Object> negateSchema() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("type", "boolean");
+        out.put("title", Descriptors.NEGATE.label());
+        out.put("description", Descriptors.NEGATE.help());
         return out;
     }
 

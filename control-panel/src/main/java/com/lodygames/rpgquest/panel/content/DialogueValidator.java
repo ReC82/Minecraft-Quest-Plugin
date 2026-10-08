@@ -157,6 +157,15 @@ public final class DialogueValidator {
         if (allowNegate) {
             allowed.add(Descriptors.NEGATE.name());
         }
+        String negate = entry.get(Descriptors.NEGATE.name());
+        if (negate != null && !negate.isBlank()
+                && !negate.equalsIgnoreCase("true") && !negate.equalsIgnoreCase("false")) {
+            // Le moteur lit « negate » avec getBoolean : toute autre valeur y vaut SILENCIEUSEMENT
+            // false, donc une condition écrite pour être inversée ne l'aurait pas été.
+            out.add(Diagnostic.error(ctx, "« negate » attend true ou false, reçu « " + negate
+                    + " ». Le moteur traiterait cette valeur comme false, sans le dire."));
+        }
+
         for (String key : entry.keySet()) {
             if (!allowed.contains(key)) {
                 out.add(Diagnostic.error(ctx, "Champ « " + key + " » inattendu pour la " + what

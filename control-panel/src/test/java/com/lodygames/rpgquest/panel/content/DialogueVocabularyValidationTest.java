@@ -200,6 +200,39 @@ class DialogueVocabularyValidationTest {
                 """)).isEmpty(), "inverser une action ne veut rien dire");
     }
 
+    /**
+     * Une valeur de {@code negate} qui n'est ni {@code true} ni {@code false} vaut
+     * <strong>silencieusement</strong> false pour le moteur : la condition écrite pour être inversée
+     * ne l'est pas, et rien ne le signale. C'est le pire cas possible — le dialogue fonctionne, mais
+     * à l'envers de l'intention.
+     */
+    @Test
+    void aNegateValueThatIsNotABooleanIsRejected() {
+        List<Diagnostic> errors = errors(withChoice("""
+                      - text: "Sauf si…"
+                        conditions:
+                          - type: NO_MAIN_CLAIM
+                            negate: peut-etre
+                        actions:
+                          - type: CLOSE
+                """));
+
+        assertEquals(1, errors.size(), errors.toString());
+        assertTrue(errors.get(0).message().contains("negate"), errors.toString());
+
+        for (String value : List.of("true", "false", "TRUE", "False")) {
+            assertTrue(errors(withChoice("""
+                      - text: "Sauf si…"
+                        conditions:
+                          - type: NO_MAIN_CLAIM
+                            negate: """ + value + """
+
+                        actions:
+                          - type: CLOSE
+                """)).isEmpty(), "« " + value + " » doit être accepté");
+        }
+    }
+
     /** Issue #123 : le PNJ reste facultatif, c'est ce qui rend la branche de remise réutilisable. */
     @Test
     void anOptionalFieldMayBeOmittedOrGiven() {

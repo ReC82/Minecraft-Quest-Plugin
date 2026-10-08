@@ -396,6 +396,22 @@ class ContentPackContractTest {
         }
     }
 
+    /**
+     * {@code negate} est un <strong>booléen</strong>, pas une chaîne. Dérivé d'un descripteur il
+     * aurait été déclaré « string », puisqu'aucun {@code FieldType} ne décrit un booléen — et tout
+     * validateur aurait alors refusé un pack écrivant {@code negate: true}, que le moteur lit
+     * pourtant avec {@code getBoolean}.
+     */
+    @Test
+    void negateIsDeclaredAsABooleanAndNotAsAString() {
+        for (Descriptors.Descriptor d : Descriptors.DIALOGUE_CONDITIONS) {
+            Map<String, Object> negate = map(map(branch(def("dialogueCondition"), d.kind())
+                    .get("properties")).get("negate"));
+
+            assertEquals("boolean", negate.get("type"), d.kind());
+        }
+    }
+
     /** Une branche reste fermée : un champ appartenant à un autre type est refusé. */
     @Test
     void aDialogueBranchRefusesFieldsOfAnotherType() {

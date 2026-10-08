@@ -19,6 +19,8 @@ import com.lodygames.rpgquest.panel.bridge.BridgeException;
 import com.lodygames.rpgquest.panel.bridge.BridgeHealth;
 import com.lodygames.rpgquest.panel.config.PanelConfig;
 import com.lodygames.rpgquest.panel.config.Target;
+import com.lodygames.rpgquest.panel.content.ContentPackSchema;
+import com.lodygames.rpgquest.panel.content.ContentPackTemplates;
 import com.lodygames.rpgquest.panel.content.ContentWorkspace;
 import com.lodygames.rpgquest.panel.content.RefData;
 import com.lodygames.rpgquest.panel.docs.DocLibrary;
@@ -54,6 +56,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -236,6 +239,12 @@ public final class PanelApp {
                 Permission.DIALOGUE_WRITE, "SAVE"));
         route("/content/export", this::handleContentExport);
         route("/content/export/download", this::handleContentExportDownload);
+        // Issue #110 — contrat de contenu machine-readable. Trois téléchargements en lecture pure,
+        // tous GÉNÉRÉS depuis les descripteurs du moteur : aucun fichier maintenu à la main, donc
+        // rien qui puisse décrire un type inexistant ou oublier un type existant.
+        route("/content/schema.json", this::handleContentSchema);
+        route("/content/template", this::handleContentTemplate);
+        route("/content/contract.md", this::handleContentContractDoc);
         route("/docs", this::handleDocs);
         // Issue #95 — exploitation serveur. /ops rend la page ; les deux endpoints JSON
         // alimentent la console et le suivi d'opération sans rechargement complet.
@@ -638,6 +647,52 @@ public final class PanelApp {
         String body = contentExportPages.render(query.get("toast"), query.get("err"));
         Http.html(exchange, 200, renderPage("Export de contenu", session, "/content/export", body,
                 Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    // ---- Contrat de contenu machine-readable (issue #110) -------------------------------
+
+    private void handleContentSchema(HttpExchange exchange) throws IOException {
+        serveGeneratedContract(exchange, "content.schema.download",
+                "lodyquests-content-pack-v" + ContentPackSchema.SCHEMA_VERSION + ".schema.json",
+                "application/schema+json", ContentPackSchema.json());
+    }
+
+    private void handleContentTemplate(HttpExchange exchange) throws IOException {
+        String family = Http.query(exchange).getOrDefault("family", "").trim().toLowerCase(Locale.ROOT);
+        // Une famille inconnue n'est pas une erreur : elle donne le gabarit du pack complet, qui est
+        // un sur-ensemble valide. Le nom du fichier dit toujours ce qui a réellement été servi.
+        String label = ContentPackSchema.FAMILIES.contains(family) ? family : "content";
+        serveGeneratedContract(exchange, "content.template.download",
+                "lodyquests-template-" + label + ".yml", "application/yaml",
+                ContentPackTemplates.template(family));
+    }
+
+    private void handleContentContractDoc(HttpExchange exchange) throws IOException {
+        serveGeneratedContract(exchange, "content.contract.download",
+                "lodyquests-content-contract.md", "text/markdown",
+                ContentPackTemplates.aiDocumentation());
+    }
+
+    /**
+     * Sert un document généré. Lecture pure : aucun état serveur n'est touché, aucun agent n'est
+     * sollicité (le contrat ne dépend pas du serveur Minecraft), et la même permission que l'export
+     * s'applique — c'est la même nature de donnée, du contenu déclaratif sans secret.
+     */
+    private void serveGeneratedContract(HttpExchange exchange, String auditAction, String filename,
+                                        String contentType, String body) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.CONTENT_EXPORT)) {
+            forbidden(exchange, session, "/content/export");
+            return;
+        }
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        audit.record(session.username(), auditAction, "bytes=" + bytes.length, "OK", filename,
+                UUID.randomUUID().toString().substring(0, 8));
+        Http.attachment(exchange, filename, contentType, bytes);
     }
 
     private void handleContentExportDownload(HttpExchange exchange) throws IOException {

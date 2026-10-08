@@ -27,6 +27,69 @@ public final class Json {
         return sb.toString();
     }
 
+    /**
+     * Même contenu que {@link #write(Object)}, indenté de deux espaces et terminé par un saut de
+     * ligne — pour les documents JSON <strong>destinés à être lus</strong> (issue #110 : le schéma
+     * officiel du format {@code lodyquests-content-pack}, téléchargé puis relu par un humain ou
+     * collé dans un prompt). L'ordre des clés suit l'ordre d'insertion, donc la sortie est
+     * déterministe et diffable.
+     */
+    public static String writePretty(Object value) {
+        StringBuilder sb = new StringBuilder();
+        writePrettyValue(sb, value, 0);
+        return sb.append('\n').toString();
+    }
+
+    private static void writePrettyValue(StringBuilder sb, Object value, int depth) {
+        switch (value) {
+            case Map<?, ?> map -> {
+                if (map.isEmpty()) {
+                    sb.append("{}");
+                    return;
+                }
+                sb.append("{\n");
+                boolean first = true;
+                for (Map.Entry<?, ?> e : map.entrySet()) {
+                    if (!first) {
+                        sb.append(",\n");
+                    }
+                    first = false;
+                    indent(sb, depth + 1);
+                    writeString(sb, String.valueOf(e.getKey()));
+                    sb.append(": ");
+                    writePrettyValue(sb, e.getValue(), depth + 1);
+                }
+                sb.append('\n');
+                indent(sb, depth);
+                sb.append('}');
+            }
+            case Iterable<?> it -> {
+                if (!it.iterator().hasNext()) {
+                    sb.append("[]");
+                    return;
+                }
+                sb.append("[\n");
+                boolean first = true;
+                for (Object o : it) {
+                    if (!first) {
+                        sb.append(",\n");
+                    }
+                    first = false;
+                    indent(sb, depth + 1);
+                    writePrettyValue(sb, o, depth + 1);
+                }
+                sb.append('\n');
+                indent(sb, depth);
+                sb.append(']');
+            }
+            default -> writeValue(sb, value);
+        }
+    }
+
+    private static void indent(StringBuilder sb, int depth) {
+        sb.append("  ".repeat(depth));
+    }
+
     private static void writeValue(StringBuilder sb, Object value) {
         switch (value) {
             case null -> sb.append("null");

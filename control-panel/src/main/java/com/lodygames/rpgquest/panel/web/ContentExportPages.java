@@ -2,6 +2,8 @@ package com.lodygames.rpgquest.panel.web;
 
 import com.lodygames.rpgquest.panel.agent.AgentActionRow;
 import com.lodygames.rpgquest.panel.agent.AgentStore;
+import com.lodygames.rpgquest.panel.content.ContentPackSchema;
+import com.lodygames.rpgquest.panel.content.Descriptors;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.json.Json;
 import java.util.List;
@@ -56,6 +58,7 @@ public final class ContentExportPages {
 
         sb.append(exportCard());
         sb.append(recentCard());
+        sb.append(contractCard());
         sb.append(aboutCard());
         return sb.toString();
     }
@@ -161,6 +164,54 @@ public final class ContentExportPages {
         return sb.toString();
     }
 
+    /**
+     * Issue #110 — le contrat machine-readable, à côté du formulaire. Les trois documents sont
+     * <strong>générés</strong> depuis les descripteurs réels du moteur : aucun fichier maintenu à la
+     * main, donc aucun risque de décrire un type qui n'existe pas ou d'oublier un type qui existe.
+     * Ils ne dépendent pas du serveur Minecraft et restent donc téléchargeables agent hors ligne.
+     */
+    private String contractCard() {
+        return "<section class=\"card\">"
+                + Ui.sectionTitle("docs", "Contrat de contenu (pour une IA ou un outil externe)")
+                + "<p class=\"muted\">Ces trois documents décrivent le format <code>"
+                + Http.esc(ContentPackSchema.FORMAT) + "</code> v" + ContentPackSchema.SCHEMA_VERSION
+                + " de façon exploitable sans accès au code ni au serveur. Ils sont <strong>générés</strong> "
+                + "depuis les descripteurs réels du moteur : ils ne peuvent décrire que des propriétés "
+                + "réellement supportées, et suivent automatiquement les " + Descriptors.OBJECTIVES.size()
+                + " types d'objectifs et " + Descriptors.REWARDS.size() + " types de récompenses existants.</p>"
+                + "<ul class=\"muted\">"
+                + "<li><strong>Schéma officiel</strong> (JSON Schema) — à donner à un outil de validation.</li>"
+                + "<li><strong>Gabarit</strong> (YAML commenté) — à compléter à la main, avec la liste "
+                + "complète des objectifs et récompenses en commentaire.</li>"
+                + "<li><strong>Contrat rédigé</strong> (Markdown) — à coller tel quel dans un prompt : "
+                + "règles d\u2019identifiants, types disponibles et leurs paramètres, règles de stories, "
+                + "références autorisées, conventions de dialogue, exemple minimal et exemple complet.</li>"
+                + "</ul>"
+                + "<div class=\"btn-row\">"
+                + "<a class=\"btn btn-sm btn-outline-primary\" href=\"/content/schema.json\">Schéma JSON</a>"
+                + "<a class=\"btn btn-sm btn-outline-primary\" href=\"/content/contract.md\">Contrat rédigé (Markdown)</a>"
+                + "<a class=\"btn btn-sm btn-outline-secondary\" href=\"/content/template\">Gabarit — pack complet</a>"
+                + templateLinks()
+                + "</div>"
+                + "<p class=\"muted\">Limite assumée de cette version : la section <code>dialogues</code> "
+                + "n\u2019est contrainte que sur son squelette. Le vocabulaire des actions et conditions de "
+                + "dialogue vit dans le moteur et n\u2019est pas encore déclaré sous une forme que le panel "
+                + "puisse dériver — le schéma laisse donc ces tableaux libres plutôt que de recopier une "
+                + "liste qui divergerait en silence.</p>"
+                + "</section>";
+    }
+
+    /** Un bouton de gabarit par famille, dans l\u2019ordre canonique du format. */
+    private String templateLinks() {
+        StringBuilder sb = new StringBuilder();
+        for (String[] family : FAMILIES) {
+            sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"/content/template?family=")
+                    .append(Http.esc(family[0])).append("\">Gabarit — ").append(Http.esc(family[1]))
+                    .append("</a>");
+        }
+        return sb.toString();
+    }
+
     private String aboutCard() {
         return "<section class=\"card\">"
                 + Ui.sectionTitle("docs", "À propos du format")
@@ -169,7 +220,7 @@ public final class ContentExportPages {
                 + "avec <code>quests</code> / <code>stories</code> / <code>dialogues</code> / <code>npcs</code>. "
                 + "Aucune donnée joueur, aucun secret. Les références (story → quêtes, quête → PNJ donneur, "
                 + "PNJ → dialogue…) sont conservées par identifiant. Détail : "
-                + "<a href=\"/docs\">documentation</a> (fiche « Content pack »).</p>"
+                + "<a href=\"/docs\">documentation</a> (fiche « Content packs »).</p>"
                 + "<p class=\"muted\">Limite actuelle : un export dépassant ~56 Kio est refusé proprement "
                 + "(transport agent) — exporter alors par famille ou par élément. Le découpage viendra avec l'import (#109).</p>"
                 + "</section>";

@@ -1639,8 +1639,51 @@ pour sauvegarder, archiver ou fournir à une IA. Granularités : *tout le conten
 - Le contenu `secret: true` **est** exporté (un backup ne doit pas perdre de contenu), avec son
   flag conservé.
 - Format complet + exemple + stratégie d'évolution `schemaVersion` : [docs/CONTENT_PACK.md](CONTENT_PACK.md).
-- **Hors périmètre #108** : import/écriture (#109), génération IA (#110), familles items/recettes,
+- **Hors périmètre #108** : import/écriture (#109), familles items/recettes,
   découpage/compression du transport.
+
+### Contrat de contenu machine-readable (issue #110, phase 1)
+
+Pour qu'une IA ou un outil externe produise un pack valide **sans accès au serveur ni au code**, le
+Control Panel publie trois documents, tous **générés** et téléchargeables depuis `/content/export`
+(permission `CONTENT_EXPORT`, lecture pure, aucun agent sollicité — le contrat ne dépend pas du
+serveur Minecraft) :
+
+| Route | Contenu | Usage |
+|---|---|---|
+| `GET /content/schema.json` | JSON Schema draft 2020-12 du format `lodyquests-content-pack` v1 | validation automatique |
+| `GET /content/template?family=<famille>` | gabarit YAML commenté (famille, ou pack complet sans paramètre) | rédaction à la main |
+| `GET /content/contract.md` | contrat rédigé : identifiants, types et paramètres, stories, références, dialogues, exemple minimal et exemple complet | à coller dans un prompt |
+
+**Rien n'est maintenu à la main.** `ContentPackSchema` et `ContentPackTemplates` dérivent les
+objectifs et les récompenses de `Descriptors` — la même source qui pilote le formulaire, l'écriture
+YAML, l'aller-retour et la validation du panel, et dont `EditorDescriptorsTest` verrouille
+l'ensemble des types sur l'`ObjectiveType` du moteur. Un type ajouté au moteur apparaît donc dans le
+schéma, le gabarit et la documentation sans qu'une ligne soit recopiée ; `ContentPackContractTest`
+échoue si le contrat décrit un type inexistant, en oublie un, ou laisse passer un champ étranger
+(`additionalProperties: false` par branche de type).
+
+Ce que le schéma contraint : l'enveloppe (`format` et `schemaVersion` en constantes — les **seuls**
+champs sur lesquels un import décide), les quêtes (identifiants `namespace:clé` par expression
+régulière, au moins une étape, au moins un objectif par étape, un `oneOf` par type d'objectif et de
+récompense avec leurs champs obligatoires réels), les stories, les PNJ logiques, les `dependencies`
+déclarées (quêtes / PNJ / dialogues / objets) et les `metadata` de provenance, volontairement
+ouvertes et sans effet sur le gameplay.
+
+**Limite assumée de cette phase** : la section `dialogues` n'est contrainte que sur son squelette
+(id, `start`, nœuds, choix). Le vocabulaire des actions et des conditions vit dans les énumérations
+`ActionType` / `ConditionType` du plugin et n'est, à ce jour, déclaré nulle part que le Control Panel
+puisse dériver : le schéma laisse donc ces deux tableaux libres plutôt que de recopier une liste qui
+divergerait en silence. Le contrat rédigé l'énonce explicitement au lecteur, humain ou IA. Rendre ce
+vocabulaire dérivable (descripteurs de dialogue côté panel, ou relevé d'agent) est la suite directe.
+
+Les exemples portent tous le préfixe d'identifiant **`tc110_`** : reconnaissables, donc faciles à
+retrouver et à supprimer après un essai, et impossibles à confondre avec du contenu de production.
+L'exemple complet (« Les mines oubliées ») enchaîne deux quêtes par une story, fournit un PNJ et son
+dialogue — dont l'id est celui du PNJ, convention du moteur — et déclare ses dépendances, y compris
+celles que le pack satisfait lui-même, pour que l'import puisse les reconnaître comme telles.
+Aucune contrainte d'équilibrage n'est inventée : le contrat dit explicitement que rien ne plafonne
+une récompense côté moteur.
 
 ### Commandes RPGQuest — `/rpgadmin npc`
 

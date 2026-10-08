@@ -337,7 +337,50 @@ Par construction (les modèles source ne portent que du contenu éditorial) et v
 | Sélection / ordre / manifest | `ContentPackAssembler` (`exportAll` / `exportFamily` / `exportElement` / `exportSelection`) |
 | Action agent lecture seule | `AgentActionType.CONTENT_EXPORT` (`content.export`) → `BukkitAgentActions.exportContent` |
 | UI + téléchargement | Control Panel `/content/export` (`ContentExportPages`, `PanelApp`), `Permission.CONTENT_EXPORT` |
+| Schéma officiel JSON (#110) | `panel.content.ContentPackSchema` → `GET /content/schema.json` |
+| Gabarits, exemples, contrat rédigé (#110) | `panel.content.ContentPackTemplates` → `GET /content/template`, `GET /content/contract.md` |
 
 Ajouter une famille = une constante `ContentFamily` + un `*PackEntry` + un cas dans `ContentPackMapper`
 / `ContentPackSerializer` + un `Supplier` dans `BukkitAgentActions`. Rien d'autre dans le pipeline
 ne connaît la liste des familles en dur.
+
+
+---
+
+## 12. Contrat machine-readable (#110, phase 1)
+
+Trois documents **générés** décrivent le format pour un outil externe ou une IA, sans accès au code
+ni au serveur :
+
+| Route | Contenu |
+|---|---|
+| `GET /content/schema.json` | JSON Schema draft 2020-12 du format, versionné par `schemaVersion` |
+| `GET /content/template?family=<quests\|stories\|dialogues\|npcs>` | gabarit YAML commenté ; sans paramètre, le pack complet |
+| `GET /content/contract.md` | contrat rédigé, pensé pour être collé dans un prompt |
+
+Ils sont tous dérivés de `panel.content.Descriptors`, la source qui pilote déjà le formulaire,
+l'écriture YAML, l'aller-retour et la validation du Control Panel. **Aucune liste de types n'est
+recopiée** : un type d'objectif ou de récompense ajouté au moteur apparaît automatiquement dans les
+trois documents, et `ContentPackContractTest` échoue si le contrat décrit un type inexistant, en
+oublie un, ou laisse passer un champ qu'aucun descripteur ne déclare.
+
+Points saillants du schéma :
+
+- `format` et `schemaVersion` sont des **constantes** : ce sont les seuls champs sur lesquels un
+  import s'appuie pour décider, conformément à la section 10.
+- Un identifiant de quête doit respecter `^[a-z0-9_]+:[a-z0-9_]+$` — jamais un chemin, jamais un titre.
+- Chaque type d'objectif et de récompense est une branche `oneOf` avec ses champs obligatoires réels
+  et `additionalProperties: false` : un pack portant une propriété que le moteur ignorerait est
+  invalide, plutôt que silencieusement accepté.
+- `dependencies` permet de déclarer les quêtes, PNJ, dialogues et objets attendus. L'import (#109)
+  doit pouvoir distinguer « satisfaite par le pack », « déjà présente sur le serveur » et
+  « manquante ».
+- `metadata` est ouvert et purement informatif (titre, auteur, générateur, notes).
+
+**Limite assumée** : la section `dialogues` n'est contrainte que sur son squelette. Le vocabulaire
+des actions et conditions vit dans `ActionType` / `ConditionType` côté plugin et n'est pas encore
+déclaré sous une forme dérivable par le panel ; le schéma laisse donc ces tableaux libres, et le
+contrat rédigé le dit au lecteur. Le rendre dérivable est la suite directe de cette phase.
+
+Les exemples utilisent le préfixe d'identifiant `tc110_`, pour être reconnaissables et supprimables
+après un essai.

@@ -9,6 +9,7 @@ joueurs-admin.md
 joueurs-reset.md
 groupes.md
 quetes.md
+content-packs.md
 claims.md
 wild.md
 verygames-deploiement.md

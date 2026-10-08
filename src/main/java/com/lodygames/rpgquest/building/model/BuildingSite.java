@@ -60,10 +60,17 @@ public record BuildingSite(String id, String name, String description, String wo
         createdBy = createdBy == null ? "" : createdBy.trim();
     }
 
-    /** Un emplacement neuf, au nom par défaut et sans description. */
+    /**
+     * Un emplacement neuf, portant le nom que le joueur a saisi (issue #227) et sans description.
+     *
+     * <p>Un nom vide retombe sur {@link #DEFAULT_NAME} par le constructeur canonique — mais ce cas
+     * ne devrait plus se produire depuis #227 : le nom est exigé à la confirmation, et c'est
+     * justement ce qui fait qu'un clic de travers ne laisse rien derrière lui.</p>
+     */
     public static BuildingSite created(String id, String world, BuildingSiteAnchor anchor,
-                                       Facing facing, String createdBy, Instant createdAt) {
-        return new BuildingSite(id, DEFAULT_NAME, "", world, anchor.x(), anchor.y(), anchor.z(),
+                                       Facing facing, String name, String createdBy,
+                                       Instant createdAt) {
+        return new BuildingSite(id, name, "", world, anchor.x(), anchor.y(), anchor.z(),
                 facing, SiteStatus.EMPTY, createdBy, createdAt);
     }
 

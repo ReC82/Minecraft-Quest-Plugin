@@ -203,6 +203,8 @@ public final class RPGQuestBootstrap {
      * base.
      */
     private com.lodygames.rpgquest.building.BuildingSiteService buildingSiteService;
+    /** Issue #227 — demandes de création en attente de nom, non persistantes. */
+    private com.lodygames.rpgquest.building.PendingBuildingSiteRegistry buildingSitePendings;
     private final YamlMerchantRegistry merchantRegistry;
     private final YamlPortalRegistry portalRegistry;
     private final YamlDestinationRegistry destinationRegistry;
@@ -337,8 +339,21 @@ public final class RPGQuestBootstrap {
                                     + "« Bâtiments » restera vide jusqu'au prochain démarrage.", error);
                     return null;
                 });
+        // Issue #227 — les demandes de création en attente de nom. En mémoire uniquement : une
+        // intention de création n'a aucune raison de survivre à une déconnexion, et ne rien
+        // persister garantit par construction qu'un pending abandonné n'écrit jamais.
+        buildingSitePendings = new com.lodygames.rpgquest.building.PendingBuildingSiteRegistry();
         registry.start(new PlayerListenerService(plugin,
-                new com.lodygames.rpgquest.building.BuildingSiteToolListener(buildingSiteService)));
+                new com.lodygames.rpgquest.building.BuildingSiteToolListener(
+                        buildingSiteService, buildingSitePendings)));
+        registry.start(new PlayerListenerService(plugin,
+                new com.lodygames.rpgquest.building.BuildingSiteNameListener(
+                        buildingSiteService, buildingSitePendings)));
+        // Purge des demandes expirées. La correction n'en dépend pas — find()/take() vérifient déjà
+        // l'expiration — elle empêche seulement la table de grossir si des joueurs cliquent puis
+        // s'en vont sans rien fermer.
+        plugin.getServer().getScheduler().runTaskTimer(plugin,
+                buildingSitePendings::purgeExpired, 20L * 30, 20L * 30);
 
         PlayerProfileRepository profileRepository = new PlayerProfileRepository(databaseService.databaseManager());
         playerProfileService = new PlayerProfileService(profileRepository);

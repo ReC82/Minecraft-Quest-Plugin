@@ -83,7 +83,12 @@ class BuildingSiteServiceTest {
 
     private BuildingSiteService.CreateResult create(String world, int x, int y, int z, Facing facing)
             throws Exception {
-        return service.create(world, new BuildingSiteAnchor(x, y, z), facing, "Lody", null)
+        return create(world, x, y, z, facing, "Taverne du village");
+    }
+
+    private BuildingSiteService.CreateResult create(String world, int x, int y, int z, Facing facing,
+                                                    String name) throws Exception {
+        return service.create(world, new BuildingSiteAnchor(x, y, z), facing, name, "Lody")
                 .get(TIMEOUT, TimeUnit.SECONDS);
     }
 
@@ -102,7 +107,8 @@ class BuildingSiteServiceTest {
         assertEquals(-702, site.z());
         assertEquals(Facing.WEST, site.facing());
         assertEquals(SiteStatus.EMPTY, site.status());
-        assertEquals(BuildingSite.DEFAULT_NAME, site.name());
+        assertEquals("Taverne du village", site.name(),
+                "le nom vient du joueur depuis #227, il n'y a plus de libellé par défaut");
         assertEquals("", site.description());
         assertEquals("Lody", site.createdBy());
         assertEquals(Instant.parse("2026-10-08T18:00:00Z"), site.createdAt());
@@ -201,47 +207,48 @@ class BuildingSiteServiceTest {
     }
 
     /**
-     * Le double événement d'un seul clic droit : deux blocs <em>différents</em> en quelques
-     * millisecondes. L'anti-rebond l'absorbe, là où la règle « même bloc » ne pouvait pas.
+     * Le double événement d'un seul clic droit, absorbé par l'anti-rebond.
+     *
+     * <p>Depuis #227 l'anti-rebond porte sur le <strong>clic</strong> et non sur l'écriture, et
+     * c'était nécessaire : si {@code create} le portait encore, un joueur qui valide son nom moins
+     * d'une demi-seconde après avoir cliqué verrait sa confirmation avalée en silence.</p>
      */
     @Test
-    void twoClicksWithinTheDebounceWindowCreateOnlyOne() throws Exception {
+    void twoClicksWithinTheDebounceWindowAreCountedAsOne() {
         String player = "11111111-1111-1111-1111-111111111111";
 
-        var first = service.create("world_hub", new BuildingSiteAnchor(0, 64, 0), Facing.NORTH,
-                "Lody", player).get(TIMEOUT, TimeUnit.SECONDS);
-        var second = service.create("world_hub", new BuildingSiteAnchor(1, 64, 0), Facing.NORTH,
-                "Lody", player).get(TIMEOUT, TimeUnit.SECONDS);
-
-        assertTrue(first.created());
-        assertEquals(BuildingSiteService.CreateOutcome.DEBOUNCED, second.outcome());
-        assertEquals(1, service.all().size());
+        assertTrue(service.acceptClick(player), "le premier clic compte");
+        assertFalse(service.acceptClick(player), "le second, émis dans la foulée, non");
     }
 
     @Test
-    void aDeliberateSecondClickAfterTheWindowIsAccepted() throws Exception {
+    void aDeliberateSecondClickAfterTheWindowIsAccepted() {
         String player = "11111111-1111-1111-1111-111111111111";
-        service.create("world_hub", new BuildingSiteAnchor(0, 64, 0), Facing.NORTH, "Lody", player)
-                .get(TIMEOUT, TimeUnit.SECONDS);
+        assertTrue(service.acceptClick(player));
 
         clock.advance(Duration.ofMillis(BuildingSiteService.DEBOUNCE_MILLIS + 1));
-        var second = service.create("world_hub", new BuildingSiteAnchor(1, 64, 0), Facing.NORTH,
-                "Lody", player).get(TIMEOUT, TimeUnit.SECONDS);
 
-        assertTrue(second.created());
-        assertEquals(2, service.all().size());
+        assertTrue(service.acceptClick(player));
     }
 
     /** L'anti-rebond est par joueur : deux administrateurs ne se bloquent pas l'un l'autre. */
     @Test
-    void theDebounceIsPerPlayer() throws Exception {
-        service.create("world_hub", new BuildingSiteAnchor(0, 64, 0), Facing.NORTH, "A", "player-a")
-                .get(TIMEOUT, TimeUnit.SECONDS);
+    void theDebounceIsPerPlayer() {
+        assertTrue(service.acceptClick("player-a"));
 
-        var other = service.create("world_hub", new BuildingSiteAnchor(1, 64, 0), Facing.NORTH,
-                "B", "player-b").get(TIMEOUT, TimeUnit.SECONDS);
+        assertTrue(service.acceptClick("player-b"));
+    }
 
-        assertTrue(other.created());
+    /**
+     * L'écriture, elle, n'est JAMAIS freinée par l'anti-rebond : deux créations successives à des
+     * ancres différentes aboutissent, même immédiates. C'est ce qui garantit qu'une confirmation
+     * rapide n'est pas perdue.
+     */
+    @Test
+    void writingIsNeverDebounced() throws Exception {
+        assertTrue(create("world_hub", 0, 64, 0, Facing.NORTH).created());
+        assertTrue(create("world_hub", 1, 64, 0, Facing.NORTH).created());
+
         assertEquals(2, service.all().size());
     }
 
@@ -390,6 +397,207 @@ class BuildingSiteServiceTest {
 
         assertEquals(1, service.all().size());
         assertEquals("buildsite_0002", service.all().get(0).id());
+    }
+
+    // ---- Issue #227 : la création en deux temps -------------------------------------------------
+
+    private PendingBuildingSite pending(int x, int y, int z, Facing facing) {
+        return new PendingBuildingSite("11111111-1111-1111-1111-111111111111", "world_hub",
+                new BuildingSiteAnchor(x, y, z), facing, x, y - 1, z,
+                clock.instant(), clock.instant().plusSeconds(60));
+    }
+
+    /** Le parcours normal : une demande + un nom = un emplacement, et rien d'autre. */
+    @Test
+    void confirmingAPendingWithANameCreatesExactlyOneSite() throws Exception {
+        BuildingSiteService.CreateResult result = service
+                .confirm(pending(712, 67, -702, Facing.EAST), "Taverne du village", "Lody")
+                .get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertTrue(result.created());
+        BuildingSite site = result.site();
+        assertEquals("Taverne du village", site.name());
+        assertEquals("buildsite_0001", site.id());
+        assertEquals("world_hub", site.world());
+        assertEquals(712, site.x());
+        assertEquals(67, site.y());
+        assertEquals(-702, site.z());
+        assertEquals(Facing.EAST, site.facing(), "l'orientation du clic est conservée");
+        assertEquals("Lody", site.createdBy());
+        assertEquals(1, service.all().size());
+    }
+
+    /** L'ancre et l'orientation retenues au clic traversent la confirmation sans se déformer. */
+    @Test
+    void theAnchorAndFacingOfTheClickAreThePersistedOnes() throws Exception {
+        for (Facing facing : Facing.values()) {
+            service.confirm(pending(facing.ordinal(), 70, 5, facing), "Site " + facing.name(), "Lody")
+                    .get(TIMEOUT, TimeUnit.SECONDS);
+        }
+        BuildingSiteService reopened = new BuildingSiteService(repository, clock);
+        reopened.load().get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals(4, reopened.all().size());
+        for (Facing facing : Facing.values()) {
+            BuildingSite site = reopened.all().stream()
+                    .filter(x -> x.name().equals("Site " + facing.name()))
+                    .findFirst().orElseThrow();
+            assertEquals(facing, site.facing());
+            assertEquals(facing.ordinal(), site.x());
+            assertEquals(70, site.y());
+        }
+    }
+
+    /** Le cas qui justifie tout le lot : un nom vide ne crée rien. */
+    @Test
+    void confirmingWithoutANameCreatesNothing() throws Exception {
+        for (String name : new String[] {"", "   ", null}) {
+            BuildingSiteService.CreateResult result = service
+                    .confirm(pending(0, 64, 0, Facing.NORTH), name, "Lody")
+                    .get(TIMEOUT, TimeUnit.SECONDS);
+
+            assertEquals(BuildingSiteService.CreateOutcome.INVALID_NAME, result.outcome(),
+                    "nom = " + name);
+            assertTrue(result.error().contains("obligatoire"), result.error());
+        }
+        assertTrue(service.all().isEmpty());
+        assertTrue(repository.loadAll().get(TIMEOUT, TimeUnit.SECONDS).isEmpty(),
+                "et rien n'est arrivé en base");
+    }
+
+    /** Un nom trop long est refusé, pas tronqué : le joueur doit pouvoir corriger sa saisie. */
+    @Test
+    void confirmingWithATooLongNameCreatesNothing() throws Exception {
+        BuildingSiteService.CreateResult result = service
+                .confirm(pending(0, 64, 0, Facing.NORTH), "n".repeat(65), "Lody")
+                .get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals(BuildingSiteService.CreateOutcome.INVALID_NAME, result.outcome());
+        assertTrue(result.error().contains("65"), result.error());
+        assertTrue(service.all().isEmpty());
+    }
+
+    /** Un nom exactement à la borne passe : la limite est inclusive. */
+    @Test
+    void aNameAtTheExactLimitIsAccepted() throws Exception {
+        String name = "n".repeat(BuildingSite.MAX_NAME_LENGTH);
+
+        BuildingSiteService.CreateResult result = service
+                .confirm(pending(0, 64, 0, Facing.NORTH), name, "Lody")
+                .get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertTrue(result.created());
+        assertEquals(name, result.site().name());
+    }
+
+    /** Les accents et l'Unicode sont des noms parfaitement normaux. */
+    @Test
+    void accentsAndUnicodeAreKeptExactly() throws Exception {
+        BuildingSiteService.CreateResult result = service
+                .confirm(pending(0, 64, 0, Facing.NORTH), "  Forgeron d'Élénore  ", "Lody")
+                .get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals("Forgeron d'Élénore", result.site().name(), "trim, mais rien d'autre");
+    }
+
+    /** « timeout → 0 site » : une demande périmée ne crée rien, et le dit. */
+    @Test
+    void confirmingAnExpiredPendingCreatesNothing() throws Exception {
+        PendingBuildingSite stale = new PendingBuildingSite("p", "world_hub",
+                new BuildingSiteAnchor(0, 64, 0), Facing.NORTH, 0, 63, 0,
+                clock.instant().minusSeconds(120), clock.instant().minusSeconds(60));
+
+        BuildingSiteService.CreateResult result = service.confirm(stale, "Trop tard", "Lody")
+                .get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals(BuildingSiteService.CreateOutcome.EXPIRED, result.outcome());
+        assertTrue(result.error().contains("expir"), result.error());
+        assertTrue(service.all().isEmpty());
+    }
+
+    /** Confirmer sans demande du tout — fenêtre déjà consommée, ou jamais ouverte. */
+    @Test
+    void confirmingWithoutAnyPendingCreatesNothing() throws Exception {
+        BuildingSiteService.CreateResult result = service.confirm(null, "Un nom", "Lody")
+                .get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals(BuildingSiteService.CreateOutcome.EXPIRED, result.outcome());
+        assertTrue(service.all().isEmpty());
+    }
+
+    /**
+     * La revalidation du doublon à la confirmation : entre le clic et la validation, un autre
+     * administrateur a pu marquer le même bloc.
+     */
+    @Test
+    void confirmingWhereASiteAppearedMeanwhileCreatesNoDuplicate() throws Exception {
+        PendingBuildingSite p = pending(5, 64, 5, Facing.NORTH);
+        create("world_hub", 5, 64, 5, Facing.SOUTH, "Posé entre-temps");
+
+        BuildingSiteService.CreateResult result = service.confirm(p, "Mon nom", "Lody")
+                .get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals(BuildingSiteService.CreateOutcome.ALREADY_THERE, result.outcome());
+        assertEquals("Posé entre-temps", result.site().name());
+        assertEquals(1, service.all().size());
+    }
+
+    /** Aucun identifiant n'est consommé par un refus : annuler cent fois ne fait pas sauter cent numéros. */
+    @Test
+    void refusedConfirmationsConsumeNoIdentifier() throws Exception {
+        service.confirm(pending(0, 64, 0, Facing.NORTH), "", "Lody").get(TIMEOUT, TimeUnit.SECONDS);
+        service.confirm(pending(0, 64, 0, Facing.NORTH), "n".repeat(99), "Lody")
+                .get(TIMEOUT, TimeUnit.SECONDS);
+        service.confirm(null, "x", "Lody").get(TIMEOUT, TimeUnit.SECONDS);
+
+        BuildingSiteService.CreateResult ok = service
+                .confirm(pending(0, 64, 0, Facing.NORTH), "Le vrai", "Lody")
+                .get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals("buildsite_0001", ok.site().id(),
+                "les refus n'avaient pas touché à l'allocateur");
+    }
+
+    // ---- Issue #227 : voisin immédiat ----------------------------------------------------------
+
+    /** On avertit d'un voisin à un bloc. On ne refuse pas : deux sites proches peuvent être voulus. */
+    @Test
+    void anAdjacentSiteIsReportedButNeverBlocking() throws Exception {
+        create("world_hub", 10, 64, 10, Facing.NORTH, "Maison du forgeron");
+
+        List<BuildingSite> adjacent = service.adjacentTo("world_hub", 11, 64, 10);
+
+        assertEquals(1, adjacent.size());
+        assertEquals("Maison du forgeron", adjacent.get(0).name());
+        // et créer juste à côté reste possible
+        assertTrue(create("world_hub", 11, 64, 10, Facing.NORTH, "Le puits").created());
+    }
+
+    /** Les 26 voisins du cube comptent, y compris en diagonale et en hauteur. */
+    @Test
+    void adjacencyCoversTheWholeSurroundingCube() throws Exception {
+        create("world_hub", 0, 64, 0, Facing.NORTH, "Centre");
+
+        assertEquals(1, service.adjacentTo("world_hub", 1, 65, 1).size(), "diagonale en hauteur");
+        assertEquals(1, service.adjacentTo("world_hub", -1, 63, -1).size());
+        assertTrue(service.adjacentTo("world_hub", 2, 64, 0).isEmpty(), "à deux blocs, non");
+        assertTrue(service.adjacentTo("world_hub", 0, 66, 0).isEmpty());
+    }
+
+    /** L'ancre elle-même n'est pas « adjacente » : c'est un doublon, traité séparément. */
+    @Test
+    void theExactAnchorIsNotReportedAsAdjacent() throws Exception {
+        create("world_hub", 0, 64, 0, Facing.NORTH, "Centre");
+
+        assertTrue(service.adjacentTo("world_hub", 0, 64, 0).isEmpty());
+        assertTrue(service.at("world_hub", 0, 64, 0).isPresent());
+    }
+
+    @Test
+    void adjacencyNeverCrossesWorlds() throws Exception {
+        create("world_hub", 0, 64, 0, Facing.NORTH, "Centre");
+
+        assertTrue(service.adjacentTo("claims", 1, 64, 0).isEmpty());
     }
 
     // ---- Lecture -------------------------------------------------------------------------------

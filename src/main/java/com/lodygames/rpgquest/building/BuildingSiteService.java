@@ -56,17 +56,33 @@ public final class BuildingSiteService {
         /** Un emplacement existait déjà exactement sur ce bloc : c'est lui qui est renvoyé. */
         ALREADY_THERE,
         /** Clic trop rapproché du précédent : rien n'a été fait, et il n'y a rien à dire. */
-        DEBOUNCED
+        DEBOUNCED,
+        /**
+         * La demande de création avait expiré (issue #227). Rien n'a été écrit, et il faut le dire :
+         * c'est très différent de « vous n'avez rien demandé ».
+         */
+        EXPIRED,
+        /** Le nom saisi est refusé (vide, ou trop long). Rien n'a été écrit (issue #227). */
+        INVALID_NAME
     }
 
     /**
-     * @param site l'emplacement concerné — créé, ou celui qui existait déjà. {@code null} seulement
-     *             pour {@link CreateOutcome#DEBOUNCED}
+     * @param site  l'emplacement concerné — créé, ou celui qui existait déjà. {@code null} quand il
+     *              n'y a rien à montrer ({@code DEBOUNCED}, {@code EXPIRED}, {@code INVALID_NAME})
+     * @param error raison lisible d'un refus, ou {@code null}
      */
-    public record CreateResult(CreateOutcome outcome, BuildingSite site) {
+    public record CreateResult(CreateOutcome outcome, BuildingSite site, String error) {
+
+        public CreateResult(CreateOutcome outcome, BuildingSite site) {
+            this(outcome, site, null);
+        }
 
         public boolean created() {
             return outcome == CreateOutcome.CREATED;
+        }
+
+        static CreateResult refused(CreateOutcome outcome, String error) {
+            return new CreateResult(outcome, null, error);
         }
     }
 
@@ -121,18 +137,62 @@ public final class BuildingSiteService {
     }
 
     /**
-     * Crée un emplacement à l'ancre donnée, ou explique pourquoi il n'en a pas créé.
+     * Les emplacements situés sur un bloc <strong>immédiatement adjacent</strong> — les 26 voisins du
+     * cube, l'ancre elle-même exclue (issue #227).
      *
-     * @param playerKey identité du joueur pour l'anti-rebond (son UUID en texte) ; {@code null}
-     *                  désactive l'anti-rebond, ce qui n'a de sens que pour un appel non interactif
+     * <p>Sert à <em>avertir</em> avant confirmation, jamais à refuser : deux emplacements voisins
+     * peuvent être parfaitement légitimes, et aucune règle de distance n'est inventée. Mais un
+     * emplacement à un bloc du précédent est bien plus souvent un clic de travers qu'une intention,
+     * et le dire avant d'écrire coûte une ligne de message.</p>
+     */
+    public List<BuildingSite> adjacentTo(String world, int x, int y, int z) {
+        return sites.values().stream()
+                .filter(site -> site.world().equals(world))
+                .filter(site -> !site.samePositionAs(world, x, y, z))
+                .filter(site -> Math.abs(site.x() - x) <= 1
+                        && Math.abs(site.y() - y) <= 1
+                        && Math.abs(site.z() - z) <= 1)
+                .sorted(Comparator.comparing(BuildingSite::id))
+                .toList();
+    }
+
+    /**
+     * Confirme une demande en attente avec le nom saisi par le joueur (issue #227).
+     *
+     * <p><strong>C'est ici — et seulement ici — qu'une écriture a lieu.</strong> Le clic ne fait que
+     * préparer ; tant que cette méthode n'est pas appelée, rien n'existe en base et aucun
+     * identifiant n'est consommé. Annuler, fermer la fenêtre, se déconnecter ou laisser expirer sont
+     * donc, littéralement, des non-événements.</p>
+     *
+     * <p>Tout est <strong>revalidé</strong> : l'expiration, le nom, et l'absence d'un emplacement
+     * déjà posé sur cette ancre. Une demande ouverte il y a quarante secondes décrit un monde qui a
+     * pu changer entre-temps — un autre administrateur a pu marquer le même bloc.</p>
+     */
+    public CompletableFuture<CreateResult> confirm(PendingBuildingSite pending, String rawName,
+                                                   String createdBy) {
+        if (pending == null) {
+            return CompletableFuture.completedFuture(CreateResult.refused(CreateOutcome.EXPIRED,
+                    "Aucune demande de création en cours, ou elle a expiré. Recliquez avec l'outil."));
+        }
+        if (pending.expiredAt(clock.instant())) {
+            return CompletableFuture.completedFuture(CreateResult.refused(CreateOutcome.EXPIRED,
+                    "Demande expirée : rien n'a été enregistré. Recliquez avec l'outil."));
+        }
+        BuildingSiteName.Checked checked = BuildingSiteName.check(rawName);
+        if (!checked.ok()) {
+            return CompletableFuture.completedFuture(
+                    CreateResult.refused(CreateOutcome.INVALID_NAME, checked.error()));
+        }
+        return create(pending.world(), pending.anchor(), pending.facing(), checked.name(), createdBy);
+    }
+
+    /**
+     * Écrit un emplacement. Point d'écriture unique, sans anti-rebond : celui-ci appartient au clic
+     * (voir {@link #acceptClick}), pas à la confirmation — sinon un joueur qui valide très vite après
+     * avoir cliqué verrait sa confirmation avalée en silence.
      */
     public CompletableFuture<CreateResult> create(String world, BuildingSiteAnchor anchor,
-                                                  Facing facing, String createdBy,
-                                                  String playerKey) {
-        if (playerKey != null && !accept(playerKey)) {
-            return CompletableFuture.completedFuture(
-                    new CreateResult(CreateOutcome.DEBOUNCED, null));
-        }
+                                                  Facing facing, String name, String createdBy) {
         Optional<BuildingSite> existing = at(world, anchor.x(), anchor.y(), anchor.z());
         if (existing.isPresent()) {
             return CompletableFuture.completedFuture(
@@ -141,12 +201,23 @@ public final class BuildingSiteService {
         Instant now = clock.instant();
         return repository.allocateNumber().thenCompose(number -> {
             BuildingSite site = BuildingSite.created(idFor(number), world, anchor, facing,
-                    createdBy, now);
+                    name, createdBy, now);
             return repository.insert(site).thenApply(ignored -> {
                 sites.put(site.id(), site);
                 return new CreateResult(CreateOutcome.CREATED, site);
             });
         });
+    }
+
+    /**
+     * Ce clic doit-il être pris en compte, ou suit-il de trop près le précédent du même joueur ?
+     *
+     * <p>Un clic droit Minecraft produit couramment deux événements rapprochés. Sans cette fenêtre,
+     * le second rouvrirait la fenêtre de saisie par-dessus la première — ce qui, selon l'ordre des
+     * événements de fermeture, annulerait la demande que le joueur est en train de nommer.</p>
+     */
+    public boolean acceptClick(String playerKey) {
+        return playerKey == null || accept(playerKey);
     }
 
     /**

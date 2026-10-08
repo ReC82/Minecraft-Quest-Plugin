@@ -17,14 +17,22 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 
 /**
- * Clic droit avec l'outil d'emplacement : crée un emplacement de construction (issue #213).
+ * Clic droit avec l'outil d'emplacement : <strong>prépare</strong> un emplacement et demande son nom
+ * (issues #213 et #227).
  *
- * <h2>Ce que le clic produit</h2>
+ * <h2>Le clic n'écrit plus rien</h2>
+ *
+ * <p>Avant #227, il enregistrait immédiatement : un clic de travers créait un emplacement qu'il
+ * fallait ensuite aller supprimer depuis le Control Panel, et la validation manuelle a montré que
+ * c'est précisément ce qui arrive. Le clic calcule désormais l'ancre et l'orientation, les retient
+ * dans {@link PendingBuildingSiteRegistry}, et ouvre une fenêtre de saisie du nom. Rien n'est écrit
+ * avant la confirmation — un missclick se referme et ne laisse rien.</p>
+ *
+ * <h2>Ce que le clic calcule</h2>
  *
  * <p>Monde du joueur, ancre résolue par {@link BuildingSiteAnchor} (la case libre contre la face
- * cliquée), orientation cardinale déduite du regard, identifiant automatique
- * {@code buildsite_0001}, nom par défaut. <strong>Aucune saisie dans le chat</strong> : le
- * renommage se fait depuis le Control Panel, qui est fait pour ça.</p>
+ * cliquée) et orientation cardinale déduite du regard. <strong>Aucune saisie dans le chat</strong> :
+ * le nom se tape dans une enclume vanilla.</p>
  *
  * <h2>Pourquoi l'événement est annulé</h2>
  *
@@ -49,9 +57,12 @@ public final class BuildingSiteToolListener implements Listener {
     private static final MiniMessage MM = MiniMessage.miniMessage();
 
     private final BuildingSiteService service;
+    private final PendingBuildingSiteRegistry pendings;
 
-    public BuildingSiteToolListener(BuildingSiteService service) {
+    public BuildingSiteToolListener(BuildingSiteService service,
+                                    PendingBuildingSiteRegistry pendings) {
         this.service = service;
+        this.pendings = pendings;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
@@ -114,56 +125,57 @@ public final class BuildingSiteToolListener implements Listener {
 
         Facing facing = Facing.fromYaw(player.getLocation().getYaw());
         String worldName = world.getName();
+        String playerKey = player.getUniqueId().toString();
 
-        service.create(worldName, anchor, facing, player.getName(),
-                        player.getUniqueId().toString())
-                .thenAccept(result -> announce(player, result, worldName, anchor, facing))
-                .exceptionally(error -> {
-                    player.sendMessage(MM.deserialize(
-                            "<red>Création impossible :</red> <white><cause></white>"
-                                    + "<gray> — rien n'a été enregistré.</gray>",
-                            Placeholder.unparsed("cause", rootName(error))));
-                    return null;
-                });
-    }
+        // Un clic droit émet couramment deux événements : sans cette fenêtre, le second rouvrirait la
+        // fenêtre de saisie par-dessus la première, et la fermeture de celle-ci annulerait la demande
+        // que le joueur est en train de nommer.
+        if (!service.acceptClick(playerKey)) {
+            return;
+        }
 
-    /**
-     * Le retour au joueur. Il nomme l'identifiant attribué, parce que c'est lui qu'il retrouvera
-     * dans le Control Panel — pas le nom par défaut, identique pour tous.
-     *
-     * <p>Un clic absorbé par l'anti-rebond ne dit <strong>rien</strong> : c'était le même geste, et
-     * afficher « ignoré » à chaque double clic apprendrait à ignorer les messages de l'outil.</p>
-     */
-    private void announce(Player player, BuildingSiteService.CreateResult result, String world,
-                          BuildingSiteAnchor anchor, Facing facing) {
-        switch (result.outcome()) {
-            case CREATED -> player.sendMessage(MM.deserialize(
-                    "<green>Emplacement créé :</green> <white><id></white> "
-                            + "<gray>— <world> <x>/<y>/<z>, orienté <facing>.</gray>"
-                            + "<newline><gray>Renommez-le depuis le Control Panel "
-                            + "(Bâtiments → Emplacements).</gray>",
-                    Placeholder.unparsed("id", result.site().id()),
-                    Placeholder.unparsed("world", world),
-                    Placeholder.unparsed("x", String.valueOf(anchor.x())),
-                    Placeholder.unparsed("y", String.valueOf(anchor.y())),
-                    Placeholder.unparsed("z", String.valueOf(anchor.z())),
-                    Placeholder.unparsed("facing", facing.label())));
-            case ALREADY_THERE -> player.sendMessage(MM.deserialize(
+        // Un emplacement déjà posé exactement ici : inutile d'ouvrir une fenêtre de nom pour
+        // découvrir ensuite qu'il n'y a rien à créer.
+        var existing = service.at(worldName, anchor.x(), anchor.y(), anchor.z());
+        if (existing.isPresent()) {
+            player.sendMessage(MM.deserialize(
                     "<yellow>Un emplacement existe déjà ici :</yellow> <white><id></white> "
-                            + "<gray>(« <name> »). Aucun second emplacement n'a été créé.</gray>",
-                    Placeholder.unparsed("id", result.site().id()),
-                    Placeholder.unparsed("name", result.site().name())));
-            case DEBOUNCED -> {
-                // Volontairement muet : voir le commentaire de méthode.
-            }
+                            + "<gray>(« <name> »). Rien à créer.</gray>",
+                    Placeholder.unparsed("id", existing.get().id()),
+                    Placeholder.unparsed("name", existing.get().name())));
+            return;
         }
-    }
 
-    private static String rootName(Throwable error) {
-        Throwable cause = error;
-        while (cause.getCause() != null) {
-            cause = cause.getCause();
+        // Voisin immédiat : on AVERTIT, on ne refuse pas. Deux emplacements côte à côte peuvent être
+        // légitimes ; mais à un bloc près, c'est bien plus souvent un clic de travers — et le dire
+        // avant que le joueur ne valide ne coûte qu'une ligne.
+        var adjacent = service.adjacentTo(worldName, anchor.x(), anchor.y(), anchor.z());
+        if (!adjacent.isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<gold>Attention :</gold> <gray>un autre emplacement est à 1 bloc — "
+                            + "<white><name></white> (<id>). Fermez la fenêtre si c'était un clic "
+                            + "de travers.</gray>",
+                    Placeholder.unparsed("name", adjacent.get(0).name()),
+                    Placeholder.unparsed("id", adjacent.get(0).id())));
         }
-        return cause.getClass().getSimpleName();
+
+        // Rien n'est écrit ici : on prépare, et on demande un nom. C'est tout l'objet de #227.
+        PendingBuildingSite pendingSite = pendings.open(playerKey, worldName, anchor, facing,
+                clicked.getX(), clicked.getY(), clicked.getZ());
+        if (BuildingSiteNamePrompt.open(player, pendingSite).isEmpty()) {
+            pendings.cancel(playerKey);
+            player.sendMessage(MM.deserialize(
+                    "<red>Impossible d'ouvrir la fenêtre de saisie du nom.</red>"
+                            + "<gray> Rien n'a été créé.</gray>"));
+            return;
+        }
+        player.sendMessage(MM.deserialize(
+                "<gray>Emplacement préparé en <white><world> <pos></white>, orienté "
+                        + "<white><facing></white>.</gray>"
+                        + "<newline><gray>Donnez-lui un nom dans l'enclume, puis cliquez le "
+                        + "résultat. Fermer la fenêtre annule.</gray>",
+                Placeholder.unparsed("world", worldName),
+                Placeholder.unparsed("pos", pendingSite.positionLabel()),
+                Placeholder.unparsed("facing", facing.label())));
     }
 }

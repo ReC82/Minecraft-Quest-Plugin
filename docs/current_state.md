@@ -308,9 +308,55 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   doigt, un formulaire devrait inventer des coordonnées. L'orientation est éditable, la position
   non. Trois permissions (`BUILDING_READ` — accordée aussi au Builder et au Testeur —,
   `BUILDING_WRITE`, `BUILDING_DELETE`). Limites : aucune dimension/emprise, aucune affectation de
-  schematic, aucun placement, aucune téléportation vers un emplacement (aucun service de TP admin
+  schematic, aucune téléportation vers un emplacement (aucun service de TP admin
   réutilisable n'existe), aucun marqueur visuel en jeu, et aucune prévisualisation de l'ancre avant
   validation du nom (l'enclume occupe l'écran).
+- **Bibliothèque de bâtiments et premier placement** *(issue #213, lot suivant)* — un bâtiment peut
+  désormais être **affecté à un emplacement et posé dans le monde**. Trois concepts séparés :
+  `BuildingSite` (point d'ancrage, base), `BuildingDefinition` (**fichier** de contenu
+  `plugins/RPGQuest/buildings/*.yml` — se relit, se compare, se versionne comme une quête) et
+  `BuildingPlacement` (un **fait**, table `building_placements`, migration **V29** purement
+  additive, `site_id` en clé primaire donc « un emplacement porte au plus un bâtiment » est garanti
+  par le schéma).
+  **WorldEdit est une dépendance d'infrastructure, jamais du domaine** : tout passe par
+  l'interface RPGQuest `SchematicGateway`, et aucun modèle n'expose un type WorldEdit. Une seule
+  classe le connaît (`building.worldedit.WorldEditSchematicGateway`), en `compileOnly` +
+  `softdepend`, avec refus **nommé** si le plugin est absent, désactivé ou incompatible
+  (`LinkageError` intercepté) — même conception que le pont Citizens. Conséquence mesurable :
+  rotation, emprise, ordre des opérations, refus, retour arrière et persistance sont **exécutés par
+  les tests**, sans WorldEdit sur le chemin de classe.
+  **La hutte de test est produite par notre code**, pas importée : `TestHutBlueprint` la décrit en
+  Java (7 × 5 × 6, fondation, poteaux d'angle, porte centrée, deux fenêtres, toit à deux pans,
+  intérieur vide) et `SchematicWorkshop` l'écrit avec l'écrivain officiel du moteur (Sponge v3) dans
+  `plugins/RPGQuest/schematics/`, au démarrage si absent, **jamais écrasé** s'il existe. Le dépôt
+  versionne le générateur et la définition, pas le binaire : un audit a montré que `worldedit-core`
+  lève `IllegalStateException: WorldEdit is not initialized yet` hors d'un serveur, donc un `.schem`
+  ne peut être ni produit ni vérifié sur la machine de build. Un test échoue si la définition YAML
+  et le plan divergent.
+  **Ancre = centre de la porte au niveau du sol** (`3 / 1 / 0`) : la fondation se place donc un bloc
+  *sous* l'ancre de l'emplacement, ce qui est voulu. `front: NORTH` est **géométriquement vrai** (la
+  porte est sur la paroi `z = 0`, qui regarde les `-Z`) — déclarer `SOUTH` aurait caché un demi-tour
+  permanent dans le collage.
+  **Rotation pure** (`BuildingRotation`, azimut horaire) et **emprise** calculée en décalages
+  relatifs à l'ancre, donc l'ancre est un point fixe ; à 90° et 270° largeur et profondeur
+  s'échangent, et l'aperçu le dit. **Le sens de rotation du moteur est mesuré, pas supposé** :
+  l'adaptateur applique la transformation aux coins, compare à l'emprise du domaine, et **refuse le
+  collage** si aucun sens ne correspond.
+  **Ordre des opérations** : revérifier tout (un aperçu n'est pas une réservation) → **sauvegarder**
+  la zone → coller (avec l'air, qui creuse l'intérieur) → enregistrer → marquer `OCCUPIED`. Un échec
+  de sauvegarde ne colle rien ; un échec de collage laisse l'emplacement **vide** sans placement.
+  **Retour arrière** : la sauvegarde est reposée telle quelle. **Sans sauvegarde, refusé** — et le
+  bouton n'apparaît pas : remettre de l'air détruirait le terrain d'origine. Limite réelle et
+  affichée : la restauration écrase aussi ce qui a été bâti dans l'emprise *après* la pose.
+  `SiteStatus.OCCUPIED` ajouté **sans migration** (colonne `TEXT`, lecture tolérante — le bénéfice
+  exact que #213 visait), et **aucune action agent ne permet de l'éditer** : l'état suit le fait.
+  **Control Panel** : *Bâtiments → Bibliothèque* (lecture seule, aucun téléversement ni éditeur) et,
+  sur la fiche d'un emplacement vide, « Choisir un bâtiment » → aperçu (rotation, emprise, volume,
+  blocs non-air, refus et avertissements) → « Placer dans le monde » avec confirmation. Quatre
+  actions agent (`building.definition.list`, `.placement.preview/place/rollback`), **aucune commande
+  WorldEdit libre**, et deux permissions dédiées `BUILDING_PLACE` / `BUILDING_ROLLBACK` distinctes de
+  l'édition de fiche. Limites : aucune génération IA, aucune analyse d'image, aucun import de
+  schematic, aucun aperçu visuel en jeu, aucun versioning ni remplacement d'un bâtiment posé.
 - **Le retour après une action agent est dérivé de la navigation** *(issue #227)* — la liste des
   chemins de retour acceptés par `/agents/action` était **écrite à la main** et ignorait
   `/buildings/sites` : les cinq actions de la page, **bouton Rafraîchir compris**, renvoyaient sur

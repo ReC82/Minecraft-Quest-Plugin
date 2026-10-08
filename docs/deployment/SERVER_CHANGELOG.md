@@ -6644,3 +6644,137 @@ RCON ne simule un clic droit sur un bloc ni l'ouverture d'une fenêtre d'inventa
 chargé, le schéma est inchangé, le panel sert le bon code — mais que l'enclume s'ouvre, que le clic
 sur le résultat crée, et que la fermeture ne crée rien restent à voir. C'est **TC-269**, et **TC-268**
 corrigé.
+
+---
+
+## 2026-10-08 (nuit) - Bibliothèque de bâtiments, hutte de test générée, et premier placement (#213)
+
+### Changement
+
+**Plugin RPGQuest ET Control Panel.** Un bâtiment peut désormais être affecté à un emplacement et
+**posé dans le monde**, avec sauvegarde préalable de la zone et retour arrière.
+
+**Nouvelle dépendance serveur : WorldEdit** — déjà installé sur le DEV (**7.4.1**, vérifié par
+`/version WorldEdit`). Elle est **optionnelle** : `softdepend` + `compileOnly`, jamais empaquetée.
+Sans WorldEdit, RPGQuest démarre et fonctionne exactement comme avant ; seule la pose de bâtiments
+est refusée, avec son motif. Toute la surface WorldEdit est confinée à une seule classe, qui
+intercepte `LinkageError` si la build installée ne correspond pas.
+
+Trois concepts, séparés volontairement :
+
+| Concept | Nature | Où il vit |
+|---|---|---|
+| `BuildingSite` | point d'ancrage nommé | base (`building_sites`, V28) |
+| `BuildingDefinition` | ce qu'on peut poser | **fichier** `plugins/RPGQuest/buildings/*.yml` |
+| `BuildingPlacement` | un bâtiment réellement posé | base (`building_placements`, **V29**) |
+
+**La hutte de test est générée par le plugin, aucun fichier n'a été importé.** Son plan est écrit en
+Java (`TestHutBlueprint` : 7 × 5 × 6, fondation en pierre, poteaux d'angle, porte centrée, deux
+fenêtres, toit à deux pans, intérieur vide) et le `.schem` est écrit avec l'écrivain officiel du
+moteur (Sponge v3), dans `plugins/RPGQuest/schematics/`, **au démarrage s'il est absent et jamais
+écrasé s'il existe**.
+
+> **Pourquoi le binaire n'est pas dans le dépôt.** Un audit préalable a montré que
+> `worldedit-core` lève `IllegalStateException: WorldEdit is not initialized yet` hors d'un serveur
+> (le registre de blocs est peuplé par la plateforme). Un `.schem` ne peut donc être ni produit ni
+> vérifié sur la machine de build : versionner un binaire que la CI ne peut pas régénérer serait
+> versionner quelque chose que personne ne peut contrôler. Le dépôt versionne le **générateur** et
+> la **définition** ; un test échoue si les deux divergent.
+
+**Ordre des opérations à la pose**, qui est la garantie principale : revérifier toutes les règles →
+**sauvegarder la zone de l'emprise** dans un `.schem` daté → coller → enregistrer → marquer
+l'emplacement occupé. Un échec de sauvegarde **ne colle rien** ; un échec de collage laisse
+l'emplacement **vide** sans placement enregistré. Aucun faux placement n'est possible.
+
+**Retour arrière** : la sauvegarde est reposée telle quelle. **Sans sauvegarde, il est refusé** et le
+bouton n'apparaît pas — remettre de l'air dans l'emprise détruirait le terrain d'origine.
+
+Nouveaux fichiers plugin : `building.model.BuildingDefinition`, `BuildingPlacement`,
+`BuildingFootprint`, `BuildingRotation`, `Blueprint`, `BlueprintBlock` ; `building.SchematicGateway`
+(frontière), `building.worldedit.WorldEditSchematicGateway` (**seule** classe qui connaît WorldEdit),
+`building.WorldProbe` / `BukkitWorldProbe`, `building.TestHutBlueprint`, `SchematicWorkshop`,
+`BuildingLibrary`, `BuildingDefinitionYaml`, `BuildingPlacementService`,
+`database.BuildingPlacementRepository`. Modifiés : `SchemaMigrator` (V29),
+`building.model.SiteStatus` (+ `OCCUPIED`, **sans migration**), `BuildingSite` (+ `withStatus`),
+`BuildingSiteService` (+ `markStatus`), `BuildingSiteRepository` (+ `updateStatus`),
+`RpgAdminCommand` (`/rpgadmin building list|reload|generate`), `plugin.yml` (softdepend WorldEdit),
+`build.gradle.kts` (dépôt EngineHub + WorldEdit en `compileOnly`), la couche agent.
+Panel : page `/buildings/library`, section de pose sur la fiche d'un emplacement, deux permissions
+(`BUILDING_PLACE`, `BUILDING_ROLLBACK`), quatre actions au catalogue, fiche d'aide
+`batiments-bibliotheque.md`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du Control Panel. **Migration automatique V29** au
+premier démarrage (voir ci-dessous).
+
+**Aucune installation à faire** : WorldEdit est déjà présent sur le DEV. Sur un serveur qui n'en
+aurait pas, rien à installer non plus — la pose serait simplement refusée.
+
+Le dossier `plugins/RPGQuest/buildings/` et le fichier `test_hut_01.yml` sont créés automatiquement
+au premier démarrage, ainsi que `plugins/RPGQuest/schematics/test_hut_01.schem`. **Aucun fichier
+existant n'est écrasé.**
+
+### Sauvegarde préalable
+
+- Ancien JAR `plugins/RPGQuest-<ancienne_version>.jar`.
+- `plugins/RPGQuest/data.db` — **migration de schéma V28 → V29**, donc suivre la procédure de
+  [mise à jour du seul JAR](VERYGAMES.md#mise-à-jour-du-seul-jar-rpgquest-scénario-2) et vérifier la
+  sauvegarde avant de redémarrer.
+- Control Panel : sauvegarde automatique par `scripts/plugadmin/deploy.sh`.
+
+### Déploiement
+
+1. Compiler depuis un worktree propre (`./gradlew clean build`).
+2. Déployer le Control Panel (`scripts/plugadmin/deploy.sh`).
+3. Arrêter le serveur Minecraft, remplacer uniquement `plugins/RPGQuest-*.jar`, redémarrer.
+4. Vérifier la migration : `user_version = 29` et la table `building_placements` présente.
+5. Vérifier que `plugins/RPGQuest/schematics/test_hut_01.schem` a bien été produit.
+
+**Le redémarrage Minecraft est nécessaire** : la migration, la bibliothèque et la génération du
+schematic ont lieu au démarrage du plugin.
+
+### Validation
+
+Automatisée, et c'est l'intérêt de la frontière `SchematicGateway` : **127 tests** couvrent la
+rotation (les quatre orientations dans les deux sens, l'échange des axes à 90°/270°, quatre quarts de
+tour qui reviennent au départ), l'emprise (ancre point fixe, fondation un bloc sous l'ancre,
+chevauchement, mondes distincts), la définition (dimensions, ancre hors bâtiment, orientation
+inconnue, traversée de chemin dans le nom de fichier), le plan de la hutte bloc par bloc, la
+bibliothèque (fichier invalide nommé et ignoré, doublon d'identifiant, exemple jamais écrasé), le
+placement (**sauvegarde avant collage prouvée par l'ordre des appels**, échec de collage →
+emplacement vide, échec de sauvegarde → aucun collage tenté, double clic, site occupé, chevauchement,
+retour arrière et ses quatre refus, survie à un service neuf) et le panel (formulaires **réellement
+rendus** et soumis tels quels, bouton de pose absent sans aperçu, aperçu d'un autre emplacement non
+affiché, rollback absent sans sauvegarde).
+
+**Non vérifié** : **TC-270** (`PENDING MANUAL VALIDATION`). Ce qui ne peut pas l'être depuis la
+machine de build : le **collage réel** et le **sens de rotation effectif du moteur**. L'adaptateur
+compare l'emprise de WorldEdit à la nôtre et refuse en cas de désaccord, donc une convention de signe
+inattendue produira un refus explicite plutôt qu'une hutte à l'envers — mais que la hutte apparaisse
+bien, porte face à l'orientation attendue, reste à voir en jeu.
+
+### Effet de bord à connaître
+
+**C'est le premier lot qui écrit dans le monde.** Une pose remplace tous les blocs de l'emprise
+annoncée. Rien n'est écrit sans un aperçu puis une confirmation explicite, et la zone est sauvegardée
+avant — mais le geste n'est plus anodin, contrairement à tout ce que la page « Bâtiments » faisait
+jusqu'ici.
+
+**Aucun effet sur le contenu ou le gameplay existant** : aucune quête, dialogue, story ou PNJ n'est
+touché. Les 4 emplacements déjà créés sur le DEV restent intacts et vides.
+
+Un **rollback du JAR laisse la table `building_placements` en place**, simplement inutilisée ; les
+bâtiments déjà posés **restent dans le monde** (ce sont des blocs), et leurs sauvegardes restent dans
+`plugins/RPGQuest/schematics/`. Le `SchemaMigrationRunner` ne redescend jamais une version.
+
+### Rollback
+
+- **Plugin** : redéployer le JAR sauvegardé, puis redémarrer. La bibliothèque et la pose
+  disparaissent du panel (actions refusées par l'agent, ce qui est le comportement attendu). **Les
+  bâtiments posés restent dans le monde** — pour les retirer, il faut d'abord annuler la pose depuis
+  le panel, *avant* de revenir en arrière.
+- **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
+- **Données** : la sauvegarde de `data.db` prise avant le déploiement est en V28. La restaurer ferait
+  perdre les placements enregistrés, sans retirer les bâtiments du monde — à ne faire que si la
+  migration a réellement échoué.

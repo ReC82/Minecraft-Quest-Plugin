@@ -1104,6 +1104,167 @@ placement, et elles dépendent du bâtiment, pas du site), aucune action de tél
 emplacement (il n'existe aucun service de TP admin réutilisable — le construire serait un lot à
 part), et aucun marqueur visuel en jeu.
 
+### Bibliothèque de bâtiments et premier placement — `/buildings/library` (issue #213)
+
+Le lot suivant du même chantier : un bâtiment peut enfin être **affecté à un emplacement et posé
+dans le monde**. Trois concepts, et leur séparation n'est pas cosmétique :
+
+| Concept | Nature | Où il vit |
+|---|---|---|
+| `BuildingSite` | un point d'ancrage nommé | base (`building_sites`, V28) |
+| `BuildingDefinition` | ce qu'on peut poser | **fichier** `plugins/RPGQuest/buildings/*.yml` |
+| `BuildingPlacement` | un bâtiment réellement posé | base (`building_placements`, V29) |
+
+**Pourquoi la définition est un fichier et le placement une table.** Une définition est du
+*contenu* : elle se relit, se compare entre deux versions, se corrige dans un éditeur et se
+versionne avec le dépôt — exactement comme une quête ou un dialogue. Un placement est un *fait* :
+« le 8 octobre à 22 h, la hutte a été posée ici, tournée de 90°, et voici la sauvegarde de ce qui
+s'y trouvait avant ». Rien d'autre ne peut le reconstituer.
+
+#### WorldEdit est une dépendance d'infrastructure, jamais du domaine
+
+Tout passe par **`SchematicGateway`**, une interface RPGQuest dont la surface ne parle que de plans,
+de noms de fichiers, d'emprises et de degrés. `BuildingSite`, `BuildingDefinition` et
+`BuildingPlacement` **n'exposent aucun type WorldEdit** ; ils ne savent pas qu'il existe.
+
+Une seule classe le connaît : `building.worldedit.WorldEditSchematicGateway`. Même conception que
+le pont Citizens — `compileOnly`, `softdepend`, et un refus **nommé** si le plugin est absent,
+désactivé ou incompatible (`LinkageError` intercepté). RPGQuest démarre normalement sans WorldEdit ;
+seule la pose est refusée, en le disant.
+
+L'effet mesurable de cette frontière : **l'essentiel du lot s'exécute dans les tests**. La rotation,
+l'emprise, l'ordre des opérations, les refus, le retour arrière et la survie à un redémarrage sont
+vérifiés contre un faux moteur, sans WorldEdit sur le chemin de classe. Ce qui reste derrière
+l'interface est mince, et c'est précisément la part qu'aucun test honnête ne couvrirait sans serveur.
+
+#### La hutte de test est produite par notre code, pas importée
+
+Aucun fichier externe n'entre dans le dépôt. `TestHutBlueprint` décrit la hutte **en Java** —
+7 × 5 × 6, fondation en pierre, poteaux d'angle en rondins, murs en planches, porte centrée, deux
+fenêtres, toit à deux pans, intérieur vide — et `SchematicWorkshop` l'écrit avec l'écrivain officiel
+du moteur (Sponge v3).
+
+> **Pourquoi un plan en code plutôt qu'un `.schem` dans Git.** Un blob gzip de quelques kilo-octets
+> ne se relit pas en revue : personne ne pourrait affirmer qu'il mesure 7 × 5 × 6 ni que sa porte
+> est centrée. Le plan, lui, s'inspecte — et `TestHutBlueprintTest` l'inspecte réellement, bloc par
+> bloc. La définition YAML lit d'ailleurs ses dimensions **sur le plan**, et un test échoue si les
+> deux divergent : une définition qui mentirait sur ses dimensions ferait annoncer une emprise
+> fausse, et la faute ne se verrait qu'après le collage.
+
+**La façade est volontairement dissymétrique** (porte au centre, deux fenêtres de part et d'autre,
+toit à deux pans). Une hutte à symétrie parfaite ne dirait rien d'une rotation de 180° : on ne
+pourrait pas la distinguer d'une rotation nulle, et le test manuel ne conclurait rien.
+
+**Où vit le fichier, et pourquoi.** Dans `plugins/RPGQuest/schematics/`, produit au démarrage s'il
+est absent — jamais écrasé s'il existe, comme tout contenu déposé par le plugin. Le dépôt versionne
+le **générateur** et la **définition**, pas le binaire : un audit préalable a montré que
+`worldedit-core` lève `IllegalStateException: WorldEdit is not initialized yet` hors d'un serveur
+(le registre de blocs est peuplé par la plateforme), donc un `.schem` ne peut être ni produit ni
+vérifié sur la machine de build. Versionner un binaire que la CI ne peut pas régénérer serait
+versionner quelque chose que personne ne peut contrôler. `/rpgadmin building generate` le réécrit à
+la demande.
+
+#### L'ancre : centre de la porte, au niveau du sol
+
+Convention **unique et explicite**, énoncée dans la définition et nulle part ailleurs en dur. Pour
+la hutte : `3 / 1 / 0`.
+
+Le `1` porte une conséquence qu'il faut connaître : la fondation (`y = 0`) se place **un bloc sous**
+l'ancre de l'emplacement. C'est voulu — une fondation s'enfonce dans le sol, et l'ancre d'un
+emplacement est justement la case libre au-dessus du bloc cliqué.
+
+`front` déclare la direction que regarde la façade à rotation nulle, et elle doit être
+**géométriquement vraie**. Pour la hutte, la porte est sur la paroi `z = 0`, qui regarde les `-Z`,
+donc le nord : d'où `front: NORTH`. Déclarer `SOUTH` sur la même géométrie aurait caché un demi-tour
+permanent dans le code de collage — exactement l'offset implicite que ce lot devait éviter.
+
+#### La rotation, mesurée et non supposée
+
+`BuildingRotation` est une fonction **pure** : azimut de boussole (nord = 0, horaire), rotation =
+écart d'azimut entre `front` et l'orientation de l'emplacement, toujours multiple de 90°.
+`BuildingFootprint` exprime les coins du schematic en décalages **relatifs à l'ancre**, les fait
+tourner, puis les replace autour de l'ancre du monde — l'ancre est donc un point fixe, ce qui est
+précisément ce qu'on attend d'une ancre.
+
+À **90° et 270°, largeur et profondeur s'échangent** : une hutte 7 × 5 occupe 5 × 7. L'aperçu
+l'affiche et l'explique, parce que c'est l'erreur la plus facile à faire en estimant une emprise de
+tête.
+
+> **Le sens de rotation de WorldEdit n'est pas deviné.** La convention de signe de
+> `AffineTransform#rotateY` est une décision interne à la bibliothèque ; la supposer serait un pari,
+> et un pari perdu pose la hutte à l'envers sur du terrain déjà écrasé. L'adaptateur **applique donc
+> la transformation aux coins du schematic**, compare l'emprise obtenue à celle calculée par le
+> domaine, et ne colle que si les deux coïncident. Si le signe opposé est celui qui correspond, il
+> est utilisé et journalisé une fois ; si aucun ne correspond, le collage est **refusé**. L'emprise
+> annoncée à l'administrateur est ainsi toujours celle qui sera réellement occupée.
+
+#### L'ordre des opérations est la garantie principale
+
+1. **Vérifier** — toutes les règles de l'aperçu sont **rejouées** au moment de poser. Entre l'écran
+   et le clic, un autre administrateur a pu occuper l'emplacement ou décharger le monde. *Un aperçu
+   n'est pas une réservation.*
+2. **Sauvegarder** la zone de l'emprise dans un `.schem` daté. Si cela échoue, **on ne colle pas** :
+   poser sans pouvoir revenir en arrière n'est pas acceptable pour une première validation.
+3. **Coller**, avec l'air (c'est lui qui creuse l'intérieur de la hutte ; l'ignorer laisserait le
+   terrain dans les murs).
+4. **Enregistrer** le placement, puis marquer l'emplacement `OCCUPIED`.
+
+Un échec au collage laisse l'emplacement **vide** et n'inscrit aucun placement : il n'y a pas de
+faux placement possible. Si l'enregistrement échoue *après* un collage réussi, le message le dit
+explicitement et nomme le fichier de sauvegarde — mieux vaut un bâtiment posé sans fiche, qu'un
+administrateur peut constater, qu'une fiche sans bâtiment.
+
+**`site_id` est la clé primaire de `building_placements`** : « un emplacement porte au plus un
+bâtiment » est donc une règle appliquée par le **schéma**, pas seulement par le service. Un double
+clic est refusé par le service, et le serait de toute façon par la base si deux requêtes arrivaient
+ensemble.
+
+#### Le retour arrière restaure, il ne détruit pas
+
+La sauvegarde prise avant la pose est reposée **telle quelle**, sans transformation, à l'emplacement
+exact d'où elle vient. Puis l'emplacement redevient vide.
+
+**Sans sauvegarde, le retour arrière est refusé** — et le bouton n'apparaît même pas. Remettre de
+l'air dans l'emprise détruirait le terrain d'origine : ce serait une destruction déguisée en
+annulation. C'est la limite que le ticket demandait de ne pas franchir, et de documenter plutôt que
+de contourner.
+
+**Limite à connaître, et elle est réelle** : la restauration repose un instantané. Tout ce qui a été
+construit dans l'emprise *après* la pose est également écrasé. L'écran le dit en clair.
+
+#### `SiteStatus.OCCUPIED`, arrivé sans migration
+
+Le socle de #213 ne déclarait qu'`EMPTY`, exprès : aucun geste ne pouvait produire autre chose. Le
+geste existe maintenant, donc l'état existe — et son ajout n'a demandé **aucune migration**, parce
+que la colonne est un `TEXT` et la lecture tolérante. C'est exactement le bénéfice que cette
+décision visait, constaté un lot plus tard.
+
+L'état **suit** le fait, il ne le décide pas : il n'existe volontairement **aucune action agent**
+pour l'éditer à la main, ce qui permettrait de déclarer « occupé » un emplacement vide.
+
+#### Actions agent et permissions
+
+| Action | Permission | Effet |
+|---|---|---|
+| `building.definition.list` | `BUILDING_READ` | bibliothèque — lecture seule |
+| `building.placement.preview` | `BUILDING_READ` | rotation et emprise — **n'écrit rien** |
+| `building.placement.place` | `BUILDING_PLACE` | écrit dans le monde, `confirm=true` exigé |
+| `building.placement.rollback` | `BUILDING_ROLLBACK` | restaure la zone, `confirm=true` exigé |
+
+**Aucune commande WorldEdit libre n'est envoyée par le navigateur** : le panel n'enfile que ces
+actions, dont les paramètres sont validés deux fois — par le catalogue du panel, puis par l'agent.
+
+`BUILDING_PLACE` et `BUILDING_ROLLBACK` sont **distinctes** de `BUILDING_WRITE` et l'une de l'autre,
+parce que les risques sont de natures différentes : renommer une fiche ne change rien dans le jeu,
+poser écrase des blocs réels, et restaurer écrase aussi ce qui a été ajouté depuis. Le **Builder**
+consulte la bibliothèque mais ne pose pas.
+
+#### Ce qui n'est pas fait, et volontairement
+
+Aucune génération IA de bâtiment, aucune analyse d'image, aucun import de schematic depuis le panel,
+aucun aperçu visuel en jeu de l'emprise, aucun versioning de bâtiment ni remplacement d'un bâtiment
+posé. Le ticket les plaçait explicitement hors de ce lot.
+
 ### Rôles, permissions et comptes PlugAdmin (issue #50)
 
 Le contrôle d'accès du Control Panel repose sur un modèle **utilisateur → rôle →

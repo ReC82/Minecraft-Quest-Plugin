@@ -4131,6 +4131,7 @@ le résumé de récompenses de TC-014).
 | TC-267 | Correction IA, identifiant, nœuds exacts, fiche Mira, suppression d'un PNJ de test #222/#223/#224/#225/#226 (PENDING) | | | |
 | TC-268 | Emplacement de construction : marquer en jeu, gérer et supprimer depuis le panel #213 (PENDING) | | | |
 | TC-269 | Annuler la création d'un emplacement, et retour du panel sur sa page #227 (PENDING) | | | |
+| TC-270 | Poser la hutte de test sur un emplacement, deux orientations, et annuler #213 (PENDING) | | | |
 
 ---
 
@@ -4523,3 +4524,129 @@ le résumé de récompenses de TC-014).
 -   L'avertissement de voisinage s'affiche et **ne bloque pas**.
 -   **Les cinq actions du panel reviennent sur « Bâtiments → Emplacements »**, succès comme refus.
 -   Aucun bloc du monde n'est modifié, et WorldEdit reste intact.
+
+---
+
+### TC-270 — Poser la hutte de test sur un emplacement, deux orientations, et annuler (issue #213, PENDING MANUAL VALIDATION)
+
+-   **But :** valider **toute la chaîne** `BuildingSite → BuildingDefinition → schematic → aperçu →
+    rotation → collage`, avec une hutte volontairement simple, puis vérifier que le retour arrière
+    restaure réellement la zone.
+-   **Durée :** environ 12 minutes.
+-   **Pré-requis :** JAR de ce lot déployé **et serveur redémarré** (la migration V29, la
+    bibliothèque et la génération du schematic ont lieu au démarrage), Control Panel redéployé, un
+    compte PlugAdmin `OWNER` ou `ADMIN`, un compte en jeu portant `rpgquest.admin.buildsite`, et
+    **WorldEdit installé** (il l'est sur le DEV, 7.4.1).
+-   ⚠️ **C'est le premier TC qui écrase des blocs réels.** Choisissez un terrain plat, **dégagé et
+    sans valeur** dans `world_hub` — pas à côté d'un PNJ, d'un portail, d'une borne ni d'une
+    construction existante.
+-   ✅ Ce TC ne touche ni quête, ni dialogue, ni story, ni PNJ.
+
+#### 1. Le bâtiment existe, et son fichier a bien été produit
+
+1.  En jeu : `/rpgadmin building list`. Attendu : **une** entrée, `test_hut_01` « Hutte de test »,
+    `7 × 5 × 6`, façade **nord**.
+2.  Panel → **Bâtiments → Bibliothèque** → **Rafraîchir**. Attendu sur la fiche :
+    -   dimensions `7 × 5 × 6` ;
+    -   ancre `3 / 1 / 0` ;
+    -   façade de référence **nord** ;
+    -   badge vert **« schematic présent »**.
+3.  Vérifier qu'il n'y a **aucun bouton** de création, de téléversement ni d'édition : la
+    bibliothèque est en lecture seule, et la page le dit.
+4.  Si le badge est rouge (« schematic absent ») : `/rpgadmin building generate` en jeu, puis
+    **Rafraîchir**. Si cela échoue, le message nomme la cause — ne pas continuer sans fichier.
+
+#### 2. Préparer un emplacement, orienté à l'est
+
+5.  En jeu, sur le terrain dégagé : `/rpgadmin buildsite tool`, **regardez vers l'est**, puis
+    **clic droit** sur un bloc de sol. Nommez-le **« Test hutte est »** dans l'enclume et validez.
+6.  **Noter les coordonnées exactes** annoncées (l'ancre), et **prendre une capture d'écran du
+    terrain** : c'est elle qui servira à juger la restauration à l'étape 20.
+7.  Panel → **Bâtiments → Emplacements** → **Rafraîchir** → ouvrir la fiche. État : **vide**.
+
+#### 3. L'aperçu — rien ne doit être écrit à cette étape
+
+8.  Dans la fiche, section **Bâtiment** : choisir « Hutte de test », puis **Choisir un bâtiment**.
+9.  Attendu dans l'**Aperçu de la pose** :
+    -   **Rotation appliquée : 90°** (façade nord amenée vers l'est) ;
+    -   **emprise** `x1..x2 / y1..y2 / z1..z2` ;
+    -   **emprise (dimensions) : 5 × 7 × 6** — la largeur et la profondeur sont **échangées**, et la
+        page l'explique. C'est le point le plus facile à casser de tout le lot ;
+    -   **210 blocs** ;
+    -   un nombre de **blocs non-air** déjà présents (de l'herbe, c'est normal).
+10. **Vérifier l'emprise à la main** : `y1` doit être **l'ancre − 1** (la fondation s'enfonce d'un
+    bloc), et `y2` l'ancre + 4.
+11. **Retourner en jeu et vérifier qu'aucun bloc n'a changé.** L'aperçu ne doit **rien** avoir écrit.
+
+#### 4. Poser
+
+12. Panel → fiche → cocher la case → **Placer dans le monde**.
+13. **Rafraîchir**. Attendu : l'emplacement est **occupé**, et la section **Bâtiment posé** indique
+    le bâtiment, la rotation `90°`, l'emprise et la date.
+14. **Aller en jeu sur place.** Vérifier, dans cet ordre :
+    -   la hutte **existe** ;
+    -   la **porte regarde l'est** (c'est l'orientation de l'emplacement) ;
+    -   le **seuil de la porte est exactement à l'ancre notée à l'étape 6** ;
+    -   la **fondation en pierre** est un bloc plus bas ;
+    -   dimensions au sol **5 × 7** (tournée), hauteur **6** ;
+    -   **intérieur vide** — aucun meuble ;
+    -   **aucune décoration extérieure**, aucun arbre, aucune clôture, aucun terrain aplani autour.
+15. `/rpgadmin buildsite list` → l'emplacement est toujours là.
+
+#### 5. Persistance
+
+16. **Redémarrer le serveur Minecraft.**
+17. Panel → **Rafraîchir** → l'emplacement est **toujours occupé**, avec la même emprise et la même
+    rotation. La hutte est toujours en jeu.
+
+#### 6. La seconde orientation — le test qui attrape une erreur de signe
+
+18. Créer un **second** emplacement, loin du premier (au moins 20 blocs), en **regardant vers le
+    nord**, nommé « Test hutte nord ». Choisir « Hutte de test ».
+19. Attendu : **rotation 0°** et **emprise 7 × 5 × 6** (aucun échange d'axes). Poser, puis vérifier
+    en jeu que la **porte regarde le nord**.
+
+> ⚠️ Si la porte de l'une des deux huttes regarde la mauvaise direction, **arrêter ici et le
+> signaler** : c'est une erreur de convention de rotation, et elle rendrait tout placement futur
+> faux. Le serveur refuse normalement un collage dont l'emprise ne correspond pas à celle annoncée,
+> donc un refus explicite est aussi une information utile — notez le message.
+
+#### 7. Annuler la pose
+
+20. Fiche du **premier** emplacement → **Annuler la pose** → cocher → **Restaurer la zone d'avant**.
+21. **Rafraîchir** : l'emplacement est redevenu **vide**, et la section « Bâtiment posé » a disparu.
+22. **Aller en jeu** : la hutte a disparu, et le terrain est **tel qu'avant** — comparer avec la
+    capture d'écran de l'étape 6. L'herbe, les dénivelés et les blocs d'origine doivent être revenus.
+23. Relancer l'annulation sur le même emplacement : attendu **« Aucun bâtiment enregistré »**, jamais
+    une erreur.
+
+#### 8. Les refus
+
+24. Sur l'emplacement **encore occupé** (le second) : vérifier qu'il **ne propose pas** de choisir un
+    autre bâtiment — il faut d'abord annuler.
+25. Créer un emplacement **à 2 blocs** du second (donc dans son emprise), et tenter un aperçu.
+    Attendu : refus **« L'emprise chevauche … »**. Le repère voisin est permis, c'est la **matière
+    posée** qui ne peut pas se superposer.
+26. Avec un compte PlugAdmin de rôle **Builder** : la bibliothèque est **visible**, mais ni
+    « Choisir un bâtiment », ni « Placer », ni « Annuler » n'apparaissent.
+27. Avec un rôle **Éditeur de contenu** : l'entrée « Bâtiments » ne doit pas apparaître, et
+    `/buildings/library` saisi à la main doit renvoyer « Accès refusé ».
+
+#### 9. Nettoyage
+
+28. Annuler la pose du second emplacement, puis supprimer les emplacements de test créés ici.
+    **Ne pas supprimer** les emplacements `buildsite_0002` à `buildsite_0005` existants.
+
+#### Critères de réussite
+
+-   La bibliothèque montre la hutte avec ses dimensions, son ancre et son schematic présent.
+-   L'aperçu annonce la bonne rotation et la bonne emprise, **sans rien écrire**.
+-   À 90°, l'emprise est bien **5 × 7 × 6** et non 7 × 5 × 6.
+-   La hutte apparaît **exactement à l'ancre**, porte face à l'orientation de l'emplacement, aux deux
+    orientations testées.
+-   Le seuil de la porte est à l'ancre, la fondation un bloc plus bas.
+-   Intérieur vide, aucune décoration, aucun terrain modifié autour de l'emprise.
+-   Tout survit à un redémarrage.
+-   L'annulation restaure le terrain **tel qu'avant**, et une seconde annulation est inoffensive.
+-   Un emplacement occupé et un chevauchement sont refusés, avec un motif lisible.
+-   Un Builder consulte sans pouvoir poser.

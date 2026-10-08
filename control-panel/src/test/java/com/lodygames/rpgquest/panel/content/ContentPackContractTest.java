@@ -315,13 +315,119 @@ class ContentPackContractTest {
         assertTrue(doc.contains("## Exemple minimal"));
         assertTrue(doc.contains("## Exemple complet multi-éléments"));
         assertTrue(doc.contains("tc110_descente"), "l'exemple complet doit être inclus en entier");
-        assertTrue(doc.contains("Limite de cette version du contrat"),
-                "la limite sur le vocabulaire de dialogue doit être énoncée, jamais passée sous silence");
         assertTrue(doc.contains("Aucune contrainte d'équilibrage n'est formalisée"),
                 "ne jamais inventer de règle d'équilibrage");
     }
 
+    /**
+     * Depuis #146 phase 2, la documentation énonce le vocabulaire de dialogue au complet. Elle le
+     * dérive des mêmes descripteurs que le schéma, donc une divergence est impossible — mais une
+     * omission d'énumération, elle, le serait : ce test l'interdit.
+     */
+    @Test
+    void theAiDocumentationListsEveryDialogueActionAndCondition() {
+        String doc = ContentPackTemplates.aiDocumentation();
+
+        assertTrue(doc.contains("### Actions de dialogue disponibles ("
+                + Descriptors.DIALOGUE_ACTIONS.size() + ")"), "compte réel des actions");
+        assertTrue(doc.contains("### Conditions de dialogue disponibles ("
+                + Descriptors.DIALOGUE_CONDITIONS.size() + ")"));
+        for (Descriptors.Descriptor d : Descriptors.DIALOGUE_ACTIONS) {
+            assertTrue(doc.contains("`" + d.kind() + "`"), "action absente : " + d.kind());
+        }
+        for (Descriptors.Descriptor d : Descriptors.DIALOGUE_CONDITIONS) {
+            assertTrue(doc.contains("`" + d.kind() + "`"), "condition absente : " + d.kind());
+        }
+        assertTrue(doc.contains("negate: true"), "le champ commun aux conditions doit être expliqué");
+        assertFalse(doc.contains("Limite de cette version du contrat"),
+                "la limite sur le vocabulaire de dialogue est levée : ne plus l'annoncer");
+    }
+
+    // ---- Vocabulaire de dialogue contraint par le schéma ---------------------------------------
+
+    /**
+     * Le cœur de la phase 2 : les deux tableaux d'un choix ne sont plus libres. Un pack qui invente
+     * une action est refusé par le schéma avant d'arriver à l'import.
+     */
+    @Test
+    void dialogueActionsAndConditionsAreConstrainedByTheSchema() {
+        assertEquals(kinds(Descriptors.DIALOGUE_ACTIONS), branchKinds(def("dialogueAction")));
+        assertEquals(kinds(Descriptors.DIALOGUE_CONDITIONS), branchKinds(def("dialogueCondition")));
+    }
+
+    @Test
+    void aChoicePointsAtThoseDefinitionsRatherThanAtFreeObjects() {
+        Map<String, Object> props = map(map(map(dialogueNode().get("properties")).get("choices"))
+                .get("items"));
+        props = map(props.get("properties"));
+
+        assertEquals("#/$defs/dialogueAction", map(map(props.get("actions")).get("items")).get("$ref"));
+        assertEquals("#/$defs/dialogueCondition",
+                map(map(props.get("conditions")).get("items")).get("$ref"));
+    }
+
+    /**
+     * {@code nodes} est une map, et c'était un défaut réel du contrat : le schéma annonçait une
+     * liste de nœuds portant chacun un {@code id}, alors que le moteur ET l'export du plugin
+     * écrivent une map indexée par id. Un pack suivant le schéma était donc refusé à l'import.
+     */
+    @Test
+    void dialogueNodesFormAMapKeyedByNodeIdRatherThanAList() {
+        Map<String, Object> nodes = map(map(def("dialogue").get("properties")).get("nodes"));
+
+        assertEquals("object", nodes.get("type"), "une liste serait refusée à l'import");
+        assertEquals(1L, ((Number) nodes.get("minProperties")).longValue());
+        assertTrue(nodes.containsKey("propertyNames"), "l'id de nœud, qui est la clé, doit être borné");
+        assertFalse(map(dialogueNode().get("properties")).containsKey("id"),
+                "l'id est la clé : le répéter dans le nœud serait une seconde source de vérité");
+        assertEquals(List.of("speaker", "text"), dialogueNode().get("required"));
+    }
+
+    /** {@code negate} est accepté par toutes les branches, et par aucune branche d'action. */
+    @Test
+    void negateIsAcceptedOnEveryConditionAndOnNoAction() {
+        for (Descriptors.Descriptor d : Descriptors.DIALOGUE_CONDITIONS) {
+            assertTrue(map(branch(def("dialogueCondition"), d.kind()).get("properties"))
+                    .containsKey("negate"), d.kind());
+        }
+        for (Descriptors.Descriptor d : Descriptors.DIALOGUE_ACTIONS) {
+            assertFalse(map(branch(def("dialogueAction"), d.kind()).get("properties"))
+                    .containsKey("negate"), d.kind() + " : negate n'a aucun sens sur une action");
+        }
+    }
+
+    /** Une branche reste fermée : un champ appartenant à un autre type est refusé. */
+    @Test
+    void aDialogueBranchRefusesFieldsOfAnotherType() {
+        Map<String, Object> close = branch(def("dialogueAction"), "CLOSE");
+
+        assertEquals(Boolean.FALSE, close.get("additionalProperties"));
+        assertEquals(Set.of("type"), map(close.get("properties")).keySet());
+    }
+
+    @Test
+    void questStateConditionEnumeratesTheRealStates() {
+        Map<String, Object> state = map(map(branch(def("dialogueCondition"), "QUEST_STATE")
+                .get("properties")).get("state"));
+
+        assertTrue(String.valueOf(state.get("description")).contains("COMPLETED"), state.toString());
+    }
+
     // ---- Helpers -------------------------------------------------------------------------------
+
+    /**
+     * Le nœud de dialogue, atteint à travers la MAP {@code nodes}. Il est décrit par
+     * {@code additionalProperties} parce que son identifiant est la clé, pas un champ.
+     */
+    private static Map<String, Object> dialogueNode() {
+        return map(map(map(def("dialogue").get("properties")).get("nodes"))
+                .get("additionalProperties"));
+    }
+
+    private static Set<String> kinds(List<Descriptors.Descriptor> catalog) {
+        return catalog.stream().map(Descriptors.Descriptor::kind)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
 
     private static Set<String> branchKinds(Map<String, Object> def) {
         Set<String> kinds = new LinkedHashSet<>();

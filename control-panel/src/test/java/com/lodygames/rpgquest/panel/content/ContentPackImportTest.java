@@ -74,6 +74,52 @@ class ContentPackImportTest {
         return a.elements().get(0);
     }
 
+    // ---- Les exemples du contrat s'importent réellement ----------------------------------------
+
+    /**
+     * <strong>Le test qui manquait.</strong> Les exemples de #110 n'étaient vérifiés que sur leur
+     * texte — « tel type y figure-t-il ? » — jamais en les faisant passer par l'import. Résultat :
+     * leur dialogue déclarait ses nœuds sous forme de liste, alors que le moteur et l'export du
+     * plugin écrivent une map indexée par id, et l'exemple de référence du contrat était donc
+     * <em>inimportable</em>. Un contrat dont l'exemple ne passe pas son propre import ne vaut rien ;
+     * ce test le fait passer.
+     */
+    @Test
+    void theCompleteExampleOfTheContractIsFullyImportable() {
+        ContentPackImport.Analysis a = analyze(ContentPackTemplates.completeExample());
+
+        assertTrue(a.envelope().stream().noneMatch(d -> d.level() == Diagnostic.Level.ERROR),
+                () -> "enveloppe : " + a.envelope());
+        for (ContentPackImport.Element e : a.elements()) {
+            // « npcs » n'est pas éditable depuis le panel : l'élément est légitimement laissé de
+            // côté, ni écrit ni perdu. Toutes les autres familles doivent être importables.
+            ContentPackImport.Status expected = e.family().equals("npcs")
+                    ? ContentPackImport.Status.SKIPPED : ContentPackImport.Status.NEW;
+            assertEquals(expected, e.status(),
+                    () -> e.key() + " : " + e.reason() + " " + e.diagnostics());
+        }
+        assertTrue(a.importable(), () -> "éléments : " + a.elements());
+        assertTrue(a.elements().stream().anyMatch(e -> e.key().startsWith("dialogues/")),
+                () -> "le dialogue doit être vu comme un élément : " + a.elements());
+    }
+
+    @Test
+    void theMinimalExampleOfTheContractIsAlsoImportable() {
+        ContentPackImport.Analysis a = analyze(ContentPackTemplates.minimalExample());
+
+        assertTrue(a.importable(), () -> "éléments : " + a.elements());
+    }
+
+    /** Le gabarit par famille doit lui aussi décrire une forme que l'import accepte. */
+    @Test
+    void theDialogueFamilyTemplateDescribesAnImportableShape() {
+        ContentPackImport.Analysis a = analyze(ContentPackTemplates.template("dialogues"));
+
+        ContentPackImport.Element e = only(a);
+        assertEquals(ContentPackImport.Status.NEW, e.status(),
+                () -> e.reason() + " " + e.diagnostics());
+    }
+
     // ---- Enveloppe -----------------------------------------------------------------------------
 
     @Test

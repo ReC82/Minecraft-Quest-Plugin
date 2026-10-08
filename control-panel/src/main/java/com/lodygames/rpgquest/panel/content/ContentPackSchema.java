@@ -19,12 +19,11 @@ import java.util.Map;
  * soit recopiée ici — c'est l'exigence du ticket : « le schéma doit rester dérivé des capacités
  * réelles du moteur et ne pas inventer des propriétés non supportées ».</p>
  *
- * <p><strong>Limite assumée de cette phase</strong> : la section {@code dialogues} n'est contrainte
- * que sur son squelette (id / start / nœuds / choix). Le vocabulaire de ses actions et conditions
- * vit dans les énumérations {@code ActionType} / {@code ConditionType} du plugin et n'est, à ce
- * jour, déclaré nulle part que le Control Panel puisse dériver : le schéma laisse donc ces deux
- * tableaux libres plutôt que de recopier une liste qui divergerait en silence. La documentation le
- * dit explicitement.</p>
+ * <p><strong>Couverture complète depuis #146 phase 2</strong> : la section {@code dialogues} est
+ * désormais contrainte jusqu'au vocabulaire de ses actions et de ses conditions, dérivé de
+ * {@link Descriptors#DIALOGUE_ACTIONS} et {@link Descriptors#DIALOGUE_CONDITIONS} — eux-mêmes
+ * verrouillés sur les énumérations du moteur par {@code DialogueDescriptorsTest}. C'était la limite
+ * explicitement documentée des deux phases précédentes.</p>
  */
 public final class ContentPackSchema {
 
@@ -128,6 +127,14 @@ public final class ContentPackSchema {
                         + "n'est accepté."));
         defs.put("reward", oneOfDescriptors(Descriptors.REWARDS, "type",
                 "Récompense accordée à la complétion de la quête."));
+        // Issue #146 phase 2 : le vocabulaire de dialogue est désormais DÉRIVÉ des descripteurs,
+        // donc contraint comme les objectifs. C'était la limite explicitement documentée de #110.
+        defs.put("dialogueAction", oneOfDescriptors(Descriptors.DIALOGUE_ACTIONS, "type",
+                "Action exécutée par un choix de dialogue. « type » détermine les autres champs ; "
+                        + "aucun champ d'un autre type n'est accepté."));
+        defs.put("dialogueCondition", oneOfDescriptors(Descriptors.DIALOGUE_CONDITIONS, "type",
+                "Condition d'affichage d'un choix. « negate: true » inverse le verdict de n'importe "
+                        + "laquelle.", List.of(Descriptors.NEGATE)));
         defs.put("story", story());
         defs.put("npc", npc());
         defs.put("dialogue", dialogue());
@@ -221,31 +228,40 @@ public final class ContentPackSchema {
         Map<String, Object> choiceProps = new LinkedHashMap<>();
         choiceProps.put("text", ref("text"));
         choiceProps.put("next", typed("string", "Id du nœud suivant, ou absent pour terminer."));
-        choiceProps.put("conditions", arrayOf(object(null, null),
-                "Conditions d'affichage du choix. Vocabulaire NON contraint par ce schéma — voir la "
-                        + "limite documentée."));
-        choiceProps.put("actions", arrayOf(object(null, null),
-                "Actions exécutées quand le choix est pris. Vocabulaire NON contraint par ce schéma — "
-                        + "voir la limite documentée."));
+        choiceProps.put("conditions", arrayOf(ref("dialogueCondition"),
+                "Conditions d'affichage du choix. Un choix dont une condition est fausse n'est pas "
+                        + "montré au joueur."));
+        choiceProps.put("actions", arrayOf(ref("dialogueAction"),
+                "Actions exécutées quand le choix est pris, dans l'ordre."));
         Map<String, Object> choice = object(choiceProps, "Un choix proposé au joueur.");
         choice.put("required", List.of("text"));
 
         Map<String, Object> nodeProps = new LinkedHashMap<>();
-        nodeProps.put("id", ref("logicalId"));
         nodeProps.put("speaker", typed("string", "Nom affiché du locuteur."));
         nodeProps.put("text", ref("text"));
         nodeProps.put("choices", arrayOf(choice, "Choix du nœud."));
         Map<String, Object> node = object(nodeProps, "Un nœud de dialogue.");
-        node.put("required", List.of("id", "text"));
+        node.put("required", List.of("speaker", "text"));
+        node.put("additionalProperties", false);
+
+        // Les nœuds forment une MAP « id de nœud → nœud », et non une liste. C'est la forme que
+        // le moteur lit et que l'export du plugin écrit ; l'id du nœud est donc la clé, et n'est
+        // jamais répété à l'intérieur. Une liste serait refusée à l'import.
+        Map<String, Object> nodes = new LinkedHashMap<>();
+        nodes.put("type", "object");
+        nodes.put("description", "Nœuds du dialogue, indexés par identifiant de nœud. Au moins un. "
+                + "L'identifiant est la CLÉ : ce n'est pas une liste.");
+        nodes.put("propertyNames", pattern("^[a-z0-9_][a-z0-9_-]{0,63}$",
+                "Identifiant de nœud : minuscules, chiffres, « _ » et « - »."));
+        nodes.put("additionalProperties", node);
+        nodes.put("minProperties", 1);
 
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("id", ref("logicalId"));
         props.put("start", ref("logicalId"));
-        props.put("nodes", arrayOfMin(node, 1, "Nœuds du dialogue. Au moins un."));
+        props.put("nodes", nodes);
         Map<String, Object> out = object(props,
-                "Un dialogue. Convention du moteur : l'id d'un dialogue est l'id du PNJ qui le porte. "
-                        + "Seul le squelette est contraint ici (voir la limite documentée sur les actions "
-                        + "et conditions).");
+                "Un dialogue. Convention du moteur : l'id d'un dialogue est l'id du PNJ qui le porte.");
         out.put("required", List.of("id", "start", "nodes"));
         out.put("additionalProperties", false);
         return out;
@@ -258,6 +274,18 @@ public final class ContentPackSchema {
      */
     private static Map<String, Object> oneOfDescriptors(List<Descriptors.Descriptor> catalog,
                                                          String discriminator, String description) {
+        return oneOfDescriptors(catalog, discriminator, description, List.of());
+    }
+
+    /**
+     * @param commonFields champs acceptés par <strong>toutes</strong> les branches — {@code negate}
+     *                     pour les conditions de dialogue, qui n'appartient à aucun type en
+     *                     particulier. Sans cela, {@code additionalProperties: false} le refuserait
+     *                     partout.
+     */
+    private static Map<String, Object> oneOfDescriptors(List<Descriptors.Descriptor> catalog,
+                                                         String discriminator, String description,
+                                                         List<Descriptors.Field> commonFields) {
         List<Object> branches = new ArrayList<>();
         for (Descriptors.Descriptor d : catalog) {
             Map<String, Object> props = new LinkedHashMap<>();
@@ -269,6 +297,9 @@ public final class ContentPackSchema {
                 if (f.required()) {
                     required.add(f.name());
                 }
+            }
+            for (Descriptors.Field f : commonFields) {
+                props.put(f.name(), fieldSchema(f));
             }
             Map<String, Object> branch = object(props, d.hint());
             branch.put("required", required);

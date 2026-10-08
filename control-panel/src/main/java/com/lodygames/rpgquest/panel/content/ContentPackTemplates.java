@@ -38,7 +38,8 @@ public final class ContentPackTemplates {
         return switch (f) {
             case "quests" -> envelope("quests") + questTemplateBody() + objectiveReference() + rewardReference();
             case "stories" -> envelope("stories") + storyTemplateBody();
-            case "dialogues" -> envelope("dialogues") + dialogueTemplateBody();
+            case "dialogues" -> envelope("dialogues") + dialogueTemplateBody()
+                    + dialogueActionReference() + dialogueConditionReference();
             case "npcs" -> envelope("npcs") + npcTemplateBody();
             default -> fullTemplate();
         };
@@ -58,6 +59,8 @@ public final class ContentPackTemplates {
         sb.append(npcTemplateBody());
         sb.append(objectiveReference());
         sb.append(rewardReference());
+        sb.append(dialogueActionReference());
+        sb.append(dialogueConditionReference());
         return sb.toString();
     }
 
@@ -159,11 +162,24 @@ public final class ContentPackTemplates {
                     # Convention du moteur : l'id du dialogue EST l'id du PNJ qui le porte.
                     - id: mon_pnj
                       start: accueil
+                      # « nodes » est une MAP : la clé est l'id du nœud, jamais une liste.
                       nodes:
-                        - id: accueil
+                        accueil:
                           speaker: "Mon PNJ"
                           text: "Bonjour."
                           choices:
+                            # Un choix conditionnel n'est PAS affiché si sa condition est fausse.
+                            # « negate: true » inverse n'importe quelle condition.
+                            - text: "Parle-moi de la mine."
+                              conditions:
+                                - type: QUEST_STATE
+                                  quest: namespace:ma_quete
+                                  state: NOT_STARTED
+                              actions:
+                                - type: START_QUEST
+                                  quest: namespace:ma_quete
+                                - type: CLOSE
+                            # Prévoir toujours une sortie : un choix sans « next », ou CLOSE.
                             - text: "Au revoir."
                               actions:
                                 - type: CLOSE
@@ -193,6 +209,20 @@ public final class ContentPackTemplates {
 
     private static String rewardReference() {
         return reference("RÉCOMPENSES SUPPORTÉES", Descriptors.REWARDS);
+    }
+
+    private static String dialogueActionReference() {
+        return reference("ACTIONS DE DIALOGUE SUPPORTÉES", Descriptors.DIALOGUE_ACTIONS);
+    }
+
+    /**
+     * Les conditions, plus la mention de {@code negate} : c'est le seul champ commun à toutes, et
+     * il n'apparaîtrait donc dans aucun descripteur.
+     */
+    private static String dialogueConditionReference() {
+        return reference("CONDITIONS DE DIALOGUE SUPPORTÉES", Descriptors.DIALOGUE_CONDITIONS)
+                + "# Toute condition accepte « " + Descriptors.NEGATE.name()
+                + ": true », qui inverse son verdict.\n#\n";
     }
 
     private static String reference(String title, List<Descriptors.Descriptor> catalog) {
@@ -237,6 +267,9 @@ public final class ContentPackTemplates {
         sb.append("    - id: rpgquest:").append(EXAMPLE_PREFIX).append("minimal\n");
         sb.append("      title: \"Exemple minimal\"\n");
         sb.append("      description: \"Un seul objectif.\"\n");
+        // La catégorie est obligatoire pour le validateur réel : sans elle, cet exemple — annoncé
+        // comme le plus petit pack VALIDE — était refusé à l'import. Vérifié par un test d'import.
+        sb.append("      category: ").append(EXAMPLE_PREFIX).append("exemple\n");
         sb.append("      steps:\n        - id: etape_unique\n          objectives:\n");
         sb.append("            - type: ").append(first.kind()).append('\n');
         for (Descriptors.Field f : first.fields()) {
@@ -348,17 +381,40 @@ public final class ContentPackTemplates {
                   dialogues:
                     - id: tc110_mineur
                       start: accueil
+                      # « nodes » est une MAP indexée par id de nœud, comme l'écrit l'export du
+                      # plugin. Une liste de nœuds serait refusée à l'import.
                       nodes:
-                        - id: accueil
+                        accueil:
                           speaker: "Vieux mineur"
                           text: "Tu viens pour le puits, pas vrai ?"
                           choices:
+                            # Un choix sans condition est toujours affiché.
                             - text: "Raconte-moi."
+                              next: histoire
+                            # Celui-ci n'apparaît QUE si la quête n'est pas encore commencée : un
+                            # choix dont une condition est fausse n'est pas montré au joueur.
+                            - text: "J'y vais tout de suite."
+                              conditions:
+                                - type: QUEST_STATE
+                                  quest: rpgquest:tc110_descente
+                                  state: NOT_STARTED
+                              actions:
+                                - type: START_QUEST
+                                  quest: rpgquest:tc110_descente
+                                - type: CLOSE
+                            # « negate » inverse n'importe quelle condition : ici, seulement pour
+                            # qui n'a PAS encore terminé la descente.
+                            - text: "Qu'est-ce que tu dirais d'un coup de main ?"
+                              conditions:
+                                - type: QUEST_STATE
+                                  quest: rpgquest:tc110_descente
+                                  state: COMPLETED
+                                  negate: true
                               next: histoire
                             - text: "Une autre fois."
                               actions:
                                 - type: CLOSE
-                        - id: histoire
+                        histoire:
                           speaker: "Vieux mineur"
                           text: "Personne n'en est remonté depuis des années."
                           choices:
@@ -366,6 +422,10 @@ public final class ContentPackTemplates {
                               actions:
                                 - type: START_QUEST
                                   quest: rpgquest:tc110_descente
+                                - type: CLOSE
+                            # Dernier nœud atteignable : toujours prévoir une sortie.
+                            - text: "Laisse-moi réfléchir."
+                              actions:
                                 - type: CLOSE
                 """;
     }
@@ -461,13 +521,30 @@ public final class ContentPackTemplates {
                 ## Conventions de dialogue
 
                 - L'id d'un dialogue **est** l'id du PNJ qui le porte.
+                - `nodes` est une **map** indexée par identifiant de nœud (`accueil:`, `histoire:`…),
+                  **pas une liste**. L'identifiant est la clé et n'est jamais répété à l'intérieur du
+                  nœud. C'est la forme que le moteur lit ; une liste est refusée à l'import.
                 - Un dialogue a un nœud de départ (`start`) et des nœuds nommés ; chaque choix peut porter
                   des conditions d'affichage, des actions, et un `next`.
                 - Un choix sans `next` termine la conversation ; `CLOSE` la ferme explicitement.
-                - **Limite de cette version du contrat** : le vocabulaire complet des actions et des
-                  conditions de dialogue n'est pas encore contraint par le schéma. Restez sur les actions
-                  visibles dans l'exemple complet, ou demandez à un administrateur la liste à jour.
+                - Un choix dont une seule condition est fausse **n'est pas affiché** au joueur. Pour une
+                  branche visible mais refusée, affichez-la sans condition et expliquez le refus dans le
+                  nœud suivant.
+                - `negate: true` sur n'importe quelle condition inverse son verdict. C'est le seul champ
+                  commun à toutes les conditions.
+                - Les actions d'un choix sont exécutées **dans l'ordre de la liste**.
 
+                """);
+
+        sb.append("### Actions de dialogue disponibles (")
+                .append(Descriptors.DIALOGUE_ACTIONS.size()).append(")\n\n");
+        appendCatalog(sb, Descriptors.DIALOGUE_ACTIONS, "####");
+
+        sb.append("### Conditions de dialogue disponibles (")
+                .append(Descriptors.DIALOGUE_CONDITIONS.size()).append(")\n\n");
+        appendCatalog(sb, Descriptors.DIALOGUE_CONDITIONS, "####");
+
+        sb.append("""
                 ## Équilibrage
 
                 Aucune contrainte d'équilibrage n'est formalisée par le moteur : rien ne plafonne une
@@ -484,8 +561,13 @@ public final class ContentPackTemplates {
     }
 
     private static void appendCatalog(StringBuilder sb, List<Descriptors.Descriptor> catalog) {
+        appendCatalog(sb, catalog, "###");
+    }
+
+    private static void appendCatalog(StringBuilder sb, List<Descriptors.Descriptor> catalog,
+                                      String heading) {
         for (Descriptors.Descriptor d : catalog) {
-            sb.append("### `").append(d.kind()).append("` — ").append(d.label()).append("\n\n");
+            sb.append(heading).append(" `").append(d.kind()).append("` — ").append(d.label()).append("\n\n");
             sb.append(d.hint()).append("\n\n");
             for (Descriptors.Field f : d.fields()) {
                 sb.append("- `").append(f.name()).append("` (").append(yamlType(f))

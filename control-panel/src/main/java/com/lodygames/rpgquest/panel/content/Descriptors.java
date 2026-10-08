@@ -181,6 +181,144 @@ public final class Descriptors {
                                     + "d'équilibrage : rien ne le plafonne côté serveur, un montant "
                                     + "inhabituellement élevé est seulement signalé."))));
 
+    // ---- Actions de dialogue (calquées sur dialogue.model.ActionType) -----------------------
+
+    private static final Field QUEST_REF = Field.select("quest", "Quête", "quest",
+            "Identifiant de quête, forme « namespace:clé ».", true);
+    private static final Field ITEM_AMOUNT = Field.integer("amount", "Quantité",
+            "Nombre d'exemplaires (entier > 0).");
+
+    /**
+     * Les douze actions réellement exécutables par un choix de dialogue (issue #146, phase 2).
+     *
+     * <p><strong>Pourquoi ce catalogue existe.</strong> Jusqu'ici ce vocabulaire ne vivait que dans
+     * l'énumération {@code ActionType} du plugin et dans son parseur : le Control Panel ne pouvait ni
+     * le contraindre dans le schéma de #110, ni le fournir à une IA. Les deux limites étaient
+     * documentées comme telles. Le déclarer ici les lève d'un coup, et
+     * {@code DialogueDescriptorsTest} verrouille l'ensemble sur le moteur — exactement comme
+     * {@code EditorDescriptorsTest} le fait pour les objectifs.</p>
+     */
+    public static final List<Descriptor> DIALOGUE_ACTIONS = List.of(
+            new Descriptor("START_QUEST", "Démarrer une quête", "book",
+                    "Accepte la quête pour le joueur, si elle est réellement disponible pour lui "
+                            + "(prérequis, état, répétabilité) — l'action ne contourne aucune règle.",
+                    List.of(QUEST_REF)),
+            new Descriptor("ADVANCE_QUEST", "Faire avancer une quête", "history",
+                    "Passe à l'étape suivante de la quête. Sert aux étapes qui se valident en "
+                            + "parlant, sans objectif mesurable.",
+                    List.of(QUEST_REF)),
+            new Descriptor("TURN_IN_QUEST", "Rendre une quête", "check",
+                    "Termine la quête et verse ses récompenses. Sans effet si elle n'est pas "
+                            + "réellement prête à être rendue.",
+                    List.of(QUEST_REF)),
+            new Descriptor("GIVE_ITEM", "Donner un objet", "gift",
+                    "Donne N exemplaires d'un objet vanilla au joueur.",
+                    List.of(Field.select("material", "Objet", "material",
+                            "Chercher par nom français ou par identifiant Minecraft.", true),
+                            ITEM_AMOUNT)),
+            new Descriptor("TAKE_ITEM", "Reprendre un objet", "admin",
+                    "Retire N exemplaires d'un objet au joueur. Pour une remise de quête, préférer "
+                            + "DELIVER_QUEST_ITEMS, qui gère les dépôts partiels et ne retire jamais "
+                            + "plus que le reliquat.",
+                    List.of(Field.select("material", "Objet", "material",
+                            "Chercher par nom français ou par identifiant Minecraft.", true),
+                            ITEM_AMOUNT)),
+            new Descriptor("SET_VARIABLE", "Poser une variable", "check",
+                    "Écrit une variable persistante du joueur (déblocage, jalon de scénario).",
+                    List.of(Field.text("key", "Clé", "Nom de la variable (ex. CLAIM_TIER_1).", true),
+                            Field.text("value", "Valeur",
+                                    "Valeur brute (ex. true). Vide = chaîne vide.", false))),
+            new Descriptor("RUN_SAFE_COMMAND", "Exécuter une commande autorisée", "admin",
+                    "Exécute une commande console. Sensible : seules les commandes de la liste "
+                            + "blanche du serveur sont acceptées, et le refus a lieu au chargement.",
+                    List.of(Field.text("command", "Commande",
+                            "Sans le « / » initial. Doit figurer dans la liste blanche du serveur.", true))),
+            new Descriptor("OPEN_DIALOGUE", "Ouvrir un autre dialogue", "dialogues",
+                    "Enchaîne sur un autre dialogue. Sert à factoriser une branche commune à "
+                            + "plusieurs PNJ.",
+                    List.of(Field.select("dialogue", "Dialogue", "dialogue",
+                            "Identifiant du dialogue à ouvrir.", true))),
+            new Descriptor("OPEN_MERCHANT", "Ouvrir un marchand", "money",
+                    "Ouvre l'inventaire d'un marchand PNJ.",
+                    List.of(Field.select("merchant", "Marchand", "merchant",
+                            "Identifiant du marchand.", true))),
+            new Descriptor("GIVE_STARTER_KIT", "Remettre le kit de départ", "gift",
+                    "Remet le kit de départ correspondant au palier atteint par le joueur "
+                            + "(issue #218). Aucun paramètre : le palier et le contenu viennent de la "
+                            + "configuration, jamais du dialogue.",
+                    List.of()),
+            new Descriptor("DELIVER_QUEST_ITEMS", "Recevoir les objets attendus", "gift",
+                    "Traite en une fois toutes les remises que ce PNJ attend du joueur, pour toutes "
+                            + "ses quêtes actives. Ne retire jamais plus que le reliquat, et les "
+                            + "dépôts partiels sont acquis définitivement (issue #123).",
+                    List.of(Field.select("npc", "PNJ destinataire", "npc",
+                            "Facultatif : vide = le PNJ porteur du dialogue, par la convention "
+                                    + "« identifiant de dialogue = identifiant de PNJ ». Laisser vide "
+                                    + "rend la branche réutilisable telle quelle.", false))),
+            new Descriptor("CLOSE", "Fermer le dialogue", "check",
+                    "Ferme la fenêtre. Aucun paramètre.", List.of()));
+
+    // ---- Conditions de dialogue (calquées sur dialogue.model.ConditionType) -----------------
+
+    /**
+     * Les huit conditions réellement évaluables sur un choix de dialogue. Un choix dont une
+     * condition est fausse n'est pas affiché.
+     *
+     * <p>{@link #NEGATE} s'applique à <strong>n'importe laquelle</strong> d'entre elles : il n'est
+     * donc pas répété dans chaque descripteur, mais documenté une fois.</p>
+     */
+    public static final List<Descriptor> DIALOGUE_CONDITIONS = List.of(
+            new Descriptor("QUEST_STATE", "État d'une quête", "book",
+                    "Vraie si la quête est dans l'état indiqué pour ce joueur.",
+                    List.of(QUEST_REF, Field.select("state", "État", "questState",
+                            "Un des six états du moteur : NOT_STARTED, ACTIVE, READY_TO_TURN_IN, "
+                            + "COMPLETED, FAILED ou ABANDONED.", true))),
+            new Descriptor("HAS_ITEM", "Possède un objet", "gift",
+                    "Vraie si le joueur possède au moins N exemplaires de l'objet.",
+                    List.of(Field.select("material", "Objet", "material",
+                            "Chercher par nom français ou par identifiant Minecraft.", true),
+                            ITEM_AMOUNT)),
+            new Descriptor("HAS_PERMISSION", "Possède une permission", "admin",
+                    "Vraie si le joueur a la permission indiquée.",
+                    List.of(Field.text("permission", "Permission",
+                            "Nœud de permission (ex. rpgquest.admin.world).", true))),
+            new Descriptor("VARIABLE_EQUALS", "Variable égale à", "check",
+                    "Vraie si la variable du joueur vaut exactement cette valeur.",
+                    List.of(Field.text("key", "Clé", "Nom de la variable.", true),
+                            Field.text("value", "Valeur",
+                                    "Valeur attendue. Vide = chaîne vide.", false))),
+            new Descriptor("NO_MAIN_CLAIM", "N'a pas de claim principal", "world",
+                    "Vraie si le joueur n'a aucun claim principal. Aucun paramètre.", List.of()),
+            new Descriptor("HAS_MAIN_CLAIM", "A un claim principal", "world",
+                    "Vraie si le joueur a un claim principal. Aucun paramètre.", List.of()),
+            new Descriptor("LACKS_CUSTOM_ITEM", "N'a pas un objet personnalisé", "gift",
+                    "Vraie si le joueur ne possède pas l'objet personnalisé RPGQuest indiqué. "
+                            + "Reconnaît l'objet par son identité réelle, pas par son nom.",
+                    List.of(Field.text("item", "Objet personnalisé",
+                            "Identifiant de l'objet RPGQuest.", true))),
+            new Descriptor("HAS_PENDING_DELIVERY", "Attend encore des objets", "gift",
+                    "Vraie si une quête active du joueur demande de remettre des objets à ce PNJ "
+                            + "(issue #123). Permet d'afficher la branche de remise seulement quand "
+                            + "elle a un sens.",
+                    List.of(Field.select("npc", "PNJ", "npc",
+                            "Facultatif : vide = le PNJ porteur du dialogue.", false))));
+
+    /**
+     * Champ commun à <strong>toutes</strong> les conditions : {@code negate: true} inverse le
+     * verdict. Documenté à part parce qu'il n'appartient à aucun type en particulier.
+     */
+    public static final Field NEGATE = new Field("negate", "Inverser la condition", FieldType.TEXT,
+            "« true » inverse le verdict de la condition. Permet d'exprimer « ce PNJ n'attend plus "
+                    + "rien » sans créer un type de condition supplémentaire.", null, false);
+
+    public static Optional<Descriptor> dialogueAction(String kind) {
+        return find(DIALOGUE_ACTIONS, kind);
+    }
+
+    public static Optional<Descriptor> dialogueCondition(String kind) {
+        return find(DIALOGUE_CONDITIONS, kind);
+    }
+
     /** Descripteur d'un {@code kind}, qu'il soit objectif ou récompense. */
     public static Optional<Descriptor> any(String kind) {
         return objective(kind).or(() -> reward(kind));

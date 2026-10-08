@@ -48,7 +48,7 @@ public enum Role {
             Permission.DIALOGUE_READ, Permission.DIALOGUE_WRITE,
             Permission.QUEST_CONTENT_WRITE, Permission.STORY_CONTENT_WRITE,
             Permission.CONTENT_READ, Permission.CONTENT_EXPORT, Permission.CONTENT_IMPORT,
-            Permission.CONTENT_DELETE,
+            Permission.CONTENT_DELETE, Permission.AI_USE, Permission.AI_CONFIGURE,
             Permission.DOCS_READ, Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ,
             Permission.ACTION_QUEST, Permission.ACTION_STORY,
             Permission.ACTION_VARIABLE_GET, Permission.ACTION_VARIABLE_SET,
@@ -80,7 +80,7 @@ public enum Role {
             Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ, Permission.DOCS_READ,
             Permission.NPC_READ, Permission.DIALOGUE_READ,
             Permission.QUEST_CONTENT_WRITE, Permission.STORY_CONTENT_WRITE,
-            Permission.CONTENT_IMPORT,
+            Permission.CONTENT_IMPORT, Permission.AI_USE,
             Permission.DIALOGUE_WRITE, Permission.NPC_WRITE, Permission.QUEST_GIVER_WRITE,
             Permission.ACTION_CONTENT_RELOAD, Permission.MOB_READ, Permission.MOB_WRITE)),
 

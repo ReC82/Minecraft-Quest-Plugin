@@ -37,6 +37,19 @@ public enum Permission {
     /** Exporter le contenu déclaratif en content pack versionné (issue #108). Lecture — jamais d'écriture. */
     CONTENT_EXPORT,
     /**
+     * Utiliser l'atelier IA (issue #146) : décrire une quête, lancer une génération, relire la
+     * proposition. Permission <strong>dédiée</strong>, distincte de l'écriture de contenu : un appel
+     * d'IA coûte de l'argent réel et part vers un tiers, ce qui n'est pas la même décision que
+     * modifier un fichier local. L'enregistrement final exige en plus {@link #CONTENT_IMPORT}.
+     */
+    AI_USE,
+    /**
+     * Configurer les fournisseurs d'IA (issue #146) : clés API, modèles, URL de base, plafonds.
+     * Réservée aux rôles d'administration — manipuler une clé d'API tierce n'est pas un geste
+     * d'édition de contenu, et un éditeur n'a aucune raison d'y toucher.
+     */
+    AI_CONFIGURE,
+    /**
      * Importer un content pack (issue #109). Permission <strong>dédiée</strong> : l'import écrit
      * dans la source, et peut remplacer plusieurs contenus d'un coup — ce n'est pas la même chose
      * qu'exporter, et pas la même chose qu'éditer un élément à la fois. Accordée aux rôles qui

@@ -92,6 +92,10 @@ public final class PanelApp {
     private final HomePages homePages = new HomePages(permissions);
     private final NotificationCenter notifications;
     private final ContentWorkspace contentWorkspace;
+    private final com.lodygames.rpgquest.panel.ai.AiProviderRegistry aiProviders =
+            new com.lodygames.rpgquest.panel.ai.AiProviderRegistry();
+    private final com.lodygames.rpgquest.panel.ai.AiSettingsStore aiSettings;
+    private final com.lodygames.rpgquest.panel.ai.AiQuestStudio aiStudio;
     private final ContentEditorPages contentEditor;
     private final ContentDeletionPages contentDeletion;
     private final ContentExportPages contentExportPages;
@@ -137,6 +141,10 @@ public final class PanelApp {
                 config.panelDbPath() == null || config.panelDbPath().isBlank() ? null
                         : Path.of(config.panelDbPath()).toAbsolutePath().getParent()
                                 .resolve("content-backups"));
+        // Issue #146 : les réglages d'IA vivent dans la base du panel — hors dépôt Git, en mode 600,
+        // lisible par le seul compte du service. C'est le stockage serveur exigé pour une clé API.
+        this.aiSettings = new com.lodygames.rpgquest.panel.ai.AiSettingsStore(config.panelDbPath());
+        this.aiStudio = new com.lodygames.rpgquest.panel.ai.AiQuestStudio(aiProviders, aiSettings);
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
         this.notifications = new NotificationCenter(agentStore, agentRegistry);
@@ -244,6 +252,10 @@ public final class PanelApp {
         // tous GÉNÉRÉS depuis les descripteurs du moteur : aucun fichier maintenu à la main, donc
         // rien qui puisse décrire un type inexistant ou oublier un type existant.
         route("/content/import", this::handleContentImport);
+        // Issue #146 — atelier IA. Deux routes distinctes : l'atelier (usage) et la configuration
+        // des fournisseurs (clés API), avec deux permissions différentes.
+        route("/ai/studio", this::handleAiStudio);
+        route("/ai/providers", this::handleAiProviders);
         route("/content/schema.json", this::handleContentSchema);
         route("/content/template", this::handleContentTemplate);
         route("/content/contract.md", this::handleContentContractDoc);
@@ -649,6 +661,175 @@ public final class PanelApp {
         String body = contentExportPages.render(query.get("toast"), query.get("err"));
         Http.html(exchange, 200, renderPage("Export de contenu", session, "/content/export", body,
                 Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    // ---- Atelier IA (issue #146) ---------------------------------------------------------
+
+    /**
+     * Atelier « Créer avec une IA ». GET rend le formulaire ; POST génère ou demande une correction.
+     *
+     * <p>Cette route <strong>n'écrit jamais de contenu</strong> : elle s'arrête à l'aperçu validé.
+     * Le bouton d'enregistrement de la page poste vers {@code /content/import}, qui applique le
+     * pipeline de #109 avec sa confirmation explicite. C'est ce qui garantit, par construction et
+     * non par vigilance, qu'aucune proposition d'IA ne peut être publiée automatiquement.</p>
+     */
+    private void handleAiStudio(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.AI_USE)) {
+            forbidden(exchange, session, "/ai/studio");
+            return;
+        }
+
+        RefData ref = agentPages.referenceData(config.agents().defaultAgentId());
+        boolean canImport = permissions.can(session.effective(), Permission.CONTENT_IMPORT);
+        String error = null;
+        com.lodygames.rpgquest.panel.ai.AiQuestStudio.Generation generation = null;
+        com.lodygames.rpgquest.panel.ai.QuestPromptBuilder.QuestRequest form = null;
+        String provider = "";
+
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Optional<Map<String, String>> body = Http.formBody(exchange, 1024 * 1024);
+            if (body.isEmpty()) {
+                error = "Requête trop volumineuse.";
+            } else {
+                Map<String, String> f = body.get();
+                if (!constantTimeEquals(session.csrfToken(), f.get("_csrf"))) {
+                    Http.html(exchange, 403, Layout.bare("CSRF",
+                            "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+                    return;
+                }
+                provider = f.getOrDefault("provider", "").trim();
+                String rid = UUID.randomUUID().toString().substring(0, 8);
+                if ("correct".equals(f.get("_action"))) {
+                    List<String> problems = new ArrayList<>();
+                    f.forEach((k, v) -> {
+                        if ("problem".equals(k) && v != null && !v.isBlank()) {
+                            problems.add(v);
+                        }
+                    });
+                    generation = aiStudio.correct(provider, f.getOrDefault("previousYaml", ""),
+                            problems, ref, contentWorkspace);
+                } else {
+                    form = new com.lodygames.rpgquest.panel.ai.QuestPromptBuilder.QuestRequest(
+                            f.getOrDefault("intent", ""), f.getOrDefault("title", ""),
+                            f.getOrDefault("questId", ""), f.getOrDefault("category", ""),
+                            f.getOrDefault("giver", ""), f.getOrDefault("difficulty", ""),
+                            f.getOrDefault("duration", ""), parseIntOr(f.get("stepCount"), 0),
+                            "on".equals(f.get("repeatable")), f.getOrDefault("rewardIntent", ""),
+                            f.getOrDefault("constraints", ""));
+                    if (!form.valid()) {
+                        error = "Décrivez d'abord ce que la quête doit raconter.";
+                    } else {
+                        generation = aiStudio.generateQuest(provider, form, ref, contentWorkspace);
+                    }
+                }
+                if (generation != null) {
+                    // L'audit retient le fournisseur, le modèle, les jetons et le verdict — jamais
+                    // la clé, jamais le prompt complet (contenu éditorial, et volumineux).
+                    audit.record(session.username(),
+                            "correct".equals(f.get("_action")) ? "ai.correct" : "ai.generate",
+                            "provider=" + generation.providerId()
+                                    + " model=" + generation.model()
+                                    + " usage=" + generation.usage(),
+                            generation.callOk() ? "OK" : "FAILED",
+                            generation.callOk()
+                                    ? (generation.analysis() != null && generation.analysis().importable()
+                                        ? "proposition valide" : "proposition refusée par la validation")
+                                    : generation.error(),
+                            rid);
+                }
+            }
+        }
+
+        String body = AiStudioPages.render(aiStudio.usableProviders(), form, provider, generation,
+                ref, canImport, error);
+        Http.html(exchange, 200, renderPage("Créer avec une IA", session, "/ai/studio", body,
+                Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    /**
+     * Configuration des fournisseurs. Permission distincte de l'usage : manipuler une clé d'API
+     * tierce n'est pas un geste d'édition de contenu.
+     */
+    private void handleAiProviders(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.AI_CONFIGURE)) {
+            forbidden(exchange, session, "/ai/providers");
+            return;
+        }
+
+        String notice = null;
+        String error = null;
+        String tested = null;
+        com.lodygames.rpgquest.panel.ai.AiProvider.Result testResult = null;
+
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Map<String, String> f = Http.formBody(exchange);
+            if (!constantTimeEquals(session.csrfToken(), f.get("_csrf"))) {
+                Http.html(exchange, 403, Layout.bare("CSRF",
+                        "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+                return;
+            }
+            String id = f.getOrDefault("provider", "").trim();
+            var provider = aiProviders.byId(id);
+            if (provider.isEmpty()) {
+                error = "Fournisseur inconnu.";
+            } else {
+                String action = f.getOrDefault("_action", "save");
+                String rid = UUID.randomUUID().toString().substring(0, 8);
+                if ("clear".equals(action)) {
+                    aiSettings.clearKey(id, session.username());
+                    // L'audit dit QUE la clé a été effacée, jamais ce qu'elle valait.
+                    audit.record(session.username(), "ai.provider.clearKey", "provider=" + id,
+                            "OK", "clé effacée, fournisseur désactivé", rid);
+                    notice = "Clé effacée et fournisseur désactivé.";
+                } else {
+                    var settings = new com.lodygames.rpgquest.panel.ai.AiProviderSettings(id,
+                            "on".equals(f.get("enabled")), f.getOrDefault("apiKey", ""),
+                            f.getOrDefault("baseUrl", ""), f.getOrDefault("model", ""),
+                            parseIntOr(f.get("maxOutputTokens"), 0),
+                            parseIntOr(f.get("timeoutSeconds"), 0));
+                    aiSettings.save(settings, session.username());
+                    var saved = aiSettings.get(id);
+                    // L'empreinte, jamais la clé : elle permet de tracer une rotation sans fuite.
+                    audit.record(session.username(), "ai.provider.save",
+                            "provider=" + id + " enabled=" + saved.enabled()
+                                    + " model=" + saved.model() + " baseUrl=" + saved.baseUrl()
+                                    + " keyFingerprint=" + (saved.hasKey() ? saved.fingerprint() : "aucune"),
+                            "OK", "configuration enregistrée", rid);
+                    notice = "Configuration enregistrée.";
+                    if ("test".equals(action)) {
+                        tested = id;
+                        testResult = provider.get().testConnection(saved);
+                        audit.record(session.username(), "ai.provider.test",
+                                "provider=" + id + " model=" + saved.model(),
+                                testResult.ok() ? "OK" : "FAILED",
+                                testResult.ok() ? "connexion réussie" : testResult.error(), rid);
+                        notice = null;
+                    }
+                }
+            }
+        }
+
+        String body = AiProviderPages.render(aiProviders, aiSettings, notice, error, tested, testResult);
+        Http.html(exchange, 200, renderPage("Fournisseurs d'IA", session, "/ai/providers", body,
+                Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    private static int parseIntOr(String raw, int fallback) {
+        try {
+            return raw == null || raw.isBlank() ? fallback : Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     // ---- Import de content pack (issue #109) ---------------------------------------------

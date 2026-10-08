@@ -17,6 +17,11 @@ folia-supported: false
 softdepend:
   - Citizens
   - LuckPerms
+  # WorldEdit (issue #213, lot « placement ») : jamais requis. Présent, il sert de moteur de
+  # schematics pour générer la hutte de test, sauvegarder une zone et coller un bâtiment ; absent,
+  # le plugin démarre exactement comme avant et la pose de bâtiments est refusée avec son motif.
+  # softdepend et non depend : RPGQuest n'a aucune raison de ne pas démarrer sans lui.
+  - WorldEdit
 
 libraries:
   - org.xerial:sqlite-jdbc:3.53.2.1

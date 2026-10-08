@@ -24,6 +24,12 @@ repositories {
     maven("https://maven.citizensnpcs.co/repo") {
         name = "citizensnpcs"
     }
+    // WorldEdit : API seule, en compileOnly. Le moteur réel est fourni à l'exécution par le plugin
+    // WorldEdit installé (soft-dependency dans plugin.yml) — voir
+    // com.lodygames.rpgquest.building.worldedit.WorldEditSchematicGateway.
+    maven("https://maven.enginehub.org/repo/") {
+        name = "enginehub"
+    }
 }
 
 configurations {
@@ -64,6 +70,32 @@ dependencies {
     // plugin démarre et fonctionne normalement SANS LuckPerms, et le pont se déclare alors
     // indisponible avec son motif plutôt que d'échouer.
     compileOnly("net.luckperms:api:5.4")
+
+    // WorldEdit (issue #213, lot « placement ») : moteur de schematics, FOURNI PAR LE SERVEUR.
+    // Version alignée sur celle réellement installée en DEV (7.4.1, vérifiée par `/version
+    // WorldEdit`). compileOnly STRICT : jamais empaqueté dans notre JAR.
+    //
+    // Pourquoi une dépendance plutôt que de la réflexion : lire un `.schem`, appliquer une rotation
+    // et coller sont des appels publics et typés (ClipboardFormats, ClipboardHolder,
+    // AffineTransform, EditSession). Les faire par réflexion coûterait la vérification du
+    // compilateur sans rien gagner, sur du code qui écrit dans le monde — le dernier endroit où
+    // l'on veut deviner.
+    //
+    // `worldedit-bukkit` et non `worldedit-core` : c'est lui qui apporte BukkitAdapter, seul point
+    // de traduction entre un World Bukkit et un World WorldEdit. `isTransitive = false` : la seule
+    // chose dont nous avons besoin en plus est worldedit-core, déclaré juste en dessous ; le reste
+    // du POM (Spigot, bstats, Paper-lib…) n'a aucun rôle à la compilation et Gradle ne doit pas
+    // aller le chercher.
+    //
+    // Compatibilité : toute la surface WorldEdit est confinée à
+    // com.lodygames.rpgquest.building.worldedit.WorldEditSchematicGateway, qui intercepte
+    // LinkageError et se déclare INDISPONIBLE avec son motif si la build installée ne correspond
+    // pas. Le plugin démarre et fonctionne normalement SANS WorldEdit — seule la pose de bâtiments
+    // est alors refusée, en le disant.
+    compileOnly("com.sk89q.worldedit:worldedit-bukkit:7.4.1") {
+        isTransitive = false
+    }
+    compileOnly("com.sk89q.worldedit:worldedit-core:7.4.1")
 
     // Issue #95 — capture de la console serveur pour la page « Exploitation serveur » du Control
     // Panel. `log4j-api` vient déjà de paper-api, mais attacher un appender exige `log4j-core`,

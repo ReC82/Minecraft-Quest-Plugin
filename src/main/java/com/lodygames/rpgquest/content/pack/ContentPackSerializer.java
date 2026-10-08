@@ -134,7 +134,12 @@ public final class ContentPackSerializer {
             sb.append("    - id: ").append(id(s.id())).append('\n');
             text(sb, 3, "name", s.name());
             kv(sb, 3, "secret", String.valueOf(s.secret()));
-            sb.append("      questIds: ").append(inlineIds(s.questIds())).append('\n');
+            // Issue #109 : la clé est « quests », celle que lit réellement StoryDefinitionParser.
+            // Le pack écrivait « questIds » : une story exportée n'était donc pas relisible par le
+            // moteur, alors que tout l'intérêt du format est précisément de l'être. Les packs
+            // schemaVersion 1 déjà exportés restent importables, l'ancienne orthographe étant
+            // toujours acceptée en lecture (voir StoryYaml#fromMap).
+            sb.append("      quests: ").append(inlineIds(s.questIds())).append('\n');
         }
     }
 

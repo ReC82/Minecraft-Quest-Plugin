@@ -131,7 +131,10 @@ class ContentPackSerializerTest {
                 List.of("rpgquest:first_steps", "rpgquest:crystal_hunt"));
         NpcPackEntry n = new NpcPackEntry("guide", "Le Guide", null, "rpgquest:guide", "guide", true);
         String yaml = ContentPackSerializer.toYaml(pack(List.of(), List.of(s), List.of(), List.of(n)));
-        assertTrue(yaml.contains("      questIds: [rpgquest:first_steps, rpgquest:crystal_hunt]\n"), yaml);
+        // Issue #109 : la clé est « quests », celle que lit réellement StoryDefinitionParser. Le pack
+        // écrivait « questIds », donc une story exportée n'était pas relisible par le moteur.
+        assertTrue(yaml.contains("      quests: [rpgquest:first_steps, rpgquest:crystal_hunt]\n"), yaml);
+        assertFalse(yaml.contains("questIds:"), "l'ancienne orthographe ne doit plus être émise");
         assertTrue(yaml.contains("      secret: true\n"), yaml);
         assertTrue(yaml.contains("      dialogue: rpgquest:guide\n"), yaml);
         assertFalse(yaml.contains("description:"), "description nulle non sérialisée\n" + yaml);

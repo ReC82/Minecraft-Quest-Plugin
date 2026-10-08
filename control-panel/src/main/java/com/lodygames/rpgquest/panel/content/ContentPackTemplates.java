@@ -147,7 +147,7 @@ public final class ContentPackTemplates {
                     - id: ma_story
                       name: "Nom de la story"
                       secret: false
-                      questIds:                       # dans l'ordre de progression
+                      quests:                         # dans l'ordre de progression
                         - namespace:ma_quete
 
                 """;
@@ -333,7 +333,7 @@ public final class ContentPackTemplates {
                     - id: tc110_mines_oubliees
                       name: "Les mines oubliées"
                       secret: false
-                      questIds:
+                      quests:
                         - rpgquest:tc110_descente
                         - rpgquest:tc110_remonter
 
@@ -444,7 +444,7 @@ public final class ContentPackTemplates {
                 ## Règles de stories
 
                 Une story est un **enchaînement ordonné de quêtes existantes**. Elle ne définit jamais
-                d'objectif par elle-même, et ses `questIds` doivent exister : soit dans le même pack, soit
+                d'objectif par elle-même, et ses `quests` doivent exister : soit dans le même pack, soit
                 déjà sur le serveur. L'ordre de la liste est l'ordre de progression.
 
                 ## Références autorisées
@@ -453,7 +453,7 @@ public final class ContentPackTemplates {
                 - `prerequisites` d'une quête → des ids de quêtes.
                 - `npc` d'un objectif → un id de PNJ logique.
                 - `dialogue` d'un PNJ → un id de dialogue.
-                - `questIds` d'une story → des ids de quêtes.
+                - `quests` d'une story → des ids de quêtes.
 
                 Une référence vers un élément absent du pack **et** absent du serveur est une dépendance
                 manquante : déclarez-la dans `dependencies` plutôt que d'inventer l'élément.

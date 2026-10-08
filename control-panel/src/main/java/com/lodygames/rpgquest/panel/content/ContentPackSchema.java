@@ -181,13 +181,21 @@ public final class ContentPackSchema {
         props.put("id", ref("logicalId"));
         props.put("name", ref("text"));
         props.put("secret", typed("boolean", "Masquée tant qu'elle n'est pas découverte."));
-        props.put("questIds", arrayOfMin(ref("questId"), 1,
+        props.put("quests", arrayOfMin(ref("questId"), 1,
                 "Quêtes de la story, dans l'ordre de progression. Elles doivent exister (dans ce pack "
-                        + "ou déjà sur le serveur)."));
+                        + "ou déjà sur le serveur). C'est la clé que lit réellement le moteur."));
+        props.put("questIds", arrayOfMin(ref("questId"), 1,
+                "Orthographe héritée des packs exportés jusqu'au 2026-10-08. Toujours acceptée à "
+                        + "l'import, mais ne plus l'écrire : préférer « quests »."));
         Map<String, Object> out = object(props,
                 "Une story : un enchaînement ordonné de quêtes existantes. Une story ne définit jamais "
                         + "d'objectif par elle-même.");
-        out.put("required", List.of("id", "name", "questIds"));
+        out.put("required", List.of("id", "name"));
+        // L'une des deux orthographes doit être présente, jamais aucune : une story sans quête ne
+        // veut rien dire. « quests » est la clé officielle, « questIds » l'héritage toléré.
+        out.put("anyOf", List.of(
+                Map.of("required", List.of("quests")),
+                Map.of("required", List.of("questIds"))));
         out.put("additionalProperties", false);
         return out;
     }

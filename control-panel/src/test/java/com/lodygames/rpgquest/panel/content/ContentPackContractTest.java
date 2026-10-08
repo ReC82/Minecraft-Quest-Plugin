@@ -260,7 +260,7 @@ class ContentPackContractTest {
 
         List<Object> stories = list(content.get("stories"));
         assertEquals(1, stories.size());
-        List<Object> questIds = list(map(stories.get(0)).get("questIds"));
+        List<Object> questIds = list(map(stories.get(0)).get("quests"));
         assertEquals(List.of("rpgquest:tc110_descente", "rpgquest:tc110_remonter"), questIds);
 
         Set<String> defined = new LinkedHashSet<>();

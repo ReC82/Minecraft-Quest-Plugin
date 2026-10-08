@@ -205,6 +205,10 @@ public final class RPGQuestBootstrap {
     private com.lodygames.rpgquest.building.BuildingSiteService buildingSiteService;
     /** Issue #227 — demandes de création en attente de nom, non persistantes. */
     private com.lodygames.rpgquest.building.PendingBuildingSiteRegistry buildingSitePendings;
+    private com.lodygames.rpgquest.building.BuildingLibrary buildingLibrary;
+    private com.lodygames.rpgquest.building.SchematicGateway schematicGateway;
+    private com.lodygames.rpgquest.building.BuildingPlacementService buildingPlacementService;
+    private com.lodygames.rpgquest.building.SchematicWorkshop buildingSchematics;
     private final YamlMerchantRegistry merchantRegistry;
     private final YamlPortalRegistry portalRegistry;
     private final YamlDestinationRegistry destinationRegistry;
@@ -354,6 +358,47 @@ public final class RPGQuestBootstrap {
         // s'en vont sans rien fermer.
         plugin.getServer().getScheduler().runTaskTimer(plugin,
                 buildingSitePendings::purgeExpired, 20L * 30, 20L * 30);
+
+        // Issue #213, lot « placement » — bibliothèque de bâtiments, moteur de schematics et pose.
+        //
+        // WorldEdit est une dépendance d'INFRASTRUCTURE remplaçable : tout passe par
+        // SchematicGateway, et aucun modèle du domaine n'expose un de ses types. Son absence ne
+        // bloque pas le démarrage — la bibliothèque reste visible et la pose est refusée avec son
+        // motif, comme le pont Citizens le fait depuis #200.
+        buildingLibrary = new com.lodygames.rpgquest.building.BuildingLibrary(
+                plugin.getDataFolder().toPath().resolve("buildings"),
+                plugin.getLogger());
+        buildingLibrary.start();
+        schematicGateway = new com.lodygames.rpgquest.building.worldedit.WorldEditSchematicGateway(
+                plugin.getDataFolder().toPath().resolve("schematics"),
+                plugin.getLogger());
+        if (!schematicGateway.available()) {
+            plugin.getSLF4JLogger().info(
+                    "Moteur de schematics indisponible : {} La pose de bâtiments sera refusée ; "
+                            + "tout le reste fonctionne normalement.",
+                    schematicGateway.unavailableReason());
+        }
+        buildingPlacementService = new com.lodygames.rpgquest.building.BuildingPlacementService(
+                new com.lodygames.rpgquest.database.BuildingPlacementRepository(
+                        databaseService.databaseManager()),
+                buildingSiteService, buildingLibrary, schematicGateway,
+                new com.lodygames.rpgquest.building.BukkitWorldProbe());
+        buildingPlacementService.load()
+                .thenAccept(count -> plugin.getSLF4JLogger().info(
+                        "{} bâtiment(s) posé(s) chargé(s).", count))
+                .exceptionally(error -> {
+                    plugin.getSLF4JLogger().error(
+                            "Chargement des bâtiments posés impossible : la page « Bâtiments » "
+                                    + "les montrera absents jusqu'au prochain démarrage.", error);
+                    return null;
+                });
+        // La hutte de test est PRODUITE PAR CE CODE, pas importée : aucun fichier externe n'entre
+        // dans le dépôt. On ne l'écrit que si elle manque — regénérer à chaque démarrage écraserait
+        // une retouche éventuelle, et la règle du projet est de ne jamais écraser un fichier
+        // existant. `/rpgadmin building generate` force la régénération quand on la veut.
+        buildingSchematics = new com.lodygames.rpgquest.building.SchematicWorkshop(
+                schematicGateway, plugin.getLogger());
+        buildingSchematics.ensureTestHut();
 
         PlayerProfileRepository profileRepository = new PlayerProfileRepository(databaseService.databaseManager());
         playerProfileService = new PlayerProfileService(profileRepository);
@@ -822,7 +867,8 @@ public final class RPGQuestBootstrap {
                                 economyService, walletRepository,
                                 // Issue #213 — le MÊME service que l'outil en jeu : le panel et le
                                 // clic lisent et écrivent le même cache et la même base.
-                                buildingSiteService))));
+                                buildingSiteService, buildingLibrary, buildingPlacementService,
+                                schematicGateway))));
 
         registerCommands();
     }
@@ -1139,7 +1185,7 @@ public final class RPGQuestBootstrap {
                 worldPortalDebugService, storyService, waystoneService, playerResetService, hubGuideRegistry,
                 questProgressEngine, questEngine, variableRepository, travelBeaconService, waypointService,
                 travelMaintenanceMode, claimService, contentReloadService, starterToolKitService,
-                buildingSiteService, plugin);
+                buildingSiteService, buildingLibrary, buildingSchematics, plugin);
         var rpgadmin = plugin.getCommand("rpgadmin");
         if (rpgadmin != null) {
             rpgadmin.setExecutor(rpgAdminCommand);

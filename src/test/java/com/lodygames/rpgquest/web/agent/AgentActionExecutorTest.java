@@ -1312,7 +1312,52 @@ class AgentActionExecutorTest {
                     List.of(new BuildingSiteSummary("buildsite_0001", "Taverne du village", "",
                             "world_hub", 712, 67, -702, "WEST", "EMPTY", "Lody",
                             "2026-10-08T18:00:00Z", true)),
-                    List.of("world_hub"), 1));
+                    List.of("world_hub"), 1, List.of()));
+        }
+
+        String lastPreviewSiteId;
+        String lastPreviewBuildingId;
+        String lastPlacedSiteId;
+        String lastPlacedBuildingId;
+        String lastPlacedBy;
+        String lastRollbackSiteId;
+
+        @Override
+        public CompletableFuture<BuildingLibraryView> buildingLibrary() {
+            return CompletableFuture.completedFuture(new BuildingLibraryView(
+                    List.of(new BuildingDefinitionSummary("test_hut_01", "Hutte de test", "",
+                            7, 6, 5, 3, 1, 0, "NORTH",
+                            List.of("cobblestone", "oak_planks"), "test_hut_01.schem", true, 1)),
+                    List.of(), true, ""));
+        }
+
+        @Override
+        public CompletableFuture<BuildingPreviewView> buildingPlacementPreview(String siteId,
+                                                                               String buildingId) {
+            lastPreviewSiteId = siteId;
+            lastPreviewBuildingId = buildingId;
+            return CompletableFuture.completedFuture(new BuildingPreviewView(true,
+                    siteId, "Taverne du village", "WEST", "world_hub", 712, 67, -702,
+                    buildingId, "Hutte de test", 7, 6, 5, "NORTH", 270,
+                    708, 66, -705, 712, 71, -699, 210L, 12L, List.of(), List.of()));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> buildingPlacementPlace(String siteId,
+                                                                        String buildingId,
+                                                                        String placedBy) {
+            lastPlacedSiteId = siteId;
+            lastPlacedBuildingId = buildingId;
+            lastPlacedBy = placedBy;
+            return CompletableFuture.completedFuture(
+                    MutationResult.of(true, "PLACED", "posé"));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> buildingPlacementRollback(String siteId) {
+            lastRollbackSiteId = siteId;
+            return CompletableFuture.completedFuture(
+                    MutationResult.of(true, "RESTORED", "restauré"));
         }
 
         @Override

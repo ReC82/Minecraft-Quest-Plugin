@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.building;
 import com.lodygames.rpgquest.building.model.BuildingSite;
 import com.lodygames.rpgquest.building.model.BuildingSiteAnchor;
 import com.lodygames.rpgquest.building.model.Facing;
+import com.lodygames.rpgquest.building.model.SiteStatus;
 import com.lodygames.rpgquest.database.BuildingSiteRepository;
 import java.time.Clock;
 import java.time.Instant;
@@ -241,6 +242,19 @@ public final class BuildingSiteService {
     public CompletableFuture<Optional<BuildingSite>> reface(String id, Facing facing) {
         return mutate(id, site -> site.withFacing(facing),
                 updated -> repository.updateFacing(updated.id(), updated.facing()));
+    }
+
+    /**
+     * Change l'état d'un emplacement (lot « placement » de #213).
+     *
+     * <p>Appelé par {@link BuildingPlacementService} après un collage réussi, et après une
+     * restauration réussie. Volontairement <strong>pas</strong> exposé comme action agent : l'état
+     * est une conséquence d'un fait, pas un champ qu'on édite. Le laisser modifiable à la main
+     * permettrait de déclarer « occupé » un emplacement vide, et réciproquement.</p>
+     */
+    public CompletableFuture<Optional<BuildingSite>> markStatus(String id, SiteStatus status) {
+        return mutate(id, site -> site.withStatus(status),
+                updated -> repository.updateStatus(updated.id(), updated.status()));
     }
 
     /**

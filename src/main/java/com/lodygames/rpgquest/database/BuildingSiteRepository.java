@@ -41,6 +41,7 @@ public final class BuildingSiteRepository {
     private static final String UPDATE_DESCRIPTION =
             "UPDATE building_sites SET description = ? WHERE id = ?";
     private static final String UPDATE_FACING = "UPDATE building_sites SET facing = ? WHERE id = ?";
+    private static final String UPDATE_STATUS = "UPDATE building_sites SET status = ? WHERE id = ?";
     private static final String DELETE = "DELETE FROM building_sites WHERE id = ?";
 
     private final DatabaseManager database;
@@ -112,6 +113,16 @@ public final class BuildingSiteRepository {
 
     public CompletableFuture<Integer> updateDescription(String id, String description) {
         return update(UPDATE_DESCRIPTION, description, id);
+    }
+
+    /**
+     * Change l'état d'un emplacement (lot « placement » de #213).
+     *
+     * <p>Écrit le nom de l'énumération, relu par {@link SiteStatus#of(String)} qui est tolérant :
+     * c'est ce qui a permis d'ajouter {@code OCCUPIED} sans migration.</p>
+     */
+    public CompletableFuture<Integer> updateStatus(String id, SiteStatus status) {
+        return update(UPDATE_STATUS, status.name(), id);
     }
 
     public CompletableFuture<Integer> updateFacing(String id, Facing facing) {

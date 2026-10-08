@@ -201,6 +201,9 @@ public final class BukkitAgentActions implements AgentActions {
 
     /** Issue #213 — emplacements de construction. Source de vérité : sa base, pas ce cache-ci. */
     private final com.lodygames.rpgquest.building.BuildingSiteService buildingSiteService;
+    private final com.lodygames.rpgquest.building.BuildingLibrary buildingLibraryService;
+    private final com.lodygames.rpgquest.building.BuildingPlacementService buildingPlacements;
+    private final com.lodygames.rpgquest.building.SchematicGateway schematicGateway;
 
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
                               QuestProgressEngine questProgressEngine, StoryService storyService,
@@ -219,7 +222,10 @@ public final class BukkitAgentActions implements AgentActions {
                               ContentReloadService contentReloadService,
                               Supplier<java.util.Optional<org.bukkit.Location>> hubRescueTarget,
                               EconomyService economyService, WalletRepository walletRepository,
-                              com.lodygames.rpgquest.building.BuildingSiteService buildingSiteService) {
+                              com.lodygames.rpgquest.building.BuildingSiteService buildingSiteService,
+                              com.lodygames.rpgquest.building.BuildingLibrary buildingLibraryService,
+                              com.lodygames.rpgquest.building.BuildingPlacementService buildingPlacements,
+                              com.lodygames.rpgquest.building.SchematicGateway schematicGateway) {
         this.plugin = plugin;
         this.questEngine = questEngine;
         this.questProgressEngine = questProgressEngine;
@@ -251,6 +257,9 @@ public final class BukkitAgentActions implements AgentActions {
         this.economyService = economyService;
         this.walletRepository = walletRepository;
         this.buildingSiteService = buildingSiteService;
+        this.buildingLibraryService = buildingLibraryService;
+        this.buildingPlacements = buildingPlacements;
+        this.schematicGateway = schematicGateway;
         // Issue #194 : dossiers réels du plugin, et sauvegardes HORS des dossiers de contenu pour
         // ne jamais être relues comme des définitions.
         java.nio.file.Path data = plugin.getDataFolder().toPath();
@@ -790,8 +799,115 @@ public final class BukkitAgentActions implements AgentActions {
                         loaded.contains(site.world())));
             }
             return done(new BuildingSiteCatalogView(List.copyOf(rows),
-                    buildingSiteService.worlds(), rows.size()));
+                    buildingSiteService.worlds(), rows.size(), placementRows()));
         });
+    }
+
+    /** Projection des bâtiments posés, partagée par le catalogue et la bibliothèque. */
+    private List<BuildingPlacementSummary> placementRows() {
+        List<BuildingPlacementSummary> rows = new ArrayList<>();
+        for (com.lodygames.rpgquest.building.model.BuildingPlacement placement
+                : buildingPlacements.all()) {
+            String name = buildingLibraryService.find(placement.buildingId())
+                    .map(com.lodygames.rpgquest.building.model.BuildingDefinition::name)
+                    // Le bâtiment a pu être retiré de la bibliothèque après la pose : on garde la
+                    // ligne et on le dit, plutôt que de faire disparaître un bâtiment réellement
+                    // posé parce que sa définition a bougé.
+                    .orElse(placement.buildingId() + " (hors bibliothèque)");
+            rows.add(new BuildingPlacementSummary(placement.siteId(), placement.buildingId(), name,
+                    placement.world(), placement.anchorX(), placement.anchorY(),
+                    placement.anchorZ(), placement.rotationDegrees(),
+                    placement.minX(), placement.minY(), placement.minZ(),
+                    placement.maxX(), placement.maxY(), placement.maxZ(),
+                    placement.placedBy(), placement.placedAt().toString(),
+                    placement.restorable()));
+        }
+        return rows;
+    }
+
+    @Override
+    public CompletableFuture<BuildingLibraryView> buildingLibrary() {
+        List<BuildingDefinitionSummary> rows = new ArrayList<>();
+        for (com.lodygames.rpgquest.building.model.BuildingDefinition definition
+                : buildingLibraryService.all()) {
+            rows.add(new BuildingDefinitionSummary(definition.id(), definition.name(),
+                    definition.description(),
+                    definition.sizeX(), definition.sizeY(), definition.sizeZ(),
+                    definition.anchorX(), definition.anchorY(), definition.anchorZ(),
+                    definition.front().name(), definition.materials(),
+                    definition.schematic(), schematicGateway.has(definition.schematic()),
+                    definition.version()));
+        }
+        return done(new BuildingLibraryView(List.copyOf(rows), buildingLibraryService.problems(),
+                schematicGateway.available(), schematicGateway.unavailableReason()));
+    }
+
+    /**
+     * {@code building.placement.preview}. Sur le thread principal, parce que le comptage des blocs
+     * non-air lit le monde — et lire des blocs hors du thread principal n'est pas sûr.
+     */
+    @Override
+    public CompletableFuture<BuildingPreviewView> buildingPlacementPreview(String siteId,
+                                                                           String buildingId) {
+        return onMain(() -> {
+            com.lodygames.rpgquest.building.BuildingPlacementService.Preview preview =
+                    buildingPlacements.preview(siteId, buildingId);
+            if (preview.site() == null || preview.definition() == null) {
+                return done(new BuildingPreviewView(false, siteId, "", "", "", 0, 0, 0,
+                        buildingId, "", 0, 0, 0, "", 0, 0, 0, 0, 0, 0, 0, 0L, -1L,
+                        preview.refusals(), preview.warnings()));
+            }
+            var site = preview.site();
+            var building = preview.definition();
+            var footprint = preview.footprint();
+            return done(new BuildingPreviewView(preview.placeable(),
+                    site.id(), site.name(), site.facing().name(),
+                    site.world(), site.x(), site.y(), site.z(),
+                    building.id(), building.name(),
+                    building.sizeX(), building.sizeY(), building.sizeZ(),
+                    building.front().name(),
+                    preview.rotationDegrees(),
+                    footprint.minX(), footprint.minY(), footprint.minZ(),
+                    footprint.maxX(), footprint.maxY(), footprint.maxZ(),
+                    footprint.blockCount(), preview.nonAirBlocks(),
+                    preview.refusals(), preview.warnings()));
+        });
+    }
+
+    /**
+     * {@code building.placement.place}. Sur le thread principal : coller écrit dans le monde, et
+     * WorldEdit doit être appelé là où Bukkit l'autorise.
+     */
+    @Override
+    public CompletableFuture<MutationResult> buildingPlacementPlace(String siteId,
+                                                                    String buildingId,
+                                                                    String placedBy) {
+        return onMain(() -> buildingPlacements.place(siteId, buildingId, placedBy)
+                .thenApply(result -> result.placed()
+                        ? new MutationResult(true, "PLACED",
+                                "« " + result.placement().buildingId() + " » posé sur "
+                                        + result.placement().siteId() + ", tourné de "
+                                        + result.placement().rotationLabel() + ", emprise "
+                                        + result.placement().footprint().label() + ".",
+                                List.of("rotation: " + result.placement().rotationLabel(),
+                                        "emprise: " + result.placement().footprint().label(),
+                                        "sauvegarde: " + result.placement().backupSchematic()))
+                        : MutationResult.of(false, "REFUSED", result.error()))
+                .exceptionally(error -> MutationResult.of(false, "ERROR",
+                        "Échec de la pose : " + rootName(error))));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingPlacementRollback(String siteId) {
+        return onMain(() -> buildingPlacements.rollback(siteId)
+                .thenApply(result -> result.restored()
+                        ? new MutationResult(true, "RESTORED",
+                                "Zone restaurée et " + siteId + " libéré (« "
+                                        + result.placement().buildingId() + " » retiré).",
+                                List.of("emprise: " + result.placement().footprint().label()))
+                        : MutationResult.of(false, "REFUSED", result.error()))
+                .exceptionally(error -> MutationResult.of(false, "ERROR",
+                        "Échec de la restauration : " + rootName(error))));
     }
 
     @Override

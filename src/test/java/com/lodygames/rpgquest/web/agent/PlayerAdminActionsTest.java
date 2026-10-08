@@ -54,7 +54,9 @@ class PlayerAdminActionsTest {
                 new ServerOpsService(plugin, new ServerLogBuffer(50), Optional::empty),
                 null,
                 () -> hubTarget,
-                null, null, null);
+                // Lot « placement » de #213 : économie, portefeuille, emplacements, bibliothèque,
+                // placements et moteur de schematics — aucun n'intervient dans ces tests.
+                null, null, null, null, null, null);
     }
 
     @AfterEach

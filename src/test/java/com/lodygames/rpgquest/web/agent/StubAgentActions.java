@@ -74,7 +74,7 @@ class StubAgentActions implements AgentActions {
     @Override
     public CompletableFuture<BuildingSiteCatalogView> buildingSites() {
         return CompletableFuture.completedFuture(
-                new BuildingSiteCatalogView(List.of(), List.of(), 0));
+                new BuildingSiteCatalogView(List.of(), List.of(), 0, List.of()));
     }
 
     @Override
@@ -90,6 +90,32 @@ class StubAgentActions implements AgentActions {
     @Override
     public CompletableFuture<MutationResult> buildingSiteFacing(String id, String facing) {
         return unsupported();
+    }
+
+    @Override
+    public CompletableFuture<BuildingLibraryView> buildingLibrary() {
+        return CompletableFuture.completedFuture(
+                new BuildingLibraryView(List.of(), List.of(), false, "stub"));
+    }
+
+    @Override
+    public CompletableFuture<BuildingPreviewView> buildingPlacementPreview(String siteId,
+                                                                           String buildingId) {
+        return CompletableFuture.completedFuture(new BuildingPreviewView(false, siteId, "", "", "",
+                0, 0, 0, buildingId, "", 0, 0, 0, "", 0, 0, 0, 0, 0, 0, 0, 0L, -1L,
+                List.of("stub"), List.of()));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingPlacementPlace(String siteId,
+                                                                    String buildingId,
+                                                                    String placedBy) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "STUB", "stub"));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingPlacementRollback(String siteId) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "STUB", "stub"));
     }
 
     @Override

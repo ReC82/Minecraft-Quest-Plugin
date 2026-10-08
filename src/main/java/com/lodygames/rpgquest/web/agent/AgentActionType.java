@@ -134,6 +134,33 @@ public enum AgentActionType {
      * ce lot ne sait rien poser, donc il n'y a rien à défaire en jeu. Idempotent.
      */
     BUILDING_SITE_DELETE("building.site.delete"),
+    /**
+     * Issue #213, lot « placement » — la bibliothèque de bâtiments, en lecture seule.
+     *
+     * <p>Aucune action de création, de téléversement ni d'édition : une définition de bâtiment est
+     * du <strong>contenu déclaratif versionné</strong>, qui se modifie dans son fichier YAML et se
+     * relit au démarrage. Un formulaire web qui l'écrirait contournerait la revue.</p>
+     */
+    BUILDING_DEFINITION_LIST("building.definition.list"),
+    /**
+     * Calcule rotation et emprise pour un couple (emplacement, bâtiment). <strong>N'écrit
+     * rien</strong>, ni dans le monde, ni en base : c'est ce qui permet de montrer l'emprise avant
+     * de demander confirmation.
+     */
+    BUILDING_PLACEMENT_PREVIEW("building.placement.preview"),
+    /**
+     * Pose réellement le bâtiment. Sauvegarde la zone écrasée <strong>avant</strong> de coller, et
+     * n'enregistre le placement qu'après un collage réussi — donc un échec ne laisse jamais un faux
+     * placement.
+     */
+    BUILDING_PLACEMENT_PLACE("building.placement.place"),
+    /**
+     * Restaure la zone telle qu'elle était avant la pose, depuis la sauvegarde prise à ce
+     * moment-là. <strong>Refusé s'il n'y a pas de sauvegarde</strong> : remettre de l'air dans
+     * l'emprise détruirait le terrain d'origine, ce qui serait une destruction déguisée en
+     * annulation.
+     */
+    BUILDING_PLACEMENT_ROLLBACK("building.placement.rollback"),
     DIALOGUE_LIST("dialogue.list"),
     DIALOGUE_DEFINITION_CREATE("dialogue.definition.create"),
     DIALOGUE_NODE_CREATE("dialogue.node.create"),

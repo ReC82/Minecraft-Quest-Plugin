@@ -98,7 +98,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final String DEBUG_PERMISSION = "rpgquest.admin.debug";
     private static final String DEFAULT_NAMESPACE = "rpgquest";
     private static final List<String> TOP_LEVEL_SUBCOMMANDS =
-            List.of("flatten", "zone", "portal", "mob", "npc", "buildsite", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim", "content");
+            List.of("flatten", "zone", "portal", "mob", "npc", "buildsite", "building", "spawn", "world", "worldportal", "quest", "story", "waystone", "player", "guide", "travel", "claim", "content");
     private static final List<String> TRAVEL_SUBCOMMANDS =
             List.of("beacon", "village", "diagnose", "repair", "restore", "signs", "maintenance");
     private static final List<String> TRAVEL_REPAIR_KINDS = List.of("waypoint", "beacon");
@@ -123,6 +123,9 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final List<String> ZONE_SUBCOMMANDS = List.of("create", "delete", "list", "info", "wand");
     /** Issue #213 — l'outil, et une lecture seule pour retrouver un emplacement depuis le jeu. */
     private static final List<String> BUILD_SITE_SUBCOMMANDS = List.of("tool", "list");
+    /** Lot « placement » de #213. La POSE n'est pas ici : elle passe par le Control Panel. */
+    private static final List<String> BUILDING_SUBCOMMANDS =
+            List.of("list", "reload", "generate");
     private static final List<String> PORTAL_SUBCOMMANDS = List.of("create", "delete", "list", "info", "setdestination");
     private static final List<String> MOB_SUBCOMMANDS = List.of("spawn", "list", "inspect", "reload", "metrics");
     private static final List<String> NPC_SUBCOMMANDS = List.of("tag", "untag", "info");
@@ -143,6 +146,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private final ZoneSelectionService zoneSelectionService;
     /** Issue #213 — emplacements de construction : lecture pour « list », création par l'outil. */
     private final BuildingSiteService buildingSiteService;
+    private final com.lodygames.rpgquest.building.BuildingLibrary buildingLibrary;
+    private final com.lodygames.rpgquest.building.SchematicWorkshop buildingSchematics;
     private final YamlPortalRegistry portalRegistry;
     private final YamlDestinationRegistry destinationRegistry;
     private final SpecialMobRegistry mobRegistry;
@@ -182,6 +187,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             ClaimService claimService, ContentReloadService contentReloadService,
                             com.lodygames.rpgquest.player.StarterToolKitService starterToolKitService,
                             BuildingSiteService buildingSiteService,
+                            com.lodygames.rpgquest.building.BuildingLibrary buildingLibrary,
+                            com.lodygames.rpgquest.building.SchematicWorkshop buildingSchematics,
                             RPGQuestPlugin plugin) {
         this.contentReloadService = contentReloadService;
         this.starterToolKitService = starterToolKitService;
@@ -189,6 +196,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         this.zoneRegistry = zoneRegistry;
         this.zoneSelectionService = zoneSelectionService;
         this.buildingSiteService = buildingSiteService;
+        this.buildingLibrary = buildingLibrary;
+        this.buildingSchematics = buildingSchematics;
         this.portalRegistry = portalRegistry;
         this.destinationRegistry = destinationRegistry;
         this.mobRegistry = mobRegistry;
@@ -245,6 +254,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         // resets joueur, l'économie ni les autres opérations d'administration.
         if (args.length > 0 && !args[0].equalsIgnoreCase("npc")
                 && !args[0].equalsIgnoreCase("buildsite")
+                && !args[0].equalsIgnoreCase("building")
                 && !RpgPermissions.canRunLegacyAdminBranch(sender)) {
             sender.sendMessage(MM.deserialize(
                     "<red>Permission manquante pour cette sous-commande :</red> <white><permission></white>"
@@ -314,6 +324,8 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handleNpc(player, args);
         } else if (args[0].equalsIgnoreCase("buildsite")) {
             handleBuildSite(player, args);
+        } else if (args[0].equalsIgnoreCase("building")) {
+            handleBuilding(player, args);
         } else if (args[0].equalsIgnoreCase("spawn")) {
             handleSpawn(player, args);
         } else if (args[0].equalsIgnoreCase("world")) {
@@ -2736,6 +2748,84 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    /**
+     * {@code /rpgadmin building} — la bibliothèque et la génération du schematic de test
+     * (issue #213, lot « placement »).
+     *
+     * <p>Volontairement <strong>sans pose ni retour arrière</strong> : poser écrase des blocs, et ce
+     * geste doit passer par le Control Panel, qui montre l'emprise avant de confirmer et conserve
+     * une trace de qui l'a fait. Une commande de chat ne montrerait rien et ne tracerait rien.</p>
+     */
+    private void handleBuilding(Player player, String[] args) {
+        if (!RpgPermissions.canManageBuildingSites(player)) {
+            player.sendMessage(MM.deserialize(
+                    "<red>Permission manquante :</red> <white><permission></white>",
+                    Placeholder.unparsed("permission", RpgPermissions.ADMIN_BUILD_SITE)));
+            return;
+        }
+        if (args.length < 2) {
+            sendBuildingUsage(player);
+            return;
+        }
+        switch (args[1].toLowerCase(Locale.ROOT)) {
+            case "list" -> handleBuildingList(player);
+            case "reload" -> {
+                int count = buildingLibrary.reload();
+                player.sendMessage(MM.deserialize(
+                        "<green>Bibliothèque rechargée :</green> <white><count></white> "
+                                + "<gray>bâtiment(s), <errors> erreur(s).</gray>",
+                        Placeholder.unparsed("count", String.valueOf(count)),
+                        Placeholder.unparsed("errors",
+                                String.valueOf(buildingLibrary.problems().size()))));
+                for (String problem : buildingLibrary.problems()) {
+                    player.sendMessage(MM.deserialize("<red><p></red>",
+                            Placeholder.unparsed("p", problem)));
+                }
+            }
+            case "generate" -> {
+                // Réécrit le fichier même s'il existe : c'est un geste explicite, contrairement au
+                // dépôt au démarrage qui ne touche jamais un fichier présent.
+                var outcome = buildingSchematics.regenerateTestHut();
+                player.sendMessage(outcome.ok()
+                        ? MM.deserialize("<green>Schematic de la hutte de test régénéré.</green> "
+                                + "<gray>Rafraîchissez la bibliothèque dans le panel.</gray>")
+                        : MM.deserialize("<red>Génération impossible :</red> <gray><why></gray>",
+                                Placeholder.unparsed("why", outcome.error())));
+            }
+            default -> sendBuildingUsage(player);
+        }
+    }
+
+    private void handleBuildingList(Player player) {
+        var buildings = buildingLibrary.all();
+        if (buildings.isEmpty()) {
+            player.sendMessage(MM.deserialize(
+                    "<gray>Bibliothèque de bâtiments vide.</gray>"));
+            return;
+        }
+        player.sendMessage(MM.deserialize("<gold><count> bâtiment(s) :</gold>",
+                Placeholder.unparsed("count", String.valueOf(buildings.size()))));
+        for (var building : buildings) {
+            player.sendMessage(MM.deserialize(
+                    "<white><id></white> <gray>« <name> » — <size>, façade <front></gray>",
+                    Placeholder.unparsed("id", building.id()),
+                    Placeholder.unparsed("name", building.name()),
+                    Placeholder.unparsed("size", building.sizeLabel()),
+                    Placeholder.unparsed("front", building.front().label())));
+        }
+    }
+
+    private void sendBuildingUsage(Player player) {
+        player.sendMessage(MM.deserialize(
+                "<yellow>/rpgadmin building list</yellow> <gray>— lister la bibliothèque.</gray>"
+                        + "<newline><yellow>/rpgadmin building reload</yellow> <gray>— relire les "
+                        + "fichiers de bâtiments.</gray>"
+                        + "<newline><yellow>/rpgadmin building generate</yellow> <gray>— régénérer "
+                        + "le schematic de la hutte de test.</gray>"
+                        + "<newline><gray>Poser un bâtiment : Control Panel → Bâtiments → "
+                        + "Emplacements (l'emprise y est montrée avant confirmation).</gray>"));
+    }
+
     private void sendBuildSiteUsage(Player player) {
         player.sendMessage(MM.deserialize(
                 "<yellow>/rpgadmin buildsite tool</yellow> <gray>— recevoir l'outil de marquage.</gray>"
@@ -3021,6 +3111,10 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("flatten")) {
             return FLATTEN_SUBCOMMANDS.stream().filter(s -> s.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("building")) {
+            return BUILDING_SUBCOMMANDS.stream()
+                    .filter(c -> c.startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("buildsite")) {
             return BUILD_SITE_SUBCOMMANDS.stream()

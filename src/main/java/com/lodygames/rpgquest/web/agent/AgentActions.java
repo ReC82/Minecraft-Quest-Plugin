@@ -228,8 +228,101 @@ public interface AgentActions {
      * Vue complète de {@code building.site.list} : les emplacements + les mondes qui en portent au
      * moins un (source du filtre du Control Panel, jamais recalculée côté panel).
      */
-    record BuildingSiteCatalogView(List<BuildingSiteSummary> sites, List<String> worlds, int total) {
+    record BuildingSiteCatalogView(List<BuildingSiteSummary> sites, List<String> worlds, int total,
+                                   List<BuildingPlacementSummary> placements) {
     }
+
+    // ---- Bibliothèque et placement (issue #213, lot « placement ») ------------------------------
+
+    /**
+     * Un bâtiment de la bibliothèque.
+     *
+     * <p>{@code schematicPresent} est séparé du reste pour une raison : une définition dont le
+     * fichier manque reste du contenu <strong>correct</strong>, c'est l'artefact qui est absent. La
+     * montrer en le disant explique pourquoi la pose est refusée ; la cacher laisserait une
+     * bibliothèque vide sans explication.</p>
+     */
+    record BuildingDefinitionSummary(String id, String name, String description,
+                                     int sizeX, int sizeY, int sizeZ,
+                                     int anchorX, int anchorY, int anchorZ,
+                                     String front, List<String> materials,
+                                     String schematic, boolean schematicPresent, int version) {
+    }
+
+    /**
+     * Vue de {@code building.definition.list}.
+     *
+     * @param problems       les fichiers refusés au dernier chargement, nommés
+     * @param engineAvailable le moteur de schematics est-il exploitable ? Si non, la bibliothèque
+     *                        reste consultable mais rien ne peut être posé — et {@code engineReason}
+     *                        le dit
+     */
+    record BuildingLibraryView(List<BuildingDefinitionSummary> buildings, List<String> problems,
+                               boolean engineAvailable, String engineReason) {
+    }
+
+    /**
+     * Un bâtiment réellement posé.
+     *
+     * @param restorable une sauvegarde de la zone écrasée existe-t-elle ? Sans elle, le retour
+     *                   arrière est refusé plutôt que tenté à l'aveugle
+     */
+    record BuildingPlacementSummary(String siteId, String buildingId, String buildingName,
+                                    String world, int anchorX, int anchorY, int anchorZ,
+                                    int rotation,
+                                    int minX, int minY, int minZ,
+                                    int maxX, int maxY, int maxZ,
+                                    String placedBy, String placedAt, boolean restorable) {
+    }
+
+    /**
+     * Vue de {@code building.placement.preview} : ce que donnerait la pose, sans l'avoir faite.
+     *
+     * @param nonAirBlocks nombre de blocs non-air déjà présents, ou {@code -1} si le comptage n'a
+     *                     pas pu être fait (monde ou chunk déchargé) — ce qui n'est pas zéro
+     * @param refusals     <strong>tous</strong> les motifs de refus, pas seulement le premier
+     * @param warnings     ce qui mérite d'être lu mais n'empêche pas de poser
+     */
+    record BuildingPreviewView(boolean placeable,
+                               String siteId, String siteName, String siteFacing,
+                               String world, int anchorX, int anchorY, int anchorZ,
+                               String buildingId, String buildingName,
+                               int sizeX, int sizeY, int sizeZ, String front,
+                               int rotation,
+                               int minX, int minY, int minZ,
+                               int maxX, int maxY, int maxZ,
+                               long blockCount, long nonAirBlocks,
+                               List<String> refusals, List<String> warnings) {
+    }
+
+    /** La bibliothèque de bâtiments. Lecture seule. */
+    CompletableFuture<BuildingLibraryView> buildingLibrary();
+
+    /**
+     * Calcule rotation et emprise. <strong>Aucune écriture</strong> : ni bloc, ni ligne en base.
+     *
+     * <p>Un aperçu n'est pas une réservation — tout est revérifié au moment de poser, parce que le
+     * monde a pu changer entre l'écran et le clic.</p>
+     */
+    CompletableFuture<BuildingPreviewView> buildingPlacementPreview(String siteId,
+                                                                    String buildingId);
+
+    /**
+     * Pose le bâtiment, après avoir sauvegardé la zone écrasée.
+     *
+     * <p>Un échec de collage laisse l'emplacement vide et n'inscrit aucun placement : il n'y a pas
+     * de faux placement possible.</p>
+     */
+    CompletableFuture<MutationResult> buildingPlacementPlace(String siteId, String buildingId,
+                                                             String placedBy);
+
+    /**
+     * Restaure la zone d'avant la pose et libère l'emplacement.
+     *
+     * <p>Refusé si aucune sauvegarde n'est associée : c'est la seule réponse honnête, puisque
+     * remettre de l'air détruirait le terrain d'origine.</p>
+     */
+    CompletableFuture<MutationResult> buildingPlacementRollback(String siteId);
 
     CompletableFuture<BuildingSiteCatalogView> buildingSites();
 

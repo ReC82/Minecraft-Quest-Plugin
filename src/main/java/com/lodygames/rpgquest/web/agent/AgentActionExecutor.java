@@ -90,6 +90,10 @@ public final class AgentActionExecutor {
                 case BUILDING_SITE_DESCRIBE -> buildingSiteDescribe(action);
                 case BUILDING_SITE_FACING -> buildingSiteFacing(action);
                 case BUILDING_SITE_DELETE -> buildingSiteDelete(action);
+                case BUILDING_DEFINITION_LIST -> buildingDefinitionList(action);
+                case BUILDING_PLACEMENT_PREVIEW -> buildingPlacementPreview(action);
+                case BUILDING_PLACEMENT_PLACE -> buildingPlacementPlace(action);
+                case BUILDING_PLACEMENT_ROLLBACK -> buildingPlacementRollback(action);
                 case CONTENT_EXPORT -> contentExport(action);
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
@@ -1304,6 +1308,141 @@ public final class AgentActionExecutor {
         return actions.buildingSiteDelete(id)
                 .thenApply(r -> mutationOutcome(action, r, "id", id))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> buildingDefinitionList(AgentAction action) {
+        return actions.buildingLibrary().thenApply(view -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (AgentActions.BuildingDefinitionSummary b : view.buildings()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("id", b.id());
+                row.put("name", b.name());
+                row.put("description", b.description());
+                row.put("sizeX", b.sizeX());
+                row.put("sizeY", b.sizeY());
+                row.put("sizeZ", b.sizeZ());
+                row.put("anchorX", b.anchorX());
+                row.put("anchorY", b.anchorY());
+                row.put("anchorZ", b.anchorZ());
+                row.put("front", b.front());
+                row.put("materials", b.materials());
+                row.put("schematic", b.schematic());
+                row.put("schematicPresent", b.schematicPresent());
+                row.put("version", b.version());
+                rows.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("buildings", rows);
+            details.put("problems", view.problems());
+            details.put("engineAvailable", view.engineAvailable());
+            details.put("engineReason", view.engineReason());
+            return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
+                    rows.size() + " bâtiment(s) en bibliothèque.", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code building.placement.preview}. N'écrit rien, donc n'est jamais « refusée » au sens d'une
+     * mutation : un aperçu impossible est un aperçu qui porte ses motifs de refus.
+     */
+    private CompletableFuture<AgentActionOutcome> buildingPlacementPreview(AgentAction action) {
+        String siteId = buildSiteId(action);
+        if (siteId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        String buildingId = buildingId(action);
+        if (buildingId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « building » manquant ou invalide."));
+        }
+        return actions.buildingPlacementPreview(siteId, buildingId).thenApply(view -> {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("placeable", view.placeable());
+            details.put("siteId", view.siteId());
+            details.put("siteName", view.siteName());
+            details.put("siteFacing", view.siteFacing());
+            details.put("world", view.world());
+            details.put("anchorX", view.anchorX());
+            details.put("anchorY", view.anchorY());
+            details.put("anchorZ", view.anchorZ());
+            details.put("buildingId", view.buildingId());
+            details.put("buildingName", view.buildingName());
+            details.put("sizeX", view.sizeX());
+            details.put("sizeY", view.sizeY());
+            details.put("sizeZ", view.sizeZ());
+            details.put("front", view.front());
+            details.put("rotation", view.rotation());
+            details.put("minX", view.minX());
+            details.put("minY", view.minY());
+            details.put("minZ", view.minZ());
+            details.put("maxX", view.maxX());
+            details.put("maxY", view.maxY());
+            details.put("maxZ", view.maxZ());
+            details.put("blockCount", view.blockCount());
+            details.put("nonAirBlocks", view.nonAirBlocks());
+            details.put("refusals", view.refusals());
+            details.put("warnings", view.warnings());
+            String summary = view.placeable()
+                    ? "Posable : " + view.buildingName() + " tourné de " + view.rotation()
+                            + "°, emprise " + view.minX() + ".." + view.maxX() + " / "
+                            + view.minY() + ".." + view.maxY() + " / "
+                            + view.minZ() + ".." + view.maxZ() + "."
+                    : "Non posable : " + (view.refusals().isEmpty()
+                            ? "motif non précisé." : view.refusals().get(0));
+            return AgentActionOutcome.success(action.id(), view.placeable() ? "ok" : "ko",
+                    summary, details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> buildingPlacementPlace(AgentAction action) {
+        String siteId = buildSiteId(action);
+        if (siteId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        String buildingId = buildingId(action);
+        if (buildingId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « building » manquant ou invalide."));
+        }
+        // La confirmation est exigée ICI aussi, et pas seulement par le panel : coller écrase des
+        // blocs du monde, donc la dernière barrière doit être du côté qui écrit.
+        if (!"true".equals(trimOrNull(action.param("confirm")))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Confirmation manquante : « confirm=true » est exigé pour écrire dans le "
+                            + "monde."));
+        }
+        String placedBy = trimOrNull(action.param("placed_by"));
+        return actions.buildingPlacementPlace(siteId, buildingId,
+                        placedBy == null ? "panel" : placedBy)
+                .thenApply(r -> mutationOutcome(action, r, "id", siteId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> buildingPlacementRollback(AgentAction action) {
+        String siteId = buildSiteId(action);
+        if (siteId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        if (!"true".equals(trimOrNull(action.param("confirm")))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Confirmation manquante : « confirm=true » est exigé pour restaurer la zone."));
+        }
+        return actions.buildingPlacementRollback(siteId)
+                .thenApply(r -> mutationOutcome(action, r, "id", siteId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** Identifiant de bâtiment de bibliothèque, même forme que le contenu du projet. */
+    private static String buildingId(AgentAction action) {
+        String raw = firstNonBlank(action.param("building"), action.param("building_id"));
+        if (raw == null) {
+            return null;
+        }
+        String clean = raw.trim().toLowerCase(java.util.Locale.ROOT);
+        return clean.matches("[a-z0-9][a-z0-9_]{0,63}") ? clean : null;
     }
 
     /** Bornes de saisie, miroir de {@code BuildingSite} — revérifiées ici, jamais supposées. */

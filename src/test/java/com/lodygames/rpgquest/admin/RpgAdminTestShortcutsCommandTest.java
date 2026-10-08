@@ -112,7 +112,8 @@ class RpgAdminTestShortcutsCommandTest {
                 storyService, null, null, null,
                 questProgressEngine, questEngine, variableRepository, null, null,
                 new com.lodygames.rpgquest.travel.TravelMaintenanceMode(), null, null, null,
-                null, plugin);
+                // #213 : emplacements, bibliothèque et atelier de schematics — non utilisés ici.
+                null, null, null, plugin);
     }
 
     @AfterEach

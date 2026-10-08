@@ -1,0 +1,54 @@
+# Hutte de test — le seul bâtiment du lot « placement » de l'issue #213.
+#
+# Ce fichier est du CONTENU : il décrit ce qu'on peut poser. Le fichier .schem qui l'accompagne est
+# un artefact DÉRIVÉ, produit par le plugin lui-même à partir de
+# com.lodygames.rpgquest.building.TestHutBlueprint — aucun fichier externe n'a été importé.
+#
+# Les valeurs ci-dessous doivent rester cohérentes avec ce plan. Un test
+# (BuildingLibraryTest#leFichierEmbarqueDecritExactementLePlan) échoue si elles divergent : une
+# définition qui mentirait sur ses dimensions ferait annoncer une emprise fausse à l'administrateur,
+# et la faute ne se verrait qu'une fois la hutte posée.
+
+id: test_hut_01
+name: "Hutte de test"
+description: >-
+  Hutte de validation, produite par le code du plugin. Façade dissymétrique (porte centrée, deux
+  fenêtres) et toit à deux pans, pour que l'orientation et la rotation se constatent d'un coup
+  d'œil. Intérieur vide, aucune décoration, aucun terrain modifié autour.
+
+schematic: test_hut_01.schem
+
+# Dimensions en blocs. x = largeur, y = hauteur, z = profondeur.
+size:
+  x: 7
+  y: 6
+  z: 5
+
+# L'ancre est le CENTRE DE LA PORTE, AU NIVEAU DU SOL, en coordonnées locales du schematic.
+# C'est ce point qui coïncide avec l'ancre de l'emplacement, et le point fixe de la rotation.
+#
+# y: 1 et non 0, et ce n'est pas un détail : la fondation en pierre occupe y = 0, donc elle se place
+# UN BLOC SOUS l'ancre de l'emplacement. C'est voulu — une fondation s'enfonce dans le sol, et
+# l'ancre d'un emplacement est précisément la case libre au-dessus du bloc cliqué.
+anchor:
+  x: 3
+  y: 1
+  z: 0
+
+# Direction que regarde la façade quand la rotation est NULLE.
+#
+# NORTH, et cette déclaration est géométriquement vraie : la porte est sur la paroi z = 0, qui
+# regarde les -Z, donc le nord. Déclarer SOUTH sur la même géométrie aurait caché un demi-tour
+# permanent dans le code de collage — exactement l'offset implicite que ce lot doit éviter.
+front: NORTH
+
+materials:
+  - cobblestone
+  - oak_log
+  - oak_planks
+  - oak_door
+  - glass_pane
+  - oak_stairs
+  - oak_slab
+
+version: 1

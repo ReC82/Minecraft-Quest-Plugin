@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 28;
+    public static final int CURRENT_VERSION = 29;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -60,7 +60,8 @@ public final class SchemaMigrator {
             new SchemaMigration(25, "quest_reward_grants", SchemaMigrator::applyV25),
             new SchemaMigration(26, "quest_reward_grants.status (dettes récupérables)", SchemaMigrator::applyV26),
             new SchemaMigration(27, "npc_citizens_skins", SchemaMigrator::applyV27),
-            new SchemaMigration(28, "building_sites, building_site_ids", SchemaMigrator::applyV28));
+            new SchemaMigration(28, "building_sites, building_site_ids", SchemaMigrator::applyV28),
+            new SchemaMigration(29, "building_placements", SchemaMigrator::applyV29));
 
     private SchemaMigrator() {
     }
@@ -433,6 +434,51 @@ public final class SchemaMigrator {
      * retour au JAR précédent laisse donc ces tables en place et simplement inutilisées — elles ne
      * gênent rien, et les emplacements déjà créés réapparaissent au redéploiement.
      */
+    private static void applyV29(Connection connection, SqlDialect dialect) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            // Un bâtiment réellement posé dans le monde (lot « placement » de #213).
+            //
+            // site_id est la CLÉ PRIMAIRE, et ce choix porte une règle : un emplacement porte au
+            // plus un bâtiment. Un emplacement déjà occupé est donc refusé par le schéma lui-même,
+            // pas seulement par le service — ce qui rend un double clic inoffensif même si deux
+            // requêtes arrivaient simultanément.
+            //
+            // L'emprise (min/max) est stockée bien qu'elle soit recalculable depuis la définition,
+            // la rotation et l'ancre. Deux raisons : détecter un chevauchement sans relire la
+            // bibliothèque, et surtout conserver l'emprise RÉELLEMENT occupée même si la définition
+            // change plus tard — sinon un retour arrière restaurerait la mauvaise zone.
+            //
+            // backup_schematic peut être vide : dans ce cas le retour arrière est REFUSÉ plutôt que
+            // tenté à l'aveugle. Remettre de l'air dans l'emprise détruirait le terrain d'origine.
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS building_placements (
+                        site_id TEXT PRIMARY KEY,
+                        building_id TEXT NOT NULL,
+                        world TEXT NOT NULL,
+                        anchor_x INTEGER NOT NULL,
+                        anchor_y INTEGER NOT NULL,
+                        anchor_z INTEGER NOT NULL,
+                        rotation INTEGER NOT NULL DEFAULT 0,
+                        min_x INTEGER NOT NULL,
+                        min_y INTEGER NOT NULL,
+                        min_z INTEGER NOT NULL,
+                        max_x INTEGER NOT NULL,
+                        max_y INTEGER NOT NULL,
+                        max_z INTEGER NOT NULL,
+                        backup_schematic TEXT NOT NULL DEFAULT '',
+                        placed_by TEXT NOT NULL DEFAULT '',
+                        placed_at TEXT NOT NULL
+                    )
+                    """));
+            // Détection de chevauchement : on interroge par monde, puis on compare les intervalles
+            // en mémoire. Un index sur le monde suffit — le nombre de bâtiments posés par monde
+            // restera petit longtemps, et un index spatial serait une complication sans mesure.
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_building_placements_world "
+                            + "ON building_placements (world)"));
+        }
+    }
+
     private static void applyV28(Connection connection, SqlDialect dialect) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             // L'identité est « id », attribuée une fois et jamais recalculée depuis la position :

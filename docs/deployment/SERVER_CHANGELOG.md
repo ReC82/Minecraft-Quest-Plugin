@@ -6778,3 +6778,53 @@ bâtiments déjà posés **restent dans le monde** (ce sont des blocs), et leurs
 - **Données** : la sauvegarde de `data.db` prise avant le déploiement est en V28. La restaurer ferait
   perdre les placements enregistrés, sans retirer les bâtiments du monde — à ne faire que si la
   migration a réellement échoué.
+
+### Déploiement RÉELLEMENT effectué — 2026-10-09 00:06 à 00:12 (CEST)
+
+Serveur **RPGQuest DEV**, depuis un worktree propre sur `db518fe`. Branche vérifiée **superset** de
+toutes les lignes déployées récentes avant tout transfert.
+
+| Étape | Résultat |
+|---|---|
+| **Sauvegarde `data.db` AVANT** | `data-20261008T220617Z-predeploy.db` (1 773 568 o), **relue** : `user_version = 28`, `integrity_check = ok`, 35 tables, `building_placements` **absente** — exactement l'état attendu avant V29 |
+| **WorldEdit réellement installé** | `worldedit-bukkit-7.4.1.jar` vu dans le dossier des plugins — **la même version que le `compileOnly`** |
+| **Control Panel** | déployé en premier. ⚠️ `PANEL_DEPLOY_EXIT=1` : le script a sondé `/health` avant que la JVM ait fini de se lier au port. **Faux négatif connu** — vérifié juste après : service `active`, `/health` → `ONLINE`, `/buildings/library` → **303** vers `/login` (route enregistrée) |
+| Ce qui est **servi**, vérifié | le JAR de `/opt/plugadmin/app` contient `panel/building/BuildingLibraryDirectory`, `BuildingPlacementPreview`, `BuildingPlacementView`, la fiche `docs/batiments-bibliotheque.md`, et les **quatre** actions au catalogue |
+| JAR plugin | `DEPLOY_EXIT=0`, en ligne **2 114 011 o == local** (SHA-256 `38053163…`) |
+| Backup du JAR remplacé | `rpgquest-20261008T220718Z-predeploy.jar` (2 042 328 o) — le JAR de #227, **la sauvegarde précédente n'a pas été écrasée**. Le nouveau JAR est **plus gros**, donc dans le sens attendu |
+| Redémarrage Minecraft | **un seul**, **0 joueur connecté**, `save-all` exécuté par le script |
+| **Migration V29** | vérifiée sur la base réelle : `user_version = 29`, `integrity_check = ok`, **36 tables** contre 35 avant, `building_placements` avec ses **16 colonnes**, son index `idx_building_placements_world` **et** `sqlite_autoindex_building_placements_1` — ce dernier prouve que `site_id` est bien la clé primaire |
+| RCON | RPGQuest, WorldEdit et Citizens **en vert** ; `/rpgadmin building` enregistrée |
+| Données conservées | l'emplacement existant est intact et toujours `EMPTY` ; `building_placements` est vide, ce qui est correct — rien n'a été posé automatiquement |
+
+#### La hutte a réellement été produite sur le serveur
+
+C'est la vérification qui donne le plus de confiance avant le test manuel. Les deux fichiers ont été
+créés au démarrage, puis **retéléchargés et inspectés** :
+
+- `RPGQuest/buildings/test_hut_01.yml` (2 134 o) — la définition déposée ;
+- `RPGQuest/schematics/test_hut_01.schem` (521 o compressés, 1 168 o décompressés).
+
+Le `.schem` a été décompressé et lu : c'est un **vrai schematic Sponge** (tags `Version` et
+`DataVersion` présents) mesurant **`Width = 7`, `Height = 6`, `Length = 5`** — exactement les
+dimensions déclarées — avec pour palette précisément les sept matériaux annoncés plus
+`minecraft:air`, qui est ce qui creuse l'intérieur de la hutte.
+
+Autrement dit, toute la chaîne *plan Java → écrivain officiel WorldEdit → fichier valide* fonctionne
+sur le serveur réel. Il ne reste que le collage lui-même à constater en jeu.
+
+#### Ce qui reste à constater
+
+Le **collage réel** et le **sens de rotation effectif du moteur**. L'adaptateur compare l'emprise
+calculée par WorldEdit à la nôtre et refuse en cas de désaccord, donc une convention de signe
+inattendue produira un **refus explicite** plutôt qu'une hutte posée à l'envers — mais que la hutte
+apparaisse, à la bonne ancre et porte face à l'orientation attendue, ne peut être vu qu'avec un
+client. C'est **TC-270**.
+
+#### Constat incident, utile à noter
+
+L'emplacement présent sur le DEV s'appelle **« Hutte »** et porte l'identifiant `buildsite_0006`.
+Il n'a donc pas été créé par l'ancien parcours : un nom saisi à la main prouve que **l'enclume de
+#227 fonctionne en jeu**, et le passage de `0005` à `0006` confirme que les identifiants ne sont pas
+recyclés. Les emplacements de test précédents ont été supprimés entre les deux déploiements, ce qui
+confirme une fois de plus que la suppression depuis le panel s'applique.

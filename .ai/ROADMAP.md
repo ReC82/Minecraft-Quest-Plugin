@@ -2647,3 +2647,122 @@ Blocages: aucun. Limites assumées et documentées :
 Première étape à reprendre: TC-269 puis TC-268 (~11 min à deux). Ensuite le lot suivant de #213 :
   affecter un .schem à un emplacement — NON commencé, le prompt l'interdisait explicitement.
 ```
+
+```text
+Date: 2026-10-08 (nuit — #213 : bibliothèque de bâtiments et premier placement)
+Branche de départ: fix/227-building-sites-actions @ e02c4de (la ligne déployée du soir)
+Branche de travail: fix/227-building-sites-actions (poursuivie — même chantier #213, et la ligne
+  déployée est celle-ci ; ouvrir une branche de plus aurait fragmenté le déploiement du jour)
+Étape de départ: « lot suivant de #213 : associer un schematic simple à un BuildingSite et faire un
+  premier placement contrôlé ». Génération IA de bâtiment et analyse d'image explicitement HORS
+  périmètre, et non commencées.
+Étapes terminées:
+  - AUDIT D'ABORD, et il a décidé l'architecture. (1) WorldEdit EST installé en DEV : 7.4.1, vérifié
+    par `/version WorldEdit` — la version compileOnly est alignée dessus. (2) SONDE DÉCISIVE : un
+    programme jetable sur worldedit-core hors serveur lève
+    « IllegalStateException: WorldEdit is not initialized yet » dès BlockTypes.get(), parce que le
+    registre de blocs est peuplé par la plateforme. Conséquence : un .schem ne peut être ni produit
+    ni vérifié sur la machine de build. D'où la génération AU RUNTIME, dans le plugin, avec
+    l'écrivain officiel — ce qui est exactement la première préférence du prompt.
+  - CONTRAINTE DU PROPRIÉTAIRE, posée en cours de lot et respectée : WorldEdit est une dépendance
+    d'INFRASTRUCTURE remplaçable, jamais du domaine. Tout passe par l'interface RPGQuest
+    SchematicGateway ; BuildingSite, BuildingDefinition et BuildingPlacement n'exposent AUCUN type
+    WorldEdit. Une seule classe le connaît (building.worldedit.WorldEditSchematicGateway),
+    compileOnly + softdepend, LinkageError intercepté, refus nommé — conception du pont Citizens.
+    Effet mesurable : l'essentiel du lot s'exécute dans les tests, sans WorldEdit sur le chemin de
+    classe.
+  - SÉPARATION contenu / état, alignée sur la préférence du prompt : BuildingDefinition = fichier
+    YAML (plugins/RPGQuest/buildings/, relu au démarrage, exemple jamais écrasé) ;
+    BuildingPlacement = table building_placements (migration V29, purement additive).
+    site_id en CLÉ PRIMAIRE : « un emplacement porte au plus un bâtiment » est garanti par le
+    schéma, donc vrai même si deux requêtes arrivaient ensemble.
+  - HUTTE GÉNÉRÉE PAR NOTRE CODE, aucun fichier externe. TestHutBlueprint (7 × 5 × 6, fondation,
+    poteaux d'angle, porte centrée, deux fenêtres, toit à deux pans, intérieur vide) + 
+    SchematicWorkshop. Un plan en Java se relit en revue ; un blob gzip non — et
+    TestHutBlueprintTest l'inspecte bloc par bloc. La définition lit ses dimensions SUR le plan, et
+    un test échoue si le YAML embarqué divergeait.
+  - FAÇADE DISSYMÉTRIQUE VOLONTAIRE : une hutte symétrique ne dirait rien d'une rotation de 180°, et
+    le TC manuel ne pourrait rien conclure.
+  - ÉCART ASSUMÉ par rapport à l'exemple du prompt : front = NORTH et non SOUTH. L'ancre (3, 1, 0)
+    reste celle de l'exemple, mais la porte est sur la paroi z = 0, qui regarde les -Z. Déclarer
+    SOUTH aurait caché un DEMI-TOUR PERMANENT dans le code de collage — exactement l'« offset
+    implicite » que le prompt interdisait. La déclaration est donc géométriquement vraie.
+  - ANCRE = centre de la porte au niveau du sol. Le y = 1 a une conséquence à connaître : la
+    fondation se place un bloc SOUS l'ancre de l'emplacement, ce qui est voulu — une fondation
+    s'enfonce dans le sol, et l'ancre d'un emplacement est la case libre au-dessus du bloc cliqué.
+  - ROTATION PURE (BuildingRotation, azimut horaire nord = 0) et EMPRISE en décalages relatifs à
+    l'ancre, donc l'ancre est un point fixe. À 90°/270° largeur et profondeur s'échangent, et
+    l'aperçu l'affiche ET l'explique.
+  - LE SENS DE ROTATION DU MOTEUR EST MESURÉ, PAS SUPPOSÉ. La convention de signe de
+    AffineTransform#rotateY est interne à WorldEdit ; la deviner serait un pari, et un pari perdu
+    pose la hutte à l'envers sur du terrain DÉJÀ écrasé. L'adaptateur applique la transformation aux
+    coins, compare à l'emprise du domaine, et REFUSE le collage si aucun sens ne correspond.
+  - ORDRE DES OPÉRATIONS = la garantie principale : revérifier tout (un aperçu n'est pas une
+    réservation) → SAUVEGARDER la zone → coller (avec l'air, qui creuse l'intérieur) → enregistrer →
+    marquer OCCUPIED. Échec de sauvegarde : rien n'est collé. Échec de collage : emplacement VIDE,
+    aucun placement. Aucun faux placement possible. Prouvé par l'ordre des appels dans les tests.
+  - RETOUR ARRIÈRE = l'option préférée du prompt : capture de la zone AVANT le collage, reposée
+    telle quelle. SANS SAUVEGARDE, REFUSÉ, et le bouton n'apparaît même pas — remettre de l'air
+    détruirait le terrain d'origine, ce serait une destruction déguisée en annulation. LIMITE
+    DOCUMENTÉE plutôt que contournée : la restauration écrase aussi ce qui a été bâti dans l'emprise
+    APRÈS la pose.
+  - SiteStatus.OCCUPIED ajouté SANS MIGRATION (colonne TEXT, lecture tolérante) : le bénéfice exact
+    que #213 visait en ne déclarant qu'une valeur, constaté un lot plus tard. Et AUCUNE action agent
+    ne permet d'éditer l'état — il suit le fait, sinon on pourrait déclarer « occupé » un vide.
+  - Quatre actions agent (definition.list / placement.preview / place / rollback). AUCUNE commande
+    WorldEdit libre depuis le navigateur ; paramètres validés deux fois (catalogue panel, puis
+    agent) ; confirm=true exigé pour poser et pour restaurer, y compris côté agent.
+  - Permissions DÉDIÉES BUILDING_PLACE et BUILDING_ROLLBACK, distinctes de BUILDING_WRITE et l'une
+    de l'autre : renommer une fiche ne change rien dans le jeu, poser écrase des blocs, restaurer
+    écrase aussi ce qui a été ajouté depuis. Le Builder consulte sans poser.
+  - Panel : /buildings/library en LECTURE SEULE (aucun téléversement, aucun éditeur — une définition
+    est du contenu versionné), et sur la fiche d'un emplacement vide « Choisir un bâtiment » →
+    aperçu → « Placer ». Le bouton de pose n'existe QU'APRÈS un aperçu, et un aperçu calculé pour un
+    autre emplacement n'est pas affiché. Le groupe de nav « Bâtiments » créé à #213 avec une seule
+    entrée a servi exactement comme prévu : aucun lien cassé.
+  - /rpgadmin building list|reload|generate, SANS pose ni retour arrière : écrire dans le monde doit
+    passer par le panel, qui montre l'emprise avant de confirmer et garde une trace.
+Branche finale: fix/227-building-sites-actions (poussée, JAMAIS fusionnée)
+Build: ./gradlew clean build BUILD SUCCESSFUL en 37 min 12 s sur db518fe, worktree PROPRE, UN SEUL
+  Gradle à la fois. 3189 tests, 0 échec, 38 ignorés : plugin 2090 (+103), control-panel 1069 (+24),
+  web-api 30. +127 tests pour ce lot. Aucun test existant assoupli — une seule attente corrigée
+  (BuildingSiteServiceTest utilisait « OCCUPIED » comme exemple de valeur INCONNUE ; l'exemple est
+  devenu réel, l'intention du test est conservée avec une autre valeur).
+Déploiement: FAIT sur le DEV, 00:06-00:12. data.db sauvegardé AVANT et RELU (V28, integrity ok,
+  35 tables, building_placements absente). Panel d'abord : PANEL_DEPLOY_EXIT=1 mais c'est le FAUX
+  NÉGATIF connu (sonde /health avant liaison du port) — vérifié ensuite service actif, /health
+  ONLINE, /buildings/library -> 303, et le JAR SERVI contient bien panel/building/* + les quatre
+  actions. Puis le JAR (DEPLOY_EXIT=0, 2 114 011 o == local, SHA 38053163…), backup du précédent
+  sans écraser le plus ancien, UN SEUL redémarrage, 0 joueur. MIGRATION V29 VÉRIFIÉE sur la base
+  réelle : user_version=29, 36 tables contre 35, les 16 colonnes, l'index, ET
+  sqlite_autoindex_building_placements_1 — qui prouve que site_id est la clé primaire.
+  VÉRIFICATION LA PLUS UTILE : le .schem produit au démarrage a été retéléchargé et DÉCOMPRESSÉ.
+  C'est un vrai schematic Sponge, Width=7 Height=6 Length=5, palette = les sept matériaux déclarés
+  + minecraft:air. La chaîne plan Java -> écrivain officiel -> fichier valide fonctionne donc sur le
+  serveur réel ; il ne reste que le collage à constater.
+  NON vérifiable d'ici : le collage lui-même et le sens de rotation effectif du moteur. En cas de
+  convention inattendue, l'adaptateur REFUSE au lieu de poser de travers — un refus serait donc une
+  information, pas une catastrophe.
+  CONSTAT INCIDENT : l'emplacement du DEV s'appelle « Hutte » (nom saisi) et porte buildsite_0006 —
+  l'enclume de #227 fonctionne donc en jeu, et les identifiants ne sont pas recyclés.
+Tests manuels en attente: TC-270 (nouveau, ~12 min, DEUX orientations). Plus TC-269, TC-268, TC-267
+  (#222..#226), TC-265, TC-266, TC-264, TC-257, TC-258..TC-263.
+Blocages: aucun. Limites assumées et documentées :
+  - la restauration repose un INSTANTANÉ : elle écrase aussi ce qui a été bâti dans l'emprise APRÈS
+    la pose. C'est écrit dans la zone de danger et dans la fiche d'aide ;
+  - sans sauvegarde associée, le retour arrière est REFUSÉ et le bouton absent — remettre de l'air
+    détruirait le terrain d'origine (le prompt interdisait la suppression destructive naïve) ;
+  - aucun aperçu VISUEL en jeu de l'emprise : elle est annoncée en chiffres dans le panel ;
+  - aucune vérification bloc par bloc du terrain : seul un comptage de blocs non-air, et il
+    AVERTIT sans jamais refuser (le prompt l'exigeait explicitement) ;
+  - aucun versioning de bâtiment, aucun remplacement d'un bâtiment posé par un autre ;
+  - la POSITION d'un emplacement reste non modifiable depuis le panel ;
+  - le .schem n'est PAS versionné dans le dépôt : la sonde a prouvé qu'il n'est ni produisible ni
+    vérifiable hors serveur, donc le dépôt versionne le générateur et la définition. Un test échoue
+    si les deux divergent.
+  DETTE RAPPELÉE : MiniYaml ne gère pas les scalaires repliés (dialogues/guard.yml).
+  RestartServiceTest reste sensible au temps réel.
+Première étape à reprendre: TC-270 (~12 min, un vrai client). C'est le seul moyen de constater le
+  collage et le sens de rotation. Ensuite, et seulement ensuite, le lot suivant : bibliothèque de
+  schematics importables, puis génération IA de bâtiment — NON commencés, le prompt l'interdisait.
+```

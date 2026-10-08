@@ -227,7 +227,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   d'accepter le champ `text_color`, le formulaire ne l'émet plus. Les seuls champs restés en texte
   simple sont ceux qui ne sont jamais colorés en jeu (locuteur d'un dialogue, valeurs techniques
   des descripteurs).
-- **Atelier IA** *(issue #146, phase 1)* — `/ai/studio` : décrire une quête en français et obtenir
+- **Atelier IA** *(issue #146)* — `/ai/studio` : décrire en français et obtenir
   une proposition **déjà validée**. Le panel joint automatiquement le contrat de #110, le schéma, les
   types réellement supportés et les références réellement existantes — l'administrateur ne fournit
   que son intention. La réponse traverse les **mêmes validateurs** que l'éditeur guidé ; en cas de
@@ -239,8 +239,23 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   Gemini. La clé API vit dans la base locale du panel (hors Git, mode 600), n'est **jamais** renvoyée
   au navigateur (seules sa longueur et une empreinte SHA-256 tronquée sont affichées), **jamais**
   journalisée, et ne part **jamais** en clair (URL de base HTTP refusée). Plafond de jetons et délai
-  configurables ; un échec ou un délai dépassé ne modifie rien. Limites : une seule quête par
-  génération, pas de dialogues ni de stories, aucun coût monétaire estimé.
+  configurables ; un échec ou un délai dépassé ne modifie rien. L'atelier couvre les **trois
+  familles éditables** — quête, dialogue, story — choisies par un lien, **une à la fois** : un
+  élément par demande garde chaque échec petit et chaque correction ciblée. Chaque famille a ses
+  consignes propres (id de dialogue = id du PNJ, nœuds en map, un choix dont une condition est
+  fausse n'est pas affiché ; une story n'ordonne que des quêtes existantes et n'en invente aucune).
+  Limites : un élément par génération, pas de PNJ (famille non éditable depuis le panel), aucun coût
+  monétaire estimé, garde-fous par appel et non budget cumulé.
+- **Vocabulaire de dialogue déclaré et validé** *(issue #146)* — les 12 actions et 8 conditions du
+  moteur sont déclarées dans `Descriptors` et verrouillées sur les énumérations du moteur par un
+  test de couverture exacte. Le schéma de content pack les contraint, les gabarits et la
+  documentation IA les énoncent, et `DialogueValidator` refuse désormais un type inconnu, un champ
+  obligatoire absent, un champ d'un autre type, un entier non positif ou un état de quête
+  inexistant — avant cela, une action inventée n'échouait qu'au chargement du serveur. `nodes` est
+  une **map** indexée par id de nœud : le schéma de #110 l'annonçait à tort comme une liste, si bien
+  que son propre exemple de référence était inimportable. Limite connue : `MiniYaml` ne lit pas les
+  scalaires repliés (`text: >`), donc `dialogues/guard.yml` n'est pas éditable depuis le panel ; la
+  troncature est signalée par le garde-fou round-trip, jamais silencieuse.
 - **Import sécurisé d'un content pack** *(issue #109, phase 2)* — `/content/import`, permission
   dédiée `CONTENT_IMPORT`, CSRF, audit. Le pack est analysé, validé par les validateurs réels et
   comparé à la source ; **rien n'est écrit avant la confirmation**. Un identifiant déjà présent et

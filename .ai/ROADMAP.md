@@ -2354,3 +2354,57 @@ Première étape à reprendre: aucune — la table "Étapes" ne définit rien
   au-delà de 23 ; voir TODO.md "Plus tard" pour des pistes, à préciser par
   l'utilisateur avant de démarrer
 ```
+
+```text
+Date: 2026-10-08 (matin, 3e lot — #146 suite : dialogues et stories dans l'atelier)
+Branche de départ: feature/218-starter-kit-tiers @ e52bcc3 (fin du lot #146 phase 1, panel déployé)
+Étape de départ: « continue sur les dialogues et stories dans l'atelier ». Ticket réel : #146.
+Étapes terminées:
+  - BLOCAGE LEVÉ D'ABORD : le vocabulaire des actions/conditions de dialogue ne vivait que dans
+    ActionType/ConditionType du moteur. Sans déclaration côté panel, ni le schéma de #110 ni l'IA
+    ne pouvaient le respecter. Déclaré dans Descriptors (12 actions, 8 conditions) et VERROUILLÉ
+    sur le moteur par DialogueDescriptorsTest (comparaison à l'identique des ensembles).
+  - Schéma de content pack : les deux tableaux d'un choix sont contraints par des branches oneOf
+    dérivées. La limite explicitement documentée de #110 est LEVÉE.
+  - DialogueValidator : refuse un type inconnu, un champ obligatoire absent, un champ d'un autre
+    type, un entier non positif, un état de quête inexistant, un « negate » non booléen. AVANT CE
+    LOT, une action inventée traversait l'éditeur ET l'import en silence et n'échouait qu'au
+    chargement du serveur Minecraft.
+  - Atelier étendu aux TROIS familles (quête / dialogue / story), une à la fois, choisies par un
+    lien (GET) parce que la CSP interdit le JS en ligne. Consignes propres à chaque famille.
+    QuestPromptBuilder -> ContentPromptBuilder, AiQuestStudio -> AiContentStudio : les trois
+    familles partagent contrat, schéma, références, format et correction.
+  - GARANTIE STRUCTURELLE INCHANGÉE : aucune des trois méthodes de génération n'a de chemin vers
+    le disque. Vérifié par un test pour les trois familles.
+  - QUATRE défauts réels trouvés et corrigés, chacun couvert par un test :
+    (1) le schéma ET les exemples de #110 déclaraient « nodes » comme une LISTE alors que le
+        moteur et l'export du plugin écrivent une MAP indexée par id -> l'exemple de référence du
+        contrat était INIMPORTABLE ; les exemples passent désormais un VRAI import ;
+    (2) l'exemple « minimal valide » n'avait pas de category, pourtant obligatoire -> refusé ;
+    (3) l'aide de l'état de quête n'énonçait que 5 des 6 états réels (ABANDONED manquait) ;
+    (4) « negate » était déclaré « string » alors que le moteur le lit avec getBoolean -> tout
+        validateur aurait refusé « negate: true », la forme même recommandée par la doc.
+Branche finale: feature/218-starter-kit-tiers @ 1b6982f + un commit de documentation
+Dernier commit: 1b6982f fix(control-panel): « negate » est un booléen, pas une chaîne (#146)
+Build: ./gradlew test BUILD SUCCESSFUL en 11 min 21 s sur 7cd7dbd, puis ./gradlew build sur le
+  commit final, depuis le worktree propre. UN SEUL Gradle à la fois.
+Tests: voir le rapport de session pour le décompte exact. Lot entièrement côté panel ; AUCUN appel
+  réseau sortant (fournisseur bouchon).
+Déploiement: PANEL SEUL à prévoir. AUCUN changement de plugin, donc aucun JAR, aucun redémarrage
+  Minecraft, aucune migration. La table ai_provider et les clés déjà posées restent en place.
+Tests manuels en attente: TC-266 (nouveau, #146 — dialogue et story générés puis réellement
+  chargés par le serveur ; exige une vraie clé API et consomme des jetons facturés). TC-265 reste
+  à faire, donc #146 RESTE OUVERTE. Plus TC-264 (#109), TC-257 (#123) et TC-258..TC-263.
+Blocages: aucun. Limites assumées et documentées : un élément par génération (choix délibéré) ;
+  les PNJ ne sont pas générables car la famille npcs n'est pas éditable depuis le panel ; aucun
+  coût monétaire estimé alors que #146 le demande ; garde-fou de budget PAR APPEL seulement ;
+  AUCUN des trois fournisseurs encore appelé avec une vraie clé.
+  DETTE SIGNALÉE : MiniYaml ne gère pas les scalaires repliés (text: >), donc dialogues/guard.yml
+  n'est pas éditable depuis le panel — 6 de ses 13 nœuds ne sont pas vus. La troncature n'est PAS
+  silencieuse (garde-fou round-trip), et un test le vérifie désormais fichier par fichier, mais le
+  lecteur mériterait de gérer cette construction.
+  DETTE RAPPELÉE : RestartServiceTest reste sensible au temps réel (voir le lot précédent).
+Première étape à reprendre: configurer un fournisseur et faire le point 4 de TC-265 (« Tester la
+  connexion ») — quelques secondes, et c'est le seul moyen de savoir si les trois implémentations
+  d'API sont justes. Puis TC-265, puis TC-266, puis TC-264.
+```

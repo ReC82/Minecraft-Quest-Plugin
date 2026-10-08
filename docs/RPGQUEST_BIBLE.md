@@ -1257,6 +1257,49 @@ Cliquer sur un PNJ identifié `X` (voir section 5) ouvre automatiquement le
 dialogue `id: rpgquest:X` s'il existe — aucune configuration
 supplémentaire.
 
+### Vocabulaire des actions et des conditions, et sa validation (issue #146)
+
+Le vocabulaire d'un choix de dialogue ne vivait que dans les énumérations `ActionType` et
+`ConditionType` du moteur. Le Control Panel, qui ne dépend pas du module du plugin, ne pouvait donc
+ni le contraindre, ni le documenter, ni le fournir à une IA. Il est désormais **déclaré** dans
+`Descriptors` — **12 actions** et **8 conditions** — et **verrouillé sur le moteur** par
+`DialogueDescriptorsTest`, qui compare les ensembles à l'identique : une action ajoutée ou retirée
+côté moteur fait échouer la suite jusqu'à ce que quelqu'un décide quoi en faire.
+
+| Actions | Conditions |
+|---|---|
+| `START_QUEST`, `ADVANCE_QUEST`, `TURN_IN_QUEST` (`quest`) | `QUEST_STATE` (`quest`, `state`) |
+| `GIVE_ITEM`, `TAKE_ITEM` (`material`, `amount`) | `HAS_ITEM` (`material`, `amount`) |
+| `SET_VARIABLE` (`key`, `value` facultatif) | `VARIABLE_EQUALS` (`key`, `value` facultatif) |
+| `RUN_SAFE_COMMAND` (`command`, liste blanche) | `HAS_PERMISSION` (`permission`) |
+| `OPEN_DIALOGUE` (`dialogue`), `OPEN_MERCHANT` (`merchant`) | `NO_MAIN_CLAIM`, `HAS_MAIN_CLAIM` |
+| `GIVE_STARTER_KIT`, `CLOSE` (aucun champ) | `LACKS_CUSTOM_ITEM` (`item`) |
+| `DELIVER_QUEST_ITEMS` (`npc` facultatif) | `HAS_PENDING_DELIVERY` (`npc` facultatif) |
+
+`negate: true` inverse n'importe quelle condition : c'est le **seul** champ commun à toutes, et il
+n'a aucun sens sur une action. `state` accepte les **six** états de `QuestState` : `NOT_STARTED`,
+`ACTIVE`, `READY_TO_TURN_IN`, `COMPLETED`, `FAILED`, `ABANDONED`.
+
+**Ce que le panel refuse désormais à l'enregistrement** (`DialogueValidator`) : un type d'action ou
+de condition inconnu, un champ obligatoire absent, un champ appartenant à un autre type, un entier
+non positif, un état de quête inexistant. Jusqu'ici une action inventée traversait l'éditeur **et**
+l'import sans un mot et n'échouait qu'au chargement du serveur Minecraft — c'est-à-dire longtemps
+après le clic sur « enregistrer », dans un journal que personne ne lit à ce moment-là. Le moteur
+reste l'autorité finale ; ce qui est vérifié ici, c'est ce que le panel est capable de savoir.
+
+**Forme des nœuds.** `nodes` est une **map indexée par identifiant de nœud**, jamais une liste :
+l'identifiant est la clé et ne se répète pas à l'intérieur du nœud. C'est la forme que le moteur lit
+et que l'export du plugin écrit ; une liste est refusée à l'import. Le schéma de content pack de
+#110 l'annonçait à tort comme une liste, si bien que son propre exemple de référence était
+inimportable — corrigé, et désormais couvert par un test qui fait passer les exemples du contrat par
+un vrai import.
+
+**Limite du lecteur YAML du panel** : `MiniYaml` ne gère pas les scalaires repliés (`text: >`) et
+abandonne la suite de la map. `dialogues/guard.yml` en contient : six de ses treize nœuds ne sont
+donc pas vus par le panel. La troncature n'est pas silencieuse — le garde-fou round-trip la signale
+et l'éditeur refuse d'écraser à l'aveugle, ce qu'un test vérifie fichier par fichier — mais ce
+dialogue n'est pas éditable depuis le panel tant que le lecteur ne gère pas cette construction.
+
 ### `/dialogue open <joueur> <dialogueId>`
 
 Type : Admin
@@ -1665,11 +1708,31 @@ pour sauvegarder, archiver ou fournir à une IA. Granularités : *tout le conten
 - **Hors périmètre #108** : import/écriture (#109), familles items/recettes,
   découpage/compression du transport.
 
-### Atelier IA — `/ai/studio` et `/ai/providers` (issue #146, phase 1)
+### Atelier IA — `/ai/studio` et `/ai/providers` (issue #146)
 
-Troisième et dernière phase du pipeline de contenus : **décrire une quête en français** et obtenir
-une proposition validée, prête à être importée. L'atelier s'appuie entièrement sur les deux phases
-précédentes — le contrat de #110 pour le prompt, l'import de #109 pour tout ce qui suit la réponse.
+Troisième et dernière phase du pipeline de contenus : **décrire en français** ce que l'on veut, et
+obtenir une proposition validée, prête à être importée. L'atelier s'appuie entièrement sur les deux
+phases précédentes — le contrat de #110 pour le prompt, l'import de #109 pour tout ce qui suit la
+réponse.
+
+**Trois familles, une à la fois.** L'atelier sait produire **une quête**, **un dialogue** ou **une
+story**, choisis par un lien en tête de page (`/ai/studio?kind=quest|dialogue|story`). Le choix
+passe par un lien, donc par un GET, parce que la politique de sécurité du panel interdit le
+JavaScript en ligne et qu'un sélecteur échangeant le formulaire côté client exigerait un script ;
+la famille voyage ensuite en champ caché, pour que l'envoi ne dépende pas de l'URL d'où il part.
+
+Un seul élément par demande, volontairement : demander « une quête, son dialogue et une story » en
+un appel produit un pack dont une partie est bonne et l'autre refusée, sans moyen simple de ne
+corriger que la mauvaise. Pour une quête **et** son dialogue, on fait deux demandes — la seconde
+peut citer la première, qui existe alors déjà.
+
+Chaque famille a ses propres consignes, celles que les modèles manquent spontanément :
+
+| Famille | Ce que le prompt impose en plus |
+|---|---|
+| Quête | une seule quête, dans `quests` ; ne pas remplir les autres sections |
+| Dialogue | l'id du dialogue **est** l'id du PNJ ; `nodes` est une **map** ; un choix dont une condition est fausse **n'est pas affiché** ; aucune action ni condition ne s'invente ; toujours prévoir une sortie |
+| Story | un **enchaînement ordonné de quêtes existantes** ; aucune quête inventée ; **aucune** section `quests` — une quête manquante est une dépendance, pas une quête à écrire |
 
 **Deux pages, deux permissions distinctes** :
 
@@ -1682,7 +1745,7 @@ La séparation est voulue : un appel d'IA coûte de l'argent réel et part vers 
 pas la même décision que modifier un fichier local ; et manipuler une clé d'API tierce n'est pas un
 geste d'édition de contenu. Un **Testeur** et un rôle **Lecture seule** n'ont ni l'une ni l'autre.
 
-**L'atelier n'écrit jamais.** `AiQuestStudio` s'arrête à l'aperçu validé ; le bouton
+**L'atelier n'écrit jamais.** `AiContentStudio` s'arrête à l'aperçu validé ; le bouton
 d'enregistrement de la page poste vers `/content/import`, qui applique le pipeline de #109 avec son
 arbitrage des collisions et sa confirmation explicite. Il n'existe donc **qu'un seul chemin
 d'écriture** dans tout le panel, et l'IA n'en obtient aucun raccourci — c'est la dernière exigence
@@ -1693,8 +1756,10 @@ construction et non par vigilance à l'écran.
 automatiquement les règles de LodyQuests, la documentation de contenu générée pour #110, le schéma
 JSON, les types d'objectifs et de récompenses **réellement** supportés, et les **références
 réellement existantes** relevées sur le serveur (PNJ, quêtes, mondes). Rien n'est recopié dans
-`QuestPromptBuilder` : un type ajouté au moteur arrive dans le prompt sans qu'une ligne soit
-touchée, et un type qui n'existe pas ne peut pas y apparaître. Les références réelles sont la mesure
+`ContentPromptBuilder` : un type ajouté au moteur arrive dans le prompt sans qu'une ligne soit
+touchée, et un type qui n'existe pas ne peut pas y apparaître. Les trois familles partagent tout ce
+qui est coûteux à maintenir — contrat, schéma, références, consigne de format, demande de
+correction — et ne divergent que par leurs consignes propres. Les références réelles sont la mesure
 la plus efficace contre les références inventées, que le ticket demande explicitement de limiter.
 
 **L'IA ne remplace pas les validateurs.** La réponse traverse `AiYamlExtractor` (délimitation d'une
@@ -1734,14 +1799,16 @@ fournisseur. Un échec, un délai dépassé ou une réponse illisible ne modifie
 affichés comme tels. « Tester la connexion » fait un **vrai** aller-retour minimal, parce que
 « configuration enregistrée » ne prouve rien.
 
-**Texte stylé** : le champ « titre exact souhaité » est du texte destiné au joueur ; il utilise donc
-le composant guidé partagé, comme partout ailleurs (voir § 4). Aucune balise MiniMessage n'est
-demandée dans le parcours normal, et l'IA est priée de rester sobre sur la couleur.
+**Texte stylé** : tout champ destiné au joueur — titre de quête, titre de story, **nom affiché du
+locuteur** d'un dialogue — utilise le composant guidé partagé, comme partout ailleurs (voir § 4).
+Aucune balise MiniMessage n'est demandée dans le parcours normal, et l'IA est priée de rester sobre
+sur la couleur.
 
-**Limites de cette phase** : une seule quête par génération (le ticket demande de commencer par là),
-pas de génération de dialogues ni de stories, et aucun coût monétaire estimé — les jetons rapportés
-par le fournisseur sont affichés et audités, mais inventer un prix supposerait une grille tarifaire
-qui change sans prévenir.
+**Limites connues** : un seul élément par génération (voir ci-dessus, c'est un choix), les PNJ ne
+sont pas générables depuis l'atelier parce que la famille `npcs` n'est pas éditable depuis le panel,
+et aucun coût monétaire n'est estimé — les jetons rapportés par le fournisseur sont affichés et
+audités, mais inventer un prix supposerait une grille tarifaire qui change sans prévenir. Le plafond
+de jetons et le délai sont des garde-fous **par appel**, pas un budget cumulé.
 
 ### Import sécurisé d'un content pack — `/content/import` (issue #109, phase 2)
 

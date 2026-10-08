@@ -6106,3 +6106,84 @@ conséquences pratiques :
 - en cas de doute sur une fuite, révoquer la clé chez le fournisseur puis en
   poser une nouvelle depuis `/ai/providers` — l'empreinte affichée permet de
   vérifier que la rotation a bien eu lieu.
+
+## 2026-10-08 (matin, 3e lot) - Atelier IA : dialogues et stories, et vocabulaire de dialogue validé (#146)
+
+### Changement
+
+- **#146 (suite)** — l'atelier IA couvre désormais les **trois familles
+  éditables** : une quête, **un dialogue** ou **une story**, choisies par un
+  lien en tête de `/ai/studio`. Un seul élément par demande, volontairement.
+  Chaque famille impose ses propres consignes (id de dialogue = id du PNJ,
+  nœuds en map, un choix dont une condition est fausse n'est pas affiché ; une
+  story n'ordonne que des quêtes existantes et n'en invente aucune). La
+  garantie structurelle est inchangée : **l'atelier n'a aucun code
+  d'écriture**, l'enregistrement reste l'import de #109 avec sa confirmation.
+- **Vocabulaire de dialogue déclaré et contraint** — les **12 actions** et
+  **8 conditions** du moteur sont déclarées côté panel et verrouillées sur les
+  énumérations du moteur par un test de couverture exacte. Le schéma de content
+  pack les contraint, les gabarits et la documentation IA les énoncent.
+- **Trou de validation fermé** — `DialogueValidator` refuse désormais un type
+  d'action ou de condition inconnu, un champ obligatoire absent, un champ
+  appartenant à un autre type, un entier non positif et un état de quête
+  inexistant. **Avant ce lot, une action inventée traversait l'éditeur et
+  l'import sans un mot** et n'échouait qu'au chargement du serveur Minecraft.
+- **Trois défauts de format corrigés** (côté panel uniquement) : le schéma et
+  les exemples de #110 déclaraient `nodes` comme une **liste**, alors que le
+  moteur et l'export du plugin écrivent une **map** indexée par id — l'exemple
+  de référence du contrat était donc inimportable ; l'exemple « minimal
+  valide » n'avait pas de `category`, pourtant obligatoire ; l'aide de l'état
+  de quête n'énonçait que cinq des **six** états réels (`ABANDONED` manquait).
+
+### Action serveur
+
+**Aucune action côté serveur Minecraft.** Aucun changement de plugin : ce lot
+est **entièrement** dans `control-panel/`. Pas de JAR à remplacer, pas de
+redémarrage Minecraft, pas de fichier de configuration, pas de migration.
+
+**Control Panel seul** : redéployer l'application (`scripts/plugadmin/deploy.sh`).
+Aucune migration de base : la table `ai_provider` de ce matin est inchangée, et
+les clés déjà configurées restent en place.
+
+### Sauvegarde préalable
+
+Release précédente du panel (conservée automatiquement par le script de
+déploiement). Rien à sauvegarder côté Minecraft.
+
+### Déploiement
+
+1. `scripts/plugadmin/deploy.sh` depuis un arbre propre sur le commit visé.
+2. Vérifier `/health`, puis `/ai/studio` : la section « Que voulez-vous
+   créer ? » doit proposer **trois** liens.
+
+### Validation
+
+**Vérifié automatiquement** : suite complète, voir le rapport de session. Le
+vocabulaire est confronté aux énumérations du moteur, chaque dialogue embarqué
+du dépôt est confronté au vocabulaire, et les exemples du contrat passent
+désormais un **vrai** import.
+
+**Non vérifié** : **TC-266** (`PENDING MANUAL VALIDATION`) — génération réelle
+d'un dialogue et d'une story, et chargement effectif par le serveur. Exige une
+vraie clé API et consomme des jetons facturés. TC-265 reste également à faire.
+
+### Effet de bord à connaître
+
+Le resserrement de `DialogueValidator` s'applique **à tous** les dialogues, pas
+seulement à ceux produits par l'IA. Un dialogue existant qui citerait un type
+inconnu afficherait désormais une erreur dans l'éditeur du panel. Vérifié :
+aucun des cinq dialogues embarqués du dépôt n'est dans ce cas, et un test le
+confronte fichier par fichier à chaque exécution de la suite.
+
+`dialogues/guard.yml` reste **non éditable depuis le panel**, pour une raison
+qui lui préexiste : son `text: >` (scalaire replié) n'est pas géré par le
+lecteur YAML du panel, qui abandonne alors la suite de la map — six de ses
+treize nœuds ne sont pas vus. La troncature **n'est pas silencieuse** (le
+garde-fou round-trip la signale et l'éditeur refuse d'écraser à l'aveugle), et
+un test le vérifie désormais fichier par fichier. Ce fichier s'édite à la main.
+
+### Rollback
+
+`scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`. Un
+rollback retire les deux familles de l'atelier et rend au validateur de
+dialogues son silence sur le vocabulaire. Aucune donnée n'est concernée.

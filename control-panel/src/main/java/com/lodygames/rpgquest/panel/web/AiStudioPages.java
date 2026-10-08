@@ -490,8 +490,11 @@ public final class AiStudioPages {
                 + Ui.sectionTitle("docs", "Ce que fait l'atelier, et ce qu'il ne fait pas")
                 + "<ul class=\"muted\">"
                 + "<li><strong>Vous ne décrivez que votre intention.</strong> Le contrat de contenu, "
-                + "le schéma officiel, les types d'objectifs et de récompenses réellement supportés "
-                + "et les références réellement existantes sont joints automatiquement.</li>"
+                + "le schéma officiel, les types réellement supportés — objectifs, récompenses, "
+                + "actions et conditions de dialogue — et les références réellement existantes sont "
+                + "joints automatiquement.</li>"
+                + "<li><strong>Un seul élément par demande.</strong> Une quête, un dialogue ou une "
+                + "story : un échec reste petit, et une correction reste ciblée.</li>"
                 + "<li><strong>L'IA ne remplace pas les validateurs.</strong> Sa proposition passe "
                 + "par les mêmes validateurs que l'éditeur guidé ; une erreur de sa part est "
                 + "attrapée, affichée, et bloque l'enregistrement.</li>"

@@ -55,15 +55,43 @@ plutôt qu'écrasé.
 Un pack dont la `schemaVersion` n'est pas celle supportée est refusé avec la version attendue — jamais
 interprété approximativement.
 
-## Créer une quête avec une IA, depuis le panel
+## Créer du contenu avec une IA, depuis le panel
 
-Page **Créer avec une IA** (`/ai/studio`). C'est la voie la plus courte : vous décrivez la quête en
-français, le panel joint automatiquement le contrat, le schéma, les types réellement supportés et
-les références réellement existantes, puis affiche la proposition déjà validée.
+Page **Créer avec une IA** (`/ai/studio`). C'est la voie la plus courte : vous décrivez ce que vous
+voulez en français, le panel joint automatiquement le contrat, le schéma, les types réellement
+supportés et les références réellement existantes, puis affiche la proposition déjà validée.
 
-1. **Décrire** — un seul champ est nécessaire : ce que la quête doit raconter. Les autres (titre,
+Commencez par choisir **ce que vous voulez créer** : une quête, un dialogue ou une story. Un seul
+élément par demande — c'est voulu. Demander une quête, son dialogue et une story en un appel donne
+un résultat dont une partie est bonne et l'autre refusée, sans moyen simple de ne corriger que la
+mauvaise. Pour une quête **et** son dialogue, faites deux demandes : la seconde pourra citer la
+première, qui existera déjà.
+
+### Pour un dialogue
+
+Décrivez aussi **les cas de figure** : « s'il a déjà terminé la quête… », « s'il n'a pas assez
+de… ». Ce sont eux qui deviennent des conditions, et c'est ce qu'on oublie le plus souvent de
+demander. Attention à un piège du moteur : **un choix dont une condition est fausse n'est pas
+affiché du tout** au joueur. Pour une branche visible mais refusée, demandez explicitement qu'elle
+soit sans condition et que le refus soit expliqué dans la réplique suivante.
+
+Indiquez le **PNJ porteur** : l'identifiant du dialogue est celui du PNJ, et l'IA ne peut pas le
+deviner. Si la conversation doit proposer ou valider une quête, cette quête doit **déjà exister** —
+un dialogue n'en crée pas.
+
+### Pour une story
+
+Une story est un **ordre de quêtes existantes**. Elle ne crée ni objectif ni récompense. Listez les
+quêtes à enchaîner (une par ligne ou séparées par des virgules) ; les quêtes réellement disponibles
+sont rappelées sous le champ. Si une quête manque, elle sera signalée comme **dépendance
+manquante** plutôt qu'inventée.
+
+### Le parcours, dans les trois cas
+
+1. **Décrire** — un seul champ est nécessaire : ce que l'élément doit raconter. Les autres (titre,
    identifiant, PNJ donneur, difficulté, durée, nombre d'étapes, récompense, contraintes) affinent
-   la demande. Le **titre** se met en forme avec la palette habituelle : aucune balise à écrire.
+   la demande. Les textes vus par le joueur — titre de quête, titre de story, nom du locuteur — se
+   mettent en forme avec la palette habituelle : aucune balise à écrire.
 2. **Demander une proposition** — l'appel part du **serveur du panel**, jamais de votre navigateur.
    Il peut prendre une minute.
 3. **Relire** — la proposition passe par les **mêmes validateurs** que l'éditeur guidé. Chaque

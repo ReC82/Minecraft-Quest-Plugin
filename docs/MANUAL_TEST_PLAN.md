@@ -3948,9 +3948,87 @@ le résumé de récompenses de TC-014).
 
 -   **Nettoyage :** supprimer les quêtes générées pendant le test, `/quest admin reload`, et effacer
     la clé API si elle était temporaire.
--   **Limites connues :** une seule quête par génération ; pas de génération de dialogues ni de
-    stories ; aucun coût monétaire estimé (les jetons sont affichés, pas convertis en euros) ; la
-    qualité éditoriale de la proposition dépend du modèle et n'est pas un critère de ce test.
+-   **Limites connues :** un seul élément par génération ; aucun coût monétaire estimé (les jetons
+    sont affichés, pas convertis en euros) ; la qualité éditoriale de la proposition dépend du
+    modèle et n'est pas un critère de ce test.
+
+---
+
+### TC-266 — Atelier IA : créer un dialogue et une story (issue #146, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier que les deux autres familles de l'atelier produisent du contenu réellement
+    chargeable par le serveur, que le vocabulaire des actions et conditions est respecté, et qu'une
+    story n'invente aucune quête. TC-265 couvre déjà la sécurité de la clé et le fait que rien n'est
+    enregistré sans confirmation : **ne pas les refaire ici**.
+-   **Pré-requis :** TC-265 réussi (donc un fournisseur fonctionnel), au moins **deux quêtes
+    existantes** sur le serveur, et un PNJ identifié existant.
+-   ⚠️ **Ce test consomme des jetons facturés.**
+
+#### Choix de la famille
+
+1.  `/ai/studio` → la section « Que voulez-vous créer ? » propose **trois** liens : une quête, un
+    dialogue, une story. Le lien actif est mis en évidence.
+2.  Cliquer « Un dialogue » → l'URL devient `/ai/studio?kind=dialogue` et le formulaire change :
+    champs **PNJ porteur**, **nom affiché du locuteur**, **ton**, **nombre de nœuds**, **quête
+    concernée**. Les champs propres à une quête (identifiant de quête, étapes, récompense) ont
+    disparu.
+3.  Cliquer « Une story » → champs **quêtes à enchaîner**, **identifiant**, **titre**. Les quêtes
+    réellement disponibles sont rappelées sous le champ. Aucun champ de récompense.
+4.  Forcer une famille inconnue dans l'URL (`/ai/studio?kind=nimportequoi`) → la page retombe sur le
+    formulaire de quête, sans erreur ni page vide.
+
+#### Génération d'un dialogue
+
+5.  Choisir « Un dialogue », indiquer un **PNJ existant** comme porteur, mettre en forme le **nom du
+    locuteur** avec la palette (couleur + gras) — vérifier qu'aucune balise n'est à écrire —, et
+    décrire une conversation avec **au moins un cas de figure** : « s'il a déjà terminé la quête X,
+    le féliciter au lieu de la reproposer ».
+6.  **Demander une proposition** → la proposition s'affiche, précédée de la famille (« dialogue »),
+    du fournisseur, du modèle et des jetons.
+7.  Vérifier dans le contenu proposé que : l'**id du dialogue est celui du PNJ** ; `nodes` est une
+    **map** (`accueil:`, pas `- id: accueil`) ; le cas de figure demandé est devenu une
+    **condition** ; une **sortie** existe (choix sans `next`, ou `CLOSE`).
+8.  Déplier **« Réponse brute du modèle »** → la réponse complète est consultable.
+9.  **Relire et enregistrer** → la page d'import s'ouvre, le dialogue apparaît en « nouveau »,
+    confirmer.
+10. En jeu : `/dialogue reload` puis parler au PNJ → le dialogue se charge **sans erreur dans la
+    console** et les choix conditionnels n'apparaissent **que** dans l'état attendu. C'est la
+    vérification qui compte : un vocabulaire respecté sur le papier mais refusé par le moteur serait
+    un échec.
+11. Refaire la conversation **après** avoir terminé la quête citée (`/rpgadmin quest complete`) →
+    le choix conditionnel change comme demandé.
+
+#### Génération d'une story
+
+12. Choisir « Une story », saisir **deux quêtes existantes** dans l'ordre, décrire le fil, mettre en
+    forme le **titre** avec la palette.
+13. **Demander une proposition** → vérifier que la story cite **exactement** ces quêtes, dans
+    l'ordre, et qu'elle ne contient **aucune** section `quests` (aucune quête inventée).
+14. Recommencer en citant volontairement une quête **inexistante** → elle doit être signalée comme
+    **dépendance manquante** ou absente de la proposition, **jamais** inventée comme nouvelle quête.
+15. Enregistrer la story valide, puis en jeu : `/story reload` et `/story list` → elle apparaît et
+    son enchaînement est celui demandé.
+
+#### Vocabulaire refusé
+
+16. Dans la page d'import, soumettre à la main un pack contenant une action inventée
+    (`type: TELEPORTER_LE_JOUEUR`) → **refus** nommant le type inconnu **et listant les types
+    acceptés**. Vérifier que **rien** n'est écrit.
+17. Même essai avec `type: QUEST_STATE` et `state: PRESQUE_FINIE` → refus nommant l'état inconnu.
+18. Demander une correction à l'IA depuis une proposition refusée → la nouvelle demande reste sur la
+    **même famille** (elle ne repart pas sur une quête).
+
+#### Audit
+
+19. `/audit` → les entrées `ai.generate` portent la **famille** (`kind=DIALOGUE`, `kind=STORY`), le
+    fournisseur, le modèle, les jetons et le verdict. Toujours **jamais** la clé ni le prompt
+    complet.
+
+-   **Nettoyage :** supprimer le dialogue et la story générés, `/dialogue reload`, `/story reload`.
+-   **Limites connues :** les **PNJ** ne sont pas générables (famille non éditable depuis le panel) ;
+    un seul élément par génération ; `dialogues/guard.yml` n'est pas éditable depuis le panel parce
+    que le lecteur YAML du panel ne gère pas les scalaires repliés — la troncature est signalée, pas
+    silencieuse, mais le fichier reste à éditer à la main.
 
 ---
 
@@ -4049,3 +4127,4 @@ le résumé de récompenses de TC-014).
 | TC-263 | Texte stylé sans MiniMessage, partout #195 (PENDING) | | | |
 | TC-264 | Import sécurisé d'un content pack #109 (PENDING) | | | |
 | TC-265 | Atelier IA : créer une quête avec une IA #146 (PENDING) | | | |
+| TC-266 | Atelier IA : dialogue et story #146 (PENDING) | | | |

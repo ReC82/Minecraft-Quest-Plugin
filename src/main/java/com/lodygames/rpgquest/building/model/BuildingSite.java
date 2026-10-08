@@ -92,6 +92,17 @@ public record BuildingSite(String id, String name, String description, String wo
                 createdBy, createdAt);
     }
 
+    /**
+     * Même emplacement, état changé (lot « placement » de #213).
+     *
+     * <p>L'état suit le fait, il ne le décide pas : il passe à {@code OCCUPIED} parce qu'un bâtiment
+     * a été collé, et revient à {@code EMPTY} parce que la zone a été restaurée.</p>
+     */
+    public BuildingSite withStatus(SiteStatus newStatus) {
+        return new BuildingSite(id, name, description, world, x, y, z, facing, newStatus,
+                createdBy, createdAt);
+    }
+
     /** Position lisible, dans l'ordre où un administrateur la lit en jeu. */
     public String positionLabel() {
         return x + " / " + y + " / " + z;

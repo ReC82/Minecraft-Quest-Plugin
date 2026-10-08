@@ -6,21 +6,23 @@ import java.util.Optional;
 /**
  * État d'un emplacement de construction (issue #213).
  *
- * <p><strong>Une seule valeur, volontairement.</strong> Tant qu'aucun bâtiment ne peut être affecté
- * ni posé, un emplacement est vide — et il n'existe aucun geste capable de le rendre autre chose.
- * Déclarer {@code RESERVED} ou {@code OCCUPIED} aujourd'hui reviendrait à inventer un cycle de vie
- * que rien ne fait avancer : des états morts, que chaque écran devrait afficher sans jamais pouvoir
- * les produire, et dont la sémantique serait figée avant d'avoir servi.</p>
+ * <p><strong>Deux valeurs, et la seconde est arrivée sans migration.</strong> Le socle de #213 n'en
+ * déclarait qu'une : tant qu'aucun bâtiment ne pouvait être posé, un emplacement était vide, et
+ * déclarer {@code OCCUPIED} aurait inventé un cycle de vie que rien ne faisait avancer. Le lot
+ * « placement » a produit le geste manquant, donc l'état existe maintenant pour de bon.</p>
  *
- * <p><strong>Ce qui rend l'ajout futur additif.</strong> La colonne est un {@code TEXT} et la
- * lecture passe par {@link #of(String)}, qui retombe sur {@link #EMPTY} devant une valeur inconnue.
- * Ajouter un état plus tard ne demande donc <strong>aucune migration</strong>, et une base écrite
- * par une version plus récente reste lisible par une plus ancienne au lieu de la faire échouer.</p>
+ * <p><strong>Ce qui a rendu l'ajout additif.</strong> La colonne est un {@code TEXT} et la lecture
+ * passe par {@link #of(String)}, qui retombe sur {@link #EMPTY} devant une valeur inconnue. Ajouter
+ * {@code OCCUPIED} n'a donc demandé <strong>aucune migration</strong>, et une base écrite par une
+ * version plus récente reste lisible par une plus ancienne au lieu de la faire échouer — une base
+ * de #213 relue ici voit simplement tous ses emplacements vides, ce qui est exact.</p>
  */
 public enum SiteStatus {
 
-    /** Aucun bâtiment affecté ni posé. Seul état que ce lot sait produire. */
-    EMPTY;
+    /** Aucun bâtiment posé : l'emplacement n'est qu'un repère. */
+    EMPTY,
+    /** Un bâtiment est posé ici — il existe un {@code BuildingPlacement} pour cet emplacement. */
+    OCCUPIED;
 
     /**
      * Lecture tolérante. Une valeur absente, vide ou inconnue donne {@link #EMPTY} : c'est la
@@ -53,6 +55,7 @@ public enum SiteStatus {
     public String label() {
         return switch (this) {
             case EMPTY -> "vide";
+            case OCCUPIED -> "occupé";
         };
     }
 }

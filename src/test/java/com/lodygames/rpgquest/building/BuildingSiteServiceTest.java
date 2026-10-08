@@ -641,13 +641,24 @@ class BuildingSiteServiceTest {
         assertTrue(service.at("claims", 5, 64, 5).isEmpty());
     }
 
-    /** Une valeur d'état inconnue en base ne doit pas faire perdre l'emplacement entier. */
+    /**
+     * Une valeur d'état inconnue en base ne doit pas faire perdre l'emplacement entier.
+     *
+     * <p>L'exemple de valeur inconnue a changé avec le lot « placement » : {@code OCCUPIED} existe
+     * désormais pour de bon, donc il n'illustre plus rien. C'est précisément le mécanisme que ce
+     * test protège qui a permis de l'ajouter <strong>sans migration</strong> — une base écrite par
+     * une version plus récente reste lisible par une plus ancienne.</p>
+     */
     @Test
     void anUnknownStoredStatusIsReadAsEmpty() {
-        assertEquals(SiteStatus.EMPTY, SiteStatus.of("OCCUPIED_BY_A_FUTURE_VERSION"));
+        assertEquals(SiteStatus.EMPTY, SiteStatus.of("RESERVED_BY_A_FUTURE_VERSION"));
         assertEquals(SiteStatus.EMPTY, SiteStatus.of(null));
         assertEquals(SiteStatus.EMPTY, SiteStatus.of(""));
-        assertTrue(SiteStatus.parse("OCCUPIED").isEmpty(), "mais on sait dire qu'elle est inconnue");
+        assertTrue(SiteStatus.parse("RESERVED").isEmpty(),
+                "mais on sait dire qu'elle est inconnue");
         assertTrue(SiteStatus.parse("empty").isPresent());
+        // Les deux valeurs que cette version connaît réellement.
+        assertEquals(SiteStatus.EMPTY, SiteStatus.of("EMPTY"));
+        assertEquals(SiteStatus.OCCUPIED, SiteStatus.of("occupied"));
     }
 }

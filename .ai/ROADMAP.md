@@ -247,11 +247,20 @@ Branche de départ: feature/218-starter-kit-tiers @ f6bcb75 — la ligne réelle
     joueurs (titre et description de quête, nom de story, réplique de dialogue) ; variante
     multiligne ajoutée ; le select « Couleur du texte » concurrent est retiré.
 Branche finale: feature/218-starter-kit-tiers (poussée)
-Build: ./gradlew build — voir le rapport de session pour le résultat chiffré définitif.
-Tests: suites ciblées vertes pendant le développement, puis suite complète avant le rapport.
-  Un échec PRÉEXISTANT subsiste et n'est PAS masqué : CrystalHuntIntegrationTest échoue parce que
-  le propriétaire a réécrit src/main/resources/quests/crystal_hunt.yml depuis le Control Panel
-  (araignées/crafting → zombies/chasse). Ce fichier n'est ni committé ni modifié par cette session.
+Build: ./gradlew build BUILD SUCCESSFUL, depuis un worktree Git PROPRE (/srv/rpgquest/worktree-nuit)
+  détaché sur le commit poussé — 30 min 51 s au premier passage (7072d92), 10 min 12 s au second
+  (b0c0b8f) avec :test et :web-api:test UP-TO-DATE.
+Tests: 1890 plugin + 770 panel + 30 web-api = 2690 tests, 0 échec, 0 erreur, 38 ignorés (tous
+  PRÉEXISTANTS : MariaDB sans serveur, limites MockBukkit ; aucun dans les classes ajoutées).
+  CrystalHuntIntegrationTest PASSE dans le worktree propre — son échec dans l'arbre de travail vient
+  uniquement de src/main/resources/quests/crystal_hunt.yml réécrit par le propriétaire depuis le
+  Control Panel (araignées/crafting → zombies/chasse). Ce fichier n'est ni committé ni modifié ici.
+Déploiement: DEV fait le 2026-10-08 03:31–03:33 sur b0c0b8f. JAR 1 985 816 o (acc1954113…) +
+  dialogues/guide.yml via --also (version en ligne comparée avant : 0 ligne supprimée, 49 ajoutées),
+  DEPLOY_EXIT=0, redémarrage RCON RESTART_EXIT=0 avec 0 joueur connecté. Control Panel redéployé
+  séparément (1 188 383 o, /health ONLINE). Vérifié : 5 plugins verts, 17 quêtes 0 erreur (16 avant,
+  kit_tier2 semé), config.yml du serveur complété avec les deux paliers, bytecode panel installé
+  inspecté.
 Tests manuels en attente: TC-258 (#218), TC-259 (#141), TC-260 (#185), TC-261 (#156),
   TC-262 (#110), TC-263 (#195) — ajoutés à docs/MANUAL_TEST_PLAN.md. Plus TC-257 (#123) toujours
   entièrement à dérouler.

@@ -5771,3 +5771,127 @@ Panel : `scripts/plugadmin/rollback.sh app` (release `20261007-233237`) puis
 `systemctl restart plugadmin`. Quête de recette : supprimer
 `RPGQuest/quests/test_remise.yml` du serveur puis `/quest admin reload` (c'est une quête de **test**,
 elle n'a pas à rester en production). Le JAR et les données joueur ne sont pas concernés.
+
+## 2026-10-08 (nuit) - Paliers du kit, SMELT_ITEM, DISCOVER_WAYPOINT, bornes du Hub, contrat de contenu (#218 #141 #156 #185 #110 #195)
+
+### Changement
+
+Lot de nuit, six sujets :
+
+- **#218** — le kit de départ rendu par le Guide après une mort devient une
+  **progression par paliers** définie dans `config.yml`
+  (`starter-tool-kit.tiers`). Palier 1 automatique (4 outils en bois) ; palier 2
+  débloqué par la nouvelle quête `rpgquest:kit_tier2`, qui demande 1 bâton,
+  2 pierres, 4 cuirs et 3 graines de blé au Guide et donne épée en pierre,
+  pioche/pelle/hache en bois, bottes en cuir et un pain. Un palier **ne peut pas
+  être sauté** : le déblocage passe par `/rpgadmin kit grant-tier`, qui refuse un
+  niveau non contigu ou non défini.
+- **#141** — nouvel objectif de quête `SMELT_ITEM` : **cuire** réellement un
+  objet dans un four, un haut fourneau ou un fumoir.
+- **#185** — nouvel objectif de quête `DISCOVER_WAYPOINT` : découvrir N
+  waypoints distincts, par **première découverte réelle** uniquement.
+- **#156** — correction d'un défaut d'appariement : une instance de biome du Hub
+  ne pouvait obtenir sa borne qu'à une visite **ultérieure**. Diagnostic
+  administrable ajouté (`/rpgadmin travel diagnose` et panel `/travel`) donnant
+  la **cause** de chaque appariement manquant.
+- **#110** — Control Panel : contrat de contenu machine-readable téléchargeable
+  (schéma JSON, gabarits YAML, contrat rédigé pour une IA).
+- **#195** — Control Panel : plus aucun champ de texte destiné aux joueurs
+  n'impose d'écrire du MiniMessage.
+
+### Action serveur
+
+1. **Remplacer le JAR RPGQuest** (#218, #141, #156, #185 sont côté plugin).
+2. **Transférer `RPGQuest/dialogues/guide.yml`** — obligatoire. Un redéploiement
+   de JAR ne met **jamais** à jour un dialogue déjà présent sur le serveur, et le
+   Guide a besoin de la branche de remise générique pour que la quête de palier 2
+   soit jouable. La version en ligne a été comparée **avant** transfert : la seule
+   différence était l'absence de cette branche (0 ligne supprimée, 49 ajoutées),
+   donc aucune personnalisation du propriétaire n'est perdue.
+3. **Ne PAS transférer `config.yml`.** La section `starter-tool-kit.tiers` est
+   ajoutée automatiquement au démarrage par `ConfigFileCompleter`, qui ne copie
+   que les clés absentes et n'écrase jamais une valeur existante. Vérifié dans le
+   code : `tiers` étant une liste absente du fichier serveur, elle est copiée
+   telle quelle.
+4. **Ne PAS transférer la nouvelle quête** `quests/kit_tier2.yml` : elle fait
+   partie des exemples embarqués du JAR et est **semée automatiquement** au
+   démarrage parce qu'elle est absente du serveur (16 → 17 quêtes).
+5. **Redéployer le Control Panel** (#110, #195, et les deux ajouts d'affichage de
+   #156 et #185) — déploiement **distinct**, script distinct.
+
+### Sauvegarde préalable
+
+Automatique par `deploy-verygames.sh` : le JAR en ligne **et** `guide.yml` sont
+sauvegardés en `*.predeploy-<horodatage>` avant remplacement. Côté panel,
+`scripts/plugadmin/deploy.sh` archive l'application précédente dans
+`/opt/plugadmin/releases/<horodatage>/`.
+
+`data.db`, `config.yml`, `messages.yml`, `spawn.yml`, les mondes et
+`RPGQuest/Citizens/` ne sont **jamais** touchés par le script.
+
+### Déploiement
+
+Fait depuis un **worktree Git propre** (`/srv/rpgquest/worktree-nuit`, détaché
+sur le commit poussé), et non depuis l'arbre de travail : des fichiers de
+contenu modifiés localement par le propriétaire y font échouer
+`CrystalHuntIntegrationTest`, ce qui bloquerait le script.
+
+```bash
+# 1. Serveur Minecraft (VeryGames)
+cd /srv/rpgquest/worktree-nuit
+RPGQUEST_TEST_MAX_HEAP=768m scripts/deploy-verygames.sh \
+    --also src/main/resources/dialogues/guide.yml:RPGQuest/dialogues/guide.yml -y
+scripts/verygames-restart.sh
+
+# 2. Control Panel (AWS, déploiement DISTINCT)
+cd /srv/rpgquest/worktree-nuit
+scripts/plugadmin/deploy.sh
+```
+
+**Fait le 2026-10-08 à 03:31–03:33 (heure locale), commit `b0c0b8f`.**
+
+| Élément | Valeur |
+|---|---|
+| JAR déployé | 1 985 816 o, SHA-256 `acc195411336ac6d…` |
+| JAR précédent (backup) | `~/.local/share/rpgquest/verygames-backups/rpgquest-20261008T013149Z-predeploy.jar` (1 954 747 o, celui du lot #123) |
+| `guide.yml` | 6 571 → 8 653 o ; backup `extra-20261008T013149Z/RPGQuest/dialogues/guide.yml` (sha256 `4b86a69d…`) |
+| Redémarrage | `save-all` puis stop RCON, retour ONLINE confirmé, **0 joueur** avant comme après |
+| Control Panel | release précédente archivée en `/opt/plugadmin/releases/20261008-033256/`, nouveau JAR 1 188 383 o (contre 1 161 883) |
+
+Le script de déploiement du panel a de nouveau rapporté `/health KO` : il sonde
+le port environ 2 secondes après le redémarrage, avant que la JVM ne l'ait lié.
+Vérifié manuellement juste après : `{"panel":"ONLINE"}`. Aucun rollback.
+
+### Validation
+
+Vérifié réellement, pas supposé :
+
+- `/plugins` → **5 plugins, tous verts** (Citizens, LuckPerms, Multiverse-Core, RPGQuest, WorldEdit).
+- `/rpgquest version` → `v0.1.0-SNAPSHOT`.
+- `/quest admin validate` → **17 quête(s) chargée(s), 0 erreur(s)** — contre 16 avant, ce qui prouve que `kit_tier2.yml` a bien été semé automatiquement.
+- `config.yml` du serveur **relu après redémarrage** : la section `starter-tool-kit.tiers` contient bien les deux paliers, et l'ancien `items:` est conservé intact. Réserve annoncée confirmée : les commentaires du bloc ajouté ne sont pas reportés, les valeurs le sont.
+- `/rpgadmin kit` depuis la console → affiche son aide (`status`, `grant-tier`), donc la branche d'administration de #218 est bien active.
+- Panel : `/health` → `ONLINE` ; les trois nouvelles routes `/content/schema.json`, `/content/template` et `/content/contract.md` répondent **303 vers /login** (elles existent et sont protégées — elles n'existaient pas avant ce déploiement).
+- **Bytecode réellement installé inspecté** (leçon du lot #123, où seul le serveur Minecraft avait été mis à jour) : `ContentPackSchema.class` et `ContentPackTemplates.class` présents, `DISCOVER_WAYPOINT` présent dans `Descriptors.class`, libellés de badge « étape(s) / objectif(s) » présents dans `AgentPages.class`, fiche `docs/content-packs.md` embarquée.
+
+**Non vérifié, volontairement** : `/rpgadmin travel diagnose` exige un **joueur en jeu** (il a besoin d'une position et refuse la console) ; le même relevé est consultable au navigateur sur `/travel`. Tout le reste du comportement en jeu relève de **TC-258 à TC-263**, `PENDING MANUAL VALIDATION`.
+
+### Rollback
+
+- **Minecraft** : `scripts/rollback-verygames.sh` restaure le JAR sauvegardé
+  (`*.predeploy-<horodatage>`). `guide.yml` a lui aussi son backup daté. Un
+  rollback du JAR **avant #123** casserait `guide.yml` (il utilise
+  `HAS_PENDING_DELIVERY` et `DELIVER_QUEST_ITEMS`) — restaurer alors les deux
+  ensemble.
+- **config.yml** : le plugin en écrit un `.bak` avant d'ajouter la section
+  `tiers`. À noter : les **commentaires** du bloc ajouté ne sont pas reportés
+  dans le fichier serveur (les valeurs le sont) — comportement habituel de la
+  complétion automatique, les commentaires des clés déjà présentes sont
+  conservés.
+- **quête `kit_tier2.yml`** : supprimer le fichier côté serveur et faire
+  `/quest admin reload`. Attention, il fait partie des exemples embarqués : il
+  sera **re-semé** au prochain démarrage. Pour le désactiver durablement, retirer
+  le palier 2 de `starter-tool-kit.tiers`.
+- **Control Panel** : `scripts/plugadmin/rollback.sh app` puis
+  `systemctl restart plugadmin`.
+- **Données joueur** : aucune n'est touchée, aucune migration, rien à annuler.

@@ -4129,6 +4129,7 @@ le résumé de récompenses de TC-014).
 | TC-265 | Atelier IA : créer une quête avec une IA #146 (PENDING) | | | |
 | TC-266 | Atelier IA : dialogue et story #146 (PENDING) | | | |
 | TC-267 | Correction IA, identifiant, nœuds exacts, fiche Mira, suppression d'un PNJ de test #222/#223/#224/#225/#226 (PENDING) | | | |
+| TC-268 | Emplacement de construction : marquer en jeu, gérer et supprimer depuis le panel #213 (PENDING) | | | |
 
 ---
 
@@ -4303,3 +4304,114 @@ le résumé de récompenses de TC-014).
 -   #226 : un PNJ de test se supprime couche par couche depuis le panel, sans commande Minecraft, sans
     SQL, sans édition manuelle de YAML ; un dialogue n'est jamais emporté ; une dépendance bloque ; et
     aucun PNJ de gameplay n'est affecté.
+
+---
+
+### TC-268 — Emplacement de construction : marquer en jeu, gérer et supprimer depuis le panel (issue #213, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier le socle « emplacement de construction » de bout en bout : un clic en jeu
+    crée un point d'ancrage persistant, le Control Panel le montre et le gère, et le supprimer ne
+    touche **aucun bloc du monde**.
+-   **Durée :** environ 5 minutes.
+-   **Pré-requis :** JAR de ce lot déployé **et serveur redémarré** (la migration V28 et l'outil
+    vivent dans le plugin), Control Panel redéployé, un compte PlugAdmin `OWNER` ou `ADMIN`, et un
+    compte en jeu OP (ou portant `rpgquest.admin.buildsite`).
+-   🚫 **Ne construire AUCUN bâtiment pendant ce TC.** Ce lot ne sait rien poser ; il n'y a rien à
+    placer, et tenter de le faire ne testerait rien.
+-   ✅ Aucun contenu existant n'est concerné : ce TC ne touche ni quête, ni dialogue, ni story, ni
+    PNJ.
+
+#### 1. Obtenir l'outil
+
+1.  En jeu : `/rpgadmin buildsite tool`. Attendu : message « Outil d'emplacement reçu » et une
+    **houe en fer** nommée « Outil d'emplacement de construction » dans l'inventaire.
+2.  Vérifier qu'elle **n'est pas** une hache en bois : la wand WorldEdit doit rester intacte et
+    utilisable comme avant.
+
+#### 2. Marquer un emplacement
+
+3.  Se rendre dans `world_hub`, sur un bout de terrain plat et dégagé.
+4.  **Se tourner vers l'est** (la boussole F3, ou simplement vérifier à l'étape 8).
+5.  **Clic droit** sur le bloc de sol visé — noter ses coordonnées, visibles en F3.
+6.  Attendu : message vert « Emplacement créé : `buildsite_000N` — `world_hub` X/Y/Z, orienté
+    est. », suivi de « Renommez-le depuis le Control Panel ».
+7.  **Vérifier l'ancrage** : le `Y` annoncé doit être **celui du bloc cliqué + 1** — l'ancre est la
+    case libre au-dessus du sol, là où reposera le bâtiment. C'est la règle du ticket, et c'est le
+    point le plus facile à casser.
+8.  `/rpgadmin buildsite list` → l'emplacement apparaît avec son monde, sa position et son
+    orientation. L'orientation doit bien être **est** si vous regardiez vers l'est.
+
+#### 3. Anti-doublon
+
+9.  **Re-cliquer exactement le même bloc.** Attendu : message jaune « Un emplacement existe déjà
+    ici : `buildsite_000N` ». **Aucun second emplacement n'est créé.**
+10. **Spammer le clic droit** une demi-douzaine de fois sur des blocs voisins différents, aussi vite
+    que possible. Attendu : nettement moins d'emplacements que de clics (anti-rebond de 500 ms).
+    `/rpgadmin buildsite list` pour compter. Supprimer les emplacements en trop à l'étape 12.
+11. Vérifier qu'un bloc **voisin**, cliqué calmement, crée bien un emplacement distinct : aucune
+    distance minimale n'est imposée.
+
+#### 4. Le Control Panel
+
+12. Ouvrir PlugAdmin → **Bâtiments → Emplacements** → **Rafraîchir**.
+13. Attendu sur la fiche de `buildsite_000N` :
+    -   **Monde** `world_hub` ;
+    -   **Position** exactement les X/Y/Z de l'étape 6 ;
+    -   **Orientation** « est » ;
+    -   **État** « vide » ;
+    -   **Créé par** votre pseudo, et la date ;
+    -   **Nom** « Nouvel emplacement ».
+14. Vérifier qu'il n'y a **aucun bouton « Créer »**, et que la carte du bas explique où créer un
+    emplacement (en jeu, avec l'outil). C'est volontaire.
+15. **Renommer** en « Test hutte » → la fiche affiche le nouveau nom, et l'identifiant
+    `buildsite_000N` **n'a pas changé**.
+16. Ajouter une **description** (« Test TC-268 »), enregistrer, puis **vider le champ** et
+    réenregistrer → la description disparaît. Un champ vide est une valeur valide.
+17. **Changer l'orientation** en `NORTH` → la fiche affiche « nord », et la **position est
+    inchangée**. (Remettre `EAST` si vous voulez enchaîner avec l'étape 20.)
+18. Si plusieurs mondes portent des emplacements : vérifier le **filtre par monde** et le retour
+    « Tous les mondes ». Vérifier aussi la **recherche** (taper « hutte », puis une coordonnée).
+
+#### 5. Persistance — l'étape qui compte
+
+19. **Redémarrer le serveur Minecraft.**
+20. Reconnecter, puis `/rpgadmin buildsite list` → `buildsite_000N` est **toujours là**, avec son
+    nom « Test hutte », sa position et son orientation.
+21. Panel → **Rafraîchir** → la fiche est identique à l'étape 17. Rien n'a été perdu.
+
+#### 6. Supprimer, sans toucher au monde
+
+22. **Avant de supprimer** : se placer en jeu à l'emplacement et **noter précisément les blocs
+    présents** (une capture d'écran suffit).
+23. Panel → fiche → **Zone de danger** → cocher la case → **Supprimer l'emplacement**.
+24. Attendu : l'action part, et après **Rafraîchir** l'emplacement a disparu de la liste.
+25. `/rpgadmin buildsite list` → il n'y est plus non plus.
+26. **Retourner sur place en jeu** : **aucun bloc n'a été modifié**. C'est le point le plus
+    important de l'étape — un emplacement n'est qu'un repère.
+27. **Double clic** : relancer la suppression du même identifiant (ou cliquer deux fois).
+    Attendu : « rien à supprimer », **jamais une erreur**.
+28. Créer un nouvel emplacement et vérifier que son identifiant **ne réutilise pas** celui qui vient
+    d'être supprimé (si `buildsite_0003` a été supprimé, le suivant est `buildsite_0004`).
+
+#### 7. Permissions
+
+29. Avec un compte en jeu **sans** `rpgquest.admin.buildsite` ni `rpgquest.admin.world` :
+    `/rpgadmin buildsite tool` → refusé avec le nom de la permission manquante.
+30. Lui donner l'outil par un autre moyen (le jeter au sol et le ramasser avec l'autre compte), puis
+    **clic droit** → refusé, avec le nom de la permission. **Aucun emplacement n'est créé.**
+31. Dans PlugAdmin, avec un compte de rôle **Éditeur de contenu** : l'entrée « Bâtiments » ne doit
+    pas apparaître, et `/buildings/sites` saisi à la main doit renvoyer « Accès refusé ».
+32. Avec un rôle **Builder** : la page est **visible** (c'est voulu — un repère de construction est
+    son métier), mais les formulaires de modification et la zone de danger n'apparaissent pas.
+
+#### Critères de réussite
+
+-   Un clic droit crée un emplacement persistant, à l'ancre attendue (**bloc cliqué + 1 en Y**) et
+    avec l'orientation du regard.
+-   Le spam de clics et le re-clic au même endroit ne créent pas de doublons.
+-   Le Control Panel montre monde, position, orientation, état, date et auteur, et permet de
+    renommer, décrire et réorienter — jamais de déplacer.
+-   Tout survit à un redémarrage du serveur.
+-   La suppression retire le repère, **ne modifie aucun bloc**, est idempotente, et ne recycle pas
+    l'identifiant.
+-   Un joueur sans la permission ne crée rien, même avec l'outil en main.

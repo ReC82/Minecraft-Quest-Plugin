@@ -271,6 +271,34 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   que son propre exemple de référence était inimportable. Limite connue : `MiniYaml` ne lit pas les
   scalaires repliés (`text: >`), donc `dialogues/guard.yml` n'est pas éditable depuis le panel ; la
   troncature est signalée par le garde-fou round-trip, jamais silencieuse.
+- **Emplacements de construction** *(issue #213, première livraison)* — socle du futur système de
+  bâtiments. Un emplacement est un **point d'ancrage nommé** dans un monde : identité stable
+  (`buildsite_0001`, jamais recalculée depuis la position ni réutilisée après suppression), nom
+  humain, description, monde, coordonnées de bloc, orientation cardinale, état, auteur et date. Il
+  ne contient **aucun** bâtiment, aucune dimension, aucune emprise et aucun schematic.
+  **Marquage en jeu** : `/rpgadmin buildsite tool` donne un outil reconnu par **PDC seulement**
+  (houe en fer — ni hache en bois, wand WorldEdit reconnue par type d'objet, ni tige de blaze,
+  déjà prise par l'outil de zone) ; **clic droit** crée l'emplacement sur la case libre contre la
+  face cliquée — cliquer le dessus du sol ancre juste au-dessus, là où reposera le bâtiment, pour
+  qu'aucun placement futur n'ait à appliquer un `+1` implicite. L'orientation est déduite du regard
+  et convertie une fois (attention : dans Minecraft le yaw `0` regarde le **sud**). Aucune saisie
+  dans le chat : le renommage est dans le panel. Permission **dédiée**
+  `rpgquest.admin.buildsite`, pas une permission WorldEdit.
+  **Anti-doublon** : même bloc → on renvoie l'emplacement existant au lieu d'en créer un second ;
+  même geste → anti-rebond de 500 ms par joueur (un clic droit émet couramment deux événements).
+  Aucune règle de distance minimale n'est inventée — deux emplacements voisins peuvent être
+  légitimes, et l'interdire demanderait des emprises que ce lot ne connaît pas.
+  **Persistance** : `building_sites` + `building_site_ids` (migration V28, purement additive), base
+  = source de vérité, cache mémoire rechargé au démarrage. `status` est un `TEXT` à lecture
+  tolérante : ajouter `RESERVED`/`OCCUPIED` ne demandera aucune migration.
+  **Control Panel** : *Bâtiments → Emplacements* — liste, recherche, filtre par monde, fiche,
+  renommage, description, correction d'orientation, suppression du marqueur (aucun bloc touché,
+  idempotente). **Aucun bouton « Créer »**, et la page l'explique : un point d'ancrage se désigne du
+  doigt, un formulaire devrait inventer des coordonnées. L'orientation est éditable, la position
+  non. Trois permissions (`BUILDING_READ` — accordée aussi au Builder et au Testeur —,
+  `BUILDING_WRITE`, `BUILDING_DELETE`). Limites : aucune dimension/emprise, aucune affectation de
+  schematic, aucun placement, aucune téléportation vers un emplacement (aucun service de TP admin
+  réutilisable n'existe), aucun marqueur visuel en jeu.
 - **Catalogue PNJ : le dialogue réellement lié** *(issue #225)* — `NpcCatalog` lit le rattachement
   PNJ → dialogue dans cet ordre : le dialogue que la définition **déclare** (`dialogue:`), puis à
   défaut celui qui porte le **nom** du PNJ. N'appliquer que la convention de nom produisait deux

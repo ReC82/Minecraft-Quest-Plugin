@@ -2478,3 +2478,73 @@ Blocages: aucun. Limites assumées et documentées :
 Première étape à reprendre: déployer (JAR + redémarrage + panel), puis TC-267. Ensuite seulement,
   reprendre TC-266 et la suite de #146.
 ```
+
+```text
+Date: 2026-10-08 (soir — #213 : emplacements de construction, MVP)
+Branche de départ: fix/222-atelier-ia-et-suppression-pnj @ 1cd0ac1 (la ligne déployée du jour)
+Branche de travail: feature/213-building-sites
+Étape de départ: « nouveau MVP Emplacements de construction ». Ticket réel trouvé à l'audit :
+  #213 (ouvert le 06/10), sous-chantier de #94, lié à #20. Ce lot EST sa « première livraison
+  indépendante de l'IA » : marquage + catalogue. Le placement de schematic et la génération IA
+  sont explicitement HORS périmètre et n'ont pas été touchés.
+Étapes terminées:
+  - AUDIT D'ABORD. Trois constats ont déterminé l'architecture : (1) le modèle de #194 (analyser
+    le workspace du panel, écrire, sauvegarder localement) NE S'APPLIQUE PAS, parce que les
+    définitions ne vivent pas dans l'espace éditable du panel ; (2) il existe déjà un outil PDC
+    (ZoneSelectionService/ZoneWandListener) dont la tige de blaze a été choisie POUR éviter la
+    collision avec la wand WorldEdit — modèle réutilisé, matériau différent pour ne pas confondre
+    deux outils d'administration dans une barre d'inventaire ; (3) VillageCenterRepository (V20)
+    est la forme exacte du besoin, et NpcIdRepository (V11) celle de l'allocateur d'identifiants.
+  - Modèle : BuildingSite + Facing + SiteStatus + ClickedFace + BuildingSiteAnchor. Les deux
+    règles délicates sont des fonctions PURES, donc réellement testées : l'ancrage (bloc cliqué +
+    face) et la conversion yaw → cardinal (piège : dans Minecraft le yaw 0 regarde le SUD).
+  - Ancre = case libre contre la face cliquée. Cliquer le dessus du sol en y=66 donne y=67. Le
+    ticket exige une ancre « indépendante d'un offset interne implicite » : si l'ancre était le
+    bloc cliqué, chaque placement futur devrait ajouter +1 en Y de son côté.
+  - Anti-doublon à DEUX niveaux, pour deux problèmes distincts : même bloc → on renvoie l'existant ;
+    même geste → anti-rebond 500 ms par joueur (un clic droit émet couramment deux événements, et
+    deux blocs voisins ne sont pas « le même bloc »). AUCUNE distance minimale inventée.
+  - Identifiants buildsite_0001 séquentiels et JAMAIS réutilisés (table AUTOINCREMENT, pas un
+    MAX()). Un identifiant recyclé ferait pointer un futur placement sur le mauvais emplacement.
+  - Migration V28 purement additive (building_sites + building_site_ids + index). status en TEXT
+    à lecture tolérante : RESERVED/OCCUPIED plus tard sans migration.
+  - Permission DÉDIÉE rpgquest.admin.buildsite, et /rpgadmin buildsite échappe à l'ombrelle
+    historique comme la branche PNJ de #200. PAS une permission WorldEdit : l'outil ne sélectionne
+    aucune région et ne modifie aucun bloc.
+  - Cinq actions agent (list/rename/describe/facing/delete). AUCUNE création : un emplacement est
+    défini par une position désignée dans le monde ; un formulaire devrait l'inventer. ÉCART
+    ASSUMÉ par rapport à la liste du prompt, qui mentionnait building.site.create.
+  - Panel : groupe de nav « Bâtiments » (créé maintenant, une seule entrée, pour que la
+    bibliothèque et les placements s'y rangent sans casser de liens), page /buildings/sites,
+    3 permissions (READ aussi au Builder et au Testeur), page de doc du centre d'aide.
+  - ÉCART ASSUMÉ n°2 : pas d'action « Me téléporter à l'emplacement ». Le prompt la conditionnait
+    à l'existence d'un service de TP admin sûr — il n'y en a pas (ClaimTeleportService est
+    spécifique aux claims, et aucune action agent ne téléporte). La construire serait un lot.
+  - AJOUT par rapport au prompt, exigé par le ticket : le champ « description », éditable depuis
+    la fiche. Les critères de #213 le demandent explicitement, et l'ajouter maintenant évite une
+    seconde migration.
+Branche finale: feature/213-building-sites (JAMAIS fusionnée)
+Build: ./gradlew build BUILD SUCCESSFUL en 34 min 17 s sur e56dc7a, worktree PROPRE, UN SEUL
+  Gradle à la fois. 3019 tests, 0 échec, 38 ignorés (+84) : plugin 1956, control-panel 1033,
+  web-api 30. Aucun test existant assoupli — seules cinq signatures de constructeur de test
+  étendues d'un paramètre.
+Déploiement: JAR + REDÉMARRAGE Minecraft + panel. PREMIÈRE MIGRATION DE BASE de la journée (V28) :
+  additive, automatique au démarrage. Sauvegarder data.db AVANT — ce n'est pas une précaution de
+  principe cette fois.
+Tests manuels en attente: TC-268 (nouveau, ~5 min). Plus TC-267 (#222..#226), TC-265, TC-266,
+  TC-264, TC-257, TC-258..TC-263.
+Blocages: aucun. Limites assumées et documentées :
+  - aucune dimension ni emprise : le ticket les veut définies AVANT placement, et elles dépendent
+    du bâtiment, pas du site ;
+  - aucun marqueur visuel en jeu (le ticket le veut « temporaire, pas un bloc permanent » : c'est
+    un chantier à part) ;
+  - aucune téléportation vers un emplacement (voir écart n°2) ;
+  - la POSITION n'est pas éditable depuis le panel — seule l'orientation l'est. Corriger une
+    position veut dire re-marquer en jeu puis supprimer l'ancien, et l'aide le dit ;
+  - la suppression devra être REPENSÉE quand un bâtiment pourra être posé : aujourd'hui elle est
+    sûre parce qu'il n'y a rien à défaire.
+  DETTE RAPPELÉE : MiniYaml ne gère pas les scalaires repliés (dialogues/guard.yml). 
+  RestartServiceTest reste sensible au temps réel.
+Première étape à reprendre: déployer (JAR + redémarrage + panel), puis TC-268 (~5 min). Ensuite le
+  lot suivant de #213 : affecter un .schem à un emplacement — l'identifiant stable est prêt pour ça.
+```

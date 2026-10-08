@@ -4,6 +4,7 @@
 # Un fichier .md par ligne, nom plat (pas de chemin), commentaires avec #.
 
 pnj-citizens.md
+batiments-emplacements.md
 citizens-commandes.md
 joueurs-admin.md
 joueurs-reset.md

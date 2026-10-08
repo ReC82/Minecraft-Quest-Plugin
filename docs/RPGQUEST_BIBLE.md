@@ -839,6 +839,183 @@ cause.
 > et on ne renomme jamais un dialogue pour « respecter la convention » — cela casserait le lien
 > existant.
 
+### Emplacements de construction — `/buildings/sites` (issue #213)
+
+Première brique du futur système de bâtiments. Un **emplacement** est un point d'ancrage nommé dans
+un monde : il ne contient **aucun** bâtiment, aucune dimension, aucune emprise et aucun schematic.
+Ce lot ne sait rien poser, et ne prétend rien à leur sujet.
+
+#### Ce qu'un emplacement porte
+
+| Champ | Rôle |
+|---|---|
+| `id` | identité **stable**, attribuée une fois (`buildsite_0001`), jamais recalculée depuis la position ni réutilisée après suppression — c'est elle qu'un futur placement citera |
+| `name` | libellé humain, modifiable à volonté (« Nouvel emplacement » par défaut) |
+| `description` | note libre de l'administrateur, vide par défaut |
+| `world` / `x` / `y` / `z` | l'ancre, en coordonnées de **blocs** |
+| `facing` | `NORTH` / `EAST` / `SOUTH` / `WEST`, corrigeable |
+| `status` | `EMPTY` — seul état que ce lot sait produire |
+| `created_by` / `created_at` | auteur (vide si l'identité n'était pas disponible — jamais inventée) et date |
+
+**Coordonnées entières, et pas flottantes** : un bâtiment se pose sur la grille de blocs. Les
+centres de village (`village_centers`) stockent des `REAL` parce qu'ils sont des destinations de
+téléportation, où un demi-bloc compte ; ici un `REAL` n'exprimerait qu'une précision inutilisable.
+
+#### La règle d'ancrage
+
+**L'ancre est le bloc adjacent à la face cliquée** — l'espace libre contre lequel on vient de
+cliquer. Cliquer le dessus d'un bloc d'herbe en `y=66` enregistre `y=67` : la case où l'on se
+tiendrait, et où reposera le premier niveau du bâtiment.
+
+Pourquoi pas le bloc cliqué lui-même : un bâtiment ne s'enfonce pas d'un bloc dans le terrain. Si
+l'ancre était le bloc cliqué, tout placement futur devrait ajouter `+1` en Y — un décalage
+implicite, que chaque appelant appliquerait de son côté, et qu'un seul oublierait. Le ticket #213
+l'exige d'ailleurs : l'ancre doit être « indépendante d'un offset interne implicite ».
+
+La même règle s'applique aux six faces, sans cas particulier : cliquer la face nord d'un mur ancre
+un bloc au nord de ce mur. La règle est une fonction **pure** (`BuildingSiteAnchor`), donc
+réellement exécutable dans un test — une règle qu'on ne peut pas exécuter n'est pas précise, elle
+est seulement écrite.
+
+Une ancre hors des limites du monde (cliquer le dessus du bloc le plus haut) est **refusée** avec
+son message : seul le serveur connaît les limites réelles du monde chargé.
+
+#### L'orientation
+
+Convertie **une seule fois**, à la création, depuis le regard horizontal du joueur. Le yaw brut
+n'est pas stocké : un bâtiment se pose aligné sur la grille, et conserver `177,43°` donnerait une
+précision que le placement ne saura jamais utiliser — en obligeant chaque lecteur à refaire la même
+conversion, donc à la refaire différemment.
+
+> **Piège à connaître** : dans Minecraft, le yaw `0` regarde le **sud** (`+Z`), pas le nord. La
+> conversion est couverte sur les quatre cardinaux, les yaw négatifs, les tours multiples et les
+> diagonales exactes (qui tombent sur le quadrant suivant — arbitraire, mais déterministe, et
+> l'orientation reste corrigeable depuis le panel).
+
+#### L'outil en jeu
+
+`/rpgadmin buildsite tool` donne l'outil ; `/rpgadmin buildsite list` liste les emplacements sans
+quitter le jeu. **Clic droit** sur un bloc crée l'emplacement ; le clic gauche ne crée rien (il est
+simplement annulé, pour ne pas casser de bloc avec l'outil) et rappelle la bonne manipulation.
+
+- **Reconnu par son PDC uniquement.** Un joueur peut nommer une houe « Outil d'emplacement de
+  construction » dans une enclume : elle ne fera rien.
+- **Une houe en fer**, ni hache en bois (wand WorldEdit par défaut, que WorldEdit reconnaît *par
+  type d'objet* — les deux plugins se disputeraient le clic), ni tige de blaze (outil de zone
+  existant, qu'on confondrait dans la barre d'inventaire). Le ticket demande explicitement de ne pas
+  perturber WorldEdit.
+- **Aucune saisie dans le chat.** L'identifiant est automatique, le nom est celui par défaut, et le
+  renommage se fait depuis le Control Panel — qui est fait pour ça.
+- La permission est vérifiée **avant** de regarder le clic : un joueur ordinaire qui récupérerait
+  l'outil (mort d'un administrateur, coffre, `/give`) ne crée rien, et le comprend plutôt que de
+  cliquer dans le vide.
+
+#### Anti-doublon : deux protections, deux problèmes
+
+1. **Le même bloc.** Un emplacement existe déjà exactement là ? On ne crée pas le second : on
+   renvoie celui qui existe, en le nommant. C'est la réponse au spam de clics, et aussi la bonne
+   réponse à un double clic légitime — l'administrateur voulait un emplacement ici, il en a un.
+2. **Le même geste.** Un clic droit Minecraft émet couramment deux événements rapprochés, et deux
+   blocs voisins ne sont pas « le même bloc ». Une fenêtre d'anti-rebond de **500 ms par joueur**
+   l'absorbe. Elle est par joueur : deux administrateurs ne se bloquent pas l'un l'autre.
+
+**Aucune règle de distance minimale n'est inventée.** Deux emplacements à deux blocs l'un de l'autre
+peuvent être parfaitement légitimes — une maison et son puits. L'interdire demanderait de connaître
+l'emprise des bâtiments, que ce lot ne connaît pas : la question appartient au lot de placement.
+
+#### Permission dédiée
+
+`rpgquest.admin.buildsite` (`default: false`), **pas** une permission WorldEdit : l'outil ne
+sélectionne aucune région et ne modifie aucun bloc, et un builder équipé de WorldEdit n'a aucune
+raison de créer des points d'ancrage de contenu. Réutiliser `worldedit.wand` aurait lié deux
+surfaces d'autorisation sans rapport, et rendu impossible d'accorder l'une sans l'autre.
+
+La branche `/rpgadmin buildsite` échappe à l'ombrelle historique `rpgquest.admin.world` — comme la
+branche PNJ de #200 — mais l'ombrelle l'implique : un administrateur existant ne perd rien, et un
+compte non-OP peut recevoir ce seul nœud.
+
+#### Persistance
+
+Table `building_sites` (+ `building_site_ids` pour l'allocateur), migration **V28**, purement
+additive : deux tables neuves, aucune colonne ajoutée ailleurs, aucune donnée existante lue ni
+réécrite. La base est la **source de vérité** ; le service en garde un cache mémoire, chargé au
+démarrage et mis à jour après chaque écriture réussie, jamais consulté pour décider si une écriture
+a eu lieu.
+
+**Les identifiants ne sont jamais réutilisés** : l'allocateur est une table `AUTOINCREMENT`, pas un
+`MAX()` sur `building_sites`. Dériver le prochain numéro des lignes existantes recyclerait
+l'identifiant d'un emplacement supprimé — et un identifiant recyclé est exactement ce qui ferait
+pointer un futur placement sur le mauvais emplacement.
+
+`status` est un `TEXT` sans contrainte et la lecture est tolérante (valeur inconnue → `EMPTY`) :
+ajouter `RESERVED`/`OCCUPIED` plus tard ne demandera **aucune migration**, et une base écrite par
+une version plus récente reste lisible par une plus ancienne.
+
+#### Le Control Panel
+
+Navigation **Bâtiments → Emplacements**. Liste avec recherche et filtre par monde (un lien par
+monde : aucun script, et l'URL est partageable), fiche en accordion, renommage, description,
+correction d'orientation, suppression.
+
+**Aucun bouton « Créer », et la page l'explique.** Un emplacement est défini par une position
+désignée du doigt ; un formulaire web devrait inventer des coordonnées. La carte « Créer un
+emplacement : en jeu, pas ici » donne la marche à suivre, et s'affiche même quand la liste est vide
+— c'est-à-dire précisément quand on en a besoin.
+
+**L'orientation est éditable, la position non.** Se tromper de façade au moment du clic est banal ;
+déplacer un point d'ancrage depuis un écran ne l'est pas — on retourne le désigner en jeu, et l'aide
+le dit.
+
+Sans relevé `building.site.list`, la page dit « cliquez sur Rafraîchir » au lieu d'afficher une
+liste vide, qui se lirait comme « aucun emplacement » — donc comme une perte de données après un
+redémarrage. Un emplacement situé dans un monde **non chargé** est signalé et reste compté : il est
+parfaitement valide, il n'est simplement pas visitable pour l'instant.
+
+| Permission | Qui l'a | Ce qu'elle donne |
+|---|---|---|
+| `BUILDING_READ` | Propriétaire, Administrateur, **Builder**, Testeur | voir la page et les fiches |
+| `BUILDING_WRITE` | Propriétaire, Administrateur | libellé, note, orientation |
+| `BUILDING_DELETE` | Propriétaire, Administrateur | retirer le marqueur |
+
+`BUILDING_READ` est accordée au **Builder** parce qu'un emplacement est un repère de construction —
+exactement ce que ce rôle consulte — et au **Testeur** pour vérifier qu'un emplacement marqué en jeu
+est bien arrivé. Aucune des trois ne permet de créer.
+
+#### Actions agent
+
+| Action | Permission | Effet |
+|---|---|---|
+| `building.site.list` | `BUILDING_READ` | catalogue — lecture seule |
+| `building.site.rename` | `BUILDING_WRITE` | libellé humain |
+| `building.site.describe` | `BUILDING_WRITE` | note libre ; une description **vide est valide** (c'est « effacer la note ») |
+| `building.site.facing` | `BUILDING_WRITE` | orientation — **jamais** la position |
+| `building.site.delete` | `BUILDING_DELETE` | retire le marqueur logique |
+
+**Il n'existe volontairement aucune action de création.** Un emplacement est défini par une position
+choisie dans le monde ; le clic en jeu la connaît, un écran devrait l'inventer.
+
+#### Supprimer un emplacement
+
+Depuis la fiche, **Zone de danger → Supprimer**, avec case à cocher explicite (l'action est déclarée
+sensible). **Aucun bloc du monde n'est touché** : un emplacement n'est qu'un repère, et ce lot ne
+sait rien poser — il n'y a donc rien à défaire en jeu. L'opération est **idempotente** : un
+identifiant déjà absent réussit en disant qu'il n'y avait rien, donc un double clic est inoffensif.
+L'identifiant supprimé n'est jamais réattribué.
+
+Cette suppression devra être **repensée** le jour où un bâtiment pourra être réellement posé sur un
+emplacement : il faudra alors la bloquer, ou traiter la construction posée explicitement.
+
+#### Ce qui est prêt pour la suite, et ce qui ne l'est pas
+
+Prêt : l'identité stable et réutilisable, la position et l'orientation d'ancrage, la fiche
+éditable, et un état extensible sans migration. Un futur `BuildingPlacement` n'a qu'à citer un
+`buildsite_id`.
+
+Pas fait, et volontairement : aucune dimension ni emprise (le ticket les veut définies *avant*
+placement, et elles dépendent du bâtiment, pas du site), aucune action de téléportation vers un
+emplacement (il n'existe aucun service de TP admin réutilisable — le construire serait un lot à
+part), et aucun marqueur visuel en jeu.
+
 ### Rôles, permissions et comptes PlugAdmin (issue #50)
 
 Le contrôle d'accès du Control Panel repose sur un modèle **utilisateur → rôle →

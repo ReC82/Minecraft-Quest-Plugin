@@ -6357,3 +6357,113 @@ l'interface (`PNJ → Rafraîchir`) ou en jeu. Il n'existe aucune commande RCON
 qui liste le catalogue. **Ce point reste donc à vérifier**, et c'est l'étape 23
 de TC-267 : le plugin corrigé est bien chargé et actif, mais l'écran montre
 encore le dernier relevé, antérieur au déploiement.
+
+---
+
+## 2026-10-08 (soir) - Emplacements de construction : marquer un point d'ancrage en jeu (#213)
+
+### Changement
+
+Première brique du futur système de bâtiments (#213, livraison « indépendante
+de l'IA »). Un **emplacement** est un point d'ancrage nommé dans un monde. Il
+ne contient **aucun** bâtiment, aucune dimension, aucune emprise et aucun
+schematic : ce lot ne sait rien poser.
+
+**Côté plugin**
+
+- `/rpgadmin buildsite tool` donne un **outil d'administration dédié** (houe en
+  fer, reconnue par **PDC uniquement**). Clic droit sur un bloc → emplacement
+  créé sur la **case libre contre la face cliquée**, orienté selon le regard,
+  avec un identifiant automatique `buildsite_0001` et le nom « Nouvel
+  emplacement ». Aucune saisie dans le chat.
+  `/rpgadmin buildsite list` liste les emplacements sans quitter le jeu.
+- Ni hache en bois (wand WorldEdit par défaut, reconnue *par type d'objet* :
+  les deux plugins se disputeraient le clic) ni tige de blaze (déjà l'outil de
+  zone). **La wand WorldEdit n'est pas touchée.**
+- Permission **dédiée** `rpgquest.admin.buildsite` (`default: false`), sans
+  rapport avec WorldEdit. L'ombrelle historique `rpgquest.admin.world`
+  l'implique, donc un administrateur existant ne perd rien.
+- **Anti-doublon** : même bloc → on renvoie l'emplacement existant ; même geste
+  → anti-rebond de 500 ms par joueur. Aucune règle de distance minimale.
+- Cinq actions agent whitelistées : `building.site.list`, `.rename`,
+  `.describe`, `.facing`, `.delete`. **Aucune action de création** : un
+  emplacement est défini par une position désignée dans le monde.
+
+**Côté Control Panel**
+
+- Nouvelle page **Bâtiments → Emplacements** (`/buildings/sites`) : liste,
+  recherche, filtre par monde, fiche, renommage, description, correction
+  d'orientation, suppression du marqueur.
+- Trois permissions : `BUILDING_READ` (Propriétaire, Administrateur, **Builder**,
+  Testeur), `BUILDING_WRITE` et `BUILDING_DELETE` (Propriétaire, Administrateur).
+- Pas de bouton « Créer », et la page l'explique.
+
+### Action serveur
+
+**Un JAR à remplacer**, puis **redémarrer Minecraft** — l'outil, les actions
+agent et la migration vivent dans le plugin. Puis **redéployer le Control
+Panel**.
+
+> **MIGRATION DE BASE : OUI, et c'est la première de ce lot de la journée.**
+> `data.db` passe en schéma **V28**. Elle est **purement additive** : deux
+> tables neuves (`building_sites`, `building_site_ids`) et un index. **Aucune
+> colonne n'est ajoutée à une table existante, aucune donnée existante n'est
+> lue ni réécrite.** Elle s'applique automatiquement au démarrage du plugin.
+
+> **Ce qu'il ne faut PAS altérer** : `plugins/RPGQuest/npcs/`, `dialogues/`,
+> `quests/`, `stories/`, la configuration Citizens. Aucun fichier de contenu
+> n'est créé ni modifié par ce lot.
+
+### Sauvegarde préalable
+
+- JAR RPGQuest actuellement déployé (sauvegarde datée, **ne jamais écraser la
+  dernière**) ;
+- **`data.db` — cette fois ce n'est pas une précaution de principe** : il y a
+  une migration de schéma. La prendre avant le redémarrage.
+- release précédente du panel (conservée automatiquement par le script).
+
+### Déploiement
+
+1. Build depuis un arbre **propre** sur le commit visé.
+2. `scripts/deploy-verygames.sh` (avec `RPGQUEST_TEST_MAX_HEAP=768m` et `-y`).
+3. Redémarrage Minecraft → la migration V28 s'applique, et le log affiche
+   « N emplacement(s) de construction chargé(s). » (0 au premier démarrage).
+4. `scripts/plugadmin/deploy.sh` — Control Panel.
+5. Vérifier : `/health`, puis la navigation **Bâtiments → Emplacements** dans
+   PlugAdmin, et `/rpgadmin buildsite tool` en jeu.
+
+### Migration automatique
+
+**Oui** — V28, au démarrage du plugin, par le `SchemaMigrationRunner` existant.
+Rejouée sur une base déjà à jour : no-op.
+
+### Validation
+
+**Vérifié automatiquement** : suite complète (plugin + control-panel +
+web-api), voir le rapport de session. La règle d'ancrage, la conversion
+yaw → orientation, l'anti-doublon, la persistance après redémarrage simulé,
+l'idempotence de la suppression et le non-recyclage des identifiants sont
+couverts par des tests.
+
+**Non vérifié** : **TC-268** (`PENDING MANUAL VALIDATION`) — environ 5 minutes,
+avec un vrai client Minecraft.
+
+### Effet de bord à connaître
+
+**Aucun sur le contenu ou le gameplay existant.** Le lot n'ajoute qu'un outil
+d'administration, une page de panel et deux tables. Un joueur ordinaire ne voit
+rien changer, et l'outil ne fait rien entre ses mains (permission vérifiée
+avant le clic).
+
+Un **rollback du JAR laisse les deux tables en place**, simplement inutilisées :
+elles ne gênent rien, et les emplacements déjà créés réapparaissent au
+redéploiement. Le `SchemaMigrationRunner` ne redescend jamais une version.
+
+### Rollback
+
+- Plugin : redéployer le JAR sauvegardé, puis redémarrer Minecraft. L'outil et
+  les cinq actions redeviennent inconnus de l'agent — le panel les verrait
+  refusées, ce qui est le comportement attendu. **Les données restent** (voir
+  ci-dessus).
+- Panel : `scripts/plugadmin/rollback.sh app` puis
+  `systemctl restart plugadmin`.

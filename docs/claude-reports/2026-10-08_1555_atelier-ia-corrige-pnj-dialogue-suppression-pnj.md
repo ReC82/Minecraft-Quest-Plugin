@@ -7,10 +7,10 @@
 * Sujet : atelier IA corrigé (correction, identifiant, nombre de nœuds), cohérence PNJ ↔ dialogue, et suppression sûre d'un PNJ depuis le Control Panel
 * Statut : **DONE** (code et tests automatisés) — les cinq tickets restent **ouverts** jusqu'à TC-267
 * Branche Git : `fix/222-atelier-ia-et-suppression-pnj` (poussée, **jamais fusionnée**)
-* Commit actuel si disponible : `3e06304`
+* Commit actuel si disponible : `ba1c6d6`
 * Début de la tâche : 2026-10-08 14:31:48
-* Fin de la tâche : 2026-10-08 16:__:__ *(voir la ligne « Durée totale » — horodatage réel de fin de session)*
-* Durée totale : *(renseignée en fin de session)*
+* Fin de la tâche : 2026-10-08 16:17:58
+* Durée totale : 01:46:10
 
 > Les tickets couverts sont **#222**, **#223**, **#224**, **#225** et **#226**, dans cet ordre
 > logique, et strictement dans ce périmètre.
@@ -381,7 +381,33 @@ avec `RPGQUEST_TEST_MAX_HEAP=768m`, **un seul Gradle à la fois**. Le worktree p
 nécessaire : les fichiers de contenu non suivis présents dans l'arbre de travail de l'utilisateur
 font échouer `CrystalHuntIntegrationTest`.
 
-*(Nombres exacts renseignés en fin de session — voir la section « Résultat de la suite ».)*
+### Résultat de la suite
+
+`./gradlew build` (qui inclut `test`) sur `ba1c6d6`, depuis le worktree propre :
+**BUILD SUCCESSFUL en 12 min 31 s**.
+
+| Module | Tests | Échecs | Erreurs | Ignorés |
+|---|---|---|---|---|
+| plugin | 1904 | 0 | 0 | 37 |
+| control-panel | 1001 | 0 | 0 | 1 |
+| web-api | 30 | 0 | 0 | 0 |
+| **Total** | **2935** | **0** | **0** | **38** |
+
+Soit **+101 tests** par rapport au lot précédent (2834).
+
+#### Un échec réel, et ce qu'il a attrapé
+
+La **première** exécution complète, faite sur `3e06304` (avant que la documentation ne soit
+commitée), a signalé **un** échec :
+`DiagnosticHelpTest > everyDocSheetExistsIsWhitelistedAndCarriesTheMatchingHeading`.
+
+Ce test exige que **chaque** entrée du registre `DiagnosticHelp` ait une section correspondante
+dans sa fiche du centre d'aide, l'ancre étant dérivée du titre. La nouvelle anomalie
+`DIALOGUE_WITHOUT_NPC` était en place dans le code, mais la section
+« Dialogue sans PNJ porteur » de `pnj-depannage.md` n'était pas encore dans le commit. Le
+garde-fou a donc fait exactement son travail : il a refusé une anomalie qui aurait renvoyé
+l'administrateur vers une ancre inexistante. Corrigé, vérifié, puis l'exécution définitive est
+verte.
 
 ### Ce que les tests couvrent réellement
 

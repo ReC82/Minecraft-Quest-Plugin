@@ -2447,9 +2447,14 @@ Branche de travail: fix/222-atelier-ia-et-suppression-pnj
   - Correctif d'affichage trouvé en chemin : Ui.banner retombait en SILENCE sur « info » pour
     error/warning/success. Les bandeaux d'erreur de l'atelier IA étaient donc neutres depuis #146.
 Branche finale: fix/222-atelier-ia-et-suppression-pnj (poussée, JAMAIS fusionnée)
-Build: voir le rapport de session pour les nombres exacts. UN SEUL Gradle à la fois, depuis un
-  worktree PROPRE (les fichiers de contenu non suivis de l'utilisateur cassent
-  CrystalHuntIntegrationTest et bloquent le déploiement).
+Build: ./gradlew build (qui inclut test) BUILD SUCCESSFUL en 12 min 31 s sur ba1c6d6, depuis un
+  worktree PROPRE. UN SEUL Gradle à la fois. 2935 tests, 0 échec, 38 ignorés (+101) :
+  plugin 1904, control-panel 1001, web-api 30.
+  Le worktree propre est OBLIGATOIRE : les fichiers de contenu non suivis de l'utilisateur cassent
+  CrystalHuntIntegrationTest et bloquent le déploiement.
+  UN ÉCHEC RÉEL attrapé en route, sur la première exécution : DiagnosticHelpTest exigeait la
+  section de doc correspondant à la nouvelle anomalie DIALOGUE_WITHOUT_NPC, pas encore commitée.
+  Le garde-fou a refusé une anomalie qui aurait renvoyé vers une ancre inexistante.
 Déploiement: JAR + PANEL cette fois. Contrairement aux trois lots précédents, ce lot touche
   src/main/java/ : le catalogue PNJ et les trois actions de suppression vivent dans le plugin.
   Redémarrage Minecraft requis. Aucune migration, aucun fichier de contenu touché.

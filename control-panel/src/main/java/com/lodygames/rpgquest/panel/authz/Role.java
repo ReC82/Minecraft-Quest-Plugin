@@ -51,6 +51,10 @@ public enum Role {
             Permission.CONTENT_DELETE, Permission.NPC_DELETE,
             // Issue #213 : les emplacements de construction font partie de l'exploitation courante.
             Permission.BUILDING_READ, Permission.BUILDING_WRITE, Permission.BUILDING_DELETE,
+            // Lot « placement » : poser et restaurer écrivent dans le monde, donc administrateurs
+            // seulement. Le Builder consulte la bibliothèque, il ne pose pas — un bâtiment posé
+            // écrase des blocs, et ce geste doit rester rare et traçable.
+            Permission.BUILDING_PLACE, Permission.BUILDING_ROLLBACK,
             Permission.AI_USE, Permission.AI_CONFIGURE,
             Permission.DOCS_READ, Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ,
             Permission.ACTION_QUEST, Permission.ACTION_STORY,

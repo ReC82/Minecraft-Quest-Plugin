@@ -37,6 +37,8 @@ public final class AgentActionCatalog {
     private static final Pattern NPC_ROLE = Pattern.compile("[a-z0-9_-]{1,32}");
     /** Issue #213 : exactement la forme que le serveur attribue à un emplacement. */
     private static final Pattern BUILD_SITE_ID = Pattern.compile("buildsite_[0-9]{1,12}");
+    /** Identifiant de bâtiment de bibliothèque — même forme que le reste du contenu du projet. */
+    private static final Pattern BUILDING_ID = Pattern.compile("[a-z0-9][a-z0-9_]{0,63}");
     /** Les quatre orientations cardinales, miroir de {@code Facing} côté plugin. */
     private static final java.util.Set<String> BUILD_SITE_FACINGS =
             java.util.Set.of("NORTH", "EAST", "SOUTH", "WEST");
@@ -270,6 +272,25 @@ public final class AgentActionCatalog {
         // sera jamais réattribué — donc mutation sensible, avec confirmation explicite.
         addSensitiveWrite("building.site.delete", Permission.BUILDING_DELETE, false,
                 "Supprimer un emplacement de construction", "building.site.list");
+        // Lot « placement » de #213 — la bibliothèque est en LECTURE SEULE : une définition de
+        // bâtiment est du contenu déclaratif versionné, qui se modifie dans son fichier YAML.
+        add("building.definition.list", Permission.BUILDING_READ, false, false,
+                "Rafraîchir la bibliothèque de bâtiments");
+        // L'aperçu n'écrit RIEN : ni bloc, ni ligne en base. Il est donc déclaré en lecture, et
+        // c'est ce qui permet de le relancer autant de fois qu'on veut avant de se décider.
+        add("building.placement.preview", Permission.BUILDING_READ, false, false,
+                "Prévisualiser la pose d'un bâtiment (emprise et rotation)");
+        // Poser ÉCRASE DES BLOCS RÉELS : mutation sensible, confirmation explicite exigée, et
+        // permission dédiée distincte de l'édition de fiche. Les deux catalogues sont ré-enfilés
+        // pour que l'emplacement apparaisse occupé sans « Rafraîchir + F5 ».
+        addSensitiveWrite("building.placement.place", Permission.BUILDING_PLACE, false,
+                "Poser un bâtiment dans le monde",
+                "building.site.list", "building.definition.list");
+        // Restaurer réécrit aussi des blocs — et écrase ce qui a pu être ajouté APRÈS la pose.
+        // Permission distincte : pouvoir poser n'implique pas pouvoir défaire.
+        addSensitiveWrite("building.placement.rollback", Permission.BUILDING_ROLLBACK, false,
+                "Restaurer la zone d'avant une pose",
+                "building.site.list", "building.definition.list");
         addContentWrite("npc.citizens.link", Permission.NPC_BIND_WRITE, "Lier un PNJ Citizens existant",
                 "npc.list", "npc.citizens.list");
         // Issue #226 — les trois suppressions de PNJ. Permission DÉDIÉE (NPC_DELETE) : créer et
@@ -603,6 +624,31 @@ public final class AgentActionCatalog {
                     return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
                 }
                 params.put("id", id);
+            }
+            case "building.placement.preview", "building.placement.place" -> {
+                String id = buildSiteId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                String building = trim(form.get("building")).toLowerCase(java.util.Locale.ROOT);
+                if (!BUILDING_ID.matcher(building).matches()) {
+                    return Validation.fail("Identifiant de bâtiment manquant ou invalide.");
+                }
+                params.put("id", id);
+                params.put("building", building);
+                // La confirmation n'est exigée que pour la pose : l'aperçu n'écrit rien, et obliger
+                // à cocher une case pour regarder une emprise découragerait de la regarder.
+                if (type.equals("building.placement.place")) {
+                    params.put("confirm", "true");
+                }
+            }
+            case "building.placement.rollback" -> {
+                String id = buildSiteId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                params.put("id", id);
+                params.put("confirm", "true");
             }
             case "npc.definition.delete" -> {
                 String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);

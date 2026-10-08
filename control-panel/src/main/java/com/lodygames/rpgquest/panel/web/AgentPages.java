@@ -1771,6 +1771,151 @@ public final class AgentPages {
      * en tête, avec la commande qui donne l'outil — c'est la question que se posera forcément
      * quiconque arrive ici la première fois.</p>
      */
+    /**
+     * La bibliothèque, depuis le dernier relevé {@code building.definition.list} réussi.
+     *
+     * <p>Même règle que pour les emplacements : sans relevé, la bibliothèque est explicitement
+     * indisponible, et l'écran dit « cliquez sur Rafraîchir ». Afficher une liste vide reviendrait à
+     * affirmer qu'aucun bâtiment n'existe, ce qu'on ne sait pas.</p>
+     */
+    public com.lodygames.rpgquest.panel.building.BuildingLibraryDirectory buildingLibraryDirectory(
+            String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return com.lodygames.rpgquest.panel.building.BuildingLibraryDirectory.unavailable();
+        }
+        return latestDetails(agentId, "building.definition.list")
+                .map(com.lodygames.rpgquest.panel.building.BuildingLibraryDirectory::from)
+                .orElseGet(com.lodygames.rpgquest.panel.building.BuildingLibraryDirectory::unavailable);
+    }
+
+    /** Le dernier aperçu de pose calculé. Il ne vaut que pour l'emplacement qu'il nomme. */
+    public com.lodygames.rpgquest.panel.building.BuildingPlacementPreview buildingPlacementPreview(
+            String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return com.lodygames.rpgquest.panel.building.BuildingPlacementPreview.unavailable();
+        }
+        return latestDetails(agentId, "building.placement.preview")
+                .map(com.lodygames.rpgquest.panel.building.BuildingPlacementPreview::from)
+                .orElseGet(com.lodygames.rpgquest.panel.building.BuildingPlacementPreview::unavailable);
+    }
+
+    /**
+     * Page {@code /buildings/library} : ce qu'on peut poser.
+     *
+     * <p><strong>Lecture seule, volontairement.</strong> Pas de téléversement, pas d'éditeur, pas de
+     * génération : une définition de bâtiment est du contenu déclaratif versionné, qui se modifie
+     * dans son fichier YAML et se relit au démarrage. Un formulaire web qui l'écrirait contournerait
+     * la revue — et c'est précisément ce qu'on ne veut pas pour quelque chose qui écrase des blocs.
+     * </p>
+     */
+    public String buildingLibrary(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("world", "Bibliothèque de bâtiments",
+                "Les bâtiments disponibles à la pose. Chaque entrée est un fichier de contenu, "
+                        + "accompagné d'un schematic produit par le plugin.", ""));
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+
+        sb.append(agentPicker(agentId, "/buildings/library", ""));
+        sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Bibliothèque</span>");
+        sb.append(compactRefresh(session, agentId, "building.definition.list", "Rafraîchir",
+                "btn-outline-primary", "/buildings/library"));
+        sb.append("</div>");
+
+        var library = buildingLibraryDirectory(agentId);
+        if (!library.available()) {
+            sb.append(Ui.empty("world", "Aucun relevé chargé — cliquer sur « Rafraîchir »."));
+            return sb.toString();
+        }
+        if (!library.engineAvailable()) {
+            sb.append(Ui.banner("warning", "Moteur de schematics indisponible : "
+                    + (library.engineReason().isEmpty() ? "motif non précisé."
+                            : library.engineReason())
+                    + " La bibliothèque reste consultable, mais rien ne peut être posé."));
+        }
+        for (String problem : library.problems()) {
+            sb.append(Ui.banner("error", "Fichier refusé — " + problem));
+        }
+        if (library.total() == 0) {
+            sb.append(Ui.empty("world", "Aucun bâtiment en bibliothèque."));
+            return sb.toString();
+        }
+
+        sb.append("<div class=\"accordion npc-accordion\" id=\"building-accordion\">");
+        int index = 0;
+        for (var building : library.buildings()) {
+            sb.append(buildingDefinitionItem(building, index++));
+        }
+        sb.append("</div>");
+        sb.append("<div class=\"card\"><div class=\"card-body\">");
+        sb.append("<h3 class=\"h6\">Comment poser un bâtiment</h3>");
+        sb.append("<p class=\"field-help\">Depuis <strong>Bâtiments → Emplacements</strong> : "
+                + "ouvrez la fiche d'un emplacement vide, choisissez un bâtiment, vérifiez "
+                + "l'emprise et la rotation annoncées, puis confirmez. Rien n'est écrit dans le "
+                + "monde avant cette confirmation.</p>");
+        sb.append("</div></div>");
+        return sb.toString();
+    }
+
+    private String buildingDefinitionItem(
+            com.lodygames.rpgquest.panel.building.BuildingDefinitionView building, int index) {
+        String slug = "building-" + index + "-" + building.id().replaceAll("[^a-z0-9_-]", "-");
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"accordion-item npc-item\">");
+        sb.append("<h3 class=\"accordion-header\">");
+        sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" ")
+                .append("data-bs-toggle=\"collapse\" data-bs-target=\"#").append(slug)
+                .append("\" aria-expanded=\"false\" aria-controls=\"").append(slug).append("\">");
+        sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">")
+                .append(Http.esc(building.name())).append("</span>");
+        sb.append("<code class=\"tid npc-id\">").append(Http.esc(building.id())).append("</code>");
+        sb.append("<span class=\"npc-loc\">").append(Http.esc(building.sizeLabel()))
+                .append("</span>");
+        sb.append("</span><span class=\"npc-head-badges\">");
+        sb.append("<span class=\"badge text-bg-secondary\">façade ")
+                .append(Http.esc(building.frontLabel())).append("</span>");
+        sb.append(building.schematicPresent()
+                ? "<span class=\"badge text-bg-success\">schematic présent</span>"
+                : "<span class=\"badge text-bg-danger\">schematic absent</span>");
+        sb.append("</span></button></h3>");
+
+        sb.append("<div id=\"").append(slug)
+                .append("\" class=\"accordion-collapse collapse\" ")
+                .append("data-bs-parent=\"#building-accordion\"><div class=\"accordion-body npc-detail\">");
+        sb.append(detailSection("world", "Bâtiment"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Identifiant", Ui.id(building.id()));
+        dlRow(sb, "Nom", Http.esc(building.name()));
+        dlRow(sb, "Dimensions", "<code class=\"tid\">" + Http.esc(building.sizeLabel())
+                + "</code> <span class=\"muted\">(largeur × profondeur × hauteur)</span>");
+        dlRow(sb, "Volume", building.blockCount() + " blocs");
+        dlRow(sb, "Ancre", "<code class=\"tid\">" + Http.esc(building.anchorLabel())
+                + "</code> <span class=\"muted\">centre de la porte, au niveau du sol</span>");
+        dlRow(sb, "Façade de référence", Http.esc(building.frontLabel())
+                + " <code class=\"tid\">" + Http.esc(building.front()) + "</code>");
+        dlRow(sb, "Schematic", "<code class=\"tid\">" + Http.esc(building.schematic()) + "</code>"
+                + (building.schematicPresent() ? ""
+                        : " <span class=\"badge text-bg-danger\">absent</span>"));
+        dlRow(sb, "Matériaux", Http.esc(building.materialsLabel()));
+        dlRow(sb, "Version", String.valueOf(building.version()));
+        dlRow(sb, "Description", building.description().isEmpty()
+                ? "<span class=\"muted\">aucune</span>" : Http.esc(building.description()));
+        sb.append("</dl>");
+        if (!building.schematicPresent()) {
+            sb.append("<p class=\"field-help\">La définition est correcte, c'est le "
+                    + "<strong>fichier</strong> qui manque. Il est produit par le plugin au "
+                    + "démarrage ; relancez le serveur ou utilisez "
+                    + "<code>/rpgadmin building generate</code>.</p>");
+        }
+        sb.append("<p class=\"field-help\">Cette fiche est en lecture seule : un bâtiment est du "
+                + "contenu versionné, qui se modifie dans son fichier YAML sur le serveur.</p>");
+        sb.append("</div></div></div>");
+        return sb.toString();
+    }
+
     public String buildingSites(Session session, Map<String, String> q) {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
@@ -1783,6 +1928,11 @@ public final class AgentPages {
         String agentId = agent.get().id();
         boolean canWrite = perms.can(session.effective(), Permission.BUILDING_WRITE);
         boolean canDelete = perms.can(session.effective(), Permission.BUILDING_DELETE);
+        boolean canPlace = perms.can(session.effective(), Permission.BUILDING_PLACE);
+        boolean canRollback = perms.can(session.effective(), Permission.BUILDING_ROLLBACK);
+        // Bibliothèque et dernier aperçu : lus ici une seule fois, puis passés à chaque fiche.
+        var library = buildingLibraryDirectory(agentId);
+        var preview = buildingPlacementPreview(agentId);
 
         sb.append(agentPicker(agentId, "/buildings/sites", ""));
         sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Catalogue</span>");
@@ -1827,7 +1977,8 @@ public final class AgentPages {
         sb.append("<div class=\"accordion npc-accordion\" id=\"buildsite-accordion\">");
         int index = 0;
         for (var site : shown) {
-            sb.append(buildingSiteItem(session, agentId, site, index++, canWrite, canDelete));
+            sb.append(buildingSiteItem(session, agentId, site, index++, canWrite, canDelete,
+                    canPlace, canRollback, directory, library, preview));
         }
         sb.append("</div>");
         if (shown.isEmpty()) {
@@ -1886,7 +2037,11 @@ public final class AgentPages {
     /** Une ligne d'accordion : synthèse en bouton, détail et formulaires dans le replié. */
     private String buildingSiteItem(Session session, String agentId,
                                     com.lodygames.rpgquest.panel.building.BuildingSiteView site,
-                                    int index, boolean canWrite, boolean canDelete) {
+                                    int index, boolean canWrite, boolean canDelete,
+                                    boolean canPlace, boolean canRollback,
+                                    com.lodygames.rpgquest.panel.building.BuildingSiteDirectory directory,
+                                    com.lodygames.rpgquest.panel.building.BuildingLibraryDirectory library,
+                                    com.lodygames.rpgquest.panel.building.BuildingPlacementPreview preview) {
         String slug = "buildsite-" + index + "-" + site.id().replaceAll("[^a-z0-9_-]", "-");
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"buildsites\" ")
@@ -1932,9 +2087,8 @@ public final class AgentPages {
                 ? "<span class=\"muted\">aucune</span>" : Http.esc(site.description()));
         sb.append("</dl>");
 
-        sb.append("<p class=\"field-help\">Aucun bâtiment n'est encore affecté à cet "
-                + "emplacement : affecter un schematic et le poser appartiennent au lot suivant. "
-                + "L'identifiant est déjà stable, et c'est lui qui sera cité.</p>");
+        sb.append(buildingPlacementSection(session, agentId, site, directory, library, preview,
+                canPlace, canRollback));
 
         if (canWrite) {
             sb.append(detailSection("edit", "Modifier la fiche"));
@@ -1946,6 +2100,203 @@ public final class AgentPages {
             sb.append(buildingSiteDeleteZone(session, agentId, site));
         }
         sb.append("</div></div></div>");
+        return sb.toString();
+    }
+
+    /**
+     * Ce que l'emplacement porte, ou comment lui affecter un bâtiment (issue #213, lot
+     * « placement »).
+     *
+     * <p>Trois états, et un seul écrit dans le monde :</p>
+     * <ol>
+     *   <li><strong>occupé</strong> — on montre ce qui est posé, et le retour arrière si une
+     *       sauvegarde existe ;</li>
+     *   <li><strong>vide, aucun aperçu</strong> — on propose de choisir un bâtiment. Ce choix
+     *       déclenche un aperçu, qui n'écrit rien ;</li>
+     *   <li><strong>vide, aperçu calculé pour CET emplacement</strong> — on montre l'emprise, la
+     *       rotation et les avertissements, et seulement alors le bouton de pose.</li>
+     * </ol>
+     *
+     * <p>L'aperçu est volontairement une étape séparée : l'emprise est la seule information qui dise
+     * ce qui va être écrasé, et la demander après la pose n'aurait aucun intérêt.</p>
+     */
+    private String buildingPlacementSection(
+            Session session, String agentId,
+            com.lodygames.rpgquest.panel.building.BuildingSiteView site,
+            com.lodygames.rpgquest.panel.building.BuildingSiteDirectory directory,
+            com.lodygames.rpgquest.panel.building.BuildingLibraryDirectory library,
+            com.lodygames.rpgquest.panel.building.BuildingPlacementPreview preview,
+            boolean canPlace, boolean canRollback) {
+        StringBuilder sb = new StringBuilder();
+        var placement = directory.placementFor(site.id());
+
+        if (placement.isPresent()) {
+            var placed = placement.get();
+            sb.append(detailSection("world", "Bâtiment posé"));
+            sb.append("<dl class=\"npc-dl\">");
+            dlRow(sb, "Bâtiment", Http.esc(placed.buildingName())
+                    + " " + Ui.id(placed.buildingId()));
+            dlRow(sb, "Rotation appliquée", "<code class=\"tid\">" + placed.rotation()
+                    + "°</code>");
+            dlRow(sb, "Emprise", "<code class=\"tid\">" + Http.esc(placed.footprintLabel())
+                    + "</code>");
+            dlRow(sb, "Emprise (dimensions)", "<code class=\"tid\">"
+                    + Http.esc(placed.sizeLabel()) + "</code> — " + placed.blockCount()
+                    + " blocs");
+            dlRow(sb, "Ancre", "<code class=\"tid\">" + Http.esc(placed.anchorLabel())
+                    + "</code>");
+            dlRow(sb, "Posé le", Http.esc(placed.placedAt()));
+            dlRow(sb, "Posé par", placed.placedBy().isEmpty()
+                    ? "<span class=\"muted\">inconnu</span>" : Http.esc(placed.placedBy()));
+            sb.append("</dl>");
+
+            if (!placed.restorable()) {
+                sb.append(Ui.banner("warning", "Aucune sauvegarde n'est associée à cette pose : "
+                        + "le retour arrière est refusé. Remettre de l'air dans l'emprise "
+                        + "détruirait le terrain d'origine."));
+            } else if (canRollback) {
+                sb.append(detailSection("warning", "Annuler la pose"));
+                sb.append("<p class=\"field-help\">Restaure la zone <strong>exactement</strong> "
+                        + "telle qu'elle était avant la pose, depuis la sauvegarde prise à ce "
+                        + "moment-là, puis libère l'emplacement. "
+                        + "<strong>Attention :</strong> tout ce qui a été construit dans cette "
+                        + "emprise <em>après</em> la pose sera également écrasé.</p>");
+                sb.append(formStart(session, agentId, "building.placement.rollback",
+                        "/buildings/sites", ""));
+                sb.append("<input type=\"hidden\" name=\"id\" value=\"")
+                        .append(Http.esc(site.id())).append("\">");
+                sb.append(mutationConsent("building.placement.rollback", "", null));
+                sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-danger\" "
+                        + "type=\"submit\">").append(Icons.icon("warning"))
+                        .append("Restaurer la zone d'avant</button></div></form>");
+            }
+            return sb.toString();
+        }
+
+        // ---- Emplacement vide -----------------------------------------------------------------
+        sb.append(detailSection("world", "Bâtiment"));
+        if (!library.available()) {
+            sb.append("<p class=\"field-help\">Bibliothèque non chargée : ouvrez "
+                    + "<strong>Bâtiments → Bibliothèque</strong> et cliquez sur « Rafraîchir ».</p>");
+            return sb.toString();
+        }
+        if (!library.engineAvailable()) {
+            sb.append(Ui.banner("warning", "Moteur de schematics indisponible : "
+                    + (library.engineReason().isEmpty() ? "motif non précisé."
+                            : library.engineReason())
+                    + " Aucun bâtiment ne peut être posé."));
+            return sb.toString();
+        }
+        var placeable = library.placeable();
+        if (placeable.isEmpty()) {
+            sb.append("<p class=\"field-help\">Aucun bâtiment posable : la bibliothèque est vide, "
+                    + "ou aucun schematic n'est présent sur le serveur.</p>");
+            return sb.toString();
+        }
+        if (!site.worldLoaded()) {
+            sb.append(Ui.banner("warning", "Le monde « " + Http.esc(site.world())
+                    + " » n'est pas chargé : rien ne peut être posé tant qu'il dort."));
+        }
+
+        boolean previewMatches = preview.available()
+                && preview.siteId().equalsIgnoreCase(site.id());
+
+        if (canPlace) {
+            sb.append("<p class=\"field-help\">Choisir un bâtiment calcule la rotation et "
+                    + "l'emprise. <strong>Rien n'est écrit dans le monde à cette étape.</strong></p>");
+            sb.append(formStart(session, agentId, "building.placement.preview",
+                    "/buildings/sites", ""));
+            sb.append("<input type=\"hidden\" name=\"id\" value=\"")
+                    .append(Http.esc(site.id())).append("\">");
+            sb.append("<div class=\"field\"><label>Bâtiment</label><select name=\"building\">");
+            for (var building : placeable) {
+                boolean selected = previewMatches
+                        && preview.buildingId().equalsIgnoreCase(building.id());
+                sb.append("<option value=\"").append(Http.esc(building.id())).append('"')
+                        .append(selected ? " selected" : "").append('>')
+                        .append(Http.esc(building.name())).append(" — ")
+                        .append(Http.esc(building.sizeLabel()))
+                        .append(" — façade ").append(Http.esc(building.frontLabel()))
+                        .append("</option>");
+            }
+            sb.append("</select><p class=\"field-help\">La façade du bâtiment sera tournée vers "
+                            + "l'orientation de l'emplacement (<strong>")
+                    .append(Http.esc(site.facingLabel()))
+                    .append("</strong>).</p></div>");
+            sb.append(mutationConsent("building.placement.preview", "", null));
+            sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
+                    + "type=\"submit\">").append(Icons.icon("world"))
+                    .append("Choisir un bâtiment</button></div></form>");
+        } else {
+            sb.append("<p class=\"field-help\">Vous n'avez pas le droit de poser un bâtiment.</p>");
+        }
+
+        if (previewMatches) {
+            sb.append(buildingPreviewCard(session, agentId, site, preview, canPlace));
+        }
+        return sb.toString();
+    }
+
+    /** L'aperçu : l'emprise exacte, la rotation, et ce qui empêche ou mérite attention. */
+    private String buildingPreviewCard(
+            Session session, String agentId,
+            com.lodygames.rpgquest.panel.building.BuildingSiteView site,
+            com.lodygames.rpgquest.panel.building.BuildingPlacementPreview preview,
+            boolean canPlace) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(detailSection("world", "Aperçu de la pose"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Bâtiment", Http.esc(preview.buildingName()) + " "
+                + Ui.id(preview.buildingId()));
+        dlRow(sb, "Dimensions du bâtiment", "<code class=\"tid\">"
+                + Http.esc(preview.sizeLabel()) + "</code> — façade de référence "
+                + Http.esc(preview.front()));
+        dlRow(sb, "Orientation de l'emplacement", Http.esc(site.facingLabel())
+                + " <code class=\"tid\">" + Http.esc(preview.siteFacing()) + "</code>");
+        dlRow(sb, "Rotation appliquée", "<code class=\"tid\">" + preview.rotation()
+                + "°</code> <span class=\"muted\">pour amener la façade sur "
+                + Http.esc(site.facingLabel()) + "</span>");
+        dlRow(sb, "Ancre", "<code class=\"tid\">" + Http.esc(preview.anchorLabel()) + "</code>");
+        dlRow(sb, "Emprise calculée", "<code class=\"tid\">"
+                + Http.esc(preview.footprintLabel()) + "</code>");
+        dlRow(sb, "Emprise (dimensions)", "<code class=\"tid\">"
+                + Http.esc(preview.footprintSizeLabel()) + "</code> — "
+                + preview.blockCount() + " blocs"
+                + (preview.rotation() == 90 || preview.rotation() == 270
+                        ? " <span class=\"muted\">(largeur et profondeur échangées par la "
+                                + "rotation)</span>"
+                        : ""));
+        dlRow(sb, "Blocs non-air sur place", preview.counted()
+                ? String.valueOf(preview.nonAirBlocks())
+                : "<span class=\"muted\">non calculé (monde ou chunk déchargé)</span>");
+        sb.append("</dl>");
+
+        for (String warning : preview.warnings()) {
+            sb.append(Ui.banner("warning", Http.esc(warning)));
+        }
+        for (String refusal : preview.refusals()) {
+            sb.append(Ui.banner("error", Http.esc(refusal)));
+        }
+
+        if (!preview.placeable()) {
+            sb.append("<p class=\"field-help\">La pose est refusée tant que les points ci-dessus "
+                    + "ne sont pas réglés.</p>");
+            return sb.toString();
+        }
+        if (!canPlace) {
+            return sb.toString();
+        }
+        sb.append("<p class=\"field-help\">La zone est <strong>sauvegardée avant</strong> le "
+                + "collage, ce qui rend le retour arrière possible. Les blocs de l'emprise "
+                + "ci-dessus seront remplacés.</p>");
+        sb.append(formStart(session, agentId, "building.placement.place", "/buildings/sites", ""));
+        sb.append("<input type=\"hidden\" name=\"id\" value=\"")
+                .append(Http.esc(site.id())).append("\">");
+        sb.append("<input type=\"hidden\" name=\"building\" value=\"")
+                .append(Http.esc(preview.buildingId())).append("\">");
+        sb.append(mutationConsent("building.placement.place", "", null));
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-danger\" type=\"submit\">")
+                .append(Icons.icon("world")).append("Placer dans le monde</button></div></form>");
         return sb.toString();
     }
 

@@ -106,6 +106,23 @@ public enum Permission {
      * emplacement.</p>
      */
     BUILDING_DELETE,
+    /**
+     * Poser un bâtiment dans le monde (issue #213, lot « placement »).
+     *
+     * <p>Permission <strong>dédiée</strong>, et séparée de {@link #BUILDING_WRITE} pour une raison
+     * de nature : renommer une fiche ne change rien dans le jeu, poser un bâtiment
+     * <strong>écrase des blocs réels</strong>. Ce sont deux risques différents, donc deux droits
+     * différents — un éditeur de fiches n'a pas à pouvoir modifier le terrain.</p>
+     */
+    BUILDING_PLACE,
+    /**
+     * Restaurer la zone d'avant une pose (issue #213, lot « placement »).
+     *
+     * <p>Séparée de {@link #BUILDING_PLACE} parce qu'une restauration réécrit elle aussi des blocs,
+     * et parce qu'elle écrase ce qui a pu être ajouté <em>après</em> la pose. Pouvoir poser
+     * n'implique donc pas pouvoir défaire.</p>
+     */
+    BUILDING_ROLLBACK,
     DOCS_READ,
     DIAGNOSTICS_READ,
     AUDIT_READ,

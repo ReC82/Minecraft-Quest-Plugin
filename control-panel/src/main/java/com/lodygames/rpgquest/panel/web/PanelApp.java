@@ -241,6 +241,12 @@ public final class PanelApp {
         // mutations passent par /agents/action, donc par le catalogue et ses propres permissions.
         route("/buildings/sites", exchange -> handleBusinessPage(exchange, "/buildings/sites",
                 "Emplacements de construction", Permission.BUILDING_READ, agentPages::buildingSites));
+        // Lot « placement » de #213 — la bibliothèque. Lecture seule : aucune route d'écriture,
+        // parce qu'une définition de bâtiment est du contenu versionné qui se modifie dans son
+        // fichier. Poser et restaurer passent par /agents/action et leurs permissions dédiées.
+        route("/buildings/library", exchange -> handleBusinessPage(exchange, "/buildings/library",
+                "Bibliothèque de bâtiments", Permission.BUILDING_READ,
+                agentPages::buildingLibrary));
         route("/travel", exchange -> handleBusinessPage(exchange, "/travel", "Réseau de voyage",
                 Permission.TRAVEL_READ, agentPages::travel));
         route("/mobs", exchange -> handleBusinessPage(exchange, "/mobs", "Mobs spéciaux & boss",

@@ -15,15 +15,17 @@ import java.util.Optional;
  * lirait comme « aucun emplacement ».</p>
  */
 public record BuildingSiteDirectory(List<BuildingSiteView> sites, List<String> worlds,
-                                    boolean available) {
+                                    boolean available,
+                                    List<BuildingPlacementView> placements) {
 
     public BuildingSiteDirectory {
         sites = List.copyOf(sites == null ? List.of() : sites);
         worlds = List.copyOf(worlds == null ? List.of() : worlds);
+        placements = List.copyOf(placements == null ? List.of() : placements);
     }
 
     public static BuildingSiteDirectory unavailable() {
-        return new BuildingSiteDirectory(List.of(), List.of(), false);
+        return new BuildingSiteDirectory(List.of(), List.of(), false, List.of());
     }
 
     /** Projette les détails d'un {@code building.site.list}. {@code null} ⇒ indisponible. */
@@ -46,7 +48,38 @@ public record BuildingSiteDirectory(List<BuildingSiteView> sites, List<String> w
         // Les mondes viennent du serveur, jamais recalculés ici : lui seul sait ce qu'il porte.
         List<String> worlds = asList(details.get("worlds")).stream()
                 .map(BuildingSiteDirectory::str).filter(w -> !w.isEmpty()).sorted().toList();
-        return new BuildingSiteDirectory(out, worlds, true);
+
+        // Les bâtiments posés voyagent avec le même relevé : la fiche d'un emplacement doit pouvoir
+        // dire ce qu'il porte sans une seconde requête, sinon elle afficherait « occupé » sans
+        // pouvoir dire par quoi.
+        List<BuildingPlacementView> placements = new ArrayList<>();
+        for (Object raw : asList(details.get("placements"))) {
+            Map<String, Object> m = asMap(raw);
+            String siteId = str(m.get("siteId"));
+            if (siteId.isEmpty()) {
+                continue;
+            }
+            placements.add(new BuildingPlacementView(siteId, str(m.get("buildingId")),
+                    str(m.get("buildingName")), str(m.get("world")),
+                    intOr(m.get("anchorX")), intOr(m.get("anchorY")), intOr(m.get("anchorZ")),
+                    intOr(m.get("rotation")),
+                    intOr(m.get("minX")), intOr(m.get("minY")), intOr(m.get("minZ")),
+                    intOr(m.get("maxX")), intOr(m.get("maxY")), intOr(m.get("maxZ")),
+                    str(m.get("placedBy")), str(m.get("placedAt")),
+                    bool(m.get("restorable"))));
+        }
+        return new BuildingSiteDirectory(out, worlds, true, placements);
+    }
+
+    /** Le bâtiment posé sur cet emplacement, s'il y en a un. */
+    public Optional<BuildingPlacementView> placementFor(String siteId) {
+        if (siteId == null || siteId.isBlank()) {
+            return Optional.empty();
+        }
+        String wanted = siteId.trim().toLowerCase(Locale.ROOT);
+        return placements.stream()
+                .filter(p -> p.siteId().toLowerCase(Locale.ROOT).equals(wanted))
+                .findFirst();
     }
 
     public Optional<BuildingSiteView> find(String id) {

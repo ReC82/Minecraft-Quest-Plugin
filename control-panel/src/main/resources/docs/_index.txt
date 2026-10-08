@@ -23,3 +23,4 @@ quetes-depannage.md
 stories-depannage.md
 exploitation-serveur.md
 serveur-depannage.md
+contenu-publier-sur-dev.md

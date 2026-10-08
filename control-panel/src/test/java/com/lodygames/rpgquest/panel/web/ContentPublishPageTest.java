@@ -372,6 +372,90 @@ class ContentPublishPageTest {
         assertEquals(0, count("content.publish.rollback"));
     }
 
+    // ---- Après un retour arrière -----------------------------------------------------------------
+
+    /**
+     * Après une restauration, l'état est « Différent » — <strong>pas</strong> « Conflit ».
+     *
+     * <p>Défaut constaté sur le serveur réel : la référence « ce que nous avons mis sur DEV » ne
+     * regardait que les <em>publications</em>. Après une restauration, DEV ne portait donc ni la
+     * source ni la dernière publication, et l'écran annonçait « Conflit » — c'est-à-dire
+     * « quelqu'un d'autre a touché au fichier », alors que c'était nous, à la demande de
+     * l'utilisateur.</p>
+     */
+    @Test
+    void afterARollbackTheStateIsDifferentAndNotAConflict() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        // DEV porte une version ANCIENNE (celle restaurée), la source porte la nouvelle.
+        String restored = sha("ancienne version");
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", restored),
+                "[\"rpgquest:test_publish_quest\"]"));
+        // Et la dernière opération réussie est une RESTAURATION qui a remis cette empreinte.
+        seedResult("content.publish.rollback",
+                "{\"ok\":true,\"code\":\"RESTORED\",\"kind\":\"quests\","
+                        + "\"slug\":\"test_publish_quest\",\"devShaAfter\":\"" + restored
+                        + "\",\"backupPath\":\"content-backups/x/quests/test_publish_quest.yml\","
+                        + "\"runtimeConfirmed\":true,\"verifiedAt\":\"2026-10-09T00:00:00Z\"}");
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Différent"), "DEV porte volontairement une version antérieure");
+        assertFalse(page.contains("Conflit"),
+                "ce n'est pas un tiers qui a modifié le fichier, c'est nous");
+    }
+
+    /**
+     * Après une restauration, aucun bouton de retour arrière.
+     *
+     * <p>Il n'y a plus rien à défaire : DEV porte déjà la version sauvegardée. Un bouton qui
+     * reposerait le même contenu ne ferait rien, et un bouton qui ne fait rien est un bouton qui
+     * ment.</p>
+     */
+    @Test
+    void afterARollbackNoFurtherRollbackIsOffered() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        String restored = sha("ancienne version");
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", restored),
+                "[\"rpgquest:test_publish_quest\"]"));
+        seedResult("content.publish.rollback",
+                "{\"ok\":true,\"code\":\"RESTORED\",\"kind\":\"quests\","
+                        + "\"slug\":\"test_publish_quest\",\"devShaAfter\":\"" + restored
+                        + "\",\"backupPath\":\"content-backups/x/quests/test_publish_quest.yml\","
+                        + "\"runtimeConfirmed\":true,\"verifiedAt\":\"2026-10-09T00:00:00Z\"}");
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertFalse(page.contains("name=\"type\" value=\"content.publish.rollback\""),
+                "aucun bouton de restauration après une restauration");
+        // En revanche, publier à nouveau reste proposé : c'est la suite logique.
+        assertTrue(page.contains("name=\"type\" value=\"content.publish\""));
+    }
+
+    /** Après une publication, le retour arrière EST proposé — c'est le cas symétrique. */
+    @Test
+    void afterAPublicationARollbackIsOffered() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha(QUEST_YAML)),
+                "[\"rpgquest:test_publish_quest\"]"));
+        seedResult("content.publish",
+                "{\"ok\":true,\"code\":\"PUBLISHED\",\"kind\":\"quests\","
+                        + "\"slug\":\"test_publish_quest\",\"devShaAfter\":\"" + sha(QUEST_YAML)
+                        + "\",\"backupPath\":\"content-backups/x/quests/test_publish_quest.yml\","
+                        + "\"runtimeConfirmed\":true,\"verifiedAt\":\"2026-10-09T00:00:00Z\"}");
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Synchronisé"));
+        assertTrue(page.contains("name=\"type\" value=\"content.publish.rollback\""));
+        assertTrue(page.contains("Restaurer la version précédente"));
+    }
+
     // ---- Harnais -------------------------------------------------------------------------------
 
     /** Un relevé {@code content.dev.state} : fichiers DEV + identifiants chargés pour les quêtes. */
@@ -467,11 +551,33 @@ class ContentPublishPageTest {
                 .replace("&quot;", "\"").replace("&#39;", "'");
     }
 
+    /**
+     * Comme {@link #seed}, mais pour une action qui porte des paramètres de ressource.
+     *
+     * <p>Nécessaire pour simuler une publication ou une restauration antérieure : la page les
+     * retrouve en filtrant sur {@code kind} et {@code id}.</p>
+     */
+    private void seedResult(String type, String details) throws Exception {
+        String token = csrf(get("/quests?agent=" + TestConfig.AGENT_ID).body());
+        String extra = "&kind=quests&id=test_publish_quest&confirm=true";
+        if (type.equals("content.publish")) {
+            extra += "&expected_source_sha=" + sha(QUEST_YAML) + "&expected_dev_sha=";
+        }
+        post("/agents/action", "_csrf=" + token + "&type=" + type + "&agent="
+                + TestConfig.AGENT_ID + "&return=/quests" + extra);
+        deliver(details);
+    }
+
     /** Enfile une action, la livre à l'agent, et renvoie un succès portant les détails fournis. */
     private void seed(String type, String details) throws Exception {
         String token = csrf(get("/quests?agent=" + TestConfig.AGENT_ID).body());
         post("/agents/action", "_csrf=" + token + "&type=" + type + "&agent="
                 + TestConfig.AGENT_ID + "&return=/quests");
+        deliver(details);
+    }
+
+    /** Livre la prochaine action en attente et lui renvoie un succès portant {@code details}. */
+    private void deliver(String details) throws Exception {
         HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
                 .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(),

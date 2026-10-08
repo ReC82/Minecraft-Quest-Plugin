@@ -5651,8 +5651,16 @@ public final class AgentPages {
             }
         }
 
-        // Retour arrière : seulement si une publication a RÉELLEMENT eu lieu depuis le panel.
-        if (lastPublish.isPresent() && canRollback && !devSha.isEmpty()) {
+        // Retour arrière : seulement si la dernière opération réussie était une PUBLICATION.
+        //
+        // Après une restauration ou un retrait, il n'y a plus rien à défaire : DEV porte déjà la
+        // version sauvegardée. Proposer quand même « Restaurer » reposerait le même contenu, donc
+        // ne ferait rien — un bouton qui ne fait rien est un bouton qui ment.
+        String lastCode = lastPublish.map(d -> str(d.get("code"))).orElse("");
+        boolean lastWasPublication = !lastCode.isEmpty()
+                && !"RESTORED".equals(lastCode) && !"WITHDRAWN".equals(lastCode)
+                && !"ALREADY_ABSENT".equals(lastCode);
+        if (lastPublish.isPresent() && lastWasPublication && canRollback && !devSha.isEmpty()) {
             boolean restorable = !backupPath.isEmpty();
             sb.append(detailSection("warning", restorable
                     ? "Restaurer la version précédente" : "Retirer de DEV"));
@@ -5723,7 +5731,8 @@ public final class AgentPages {
     }
 
     /**
-     * Le compte rendu de la dernière publication <strong>de cette ressource</strong>.
+     * Le compte rendu de la dernière opération réussie <strong>sur cette ressource</strong> —
+     * publication <em>ou</em> retour arrière.
      *
      * <p>C'est de là que viennent le chemin de sauvegarde (donc la possibilité d'un retour arrière)
      * et l'empreinte DEV que nous avions laissée — celle qui permet de distinguer « différent parce
@@ -5734,14 +5743,24 @@ public final class AgentPages {
             return Optional.empty();
         }
         for (AgentActionRow row : store.recentActions(agentId, 200)) {
-            if (!"content.publish".equals(row.type())) {
+            // Une publication ET un retour arrière laissent tous deux une empreinte connue sur DEV.
+            //
+            // Ne regarder que les publications était un vrai défaut, constaté sur le serveur réel :
+            // après une restauration, DEV ne portait ni la source ni la dernière publication, donc
+            // l'état affiché devenait « Conflit » — c'est-à-dire « quelqu'un d'autre a touché au
+            // fichier », alors que c'était NOUS, à la demande de l'utilisateur. Un retour arrière
+            // doit laisser « Différent », qui est la vérité : DEV porte volontairement une version
+            // antérieure.
+            boolean publication = "content.publish".equals(row.type());
+            boolean rollback = "content.publish.rollback".equals(row.type());
+            if (!publication && !rollback) {
                 continue;
             }
             if (!kind.equals(row.params().get("kind")) || !slug.equals(row.params().get("id"))) {
                 continue;
             }
             Optional<Map<String, Object>> details = detailsOf(row);
-            // Seule une publication RÉUSSIE fait référence : un conflit n'a rien écrit, donc sa
+            // Seule une opération RÉUSSIE fait référence : un conflit n'a rien écrit, donc sa
             // sauvegarde (inexistante) ne doit pas apparaître comme restaurable.
             if (details.isPresent() && Boolean.TRUE.equals(details.get().get("ok"))) {
                 return details;

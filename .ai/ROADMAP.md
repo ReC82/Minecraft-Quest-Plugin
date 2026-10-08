@@ -216,6 +216,56 @@ Première étape à reprendre:
 ```
 
 ```text
+Date: 2026-10-08 (nuit — MODE NUIT AUTONOME : #218, #141, #156, #185, #110, #195)
+Branche de départ: feature/218-starter-kit-tiers @ f6bcb75 — la ligne réellement déployée en DEV
+  (chaîne 123 ← 161 ← 169), volontairement et PAS une branche d'intégration plus ancienne, qui
+  aurait fait régresser #123/#161/#24 au premier déploiement.
+Étape de départ: LOT 0 — vérifier que la branche contient tout #123 sans le réimplémenter (fait :
+  moteur, dialogue, descripteur, journal, export et correctif TC-257 tous présents), puis les lots
+  annoncés. #156 a été ajouté en PRIORITÉ en cours de session par l'utilisateur.
+Étapes terminées:
+  - #218 paliers du kit de départ : palier 1 automatique, palier 2 par quête
+    DELIVER_ITEM_TO_NPC, impossibilité de sauter un palier garantie par le MOTEUR
+    (grant-tier refuse SKIPPED / UNKNOWN_TIER / ALREADY_AT_LEAST), emplacements calculés sur le
+    contenu réel, aucune migration. Paliers 3 à 5 acceptés mais CONTENU NON INVENTÉ.
+  - #141 SMELT_ITEM : FurnaceExtractEvent (seul événement de four portant un joueur), les trois
+    fours vanilla vérifiés explicitement, progression par lots plafonnée.
+  - #156 appariement des bornes du Hub : AUDIT FACTUEL d'abord sur une copie lecture seule de la
+    base DEV. Ratio corrigé (22 waypoints Hub / 13 bornes, pas 115/13 — le Wild n'en prend jamais).
+    Hypothèse « espacement » RÉFUTÉE (borne la plus proche à 88 blocs ou plus partout). Cause
+    réelle : défaut du déclencheur — persistance asynchrone du waypoint + sortie anticipée « même
+    instance », donc une instance ne pouvait s'apparier qu'à une visite ULTÉRIEURE (les 13 bornes
+    existantes sont nées 17 s à 11 h 50 après leur waypoint). Correctif + diagnostic administrable
+    à source unique. AUCUN ratio borne/waypoint introduit, aucune politique de génération modifiée.
+  - #185 DISCOVER_WAYPOINT : dixième type d'objectif, aucun écouteur d'événement de jeu
+    volontairement, aucune table supplémentaire (unicité joueur/waypoint déjà garantie en base),
+    deux modes de comptage explicites et ANNONCÉS au joueur, mode inconnu refusé au chargement.
+  - #110 phase 1 : contrat machine-readable généré depuis Descriptors (schéma JSON Schema
+    2020-12, gabarits YAML, contrat rédigé ~13 Ko pour un prompt), trois routes de téléchargement,
+    exemples tc110_. Limite assumée : section dialogues contrainte sur son squelette seulement.
+  - #195 suite : le composant guidé couvre maintenant TOUS les champs de texte destinés aux
+    joueurs (titre et description de quête, nom de story, réplique de dialogue) ; variante
+    multiligne ajoutée ; le select « Couleur du texte » concurrent est retiré.
+Branche finale: feature/218-starter-kit-tiers (poussée)
+Build: ./gradlew build — voir le rapport de session pour le résultat chiffré définitif.
+Tests: suites ciblées vertes pendant le développement, puis suite complète avant le rapport.
+  Un échec PRÉEXISTANT subsiste et n'est PAS masqué : CrystalHuntIntegrationTest échoue parce que
+  le propriétaire a réécrit src/main/resources/quests/crystal_hunt.yml depuis le Control Panel
+  (araignées/crafting → zombies/chasse). Ce fichier n'est ni committé ni modifié par cette session.
+Tests manuels en attente: TC-258 (#218), TC-259 (#141), TC-260 (#185), TC-261 (#156),
+  TC-262 (#110), TC-263 (#195) — ajoutés à docs/MANUAL_TEST_PLAN.md. Plus TC-257 (#123) toujours
+  entièrement à dérouler.
+Blocages: aucun blocage technique. NON LIVRÉS, faute de temps et parce qu'un pipeline d'import à
+  moitié construit est pire que pas d'import : #109 (import sécurisé de content pack) et le LOT 4
+  (atelier IA + configuration de fournisseurs). Le contrat #110 est précisément la brique dont ces
+  deux lots ont besoin.
+Première étape à reprendre: #109 — import sécurisé de content pack
+  (IMPORT → ANALYSE → VALIDATION → DIFF → BROUILLON → CONFIRMATION → ENREGISTREMENT SOURCE),
+  en s'appuyant sur le schéma et les dépendances déclarées de #110. Puis le LOT 4.
+  Aucune issue n'a été fermée : toutes portent un test manuel non exécuté.
+```
+
+```text
 Date: 2026-10-07 (soirée, 2e lot — #123 : remise d'objets à un PNJ avec dépôts partiels)
 Branche de départ: feature/161-wild-entry-ux @ 4a99bff — volontairement, et PAS la branche
   d'intégration : c'est la ligne réellement déployée en DEV depuis le lot précédent, donc partir

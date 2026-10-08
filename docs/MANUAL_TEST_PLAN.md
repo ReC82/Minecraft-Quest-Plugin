@@ -3671,6 +3671,164 @@ le résumé de récompenses de TC-014).
 
 ---
 
+### TC-258 — Paliers du kit de départ (issue #218, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier qu'un palier ne peut pas être sauté, que la remise reste limitée à une par
+    vie, et que les emplacements exigés suivent le contenu **réel** du palier.
+-   **Pré-requis :** JAR du lot de nuit déployé, serveur redémarré (la section
+    `starter-tool-kit.tiers` est ajoutée au `config.yml` du serveur au démarrage).
+-   **Actions en jeu :**
+    1.  Joueur neuf → `/rpgadmin kit status <joueur>` doit annoncer le palier **1**.
+    2.  Mourir, revenir, demander le kit au Guide → **4 outils en bois**. Redemander dans la même
+        vie → **rien** (une remise par vie).
+    3.  Accepter `rpgquest:kit_tier2` auprès du Guide. Le journal doit lister **quatre** remises :
+        1 bâton, 2 pierres, 4 cuirs, 3 **graines de blé**.
+    4.  Remettre les matériaux **en plusieurs visites**, avec une **mort** entre deux visites : le
+        déjà-remis doit être conservé.
+    5.  Avec tout en inventaire, **une seule** interaction doit tout remettre d'un coup.
+    6.  Quête terminée → `/rpgadmin kit status` doit annoncer le palier **2**.
+    7.  Mourir, demander le kit → **épée en pierre + pioche/pelle/hache en bois + bottes en cuir +
+        1 pain** (six objets).
+    8.  Recommencer avec **5 emplacements libres seulement** : le refus doit annoncer **6**
+        emplacements nécessaires (pas 4).
+    9.  `/rpgadmin kit grant-tier <joueur> 4` → refus pour **saut de palier**.
+    10. `/rpgadmin kit grant-tier <joueur> 9` → refus pour **palier non défini**.
+    11. Redémarrer le serveur → le palier est conservé.
+-   **Limites :** les paliers 3 à 5 sont acceptés par l'architecture mais leur contenu n'est pas
+    défini : rien à tester de ce côté.
+
+---
+
+### TC-259 — Objectif `SMELT_ITEM` : cuire, pas obtenir (issue #141, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier que seule une **extraction réelle** d'un four fait progresser l'objectif, et
+    que l'attribution multijoueur est correcte.
+-   **Pré-requis :** copier `docs/manual-tests/quests/test_smelt_item.yml` dans
+    `plugins/RPGQuest/quests/`, puis `/quest admin reload`.
+-   **Actions en jeu :**
+    1.  Accepter `rpgquest:test_smelt_item`.
+    2.  Four + combustible + **cactus**, retirer soi-même la teinture verte → le compteur avance.
+    3.  Shift-clic sur le slot de résultat (plusieurs objets d'un coup) → le compteur avance
+        **d'autant**, sans jamais dépasser la quantité demandée.
+    4.  Refaire avec un **haut fourneau** puis un **fumoir** → comptent aussi.
+    5.  `/give <joueur> green_dye` → **aucune** progression.
+    6.  Entonnoir sous le four qui aspire le résultat → **aucune** progression.
+    7.  Deux joueurs, un seul four : seul celui qui **retire** progresse.
+    8.  Se déconnecter puis revenir → compteur conservé.
+    9.  **Supprimer** la quête de test et `/quest admin reload`.
+-   **Limites connues et voulues :** un joueur qui vide le four d'un autre progresse — c'est la
+    seule attribution que l'API publique garantisse.
+
+---
+
+### TC-260 — Objectif `DISCOVER_WAYPOINT` (issue #185, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier que seule une **première découverte réelle** compte, que l'identité comptée
+    est l'id du waypoint, et que la règle de comptage est **annoncée** au joueur.
+-   **Pré-requis :** copier `docs/manual-tests/quests/test_discover_waypoint.yml` dans
+    `plugins/RPGQuest/quests/`, puis `/quest admin reload`. Prévoir au moins deux waypoints encore
+    **non découverts** par le compte de test.
+-   **Actions en jeu :**
+    1.  Accepter `rpgquest:test_discover_waypoint`. Le libellé du journal doit annoncer la
+        **portée** (« tous mondes ») et la **règle** (« nouvelles découvertes »).
+    2.  **Passer à côté** d'un waypoint inconnu, sans cliquer → aucune progression.
+    3.  **Se téléporter** vers un waypoint inconnu depuis une borne → aucune progression.
+    4.  Cliquer le bouton d'un waypoint **inconnu** → 1/2.
+    5.  **Recliquer le même** → message « Waypoint déjà découvert » mais compteur **inchangé**.
+    6.  Découvrir un **second** waypoint, si possible **du même biome** → 2/2, quête terminée.
+    7.  Variante filtre : éditer la quête avec `worlds: [world_hub]`, recharger, et vérifier qu'une
+        découverte dans le **Wild** ne fait rien avancer.
+    8.  Variante cumulative : `count-mode: INCLUDE_EXISTING` sur un joueur ayant déjà des
+        découvertes → la progression part du **total déjà acquis** dès l'acceptation.
+    9.  Redémarrer le serveur → compteur conservé, **aucune** découverte perdue.
+    10. **Supprimer** la quête de test et `/quest admin reload`.
+-   **Limite assumée :** en mode `NEW_ONLY`, un joueur ayant déjà découvert tous les waypoints
+    accessibles ne peut pas valider un nouveau cycle d'une quête répétable. C'est voulu : aucune
+    découverte n'est supprimée ni aucun waypoint débloqué pour y remédier.
+
+---
+
+### TC-261 — Appariement des bornes du Hub (issue #156, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier qu'une instance de biome du Hub obtient sa borne **pendant la visite en
+    cours**, et que le diagnostic dit la **cause** de tout appariement manquant.
+-   **Mesure de référence (serveur DEV, avant correction) :** 22 waypoints dans `world_hub` pour
+    13 bornes ; les 9 instances sans borne étaient toutes à **88 blocs ou plus** de la borne la plus
+    proche, et les 13 bornes existantes avaient été créées entre **17 s et 11 h 50 après** leur
+    waypoint. Aucune borne dans le Wild : c'est voulu.
+-   **Actions en jeu :**
+    1.  `/rpgadmin travel diagnose world_hub` → noter les instances sans borne.
+    2.  Entrer dans une instance de biome du Hub **jamais visitée** et y rester une dizaine de
+        secondes → une borne doit apparaître **pendant la même visite**.
+    3.  Repasser dans les instances connues sans borne → chacune doit s'apparier au fil des
+        passages.
+    4.  Vérifier qu'une borne apparue est **distincte** du waypoint (6 à 16 blocs), posée sur une
+        colonne accessible, et que son bouton ouvre le menu de voyage.
+    5.  Allers-retours rapides → **aucun doublon**.
+    6.  `/rpgadmin travel diagnose` → pour toute instance restante, l'état doit dire *jamais tenté
+        depuis le démarrage*, *appariement en cours*, ou *N essai(s), candidats refusés*. Le libellé
+        ambigu « jamais tenté/en cours » ne doit plus apparaître.
+    7.  Panel `/travel` → section « Appariements manquants dans le Hub » : cause, distance à la
+        borne la plus proche, délai avant réessai, et la mention qu'un redémarrage remet les
+        compteurs à zéro.
+    8.  Parcourir le **Wild** → aucune borne générée.
+-   **Limites :** les compteurs d'essai vivent en mémoire ; après un redémarrage, « jamais tenté »
+    signifie « plus depuis le redémarrage ». Aucun ratio borne/waypoint n'a été introduit.
+
+---
+
+### TC-262 — Contrat de contenu machine-readable (issue #110, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier que les trois documents décrivent le format réel et suffisent à faire
+    produire un pack par une IA. **Au navigateur, sans Minecraft** — ces documents ne dépendent pas
+    du serveur.
+-   **Actions au navigateur :**
+    1.  `/content/export` → la carte « Contrat de contenu » est présente, avec ses boutons.
+    2.  Télécharger le **schéma JSON** → JSON valide ; `format` et `schemaVersion` sont des
+        constantes ; **10** branches d'objectifs et **5** de récompenses.
+    3.  Télécharger le **gabarit « pack complet »** → les quatre familles, et la liste commentée des
+        10 objectifs et 5 récompenses en bas du fichier.
+    4.  Télécharger un **gabarit par famille** → le nom du fichier correspond à la famille.
+    5.  Forcer `?family=inventee` → le gabarit **complet** est servi, sous le nom
+        `lodyquests-template-content.yml`.
+    6.  Télécharger le **contrat rédigé** → identifiants, objectifs, récompenses, stories,
+        références, dialogues, équilibrage, exemple minimal, exemple complet `tc110_`, et la
+        **limite** sur le vocabulaire des dialogues énoncée explicitement.
+    7.  **Essai réel avec une IA** : coller le contrat, demander une mini-campagne, puis relire le
+        YAML produit — identifiants `namespace:clé`, aucun type inventé, références cohérentes.
+    8.  Les trois routes **sans session** → redirection vers `/login`.
+    9.  Centre d'aide `/docs` → la fiche « Content packs » apparaît et s'ouvre.
+-   **Limites :** il n'existe **pas encore** d'import de pack (#109) ; un pack produit se recopie
+    aujourd'hui élément par élément dans les éditeurs.
+
+---
+
+### TC-263 — Texte stylé sans MiniMessage, partout (issue #195, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier qu'aucun champ de texte destiné aux joueurs n'impose plus d'écrire du
+    MiniMessage, que les textes multi-styles ne sont **jamais** simplifiés en silence, et que les
+    boutons de brouillon continuent de fonctionner. **Au navigateur.**
+-   **Actions au navigateur :**
+    1.  `/quests/new` → **Titre** et **Description** offrent palette, cases de style et aperçu.
+    2.  Saisir un titre coloré, enregistrer, rouvrir → couleur conservée, mode guidé prérempli.
+    3.  Ouvrir une quête dont le titre est **multi-styles** (deux couleurs, ou `<gradient>`) → mode
+        avancé, texte **intact**, avertissement affiché ; la bascule guidée exige un geste explicite
+        et annonce qu'elle simplifiera.
+    4.  `/stories/new` → **Nom affiché** idem.
+    5.  `/dialogues/new` → **Réplique de départ** idem ; le select « Couleur du texte » a
+        **disparu**.
+    6.  Enregistrer un dialogue depuis le nouveau formulaire, puis vérifier **en jeu** que la
+        réplique s'affiche avec la bonne couleur.
+    7.  Sur un formulaire **incomplet**, cliquer un bouton de brouillon (ajouter une étape, changer
+        un type) → il fonctionne, sans bulle native bloquante, et le marqueur « * » reste affiché
+        sur les champs obligatoires.
+    8.  **JavaScript désactivé** → les champs restent visibles et éditables, la page reste
+        utilisable.
+-   **Limites :** le locuteur d'un dialogue et les valeurs techniques des descripteurs restent en
+    texte simple — ils ne sont jamais colorés en jeu.
+
+---
+
 ## Table de recette
 
 | ID | Test | PASS | FAIL | Notes |
@@ -3758,3 +3916,9 @@ le résumé de récompenses de TC-014).
 | TC-255 | PNJ : regarder les joueurs et promenade depuis le panel #165 (PENDING) | | | |
 | TC-256 | Entrée dans le Wild : avertissement, préparation, état au Garde #161/#26/#24 (PENDING) | | | |
 | TC-257 | Rapporter des objets à un PNJ : dépôts partiels persistants #123 (PENDING) | | | |
+| TC-258 | Paliers du kit de départ #218 (PENDING) | | | |
+| TC-259 | Objectif SMELT_ITEM : cuire, pas obtenir #141 (PENDING) | | | |
+| TC-260 | Objectif DISCOVER_WAYPOINT #185 (PENDING) | | | |
+| TC-261 | Appariement des bornes du Hub #156 (PENDING) | | | |
+| TC-262 | Contrat de contenu machine-readable #110 (PENDING) | | | |
+| TC-263 | Texte stylé sans MiniMessage, partout #195 (PENDING) | | | |

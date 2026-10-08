@@ -6,7 +6,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
-- **Quêtes** — définitions YAML, 7 types d'objectifs, prérequis, récompenses, progression
+- **Quêtes** — définitions YAML, 10 types d'objectifs, prérequis, récompenses, progression
   persistée par joueur (`quest.progress.QuestProgressEngine`).
 - **Storyline** *(progression automatique ajoutée cette étape)* — conteneur logique ordonné de
   quêtes existantes, désormais connecté au moteur de quête : une Story `ACTIVE` avance toute seule
@@ -217,6 +217,56 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   téléportation tardive après déconnexion. `RANDOM_SAFE`, les contrôles de sécurité et le répit
   d'arrivée de 40 ticks sont inchangés ; chaque passage émet une ligne `[TP-LATENCY]` séparant
   recherche / chargement de chunks / téléportation.
+- **Texte stylé sans MiniMessage — couverture étendue** *(suite de #195)* — le composant guidé
+  partagé (palette au clic, gras/italique/souligné/barré, aperçu, mode code explicite) couvre
+  désormais **tous** les champs de texte destinés aux joueurs : titre et description d'une quête,
+  nom d'une story, réplique de départ d'un dialogue, en plus des noms de PNJ, de mobs/boss et des
+  textes de nœuds et de choix déjà couverts. Deux variantes : simple ligne et multiligne. L'ancien
+  `select` « Couleur du texte » de l'éditeur de dialogue, second mécanisme concurrent appliqué au
+  texte simple et ignoré dès qu'il contenait du MiniMessage, a été retiré — le serveur continue
+  d'accepter le champ `text_color`, le formulaire ne l'émet plus. Les seuls champs restés en texte
+  simple sont ceux qui ne sont jamais colorés en jeu (locuteur d'un dialogue, valeurs techniques
+  des descripteurs).
+- **Contrat de contenu machine-readable** *(issue #110, phase 1)* — `/content/export` publie trois
+  documents **générés** et téléchargeables : le schéma officiel du format
+  `lodyquests-content-pack` en JSON Schema (`/content/schema.json`), des gabarits YAML commentés par
+  famille ou pour le pack complet (`/content/template`), et un contrat rédigé pensé pour être collé
+  dans un prompt (`/content/contract.md`). Tous sont dérivés de `Descriptors`, la source qui pilote
+  déjà le formulaire, l'écriture YAML et la validation du panel : aucune liste de types n'est
+  recopiée, et un test échoue si le contrat décrit un type inexistant, en oublie un, ou laisse
+  passer un champ qu'aucun descripteur ne déclare. Chaque type d'objectif et de récompense est une
+  branche `oneOf` avec `additionalProperties: false`. Les exemples portent le préfixe `tc110_`.
+  **Limite assumée** : la section `dialogues` n'est contrainte que sur son squelette, le vocabulaire
+  de ses actions et conditions n'étant pas encore dérivable côté panel.
+- **Cuisson** *(issue #141)* — type d'objectif `SMELT_ITEM` (`material` = l'objet **obtenu**,
+  `amount`) : la progression vient de `FurnaceExtractEvent`, le seul événement de four qui porte un
+  joueur, donc le seul permettant une attribution correcte en multijoueur. Les trois fours vanilla
+  comptent, vérifiés explicitement ; une extraction qui sort plusieurs objets avance d'autant, sans
+  jamais dépasser la quantité demandée. Obtenir l'objet autrement (coffre, `/give`, craft,
+  ramassage) ou le laisser sortir par un entonnoir ne compte jamais.
+- **Découverte de waypoints** *(issue #185)* — type d'objectif `DISCOVER_WAYPOINT` (`amount`,
+  `worlds` optionnel, `count-mode`). La progression vient de l'abonnement aux **premières**
+  découvertes du système de waypoints, branché une seule fois au bootstrap : passer à proximité, se
+  téléporter ou recliquer un waypoint déjà connu ne compte jamais, et aucune table supplémentaire
+  n'est nécessaire (une première découverte est unique par couple joueur/waypoint en base).
+  L'identité comptée est l'id stable du waypoint. `count-mode` est explicite — `NEW_ONLY` (défaut)
+  ou `INCLUDE_EXISTING` — et la portée comme la règle sont **annoncées au joueur** dans le libellé.
+  Aucune découverte n'est jamais supprimée ni aucun waypoint débloqué pour rendre une quête
+  répétable.
+- **Paliers du kit de départ** *(issue #218)* — le kit rendu au Guide après une mort progresse par
+  paliers définis en configuration (`starter-tool-kit.tiers`). Le palier atteint est persistant, un
+  palier ne peut jamais être sauté (garantie du moteur, pas une convention de données), la remise
+  reste atomique et limitée à une par vie, et les emplacements requis sont calculés sur le contenu
+  réel du palier. Le déblocage passe par une quête ordinaire (`kit_tier2.yml`) utilisant
+  `DELIVER_ITEM_TO_NPC` : rien n'est codé en dur dans le Guide.
+- **Densité des bornes de voyage du Hub** *(issue #156)* — correction d'un défaut du déclencheur
+  d'appariement : la persistance du waypoint étant asynchrone, le premier passage d'un joueur ne
+  pouvait jamais apparier, et une sortie anticipée « déjà dans cette instance » interdisait ensuite
+  toute nouvelle tentative jusqu'à ce qu'il quitte l'instance puis y revienne. Aucun ratio
+  borne/waypoint n'a été introduit et aucune politique de génération n'a changé. Le diagnostic
+  correspondant est administrable et en lecture seule (`/travel` et `/rpgadmin travel diagnose`,
+  même source) : pour chaque instance encore sans borne, il donne la cause, la distance à la borne
+  la plus proche et le délai avant réessai.
 - **Remise d'objets à un PNJ** *(issue #123)* — nouveau type d'objectif `DELIVER_ITEM_TO_NPC`
   (`npc` + `material` + `amount`) : le joueur doit **réellement remettre** les objets au PNJ, dans
   son dialogue. Cet objectif n'écoute **aucun** événement de jeu — ramasser, fabriquer ou posséder
@@ -663,7 +713,7 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   (« Créer une story »), ou « Modifier » sur une carte : formulaire guidé multi-sections
   (Général / Prérequis / Objectifs / Récompenses / Variables ; Général / Chaîne de quêtes),
   **sans JavaScript** (aller-retour serveur, boutons `_action` pour ajouter / supprimer /
-  réordonner). Les 7 types d'objectifs et 5 récompenses **réels** du moteur sont décrits par des
+  réordonner). Les 10 types d'objectifs et 5 récompenses **réels** du moteur sont décrits par des
   descripteurs (`Descriptors`) avec champs adaptés ; les valeurs (entité / matériau / PNJ /
   quête / monde) sont proposées par `<datalist>` alimentées par le dernier relevé de l'agent +
   des listes curées. `QuestValidator` / `StoryValidator` produisent des diagnostics

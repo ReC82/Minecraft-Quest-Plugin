@@ -2552,3 +2552,98 @@ Blocages: aucun. Limites assumées et documentées :
 Première étape à reprendre: déployer (JAR + redémarrage + panel), puis TC-268 (~5 min). Ensuite le
   lot suivant de #213 : affecter un .schem à un emplacement — l'identifiant stable est prêt pour ça.
 ```
+
+```text
+Date: 2026-10-08 (soir, 2e lot — #227 : actions du panel + nommage en enclume)
+Branche de départ: feature/213-building-sites @ f93e518 (la ligne déployée du lot précédent,
+  vérifiée superset de toutes les lignes déployées récentes avant déploiement)
+Branche de travail: fix/227-building-sites-actions
+Étape de départ: deux sujets dans un lot. (1) #227, ouvert après la validation manuelle de #213 :
+  « les actions du panel redirigent vers Agents et ne s'appliquent pas ». (2) améliorer la
+  création en jeu : clic → nom → confirmation.
+Étapes terminées:
+  - CAUSE RÉELLE DE #227, et une correction du ticket au passage. La liste des chemins de retour
+    acceptés par /agents/action était ÉCRITE À LA MAIN et ignorait /buildings/sites : les cinq
+    actions, BOUTON RAFRAÎCHIR COMPRIS, renvoyaient sur /agents.
+    MAIS « ne s'appliquent pas » est FAUX, et c'est prouvé deux fois : (a) le journal d'actions du
+    DEV montre chaque building.site.* en SUCCESS avec son compte rendu ; (b) la sauvegarde de
+    data.db prise avant ce déploiement contient 4 emplacements pour 5 identifiants alloués — donc
+    buildsite_0001 a bien été SUPPRIMÉ par le panel, et son identifiant n'a pas été recyclé.
+    Rien à réparer en base. Le défaut était entièrement dans le retour — mais comme Rafraîchir
+    souffrait du même défaut, il était impossible de revenir constater le résultat, ce qui se lit
+    très raisonnablement comme « rien n'est enregistré ».
+  - CORRECTION STRUCTURELLE, pas la seule redirection (le prompt l'interdisait explicitement) : la
+    liste est DÉRIVÉE de Layout.nav(). Toute page du menu est un retour accepté par construction,
+    donc ajouter une page ne demande plus de penser à une seconde liste — l'oubli exact qui a
+    produit #227. Le filtre garde son rôle anti-redirection ouverte (cible hors panel -> /agents).
+  - TESTS HTTP SUR LES VRAIS FORMULAIRES, comme exigé : chaque test EXTRAIT le formulaire rendu
+    par la page (URL d'action, champs cachés, CSRF, case de confirmation, option sélectionnée) et
+    le soumet tel quel. La distinction n'est pas cosmétique : un corps écrit à la main contient ce
+    que le test croit nécessaire, donc il aurait porté le bon « return » même quand la page en
+    émettait un que le serveur refusait — et le défaut serait passé.
+  - PREUVE que le garde-fou attrape #227 : le correctif a été temporairement remplacé par
+    l'ancienne liste en dur. 2 échecs sur 4 dans ActionReturnPathTest et les 6 tests de formulaire
+    réel en échec avec le symptôme EXACT (/agents?agent=rpgquest-dev&...). Correctif restauré.
+  - CLIC EN JEU : LE CLIC N'ÉCRIT PLUS RIEN. Il calcule l'ancre et l'orientation, les retient en
+    mémoire (PendingBuildingSiteRegistry, TTL 60 s, NON persistant) et ouvre une ENCLUME vanilla.
+    Seul un clic sur le résultat écrit. Fermeture / expiration / déconnexion / nom refusé
+    n'écrivent rien et NE CONSOMMENT AUCUN IDENTIFIANT (l'allocateur n'est appelé qu'à l'écriture).
+    Justification trouvée dans les données réelles : les 4 emplacements du DEV sont tous dans un
+    cube d'un bloc de côté et tous nommés « Nouvel emplacement » — le missclick que ce lot corrige.
+  - API PUBLIQUE AUDITÉE AVANT D'ÉCRIRE (le prompt l'exigeait), sur le JAR Paper réellement
+    installé, au javap : openAnvil(Location, boolean), AnvilInventory#getRenameText,
+    PrepareAnvilEvent#setResult, AnvilView#setRepairCost/setMaximumRepairCost. AUCUN NMS, aucune
+    réflexion CraftBukkit. Les deux derniers ne sont pas cosmétiques : sans eux, vanilla ne
+    proposerait un résultat que si le nom diffère de l'original, et réclamerait des niveaux — le
+    bouton de validation serait inerte ou payant.
+  - DEUX PIÈGES TRAITÉS. (1) Valider implique de FERMER la fenêtre, donc InventoryCloseEvent part
+    aussi après un succès : la demande est retirée du registre au moment de confirmer, sinon chaque
+    création s'annoncerait « annulée » juste après avoir réussi. C'est la même mécanique qui rend
+    un double clic inoffensif. (2) L'anti-rebond de 500 ms a été DÉPLACÉ de l'écriture vers le
+    chemin du clic : laissé dans l'écriture, il aurait avalé EN SILENCE la confirmation d'un joueur
+    rapide. Attrapé au raisonnement, pas par le compilateur ; test writingIsNeverDebounced.
+  - PIÈGE SILENCIEUX ÉVITÉ : après avoir changé create(world, anchor, facing, createdBy, playerKey)
+    en create(world, anchor, facing, name, createdBy), compileTestJava PASSAIT — l'ancien appel
+    create(..., "Lody", null) s'était recollé sur name="Lody", createdBy=null. Tests réécrits.
+  - Anti-missclick : même ancre -> la fenêtre ne s'ouvre même pas, et la règle est REVÉRIFIÉE à la
+    confirmation (un autre administrateur a pu marquer ce bloc pendant la saisie) ; voisin immédiat
+    (les 26 cases du cube) -> AVERTISSEMENT nommant l'emplacement concerné, JAMAIS un refus. Aucune
+    distance minimale inventée, conformément au prompt.
+  - Nom obligatoire, 1 à 64 caractères, Unicode, JAMAIS tronqué en silence, et JAMAIS source de
+    l'identifiant technique. Un nom refusé NE FERME PAS la fenêtre : le joueur corrige sur place.
+  - Code mort supprimé : BuildingSiteToolListener#rootName, devenu inutile avec announce().
+  - TC-268 CORRIGÉ, pas doublé : ses étapes de marquage décrivaient un clic qui créait
+    immédiatement, ce qui n'est plus le produit, et il n'avait JAMAIS été exécuté. Un TC périmé est
+    pire que pas de TC. TC-269 ajouté pour le terrain réellement neuf.
+Branche finale: fix/227-building-sites-actions (poussée, JAMAIS fusionnée)
+Build: ./gradlew clean build BUILD SUCCESSFUL en 34 min 54 s sur b0ca263, worktree PROPRE, UN SEUL
+  Gradle à la fois. 3062 tests, 0 échec, 38 ignorés : plugin 1987 (+31), control-panel 1045 (+12),
+  web-api 30. Aucun test existant assoupli.
+Déploiement: FAIT sur le DEV, 21:35-21:40. Panel d'abord (PANEL_DEPLOY_EXIT=0, /health ONLINE), et
+  ce qui est SERVI a été vérifié au javap sur le JAR de /opt/plugadmin/app : safeReturnPath lit
+  bien Set.contains(RETURN_PATHS) et non plus un switch, /buildings/sites -> 303. Puis le JAR
+  (DEPLOY_EXIT=0, 2 042 328 o == local, SHA 6407fc8b…), backup du précédent sans écraser le plus
+  ancien (2 027 547 o, SHA 96fd7ac9… = le JAR de #213). data.db sauvegardé AVANT et RELU
+  (V28, integrity ok, 35 tables). UN SEUL redémarrage, annoncé en jeu d'abord car LoDyMcFly était
+  connecté, save-all exécuté par le script. APRÈS : user_version TOUJOURS 28 (aucune migration
+  dans ce lot, c'était attendu), 35 tables, les 4 emplacements et les 5 identifiants intacts.
+  NON vérifiable d'ici : le RENDU de l'enclume chez le client. Aucune commande RCON ne simule un
+  clic droit ni l'ouverture d'une fenêtre d'inventaire. C'est TC-269.
+Tests manuels en attente: TC-269 (nouveau, ~6 min) et TC-268 (corrigé, ~5 min). Plus TC-267
+  (#222..#226), TC-265, TC-266, TC-264, TC-257, TC-258..TC-263.
+Blocages: aucun. Limites assumées et documentées :
+  - aucune prévisualisation de l'ancre avant validation du nom : l'enclume occupe l'écran, et le
+    chat annonce la position préparée faute de mieux ;
+  - l'avertissement de voisinage est TEXTUEL, pas visuel ;
+  - PendingBuildingSiteRegistry est purement mémoire : un redémarrage pendant une saisie perd la
+    demande, ce qui EST le comportement voulu ;
+  - le titre de la fenêtre d'enclume n'est pas garanti : openAnvil ouvre la fenêtre vanilla, dont
+    le libellé vient du client. Le prompt demandait « Nom de l'emplacement » — la consigne est
+    donnée dans le chat, qui est le seul endroit sûr ;
+  - #227 reste OUVERTE : la moitié « ne s'appliquent pas » de son titre est réfutée, mais le
+    parcours en jeu et le retour du panel réclament TC-269.
+  DETTE RAPPELÉE : MiniYaml ne gère pas les scalaires repliés (dialogues/guard.yml).
+  RestartServiceTest reste sensible au temps réel.
+Première étape à reprendre: TC-269 puis TC-268 (~11 min à deux). Ensuite le lot suivant de #213 :
+  affecter un .schem à un emplacement — NON commencé, le prompt l'interdisait explicitement.
+```

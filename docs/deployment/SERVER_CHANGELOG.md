@@ -6609,3 +6609,38 @@ ne place toujours **rien**. Les emplacements déjà créés sur le DEV sont inta
 - Panel : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`. Attention : cela
   **réarme #227**, donc les actions de la page Emplacements renverront de nouveau sur « Agents »
   (tout en continuant de s'appliquer).
+
+### Déploiement RÉELLEMENT effectué — 2026-10-08 21:35 à 21:40 (CEST)
+
+Serveur **RPGQuest DEV**, depuis un worktree propre sur `b0ca263`. Branche vérifiée **superset** de
+toutes les lignes déployées récentes avant tout transfert.
+
+| Étape | Résultat |
+|---|---|
+| **Sauvegarde `data.db` AVANT** | `data-20261008T193630Z-predeploy.db` (1 183 744 o), **relue** : `user_version = 28`, `integrity_check = ok`, 35 tables — exploitable, pas juste copiée |
+| **Control Panel (déployé en premier)** | `PANEL_DEPLOY_EXIT=0`, `/health` → `ONLINE` |
+| **Ce qui est SERVI, vérifié** | `javap` sur le JAR de `/opt/plugadmin/app` : `safeReturnPath` lit `Set.contains(RETURN_PATHS)` et **non plus un `switch`** ; `returnPaths()` présent ; `GET /buildings/sites` → **303** vers `/login` (route enregistrée) |
+| JAR | `DEPLOY_EXIT=0`, en ligne **2 042 328 o == local** (SHA-256 `6407fc8b…`) |
+| Backup du JAR remplacé | `rpgquest-20261008T193720Z-predeploy.jar` (2 027 547 o, SHA-256 `96fd7ac9…`) — le JAR de #213, **la sauvegarde précédente n'a pas été écrasée** |
+| Redémarrage Minecraft | **un seul**. `LoDyMcFly` était connecté : **prévenu en jeu** avant l'arrêt, et le script a exécuté `save-all` |
+| **Après redémarrage** | RPGQuest **en vert**, Citizens en vert ; `user_version` **toujours 28** (aucune migration dans ce lot, c'était attendu), 35 tables, **les 4 emplacements et les 5 identifiants intacts** |
+
+#### Ce que la sauvegarde de `data.db` prouve au sujet de #227
+
+`building_sites` contient **4** lignes alors que `building_site_ids` en compte **5** : `buildsite_0001`
+a donc bien été **supprimé par le panel**, et son identifiant **n'a pas été recyclé**. Avec le journal
+d'actions en `SUCCESS`, cela établit que les mutations s'appliquaient. **Il n'y a rien à réparer en
+base.**
+
+Accessoirement, les quatre emplacements restants tiennent **dans un cube d'un bloc de côté**
+(737/66, 736/66, 736/67, 737/67) et portent tous le nom par défaut « Nouvel emplacement » : c'est
+exactement le missclick que l'étape de nommage et l'avertissement de voisinage de ce lot
+suppriment. **Ils ont été laissés intacts** — rien n'autorisait à les supprimer.
+
+#### Ce qui reste à constater
+
+Le **rendu de l'enclume chez le client**, et donc le parcours complet de création. Aucune commande
+RCON ne simule un clic droit sur un bloc ni l'ouverture d'une fenêtre d'inventaire. Le plugin est
+chargé, le schéma est inchangé, le panel sert le bon code — mais que l'enclume s'ouvre, que le clic
+sur le résultat crée, et que la fermeture ne crée rien restent à voir. C'est **TC-269**, et **TC-268**
+corrigé.

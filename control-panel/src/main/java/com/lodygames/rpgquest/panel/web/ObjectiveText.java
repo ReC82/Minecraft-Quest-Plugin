@@ -60,6 +60,15 @@ public final class ObjectiveText {
                 yield new Objective(label, target);
             }
             case "REACH_LOCATION" -> new Objective("Se rendre dans " + prettyNpc(target), target);
+            // Issue #185 : la portée ET la règle de comptage apparaissent dans le résumé. Le ticket
+            // interdit de les laisser implicites — elles changent ce que le joueur doit faire.
+            case "DISCOVER_WAYPOINT" -> {
+                String scope = worldScope(summary.get("worlds"));
+                boolean cumulative = "INCLUDE_EXISTING".equalsIgnoreCase(str(summary.get("countMode")));
+                yield new Objective("Découvrir " + amount + " waypoint(s) — " + scope
+                        + (cumulative ? " — découvertes déjà acquises incluses" : " — nouvelles découvertes"),
+                        null);
+            }
             default -> {
                 String raw = str(summary.get("raw"));
                 yield new Objective(raw.isEmpty()
@@ -67,6 +76,22 @@ public final class ObjectiveText {
                         : MinecraftNames.humanizeTokens(raw), null);
             }
         };
+    }
+
+    /**
+     * Portée affichée d'un {@code DISCOVER_WAYPOINT} (issue #185). La valeur arrive soit en liste
+     * (relevé runtime de l'agent), soit en texte « a, b » (brouillon relu depuis le YAML) : les deux
+     * origines doivent produire exactement le même libellé.
+     */
+    private static String worldScope(Object raw) {
+        String joined;
+        if (raw instanceof java.util.Collection<?> list) {
+            joined = list.stream().map(x -> x == null ? "" : String.valueOf(x).trim())
+                    .filter(x -> !x.isEmpty()).collect(java.util.stream.Collectors.joining(", "));
+        } else {
+            joined = str(raw).trim();
+        }
+        return joined.isEmpty() ? "tous mondes" : joined;
     }
 
     private static Objective countable(String verb, String name, int amount, String target) {

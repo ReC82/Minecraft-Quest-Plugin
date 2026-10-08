@@ -32,6 +32,7 @@ import com.lodygames.rpgquest.quest.model.CollectItemObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.CraftItemObjective;
 import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
+import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
@@ -105,6 +106,10 @@ public final class ContentPackMapper {
             case ReachLocationObjective b -> QuestPackEntry.Objective.reach(b.world(), b.x(), b.y(), b.z(), b.radius());
             case DeliverItemToNpcObjective b -> QuestPackEntry.Objective.deliver(b.npcId(), b.material().name(), b.amount());
             case SmeltItemObjective b -> QuestPackEntry.Objective.countable("SMELT_ITEM", b.material().name(), b.amount());
+            // Issue #185 : la règle de comptage voyage avec la quête — un pack réimporté ne doit
+            // jamais changer silencieusement ce que le joueur doit faire.
+            case DiscoverWaypointObjective b ->
+                    QuestPackEntry.Objective.discoverWaypoint(b.amount(), b.worlds(), b.countMode().name());
         };
     }
 

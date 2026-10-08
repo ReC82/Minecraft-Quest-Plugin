@@ -86,12 +86,29 @@ public interface AgentActions {
      *                    {@code null} pour tous les autres types. Champ distinct de {@code target}
      *                    parce qu'une remise a DEUX cibles : l'objet compté et le PNJ qui le reçoit
      *                    — les écraser dans un seul champ rendrait le libellé du panel faux.
+     * @param worlds      mondes où un {@code DISCOVER_WAYPOINT} compte (issue #185) ; liste vide =
+     *                    tous les mondes, et jamais {@code null}
+     * @param countMode   {@code NEW_ONLY} ou {@code INCLUDE_EXISTING} pour un
+     *                    {@code DISCOVER_WAYPOINT} (issue #185), {@code null} pour les autres types
      */
-    record ObjectiveSummary(String kind, String target, int amount, String raw, String npc) {
+    record ObjectiveSummary(String kind, String target, int amount, String raw, String npc,
+                            List<String> worlds, String countMode) {
+
+        public ObjectiveSummary {
+            worlds = worlds == null ? List.of() : List.copyOf(worlds);
+        }
 
         /** Objectif sans PNJ destinataire : tous les types sauf {@code DELIVER_ITEM_TO_NPC}. */
         ObjectiveSummary(String kind, String target, int amount, String raw) {
-            this(kind, target, amount, raw, null);
+            this(kind, target, amount, raw, null, List.of(), null);
+        }
+
+        /**
+         * Issue #123 : avec PNJ destinataire. {@code worlds}/{@code countMode} (issue #185) ne
+         * concernent que {@code DISCOVER_WAYPOINT}.
+         */
+        ObjectiveSummary(String kind, String target, int amount, String raw, String npc) {
+            this(kind, target, amount, raw, npc, List.of(), null);
         }
     }
 

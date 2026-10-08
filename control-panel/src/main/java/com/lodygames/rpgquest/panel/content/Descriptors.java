@@ -19,7 +19,12 @@ public final class Descriptors {
     private Descriptors() {
     }
 
-    public enum FieldType { TEXT, INT, DOUBLE, SELECT, TEXTAREA }
+    /**
+     * {@code LIST} (issue #185) : plusieurs valeurs séparées par des virgules dans le formulaire,
+     * écrites en liste YAML en ligne — le modèle du panel reste une simple {@code Map<String,String>},
+     * aucun éditeur de liste hétérogène n'est introduit.
+     */
+    public enum FieldType { TEXT, INT, DOUBLE, SELECT, TEXTAREA, LIST }
 
     /**
      * @param name         nom technique (clé YAML)
@@ -46,6 +51,11 @@ public final class Descriptors {
 
         public static Field select(String n, String l, String source, String h, boolean req) {
             return new Field(n, l, FieldType.SELECT, h, source, req);
+        }
+
+        /** Liste facultative de valeurs ; {@code source} sert à vérifier chaque entrée (issue #185). */
+        public static Field list(String n, String l, String source, String h) {
+            return new Field(n, l, FieldType.LIST, h, source, false);
         }
     }
 
@@ -77,6 +87,23 @@ public final class Descriptors {
                     List.of(Field.select("material", "Objet obtenu après cuisson", "material",
                             "Chercher par nom français (« teinture verte ») ou par identifiant "
                                     + "(« GREEN_DYE »).", true), AMOUNT)),
+            new Descriptor("DISCOVER_WAYPOINT", "Découvrir des waypoints", "world",
+                    "Découvrir N waypoints DISTINCTS. Seule la première découverte réelle compte : "
+                            + "passer à proximité, se téléporter ou recliquer un waypoint déjà connu "
+                            + "ne progresse jamais. Deux waypoints du même biome comptent séparément, "
+                            + "et renommer ou déplacer un waypoint ne le fait pas compter deux fois.",
+                    List.of(AMOUNT,
+                            Field.list("worlds", "Mondes (optionnel)", "world",
+                                    "Mondes où la découverte compte, séparés par des virgules "
+                                            + "(ex. « world_hub, wild »). Laisser vide = tous les mondes ; "
+                                            + "la portée retenue est toujours annoncée au joueur."),
+                            Field.select("count-mode", "Règle de comptage", "waypointCountMode",
+                                    "NEW_ONLY : seules les découvertes faites pendant que l'objectif est "
+                                            + "actif comptent (défaut). INCLUDE_EXISTING : les découvertes "
+                                            + "déjà acquises comptent aussi. Sur une quête répétable, "
+                                            + "NEW_ONLY empêche un nouveau cycle si le joueur a déjà tout "
+                                            + "découvert — aucune découverte n'est jamais supprimée pour "
+                                            + "rendre la quête rejouable.", false))),
             new Descriptor("CRAFT_ITEM", "Fabriquer un objet", "gift",
                     "Fabriquer N exemplaires d'un objet (table de craft ou grille 2×2).",
                     List.of(Field.select("material", "Objet", "material",

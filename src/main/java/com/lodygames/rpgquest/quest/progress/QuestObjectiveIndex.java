@@ -4,6 +4,7 @@ import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.CollectItemObjective;
 import com.lodygames.rpgquest.quest.model.CraftItemObjective;
 import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
+import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.ObjectiveType;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
@@ -40,6 +41,13 @@ public final class QuestObjectiveIndex {
     private final Map<String, List<ObjectiveRef>> reachLocationByWorld = new HashMap<>();
     private final Map<String, List<ObjectiveRef>> deliverToNpc = new HashMap<>();
     private final Map<Material, List<ObjectiveRef>> smeltItem = new HashMap<>();
+    /**
+     * Issue #185 : aucune clé naturelle ne découpe ces objectifs (une découverte ne porte ni
+     * matériau ni entité), et le filtre de mondes est optionnel. La liste reste donc plate — elle
+     * n'est parcourue que lors d'une PREMIÈRE découverte, un événement rare, jamais à chaque
+     * déplacement.
+     */
+    private final List<ObjectiveRef> discoverWaypoint = new ArrayList<>();
 
     public QuestObjectiveIndex(List<QuestDefinition> quests) {
         for (QuestDefinition quest : quests) {
@@ -65,6 +73,7 @@ public final class QuestObjectiveIndex {
             case ReachLocationObjective o -> add(reachLocationByWorld, o.world(), ref);
             case DeliverItemToNpcObjective o -> add(deliverToNpc, o.npcId(), ref);
             case SmeltItemObjective o -> add(smeltItem, o.material(), ref);
+            case DiscoverWaypointObjective o -> discoverWaypoint.add(ref);
         }
     }
 
@@ -115,6 +124,11 @@ public final class QuestObjectiveIndex {
         return smeltItem.getOrDefault(material, List.of());
     }
 
+    /** Objectifs de découverte de waypoints (issue #185) — l'appelant applique le filtre de mondes. */
+    public List<ObjectiveRef> discoverWaypoint() {
+        return List.copyOf(discoverWaypoint);
+    }
+
     public boolean isEmpty(ObjectiveType type) {
         return switch (type) {
             case BREAK_BLOCK -> breakBlock.isEmpty();
@@ -126,6 +140,7 @@ public final class QuestObjectiveIndex {
             case REACH_LOCATION -> reachLocationByWorld.isEmpty();
             case DELIVER_ITEM_TO_NPC -> deliverToNpc.isEmpty();
             case SMELT_ITEM -> smeltItem.isEmpty();
+            case DISCOVER_WAYPOINT -> discoverWaypoint.isEmpty();
         };
     }
 }

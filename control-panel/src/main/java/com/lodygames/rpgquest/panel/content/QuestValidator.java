@@ -22,6 +22,12 @@ public final class QuestValidator {
     private static final Pattern KEY = Pattern.compile("[a-z0-9._/-]+");
     private static final Pattern STEP_ID = Pattern.compile("[a-z0-9_-]+");
     private static final Pattern VAR_KEY = Pattern.compile("[A-Za-z0-9_]+");
+    /**
+     * Sources de liste à vocabulaire FIXE : leurs valeurs viennent d'une énumération du moteur, pas
+     * d'un relevé serveur. Une valeur hors liste est donc une vraie erreur, pas une incertitude.
+     */
+    private static final Map<String, List<String>> FIXED_SOURCES = Map.of(
+            "waypointCountMode", List.of("NEW_ONLY", "INCLUDE_EXISTING"));
 
     private QuestValidator() {
     }
@@ -233,6 +239,17 @@ public final class QuestValidator {
                     }
                 }
                 case SELECT -> {
+                    // Issue #185 : vocabulaire FIXE venu d'une énumération du moteur, pas d'un relevé
+                    // serveur. Le vérifier ici évite à la fois un « valeur inconnue » trompeur et un
+                    // « impossible de vérifier » alors que les deux seules valeurs valides sont connues.
+                    if (FIXED_SOURCES.containsKey(f.selectSource())) {
+                        List<String> allowed = FIXED_SOURCES.get(f.selectSource());
+                        if (!allowed.contains(v.trim().toUpperCase(Locale.ROOT))) {
+                            out.add(Diagnostic.error(ctx, "« " + f.label() + " » : valeur « " + v.trim()
+                                    + " » invalide. Valeurs acceptées : " + String.join(", ", allowed) + "."));
+                        }
+                        continue;
+                    }
                     // #196 : un bloc sans forme d'objet n'est pas une valeur « inconnue » — il
                     // existe bel et bien, mais ne peut jamais devenir un objet. Le dire
                     // précisément évite de chercher une faute de frappe qui n'existe pas.
@@ -248,6 +265,22 @@ public final class QuestValidator {
                                 + " réellement invalide au chargement."));
                     } else if (!ref.sourceKnown(f.selectSource())) {
                         out.add(Diagnostic.info(ctx, "Impossible de vérifier « " + f.label() + " » : aucun relevé de référence."));
+                    }
+                }
+                // Issue #185 : chaque entrée de la liste est vérifiée séparément, et un doublon est
+                // signalé — « world_hub, world_hub » ne doit pas laisser croire à deux mondes.
+                case LIST -> {
+                    List<String> parts = QuestYaml.splitList(v);
+                    java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+                    for (String part : parts) {
+                        if (!seen.add(part.toLowerCase(Locale.ROOT))) {
+                            out.add(Diagnostic.warning(ctx, "« " + f.label() + " » : « " + part
+                                    + " » est répété ; il ne compte qu'une fois."));
+                        } else if (ref.sourceKnown(f.selectSource()) && !ref.isValueKnown(f.selectSource(), part)) {
+                            out.add(Diagnostic.warning(ctx, "« " + f.label() + " » : valeur « " + part
+                                    + " » hors des valeurs connues. Un " + f.selectSource()
+                                    + " inexistant ne fera jamais progresser l'objectif."));
+                        }
                     }
                 }
                 default -> {

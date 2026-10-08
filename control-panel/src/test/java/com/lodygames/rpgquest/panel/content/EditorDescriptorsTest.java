@@ -18,14 +18,19 @@ class EditorDescriptorsTest {
     /** Types réels du moteur : {@code quest.model.ObjectiveType} / {@code quest.model.RewardType}. */
     private static final Set<String> ENGINE_OBJECTIVES = Set.of(
             "BREAK_BLOCK", "PLACE_BLOCK", "KILL_ENTITY", "COLLECT_ITEM", "CRAFT_ITEM",
-            "TALK_TO_NPC", "REACH_LOCATION", "DELIVER_ITEM_TO_NPC", "SMELT_ITEM");
+            "TALK_TO_NPC", "REACH_LOCATION", "DELIVER_ITEM_TO_NPC", "SMELT_ITEM", "DISCOVER_WAYPOINT");
     private static final Set<String> ENGINE_REWARDS =
             Set.of("EXPERIENCE", "ITEM", "VARIABLE", "COMMAND", "MONEY");
 
     /** Noms de champ YAML réellement lus par {@code QuestDefinitionParser}. */
+    /**
+     * Clés YAML réellement lues par le moteur. {@code worlds} (pluriel) et {@code count-mode}
+     * viennent de l'objectif {@code DISCOVER_WAYPOINT} (issue #185) et sont distincts de
+     * {@code world} (singulier, propre à {@code REACH_LOCATION}).
+     */
     private static final Set<String> ENGINE_FIELDS = Set.of(
             "entity", "material", "amount", "npc", "world", "x", "y", "z", "radius",
-            "key", "value", "command");
+            "key", "value", "command", "worlds", "count-mode");
 
     @Test
     void objectiveKindsMatchTheEngineExactly() {
@@ -92,7 +97,10 @@ class EditorDescriptorsTest {
                     continue;
                 }
                 String src = f.selectSource();
-                assertTrue(Set.of("entity", "material", "icon", "npc", "quest", "world").contains(src),
+                // « waypointCountMode » n'est pas un relevé serveur : ce sont les deux valeurs de
+                // l'énumération CountMode du moteur (issue #185), servies telles quelles.
+                assertTrue(Set.of("entity", "material", "icon", "npc", "quest", "world",
+                        "waypointCountMode").contains(src),
                         d.kind() + "/" + f.name() + " : source de liste inconnue « " + src + " »");
             }
         }

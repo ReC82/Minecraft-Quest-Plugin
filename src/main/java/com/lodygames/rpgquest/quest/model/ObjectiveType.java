@@ -11,5 +11,7 @@ public enum ObjectiveType {
     /** Remise réelle d'objets à un PNJ, avec dépôts partiels persistants (issue #123). */
     DELIVER_ITEM_TO_NPC,
     /** Cuisson réelle d'un objet dans un four (issue #141). */
-    SMELT_ITEM
+    SMELT_ITEM,
+    /** Première découverte réelle de waypoints distincts (issue #185). */
+    DISCOVER_WAYPOINT
 }

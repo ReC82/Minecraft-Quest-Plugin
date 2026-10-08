@@ -104,6 +104,13 @@ public final class ContentPackSerializer {
         opt(sb, 7, "y", num(o.y()));
         opt(sb, 7, "z", num(o.z()));
         opt(sb, 7, "radius", num(o.radius()));
+        // Issue #185 : liste YAML en ligne, lue telle quelle par getStringList à la réimportation.
+        if (!o.worlds().isEmpty()) {
+            sb.append("              worlds: [")
+                    .append(String.join(", ", o.worlds().stream().map(ContentPackSerializer::plain).toList()))
+                    .append("]\n");
+        }
+        opt(sb, 7, "count-mode", o.countMode() == null ? null : plain(o.countMode()));
     }
 
     private static void writeReward(StringBuilder sb, QuestPackEntry.Reward r) {

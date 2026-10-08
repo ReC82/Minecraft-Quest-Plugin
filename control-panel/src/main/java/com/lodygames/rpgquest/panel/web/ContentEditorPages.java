@@ -493,6 +493,9 @@ public final class ContentEditorPages {
                             fld.type() == Descriptors.FieldType.INT, on));
                     case SELECT -> sb.append(text(name, fld.label(), fld.help(), val, fld.required(), false,
                             null, datalistId(fld.selectSource()), on));
+                    // Issue #185 : saisie texte « a, b » ; la liste YAML est produite à l'écriture.
+                    case LIST -> sb.append(text(name, fld.label(), fld.help(), val, false, false,
+                            null, null, on));
                     default -> sb.append(text(name, fld.label(), fld.help(), val, fld.required(), false, null, null, on));
                 }
             }
@@ -1364,6 +1367,7 @@ public final class ContentEditorPages {
             case "npc" -> "dl-npc";
             case "quest" -> "dl-quest";
             case "world" -> "dl-world";
+            case "waypointCountMode" -> "dl-waypoint-count-mode";
             default -> null;
         };
     }
@@ -1392,7 +1396,9 @@ public final class ContentEditorPages {
                 + datalist("dl-category", RefData.CATEGORIES)
                 + npcDatalist("dl-npc", r)
                 + questDatalist("dl-quest", r)
-                + datalist("dl-world", r.worlds());
+                + datalist("dl-world", r.worlds())
+                // Issue #185 : deux valeurs fixes, définies par le moteur — jamais un relevé serveur.
+                + datalist("dl-waypoint-count-mode", List.of("NEW_ONLY", "INCLUDE_EXISTING"));
     }
 
     /**

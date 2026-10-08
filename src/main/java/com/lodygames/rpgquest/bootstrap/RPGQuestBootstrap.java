@@ -609,6 +609,15 @@ public final class RPGQuestBootstrap {
                 (world, x, y, z) -> claimService.claimAt(world.getName(), x, y, z).isEmpty(),
                 () -> configService.current().travel());
         registry.start(waypointService);
+
+        // Issue #185 : l'objectif « découvrir N waypoints » se branche ICI, et nulle part ailleurs.
+        // Le système de waypoints ne connaît pas le moteur de quêtes et réciproquement : il publie
+        // ses PREMIÈRES découvertes et sait les compter, le moteur s'y abonne. Aucun waypoint n'est
+        // jamais débloqué ni aucune découverte supprimée pour satisfaire une quête.
+        waypointService.onFirstDiscovery((player, waypoint) ->
+                questProgressEngine.handleWaypointDiscovered(player, waypoint.world()));
+        questProgressEngine.setDiscoveredWaypointCounter(waypointService::discoveredCount);
+
         registry.start(new PlayerListenerService(plugin, waypointService.listener()));
         registry.start(new PlayerListenerService(plugin, waypointService.protectionListener(travelMaintenanceMode)));
 

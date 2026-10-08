@@ -1,0 +1,41 @@
+# QUÊTE DE TEST MANUEL — ne jamais copier telle quelle dans une procédure de
+# production VeryGames permanente. Voir docs/MANUAL_TEST_PLAN.md.
+#
+# Objectif DISCOVER_WAYPOINT (issue #185) : il faut DÉCOUVRIR des waypoints
+# distincts, c'est-à-dire cliquer sur le bouton d'un waypoint jamais découvert.
+#
+# Procédure et pièges à vérifier explicitement :
+#   - passer à proximité d'un waypoint ne compte pas ;
+#   - s'y téléporter depuis une borne ne compte pas ;
+#   - recliquer un waypoint DÉJÀ découvert ne compte pas (le message « Waypoint
+#     déjà découvert » s'affiche, mais le compteur ne bouge pas) ;
+#   - deux waypoints du même biome comptent séparément ;
+#   - renommer ou déplacer un waypoint ne le fait pas compter deux fois.
+#
+# « worlds » est volontairement ABSENT ici : la portée est donc « tous mondes »,
+# et le libellé affiché au joueur le dit. Pour tester le filtre, ajouter par
+# exemple « worlds: [world_hub] » et vérifier qu'une découverte dans le Wild ne
+# fait rien avancer.
+#
+# « count-mode: NEW_ONLY » est le mode par défaut, écrit ici explicitement :
+# seules les découvertes faites PENDANT que l'objectif est actif comptent. Sur
+# une quête répétable comme celle-ci, un joueur ayant déjà tout découvert ne
+# pourra donc pas valider un nouveau cycle — c'est le comportement attendu,
+# aucune découverte n'est jamais supprimée pour rendre la quête rejouable.
+id: rpgquest:test_discover_waypoint
+title: "<red>[TEST] Découvrir des waypoints</red>"
+description: "<gray>Quête de test manuel — objectif DISCOVER_WAYPOINT. Découvre deux waypoints que tu ne connais pas encore, en cliquant sur leur bouton.</gray>"
+category: test
+icon: LODESTONE
+repeatable: true
+
+steps:
+  - id: decouvrir_deux_waypoints
+    objectives:
+      - type: DISCOVER_WAYPOINT
+        amount: 2
+        count-mode: NEW_ONLY
+
+rewards:
+  - type: EXPERIENCE
+    amount: 5

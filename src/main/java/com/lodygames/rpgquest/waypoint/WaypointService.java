@@ -20,6 +20,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -88,6 +90,8 @@ public final class WaypointService implements PluginService {
     private final Set<String> usedDisplayNames = ConcurrentHashMap.newKeySet();
 
     private final ConcurrentHashMap<UUID, Set<String>> discoveriesByPlayer = new ConcurrentHashMap<>();
+    /** Issue #185 : abonnés aux PREMIÈRES découvertes (moteur de quêtes), jamais aux reclics. */
+    private final List<BiConsumer<Player, Waypoint>> firstDiscoveryListeners = new CopyOnWriteArrayList<>();
     private final ConcurrentHashMap<UUID, String> lastInstanceByPlayer = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Long> lastCheckByPlayer = new ConcurrentHashMap<>();
 
@@ -647,6 +651,14 @@ public final class WaypointService implements PluginService {
                 .thenAccept(isNew -> runSync(() -> {
                     discovered.add(waypoint.id());
                     Player online = plugin.getServer().getPlayer(playerId);
+                    if (isNew) {
+                        // Issue #185 : notifié uniquement sur une PREMIÈRE découverte réelle. isNew
+                        // vient de l'insertion en base, donc un second clic — même après un
+                        // redémarrage ou depuis une autre session — ne notifie jamais. C'est ce qui
+                        // rend le comptage d'un objectif « découvrir N waypoints » distinct sans
+                        // aucune table supplémentaire.
+                        notifyFirstDiscovery(online != null ? online : player, waypoint);
+                    }
                     if (online != null && online.isOnline() && isNew) {
                         // Retour joueur 2026-10-04 (issue #160) : la première découverte n'affichait
                         // que le biome ("Waypoint découvert — plains"), jamais le nom canonique --
@@ -662,6 +674,52 @@ public final class WaypointService implements PluginService {
                     return null;
                 });
         return true;
+    }
+
+    /**
+     * Issue #185 — s'abonner aux <strong>premières</strong> découvertes. Le système waypoint ne
+     * connaît ainsi aucun consommateur en particulier : le moteur de quêtes s'y branche depuis le
+     * bootstrap, et un waypoint n'est jamais débloqué ni une découverte supprimée pour satisfaire
+     * une quête.
+     */
+    public void onFirstDiscovery(BiConsumer<Player, Waypoint> listener) {
+        if (listener != null) {
+            firstDiscoveryListeners.add(listener);
+        }
+    }
+
+    /** Toujours appelé sur le thread principal (depuis {@code runSync}). Un abonné qui échoue n'en bloque aucun autre. */
+    private void notifyFirstDiscovery(Player player, Waypoint waypoint) {
+        for (BiConsumer<Player, Waypoint> listener : firstDiscoveryListeners) {
+            try {
+                listener.accept(player, waypoint);
+            } catch (RuntimeException error) {
+                logger.error("Un abonné à la première découverte de {} a échoué", waypoint.id(), error);
+            }
+        }
+    }
+
+    /**
+     * Nombre de waypoints déjà découverts par {@code playerId}, restreint à {@code worlds} (liste
+     * vide = tous les mondes). Lecture de l'index déjà en mémoire, jamais un accès base ni un scan
+     * monde — utilisé par le mode de comptage cumulatif de l'issue #185.
+     */
+    public int discoveredCount(UUID playerId, List<String> worlds) {
+        Set<String> discovered = discoveriesByPlayer.get(playerId);
+        if (discovered == null || discovered.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (String id : discovered) {
+            Waypoint waypoint = byId.get(id);
+            if (waypoint == null) {
+                continue;
+            }
+            if (worlds.isEmpty() || worlds.stream().anyMatch(w -> w.equalsIgnoreCase(waypoint.world()))) {
+                count++;
+            }
+        }
+        return count;
     }
 
     // ---- Protection ---------------------------------------------------------------------------

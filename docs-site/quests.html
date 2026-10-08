@@ -85,9 +85,17 @@ rewards:                    # optionnel
         <tr><td><code>DELIVER_ITEM_TO_NPC</code></td><td><code>npc</code>, <code>material</code>, <code>amount</code></td>
           <td><strong>Remettre</strong> l'objet au PNJ, dans son dialogue. Collecter ou posséder ne compte
             <strong>jamais</strong> ; les objets sont réellement consommés. Dépôts partiels conservés.</td></tr>
+        <tr><td><code>DISCOVER_WAYPOINT</code></td><td><code>amount</code>, <code>worlds</code> (optionnel), <code>count-mode</code> (optionnel)</td>
+          <td><strong>Découvrir</strong> des waypoints distincts, en cliquant sur leur bouton. Passer à
+            proximité, se téléporter ou recliquer un waypoint déjà connu ne comptent
+            <strong>jamais</strong>. Deux waypoints du même biome comptent séparément ; renommer ou
+            déplacer un waypoint ne le fait pas compter deux fois. <code>worlds</code> vide = tous les
+            mondes. <code>count-mode</code> vaut <code>NEW_ONLY</code> (défaut : seules les découvertes
+            faites pendant que l'objectif est actif) ou <code>INCLUDE_EXISTING</code> (les découvertes
+            déjà acquises comptent aussi) ; la règle retenue est annoncée au joueur.</td></tr>
       </tbody>
     </table>
-    <p class="text-body-secondary small">Neuf types au total, aucun autre n'existe actuellement (pas d'objectif « utiliser un objet », par exemple).</p>
+    <p class="text-body-secondary small">Dix types au total, aucun autre n'existe actuellement (pas d'objectif « utiliser un objet », par exemple).</p>
 
     <div class="alert alert-info">
       <p class="mb-2">

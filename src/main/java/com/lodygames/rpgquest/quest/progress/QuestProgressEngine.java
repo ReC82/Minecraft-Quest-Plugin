@@ -16,6 +16,7 @@ import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
+import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
 import com.lodygames.rpgquest.quest.model.ItemReward;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
@@ -37,8 +38,10 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.function.ToIntBiFunction;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.title.Title;
@@ -101,6 +104,15 @@ public final class QuestProgressEngine implements PluginService {
     /** Jeton anti double-clic / spam / appel concurrent d'une remise d'objets (issue #123), par joueur. */
     private final java.util.Set<UUID> deliveriesInFlight = ConcurrentHashMap.newKeySet();
     private volatile QuestObjectiveIndex index = new QuestObjectiveIndex(List.of());
+    /**
+     * Issue #185 — nombre de waypoints déjà découverts par un joueur, filtré par monde. Simple
+     * couture branchée au bootstrap sur {@code waypoint.WaypointService#discoveredCount} : le moteur
+     * de quêtes ne dépend jamais du système de waypoints, et réciproquement. Non branchée (tests
+     * d'autres objectifs), le mode cumulatif ne compte que les nouvelles découvertes et le dit une
+     * fois dans les logs, au lieu de prétendre silencieusement un total de zéro.
+     */
+    private volatile ToIntBiFunction<UUID, List<String>> discoveredWaypointCounter;
+    private final AtomicBoolean missingCounterWarned = new AtomicBoolean();
 
     public QuestProgressEngine(RPGQuestPlugin plugin, YamlQuestEngine questEngine, QuestProgressRepository repository,
                                 PlayerVariableRepository variableRepository, QuestMessagesService messagesService,
@@ -113,6 +125,11 @@ public final class QuestProgressEngine implements PluginService {
         this.npcIdentityService = npcIdentityService;
         this.rewardPayer = rewardPayer;
         this.logger = plugin.getSLF4JLogger();
+    }
+
+    /** Issue #185 — branché une seule fois au démarrage (voir {@code bootstrap.RPGQuestBootstrap}). */
+    public void setDiscoveredWaypointCounter(ToIntBiFunction<UUID, List<String>> counter) {
+        this.discoveredWaypointCounter = counter;
     }
 
     @Override
@@ -194,6 +211,12 @@ public final class QuestProgressEngine implements PluginService {
             // sémantique de COLLECT_ITEM que ce type d'objectif existe pour éviter.
             case DELIVER_ITEM_TO_NPC -> null;
             case SMELT_ITEM -> new QuestSmeltListener(this);
+            // Issue #185 : DISCOVER_WAYPOINT n'écoute aucun événement de jeu. Un écouteur de
+            // déplacement ou d'interaction recréerait une seconde règle de découverte à côté de
+            // celle du système de waypoints, avec la quasi-certitude de diverger (passage à
+            // proximité, téléportation, reclic). La progression vient exclusivement de l'abonnement
+            // aux PREMIÈRES découvertes réelles, via setDiscoveredWaypointCounter/handleWaypointDiscovered.
+            case DISCOVER_WAYPOINT -> null;
         };
         if (primary == null) {
             return List.of();
@@ -237,6 +260,13 @@ public final class QuestProgressEngine implements PluginService {
                         // Ici et nulle part ailleurs : une seule fois par chargement, asynchrone,
                         // borné — jamais une tâche répétitive.
                         recoverPendingMoneyRewards(playerId);
+                        // Issue #185 : le mode cumulatif se recalcule depuis le total réel du
+                        // joueur, donc une découverte faite avant l'acceptation est prise en compte
+                        // dès le chargement, sans instantané stocké.
+                        Player online = plugin.getServer().getPlayer(playerId);
+                        if (online != null) {
+                            runOnMainThread(() -> refreshCumulativeDiscoveryObjectives(online));
+                        }
                     });
         }).exceptionally(error -> {
             logger.error("Impossible de charger la progression de quêtes pour {}", playerId, error);
@@ -313,7 +343,10 @@ public final class QuestProgressEngine implements PluginService {
         future.whenComplete((outcome, error) -> {
             notifyChanged(playerId);
             if (error == null && outcome.result() == AcceptOutcome.Result.ACCEPTED) {
-                runOnMainThread(() -> showQuestStarted(player, quest));
+                runOnMainThread(() -> {
+                    showQuestStarted(player, quest);
+                    refreshCumulativeDiscoveryObjectives(player);
+                });
             }
         });
         return future;
@@ -799,6 +832,79 @@ public final class QuestProgressEngine implements PluginService {
         handleCandidates(player, index.smeltItem(material), amount);
     }
 
+    /**
+     * Issue #185 — appelé <strong>uniquement</strong> sur une première découverte réelle, jamais sur
+     * un reclic ni un passage à proximité : c'est le système de waypoints qui tranche, à partir de
+     * l'insertion en base. Un même waypoint ne peut donc pas compter deux fois, même après une mort,
+     * une reconnexion ou un redémarrage, et aucune table supplémentaire n'est nécessaire.
+     */
+    public void handleWaypointDiscovered(Player player, String world) {
+        List<ObjectiveRef> newDiscoveriesOnly = index.discoverWaypoint().stream()
+                .filter(ref -> ref.objective() instanceof DiscoverWaypointObjective o
+                        && o.countMode() == DiscoverWaypointObjective.CountMode.NEW_ONLY
+                        && o.matchesWorld(world))
+                .toList();
+        handleCandidates(player, newDiscoveriesOnly);
+        // Le mode cumulatif ne s'incrémente pas : il se recalcule depuis le total du joueur, ce qui
+        // reste exact après un redémarrage sans stocker d'instantané.
+        refreshCumulativeDiscoveryObjectives(player);
+    }
+
+    /**
+     * Issue #185, mode {@code INCLUDE_EXISTING} : aligne le compteur sur le nombre réel de waypoints
+     * déjà découverts par le joueur (filtré par monde). Idempotent et sans effet de bord sur les
+     * découvertes elles-mêmes — appelé à l'acceptation, au changement d'étape, au chargement du
+     * joueur et à chaque nouvelle découverte.
+     */
+    public void refreshCumulativeDiscoveryObjectives(Player player) {
+        List<ObjectiveRef> cumulative = index.discoverWaypoint().stream()
+                .filter(ref -> ref.objective() instanceof DiscoverWaypointObjective o
+                        && o.countMode() == DiscoverWaypointObjective.CountMode.INCLUDE_EXISTING)
+                .toList();
+        if (cumulative.isEmpty()) {
+            return;
+        }
+        UUID playerId = player.getUniqueId();
+        Map<NamespacedKey, ActiveQuestProgress> playerActive = activeByPlayer.get(playerId);
+        if (playerActive == null || playerActive.isEmpty()) {
+            return;
+        }
+        boolean changed = false;
+        for (ObjectiveRef ref : cumulative) {
+            ActiveQuestProgress progress = playerActive.get(ref.questId());
+            if (progress == null || progress.state() != QuestState.ACTIVE
+                    || progress.currentStepIndex() != ref.stepIndex()) {
+                continue;
+            }
+            DiscoverWaypointObjective objective = (DiscoverWaypointObjective) ref.objective();
+            int required = objective.amount();
+            int total = countDiscoveredWaypoints(playerId, objective.worlds());
+            int updated = Math.min(required, total);
+            // Jamais de régression : un waypoint désactivé après coup ne doit pas faire reculer une
+            // progression déjà acquise.
+            if (updated <= progress.counter(ref.objectiveIndex())) {
+                continue;
+            }
+            applyObjectiveCounter(player, ref, progress, updated, required);
+            changed = true;
+        }
+        if (changed) {
+            notifyChanged(playerId);
+        }
+    }
+
+    private int countDiscoveredWaypoints(UUID playerId, List<String> worlds) {
+        ToIntBiFunction<UUID, List<String>> counter = discoveredWaypointCounter;
+        if (counter == null) {
+            if (missingCounterWarned.compareAndSet(false, true)) {
+                logger.warn("Mode cumulatif de DISCOVER_WAYPOINT demandé sans compteur de découvertes "
+                        + "branché : seules les nouvelles découvertes compteront (issue #185).");
+            }
+            return 0;
+        }
+        return counter.applyAsInt(playerId, worlds);
+    }
+
     void handleTalkToNpc(Player player, String npcId) {
         handleCandidates(player, index.talkToNpc(npcId));
     }
@@ -927,19 +1033,31 @@ public final class QuestProgressEngine implements PluginService {
             }
 
             int updated = Math.min(required, progress.counter(ref.objectiveIndex()) + Math.max(1, step));
-            progress.setCounter(ref.objectiveIndex(), updated);
-            repository.setObjectiveProgress(playerId, ref.questId(), ref.stepId(), ref.objectiveIndex(), updated)
-                    .exceptionally(error -> {
-                        logger.error("Impossible de persister la progression de {} pour {}", ref.questId(), playerId, error);
-                        return null;
-                    });
-            showObjectiveProgress(player, ref.objective(), updated, required);
-
-            if (updated >= required) {
-                questEngine.find(ref.questId()).ifPresent(quest -> checkStepCompletion(player, quest, progress));
-            }
+            applyObjectiveCounter(player, ref, progress, updated, required);
         }
         notifyChanged(playerId);
+    }
+
+    /**
+     * Pose la valeur <strong>absolue</strong> d'un compteur d'objectif, la persiste, affiche la
+     * progression et termine l'étape si elle est complète. Partagé par la progression événementielle
+     * ({@link #handleCandidates}) et par le recalcul cumulatif de l'issue #185, pour qu'il n'existe
+     * jamais deux façons d'écrire un compteur.
+     */
+    private void applyObjectiveCounter(Player player, ObjectiveRef ref, ActiveQuestProgress progress,
+                                        int updated, int required) {
+        UUID playerId = player.getUniqueId();
+        progress.setCounter(ref.objectiveIndex(), updated);
+        repository.setObjectiveProgress(playerId, ref.questId(), ref.stepId(), ref.objectiveIndex(), updated)
+                .exceptionally(error -> {
+                    logger.error("Impossible de persister la progression de {} pour {}", ref.questId(), playerId, error);
+                    return null;
+                });
+        showObjectiveProgress(player, ref.objective(), updated, required);
+
+        if (updated >= required) {
+            questEngine.find(ref.questId()).ifPresent(quest -> checkStepCompletion(player, quest, progress));
+        }
     }
 
     private void checkStepCompletion(Player player, QuestDefinition quest, ActiveQuestProgress progress) {
@@ -954,6 +1072,8 @@ public final class QuestProgressEngine implements PluginService {
         int nextIndex = progress.currentStepIndex() + 1;
         if (nextIndex < quest.steps().size()) {
             progress.advanceToStep(nextIndex);
+            // Issue #185 : la nouvelle étape peut porter un objectif cumulatif déjà satisfait.
+            runOnMainThread(() -> refreshCumulativeDiscoveryObjectives(player));
             String nextStepId = quest.steps().get(nextIndex).id();
             repository.upsertState(playerId, quest.id(), QuestState.ACTIVE, nextStepId).exceptionally(error -> {
                 logger.error("Impossible de persister l'avancement d'étape pour {} ({})", quest.id(), playerId, error);

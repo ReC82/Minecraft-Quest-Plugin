@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
+import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
 import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.RewardType;
@@ -444,6 +445,76 @@ class QuestDefinitionParserTest {
         String combined = String.join(" | ", result.issues().stream().map(QuestLoadIssue::message).toList());
         assertTrue(combined.contains("material"), combined);
         assertTrue(combined.contains("amount"), combined);
+    }
+
+    // ---- Découverte de waypoints (issue #185) --------------------------------------------------
+
+    @Test
+    void aDiscoverWaypointObjectiveDefaultsToNewDiscoveriesAndAllWorlds() {
+        QuestDefinitionParser.ParseResult result = parser.parse("discover.yml", load("""
+                id: rpgquest:discover
+                title: "Titre"
+                description: "Description"
+                category: test
+
+                steps:
+                  - id: decouvrir
+                    objectives:
+                      - type: DISCOVER_WAYPOINT
+                        amount: 5
+                """));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        assertEquals(new DiscoverWaypointObjective(5, List.of(), DiscoverWaypointObjective.CountMode.NEW_ONLY),
+                result.quest().steps().get(0).objectives().get(0));
+    }
+
+    @Test
+    void aDiscoverWaypointObjectiveKeepsItsWorldFilterAndCountMode() {
+        QuestDefinitionParser.ParseResult result = parser.parse("discover_filtered.yml", load("""
+                id: rpgquest:discover_filtered
+                title: "Titre"
+                description: "Description"
+                category: test
+
+                steps:
+                  - id: decouvrir
+                    objectives:
+                      - type: DISCOVER_WAYPOINT
+                        amount: 2
+                        worlds: [world_hub, wild]
+                        count-mode: include_existing
+                """));
+
+        assertTrue(result.isSuccess(), () -> "issues: " + result.issues());
+        assertEquals(new DiscoverWaypointObjective(2, List.of("world_hub", "wild"),
+                        DiscoverWaypointObjective.CountMode.INCLUDE_EXISTING),
+                result.quest().steps().get(0).objectives().get(0));
+    }
+
+    /**
+     * Un mode inconnu est REFUSÉ, jamais rabattu sur le défaut : la règle de comptage change ce que
+     * le joueur doit faire, une faute de frappe ne doit pas la retourner en silence.
+     */
+    @Test
+    void anUnknownCountModeIsRejectedRatherThanDefaulted() {
+        QuestDefinitionParser.ParseResult result = parser.parse("discover_broken.yml", load("""
+                id: rpgquest:discover_broken
+                title: "Titre"
+                description: "Description"
+                category: test
+
+                steps:
+                  - id: decouvrir
+                    objectives:
+                      - type: DISCOVER_WAYPOINT
+                        amount: 2
+                        count-mode: CUMULATIF
+                """));
+
+        assertFalse(result.isSuccess());
+        String combined = String.join(" | ", result.issues().stream().map(QuestLoadIssue::message).toList());
+        assertTrue(combined.contains("count-mode"), combined);
     }
 
     private ConfigurationSection load(String yaml) {

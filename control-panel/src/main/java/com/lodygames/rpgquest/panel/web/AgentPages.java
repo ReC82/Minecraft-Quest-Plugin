@@ -220,6 +220,11 @@ public final class AgentPages {
         o.put("target", firstNonBlank(obj.get("entity"), obj.get("material"), obj.get("npc"), obj.get("world")));
         o.put("amount", intOr(obj.get("amount"), 0));
         o.put("npc", nz(obj.get("npc")));
+        // Issue #185 : la clé YAML « count-mode » est normalisée en « countMode », la même que le
+        // relevé runtime — sinon la même quête s'afficherait différemment selon son origine, exactement
+        // le défaut corrigé pour le PNJ destinataire de #123.
+        o.put("worlds", nz(obj.get("worlds")));
+        o.put("countMode", nz(obj.get("count-mode")));
         o.put("raw", "");
         return o;
     }

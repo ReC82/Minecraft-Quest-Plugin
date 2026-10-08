@@ -80,6 +80,7 @@ import com.lodygames.rpgquest.quest.YamlQuestEngine;
 import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.CollectItemObjective;
 import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
+import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
 import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.CraftItemObjective;
@@ -379,8 +380,13 @@ public final class BukkitAgentActions implements AgentActions {
                     int amount = QuestObjective.requiredAmount(o);
                     String raw = QuestObjective.describe(o) + " (x" + amount + ")";
                     objectives.add(raw);
+                    // Issue #185 : la portée et la règle de comptage voyagent avec l'objectif,
+                    // sinon le panel afficherait une ligne qui ne dit pas ce que le joueur doit faire.
+                    List<String> objectiveWorlds = o instanceof DiscoverWaypointObjective d ? d.worlds() : List.of();
+                    String countMode = o instanceof DiscoverWaypointObjective d ? d.countMode().name() : null;
                     objectiveDetails.add(new ObjectiveSummary(
-                            o.type().name(), objectiveTarget(o), amount, raw, objectiveNpc(o)));
+                            o.type().name(), objectiveTarget(o), amount, raw, objectiveNpc(o),
+                            objectiveWorlds, countMode));
                 }
                 steps.add(new QuestStepSummary(s.id(), objectives, objectiveDetails));
             }
@@ -2787,6 +2793,9 @@ public final class BukkitAgentActions implements AgentActions {
             // La cible comptée d'une remise est l'OBJET ; le PNJ voyage à part (voir objectiveNpc).
             case DeliverItemToNpcObjective o -> o.material().name();
             case SmeltItemObjective o -> o.material().name();
+            // Issue #185 : aucune cible unique à nommer (ni matériau, ni entité, ni monde unique) —
+            // la portée est la liste « worlds », transportée à part dans le résumé.
+            case DiscoverWaypointObjective o -> null;
         };
     }
 

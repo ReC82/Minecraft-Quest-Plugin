@@ -318,6 +318,10 @@ public final class AgentActionExecutor {
             // Issue #123 : jamais omis quand il est présent — le panel ne peut pas deviner le PNJ
             // destinataire d'une remise, et un libellé sans lui serait ambigu.
             m.put("npc", o.npc());
+            // Issue #185 : la portée (mondes) et la règle de comptage font partie de ce que le
+            // joueur doit faire — les omettre produirait un libellé incomplet côté panel.
+            m.put("worlds", o.worlds());
+            m.put("countMode", o.countMode());
             out.add(m);
         }
         return out;

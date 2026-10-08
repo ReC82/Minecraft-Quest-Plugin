@@ -101,8 +101,40 @@ public final class QuestYaml {
         return switch (type) {
             case INT, DOUBLE -> v.trim();
             case SELECT -> looksTechnical(v) ? v.trim() : qq(v);
+            // Issue #185 : « a, b » saisi dans le formulaire devient la liste YAML [a, b], relue
+            // telle quelle par getStringList côté plugin. Le round-trip reste exact.
+            case LIST -> inlineList(v);
             default -> qq(v);
         };
+    }
+
+    /** {@code "world_hub, wild"} → {@code [world_hub, wild]}, en ignorant les entrées vides. */
+    private static String inlineList(String raw) {
+        List<String> parts = splitList(raw);
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < parts.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            String p = parts.get(i);
+            sb.append(looksTechnical(p) ? p : qq(p));
+        }
+        return sb.append(']').toString();
+    }
+
+    /** Découpage commun formulaire → liste (issue #185), sans entrée vide ni espace parasite. */
+    public static List<String> splitList(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (String part : raw.split(",")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                out.add(trimmed);
+            }
+        }
+        return out;
     }
 
     private static boolean looksTechnical(String v) {
@@ -205,7 +237,13 @@ public final class QuestYaml {
         }
         for (Map.Entry<?, ?> e : m.entrySet()) {
             String k = String.valueOf(e.getKey());
-            String v = e.getValue() == null ? "" : String.valueOf(e.getValue());
+            // Issue #185 : une liste YAML revient dans le formulaire sous forme « a, b », jamais sous
+            // la forme « [a, b] » de List.toString() qui serait ensuite réécrite comme une chaîne.
+            String v = e.getValue() == null ? ""
+                    : e.getValue() instanceof List<?> list
+                            ? list.stream().map(x -> x == null ? "" : String.valueOf(x).trim())
+                                    .filter(x -> !x.isEmpty()).collect(java.util.stream.Collectors.joining(", "))
+                            : String.valueOf(e.getValue());
             out.put(k.equals("type") ? "kind" : k, k.equals("type") ? v.toUpperCase(Locale.ROOT) : v);
         }
         return out;

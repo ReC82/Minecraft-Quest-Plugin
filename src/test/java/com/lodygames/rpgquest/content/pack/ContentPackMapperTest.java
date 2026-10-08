@@ -17,6 +17,7 @@ import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
 import com.lodygames.rpgquest.npc.model.NpcDefinition;
 import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
+import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
 import com.lodygames.rpgquest.quest.model.SmeltItemObjective;
 import com.lodygames.rpgquest.quest.model.CommandReward;
 import com.lodygames.rpgquest.quest.model.ExperienceReward;
@@ -65,7 +66,9 @@ class ContentPackMapperTest {
                         new BreakBlockObjective(Material.STONE, 12),
                         new ReachLocationObjective("wild", 1.0, 64.0, -2.0, 3.5),
                         new DeliverItemToNpcObjective("blacksmith", Material.LEATHER, 4),
-                        new SmeltItemObjective(Material.GREEN_DYE, 2)))),
+                        new SmeltItemObjective(Material.GREEN_DYE, 2),
+                        new DiscoverWaypointObjective(5, List.of("world_hub"),
+                                DiscoverWaypointObjective.CountMode.INCLUDE_EXISTING)))),
                 List.of((QuestReward) new ExperienceReward(50),
                         new VariableReward("CLAIM_TIER_1", "true"),
                         new CommandReward("say gg")),
@@ -106,6 +109,13 @@ class ContentPackMapperTest {
         assertEquals("SMELT_ITEM", objs.get(5).type());
         assertEquals("GREEN_DYE", objs.get(5).material());
         assertEquals(2, objs.get(5).amount());
+
+        // Issue #185 : la portée et la règle de comptage voyagent avec le pack — un pack réimporté
+        // ne doit jamais changer silencieusement ce que le joueur doit faire.
+        assertEquals("DISCOVER_WAYPOINT", objs.get(6).type());
+        assertEquals(5, objs.get(6).amount());
+        assertEquals(List.of("world_hub"), objs.get(6).worlds());
+        assertEquals("INCLUDE_EXISTING", objs.get(6).countMode());
 
         assertEquals("EXPERIENCE", e.rewards().get(0).type());
         assertEquals(50, e.rewards().get(0).amount());

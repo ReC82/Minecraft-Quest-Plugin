@@ -54,26 +54,36 @@ public record QuestPackEntry(
      *       {@code material} + {@code amount} ;</li>
      *   <li>{@code KILL_ENTITY} : {@code entity} + {@code amount} ;</li>
      *   <li>{@code TALK_TO_NPC} : {@code npc} ;</li>
-     *   <li>{@code REACH_LOCATION} : {@code world} + {@code x}/{@code y}/{@code z} + {@code radius}.</li>
+     *   <li>{@code REACH_LOCATION} : {@code world} + {@code x}/{@code y}/{@code z} + {@code radius} ;</li>
+     *   <li>{@code DISCOVER_WAYPOINT} : {@code amount} + {@code worlds} (optionnel) + {@code countMode}.</li>
      * </ul>
+     *
+     * <p>{@code worlds} est distinct de {@code world} (singulier, propre à {@code REACH_LOCATION}) :
+     * un objectif de découverte accepte plusieurs mondes, et une liste vide vaut « tous les mondes ».
+     * Les deux champs ne sont jamais renseignés ensemble.</p>
      */
     public record Objective(String type, String material, String entity, String npc, String world,
-                            Integer amount, Double x, Double y, Double z, Double radius) {
+                            Integer amount, Double x, Double y, Double z, Double radius,
+                            List<String> worlds, String countMode) {
+
+        public Objective {
+            worlds = worlds == null ? List.of() : List.copyOf(worlds);
+        }
 
         public static Objective countable(String type, String material, int amount) {
-            return new Objective(type, material, null, null, null, amount, null, null, null, null);
+            return new Objective(type, material, null, null, null, amount, null, null, null, null, List.of(), null);
         }
 
         public static Objective kill(String entity, int amount) {
-            return new Objective("KILL_ENTITY", null, entity, null, null, amount, null, null, null, null);
+            return new Objective("KILL_ENTITY", null, entity, null, null, amount, null, null, null, null, List.of(), null);
         }
 
         public static Objective talk(String npc) {
-            return new Objective("TALK_TO_NPC", null, null, npc, null, null, null, null, null, null);
+            return new Objective("TALK_TO_NPC", null, null, npc, null, null, null, null, null, null, List.of(), null);
         }
 
         public static Objective reach(String world, double x, double y, double z, double radius) {
-            return new Objective("REACH_LOCATION", null, null, null, world, null, x, y, z, radius);
+            return new Objective("REACH_LOCATION", null, null, null, world, null, x, y, z, radius, List.of(), null);
         }
 
         /**
@@ -81,7 +91,17 @@ public record QuestPackEntry(
          * {@code material} et {@code npc} — les deux champs existaient déjà, aucun n'est ajouté.
          */
         public static Objective deliver(String npc, String material, int amount) {
-            return new Objective("DELIVER_ITEM_TO_NPC", material, null, npc, null, amount, null, null, null, null);
+            return new Objective("DELIVER_ITEM_TO_NPC", material, null, npc, null, amount, null, null, null, null, List.of(), null);
+        }
+
+        /**
+         * Découverte de waypoints (issue #185). {@code worlds} vide = tous les mondes ;
+         * {@code countMode} est toujours écrit explicitement, pour qu'un pack réimporté ne change
+         * jamais de règle de comptage au gré d'un défaut.
+         */
+        public static Objective discoverWaypoint(int amount, List<String> worlds, String countMode) {
+            return new Objective("DISCOVER_WAYPOINT", null, null, null, null, amount,
+                    null, null, null, null, worlds, countMode);
         }
     }
 

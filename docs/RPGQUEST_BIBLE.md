@@ -353,7 +353,7 @@ Permission : `rpgquest.admin` (toutes), sauf `/quest complete` qui est aussi `rp
 
 ### Types d'objectifs (`steps[].objectives[].type`)
 
-Les 9 types existent **tous** réellement dans le code (`ObjectiveType` enum, exactement ces 9 valeurs, aucune de plus) :
+Les 10 types existent **tous** réellement dans le code (`ObjectiveType` enum, exactement ces 10 valeurs, aucune de plus) :
 
 | Type | Champs YAML | Classe | Événement Bukkit déclencheur | Comportement multi-monde |
 |---|---|---|---|---|
@@ -365,6 +365,7 @@ Les 9 types existent **tous** réellement dans le code (`ObjectiveType` enum, ex
 | `TALK_TO_NPC` | `npc` (id logique RPGQuest attribué par `/rpgadmin npc tag`, **pas** le nom affiché — voir section 5) | `TalkToNpcObjective` | `PlayerInteractEntityEvent` (`QuestNpcInteractListener`, entité vanilla/Citizens non géré) **ou** `NPCRightClickEvent` (`QuestCitizensNpcInteractListener`, uniquement si Citizens est actif et gère l'entité) — jamais les deux sur la même entité | Implicitement lié au monde où se trouve le PNJ visé, mais le champ lui-même ne porte pas de monde. À ne pas confondre avec l'identification par nom affiché utilisée par le système de **dialogue** (section 4/5) : `TALK_TO_NPC` (quête) exige un id logique posé au préalable via `/rpgadmin npc tag`, une entité renommée sans être taguée ne progresse jamais cet objectif. |
 | `SMELT_ITEM` | `material` (objet **obtenu** après cuisson), `amount` (> 0) | `SmeltItemObjective` | `FurnaceExtractEvent` (`QuestSmeltListener`, `ignoreCancelled = true`) — **seul** événement de cuisson qui porte un joueur, et il donne la quantité réellement retirée | Global. Progresse de la quantité extraite, plafonnée au reste à faire. Les trois fours vanilla comptent (`FURNACE`, `BLAST_FURNACE`, `SMOKER`), vérifiés explicitement. **Limite connue** : obtenir l'objet autrement (coffre, `/give`, craft, ramassage) ou le laisser sortir par un entonnoir ne progresse jamais — c'est voulu ; et un joueur qui vide le four d'un autre progresse, seule attribution que l'API publique garantisse. |
 | `DELIVER_ITEM_TO_NPC` | `npc` (id logique RPGQuest, comme `TALK_TO_NPC`), `material`, `amount` (> 0) | `DeliverItemToNpcObjective` | **Aucun** — volontairement. Seule l'action de dialogue `DELIVER_QUEST_ITEMS` sur le bon PNJ fait progresser cet objectif (`QuestProgressEngine#deliverTo`) | Global (le PNJ est où il est). Le compteur porte la quantité **déjà remise** : dépôts partiels acquis définitivement, objets remis **consommés**, jamais restitués. Voir « Remise d'objets à un PNJ » plus bas. |
+| `DISCOVER_WAYPOINT` | `amount` (> 0), `worlds` (liste optionnelle ; vide = tous les mondes), `count-mode` (`NEW_ONLY` par défaut, ou `INCLUDE_EXISTING`) | `DiscoverWaypointObjective` | **Aucun** — volontairement. La progression vient de l'abonnement aux **premières** découvertes du système de waypoints (`WaypointService#onFirstDiscovery` → `QuestProgressEngine#handleWaypointDiscovered`), branché une seule fois au bootstrap. Un écouteur de déplacement ou d'interaction recréerait une seconde règle de découverte à côté de celle du système de waypoints. | Filtré par `worlds` quand la liste est renseignée, global sinon. L'identité comptée est l'**id stable** du waypoint : deux waypoints du même biome comptent séparément, renommer ou déplacer un waypoint ne le fait pas compter deux fois. Aucune table supplémentaire — une première découverte est unique par couple (joueur, waypoint) au niveau de la base, donc un reclic ne notifie jamais. **Limite connue, assumée** : en `NEW_ONLY`, un joueur ayant déjà découvert tous les waypoints accessibles ne peut pas valider un nouveau cycle d'une quête répétable ; aucune découverte n'est jamais supprimée ni aucun waypoint débloqué pour y remédier. Utiliser `INCLUDE_EXISTING` si ce cumul est voulu. |
 | `REACH_LOCATION` | `world`, `x`, `y`, `z`, `radius` (> 0) | `ReachLocationObjective` | `PlayerMoveEvent` (`QuestLocationListener`, `ignoreCancelled = true`, ignore les mouvements qui ne changent pas de bloc) — distance euclidienne comparée à `radius` | **Seul type explicitement lié à un monde précis** — `world` est un simple nom (résolu à l'évaluation, pas au chargement) ; un déplacement dans un autre monde n'est jamais candidat, même avec les mêmes coordonnées. |
 
 Dans tous les cas, la progression n'a lieu que si, au moment de l'événement, la quête est `ACTIVE` pour ce joueur **et** l'objectif appartient à l'étape actuellement active (`QuestProgressEngine#handleCandidates`, couvert par `QuestProgressEngineTest#objectiveEventBeforeAcceptingTheQuestIsIgnored` et `#objectiveOnALaterStepIsIgnoredUntilItsOwnStepIsActive`) — un événement pour une quête non acceptée, abandonnée, terminée, ou pour une étape pas encore atteinte, est silencieusement ignoré.
@@ -398,7 +399,30 @@ Exemples minimaux (champs vérifiés dans le code, valeurs d'illustration) :
 - type: SMELT_ITEM
   material: GREEN_DYE        # l'objet qui SORT du four, pas le cactus qui y entre
   amount: 2
+
+- type: DISCOVER_WAYPOINT
+  amount: 5
+  worlds: [world_hub]        # optionnel ; absent ou vide = tous les mondes
+  count-mode: NEW_ONLY       # optionnel ; NEW_ONLY (défaut) ou INCLUDE_EXISTING
 ```
+
+### Découverte de waypoints — `DISCOVER_WAYPOINT` (issue #185)
+
+La règle de comptage est **toujours explicite** et **toujours annoncée au joueur** : le libellé du
+journal énonce la portée (« tous mondes », ou la liste des mondes retenus) puis la règle
+(« nouvelles découvertes » ou « découvertes déjà acquises incluses »). Le ticket interdit d'imposer
+l'une des deux silencieusement, parce qu'elle change ce que le joueur doit réellement faire.
+
+- `NEW_ONLY` (défaut) : seules les découvertes faites **pendant que l'objectif est actif** comptent.
+  Le compteur s'incrémente à chaque première découverte, et rien d'autre ne le fait bouger.
+- `INCLUDE_EXISTING` : la progression vaut le **total** des découvertes du joueur correspondant aux
+  filtres, recalculé à l'acceptation, au changement d'étape, au chargement du joueur et à chaque
+  nouvelle découverte. Aucun instantané n'est stocké, donc la valeur reste exacte après un
+  redémarrage, et elle ne recule jamais si un waypoint est désactivé après coup.
+
+Le Control Panel expose les trois champs (`amount`, `worlds`, `count-mode`) dans l'éditeur de
+quêtes ; `worlds` se saisit en texte séparé par des virgules et est écrit en liste YAML, chaque
+entrée étant vérifiée contre les mondes réellement relevés et les doublons signalés.
 
 ### Remise d'objets à un PNJ — `DELIVER_ITEM_TO_NPC` (issue #123)
 
@@ -1257,7 +1281,6 @@ Aucun code à connaître pour un usage courant.
 
 Champs concernés : **nom affiché** d'un mob spécial ou d'un boss (`/mobs`, création et
 modification) et **texte d'un nœud de dialogue** (`/dialogues`, nœud existant et nouveau nœud).
-
 - **MiniMessage reste le format stocké** — c'est un détail interne. Le champ réellement soumis
   garde le même nom et la même valeur qu'avant : les actions agent, les validateurs et le plugin
   ne voient aucune différence, et les fichiers YAML produits sont inchangés.

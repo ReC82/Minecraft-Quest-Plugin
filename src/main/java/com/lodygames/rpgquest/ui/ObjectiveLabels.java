@@ -4,6 +4,7 @@ import com.lodygames.rpgquest.quest.model.BreakBlockObjective;
 import com.lodygames.rpgquest.quest.model.CollectItemObjective;
 import com.lodygames.rpgquest.quest.model.CraftItemObjective;
 import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
+import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
 import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
@@ -54,6 +55,14 @@ final class ObjectiveLabels {
             // objet — trois objectifs qui attendent trois actions différentes.
             case SmeltItemObjective o -> Component.translatable(o.material())
                     .append(Component.text(" (à cuire)"));
+            // Issue #185 : la PORTÉE et la RÈGLE sont dans le libellé, jamais supposées. Le ticket
+            // interdit d'imposer silencieusement un mode de comptage ou de laisser croire que tous
+            // les mondes comptent.
+            case DiscoverWaypointObjective o -> Component.text("Waypoints à découvrir")
+                    .append(Component.text(o.worlds().isEmpty() ? " (tous mondes)"
+                            : " (" + String.join(", ", o.worlds()) + ")"))
+                    .append(Component.text(o.countMode() == DiscoverWaypointObjective.CountMode.NEW_ONLY
+                            ? " — nouvelles découvertes" : " — découvertes déjà acquises incluses"));
         };
     }
 

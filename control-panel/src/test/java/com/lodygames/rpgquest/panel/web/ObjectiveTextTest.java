@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -95,6 +96,48 @@ class ObjectiveTextTest {
     void smeltItemUsesTheObtainedItemName() {
         assertEquals("Cuire Teinture verte (x2)",
                 ObjectiveText.fromSummary(summary("SMELT_ITEM", "GREEN_DYE", 2)).label());
+    }
+
+    /**
+     * Issue #185 : la portée ET la règle de comptage apparaissent dans le libellé — sans elles, deux
+     * objectifs attendant des actions différentes s'afficheraient à l'identique.
+     */
+    @Test
+    void discoverWaypointStatesItsScopeAndCountingRule() {
+        Map<String, Object> m = summary("DISCOVER_WAYPOINT", null, 5);
+        m.put("worlds", List.of("world_hub", "wild"));
+        m.put("countMode", "NEW_ONLY");
+
+        assertEquals("Découvrir 5 waypoint(s) — world_hub, wild — nouvelles découvertes",
+                ObjectiveText.fromSummary(m).label());
+    }
+
+    /** Sans filtre de monde, la portée est dite explicitement, jamais laissée vide. */
+    @Test
+    void discoverWaypointWithoutWorldFilterSaysAllWorlds() {
+        Map<String, Object> m = summary("DISCOVER_WAYPOINT", null, 3);
+        m.put("countMode", "INCLUDE_EXISTING");
+
+        assertEquals("Découvrir 3 waypoint(s) — tous mondes — découvertes déjà acquises incluses",
+                ObjectiveText.fromSummary(m).label());
+    }
+
+    /**
+     * Le brouillon relu depuis le YAML porte « a, b » en texte, le relevé runtime une liste : les
+     * deux origines doivent produire exactement le même libellé (même classe de défaut que le PNJ
+     * destinataire perdu de #123).
+     */
+    @Test
+    void discoverWaypointRendersTheSameFromSourceTextAndRuntimeList() {
+        Map<String, Object> fromSource = summary("DISCOVER_WAYPOINT", null, 2);
+        fromSource.put("worlds", "world_hub, wild");
+        fromSource.put("countMode", "NEW_ONLY");
+        Map<String, Object> fromRuntime = summary("DISCOVER_WAYPOINT", null, 2);
+        fromRuntime.put("worlds", List.of("world_hub", "wild"));
+        fromRuntime.put("countMode", "NEW_ONLY");
+
+        assertEquals(ObjectiveText.fromSummary(fromRuntime).label(),
+                ObjectiveText.fromSummary(fromSource).label());
     }
 
     @Test

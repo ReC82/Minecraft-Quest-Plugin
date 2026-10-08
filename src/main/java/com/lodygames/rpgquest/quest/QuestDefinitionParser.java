@@ -10,6 +10,7 @@ import com.lodygames.rpgquest.quest.model.KillEntityObjective;
 import com.lodygames.rpgquest.quest.model.LocalizedText;
 import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.DeliverItemToNpcObjective;
+import com.lodygames.rpgquest.quest.model.DiscoverWaypointObjective;
 import com.lodygames.rpgquest.quest.model.ObjectiveType;
 import com.lodygames.rpgquest.quest.model.PlaceBlockObjective;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
@@ -325,6 +326,28 @@ final class QuestDefinitionParser {
                 yield (npc != null && !npc.isBlank() && material != null && amount != null)
                         ? new DeliverItemToNpcObjective(npc, material, amount)
                         : null;
+            }
+            // Issue #185 : « worlds » est optionnel (vide = tous les mondes, portée toujours annoncée
+            // au joueur), « count-mode » est explicite et par défaut NEW_ONLY. Un mode inconnu est
+            // refusé plutôt que rabattu silencieusement sur le défaut : la règle de comptage change
+            // ce que le joueur doit faire, ce n'est jamais un détail de présentation.
+            case DISCOVER_WAYPOINT -> {
+                Integer amount = parsePositiveInt(section, "amount", context, errors);
+                List<String> worlds = section.getStringList("worlds").stream()
+                        .filter(w -> w != null && !w.isBlank()).map(String::trim).toList();
+                DiscoverWaypointObjective.CountMode mode = DiscoverWaypointObjective.CountMode.NEW_ONLY;
+                String rawMode = section.getString("count-mode");
+                if (rawMode != null && !rawMode.isBlank()) {
+                    try {
+                        mode = DiscoverWaypointObjective.CountMode.valueOf(
+                                rawMode.trim().toUpperCase(java.util.Locale.ROOT));
+                    } catch (IllegalArgumentException unknown) {
+                        errors.add(context + ": « count-mode » inconnu : " + rawMode
+                                + " (attendu NEW_ONLY ou INCLUDE_EXISTING).");
+                        mode = null;
+                    }
+                }
+                yield (amount != null && mode != null) ? new DiscoverWaypointObjective(amount, worlds, mode) : null;
             }
         };
     }

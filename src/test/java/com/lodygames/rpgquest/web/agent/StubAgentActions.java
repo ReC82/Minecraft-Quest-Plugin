@@ -93,6 +93,30 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<DevContentStateView> contentDevState() {
+        return CompletableFuture.completedFuture(
+                new DevContentStateView(List.of(), java.util.Map.of(), "stub"));
+    }
+
+    @Override
+    public CompletableFuture<ContentPublishResultView> contentPublish(String kind, String slug,
+                                                                      String yaml,
+                                                                      String expectedDevSha,
+                                                                      String expectedId) {
+        return CompletableFuture.completedFuture(new ContentPublishResultView(false, "STUB",
+                "stub", kind, slug, "", "", "", "", false, "", false, "", "", 0, 0, false, "", ""));
+    }
+
+    @Override
+    public CompletableFuture<ContentPublishResultView> contentPublishRollback(String kind,
+                                                                              String slug,
+                                                                              String backupPath,
+                                                                              String expectedId) {
+        return CompletableFuture.completedFuture(new ContentPublishResultView(false, "STUB",
+                "stub", kind, slug, "", "", "", "", false, "", false, "", "", 0, 0, false, "", ""));
+    }
+
+    @Override
     public CompletableFuture<BuildingLibraryView> buildingLibrary() {
         return CompletableFuture.completedFuture(
                 new BuildingLibraryView(List.of(), List.of(), false, "stub"));

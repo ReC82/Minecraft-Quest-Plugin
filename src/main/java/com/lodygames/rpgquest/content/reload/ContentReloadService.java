@@ -182,6 +182,64 @@ public final class ContentReloadService {
         return hash(currentRuntimeSignature());
     }
 
+    /**
+     * Les identifiants <strong>réellement chargés</strong> pour une famille (issue #47).
+     *
+     * <p>C'est la primitive de vérification du runtime : après avoir publié un fichier et rechargé
+     * sa famille, c'est elle qui permet de répondre à la seule question qui compte — « le moteur
+     * voit-il maintenant cette ressource ? ». Sans elle, « reload demandé » devrait être pris pour
+     * « reload réussi », ce que #47 interdit explicitement.</p>
+     *
+     * <p>Les identifiants sont renvoyés <strong>tels que le moteur les porte</strong>, donc
+     * préfixés {@code rpgquest:} pour les familles qui utilisent une {@code NamespacedKey}. La
+     * comparaison côté appelant doit donc se faire sur l'identifiant « nu ».</p>
+     */
+    public List<String> loadedIds(ReloadFamily family) {
+        if (family == null) {
+            return List.of();
+        }
+        return switch (family) {
+            case ITEMS -> itemRegistry.items().stream()
+                    .map(CustomItemDefinition::id).map(NamespacedKey::toString).sorted().toList();
+            case NPCS -> npcEngine.definitions().stream()
+                    .map(NpcDefinition::id).sorted().toList();
+            case QUESTS -> questEngine.quests().stream()
+                    .map(QuestDefinition::id).map(NamespacedKey::toString).sorted().toList();
+            case STORIES -> storyRegistry.stories().stream()
+                    .map(StoryDefinition::id).sorted().toList();
+            case DIALOGUES -> dialogueEngine.dialogues().stream()
+                    .map(DialogueDefinition::id).map(NamespacedKey::toString).sorted().toList();
+            case MOBS -> mobRegistry.definitions().stream()
+                    .map(SpecialMobDefinition::id).map(NamespacedKey::toString).sorted().toList();
+        };
+    }
+
+    /**
+     * Vrai si la famille porte cet identifiant, comparé sur sa forme « nue ».
+     *
+     * <p>Tolérant au préfixe {@code rpgquest:} des deux côtés : le panel raisonne sur des slugs, le
+     * moteur sur des {@code NamespacedKey}, et c'est ici qu'on réconcilie les deux une fois pour
+     * toutes plutôt qu'à chaque point d'appel.</p>
+     */
+    public boolean runtimeHas(ReloadFamily family, String id) {
+        if (id == null || id.isBlank()) {
+            return false;
+        }
+        String wanted = plain(id);
+        for (String loaded : loadedIds(family)) {
+            if (plain(loaded).equals(wanted)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String plain(String id) {
+        String clean = id.trim().toLowerCase(java.util.Locale.ROOT);
+        int colon = clean.indexOf(':');
+        return colon < 0 ? clean : clean.substring(colon + 1);
+    }
+
     // ---- Cœur -----------------------------------------------------------------------------
 
     private ReloadResult run(Set<ReloadFamily> requested, boolean apply) {

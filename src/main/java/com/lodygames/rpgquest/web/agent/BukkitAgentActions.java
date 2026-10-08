@@ -183,6 +183,7 @@ public final class BukkitAgentActions implements AgentActions {
     private final ServerOpsService serverOpsService;
     /** Issue #131 — service central de rechargement du contenu. */
     private final ContentReloadService contentReloadService;
+    private final com.lodygames.rpgquest.content.publish.ContentPublishService contentPublishService;
     /**
      * Issue #210 — position sûre du Hub pour le renvoi d'un joueur. Même source que la Pierre de
      * retour et le filet de sécurité des claims : jamais une coordonnée figée.
@@ -220,6 +221,7 @@ public final class BukkitAgentActions implements AgentActions {
                               Supplier<com.lodygames.rpgquest.config.HubConfig> hubConfig,
                               ServerOpsService serverOpsService,
                               ContentReloadService contentReloadService,
+                              com.lodygames.rpgquest.content.publish.ContentPublishService contentPublishService,
                               Supplier<java.util.Optional<org.bukkit.Location>> hubRescueTarget,
                               EconomyService economyService, WalletRepository walletRepository,
                               com.lodygames.rpgquest.building.BuildingSiteService buildingSiteService,
@@ -253,6 +255,7 @@ public final class BukkitAgentActions implements AgentActions {
         this.hubConfig = hubConfig;
         this.serverOpsService = serverOpsService;
         this.contentReloadService = contentReloadService;
+        this.contentPublishService = contentPublishService;
         this.hubRescueTarget = hubRescueTarget;
         this.economyService = economyService;
         this.walletRepository = walletRepository;
@@ -2713,6 +2716,78 @@ public final class BukkitAgentActions implements AgentActions {
                     result.suggestedFamilies().stream().map(ReloadFamily::wire).toList(),
                     result.runtimeHash(), result.durationMillis(), result.restartRequired()));
         });
+    }
+
+    // ---- Publication de contenu vers DEV (issue #47) -------------------------------------------
+
+    /**
+     * {@code content.dev.state}. Sur le thread principal : la lecture des identifiants chargés
+     * interroge les registres que les listeners du thread principal utilisent.
+     */
+    @Override
+    public CompletableFuture<DevContentStateView> contentDevState() {
+        return onMain(() -> {
+            List<DevContentFile> files = new ArrayList<>();
+            java.util.Map<String, List<String>> runtime = new LinkedHashMap<>();
+            for (var kind : com.lodygames.rpgquest.content.publish.PublishKind.values()) {
+                for (var file : contentPublishService.list(kind)) {
+                    files.add(new DevContentFile(kind.directory(), file.slug(), file.sha256(),
+                            file.bytes()));
+                }
+                runtime.put(kind.directory(), contentPublishService.runtimeIds(kind));
+            }
+            return done(new DevContentStateView(List.copyOf(files), java.util.Map.copyOf(runtime),
+                    contentReloadService.runtimeHash()));
+        });
+    }
+
+    /**
+     * {@code content.publish}. Sur le thread principal, parce que l'écriture est immédiatement
+     * suivie d'un rechargement qui permute des ensembles lus par ce thread.
+     */
+    @Override
+    public CompletableFuture<ContentPublishResultView> contentPublish(String kind, String slug,
+                                                                      String yaml,
+                                                                      String expectedDevSha,
+                                                                      String expectedId) {
+        var resolved = com.lodygames.rpgquest.content.publish.PublishKind.of(kind);
+        if (resolved.isEmpty()) {
+            return done(refusedPublish("INVALID_KIND",
+                    "Famille de contenu non publiable : « " + safe(kind) + " ».", kind, slug));
+        }
+        return onMain(() -> done(publishView(contentPublishService.publish(resolved.get(), slug,
+                yaml, expectedDevSha, expectedId))));
+    }
+
+    @Override
+    public CompletableFuture<ContentPublishResultView> contentPublishRollback(String kind,
+                                                                              String slug,
+                                                                              String backupPath,
+                                                                              String expectedId) {
+        var resolved = com.lodygames.rpgquest.content.publish.PublishKind.of(kind);
+        if (resolved.isEmpty()) {
+            return done(refusedPublish("INVALID_KIND",
+                    "Famille de contenu non publiable : « " + safe(kind) + " ».", kind, slug));
+        }
+        return onMain(() -> done(publishView(contentPublishService.rollback(resolved.get(), slug,
+                backupPath, expectedId))));
+    }
+
+    private static ContentPublishResultView publishView(
+            com.lodygames.rpgquest.content.publish.ContentPublishService.PublishOutcome o) {
+        return new ContentPublishResultView(o.ok(), o.code(), o.message(),
+                o.kind() == null ? "" : o.kind().directory(), o.slug(), o.expectedId(),
+                o.devShaBefore(), o.devShaAfter(), o.sourceSha(), o.created(), o.backupPath(),
+                o.reloadApplied(), o.reloadCode(), o.reloadMessage(),
+                o.loadedCount(), o.issueCount(), o.runtimeConfirmed(), o.runtimeHash(),
+                o.verifiedAt() == null ? "" : o.verifiedAt().toString());
+    }
+
+    private static ContentPublishResultView refusedPublish(String code, String message,
+                                                           String kind, String slug) {
+        return new ContentPublishResultView(false, code, message, kind == null ? "" : kind,
+                slug == null ? "" : slug, "", "", "", "", false, "", false, "", "", 0, 0,
+                false, "", "");
     }
 
     // ---- Administration de joueur (issue #210) ------------------------------------------------

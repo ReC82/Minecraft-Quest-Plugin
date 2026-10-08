@@ -52,7 +52,7 @@ class PlayerAdminActionsTest {
                 () -> "wild",
                 () -> new com.lodygames.rpgquest.config.HubConfig("world_hub"),
                 new ServerOpsService(plugin, new ServerLogBuffer(50), Optional::empty),
-                null,
+                null, null,
                 () -> hubTarget,
                 // Lot « placement » de #213 : économie, portefeuille, emplacements, bibliothèque,
                 // placements et moteur de schematics — aucun n'intervient dans ces tests.

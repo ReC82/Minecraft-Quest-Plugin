@@ -1322,6 +1322,51 @@ class AgentActionExecutorTest {
         String lastPlacedBy;
         String lastRollbackSiteId;
 
+        String lastPublishKind;
+        String lastPublishSlug;
+        String lastPublishYaml;
+        String lastPublishExpectedSha;
+        String lastPublishExpectedId;
+        String lastRollbackBackup;
+        boolean publishOk = true;
+
+        @Override
+        public CompletableFuture<DevContentStateView> contentDevState() {
+            return CompletableFuture.completedFuture(new DevContentStateView(
+                    List.of(new DevContentFile("quests", "test_publish_quest", "abc123", 42L)),
+                    java.util.Map.of("quests", List.of("rpgquest:test_publish_quest")),
+                    "runtime-hash"));
+        }
+
+        @Override
+        public CompletableFuture<ContentPublishResultView> contentPublish(String kind, String slug,
+                                                                          String yaml,
+                                                                          String expectedDevSha,
+                                                                          String expectedId) {
+            lastPublishKind = kind;
+            lastPublishSlug = slug;
+            lastPublishYaml = yaml;
+            lastPublishExpectedSha = expectedDevSha;
+            lastPublishExpectedId = expectedId;
+            return CompletableFuture.completedFuture(new ContentPublishResultView(publishOk,
+                    publishOk ? "PUBLISHED" : "CONFLICT",
+                    publishOk ? "publié et confirmé" : "le fichier DEV a changé",
+                    kind, slug, expectedId, "", "after", "after", true, "", true, "APPLIED",
+                    "rechargé", 3, 0, publishOk, "hash", "2026-10-09T00:00:00Z"));
+        }
+
+        @Override
+        public CompletableFuture<ContentPublishResultView> contentPublishRollback(String kind,
+                                                                                  String slug,
+                                                                                  String backupPath,
+                                                                                  String expectedId) {
+            lastRollbackBackup = backupPath;
+            return CompletableFuture.completedFuture(new ContentPublishResultView(true,
+                    "RESTORED", "restauré", kind, slug, expectedId, "after", "before", "before",
+                    false, backupPath == null ? "" : backupPath, true, "APPLIED", "rechargé",
+                    3, 0, true, "hash", "2026-10-09T00:00:00Z"));
+        }
+
         @Override
         public CompletableFuture<BuildingLibraryView> buildingLibrary() {
             return CompletableFuture.completedFuture(new BuildingLibraryView(

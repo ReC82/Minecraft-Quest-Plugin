@@ -2,6 +2,7 @@ package com.lodygames.rpgquest.web.agent;
 
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -205,6 +206,60 @@ public interface AgentActions {
     /** Anomalie de configuration d'un PNJ. {@code severity} ∈ {@code error|warning|info}. */
     record NpcWarning(String code, String severity, String message) {
     }
+
+    // ---- Publication de contenu vers DEV (issue #47) -------------------------------------------
+
+    /** Une ressource présente dans un dossier de contenu du serveur. */
+    record DevContentFile(String kind, String slug, String sha256, long bytes) {
+    }
+
+    /**
+     * Vue de {@code content.dev.state} : pour chaque famille publiable, les fichiers présents et
+     * les identifiants <strong>réellement chargés</strong> par le moteur.
+     *
+     * <p>Les deux sont nécessaires et ne disent pas la même chose : un fichier peut être présent
+     * sans être chargé (écrit mais jamais rechargé), et un identifiant peut être chargé alors que
+     * son fichier a été modifié depuis. C'est cette différence qui produit les états « différent »
+     * et « conflit ».</p>
+     */
+    record DevContentStateView(List<DevContentFile> files, Map<String, List<String>> runtimeIds,
+                               String runtimeHash) {
+    }
+
+    /**
+     * Compte rendu d'une publication ou d'un retour arrière.
+     *
+     * @param runtimeConfirmed le moteur voit-il réellement la ressource ? <strong>Seul</strong> ce
+     *                         champ autorise le badge « Synchronisé » — ni la copie du fichier, ni
+     *                         l'envoi de l'action, ni la demande de rechargement ne le valent
+     */
+    record ContentPublishResultView(boolean ok, String code, String message,
+                                    String kind, String slug, String expectedId,
+                                    String devShaBefore, String devShaAfter, String sourceSha,
+                                    boolean created, String backupPath,
+                                    boolean reloadApplied, String reloadCode, String reloadMessage,
+                                    int loadedCount, int issueCount,
+                                    boolean runtimeConfirmed, String runtimeHash,
+                                    String verifiedAt) {
+    }
+
+    /** L'état DEV du contenu publiable. Lecture seule, n'écrit rien. */
+    CompletableFuture<DevContentStateView> contentDevState();
+
+    /**
+     * Publie une ressource puis vérifie le runtime.
+     *
+     * @param expectedDevSha empreinte DEV attendue ({@code ""} = absente) — un désaccord est un
+     *                       conflit, jamais un écrasement silencieux
+     */
+    CompletableFuture<ContentPublishResultView> contentPublish(String kind, String slug,
+                                                               String yaml, String expectedDevSha,
+                                                               String expectedId);
+
+    /** Défait une publication : restauration si sauvegarde, retrait si la ressource était neuve. */
+    CompletableFuture<ContentPublishResultView> contentPublishRollback(String kind, String slug,
+                                                                       String backupPath,
+                                                                       String expectedId);
 
     // ---- Emplacements de construction (issue #213) ---------------------------------------------
 

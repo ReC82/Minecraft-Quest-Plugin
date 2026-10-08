@@ -130,6 +130,9 @@ public final class AgentActionExecutor {
                 case SERVER_ANNOUNCE -> serverAnnounce(action);
                 case SERVER_LOGS_TAIL -> serverLogsTail(action);
                 case CONTENT_RELOAD_PREVIEW -> contentReload(action, false);
+                case CONTENT_DEV_STATE -> contentDevState(action);
+                case CONTENT_PUBLISH -> contentPublish(action);
+                case CONTENT_PUBLISH_ROLLBACK -> contentPublishRollback(action);
                 case CONTENT_RELOAD -> contentReload(action, true);
                 case PLAYER_OP -> playerOperator(action, true);
                 case PLAYER_DEOP -> playerOperator(action, false);
@@ -1443,6 +1446,130 @@ public final class AgentActionExecutor {
         }
         String clean = raw.trim().toLowerCase(java.util.Locale.ROOT);
         return clean.matches("[a-z0-9][a-z0-9_]{0,63}") ? clean : null;
+    }
+
+    // ---- Publication de contenu vers DEV (issue #47) -------------------------------------------
+
+    /** Taille maximale d'un YAML transporté. Large pour du contenu, fini par principe. */
+    private static final int PUBLISH_YAML_MAX = 256 * 1024;
+
+    private CompletableFuture<AgentActionOutcome> contentDevState(AgentAction action) {
+        return actions.contentDevState().thenApply(view -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (AgentActions.DevContentFile f : view.files()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("kind", f.kind());
+                row.put("slug", f.slug());
+                row.put("sha256", f.sha256());
+                row.put("bytes", f.bytes());
+                rows.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("files", rows);
+            details.put("runtimeIds", view.runtimeIds());
+            details.put("runtimeHash", view.runtimeHash());
+            return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
+                    rows.size() + " fichier(s) de contenu sur DEV.", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> contentPublish(AgentAction action) {
+        String kind = trimOrNull(action.param("kind"));
+        String slug = publishSlug(action);
+        if (kind == null || slug == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètres « kind » et « id » obligatoires (identifiant en minuscules, "
+                            + "sans séparateur)."));
+        }
+        String yaml = action.param("yaml");
+        if (yaml == null || yaml.isBlank()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « yaml » manquant : il n'y a rien à publier."));
+        }
+        if (yaml.length() > PUBLISH_YAML_MAX) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Contenu trop volumineux (" + PUBLISH_YAML_MAX + " caractères au plus)."));
+        }
+        // La confirmation est exigée ICI aussi : publier écrit un fichier sur le serveur et permute
+        // le contenu chargé. La dernière barrière doit être du côté qui écrit.
+        if (!"true".equals(trimOrNull(action.param("confirm")))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Confirmation manquante : « confirm=true » est exigé pour publier."));
+        }
+        // Absent = « je n'ai pas regardé », ce qui désactive la détection de conflit. On exige donc
+        // le champ, la chaîne vide signifiant explicitement « la ressource était absente de DEV ».
+        String expectedDevSha = action.param("expected_dev_sha");
+        if (expectedDevSha == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « expected_dev_sha » manquant : sans lui, une modification faite "
+                            + "sur DEV depuis votre analyse serait écrasée en silence."));
+        }
+        return actions.contentPublish(kind, slug, yaml, expectedDevSha.trim(),
+                        trimOrNull(action.param("expected_id")))
+                .thenApply(view -> publishOutcome(action, view))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> contentPublishRollback(AgentAction action) {
+        String kind = trimOrNull(action.param("kind"));
+        String slug = publishSlug(action);
+        if (kind == null || slug == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètres « kind » et « id » obligatoires."));
+        }
+        if (!"true".equals(trimOrNull(action.param("confirm")))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Confirmation manquante : « confirm=true » est exigé pour revenir en arrière."));
+        }
+        return actions.contentPublishRollback(kind, slug, trimOrNull(action.param("backup")),
+                        trimOrNull(action.param("expected_id")))
+                .thenApply(view -> publishOutcome(action, view))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * Traduit un compte rendu de publication en résultat d'action.
+     *
+     * <p><strong>Un refus n'est pas un échec technique</strong> : un conflit ou un identifiant
+     * invalide sont des réponses légitimes du serveur, donc {@code REJECTED}. {@code FAILED} est
+     * réservé à ce qui a réellement cassé.</p>
+     */
+    private AgentActionOutcome publishOutcome(AgentAction action,
+                                              AgentActions.ContentPublishResultView view) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("ok", view.ok());
+        details.put("code", view.code());
+        details.put("message", view.message());
+        details.put("kind", view.kind());
+        details.put("slug", view.slug());
+        details.put("expectedId", view.expectedId());
+        details.put("devShaBefore", view.devShaBefore());
+        details.put("devShaAfter", view.devShaAfter());
+        details.put("sourceSha", view.sourceSha());
+        details.put("created", view.created());
+        details.put("backupPath", view.backupPath());
+        details.put("reloadApplied", view.reloadApplied());
+        details.put("reloadCode", view.reloadCode());
+        details.put("reloadMessage", view.reloadMessage());
+        details.put("loadedCount", view.loadedCount());
+        details.put("issueCount", view.issueCount());
+        details.put("runtimeConfirmed", view.runtimeConfirmed());
+        details.put("runtimeHash", view.runtimeHash());
+        details.put("verifiedAt", view.verifiedAt());
+        if (view.ok()) {
+            return AgentActionOutcome.success(action.id(), view.code(), view.message(), details);
+        }
+        return AgentActionOutcome.rejectedWithDetails(action.id(), view.message(), details);
+    }
+
+    /** L'identifiant de ressource : même forme que le contenu du projet, sans séparateur. */
+    private static String publishSlug(AgentAction action) {
+        String raw = firstNonBlank(action.param("id"), action.param("slug"));
+        if (raw == null) {
+            return null;
+        }
+        String clean = raw.trim().toLowerCase(java.util.Locale.ROOT);
+        return clean.matches("[a-z0-9][a-z0-9_-]{0,63}") ? clean : null;
     }
 
     /** Bornes de saisie, miroir de {@code BuildingSite} — revérifiées ici, jamais supposées. */

@@ -254,6 +254,7 @@ public final class RPGQuestBootstrap {
     private PlayerResetService playerResetService;
     /** Issue #131 — service central de rechargement du contenu dans le runtime. */
     private ContentReloadService contentReloadService;
+    private com.lodygames.rpgquest.content.publish.ContentPublishService contentPublishService;
     /** Issue #95 — tampon de console et son branchement Log4j (exploitation serveur). */
     private ServerLogBuffer serverLogBuffer;
     private ConsoleTap consoleTap;
@@ -816,6 +817,23 @@ public final class RPGQuestBootstrap {
                 plugin.getSLF4JLogger(),
                 families -> npcHintService.invalidateAll());
 
+        // Issue #47 — publication de contenu depuis le Control Panel, SANS rebuild ni redémarrage.
+        //
+        // L'agent est SORTANT : le panel ne peut pas pousser un fichier vers ce serveur. C'est donc
+        // le serveur qui reçoit le YAML dans un paramètre d'action et l'écrit lui-même, dans un
+        // dossier issu d'une liste blanche (PublishKind). Le navigateur n'envoie jamais de chemin,
+        // et aucun identifiant FTP ne vit côté panel.
+        //
+        // Les sauvegardes vont sous content-backups/, HORS des dossiers de contenu : déposées dans
+        // quests/, elles seraient relues comme des définitions au prochain rechargement et
+        // créeraient des doublons d'identifiants.
+        contentPublishService = new com.lodygames.rpgquest.content.publish.ContentPublishService(
+                new com.lodygames.rpgquest.content.publish.ContentPublishStore(
+                        plugin.getDataFolder().toPath(),
+                        plugin.getDataFolder().toPath().resolve("content-backups")),
+                new com.lodygames.rpgquest.content.publish.ReloadServiceApplier(
+                        contentReloadService));
+
         // Exploitation serveur (issue #95) : tampon borné des lignes de console + annonce globale,
         // consommés par les actions agent « server.logs.tail » et « server.announce ».
         //
@@ -856,7 +874,7 @@ public final class RPGQuestBootstrap {
                                 waypointService, travelBeaconService, mobRegistry, mobService, mobDefinitionStore,
                                 mobSpawnSettingsStore, () -> configService.current().travel().wildWorld(),
                                 () -> configService.current().hub(),
-                                serverOpsService, contentReloadService,
+                                serverOpsService, contentReloadService, contentPublishService,
                                 // Issue #210 — même source de position sûre que la Pierre de retour
                                 // et le filet de sécurité des claims : jamais une coordonnée figée.
                                 () -> spawnService.resolve().or(() -> worldService

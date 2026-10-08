@@ -44,6 +44,19 @@ public record AgentActionOutcome(
         return new AgentActionOutcome(actionId, REJECTED, null, message, Map.of(), Instant.now());
     }
 
+    /**
+     * Un refus qui <strong>porte ses données</strong> (issue #47).
+     *
+     * <p>Un refus n'est pas toujours une erreur de saisie : un conflit de publication est une
+     * réponse légitime du serveur, et le panel a besoin des deux empreintes pour expliquer
+     * <em>pourquoi</em> il refuse et proposer une nouvelle analyse. Un {@code rejected} sans
+     * détails obligerait l'écran à dire « refusé » sans pouvoir dire de quoi.</p>
+     */
+    public static AgentActionOutcome rejectedWithDetails(String actionId, String message,
+                                                         Map<String, Object> details) {
+        return new AgentActionOutcome(actionId, REJECTED, null, message, details, Instant.now());
+    }
+
     /** Corps JSON envoyé à PlugAdmin. */
     public Map<String, Object> toJson() {
         Map<String, Object> root = new LinkedHashMap<>();

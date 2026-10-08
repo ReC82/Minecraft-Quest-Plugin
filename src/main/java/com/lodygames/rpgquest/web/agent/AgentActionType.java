@@ -196,6 +196,27 @@ public enum AgentActionType {
      */
     CONTENT_RELOAD_PREVIEW("content.reload.preview"),
     /**
+     * Issue #47 — l'état DEV du contenu : quels fichiers sont présents, avec quelle empreinte, et
+     * quels identifiants le moteur porte réellement. <strong>Lecture seule.</strong>
+     *
+     * <p>C'est ce relevé qui permet au panel de distinguer « différent » de « conflit »
+     * <em>avant</em> de proposer de publier quoi que ce soit.</p>
+     */
+    CONTENT_DEV_STATE("content.dev.state"),
+    /**
+     * Issue #47 — publie une ressource de contenu sur CE serveur, puis prouve qu'elle est chargée.
+     *
+     * <p>Le contenu voyage dans le paramètre {@code yaml} : l'agent est <strong>sortant</strong>,
+     * donc le panel ne peut pas pousser un fichier — c'est le serveur qui le reçoit et l'écrit
+     * lui-même, dans un dossier issu d'une liste blanche. Le navigateur n'envoie jamais de chemin.</p>
+     */
+    CONTENT_PUBLISH("content.publish"),
+    /**
+     * Issue #47 — défait une publication : restaure la sauvegarde si elle existe, retire le fichier
+     * si la ressource était nouvelle. Jamais l'un déguisé en l'autre.
+     */
+    CONTENT_PUBLISH_ROLLBACK("content.publish.rollback"),
+    /**
      * Issue #131 — rechargement effectif du contenu dans le runtime, après validation. N'applique
      * rien si une famille est invalide ou si une référence croisée serait cassée : l'ancien runtime
      * valide est conservé. Jamais un {@code /reload} Bukkit.

@@ -54,22 +54,62 @@ final class StyleField {
      * @param help     aide affichée sous le champ (HTML déjà échappé par l'appelant)
      */
     static String render(String name, String id, String label, String value, boolean required, String help) {
+        return render(name, id, label, value, required, help, false, true);
+    }
+
+    /**
+     * @param multiline rend le champ stocké <strong>et</strong> le champ guidé en {@code <textarea>},
+     *                  pour un texte long (description de quête, réplique de dialogue). Le pilote
+     *                  JavaScript lit et écrit {@code .value} et masque le champ stocké par une classe
+     *                  CSS : les deux fonctionnent donc à l'identique sur un {@code textarea}, et le
+     *                  nom comme la valeur MiniMessage soumis restent inchangés.
+     */
+    static String render(String name, String id, String label, String value, boolean required, String help,
+                          boolean multiline) {
+        return render(name, id, label, value, required, help, multiline, true);
+    }
+
+    /**
+     * @param htmlRequired émettre l'attribut HTML {@code required} en plus du marqueur « * ».
+     *                     {@code false} dans les éditeurs de contenu : leurs formulaires sont
+     *                     {@code novalidate} et portent des boutons d'action de brouillon (ajouter une
+     *                     étape, changer un type) qui doivent pouvoir être soumis sur un formulaire
+     *                     incomplet. L'obligation y est vérifiée par le validateur métier, qui donne
+     *                     un diagnostic lisible au lieu d'une bulle native bloquante — et qui peut
+     *                     pointer un champ caché dans une section repliée, ce que le navigateur ne
+     *                     sait pas faire.
+     */
+    static String render(String name, String id, String label, String value, boolean required, String help,
+                          boolean multiline, boolean htmlRequired) {
         String current = value == null || "null".equals(value) ? "" : value;
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"mb-2 sf\" data-stylefield>");
         sb.append("<label class=\"form-label\" for=\"").append(id).append("-text\">")
-                .append(Http.esc(label)).append("</label>");
+                .append(Http.esc(label))
+                .append(required ? " <span aria-hidden=\"true\">*</span>" : "").append("</label>");
 
         // Champ réellement soumis : la valeur MiniMessage. Visible et éditable sans JavaScript ;
         // panel.js le masque et le pilote dès qu'il prend la main.
-        sb.append("<input class=\"form-control\" id=\"").append(id).append("-store\" type=\"text\" name=\"")
-                .append(Http.esc(name)).append("\" value=\"").append(Http.esc(current)).append("\"")
-                .append(required ? " required" : "").append(" data-sf-store>");
+        if (multiline) {
+            sb.append("<textarea class=\"form-control\" id=\"").append(id).append("-store\" name=\"")
+                    .append(Http.esc(name)).append("\" rows=\"3\"")
+                    .append(required && htmlRequired ? " required" : "").append(" data-sf-store>")
+                    .append(Http.esc(current)).append("</textarea>");
+        } else {
+            sb.append("<input class=\"form-control\" id=\"").append(id).append("-store\" type=\"text\" name=\"")
+                    .append(Http.esc(name)).append("\" value=\"").append(Http.esc(current)).append("\"")
+                    .append(required && htmlRequired ? " required" : "").append(" data-sf-store>");
+        }
 
         // -- Mode guidé (construit par panel.js, masqué par défaut pour éviter tout doublon sans JS)
         sb.append("<div class=\"sf-guided\" data-sf-guided hidden>");
-        sb.append("<input class=\"form-control sf-text\" id=\"").append(id)
-                .append("-text\" type=\"text\" data-sf-text placeholder=\"Texte affiché, sans code\">");
+        if (multiline) {
+            sb.append("<textarea class=\"form-control sf-text\" id=\"").append(id)
+                    .append("-text\" rows=\"3\" data-sf-text placeholder=\"Texte affiché, sans code\"></textarea>");
+        } else {
+            sb.append("<input class=\"form-control sf-text\" id=\"").append(id)
+                    .append("-text\" type=\"text\" data-sf-text placeholder=\"Texte affiché, sans code\">");
+        }
         sb.append("<div class=\"sf-palette\" data-sf-palette>");
         sb.append("<button type=\"button\" class=\"sf-swatch sf-none\" data-sf-color=\"\" ")
                 .append("title=\"Aucune couleur (couleur par défaut du jeu)\" aria-label=\"Aucune couleur\">∅</button>");

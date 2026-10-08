@@ -1279,8 +1279,31 @@ offrent désormais : **palette de 16 couleurs nommées au clic** plus « ∅ auc
 **Gras / Italique / Souligné / Barré**, **aperçu** du résultat, et saisie en **texte simple**.
 Aucun code à connaître pour un usage courant.
 
-Champs concernés : **nom affiché** d'un mob spécial ou d'un boss (`/mobs`, création et
-modification) et **texte d'un nœud de dialogue** (`/dialogues`, nœud existant et nouveau nœud).
+**Audit complet des champs de texte destinés aux joueurs** (toutes les pages du panel) :
+
+| Page / champ | État |
+|---|---|
+| `/mobs` — nom affiché d'un mob spécial ou d'un boss (création et modification) | composant guidé |
+| `/dialogues` — texte d'un nœud, texte d'un choix, nouveau nœud (éditeur guidé) | composant guidé |
+| `/npcs` — nom du PNJ (définition RPGQuest) | composant guidé |
+| `/quests` — **titre** affiché d'une quête | composant guidé |
+| `/quests` — **description** d'une quête (multiligne) | composant guidé |
+| `/stories` — **nom affiché** d'une story | composant guidé |
+| `/dialogues/new`, `/dialogues/edit` — **réplique de départ** (multiligne) | composant guidé |
+| `/dialogues` — **locuteur affiché** (`speaker`) | texte simple, **non stylé** — c'est un nom de personne, jamais coloré en jeu |
+| Champs de descripteur d'objectif ou de récompense (`key`, `value`, `command`, `category`, identifiants…) | texte simple, **non stylé** — ce sont des valeurs techniques, pas du texte affiché |
+
+Il ne reste donc **aucun champ de texte destiné aux joueurs qui impose d'écrire du MiniMessage**
+dans le chemin normal. Les seuls champs restés en texte simple sont ceux qui ne sont jamais rendus
+avec des couleurs en jeu.
+
+**Un seul mécanisme, et un seul.** La page d'édition de dialogue possédait un *second* dispositif :
+un `select` « Couleur du texte » appliqué au texte simple et **ignoré** si le texte contenait déjà du
+MiniMessage. Deux mécanismes concurrents pour le même besoin divergent tôt ou tard ; le `select` a
+donc été retiré au profit du composant partagé, qui offre en plus les décorations, l'aperçu et le
+mode code explicite. Le serveur continue d'accepter le champ `text_color` (une requête ou un
+enregistrement antérieur fonctionne à l'identique) ; le formulaire ne l'émet simplement plus.
+
 - **MiniMessage reste le format stocké** — c'est un détail interne. Le champ réellement soumis
   garde le même nom et la même valeur qu'avant : les actions agent, les validateurs et le plugin
   ne voient aucune différence, et les fichiers YAML produits sont inchangés.

@@ -317,8 +317,20 @@ public final class ContentEditorPages {
                 QuestYaml.plainId(d.id), true, editing));
         sb.append(text("category", "Catégorie", "Ex. tutorial, combat, crafting. Nouvelle catégorie autorisée.",
                 d.category, true, false, null, "dl-category"));
-        sb.append(text("title", "Titre affiché", "Peut contenir du MiniMessage (ex. <gold>…</gold>).", d.title, true, false, "full"));
-        sb.append(textarea("description", "Description", "Texte présenté au joueur. MiniMessage accepté.", d.description, "full"));
+        // Issue #195, suite : même composant que les PNJ, les mobs et les dialogues guidés — couleur
+        // au clic, styles, aperçu. L'ancienne aide disait « peut contenir du MiniMessage », c'est-à-dire
+        // qu'il fallait le connaître : ce n'est plus le cas pour un usage courant. Le champ soumis garde
+        // son nom et sa valeur MiniMessage, donc QuestYaml, le validateur et le plugin ne voient aucune
+        // différence, et un titre déjà écrit en plusieurs styles est conservé tel quel.
+        sb.append("<div class=\"full\">").append(StyleField.render("title", "q-title", "Titre affiché",
+                d.title, true,
+                "Nom de la quête dans le journal. Choisir une couleur et des styles : aucun code à "
+                + "écrire. Un titre déjà écrit avec <strong>plusieurs styles</strong> est conservé tel "
+                + "quel et n'est jamais simplifié sans action explicite.", false, false)).append("</div>");
+        sb.append("<div class=\"full\">").append(StyleField.render("description", "q-desc", "Description",
+                d.description, false,
+                "Texte présenté au joueur. Même éditeur guidé que le titre ; « Modifier le code "
+                + "MiniMessage » reste disponible pour un rendu avancé.", true, false)).append("</div>");
         sb.append(text("icon", "Icône", iconHelp(ref), d.icon, false, false, null, "dl-material"));
         sb.append(text("giver", "PNJ donneur",
                 "PNJ logique qui remet la quête (optionnel) — chercher par nom (« Garde ») ou par id (« guard »).",
@@ -635,7 +647,11 @@ public final class ContentEditorPages {
         sb.append(sectionOpen("book", "Général", "Identité de la story. L'identifiant sert de nom de fichier."));
         sb.append("<div class=\"form-grid\">");
         sb.append(text("id", "Identifiant", "Minuscules, chiffres, « _ - ».", StoryYaml.plainId(d.id), true, editing));
-        sb.append(text("name", "Nom affiché", "Titre lisible de la chaîne.", d.name, true, false));
+        // Issue #195, suite : le nom d'une story s'affiche au joueur, il mérite le même éditeur guidé.
+        sb.append("<div class=\"full\">").append(StyleField.render("name", "s-name", "Nom affiché",
+                d.name, true,
+                "Titre lisible de la chaîne, affiché au joueur. Choisir une couleur et des styles : "
+                + "aucun code à écrire.", false, false)).append("</div>");
         sb.append("<div class=\"full\">").append(checkbox("secret", "Story secrète", d.secret)).append("</div>");
         sb.append("</div>");
         sb.append(sectionClose());
@@ -895,15 +911,25 @@ public final class ContentEditorPages {
                 npc, false, false, null, "dl-npc"));
         sb.append(text("speaker", "Locuteur affiché",
                 "Nom affiché devant la réplique (prérempli avec le nom du PNJ si vide).", speaker, true, false));
-        sb.append(colorSelect(color));
         sb.append("</div>");
         sb.append(sectionClose());
 
+        // Issue #195, suite : l'ancien mécanisme « un select de couleur, ignoré si le texte contient
+        // déjà du MiniMessage » était une SECONDE façon de styler du texte, à côté du composant guidé
+        // des PNJ, des mobs et des nœuds de dialogue. Deux mécanismes concurrents pour le même besoin
+        // divergent tôt ou tard : le select disparaît au profit du composant partagé, qui offre en plus
+        // les décorations, l'aperçu et le mode code explicite. Le champ « text_color » n'est plus émis ;
+        // le serveur le lit toujours et le traite comme vide, donc un enregistrement antérieur ou une
+        // requête directe continuent de fonctionner à l'identique.
         sb.append(sectionOpen("dialogues", "Réplique de départ",
-                "Texte du nœud « start ». Choisir une couleur ci-dessus, ou saisir directement du "
-                        + "MiniMessage (« <yellow>…</yellow> ») pour un rendu avancé — dans ce cas la couleur est ignorée."));
+                "Texte du nœud « start ». Choisir une couleur et des styles : aucun code à écrire. "
+                        + "« Modifier le code MiniMessage » reste disponible pour un rendu avancé."));
         sb.append("<div class=\"form-grid\">");
-        sb.append(textarea("start_text", "Texte", "Réplique d'ouverture (max 512).", startTextForField(startText, color), "full"));
+        sb.append("<div class=\"full\">").append(StyleField.render("start_text", "dlg-start-text", "Texte",
+                startTextForField(startText, color), false,
+                "Réplique d'ouverture (512 caractères au plus). Une réplique déjà écrite avec "
+                + "<strong>plusieurs styles</strong> est conservée telle quelle et n'est jamais "
+                + "simplifiée sans action explicite.", true, false)).append("</div>");
         sb.append("</div>");
         sb.append(sectionClose());
 
@@ -945,20 +971,6 @@ public final class ContentEditorPages {
         return storedText;
     }
 
-    private static String colorSelect(String selected) {
-        StringBuilder sb = new StringBuilder("<div class=\"field\"><label for=\"f-text_color\">Couleur du texte</label>");
-        sb.append("<select id=\"f-text_color\" name=\"text_color\">");
-        sb.append("<option value=\"\"").append(selected == null || selected.isBlank() ? " selected" : "")
-                .append(">Par défaut</option>");
-        for (String c : AgentActionCatalog.PALETTE_COLORS) {
-            sb.append("<option value=\"").append(c).append("\"")
-                    .append(c.equals(selected) ? " selected" : "").append(">")
-                    .append(Http.esc(MinecraftNames.humanize(c))).append("</option>");
-        }
-        sb.append("</select>");
-        sb.append("<p class=\"field-help\">Ignorée si le texte contient déjà du MiniMessage.</p>");
-        return sb.append("</div>").toString();
-    }
 
     // ================================================================================
     //  Fragments partagés

@@ -66,6 +66,74 @@ class ContentEditorPagesTest {
         assertFalse(body.contains("%CSRF%"), "placeholder CSRF remplacé");
     }
 
+    /**
+     * Issue #195, suite : le titre et la description d'une quête passent par le composant guidé
+     * partagé (couleur au clic, styles, aperçu). L'aide ne doit plus demander de connaître
+     * MiniMessage pour l'usage courant — c'était exactement le reproche.
+     */
+    @Test
+    void questTitleAndDescriptionUseTheGuidedStyleEditor() throws Exception {
+        start(true);
+        String body = get("/quests/new").body();
+
+        assertTrue(body.contains("id=\"q-title-store\"") && body.contains("name=\"title\""),
+                "le titre doit être rendu par le composant guidé, en gardant le nom du champ");
+        assertTrue(body.contains("id=\"q-desc-store\"") && body.contains("name=\"description\""),
+                "la description aussi");
+        assertTrue(body.contains("data-stylefield"), "balisage du composant présent");
+        assertTrue(body.contains("data-sf-palette"), "palette de couleurs présente");
+        assertFalse(body.contains("Peut contenir du MiniMessage"),
+                "l'ancienne aide qui exigeait de connaître MiniMessage ne doit plus être affichée");
+    }
+
+    /** La description est longue : le champ guidé comme le champ stocké doivent être multilignes. */
+    @Test
+    void theQuestDescriptionStaysAMultilineField() throws Exception {
+        start(true);
+        String body = get("/quests/new").body();
+
+        assertTrue(body.contains("<textarea class=\"form-control\" id=\"q-desc-store\""),
+                "le champ réellement soumis doit rester un textarea");
+        assertTrue(body.contains("id=\"q-desc-text\""), "le champ guidé doit exister");
+    }
+
+    /** Sans JavaScript, le champ soumis reste visible et éditable : la page ne devient jamais inutilisable. */
+    @Test
+    void theStyledFieldRemainsUsableWithoutJavaScript() throws Exception {
+        start(true);
+        String body = get("/quests/new").body();
+
+        assertTrue(body.contains("data-sf-guided hidden"),
+                "le mode guidé est masqué par défaut et révélé par le JavaScript, jamais l'inverse");
+    }
+
+    /** Issue #195, suite : le nom d'une story s'affiche au joueur, il passe par le même composant. */
+    @Test
+    void storyNameUsesTheGuidedStyleEditor() throws Exception {
+        start(true);
+        String body = get("/stories/new").body();
+
+        assertTrue(body.contains("id=\"s-name-store\"") && body.contains("name=\"name\""));
+        assertTrue(body.contains("data-sf-palette"), "palette présente sur l'éditeur de story");
+    }
+
+    /**
+     * Issue #195, suite : la réplique de départ d'un dialogue passe par le composant partagé, et
+     * l'ancien <em>select</em> de couleur disparaît. Deux mécanismes concurrents pour styler le même
+     * texte finissent toujours par diverger ; le serveur continue néanmoins d'accepter l'ancien champ.
+     */
+    @Test
+    void theDialogueStartTextReplacesTheOldColourSelectWithTheSharedComponent() throws Exception {
+        start(true);
+        String body = get("/dialogues/new").body();
+
+        assertTrue(body.contains("id=\"dlg-start-text-store\"") && body.contains("name=\"start_text\""));
+        assertTrue(body.contains("data-sf-palette"), "palette présente sur l'éditeur de dialogue");
+        assertFalse(body.contains("name=\"text_color\""),
+                "le select de couleur concurrent ne doit plus être émis");
+        assertFalse(body.contains("Couleur du texte"), "ni son libellé");
+    }
+
     @Test
     void anonymousIsRedirectedToLogin() throws Exception {
         start(true);

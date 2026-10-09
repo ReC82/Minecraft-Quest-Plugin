@@ -149,6 +149,16 @@ public enum Permission {
     ACTION_VARIABLE_GET,
     ACTION_VARIABLE_SET,
     ACTION_PLAYER_RESET,
+    /**
+     * Reset « nouveau joueur complet » : réinitialise la progression RPGQuest <strong>et vide
+     * l'inventaire</strong>, l'équipement et le coffre de l'Ender (issue #235).
+     *
+     * <p>Permission <strong>distincte</strong> de {@link #ACTION_PLAYER_RESET} parce que les deux
+     * gestes n'ont pas la même portée : réinitialiser une progression se refait en rejouant, vider
+     * l'inventaire d'un joueur ne se défait pas. Un droit commun aurait fait de la seconde un effet
+     * de bord de la première.</p>
+     */
+    ACTION_PLAYER_RESET_FULL,
     ACTION_ITEM_GIVE,
     ACTION_CONTENT_RELOAD,
     DEV_MODULE,

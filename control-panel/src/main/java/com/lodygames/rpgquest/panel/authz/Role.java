@@ -64,7 +64,10 @@ public enum Role {
             Permission.DOCS_READ, Permission.DIAGNOSTICS_READ, Permission.AUDIT_READ,
             Permission.ACTION_QUEST, Permission.ACTION_STORY,
             Permission.ACTION_VARIABLE_GET, Permission.ACTION_VARIABLE_SET,
-            Permission.ACTION_PLAYER_RESET, Permission.ACTION_ITEM_GIVE,
+            // Issue #235 : le reset COMPLET (qui vide l'inventaire) fait partie des outils de test
+            // d'un administrateur, mais reste un droit à part — voir ACTION_PLAYER_RESET_FULL.
+            Permission.ACTION_PLAYER_RESET, Permission.ACTION_PLAYER_RESET_FULL,
+            Permission.ACTION_ITEM_GIVE,
             Permission.ACTION_CONTENT_RELOAD,
             // Issue #95 : « exploitation du serveur » est la définition même de ce rôle.
             Permission.OPS_VIEW, Permission.OPS_ANNOUNCE, Permission.OPS_RESTART, Permission.OPS_LOGS,

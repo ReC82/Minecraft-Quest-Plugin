@@ -2149,8 +2149,9 @@ public final class BukkitAgentActions implements AgentActions {
     }
 
     @Override
-    public CompletableFuture<ResetPreview> resetPreview(UUID playerId) {
-        return onMain(() -> playerResetService.previewReset(playerId).thenApply(preview -> {
+    public CompletableFuture<ResetPreview> resetPreview(UUID playerId,
+                                                        PlayerResetService.ResetScope scope) {
+        return onMain(() -> playerResetService.previewReset(playerId, scope).thenApply(preview -> {
             List<ResetPreviewLine> lines = new ArrayList<>();
             for (PlayerResetService.ResetCategory c : preview.categories()) {
                 lines.add(new ResetPreviewLine(c.label(), c.count(), c.detail()));
@@ -2312,12 +2313,18 @@ public final class BukkitAgentActions implements AgentActions {
     }
 
     @Override
-    public CompletableFuture<MutationResult> resetConfirm(UUID playerId, String playerName) {
-        return onMain(() -> playerResetService.resetToNewPlayer(playerId, playerName == null ? "" : playerName)
+    public CompletableFuture<MutationResult> resetConfirm(UUID playerId, String playerName,
+                                                           PlayerResetService.ResetScope scope) {
+        return onMain(() -> playerResetService.reset(playerId, playerName == null ? "" : playerName, scope)
                 .thenApply(summary -> new MutationResult(true, "RESET_DONE",
-                        "Joueur remis à zéro (état RPGQuest « jamais joué »).",
+                        scope.label() + " effectué.",
                         List.of(summary.online()
-                                ? "Objets RPGQuest retirés : " + Math.max(summary.inventoryItemsRemoved(), 0)
+                                ? (scope.wipesInventory()
+                                        ? "Inventaire, équipement et coffre de l'Ender vidés : "
+                                                + Math.max(summary.inventoryItemsRemoved(), 0) + " objet(s)"
+                                        : "Objets RPGQuest retirés : "
+                                                + Math.max(summary.inventoryItemsRemoved(), 0)
+                                                + " (inventaire vanilla conservé)")
                                 : "Joueur hors ligne — nettoyage d'inventaire différé à sa prochaine connexion.")))
                 .exceptionally(e -> MutationResult.of(false, "ERROR", "Échec du reset : " + rootName(e))));
     }

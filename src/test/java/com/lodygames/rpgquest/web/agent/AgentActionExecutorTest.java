@@ -662,6 +662,59 @@ class AgentActionExecutorTest {
         assertFalse(actions.resetConfirmCalled, "preview ne doit jamais confirmer");
     }
 
+    /**
+     * Issue #235 — chaque type d'action porte sa portée, et la bonne.
+     *
+     * <p>C'est le cœur du ticket : une action qui conserve l'inventaire et une action qui le vide ne
+     * doivent pas pouvoir être confondues. Si ce routage s'inversait, un administrateur viderait un
+     * inventaire en croyant réinitialiser une progression — et aucun écran ne le rattraperait.</p>
+     */
+    @Test
+    void eachResetActionTypeCarriesItsOwnScope() {
+        run(new AgentAction("rp1", "player.resetnew.preview", Map.of("player", "Rondoudou9000")));
+        assertEquals(com.lodygames.rpgquest.player.PlayerResetService.ResetScope.PROGRESSION,
+                actions.lastPreviewScope);
+        assertFalse(actions.lastPreviewScope.wipesInventory());
+
+        run(new AgentAction("rp2", "player.resetfull.preview", Map.of("player", "Rondoudou9000")));
+        assertEquals(com.lodygames.rpgquest.player.PlayerResetService.ResetScope.NEW_PLAYER,
+                actions.lastPreviewScope);
+        assertTrue(actions.lastPreviewScope.wipesInventory());
+
+        run(new AgentAction("rc1", "player.resetnew.confirm",
+                Map.of("player", "Rondoudou9000", "confirm", "true")));
+        assertEquals(com.lodygames.rpgquest.player.PlayerResetService.ResetScope.PROGRESSION,
+                actions.lastConfirmScope);
+
+        run(new AgentAction("rc2", "player.resetfull.confirm",
+                Map.of("player", "Rondoudou9000", "confirm", "true")));
+        assertEquals(com.lodygames.rpgquest.player.PlayerResetService.ResetScope.NEW_PLAYER,
+                actions.lastConfirmScope);
+    }
+
+    /** Le reset complet exige la même confirmation explicite — jamais moins. */
+    @Test
+    void theFullResetAlsoRequiresExplicitConfirmation() {
+        AgentActionOutcome refused = run(new AgentAction("rf1", "player.resetfull.confirm",
+                Map.of("player", "Rondoudou9000")));
+
+        assertEquals(AgentActionOutcome.REJECTED, refused.status());
+        assertFalse(actions.resetConfirmCalled);
+        assertTrue(refused.message().contains("confirm"), refused.message());
+    }
+
+    /** Un aperçu, même de la portée destructrice, n'écrit jamais rien. */
+    @Test
+    void theFullPreviewNeverConfirms() {
+        AgentActionOutcome outcome = run(new AgentAction("rf2", "player.resetfull.preview",
+                Map.of("player", "Rondoudou9000")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, outcome.status());
+        assertFalse(actions.resetConfirmCalled);
+        assertEquals("NEW_PLAYER", outcome.details().get("scope"));
+        assertEquals(Boolean.TRUE, outcome.details().get("wipes_inventory"));
+    }
+
     // ---- Mutations : validation + délégation --------------------------------------------
 
     @Test
@@ -1188,6 +1241,9 @@ class AgentActionExecutorTest {
         String lastStoryId;
         String lastVariableValue;
         boolean resetConfirmCalled;
+        /** Issue #235 : la PORTÉE réellement transmise au service — le cœur du ticket. */
+        com.lodygames.rpgquest.player.PlayerResetService.ResetScope lastConfirmScope;
+        com.lodygames.rpgquest.player.PlayerResetService.ResetScope lastPreviewScope;
         boolean mutationOk = true;
         String mutationCode = "OK";
         int lastCatalogLimit = -999;
@@ -1709,7 +1765,9 @@ class AgentActionExecutorTest {
         }
 
         @Override
-        public CompletableFuture<ResetPreview> resetPreview(UUID playerId) {
+        public CompletableFuture<ResetPreview> resetPreview(UUID playerId,
+                                                            com.lodygames.rpgquest.player.PlayerResetService.ResetScope scope) {
+            lastPreviewScope = scope;
             return CompletableFuture.completedFuture(new ResetPreview(true,
                     List.of(new ResetPreviewLine("Quêtes", 2, "2 quête(s) avec progression"))));
         }
@@ -1750,8 +1808,10 @@ class AgentActionExecutorTest {
         }
 
         @Override
-        public CompletableFuture<MutationResult> resetConfirm(UUID playerId, String playerName) {
+        public CompletableFuture<MutationResult> resetConfirm(UUID playerId, String playerName,
+                                                               com.lodygames.rpgquest.player.PlayerResetService.ResetScope scope) {
             resetConfirmCalled = true;
+            lastConfirmScope = scope;
             return mutation("reset " + playerName);
         }
 

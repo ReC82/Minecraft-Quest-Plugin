@@ -111,7 +111,8 @@ class AgentActionCatalogTest {
 
         // Actions réellement sensibles / destructrices : confirmation explicite conservée.
         for (String type : new String[] {"dialogue.choice.delete", "npc.citizens.create", "player.ban",
-                "player.unban", "player.resetnew.confirm", "quest.reset", "mob.test.spawn", "mob.test.clear"}) {
+                "player.unban", "player.resetnew.confirm", "player.resetfull.confirm",
+                "quest.reset", "mob.test.spawn", "mob.test.clear"}) {
             assertTrue(AgentActionCatalog.spec(type).orElseThrow().sensitive(), type + " doit rester « sensible »");
         }
         assertFalse(AgentActionCatalog.validate("dialogue.choice.delete", Map.of(

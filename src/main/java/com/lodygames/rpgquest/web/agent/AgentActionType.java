@@ -47,6 +47,12 @@ public enum AgentActionType {
     /** Export versionné du contenu déclaratif (issue #108) — lecture seule, aucun effet de bord. */
     CONTENT_EXPORT("content.export"),
     PLAYER_RESETNEW_PREVIEW("player.resetnew.preview"),
+    /**
+     * Issue #235 : aperçu du reset « nouveau joueur complet » — même lecture que
+     * {@link #PLAYER_RESETNEW_PREVIEW}, mais annonce en plus le vidage de l'inventaire. Lecture
+     * seule : aucune écriture, aucun objet retiré.
+     */
+    PLAYER_RESETFULL_PREVIEW("player.resetfull.preview"),
     /** Catalogue waypoints/bornes (issue #152) — lecture seule, aucun effet de bord. */
     TRAVEL_CATALOG("travel.catalog"),
     /** Catalogue des profils de mobs spéciaux/boss + throttle Wild (issue #169) — lecture seule. */
@@ -72,6 +78,13 @@ public enum AgentActionType {
     STORY_COMPLETE("story.complete"),
     PLAYER_VARIABLE_SET("player.variable.set"),
     PLAYER_RESETNEW_CONFIRM("player.resetnew.confirm"),
+    /**
+     * Issue #235 : reset « nouveau joueur complet » — tout ce que fait
+     * {@link #PLAYER_RESETNEW_CONFIRM}, <strong>plus</strong> le vidage de l'inventaire, de
+     * l'équipement et du coffre de l'Ender. Action distincte et non un paramètre, pour qu'un clic
+     * ne puisse pas se tromper d'intention et que le journal d'audit dise laquelle a eu lieu.
+     */
+    PLAYER_RESETFULL_CONFIRM("player.resetfull.confirm"),
     PLAYER_BAN("player.ban"),
     PLAYER_UNBAN("player.unban"),
     NPC_DEFINITION_CREATE("npc.definition.create"),

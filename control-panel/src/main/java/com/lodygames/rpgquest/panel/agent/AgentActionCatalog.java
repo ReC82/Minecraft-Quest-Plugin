@@ -259,7 +259,12 @@ public final class AgentActionCatalog {
         add("player.list", Permission.PLAYERS_READ, false, false, "Rafraîchir les joueurs connectés");
         add("player.catalog", Permission.PLAYERS_READ, false, false, "Rafraîchir l'annuaire des joueurs");
         add("player.variable.get", Permission.ACTION_VARIABLE_GET, false, true, "Lire une variable joueur");
-        add("player.resetnew.preview", Permission.PLAYERS_READ, false, true, "Aperçu du reset « nouveau joueur »");
+        add("player.resetnew.preview", Permission.PLAYERS_READ, false, true,
+                "Aperçu du reset de progression RPGQuest");
+        // Issue #235 : aperçu de la portée COMPLÈTE. Lecture seule comme son homologue — c'est
+        // justement l'écran qui doit permettre de constater ce qui serait vidé avant de confirmer.
+        add("player.resetfull.preview", Permission.PLAYERS_READ, false, true,
+                "Aperçu du reset « nouveau joueur complet »");
         add("quest.list", Permission.CONTENT_READ, false, false, "Rafraîchir le catalogue de quêtes");
         add("quest.player.status", Permission.PLAYERS_READ, false, true, "État des quêtes d'un joueur");
         add("story.list", Permission.CONTENT_READ, false, false, "Rafraîchir le catalogue de stories");
@@ -412,7 +417,12 @@ public final class AgentActionCatalog {
         // Mutations
         add("player.item.give", Permission.ACTION_ITEM_GIVE, true, true, "Donner un objet");
         add("player.variable.set", Permission.ACTION_VARIABLE_SET, true, true, "Écrire une variable (debug)");
-        add("player.resetnew.confirm", Permission.ACTION_PLAYER_RESET, true, true, "Reset « nouveau joueur »");
+        add("player.resetnew.confirm", Permission.ACTION_PLAYER_RESET, true, true,
+                "Reset progression RPGQuest (inventaire conservé)");
+        // Issue #235 : vider l'inventaire d'un joueur est d'une autre nature que réinitialiser sa
+        // progression — d'où une permission DÉDIÉE, et non la même case que le reset de progression.
+        add("player.resetfull.confirm", Permission.ACTION_PLAYER_RESET_FULL, true, true,
+                "Reset nouveau joueur COMPLET (vide l'inventaire)");
         // Issue #210 — administration de joueur. L'élévation OP a sa PROPRE permission, la plus
         // restreinte du panel : réservée à OWNER, pas accordée à ADMIN. Le reste réutilise
         // PLAYER_MODERATE comme le ticket le demande, pour ne pas multiplier les permissions.
@@ -1480,7 +1490,7 @@ public final class AgentActionCatalog {
                     params.put("limit", Integer.toString(value));
                 }
             }
-            case "player.resetnew.confirm" -> params.put("confirm", "true");
+            case "player.resetnew.confirm", "player.resetfull.confirm" -> params.put("confirm", "true");
             case "player.op", "player.deop" -> {
                 // Raison OBLIGATOIRE : une élévation OP sans motif rend l'audit inexploitable.
                 String reason = trim(form.get("reason"));
@@ -1672,7 +1682,7 @@ public final class AgentActionCatalog {
                 }
             }
             default -> {
-                // player.list / *.player.status / *.list / player.resetnew.preview : pas de paramètre
+                // player.list / *.player.status / *.list / player.reset*.preview : pas de paramètre
                 // supplémentaire au-delà de « player ».
             }
         }

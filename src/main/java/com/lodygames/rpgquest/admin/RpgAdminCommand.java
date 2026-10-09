@@ -109,7 +109,7 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     private static final List<String> GUIDE_SUBCOMMANDS = List.of("list", "info");
     private static final List<String> WAYSTONE_SUBCOMMANDS =
             List.of("list", "here", "tp", "generatehere", "reset");
-    private static final List<String> PLAYER_SUBCOMMANDS = List.of("resetnew", "variable");
+    private static final List<String> PLAYER_SUBCOMMANDS = List.of("resetnew", "resetfull", "variable");
     private static final List<String> PLAYER_VARIABLE_SUBCOMMANDS = List.of("get", "set");
     private static final List<String> QUEST_SUBCOMMANDS = List.of("start", "complete", "reset");
     /** Issue #179 : raccourci admin pour poser/monter directement un claim à un palier donné. */
@@ -1849,34 +1849,54 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
             handlePlayerVariable(sender, args);
             return;
         }
-        if (args.length < 3 || !args[1].equalsIgnoreCase("resetnew")) {
+        // Issue #235 : deux sous-commandes pour deux INTENTIONS, et non un drapeau sur la même.
+        // « resetnew » conserve l'inventaire (comportement historique), « resetfull » le vide.
+        PlayerResetService.ResetScope scope;
+        if (args.length >= 2 && args[1].equalsIgnoreCase("resetfull")) {
+            scope = PlayerResetService.ResetScope.NEW_PLAYER;
+        } else if (args.length >= 2 && args[1].equalsIgnoreCase("resetnew")) {
+            scope = PlayerResetService.ResetScope.PROGRESSION;
+        } else {
+            sendPlayerResetUsage(sender);
+            return;
+        }
+        if (args.length < 3) {
             sendPlayerResetUsage(sender);
             return;
         }
         String rawName = args[2];
         String action = args.length >= 4 ? args[3].toLowerCase(Locale.ROOT) : "";
         if (action.equals("preview")) {
-            handlePlayerResetPreview(sender, rawName);
+            handlePlayerResetPreview(sender, rawName, scope);
             return;
         }
+        String sub = scope.wipesInventory() ? "resetfull" : "resetnew";
         if (!action.equals("confirm")) {
             sender.sendMessage(MM.deserialize(
-                    "<gold>⚠ Reset « nouveau joueur » pour</gold> <white><name></white> <gold>—</gold> "
+                    "<gold>⚠ <scope> pour</gold> <white><name></white> <gold>—</gold> "
                             + "<gray>efface ses quêtes, Stories, variables/unlocks, progression RPG, "
                             + "découvertes de Waystones, cooldowns et son claim principal.</gray>",
+                    Placeholder.unparsed("scope", scope.label()),
                     Placeholder.unparsed("name", rawName)));
+            sender.sendMessage(MM.deserialize(scope.wipesInventory()
+                            ? "<red>Inventaire : TOUT sera vidé</red> <gray>— inventaire, armure, main "
+                                    + "secondaire, curseur et coffre de l'Ender.</gray>"
+                            : "<gray>Inventaire : <white>CONSERVÉ</white>. Seuls les objets RPGQuest sont "
+                                    + "retirés — un kit de départ déjà reçu reste donc en place, alors que le "
+                                    + "droit d'en redemander un est rétabli.</gray>"));
             sender.sendMessage(MM.deserialize(
-                    "<yellow>Aperçu sans rien modifier :</yellow> <white>/rpgadmin player resetnew <name> preview</white>",
-                    Placeholder.unparsed("name", rawName)));
+                    "<yellow>Aperçu sans rien modifier :</yellow> <white>/rpgadmin player <sub> <name> preview</white>",
+                    Placeholder.unparsed("sub", sub), Placeholder.unparsed("name", rawName)));
             sender.sendMessage(MM.deserialize(
-                    "<yellow>Confirme avec :</yellow> <white>/rpgadmin player resetnew <name> confirm</white>",
-                    Placeholder.unparsed("name", rawName)));
+                    "<yellow>Confirme avec :</yellow> <white>/rpgadmin player <sub> <name> confirm</white>",
+                    Placeholder.unparsed("sub", sub), Placeholder.unparsed("name", rawName)));
             return;
         }
-        resolveTargetPlayer(sender, rawName, (uuid, name) -> playerResetService.resetToNewPlayer(uuid, name)
+        resolveTargetPlayer(sender, rawName, (uuid, name) -> playerResetService.reset(uuid, name, scope)
                 .thenAccept(summary -> runOnMainThread(() -> {
                     sender.sendMessage(MM.deserialize(
-                            "<green>Reset « nouveau joueur » effectué pour</green> <white><name></white> <gray>(<uuid>)</gray>",
+                            "<green><scope> effectué pour</green> <white><name></white> <gray>(<uuid>)</gray>",
+                            Placeholder.unparsed("scope", scope.label()),
                             Placeholder.unparsed("name", name), Placeholder.unparsed("uuid", uuid.toString())));
                     sender.sendMessage(MM.deserialize(
                             "<gray>Réinitialisés : quêtes (actives/progression/terminées/suivie), Stories, "
@@ -1884,20 +1904,24 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                                     + "découvertes de Waystones, cooldowns portails + Rune, claim principal "
                                     + "(données de protection uniquement).</gray>"));
                     if (summary.online()) {
-                        sender.sendMessage(MM.deserialize(
-                                "<gray>Inventaire : <n> objet(s) RPGQuest retiré(s) maintenant (inventaire vanilla intact).</gray>",
+                        sender.sendMessage(MM.deserialize(scope.wipesInventory()
+                                        ? "<gray>Inventaire : <n> objet(s) retiré(s) — tout a été vidé "
+                                                + "(inventaire, armure, main secondaire, curseur, Ender).</gray>"
+                                        : "<gray>Inventaire : <n> objet(s) RPGQuest retiré(s) (inventaire "
+                                                + "vanilla intact).</gray>",
                                 Placeholder.unparsed("n", String.valueOf(summary.inventoryItemsRemoved()))));
                     } else {
                         sender.sendMessage(MM.deserialize(
-                                "<yellow>Joueur hors ligne :</yellow> <gray>l'inventaire RPGQuest sera nettoyé "
-                                        + "automatiquement à sa prochaine connexion (avant le kit de départ).</gray>"));
+                                "<yellow>Joueur hors ligne :</yellow> <gray>le nettoyage d'inventaire (<scope>) "
+                                        + "sera appliqué automatiquement à sa prochaine connexion.</gray>",
+                                Placeholder.unparsed("scope", scope.label())));
                     }
                     sender.sendMessage(MM.deserialize(
                             "<gray>Conservés volontairement : profil/UUID, économie, backpacks/entitlements, "
                                     + "annonces de marché, blocs construits, Waystones globales.</gray>"));
                 }))
                 .exceptionally(error -> {
-                    plugin.getSLF4JLogger().error("Échec de /rpgadmin player resetnew pour {}", rawName, error);
+                    plugin.getSLF4JLogger().error("Échec de /rpgadmin player {} pour {}", sub, rawName, error);
                     runOnMainThread(() -> sender.sendMessage(MM.deserialize(
                             "<red>Échec du reset (voir la console).</red>")));
                     return null;
@@ -1905,16 +1929,19 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
     }
 
     /**
-     * {@code /rpgadmin player resetnew <joueur> preview} — dry-run : liste ce qu'un reset réel
-     * effacerait, catégorie par catégorie, <strong>sans effectuer aucune écriture</strong>
-     * (délègue à {@link PlayerResetService#previewReset(UUID)}, lecture seule).
+     * {@code /rpgadmin player resetnew|resetfull <joueur> preview} — dry-run : liste ce qu'un reset
+     * réel effacerait <strong>pour cette portée</strong>, catégorie par catégorie, sans effectuer
+     * aucune écriture (délègue à {@link PlayerResetService#previewReset}, lecture seule).
      */
-    private void handlePlayerResetPreview(CommandSender sender, String rawName) {
-        resolveTargetPlayer(sender, rawName, (uuid, name) -> playerResetService.previewReset(uuid)
+    private void handlePlayerResetPreview(CommandSender sender, String rawName,
+                                           PlayerResetService.ResetScope scope) {
+        String sub = scope.wipesInventory() ? "resetfull" : "resetnew";
+        resolveTargetPlayer(sender, rawName, (uuid, name) -> playerResetService.previewReset(uuid, scope)
                 .thenAccept(preview -> runOnMainThread(() -> {
                     sender.sendMessage(MM.deserialize(
-                            "<gold><bold>Aperçu du reset « nouveau joueur »</bold></gold> <gray>— <white><name></white> "
+                            "<gold><bold>Aperçu — <scope></bold></gold> <gray>— <white><name></white> "
                                     + "(<uuid>, <status>)</gray>",
+                            Placeholder.unparsed("scope", scope.label()),
                             Placeholder.unparsed("name", name), Placeholder.unparsed("uuid", uuid.toString()),
                             Placeholder.unparsed("status", preview.online() ? "en ligne" : "hors ligne")));
                     sender.sendMessage(MM.deserialize(
@@ -1937,11 +1964,11 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
                             "<gray>Conservés dans tous les cas : profil/UUID, économie, backpacks/entitlements, "
                                     + "annonces de marché, blocs construits, Waystones globales.</gray>"));
                     sender.sendMessage(MM.deserialize(
-                            "<yellow>Pour exécuter réellement :</yellow> <white>/rpgadmin player resetnew <name> confirm</white>",
-                            Placeholder.unparsed("name", name)));
+                            "<yellow>Pour exécuter réellement :</yellow> <white>/rpgadmin player <sub> <name> confirm</white>",
+                            Placeholder.unparsed("sub", sub), Placeholder.unparsed("name", name)));
                 }))
                 .exceptionally(error -> {
-                    plugin.getSLF4JLogger().error("Échec de /rpgadmin player resetnew preview pour {}", rawName, error);
+                    plugin.getSLF4JLogger().error("Échec de /rpgadmin player {} preview pour {}", sub, rawName, error);
                     runOnMainThread(() -> sender.sendMessage(MM.deserialize(
                             "<red>Échec de l'aperçu (voir la console).</red>")));
                     return null;
@@ -1950,11 +1977,16 @@ public final class RpgAdminCommand implements CommandExecutor, TabCompleter {
 
     private void sendPlayerResetUsage(CommandSender sender) {
         sender.sendMessage(MM.deserialize(
-                "<yellow>/rpgadmin player resetnew <joueur></yellow> <gray>- avertissement, ne fait rien</gray>"));
+                "<gold>Deux portées distinctes (issue #235) — l'inventaire est la différence :</gold>"));
         sender.sendMessage(MM.deserialize(
-                "<yellow>/rpgadmin player resetnew <joueur> preview</yellow> <gray>- dry-run : liste ce qui serait effacé, sans rien modifier</gray>"));
+                "<yellow>/rpgadmin player resetnew <joueur> [preview|confirm]</yellow> <gray>- données "
+                        + "RPGQuest uniquement, <white>inventaire CONSERVÉ</white></gray>"));
         sender.sendMessage(MM.deserialize(
-                "<yellow>/rpgadmin player resetnew <joueur> confirm</yellow> <gray>- exécute le reset</gray>"));
+                "<yellow>/rpgadmin player resetfull <joueur> [preview|confirm]</yellow> <gray>- idem "
+                        + "<red>+ vide inventaire, équipement et coffre de l'Ender</red> (tests)</gray>"));
+        sender.sendMessage(MM.deserialize(
+                "<gray>Sans <white>preview</white> ni <white>confirm</white> : avertissement seul, rien "
+                        + "n'est modifié.</gray>"));
     }
 
     // ---- Guides de Hub (issue #11 — diagnostic en lecture seule de la structure d'aide multi-Hub) ----

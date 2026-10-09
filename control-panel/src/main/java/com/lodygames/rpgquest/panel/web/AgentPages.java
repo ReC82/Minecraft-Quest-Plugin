@@ -360,7 +360,10 @@ public final class AgentPages {
         boolean canVarGet = perms.can(session.effective(), Permission.ACTION_VARIABLE_GET);
         boolean canVarSet = perms.can(session.effective(), Permission.ACTION_VARIABLE_SET);
         boolean canGive = perms.can(session.effective(), Permission.ACTION_ITEM_GIVE);
-        boolean canReset = perms.can(session.effective(), Permission.ACTION_PLAYER_RESET);
+        // Issue #235 : l'un OU l'autre suffit à ouvrir la section — chaque bloc vérifie ensuite son
+        // propre droit, donc un rôle qui n'a que l'un des deux ne voit pas le bouton de l'autre.
+        boolean canReset = perms.can(session.effective(), Permission.ACTION_PLAYER_RESET)
+                || perms.can(session.effective(), Permission.ACTION_PLAYER_RESET_FULL);
         // Issue #210 : permission DÉDIÉE, la plus restreinte du panel (OWNER uniquement).
         boolean canOp = perms.can(session.effective(), Permission.PLAYER_OP_WRITE);
         // Issue #140 : lire un solde et en créer sont deux gestes distincts.
@@ -670,7 +673,9 @@ public final class AgentPages {
                     + playerWhitelistForm(session, agentId, uuid, name, e.whitelisted()) + "</div>"));
         }
         if (canReset) {
-            toggles.add(new String[] {slug + "-f-reset", "Reset « nouveau joueur »", "trash", "btn-outline-danger"});
+            // Issue #235 : le libellé ne dit plus « Reset » tout court — il y a deux portées, et
+            // c'est l'ambiguïté qui a produit le double kit observé en jeu.
+            toggles.add(new String[] {slug + "-f-reset", "Resets joueur (2 portées)", "trash", "btn-outline-danger"});
             forms.append(actionCollapse(slug + "-f-reset", "<div class=\"card card-body npc-formcard\">"
                     + playerResetTools(session, agentId, uuid, name) + "</div>"));
         }
@@ -689,6 +694,7 @@ public final class AgentPages {
 
         // Résultats récents pour ce joueur (compact — pas l'historique complet).
         for (String type : new String[] {"player.ban", "player.unban", "player.resetnew.confirm",
+                "player.resetfull.confirm",
                 "player.op", "player.deop", "player.send.hub", "player.kick",
                 "player.whitelist.add", "player.whitelist.remove",
                 "economy.balance", "economy.credit", "economy.debit",
@@ -1126,15 +1132,76 @@ public final class AgentPages {
         return sb.toString();
     }
 
+    /**
+     * Les deux resets d'un joueur (issue #235) — et ils ne s'appellent plus tous les deux « Reset ».
+     *
+     * <h2>Pourquoi deux blocs et non deux boutons côte à côte</h2>
+     *
+     * <p>Le retour utilisateur qui a ouvert #235 est exactement une confusion d'intention : un reset
+     * présenté comme « nouveau joueur » avait rétabli le droit au kit de départ sans retirer le kit
+     * déjà reçu, et le joueur en a obtenu un second. L'écran ne mentait pas, il ne <em>disait</em>
+     * rien du sort de l'inventaire.</p>
+     *
+     * <p>Chaque portée a donc son bloc, son aperçu, son libellé et sa confirmation, et chacune
+     * <strong>énumère ce qu'elle conserve autant que ce qu'elle efface</strong> — « conserve » est
+     * l'information qui manquait.</p>
+     */
     private String playerResetTools(Session session, String agentId, String uuid, String name) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(playerResetBlock(session, agentId, uuid, name, false));
+        sb.append(playerResetBlock(session, agentId, uuid, name, true));
+        return sb.toString();
+    }
+
+    /**
+     * Un bloc de reset. {@code full} choisit la portée : progression RPGQuest seule (inventaire
+     * conservé) ou reset « nouveau joueur complet » (inventaire vidé).
+     */
+    private String playerResetBlock(Session session, String agentId, String uuid, String name, boolean full) {
+        String previewType = full ? "player.resetfull.preview" : "player.resetnew.preview";
+        String confirmType = full ? "player.resetfull.confirm" : "player.resetnew.confirm";
+        Permission needed = full ? Permission.ACTION_PLAYER_RESET_FULL : Permission.ACTION_PLAYER_RESET;
+
         StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("trash"))
-                .append("Reset « nouveau joueur » <span class=\"badge text-bg-secondary\">hors ligne OK</span></p>");
-        sb.append("<p class=\"muted\">L'aperçu ne modifie rien. La confirmation remet à zéro l'état RPGQuest "
-                + "(quêtes, stories, variables/unlocks dont CLAIM_TIER_1, progression RPG, Waystones, cooldowns, "
-                + "claim principal + objets RPGQuest de l'inventaire). Ne touche jamais le profil/UUID, les mondes, "
-                + "les autres joueurs.</p>");
-        sb.append(readForm(session, agentId, "player.resetnew.preview", "/players", uuid, "Aperçu (aucune écriture)"));
-        latestForPlayer(agentId, "player.resetnew.preview", uuid).ifPresent(row -> {
+                .append(full ? "Reset nouveau joueur complet <span class=\"badge text-bg-danger\">DEV / "
+                        + "vide l'inventaire</span>"
+                        : "Reset progression RPGQuest <span class=\"badge text-bg-secondary\">inventaire "
+                                + "conservé</span>")
+                .append(" <span class=\"badge text-bg-secondary\">hors ligne OK</span></p>");
+
+        // Ce qui est CONSERVÉ d'abord : c'est la question que l'administrateur se pose, et celle à
+        // laquelle l'ancien écran ne répondait pas.
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "Conserve", full
+                ? "le profil et l'UUID, l'économie, les backpacks, les annonces de marché, les blocs "
+                        + "construits et les Waystones globales"
+                : "<strong>l'inventaire Minecraft et l'équipement</strong>, le profil et l'UUID, "
+                        + "l'économie, les backpacks, les annonces de marché, les blocs construits");
+        dlRow(sb, "Réinitialise", "les quêtes (actives, progression, terminées, quête suivie), les "
+                + "stories, les variables et unlocks dont CLAIM_TIER_1, la progression RPG, les "
+                + "découvertes de Waystones, les cooldowns, le claim principal (données de "
+                + "protection — les blocs restent), le <strong>droit au kit de départ</strong> et le "
+                + "<strong>palier de kit (retour au palier 1)</strong>");
+        dlRow(sb, "Inventaire", full
+                ? "<strong>TOUT est vidé</strong> : inventaire, armure, main secondaire, curseur et "
+                        + "coffre de l'Ender"
+                : "seuls les objets RPGQuest (reconnus par PDC) sont retirés");
+        sb.append("</dl>");
+
+        if (!full) {
+            // L'avertissement que #235 exige mot pour mot : le droit revient, les objets restent.
+            sb.append(Ui.banner("warning", "Le droit au kit de départ est rétabli, mais un kit déjà "
+                    + "reçu reste physiquement dans l'inventaire : ce joueur pourra donc demander un "
+                    + "second kit. Les outils du kit sont des objets vanilla, indiscernables de ceux "
+                    + "qu'il a fabriqués — c'est pourquoi ils ne sont pas retirés « intelligemment ». "
+                    + "Pour un état réellement neuf, utilisez le reset complet ci-dessous."));
+        } else {
+            sb.append(Ui.banner("error", "Vider l'inventaire d'un joueur ne se défait pas. Réservé "
+                    + "aux tests d'onboarding : à n'utiliser sur un vrai joueur qu'à sa demande."));
+        }
+
+        sb.append(readForm(session, agentId, previewType, "/players", uuid, "Aperçu (aucune écriture)"));
+        latestForPlayer(agentId, previewType, uuid).ifPresent(row -> {
             sb.append(resultLine("Aperçu", row));
             detailsOf(row).map(d -> asList(d.get("lines"))).ifPresent(lines -> {
                 if (!lines.isEmpty()) {
@@ -1149,11 +1216,25 @@ public final class AgentPages {
                 }
             });
         });
+
+        if (!perms.can(session.effective(), needed)) {
+            sb.append("<p class=\"field-help\">Vous n'avez pas le droit d'exécuter ce reset. L'aperçu "
+                    + "ci-dessus reste disponible.</p>");
+            return sb.toString();
+        }
+
         sb.append("<div class=\"danger-zone\"><div class=\"dz-title\">⚠ Action irréversible</div>");
-        sb.append(formStart(session, agentId, "player.resetnew.confirm", "/players", uuid));
-        sb.append(confirmBox("Je confirme la remise à zéro complète de l'état RPGQuest de « " + name + " »."));
-        sb.append("<button class=\"btn btn-danger\" type=\"submit\">Reset « nouveau joueur »</button></form>");
-        latestForPlayer(agentId, "player.resetnew.confirm", uuid).ifPresent(row ->
+        sb.append(formStart(session, agentId, confirmType, "/players", uuid));
+        sb.append(confirmBox(full
+                ? "Je confirme la remise à zéro de la progression de « " + name + " » ET le vidage "
+                        + "de son inventaire, de son équipement et de son coffre de l'Ender."
+                : "Je confirme la remise à zéro de la progression RPGQuest de « " + name
+                        + " » (son inventaire est conservé)."));
+        sb.append("<button class=\"btn btn-danger\" type=\"submit\">")
+                .append(full ? "Reset nouveau joueur complet (vide l'inventaire)"
+                        : "Reset progression RPGQuest (garde l'inventaire)")
+                .append("</button></form>");
+        latestForPlayer(agentId, confirmType, uuid).ifPresent(row ->
                 sb.append(resultLine("Dernier reset", row)));
         sb.append("</div>");
         return sb.toString();

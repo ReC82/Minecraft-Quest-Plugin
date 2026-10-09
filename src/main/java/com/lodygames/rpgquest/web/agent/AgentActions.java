@@ -1,6 +1,7 @@
 package com.lodygames.rpgquest.web.agent;
 
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
+import com.lodygames.rpgquest.player.PlayerResetService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -811,14 +812,18 @@ public interface AgentActions {
     /** Supprime un choix simple (si le nœud garde au moins un choix). */
     CompletableFuture<MutationResult> dialogueChoiceDelete(String dialogueId, String nodeId, int choiceIndex);
 
-    /** Aperçu (dry-run, aucune écriture) de ce qu'un reset « nouveau joueur » supprimerait. */
+    /** Aperçu (dry-run, aucune écriture) de ce qu'un reset supprimerait, pour la portée demandée. */
     record ResetPreviewLine(String label, int count, String detail) {
     }
 
     record ResetPreview(boolean online, List<ResetPreviewLine> lines) {
     }
 
-    CompletableFuture<ResetPreview> resetPreview(UUID playerId);
+    /**
+     * @param scope portée annoncée (issue #235) — elle change ce que l'aperçu dit de l'inventaire,
+     *              et c'est précisément l'information qui manquait avant ce ticket
+     */
+    CompletableFuture<ResetPreview> resetPreview(UUID playerId, PlayerResetService.ResetScope scope);
 
     // ---- Mutations -----------------------------------------------------------------------------
 
@@ -845,7 +850,13 @@ public interface AgentActions {
 
     CompletableFuture<MutationResult> giveItem(UUID playerId, String itemId, int amount);
 
-    CompletableFuture<MutationResult> resetConfirm(UUID playerId, String playerName);
+    /**
+     * @param scope portée du reset (issue #235). {@code PROGRESSION} conserve l'inventaire,
+     *              {@code NEW_PLAYER} le vide — deux actions distinctes côté panel, pour qu'un clic
+     *              ne puisse pas se tromper d'intention
+     */
+    CompletableFuture<MutationResult> resetConfirm(UUID playerId, String playerName,
+                                                   PlayerResetService.ResetScope scope);
 
     /** Écriture bas niveau d'une variable joueur (outil debug — confirmation panel + audit exigés). */
     CompletableFuture<MutationResult> variableSet(UUID playerId, String key, String value);

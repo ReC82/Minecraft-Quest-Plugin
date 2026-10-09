@@ -10,10 +10,10 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 
 /**
- * Deuxième moitié, différée, du reset admin « nouveau joueur » ({@link PlayerResetService}) : quand
- * un joueur qui était <strong>hors ligne</strong> au moment du reset se reconnecte, on nettoie son
- * inventaire des objets personnalisés RPGQuest et on efface le marqueur
- * {@link PlayerResetService#PENDING_INVENTORY_KEY}.
+ * Deuxième moitié, différée, du reset admin ({@link PlayerResetService}) : quand un joueur qui était
+ * <strong>hors ligne</strong> au moment du reset se reconnecte, on applique le nettoyage
+ * d'inventaire prévu par la <strong>portée</strong> enregistrée dans le marqueur
+ * {@link PlayerResetService#PENDING_INVENTORY_KEY}, puis on efface ce marqueur.
  *
  * <p>Priorité {@link EventPriority#LOWEST} : ce nettoyage passe <strong>avant</strong>
  * {@code StarterKitListener} (priorité {@code NORMAL}), qui redistribue ensuite la Rune de rappel
@@ -46,7 +46,12 @@ public final class NewPlayerResetJoinListener implements Listener {
                 if (!player.isOnline()) {
                     return;
                 }
-                int removed = PlayerResetService.removeRpgItems(player, customItemRegistry);
+                // La PORTÉE est relue dans le marqueur : un reset « nouveau joueur complet » demandé
+                // sur un joueur hors ligne doit vider son inventaire à la reconnexion, pas
+                // seulement ses objets RPGQuest (issue #235). Une valeur illisible retombe sur la
+                // portée la moins destructrice.
+                PlayerResetService.ResetScope scope = PlayerResetService.ResetScope.ofMarker(pending.get());
+                int removed = PlayerResetService.applyInventoryReset(player, scope, customItemRegistry);
                 variableRepository.set(player.getUniqueId(), PlayerResetService.PENDING_INVENTORY_KEY, "")
                         .exceptionally(error -> {
                             plugin.getSLF4JLogger().error(
@@ -55,8 +60,9 @@ public final class NewPlayerResetJoinListener implements Listener {
                             return null;
                         });
                 plugin.getSLF4JLogger().info(
-                        "[player resetnew] Inventaire RPGQuest de {} nettoyé à la reconnexion ({} objet(s) retiré(s)).",
-                        player.getName(), removed);
+                        "[player reset:{}] Inventaire de {} nettoyé à la reconnexion ({} objet(s) retiré(s), {}).",
+                        scope.name(), player.getName(), removed,
+                        scope.wipesInventory() ? "inventaire complet vidé" : "objets RPGQuest seulement");
             });
         }).exceptionally(error -> {
             plugin.getSLF4JLogger().error("Impossible de vérifier le marqueur de reset différé pour {}",

@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.web.agent;
 import com.lodygames.rpgquest.content.pack.ContentFamily;
 import com.lodygames.rpgquest.dialogue.DialogueDefinitionEditor;
 import com.lodygames.rpgquest.dialogue.model.ActionType;
+import com.lodygames.rpgquest.player.PlayerResetService.ResetScope;
 import com.lodygames.rpgquest.quest.model.QuestState;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -115,7 +116,8 @@ public final class AgentActionExecutor {
                 case DIALOGUE_CHOICE_DELETE -> dialogueChoiceDelete(action);
                 case QUEST_PLAYER_STATUS -> questPlayerStatus(action);
                 case STORY_PLAYER_STATUS -> storyPlayerStatus(action);
-                case PLAYER_RESETNEW_PREVIEW -> resetPreview(action);
+                case PLAYER_RESETNEW_PREVIEW -> resetPreview(action, ResetScope.PROGRESSION);
+                case PLAYER_RESETFULL_PREVIEW -> resetPreview(action, ResetScope.NEW_PLAYER);
                 case TRAVEL_CATALOG -> travelCatalog(action);
                 case MOB_LIST -> mobList(action);
                 case MOB_CATALOGS -> mobCatalogs(action);
@@ -158,7 +160,8 @@ public final class AgentActionExecutor {
                 case STORY_ADVANCE -> storyMutation(action, AgentActionType.STORY_ADVANCE);
                 case STORY_COMPLETE -> storyMutation(action, AgentActionType.STORY_COMPLETE);
                 case PLAYER_VARIABLE_SET -> variableSet(action);
-                case PLAYER_RESETNEW_CONFIRM -> resetConfirm(action);
+                case PLAYER_RESETNEW_CONFIRM -> resetConfirm(action, ResetScope.PROGRESSION);
+                case PLAYER_RESETFULL_CONFIRM -> resetConfirm(action, ResetScope.NEW_PLAYER);
                 case PLAYER_BAN -> playerBan(action);
                 case PLAYER_UNBAN -> playerUnban(action);
                 case NPC_DEFINITION_CREATE -> npcDefinitionWrite(action, true);
@@ -2488,8 +2491,8 @@ public final class AgentActionExecutor {
         }));
     }
 
-    private CompletableFuture<AgentActionOutcome> resetPreview(AgentAction action) {
-        return withPlayer(action, (uuid, name) -> actions.resetPreview(uuid).thenApply(preview -> {
+    private CompletableFuture<AgentActionOutcome> resetPreview(AgentAction action, ResetScope scope) {
+        return withPlayer(action, (uuid, name) -> actions.resetPreview(uuid, scope).thenApply(preview -> {
             List<Map<String, Object>> lines = new ArrayList<>();
             for (AgentActions.ResetPreviewLine l : preview.lines()) {
                 Map<String, Object> row = new LinkedHashMap<>();
@@ -2503,8 +2506,14 @@ public final class AgentActionExecutor {
             details.put("player_name", name);
             details.put("online", preview.online());
             details.put("lines", lines);
+            // Issue #235 : la portée voyage avec l'aperçu, pour que le panel n'ait pas à la deviner
+            // et qu'un aperçu « conserve l'inventaire » ne puisse pas s'afficher sous un bouton qui
+            // le vide.
+            details.put("scope", scope.name());
+            details.put("scope_label", scope.label());
+            details.put("wipes_inventory", scope.wipesInventory());
             return AgentActionOutcome.success(action.id(), name,
-                    "Aperçu du reset « nouveau joueur » de " + name + " (aucune écriture).", details);
+                    "Aperçu — " + scope.label() + " de " + name + " (aucune écriture).", details);
         }));
     }
 
@@ -2573,13 +2582,13 @@ public final class AgentActionExecutor {
                 actions.variableSet(uuid, key, value).thenApply(r -> toOutcome(action, r)));
     }
 
-    private CompletableFuture<AgentActionOutcome> resetConfirm(AgentAction action) {
+    private CompletableFuture<AgentActionOutcome> resetConfirm(AgentAction action, ResetScope scope) {
         if (!isTrue(action.param("confirm"))) {
             return done(AgentActionOutcome.rejected(action.id(),
-                    "Reset « nouveau joueur » : paramètre « confirm=true » obligatoire (garde-fou)."));
+                    scope.label() + " : paramètre « confirm=true » obligatoire (garde-fou)."));
         }
         return withResolvedUuid(action, (uuid, name) ->
-                actions.resetConfirm(uuid, name).thenApply(r -> toOutcome(action, r)));
+                actions.resetConfirm(uuid, name, scope).thenApply(r -> toOutcome(action, r)));
     }
 
     // ---- Écritures de contenu PNJ (V2 déclarative) -----------------------------------

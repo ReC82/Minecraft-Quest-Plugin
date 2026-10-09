@@ -289,7 +289,8 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
-    public CompletableFuture<ResetPreview> resetPreview(UUID playerId) {
+    public CompletableFuture<ResetPreview> resetPreview(UUID playerId,
+                                                        com.lodygames.rpgquest.player.PlayerResetService.ResetScope scope) {
         return CompletableFuture.completedFuture(new ResetPreview(false, List.of()));
     }
 
@@ -324,7 +325,8 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
-    public CompletableFuture<MutationResult> resetConfirm(UUID playerId, String playerName) {
+    public CompletableFuture<MutationResult> resetConfirm(UUID playerId, String playerName,
+                                                           com.lodygames.rpgquest.player.PlayerResetService.ResetScope scope) {
         return unsupported();
     }
 

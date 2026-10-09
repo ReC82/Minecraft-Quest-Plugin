@@ -1,5 +1,0 @@
-# Story RPGQuest — éditée via l'éditeur guidé du Control Panel (#46).
-id: lily_memories
-name: "Les souvenirs de Lily"
-quests:
-  - rpgquest:lily_pumpkin

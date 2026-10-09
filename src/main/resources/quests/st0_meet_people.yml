@@ -1,0 +1,35 @@
+# Quête RPGQuest — éditée via l'éditeur guidé du Control Panel (#46).
+id: rpgquest:st0_meet_people
+title: "Rencontrez les villageois."
+description: "Aller à la rencontre des villageois."
+category: "tutorial"
+icon: BOOK
+repeatable: false
+giver: guide
+
+steps:
+  - id: meet_the_librarian
+    objectives:
+      - type: TALK_TO_NPC
+        npc: libraire
+  - id: meet_jeff
+    objectives:
+      - type: TALK_TO_NPC
+        npc: jeff
+  - id: meet_jo
+    objectives:
+      - type: TALK_TO_NPC
+        npc: jo
+  - id: meet_junior
+    objectives:
+      - type: TALK_TO_NPC
+        npc: junior
+  - id: meet_the_gard
+    objectives:
+      - type: TALK_TO_NPC
+        npc: guard
+
+rewards:
+  - type: ITEM
+    material: IRON_SWORD
+    amount: 1

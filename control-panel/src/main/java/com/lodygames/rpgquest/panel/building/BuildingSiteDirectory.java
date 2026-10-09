@@ -66,7 +66,15 @@ public record BuildingSiteDirectory(List<BuildingSiteView> sites, List<String> w
                     intOr(m.get("minX")), intOr(m.get("minY")), intOr(m.get("minZ")),
                     intOr(m.get("maxX")), intOr(m.get("maxY")), intOr(m.get("maxZ")),
                     str(m.get("placedBy")), str(m.get("placedAt")),
-                    bool(m.get("restorable"))));
+                    bool(m.get("restorable")),
+                    // Issue #234 : version, empreinte, divergence et source du terrain voyagent
+                    // avec le même relevé. Sans elles, la fiche dirait « occupé » sans pouvoir dire
+                    // si la définition a bougé ni si l'orientation souhaitée est encore respectée.
+                    intOr(m.get("buildingVersion")), str(m.get("schematicSha")),
+                    intOr(m.get("libraryVersion")), str(m.get("librarySha")),
+                    bool(m.get("outdated")),
+                    m.get("desiredRotation") == null ? -1 : intOr(m.get("desiredRotation")),
+                    bool(m.get("diverges")), str(m.get("restoreSource"))));
         }
         return new BuildingSiteDirectory(out, worlds, true, placements);
     }

@@ -353,9 +353,29 @@ public final class AgentActionCatalog {
                 "building.site.list", "building.definition.list");
         // Restaurer réécrit aussi des blocs — et écrase ce qui a pu être ajouté APRÈS la pose.
         // Permission distincte : pouvoir poser n'implique pas pouvoir défaire.
+        //
+        // Issue #234 : cette action LIBÈRE désormais l'emplacement en rendant le terrain d'ORIGINE,
+        // et non l'état d'avant la dernière opération. Pour un emplacement dont la pose est la
+        // seule opération — le seul cas qui pouvait exister avant #234 — les deux coïncident.
         addSensitiveWrite("building.placement.rollback", Permission.BUILDING_ROLLBACK, false,
-                "Restaurer la zone d'avant une pose",
+                "Libérer l'emplacement et restaurer le terrain d'origine",
                 "building.site.list", "building.definition.list");
+        // Issue #234 — l'aperçu d'une transformation n'écrit RIEN : déclaré en lecture, et
+        // relançable autant qu'on veut avant de se décider.
+        add("building.placement.retarget.preview", Permission.BUILDING_READ, false, false,
+                "Prévisualiser une réorientation ou un remplacement");
+        // Réorienter et remplacer POSENT un bâtiment : même permission que la pose. Ce qui les
+        // sépare de la libération n'est pas leur dangerosité mais leur résultat — après elles il y a
+        // toujours un bâtiment, après une libération il n'y en a plus. BUILDING_ROLLBACK gouverne
+        // donc le fait de VIDER un emplacement, et lui seul.
+        addSensitiveWrite("building.placement.reorient", Permission.BUILDING_PLACE, false,
+                "Réorienter le bâtiment posé",
+                "building.site.list", "building.definition.list");
+        addSensitiveWrite("building.placement.replace", Permission.BUILDING_PLACE, false,
+                "Remplacer le bâtiment posé",
+                "building.site.list", "building.definition.list");
+        add("building.placement.history", Permission.BUILDING_READ, false, false,
+                "Journal des opérations d'un emplacement");
         addContentWrite("npc.citizens.link", Permission.NPC_BIND_WRITE, "Lier un PNJ Citizens existant",
                 "npc.list", "npc.citizens.list");
         // Issue #226 — les trois suppressions de PNJ. Permission DÉDIÉE (NPC_DELETE) : créer et
@@ -777,13 +797,55 @@ public final class AgentActionCatalog {
                     params.put("confirm", "true");
                 }
             }
-            case "building.placement.rollback" -> {
+            case "building.placement.rollback", "building.placement.history" -> {
                 String id = buildSiteId(form);
                 if (id == null) {
                     return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
                 }
                 params.put("id", id);
-                params.put("confirm", "true");
+                // La libération écrit dans le monde ; le journal se contente de lire.
+                if (type.equals("building.placement.rollback")) {
+                    params.put("confirm", "true");
+                }
+            }
+            // Issue #234 — réorienter et remplacer. Le navigateur n'envoie QUE l'identifiant de
+            // l'emplacement, celui du bâtiment, l'orientation et le jeton de l'aperçu : jamais une
+            // emprise, jamais un chemin, jamais un nom de fichier.
+            case "building.placement.retarget.preview", "building.placement.reorient",
+                 "building.placement.replace" -> {
+                String id = buildSiteId(form);
+                if (id == null) {
+                    return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
+                }
+                String facing = trim(form.get("facing")).toUpperCase(java.util.Locale.ROOT);
+                if (!facing.equals("NORTH") && !facing.equals("EAST")
+                        && !facing.equals("SOUTH") && !facing.equals("WEST")) {
+                    return Validation.fail("Orientation manquante ou invalide "
+                            + "(NORTH, EAST, SOUTH ou WEST).");
+                }
+                params.put("id", id);
+                params.put("facing", facing);
+                // Le bâtiment est OBLIGATOIRE pour un remplacement, facultatif sinon : réorienter
+                // porte par définition sur le bâtiment déjà posé.
+                String building = trim(form.get("building")).toLowerCase(java.util.Locale.ROOT);
+                if (type.equals("building.placement.replace")) {
+                    if (!BUILDING_ID.matcher(building).matches()) {
+                        return Validation.fail("Identifiant de bâtiment manquant ou invalide.");
+                    }
+                    params.put("building", building);
+                } else if (BUILDING_ID.matcher(building).matches()) {
+                    params.put("building", building);
+                }
+                // Le jeton de l'aperçu voyage avec la confirmation : c'est lui qui fait refuser une
+                // décision prise sur un aperçu périmé. Facultatif pour l'aperçu lui-même.
+                String token = trim(form.get("token"));
+                if (!type.equals("building.placement.retarget.preview")) {
+                    if (!token.matches("[0-9a-f]{0,32}")) {
+                        return Validation.fail("Jeton d'aperçu invalide.");
+                    }
+                    params.put("token", token);
+                    params.put("confirm", "true");
+                }
             }
             case "npc.definition.delete" -> {
                 String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);

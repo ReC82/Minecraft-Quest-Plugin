@@ -204,6 +204,12 @@ public final class BukkitAgentActions implements AgentActions {
     private final com.lodygames.rpgquest.building.BuildingSiteService buildingSiteService;
     private final com.lodygames.rpgquest.building.BuildingLibrary buildingLibraryService;
     private final com.lodygames.rpgquest.building.BuildingPlacementService buildingPlacements;
+    /**
+     * Journal des opérations de bâtiment (issue #234). {@code null} accepté : le journal est un
+     * outil de diagnostic, pas une dépendance du placement — sans lui, l'historique est simplement
+     * vide, et aucune opération n'échoue pour autant.
+     */
+    private com.lodygames.rpgquest.database.BuildingHistoryRepository buildingHistoryRepository;
     private final com.lodygames.rpgquest.building.SchematicGateway schematicGateway;
 
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
@@ -807,6 +813,18 @@ public final class BukkitAgentActions implements AgentActions {
     }
 
     /** Projection des bâtiments posés, partagée par le catalogue et la bibliothèque. */
+    /**
+     * Branche le journal des opérations de bâtiment (issue #234).
+     *
+     * <p>Un setter et non un paramètre de constructeur : celui-ci en compte déjà une trentaine, et
+     * ajouter une dépendance <em>facultative</em> à une liste déjà longue aurait obligé chaque test
+     * existant à la nommer pour rien.</p>
+     */
+    public void setBuildingHistoryRepository(
+            com.lodygames.rpgquest.database.BuildingHistoryRepository repository) {
+        this.buildingHistoryRepository = repository;
+    }
+
     private List<BuildingPlacementSummary> placementRows() {
         List<BuildingPlacementSummary> rows = new ArrayList<>();
         for (com.lodygames.rpgquest.building.model.BuildingPlacement placement
@@ -817,13 +835,29 @@ public final class BukkitAgentActions implements AgentActions {
                     // ligne et on le dit, plutôt que de faire disparaître un bâtiment réellement
                     // posé parce que sa définition a bougé.
                     .orElse(placement.buildingId() + " (hors bibliothèque)");
+            // Issue #234 : la version de la bibliothèque AUJOURD'HUI, pour pouvoir dire « une
+            // version plus récente existe » sans jamais toucher au bâtiment posé.
+            var definition = buildingLibraryService.find(placement.buildingId());
+            int libraryVersion = definition
+                    .map(com.lodygames.rpgquest.building.model.BuildingDefinition::version)
+                    .orElse(0);
+            String librarySha = definition
+                    .flatMap(d -> schematicGateway.fingerprint(d.schematic()))
+                    .orElse("");
+            var source = buildingPlacements.restoreSourceFor(placement.siteId());
             rows.add(new BuildingPlacementSummary(placement.siteId(), placement.buildingId(), name,
                     placement.world(), placement.anchorX(), placement.anchorY(),
                     placement.anchorZ(), placement.rotationDegrees(),
                     placement.minX(), placement.minY(), placement.minZ(),
                     placement.maxX(), placement.maxY(), placement.maxZ(),
                     placement.placedBy(), placement.placedAt().toString(),
-                    placement.restorable()));
+                    source.restorable(),
+                    placement.buildingVersion(), placement.schematicSha256(),
+                    libraryVersion, librarySha,
+                    placement.outdatedAgainst(libraryVersion, librarySha),
+                    buildingPlacements.desiredRotation(placement.siteId()).orElse(-1),
+                    buildingPlacements.diverges(placement.siteId()),
+                    source.label()));
         }
         return rows;
     }
@@ -900,17 +934,173 @@ public final class BukkitAgentActions implements AgentActions {
                         "Échec de la pose : " + rootName(error))));
     }
 
+    /**
+     * {@code building.placement.rollback} — devenu « libérer l'emplacement » (issue #234).
+     *
+     * <p>La source est désormais la <strong>baseline originale</strong> quand elle existe, et non la
+     * sauvegarde de la dernière opération. Pour un emplacement dont la pose est la seule opération —
+     * le seul cas qui pouvait exister avant ce lot — les deux coïncident, donc rien ne change pour
+     * ce qui est déjà en production.</p>
+     */
     @Override
     public CompletableFuture<MutationResult> buildingPlacementRollback(String siteId) {
-        return onMain(() -> buildingPlacements.rollback(siteId)
-                .thenApply(result -> result.restored()
-                        ? new MutationResult(true, "RESTORED",
-                                "Zone restaurée et " + siteId + " libéré (« "
-                                        + result.placement().buildingId() + " » retiré).",
-                                List.of("emprise: " + result.placement().footprint().label()))
-                        : MutationResult.of(false, "REFUSED", result.error()))
+        return onMain(() -> {
+            var source = buildingPlacements.restoreSourceFor(siteId);
+            return buildingPlacements.free(siteId, "panel")
+                    .thenApply(result -> result.freed()
+                            ? new MutationResult(true, "RESTORED",
+                                    "Terrain restauré et " + siteId + " libéré (« "
+                                            + result.previous().buildingId() + " » retiré).",
+                                    List.of("emprise: " + result.previous().footprint().label(),
+                                            "source: " + source.label()))
+                            : MutationResult.of(false, "REFUSED", result.error()))
+                    .exceptionally(error -> MutationResult.of(false, "ERROR",
+                            "Échec de la restauration : " + rootName(error)));
+        });
+    }
+
+    // ---- Réorienter, remplacer, journal (issue #234) --------------------------------------------
+
+    /**
+     * {@code building.placement.retarget.preview}. Sur le thread principal : le comptage des blocs
+     * non-air lit le monde.
+     */
+    @Override
+    public CompletableFuture<BuildingRetargetView> buildingRetargetPreview(String siteId,
+                                                                           String buildingId,
+                                                                           String facing) {
+        return onMain(() -> {
+            var target = parseFacing(facing);
+            var current = buildingPlacements.at(siteId);
+            boolean sameBuilding = current.isPresent()
+                    && current.get().buildingId().equals(blankToNull(buildingId) == null
+                            ? current.get().buildingId() : buildingId);
+            var preview = sameBuilding
+                    ? buildingPlacements.previewReorient(siteId, target)
+                    : buildingPlacements.previewReplace(siteId,
+                            blankToNull(buildingId) == null ? "" : buildingId, target);
+            return done(retargetView(siteId, buildingId, preview));
+        });
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingReorient(String siteId, String facing,
+                                                               String actor, String token) {
+        return onMain(() -> buildingPlacements
+                .reorient(siteId, parseFacing(facing), actor, token)
+                .thenApply(BukkitAgentActions::retargetResult)
                 .exceptionally(error -> MutationResult.of(false, "ERROR",
-                        "Échec de la restauration : " + rootName(error))));
+                        "Échec de la réorientation : " + rootName(error))));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingReplace(String siteId, String buildingId,
+                                                              String facing, String actor,
+                                                              String token) {
+        return onMain(() -> buildingPlacements
+                .replace(siteId, buildingId, parseFacing(facing), actor, token)
+                .thenApply(BukkitAgentActions::retargetResult)
+                .exceptionally(error -> MutationResult.of(false, "ERROR",
+                        "Échec du remplacement : " + rootName(error))));
+    }
+
+    @Override
+    public CompletableFuture<BuildingHistoryView> buildingHistory(String siteId) {
+        if (buildingHistoryRepository == null) {
+            return done(new BuildingHistoryView(siteId, List.of()));
+        }
+        return buildingHistoryRepository.forSite(siteId, 50).thenApply(entries -> {
+            List<BuildingHistoryLine> lines = new ArrayList<>();
+            for (var entry : entries) {
+                var footprint = entry.footprint();
+                lines.add(new BuildingHistoryLine(
+                        entry.operation() == null ? "?" : entry.operation().name(),
+                        entry.operation() == null ? "opération inconnue"
+                                : entry.operation().label(),
+                        entry.buildingId(), entry.buildingVersion(), entry.shortSha(),
+                        entry.rotationDegrees(),
+                        footprint == null ? "" : footprint.label(),
+                        entry.actor(), entry.at().toString(), entry.ok(), entry.detail()));
+            }
+            return new BuildingHistoryView(siteId, List.copyOf(lines));
+        });
+    }
+
+    /**
+     * Projette un aperçu de transformation en vue transportable.
+     *
+     * <p>Un aperçu refusé renvoie quand même une vue : elle porte les motifs, et c'est ce que
+     * l'écran doit afficher. Renvoyer « rien » obligerait le panel à inventer un message.</p>
+     */
+    private BuildingRetargetView retargetView(String siteId, String buildingId,
+            com.lodygames.rpgquest.building.BuildingPlacementService.RetargetPreview preview) {
+        if (preview.site() == null || preview.current() == null || preview.target() == null) {
+            return new BuildingRetargetView(false,
+                    preview.operation() == null ? "" : preview.operation().name(),
+                    siteId, "", "", "", "", 0, "", 0L,
+                    buildingId == null ? "" : buildingId, "", 0, "", 0L, 0, 0, 0, -1L, false,
+                    preview.source().label(), preview.source().restorable(),
+                    preview.refusals(), preview.warnings(), preview.token());
+        }
+        var site = preview.site();
+        var current = preview.current();
+        var target = preview.target();
+        return new BuildingRetargetView(preview.applicable(), preview.operation().name(),
+                site.id(), site.name(), site.facing().name(),
+                current.buildingId(),
+                buildingLibraryService.find(current.buildingId())
+                        .map(com.lodygames.rpgquest.building.model.BuildingDefinition::name)
+                        .orElse(current.buildingId()),
+                current.rotationDegrees(), preview.currentFootprint().label(),
+                preview.currentFootprint().blockCount(),
+                target.id(), target.name(), preview.targetRotation(),
+                preview.targetFootprint().label(), preview.targetFootprint().blockCount(),
+                target.sizeX(), target.sizeY(), target.sizeZ(),
+                preview.targetNonAir(), preview.overlapping(),
+                preview.source().label(), preview.source().restorable(),
+                preview.refusals(), preview.warnings(), preview.token());
+    }
+
+    /**
+     * Traduit un résultat de transformation.
+     *
+     * <p>Le cas <strong>compensé</strong> a son propre code : le monde est cohérent, l'opération n'a
+     * simplement pas eu lieu. Le confondre avec une erreur ordinaire ferait croire à un état douteux
+     * là où il n'y en a pas.</p>
+     */
+    private static MutationResult retargetResult(
+            com.lodygames.rpgquest.building.BuildingPlacementService.RetargetResult result) {
+        if (result.applied()) {
+            var placement = result.placement();
+            return new MutationResult(true, "APPLIED",
+                    "« " + placement.buildingId() + " » posé sur " + placement.siteId()
+                            + ", tourné de " + placement.rotationLabel() + ", emprise "
+                            + placement.footprint().label() + ".",
+                    List.of("rotation: " + placement.rotationLabel(),
+                            "emprise: " + placement.footprint().label(),
+                            "version: " + placement.buildingVersion(),
+                            "empreinte: " + placement.shortSha(),
+                            "compensation: " + placement.backupSchematic()));
+        }
+        return MutationResult.of(false, result.compensated() ? "COMPENSATED" : "REFUSED",
+                result.error());
+    }
+
+    /** Lit une orientation ; {@code null} si elle est absente ou inconnue (le service refusera). */
+    private static com.lodygames.rpgquest.building.model.Facing parseFacing(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return com.lodygames.rpgquest.building.model.Facing
+                    .valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     @Override

@@ -428,8 +428,16 @@ class BuildingPlacementPageTest {
         assertTrue(page.contains("Bâtiment posé"));
         assertTrue(page.contains("797..803 / 69..74 / -800..-796"), "l'emprise réellement occupée");
         assertTrue(page.contains("occupé"), "l'état de la fiche");
-        assertTrue(page.contains("Annuler la pose"));
+        // Issue #234 : le libellé a changé par conception. « Annuler la pose » décrivait un retour
+        // en arrière sur la DERNIÈRE opération ; l'action rend désormais le terrain d'ORIGINE et
+        // libère l'emplacement, ce qui n'est pas la même promesse.
+        assertTrue(page.contains("Libérer l'emplacement")
+                        || page.contains("Libérer l&#39;emplacement"),
+                "la libération doit être nommée pour ce qu'elle fait");
         assertTrue(page.contains("building.placement.rollback"));
+        // Et les deux orientations, l'une sous l'autre : intention du site contre fait posé.
+        assertTrue(page.contains("Orientation souhaitée du site"), "l'intention de l'emplacement");
+        assertTrue(page.contains("Orientation du bâtiment posé"), "le fait réellement posé");
     }
 
     /** Un emplacement occupé ne propose pas d'en choisir un autre : il faut d'abord retirer. */
@@ -478,24 +486,39 @@ class BuildingPlacementPageTest {
 
         String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("Aucune sauvegarde n'est associée"));
-        assertTrue(page.contains("détruirait le terrain d'origine"));
-        assertFalse(page.contains("building.placement.rollback"));
+        assertTrue(page.contains("Aucune sauvegarde du terrain n&#39;est associée")
+                        || page.contains("Aucune sauvegarde du terrain n'est associée"),
+                "le refus doit être écrit, et dire qu'il porte sur le TERRAIN");
+        assertTrue(page.contains("détruirait le terrain d&#39;origine")
+                        || page.contains("détruirait le terrain d'origine"));
+        assertFalse(page.contains("building.placement.rollback"),
+                "aucun bouton qui serait voué à échouer");
     }
 
-    /** L'avertissement qui compte : restaurer écrase aussi ce qui a été bâti après la pose. */
+    /**
+     * L'avertissement qui compte, et la promesse exacte.
+     *
+     * <p>Issue #234 : la promesse a changé. Ce n'est plus « la zone telle qu'elle était avant la
+     * pose » mais « le terrain d'origine, celui d'avant le premier bâtiment ». La distinction est
+     * tout l'objet du ticket, donc l'écran doit la porter.</p>
+     */
     @Test
-    void theRollbackZoneWarnsThatLaterWorkWillBeOverwritten() throws Exception {
+    void theFreeZoneWarnsThatLaterWorkWillBeOverwrittenAndPromisesTheOriginalTerrain()
+            throws Exception {
         start();
         seed("building.site.list", SITES);
         seed("building.definition.list", LIBRARY);
 
         String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("après</em> la pose sera également écrasé")
-                        || page.contains("après"),
+        assertTrue(page.contains("après</em> la pose sera également écrasé"),
                 "le risque doit être écrit noir sur blanc");
-        assertTrue(page.contains("exactement"), "et la promesse de restauration aussi");
+        assertTrue(page.contains("terrain d&#39;origine") || page.contains("terrain d'origine"),
+                "la promesse porte sur le terrain d'ORIGINE");
+        assertTrue(page.contains("avant le premier bâtiment"),
+                "et elle dit explicitement de quel état il s'agit");
+        assertTrue(page.contains("immédiatement réutilisable"),
+                "un emplacement libéré ne doit pas être une impasse");
     }
 
     // ---- Harnais -------------------------------------------------------------------------------

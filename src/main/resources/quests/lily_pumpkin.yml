@@ -1,0 +1,15 @@
+# Quête RPGQuest — éditée via l'éditeur guidé du Control Panel (#46).
+id: rpgquest:lily_pumpkin
+title: "Une citrouille pour Lily"
+description: "Lily a retrouvé une vieille recette de tarte à la citrouille écrite par sa mère. Le papier est très abîmé et elle ne parvient à déchiffrer qu'un ingrédient à la fois. Le premier qu'elle réussit à lire est une citrouille."
+category: "lily"
+icon: BOOK
+repeatable: false
+giver: lily
+
+steps:
+  - id: pumpkin_ingredient
+    objectives:
+      - type: COLLECT_ITEM
+        material: PUMPKIN
+        amount: 1

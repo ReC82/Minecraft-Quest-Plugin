@@ -209,6 +209,8 @@ public final class RPGQuestBootstrap {
     private com.lodygames.rpgquest.building.BuildingLibrary buildingLibrary;
     private com.lodygames.rpgquest.building.SchematicGateway schematicGateway;
     private com.lodygames.rpgquest.building.BuildingPlacementService buildingPlacementService;
+    /** Journal des opérations de bâtiment (issue #234) — lu par la fiche d'un emplacement. */
+    private com.lodygames.rpgquest.database.BuildingHistoryRepository buildingHistoryRepository;
     private com.lodygames.rpgquest.building.SchematicWorkshop buildingSchematics;
     private final YamlMerchantRegistry merchantRegistry;
     private final YamlPortalRegistry portalRegistry;
@@ -382,11 +384,19 @@ public final class RPGQuestBootstrap {
                             + "tout le reste fonctionne normalement.",
                     schematicGateway.unavailableReason());
         }
+        // Issue #234 : le terrain d'origine et le journal des opérations. Deux tables de plus, et
+        // c'est ce qui empêche un emplacement occupé de devenir une impasse.
+        buildingHistoryRepository = new com.lodygames.rpgquest.database.BuildingHistoryRepository(
+                databaseService.databaseManager());
         buildingPlacementService = new com.lodygames.rpgquest.building.BuildingPlacementService(
                 new com.lodygames.rpgquest.database.BuildingPlacementRepository(
                         databaseService.databaseManager()),
                 buildingSiteService, buildingLibrary, schematicGateway,
-                new com.lodygames.rpgquest.building.BukkitWorldProbe());
+                new com.lodygames.rpgquest.building.BukkitWorldProbe(),
+                java.time.Clock.systemUTC(),
+                new com.lodygames.rpgquest.database.BuildingBaselineRepository(
+                        databaseService.databaseManager()),
+                buildingHistoryRepository);
         buildingPlacementService.load()
                 .thenAccept(count -> plugin.getSLF4JLogger().info(
                         "{} bâtiment(s) posé(s) chargé(s).", count))
@@ -871,10 +881,8 @@ public final class RPGQuestBootstrap {
         // Fail-closed : inerte tant que plugins/RPGQuest/plugadmin-agent.properties (hors Git)
         // n'active pas l'agent (base-url + agent-id + token). Réutilise HealthSource (#37) pour le
         // heartbeat et les services métier existants pour les actions (jamais de commande texte).
-        registry.start(new PlugAdminAgent(
-                plugin, agentConfig, new HeartbeatPayload(healthSource),
-                new AgentActionExecutor(new BukkitPlayerDirectory(plugin), variableRepository::get,
-                        new BukkitAgentActions(plugin, questEngine, questProgressEngine, storyService,
+        BukkitAgentActions agentActions =
+                new BukkitAgentActions(plugin, questEngine, questProgressEngine, storyService,
                                 customItemRegistry, playerResetService, variableRepository::set,
                                 dialogueEngine, npcIdentityService,
                                 new NpcBindingRepository(databaseService.databaseManager()),
@@ -904,7 +912,15 @@ public final class RPGQuestBootstrap {
                                 // Issue #213 — le MÊME service que l'outil en jeu : le panel et le
                                 // clic lisent et écrivent le même cache et la même base.
                                 buildingSiteService, buildingLibrary, buildingPlacementService,
-                                schematicGateway))));
+                                schematicGateway);
+        // Issue #234 : dépendance FACULTATIVE de la façade — sans elle l'historique est vide, et
+        // aucune opération n'échoue pour autant. Un setter plutôt qu'un paramètre de plus dans une
+        // liste qui en compte déjà une trentaine.
+        agentActions.setBuildingHistoryRepository(buildingHistoryRepository);
+        registry.start(new PlugAdminAgent(
+                plugin, agentConfig, new HeartbeatPayload(healthSource),
+                new AgentActionExecutor(new BukkitPlayerDirectory(plugin), variableRepository::get,
+                        agentActions)));
 
         registerCommands();
     }

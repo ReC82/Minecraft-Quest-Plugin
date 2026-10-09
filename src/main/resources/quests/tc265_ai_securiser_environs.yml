@@ -1,0 +1,23 @@
+# Quête RPGQuest — éditée via l'éditeur guidé du Control Panel (#46).
+id: rpgquest:tc265_ai_securiser_environs
+title: "<light_purple>[TEST IA] Sécuriser les environs</light_purple>"
+description: "Le Garde demande votre aide pour sécuriser les environs du village en éliminant 3 zombies normaux dans le Wild."
+category: "test"
+icon: BOOK
+repeatable: false
+giver: guard
+
+steps:
+  - id: tuer_les_zombies
+    objectives:
+      - type: KILL_ENTITY
+        entity: ZOMBIE
+        amount: 3
+  - id: parler_au_garde
+    objectives:
+      - type: TALK_TO_NPC
+        npc: guard
+
+rewards:
+  - type: EXPERIENCE
+    amount: 20

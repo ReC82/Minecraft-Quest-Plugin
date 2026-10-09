@@ -149,6 +149,33 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<BuildingRetargetView> buildingRetargetPreview(String siteId,
+                                                                           String buildingId,
+                                                                           String facing) {
+        return CompletableFuture.completedFuture(new BuildingRetargetView(false, "ROTATE",
+                siteId, "", "", "", "", 0, "", 0L, buildingId, "", 0, "", 0L, 0, 0, 0, -1L, false,
+                "", false, List.of("stub"), List.of(), ""));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingReorient(String siteId, String facing,
+                                                               String actor, String token) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "STUB", "stub"));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingReplace(String siteId, String buildingId,
+                                                              String facing, String actor,
+                                                              String token) {
+        return CompletableFuture.completedFuture(MutationResult.of(false, "STUB", "stub"));
+    }
+
+    @Override
+    public CompletableFuture<BuildingHistoryView> buildingHistory(String siteId) {
+        return CompletableFuture.completedFuture(new BuildingHistoryView(siteId, List.of()));
+    }
+
+    @Override
     public CompletableFuture<MutationResult> buildingSiteDelete(String id) {
         return unsupported();
     }

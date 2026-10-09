@@ -366,7 +366,16 @@ public final class BuildingPlacementService {
         BuildingFootprint footprint = preview.footprint();
         BuildingSite site = preview.site();
         Instant now = clock.instant();
-        String backupName = backupNameFor(siteId, now);
+        // Le NOM dit le rôle, et c'est ce qui rend le dossier des schematics relisible par un
+        // humain : « origine_ » = terrain d'origine conservé, « compens_ » = sauvegarde de
+        // compensation d'une transformation, « backup_ » = capture d'une pose sur une zone dont le
+        // terrain d'origine est déjà conservé ailleurs. Une capture qui SERT de baseline doit donc
+        // en porter le nom — sinon on ne saurait plus, en regardant le dossier, lequel des fichiers
+        // ne doit jamais être supprimé.
+        boolean willBeBaseline = baselines != null && !baselineCovers(siteId, footprint);
+        String backupName = willBeBaseline
+                ? baselineNameFor(siteId, now, baselinesFor(siteId).size())
+                : backupNameFor(siteId, now);
 
         // La sauvegarde AVANT le collage : c'est elle qui rend le retour arrière possible. Si elle
         // échoue, on s'arrête là — poser sans pouvoir revenir en arrière n'est pas acceptable pour
@@ -384,14 +393,13 @@ public final class BuildingPlacementService {
         // la zone est vierge à cet instant — soit l'emplacement n'a jamais rien porté, soit il vient
         // d'être libéré, ce qui a remis le terrain d'origine. Capturer deux fois le même état aurait
         // doublé le temps et l'espace pour rien.
-        CompletableFuture<Void> baselineRecorded =
-                baselines == null || baselineCovers(siteId, footprint)
-                        ? CompletableFuture.completedFuture(null)
-                        : baselines.insert(BuildingBaseline.of(siteId, backupName, footprint,
-                                        placedBy, now))
-                                .thenAccept(stored -> baselineCache
-                                        .computeIfAbsent(siteId, k -> new ArrayList<>())
-                                        .add(stored));
+        CompletableFuture<Void> baselineRecorded = !willBeBaseline
+                ? CompletableFuture.completedFuture(null)
+                : baselines.insert(BuildingBaseline.of(siteId, backupName, footprint,
+                                placedBy, now))
+                        .thenAccept(stored -> baselineCache
+                                .computeIfAbsent(siteId, k -> new ArrayList<>())
+                                .add(stored));
 
         SchematicGateway.Outcome pasted = gateway.paste(new SchematicGateway.PasteOrder(
                 building.schematic(), site.world(),

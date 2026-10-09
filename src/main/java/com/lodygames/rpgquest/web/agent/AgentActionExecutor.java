@@ -95,6 +95,10 @@ public final class AgentActionExecutor {
                 case BUILDING_PLACEMENT_PREVIEW -> buildingPlacementPreview(action);
                 case BUILDING_PLACEMENT_PLACE -> buildingPlacementPlace(action);
                 case BUILDING_PLACEMENT_ROLLBACK -> buildingPlacementRollback(action);
+                case BUILDING_PLACEMENT_RETARGET_PREVIEW -> buildingRetargetPreview(action);
+                case BUILDING_PLACEMENT_REORIENT -> buildingReorient(action);
+                case BUILDING_PLACEMENT_REPLACE -> buildingReplace(action);
+                case BUILDING_PLACEMENT_HISTORY -> buildingHistory(action);
                 case CONTENT_EXPORT -> contentExport(action);
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
@@ -1440,6 +1444,165 @@ public final class AgentActionExecutor {
         return actions.buildingPlacementRollback(siteId)
                 .thenApply(r -> mutationOutcome(action, r, "id", siteId))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    // ---- Réorienter, remplacer, journal (issue #234) --------------------------------------------
+
+    private CompletableFuture<AgentActionOutcome> buildingRetargetPreview(AgentAction action) {
+        String siteId = buildSiteId(action);
+        if (siteId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        String facing = facingParam(action);
+        if (facing == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « facing » manquant ou invalide (NORTH, EAST, SOUTH ou WEST)."));
+        }
+        // « building » est FACULTATIF : absent, on réoriente le bâtiment déjà posé.
+        String buildingId = buildingId(action);
+        return actions.buildingRetargetPreview(siteId, buildingId == null ? "" : buildingId, facing)
+                .thenApply(view -> {
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    details.put("applicable", view.applicable());
+                    details.put("operation", view.operation());
+                    details.put("site_id", view.siteId());
+                    details.put("site_facing", view.siteFacing());
+                    details.put("current_building_id", view.currentBuildingId());
+                    details.put("current_building_name", view.currentBuildingName());
+                    details.put("current_rotation", view.currentRotation());
+                    details.put("current_footprint", view.currentFootprint());
+                    details.put("current_block_count", view.currentBlockCount());
+                    details.put("target_building_id", view.targetBuildingId());
+                    details.put("target_building_name", view.targetBuildingName());
+                    details.put("target_rotation", view.targetRotation());
+                    details.put("target_footprint", view.targetFootprint());
+                    details.put("target_block_count", view.targetBlockCount());
+                    details.put("target_size", view.targetSizeX() + " × " + view.targetSizeZ()
+                            + " × " + view.targetSizeY());
+                    details.put("target_non_air", view.targetNonAirBlocks());
+                    details.put("overlapping", view.overlapping());
+                    details.put("restore_source", view.restoreSource());
+                    details.put("restorable", view.restorable());
+                    // L'orientation DEMANDÉE, renvoyée telle quelle : le formulaire de confirmation
+                    // doit pouvoir la renvoyer sans que le navigateur ait à la déduire d'une
+                    // rotation en degrés.
+                    details.put("requested_facing", facing);
+                    details.put("refusals", view.refusals());
+                    details.put("warnings", view.warnings());
+                    // Le jeton voyage avec l'aperçu : c'est lui qui rend la confirmation sûre.
+                    details.put("token", view.token());
+                    return AgentActionOutcome.success(action.id(), view.operation(),
+                            view.applicable()
+                                    ? "Aperçu calculé : " + view.currentFootprint() + " → "
+                                            + view.targetFootprint()
+                                    : "Aperçu refusé : " + (view.refusals().isEmpty()
+                                            ? "motif non précisé" : view.refusals().get(0)),
+                            details);
+                })
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
+                        "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> buildingReorient(AgentAction action) {
+        String siteId = buildSiteId(action);
+        if (siteId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        String facing = facingParam(action);
+        if (facing == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « facing » manquant ou invalide (NORTH, EAST, SOUTH ou WEST)."));
+        }
+        if (!"true".equals(trimOrNull(action.param("confirm")))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Confirmation manquante : « confirm=true » est exigé pour réorienter."));
+        }
+        return actions.buildingReorient(siteId, facing, actorOf(action),
+                        trimOrNull(action.param("token")))
+                .thenApply(r -> mutationOutcome(action, r, "id", siteId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
+                        "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> buildingReplace(AgentAction action) {
+        String siteId = buildSiteId(action);
+        if (siteId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        String buildingId = buildingId(action);
+        if (buildingId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « building » manquant ou invalide."));
+        }
+        String facing = facingParam(action);
+        if (facing == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « facing » manquant ou invalide (NORTH, EAST, SOUTH ou WEST)."));
+        }
+        if (!"true".equals(trimOrNull(action.param("confirm")))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Confirmation manquante : « confirm=true » est exigé pour remplacer."));
+        }
+        return actions.buildingReplace(siteId, buildingId, facing, actorOf(action),
+                        trimOrNull(action.param("token")))
+                .thenApply(r -> mutationOutcome(action, r, "id", siteId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
+                        "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> buildingHistory(AgentAction action) {
+        String siteId = buildSiteId(action);
+        if (siteId == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        return actions.buildingHistory(siteId).thenApply(view -> {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (var line : view.lines()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("operation", line.operation());
+                row.put("operation_label", line.operationLabel());
+                row.put("building_id", line.buildingId());
+                row.put("building_version", line.buildingVersion());
+                row.put("sha", line.shortSha());
+                row.put("rotation", line.rotation());
+                row.put("footprint", line.footprint());
+                row.put("actor", line.actor());
+                row.put("at", line.at());
+                row.put("ok", line.ok());
+                row.put("detail", line.detail());
+                rows.add(row);
+            }
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("site_id", view.siteId());
+            details.put("lines", rows);
+            return AgentActionOutcome.success(action.id(), view.siteId(),
+                    rows.size() + " opération(s) enregistrée(s) pour " + view.siteId() + ".",
+                    details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(),
+                "Échec : " + rootName(err)));
+    }
+
+    /** Orientation demandée, validée contre la liste fermée des quatre points cardinaux. */
+    private static String facingParam(AgentAction action) {
+        String raw = firstNonBlank(action.param("facing"), action.param("orientation"));
+        if (raw == null) {
+            return null;
+        }
+        String clean = raw.trim().toUpperCase(java.util.Locale.ROOT);
+        return switch (clean) {
+            case "NORTH", "EAST", "SOUTH", "WEST" -> clean;
+            default -> null;
+        };
+    }
+
+    /** Qui agit, pour le journal. Le panel l'envoie ; à défaut, on l'écrit « panel ». */
+    private static String actorOf(AgentAction action) {
+        String raw = firstNonBlank(action.param("actor"), action.param("by"));
+        return raw == null ? "panel" : raw.trim();
     }
 
     /** Identifiant de bâtiment de bibliothèque, même forme que le contenu du projet. */

@@ -1472,6 +1472,63 @@ class AgentActionExecutorTest {
                     MutationResult.of(true, "RESTORED", "restauré"));
         }
 
+        // ---- Issue #234 : cycle de vie ---------------------------------------------------------
+
+        /** Ce que l'exécuteur a réellement transmis — le cœur de ce qu'on vérifie. */
+        String lastRetargetSiteId;
+        String lastRetargetBuildingId;
+        String lastRetargetFacing;
+        String lastReorientFacing;
+        String lastReorientToken;
+        String lastReplaceBuildingId;
+        String lastReplaceToken;
+        String lastHistorySiteId;
+
+        @Override
+        public CompletableFuture<BuildingRetargetView> buildingRetargetPreview(String siteId,
+                                                                               String buildingId,
+                                                                               String facing) {
+            lastRetargetSiteId = siteId;
+            lastRetargetBuildingId = buildingId;
+            lastRetargetFacing = facing;
+            return CompletableFuture.completedFuture(new BuildingRetargetView(true, "ROTATE",
+                    siteId, "Emplacement", "NORTH", "test_hut_01", "Hutte de test", 180,
+                    "0..6 / 64..69 / 0..4", 210L,
+                    "test_hut_01", "Hutte de test", 0, "0..6 / 64..69 / -4..0", 210L,
+                    7, 6, 5, 3L, true, "terrain d'origine (1 sauvegarde)", true,
+                    List.of(), List.of(), "jeton123"));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> buildingReorient(String siteId, String facing,
+                                                                   String actor, String token) {
+            lastRetargetSiteId = siteId;
+            lastReorientFacing = facing;
+            lastReorientToken = token;
+            return CompletableFuture.completedFuture(
+                    MutationResult.of(true, "APPLIED", "réorienté"));
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> buildingReplace(String siteId, String buildingId,
+                                                                  String facing, String actor,
+                                                                  String token) {
+            lastRetargetSiteId = siteId;
+            lastReplaceBuildingId = buildingId;
+            lastReplaceToken = token;
+            return CompletableFuture.completedFuture(
+                    MutationResult.of(true, "APPLIED", "remplacé"));
+        }
+
+        @Override
+        public CompletableFuture<BuildingHistoryView> buildingHistory(String siteId) {
+            lastHistorySiteId = siteId;
+            return CompletableFuture.completedFuture(new BuildingHistoryView(siteId, List.of(
+                    new BuildingHistoryLine("PLACE", "Pose", "test_hut_01", 1, "abc123456789",
+                            0, "0..6 / 64..69 / 0..4", "panel", "2026-10-09T20:00:00Z", true,
+                            "Bâtiment posé."))));
+        }
+
         @Override
         public CompletableFuture<MutationResult> buildingSiteRename(String id, String name) {
             lastBuildSiteId = id;

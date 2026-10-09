@@ -174,6 +174,26 @@ public enum AgentActionType {
      * annulation.
      */
     BUILDING_PLACEMENT_ROLLBACK("building.placement.rollback"),
+    /**
+     * Issue #234 — ce que donnerait une réorientation ou un remplacement. <strong>N'écrit
+     * rien.</strong> Porte un jeton d'empreinte qui doit être renvoyé à la confirmation : un aperçu
+     * périmé est refusé au lieu d'être appliqué.
+     */
+    BUILDING_PLACEMENT_RETARGET_PREVIEW("building.placement.retarget.preview"),
+    /**
+     * Issue #234 — réoriente le bâtiment posé, en repartant du terrain d'origine et de la
+     * définition. <strong>Ce n'est pas une rotation des blocs en place</strong> : le monde est
+     * ramené à son terrain d'origine puis le bâtiment est recollé, ce qui donne exactement le même
+     * résultat qu'une pose initiale dans cette orientation.
+     */
+    BUILDING_PLACEMENT_REORIENT("building.placement.reorient"),
+    /** Issue #234 — remplace le bâtiment posé par un autre, dans l'orientation demandée. */
+    BUILDING_PLACEMENT_REPLACE("building.placement.replace"),
+    /**
+     * Issue #234 — le journal des opérations d'un emplacement. Lecture seule, et les
+     * <strong>échecs y figurent</strong> : un journal muet au moment du problème ne sert à rien.
+     */
+    BUILDING_PLACEMENT_HISTORY("building.placement.history"),
     DIALOGUE_LIST("dialogue.list"),
     DIALOGUE_DEFINITION_CREATE("dialogue.definition.create"),
     DIALOGUE_NODE_CREATE("dialogue.node.create"),

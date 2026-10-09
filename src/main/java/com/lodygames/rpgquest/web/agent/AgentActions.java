@@ -333,15 +333,69 @@ public interface AgentActions {
     /**
      * Un bâtiment réellement posé.
      *
-     * @param restorable une sauvegarde de la zone écrasée existe-t-elle ? Sans elle, le retour
-     *                   arrière est refusé plutôt que tenté à l'aveugle
+     * @param restorable       une sauvegarde du terrain existe-t-elle ? Sans elle, la libération est
+     *                         refusée plutôt que tentée à l'aveugle
+     * @param buildingVersion  version déclarée au moment de la pose (issue #234)
+     * @param schematicSha     empreinte du fichier réellement collé, {@code ""} si inconnue
+     * @param libraryVersion   version actuellement déclarée dans la bibliothèque
+     * @param librarySha       empreinte actuelle du fichier de la bibliothèque
+     * @param outdated         la définition a-t-elle changé depuis la pose ? Le bâtiment posé n'est
+     *                         JAMAIS modifié d'office — c'est une information, pas une action
+     * @param desiredRotation  la rotation qu'aurait le bâtiment selon l'orientation ACTUELLE de
+     *                         l'emplacement, {@code -1} si incalculable
+     * @param diverges         l'orientation souhaitée de l'emplacement diffère-t-elle de celle du
+     *                         bâtiment posé ? Un emplacement est une intention, un placement est un
+     *                         fait : changer l'intention ne déplace aucun bloc
+     * @param restoreSource    d'où viendrait le terrain si on libérait maintenant, en clair
      */
     record BuildingPlacementSummary(String siteId, String buildingId, String buildingName,
                                     String world, int anchorX, int anchorY, int anchorZ,
                                     int rotation,
                                     int minX, int minY, int minZ,
                                     int maxX, int maxY, int maxZ,
-                                    String placedBy, String placedAt, boolean restorable) {
+                                    String placedBy, String placedAt, boolean restorable,
+                                    int buildingVersion, String schematicSha,
+                                    int libraryVersion, String librarySha, boolean outdated,
+                                    int desiredRotation, boolean diverges,
+                                    String restoreSource) {
+    }
+
+    /**
+     * Vue d'un aperçu de réorientation ou de remplacement (issue #234).
+     *
+     * @param operation {@code ROTATE} ou {@code REPLACE} — le moteur exécute la même séquence, mais
+     *                  l'écran et le journal ne racontent pas la même histoire
+     * @param token     empreinte de tout ce dont dépend l'opération. Elle voyage avec le formulaire
+     *                  et est revérifiée à la confirmation : un aperçu périmé est refusé au lieu
+     *                  d'être appliqué
+     */
+    record BuildingRetargetView(boolean applicable, String operation,
+                                String siteId, String siteName, String siteFacing,
+                                String currentBuildingId, String currentBuildingName,
+                                int currentRotation, String currentFootprint,
+                                long currentBlockCount,
+                                String targetBuildingId, String targetBuildingName,
+                                int targetRotation, String targetFootprint,
+                                long targetBlockCount,
+                                int targetSizeX, int targetSizeY, int targetSizeZ,
+                                long targetNonAirBlocks, boolean overlapping,
+                                String restoreSource, boolean restorable,
+                                List<String> refusals, List<String> warnings, String token) {
+    }
+
+    /** Une ligne du journal des opérations d'un emplacement (issue #234). */
+    record BuildingHistoryLine(String operation, String operationLabel,
+                               String buildingId, int buildingVersion, String shortSha,
+                               int rotation, String footprint,
+                               String actor, String at, boolean ok, String detail) {
+    }
+
+    /**
+     * Vue de {@code building.placement.history} : les dernières opérations, de la plus récente à la
+     * plus ancienne. Les <strong>échecs y figurent</strong> — un journal muet au moment du problème
+     * ne sert à rien.
+     */
+    record BuildingHistoryView(String siteId, List<BuildingHistoryLine> lines) {
     }
 
     /**
@@ -386,12 +440,45 @@ public interface AgentActions {
                                                              String placedBy);
 
     /**
-     * Restaure la zone d'avant la pose et libère l'emplacement.
+     * Rend son terrain d'origine à l'emplacement et le libère (issue #234).
      *
      * <p>Refusé si aucune sauvegarde n'est associée : c'est la seule réponse honnête, puisque
-     * remettre de l'air détruirait le terrain d'origine.</p>
+     * remettre de l'air détruirait le terrain d'origine. Refusé aussi — et l'emplacement reste
+     * {@code OCCUPIED} — si la restauration échoue : il n'y a jamais de faux {@code EMPTY}.</p>
+     *
+     * <p>Depuis #234, la source est la <strong>baseline originale</strong> quand elle existe, et non
+     * la sauvegarde de la dernière opération. Pour un emplacement dont la pose est la seule
+     * opération — le seul cas qui pouvait exister avant ce lot — les deux coïncident, donc le
+     * comportement est inchangé pour tout ce qui est déjà en production.</p>
      */
     CompletableFuture<MutationResult> buildingPlacementRollback(String siteId);
+
+    /**
+     * Ce que donnerait une réorientation ou un remplacement. <strong>Aucune écriture.</strong>
+     *
+     * @param buildingId le bâtiment visé ; le bâtiment actuel pour une simple réorientation
+     * @param facing     l'orientation souhaitée, {@code NORTH}/{@code EAST}/{@code SOUTH}/{@code WEST}
+     */
+    CompletableFuture<BuildingRetargetView> buildingRetargetPreview(String siteId,
+                                                                    String buildingId,
+                                                                    String facing);
+
+    /**
+     * Réoriente le bâtiment posé, en repartant de la définition et du terrain d'origine.
+     *
+     * <p><strong>Ce n'est pas une rotation des blocs en place.</strong> Le monde est ramené à son
+     * terrain d'origine, puis le bâtiment est recollé dans la nouvelle orientation — stratégie
+     * déterministe, qui donne le même résultat qu'une pose initiale dans cette orientation.</p>
+     */
+    CompletableFuture<MutationResult> buildingReorient(String siteId, String facing, String actor,
+                                                        String token);
+
+    /** Remplace le bâtiment posé par un autre, dans l'orientation demandée. */
+    CompletableFuture<MutationResult> buildingReplace(String siteId, String buildingId,
+                                                       String facing, String actor, String token);
+
+    /** Le journal des opérations d'un emplacement. Lecture seule. */
+    CompletableFuture<BuildingHistoryView> buildingHistory(String siteId);
 
     CompletableFuture<BuildingSiteCatalogView> buildingSites();
 

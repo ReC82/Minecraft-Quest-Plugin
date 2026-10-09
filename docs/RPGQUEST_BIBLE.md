@@ -1434,6 +1434,142 @@ rechargement est refusé, pas sérialisé ; un aperçu reste autorisé puisqu'il
 au démarrage et capturées par les services. Un rechargement partiel serait le « succès ambigu » que
 le ticket interdit — le panel dit donc **redémarrage requis** et renvoie au workflow #95.
 
+### Publier du contenu sur DEV sans rebuild — `content.publish` (issue #47)
+
+**Le verrou, et ce qu'il coûtait.** Une quête créée depuis PlugAdmin était bien écrite dans la
+source éditable (côté AWS), mais restait « Source uniquement » tant qu'un script de déploiement
+externe n'avait pas copié son YAML sur le serveur. Un rechargement ne pouvait rien charger, puisque
+le fichier n'existait pas. Autrement dit : créer du contenu depuis le panel exigeait de connaître et
+de lancer le pipeline de déploiement — ou de passer par quelqu'un qui le connaissait.
+
+#### L'audit a réduit le périmètre, et c'est le résultat le plus utile
+
+Le ticket énumérait huit familles. L'audit en a trouvé **deux** réellement bloquées :
+
+| Famille | Source côté panel | Écriture côté serveur avant #47 | Verdict |
+|---|---|---|---|
+| **Quêtes** | fichier de l'espace de travail | **aucune** | vrai manque |
+| **Stories** | fichier de l'espace de travail | **aucune** | vrai manque |
+| **Dialogues** | fichier de l'espace de travail | partielle (l'éditeur guidé écrit côté serveur) | le chemin « fichier » manquait |
+| PNJ | — (store côté serveur) | oui | **déjà appliqué au runtime** |
+| Mobs spéciaux / Boss | — (store côté serveur) | oui | **déjà appliqué au runtime** |
+| Objets / Recettes | — | dépôt d'exemples embarqués uniquement | **rien ne les crée depuis le panel** |
+
+`ContentWorkspace.KINDS` vaut exactement `{quests, stories, dialogues}`, et ce n'est pas une
+coïncidence : ce sont les seules familles que le panel écrit comme fichiers. La liste blanche de
+publication et le manque réel coïncident donc.
+
+> **Conséquence assumée.** Les PNJ et les mobs ne sont pas « oubliés » : les forcer à passer par une
+> copie de fichier inventerait un second chemin pour un problème que des actions runtime résolvent
+> déjà. Et pour les objets et les recettes, il n'y a rien à publier — il manque un **éditeur**, pas
+> un transfert. Le dire vaut mieux que livrer une publication qui n'aurait aucune source.
+
+#### L'agent est sortant, donc le serveur écrit lui-même
+
+C'est la contrainte qui a décidé de l'architecture. Le plugin **interroge** le panel ; le panel ne
+peut donc pas pousser un fichier. Le YAML voyage dans un **paramètre d'action**, et c'est le serveur
+qui l'écrit dans un dossier issu d'une liste blanche.
+
+Ce n'est pas seulement plus simple que du FTP, c'est plus sûr : aucune connexion entrante vers le
+serveur de jeu, **aucun identifiant FTP côté panel**, et le navigateur n'envoie ni chemin ni contenu.
+
+> **Le navigateur envoie quatre choses** : une famille, un identifiant, l'empreinte de la source
+> qu'il a vue et l'empreinte DEV qu'il a vue. Rien d'autre. C'est le **panel** qui lit la source et
+> joint le YAML au moment d'enfiler l'action, côté serveur — donc un formulaire forgé ne peut pas
+> publier un contenu fabriqué, et n'a jamais besoin de connaître un chemin.
+
+#### `PublishKind` *est* la liste blanche
+
+Trois familles, et le reste est hors d'atteinte **par construction** plutôt que par une liste
+d'interdits qu'on aurait pu oublier de compléter : `data.db`, les mondes, les secrets, les données
+Citizens brutes, le JAR et toute configuration inconnue n'ont simplement aucune entrée.
+
+La résolution d'un chemin passe par **trois verrous successifs** : l'énumération, un motif
+d'identifiant sans séparateur, et une vérification de confinement **après** normalisation. Le
+troisième ne devrait jamais servir — et c'est précisément pour cela qu'il est là.
+
+Les sauvegardes vont sous `content-backups/<horodatage>/<famille>/`, **hors** des dossiers de
+contenu. Déposées dans `quests/`, elles seraient relues comme des définitions au prochain
+rechargement et produiraient des doublons d'identifiants. C'est la règle déjà posée par #194.
+
+#### « Fichier copié » n'est pas un succès
+
+Trois raccourcis sont interdits, et chacun a son code de sortie :
+
+| Jusqu'où on est allé | Code | Ce que le message dit |
+|---|---|---|
+| le fichier est écrit, le rechargement a échoué | `RELOAD_FAILED` | que le fichier **est** écrit, et où est la sauvegarde |
+| rechargé, mais le moteur ignore l'identifiant | `RUNTIME_MISSING` | de vérifier que l'identifiant déclaré correspond au nom du fichier |
+| le moteur confirme | `PUBLISHED` | et **seulement là**, « Synchronisé » |
+
+La vérification repose sur `ContentReloadService#loadedIds` / `runtimeHas`, qui énumèrent les
+identifiants réellement portés par chaque registre. Sans elles, « reload demandé » devrait être pris
+pour « reload réussi ».
+
+> **Pourquoi l'honnêteté des échecs compte autant que les succès.** Un échec de rechargement laisse
+> le fichier sur le serveur. Annoncer « rien n'a été fait » serait pire que l'échec lui-même :
+> l'administrateur chercherait au mauvais endroit.
+
+#### L'ordre des opérations
+
+1. valider la famille et l'identifiant — une entrée forgée n'atteint jamais le disque ;
+2. comparer l'état DEV à celui que l'appelant croyait voir ; un désaccord est un **conflit**, jamais
+   un écrasement silencieux ;
+3. **sauvegarder** si un fichier existe. Échec ⇒ on s'arrête : publier sans pouvoir revenir en
+   arrière n'est pas acceptable ;
+4. écrire de façon **atomique** (fichier temporaire puis `move`) — un plantage ne laisse jamais un
+   YAML tronqué, qui ferait échouer le chargement de toute la famille ;
+5. recharger **la seule famille concernée** ;
+6. relire le runtime.
+
+Un verrou **par ressource** (`inFlight`) empêche deux publications de la même ressource de
+s'entrelacer ; deux ressources différentes ne se bloquent pas, rien ne le justifierait.
+
+#### Le retour arrière dit ce qu'il fait
+
+Deux cas, et un seul est une restauration : si une sauvegarde existe, on la repose ; si la ressource
+était **nouvelle**, il n'y a rien à restaurer et le seul retour arrière honnête est de **retirer** le
+fichier. Le bouton porte donc deux libellés différents, et il n'apparaît pas du tout quand aucune
+publication n'a eu lieu depuis le panel.
+
+#### `PublishState` : un vocabulaire, et un mensonge corrigé
+
+Avant #47, `SYNCED` signifiait seulement « présent des deux côtés ». Une quête modifiée dans la
+source mais jamais republiée s'affichait donc **« Synchronisé »**, ce qui était faux et invisible.
+
+L'état est désormais une fonction **pure** de (empreinte source, empreinte DEV, chargé par le
+moteur), partagée par toutes les pages — une seule fonction, donc un seul vocabulaire. Deux états
+manquaient : `DIFFERENT`, et `NOT_LOADED` (« le fichier est là, le moteur ne le charge pas »), que
+l'ancien modèle ne savait pas exprimer. Chaque état porte son code stable, son libellé, son
+explication **et** l'action possible : un état sans action laisse l'utilisateur bloqué devant un
+badge.
+
+`CONFLICT` se distingue de `DIFFERENT` grâce à l'empreinte DEV laissée par **notre** dernière
+publication : si le fichier n'est ni la source ni ce que nous y avions mis, quelqu'un d'autre y a
+touché.
+
+Sans relevé du serveur, l'état est `UNKNOWN` et **aucun bouton Publier n'apparaît**. Afficher
+« Source uniquement » sans avoir interrogé DEV serait exactement le genre d'affirmation gratuite que
+ce ticket corrige.
+
+#### Permissions
+
+`CONTENT_PUBLISH` et `CONTENT_ROLLBACK` sont **dédiées**, et l'**Éditeur de contenu ne les a pas** :
+enregistrer dans la source est réversible et sans effet sur le jeu ; changer ce qui tourne sur le
+serveur de test ne l'est pas de la même façon. Les deux sont également distinctes l'une de l'autre,
+parce qu'un retour arrière réécrit lui aussi l'état du serveur.
+
+#### Dialogues : la publication ne normalise rien
+
+Publier copie le fichier **tel quel** ; le transfert ne passe jamais par `MiniYaml`. Il ne peut donc
+pas reformater un scalaire replié au passage. La dette connue sur ce point (`guard.yml`) appartient à
+l'**éditeur guidé**, qui réécrit le YAML — pas au transfert.
+
+#### Ce que la publication n'est pas
+
+Ni un commit, ni une fusion, ni une construction du JAR, ni une release. Une copie contrôlée d'un
+fichier de contenu vers le serveur de test, auditée, et réversible.
+
 ### OP/DEOP et actions de secours sur un joueur (issue #210)
 
 Sur la fiche `/players` : statut **OP réel** (relu du serveur, donc un OP accordé en jeu y apparaît),

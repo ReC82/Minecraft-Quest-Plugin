@@ -2766,3 +2766,95 @@ Première étape à reprendre: TC-270 (~12 min, un vrai client). C'est le seul m
   collage et le sens de rotation. Ensuite, et seulement ensuite, le lot suivant : bibliothèque de
   schematics importables, puis génération IA de bâtiment — NON commencés, le prompt l'interdisait.
 ```
+
+```text
+Date: 2026-10-09 (nuit — #47 : publier du contenu sur DEV sans rebuild)
+Branche de départ: fix/227-building-sites-actions @ 97913b4 (superset de la tête déployée db518fe)
+Branche de travail: feat/47-content-publish
+Étape de départ: « #47 PRIORITÉ ABSOLUE, travaille de manière autonome ». Consigne explicite de NE
+  PLUS toucher au chantier bâtiment (#213/#227) ni à buildsite_0006.
+Étapes terminées:
+  - AUDIT D'ABORD, et il a RÉDUIT le périmètre — c'est le résultat le plus utile du lot. Le ticket
+    listait huit familles ; DEUX étaient réellement bloquées (quêtes, stories) et une à moitié
+    (dialogues, dont l'éditeur guidé écrivait déjà côté serveur). Les PNJ et les mobs/boss
+    s'appliquent DÉJÀ au runtime via des stores côté serveur : les forcer à passer par une copie de
+    fichier inventerait un second chemin pour un problème résolu. Les objets et recettes n'ont
+    AUCUNE source côté panel (seuls des exemples embarqués sont déposés au démarrage) : il leur
+    manque un ÉDITEUR, pas un transfert. ContentWorkspace.KINDS vaut exactement
+    {quests, stories, dialogues} — la liste blanche et le manque réel coïncident.
+  - CONTRAINTE D'ARCHITECTURE DÉCISIVE : l'agent est SORTANT. Le panel ne peut pas pousser un
+    fichier. Le YAML voyage donc dans un PARAMÈTRE D'ACTION et c'est le serveur qui l'écrit. Plus
+    SÛR que du FTP, pas seulement plus simple : aucune connexion entrante vers le serveur de jeu,
+    aucun identifiant FTP côté panel, et le navigateur n'envoie NI CHEMIN NI CONTENU.
+  - Le navigateur envoie quatre choses : famille, identifiant, empreinte source vue, empreinte DEV
+    vue. C'est le PANEL qui lit la source et joint le YAML côté serveur — donc un formulaire forgé
+    ne peut pas publier un contenu fabriqué. L'empreinte source est REVÉRIFIÉE à ce moment : #47
+    exige la protection des deux côtés, et c'est la moitié qu'on oublie.
+  - PublishKind EST la liste blanche. data.db, mondes, secrets, données Citizens et JAR sont hors
+    d'atteinte PAR CONSTRUCTION. Trois verrous sur la résolution : énumération, motif sans
+    séparateur, confinement revérifié après normalisation.
+  - LA RÈGLE DU SERVICE : « fichier copié » ≠ succès, « action envoyée » ≠ succès, « reload
+    demandé » ≠ succès. Un code de sortie par étape atteinte (RELOAD_FAILED dit que le fichier EST
+    écrit et où est la sauvegarde ; RUNTIME_MISSING dit que le moteur ignore l'identifiant).
+    ContentReloadService#loadedIds/runtimeHas ajoutés pour cela.
+  - Ordre : valider → comparer l'état DEV à celui vu par l'appelant → SAUVEGARDER (échec = on
+    s'arrête) → écrire atomiquement → recharger LA SEULE famille → relire. Verrou PAR RESSOURCE.
+  - Retour arrière honnête : restauration s'il y a une sauvegarde, RETRAIT si la ressource était
+    nouvelle. Jamais l'un déguisé en l'autre.
+  - PublishState corrige un MENSONGE : l'ancien SYNCED voulait seulement dire « présent des deux
+    côtés », donc une quête modifiée mais pas republiée s'affichait « Synchronisé ». Fonction PURE
+    partagée par toutes les pages, + deux états qui manquaient (DIFFERENT, NOT_LOADED).
+  - ContentApplier : frontière délibérée pour que l'ordre des opérations, les conflits et les refus
+    s'exécutent dans des tests ordinaires, sans Bukkit.
+  - DEUX DÉFAUTS ATTRAPÉS, dont un sur le SERVEUR RÉEL :
+    (1) le message de conflit choisissait sa branche d'après l'état COURANT de DEV et non d'après ce
+        que l'appelant avait vu — « créée sur DEV depuis votre analyse » ne se déclenchait jamais ;
+    (2) après une RESTAURATION, l'état affiché devenait « Conflit » (= « un tiers a touché au
+        fichier ») alors que c'était nous : la référence ne regardait que les publications. Corrigé,
+        et la zone de retour arrière disparaît après une restauration — il n'y a plus rien à défaire.
+Branche finale: feat/47-content-publish (poussée, JAMAIS fusionnée)
+Build: (voir la ligne « Build » du rapport — build complet final depuis worktree propre)
+Déploiement: FAIT sur le DEV, 01:45-02:00. data.db sauvegardé AVANT et RELU (V29, integrity ok).
+  Panel d'abord (premier essai PANEL_DEPLOY_EXIT=1 = faux négatif connu, vérifié ensuite : /health
+  ONLINE, classes panel/publish/* et les trois actions dans le JAR SERVI). Puis le JAR
+  (DEPLOY_EXIT=0, 2 144 737 o == local, SHA d98a8e48…), UN SEUL redémarrage, 0 joueur. AUCUNE
+  migration.
+  CAS DE RÉFÉRENCE PUBLIÉ POUR DE VRAI : tc265_ai_securiser_environs, depuis le VRAI panel et le
+  VRAI formulaire. Source uniquement → PUBLISHED, created=true, devShaAfter == sourceSha
+  (83b666df…), backup="" (ressource nouvelle, aucun faux backup), reload APPLIED 18 quêtes 0
+  anomalie, runtimeConfirmed=TRUE. Vérifié INDÉPENDAMMENT : fichier sur DEV en FTP (617 o, même
+  SHA) et identifiant présent dans les 18 chargés par le moteur. Badge « Synchronisé ». Retour
+  303 → /quests. SON CONTENU N'A PAS ÉTÉ MODIFIÉ.
+  CYCLE COMPLET sur une ressource de test dédiée (test_publish_47) : V1 publiée → source modifiée →
+  « Différent » → republiée (sauvegarde prise, 980619cb… → 2d9754e9…) → RESTORED (retour à
+  980619cb…) → WITHDRAWN. Nettoyage FAIT et vérifié : 18 quêtes, tc265 présente, test_publish_47
+  absente du disque ET du runtime. Compte PlugAdmin jetable supprimé, secrets effacés.
+  INCIDENT INSTRUCTIF : la première version de la ressource de test déclarait « block: » là où le
+  moteur attend « material: ». Résultat RELOAD_FAILED — et le rechargement A REFUSÉ de s'appliquer,
+  donc les 18 quêtes déjà chargées (dont tc265) sont restées actives. Un contenu invalide publié par
+  erreur échoue bruyamment sans faire disparaître le contenu en place.
+Tests manuels en attente: TC-271 (nouveau, ~6 min) — le parcours à l'œil dans le navigateur, et le
+  confort MOBILE, qui n'est pas vérifiable par requêtes HTTP. Plus TC-270, TC-269, TC-268, TC-267,
+  TC-265, TC-266, TC-264, TC-257, TC-258..TC-263.
+Blocages: aucun. Limites assumées et documentées :
+  - PAS de page « Changements en attente » (sélection multiple) : la phase 5 du prompt était
+    conditionnée à « si le socle s'y prête », et la nuit a été employée à rendre les trois familles
+    fichier réellement solides plutôt qu'à ajouter un écran de plus ;
+  - PAS de diff ligne à ligne dans la fiche : seules les empreintes sont affichées. La comparaison
+    visuelle reste à faire ;
+  - l'état affiché est aussi frais que le dernier relevé « content.dev.state » TERMINÉ : la page
+    ne s'auto-rafraîchit pas, et pendant la recette un relevé trop rapproché affichait encore
+    l'état précédent. Ce n'est pas faux (l'état dit « d'après le dernier relevé »), mais c'est un
+    point de confort à améliorer ;
+  - familles NON couvertes par ce moteur, et pourquoi : PNJ / mobs / boss (déjà appliqués au
+    runtime), objets / recettes (aucune source côté panel — il manque un éditeur) ;
+  - la publication d'un dialogue copie le fichier TEL QUEL et ne passe jamais par MiniYaml, donc
+    elle ne peut pas normaliser un scalaire replié. La dette appartient à l'ÉDITEUR GUIDÉ.
+  DETTE RAPPELÉE : MiniYaml ne gère pas les scalaires repliés (dialogues/guard.yml).
+  RestartServiceTest reste sensible au temps réel.
+Première étape à reprendre: TC-271 (~6 min, un navigateur, dont un passage sur téléphone). Ensuite,
+  par ordre de valeur : page « Changements en attente » avec sélection explicite, puis diff ligne à
+  ligne, puis l'ÉDITEUR d'objets/recettes qui manque réellement (et non leur publication).
+#47 reste OUVERTE : les familles PNJ/mobs/objets/recettes de son périmètre ne passent pas par ce
+  moteur, et la décision de ne pas les y forcer mérite d'être validée par le propriétaire.
+```

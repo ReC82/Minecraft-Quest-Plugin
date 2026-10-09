@@ -4132,6 +4132,7 @@ le résumé de récompenses de TC-014).
 | TC-268 | Emplacement de construction : marquer en jeu, gérer et supprimer depuis le panel #213 (PENDING) | | | |
 | TC-269 | Annuler la création d'un emplacement, et retour du panel sur sa page #227 (PENDING) | | | |
 | TC-270 | Poser la hutte de test sur un emplacement, deux orientations, et annuler #213 (PENDING) | | | |
+| TC-271 | Publier une quête sur DEV depuis PlugAdmin, sans build ni redémarrage #47 (PENDING) | | | |
 
 ---
 
@@ -4650,3 +4651,92 @@ le résumé de récompenses de TC-014).
 -   L'annulation restaure le terrain **tel qu'avant**, et une seconde annulation est inoffensive.
 -   Un emplacement occupé et un chevauchement sont refusés, avec un motif lisible.
 -   Un Builder consulte sans pouvoir poser.
+
+---
+
+### TC-271 — Publier une quête sur DEV depuis PlugAdmin, sans build ni redémarrage (issue #47, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier la promesse de #47 — **créer/modifier du contenu et le rendre actif en jeu
+    sans lancer de build, sans redémarrer le serveur, sans transfert manuel**.
+-   **Durée :** environ 6 minutes.
+-   **Pré-requis :** JAR de ce lot déployé **et serveur redémarré une fois** (pour installer le
+    moteur), Control Panel redéployé, un compte PlugAdmin `OWNER` ou `ADMIN`.
+-   ✅ Ce TC ne touche ni bâtiment, ni PNJ, ni monde. Il n'écrit qu'un fichier de contenu.
+-   ⚠️ **Le redémarrage des pré-requis installe le moteur ; il ne fait pas partie du parcours
+    utilisateur.** Tout l'intérêt du TC est qu'ensuite, publier n'en demande plus.
+
+#### 1. L'état de départ
+
+1.  PlugAdmin → **Quêtes** → **Rafraîchir** (bouton « Quêtes »), puis **« État DEV »**.
+2.  Attendu : le bandeau orange « l'état du contenu sur le serveur DEV n'est pas encore relevé »
+    **disparaît** après le clic sur « État DEV ».
+3.  Ouvrir la fiche de **`tc265_ai_securiser_environs`**. Section **Publication sur DEV**. Attendu :
+    -   badge **« Source uniquement »** ;
+    -   l'explication « absente du serveur DEV : elle n'existe pas en jeu » ;
+    -   **Source** : une empreinte ; **Serveur DEV** : « absente » ;
+    -   **Chargée par le moteur** : non ;
+    -   un bouton **« Publier sur DEV »**.
+
+#### 2. Publier
+
+4.  Cocher la case de confirmation, puis **Publier sur DEV**.
+5.  Attendu : retour **sur la page Quêtes** (jamais sur « Agents » — c'était le défaut #227), avec un
+    bandeau de suivi d'action.
+6.  Attendre quelques secondes, puis **Rafraîchir** (« Quêtes » puis « État DEV »).
+7.  Attendu sur la fiche :
+    -   badge **« Synchronisé »** ;
+    -   **Source** et **Serveur DEV** affichent la **même** empreinte ;
+    -   **Chargée par le moteur** : **oui** ;
+    -   une ligne **« Dernière publication »** avec l'heure et le code `PUBLISHED`.
+
+> ⚠️ Si le badge affiche **« Publié, non chargé »**, le fichier est arrivé mais le moteur ne le voit
+> pas : c'est presque toujours que l'identifiant déclaré dans le YAML ne correspond pas au nom du
+> fichier. Le message le dit. Noter le cas et le signaler.
+
+#### 3. La preuve en jeu — c'est l'étape qui compte
+
+8.  En jeu : `/rpgadmin quest list` → **`tc265_ai_securiser_environs` doit apparaître**.
+9.  **Vérifier qu'aucun build n'a été lancé et que le serveur n'a pas redémarré** : la console ne
+    doit montrer qu'un rechargement de la famille « quêtes », pas un démarrage de plugin.
+
+#### 4. Modifier puis republier
+
+10. PlugAdmin → fiche de la quête → modifier quelque chose d'anodin (la description, par l'éditeur
+    guidé) → **Enregistrer**.
+11. **Rafraîchir** → **« État DEV »**. Attendu : badge **« Différent »**, et l'explication « vos
+    dernières modifications ne sont pas en jeu ».
+12. **Republier sur DEV** → rafraîchir → **« Synchronisé »**, avec une **nouvelle** empreinte des
+    deux côtés.
+13. En jeu : `/rpgadmin quest list` montre la quête, et la modification est visible dans le journal
+    de quêtes.
+
+#### 5. Revenir en arrière
+
+14. Fiche → section **« Restaurer la version précédente »** (elle n'apparaît que parce qu'un
+    remplacement a eu lieu, donc qu'une sauvegarde existe).
+15. Cocher, puis **Restaurer la version précédente**.
+16. **Rafraîchir** → attendu : l'empreinte **DEV** est revenue à celle d'avant l'étape 12, et l'état
+    est **« Différent »** (la source, elle, porte toujours votre modification — c'est normal et
+    c'est la bonne réponse : on a restauré DEV, pas la source).
+17. En jeu : la quête existe toujours, dans sa version d'avant.
+
+#### 6. Les refus
+
+18. Ouvrir la fiche dans **deux onglets**. Dans l'onglet A, publier. Dans l'onglet B (dont
+    l'affichage est désormais périmé), publier aussi.
+19. Attendu dans l'onglet B : un **refus** expliquant que le fichier DEV ou la source a changé depuis
+    l'analyse. **Rien n'est écrasé en silence.**
+20. Avec un compte de rôle **Éditeur de contenu** : la section « Publication sur DEV » affiche
+    l'état, mais **aucun bouton Publier** n'apparaît.
+
+#### Critères de réussite
+
+-   Une quête « Source uniquement » devient **active en jeu** depuis le panel, **sans build ni
+    redémarrage**.
+-   « Synchronisé » n'apparaît qu'après que le moteur a confirmé — et les deux empreintes concordent.
+-   `/rpgadmin quest list` voit la quête.
+-   Une modification non publiée s'affiche **« Différent »**, et non « Synchronisé ».
+-   La restauration ramène la version précédente sur DEV.
+-   Une publication concurrente est **refusée**, jamais appliquée en écrasant.
+-   Un Éditeur de contenu voit l'état sans pouvoir publier.
+-   Toutes les actions reviennent **sur la page Quêtes**.

@@ -271,6 +271,53 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   que son propre exemple de référence était inimportable. Limite connue : `MiniYaml` ne lit pas les
   scalaires repliés (`text: >`), donc `dialogues/guard.yml` n'est pas éditable depuis le panel ; la
   troncature est signalée par le garde-fou round-trip, jamais silencieuse.
+- **Publier du contenu sur DEV sans rebuild** *(issue #47, lot « socle + fichiers »)* — PlugAdmin
+  est désormais autonome pour le cycle **créer → enregistrer → publier → recharger → vérifier**, sans
+  build Gradle, sans redémarrage Minecraft, sans transfert manuel.
+  **L'audit a réduit le périmètre, et c'est le résultat le plus utile** : sur les huit familles
+  listées par le ticket, **deux** étaient réellement bloquées (quêtes, stories) et une l'était à
+  moitié (dialogues, dont l'éditeur guidé écrivait déjà côté serveur). Les **PNJ** et les **mobs
+  spéciaux/boss** s'appliquent déjà au runtime par des stores côté serveur — les forcer à passer par
+  une copie de fichier inventerait un second chemin. Les **objets** et **recettes** n'ont
+  *aucune* source côté panel (seuls des exemples embarqués existent) : il leur manque un éditeur,
+  pas un transfert. `ContentWorkspace.KINDS` vaut exactement `{quests, stories, dialogues}`, donc la
+  liste blanche de publication et le manque réel coïncident.
+  **L'agent étant SORTANT**, le panel ne peut pas pousser un fichier : le YAML voyage dans un
+  **paramètre d'action** et c'est le serveur qui l'écrit, dans un dossier issu de la liste blanche
+  `PublishKind`. Plus sûr que du FTP, pas seulement plus simple — aucune connexion entrante vers le
+  serveur de jeu, **aucun identifiant FTP côté panel**, et le navigateur n'envoie **ni chemin ni
+  contenu** : seulement une famille, un identifiant et les deux empreintes qu'il a vues. C'est le
+  panel qui lit la source et joint le YAML, côté serveur.
+  **Sécurité** : trois verrous successifs sur la résolution de chemin (énumération, motif sans
+  séparateur, confinement revérifié après normalisation) ; `data.db`, les mondes, les secrets, les
+  données Citizens et le JAR sont hors d'atteinte **par construction**. Sauvegardes sous
+  `content-backups/`, **hors** des dossiers de contenu (sinon relues comme des définitions, règle
+  de #194).
+  **« Fichier copié » n'est pas un succès** : codes de sortie distincts selon l'étape atteinte
+  (`RELOAD_FAILED` dit que le fichier *est* écrit et où est la sauvegarde ; `RUNTIME_MISSING` dit que
+  le rechargement a eu lieu mais que le moteur ignore l'identifiant), et « Synchronisé » n'est
+  accordé qu'après **relecture du runtime** via `ContentReloadService#loadedIds`/`runtimeHas`.
+  Ordre non négociable : valider → comparer l'état DEV à celui vu par l'appelant (désaccord =
+  **conflit**, jamais d'écrasement silencieux) → **sauvegarder** (échec = on s'arrête) → écrire
+  atomiquement → recharger **la seule famille concernée** → relire. Verrou **par ressource**, donc
+  deux ressources différentes ne se bloquent pas.
+  **Retour arrière honnête** : restauration s'il y a une sauvegarde, **retrait** si la ressource
+  était nouvelle — jamais l'un déguisé en l'autre, et aucun bouton si aucune publication n'a eu lieu
+  depuis le panel.
+  **`PublishState` corrige un mensonge** : l'ancien `SYNCED` voulait seulement dire « présent des
+  deux côtés », donc une quête modifiée mais pas republiée s'affichait « Synchronisé ». L'état est
+  maintenant une fonction **pure** partagée par toutes les pages, avec deux états qui manquaient —
+  `DIFFERENT` et `NOT_LOADED`. Sans relevé DEV, l'état est `UNKNOWN` et **aucun bouton Publier
+  n'apparaît**. `CONFLICT` se distingue de `DIFFERENT` grâce à l'empreinte laissée par notre propre
+  dernière publication.
+  **Permissions dédiées** `CONTENT_PUBLISH` / `CONTENT_ROLLBACK`, que l'**Éditeur de contenu n'a
+  pas** : écrire la source et changer ce qui tourne sur DEV n'ont pas la même portée.
+  **Dialogues** : la publication copie le fichier *tel quel* et ne passe jamais par `MiniYaml`, donc
+  elle ne peut pas normaliser un scalaire replié ; cette dette appartient à l'éditeur guidé.
+  Limites : pas de page « Changements en attente » (sélection multiple), pas d'affichage de diff
+  ligne à ligne dans la fiche, et les familles PNJ/mobs/objets/recettes ne passent pas par ce moteur
+  (voir l'audit ci-dessus).
+
 - **Emplacements de construction** *(issue #213, première livraison)* — socle du futur système de
   bâtiments. Un emplacement est un **point d'ancrage nommé** dans un monde : identité stable
   (`buildsite_0001`, jamais recalculée depuis la position ni réutilisée après suppression), nom

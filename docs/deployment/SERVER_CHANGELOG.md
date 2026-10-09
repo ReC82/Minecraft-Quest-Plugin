@@ -6828,3 +6828,160 @@ Il n'a donc pas été créé par l'ancien parcours : un nom saisi à la main pro
 #227 fonctionne en jeu**, et le passage de `0005` à `0006` confirme que les identifiants ne sont pas
 recyclés. Les emplacements de test précédents ont été supprimés entre les deux déploiements, ce qui
 confirme une fois de plus que la suppression depuis le panel s'applique.
+
+---
+
+## 2026-10-09 (nuit) - Publier du contenu sur DEV depuis PlugAdmin, sans rebuild (#47)
+
+### Changement
+
+**Plugin RPGQuest ET Control Panel.** PlugAdmin devient autonome pour le cycle **créer →
+enregistrer → publier → recharger → vérifier**, sans build Gradle, sans redémarrage Minecraft, sans
+transfert manuel.
+
+**L'audit a réduit le périmètre, et c'est le résultat le plus utile.** Le ticket listait huit
+familles ; **deux** étaient réellement bloquées :
+
+| Famille | Source côté panel | Écriture côté serveur avant #47 | Verdict |
+|---|---|---|---|
+| **Quêtes** | fichier de l'espace de travail | **aucune** | vrai manque |
+| **Stories** | fichier de l'espace de travail | **aucune** | vrai manque |
+| **Dialogues** | fichier de l'espace de travail | partielle (éditeur guidé) | chemin « fichier » manquant |
+| PNJ, Mobs, Boss | — (stores côté serveur) | oui | **déjà appliqués au runtime** |
+| Objets, Recettes | — | dépôt d'exemples embarqués seulement | **rien ne les crée depuis le panel** |
+
+**L'agent est sortant, donc le serveur écrit lui-même.** Le panel ne peut pas pousser un fichier :
+le YAML voyage dans un **paramètre d'action** et le serveur l'écrit dans un dossier issu de la liste
+blanche `PublishKind`. Plus sûr que du FTP — aucune connexion entrante vers le serveur de jeu,
+**aucun identifiant FTP côté panel**, et le navigateur n'envoie **ni chemin ni contenu** : seulement
+une famille, un identifiant et les deux empreintes qu'il a vues. C'est le panel qui lit la source et
+joint le YAML, côté serveur.
+
+**« Fichier copié » n'est pas un succès.** `RELOAD_FAILED` dit que le fichier *est* écrit et où est
+la sauvegarde ; `RUNTIME_MISSING` dit que le rechargement a eu lieu mais que le moteur ignore
+l'identifiant ; « Synchronisé » n'est accordé qu'après **relecture du runtime**.
+
+Nouveaux fichiers plugin : `content.publish.PublishKind` / `ContentPublishStore` /
+`ContentPublishService` / `ContentApplier` / `ReloadServiceApplier`. `ContentReloadService` gagne
+`loadedIds` et `runtimeHas`. Trois actions agent : `content.dev.state`, `content.publish`,
+`content.publish.rollback`. Panel : `panel.publish.PublishState` / `DevContentIndex`, permissions
+`CONTENT_PUBLISH` / `CONTENT_ROLLBACK`, section « Publication sur DEV » sur les fiches quête, story
+et dialogue, bouton « État DEV », fiche d'aide `contenu-publier-sur-dev.md`.
+
+### Action serveur
+
+Remplacement du JAR RPGQuest **et** redéploiement du Control Panel. **Aucune migration de schéma.**
+
+Un dossier `plugins/RPGQuest/content-backups/` est créé à la première publication qui **remplace**
+un fichier existant. Il est **hors** des dossiers de contenu : déposées dans `quests/`, les
+sauvegardes seraient relues comme des définitions et créeraient des doublons d'identifiants.
+
+> **Le redémarrage installe le moteur ; il ne fait pas partie du workflow utilisateur.** Une fois
+> #47 en place, **publier du contenu ne demande plus ni build ni redémarrage.**
+
+### Sauvegarde préalable
+
+- Ancien JAR `plugins/RPGQuest-<ancienne_version>.jar`.
+- `plugins/RPGQuest/data.db` — aucune migration, mais procédure standard.
+- Control Panel : sauvegarde automatique par `scripts/plugadmin/deploy.sh`.
+
+### Déploiement
+
+1. Compiler depuis un worktree propre.
+2. Déployer le Control Panel.
+3. Arrêter Minecraft, remplacer le JAR, redémarrer **une fois**.
+
+### Validation
+
+**97 tests automatisés** : le moteur de publication (31 — ordre des appels prouvé, conflits,
+sauvegarde avant écriture, échecs volontaires à chaque étape, verrou par ressource, identifiants
+forgés, confinement des chemins), le vocabulaire d'état (19 — toutes les combinaisons, y compris
+celles que l'ancien modèle affichait faussement « Synchronisé ») et le parcours HTTP (17 —
+formulaires **réellement rendus** et soumis tels quels, absence de `yaml` et de chemin dans le
+formulaire, CSRF, identifiants forgés, famille hors liste blanche).
+
+### Déploiement RÉELLEMENT effectué — 2026-10-09 01:45 à 02:00 (CEST)
+
+Serveur **RPGQuest DEV**, depuis un worktree propre. Branche vérifiée **superset** de la tête
+déployée (`db518fe`).
+
+| Étape | Résultat |
+|---|---|
+| **Sauvegarde `data.db` AVANT** | `data-20261008T230710Z-predeploy.db` (1 802 240 o), **relue** : `user_version = 29`, `integrity_check = ok` |
+| Control Panel | `/health` → `ONLINE` ; classes `panel/publish/*` et les **trois** actions présentes dans le JAR servi (⚠️ le premier déploiement a renvoyé `PANEL_DEPLOY_EXIT=1` : **faux négatif connu**, sonde `/health` avant liaison du port — vérifié ensuite) |
+| JAR plugin | `DEPLOY_EXIT=0`, **2 144 737 o == local** (SHA-256 `d98a8e48…`) ; backup `rpgquest-20261008T234533Z-predeploy.jar` (2 114 011 o) **sans écraser le plus ancien** |
+| Redémarrage Minecraft | **un seul**, **0 joueur connecté** |
+| Aucune migration | `user_version` inchangé |
+
+#### Le cas de référence, publié pour de vrai
+
+**`rpgquest:tc265_ai_securiser_environs`** — la quête générée par l'atelier IA, importée via #109,
+restée « Source uniquement » faute de publication. Publiée **depuis le vrai panel, par le vrai
+formulaire**, sans build ni redémarrage :
+
+| Preuve | Valeur |
+|---|---|
+| état avant | **Source uniquement** (empreinte DEV attendue : vide) |
+| formulaire réellement rendu | `kind`, `id`, `expected_source_sha`, `expected_dev_sha`, `confirm`, `_csrf` — **et pas de champ `yaml`** |
+| code du résultat | **`PUBLISHED`**, `created = true` |
+| empreintes | `devShaBefore = ""` → `devShaAfter = 83b666df…` **== `sourceSha`** |
+| sauvegarde | `""` — ressource nouvelle, **aucun faux backup fabriqué** |
+| rechargement | `APPLIED`, **18 quêtes chargées, 0 anomalie** |
+| **vérification runtime** | **`runtimeConfirmed = true`**, à `2026-10-08T23:48:14Z` |
+| contrôle indépendant (FTP) | fichier présent sur DEV, **617 o**, SHA-256 identique à la source |
+| contrôle indépendant (moteur) | `rpgquest:tc265_ai_securiser_environs` figure dans les **18** identifiants réellement chargés |
+| badge affiché | **Synchronisé**, « le moteur la voit en jeu » |
+| chemin de retour | `303 → /quests` (aucune régression #227) |
+
+**Son contenu n'a pas été modifié** : la publication a transféré le fichier tel quel.
+
+#### Cycle complet sur une ressource de test dédiée
+
+`test_publish_47`, créée pour l'occasion et **entièrement nettoyée ensuite** :
+
+| Étape | Résultat réel |
+|---|---|
+| V1 publiée | `PUBLISHED`, `runtimeConfirmed = true` |
+| source modifiée (V3) | état affiché → **Différent** |
+| republiée | `PUBLISHED`, `created = false`, `devShaBefore = 980619cb…` → `devShaAfter = 2d9754e9…`, **sauvegarde prise** |
+| restaurée | **`RESTORED`**, `2d9754e9…` → `980619cb…` — la version précédente est revenue |
+| retirée | **`WITHDRAWN`**, « n'est plus chargée », `runtimeConfirmed = false` |
+
+**Nettoyage effectué** : fichier source supprimé, fichier DEV retiré par le chemin « retrait »
+prévu, compte PlugAdmin jetable supprimé, secrets de test effacés. Vérification finale : **18 quêtes
+chargées, `tc265` présente, `test_publish_47` absente du disque et du runtime**.
+Les fichiers de sauvegarde de la ressource de test subsistent sous
+`plugins/RPGQuest/content-backups/` : ils sont hors des dossiers de contenu, donc jamais relus, et
+constituent la trace d'audit du test.
+
+#### Un incident instructif, et pourquoi il est rassurant
+
+La première version de la ressource de test déclarait `block: DIRT` là où le moteur attend
+`material:`. Résultat : **`RELOAD_FAILED`**, `runtimeConfirmed = false`, et le message indiquant que
+le fichier *est* écrit.
+
+Surtout : le rechargement **a refusé de s'appliquer**, donc les **18 quêtes déjà chargées — dont
+`tc265` — sont restées actives**. Un fichier de contenu invalide publié par erreur ne fait donc pas
+disparaître le contenu en place ; il échoue bruyamment et laisse le runtime intact.
+
+#### Ce qui reste à constater
+
+Le parcours **dans le navigateur** (badges, boutons, bandeaux) a été vérifié par requêtes HTTPS sur
+le vrai panel, mais pas à l'œil sur un écran — notamment le confort **mobile**. C'est **TC-271**.
+
+### Effet de bord à connaître
+
+**Publier écrit un fichier sur le serveur et permute le contenu chargé de la famille concernée.**
+C'est le but, mais le geste n'est plus anodin : il est réservé à `CONTENT_PUBLISH`, exige une
+confirmation, et est journalisé avec les empreintes avant/après.
+
+L'**Éditeur de contenu** ne peut **pas** publier : son droit d'écrire la source est inchangé.
+
+### Rollback
+
+- **Plugin** : redéployer le JAR sauvegardé, puis redémarrer. Les trois actions redeviennent
+  inconnues de l'agent ; les fichiers déjà publiés **restent** sur DEV (ce sont des fichiers de
+  contenu valides).
+- **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
+- **Une publication précise** se défait depuis la fiche (« Restaurer la version précédente » ou
+  « Retirer de DEV »), sans toucher au reste.

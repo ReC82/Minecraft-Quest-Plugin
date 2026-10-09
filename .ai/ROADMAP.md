@@ -2813,7 +2813,15 @@ Branche de travail: feat/47-content-publish
         fichier ») alors que c'était nous : la référence ne regardait que les publications. Corrigé,
         et la zone de retour arrière disparaît après une restauration — il n'y a plus rien à défaire.
 Branche finale: feat/47-content-publish (poussée, JAMAIS fusionnée)
-Build: (voir la ligne « Build » du rapport — build complet final depuis worktree propre)
+Build: NON TERMINÉE. ./gradlew clean build sur 9f8110c depuis un worktree propre a été INTERROMPU
+  PAR LE SYSTÈME pour manque de mémoire, avant d'avoir produit le moindre résultat de test (clean
+  avait déjà effacé les précédents). Aucun chiffre de build final à rapporter. Non relancé de ma
+  propre initiative.
+  Ce qui A été exécuté : suite control-panel COMPLÈTE 1102 tests / 0 échec, et plugin CIBLÉ 154
+  tests / 0 échec — mais AVANT le correctif 74aa340. Après ce correctif, seul
+  ContentPublishPageTest a tourné (17 tests / 0 échec), ce qui couvre le correctif puisqu'il est
+  panel-only. Les trois classes du lot passent : 31 + 19 + 17.
+  À FAIRE : ./gradlew clean build sur 9f8110c, worktree propre, machine au repos.
 Déploiement: FAIT sur le DEV, 01:45-02:00. data.db sauvegardé AVANT et RELU (V29, integrity ok).
   Panel d'abord (premier essai PANEL_DEPLOY_EXIT=1 = faux négatif connu, vérifié ensuite : /health
   ONLINE, classes panel/publish/* et les trois actions dans le JAR SERVI). Puis le JAR

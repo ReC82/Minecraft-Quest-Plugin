@@ -3045,3 +3045,100 @@ Blocages: aucun. Limites assumées et documentées :
 Première étape à reprendre: TC-273 (~10 min, un client), qui débouche DIRECTEMENT sur TC-257/#123 —
   c'était l'objectif du ticket. Ensuite, trancher le sort des trois libellés du Garde.
 ```
+
+```text
+Date: 2026-10-09 (nuit — #234 : cycle de vie des bâtiments posés)
+Branche de départ: feat/235-onboarding-guide-kit @ d467f27 (= ligne réellement déployée, inclut #47,
+  #213, #227 et #235)
+Branche de travail: feature/234-building-placement-lifecycle
+Étape de départ: ordre strict — (1) vérifier factuellement le déploiement de #235 puis ne plus y
+  toucher, (2) #234, (3) audit SEUL de #156 s'il reste du temps.
+Étapes terminées:
+  - PHASE 0 : #235 vérifié par TÉLÉCHARGEMENT et EMPREINTE, pas par déduction. JAR en ligne
+    SHA f9afbcde… identique au local ; guide.yml en ligne 12 656 o SHA 2d0dc9bb… BIT-POUR-BIT
+    identique au local ; les cinq exigences de contenu satisfaites ; Citizens/RPGQuest/WorldEdit
+    verts ; panel servi vérifié. UNE FAUSSE ALERTE DE MON SCRIPT : « Très bien, j'y vais » signalé
+    présent — c'était un COMMENTAIRE du fichier, aucun des 38 libellés ne le contient.
+  - AUDIT DE #234 AVANT TOUT CODE, et il a donné les six réponses du ticket : rollback SUPPRIMAIT la
+    ligne (aucun historique), le backup restait orphelin sur disque, le site repassait bien EMPTY et
+    survivait au restart, un site libéré était immédiatement réutilisable. MANQUAIENT : historique,
+    baseline originale, réorientation, remplacement, affichage de divergence, mémorisation de la
+    version.
+  - LA DISTINCTION CENTRALE : baseline originale ≠ état d'avant la dernière opération. La sauvegarde
+    de chaque opération sert à COMPENSER un échec en cours de route ; le terrain d'origine est
+    conservé À PART et jamais réécrit. Sans cela, un remplacement naïf aurait fait du
+    terrain-avec-hutte la nouvelle origine — le piège exact décrit par le ticket.
+  - PLUSIEURS FRAGMENTS PAR SITE, et ce n'est pas une facilité : une tour occupe plus de place
+    qu'une hutte, donc une baseline prise sur l'emprise de la hutte laisserait des blocs de tour EN
+    DEHORS — un terrain « presque d'origine », c'est-à-dire faux d'une manière qui en a l'air.
+    L'ordre des opérations garantit que chaque fragment contient RÉELLEMENT du terrain d'origine
+    (l'ancienne emprise est restaurée AVANT toute nouvelle capture), et c'est pour cela que l'ordre
+    de restauration n'a aucune importance logique.
+  - RÉORIENTER ET REMPLACER SONT LA MÊME SÉQUENCE DANGEREUSE, donc écrite UNE SEULE FOIS : vérifier
+    + jeton → sauvegarder l'union des deux emprises → restaurer l'origine → capturer la nouvelle
+    zone → coller → compenser si échec (code COMPENSATED, distinct d'un refus) → fiche en dernier.
+    Partager n'est pas une économie de lignes : deux copies divergeraient, et c'est la moins soignée
+    qui détruirait un terrain.
+  - RÉORIENTER NE TOURNE PAS LES BLOCS EN PLACE : on repart du terrain d'origine et de la
+    définition, donc le résultat est identique à une pose initiale dans cette orientation. Faire
+    tourner les blocs existants accumulerait les erreurs essai après essai.
+  - LIBÉRER RESTAURE D'ABORD, LIBÈRE ENSUITE : jamais de faux EMPTY. Et la baseline n'est PAS
+    supprimée — le site doit pouvoir être rebâti puis libéré à nouveau et retrouver le MÊME terrain.
+  - UN SITE EST UNE INTENTION, UN PLACEMENT EST UN FAIT : changer facing ne déplace aucun bloc, la
+    fiche affiche les deux lignes et le dit. Deux tests le figent, dont un qui vérifie qu'AUCUN
+    appel de collage n'a lieu.
+  - VERSION ET EMPREINTE : la version déclarée peut être oubliée par qui édite le YAML, l'empreinte
+    du fichier non. Sans information des deux côtés, on NE CONCLUT PAS — annoncer « à jour » sans le
+    savoir serait une affirmation qu'on n'a pas le droit de faire.
+  - TROIS FAUTES RÉELLES ATTRAPÉES PAR LES TESTS, PAS PAR RELECTURE :
+    (1) une torche posée sur une marche au niveau 2 de la tour ;
+    (2) un contrefort qui doublait le mur ouest (même position) — remplacé par un changement de
+        MATÉRIAU, même effet visuel sans bloc en conflit ;
+    (3) des volées de TROIS marches là où quatre sont nécessaires. Deux planchers sont séparés de
+        quatre blocs et une marche ne fait gagner qu'un demi-bloc : la troisième culminait à 3,5
+        quand le plancher s'atteint à 5,0. LA TOUR AURAIT ÉTÉ INVISITABLE, et cela ne se serait vu
+        qu'en jeu.
+  - UN DÉFAUT DE LISIBILITÉ CORRIGÉ grâce à un test : le premier fragment de baseline gardait le nom
+    « backup_ » alors qu'il EST la baseline, et rien dans le dossier ne disait lequel des fichiers
+    ne doit jamais être supprimé. Nommage désormais auto-descriptif : origine_ / compens_ / backup_.
+  - VILLAGES/VILLES préparés, PAS commencés : chaque emplacement reste indépendant, aucune opération
+    ne traverse plusieurs emplacements, et AUCUNE MIGRATION n'a été créée « au cas où » (§19 du
+    ticket respecté). Le jour venu : une table de projet + une colonne project_id nullable.
+Branche finale: feature/234-building-placement-lifecycle (poussée, JAMAIS fusionnée)
+Build: ./gradlew clean build ABOUTIE depuis un worktree propre, après ./gradlew --stop.
+  3462 tests, 0 échec, 0 erreur, 38 ignorés (plugin 2225, control-panel 1207, web-api 30), en
+  42 min 19 s. +73 tests pour ce lot : BuildingLifecycleServiceTest 35,
+  TestWatchtowerBlueprintTest 20, BuildingLifecyclePageTest 15, plus les mises à jour.
+Déploiement: FAIT sur le DEV, 19:15-19:25. data.db SAUVEGARDÉ AVANT la migration
+  (data-20261009T163556Z-pre-v30.db, 1 802 240 o, SHA 7ef3c563…, integrity ok, user_version 29).
+  Panel d'abord (vérifié par ce qu'il SERT), puis le JAR (2 213 495 o, SHA 171020a6…, backup
+  rpgquest-20261009T171623Z-predeploy.jar à 2 159 437 o — plus PETIT que le neuf, direction
+  attendue), UN SEUL redémarrage, 0 joueur avant et après.
+  MIGRATION V30 VÉRIFIÉE SUR LA BASE RÉELLE : integrity_check ok, user_version = 30, les deux
+  tables et leurs index créés, building_placements à 18 colonnes (étaient 16), 38 tables au total
+  (étaient 36), et LE PLACEMENT EXISTANT INTACT (buildsite_0006 / test_hut_01 / rotation 180 /
+  backup inchangé, version 0 et empreinte vide = les défauts qui se lisent « inconnu »).
+  TOUR GÉNÉRÉE PAR LE PLUGIN AU DÉMARRAGE : schematics/test_watchtower_01.schem présent, 641 o —
+  il était ABSENT avant le redémarrage. Définition déposée (2 455 o).
+  AUCUNE MUTATION DU MONDE depuis la machine : aucun bâtiment posé, aucun bloc touché, aucun
+  emplacement modifié.
+Tests manuels en attente: TC-274 (nouveau, ~20 min) — libérer, constater qu'une rotation de site ne
+  déplace aucun bloc, réorienter, remplacer par la tour et LA VISITER, puis enchaîner plusieurs
+  essais et vérifier que le terrain restauré est celui du TOUT DÉBUT (étape D, la plus importante).
+  Plus TC-273, TC-272, TC-271, TC-270, TC-269, TC-268, TC-267, TC-265, TC-266, TC-264, TC-257,
+  TC-258..TC-263.
+Blocages: aucun. Limites assumées et documentées :
+  - À SAVOIR POUR DEMAIN : buildsite_0006 DIVERGE DÉJÀ (site NORTH, hutte posée à 180°) — la fiche
+    affichera donc l'avertissement sur l'emplacement réel. Ce n'est pas une régression, c'est le cas
+    que ce lot rend visible. Sa sauvegarde de pose est présente (321 o), donc la libération
+    fonctionnera ;
+  - les fragments de baseline s'ACCUMULENT si un emplacement reçoit des bâtiments de tailles
+    croissantes. Aucun nettoyage automatique : supprimer un fragment reviendrait à perdre une partie
+    du terrain d'origine. Un outil d'entretien explicite serait un sous-ticket raisonnable ;
+  - la mise à jour vers une nouvelle version n'a pas d'action dédiée : on passe par « Remplacer »
+    avec le même bâtiment (le ticket l'autorisait, « hors MVP si nécessaire ») ;
+  - #156 : audit NON commencé — le temps a été employé à finir #234 proprement (build, déploiement,
+    vérification de migration, documentation, TC).
+Première étape à reprendre: TC-274 (~20 min, un client). Ensuite l'audit de #156, diagnostic SEUL,
+  sans toucher à la politique de densité des bornes.
+```

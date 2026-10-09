@@ -7162,3 +7162,113 @@ dédiée, une case à cocher et `confirm=true`, et l'écran énumère ce qui ser
 - **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
 - **Aucun reset déjà exécuté ne se défait** — avant comme après ce lot. C'est pourquoi l'écran
   annonce la portée avant de confirmer.
+
+------------------------------------------------------------------------
+
+## 2026-10-09 (nuit) — Cycle de vie des bâtiments posés, et tour de garde de test (#234)
+
+**Branche** : `feature/234-building-placement-lifecycle` (commits `8181032`, `4729373`, `f3c2985`,
+`707f496`)
+**Portée** : **panel ET plugin**, avec **migration V30**.
+
+### À transférer
+
+1. **Panel** (`scripts/plugadmin/deploy.sh`) — quatre nouvelles actions au catalogue, la section
+   « Bâtiment posé » réécrite, la projection d'aperçu de transformation.
+2. **JAR du plugin** — le moteur de cycle de vie, la migration V30, la tour de garde.
+3. **Rien d'autre.** Contrairement au lot #235, aucun `--also` n'est nécessaire :
+   `buildings/test_watchtower_01.yml` **est** dans `BuildingLibrary.BUNDLED_EXAMPLES`, donc déposé
+   au démarrage s'il manque, et `test_watchtower_01.schem` est **produit par le plugin** par le même
+   chemin que la hutte.
+
+**Fait le 2026-10-09, 19:15–19:25 UTC+2.** Panel d'abord, puis le JAR, puis **un seul redémarrage**,
+**0 joueur connecté** (vérifié avant *et* après).
+
+| | Valeur |
+|---|---|
+| JAR déployé | **2 213 495 o**, SHA-256 `171020a69eb0c09016c32ed5ae6f566607fa4bccc92a3fcddd40d6a4007824c8` |
+| Backup JAR | `rpgquest-20261009T171623Z-predeploy.jar` (**2 159 437 o** — plus petit que le neuf, donc la direction attendue) |
+| **Backup `data.db` AVANT migration** | `data-20261009T163556Z-pre-v30.db`, **1 802 240 o**, SHA-256 `7ef3c563…`, `integrity_check` = **ok** |
+| Migration | **V30**, additive — voir ci-dessous |
+
+### Ne PAS transférer/altérer
+
+`data.db` (migré par le plugin, jamais par un transfert), `config.yml`, `messages.yml`, `spawn.yml`,
+les mondes, `plugins/Citizens/`, les dialogues et les quêtes du serveur.
+
+⚠️ **Les fichiers `plugins/RPGQuest/schematics/origine_*.schem` sont le terrain d'origine des
+emplacements. Ne jamais les supprimer** tant que les emplacements existent — c'est ce qui permet de
+rendre le terrain d'avant le premier bâtiment. Les `compens_*` et `backup_*` sont de simples
+sauvegardes d'étape, supprimables sans risque après coup.
+
+### Redémarrage requis
+
+**Oui, un seul** — effectué. La migration V30 s'applique au démarrage, et les quatre nouvelles
+actions agent ne sont connues du moteur qu'après.
+
+### Migration automatique
+
+**Oui : V30, strictement additive.**
+
+| Changement | Nature |
+|---|---|
+| `building_placements.building_version` | colonne ajoutée (`DEFAULT 0`) |
+| `building_placements.schematic_sha256` | colonne ajoutée (`DEFAULT ''`) |
+| `building_baselines` + index `site_id` | table créée |
+| `building_placement_history` + index `(site_id, id)` | table créée |
+
+Aucune colonne existante modifiée, aucune ligne réécrite. Les deux `ALTER TABLE` vérifient d'abord
+l'existence de la colonne, donc l'étape est **rejouable** — ce que `CREATE TABLE IF NOT EXISTS` est
+nativement mais pas `ALTER TABLE ADD COLUMN`.
+
+**Vérifiée sur la base réelle, après redémarrage :**
+
+| Vérification | Résultat |
+|---|---|
+| `PRAGMA integrity_check` | **ok** |
+| `PRAGMA user_version` | **30** (était 29) |
+| Tables créées | `building_baselines`, `building_placement_history` |
+| Index créés | `idx_building_baselines_site`, `idx_building_history_site` |
+| Colonnes de `building_placements` | **18** (étaient 16) |
+| Tables au total | **38** (étaient 36) |
+| Placement existant | **intact** : `buildsite_0006` / `test_hut_01` / rotation **180** / backup inchangé, et `building_version = 0`, `schematic_sha256 = ''` — les défauts qui se lisent « inconnu » |
+
+### Ce qui a été vérifié sur le serveur réel
+
+| Vérification | Résultat |
+|---|---|
+| Plugins | **Citizens, RPGQuest, WorldEdit verts** ; `rpgquest version` → `v0.1.0-SNAPSHOT` |
+| Panel : ce qu'il **sert** | les quatre actions au catalogue, `BuildingRetargetPreview.class`, « Orientation souhaitée du site », « Orientation du bâtiment posé », « Version posée », « Journal des opérations », « Relever le journal » ; fiche d'aide à jour |
+| Tour de garde **générée par le plugin** | `schematics/test_watchtower_01.schem` **présent, 641 o** — il était absent avant le redémarrage |
+| Définition déposée | `buildings/test_watchtower_01.yml`, **2 455 o** |
+
+**Aucune mutation du monde n'a été faite depuis la machine** : aucun bâtiment posé, aucun bloc
+touché, aucun emplacement modifié. Les tests de blocs sont ceux de **TC-274**, à faire par le
+propriétaire.
+
+### À savoir pour le test de demain
+
+L'emplacement réel **`buildsite_0006` diverge déjà** : son orientation est `NORTH` alors que la
+hutte est posée à **180°** (l'orientation du site a été changée après la pose, probablement pendant
+TC-270). La fiche affichera donc l'avertissement de divergence sur cet emplacement — ce n'est pas une
+régression, c'est exactement le cas que ce lot rend visible.
+
+Ce placement n'a **pas** de baseline enregistrée (il précède ce lot) : il retombe sur sa sauvegarde
+de pose, `backup_buildsite_0006_1791498372735.schem`, **vérifiée présente (321 o)**. Elle *est* le
+terrain d'origine, puisque la pose était sa seule opération — et l'écran le dit explicitement plutôt
+que de la confondre avec une vraie baseline.
+
+### Effet de bord à connaître
+
+**`building.placement.rollback` a changé de sens**, en mieux : l'action rendait l'état d'avant la
+dernière pose, elle rend désormais le **terrain d'origine** et libère l'emplacement. Pour tout
+placement n'ayant eu qu'une pose — le seul cas possible avant ce lot — les deux coïncident, donc rien
+ne change pour ce qui est déjà en production.
+
+### Rollback
+
+- **Plugin** : `scripts/rollback-verygames.sh --latest` (restaure
+  `rpgquest-20261009T171623Z-predeploy.jar`), puis redémarrer. La migration V30 **reste** en base :
+  elle est additive, donc l'ancien code l'ignore. Si une restauration de base s'avérait nécessaire,
+  `data-20261009T163556Z-pre-v30.db` est le dernier état V29 connu.
+- **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.

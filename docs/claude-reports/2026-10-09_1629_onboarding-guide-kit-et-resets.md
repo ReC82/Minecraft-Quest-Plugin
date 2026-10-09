@@ -3,7 +3,7 @@
 ## Informations
 
 * Date : 2026-10-09
-* Heure : 17:00 (heure locale, CEST)
+* Heure : 16:29 (heure locale, CEST)
 * Sujet : #235 — onboarding du Guide : reset cohérent, démarrage de quête explicite, progression
   des paliers de kit compréhensible
 * Statut : DONE (validation manuelle en jeu restante — TC-273)
@@ -210,7 +210,7 @@ démarrage : un serveur déjà déployé reçoit les deux nouvelles clés sans a
 * `src/test/java/com/lodygames/rpgquest/player/KitProgressTextTest.java`
 * `src/test/java/com/lodygames/rpgquest/player/KitProgressServiceTest.java`
 * `control-panel/src/test/java/com/lodygames/rpgquest/panel/web/PlayerResetScopesTest.java`
-* `docs/claude-reports/2026-10-09_1700_onboarding-guide-kit-et-resets.md` (ce rapport)
+* `docs/claude-reports/2026-10-09_1629_onboarding-guide-kit-et-resets.md` (ce rapport)
 
 ## Fichiers modifiés
 

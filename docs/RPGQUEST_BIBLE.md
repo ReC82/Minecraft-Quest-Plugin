@@ -1565,6 +1565,90 @@ Publier copie le fichier **tel quel** ; le transfert ne passe jamais par `MiniYa
 pas reformater un scalaire replié au passage. La dette connue sur ce point (`guard.yml`) appartient à
 l'**éditeur guidé**, qui réécrit le YAML — pas au transfert.
 
+#### Voir les différences, et non seulement les détecter
+
+Les empreintes disent **qu'il** y a un écart, jamais **lequel**. `PublishDiff` affiche une
+comparaison ligne à ligne, avec les numéros de ligne des deux côtés.
+
+**Sens de lecture, fixé et testé** : DEV est l'*avant*, la source l'*après*. Une ligne `+` est ce que
+la publication **ajouterait**, une `-` ce qu'elle **retirerait**. C'est la seule question posée devant
+ce bouton — et une inversion ferait dire à l'écran l'exact contraire de ce qui va se passer, sans
+qu'aucun autre test ne s'en aperçoive.
+
+> **Pourquoi pas `content.TextDiff`.** Celui-là compare par préfixe et suffixe communs : parfait pour
+> l'aperçu d'une édition unique, mais devant deux modifications éloignées il marque *tout le bloc
+> central* comme retiré puis réajouté. Sur un YAML réel, quarante lignes rouges et quarante vertes là
+> où deux ont changé — donc une vue qu'on n'ose plus lire. `PublishDiff` utilise la plus longue
+> sous-séquence commune, réduit au contexte, et élide explicitement les blocs inchangés.
+
+**Seules les fins de ligne sont normalisées.** Aucun reformatage du YAML : le diff doit refléter les
+octets réellement transférés, sinon il décrirait un fichier qui n'existe pas. Deux fichiers qui ne
+diffèrent que par CRLF sont donc déclarés identiques, **en le disant**.
+
+Bornes : 256 Kio et 4000 lignes pour comparer, 400 lignes rendues — et les compteurs restent ceux du
+diff **complet**, pour ne pas mentir sur l'ampleur du changement.
+
+La comparaison exige une action dédiée (`content.dev.read`), parce que le relevé d'état ne transporte
+que des empreintes. Faire voyager tous les fichiers dans ce relevé serait disproportionné pour une
+information qu'on ne regarde qu'au moment de décider.
+
+#### Conflit : aucun remplacement aveugle
+
+Le bouton de publication **n'apparaît pas** tant que la version DEV **courante** n'a pas été
+consultée. Avoir regardé une version antérieure ne compte pas : c'est justement ce qui a changé. Une
+fois la différence vue, le bouton s'appelle **« Écraser la version DEV »** et annonce ce qui sera
+perdu.
+
+C'est la traduction d'une exigence du ticket en règle vérifiable : *consentement éclairé* plutôt que
+case à cocher de plus.
+
+#### `/content/pending` : ce qui demande une décision
+
+Une liste, pas un compteur. « 7 ressources non synchronisées » obligerait à ouvrir sept fiches pour
+savoir lesquelles.
+
+Tri **problèmes d'abord** : conflit, puis publié-non-chargé, puis le reste. Filtres par famille et
+par état, et recherche — en **liens GET**, donc l'URL reste partageable et la page ne contient aucun
+JavaScript (la CSP du panel interdit le script inline).
+
+#### La publication groupée n'est pas une opération globale
+
+Chaque case cochée produit une action `content.publish` **individuelle**, qui repasse par la
+validation du catalogue puis par l'enrichissement côté serveur — donc par ses propres
+`expected_source_sha` et `expected_dev_sha`, sa propre sauvegarde, son propre rechargement et sa
+propre vérification du runtime. **Aucune protection n'est contournée ni mutualisée.**
+
+| Règle | Comment elle tient |
+|---|---|
+| pas de « publier tout » | chaque ressource est cochée explicitement |
+| un conflit n'entre jamais dans un lot | il exige d'avoir vu la différence, ce qui se fait sur la fiche |
+| une ressource jamais publiée deux fois | la case porte la clé de la ressource comme **nom** de champ, et un formulaire n'a qu'une valeur par nom |
+| succès partiel | une ressource refusée est **nommée** avec son motif, les autres partent |
+
+> **Pourquoi pas de retour arrière global sur échec partiel.** Chaque ressource a sa propre
+> sauvegarde et son propre rechargement. Annuler l'ensemble parce qu'une a échoué défairait des
+> publications qui, elles, ont réussi et ont été confirmées — ce serait plus dangereux que de ne
+> rien annuler.
+
+« Dernières publications » montre l'issue **réelle** de chacune : `○` en attente, `✓` réussie,
+`✗` refusée avec son motif. Jamais un « publication terminée » global : une demande est asynchrone,
+et l'annoncer réussie au moment de la soumission serait exactement le raccourci interdit plus haut.
+
+#### Le relevé en retard, et comment l'écran reste honnête
+
+Une publication est asynchrone. Le relevé d'état du panel, qui date d'avant, continuait donc
+d'afficher « Source uniquement » juste après une publication **réussie** — ce qui ressemble à un
+échec.
+
+`PublishState.reconciled` fait alors confiance à l'opération, parce qu'elle a fait la vérification
+elle-même : écrit, rechargé, **relu le runtime**. C'est une preuve plus fraîche *et* plus directe
+qu'un relevé antérieur.
+
+**La règle ne bouge pas** : « Synchronisé » n'est accordé que si l'opération a confirmé le runtime
+*et* que l'empreinte qu'elle a laissée sur DEV correspond encore à la source d'aujourd'hui. Si la
+source a bougé depuis, on ne réconcilie pas. La fiche affiche « Actualisation en cours » pour dire
+d'où vient l'état.
+
 #### Ce que la publication n'est pas
 
 Ni un commit, ni une fusion, ni une construction du JAR, ni une release. Une copie contrôlée d'un

@@ -314,9 +314,34 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   pas** : écrire la source et changer ce qui tourne sur DEV n'ont pas la même portée.
   **Dialogues** : la publication copie le fichier *tel quel* et ne passe jamais par `MiniYaml`, donc
   elle ne peut pas normaliser un scalaire replié ; cette dette appartient à l'éditeur guidé.
-  Limites : pas de page « Changements en attente » (sélection multiple), pas d'affichage de diff
-  ligne à ligne dans la fiche, et les familles PNJ/mobs/objets/recettes ne passent pas par ce moteur
-  (voir l'audit ci-dessus).
+  **Voir les différences avant de publier** *(lot « diff + changements en attente »)* — la fiche
+  affiche un vrai **diff ligne à ligne** entre le fichier DEV et la source : lignes ajoutées,
+  retirées, numérotées des deux côtés, trois lignes de contexte, les blocs identiques réduits à un
+  repère explicite. Le YAML est **échappé** (jamais interprété comme du HTML), seules les fins de
+  ligne sont normalisées — **aucun reformatage** avant comparaison, sinon le diff décrirait un
+  fichier qui n'existe pas. Plafonds explicites (4 000 lignes, 256 Kio, 400 lignes rendues) avec un
+  message propre au lieu d'une page qui s'effondre, et **aucun chemin du système de fichiers** n'est
+  affiché. Le contenu DEV est lu par une action **en lecture seule** (`content.dev.read`).
+  **En conflit, le bouton de publication n'existe qu'après avoir regardé la version DEV courante** :
+  avoir consulté une version antérieure ne compte pas, puisque c'est précisément ce qui a changé.
+  **Page « Changements en attente »** (`/content/pending`) — la liste, pas un compteur : chaque
+  ressource non synchronisée des trois familles avec sa famille, son nom, son identifiant, son état,
+  les deux empreintes, le chargement par le moteur et la date du dernier relevé. Problèmes d'abord
+  (conflit, puis publié-non-chargé). Filtres par famille et par état, recherche, le tout en liens
+  `GET` — **aucun JavaScript**, la politique CSP du panel interdisant le script en ligne.
+  **La publication groupée est l'orchestration de publications individuelles**, jamais un chemin
+  parallèle : chaque ressource cochée repasse par la validation du catalogue, la relecture de la
+  source et la revérification d'empreinte. **Aucun bouton « Publier tout »**, un **conflit n'est
+  jamais cochable**, un nom de champ **unique par ressource** (`sel_<famille>/<identifiant>`) rend
+  un doublon impossible dans un même lot, et l'échec d'une ressource **n'annule pas** les autres
+  (succès partiel assumé et affiché ressource par ressource).
+  **Fraîcheur de l'affichage** : si le relevé DEV est antérieur à une publication qui a **confirmé
+  le runtime**, c'est le compte rendu de la publication qui fait foi — il a relu le moteur, le relevé
+  non. Un bandeau « Actualisation en cours » le dit. La règle du ticket tient : « Synchronisé » exige
+  toujours `runtimeConfirmed = true` **et** une empreinte DEV égale à celle de la source du moment.
+  Limites : les familles PNJ/mobs/objets/recettes ne passent pas par ce moteur (voir l'audit
+  ci-dessus) ; et une ressource **supprimée de la source** ne peut plus être retirée de DEV depuis
+  sa fiche (la fiche disparaît avec la source) — le retrait doit précéder la suppression.
 
 - **Emplacements de construction** *(issue #213, première livraison)* — socle du futur système de
   bâtiments. Un emplacement est un **point d'ancrage nommé** dans un monde : identité stable

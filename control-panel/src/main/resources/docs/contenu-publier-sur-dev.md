@@ -77,6 +77,109 @@ Ce que le serveur fait, dans cet ordre :
 
 ---
 
+## Voir les différences
+
+Quand une ressource est **Différente** ou en **Conflit**, le bouton **« Voir les différences »**
+affiche la comparaison ligne à ligne entre le fichier du serveur et votre source.
+
+Sens de lecture, et c'est le seul qui compte devant ce bouton :
+
+| Signe | Ce que ça veut dire |
+|---|---|
+| `+` | ce que la publication **ajouterait** (vient de votre source) |
+| `-` | ce que la publication **retirerait** (est actuellement sur DEV) |
+| `⋯` | des lignes identiques ont été élidées |
+
+Les deux colonnes de chiffres sont les numéros de ligne, côté DEV puis côté source : une colonne
+reste vide quand la ligne n'existe pas de ce côté.
+
+> [!NOTE]
+> La comparaison **lit le fichier sur le serveur**, ce qui demande un aller-retour. C'est pourquoi
+> c'est un bouton et non un affichage automatique : le relevé d'état ne transporte que des
+> empreintes — assez pour *détecter* un écart, pas pour le *montrer*.
+
+> [!TIP]
+> Deux fichiers qui ne diffèrent que par leurs **fins de ligne** sont déclarés identiques, et la
+> page le dit. Aucune autre normalisation n'est faite : l'indentation et les espaces en fin de ligne
+> comptent, parce que le diff doit refléter les octets réellement transférés.
+
+Au-delà de 256 Kio ou 4000 lignes, la comparaison est refusée avec un message clair — les empreintes
+restent comparables. Un diff très long est tronqué à 400 lignes affichées, mais les compteurs
+annoncent l'ampleur réelle.
+
+### En cas de conflit : pas de remplacement aveugle
+
+Le bouton **Publier n'apparaît pas** tant que vous n'avez pas consulté la version DEV **courante**.
+Avoir regardé une version antérieure ne compte pas — c'est précisément ce qui a changé.
+
+Une fois la différence consultée, le bouton apparaît sous le nom **« Écraser la version DEV »**, et
+la page annonce que la modification faite hors du panel sera perdue (une sauvegarde en est prise).
+
+---
+
+## Changements en attente
+
+**Contenu → Changements en attente** liste, en une page, **toutes** les quêtes, stories et dialogues
+qui ne sont pas synchronisées.
+
+Pour chacune : type, nom, identifiant, état, empreinte source, empreinte DEV, chargée ou non,
+dernière vérification, et un lien vers sa fiche.
+
+Les **problèmes d'abord** : conflits, puis « publié non chargé », puis le reste.
+
+### Filtrer
+
+Par famille (Quêtes / Dialogues / Stories), par état, et par recherche d'identifiant ou de nom.
+Les filtres sont des **liens** : l'URL obtenue est partageable telle quelle.
+
+### Publier plusieurs ressources
+
+Cochez celles que vous voulez publier, puis **« Publier la sélection »**.
+
+> [!IMPORTANT]
+> **Il n'y a volontairement aucun bouton « publier tout ».** Chaque ressource doit être cochée.
+>
+> Et une publication groupée n'est **rien d'autre** que plusieurs publications individuelles :
+> chacune garde ses deux empreintes, sa validation, sa sauvegarde, son rechargement et sa
+> vérification du runtime. Aucune protection n'est contournée.
+
+> [!WARNING]
+> Une ressource en **Conflit** n'est pas sélectionnable ici. Ouvrez sa fiche pour voir les
+> différences d'abord : c'est la seule façon de ne pas écraser à l'aveugle le travail de quelqu'un
+> d'autre.
+
+**Succès partiel** : si une ressource est refusée, les autres partent quand même, et le message
+nomme celle qui a échoué avec son motif. Chaque ressource a sa propre sauvegarde — annuler tout le
+lot parce qu'une a échoué serait plus dangereux que de ne rien annuler.
+
+La section **« Dernières publications »** montre l'issue réelle de chacune :
+
+| Marque | Sens |
+|---|---|
+| `○` | demande partie, **pas encore traitée** par le serveur |
+| `✓` | réussie — et « Synchronisé » si le moteur l'a confirmée |
+| `✗` | refusée, avec son motif |
+
+---
+
+## « Actualisation en cours »
+
+Une publication est asynchrone : elle part, le serveur l'exécute, et le relevé d'état du panel — qui
+date d'avant — peut encore afficher l'ancienne situation.
+
+Quand c'est le cas, la fiche l'indique et **prend l'état du compte rendu de la publication**, qui est
+une preuve plus fraîche *et* plus directe : c'est le serveur lui-même qui a écrit, rechargé et relu
+le runtime.
+
+> [!NOTE]
+> La règle ne bouge pas : **« Synchronisé » n'est affiché que si la publication a confirmé le
+> runtime**, et seulement si l'empreinte qu'elle a laissée sur DEV correspond encore à votre source.
+> Si vous avez modifié la source depuis, l'état reste « Différent ».
+
+Cliquer **« État DEV »** consolide l'affichage.
+
+---
+
 ## Les refus, et pourquoi ils sont là
 
 ### « Le fichier DEV a changé depuis votre dernière analyse »

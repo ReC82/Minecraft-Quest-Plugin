@@ -4133,6 +4133,7 @@ le résumé de récompenses de TC-014).
 | TC-269 | Annuler la création d'un emplacement, et retour du panel sur sa page #227 (PENDING) | | | |
 | TC-270 | Poser la hutte de test sur un emplacement, deux orientations, et annuler #213 (PENDING) | | | |
 | TC-271 | Publier une quête sur DEV depuis PlugAdmin, sans build ni redémarrage #47 (PENDING) | | | |
+| TC-272 | Diff source↔DEV, page « Changements en attente » et publication groupée #47 (PENDING) | | | |
 
 ---
 
@@ -4740,3 +4741,108 @@ le résumé de récompenses de TC-014).
 -   Une publication concurrente est **refusée**, jamais appliquée en écrasant.
 -   Un Éditeur de contenu voit l'état sans pouvoir publier.
 -   Toutes les actions reviennent **sur la page Quêtes**.
+
+---
+
+### TC-272 — Diff source↔DEV, « Changements en attente » et publication groupée (issue #47, PENDING MANUAL VALIDATION)
+
+-   **But :** vérifier ce qu'aucun test automatisé ne peut établir — que la comparaison est
+    **lisible**, que la page d'ensemble est **utilisable**, et que tout cela tient **sur un
+    téléphone**.
+-   **Durée :** environ 8 minutes.
+-   **Pré-requis :** JAR de ce lot déployé **et serveur redémarré une fois** (la lecture ciblée d'un
+    fichier DEV est une nouvelle action côté plugin), Control Panel redéployé, compte `OWNER` ou
+    `ADMIN`.
+-   ✅ Ce TC ne touche ni bâtiment, ni PNJ, ni monde.
+-   ⚠️ **Faites-le au moins une fois sur téléphone** : c'est le seul point du lot qui n'a aucune
+    couverture automatique.
+
+#### 1. Le diff, sur une ressource réellement différente
+
+1.  PlugAdmin → **Quêtes** → **Rafraîchir** puis **« État DEV »**.
+2.  Prenez une quête **Synchronisée**, et modifiez-la légèrement dans l'éditeur guidé (la
+    description suffit) → **Enregistrer**. Ne publiez pas.
+3.  **Rafraîchir** → **« État DEV »**. Attendu : badge **« Différent »**, et deux boutons :
+    **« Voir les différences »** et **« Republier sur DEV »**.
+4.  Cliquer **« Voir les différences »**, attendre le résultat, puis **rafraîchir la page**.
+5.  Attendu dans le bloc **Différences** :
+    -   un résumé chiffré (« 1 ligne(s) ajoutée(s), 1 retirée(s) ») ;
+    -   une ligne **`-`** avec l'ancien texte, une ligne **`+`** avec le nouveau ;
+    -   des **numéros de ligne** en tête (DEV puis source) ;
+    -   du **contexte** autour du changement.
+6.  **Vérifier le sens de lecture** : le `+` doit porter **votre** modification (la source), le `-`
+    l'ancien texte (ce qui est encore sur DEV). Si c'est inversé, **arrêtez et signalez-le** : tout
+    le reste en découle.
+7.  Vérifier qu'**aucun chemin de fichier** n'apparaît dans le bloc.
+
+#### 2. Accents et balisage
+
+8.  Mettez dans la description un accent et des chevrons, par exemple
+    `Sécuriser <les> environs ☃` → **Enregistrer** → **Voir les différences**.
+9.  Attendu : le texte s'affiche **tel quel**, chevrons compris, et la page n'est pas cassée. Les
+    `<les>` doivent apparaître **comme du texte**, pas disparaître.
+
+#### 3. Changements en attente
+
+10. **Contenu → Changements en attente**.
+11. Attendu : la quête modifiée y figure, avec son type, son nom, son état **Différent**, les deux
+    empreintes courtes, « chargée : oui », et un bouton **Ouvrir**.
+12. Vérifier que les ressources **Synchronisées n'y sont pas** : cette page ne liste que ce qui
+    demande une décision.
+13. Essayer les filtres **Quêtes / Dialogues / Stories**, puis les filtres d'état, puis la
+    **recherche** par un fragment d'identifiant. Attendu : l'URL change et reste **partageable**
+    (copier-coller dans un autre onglet doit redonner la même vue).
+
+#### 4. Publication groupée
+
+14. Modifier une **deuxième** ressource (une story ou un dialogue) → **Enregistrer**.
+15. **Changements en attente** → **« État DEV »** pour rafraîchir → les deux apparaissent.
+16. **Cocher les deux**, puis **« Publier la sélection »**.
+17. Attendu :
+    -   retour **sur la page Changements en attente** ;
+    -   un bandeau « 2 publication(s) demandée(s) » ;
+    -   une section **« Dernières publications »** listant **les deux ressources séparément**,
+        d'abord en **`○` en attente**.
+18. Attendre quelques secondes, **rafraîchir**, puis **« État DEV »**.
+19. Attendu : les deux passent en **`✓` Synchronisé**, et **disparaissent de la liste** (elles ne
+    demandent plus de décision).
+20. Vérifier qu'il n'existe **aucun bouton « publier tout »**.
+
+#### 5. « Actualisation en cours »
+
+21. Publier une ressource depuis sa fiche, puis **rafraîchir la page immédiatement**, sans cliquer
+    « État DEV ».
+22. Attendu : l'état affiche déjà **Synchronisé**, avec la mention **« Actualisation en cours »**
+    expliquant que l'état vient du compte rendu de la publication. Il ne doit **jamais** afficher
+    « Source uniquement » après une publication réussie.
+
+#### 6. Conflit : pas de remplacement aveugle
+
+23. Ce cas demande de modifier le fichier **sur le serveur** hors du panel. Si vous ne voulez pas le
+    faire, **sautez cette section** — elle est couverte automatiquement.
+24. Sinon : modifier à la main un fichier de quête déjà publié sur le serveur, puis dans le panel
+    **« État DEV »**.
+25. Attendu : badge **« Conflit »**, un bandeau rouge, **« Voir les différences »**, et **AUCUN**
+    bouton de publication.
+26. Cliquer **« Voir les différences »**, rafraîchir. Attendu : le bouton apparaît alors, nommé
+    **« Écraser la version DEV »**, avec la mention que la modification sera perdue.
+
+#### 7. Mobile — la partie qui n'a aucune couverture automatique
+
+27. Ouvrir **Changements en attente** sur téléphone. Attendu : le tableau **défile
+    horizontalement** sans casser la page, et les filtres passent à la ligne.
+28. Ouvrir une fiche et déplier un **diff** sur téléphone. Attendu : bloc monospace à défilement
+    horizontal, hauteur limitée (il ne doit pas repousser tout le reste hors de l'écran).
+29. Vérifier que les boutons restent atteignables au pouce.
+
+#### Critères de réussite
+
+-   Le diff est **lisible**, avec numéros de ligne et contexte, et le `+` porte bien la source.
+-   Accents et chevrons s'affichent tels quels, sans casser la page.
+-   « Changements en attente » ne liste que ce qui demande une décision, et les filtres sont des
+    URL partageables.
+-   La publication groupée donne un résultat **par ressource**, jamais un succès global.
+-   Aucun bouton « publier tout ».
+-   Après une publication, l'état ne régresse **jamais** vers « Source uniquement ».
+-   En conflit, aucun bouton de publication avant d'avoir vu la différence.
+-   **Tout est utilisable sur téléphone.**

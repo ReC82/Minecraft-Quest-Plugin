@@ -429,6 +429,45 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   WorldEdit libre**, et deux permissions dédiées `BUILDING_PLACE` / `BUILDING_ROLLBACK` distinctes de
   l'édition de fiche. Limites : aucune génération IA, aucune analyse d'image, aucun import de
   schematic, aucun aperçu visuel en jeu, aucun versioning ni remplacement d'un bâtiment posé.
+- **Cycle de vie d'un bâtiment posé** *(issue #234)* — un emplacement occupé n'est plus une
+  impasse : on peut **libérer**, **réorienter**, **remplacer** et recommencer, sans recréer les
+  emplacements et sans détruire le terrain.
+  **La distinction centrale** : le *terrain d'origine* est conservé à part (`building_baselines`,
+  V30) et n'est jamais réécrit, alors que la sauvegarde de chaque opération sert à **compenser** un
+  échec en cours de route. Après hutte → tour → autre orientation, cette dernière ne contient plus
+  que le bâtiment précédent — « restaurer le terrain original » rend donc l'état d'avant le
+  **premier** bâtiment. Plusieurs fragments par emplacement, parce qu'une tour occupe plus de place
+  qu'une hutte : un fragment est capturé pour chaque emprise touchée pour la première fois, et
+  l'ordre des opérations garantit que la zone est vierge au moment de la capture. Le nom des
+  fichiers dit leur rôle (`origine_*`, `compens_*`, `backup_*`).
+  **Un emplacement est une intention, un placement est un fait** : changer `facing` ne déplace aucun
+  bloc. La fiche affiche les deux orientations et signale la divergence ; aucune mutation implicite
+  du monde.
+  **Réorienter ne tourne pas les blocs en place** : on repart du terrain d'origine et de la
+  définition (`terrain + définition + rotation → nouveau placement`), donc le résultat est identique
+  à une pose initiale dans cette orientation.
+  **Ordre, et il est testé sur la séquence réelle des appels** : revérifier + comparer le jeton de
+  l'aperçu → sauvegarder l'union des deux emprises → restaurer le terrain d'origine → capturer la
+  nouvelle zone → coller → **compenser** si le collage échoue (code `COMPENSATED`, distinct d'un
+  refus) → n'écrire la fiche qu'après. Libérer restaure **d'abord** : si la restauration échoue,
+  l'emplacement reste `OCCUPIED`, et il n'y a jamais de faux `EMPTY`. La baseline n'est pas
+  supprimée à la libération — l'emplacement doit pouvoir être rebâti puis libéré à nouveau.
+  **Version et empreinte** : un placement mémorise la version déclarée *et* l'empreinte SHA-256 du
+  fichier réellement collé. La fiche annonce « une version plus récente existe » et s'arrête là : le
+  bâtiment posé ne change jamais tout seul.
+  **Historique** (`building_placement_history`, V30) : qui, quoi, quand, quelle rotation, quel
+  résultat — **échecs compris**. Pas un système de versions, on n'y rejoue rien.
+  **Permissions** : `BUILDING_PLACE` pour *poser* (pose, réorientation, remplacement),
+  `BUILDING_ROLLBACK` pour *vider*. La ligne est le résultat, pas la dangerosité.
+  **Deuxième structure** : `test_watchtower_01`, **9 × 9 × 14**, produite par le même chemin que la
+  hutte. Trois niveaux, planchers percés, escalier en spirale dont chaque volée regarde une
+  direction différente, et quatre faces franchement distinctes (porte au nord, meurtrières à l'est,
+  guet au sud, face aveugle en moellon brut à l'ouest). **Quatre marches par volée** : deux
+  planchers sont séparés de quatre blocs et une marche ne fait gagner qu'un demi-bloc — avec trois,
+  la tour serait invisitable. Un test du plan l'a établi.
+  **Villages/villes** : préparés, pas commencés. Chaque emplacement reste indépendant ; un futur
+  `Settlement` n'aura qu'à référencer des identifiants, et **aucune migration n'a été créée « au cas
+  où »**.
 - **Le retour après une action agent est dérivé de la navigation** *(issue #227)* — la liste des
   chemins de retour acceptés par `/agents/action` était **écrite à la main** et ignorait
   `/buildings/sites` : les cinq actions de la page, **bouton Rafraîchir compris**, renvoyaient sur

@@ -4135,6 +4135,7 @@ le résumé de récompenses de TC-014).
 | TC-271 | Publier une quête sur DEV depuis PlugAdmin, sans build ni redémarrage #47 (PENDING) | | | |
 | TC-272 | Diff source↔DEV, page « Changements en attente » et publication groupée #47 (PENDING) | | | |
 | TC-273 | Onboarding nouveau joueur : reset cohérent, quête nommée, progression du kit #235 (PENDING) | | | |
+| TC-274 | Cycle de vie d'un bâtiment : libérer, réorienter, remplacer, tour de garde #234 (PENDING) | | | |
 
 ---
 
@@ -4931,3 +4932,114 @@ le résumé de récompenses de TC-014).
 
 -   Le palier 2 réellement obtenu (il faut terminer la quête) — c'est TC-257/#123.
 -   Les paliers 3 à 5, dont le contenu n'est pas décidé.
+
+### TC-274 — Cycle de vie d'un bâtiment posé : libérer, réorienter, remplacer (issue #234, PENDING MANUAL VALIDATION)
+
+-   **But :** constater qu'un emplacement occupé **n'est plus une impasse**, et que la tour de garde
+    est réellement visitable. Rien ici ne peut être établi sans un client : la correction d'un
+    collage, l'orientation d'un escalier et le fait de pouvoir monter se constatent avec ses jambes.
+-   **Durée :** environ 20 minutes.
+-   **Pré-requis :** JAR de ce lot déployé **et serveur redémarré une fois** (migration V30 +
+    quatre nouvelles actions agent), Control Panel redéployé, compte `OWNER` ou `ADMIN`, WorldEdit
+    actif.
+-   ⚠️ **Ces opérations écrivent des blocs réels.** Faites-les sur un emplacement de test, pas sur
+    une construction que vous tenez à garder.
+-   ✅ Le terrain d'origine est sauvegardé avant la première pose : chaque étape est réversible par
+    « Libérer l'emplacement ».
+
+#### 0. Préparer un emplacement de test
+
+1.  En jeu, avec la houe en fer : marquez un **nouvel** emplacement sur du terrain plat et dégagé,
+    loin de toute construction. Nommez-le dans l'enclume (par exemple « Essais 234 »).
+2.  PlugAdmin → **Bâtiments → Emplacements** → « Rafraîchir ». Ouvrez sa fiche.
+3.  La **bibliothèque** doit proposer **deux** bâtiments : « Hutte de test » (7 × 5 × 6) et
+    **« Tour de garde de test » (9 × 9 × 14)**.
+
+#### A. LIBÉRER — la priorité du lot
+
+1.  Posez la **Hutte de test** (aperçu, puis « Placer »).
+2.  En jeu : **capturez l'état avant** — faites une capture d'écran du terrain autour, de face.
+3.  Revenez sur la fiche. Dans « Bâtiment posé », vérifiez la ligne **« Terrain d'origine »** :
+    elle doit dire « terrain d'origine (1 sauvegarde) ».
+4.  Cliquez **« Restaurer le terrain et libérer »** (zone rouge, confirmation).
+5.  En jeu : **le terrain est revenu** à ce qu'il était. Comparez avec la capture.
+6.  Sur la fiche : l'emplacement est **vide**, et la bibliothèque est de nouveau proposée.
+7.  **Reposez la hutte sur le même emplacement** : cela doit marcher sans rien recréer.
+
+> **Ce qui serait un échec :** un emplacement annoncé vide avec une hutte encore debout, un terrain
+> « presque » revenu, ou l'obligation de recréer un emplacement.
+
+#### B. ROTATION — l'intention n'est pas le fait
+
+1.  Libérez l'emplacement, puis **reposez la hutte** en notant son orientation en jeu.
+2.  Sur la fiche, changez l'**orientation de l'emplacement** (« Corriger l'orientation ») vers une
+    autre direction.
+3.  En jeu : **la hutte n'a pas tourné**. C'est voulu.
+4.  Sur la fiche, deux lignes doivent apparaître l'une sous l'autre :
+    - `Orientation souhaitée du site : …`
+    - `Orientation du bâtiment posé : …°`
+    et un avertissement : « L'orientation de l'emplacement a changé après le placement. Le bâtiment
+    physique n'a pas été modifié. »
+5.  Dans « Réorienter ou remplacer » : laissez « Hutte de test », choisissez la **nouvelle**
+    orientation, cliquez **« Calculer l'aperçu »**.
+6.  L'aperçu doit montrer **l'ancienne et la nouvelle emprise**, et le recouvrement.
+7.  Cliquez **« Réorienter le bâtiment »**.
+8.  En jeu : la hutte est maintenant orientée comme l'emplacement. La **porte** doit regarder la
+    bonne direction.
+9.  Sur la fiche : l'avertissement de divergence a disparu.
+
+> **Ce qui serait un échec :** une hutte qui tourne toute seule à l'étape 2, un aperçu qui donne la
+> même emprise qu'avant, ou une porte qui regarde ailleurs après la réorientation.
+
+#### C. REMPLACEMENT — et la tour, vraiment visitable
+
+1.  Dans « Réorienter ou remplacer », choisissez **« Tour de garde de test »**, orientation
+    **NORTH**, puis **« Calculer l'aperçu »**.
+2.  L'aperçu doit annoncer une **emprise plus grande** (9 × 9 × 14) et un avertissement disant que
+    la nouvelle emprise sort de l'ancienne.
+3.  Cliquez **« Remplacer le bâtiment »**.
+4.  **En jeu, visitez la tour :**
+    - la **porte** est au nord, avec **deux torches** de part et d'autre à l'intérieur ;
+    - **entrez** : le rez-de-chaussée est vide et praticable ;
+    - **montez** l'escalier le long du mur **sud**, vers l'est — il doit se monter **sans sauter** ;
+    - au premier étage, l'escalier suivant est le long du mur **est**, vers le nord ;
+    - au deuxième, le long du mur **nord**, vers l'ouest ;
+    - vous débouchez sur la **terrasse à créneaux**. On ne doit pas pouvoir tomber en marchant droit.
+5.  **Faites le tour de la tour par l'extérieur** et vérifiez que les quatre faces sont
+    reconnaissables :
+    - **nord** : la porte et deux fenêtres ;
+    - **est** : une meurtrière par niveau ;
+    - **sud** : une large ouverture de guet, **au dernier niveau seulement** ;
+    - **ouest** : aveugle, en **moellon brut** là où les autres sont en pierre taillée.
+
+> **Ce qui serait un échec :** un escalier qu'il faut sauter pour monter, un plancher qui bloque la
+> tête au milieu d'une volée, une face impossible à distinguer d'une autre, ou des blocs de tour
+> restés en dehors de son emprise.
+
+#### D. MULTI-ESSAIS — le terrain d'origine ne dérive pas
+
+1.  Remplacez la tour par la **hutte** (aperçu, puis confirmer).
+2.  Remplacez la hutte par la **tour**, dans une **autre orientation**.
+3.  Réorientez la tour encore une fois.
+4.  Sur la fiche, cliquez **« Relever le journal »** : vous devez voir **toutes** les opérations,
+    de la plus récente à la plus ancienne, avec leur type, leur rotation et leur résultat.
+5.  Cliquez **« Restaurer le terrain et libérer »**.
+6.  **En jeu : le terrain doit être celui du tout début**, celui de la capture de l'étape A.2 — pas
+    « le terrain avec la tour », pas « le terrain avec la hutte ».
+
+> **C'est le test le plus important du lot.** Si le terrain restauré porte encore la trace d'un
+> bâtiment, la baseline a dérivé, et toute la chaîne d'expérimentation est fausse.
+
+#### E. Versions (facultatif, 2 minutes)
+
+1.  Sur le serveur, ouvrez `plugins/RPGQuest/buildings/test_hut_01.yml` et changez `version: 1` en
+    `version: 2`. Rechargez le contenu (ou redémarrez).
+2.  Sur la fiche d'un emplacement portant la hutte : un bandeau doit annoncer qu'« une version plus
+    récente existe », **sans que le bâtiment posé ait changé**.
+3.  Remettez `version: 1`.
+
+#### Ce qui n'est PAS couvert par ce TC
+
+-   La génération IA de bâtiment, l'import de schematic externe, l'éditeur de plan : hors périmètre.
+-   Les villages/villes : l'architecture les prépare (chaque emplacement reste indépendant), mais
+    aucun moteur de regroupement n'existe encore.

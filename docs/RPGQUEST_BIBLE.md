@@ -1137,6 +1137,8 @@ dans le monde**. Trois concepts, et leur séparation n'est pas cosmétique :
 | `BuildingSite` | un point d'ancrage nommé | base (`building_sites`, V28) |
 | `BuildingDefinition` | ce qu'on peut poser | **fichier** `plugins/RPGQuest/buildings/*.yml` |
 | `BuildingPlacement` | un bâtiment réellement posé | base (`building_placements`, V29) |
+| `BuildingBaseline` | le **terrain d'origine** d'un emplacement | base (`building_baselines`, **V30**) |
+| `BuildingHistoryEntry` | ce qui a été tenté, et le résultat | base (`building_placement_history`, **V30**) |
 
 **Pourquoi la définition est un fichier et le placement une table.** Une définition est du
 *contenu* : elle se relit, se compare entre deux versions, se corrige dans un éditeur et se
@@ -1200,6 +1202,133 @@ emplacement est justement la case libre au-dessus du bloc cliqué.
 **géométriquement vraie**. Pour la hutte, la porte est sur la paroi `z = 0`, qui regarde les `-Z`,
 donc le nord : d'où `front: NORTH`. Déclarer `SOUTH` sur la même géométrie aurait caché un demi-tour
 permanent dans le code de collage — exactement l'offset implicite que ce lot devait éviter.
+
+### Cycle de vie d'un bâtiment posé (issue #234)
+
+Un emplacement occupé **ne doit pas devenir une impasse** : il faut pouvoir essayer, restaurer,
+tourner, remplacer et recommencer, sans recréer les emplacements et sans détruire le terrain.
+
+#### La distinction centrale : baseline originale ≠ état d'avant la dernière opération
+
+Chaque opération prend une sauvegarde de ce qu'elle écrase, et cette sauvegarde sert à
+**compenser** un échec en cours de route. Mais après hutte → tour → autre orientation, elle ne
+contient plus le terrain d'origine : elle contient le bâtiment précédent.
+
+Le terrain d'origine est donc conservé **à part**, et n'est jamais réécrit tant que l'emplacement
+existe. « Restaurer le terrain original » rend l'état d'avant le **premier** bâtiment, quel que soit
+le nombre d'essais depuis.
+
+**Plusieurs fragments par emplacement**, et ce n'est pas une facilité : une tour occupe plus de place
+qu'une hutte, donc restaurer une baseline prise sur l'emprise de la hutte laisserait des blocs de
+tour *en dehors* — un terrain « presque d'origine », c'est-à-dire faux. Un fragment est capturé pour
+chaque emprise touchée pour la première fois, et l'ordre des opérations garantit que la zone est
+**vierge** au moment de la capture.
+
+Le nom des fichiers dit leur rôle, pour que le dossier des schematics reste relisible :
+`origine_*` = terrain d'origine à ne jamais supprimer · `compens_*` = compensation d'une
+transformation · `backup_*` = capture d'une pose dont l'origine est déjà conservée ailleurs.
+
+#### Un emplacement est une intention, un placement est un fait
+
+`facing: NORTH` sur un emplacement **ne signifie pas** que le bâtiment posé regarde le nord. Si le
+bâtiment a été posé `SOUTH` puis l'emplacement passé `NORTH`, la fiche affiche les **deux** lignes et
+avertit :
+
+> Orientation souhaitée du site : NORTH
+> Orientation du bâtiment posé : SOUTH
+> ⚠ L'orientation de l'emplacement a changé après le placement. Le bâtiment physique n'a pas été
+> modifié.
+
+**Aucune mutation implicite du monde.** Tourner une structure parce qu'un champ a changé serait
+exactement ce que ce principe interdit.
+
+#### Réorienter ≠ tourner les blocs en place
+
+La réorientation repart du **terrain d'origine** et de la **définition** :
+
+```
+terrain d'origine + BuildingDefinition + nouvelle rotation → nouveau placement
+```
+
+Stratégie déterministe : le résultat est identique à une pose initiale dans cette orientation. Faire
+tourner les blocs existants accumulerait les erreurs d'arrondi et les blocs orientés mal retournés,
+essai après essai.
+
+#### L'ordre des opérations est la garantie, et il est testé
+
+Réorienter et remplacer exécutent la **même séquence** — donc elle est écrite une seule fois :
+
+1.  revérifier, puis comparer le **jeton de l'aperçu** : si l'emplacement, le bâtiment posé ou la
+    définition visée ont changé depuis l'affichage, on refuse. Un aperçu n'est pas une réservation ;
+2.  **sauvegarder l'union** des deux emprises — c'est la compensation, et la prendre avant toute
+    mutation est ce qui rend l'échec rattrapable ;
+3.  **restaurer le terrain d'origine** : l'ancien bâtiment disparaît, et la zone redevient vierge ;
+4.  **capturer la baseline de la nouvelle emprise** si elle n'est pas déjà couverte ;
+5.  **coller** le nouveau bâtiment ;
+6.  si le collage échoue, **remettre la compensation** : le monde revient à l'ancien bâtiment, et
+    l'opération n'a simplement pas eu lieu (code `COMPENSATED`, distinct d'un refus) ;
+7.  n'écrire la fiche qu'**après** un collage réussi.
+
+Structurellement impossible avec cet ordre : un emplacement annoncé transformé avec un monde vide,
+ou une fiche qui dit « succès » alors que rien n'est posé.
+
+#### Libérer : jamais de faux EMPTY
+
+« Restaurer le terrain et libérer » restaure **d'abord**, libère **ensuite**. Si la restauration
+échoue, l'emplacement reste `OCCUPIED` et le placement actif est conservé. La baseline n'est **pas**
+supprimée : l'emplacement doit pouvoir être rebâti puis libéré à nouveau, et retrouver le *même*
+terrain d'origine.
+
+#### Version et empreinte : le bâtiment posé ne change jamais tout seul
+
+Un placement mémorise la **version déclarée** et l'**empreinte SHA-256 du fichier réellement collé**.
+La version peut être oubliée par qui édite le YAML ; le contenu ne peut pas mentir. La fiche annonce
+donc « une version plus récente existe » — et s'arrête là. Appliquer la nouvelle version se demande
+explicitement, par un remplacement.
+
+#### Permissions
+
+`BUILDING_PLACE` gouverne le fait de **poser** quelque chose (pose, réorientation, remplacement) ;
+`BUILDING_ROLLBACK` gouverne le fait de **vider** un emplacement. La ligne n'est pas la dangerosité
+mais le résultat : après les trois premières il y a toujours un bâtiment, après une libération il n'y
+en a plus.
+
+#### Historique
+
+`building_placement_history` répond à une seule question : « qu'est-ce qui a été posé ici, dans quel
+ordre, par qui, et est-ce que ça a marché ? ». Ce n'est pas un système de versions, on n'y rejoue
+rien. Les **échecs y figurent** : un journal qui ne garderait que les succès serait muet au moment
+exact où on le consulte.
+
+#### Villages et villes : préparés, pas commencés
+
+Chaque emplacement reste **indépendant**. Un futur `Settlement` / `ConstructionProject` n'aura qu'à
+référencer des identifiants d'emplacements — aucun regroupement n'est codé aujourd'hui, et **aucune
+migration n'a été créée « au cas où »**. Le jour où ce sera utile : une table de projet et une
+colonne `project_id` nullable sur `building_sites`, sans toucher au cycle de vie décrit ici.
+
+### Deuxième structure de test : la tour de garde (issue #234)
+
+`test_watchtower_01`, **9 × 9 × 14**, produite par le même chemin que la hutte
+(`Blueprint → SchematicWorkshop → SchematicGateway → écrivain Sponge V3`). Aucune seconde technique
+de génération, aucun fichier externe importé.
+
+Elle met en difficulté ce que la hutte ne testait pas : la hauteur (donc les limites verticales du
+monde deviennent réelles), trois niveaux avec planchers **percés**, un escalier en spirale dont
+chaque volée regarde une direction différente, des blocs orientés de trois familles (marches, porte,
+torches murales), et **quatre faces franchement distinctes** :
+
+| Face | Signature |
+|---|---|
+| nord (façade) | la porte, deux fenêtres, deux torches murales |
+| est | une meurtrière par niveau |
+| sud | une large ouverture de guet, au dernier niveau seulement |
+| ouest | aveugle, en moellon brut là où les autres sont en pierre taillée |
+
+**Quatre marches par volée**, et le compte est contraint par la géométrie du jeu : deux planchers
+sont séparés de quatre blocs, et une marche ne fait franchir qu'un demi-bloc de plus. Avec trois
+marches, la dernière culminerait à 3,5 quand le plancher s'atteint à 5,0 — infranchissable, et la
+tour serait invisitable. C'est un test du plan qui l'a établi.
 
 #### La rotation, mesurée et non supposée
 

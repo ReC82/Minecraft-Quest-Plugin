@@ -1,7 +1,8 @@
 ---
 title: Bibliothèque de bâtiments et pose
 category: Bâtiments
-tags: [batiment, bibliotheque, schematic, placement, pose, rotation, emprise, worldedit, rollback]
+tags: [batiment, bibliotheque, schematic, placement, pose, rotation, emprise, worldedit, rollback,
+       liberer, reorienter, remplacer, baseline, terrain, historique, tour, version]
 order: 2
 ---
 
@@ -13,8 +14,13 @@ est l'endroit où on le pose. Ce sont deux choses séparées, et c'est voulu : l
 être posé sur plusieurs emplacements.
 
 > [!NOTE]
-> Un seul bâtiment existe aujourd'hui : la **Hutte de test**. Elle n'a pas à être belle — elle sert
-> à vérifier visuellement l'orientation, les dimensions, l'ancre, la rotation et la hauteur.
+> **Deux bâtiments existent aujourd'hui**, et aucun n'a à être beau :
+>
+> - la **Hutte de test** (7 × 5 × 6) vérifie l'orientation, les dimensions, l'ancre et la rotation ;
+> - la **Tour de garde de test** (9 × 9 × 14) vérifie ce que la hutte ne testait pas : la hauteur,
+>   des planchers percés, un escalier intérieur en spirale, des blocs orientés, et **quatre faces
+>   franchement différentes** — porte et torches au nord, meurtrières à l'est, ouverture de guet au
+>   sud, face aveugle en moellon brut à l'ouest. On doit voir l'orientation d'un coup d'œil.
 
 ---
 
@@ -133,25 +139,103 @@ qu'un seul bâtiment par emplacement.
 
 ---
 
-## Annuler une pose
+## Un emplacement occupé n'est pas une impasse
 
-Fiche de l'emplacement occupé → **Annuler la pose** → cocher → **Restaurer la zone d'avant**.
+Quatre actions, et **une seule** laisse l'emplacement vide :
 
-La zone est remise **exactement** telle qu'elle était avant la pose, depuis la sauvegarde prise à ce
-moment-là. Puis l'emplacement redevient vide.
+| Action | Ce qu'elle fait | Ce qui reste après |
+|---|---|---|
+| **Calculer l'aperçu** | n'écrit **rien** — ni bloc, ni ligne en base | inchangé |
+| **Réorienter** | rend le terrain d'origine, puis recolle le **même** bâtiment dans une autre orientation | un bâtiment |
+| **Remplacer** | idem, avec un **autre** bâtiment | un bâtiment |
+| **Restaurer le terrain et libérer** | rend le terrain d'origine et libère l'emplacement | rien — et l'emplacement est **immédiatement réutilisable** |
+
+## L'orientation du site n'est pas celle du bâtiment
+
+Un emplacement est une **intention**, un bâtiment posé est un **fait**. Changer l'orientation d'un
+emplacement **ne déplace aucun bloc** — la fiche affiche alors les deux lignes et vous avertit :
+
+```
+Orientation souhaitée du site : NORTH
+Orientation du bâtiment posé  : 180°
+⚠ L'orientation de l'emplacement a changé après le placement.
+  Le bâtiment physique n'a pas été modifié.
+```
+
+Pour aligner les deux, utilisez **Réorienter**. Rien ne bouge avant votre confirmation.
+
+> [!NOTE]
+> **Réorienter ne fait pas tourner les blocs déjà posés.** Le terrain d'origine est rendu, puis le
+> bâtiment est recollé dans la nouvelle orientation. Le résultat est donc identique à une pose
+> initiale dans cette orientation — c'est ce qui le rend reproductible, essai après essai.
+
+## Le terrain d'origine, et pourquoi ce n'est pas « l'état d'avant »
+
+C'est la distinction la plus importante de cette page.
+
+- Chaque opération prend une **sauvegarde de compensation** : elle sert à remettre l'ancien état si
+  un collage échoue en cours de route.
+- Le **terrain d'origine** est conservé **à part**, et n'est jamais réécrit.
+
+Après *hutte → tour → autre orientation*, la sauvegarde de la dernière opération ne contient plus le
+terrain : elle contient le bâtiment précédent. « Restaurer le terrain et libérer » rend donc l'état
+d'avant le **premier** bâtiment, quel que soit le nombre d'essais depuis.
+
+Dans `plugins/RPGQuest/schematics/`, le nom dit le rôle :
+
+| Préfixe | Rôle | À supprimer ? |
+|---|---|---|
+| `origine_` | terrain d'origine d'un emplacement | **jamais** tant que l'emplacement existe |
+| `compens_` | compensation d'une transformation | après coup, sans risque |
+| `backup_` | capture d'une pose dont l'origine est déjà conservée ailleurs | après coup, sans risque |
+
+## Aperçu d'abord, confirmation ensuite
+
+Le bouton qui écrit dans le monde **n'existe pas** avant d'avoir calculé un aperçu. L'aperçu montre
+l'ancienne et la nouvelle emprise, leur recouvrement, et les blocs non-air déjà présents.
+
+Il porte aussi un **jeton**. Si l'emplacement, le bâtiment posé ou la définition visée changent
+entre l'aperçu et votre confirmation, l'opération est **refusée** — plutôt que d'appliquer une
+décision prise sur un état qui n'existe plus. Relancez l'aperçu et recommencez.
+
+## Si le collage échoue
+
+L'ancien bâtiment est **remis en place** et l'opération n'a simplement pas eu lieu. La fiche n'est
+écrite qu'après un collage réussi : il n'y a jamais d'emplacement annoncé transformé avec un monde
+vide.
+
+## Versions : le bâtiment posé ne change jamais tout seul
+
+Un placement mémorise la **version** de la définition et l'**empreinte** du fichier réellement collé.
+Si la définition change ensuite, la fiche l'annonce :
+
+> ⚠ Une version plus récente de « Hutte de test » existe dans la bibliothèque (v2).
+
+Et elle s'arrête là. Pour appliquer la nouvelle version, faites un **Remplacer** par le même
+bâtiment : c'est un geste explicite, jamais un effet de bord d'une édition de fichier.
+
+## Journal des opérations
+
+Bouton **Relever le journal** sur la fiche. Il répond à une seule question — « qu'est-ce qui a été
+posé ici, dans quel ordre, par qui, et est-ce que ça a marché ? ». Les **échecs y figurent** : un
+journal qui ne garderait que les succès serait muet au moment exact où on le consulte.
 
 > [!WARNING]
-> **Tout ce qui a été construit dans l'emprise *après* la pose sera également écrasé.** La
-> restauration repose un instantané ; elle ne fait pas la différence entre la hutte et ce que vous
-> avez ajouté autour depuis.
+> **Tout ce qui a été construit dans l'emprise *après* la pose sera également écrasé** par une
+> libération ou une transformation. La restauration repose un instantané ; elle ne fait pas la
+> différence entre le bâtiment et ce que vous avez ajouté autour depuis.
 
-### Quand le retour arrière est refusé
+### Quand une opération est refusée
 
-- **Aucune sauvegarde associée** au placement → refusé. Remettre de l'air dans l'emprise
-  détruirait le terrain d'origine : ce serait une destruction déguisée en annulation, pas un retour
-  arrière. Le bouton n'apparaît même pas.
-- **Fichier de sauvegarde introuvable** → refusé, pour la même raison.
-- Si la restauration échoue, l'emplacement **reste occupé** : la fiche ne mentira pas sur l'état du
+- **Aucune sauvegarde du terrain** → refusé. Remettre de l'air dans l'emprise détruirait le terrain
+  d'origine : ce serait une destruction déguisée en annulation. Le bouton n'apparaît même pas.
+- **Fichier de sauvegarde introuvable** → refusé, pour la même raison : mieux vaut un refus qu'une
+  restauration à moitié faite, qui ressemblerait à un succès.
+- **Réorienter vers l'orientation déjà en place** → refusé : réécrire des blocs pour rien n'a pas
+  de sens.
+- **Emprise hors des limites du monde**, ou **chevauchant un autre bâtiment posé** → refusé, et
+  l'aperçu le dit avant que vous ne confirmiez.
+- Si une restauration échoue, l'emplacement **reste occupé** : la fiche ne mentira pas sur l'état du
   monde.
 
 ---
@@ -162,7 +246,12 @@ moment-là. Puis l'emplacement redevient vide.
 |---|---|---|
 | **lecture** | Propriétaire, Administrateur, Builder, Testeur | voir la bibliothèque et les fiches |
 | **poser** | Propriétaire, Administrateur | écrire dans le monde |
-| **annuler** | Propriétaire, Administrateur | restaurer une zone |
+| **poser** | Propriétaire, Administrateur | poser, **réorienter** et **remplacer** |
+| **libérer** | Propriétaire, Administrateur | rendre le terrain d'origine et **vider** l'emplacement |
+
+La ligne entre les deux droits n'est pas la dangerosité mais le **résultat** : après une pose, une
+réorientation ou un remplacement, il y a toujours un bâtiment ; après une libération, il n'y en a
+plus.
 
 Poser et annuler sont **deux permissions distinctes**, et distinctes de l'édition de fiche :
 renommer un emplacement ne change rien dans le jeu, poser un bâtiment écrase des blocs réels, et

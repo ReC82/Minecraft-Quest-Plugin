@@ -2866,3 +2866,88 @@ Première étape à reprendre: TC-271 (~6 min, un navigateur, dont un passage su
 #47 reste OUVERTE : les familles PNJ/mobs/objets/recettes de son périmètre ne passent pas par ce
   moteur, et la décision de ne pas les y forcer mérite d'être validée par le propriétaire.
 ```
+
+```text
+Date: 2026-10-09 (matin — #47 lots A→E : diff réel, changements en attente, vérification réelle)
+Branche de départ: feat/47-content-publish @ c880a19 (= tête déployée du lot précédent)
+Branche de travail: feat/47-content-publish (même branche, suite directe du même ticket)
+Étape de départ: les cinq lots du prompt, dans l'ordre imposé — A diff réel (priorité 1), B page
+  « Changements en attente » + publication groupée, C fraîcheur de l'affichage, D vérification
+  réelle d'un dialogue, E vérification réelle d'une story. Interdiction explicite de toucher aux
+  bâtiments/#213/#234, WorldEdit, bornes/#156, mobs #229/#230, portails.
+Étapes terminées:
+  - LOT A — diff réel source ↔ DEV. Le diff est une fonction PURE (PublishDiff) : alignement par
+    plus longue sous-séquence commune, puis réduction aux lignes de contexte avec un repère de
+    saut EXPLICITE. Deux décisions qui comptent : (1) DEV est l'AVANT et la source l'APRÈS, parce
+    que la question posée à l'écran est « qu'est-ce que publier va changer sur le serveur » ; (2) on
+    normalise UNIQUEMENT les fins de ligne — reformater le YAML avant comparaison décrirait un
+    fichier qui n'existe pas. Plafonds explicites (4 000 lignes, 256 Kio, 400 lignes rendues) avec
+    un message propre. YAML échappé, numéros de ligne des deux côtés, aucun chemin filesystem.
+  - CONSENTEMENT ÉCLAIRÉ EN CONFLIT, et c'est plus fort qu'un avertissement : en conflit, le bouton
+    de publication n'existe QUE si la version DEV COURANTE a été consultée. Avoir regardé une
+    version antérieure ne compte pas — c'est précisément ce qui a changé. Le remplacement aveugle
+    n'est donc pas « déconseillé », il est INATTEIGNABLE.
+  - Nouvelle action content.dev.read, classée en LECTURE (CONTENT_READ), même liste blanche
+    PublishKind que la publication, texte plafonné. Aucun chemin ne vient du navigateur.
+  - LOT B — page /content/pending : la LISTE, pas un compteur. Problèmes d'abord (conflit, puis
+    publié-non-chargé), filtres famille/état et recherche en liens GET — aucun JavaScript, la CSP
+    du panel interdisant le script en ligne (contrainte déjà rencontrée, pas une découverte).
+  - LA PUBLICATION GROUPÉE N'EST PAS UN CHEMIN PARALLÈLE : chaque ressource cochée repasse par
+    AgentActionCatalog.validate PUIS par la relecture de la source et la revérification
+    d'empreinte, exactement comme une publication unitaire. Donc aucune protection contournée par
+    construction, et pas « parce qu'on y a pensé ». Pas de « Publier tout ». Un conflit n'est jamais
+    cochable. Une erreur sur une ressource NE ROLLBACK PAS les autres : succès partiel assumé et
+    affiché ressource par ressource.
+  - PIÈGE RÉEL ÉVITÉ : Http.parseUrlEncoded utilise map.put, donc des champs de MÊME nom
+    s'écrasent. D'où un nom de champ UNIQUE par ressource (sel_<famille>/<identifiant>) — ce qui
+    rend aussi impossible de publier deux fois la même ressource dans un lot : deux cases de même
+    nom n'existent pas.
+  - LOT C — fraîcheur : si le relevé DEV est antérieur à une publication qui a CONFIRMÉ le runtime,
+    c'est le compte rendu de la publication qui fait foi (il a relu le moteur ; le relevé non), et un
+    bandeau le dit. La règle du ticket TIENT : « Synchronisé » exige toujours runtimeConfirmed ET
+    une empreinte DEV égale à la source du moment — si la source a bougé depuis, on ne réconcilie
+    pas.
+  - LOTS D ET E — CYCLES COMPLETS SUR LE SERVEUR RÉEL, sur des ressources de test DÉDIÉES, via le
+    vrai panel et les vrais formulaires. Dialogue : publication (11 dialogues, runtimeConfirmed) →
+    modification → Différent → diff rendu → republication avec SAUVEGARDE → RESTORED → la zone de
+    retour arrière DISPARAÎT (plus rien à défaire) → WITHDRAWN (11 → 10) → source supprimée, moteur
+    confirme l'absence. Story : idem (2 → 1), et le bouton proposé après la création était bien
+    « Retirer de DEV » et non « Restaurer » — la ressource était neuve, il n'y avait pas de version
+    précédente. guard.yml N'A PAS été touché ; aucune Story réelle cassée ; le parser YAML n'a pas
+    été réécrit.
+  - UNE FAUSSE ALERTE TRANCHÉE AU LIEU D'ÊTRE RAPPORTÉE TELLE QUELLE : le badge de la story s'est
+    affiché « Source uniquement » là où « Différent » était attendu. C'était MON HARNAIS : il
+    cherchait le badge dans une fenêtre située après la première occurrence de l'identifiant, et
+    cette fenêtre tombait sur la fiche d'UNE AUTRE ressource (mesuré : 3 identifiants sur 6 sur
+    /dialogues). Cycle REJOUÉ avec un extracteur qui remonte depuis le formulaire de LA ressource :
+    badge « Différent ». Le produit disait vrai ; l'outil de mesure était faux.
+Branche finale: feat/47-content-publish (poussée, JAMAIS fusionnée)
+Build: ./gradlew clean build ABOUTIE cette fois, depuis un worktree propre, après ./gradlew --stop
+  (qui a rendu ~650 Mo : 1107 → 1749 Mo disponibles — c'est ce qui a fait la différence avec la
+  session précédente, interrompue pour manque de mémoire). 3334 tests, 0 échec, 38 ignorés
+  (plugin 2121, control-panel 1183, web-api 30). +145 tests pour ces lots : PublishDiffTest 20,
+  PendingChangesTest 20, ContentPendingPageTest 23, PublishStateTest +5, ContentPublishPageTest +10,
+  et la mise à jour des doubles d'actions agent.
+Déploiement: FAIT sur le DEV vers 10:10 UTC. Panel d'abord (vérifié par ce qu'il SERT : classes
+  panel/publish/*, /content/pending → 303, content.dev.read dans le catalogue servi), puis le JAR
+  (DEPLOY_EXIT=0, 2 147 202 o, SHA e7814da7…, backup rpgquest-20261009T101041Z-predeploy.jar), UN
+  SEUL redémarrage, 0 joueur. AUCUNE migration (user_version reste 29).
+Tests manuels en attente: TC-272 (nouveau, ~8 min) — diff à l'œil, page « Changements en attente »,
+  publication groupée et confort MOBILE, qui n'est pas vérifiable par requêtes HTTP. Plus TC-271,
+  TC-270, TC-269, TC-268, TC-267, TC-265, TC-266, TC-264, TC-257, TC-258..TC-263.
+Blocages: aucun. Limites assumées et documentées :
+  - une ressource SUPPRIMÉE DE LA SOURCE ne peut plus être retirée de DEV depuis sa fiche : la fiche
+    disparaît avec la source. Le retrait doit donc précéder la suppression. Pour les ressources de
+    test, le retrait a été fait par l'action content.publish.rollback prévue pour cela (rollback
+    sans sauvegarde = retrait), soumise au panel qui l'a validée normalement. C'est un MANQUE
+    D'ÉCRAN, pas un manque de moteur — candidat à un sous-ticket ;
+  - le diff est TEXTUEL (pas sémantique YAML) : c'est ce que le prompt jugeait suffisant, et un diff
+    sémantique masquerait un remaniement d'indentation qui, lui, peut casser le chargement ;
+  - les familles PNJ / mobs / boss / objets / recettes ne passent toujours pas par ce moteur, et
+    pour les raisons de l'audit du lot précédent, pas par manque de temps ;
+  - #47 reste OUVERTE : voir le rapport de session pour l'évaluation objective et les trois
+    sous-tickets proposés.
+Première étape à reprendre: TC-272 puis TC-271 (~14 min au total, un navigateur, idéalement un
+  téléphone pour le confort mobile). Ensuite, décider avec le propriétaire du sort des familles hors
+  périmètre — c'est la seule question qui empêche de clore #47.
+```

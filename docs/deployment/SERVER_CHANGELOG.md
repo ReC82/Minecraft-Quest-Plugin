@@ -6985,3 +6985,96 @@ L'**Éditeur de contenu** ne peut **pas** publier : son droit d'écrire la sourc
 - **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
 - **Une publication précise** se défait depuis la fiche (« Restaurer la version précédente » ou
   « Retirer de DEV »), sans toucher au reste.
+
+------------------------------------------------------------------------
+
+## 2026-10-09 — Diff source ↔ DEV, page « Changements en attente », publication groupée (#47)
+
+**Branche** : `feat/47-content-publish` (commits `af6a4b2`, `3e2017f`, `c880a19`)
+**Portée** : **panel ET plugin**. Le plugin gagne **une action en lecture seule** ; tout le reste
+est du panel.
+
+### À transférer
+
+1. **Panel** : `scripts/plugadmin/deploy.sh` — les classes `panel/publish/{PublishDiff,
+   PendingChanges}` et la route `/content/pending` sont nouvelles.
+2. **JAR du plugin** : nécessaire **uniquement** pour l'action `content.dev.read`. Sans lui, le
+   panel affiche la comparaison comme indisponible — il ne se casse pas.
+
+**Fait le 2026-10-09 vers 10:10 UTC** : panel d'abord, puis JAR (`DEPLOY_EXIT=0`, **2 147 202 o**,
+SHA-256 `e7814da7141cd8c87e4a98ce6251290802349f966e77cb4f4197eca444b653c7`, sauvegarde
+`rpgquest-20261009T101041Z-predeploy.jar`), **un seul redémarrage**, **0 joueur connecté**.
+Panel vérifié par ce qu'il **sert** : classes présentes dans le JAR déployé, `/content/pending`
+→ `303 → /login`, et `content.dev.read` dans le catalogue servi.
+
+### Ne PAS transférer/altérer
+
+- `data.db` — **aucune migration** dans ce lot (`user_version` reste **29**).
+- Les mondes, `plugins/Citizens/`, les fichiers de contenu déjà publiés.
+- `plugins/RPGQuest/content-backups/` : trace d'audit, hors des dossiers de contenu, jamais relue.
+
+### Redémarrage requis
+
+**Oui, un seul**, pour installer l'action `content.dev.read`. Le panel seul n'en demande pas.
+
+### Migration automatique
+
+Aucune.
+
+### Ce qui a été vérifié sur le serveur réel
+
+Deux cycles **complets** sur des ressources de test **dédiées**, via le vrai panel et les vrais
+formulaires — aucun contenu du propriétaire touché.
+
+**Dialogue `test_publish_dialogue_47`**
+
+| Étape | Résultat constaté |
+|---|---|
+| publication V1 | `PUBLISHED`, `created = true`, reload `APPLIED` **11 dialogues, 0 anomalie**, `runtimeConfirmed = true`, `devShaAfter == sourceSha` (`95849450b75d…`) |
+| source modifiée | état affiché → **Différent** |
+| comparaison | diff rendu : lignes ajoutées marquées, **numéros de ligne des deux côtés**, résumé « Différences (DEV → source) », **aucun chemin filesystem** dans la page |
+| republication | `PUBLISHED`, `created = false`, `95849450b75d…` → `c7dfcd91c54f…`, **sauvegarde prise** (`content-backups/20261009t102059529119421z/dialogues/…`) |
+| restauration | **`RESTORED`**, reload `APPLIED`, `c7dfcd91…` → `95849450…` |
+| après restauration | la zone de retour arrière **disparaît** — plus rien à défaire, donc aucun bouton qui mentirait |
+| retrait | **`WITHDRAWN`**, reload `APPLIED`, **11 → 10 dialogues**, `devShaAfter = ""` |
+| nettoyage | source supprimée, **le moteur ne la voit plus**, fiche absente de la liste |
+
+**Story `test_publish_story_47`** (ne référence qu'une quête existante ; aucune Story réelle
+touchée)
+
+| Étape | Résultat constaté |
+|---|---|
+| état initial | **Source uniquement** |
+| publication | `PUBLISHED`, `created = true`, reload `APPLIED` **2 stories**, `runtimeConfirmed = true` |
+| bouton proposé | **« Retirer de DEV »** — et non « Restaurer » : la ressource était neuve, il n'y a pas de version précédente |
+| source modifiée | état affiché → **Différent** (revérifié, voir ci-dessous) |
+| republication | `PUBLISHED`, `created = false`, sauvegarde prise, `602c56a9…` → `807273f8…` |
+| restauration | **`RESTORED`**, `807273f8…` → `602c56a9…` |
+| retrait | **`WITHDRAWN`**, **2 → 1 story**, `devShaAfter = ""` |
+| nettoyage | source supprimée, moteur et liste confirment l'absence |
+
+#### Une fausse alerte, et comment elle a été tranchée
+
+Lors du premier passage, le relevé du badge de la story a affiché « Source uniquement » là où
+« Différent » était attendu. Le **harnais de test** était en cause, pas le produit : il cherchait le
+badge dans une fenêtre de texte située après la première occurrence de l'identifiant, et cette
+fenêtre tombait sur la fiche d'**une autre** ressource (vérifié : sur `/dialogues`, 3 identifiants
+sur 6 renvoyaient la section d'un voisin). Le cycle a été **rejoué** avec un extracteur qui remonte
+depuis le formulaire de *la* ressource : badge **« Différent »**, et `expected_dev_sha` non vide dans
+le formulaire — ce que la republication confirmait déjà en prenant une sauvegarde.
+
+### Effet de bord à connaître
+
+`content.dev.read` **lit** un fichier de contenu de DEV et son texte traverse le journal d'actions.
+C'est **du contenu de jeu**, jamais une configuration ni un secret : la famille vient de la même
+liste blanche `PublishKind` que la publication, et le texte est plafonné. L'action est classée en
+**lecture** et exige `CONTENT_READ`.
+
+### Rollback
+
+- **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
+- **Plugin** : redéployer `rpgquest-20261009T101041Z-predeploy.jar`, puis redémarrer. Seule
+  conséquence : la comparaison redevient indisponible ; **publier et restaurer continuent de
+  fonctionner**, et aucun fichier déjà publié n'est affecté.
+- **Une publication précise** se défait depuis la fiche (« Restaurer la version précédente » ou
+  « Retirer de DEV »).

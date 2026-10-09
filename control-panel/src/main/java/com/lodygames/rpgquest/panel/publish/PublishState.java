@@ -185,4 +185,48 @@ public enum PublishState {
         // Identiques — mais le moteur doit l'avoir confirmé pour mériter « Synchronisé ».
         return runtimeLoaded ? SYNCED : NOT_LOADED;
     }
+
+    /**
+     * Réconcilie l'état lu dans un relevé avec une opération <strong>plus récente que lui</strong>
+     * (issue #47, lot C).
+     *
+     * <h2>Le problème concret</h2>
+     *
+     * <p>Une publication est asynchrone : elle part, le serveur l'exécute, et le relevé d'état du
+     * panel — qui date d'avant — continue d'afficher l'ancienne situation. L'administrateur voit
+     * donc « Source uniquement » juste après avoir publié avec succès, ce qui ressemble à un échec.</p>
+     *
+     * <h2>Pourquoi on peut faire confiance à l'opération</h2>
+     *
+     * <p>Parce qu'elle a fait elle-même la vérification : le serveur a écrit le fichier, rechargé la
+     * famille, <strong>relu le runtime</strong>, et renvoyé {@code runtimeConfirmed}. C'est une
+     * preuve plus fraîche <em>et</em> plus directe qu'un relevé antérieur.</p>
+     *
+     * <p><strong>La règle du ticket est préservée</strong> : « Synchronisé » n'est accordé que si
+     * l'opération a réellement confirmé le runtime <em>et</em> que l'empreinte qu'elle a laissée sur
+     * DEV correspond à la source d'aujourd'hui. Si la source a bougé depuis, on ne réconcilie pas —
+     * l'état redevient celui du relevé, qui n'est pas plus faux que le nôtre.</p>
+     *
+     * @param fromReading      l'état déduit du dernier relevé
+     * @param readingIsStale   le relevé est-il antérieur à la dernière opération ?
+     * @param lastOpOk         l'opération a-t-elle réussi ?
+     * @param lastOpConfirmed  a-t-elle confirmé le runtime ?
+     * @param lastOpDevSha     l'empreinte qu'elle a laissée sur DEV
+     * @param sourceSha        l'empreinte de la source aujourd'hui
+     */
+    public static PublishState reconciled(PublishState fromReading, boolean readingIsStale,
+                                          boolean lastOpOk, boolean lastOpConfirmed,
+                                          String lastOpDevSha, String sourceSha) {
+        if (!readingIsStale || !lastOpOk || !lastOpConfirmed) {
+            return fromReading;
+        }
+        String left = lastOpDevSha == null ? "" : lastOpDevSha;
+        String right = sourceSha == null ? "" : sourceSha;
+        if (left.isEmpty() || !left.equals(right)) {
+            // L'opération a confirmé un contenu qui n'est plus celui de la source : on ne peut rien
+            // affirmer de mieux que le relevé.
+            return fromReading;
+        }
+        return SYNCED;
+    }
 }

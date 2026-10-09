@@ -183,6 +183,58 @@ class PublishStateTest {
         assertEquals(labels.size(), new java.util.HashSet<>(labels).size(), labels.toString());
     }
 
+    // ---- Réconciliation d'un relevé en retard (lot C) -------------------------------------------
+
+    /**
+     * Un relevé antérieur à une publication confirmée ne doit pas faire mentir l'écran.
+     *
+     * <p>Sans cela, l'administrateur voit « Source uniquement » juste après avoir publié avec
+     * succès — ce qui ressemble à un échec alors que c'est seulement un relevé en retard.</p>
+     */
+    @Test
+    void aStaleReadingIsOverriddenByAConfirmedPublication() {
+        PublishState reconciled = PublishState.reconciled(PublishState.SOURCE_ONLY, true,
+                true, true, SHA_A, SHA_A);
+
+        assertEquals(PublishState.SYNCED, reconciled);
+    }
+
+    /** Un relevé à jour n'est jamais réécrit : c'est lui la référence. */
+    @Test
+    void aFreshReadingIsNeverOverridden() {
+        assertEquals(PublishState.DIFFERENT, PublishState.reconciled(PublishState.DIFFERENT, false,
+                true, true, SHA_A, SHA_A));
+    }
+
+    /**
+     * La règle du ticket tient : jamais « Synchronisé » sans {@code runtimeConfirmed}.
+     */
+    @Test
+    void anUnconfirmedOperationNeverProducesSynchronized() {
+        assertEquals(PublishState.SOURCE_ONLY, PublishState.reconciled(PublishState.SOURCE_ONLY,
+                true, true, false, SHA_A, SHA_A), "publiée mais runtime non confirmé");
+        assertEquals(PublishState.SOURCE_ONLY, PublishState.reconciled(PublishState.SOURCE_ONLY,
+                true, false, true, SHA_A, SHA_A), "opération échouée");
+    }
+
+    /**
+     * Si la source a bougé depuis la publication, on ne réconcilie pas.
+     *
+     * <p>L'opération a confirmé un contenu qui n'est plus celui de la source : affirmer
+     * « Synchronisé » serait précisément le mensonge que #47 supprime.</p>
+     */
+    @Test
+    void aSourceChangedSinceThePublicationIsNotReconciled() {
+        assertEquals(PublishState.DIFFERENT, PublishState.reconciled(PublishState.DIFFERENT, true,
+                true, true, SHA_A, SHA_B));
+    }
+
+    @Test
+    void anOperationWithoutADevHashIsNotTrusted() {
+        assertEquals(PublishState.SOURCE_ONLY, PublishState.reconciled(PublishState.SOURCE_ONLY,
+                true, true, true, "", ""), "un retrait ne prouve pas une synchronisation");
+    }
+
     // ---- L'index DEV ----------------------------------------------------------------------------
 
     @Test

@@ -5549,6 +5549,413 @@ public final class AgentPages {
                         row.completedAt() != null ? row.completedAt() : row.createdAt(), Instant.now()));
     }
 
+    // ================================================================================
+    //  Changements en attente (issue #47, lot B)
+    // ================================================================================
+
+    /**
+     * Construit la liste des ressources des trois familles fichier, avec leur état (issue #47).
+     *
+     * <p>Les deux sens sont parcourus : ce que porte la source, et ce que porte DEV. Une ressource
+     * présente seulement sur le serveur est donc listée elle aussi (« Hors source »), en lecture
+     * seule — la cacher laisserait croire qu'elle n'existe pas.</p>
+     */
+    public com.lodygames.rpgquest.panel.publish.PendingChanges pendingChanges(String agentId) {
+        var devIndex = devContentIndex(agentId);
+        List<com.lodygames.rpgquest.panel.publish.PendingChanges.Row> rows = new ArrayList<>();
+        boolean sourceKnown = sourceCatalog.available();
+
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (var qs : sourceCatalog.quests()) {
+            rows.add(pendingRow(devIndex, agentId, "quests", qs.slug(),
+                    qs.draft() == null ? "" : qs.draft().title,
+                    "rpgquest:" + qs.plainId(), sourceKnown));
+            seen.add("quests/" + qs.slug());
+        }
+        for (var ss : sourceCatalog.stories()) {
+            rows.add(pendingRow(devIndex, agentId, "stories", ss.slug(),
+                    ss.draft() == null ? "" : ss.draft().name,
+                    ss.plainId(), sourceKnown));
+            seen.add("stories/" + ss.slug());
+        }
+        for (var ds : sourceCatalog.dialogues()) {
+            rows.add(pendingRow(devIndex, agentId, "dialogues", ds.slug(), "",
+                    "rpgquest:" + ds.plainId(), sourceKnown));
+            seen.add("dialogues/" + ds.slug());
+        }
+        // Ce que DEV porte et que la source ignore.
+        if (devIndex.available()) {
+            for (String kind : com.lodygames.rpgquest.panel.publish.PendingChanges.KINDS) {
+                for (String slug : devIndex.devSlugs(kind)) {
+                    if (seen.add(kind + "/" + slug)) {
+                        rows.add(pendingRow(devIndex, agentId, kind, slug, "",
+                                "rpgquest:" + slug, sourceKnown));
+                    }
+                }
+            }
+        }
+        return com.lodygames.rpgquest.panel.publish.PendingChanges.from(rows);
+    }
+
+    private com.lodygames.rpgquest.panel.publish.PendingChanges.Row pendingRow(
+            com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex, String agentId,
+            String kind, String slug, String name, String declaredId, boolean sourceKnown) {
+        String sourceSha = sourceCatalog.sha(kind, slug).orElse("");
+        Optional<Map<String, Object>> last = lastPublishOf(agentId, kind, slug);
+        String lastDevSha = last.map(d -> str(d.get("devShaAfter"))).orElse("");
+        var readState = devIndex.stateOf(kind, slug, declaredId, sourceSha, sourceKnown,
+                lastDevSha);
+        var state = com.lodygames.rpgquest.panel.publish.PublishState.reconciled(readState,
+                readingIsStale(agentId, kind, slug),
+                last.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false),
+                last.map(d -> Boolean.TRUE.equals(d.get("runtimeConfirmed"))).orElse(false),
+                lastDevSha, sourceSha);
+        return new com.lodygames.rpgquest.panel.publish.PendingChanges.Row(kind, slug, declaredId,
+                name, state, sourceSha, devIndex.devSha(kind, slug),
+                devIndex.runtimeLoaded(kind, declaredId),
+                last.map(d -> str(d.get("verifiedAt"))).orElse(""));
+    }
+
+    /**
+     * Page {@code /content/pending} : tout ce qui demande une décision, et de quoi la prendre.
+     *
+     * <p><strong>Aucun bouton « Publier tout ».</strong> Chaque ressource doit être cochée
+     * explicitement : une publication groupée écrit plusieurs fichiers sur le serveur, et un bouton
+     * qui le ferait d'un clic sur un écran qu'on n'a pas lu serait exactement le geste qu'on
+     * regrette.</p>
+     */
+    public String contentPending(Session session, Map<String, String> q) {
+        Optional<AgentIdentity> agent = resolveAgent(q);
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.pageHeader("deploy", "Changements en attente",
+                "Les quêtes, dialogues et stories dont la source et le serveur DEV ne concordent "
+                        + "pas encore.", ""));
+        if (agent.isEmpty()) {
+            return sb.append(noAgent()).toString();
+        }
+        String agentId = agent.get().id();
+        boolean canPublish = perms.can(session.effective(), Permission.CONTENT_PUBLISH);
+
+        sb.append(agentPicker(agentId, "/content/pending", ""));
+        String bar = compactRefresh(session, agentId, "content.dev.state", "État DEV",
+                devContentIndex(agentId).available() ? "btn-outline-primary" : "btn-warning",
+                "/content/pending");
+        bar += compactRefresh(session, agentId, "quest.list", "Quêtes",
+                "btn-outline-secondary", "/content/pending");
+        bar += compactRefresh(session, agentId, "story.list", "Stories",
+                "btn-outline-secondary", "/content/pending");
+        bar += compactRefresh(session, agentId, "dialogue.list", "Dialogues",
+                "btn-outline-secondary", "/content/pending");
+        sb.append(listCatbar("Relevés", bar));
+
+        if (!devContentIndex(agentId).available()) {
+            sb.append(Ui.banner("warn", "L'état du contenu sur DEV n'est pas encore relevé : "
+                    + "sans lui, aucune comparaison n'est possible et toutes les ressources "
+                    + "apparaîtraient en « état inconnu ». Cliquer sur <strong>« État DEV »</strong>."));
+        }
+        if (!sourceCatalog.available()) {
+            sb.append(Ui.banner("warn", "Aucun espace de travail source configuré : le panel ne "
+                    + "peut pas comparer."));
+        }
+
+        // Compte rendu du dernier lot soumis, transmis par la redirection.
+        String batch = q.getOrDefault("batch", "");
+        if (!batch.isEmpty()) {
+            sb.append(Ui.banner(batch.contains("refusée") ? "warning" : "success",
+                    Http.esc(batch)));
+        }
+        sb.append(recentPublishOutcomes(agentId));
+
+        var all = pendingChanges(agentId);
+        String fKind = q.getOrDefault("kind", "");
+        String fState = q.getOrDefault("state", "");
+        String search = q.getOrDefault("qs", "");
+        var shown = all.filter(fKind, fState, search);
+
+        sb.append(pendingFilterBar(agentId, all, fKind, fState, search));
+
+        if (all.isEmpty()) {
+            sb.append(Ui.empty("check", "Tout est synchronisé : aucune ressource ne demande de "
+                    + "décision."));
+            return sb.toString();
+        }
+        if (shown.isEmpty()) {
+            sb.append(Ui.empty("search", "Aucune ressource ne correspond à ce filtre."));
+            return sb.toString();
+        }
+
+        if (all.attentionCount() > 0) {
+            sb.append(Ui.banner("warn", all.attentionCount() + " ressource(s) demandent une "
+                    + "attention particulière (conflit, ou présente sur DEV sans être chargée). "
+                    + "Elles ne peuvent pas être publiées en lot : ouvrez leur fiche pour voir les "
+                    + "différences d'abord."));
+        }
+
+        sb.append(pendingTable(session, agentId, shown, canPublish));
+        return sb.toString();
+    }
+
+    /**
+     * L'issue RÉELLE des dernières publications, ressource par ressource (issue #47).
+     *
+     * <p>C'est ce qui remplace un « publication terminée » global. Une demande de publication est
+     * asynchrone : elle part, puis le serveur la traite. Afficher un succès au moment de la
+     * soumission serait exactement le raccourci que ce ticket interdit. On montre donc l'état de
+     * chaque action : en attente, réussie, ou refusée avec son motif.</p>
+     */
+    private String recentPublishOutcomes(String agentId) {
+        List<AgentActionRow> rows = new ArrayList<>();
+        for (AgentActionRow row : store.recentActions(agentId, 60)) {
+            if ("content.publish".equals(row.type())
+                    || "content.publish.rollback".equals(row.type())) {
+                rows.add(row);
+            }
+        }
+        if (rows.isEmpty()) {
+            return "";
+        }
+        rows.sort(java.util.Comparator.comparing(AgentActionRow::createdAt).reversed());
+        List<AgentActionRow> shown = rows.subList(0, Math.min(10, rows.size()));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<details class=\"publish-outcomes\" open><summary class=\"publish-diff-sum\">")
+                .append("Dernières publications <span class=\"muted\">(")
+                .append(shown.size()).append(")</span></summary>");
+        sb.append("<ul class=\"outcome-list\">");
+        for (AgentActionRow row : shown) {
+            String slug = row.params().getOrDefault("id", "?");
+            String kind = row.params().getOrDefault("kind", "");
+            Optional<Map<String, Object>> details = detailsOf(row);
+            String code = details.map(d -> str(d.get("code"))).orElse("");
+            boolean ok = details.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false);
+            boolean confirmed = details.map(d -> Boolean.TRUE.equals(d.get("runtimeConfirmed")))
+                    .orElse(false);
+
+            String mark;
+            String tone;
+            String label;
+            if (row.resultStatus() == null || row.resultStatus().isBlank()) {
+                mark = "○";
+                tone = "muted";
+                label = "en attente";
+            } else if (ok && confirmed) {
+                mark = "✓";
+                tone = "di-add";
+                label = "Synchronisé" + (code.isEmpty() ? "" : " (" + code + ")");
+            } else if (ok) {
+                mark = "✓";
+                tone = "di-ctx";
+                label = code.isEmpty() ? "appliqué" : code;
+            } else {
+                mark = "✗";
+                tone = "di-del";
+                label = code.isEmpty() ? "refusé" : code;
+            }
+            sb.append("<li><span class=\"").append(tone).append("\">").append(mark).append(' ')
+                    .append(Http.esc(slug));
+            if (!kind.isEmpty()) {
+                sb.append(" <span class=\"muted\">(").append(Http.esc(kind)).append(")</span>");
+            }
+            sb.append(" — ").append(Http.esc(label)).append("</span>");
+            String message = details.map(d -> str(d.get("message"))).orElse("");
+            if (!ok && !message.isEmpty()) {
+                sb.append("<div class=\"field-help\">").append(Http.esc(message)).append("</div>");
+            }
+            sb.append("</li>");
+        }
+        sb.append("</ul>");
+        sb.append("<p class=\"field-help\">« ○ » = demande partie, pas encore traitée par le "
+                + "serveur. Rafraîchir « État DEV » pour consolider.</p>");
+        sb.append("</details>");
+        return sb.toString();
+    }
+
+    /** Filtres : des liens, donc partageables et sans JavaScript. */
+    private String pendingFilterBar(String agentId,
+                                    com.lodygames.rpgquest.panel.publish.PendingChanges all,
+                                    String fKind, String fState, String search) {
+        StringBuilder sb = new StringBuilder("<div class=\"filterbar\">");
+        sb.append("<div class=\"filterrow\">");
+        sb.append(pendingFilterLink(agentId, "", fState, search, fKind.isEmpty(),
+                "Tous", all.total()));
+        for (String kind : com.lodygames.rpgquest.panel.publish.PendingChanges.KINDS) {
+            long n = all.countOf(kind);
+            if (n > 0) {
+                sb.append(pendingFilterLink(agentId, kind, fState, search, kind.equals(fKind),
+                        switch (kind) {
+                            case "quests" -> "Quêtes";
+                            case "stories" -> "Stories";
+                            default -> "Dialogues";
+                        }, n));
+            }
+        }
+        sb.append("</div><div class=\"filterrow\">");
+        sb.append(pendingStateLink(agentId, fKind, "", search, fState.isEmpty(),
+                "Tous états", all.total()));
+        for (var state : new com.lodygames.rpgquest.panel.publish.PublishState[] {
+                com.lodygames.rpgquest.panel.publish.PublishState.CONFLICT,
+                com.lodygames.rpgquest.panel.publish.PublishState.NOT_LOADED,
+                com.lodygames.rpgquest.panel.publish.PublishState.DIFFERENT,
+                com.lodygames.rpgquest.panel.publish.PublishState.SOURCE_ONLY,
+                com.lodygames.rpgquest.panel.publish.PublishState.RUNTIME_ONLY,
+                com.lodygames.rpgquest.panel.publish.PublishState.UNKNOWN}) {
+            long n = all.countOf(state);
+            if (n > 0) {
+                sb.append(pendingStateLink(agentId, fKind,
+                        state.code().toLowerCase(java.util.Locale.ROOT), search,
+                        state.code().equalsIgnoreCase(fState), state.label(), n));
+            }
+        }
+        sb.append("</div>");
+        // Recherche : un GET, donc l'URL reste partageable et il n'y a pas une ligne de JS.
+        sb.append("<form method=\"get\" action=\"/content/pending\" class=\"filtersearch\">");
+        sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId))
+                .append("\">");
+        if (!fKind.isEmpty()) {
+            sb.append("<input type=\"hidden\" name=\"kind\" value=\"").append(Http.esc(fKind))
+                    .append("\">");
+        }
+        if (!fState.isEmpty()) {
+            sb.append("<input type=\"hidden\" name=\"state\" value=\"").append(Http.esc(fState))
+                    .append("\">");
+        }
+        sb.append("<input type=\"search\" name=\"qs\" placeholder=\"Chercher un identifiant…\" "
+                + "value=\"").append(Http.esc(search)).append("\">");
+        sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">")
+                .append(Icons.icon("search")).append("Chercher</button>");
+        if (!search.isEmpty()) {
+            sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"")
+                    .append(Http.esc(pendingUrl(agentId, fKind, fState, ""))).append("\">Effacer</a>");
+        }
+        sb.append("</form></div>");
+        return sb.toString();
+    }
+
+    private String pendingFilterLink(String agentId, String kind, String state, String search,
+                                     boolean active, String label, long count) {
+        return "<a class=\"btn btn-sm " + (active ? "btn-primary" : "btn-outline-secondary")
+                + "\" href=\"" + Http.esc(pendingUrl(agentId, kind, state, search)) + "\">"
+                + Http.esc(label) + " <span class=\"badge text-bg-light text-dark\">" + count
+                + "</span></a>";
+    }
+
+    private String pendingStateLink(String agentId, String kind, String state, String search,
+                                    boolean active, String label, long count) {
+        return pendingFilterLink(agentId, kind, state, search, active, label, count);
+    }
+
+    private static String pendingUrl(String agentId, String kind, String state, String search) {
+        StringBuilder sb = new StringBuilder("/content/pending?agent=")
+                .append(java.net.URLEncoder.encode(agentId, java.nio.charset.StandardCharsets.UTF_8));
+        if (kind != null && !kind.isEmpty()) {
+            sb.append("&kind=").append(java.net.URLEncoder.encode(kind,
+                    java.nio.charset.StandardCharsets.UTF_8));
+        }
+        if (state != null && !state.isEmpty()) {
+            sb.append("&state=").append(java.net.URLEncoder.encode(state,
+                    java.nio.charset.StandardCharsets.UTF_8));
+        }
+        if (search != null && !search.isEmpty()) {
+            sb.append("&qs=").append(java.net.URLEncoder.encode(search,
+                    java.nio.charset.StandardCharsets.UTF_8));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Le tableau, et le formulaire de publication groupée.
+     *
+     * <p>Chaque ligne porte <strong>ses propres empreintes</strong> en champs cachés : la
+     * publication groupée n'est que l'orchestration de publications individuelles, chacune avec les
+     * protections habituelles. Rien de global ne les contourne.</p>
+     *
+     * <p>Les noms de champs sont uniques par ligne ({@code sel_<famille>/<id>}) parce que le parseur
+     * de formulaire du panel écrase les valeurs répétées : un {@code name="sel"} multiple ne
+     * livrerait qu'une seule case cochée.</p>
+     */
+    private String pendingTable(Session session, String agentId,
+                                com.lodygames.rpgquest.panel.publish.PendingChanges shown,
+                                boolean canPublish) {
+        StringBuilder sb = new StringBuilder();
+        if (canPublish) {
+            sb.append("<form method=\"post\" action=\"/content/pending/publish\">");
+            sb.append("<input type=\"hidden\" name=\"_csrf\" value=\"")
+                    .append(Http.esc(session.csrfToken())).append("\">");
+            sb.append("<input type=\"hidden\" name=\"agent\" value=\"")
+                    .append(Http.esc(agentId)).append("\">");
+        }
+        sb.append("<div class=\"tablewrap\"><table class=\"table pending-table\">");
+        sb.append("<thead><tr>");
+        if (canPublish) {
+            sb.append("<th></th>");
+        }
+        sb.append("<th>Type</th><th>Ressource</th><th>État</th><th>Source</th><th>DEV</th>")
+                .append("<th>Chargée</th><th>Dernière vérif.</th><th></th></tr></thead><tbody>");
+
+        for (var row : shown.rows()) {
+            sb.append("<tr>");
+            if (canPublish) {
+                sb.append("<td>");
+                if (row.selectable()) {
+                    sb.append("<input type=\"checkbox\" name=\"sel_").append(Http.esc(row.key()))
+                            .append("\" value=\"1\" aria-label=\"Sélectionner ")
+                            .append(Http.esc(row.slug())).append("\">");
+                    sb.append("<input type=\"hidden\" name=\"src_").append(Http.esc(row.key()))
+                            .append("\" value=\"").append(Http.esc(row.sourceSha())).append("\">");
+                    sb.append("<input type=\"hidden\" name=\"dev_").append(Http.esc(row.key()))
+                            .append("\" value=\"").append(Http.esc(row.devSha())).append("\">");
+                } else {
+                    sb.append("<span class=\"muted\" title=\"Non publiable en lot\">—</span>");
+                }
+                sb.append("</td>");
+            }
+            sb.append("<td>").append(Http.esc(row.kindLabel())).append("</td>");
+            sb.append("<td><strong>").append(Http.esc(row.name())).append("</strong>")
+                    .append(Ui.id(row.slug())).append("</td>");
+            sb.append("<td><span class=\"badge text-bg-")
+                    .append(toneClass(row.state().tone())).append("\">")
+                    .append(Http.esc(row.state().label())).append("</span></td>");
+            sb.append("<td><code class=\"tid\">").append(Http.esc(row.shortSource()))
+                    .append("</code></td>");
+            sb.append("<td><code class=\"tid\">").append(Http.esc(row.shortDev()))
+                    .append("</code></td>");
+            sb.append("<td>").append(row.runtimeLoaded() ? "oui"
+                    : "<span class=\"muted\">non</span>").append("</td>");
+            sb.append("<td class=\"muted\">").append(row.verifiedAt().isEmpty() ? "—"
+                    : Http.esc(row.verifiedAt())).append("</td>");
+            sb.append("<td><a class=\"btn btn-sm btn-outline-secondary\" href=\"")
+                    .append(Http.esc(pendingFicheUrl(agentId, row.kind()))).append("\">Ouvrir</a></td>");
+            sb.append("</tr>");
+        }
+        sb.append("</tbody></table></div>");
+
+        if (canPublish) {
+            sb.append("<p class=\"field-help\">Cochez les ressources à publier. Chacune est "
+                    + "publiée <strong>individuellement</strong>, avec sa sauvegarde, son "
+                    + "rechargement et sa vérification du runtime : une erreur sur l'une "
+                    + "n'annule pas les autres. Il n'y a volontairement pas de bouton "
+                    + "« tout publier ».</p>");
+            sb.append(mutationConsent("content.publish", "", null));
+            sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" "
+                    + "type=\"submit\">").append(Icons.icon("deploy"))
+                    .append("Publier la sélection</button></div></form>");
+        } else {
+            sb.append("<p class=\"field-help\">Vous n'avez pas le droit de publier sur DEV : "
+                    + "cette page reste consultable.</p>");
+        }
+        return sb.toString();
+    }
+
+    private static String pendingFicheUrl(String agentId, String kind) {
+        String page = switch (kind) {
+            case "stories" -> "/stories";
+            case "dialogues" -> "/dialogues";
+            default -> "/quests";
+        };
+        return page + "?agent=" + java.net.URLEncoder.encode(agentId,
+                java.nio.charset.StandardCharsets.UTF_8);
+    }
+
     /**
      * Le bloc « Voir les différences » (issue #47).
      *
@@ -5669,8 +6076,15 @@ public final class AgentPages {
         String lastDevSha = lastPublish.map(d -> str(d.get("devShaAfter"))).orElse("");
         String backupPath = lastPublish.map(d -> str(d.get("backupPath"))).orElse("");
 
-        var state = devIndex.stateOf(kind, slug, declaredId, sourceSha,
+        var readState = devIndex.stateOf(kind, slug, declaredId, sourceSha,
                 sourceCatalog.available(), lastDevSha);
+        // Lot C : si le relevé est antérieur à une publication réussie qui a CONFIRMÉ le runtime,
+        // c'est la publication qui dit vrai — elle a relu le moteur, le relevé non.
+        boolean stale = readingIsStale(agentId, kind, slug);
+        var state = com.lodygames.rpgquest.panel.publish.PublishState.reconciled(readState, stale,
+                lastPublish.map(d -> Boolean.TRUE.equals(d.get("ok"))).orElse(false),
+                lastPublish.map(d -> Boolean.TRUE.equals(d.get("runtimeConfirmed"))).orElse(false),
+                lastDevSha, sourceSha);
         String devSha = devIndex.devSha(kind, slug);
 
         StringBuilder sb = new StringBuilder();
@@ -5698,6 +6112,14 @@ public final class AgentPages {
                             + Http.esc(str(lastPublish.get().get("code"))));
         }
         sb.append("</dl>");
+
+        if (stale) {
+            sb.append("<p class=\"field-help\">").append(Icons.icon("deploy"))
+                    .append("<strong>Actualisation en cours :</strong> le relevé affiché est "
+                            + "antérieur à la dernière publication. L'état ci-dessus vient du "
+                            + "compte rendu de cette publication, qui a relu le moteur. "
+                            + "« État DEV » consolidera l'affichage.</p>");
+        }
 
         if (!devIndex.available()) {
             sb.append("<p class=\"field-help\">Relevez l'état du serveur pour savoir où en est "
@@ -5853,6 +6275,52 @@ public final class AgentPages {
         return latestDetails(agentId, "content.dev.state")
                 .map(com.lodygames.rpgquest.panel.publish.DevContentIndex::from)
                 .orElseGet(com.lodygames.rpgquest.panel.publish.DevContentIndex::unavailable);
+    }
+
+    /**
+     * Quand le dernier relevé DEV a-t-il été <strong>terminé</strong> ? (issue #47, lot C)
+     *
+     * <p>Sert à savoir si l'état affiché est antérieur à une publication plus récente. Sans cette
+     * comparaison, l'administrateur voit « Source uniquement » juste après avoir publié avec
+     * succès — ce qui ressemble à un échec alors que c'est seulement un relevé en retard.</p>
+     */
+    private Optional<java.time.Instant> devReadingAt(String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return Optional.empty();
+        }
+        return store.latestSuccessfulActionOfType(agentId, "content.dev.state")
+                .map(AgentActionRow::completedAt)
+                .filter(java.util.Objects::nonNull);
+    }
+
+    /** L'instant d'achèvement de la dernière opération de publication sur cette ressource. */
+    private Optional<java.time.Instant> lastPublishAt(String agentId, String kind, String slug) {
+        if (agentId == null || agentId.isBlank()) {
+            return Optional.empty();
+        }
+        for (AgentActionRow row : store.recentActions(agentId, 200)) {
+            boolean op = "content.publish".equals(row.type())
+                    || "content.publish.rollback".equals(row.type());
+            if (!op || !kind.equals(row.params().get("kind"))
+                    || !slug.equals(row.params().get("id"))) {
+                continue;
+            }
+            Optional<Map<String, Object>> details = detailsOf(row);
+            if (details.isPresent() && Boolean.TRUE.equals(details.get().get("ok"))
+                    && row.completedAt() != null) {
+                return Optional.of(row.completedAt());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Le relevé est-il plus ancien que la dernière opération réussie sur cette ressource ?
+     */
+    private boolean readingIsStale(String agentId, String kind, String slug) {
+        Optional<java.time.Instant> reading = devReadingAt(agentId);
+        Optional<java.time.Instant> op = lastPublishAt(agentId, kind, slug);
+        return reading.isPresent() && op.isPresent() && op.get().isAfter(reading.get());
     }
 
     /**

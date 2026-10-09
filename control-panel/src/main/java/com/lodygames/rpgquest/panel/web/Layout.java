@@ -48,6 +48,11 @@ public final class Layout {
                         new NavItem("Quêtes", "/quests", "quests", Permission.CONTENT_READ, true),
                         new NavItem("Stories", "/stories", "stories", Permission.CONTENT_READ, true),
                         new NavItem("Dialogues", "/dialogues", "dialogues", Permission.DIALOGUE_READ, true),
+                        // Issue #47 : placée juste après les trois familles de contenu, parce que
+                        // c'est leur vue d'ensemble — et avant Export/Import, qui sont d'autres
+                        // sujets.
+                        new NavItem("Changements en attente", "/content/pending", "deploy",
+                                Permission.CONTENT_READ, true),
                         new NavItem("Export contenu", "/content/export", "export", Permission.CONTENT_EXPORT, true),
                         new NavItem("Import contenu", "/content/import", "export", Permission.CONTENT_IMPORT, true),
                         new NavItem("Créer avec une IA", "/ai/studio", "gift", Permission.AI_USE, true),

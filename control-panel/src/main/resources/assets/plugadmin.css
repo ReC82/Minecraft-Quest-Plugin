@@ -270,6 +270,20 @@ label.inline.confirm{color:var(--warn);font-weight:600}
 .diff .di-num{color:#5b6b86;user-select:none}
 .publish-diff-sum{cursor:pointer;font-weight:600}
 .publish-diff-meta{color:#9fb0cc;font-size:12.5px;margin:4px 0 0}
+/* ---- issue #47 : changements en attente ---- */
+/* La table reste scrollable horizontalement plutôt que de déborder : c'est la seule façon
+   d'avoir huit colonnes lisibles sur un téléphone sans masquer d'information. */
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.pending-table{min-width:720px}
+.pending-table td,.pending-table th{vertical-align:middle;white-space:nowrap}
+.pending-table td:nth-child(3){white-space:normal}
+.outcome-list{list-style:none;padding-left:0;margin:6px 0 0}
+.outcome-list li{padding:3px 0;border-bottom:1px solid #1a2438}
+.outcome-list li:last-child{border-bottom:0}
+.filterbar{display:flex;flex-direction:column;gap:8px;margin:12px 0}
+.filterrow{display:flex;flex-wrap:wrap;gap:6px}
+.filtersearch{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.filtersearch input[type=search]{min-width:min(260px,100%)}
 /* ---- éditeur : liste d'items (objectifs / quêtes de story) ---- */
 .rowlist{display:flex;flex-direction:column;gap:10px;margin:8px 0}
 .rowitem{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}

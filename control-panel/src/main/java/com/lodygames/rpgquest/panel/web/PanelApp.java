@@ -244,6 +244,12 @@ public final class PanelApp {
         // Lot « placement » de #213 — la bibliothèque. Lecture seule : aucune route d'écriture,
         // parce qu'une définition de bâtiment est du contenu versionné qui se modifie dans son
         // fichier. Poser et restaurer passent par /agents/action et leurs permissions dédiées.
+        // Issue #47 — « Changements en attente » : la vue d'ensemble de ce qui n'est pas synchronisé,
+        // et la publication groupée. Lecture gardée par CONTENT_READ ; la publication a sa propre
+        // route POST et exige CONTENT_PUBLISH.
+        route("/content/pending", exchange -> handleBusinessPage(exchange, "/content/pending",
+                "Changements en attente", Permission.CONTENT_READ, agentPages::contentPending));
+        route("/content/pending/publish", this::handlePendingPublish);
         route("/buildings/library", exchange -> handleBusinessPage(exchange, "/buildings/library",
                 "Bibliothèque de bâtiments", Permission.BUILDING_READ,
                 agentPages::buildingLibrary));
@@ -2969,6 +2975,129 @@ public final class PanelApp {
         LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent=" + agentId
                 + " type=" + type + " action=" + id + " by=" + session.username());
         Http.redirect(exchange, appendContext(returnPath, agentId, v.params().get("player")) + "&toast=" + enc(id));
+    }
+
+    /**
+     * Publication groupée depuis « Changements en attente » (issue #47).
+     *
+     * <h2>Ce n'est PAS une opération globale</h2>
+     *
+     * <p>Chaque ressource cochée produit une action {@code content.publish}
+     * <strong>individuelle</strong>, qui repasse par la validation du catalogue puis par
+     * l'enrichissement côté serveur — donc par ses propres {@code expected_source_sha} et
+     * {@code expected_dev_sha}, sa propre sauvegarde, son propre rechargement et sa propre
+     * vérification du runtime. Aucune protection n'est contournée, et aucune n'est mutualisée.</p>
+     *
+     * <p><strong>Succès partiel assumé.</strong> Une ressource refusée n'annule pas les autres :
+     * chacune a sa sauvegarde et son rechargement, donc un retour arrière global serait une
+     * invention dangereuse. Le compte rendu distingue ce qui est parti de ce qui a été refusé, et la
+     * page montre ensuite l'issue réelle de chaque action.</p>
+     *
+     * <p>Les noms de champs sont uniques par ligne, parce que le parseur de formulaire du panel
+     * écrase les valeurs répétées : un {@code name="sel"} multiple ne livrerait qu'une seule case.</p>
+     */
+    private void handlePendingPublish(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "POST requis");
+            return;
+        }
+        Session session = maybe.get();
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF",
+                    "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        String agentId = form.getOrDefault("agent", "").trim();
+        String returnPath = "/content/pending";
+
+        if (!permissions.can(session.effective(), Permission.CONTENT_PUBLISH)) {
+            audit.record(session.username(), "content.pending.publish", "agent=" + agentId,
+                    "DENIED", "permission CONTENT_PUBLISH absente", rid);
+            Http.redirect(exchange, withError(returnPath, agentId, null,
+                    "Vous n'avez pas le droit de publier sur DEV."));
+            return;
+        }
+        if (agentRegistry.byId(agentId).isEmpty()) {
+            Http.redirect(exchange, withError(returnPath, agentId, null, "Agent inconnu."));
+            return;
+        }
+
+        // Les cases cochées, dédupliquées par construction : la clé EST le nom du champ.
+        java.util.List<String> selected = new java.util.ArrayList<>();
+        for (Map.Entry<String, String> entry : form.entrySet()) {
+            if (entry.getKey().startsWith("sel_") && !entry.getValue().isBlank()) {
+                selected.add(entry.getKey().substring("sel_".length()));
+            }
+        }
+        if (selected.isEmpty()) {
+            Http.redirect(exchange, withError(returnPath, agentId, null,
+                    "Aucune ressource sélectionnée : rien n'a été publié."));
+            return;
+        }
+        // Ordre déterministe : deux soumissions identiques produisent la même séquence d'actions.
+        java.util.Collections.sort(selected);
+
+        int queued = 0;
+        java.util.List<String> refused = new java.util.ArrayList<>();
+        for (String key : selected) {
+            int slash = key.indexOf('/');
+            if (slash <= 0 || slash == key.length() - 1) {
+                refused.add(key + " (clé invalide)");
+                continue;
+            }
+            String kind = key.substring(0, slash);
+            String slug = key.substring(slash + 1);
+            Map<String, String> one = new java.util.LinkedHashMap<>();
+            one.put("kind", kind);
+            one.put("id", slug);
+            one.put("expected_source_sha", form.getOrDefault("src_" + key, ""));
+            one.put("expected_dev_sha", form.getOrDefault("dev_" + key, ""));
+            one.put("confirm", "true");
+
+            // Exactement la même validation que pour une publication unitaire.
+            var validation = com.lodygames.rpgquest.panel.agent.AgentActionCatalog
+                    .validate("content.publish", one);
+            if (!validation.valid()) {
+                refused.add(slug + " : " + validation.error());
+                continue;
+            }
+            PublishEnrichment enriched = enrichPublish(validation.params());
+            if (enriched.error() != null) {
+                refused.add(slug + " : " + enriched.error());
+                continue;
+            }
+            String id = agentStore.createAction(agentId, "content.publish", enriched.params(),
+                    session.username());
+            audit.record(session.username(), "agent.action.create",
+                    "agent=" + agentId + " type=content.publish action=" + id + " batch=" + rid,
+                    "PENDING", safeParams(enriched.params()), rid);
+            queued++;
+        }
+
+        audit.record(session.username(), "content.pending.publish",
+                "agent=" + agentId + " selected=" + selected.size(),
+                refused.isEmpty() ? "OK" : "PARTIAL",
+                queued + " enfilée(s), " + refused.size() + " refusée(s)", rid);
+        LOG.log(System.Logger.Level.INFO, "event=content_batch_publish rid=" + rid
+                + " agent=" + agentId + " queued=" + queued + " refused=" + refused.size()
+                + " by=" + session.username());
+
+        String message = queued + " publication(s) demandée(s)"
+                + (refused.isEmpty() ? "." : " ; " + refused.size() + " refusée(s) : "
+                        + String.join(" | ", refused.subList(0, Math.min(3, refused.size())))
+                        + (refused.size() > 3 ? " …" : ""));
+        if (queued == 0) {
+            Http.redirect(exchange, withError(returnPath, agentId, null, message));
+            return;
+        }
+        Http.redirect(exchange, appendContext(returnPath, agentId, null)
+                + "&batch=" + enc(message));
     }
 
     /** Résultat de l'enrichissement d'une publication : des paramètres prêts, ou un refus. */

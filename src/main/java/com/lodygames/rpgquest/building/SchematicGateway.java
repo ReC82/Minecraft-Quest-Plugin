@@ -55,6 +55,20 @@ public interface SchematicGateway {
     Optional<Dimensions> inspect(String fileName);
 
     /**
+     * Empreinte SHA-256 du <strong>contenu</strong> du fichier (issue #234), ou vide si le fichier
+     * est absent ou illisible.
+     *
+     * <p>C'est ce qui permet de dire à l'écran « la bibliothèque a changé depuis la pose » sans le
+     * deviner. La version déclarée dans le YAML peut être oubliée par qui l'édite ; le contenu du
+     * fichier ne peut pas mentir.</p>
+     *
+     * <p>Aucune notion WorldEdit ici : c'est une lecture d'octets. Elle vit malgré tout sur cette
+     * interface parce que c'est elle qui sait où les schematics habitent — le domaine, lui, ne
+     * connaît que des noms de fichiers.</p>
+     */
+    Optional<String> fingerprint(String fileName);
+
+    /**
      * Copie la zone du monde correspondant à l'emprise dans un fichier de sauvegarde.
      *
      * <p>C'est ce qui rend le retour arrière possible : on sauvegarde ce qu'on va écraser,

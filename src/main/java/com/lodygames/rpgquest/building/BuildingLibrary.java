@@ -37,7 +37,8 @@ import org.bukkit.configuration.file.YamlConfiguration;
  */
 public final class BuildingLibrary {
 
-    private static final String[] BUNDLED_EXAMPLES = {"test_hut_01.yml"};
+    private static final String[] BUNDLED_EXAMPLES =
+            {"test_hut_01.yml", "test_watchtower_01.yml"};
 
     private final Path directory;
     private final Logger logger;

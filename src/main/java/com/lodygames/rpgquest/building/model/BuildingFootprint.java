@@ -119,6 +119,44 @@ public record BuildingFootprint(String world,
     }
 
     /** Libellé compact pour les écrans et les messages : {@code x1..x2 / y1..y2 / z1..z2}. */
+    /**
+     * Le plus petit pavé contenant les deux emprises (issue #234).
+     *
+     * <p>Sert à la <strong>compensation</strong> d'une réorientation ou d'un remplacement : avant de
+     * retirer l'ancien bâtiment et d'en coller un autre, on sauvegarde l'union des deux emprises.
+     * Sauvegarder seulement la nouvelle laisserait l'ancienne irrécupérable si le collage échouait
+     * — et c'est précisément le scénario dangereux que #234 demande d'éviter.</p>
+     *
+     * <p>Un pavé englobant, et non une union exacte : une union exacte de deux boîtes n'est pas une
+     * boîte, et le moteur de schematics ne sait sauvegarder que des pavés. Le surplus est du terrain
+     * qu'on restaure à l'identique, donc inoffensif.</p>
+     *
+     * @throws IllegalArgumentException si les deux emprises ne sont pas dans le même monde — les
+     *                                 unir n'aurait aucun sens, et le silence masquerait un défaut
+     */
+    public BuildingFootprint union(BuildingFootprint other) {
+        if (other == null) {
+            return this;
+        }
+        if (!world.equals(other.world())) {
+            throw new IllegalArgumentException(
+                    "Union impossible entre deux mondes : " + world + " et " + other.world());
+        }
+        return new BuildingFootprint(world,
+                Math.min(minX, other.minX()), Math.min(minY, other.minY()),
+                Math.min(minZ, other.minZ()),
+                Math.max(maxX, other.maxX()), Math.max(maxY, other.maxY()),
+                Math.max(maxZ, other.maxZ()));
+    }
+
+    /** Vrai si cette emprise contient entièrement l'autre. */
+    public boolean covers(BuildingFootprint other) {
+        return other != null && world.equals(other.world())
+                && minX <= other.minX() && other.maxX() <= maxX
+                && minY <= other.minY() && other.maxY() <= maxY
+                && minZ <= other.minZ() && other.maxZ() <= maxZ;
+    }
+
     public String label() {
         return minX + ".." + maxX + " / " + minY + ".." + maxY + " / " + minZ + ".." + maxZ;
     }

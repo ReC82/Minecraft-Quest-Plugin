@@ -29,8 +29,9 @@ public final class BuildingPlacementRepository {
             INSERT INTO building_placements
                 (site_id, building_id, world, anchor_x, anchor_y, anchor_z, rotation,
                  min_x, min_y, min_z, max_x, max_y, max_z,
-                 backup_schematic, placed_by, placed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 backup_schematic, placed_by, placed_at,
+                 building_version, schematic_sha256)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
     private static final String SELECT_ALL = "SELECT * FROM building_placements";
     private static final String DELETE = "DELETE FROM building_placements WHERE site_id = ?";
@@ -81,6 +82,11 @@ public final class BuildingPlacementRepository {
                         ? "" : placement.backupSchematic());
                 statement.setString(15, placement.placedBy());
                 statement.setString(16, placement.placedAt().toString());
+                // Issue #234 : ce qui a RÉELLEMENT été collé. Sans ces deux colonnes, l'écran ne
+                // pourrait pas dire « une version plus récente existe » sans l'inventer.
+                statement.setInt(17, placement.buildingVersion());
+                statement.setString(18, placement.schematicSha256() == null
+                        ? "" : placement.schematicSha256());
                 statement.executeUpdate();
                 return null;
             }
@@ -99,9 +105,12 @@ public final class BuildingPlacementRepository {
 
     private static BuildingPlacement map(ResultSet row) throws SQLException {
         String backup = row.getString("backup_schematic");
+        String sha = row.getString("schematic_sha256");
         return new BuildingPlacement(
                 row.getString("site_id"),
                 row.getString("building_id"),
+                row.getInt("building_version"),
+                sha == null ? "" : sha,
                 row.getString("world"),
                 row.getInt("anchor_x"), row.getInt("anchor_y"), row.getInt("anchor_z"),
                 row.getInt("rotation"),

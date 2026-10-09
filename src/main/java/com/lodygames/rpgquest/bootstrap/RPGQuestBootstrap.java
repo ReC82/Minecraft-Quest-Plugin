@@ -402,7 +402,8 @@ public final class RPGQuestBootstrap {
         // existant. `/rpgadmin building generate` force la régénération quand on la veut.
         buildingSchematics = new com.lodygames.rpgquest.building.SchematicWorkshop(
                 schematicGateway, plugin.getLogger());
-        buildingSchematics.ensureTestHut();
+        // Issue #234 : deux plans désormais — la hutte de #213 et la tour de garde.
+        buildingSchematics.ensureAll();
 
         PlayerProfileRepository profileRepository = new PlayerProfileRepository(databaseService.databaseManager());
         playerProfileService = new PlayerProfileService(profileRepository);

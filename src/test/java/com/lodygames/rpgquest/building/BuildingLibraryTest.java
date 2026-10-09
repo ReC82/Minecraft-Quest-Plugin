@@ -101,6 +101,40 @@ class BuildingLibraryTest {
         }
     }
 
+    /**
+     * Le même garde-fou, pour la tour de garde (issue #234).
+     *
+     * <p>Il compte plus encore que pour la hutte : la tour mesure 14 blocs de haut, donc une
+     * divergence d'un seul bloc sur la hauteur annoncée ferait passer les limites verticales du
+     * monde pour franchies alors qu'elles ne le sont pas — ou l'inverse.</p>
+     */
+    @Test
+    void leFichierEmbarqueDeLaTourDecritExactementLePlan() throws Exception {
+        try (InputStream in = BuildingLibrary.class
+                .getResourceAsStream("/buildings/test_watchtower_01.yml")) {
+            assertNotNull(in, "la ressource /buildings/test_watchtower_01.yml doit être embarquée");
+            YamlConfiguration yaml = YamlConfiguration.loadConfiguration(
+                    new InputStreamReader(in, StandardCharsets.UTF_8));
+            List<String> problems = new ArrayList<>();
+            Optional<BuildingDefinition> fromFile = BuildingDefinitionYaml.read(yaml, problems);
+
+            assertTrue(fromFile.isPresent(), problems.toString());
+            BuildingDefinition fromCode = TestWatchtowerBlueprint.definition();
+            BuildingDefinition file = fromFile.get();
+
+            assertEquals(fromCode.id(), file.id());
+            assertEquals(fromCode.schematic(), file.schematic());
+            assertEquals(fromCode.sizeX(), file.sizeX(), "largeur");
+            assertEquals(fromCode.sizeY(), file.sizeY(), "hauteur");
+            assertEquals(fromCode.sizeZ(), file.sizeZ(), "profondeur");
+            assertEquals(fromCode.anchorX(), file.anchorX(), "ancre X");
+            assertEquals(fromCode.anchorY(), file.anchorY(), "ancre Y");
+            assertEquals(fromCode.anchorZ(), file.anchorZ(), "ancre Z");
+            assertEquals(fromCode.front(), file.front(), "façade de référence");
+            assertEquals(fromCode.materials(), file.materials(), "palette annoncée");
+        }
+    }
+
     // ---- Chargement ----------------------------------------------------------------------------
 
     @Test
@@ -265,9 +299,12 @@ class BuildingLibraryTest {
 
     @Test
     void startingDepositsTheBundledExample() {
-        assertEquals(1, library.start(), "l'exemple embarqué doit être déposé puis chargé");
+        // Deux bâtiments livrés depuis #234 : la hutte de #213 et la tour de garde.
+        assertEquals(2, library.start(), "les exemples embarqués doivent être déposés puis chargés");
         assertTrue(Files.isRegularFile(directory.resolve("test_hut_01.yml")));
+        assertTrue(Files.isRegularFile(directory.resolve("test_watchtower_01.yml")));
         assertTrue(library.find("test_hut_01").isPresent());
+        assertTrue(library.find("test_watchtower_01").isPresent());
     }
 
     /**

@@ -92,6 +92,15 @@ class BuildingPlacementServiceTest {
             return files.contains(fileName);
         }
 
+        /**
+         * Empreinte simulée (issue #234) : déterministe et dérivée du nom, ce qui suffit à
+         * distinguer deux fichiers. Vide si le fichier n'existe pas — comme l'adaptateur réel.
+         */
+        @Override public java.util.Optional<String> fingerprint(String fileName) {
+            return files.contains(fileName)
+                    ? java.util.Optional.of("sha-" + fileName) : java.util.Optional.empty();
+        }
+
         @Override public Outcome write(Blueprint blueprint, String fileName) {
             calls.add("write:" + fileName);
             files.add(fileName);
@@ -669,7 +678,8 @@ class BuildingPlacementServiceTest {
         var placement = service.all().get(0);
         placementRepository.delete(created.id()).get(TIMEOUT, TimeUnit.SECONDS);
         placementRepository.insert(new com.lodygames.rpgquest.building.model.BuildingPlacement(
-                placement.siteId(), placement.buildingId(), placement.world(),
+                placement.siteId(), placement.buildingId(),
+                placement.buildingVersion(), placement.schematicSha256(), placement.world(),
                 placement.anchorX(), placement.anchorY(), placement.anchorZ(),
                 placement.rotationDegrees(),
                 placement.minX(), placement.minY(), placement.minZ(),

@@ -1,0 +1,60 @@
+# Tour de garde de test — la deuxième structure du moteur de construction (issue #234).
+#
+# Ce fichier est du CONTENU : il décrit ce qu'on peut poser. Le fichier .schem qui l'accompagne est
+# un artefact DÉRIVÉ, produit par le plugin lui-même à partir de
+# com.lodygames.rpgquest.building.TestWatchtowerBlueprint — aucun fichier externe n'a été importé,
+# et c'est la MÊME technique que la hutte de #213 (Blueprint → SchematicWorkshop →
+# SchematicGateway → écrivain Sponge V3 du moteur).
+#
+# Les valeurs ci-dessous doivent rester cohérentes avec ce plan. Un test
+# (BuildingLibraryTest) échoue si elles divergent : une définition qui mentirait sur ses dimensions
+# ferait annoncer une emprise fausse à l'administrateur, et la faute ne se verrait qu'une fois la
+# tour posée.
+
+id: test_watchtower_01
+name: "Tour de garde de test"
+description: >-
+  Tour de validation, produite par le code du plugin. Trois niveaux, escalier intérieur en spirale
+  (chaque volée regarde une direction différente), terrasse à créneaux, et quatre faces franchement
+  différentes : porte et torches au nord, meurtrières à l'est, ouverture de guet au sud, face
+  aveugle en moellon brut à l'ouest. Elle sert à mettre en difficulté ce que la hutte ne testait
+  pas — la hauteur, les planchers percés, les blocs orientés et la rotation.
+
+schematic: test_watchtower_01.schem
+
+# Dimensions en blocs. x = largeur, y = hauteur, z = profondeur.
+size:
+  x: 9
+  y: 14
+  z: 9
+
+# L'ancre est le CENTRE DE LA PORTE, AU NIVEAU DU SOL, en coordonnées locales du schematic.
+#
+# y: 1 et non 0, comme pour la hutte : la fondation occupe y = 0, donc elle se place UN BLOC SOUS
+# l'ancre de l'emplacement. C'est voulu — une fondation s'enfonce dans le sol.
+anchor:
+  x: 4
+  y: 1
+  z: 0
+
+# Direction que regarde la façade quand la rotation est NULLE.
+#
+# NORTH, et cette déclaration est géométriquement vraie : la porte est sur la paroi z = 0, qui
+# regarde les -Z, donc le nord. Déclarer autre chose cacherait une rotation permanente dans le code
+# de collage.
+front: NORTH
+
+# Palette annoncée. L'ORDRE compte : Blueprint#materials() la dérive par ordre de PREMIÈRE
+# APPARITION dans le plan, pas par ordre alphabétique, et le test de cohérence compare les deux
+# listes telles quelles.
+materials:
+  - cobblestone
+  - chiseled_stone_bricks
+  - stone_bricks
+  - oak_door
+  - glass_pane
+  - wall_torch
+  - oak_stairs
+  - oak_planks
+
+version: 1

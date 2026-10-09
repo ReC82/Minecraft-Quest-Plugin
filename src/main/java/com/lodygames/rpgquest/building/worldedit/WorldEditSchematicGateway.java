@@ -385,6 +385,40 @@ public final class WorldEditSchematicGateway implements SchematicGateway {
         return new BuildingFootprint(world, minX, minY, minZ, maxX, maxY, maxZ);
     }
 
+    /**
+     * Empreinte SHA-256 du contenu du fichier (issue #234).
+     *
+     * <p>Lecture d'octets, sans WorldEdit : elle fonctionne donc même si le moteur est absent — et
+     * c'est utile, puisque comparer deux versions ne demande pas de savoir coller.</p>
+     */
+    @Override
+    public Optional<String> fingerprint(String fileName) {
+        Path file = resolve(fileName);
+        if (file == null || !Files.isRegularFile(file)) {
+            return Optional.empty();
+        }
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            try (InputStream in = new BufferedInputStream(Files.newInputStream(file))) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) > 0) {
+                    digest.update(buffer, 0, read);
+                }
+            }
+            StringBuilder hex = new StringBuilder(64);
+            for (byte b : digest.digest()) {
+                hex.append(Character.forDigit((b >> 4) & 0xF, 16));
+                hex.append(Character.forDigit(b & 0xF, 16));
+            }
+            return Optional.of(hex.toString());
+        } catch (java.security.NoSuchAlgorithmException | IOException e) {
+            logger.log(Level.WARNING, "[building] empreinte du schematic « {0} » illisible : {1}",
+                    new Object[] {fileName, describe(e)});
+            return Optional.empty();
+        }
+    }
+
     private Clipboard read(String fileName) throws IOException {
         Path file = resolve(fileName);
         if (file == null || !Files.isRegularFile(file)) {

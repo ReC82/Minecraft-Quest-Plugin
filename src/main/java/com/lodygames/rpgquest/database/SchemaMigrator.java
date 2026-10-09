@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 29;
+    public static final int CURRENT_VERSION = 30;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -61,7 +61,9 @@ public final class SchemaMigrator {
             new SchemaMigration(26, "quest_reward_grants.status (dettes récupérables)", SchemaMigrator::applyV26),
             new SchemaMigration(27, "npc_citizens_skins", SchemaMigrator::applyV27),
             new SchemaMigration(28, "building_sites, building_site_ids", SchemaMigrator::applyV28),
-            new SchemaMigration(29, "building_placements", SchemaMigrator::applyV29));
+            new SchemaMigration(29, "building_placements", SchemaMigrator::applyV29),
+            new SchemaMigration(30, "cycle de vie des bâtiments : baseline, historique, version",
+                    SchemaMigrator::applyV30));
 
     private SchemaMigrator() {
     }
@@ -1168,6 +1170,100 @@ public final class SchemaMigrator {
             statement.execute(dialect.ddl(
                     "CREATE INDEX IF NOT EXISTS idx_quest_reward_grants_status "
                             + "ON quest_reward_grants (status)"));
+        }
+    }
+
+    private static void applyV30(Connection connection, SqlDialect dialect) throws SQLException {
+        // Cycle de vie des bâtiments posés (issue #234). STRICTEMENT ADDITIVE : aucune colonne
+        // existante n'est modifiée, aucune ligne n'est réécrite, et un emplacement déjà occupé
+        // avant cette étape reste exploitable — ses nouvelles colonnes prennent simplement leurs
+        // valeurs par défaut, qui signifient « inconnu » et non « zéro ».
+        //
+        // Pourquoi ces deux colonnes sur building_placements : le bâtiment POSÉ ne doit jamais
+        // changer parce que sa définition a changé. Il faut donc savoir ce qui a réellement été
+        // collé. La version déclarée (building_version) peut être oubliée par qui édite le YAML ;
+        // l'empreinte du fichier (schematic_sha256) ne peut pas mentir. On garde les deux : la
+        // première est lisible par un humain, la seconde est fiable.
+        if (!dialect.columnExists(connection, "building_placements", "building_version")) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(dialect.ddl(
+                        "ALTER TABLE building_placements ADD COLUMN building_version INTEGER NOT NULL DEFAULT 0"));
+            }
+        }
+        if (!dialect.columnExists(connection, "building_placements", "schematic_sha256")) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(dialect.ddl(
+                        "ALTER TABLE building_placements ADD COLUMN schematic_sha256 TEXT NOT NULL DEFAULT ''"));
+            }
+        }
+
+        try (Statement statement = connection.createStatement()) {
+            // Le TERRAIN D'ORIGINE d'un emplacement, conservé à part de la sauvegarde de
+            // compensation de chaque opération. C'est la distinction centrale de #234 : après
+            // hutte → tour → autre orientation, la sauvegarde de la dernière opération contient le
+            // bâtiment précédent, pas le terrain d'origine.
+            //
+            // PLUSIEURS LIGNES PAR EMPLACEMENT, et ce n'est pas une facilité : une tour occupe plus
+            // de place qu'une hutte, donc restaurer une baseline prise sur l'emprise de la hutte
+            // laisserait des blocs de tour en dehors. Un fragment est capturé pour chaque emprise
+            // touchée pour la première fois — et l'ordre des opérations garantit que la zone est
+            // vierge au moment de la capture (l'ancienne emprise est restaurée AVANT).
+            //
+            // Aucune contrainte d'unicité sur site_id : c'est volontaire, et c'est tout l'objet de
+            // la table.
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS building_baselines (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        site_id TEXT NOT NULL,
+                        schematic TEXT NOT NULL,
+                        world TEXT NOT NULL,
+                        min_x INTEGER NOT NULL,
+                        min_y INTEGER NOT NULL,
+                        min_z INTEGER NOT NULL,
+                        max_x INTEGER NOT NULL,
+                        max_y INTEGER NOT NULL,
+                        max_z INTEGER NOT NULL,
+                        captured_by TEXT NOT NULL DEFAULT '',
+                        captured_at TEXT NOT NULL
+                    )
+                    """));
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_building_baselines_site "
+                            + "ON building_baselines (site_id)"));
+
+            // Journal des opérations. Répond à « qu'est-ce qui a été posé ici, dans quel ordre, par
+            // qui, et est-ce que ça a marché ? » — rien de plus. On n'y rejoue rien, il ne contient
+            // aucun bloc.
+            //
+            // Les ÉCHECS y sont enregistrés aussi (ok = 0) : un journal qui ne garderait que les
+            // succès laisserait croire qu'il ne s'est rien passé là où quelque chose s'est mal
+            // passé, c'est-à-dire exactement au moment où l'on consulte un journal.
+            statement.execute(dialect.ddl("""
+                    CREATE TABLE IF NOT EXISTS building_placement_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        site_id TEXT NOT NULL,
+                        building_id TEXT NOT NULL DEFAULT '',
+                        building_version INTEGER NOT NULL DEFAULT 0,
+                        schematic_sha256 TEXT NOT NULL DEFAULT '',
+                        rotation INTEGER NOT NULL DEFAULT 0,
+                        world TEXT NOT NULL DEFAULT '',
+                        min_x INTEGER NOT NULL DEFAULT 0,
+                        min_y INTEGER NOT NULL DEFAULT 0,
+                        min_z INTEGER NOT NULL DEFAULT 0,
+                        max_x INTEGER NOT NULL DEFAULT 0,
+                        max_y INTEGER NOT NULL DEFAULT 0,
+                        max_z INTEGER NOT NULL DEFAULT 0,
+                        operation TEXT NOT NULL,
+                        actor TEXT NOT NULL DEFAULT '',
+                        happened_at TEXT NOT NULL,
+                        ok INTEGER NOT NULL DEFAULT 1,
+                        detail TEXT NOT NULL DEFAULT '',
+                        backup_schematic TEXT NOT NULL DEFAULT ''
+                    )
+                    """));
+            statement.execute(dialect.ddl(
+                    "CREATE INDEX IF NOT EXISTS idx_building_history_site "
+                            + "ON building_placement_history (site_id, id)"));
         }
     }
 }

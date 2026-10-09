@@ -460,6 +460,27 @@ placement n'ayant eu qu'une pose — le seul cas possible avant ce lot — les d
 * `docs/current_state.md` — état courant.
 * `docs/MANUAL_TEST_PLAN.md` — **TC-274** + ligne d'index.
 
+## Une erreur de ma part, et sa correction
+
+Mon `git add -A src/` du commit `4729373` a **ajouté au suivi Git les sept fichiers de contenu que
+vous éditez depuis PlugAdmin** (`mira_cartographer.yml`, `jeff_skeleton.yml`, `lily_pumpkin.yml`,
+`st0_meet_people.yml`, `tc265_ai_securiser_environs.yml`, `test_remise.yml`, `lily_memories.yml`),
+alors que la consigne était de les préserver **non suivis**. C'est une faute de ma part : un
+`git add -A` sur un dossier qui contient du contenu utilisateur ne distingue pas ce qui m'appartient
+de ce qui vous appartient.
+
+**Corrigé par un retrait du suivi** (`git rm --cached`), et **jamais par une réécriture
+d'historique** — la branche était déjà poussée. Les fichiers sont **intacts sur le disque** :
+empreintes vérifiées identiques avant et après, seul l'index Git a changé. Ils sont de nouveau
+`??` dans `git status`.
+
+**Conséquence sur le JAR déployé, assumée et sans effet fonctionnel** : le JAR de ce lot les
+embarque comme ressources. Elles sont **inertes** — aucune ne figure dans les listes
+`BUNDLED_EXAMPLES` de `YamlQuestEngine`, `StoryRegistry` ni `YamlDialogueEngine`, donc **rien ne les
+dépose sur le serveur** ; ce sont quelques kilo-octets inutiles dans l'archive. Le prochain JAR, bâti
+après le commit de correction, ne les contiendra plus. Aucun fichier de votre serveur n'a été
+modifié, et aucune de vos éditions n'a été perdue.
+
 ## Limitations / travail restant
 
 * **TC-274 n'est pas exécuté** : la correction d'un collage, l'orientation d'un escalier et le fait

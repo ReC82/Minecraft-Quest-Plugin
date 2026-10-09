@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.config.StarterKitTier;
 import com.lodygames.rpgquest.config.StarterToolKitConfig;
 import com.lodygames.rpgquest.database.PlayerVariableRepository;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -19,6 +20,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 
@@ -57,7 +60,8 @@ public final class StarterToolKitService implements Listener {
     static final String AVAILABLE_KEY = "STARTER_TOOL_KIT_AVAILABLE";
     /** Meilleur palier débloqué (issue #218). Absent = palier 1, acquis automatiquement. */
     public static final String TIER_KEY = "STARTER_KIT_TIER";
-    private static final String NOT_AVAILABLE = "false";
+    /** Visible dans le paquet : {@link PlayerResetService} l'affiche dans l'aperçu de reset (#235). */
+    static final String NOT_AVAILABLE = "false";
     private static final String AVAILABLE_AGAIN = "true";
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
@@ -66,6 +70,7 @@ public final class StarterToolKitService implements Listener {
     private final PlayerVariableRepository variableRepository;
     private final Supplier<StarterToolKitConfig> configSupplier;
     private final Set<UUID> pendingRequests = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Integer> tierCache = new ConcurrentHashMap<>();
 
     public StarterToolKitService(RPGQuestPlugin plugin, PlayerVariableRepository variableRepository,
                                   Supplier<StarterToolKitConfig> configSupplier) {
@@ -90,6 +95,53 @@ public final class StarterToolKitService implements Listener {
     /** Palier actuellement débloqué, lu en base. 1 si aucune valeur (ou valeur illisible). */
     public CompletableFuture<Integer> unlockedTier(UUID playerId) {
         return variableRepository.get(playerId, TIER_KEY).thenApply(StarterToolKitService::parseTier);
+    }
+
+    // ---- Palier lisible immédiatement, pour l'affichage (issue #235) ----
+    //
+    // Le texte d'un nœud de dialogue est substitué sur le thread principal, juste avant le rendu :
+    // une lecture SQL y est donc exclue. Le palier est donc tenu en mémoire par joueur — exactement
+    // le motif déjà employé par ProgressionService, PortalService et ItemTravelService, que
+    // PlayerResetService invalide de la même façon.
+    //
+    // Propriété importante : ce cache ne sert QU'À AFFICHER. Une remise de kit relit toujours la
+    // base (voir requestKit), donc un cache périmé ne peut pas faire donner le mauvais kit.
+
+    /** Charge (ou recharge) le palier de ce joueur en mémoire, de façon asynchrone. */
+    public void reloadForPlayer(UUID playerId) {
+        unlockedTier(playerId).whenComplete((tier, error) -> {
+            if (error != null) {
+                plugin.getSLF4JLogger().error("Impossible de charger le palier de kit de {}", playerId, error);
+                return;
+            }
+            tierCache.put(playerId, tier);
+        });
+    }
+
+    /** Oublie le palier mémorisé (déconnexion, ou reset d'un joueur hors ligne). */
+    public void forget(UUID playerId) {
+        tierCache.remove(playerId);
+    }
+
+    /**
+     * Palier connu <strong>sans attendre</strong>, pour un texte à afficher tout de suite.
+     *
+     * <p>Renvoie le palier 1 si rien n'est encore chargé — c'est la valeur par défaut d'un joueur
+     * qui n'a rien débloqué, donc jamais une affirmation plus flatteuse que la réalité. Le cas ne
+     * dure que le temps d'une lecture asynchrone à la connexion.</p>
+     */
+    public int cachedTier(UUID playerId) {
+        return tierCache.getOrDefault(playerId, 1);
+    }
+
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        reloadForPlayer(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        forget(event.getPlayer().getUniqueId());
     }
 
     /**
@@ -131,7 +183,12 @@ public final class StarterToolKitService implements Listener {
                 return CompletableFuture.completedFuture(new GrantResult(GrantOutcome.SKIPPED, current));
             }
             return variableRepository.set(playerId, TIER_KEY, Integer.toString(level))
-                    .thenApply(ignored -> new GrantResult(GrantOutcome.GRANTED, level));
+                    .thenApply(ignored -> {
+                        // Le cache d'affichage suit la source de vérité immédiatement : le Guide
+                        // annonce le nouveau palier dès la phrase suivante (issue #235).
+                        tierCache.put(playerId, level);
+                        return new GrantResult(GrantOutcome.GRANTED, level);
+                    });
         });
     }
 

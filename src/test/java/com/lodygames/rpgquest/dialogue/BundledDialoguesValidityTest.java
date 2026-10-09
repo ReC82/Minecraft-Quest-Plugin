@@ -1,10 +1,15 @@
 package com.lodygames.rpgquest.dialogue;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.lodygames.rpgquest.dialogue.model.DialogueChoice;
 import com.lodygames.rpgquest.dialogue.model.DialogueDefinition;
+import com.lodygames.rpgquest.dialogue.model.DialogueNode;
+import com.lodygames.rpgquest.dialogue.model.StartQuestAction;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -173,6 +178,145 @@ class BundledDialoguesValidityTest {
             assertTrue(command.startsWith("customitem give "), "commande inattendue : " + command);
             assertTrue(command.endsWith(" 1"), "un seul exemplaire doit être donné : " + command);
         }
+    }
+
+    // ================================================================================
+    //  Issue #235 — onboarding : plus aucune mutation de gameplay derrière un libellé vague
+    // ================================================================================
+
+    /**
+     * La règle que #235 institue, vérifiée sur le <strong>Guide</strong> : un choix qui démarre une
+     * quête doit l'annoncer, et nommer la quête.
+     *
+     * <p>C'est le défaut exact rapporté en jeu : « Très bien, j'y vais. » démarrait « Premiers pas »
+     * sans le dire. Le test porte sur la règle et non sur ce choix précis, pour qu'un futur nœud du
+     * Guide ne puisse pas réintroduire le même piège.</p>
+     *
+     * <p><strong>Pourquoi le Guide seulement.</strong> Écrit d'abord pour tous les dialogues livrés,
+     * ce test a immédiatement révélé <em>trois</em> choix du Garde qui démarrent une quête sans le
+     * dire (« J'ai entendu dire que tu avais besoin d'aide… » → {@code crystal_hunt}, « Je veux
+     * prouver ma valeur… » → {@code guard_tier1}, « Je veux agrandir mon terrain… » →
+     * {@code guard_tier2}). C'est le même défaut, mais dans du contenu qui appartient à d'autres
+     * tickets ; #235 porte sur le parcours du Guide. Le constat est consigné dans le rapport de
+     * session plutôt que corrigé en effet de bord — et ce test est prêt à être élargi à
+     * {@link #BUNDLED} le jour où ces libellés seront revus.</p>
+     */
+    @Test
+    void noGuideChoiceStartsAQuestWithoutAnnouncingIt() {
+        DialogueDefinition guide = guide();
+
+        for (DialogueNode node : guide.nodes().values()) {
+            for (DialogueChoice choice : node.choices()) {
+                if (choice.actions().stream().noneMatch(a -> a instanceof StartQuestAction)) {
+                    continue;
+                }
+                String label = choice.text().base();
+                assertTrue(label.startsWith("Commencer la quête : "),
+                        "le choix « " + label + " » (" + node.id() + ") démarre une quête : son "
+                                + "libellé doit l'annoncer ET la nommer");
+            }
+        }
+    }
+
+    /** L'ancien libellé générique ne doit pas revenir, où que ce soit. */
+    @Test
+    void theAmbiguousGoAheadLabelIsGone() {
+        DialogueDefinition guide = guide();
+
+        boolean present = guide.nodes().values().stream()
+                .flatMap(n -> n.choices().stream())
+                .anyMatch(c -> c.text().base().contains("j'y vais"));
+
+        assertFalse(present, "« Très bien, j'y vais. » démarrait une quête sans le dire (#235)");
+    }
+
+    /**
+     * Le parcours d'introduction : une question, une explication, <em>puis</em> le démarrage nommé.
+     *
+     * <p>Deux gestes et non un : le joueur lit ce qu'on attend de lui avant d'accepter.</p>
+     */
+    @Test
+    void theIntroductionExplainsBeforeStartingAndNamesTheQuest() {
+        DialogueDefinition guide = guide();
+
+        DialogueChoice entry = guide.nodes().get("greeting").choices().stream()
+                .filter(c -> "intro_quest".equals(c.next()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("le Guide doit mener à un nœud d'explication"));
+        assertTrue(entry.actions().stream().noneMatch(a -> a instanceof StartQuestAction),
+                "le choix qui ouvre l'explication ne doit RIEN démarrer");
+
+        DialogueNode intro = guide.nodes().get("intro_quest");
+        assertNotNull(intro, "nœud « intro_quest » attendu");
+        assertTrue(intro.text().base().contains("Premiers pas"),
+                "l'explication doit nommer la quête avant de la proposer");
+
+        DialogueChoice start = intro.choices().stream()
+                .filter(c -> c.actions().stream().anyMatch(a -> a instanceof StartQuestAction))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("le nœud d'explication doit proposer de démarrer"));
+        assertEquals("Commencer la quête : Premiers pas", start.text().base());
+        assertEquals(new NamespacedKey("rpgquest", "premiers_pas"),
+                ((StartQuestAction) start.actions().get(0)).questId());
+    }
+
+    /**
+     * La quête de palier 2 est <strong>atteignable</strong>.
+     *
+     * <p>Avant #235 elle n'était citée que dans {@code config.yml} : aucun dialogue ne la démarrait,
+     * donc la progression de kit annoncée par #218 était injouable. Ce test est le garde-fou de ce
+     * défaut précis.</p>
+     */
+    @Test
+    void theGuideCanStartTheKitUpgradeQuest() {
+        DialogueDefinition guide = guide();
+
+        boolean offered = guide.nodes().values().stream()
+                .flatMap(n -> n.choices().stream())
+                .flatMap(c -> c.actions().stream())
+                .anyMatch(a -> a instanceof StartQuestAction start
+                        && start.questId().equals(new NamespacedKey("rpgquest", "kit_tier2")));
+
+        assertTrue(offered, "rpgquest:kit_tier2 doit être proposée par son PNJ donneur (giver: guide)");
+    }
+
+    /**
+     * Le palier est affiché par des marqueurs, pas recopié.
+     *
+     * <p>Si quelqu'un écrivait « Palier 1 — Nouveau venu » en dur ici, le texte mentirait dès que la
+     * configuration changerait. Le test exige donc les trois marqueurs <em>et</em> l'absence de
+     * quantité codée en dur dans le nœud.</p>
+     */
+    @Test
+    void theKitProgressNodeDerivesEverythingFromPlaceholders() {
+        DialogueNode node = guide().nodes().get("kit_progress");
+
+        assertNotNull(node, "nœud « kit_progress » attendu (#235)");
+        String text = node.text().base();
+        assertTrue(text.contains("%kit_tier_current%"), "le palier actuel doit être un marqueur");
+        assertTrue(text.contains("%kit_tier_next%"), "le palier suivant doit être un marqueur");
+        assertTrue(text.contains("%kit_upgrade_requirements%"), "les matériaux doivent être un marqueur");
+        assertFalse(text.contains("COBBLESTONE") || text.contains("WHEAT_SEEDS"),
+                "aucun matériau ne doit être écrit en dur dans le dialogue");
+    }
+
+    /** L'option de progression du kit est joignable depuis l'accueil, sans condition. */
+    @Test
+    void theKitProgressNodeIsReachableFromTheGreeting() {
+        DialogueChoice choice = guide().nodes().get("greeting").choices().stream()
+                .filter(c -> "kit_progress".equals(c.next()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("« Comment améliorer mon kit ? » attendu à l'accueil"));
+
+        assertTrue(choice.conditions().isEmpty(),
+                "connaître son palier ne doit dépendre d'aucune condition — le nœud s'adapte lui-même");
+    }
+
+    private DialogueDefinition guide() {
+        return loader.load(Map.of("guide.yml", read("/dialogues/guide.yml"))).loaded().stream()
+                .filter(d -> d.id().equals(new NamespacedKey("rpgquest", "guide")))
+                .findFirst()
+                .orElseThrow();
     }
 
     private ConfigurationSection read(String resource) {

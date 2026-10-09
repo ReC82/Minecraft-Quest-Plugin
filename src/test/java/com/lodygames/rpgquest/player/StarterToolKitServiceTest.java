@@ -342,4 +342,113 @@ class StarterToolKitServiceTest {
         assertNull(availableValue(player.getUniqueId()));
         assertNoMessageContains(player, "kit de départ");
     }
+
+    // ================================================================================
+    //  Issue #235 — le palier doit être LISIBLE immédiatement, pour l'afficher au joueur
+    // ================================================================================
+
+    /**
+     * Le palier mémorisé suit la source de vérité, sans seconde logique.
+     *
+     * <p>Le texte d'un nœud de dialogue est substitué sur le thread principal, juste avant le rendu :
+     * une lecture SQL y est interdite. Le palier est donc tenu en mémoire — motif déjà employé par
+     * {@code ProgressionService} et {@code PortalService}.</p>
+     */
+    @Test
+    void theCachedTierFollowsTheStoredValue() throws Exception {
+        PlayerMock player = addPlayer();
+        variableRepository.set(player.getUniqueId(), StarterToolKitService.TIER_KEY, "2")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        service.reloadForPlayer(player.getUniqueId());
+        awaitCachedTier(player.getUniqueId(), 2);
+
+        assertEquals(2, service.cachedTier(player.getUniqueId()));
+    }
+
+    /** Un joueur inconnu du cache vaut le palier 1 : jamais une valeur plus flatteuse que la réalité. */
+    @Test
+    void anUnknownPlayerReadsAsTierOne() {
+        assertEquals(1, service.cachedTier(UUID.randomUUID()));
+    }
+
+    /** Débloquer un palier met le cache à jour tout de suite : le Guide l'annonce dès la phrase suivante. */
+    @Test
+    void grantingATierUpdatesTheCachedValueImmediately() throws Exception {
+        config.set(twoTiersForCache());
+        PlayerMock player = addPlayer();
+        assertEquals(1, service.cachedTier(player.getUniqueId()));
+
+        service.grantTier(player.getUniqueId(), 2).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(2, service.cachedTier(player.getUniqueId()));
+    }
+
+    /** Un déblocage refusé ne change pas l'affichage — un refus ne doit pas promouvoir. */
+    @Test
+    void aRefusedGrantLeavesTheCachedTierAlone() throws Exception {
+        config.set(twoTiersForCache());
+        PlayerMock player = addPlayer();
+
+        // Saut de palier : refusé par grantTier (règle de #218).
+        StarterToolKitService.GrantResult result =
+                service.grantTier(player.getUniqueId(), 3).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(StarterToolKitService.GrantOutcome.UNKNOWN_TIER, result.outcome());
+        assertEquals(1, service.cachedTier(player.getUniqueId()));
+    }
+
+    /** Oublier un joueur le ramène à la valeur par défaut, jamais à son ancien palier. */
+    @Test
+    void forgettingAPlayerResetsTheDisplayedTier() throws Exception {
+        config.set(twoTiersForCache());
+        PlayerMock player = addPlayer();
+        service.grantTier(player.getUniqueId(), 2).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertEquals(2, service.cachedTier(player.getUniqueId()));
+
+        service.forget(player.getUniqueId());
+
+        assertEquals(1, service.cachedTier(player.getUniqueId()));
+    }
+
+    /**
+     * Le cache ne décide JAMAIS du contenu remis.
+     *
+     * <p>Propriété essentielle : {@code requestKit} relit la base. Un cache périmé peut au pire
+     * afficher un palier en retard pendant une lecture asynchrone, jamais faire donner le mauvais
+     * kit. Ici le cache annonce 1 alors que la base dit 2 — et c'est le kit du palier 2 qui est
+     * remis.</p>
+     */
+    @Test
+    void aStaleCacheNeverChangesWhichKitIsGranted() throws Exception {
+        config.set(twoTiersForCache());
+        PlayerMock player = addPlayer();
+        variableRepository.set(player.getUniqueId(), StarterToolKitService.TIER_KEY, "2")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        service.forget(player.getUniqueId());
+        assertEquals(1, service.cachedTier(player.getUniqueId()), "cache volontairement périmé");
+
+        service.requestKit(player);
+        awaitAvailableValue(player.getUniqueId(), "false");
+
+        assertTrue(java.util.Arrays.stream(player.getInventory().getContents())
+                        .filter(java.util.Objects::nonNull)
+                        .anyMatch(stack -> stack.getType() == Material.STONE_SWORD),
+                "le kit remis doit être celui du palier 2 lu en BASE, pas celui du cache");
+    }
+
+    private void awaitCachedTier(UUID playerId, int expected) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 2000;
+        while (service.cachedTier(playerId) != expected && System.currentTimeMillis() < deadline) {
+            tick();
+        }
+        assertEquals(expected, service.cachedTier(playerId));
+    }
+
+    private static StarterToolKitConfig twoTiersForCache() {
+        return new StarterToolKitConfig(true, List.of(
+                new StarterKitTier(1, "Nouveau venu", KIT_ITEMS, null),
+                new StarterKitTier(2, "Premiers pas dans le Wild",
+                        List.of(Material.STONE_SWORD), "rpgquest:kit_tier2")));
+    }
 }

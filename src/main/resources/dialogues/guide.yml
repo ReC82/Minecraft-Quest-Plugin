@@ -15,6 +15,16 @@
 #   (garde LACKS_CUSTOM_ITEM) ; objet permanent, lié au joueur, jamais consommé (voir
 #   travel.ItemTravelService, cooldown). Chaque nouveau joueur en reçoit déjà une automatiquement.
 #
+# Règles (issue #235 — onboarding compréhensible) :
+# - aucune mutation de gameplay derrière un libellé générique : un choix qui démarre une quête
+#   la NOMME (« Commencer la quête : … »), et l'explication précède le démarrage ;
+# - « Comment améliorer mon kit ? » (nœud « kit_progress ») affiche le palier actuel, le palier
+#   suivant et les matériaux attendus — tout DÉRIVÉ de config.yml et de la quête de déblocage, donc
+#   jamais à recopier ici. Les libellés qui entourent ces valeurs sont dans ce fichier, donc
+#   éditables depuis le Control Panel ;
+# - la quête rpgquest:kit_tier2 n'était démarrable par AUCUN dialogue avant #235 : elle n'existait
+#   que dans config.yml. C'est ici qu'elle est proposée, par son PNJ donneur (giver: guide).
+#
 # Règle (issue #26, partie A — kit d'outils en bois) :
 # - « Demander mon kit de départ » appelle GIVE_STARTER_KIT (voir player.StarterToolKitService) :
 #   aucune remise automatique, le droit se renouvelle à chaque mort du joueur, remise tout ou rien
@@ -26,16 +36,24 @@ start: greeting
 nodes:
   greeting:
     speaker: "Guide"
-    text: "<white>Bienvenue au village !</white> <gray>Je suis le Guide : je peux t'expliquer comment fonctionne le monde et te dire à qui parler.</gray>"
+    text: "<white>Bienvenue au village !</white> <gray>Je suis le Guide : je t'explique comment fonctionne le monde, je te dis à qui parler, et je te remets ton équipement de secours quand tu en as besoin.</gray>"
     choices:
-      - text: "Très bien, j'y vais."
+      # Issue #235 : ce choix REMPLACE « Très bien, j'y vais. », qui démarrait une quête sans le
+      # dire. Il mène à un nœud qui explique ce qu'il y a à faire et NOMME la quête ; le démarrage
+      # est un second geste, explicite. Une mutation de gameplay ne se cache pas derrière une
+      # phrase polie.
+      - text: "Que dois-je faire pour commencer ?"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:premiers_pas
             state: NOT_STARTED
-        actions:
-          - type: START_QUEST
-            quest: rpgquest:premiers_pas
+        next: intro_quest
+
+      # Issue #235 : le joueur doit pouvoir connaître son palier de kit et savoir comment
+      # l'améliorer SANS le Control Panel ni commande admin. Toujours proposé : le nœud s'adapte,
+      # y compris au palier maximum.
+      - text: "Comment améliorer mon kit ?"
+        next: kit_progress
 
       - text: "Comment fonctionne le jeu ?"
         next: help_menu
@@ -65,6 +83,55 @@ nodes:
         next: delivery
 
       - text: "D'accord !"
+        actions:
+          - type: CLOSE
+
+  # Issue #235 — la quête d'introduction est EXPLIQUÉE puis NOMMÉE avant de démarrer. Le joueur
+  # sait donc ce qu'il accepte, et ce qu'il devra faire ensuite.
+  intro_quest:
+    speaker: "Guide"
+    text: "<gray>Rien de compliqué pour commencer : va te présenter au <white>Libraire</white>, juste à côté — c'est lui qui te remettra ton <white>journal des quêtes</white>. Si tu veux, je l'inscris comme ta première quête : elle s'appelle <white>Premiers pas</white>.</gray>"
+    choices:
+      - text: "Commencer la quête : Premiers pas"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:premiers_pas
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:premiers_pas
+          - type: CLOSE
+      - text: "Pas tout de suite"
+        actions:
+          - type: CLOSE
+
+  # Issue #235 — progression du kit, entièrement DÉRIVÉE : %kit_tier_current% et %kit_tier_next%
+  # viennent des paliers de config.yml, %kit_upgrade_requirements% des objectifs de la quête de
+  # déblocage (unlock-quest:) avec ce qui est DÉJÀ remis. Aucun matériau, aucune quantité et aucun
+  # nom de palier n'est écrit ici : modifier le palier 2 ou sa quête change ce texte tout seul.
+  #
+  # Au palier maximum, %kit_tier_next% rend une phrase complète (« aucune — tu as déjà… ») et
+  # %kit_upgrade_requirements% rend « rien de particulier » : ce nœud unique reste donc juste.
+  kit_progress:
+    speaker: "Guide"
+    text: "<white>Ton équipement de secours — celui que je te redonne après chaque mort :</white><newline><white>Kit actuel :</white> %kit_tier_current%<newline><white>Prochaine amélioration :</white> %kit_tier_next%<newline><gray>À me rapporter :</gray><newline>%kit_upgrade_requirements%<newline><gray>Apporte-les-moi au fur et à mesure : ce que tu me remets est gardé en sécurité, et tu ne le perds pas si tu meurs ensuite. Quand tout est là, ton kit s'améliore définitivement.</gray>"
+    choices:
+      - text: "Commencer la quête : Premiers pas dans le Wild"
+        conditions:
+          - type: QUEST_STATE
+            quest: rpgquest:kit_tier2
+            state: NOT_STARTED
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:kit_tier2
+          - type: CLOSE
+      - text: "J'ai des matériaux à te remettre"
+        conditions:
+          - type: HAS_PENDING_DELIVERY
+        next: delivery
+      - text: "← Autres questions"
+        next: greeting
+      - text: "Merci !"
         actions:
           - type: CLOSE
 

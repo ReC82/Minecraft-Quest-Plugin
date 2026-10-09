@@ -95,6 +95,7 @@ import com.lodygames.rpgquest.npc.YamlNpcEngine;
 import com.lodygames.rpgquest.ops.ConsoleTap;
 import com.lodygames.rpgquest.ops.ServerLogBuffer;
 import com.lodygames.rpgquest.ops.ServerOpsService;
+import com.lodygames.rpgquest.player.KitProgressService;
 import com.lodygames.rpgquest.player.PlayerConnectionListener;
 import com.lodygames.rpgquest.player.PlayerListenerService;
 import com.lodygames.rpgquest.player.PlayerProfileService;
@@ -226,6 +227,8 @@ public final class RPGQuestBootstrap {
     private PlayerVariableRepository variableRepository;
     /** Kit de départ à paliers (issue #218) — partagé entre le dialogue du Guide et /rpgadmin kit. */
     private StarterToolKitService starterToolKitService;
+    /** Progression du kit lisible dans le dialogue du Guide (issue #235). */
+    private KitProgressService kitProgressService;
     private YamlDialogueEngine dialogueEngine;
     private DialogueSessionEngine dialogueSessionEngine;
     private HubGuideRegistry hubGuideRegistry;
@@ -756,10 +759,23 @@ public final class RPGQuestBootstrap {
                 worldService::find, () -> configService.current().travel().wildWorld());
         // Issue #123 : %delivery_status% rend, pour le PNJ porteur du dialogue courant, ce qui a
         // déjà été remis et ce qui manque — lecture pure de la progression en mémoire.
+        // Issue #235 : la progression du kit de départ, lisible par le joueur dans le dialogue du
+        // Guide — plus besoin du Control Panel ni d'une commande admin pour connaître son palier.
+        // Trois valeurs et non un bloc tout fait : les libellés qui les entourent restent dans
+        // dialogues/guide.yml, donc éditables depuis le panel (même convention que %delivery_status%).
+        kitProgressService = new KitProgressService(
+                () -> configService.current().starterToolKit(),
+                starterToolKitService::cachedTier,
+                questEngine::find,
+                questProgressEngine::activeStepView);
         dialogueSessionEngine.setPlaceholders(new DialogueTextPlaceholders(Map.of(
                 "wild_conditions", context -> wildConditionsService.describe(),
                 "delivery_status", context -> DeliveryStatusText.render(questProgressEngine.pendingDeliveries(
-                        context.player().getUniqueId(), context.npcId())))));
+                        context.player().getUniqueId(), context.npcId())),
+                "kit_tier_current", context -> kitProgressService.currentTierText(context.player().getUniqueId()),
+                "kit_tier_next", context -> kitProgressService.nextTierText(context.player().getUniqueId()),
+                "kit_upgrade_requirements",
+                        context -> kitProgressService.requirementsText(context.player().getUniqueId()))));
         registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));
         var citizensDialogueListener = dialogueSessionEngine.citizensNpcInteractListener();
         if (citizensDialogueListener != null) {
@@ -795,13 +811,14 @@ public final class RPGQuestBootstrap {
         registry.start(questJournalService);
         registry.start(new PlayerListenerService(plugin, questJournalService.listener()));
 
-        // Reset admin « nouveau joueur » (/rpgadmin player resetnew) : orchestre les resets déjà
-        // existants (quêtes, stories, claims/CLAIM_TIER_1, découvertes de Waystones) + les
-        // suppressions par joueur manquantes (variables, progression RPG, cooldowns persistants).
+        // Reset admin (/rpgadmin player resetnew | resetfull) : orchestre les resets déjà existants
+        // (quêtes, stories, claims/CLAIM_TIER_1, découvertes de Waystones) + les suppressions par
+        // joueur manquantes (variables, progression RPG, cooldowns persistants). Deux portées
+        // explicites depuis #235 — voir PlayerResetService.ResetScope.
         playerResetService = new PlayerResetService(
                 plugin, questProgressEngine, storyService, waystoneService, claimService, progressionService,
                 questJournalService, portalService, itemTravelService, variableRepository, progressionRepository,
-                portalCooldownRepository, itemTravelCooldownRepository, customItemRegistry);
+                portalCooldownRepository, itemTravelCooldownRepository, customItemRegistry, starterToolKitService);
         registry.start(new PlayerListenerService(plugin,
                 new NewPlayerResetJoinListener(plugin, variableRepository, customItemRegistry)));
 

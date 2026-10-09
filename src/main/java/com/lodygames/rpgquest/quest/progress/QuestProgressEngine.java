@@ -1154,6 +1154,18 @@ public final class QuestProgressEngine implements PluginService {
     //  - progression d'un objectif (fréquente, peut arriver plusieurs fois par seconde en combat) :
     //    ActionBar, qui se remplace en place plutôt que d'empiler des lignes.
 
+    /**
+     * Annonce le démarrage, <strong>et ce qu'il faut faire</strong> (issue #235).
+     *
+     * <p>Le Title seul ne suffisait pas : il disparaît en deux secondes et ne dit que le nom de la
+     * quête. Un joueur qui vient de l'accepter savait donc qu'« une quête a commencé » sans savoir
+     * quoi en faire — c'est le reproche exact du retour utilisateur d'onboarding. Les objectifs de
+     * la première étape sont donc envoyés dans le chat, où ils restent lisibles et consultables.</p>
+     *
+     * <p>Aucune règle dupliquée : le libellé d'un objectif vient de {@link #describeObjective}, le
+     * même que l'ActionBar de progression et le journal, et la quantité de
+     * {@link QuestObjective#requiredAmount}. Les textes vivent dans {@code messages.yml}.</p>
+     */
     private void showQuestStarted(Player player, QuestDefinition quest) {
         if (!player.isOnline()) {
             return;
@@ -1162,6 +1174,22 @@ public final class QuestProgressEngine implements PluginService {
         Component subtitle = messagesService.current().format(
                 "quest.started-subtitle", Placeholder.parsed("quest", quest.title().base()));
         player.showTitle(Title.title(title, subtitle, FEEDBACK_TITLE_TIMES));
+
+        // Une quête sans étape ne passe pas la validation du parseur, mais on ne le suppose pas ici.
+        if (quest.steps().isEmpty()) {
+            return;
+        }
+        List<QuestObjective> objectives = quest.steps().get(0).objectives();
+        if (objectives.isEmpty()) {
+            return;
+        }
+        player.sendMessage(messagesService.current().format("quest.started-objectives-header",
+                Placeholder.parsed("quest", quest.title().base())));
+        for (QuestObjective objective : objectives) {
+            player.sendMessage(messagesService.current().format("quest.started-objective",
+                    Placeholder.unparsed("objective", describeObjective(objective)),
+                    Placeholder.unparsed("total", String.valueOf(requiredAmount(objective)))));
+        }
     }
 
     /**

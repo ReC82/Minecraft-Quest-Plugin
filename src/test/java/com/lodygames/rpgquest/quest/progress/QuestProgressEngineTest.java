@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.quest.progress;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -444,14 +445,74 @@ class QuestProgressEngineTest {
         assertTrue(actionBar.contains("2/2"), () -> "avancement forcé : doit refléter le compteur final, obtenu : " + actionBar);
     }
 
+    /**
+     * Issue #235 — accepter une quête annonce <strong>ce qu'il faut faire</strong>.
+     *
+     * <p>Ce test remplace {@code acceptingAQuestNeverSendsAChatMessage}, qui affirmait le contraire.
+     * Deux raisons de l'avoir remplacé plutôt que gardé :</p>
+     * <ul>
+     *   <li>le <strong>contrat a changé</strong> : un Title qui disparaît en deux secondes et ne dit
+     *       que le nom de la quête laissait le joueur sans savoir quoi faire — c'est le retour
+     *       utilisateur qui a ouvert #235 ;</li>
+     *   <li>l'ancien test ne prouvait <strong>rien</strong> : la notification est planifiée sur le
+     *       thread principal, et il ne tickait pas le scheduler. Il aurait passé quel que soit le
+     *       comportement. D'où le {@code performTicks} explicite ici.</li>
+     * </ul>
+     */
     @Test
-    void acceptingAQuestNeverSendsAChatMessage() throws Exception {
-        PlayerMock player = addPlayer();
+    void acceptingAQuestAnnouncesItsObjectivesInChat() throws Exception {
+        PlayerMock player = quietPlayer();
 
         AcceptOutcome outcome = engine.accept(player, KILL_QUEST).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
 
         assertEquals(AcceptOutcome.Result.ACCEPTED, outcome.result());
-        assertNull(player.nextMessage(), "le démarrage d'une quête doit passer par un Title, jamais le chat");
+        String header = player.nextMessage();
+        assertNotNull(header, "le démarrage doit annoncer la quête et ses objectifs");
+        assertTrue(header.contains("Titre"), () -> "le nom de la quête est attendu : " + header);
+        assertTrue(header.contains("/quests"), () -> "où retrouver l'objectif est attendu : " + header);
+
+        String objective = player.nextMessage();
+        assertNotNull(objective, "le premier objectif doit être lisible immédiatement");
+        assertTrue(objective.contains("ZOMBIE"), () -> "l'objectif réel est attendu : " + objective);
+        assertTrue(objective.contains("2"), () -> "la quantité demandée est attendue : " + objective);
+
+        assertNull(player.nextMessage(), "cette quête n'a qu'un objectif : pas de ligne de plus");
+    }
+
+    /** Une quête à plusieurs objectifs les annonce tous — un seul suffirait à égarer le joueur. */
+    @Test
+    void everyObjectiveOfTheFirstStepIsAnnounced() throws Exception {
+        NamespacedKey twoObjectives = new NamespacedKey("rpgquest", "two_objectives");
+        Files.writeString(questsDir.resolve("two_objectives.yml"), """
+                id: rpgquest:two_objectives
+                title: "Double"
+                description: "Deux choses à faire."
+                category: test
+                icon: STONE
+                steps:
+                  - id: s1
+                    objectives:
+                      - type: KILL_ENTITY
+                        entity: ZOMBIE
+                        amount: 2
+                      - type: COLLECT_ITEM
+                        material: DIRT
+                        amount: 3
+                """);
+        engine.reloadQuestDefinitions();
+        PlayerMock player = quietPlayer();
+
+        engine.accept(player, twoObjectives).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+
+        player.nextMessage(); // en-tête
+        String first = player.nextMessage();
+        String second = player.nextMessage();
+        assertNotNull(second, "les deux objectifs doivent être annoncés");
+        assertTrue(first.contains("ZOMBIE"), first);
+        assertTrue(second.contains("DIRT"), second);
+        assertNull(player.nextMessage());
     }
 
     @Test
@@ -681,6 +742,23 @@ class QuestProgressEngineTest {
     }
 
     /** Ajoute un joueur MockBukkit et crée son profil dans la base de test (requis par la FK de quest_progress). */
+    /**
+     * Un joueur dont la file de messages est <strong>réellement</strong> vide.
+     *
+     * <p>Le plugin complet tourne dans ces tests, et la Rune de rappel de départ est remise par une
+     * tâche planifiée : vider la file sans avoir d'abord tické le scheduler ne sert à rien, le
+     * message arrive ensuite. On tick donc, puis on vide — sinon un test de notification lirait le
+     * message d'un autre écouteur et échouerait pour une raison sans rapport.</p>
+     */
+    private PlayerMock quietPlayer() throws Exception {
+        PlayerMock player = addPlayer();
+        server.getScheduler().performTicks(5);
+        while (player.nextMessage() != null) {
+            // volontairement vide
+        }
+        return player;
+    }
+
     private PlayerMock addPlayer() throws Exception {
         PlayerMock player = server.addPlayer();
         profileRepository.findOrCreate(player.getUniqueId(), player.getName()).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);

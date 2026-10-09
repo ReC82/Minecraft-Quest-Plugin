@@ -43,6 +43,12 @@ quest:
   list-entry: "<white><quest></white> <gray>[<category>] -</gray> <yellow><state></yellow>"
   started-title: "<green><bold>Quête commencée</bold></green>"
   started-subtitle: "<white><quest></white>"
+  # Issue #235 : le Title disparaît en deux secondes et ne dit que le nom de la quête. Ces deux
+  # lignes partent dans le CHAT au démarrage, pour que le joueur sache immédiatement QUOI FAIRE —
+  # c'est l'exception assumée à la règle « jamais le chat » ci-dessus, et elle ne concerne que le
+  # démarrage (rare). Le libellé d'un objectif est le même que partout ailleurs (journal, ActionBar).
+  started-objectives-header: "<green><bold>Quête commencée :</bold></green> <white><quest></white> <gray>— à faire (suivi dans</gray> <white>/quests</white><gray>) :</gray>"
+  started-objective: "<yellow> • <objective></yellow> <gray>(x<total>)</gray>"
   objective-progress: "<yellow><objective></yellow> <gray><current>/<total></gray>"
   completed-title: "<gold><bold>Quête terminée</bold></gold>"
   completed-subtitle: "<white><quest></white>"

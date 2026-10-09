@@ -7078,3 +7078,87 @@ liste blanche `PublishKind` que la publication, et le texte est plafonné. L'act
   fonctionner**, et aucun fichier déjà publié n'est affecté.
 - **Une publication précise** se défait depuis la fiche (« Restaurer la version précédente » ou
   « Retirer de DEV »).
+
+------------------------------------------------------------------------
+
+## 2026-10-09 — Onboarding du Guide, et deux portées de reset joueur (#235)
+
+**Branche** : `feat/235-onboarding-guide-kit` (commits `b641d08`, `4dd09a1`, `70ddc61`, `c293faa`,
+`392f7c4`, `7abbf99`, `d29ba82`)
+**Portée** : **panel ET plugin**, plus **un fichier de contenu** — voir l'avertissement ci-dessous.
+
+### À transférer
+
+1. **Panel** : `scripts/plugadmin/deploy.sh` — deux nouvelles actions au catalogue
+   (`player.resetfull.preview` / `.confirm`), permission dédiée `ACTION_PLAYER_RESET_FULL`, et les
+   deux blocs de reset sur la fiche joueur.
+2. **JAR du plugin** : les deux nouvelles actions agent, le palier de kit lisible en mémoire, les
+   objectifs annoncés au démarrage d'une quête, et les nouveaux messages.
+3. ⚠️ **`dialogues/guide.yml`**, obligatoirement en `--also`. Vérifié dans le code :
+   `YamlDialogueEngine.BUNDLED_EXAMPLES` ne contient que **`guard.yml`** — `guide.yml` n'est donc
+   **même pas** semé par le plugin, et un redéploiement du JAR ne le remplace **jamais**. Sans ce
+   transfert, le moteur aurait gagné les marqueurs mais le Guide aurait gardé son ancien dialogue :
+   **aucun** changement d'onboarding n'aurait été visible en jeu.
+
+**Fait le 2026-10-09, 16:30–16:58 UTC+2.** Panel d'abord, puis le JAR et `guide.yml` dans la même
+opération, puis **un seul redémarrage**, **0 joueur connecté** (vérifié avant *et* après).
+
+| | Valeur |
+|---|---|
+| JAR déployé | **2 159 437 o**, SHA-256 `f9afbcdeb7f6718f696ae5db5dca7059c5749b66d30e6751a6957fe918c74582` |
+| Backup JAR | `rpgquest-20261009T145359Z-predeploy.jar` (**2 147 202 o** — plus petit que le neuf, donc la direction attendue) |
+| `guide.yml` | 8 653 o (`8178d70d…`) → **12 656 o** (`2d0dc9bb…`) |
+| Backup `guide.yml` | `verygames-backups/extra-20261009T145359Z/` (+ `MANIFEST.txt`) |
+| Migration | **aucune** (`user_version` reste 29) |
+
+### Ne PAS transférer/altérer
+
+`data.db`, `config.yml`, `messages.yml` (le plugin fusionne lui-même les clés manquantes au
+démarrage — aucune édition manuelle), `spawn.yml`, les mondes, `plugins/Citizens/`, les **autres**
+fichiers de dialogue, et les quêtes/stories du serveur (dont celles en cours d'édition par le
+propriétaire).
+
+### Redémarrage requis
+
+**Oui, un seul** — effectué. Les deux nouvelles actions agent et les nouveaux messages sont dans le
+JAR.
+
+### Migration automatique
+
+Aucune.
+
+### Ce qui a été vérifié sur le serveur réel
+
+Pas « le fichier est copié », mais « le moteur le voit » :
+
+| Vérification | Résultat |
+|---|---|
+| Plugin chargé | `/plugins` → **RPGQuest en vert**, `rpgquest version` → `v0.1.0-SNAPSHOT` |
+| Panel : ce qu'il **sert** | les deux actions, `ACTION_PLAYER_RESET_FULL`, les libellés des deux blocs et l'avertissement du second kit présents dans le JAR servi ; fiche d'aide `joueurs-reset.md` à jour dans le JAR |
+| Fiche joueur rendue | les **deux** portées affichées, avertissement du second kit présent, « Ender » cité dans la portée complète |
+| **Le plugin accepte la nouvelle action** | `player.resetfull.preview` soumise depuis le vrai panel → **`SUCCESS`**, `scope=NEW_PLAYER`, `wipes_inventory=true`, **12 catégories** dont « Inventaire COMPLET (vanilla inclus) », « Droit au kit de départ » et « Palier de kit » |
+| **Le moteur voit le nouveau dialogue** | `rpgquest:guide` chargé avec **13 nœuds**, dont `intro_quest` et `kit_progress` ; ancien libellé « j'y vais » **absent** ; « Commencer la quête : Premiers pas » **et** « … dans le Wild » présents ; les trois marqueurs de progression présents |
+
+L'aperçu utilisé pour cette vérification est **en lecture seule** : aucune donnée joueur n'a été
+modifiée, aucun inventaire touché. Le compte PlugAdmin jetable a été supprimé et le secret effacé.
+
+### Effet de bord à connaître
+
+**Le reset de progression (`resetnew`) rétablit le droit au kit sans retirer un kit déjà reçu.** Le
+comportement est inchangé depuis toujours ; ce qui change est que l'écran le **dit** désormais, et
+qu'une portée complète existe pour obtenir un état réellement neuf. Les outils du kit sont des objets
+vanilla indiscernables de ceux que le joueur fabrique : ils ne sont jamais retirés « intelligemment ».
+
+**Vider l'inventaire d'un joueur ne se défait pas.** `player.resetfull.confirm` exige une permission
+dédiée, une case à cocher et `confirm=true`, et l'écran énumère ce qui sera vidé avant.
+
+### Rollback
+
+- **Plugin** : `scripts/rollback-verygames.sh --latest` (restaure
+  `rpgquest-20261009T145359Z-predeploy.jar`), puis redémarrer.
+  ⚠️ **Remettre aussi l'ancien `guide.yml`** depuis `extra-20261009T145359Z/` (voir son
+  `MANIFEST.txt`) : avec l'ancien JAR, les marqueurs `%kit_tier_current%` etc. ne seraient plus
+  substitués et s'afficheraient littéralement au joueur.
+- **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
+- **Aucun reset déjà exécuté ne se défait** — avant comme après ce lot. C'est pourquoi l'écran
+  annonce la portée avant de confirmer.

@@ -2951,3 +2951,97 @@ Première étape à reprendre: TC-272 puis TC-271 (~14 min au total, un navigate
   téléphone pour le confort mobile). Ensuite, décider avec le propriétaire du sort des familles hors
   périmètre — c'est la seule question qui empêche de clore #47.
 ```
+
+```text
+Date: 2026-10-09 (après-midi — #235 : onboarding du Guide et resets joueur cohérents)
+Branche de départ: feat/47-content-publish @ 2379a80 (= ligne réellement déployée, #47 fermée)
+Branche de travail: feat/235-onboarding-guide-kit
+Étape de départ: « Traite #235 avant de poursuivre les tests #123/#218 ». Trois défauts constatés
+  en jeu après un reset de LoDyMcFly, dans les premières minutes de jeu. Consigne explicite de
+  rester EXCLUSIVEMENT sur #235.
+Étapes terminées:
+  - AUDIT D'ABORD, et il a donné la CAUSE EXACTE — c'est le résultat le plus utile du lot. Il
+    n'existait qu'UN reset. Il effaçait TOUTES les variables du joueur, donc le droit au kit ET le
+    palier, mais ne retirait de l'inventaire que les objets RPGQuest (reconnus par PDC). Or le kit
+    de départ est fait d'objets VANILLA (new ItemStack(Material, 1)) : ses outils restaient en
+    place pendant que le droit d'en redemander un était rétabli. Ce n'est pas un défaut de la
+    logique du kit, c'est l'écart entre « reset des DONNÉES » et « reset du MONDE PHYSIQUE ».
+  - ET AUCUNE DÉTECTION SÛRE N'EXISTE : une pioche en bois du kit est rigoureusement indiscernable
+    d'une pioche fabriquée. « Reconnaître les anciens outils du kit » détruirait les outils
+    légitimes du joueur. Le ticket avait raison : la seule option sûre est un reset complet
+    EXPLICITE. D'où deux portées (PlayerResetService.ResetScope) et non un seul « Reset ».
+  - DEUX ACTIONS AGENT DISTINCTES ET NON UN PARAMÈTRE BOOLÉEN : un clic ne peut pas se tromper
+    d'intention, et le journal d'audit dit laquelle a eu lieu. Permission DÉDIÉE
+    ACTION_PLAYER_RESET_FULL : une progression se refait en rejouant, un inventaire vidé ne se
+    défait pas — un droit commun aurait fait du second un effet de bord du premier.
+  - LE PANEL DIT CE QU'IL CONSERVE, pas seulement ce qu'il efface : c'était l'information
+    manquante. Le bloc « progression » avertit mot pour mot qu'un second kit restera possible, ET
+    POURQUOI. Deux catégories d'aperçu ajoutées (droit au kit, palier), lues dans la carte de
+    variables déjà chargée — aucune requête de plus.
+  - Le marqueur de nettoyage différé porte la PORTÉE. Sa valeur historique « 1 » et toute valeur
+    illisible sont relues comme PROGRESSION, la portée la MOINS destructrice : un marqueur douteux
+    ne doit jamais vider un inventaire.
+  - DEUX CONSTATS QUE L'AUDIT A RÉVÉLÉS, NON DEMANDÉS MAIS BLOQUANTS :
+    (1) rpgquest:kit_tier2 n'était citée que dans config.yml. AUCUN dialogue ne la démarrait, et
+        « giver: » est purement informatif (il n'existe aucune offre automatique de quête) : la
+        progression de kit livrée par #218 était donc INJOUABLE depuis sa livraison ;
+    (2) démarrer une quête n'affichait qu'un Title de deux secondes, SANS AUCUN OBJECTIF.
+  - Dialogue : « Très bien, j'y vais. » supprimé au profit de DEUX GESTES — une question qui mène
+    à un nœud qui EXPLIQUE et NOMME la quête, puis « Commencer la quête : Premiers pas ». Un test
+    fige la règle pour le Guide.
+  - Progression du kit TOUT DÉRIVÉE : noms de paliers de config.yml, lien palier→quête de
+    « unlock-quest: », matériaux des objectifs DELIVER_ITEM_TO_NPC de cette quête, progression
+    réelle de #123. Modifier le palier 2 change le discours du Guide SANS toucher au code.
+  - TROIS MARQUEURS plutôt qu'un bloc tout fait, sur le modèle exact de %delivery_status% : les
+    libellés qui les entourent restent dans guide.yml, donc éditables depuis le panel.
+  - Palier tenu EN MÉMOIRE (le texte d'un nœud est substitué sur le thread principal, où aucune
+    requête SQL n'a le droit d'arriver — motif déjà employé par ProgressionService et
+    PortalService, que PlayerResetService invalide de la même façon). Ce cache NE SERT QU'À
+    AFFICHER : requestKit relit toujours la base, donc un cache périmé ne peut JAMAIS faire donner
+    le mauvais kit, et un test le prouve en le périmant exprès.
+  - UN TEST OBSOLÈTE REMPLACÉ, ET C'EST LE TEST QUI AVAIT TORT :
+    acceptingAQuestNeverSendsAChatMessage affirmait qu'accepter une quête n'envoie aucun message.
+    Le contrat a changé, mais surtout il ne prouvait RIEN — la notification est planifiée sur le
+    thread principal et il ne tickait pas le scheduler. Il aurait passé quel que soit le
+    comportement.
+  - PÉRIMÈTRE TENU VOLONTAIREMENT : mon test de règle, écrit d'abord pour TOUS les dialogues
+    livrés, a révélé TROIS libellés du Garde porteurs du même défaut (crystal_hunt, guard_tier1,
+    guard_tier2 démarrent sans le dire). J'en avais corrigé un, puis JE SUIS REVENU EN ARRIÈRE :
+    contenu d'autres tickets, et crystal_hunt.yml est en cours d'édition par le propriétaire. Le
+    constat est consigné, le test recentré sur le Guide, et prêt à être élargi.
+Branche finale: feat/235-onboarding-guide-kit (poussée, JAMAIS fusionnée)
+Build: ./gradlew clean build ABOUTIE depuis un worktree propre, après ./gradlew --stop.
+  3389 tests, 0 échec, 0 erreur, 38 ignorés (plugin 2167, control-panel 1192, web-api 30), en
+  39 min 30 s. +55 tests pour ce lot. Deux tests ajoutés après le gel du worktree exécutés
+  séparément (PlayerResetServiceTest : 20 tests, 0 échec).
+Déploiement: FAIT sur le DEV, 16:30-16:58. Panel d'abord (vérifié par ce qu'il SERT), puis le JAR
+  ET guide.yml dans la même opération, UN SEUL redémarrage, 0 joueur avant et après. AUCUNE
+  migration (user_version reste 29). JAR 2 159 437 o, SHA f9afbcde…, backup
+  rpgquest-20261009T145359Z-predeploy.jar (2 147 202 o, donc plus PETIT que le neuf : direction
+  attendue). guide.yml 8 653 → 12 656 o, ancien sauvegardé sous extra-20261009T145359Z/.
+  ⚠️ guide.yml N'EST MÊME PAS dans BUNDLED_EXAMPLES (seul guard.yml y est) : un redéploiement de
+  JAR ne le remplace jamais, il DOIT partir en --also. Sans cela, aucun changement d'onboarding
+  n'aurait été visible en jeu — piège à retenir pour tout lot touchant un dialogue livré.
+  VÉRIFIÉ SUR LE SERVEUR RÉEL, pas « le fichier est copié » : le PLUGIN a traité
+  player.resetfull.preview en SUCCESS (scope=NEW_PLAYER, wipes_inventory=true, 12 catégories dont
+  les trois nouvelles), et le MOTEUR a chargé rpgquest:guide avec 13 nœuds dont intro_quest et
+  kit_progress, sans l'ancien libellé, avec les deux « Commencer la quête : … » et les trois
+  marqueurs. Aperçu en LECTURE SEULE : aucune donnée joueur modifiée. Compte jetable supprimé,
+  secret effacé.
+Tests manuels en attente: TC-273 (nouveau, ~10 min) — rejoue exactement le parcours qui a révélé
+  les trois défauts et s'enchaîne sur TC-257/#123. Plus TC-272, TC-271, TC-270, TC-269, TC-268,
+  TC-267, TC-265, TC-266, TC-264, TC-257, TC-258..TC-263.
+Blocages: aucun. Limites assumées et documentées :
+  - TROIS libellés du Garde présentent le même défaut, volontairement non corrigés (voir
+    ci-dessus). Correction d'une ligne chacun, à décider par le propriétaire ;
+  - les PALIERS ne sont pas éditables depuis le panel (config.yml n'est pas administrable côté
+    panel). Le dialogue, les textes et la quête kit_tier2 le sont ; le palier d'un joueur est
+    lisible par player.variable.get. Constat de vérification demandé par le ticket, pas un manque
+    créé par ce lot ;
+  - paliers 3 à 5 : l'architecture les accepte, leur contenu n'est pas décidé — rien n'a été
+    inventé, et le nœud du Guide s'y adapte déjà sans modification ;
+  - le cache de palier peut afficher « Palier 1 » pendant la fraction de seconde qui suit la
+    connexion. Jamais une valeur plus flatteuse que la réalité, et sans effet sur le kit remis.
+Première étape à reprendre: TC-273 (~10 min, un client), qui débouche DIRECTEMENT sur TC-257/#123 —
+  c'était l'objectif du ticket. Ensuite, trancher le sort des trois libellés du Garde.
+```

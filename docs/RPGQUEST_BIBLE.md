@@ -127,8 +127,31 @@ Détail complet : [docs/ADMIN_FLATTEN.md](ADMIN_FLATTEN.md). Page docs-site : au
 
 Persistance : non (opère directement sur les blocs du monde ; l'état d'annulation est en mémoire, perdu au redémarrage). À savoir : rayon max configurable (`admin.flatten.max-radius`, 48 par défaut), traitement par lots (4000 blocs/tick par défaut) pour ne jamais geler le serveur.
 
-### Reset « nouveau joueur » — `/rpgadmin player resetnew`
+### Resets d'un joueur — `/rpgadmin player resetnew` et `resetfull` (deux portées, issue #235)
 Détail complet : [docs/ADMIN_PLAYER_RESET.md](ADMIN_PLAYER_RESET.md).
+
+**Il y a deux resets, et la différence est l'inventaire.** Jusqu'à #235 il n'y en avait qu'un, et il
+produisait un état incohérent : il effaçait toutes les variables — donc le droit au kit de départ et
+le palier — mais ne retirait que les objets **RPGQuest** de l'inventaire. Le kit de départ étant fait
+d'objets **vanilla**, ses outils restaient en place pendant que le droit d'en redemander un était
+rétabli : le joueur obtenait un **second kit**. Constaté en jeu.
+
+On ne « reconnaît » pas les anciens outils du kit : une pioche en bois du kit est indiscernable d'une
+pioche fabriquée, et supprimer la seconde serait pire que le problème. L'intention est donc rendue
+explicite :
+
+| | `resetnew` (`PROGRESSION`) | `resetfull` (`NEW_PLAYER`) |
+|---|---|---|
+| Données RPGQuest, droit au kit, palier de kit | réinitialisés | réinitialisés |
+| Inventaire Minecraft | **conservé** (objets RPGQuest retirés) | **vidé** |
+| Armure, main secondaire, curseur, coffre de l'Ender | conservés | vidés |
+| Permission panel | `ACTION_PLAYER_RESET` | `ACTION_PLAYER_RESET_FULL` |
+| Action agent | `player.resetnew.*` | `player.resetfull.*` |
+
+Le panel affiche **deux blocs distincts**, chacun énumérant ce qu'il **conserve** autant que ce qu'il
+efface, et le bloc « progression » avertit explicitement qu'un kit déjà reçu restera en place. Le
+marqueur de nettoyage différé porte la portée ; sa valeur historique `"1"` et toute valeur illisible
+sont relues comme `PROGRESSION`, la portée la moins destructrice.
 
 | Commande | Effet |
 |---|---|
@@ -1888,6 +1911,40 @@ compatible tout client, aucune API instable). ⚠️ Divergence constatée :
 `README.md` (racine) affirme à tort que `chat` est la valeur par défaut —
 c'est `paper-dialog` dans le `config.yml` généré réellement ; `docs-site/dialogues.html` a la bonne valeur.
 
+### Onboarding du Guide : quête explicite et progression du kit visible (issue #235)
+
+Trois règles, issues d'un test utilisateur réel sur les premières minutes de jeu.
+
+**1. Aucune mutation de gameplay derrière un libellé vague.** Le choix « Très bien, j'y vais. »
+démarrait `rpgquest:premiers_pas` sans le dire. Il est remplacé par un parcours en **deux gestes** :
+« Que dois-je faire pour commencer ? » ouvre un nœud qui **explique et nomme** la quête, puis
+« Commencer la quête : Premiers pas » la démarre. Un test fige la règle pour le Guide : tout choix
+portant `START_QUEST` doit avoir un libellé commençant par « Commencer la quête : ».
+
+**2. Au démarrage, le joueur sait quoi faire.** Le `Title` « Quête commencée » disparaît en deux
+secondes et ne dit que le nom. Les objectifs de la **première étape** partent désormais aussi dans le
+chat (`messages.yml` → `quest.started-objectives-header` / `quest.started-objective`), avec le même
+libellé d'objectif que le journal et l'ActionBar, et un renvoi vers `/quests`.
+
+**3. La progression du kit est visible sans PlugAdmin ni commande admin.** Le Guide propose
+« Comment améliorer mon kit ? » (nœud `kit_progress`), qui affiche le palier actuel, le palier
+suivant, les matériaux attendus avec **ce qui est déjà remis**, et explique la remise progressive.
+Tout est **dérivé** — rien n'est recopié :
+
+| Affiché par | Vient de |
+|---|---|
+| `%kit_tier_current%` | palier joueur (`STARTER_KIT_TIER`) + noms des paliers de `config.yml` |
+| `%kit_tier_next%` | palier contigu suivant de `config.yml` (phrase complète s'il n'y en a pas) |
+| `%kit_upgrade_requirements%` | objectifs `DELIVER_ITEM_TO_NPC` de la quête `unlock-quest:` + progression réelle (#123) |
+
+Les **libellés** qui entourent ces valeurs vivent dans `dialogues/guide.yml`, donc éditables depuis
+le Control Panel — même convention que `%delivery_status%`.
+
+**À savoir** : avant #235, `rpgquest:kit_tier2` n'était citée que dans `config.yml`. **Aucun dialogue
+ne la démarrait**, et `giver:` est purement informatif (il n'existe aucune offre automatique) : la
+progression de kit annoncée par #218 était donc **injouable**. Le Guide la propose désormais, et un
+test l'exige.
+
 ### Paliers du kit de départ (issue #218)
 
 Le kit de #26 devient le **palier 1** d'une progression. Une quête par montée de palier améliore le
@@ -1905,8 +1962,13 @@ kit que le joueur récupère auprès du Guide après une mort. Implémentation :
 -   **Paliers 3 à 5** : l'architecture les accepte (il suffit de les déclarer en configuration), mais
     leur contenu exact **n'est pas décidé** et n'a donc pas été inventé.
 -   **Palier persistant** : variable joueur `STARTER_KIT_TIER` (absente = palier 1). Survit à la
-    mort, à la reconnexion et au redémarrage. `/rpgadmin player resetnew` la remet à zéro avec les
-    autres variables.
+    mort, à la reconnexion et au redémarrage. `/rpgadmin player resetnew` (et `resetfull`) la remet
+    à zéro avec les autres variables.
+-   **Palier lisible en jeu** (issue #235) : le Guide l'affiche. Le palier est tenu en mémoire par
+    joueur — chargé à la connexion, mis à jour au déblocage, oublié à la déconnexion, invalidé par un
+    reset — parce que le texte d'un nœud de dialogue est substitué sur le thread principal, où aucune
+    requête SQL n'a le droit d'arriver. **Ce cache ne sert qu'à afficher** : une remise de kit relit
+    toujours la base, donc un cache périmé ne peut jamais faire donner le mauvais kit.
 -   **Impossible de sauter un palier** : le déblocage passe par
     `/rpgadmin kit grant-tier <joueur> <niveau>`, appelé en **récompense `COMMAND`** de la quête du
     palier. Le moteur refuse tout niveau non contigu (`SKIPPED`), tout niveau non défini

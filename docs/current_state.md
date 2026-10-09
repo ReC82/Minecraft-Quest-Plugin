@@ -514,6 +514,31 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   reste atomique et limitée à une par vie, et les emplacements requis sont calculés sur le contenu
   réel du palier. Le déblocage passe par une quête ordinaire (`kit_tier2.yml`) utilisant
   `DELIVER_ITEM_TO_NPC` : rien n'est codé en dur dans le Guide.
+- **Onboarding du Guide et resets joueur cohérents** *(issue #235)* — trois corrections issues d'un
+  test utilisateur sur les premières minutes de jeu.
+  **Resets : deux portées explicites.** Il n'y en avait qu'une, et elle produisait un état
+  incohérent : elle effaçait toutes les variables — donc le droit au kit de départ et le palier —
+  mais ne retirait de l'inventaire que les objets *RPGQuest*. Le kit de départ étant fait d'objets
+  **vanilla**, ses outils restaient en place pendant que le droit d'en redemander un était rétabli,
+  et le joueur obtenait un **second kit**. On ne tente pas de « reconnaître » ces outils : une pioche
+  en bois du kit est indiscernable d'une pioche fabriquée. L'intention est donc explicite —
+  `/rpgadmin player resetnew` (progression, **inventaire conservé**, et le panel l'avertit mot pour
+  mot) et `/rpgadmin player resetfull` (**vide** inventaire, équipement et coffre de l'Ender),
+  chacune avec son aperçu, sa confirmation et sa permission (`ACTION_PLAYER_RESET` /
+  `ACTION_PLAYER_RESET_FULL`). Le marqueur de nettoyage différé porte la portée, et toute valeur
+  douteuse est relue comme la moins destructrice.
+  **Démarrage de quête explicite.** Le choix « Très bien, j'y vais. » démarrait une quête sans le
+  dire ; il est remplacé par « Que dois-je faire pour commencer ? » → explication qui **nomme** la
+  quête → « Commencer la quête : Premiers pas ». Un test fige la règle pour le Guide.
+  **Le joueur sait quoi faire après le démarrage** : les objectifs de la première étape partent dans
+  le chat (textes dans `messages.yml`), avec le même libellé que le journal et un renvoi vers
+  `/quests` — le `Title` seul disparaissait en deux secondes sans rien indiquer.
+  **Progression du kit visible en jeu** : le Guide propose « Comment améliorer mon kit ? » et affiche
+  palier actuel, palier suivant et matériaux attendus avec ce qui est **déjà remis**. Tout est dérivé
+  de `config.yml` et de la quête `unlock-quest:` (trois marqueurs `%kit_tier_current%`,
+  `%kit_tier_next%`, `%kit_upgrade_requirements%`) ; les libellés restent dans `dialogues/guide.yml`,
+  donc éditables depuis le panel. **Et surtout** : `rpgquest:kit_tier2` n'était démarrable par aucun
+  dialogue avant ce lot — la progression de #218 était injouable.
 - **Densité des bornes de voyage du Hub** *(issue #156)* — correction d'un défaut du déclencheur
   d'appariement : la persistance du waypoint étant asynchrone, le premier passage d'un joueur ne
   pouvait jamais apparier, et une sortie anticipée « déjà dans cette instance » interdisait ensuite

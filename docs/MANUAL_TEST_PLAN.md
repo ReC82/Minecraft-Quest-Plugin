@@ -4134,6 +4134,7 @@ le résumé de récompenses de TC-014).
 | TC-270 | Poser la hutte de test sur un emplacement, deux orientations, et annuler #213 (PENDING) | | | |
 | TC-271 | Publier une quête sur DEV depuis PlugAdmin, sans build ni redémarrage #47 (PENDING) | | | |
 | TC-272 | Diff source↔DEV, page « Changements en attente » et publication groupée #47 (PENDING) | | | |
+| TC-273 | Onboarding nouveau joueur : reset cohérent, quête nommée, progression du kit #235 (PENDING) | | | |
 
 ---
 
@@ -4846,3 +4847,87 @@ le résumé de récompenses de TC-014).
 -   Après une publication, l'état ne régresse **jamais** vers « Source uniquement ».
 -   En conflit, aucun bouton de publication avant d'avoir vu la différence.
 -   **Tout est utilisable sur téléphone.**
+
+### TC-273 — Onboarding nouveau joueur : reset cohérent, quête nommée, progression du kit (issue #235, PENDING MANUAL VALIDATION)
+
+-   **But :** refaire **exactement** le parcours qui a révélé les trois défauts, et constater qu'un
+    nouveau joueur comprend quoi faire **sans explication extérieure**.
+-   **Durée :** environ 10 minutes.
+-   **Pré-requis :** JAR de ce lot déployé **et serveur redémarré une fois** (deux nouvelles actions
+    agent + nouveaux messages), Control Panel redéployé, compte `OWNER` ou `ADMIN`.
+-   ⚠️ **Le reset complet vide l'inventaire, l'équipement et le coffre de l'Ender.** À faire sur un
+    compte de test, ou après avoir accepté la perte. L'écran l'annonce avant confirmation : lisez-le.
+-   ✅ Ce TC ne touche ni bâtiment, ni PNJ, ni monde, ni `data.db` d'un autre joueur.
+
+#### 1. Les deux resets sont distincts, et disent ce qu'ils font
+
+1.  PlugAdmin → **Joueurs** → votre joueur → **Resets joueur (2 portées)**.
+2.  Constatez **deux blocs** : « Reset progression RPGQuest <small>(inventaire conservé)</small> » et
+    « Reset nouveau joueur complet <small>(DEV / vide l'inventaire)</small> ».
+3.  Dans le premier, lisez l'avertissement : il doit dire que le droit au kit est rétabli mais qu'un
+    kit **déjà reçu restera dans l'inventaire**, donc qu'un **second kit** sera possible — et
+    pourquoi (outils vanilla indiscernables).
+4.  Dans le second, vérifiez que « armure », « main secondaire », « curseur » et « coffre de l'Ender »
+    sont **cités**.
+
+> **Ce qui serait un échec :** un seul bouton « Reset », ou un bloc qui n'annonce pas le sort de
+> l'inventaire.
+
+#### 2. Aperçu avant de confirmer
+
+1.  Cliquez **Aperçu (aucune écriture)** dans le bloc **complet**.
+2.  La ligne « Inventaire COMPLET (vanilla inclus) » doit compter vos objets, **Ender compris**.
+3.  Vérifiez en jeu que **rien n'a été retiré** : un aperçu n'écrit jamais.
+4.  Vérifiez les deux lignes « Droit au kit de départ » et « Palier de kit ».
+
+#### 3. Reset complet, puis reconnexion
+
+1.  Confirmez le **reset nouveau joueur complet** (case à cocher + bouton).
+2.  Reconnectez-vous.
+3.  Inventaire, armure, main secondaire et coffre de l'Ender **vides**, conformément au résumé lu à
+    l'étape 1. Une **Rune de rappel** peut être redonnée automatiquement : c'est normal (#26).
+
+#### 4. Le Guide se présente, et le kit ne se dédouble plus
+
+1.  Parlez au **Guide**. Son accueil doit expliquer son rôle : expliquer le monde, dire à qui parler,
+    **et remettre l'équipement de secours**.
+2.  « Demander mon kit de départ » → **exactement un** kit (4 outils en bois).
+3.  Redemandez **sans mourir** → refus explicite (« Tu as déjà reçu ton kit de départ. »).
+
+#### 5. La quête d'introduction est nommée avant de démarrer
+
+1.  Choisissez « **Que dois-je faire pour commencer ?** ».
+2.  Le Guide **explique** et **nomme** la quête (« Premiers pas »). À ce stade, **rien n'a démarré**.
+3.  Choisissez « **Commencer la quête : Premiers pas** ».
+4.  Vous devez voir le `Title` « Quête commencée » **et**, dans le chat, l'en-tête puis la ligne
+    d'objectif — par exemple « • Parler à libraire (x1) » — avec le renvoi vers `/quests`.
+
+> **Ce qui serait un échec :** « Très bien, j'y vais. » encore présent, ou un overlay sans aucune
+> indication de ce qu'il faut faire.
+
+#### 6. La progression du kit, lisible en jeu
+
+1.  Reparlez au Guide → « **Comment améliorer mon kit ?** ».
+2.  Vous devez lire :
+    -   `Kit actuel : Palier 1 — Nouveau venu`
+    -   `Prochaine amélioration : Palier 2 — Premiers pas dans le Wild`
+    -   `À me rapporter :` puis **1 bâton, 2 pierres, 4 cuirs, 3 graines de blé**, chacun en `0/n`
+    -   l'explication de la remise **progressive** et du fait que ce qui est remis est **sécurisé**.
+3.  Choisissez « **Commencer la quête : Premiers pas dans le Wild** ».
+4.  Les quatre objectifs doivent apparaître dans le chat au démarrage.
+
+> **Ce qui serait un échec :** aucune option de kit, un palier affiché « inconnu », ou des quantités
+> qui ne correspondent pas à `kit_tier2.yml`.
+
+#### 7. Enchaînement direct sur TC-257 / #123
+
+1.  Récoltez une partie des matériaux (par exemple 1 bâton et 1 pierre).
+2.  Revenez au Guide → « **J'ai des matériaux à te remettre** » → « Donner les matériaux que j'ai ».
+3.  Reparlez au Guide → « Comment améliorer mon kit ? » : les lignes doivent montrer le **déjà
+    remis** (`✔ Bâton 1/1`, `• Pierre 1/2`…).
+4.  À ce point, **TC-257 peut commencer sans intervention obscure**.
+
+#### Ce qui n'est PAS couvert par ce TC
+
+-   Le palier 2 réellement obtenu (il faut terminer la quête) — c'est TC-257/#123.
+-   Les paliers 3 à 5, dont le contenu n'est pas décidé.

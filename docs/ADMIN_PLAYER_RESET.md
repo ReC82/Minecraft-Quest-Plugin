@@ -1,9 +1,41 @@
-# `/rpgadmin player resetnew` — reset admin « nouveau joueur »
+# `/rpgadmin player resetnew` / `resetfull` — resets admin d'un joueur
 
 Outil d'administration/test pour remettre l'état **RPGQuest** d'**un seul** joueur dans
 l'équivalent fonctionnel d'un joueur qui n'a jamais joué sur le serveur — afin de pouvoir refaire
 tout le parcours d'onboarding : **Story → `CLAIM_TIER_1` → Jo → Acte de propriété → création du
 claim → Wild → Waystones / Rune de rappel**.
+
+## Deux portées depuis #235, et pourquoi
+
+Jusqu'à l'issue #235 il n'y avait qu'un seul reset, et il produisait un état **incohérent** : il
+effaçait toutes les variables du joueur — donc le droit au kit de départ et le palier de kit — mais
+ne retirait de l'inventaire que les objets **RPGQuest** (reconnus par PDC). Or le kit de départ est
+fait d'objets **vanilla** (`WOODEN_PICKAXE`, `WOODEN_SWORD`…) : ils restaient en place pendant que
+le droit d'en redemander un était rétabli, et le joueur obtenait un **second kit**. C'est ce qui a
+été constaté en jeu sur `LoDyMcFly`.
+
+La réponse n'est **pas** de « reconnaître les anciens outils du kit » : une pioche en bois du kit
+est rigoureusement indiscernable d'une pioche en bois fabriquée, et supprimer la seconde en croyant
+retirer la première serait pire que le problème. La réponse est de rendre l'intention **explicite**,
+avec deux portées (`PlayerResetService.ResetScope`) :
+
+| | `PROGRESSION` (`resetnew`) | `NEW_PLAYER` (`resetfull`) |
+|---|---|---|
+| Quêtes, Stories, variables, progression RPG, Waystones, cooldowns, claim | réinitialisés | réinitialisés |
+| Droit au kit de départ | rétabli | rétabli |
+| Palier de kit | retour au palier 1 | retour au palier 1 |
+| Inventaire Minecraft | **conservé** (objets RPGQuest retirés) | **vidé** |
+| Armure, main secondaire, curseur | conservés | vidés |
+| Coffre de l'Ender | conservé | vidé |
+| Permission panel | `ACTION_PLAYER_RESET` | `ACTION_PLAYER_RESET_FULL` |
+| Action agent | `player.resetnew.*` | `player.resetfull.*` |
+
+**Deux actions agent distinctes et non un paramètre** : un clic ne peut pas se tromper d'intention,
+et le journal d'audit dit laquelle a eu lieu.
+
+Le marqueur de nettoyage différé `__pending_new_player_reset__` porte désormais la **portée** comme
+valeur. Sa valeur historique `"1"`, et toute valeur illisible, sont relues comme `PROGRESSION` — la
+portée la **moins destructrice** : un marqueur douteux ne doit jamais vider un inventaire.
 
 Implémentation : `player.PlayerResetService` (+ `player.NewPlayerResetJoinListener` pour le
 nettoyage d'inventaire différé). Réutilise les resets déjà existants
@@ -14,9 +46,12 @@ suppressions par joueur qui manquaient (variables, progression RPG, cooldowns pe
 ## Commande
 
 ```
-/rpgadmin player resetnew <joueur>            # affiche un avertissement, ne fait rien
-/rpgadmin player resetnew <joueur> preview    # dry-run : liste ce qui serait effacé, sans rien modifier
-/rpgadmin player resetnew <joueur> confirm    # exécute le reset
+/rpgadmin player resetnew <joueur>             # affiche un avertissement, ne fait rien
+/rpgadmin player resetnew <joueur> preview     # dry-run : liste ce qui serait effacé, sans rien modifier
+/rpgadmin player resetnew <joueur> confirm     # exécute — inventaire CONSERVÉ
+
+/rpgadmin player resetfull <joueur> preview    # dry-run de la portée complète
+/rpgadmin player resetfull <joueur> confirm    # exécute — inventaire, équipement et Ender VIDÉS
 ```
 
 - **Permission** : `rpgquest.admin.world` (la même que toutes les sous-commandes `/rpgadmin`).
@@ -37,7 +72,12 @@ l'inventaire. Utile pour vérifier la cible avant de lancer un `confirm`.
   L'**inventaire** n'est comptabilisé que si le joueur est **en ligne** ; hors ligne, la catégorie
   est affichée comme « non applicable » (l'inventaire sera nettoyé au prochain login).
 - Une catégorie **déjà vide** est affichée comme « rien à réinitialiser » plutôt que masquée.
-- Implémentation : `PlayerResetService#previewReset(UUID)` → `ResetPreview` (liste de
+- L'aperçu est **propre à la portée** : celui de `resetfull` compte tout l'inventaire (Ender
+  inclus) et annonce le vidage ; celui de `resetnew` ne compte que les objets RPGQuest et rappelle
+  qu'un kit déjà reçu restera physiquement en place.
+- Deux catégories dédiées depuis #235, parce que ce sont elles qui expliquaient le double kit :
+  **Droit au kit de départ** et **Palier de kit**.
+- Implémentation : `PlayerResetService#previewReset(UUID, ResetScope)` → `ResetPreview` (liste de
   `ResetCategory` : `label`, `count`, `detail` ; `count == -1` = non inspectable, `count == 0` =
   inspectée mais vide). Réutilise la logique de collecte existante (mêmes services que le reset
   réel) via des lectures pures : `QuestProgressEngine#allStates`, `StoryService#progressRecords`,

@@ -1330,6 +1330,17 @@ class AgentActionExecutorTest {
         String lastRollbackBackup;
         boolean publishOk = true;
 
+        String lastReadKind;
+        String lastReadSlug;
+
+        @Override
+        public CompletableFuture<DevContentFileText> contentDevRead(String kind, String slug) {
+            lastReadKind = kind;
+            lastReadSlug = slug;
+            return CompletableFuture.completedFuture(new DevContentFileText(kind, slug, true, false,
+                    "abc123", "id: rpgquest:test_publish_quest\ntitle: \"sur DEV\"\n"));
+        }
+
         @Override
         public CompletableFuture<DevContentStateView> contentDevState() {
             return CompletableFuture.completedFuture(new DevContentStateView(

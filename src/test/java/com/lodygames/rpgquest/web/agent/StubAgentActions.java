@@ -93,6 +93,12 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<DevContentFileText> contentDevRead(String kind, String slug) {
+        return CompletableFuture.completedFuture(new DevContentFileText(
+                kind == null ? "" : kind, slug == null ? "" : slug, false, false, "", ""));
+    }
+
+    @Override
     public CompletableFuture<DevContentStateView> contentDevState() {
         return CompletableFuture.completedFuture(
                 new DevContentStateView(List.of(), java.util.Map.of(), "stub"));

@@ -669,4 +669,65 @@ class PlayerResetServiceTest {
                         .contains("resteront dans l'inventaire"),
                 "cette portée vide l'inventaire : l'avertissement serait faux");
     }
+
+    /**
+     * Les deux portées rétablissent le droit initial au kit — exigence du ticket, vérifiée pour les
+     * deux et non seulement pour celle qu'on a sous les yeux.
+     */
+    @Test
+    void bothScopesRestoreTheInitialKitRight() throws Exception {
+        for (PlayerResetService.ResetScope scope : PlayerResetService.ResetScope.values()) {
+            PlayerMock player = server.addPlayer();
+            profileRepository.findOrCreate(player.getUniqueId(), player.getName())
+                    .get(TIMEOUT, TimeUnit.SECONDS);
+            variableRepository.set(player.getUniqueId(), StarterToolKitService.AVAILABLE_KEY, "false")
+                    .get(TIMEOUT, TimeUnit.SECONDS);
+
+            runReset(player.getUniqueId(), player.getName(), scope);
+
+            assertTrue(variableRepository.get(player.getUniqueId(), StarterToolKitService.AVAILABLE_KEY)
+                            .get(TIMEOUT, TimeUnit.SECONDS).isEmpty(),
+                    scope + " : le droit au kit doit être rétabli");
+        }
+    }
+
+    /**
+     * Le scénario complet du ticket : reset complet, puis une demande de kit, et <strong>exactement
+     * un</strong> kit.
+     *
+     * <p>C'est l'assemblage des deux moitiés qui échouait en jeu : la portée vide l'inventaire, le
+     * droit est rétabli, la demande donne un kit — et la seconde demande sans mort est refusée, donc
+     * aucun doublon n'est possible. Les règles de #26 sont inchangées : c'est l'état de départ qui
+     * est maintenant cohérent.</p>
+     */
+    @Test
+    void afterAFullResetTheFirstKitRequestGivesExactlyOneKitAndTheSecondIsRefused() throws Exception {
+        PlayerMock player = server.addPlayer();
+        seedFullState(player.getUniqueId(), player.getName());
+        variableRepository.set(player.getUniqueId(), StarterToolKitService.AVAILABLE_KEY, "false")
+                .get(TIMEOUT, TimeUnit.SECONDS);
+        player.getInventory().addItem(new ItemStack(Material.WOODEN_PICKAXE, 1));
+
+        runReset(player.getUniqueId(), player.getName(), PlayerResetService.ResetScope.NEW_PLAYER);
+        assertEquals(0, PlayerResetService.countEverything(player), "état de départ réellement neuf");
+
+        starterToolKitService.requestKit(player);
+        await(() -> countMaterial(player, Material.WOODEN_PICKAXE) == 1);
+        assertEquals(1, countMaterial(player, Material.WOODEN_PICKAXE),
+                "exactement un exemplaire, jamais deux");
+
+        // Seconde demande sans mort : refusée (règle de #26, inchangée).
+        starterToolKitService.requestKit(player);
+        server.getScheduler().performTicks(10);
+        assertEquals(1, countMaterial(player, Material.WOODEN_PICKAXE),
+                "une seconde demande sans mort ne doit rien ajouter");
+    }
+
+    private static int countMaterial(PlayerMock player, Material material) {
+        return java.util.Arrays.stream(player.getInventory().getContents())
+                .filter(java.util.Objects::nonNull)
+                .filter(stack -> stack.getType() == material)
+                .mapToInt(ItemStack::getAmount)
+                .sum();
+    }
 }

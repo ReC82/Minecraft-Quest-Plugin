@@ -2741,6 +2741,24 @@ public final class BukkitAgentActions implements AgentActions {
         });
     }
 
+    /** {@code content.dev.read}. Lecture de fichier seule : aucun registre n'est consulté. */
+    @Override
+    public CompletableFuture<DevContentFileText> contentDevRead(String kind, String slug) {
+        var resolved = com.lodygames.rpgquest.content.publish.PublishKind.of(kind);
+        if (resolved.isEmpty()) {
+            return done(new DevContentFileText(kind == null ? "" : kind, slug == null ? "" : slug,
+                    false, false, "", ""));
+        }
+        String sha = contentPublishService.state(resolved.get(), slug, null).sha256();
+        var text = contentPublishService.readDev(resolved.get(), slug);
+        // Présent mais illisible par la borne : on le DIT, au lieu de renvoyer un fichier vide qui
+        // ferait croire à une ressource vide.
+        boolean present = !sha.isEmpty();
+        boolean tooLarge = present && text.isEmpty();
+        return done(new DevContentFileText(resolved.get().directory(), slug, present, tooLarge,
+                sha, text.orElse("")));
+    }
+
     /**
      * {@code content.publish}. Sur le thread principal, parce que l'écriture est immédiatement
      * suivie d'un rechargement qui permute des ensembles lus par ce thread.

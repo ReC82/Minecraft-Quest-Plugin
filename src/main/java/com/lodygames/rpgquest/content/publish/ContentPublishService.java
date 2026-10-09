@@ -116,6 +116,23 @@ public final class ContentPublishService {
                 applier.runtimeHas(kind.family(), id));
     }
 
+    /**
+     * Le texte du fichier présent sur DEV, pour permettre une comparaison lisible (issue #47).
+     *
+     * <p>Lecture seule, et <strong>bornée</strong> : au-delà de {@link #MAX_READ_CHARS}, on refuse
+     * plutôt que de faire voyager un fichier démesuré dans un résultat d'action. L'empreinte reste
+     * de toute façon comparable.</p>
+     */
+    public Optional<String> readDev(PublishKind kind, String slug) {
+        if (kind == null || !PublishKind.validSlug(slug)) {
+            return Optional.empty();
+        }
+        return store.read(kind, slug).filter(text -> text.length() <= MAX_READ_CHARS);
+    }
+
+    /** Borne de lecture, alignée sur celle de la charge utile de publication. */
+    public static final int MAX_READ_CHARS = 256 * 1024;
+
     /** Toutes les ressources présentes sur DEV pour une famille, avec leur empreinte. */
     public List<ContentPublishStore.DevFile> list(PublishKind kind) {
         return store.list(kind);

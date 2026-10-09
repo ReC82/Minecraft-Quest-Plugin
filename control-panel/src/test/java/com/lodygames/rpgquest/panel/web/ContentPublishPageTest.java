@@ -372,6 +372,223 @@ class ContentPublishPageTest {
         assertEquals(0, count("content.publish.rollback"));
     }
 
+    // ---- Le diff (issue #47, lot A) ---------------------------------------------------------------
+
+    /** Une ressource différente propose de voir les différences, en plus de republier. */
+    @Test
+    void aDifferentResourceOffersToSeeTheDifferences() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha("autre contenu")),
+                "[\"rpgquest:test_publish_quest\"]"));
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("name=\"type\" value=\"content.dev.read\""));
+        assertTrue(page.contains("Voir les différences"));
+        assertTrue(page.contains("Republier sur DEV"), "les deux actions sont proposées");
+    }
+
+    /** Une ressource absente de DEV ne propose PAS de comparer : il n'y a rien en face. */
+    @Test
+    void aSourceOnlyResourceDoesNotOfferAComparison() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        seed("content.dev.state", devState("{}", "[]"));
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertFalse(page.contains("name=\"type\" value=\"content.dev.read\""),
+                "tout le fichier serait « ajouté » : la comparaison n'apprendrait rien");
+        assertTrue(page.contains("Publier sur DEV"));
+    }
+
+    /** Le vrai formulaire de comparaison part avec la famille et l'identifiant, et rien d'autre. */
+    @Test
+    void theRealCompareFormQueuesATargetedRead() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha("autre contenu")),
+                "[\"rpgquest:test_publish_quest\"]"));
+
+        HttpResponse<String> res = submitRealForm("content.dev.read", Map.of());
+
+        assertEquals(303, res.statusCode());
+        assertTrue(res.headers().firstValue("Location").orElse("").startsWith("/quests?"));
+        AgentActionRow queued = queued("content.dev.read");
+        assertEquals("quests", queued.params().get("kind"));
+        assertEquals("test_publish_quest", queued.params().get("id"));
+        assertFalse(queued.params().containsKey("yaml"), "une lecture n'envoie aucun contenu");
+    }
+
+    /** Une fois le fichier DEV relu, la page montre un diff lisible, ligne à ligne. */
+    @Test
+    void onceReadThePageShowsAReadableLineDiff() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        String devText = QUEST_YAML.replace("Quête de publication", "ANCIEN TITRE");
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha(devText)),
+                "[\"rpgquest:test_publish_quest\"]"));
+        seedRead(devText, sha(devText));
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Différences"), "le bloc de comparaison est rendu");
+        assertTrue(page.contains("di-del"), "au moins une ligne retirée");
+        assertTrue(page.contains("di-add"), "au moins une ligne ajoutée");
+        assertTrue(page.contains("ANCIEN TITRE"), "la ligne DEV est montrée");
+        assertTrue(page.contains("Quête de publication"), "la ligne source est montrée");
+        assertTrue(page.contains("ligne(s) ajoutée(s)"), "et un résumé chiffré");
+    }
+
+    /**
+     * Le YAML n'est jamais interprété comme du HTML.
+     *
+     * <p>Un contenu de quête contient du MiniMessage, donc des chevrons. S'ils n'étaient pas
+     * échappés, une description pourrait injecter du balisage dans la page du panel.</p>
+     */
+    @Test
+    void theDiffEscapesHtmlAndNeverInterpretsTheYaml() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        String devText = "description: \"<script>alert('x')</script>\"\n";
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha(devText)),
+                "[\"rpgquest:test_publish_quest\"]"));
+        seedRead(devText, sha(devText));
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertFalse(page.contains("<script>alert"), "aucune balise script brute dans la page");
+        assertTrue(page.contains("&lt;script&gt;"), "les chevrons sont échappés");
+    }
+
+    /** Le diff ne doit jamais faire apparaître un chemin du système de fichiers. */
+    @Test
+    void theDiffNeverExposesAFilesystemPath() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        String devText = QUEST_YAML.replace("publication", "ancienne");
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha(devText)),
+                "[\"rpgquest:test_publish_quest\"]"));
+        seedRead(devText, sha(devText));
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+        int at = page.indexOf("Différences");
+        String block = page.substring(at, Math.min(page.length(), at + 8000));
+
+        assertFalse(block.contains(contentRoot.toString()), "aucun chemin absolu");
+        assertFalse(block.contains("/src/main/resources"), "aucun chemin de dépôt");
+        assertFalse(block.contains("plugins/RPGQuest"), "aucun chemin serveur");
+    }
+
+    /** Un fichier DEV trop volumineux est annoncé, pas comparé en silence. */
+    @Test
+    void anOversizedDevFileIsAnnouncedRatherThanCompared() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha("gros")),
+                "[\"rpgquest:test_publish_quest\"]"));
+        // present = true, tooLarge = true, texte vide : le serveur refuse de le transporter.
+        deliverReadResult("{\"kind\":\"quests\",\"slug\":\"test_publish_quest\","
+                + "\"present\":true,\"tooLarge\":true,\"sha256\":\"" + sha("gros")
+                + "\",\"text\":\"\"}");
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("trop volumineux"), "la limite est annoncée");
+        assertFalse(page.contains("di-add"), "et aucun faux diff n'est rendu");
+    }
+
+    // ---- Conflit : aucun remplacement aveugle ----------------------------------------------------
+
+    /**
+     * En conflit, le bouton de publication n'apparaît <strong>pas</strong> avant d'avoir regardé.
+     *
+     * <p>« Ne propose pas un remplacement aveugle » : la publication n'est offerte qu'une fois le
+     * contenu DEV <em>courant</em> réellement consulté.</p>
+     */
+    @Test
+    void aConflictOffersNoPublishButtonBeforeTheDifferenceHasBeenSeen() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        String devText = QUEST_YAML.replace("publication", "modifiée hors du panel");
+        // DEV ne correspond ni à la source ni à notre dernière publication -> conflit.
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha(devText)),
+                "[\"rpgquest:test_publish_quest\"]"));
+        seedResult("content.publish",
+                "{\"ok\":true,\"code\":\"PUBLISHED\",\"kind\":\"quests\","
+                        + "\"slug\":\"test_publish_quest\",\"devShaAfter\":\""
+                        + sha("une version que nous avions publiée")
+                        + "\",\"backupPath\":\"\",\"runtimeConfirmed\":true,"
+                        + "\"verifiedAt\":\"2026-10-09T00:00:00Z\"}");
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Conflit"));
+        assertTrue(page.contains("modifié hors du panel"));
+        assertTrue(page.contains("Voir les différences"), "on propose de regarder");
+        assertFalse(page.contains("name=\"type\" value=\"content.publish\""),
+                "et PAS de publier avant d'avoir regardé");
+        assertTrue(page.contains("n'apparaît qu'ensuite"), "la page explique pourquoi");
+    }
+
+    /** Après avoir consulté la version DEV courante, l'écrasement devient possible — et nommé. */
+    @Test
+    void afterSeeingTheCurrentDevVersionTheOverwriteBecomesAvailableAndIsNamedAsSuch()
+            throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        String devText = QUEST_YAML.replace("publication", "modifiée hors du panel");
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha(devText)),
+                "[\"rpgquest:test_publish_quest\"]"));
+        seedResult("content.publish",
+                "{\"ok\":true,\"code\":\"PUBLISHED\",\"kind\":\"quests\","
+                        + "\"slug\":\"test_publish_quest\",\"devShaAfter\":\""
+                        + sha("une version que nous avions publiée")
+                        + "\",\"backupPath\":\"\",\"runtimeConfirmed\":true,"
+                        + "\"verifiedAt\":\"2026-10-09T00:00:00Z\"}");
+        // L'administrateur consulte la version DEV COURANTE.
+        seedRead(devText, sha(devText));
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("name=\"type\" value=\"content.publish\""));
+        assertTrue(page.contains("Écraser la version DEV"), "le bouton dit ce qu'il fait");
+        assertTrue(page.contains("sera perdue"), "et ce qui sera perdu");
+    }
+
+    /** Avoir consulté une version DEV ANTÉRIEURE ne vaut pas consentement. */
+    @Test
+    void havingSeenAnOlderDevVersionDoesNotCountAsConsent() throws Exception {
+        start();
+        seed("quest.list", RUNTIME_WITHOUT_IT);
+        String devNow = QUEST_YAML.replace("publication", "version COURANTE hors panel");
+        seed("content.dev.state", devState(
+                fileEntry("quests", "test_publish_quest", sha(devNow)),
+                "[\"rpgquest:test_publish_quest\"]"));
+        seedResult("content.publish",
+                "{\"ok\":true,\"code\":\"PUBLISHED\",\"kind\":\"quests\","
+                        + "\"slug\":\"test_publish_quest\",\"devShaAfter\":\""
+                        + sha("publiée jadis") + "\",\"backupPath\":\"\","
+                        + "\"runtimeConfirmed\":true,\"verifiedAt\":\"2026-10-09T00:00:00Z\"}");
+        // On a lu une version PÉRIMÉE : son empreinte ne correspond pas à celle de DEV aujourd'hui.
+        seedRead("un contenu DEV périmé\n", sha("un contenu DEV périmé\n"));
+
+        String page = get("/quests?agent=" + TestConfig.AGENT_ID).body();
+
+        assertFalse(page.contains("name=\"type\" value=\"content.publish\""),
+                "la lecture périmée ne doit pas débloquer l'écrasement");
+        assertTrue(page.contains("n'apparaît qu'ensuite"));
+    }
+
     // ---- Après un retour arrière -----------------------------------------------------------------
 
     /**
@@ -551,6 +768,43 @@ class ContentPublishPageTest {
                 .replace("&quot;", "\"").replace("&#39;", "'");
     }
 
+    /** Simule un {@code content.dev.read} réussi portant ce texte DEV. */
+    private void seedRead(String devText, String devSha) throws Exception {
+        deliverReadResult("{\"kind\":\"quests\",\"slug\":\"test_publish_quest\","
+                + "\"present\":true,\"tooLarge\":false,\"sha256\":\"" + devSha
+                + "\",\"text\":" + jsonString(devText) + "}");
+    }
+
+    /** Enfile un {@code content.dev.read} pour la ressource de test, puis lui renvoie un résultat. */
+    private void deliverReadResult(String details) throws Exception {
+        String token = csrf(get("/quests?agent=" + TestConfig.AGENT_ID).body());
+        post("/agents/action", "_csrf=" + token + "&type=content.dev.read&agent="
+                + TestConfig.AGENT_ID + "&return=/quests&kind=quests&id=test_publish_quest");
+        deliver("content.dev.read", details);
+    }
+
+    /** Encode une chaîne en littéral JSON — le texte contient des guillemets et des retours. */
+    private static String jsonString(String raw) {
+        StringBuilder sb = new StringBuilder("\"");
+        for (char c : raw.toCharArray()) {
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.append('"').toString();
+    }
+
     /**
      * Comme {@link #seed}, mais pour une action qui porte des paramètres de ressource.
      *
@@ -565,7 +819,7 @@ class ContentPublishPageTest {
         }
         post("/agents/action", "_csrf=" + token + "&type=" + type + "&agent="
                 + TestConfig.AGENT_ID + "&return=/quests" + extra);
-        deliver(details);
+        deliver(type, details);
     }
 
     /** Enfile une action, la livre à l'agent, et renvoie un succès portant les détails fournis. */
@@ -573,20 +827,51 @@ class ContentPublishPageTest {
         String token = csrf(get("/quests?agent=" + TestConfig.AGENT_ID).body());
         post("/agents/action", "_csrf=" + token + "&type=" + type + "&agent="
                 + TestConfig.AGENT_ID + "&return=/quests");
-        deliver(details);
+        deliver(type, details);
     }
 
     /** Livre la prochaine action en attente et lui renvoie un succès portant {@code details}. */
     private void deliver(String details) throws Exception {
+        deliver(null, details);
+    }
+
+    /**
+     * Livre l'action en attente <strong>du type demandé</strong> et lui renvoie un succès.
+     *
+     * <p>Le type est indispensable, et son absence a produit deux faux échecs : une publication
+     * réussie <em>ré-enfile automatiquement</em> les relevés de catalogue ({@code content.dev.state},
+     * {@code quest.list}…), donc « la première action en attente » n'est pas celle qu'on vient
+     * d'enfiler. Le résultat se posait sur la mauvaise action, et l'état affiché devenait
+     * incohérent — exactement le genre de confusion que le produit, lui, évite en filtrant sur
+     * {@code kind}/{@code id}.</p>
+     */
+    private void deliver(String expectedType, String details) throws Exception {
         HttpResponse<String> poll = client.send(HttpRequest.newBuilder(uri("/agent/v1/actions"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
                 .header("X-Agent-Id", TestConfig.AGENT_ID).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
-        Matcher m = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"").matcher(poll.body());
-        if (!m.find()) {
-            throw new IllegalStateException("aucune action à livrer : " + poll.body());
+        String id = null;
+        Matcher m = Pattern.compile(
+                "\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"\\s*,\\s*\"type\"\\s*:\\s*\"([^\"]+)\"")
+                .matcher(poll.body());
+        while (m.find()) {
+            if (expectedType == null || expectedType.equals(m.group(2))) {
+                id = m.group(1);
+                break;
+            }
         }
-        String id = m.group(1);
+        if (id == null) {
+            // Repli : certaines réponses n'ordonnent pas id avant type.
+            Matcher any = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"")
+                    .matcher(poll.body());
+            if (expectedType == null && any.find()) {
+                id = any.group(1);
+            }
+        }
+        if (id == null) {
+            throw new IllegalStateException("aucune action « " + expectedType + " » à livrer : "
+                    + poll.body());
+        }
         String result = "{\"action_id\":\"" + id + "\",\"status\":\"SUCCESS\",\"value\":\"ok\","
                 + "\"message\":\"relevé\",\"details\":" + details + "}";
         client.send(HttpRequest.newBuilder(uri("/agent/v1/actions/" + id + "/result"))

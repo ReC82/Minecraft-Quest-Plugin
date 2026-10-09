@@ -210,6 +210,14 @@ public enum AgentActionType {
      * donc le panel ne peut pas pousser un fichier — c'est le serveur qui le reçoit et l'écrit
      * lui-même, dans un dossier issu d'une liste blanche. Le navigateur n'envoie jamais de chemin.</p>
      */
+    /**
+     * Issue #47 — lit le CONTENU d'un seul fichier de DEV, pour une comparaison lisible.
+     *
+     * <p>Lecture seule et ciblée : {@code content.dev.state} ne transporte que des empreintes, ce
+     * qui suffit pour détecter un écart mais pas pour le <em>montrer</em>. Faire voyager tous les
+     * fichiers dans le relevé d'état serait disproportionné ; on lit donc celui qu'on regarde.</p>
+     */
+    CONTENT_DEV_READ("content.dev.read"),
     CONTENT_PUBLISH("content.publish"),
     /**
      * Issue #47 — défait une publication : restaure la sauvegarde si elle existe, retire le fichier

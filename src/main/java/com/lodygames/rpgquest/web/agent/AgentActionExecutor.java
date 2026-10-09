@@ -131,6 +131,7 @@ public final class AgentActionExecutor {
                 case SERVER_LOGS_TAIL -> serverLogsTail(action);
                 case CONTENT_RELOAD_PREVIEW -> contentReload(action, false);
                 case CONTENT_DEV_STATE -> contentDevState(action);
+                case CONTENT_DEV_READ -> contentDevRead(action);
                 case CONTENT_PUBLISH -> contentPublish(action);
                 case CONTENT_PUBLISH_ROLLBACK -> contentPublishRollback(action);
                 case CONTENT_RELOAD -> contentReload(action, true);
@@ -1470,6 +1471,29 @@ public final class AgentActionExecutor {
             details.put("runtimeHash", view.runtimeHash());
             return AgentActionOutcome.success(action.id(), String.valueOf(rows.size()),
                     rows.size() + " fichier(s) de contenu sur DEV.", details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> contentDevRead(AgentAction action) {
+        String kind = trimOrNull(action.param("kind"));
+        String slug = publishSlug(action);
+        if (kind == null || slug == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètres « kind » et « id » obligatoires."));
+        }
+        return actions.contentDevRead(kind, slug).thenApply(view -> {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("kind", view.kind());
+            details.put("slug", view.slug());
+            details.put("present", view.present());
+            details.put("tooLarge", view.tooLarge());
+            details.put("sha256", view.sha256());
+            details.put("text", view.text());
+            String summary = !view.present() ? "Absent de DEV."
+                    : view.tooLarge() ? "Présent sur DEV mais trop volumineux pour être lu."
+                            : view.text().length() + " caractères lus depuis DEV.";
+            return AgentActionOutcome.success(action.id(),
+                    view.present() ? "present" : "absent", summary, details);
         }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 

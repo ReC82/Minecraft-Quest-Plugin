@@ -243,6 +243,19 @@ public interface AgentActions {
                                     String verifiedAt) {
     }
 
+    /**
+     * Le contenu d'un fichier de DEV.
+     *
+     * @param present le fichier existe-t-il ? Distinct d'un texte vide, qui serait un fichier vide
+     * @param tooLarge le fichier existe mais dépasse la borne de lecture
+     */
+    record DevContentFileText(String kind, String slug, boolean present, boolean tooLarge,
+                              String sha256, String text) {
+    }
+
+    /** Lit un seul fichier de DEV, pour pouvoir montrer la différence. Lecture seule. */
+    CompletableFuture<DevContentFileText> contentDevRead(String kind, String slug);
+
     /** L'état DEV du contenu publiable. Lecture seule, n'écrit rien. */
     CompletableFuture<DevContentStateView> contentDevState();
 

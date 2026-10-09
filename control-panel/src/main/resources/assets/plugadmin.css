@@ -260,6 +260,16 @@ label.inline.confirm{color:var(--warn);font-weight:600}
   padding:14px 16px;overflow-x:auto;color:#dbe4f3;font-size:12.5px;line-height:1.55;white-space:pre}
 .diff pre{background:#0f1729}
 .diff .di-add{color:#7ee0a1} .diff .di-del{color:#ff9d9d} .diff .di-ctx{color:#9fb0cc}
+/* ---- issue #47 : diff source ↔ DEV ---- */
+/* Hauteur bornée : un diff long ne doit pas repousser le reste de la fiche hors de l'écran.
+   La largeur reste gérée par overflow-x de .codeblock pre, donc lisible sur téléphone. */
+.diff.diff-publish pre{max-height:50vh;overflow-y:auto}
+.diff .di-gap{color:#64748b}
+/* Gouttière de numéros de ligne : sélectionnable mais discrète, et elle ne bouge pas quand on
+   fait défiler horizontalement puisqu'elle fait partie de la ligne. */
+.diff .di-num{color:#5b6b86;user-select:none}
+.publish-diff-sum{cursor:pointer;font-weight:600}
+.publish-diff-meta{color:#9fb0cc;font-size:12.5px;margin:4px 0 0}
 /* ---- éditeur : liste d'items (objectifs / quêtes de story) ---- */
 .rowlist{display:flex;flex-direction:column;gap:10px;margin:8px 0}
 .rowitem{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}

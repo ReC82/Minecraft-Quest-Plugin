@@ -300,6 +300,11 @@ public final class AgentActionCatalog {
         // AVANT de proposer de publier quoi que ce soit.
         add("content.dev.state", Permission.CONTENT_READ, false, false,
                 "Relever l'état du contenu sur DEV (fichiers et runtime)");
+        // Lecture d'UN fichier, pour pouvoir MONTRER la différence et pas seulement la détecter.
+        // Le relevé d'état ne transporte que des empreintes, ce qui est suffisant pour comparer mais
+        // pas pour expliquer.
+        add("content.dev.read", Permission.CONTENT_READ, false, false,
+                "Lire un fichier de contenu sur DEV (pour la comparaison)");
         // Publier ÉCRIT un fichier sur le serveur et permute le contenu chargé : mutation sensible,
         // confirmation exigée, permission dédiée distincte de l'écriture de la source. Les relevés
         // impactés sont ré-enfilés pour que l'état se réconcilie sans « Rafraîchir + F5 ».
@@ -710,6 +715,18 @@ public final class AgentActionCatalog {
                 // que c'est le panel qui détient la source. Voir PanelApp#enrichPublish.
                 params.put("expected_source_sha", expectedSource);
                 params.put("confirm", "true");
+            }
+            case "content.dev.read" -> {
+                String kind = publishKind(form);
+                if (kind == null) {
+                    return Validation.fail("Famille de contenu non publiable.");
+                }
+                String slug = publishSlug(form);
+                if (slug == null) {
+                    return Validation.fail("Identifiant de ressource manquant ou invalide.");
+                }
+                params.put("kind", kind);
+                params.put("id", slug);
             }
             case "content.publish.rollback" -> {
                 String kind = publishKind(form);

@@ -5550,6 +5550,101 @@ public final class AgentPages {
     }
 
     /**
+     * Le bloc « Voir les différences » (issue #47).
+     *
+     * <h2>Pourquoi un bouton et pas un affichage systématique</h2>
+     *
+     * <p>Comparer exige de <strong>lire le fichier sur le serveur</strong>, donc une action agent.
+     * La faire partir pour chaque ressource de chaque page coûterait un relevé par ligne de
+     * catalogue, pour une information que l'administrateur ne regarde qu'au moment de décider.
+     * Le relevé d'état, lui, ne transporte que des empreintes — assez pour <em>détecter</em> l'écart,
+     * pas pour le <em>montrer</em>.</p>
+     *
+     * <p>Sens de lecture : {@code +} est ce que la publication ajouterait, {@code -} ce qu'elle
+     * retirerait. C'est la seule question posée devant ce bouton.</p>
+     */
+    private String publishDiffBlock(Session session, String agentId, String kind, String slug,
+                                    String sourceText, String returnPath) {
+        StringBuilder sb = new StringBuilder();
+        Optional<Map<String, Object>> read = devFileRead(agentId, kind, slug);
+
+        sb.append(formStart(session, agentId, "content.dev.read", returnPath, ""));
+        sb.append("<input type=\"hidden\" name=\"kind\" value=\"").append(Http.esc(kind))
+                .append("\"><input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(slug))
+                .append("\">");
+        sb.append(mutationConsent("content.dev.read", "", null));
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-secondary\" "
+                + "type=\"submit\">").append(Icons.icon("docs"))
+                .append(read.isPresent() ? "Recalculer les différences" : "Voir les différences")
+                .append("</button></div></form>");
+
+        if (read.isEmpty()) {
+            return sb.toString();
+        }
+
+        Map<String, Object> details = read.get();
+        boolean present = Boolean.TRUE.equals(details.get("present"));
+        boolean tooLarge = Boolean.TRUE.equals(details.get("tooLarge"));
+        String devText = str(details.get("text"));
+
+        com.lodygames.rpgquest.panel.publish.PublishDiff diff;
+        if (tooLarge) {
+            diff = com.lodygames.rpgquest.panel.publish.PublishDiff.unavailable(
+                    "Le fichier est présent sur DEV mais trop volumineux pour être comparé ici.");
+        } else {
+            diff = com.lodygames.rpgquest.panel.publish.PublishDiff.between(
+                    present ? devText : null, sourceText);
+        }
+
+        sb.append("<details class=\"publish-diff\" open><summary class=\"publish-diff-sum\">")
+                .append("Différences <span class=\"muted\">(DEV → source)</span></summary>");
+        sb.append("<p class=\"publish-diff-meta\">").append(Http.esc(diff.summary()));
+        if (!diff.note().isEmpty() && diff.comparable()) {
+            sb.append(" — ").append(Http.esc(diff.note()));
+        }
+        sb.append("</p>");
+
+        if (!diff.comparable()) {
+            sb.append("<p class=\"field-help\">").append(Http.esc(diff.note())).append("</p>");
+        } else if (diff.identical()) {
+            sb.append("<p class=\"field-help\">Les deux fichiers sont identiques ligne pour "
+                    + "ligne.</p>");
+        } else {
+            sb.append("<div class=\"codeblock diff diff-publish\"><pre>");
+            for (var line : diff.lines()) {
+                String cls = switch (line.kind()) {
+                    case ADDED -> "di-add";
+                    case REMOVED -> "di-del";
+                    case GAP -> "di-gap";
+                    default -> "di-ctx";
+                };
+                sb.append("<span class=\"").append(cls).append("\">");
+                // Gouttière : numéro DEV puis numéro source, vides quand la ligne n'existe pas d'un
+                // côté. C'est ce qui permet de retrouver la ligne dans le fichier réel.
+                sb.append("<span class=\"di-num\">")
+                        .append(gutter(line.devLine())).append(gutter(line.sourceLine()))
+                        .append("</span>");
+                sb.append(Http.esc(line.sign())).append(' ')
+                        // Http.esc : le YAML n'est JAMAIS interprété comme du HTML.
+                        .append(Http.esc(line.text()));
+                sb.append("</span>\n");
+            }
+            sb.append("</pre></div>");
+            sb.append("<p class=\"field-help\">Les colonnes sont les numéros de ligne côté DEV "
+                    + "puis côté source. <code>+</code> sera ajouté par la publication, "
+                    + "<code>-</code> en sera retiré.</p>");
+        }
+        sb.append("</details>");
+        return sb.toString();
+    }
+
+    /** Un numéro de ligne sur 4 colonnes, ou des espaces si la ligne n'existe pas de ce côté. */
+    private static String gutter(int line) {
+        String value = line <= 0 ? "" : String.valueOf(line);
+        return String.format("%4s ", value);
+    }
+
+    /**
      * La section « Publication sur DEV » d'une fiche de contenu (issue #47).
      *
      * <h2>Enregistrer et publier sont deux gestes, et l'écran doit le montrer</h2>
@@ -5618,20 +5713,48 @@ public final class AgentPages {
             return sb.toString();
         }
 
-        if (state == com.lodygames.rpgquest.panel.publish.PublishState.CONFLICT) {
+        boolean conflict = state == com.lodygames.rpgquest.panel.publish.PublishState.CONFLICT;
+        if (conflict) {
             sb.append(Ui.banner("error", "Le fichier DEV a été modifié hors du panel. "
                     + "Publier écraserait cette modification — regardez les différences avant de "
                     + "décider."));
         }
 
-        if (state.publishable() || state == com.lodygames.rpgquest.panel.publish.PublishState.CONFLICT) {
+        // Comparaison : proposée dès qu'il y a quelque chose à comparer. Inutile pour une ressource
+        // absente de DEV — tout le fichier serait « ajouté », ce qui n'apprend rien.
+        boolean comparable = !devSha.isEmpty();
+        if (comparable) {
+            sb.append(publishDiffBlock(session, agentId, kind, slug,
+                    sourceCatalog.text(kind, slug).orElse(""), returnPath));
+        }
+
+        // En CONFLIT, on n'offre PAS de remplacement aveugle : publier n'est proposé qu'une fois la
+        // différence réellement consultée POUR LE CONTENU DEV COURANT. Avoir regardé une version
+        // antérieure ne compte pas — c'est justement ce qui a changé.
+        boolean sawCurrentDev = devFileRead(agentId, kind, slug)
+                .map(d -> devSha.equals(str(d.get("sha256"))))
+                .orElse(false);
+        if (conflict && !sawCurrentDev) {
+            sb.append("<p class=\"field-help\">Consultez les différences ci-dessus avant de "
+                    + "pouvoir republier : le bouton n'apparaît qu'ensuite, pour qu'aucun "
+                    + "remplacement ne se fasse à l'aveugle.</p>");
+            sb.append(compactRefresh(session, agentId, "content.dev.state", "Rafraîchir l'état",
+                    "btn-outline-secondary", returnPath));
+        }
+
+        if (state.publishable() || (conflict && sawCurrentDev)) {
             if (!canPublish) {
                 sb.append("<p class=\"field-help\">Vous n'avez pas le droit de publier sur "
                         + "DEV.</p>");
             } else {
-                sb.append("<p class=\"field-help\">Publier copie <strong>ce seul fichier</strong> "
-                        + "sur le serveur, recharge la famille concernée, puis vérifie que le moteur "
-                        + "la voit. Aucun build, aucun redémarrage.</p>");
+                sb.append("<p class=\"field-help\">").append(conflict
+                        ? "Vous avez consulté la version DEV ci-dessus. Publier la "
+                                + "<strong>remplacera</strong> par la source, et la modification "
+                                + "faite hors du panel sera perdue — une sauvegarde en sera prise."
+                        : "Publier copie <strong>ce seul fichier</strong> sur le serveur, recharge "
+                                + "la famille concernée, puis vérifie que le moteur la voit. "
+                                + "Aucun build, aucun redémarrage.")
+                        .append("</p>");
                 sb.append(formStart(session, agentId, "content.publish", returnPath, ""));
                 sb.append("<input type=\"hidden\" name=\"kind\" value=\"")
                         .append(Http.esc(kind)).append("\">");
@@ -5644,9 +5767,11 @@ public final class AgentPages {
                 sb.append("<input type=\"hidden\" name=\"expected_dev_sha\" value=\"")
                         .append(Http.esc(devSha)).append("\">");
                 sb.append(mutationConsent("content.publish", "", null));
-                sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-primary\" "
-                        + "type=\"submit\">").append(Icons.icon("deploy"))
-                        .append(devSha.isEmpty() ? "Publier sur DEV" : "Republier sur DEV")
+                sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm ")
+                        .append(conflict ? "btn-danger" : "btn-primary")
+                        .append("\" type=\"submit\">").append(Icons.icon("deploy"))
+                        .append(conflict ? "Écraser la version DEV"
+                                : devSha.isEmpty() ? "Publier sur DEV" : "Republier sur DEV")
                         .append("</button></div></form>");
             }
         }
@@ -5728,6 +5853,31 @@ public final class AgentPages {
         return latestDetails(agentId, "content.dev.state")
                 .map(com.lodygames.rpgquest.panel.publish.DevContentIndex::from)
                 .orElseGet(com.lodygames.rpgquest.panel.publish.DevContentIndex::unavailable);
+    }
+
+    /**
+     * Le contenu DEV relu pour <strong>cette</strong> ressource, s'il a été demandé (issue #47).
+     *
+     * <p>Filtré sur {@code kind} et {@code id} : un relevé fait pour une autre ressource ne doit
+     * surtout pas servir de base à une comparaison — on afficherait le diff du voisin.</p>
+     */
+    public Optional<Map<String, Object>> devFileRead(String agentId, String kind, String slug) {
+        if (agentId == null || agentId.isBlank()) {
+            return Optional.empty();
+        }
+        for (AgentActionRow row : store.recentActions(agentId, 200)) {
+            if (!"content.dev.read".equals(row.type())) {
+                continue;
+            }
+            if (!kind.equals(row.params().get("kind")) || !slug.equals(row.params().get("id"))) {
+                continue;
+            }
+            Optional<Map<String, Object>> details = detailsOf(row);
+            if (details.isPresent()) {
+                return details;
+            }
+        }
+        return Optional.empty();
     }
 
     /**

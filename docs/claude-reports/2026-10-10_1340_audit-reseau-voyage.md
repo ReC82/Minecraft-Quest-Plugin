@@ -10,10 +10,10 @@
   restante, issue **non fermée**
 * Branche Git : `feature/156-travel-network-audit` (créée depuis
   `feature/234-building-placement-lifecycle`)
-* Commit actuel si disponible : voir section « Commits »
+* Commit actuel si disponible : `aa774be` (branche poussée, 4 commits)
 * Début de la tâche : 2026-10-10 13:40:11
-* Fin de la tâche : 2026-10-10 15:12:40
-* Durée totale : 01:32:29
+* Fin de la tâche : 2026-10-10 15:34:10
+* Durée totale : 01:53:59
 
 ---
 
@@ -204,8 +204,15 @@ réellement configurés, ni l'âge des structures, ni le réseau du Wild. L'écr
 * `waystoneNetworks` : par monde, existantes / découvertes / `cell-size` / `chance` /
   `minimum-spacing` / étendue — avec un nouveau `WaystoneRepository#totalDiscoveries()`.
 
-Tout vient des index déjà en mémoire ou d'un `COUNT(*)`, sur le thread principal pour la lecture
-Bukkit uniquement, comme le relevé existant.
+Tout vient des index déjà en mémoire, sauf le `COUNT(*)` des découvertes de Waystones.
+
+**Un défaut que j'ai introduit et corrigé avant de livrer** : ce `COUNT(*)` était d'abord consommé
+*depuis* le bloc exécuté sur le thread principal, avec une attente bornée à 2 secondes. C'est
+exactement ce que les contraintes du projet interdisent — jusqu'à 40 ticks de gel serveur, pour un
+compteur de diagnostic. Un diagnostic n'a pas le droit de coûter des ticks à ce qu'il décrit. La
+lecture est maintenant consommée **avant** le passage sur le thread principal, et le bloc principal
+ne lit plus que des index déjà en mémoire (vérifié ligne à ligne : aucun accès base, aucune attente
+de `Future`). Un échec est journalisé et donne « non relevé », jamais un relevé en échec.
 
 ### 3. Le calcul du diagnostic, isolé et testé
 
@@ -284,7 +291,7 @@ instances en manque : on en nomme une, l'autre reste intacte.
 | `src/main/java/com/lodygames/rpgquest/web/agent/AgentActionType.java` | `TRAVEL_BEACON_PAIR` |
 | `src/main/java/com/lodygames/rpgquest/web/agent/AgentActionExecutor.java` | sérialisation des nouveaux champs, dispatch `travel.beacon.pair` |
 | `src/main/java/com/lodygames/rpgquest/database/WaystoneRepository.java` | `totalDiscoveries()` |
-| `src/main/java/com/lodygames/rpgquest/bootstrap/RPGQuestBootstrap.java` | câblage des sources de diagnostic du voyage |
+| `src/main/java/com/lodygames/rpgquest/bootstrap/RPGQuestBootstrap.java` | câblage des sources de diagnostic du voyage, compteur de découvertes **asynchrone de bout en bout** |
 | `control-panel/.../panel/web/AgentPages.java` | les cinq sections et le formulaire d'appariement ciblé |
 | `control-panel/.../panel/authz/Permission.java`, `Role.java` | `TRAVEL_PAIR_WRITE`, accordée à ADMIN |
 | `control-panel/.../panel/agent/AgentActionCatalog.java` | liste blanche + validation stricte du `waypointId` |
@@ -320,8 +327,16 @@ ajout SQL est un `COUNT(*)` en lecture.
 
 ### Résultat des suites
 
-* `./gradlew test` : **VERT**
-* `./gradlew build` : **VERT**
+Exécutées depuis un **worktree Git propre** (`/srv/rpgquest/worktree-nuit`, détaché sur `aa774be`),
+parce que le `crystal_hunt.yml` réécrit par le propriétaire dans l'arbre de travail fait échouer
+`CrystalHuntIntegrationTest` — le test attend une étape de fabrication et une récompense
+`miner_pickaxe`, le fichier du propriétaire a trois objectifs `KILL_ENTITY` et une récompense
+`IRON_PICKAXE`. Ce fichier n'est ni commité ni modifié par ce lot.
+
+* `./gradlew test` : **BUILD SUCCESSFUL en 42 min 4 s**, `TEST_EXIT=0`
+* `./gradlew build` : **BUILD SUCCESSFUL**, `BUILD_EXIT=0`
+* **2233 plugin + 1234 panel + 30 web-api = 3497 tests, 0 échec, 0 erreur**, 38 ignorés (tous
+  préexistants : MariaDB sans serveur, limites MockBukkit ; aucun dans les classes ajoutées).
 
 ## Tests manuels à effectuer
 
@@ -365,6 +380,29 @@ Rien à réinitialiser : aucune donnée de jeu n'a été modifiée par ce lot. U
 `/rpgadmin travel` côté serveur.
 
 ## Déploiement VeryGames
+
+**Fait le 2026-10-10, 15:30–15:32**, panel puis JAR, un seul redémarrage, **0 joueur connecté**
+(vérifié avant et après). Détail complet et procédure de rollback :
+`docs/deployment/SERVER_CHANGELOG.md`, entrée du 2026-10-10.
+
+| | Valeur |
+|---|---|
+| JAR déployé | 2 216 617 o, SHA-256 `a58ca130…` — `DEPLOY_EXIT=0` |
+| Backup JAR | `rpgquest-20261010T133044Z-predeploy.jar`, 2 213 495 o, SHA-256 `171020a6…` (= le JAR de #234) |
+| Panel installé | 1 474 423 o, `/health` 200, `/login` public 200 |
+| Redémarrage | `RESTART_EXIT=0`, 5 plugins verts |
+| Migration | aucune |
+
+**Vérifié sur le serveur réel, pas supposé** : les classes `TravelNetworkDiagnostic`,
+`travel.beacon.pair` et `TRAVEL_PAIR_WRITE` sont présentes dans le JAR du panel **installé** ; un
+relevé `travel.catalog` déclenché en direct a répondu **SUCCESS** avec « 143 waypoint(s), 16
+borne(s) (7 sans borne appariée dans le Hub) », et portait bien le référentiel
+(`hubWorld=world_hub`, spawn `738 / -680`, `instanceRegionSize=256`, anneau `6–16`,
+`waypointMinimumSpacing=80`), le réseau du Wild (**7 Waystones, 0 découverte**), les `createdAt`, et
+les 7 instances toutes à **`attempts = 0`**.
+
+**Aucune borne n'a été posée.** Les 7 instances sont toujours en manque : c'est TC-276 qui les
+débloquera.
 
 ### À transférer
 
@@ -515,7 +553,15 @@ Techniquement possible (120 waypoints du Wild pourraient recevoir une borne appa
 
 ## Commits
 
-Voir `git log` de la branche `feature/156-travel-network-audit`. Aucun merge, aucun push vers `main`.
+Branche `feature/156-travel-network-audit`, poussée. Aucun merge, aucun push vers `main`.
+
+| Commit | Objet |
+|---|---|
+| `6cc1260` | `feat(travel)` — relevé enrichi et appariement ciblé d'une instance du Hub |
+| `770481a` | `feat(panel)` — diagnostic du réseau de voyage et rattrapage ciblé |
+| `b305c22` | `docs(#156)` — audit, TC-275/TC-276 et scénarios chiffrés |
+| `aa774be` | `fix(travel)` — ne jamais attendre une lecture SQL sur le thread principal |
+
 Les fichiers de contenu non suivis du propriétaire (7 fichiers `??`) ont été **vérifiés avant chaque
 commit** et **n'ont jamais été ajoutés au suivi** — chaque commit a été composé par énumération
 explicite des fichiers, jamais par `git add -A`.

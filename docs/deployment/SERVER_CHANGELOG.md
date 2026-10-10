@@ -7272,3 +7272,83 @@ ne change pour ce qui est déjà en production.
   elle est additive, donc l'ancien code l'ignore. Si une restauration de base s'avérait nécessaire,
   `data-20261009T163556Z-pre-v30.db` est le dernier état V29 connu.
 - **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
+
+## 2026-10-10 — Diagnostic du réseau de voyage et rattrapage ciblé d'une instance (#156)
+
+**Branche** : `feature/156-travel-network-audit` (commits `6cc1260`, `770481a`, `b305c22`,
+`aa774be`)
+**Portée** : **panel ET plugin**, **sans migration**.
+
+### À transférer
+
+1. **Panel** (`scripts/plugadmin/deploy.sh`) — les cinq sections de diagnostic de `/travel`, la
+   permission `TRAVEL_PAIR_WRITE`, et l'action `travel.beacon.pair` au catalogue.
+2. **JAR du plugin** — le relevé `travel.catalog` enrichi et `TravelBeaconService#pairHubInstance`.
+3. **Rien d'autre.** Aucun `--also` : aucun fichier de contenu n'est touché par ce lot.
+
+**Les deux déploiements sont nécessaires.** Sans le panel, aucune section nouvelle ; sans le JAR, le
+panel afficherait un diagnostic amputé du référentiel et l'agent refuserait l'action. L'écran gère
+explicitement la fenêtre entre les deux : un relevé antérieur au JAR affiche « rafraîchir » au lieu
+d'affirmer faussement qu'aucun monde Hub n'est configuré.
+
+**Fait le 2026-10-10, 15:30–15:32 UTC+2.** Panel d'abord, puis le JAR, puis **un seul redémarrage**,
+**0 joueur connecté** (vérifié avant *et* après).
+
+| | Valeur |
+|---|---|
+| JAR déployé | **2 216 617 o**, SHA-256 `a58ca130fc622844481eef2854a340d0137dc64f7318e548c381954cbe370826` |
+| Backup JAR | `rpgquest-20261010T133044Z-predeploy.jar` (**2 213 495 o**, SHA-256 `171020a6…` = exactement le JAR de #234, ce qui confirme la ligne déployée) |
+| Direction des tailles | neuf **plus gros** que le backup — direction attendue |
+| Panel installé | `control-panel-0.1.0-SNAPSHOT.jar`, **1 474 423 o** |
+| Release panel précédente | `/opt/plugadmin/releases/20261010-153015` |
+| Migration | **aucune** |
+| Tests (worktree propre) | 2233 plugin + 1234 panel + 30 web-api = **3497, 0 échec**, 38 ignorés (préexistants) |
+
+### Ne PAS transférer/altérer
+
+`data.db`, `config.yml` (**aucun réglage de voyage ne change** : `region-size` 256,
+`minimum-spacing` 80, `pair-min/max-spacing` 6/16, `waystone.cell-size` 1000, `chance` 0.6 —
+inchangés), `messages.yml`, `spawn.yml`, les mondes, `plugins/Citizens/`, et les quêtes, dialogues
+et stories du serveur.
+
+### Redémarrage requis
+
+Oui pour le JAR. `RESTART_EXIT=0`, serveur revenu ONLINE, **5 plugins verts** (Citizens, LuckPerms,
+Multiverse-Core, RPGQuest, WorldEdit), `rpgquest version` → `v0.1.0-SNAPSHOT`.
+
+### Migration automatique
+
+**Aucune.** Tout ce qui est affiché existait déjà en base ; le seul ajout SQL est un `COUNT(*)` en
+lecture, exécuté **hors du thread principal**.
+
+### Ce qui a été vérifié sur le serveur réel
+
+| Vérification | Résultat |
+|---|---|
+| Panel : ce qu'il **sert** | `TravelNetworkDiagnostic` + ses 5 types imbriqués présents dans le JAR installé ; `travel.beacon.pair` dans `AgentActionCatalog.class` ; `TRAVEL_PAIR_WRITE` dans `Permission.class` ; `/health` **200**, `/login` public **200** |
+| Agent | heartbeat reçu après redémarrage, `ONLINE`, 0 joueur |
+| Relevé `travel.catalog` **réel** | **SUCCESS** — « 143 waypoint(s), 16 borne(s) (7 sans borne appariée dans le Hub) » |
+| Référentiel réellement transmis | `hubWorld=world_hub`, spawn `738 / -680`, `instanceRegionSize=256`, anneau `6–16`, `waypointMinimumSpacing=80`, génération Hub activée |
+| Réseau du Wild transmis | `wild` : **7 Waystones, 0 découverte**, `cellSize=1000`, `chance=0.6`, `minimumSpacing=300` |
+| Âge des structures | `createdAt` présent — dernière borne `2026-10-08T22:43:47Z` |
+| Les 7 instances en manque | toutes à **`attempts = 0`** = jamais tenté, confirmé en direct |
+
+**Aucune mutation du monde n'a été faite depuis la machine** : aucune borne posée, aucun bloc touché,
+aucune progression de joueur modifiée. L'action ciblée est livrée, **pas exercée** — les
+7 instances sont toujours en manque, et c'est **TC-276** qui les débloquera.
+
+### À savoir
+
+Le nombre de bornes n'a **pas** changé et ne changera pas tout seul : ce lot rend le réseau lisible
+et fournit l'outil, il ne modifie **aucun** réglage de densité, de distance ou de probabilité. Les
+quatre scénarios d'équilibrage sont chiffrés dans
+`docs/claude-reports/2026-10-10_1340_audit-reseau-voyage.md` et **aucun n'est activé**.
+
+### Rollback
+
+- **Plugin** : `scripts/rollback-verygames.sh --latest` (restaure
+  `rpgquest-20261010T133044Z-predeploy.jar`), puis redémarrer. **Rien à défaire en base** — aucune
+  migration.
+- **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
+- Une borne posée par `travel.beacon.pair` **survit** au rollback : c'est une borne auto-générée
+  ordinaire, appariée à son instance. Elle se retire par les outils `/rpgadmin travel` déjà en place.

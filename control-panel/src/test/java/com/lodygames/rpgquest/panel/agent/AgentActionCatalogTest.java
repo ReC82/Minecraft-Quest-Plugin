@@ -495,4 +495,42 @@ class AgentActionCatalogTest {
         assertTrue(AgentActionCatalog.spec("server.announce").orElseThrow().sensitive());
         assertFalse(AgentActionCatalog.spec("server.logs.tail").orElseThrow().sensitive());
     }
+
+    /**
+     * Issue #156 — le rattrapage ciblé d'une instance du Hub. L'instance est désignée par SON
+     * waypoint, dans la forme exacte que le serveur fabrique : on ne peut donc pas demander une
+     * borne « quelque part », ni viser un chemin ou une valeur libre.
+     */
+    @Test
+    void travelBeaconPairIsASensitiveWriteBoundToItsOwnPermission() {
+        assertTrue(AgentActionCatalog.isWhitelisted("travel.beacon.pair"));
+        assertEquals(Permission.TRAVEL_PAIR_WRITE,
+                AgentActionCatalog.spec("travel.beacon.pair").orElseThrow().permission());
+        assertTrue(AgentActionCatalog.spec("travel.beacon.pair").orElseThrow().mutation());
+        assertTrue(AgentActionCatalog.spec("travel.beacon.pair").orElseThrow().sensitive(),
+                "elle pose des blocs réels : confirmation explicite exigée");
+        // Le simple relevé reste en lecture, et sous sa propre permission.
+        assertEquals(Permission.TRAVEL_READ,
+                AgentActionCatalog.spec("travel.catalog").orElseThrow().permission());
+        assertFalse(AgentActionCatalog.spec("travel.catalog").orElseThrow().mutation());
+    }
+
+    @Test
+    void travelBeaconPairValidatesTheWaypointIdAndRequiresConfirmation() {
+        assertFalse(AgentActionCatalog.validate("travel.beacon.pair",
+                Map.of("waypointId", "wp_world_hub_plains_0_0")).valid(),
+                "sans confirmation, une mutation sensible est refusée");
+        assertFalse(AgentActionCatalog.validate("travel.beacon.pair",
+                Map.of("confirm", "true")).valid(), "sans waypoint, rien à apparier");
+        assertFalse(AgentActionCatalog.validate("travel.beacon.pair",
+                Map.of("waypointId", "../../etc/passwd", "confirm", "true")).valid());
+        assertFalse(AgentActionCatalog.validate("travel.beacon.pair",
+                Map.of("waypointId", "beacon_auto_world_hub_plains_0_0", "confirm", "true")).valid(),
+                "un identifiant de BORNE n'est pas un identifiant de waypoint");
+
+        AgentActionCatalog.Validation ok = AgentActionCatalog.validate("travel.beacon.pair",
+                Map.of("waypointId", "wp_world_hub_plains_0_-3", "confirm", "true"));
+        assertTrue(ok.valid(), "une coordonnée de région négative est légitime");
+        assertEquals("wp_world_hub_plains_0_-3", ok.params().get("waypointId"));
+    }
 }

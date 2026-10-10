@@ -15,6 +15,7 @@ import com.lodygames.rpgquest.panel.content.StoryDraft;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.json.Json;
 import com.lodygames.rpgquest.panel.security.Session;
+import com.lodygames.rpgquest.panel.travel.TravelNetworkDiagnostic;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -2810,6 +2811,25 @@ public final class AgentPages {
         String query = q.getOrDefault("q", "").trim().toLowerCase(java.util.Locale.ROOT);
         String worldFilter = q.getOrDefault("world", "").trim();
 
+        // Issue #156 — le diagnostic est calculé par une classe pure et testée ; cette page ne fait
+        // que le mettre en forme. Aucune arithmétique de réseau ne vit dans du HTML.
+        //
+        // Il n'est affiché que SANS filtre, et c'est délibéré : une moyenne de distances calculée sur
+        // un sous-ensemble recherché serait présentée comme la couverture du réseau. Un filtre est une
+        // recherche, pas un diagnostic — mieux vaut masquer la section que la laisser mentir.
+        if (query.isEmpty() && worldFilter.isEmpty()) {
+            TravelNetworkDiagnostic diag = TravelNetworkDiagnostic.from(d);
+            sb.append(travelHubDiagnostic(diag));
+            sb.append(travelCoverage(diag));
+            sb.append(travelBeaconSheets(diag));
+            sb.append(travelInstances(session, agentId, diag));
+            sb.append(travelWildNetwork(diag));
+        } else {
+            sb.append("<p class=\"muted\">Filtre actif : le diagnostic du réseau complet est masqué, "
+                    + "pour ne pas présenter des moyennes calculées sur un sous-ensemble. Retirer le "
+                    + "filtre le rétablit.</p>");
+        }
+
         java.util.LinkedHashSet<String> worlds = new java.util.LinkedHashSet<>();
         for (Object o : waypoints) {
             worlds.add(str(asMap(o).get("world")));
@@ -2831,6 +2851,337 @@ public final class AgentPages {
         sb.append(Ui.sectionTitle("travel", "Appariements manquants dans le Hub (" + unpaired.size() + ")"));
         sb.append(renderUnpairedTable(unpaired));
 
+        return sb.toString();
+    }
+
+    /**
+     * Issue #156 — « RÉSEAU HUB — DIAGNOSTIC » : les chiffres qui répondent à « pourquoi si peu de
+     * bornes ? » avant toute liste.
+     *
+     * <p>Le premier fait à établir est que les bornes n'existent que dans le Hub : tant que l'écran
+     * ne le disait pas, chercher une borne dans le Wild semblait un manque de densité alors que
+     * c'est une politique.</p>
+     */
+    private String travelHubDiagnostic(TravelNetworkDiagnostic diag) {
+        if (!diag.available()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.sectionTitle("travel", "Réseau Hub — diagnostic"));
+        if (!diag.referenceKnown()) {
+            // Le panel se déploie avant le plugin : ce relevé peut précéder la version qui envoie le
+            // référentiel du réseau. Le dire, plutôt que d'affirmer qu'aucun Hub n'est configuré.
+            return sb.append(Ui.banner("info", "Ce relevé date d'une version du plugin antérieure au "
+                    + "diagnostic du réseau : cliquer sur « Rafraîchir » pour en obtenir un complet.")).toString();
+        }
+        if (diag.hubWorld().isEmpty()) {
+            return sb.append(Ui.banner("warn", "Aucun monde Hub configuré : aucune borne ne peut "
+                    + "être générée. Les bornes n'existent que dans le Hub.")).toString();
+        }
+        sb.append("<p class=\"muted\">Les bornes de voyage existent <strong>uniquement</strong> dans "
+                + "le monde Hub <code>").append(Http.esc(diag.hubWorld())).append("</code>, par "
+                + "politique du projet — il n'y en a jamais eu dans le Wild, et aucun réglage de "
+                + "densité n'en créera. Le réseau de voyage du Wild est celui des Waystones, décrit "
+                + "plus bas.</p>");
+        if (!diag.hubBeaconGenerationEnabled()) {
+            sb.append(Ui.banner("err", "La génération automatique de bornes du Hub est "
+                    + "<strong>désactivée</strong> dans la configuration : aucune nouvelle borne "
+                    + "n'apparaîtra, quel que soit le nombre d'instances visitées."));
+        }
+
+        sb.append("<div class=\"cards\">");
+        sb.append(Ui.statCard("travel", String.valueOf(diag.hubWaypoints()),
+                "instances du Hub (waypoints)", "", ""));
+        sb.append(Ui.statCard("travel", String.valueOf(diag.hubBeacons()), "bornes du Hub", "", ""));
+        sb.append(Ui.statCard("travel", String.valueOf(diag.completePairs()), "paires complètes",
+                diag.completePairs() == diag.hubWaypoints() ? "ok" : "", ""));
+        sb.append(Ui.statCard("warning", String.valueOf(diag.missingPairs()), "instances sans borne",
+                diag.missingPairs() == 0 ? "ok" : "warn", ""));
+        sb.append(Ui.statCard("warning", String.valueOf(diag.orphanBeacons()), "bornes orphelines",
+                diag.orphanBeacons() == 0 ? "ok" : "err", ""));
+        sb.append("</div>");
+
+        // La cause mécanique, dite une fois pour toutes : sans elle, un administrateur conclut à un
+        // défaut de génération là où il n'y a qu'un déclencheur jamais passé.
+        sb.append("<p>Une borne n'est cherchée <strong>que</strong> lorsqu'un joueur se déplace dans "
+                + "une instance de biome du Hub qui n'en a pas encore. Il n'existe aucun balayage du "
+                + "monde, aucune tâche de fond, aucune pré-génération : le nombre de bornes mesure "
+                + "donc <strong>l'exploration réelle du Hub</strong>, pas une densité configurée.</p>");
+        sb.append("<p class=\"muted\">Une instance de biome = (monde, type de biome, tuile de ")
+                .append(diag.instanceRegionSize()).append(" blocs). Une borne est posée entre ")
+                .append(diag.pairMinSpacing()).append(" et ").append(diag.pairMaxSpacing())
+                .append(" blocs de son waypoint, et jamais à moins de ")
+                .append(diag.waypointMinimumSpacing()).append(" blocs d'une autre borne.</p>");
+
+        if (!diag.lastBeaconCreatedAt().isEmpty()) {
+            sb.append(Ui.metaLine("Dernière borne créée",
+                    "<code>" + Http.esc(diag.lastBeaconCreatedAt()) + "</code>"));
+        }
+        if (!diag.lastInstanceCreatedAt().isEmpty()) {
+            sb.append(Ui.metaLine("Dernière instance découverte",
+                    "<code>" + Http.esc(diag.lastInstanceCreatedAt()) + "</code>"));
+        }
+        if (diag.otherWorldWaypoints() > 0) {
+            sb.append(Ui.metaLine("Waypoints hors du Hub",
+                    diag.otherWorldWaypoints() + " — sans borne par politique, voir les Waystones"));
+        }
+
+        if (diag.hubComplete()) {
+            sb.append(Ui.banner("ok", "Chaque instance du Hub ayant un waypoint a sa borne, et "
+                    + "aucune borne n'est orpheline."));
+        }
+        for (TravelNetworkDiagnostic.BeaconRow row : diag.anomalies()) {
+            sb.append(Ui.banner("warn", "Borne <code>" + Http.esc(row.id()) + "</code> : "
+                    + Http.esc(row.anomaly()) + "."));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Issue #156 — « COUVERTURE » : la géographie du réseau, pour que « il y a peu de bornes » puisse
+     * être confronté à « sur quelle étendue ».
+     *
+     * <p>Une distance non calculable est affichée comme telle : avec une seule borne, il n'existe pas
+     * de distance entre bornes, et afficher {@code 0} laisserait croire à des bornes superposées.</p>
+     */
+    private String travelCoverage(TravelNetworkDiagnostic diag) {
+        if (!diag.available() || !diag.referenceKnown() || diag.hubBeacons() == 0) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.sectionTitle("travel", "Couverture du Hub"));
+        sb.append(Ui.tableOpen("Mesure", "Min", "Moyenne", "Médiane", "Max"));
+        sb.append(statsRow("Distance à la borne la plus proche", diag.neighbourDistance()));
+        sb.append(statsRow(diag.spawnKnown() ? "Distance au spawn du Hub"
+                : "Distance au spawn (spawn inconnu)", diag.spawnDistance()));
+        sb.append(Ui.tableClose());
+
+        TravelNetworkDiagnostic.Extent e = diag.extent();
+        if (e.known()) {
+            sb.append(Ui.metaLine("Étendue couverte",
+                    "X de <code>" + e.minX() + "</code> à <code>" + e.maxX() + "</code> ("
+                            + e.width() + " blocs) · Z de <code>" + e.minZ() + "</code> à <code>"
+                            + e.maxZ() + "</code> (" + e.depth() + " blocs)"));
+            long per = diag.areaPerBeacon();
+            if (per > 0) {
+                sb.append(Ui.metaLine("Densité observée",
+                        "environ une borne pour " + formatArea(per)
+                                + " <span class=\"muted\">— mesure de l'explor&eacute; seulement, "
+                                + "jamais une densit&eacute; configur&eacute;e</span>"));
+            }
+        }
+        if (diag.spawnKnown()) {
+            sb.append(Ui.metaLine("Spawn du Hub",
+                    "<code>" + diag.spawnX() + ", " + diag.spawnZ() + "</code>"));
+        }
+        return sb.toString();
+    }
+
+    private String statsRow(String label, TravelNetworkDiagnostic.Stats stats) {
+        if (!stats.known()) {
+            return "<tr><td>" + Http.esc(label) + "</td><td colspan=\"4\" class=\"muted\">"
+                    + "non calculable (moins de deux points)</td></tr>";
+        }
+        return "<tr><td>" + Http.esc(label) + "</td><td>" + stats.min() + " blocs</td><td>"
+                + stats.mean() + " blocs</td><td>" + stats.median() + " blocs</td><td>"
+                + stats.max() + " blocs</td></tr>";
+    }
+
+    /** Aire lisible : les blocs² deviennent illisibles au-delà du millier. */
+    private static String formatArea(long squareBlocks) {
+        if (squareBlocks < 1_000_000L) {
+            return squareBlocks + " blocs²";
+        }
+        return String.format(Locale.FRANCE, "%.2f km²", squareBlocks / 1_000_000.0);
+    }
+
+    /**
+     * Issue #156 — une fiche <strong>ouvrable</strong> par borne du Hub.
+     *
+     * <p>Le tableau paginé répond à « lesquelles existent » ; il ne répond pas à « celle-ci est-elle
+     * normale ». La fiche rassemble ce qu'il fallait jusqu'ici recouper à la main entre trois
+     * tableaux : l'instance servie, la distance à son waypoint confrontée à l'anneau configuré, la
+     * distance au spawn, la borne voisine et l'âge.</p>
+     *
+     * <p>Sans JavaScript : {@code <details>} natif, comme le reste du panel (la CSP interdit le
+     * script en ligne).</p>
+     */
+    private String travelBeaconSheets(TravelNetworkDiagnostic diag) {
+        if (!diag.available() || !diag.referenceKnown() || diag.beacons().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.sectionTitle("travel", "Bornes du Hub — fiche par borne ("
+                + diag.beacons().size() + ")"));
+        sb.append("<p class=\"muted\">Ordre de création : la première ligne est la plus ancienne "
+                + "borne du réseau.</p>");
+        for (TravelNetworkDiagnostic.BeaconRow row : diag.beacons()) {
+            sb.append("<details class=\"npc-registry\"><summary>")
+                    .append(row.hasAnomaly() ? Icons.icon("warning") : Icons.icon("travel"))
+                    .append("<code>").append(Http.esc(row.id())).append("</code> — ")
+                    .append(Http.esc(row.biomeKey().isEmpty() ? "sans instance" : row.biomeKey()))
+                    .append(" <span class=\"muted\">").append(row.x()).append(", ").append(row.y())
+                    .append(", ").append(row.z()).append("</span>");
+            if (row.hasAnomaly()) {
+                sb.append(" <span class=\"badge text-bg-warning\">anomalie</span>");
+            }
+            sb.append("</summary><div class=\"mt-2\">");
+            if (row.hasAnomaly()) {
+                sb.append(Ui.banner("warn", Http.esc(row.anomaly())));
+            }
+            sb.append(Ui.metaLine("Instance servie", row.biomeInstance().isEmpty()
+                    ? "<span class=\"badge text-bg-warning\">aucune</span> <span class=\"muted\">"
+                            + "— borne posée à la main : elle n'est l'équipement d'aucune instance, "
+                            + "et ne compte donc dans aucune paire</span>"
+                    : "<code>" + Http.esc(row.biomeInstance()) + "</code>"));
+            sb.append(Ui.metaLine("Waypoint apparié", row.pairedWaypointId().isEmpty()
+                    ? "<span class=\"muted\">aucun</span>"
+                    : "<code>" + Http.esc(row.pairedWaypointId()) + "</code>"));
+            sb.append(Ui.metaLine("Distance à son waypoint", row.waypointDistance() < 0
+                    ? "<span class=\"muted\">non calculable</span>"
+                    : row.waypointDistance() + " blocs <span class=\"muted\">(anneau configuré : "
+                            + diag.pairMinSpacing() + "–" + diag.pairMaxSpacing() + ")</span>"));
+            sb.append(Ui.metaLine("Distance au spawn", row.spawnDistance() < 0
+                    ? "<span class=\"muted\">spawn du Hub inconnu</span>"
+                    : row.spawnDistance() + " blocs"));
+            sb.append(Ui.metaLine("Borne la plus proche", row.nearestBeaconDistance() < 0
+                    ? "<span class=\"muted\">elle est seule dans ce monde</span>"
+                    : row.nearestBeaconDistance() + " blocs"));
+            sb.append(Ui.metaLine("Origine", row.autoGenerated()
+                    ? "auto-générée par l'exploration" : "posée par un administrateur"));
+            sb.append(Ui.metaLine("Active", row.active() ? "oui"
+                    : "<span class=\"badge text-bg-warning\">non — son bouton est inerte</span>"));
+            sb.append(Ui.metaLine("Créée le", "<code>" + Http.esc(row.createdAt()) + "</code>"));
+            sb.append("</div></details>");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Issue #156 — « INSTANCES CONNUES DU HUB » : la vue qui fait apparaître le manque comme un état,
+     * et non comme une absence de ligne.
+     *
+     * <p>C'est aussi d'ici que part le rattrapage ciblé : une instance nommée, un essai. Le bouton
+     * n'apparaît qu'avec {@link Permission#TRAVEL_PAIR_WRITE}, parce qu'il pose des blocs réels.</p>
+     */
+    private String travelInstances(Session session, String agentId, TravelNetworkDiagnostic diag) {
+        if (!diag.available() || !diag.referenceKnown() || diag.instances().isEmpty()) {
+            return "";
+        }
+        boolean canPair = perms.can(session.effective(), Permission.TRAVEL_PAIR_WRITE);
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.sectionTitle("travel", "Instances connues du Hub (" + diag.instances().size() + ")"));
+        sb.append("<p class=\"muted\">Une ligne = une instance de biome où un joueur est réellement "
+                + "passé. Une instance jamais traversée n'existe nulle part : elle n'est pas un "
+                + "manque, elle n'est pas encore découverte.</p>");
+        for (TravelNetworkDiagnostic.InstanceRow row : diag.instances()) {
+            sb.append("<details class=\"npc-registry\"><summary>")
+                    .append(row.complete() ? Icons.icon("travel") : Icons.icon("warning"))
+                    .append(Http.esc(row.biomeKey())).append(" <span class=\"muted\">")
+                    .append(row.x()).append(", ").append(row.z()).append("</span> ")
+                    .append(row.complete()
+                            ? "<span class=\"badge text-bg-success\">borne présente</span>"
+                            : "<span class=\"badge text-bg-warning\">sans borne</span>")
+                    .append("</summary><div class=\"mt-2\">");
+            sb.append(Ui.metaLine("Instance", "<code>" + Http.esc(row.biomeInstance()) + "</code>"));
+            sb.append(Ui.metaLine("Waypoint", "<code>" + Http.esc(row.waypointId()) + "</code>"));
+            sb.append(Ui.metaLine("Borne", row.beaconId() == null || row.beaconId().isEmpty()
+                    ? "<span class=\"badge text-bg-warning\">aucune</span>"
+                    : "<code>" + Http.esc(row.beaconId()) + "</code>"));
+            sb.append(Ui.metaLine("Découverte le", "<code>" + Http.esc(row.createdAt()) + "</code>"));
+            if (!row.complete()) {
+                sb.append(Ui.metaLine("Cause", Http.esc(row.reason())));
+                sb.append(Ui.metaLine("Essais depuis le dernier démarrage", String.valueOf(row.attempts())));
+                sb.append(Ui.metaLine("Borne la plus proche", row.nearestBeaconDistance() < 0
+                        ? "<span class=\"muted\">aucune dans ce monde</span>"
+                        : row.nearestBeaconDistance() + " blocs"));
+                if (row.nextRetryEpochMs() != null
+                        && row.nextRetryEpochMs() > System.currentTimeMillis()) {
+                    sb.append(Ui.metaLine("Prochain essai automatique",
+                            "dans " + ((row.nextRetryEpochMs() - System.currentTimeMillis()) / 1000)
+                                    + " s, si un joueur retraverse l'instance"));
+                }
+                sb.append(travelPairForm(session, agentId, row, canPair));
+            }
+            sb.append("</div></details>");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Le rattrapage ciblé d'<strong>une</strong> instance (issue #156).
+     *
+     * <p>Le texte dit exactement la portée du geste, parce que c'est précisément ce qu'un bouton
+     * nommé « Réparer » laisserait deviner : cette instance, un essai, rien d'autre. Aucun
+     * rattrapage global n'est proposé ici — ce serait une décision d'équilibrage, pas d'exploitation.</p>
+     */
+    private String travelPairForm(Session session, String agentId,
+                                   TravelNetworkDiagnostic.InstanceRow row, boolean canPair) {
+        if (!canPair) {
+            return "<p class=\"muted\">Le rattrapage d'une instance demande la permission "
+                    + "« apparier une borne ».</p>";
+        }
+        return "<div class=\"mt-2\"><p>Poser maintenant la borne de cette instance, sans attendre "
+                + "qu'un joueur la retraverse. L'emplacement est cherché entre les mêmes distances "
+                + "que d'habitude, en respectant l'espacement minimal : <strong>cette instance "
+                + "seulement</strong>, aucun balayage du monde, aucune autre borne, aucune densité "
+                + "modifiée. S'il n'existe aucun emplacement valable, rien n'est posé et la raison "
+                + "est affichée.</p>"
+                + formStart(session, agentId, "travel.beacon.pair", "/travel", "")
+                + "<input type=\"hidden\" name=\"waypointId\" value=\"" + Http.esc(row.waypointId()) + "\">"
+                + confirmBox("Apparier une borne à l'instance " + row.biomeInstance())
+                + "<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
+                + "type=\"submit\">" + Icons.icon("travel") + "Apparier cette instance"
+                + "</button></div></form></div>";
+    }
+
+    /**
+     * Issue #156 — le réseau du <strong>Wild</strong>, qui n'est pas celui des bornes.
+     *
+     * <p>C'est la section qui empêche la confusion de recommencer : chercher des bornes dans le Wild
+     * ne donnera jamais rien, et ce qui compte là-bas est le nombre de Waystones
+     * <strong>découvertes</strong> — une Waystone que personne n'a trouvée n'offre aucun voyage.</p>
+     */
+    private String travelWildNetwork(TravelNetworkDiagnostic diag) {
+        if (!diag.available() || !diag.referenceKnown() || diag.waystoneNetworks().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(Ui.sectionTitle("travel", "Réseau du Wild — Waystones"));
+        sb.append("<p class=\"muted\">Le Wild n'a <strong>aucune</strong> borne, par politique. Son "
+                + "réseau de voyage est celui des Waystones, réparties sur une grille : au plus une "
+                + "par cellule, et seulement avec une certaine probabilité. Une Waystone ne sert à "
+                + "voyager qu'une fois <strong>découverte</strong> par un joueur.</p>");
+        for (TravelNetworkDiagnostic.WaystoneRow row : diag.waystoneNetworks()) {
+            sb.append("<details class=\"npc-registry\" open><summary>").append(Icons.icon("travel"))
+                    .append("<code>").append(Http.esc(row.world())).append("</code> — ")
+                    .append(row.total()).append(" Waystone(s)");
+            if (row.discoveryKnown()) {
+                sb.append(", ").append(row.discovered()).append(" découverte(s)");
+            }
+            sb.append("</summary><div class=\"mt-2\">");
+            if (row.discoveryKnown() && row.noneDiscovered() && row.total() > 0) {
+                sb.append(Ui.banner("warn", "Aucune de ces Waystones n'a jamais été découverte : le "
+                        + "réseau de voyage du Wild est, en pratique, inexistant pour les joueurs."));
+            }
+            sb.append(Ui.metaLine("Grille", "une cellule de " + row.cellSize() + " blocs de côté, "
+                    + "avec " + Http.esc(TravelNetworkDiagnostic.percent(row.chance()))
+                    + " de chance d'en porter une"));
+            long expected = (long) row.cellSize() * row.cellSize();
+            if (expected > 0 && row.chance() > 0) {
+                sb.append(Ui.metaLine("Densité théorique", "environ une Waystone pour "
+                        + formatArea(Math.round(expected / row.chance()))));
+            }
+            sb.append(Ui.metaLine("Espacement minimal", row.minimumSpacing() + " blocs"));
+            if (row.extent().known()) {
+                sb.append(Ui.metaLine("Étendue connue",
+                        "X de <code>" + row.extent().minX() + "</code> à <code>"
+                                + row.extent().maxX() + "</code> · Z de <code>"
+                                + row.extent().minZ() + "</code> à <code>" + row.extent().maxZ()
+                                + "</code>"));
+            }
+            sb.append("</div></details>");
+        }
         return sb.toString();
     }
 

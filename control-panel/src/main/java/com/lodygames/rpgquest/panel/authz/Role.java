@@ -45,6 +45,9 @@ public enum Role {
             Permission.DASHBOARD_VIEW,
             Permission.PLAYERS_READ, Permission.PLAYER_MODERATE, Permission.PLAYER_BUILD_WRITE,
             Permission.NPC_READ, Permission.TRAVEL_READ, Permission.NPC_WRITE, Permission.NPC_BIND_WRITE,
+            // Issue #156 : débloquer une instance du Hub restée sans borne est un geste
+            // d'exploitation ciblé, pas une modification de l'équilibrage du réseau.
+            Permission.TRAVEL_PAIR_WRITE,
             Permission.NPC_SPAWN_WRITE, Permission.QUEST_GIVER_WRITE,
             Permission.MOB_READ, Permission.MOB_WRITE, Permission.MOB_TEST_SPAWN,
             Permission.DIALOGUE_READ, Permission.DIALOGUE_WRITE,

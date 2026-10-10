@@ -19,6 +19,21 @@ public enum Permission {
     NPC_READ,
     /** Consultation lecture seule du réseau de voyage : waypoints/bornes persistés (issue #152). */
     TRAVEL_READ,
+    /**
+     * Demander l'appariement d'<strong>une</strong> instance de biome du Hub nommée, qui a un
+     * waypoint mais pas de borne (issue #156).
+     *
+     * <p>Permission <strong>dédiée</strong> et volontairement étroite. L'appariement automatique
+     * n'est tenté que lorsqu'un joueur traverse l'instance : une instance traversée une seule fois,
+     * ou traversée avant un redémarrage, reste donc indéfiniment sans borne sans que rien ne puisse
+     * la débloquer. Cette permission couvre exactement ce rattrapage — une instance désignée, un
+     * essai — et <strong>rien</strong> d'autre : pas de balayage du monde, pas de rattrapage
+     * global, aucun changement de densité ni de distance.</p>
+     *
+     * <p>Elle écrit dans le monde (une borne est posée en blocs réels), d'où sa séparation de
+     * {@link #TRAVEL_READ} : consulter le réseau n'est pas le modifier.</p>
+     */
+    TRAVEL_PAIR_WRITE,
     /** Consultation des profils de mob spécial/boss + throttle Wild (issue #169). */
     MOB_READ,
     /** Créer/modifier/activer-désactiver un profil de mob spécial/boss, régler le throttle Wild (issue #169). */

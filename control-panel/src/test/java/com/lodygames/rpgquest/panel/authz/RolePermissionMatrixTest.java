@@ -189,4 +189,21 @@ class RolePermissionMatrixTest {
             }
         }
     }
+
+    /**
+     * Issue #156 — apparier une borne pose des blocs réels : le droit est distinct de la lecture du
+     * réseau, que tous les rôles d'observation possèdent.
+     */
+    @Test
+    void pairingABeaconIsAnAdminWriteWhileReadingTheNetworkIsNot() {
+        assertTrue(can(Role.ADMIN, Permission.TRAVEL_PAIR_WRITE));
+        for (Role r : new Role[] {Role.TESTER, Role.BUILDER, Role.CONTENT_EDITOR, Role.READ_ONLY}) {
+            assertFalse(r.has(Permission.TRAVEL_PAIR_WRITE), r + " ne doit pas poser de borne");
+        }
+        // Les rôles d'observation consultent le réseau sans pouvoir y écrire : c'est exactement la
+        // séparation que cette permission introduit.
+        for (Role r : new Role[] {Role.TESTER, Role.BUILDER, Role.READ_ONLY}) {
+            assertTrue(r.has(Permission.TRAVEL_READ), r + " doit pouvoir consulter le réseau");
+        }
+    }
 }

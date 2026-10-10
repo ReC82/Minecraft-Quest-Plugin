@@ -53,6 +53,12 @@ public final class AgentActionCatalog {
      */
     private static final Pattern BACKUP_PATH = Pattern.compile(
             "content-backups/[0-9a-z]{1,40}/(quests|stories|dialogues)/[a-z0-9][a-z0-9_-]{0,63}\\.yml");
+    /**
+     * Issue #156 — forme EXACTE d'un identifiant de waypoint fabriqué par le serveur
+     * ({@code wp_<monde>_<biome>_<regionX>_<regionZ>}, voir {@code BiomeInstanceKey#waypointId}).
+     * Le tiret est accepté parce qu'une coordonnée de région est signée.
+     */
+    private static final Pattern WAYPOINT_ID = Pattern.compile("wp_[A-Za-z0-9_\\-]{1,120}");
     /** Identifiant de bâtiment de bibliothèque — même forme que le reste du contenu du projet. */
     private static final Pattern BUILDING_ID = Pattern.compile("[a-z0-9][a-z0-9_]{0,63}");
     /** Les quatre orientations cardinales, miroir de {@code Facing} côté plugin. */
@@ -277,6 +283,12 @@ public final class AgentActionCatalog {
                 "Rafraîchir les emplacements de construction");
         add("travel.catalog", Permission.TRAVEL_READ, false, false,
                 "Rafraîchir le catalogue waypoints/bornes (issue #152)");
+        // Issue #156 — rattrapage CIBLÉ d'une instance du Hub restée sans borne. Mutation sensible :
+        // elle pose des blocs réels. Elle ne touche QUE l'instance nommée — aucun balayage, aucun
+        // rattrapage global, aucune densité ni distance modifiée — et le catalogue est ré-enfilé
+        // pour que la borne apparaisse sans « Rafraîchir + F5 ».
+        addSensitiveWrite("travel.beacon.pair", Permission.TRAVEL_PAIR_WRITE, false,
+                "Apparier une borne à une instance du Hub", "travel.catalog");
         add("npc.citizens.list", Permission.NPC_READ, false, false, "Rafraîchir les PNJ Citizens");
         add("dialogue.list", Permission.DIALOGUE_READ, false, false, "Rafraîchir le catalogue des dialogues");
         add("mob.list", Permission.MOB_READ, false, false,
@@ -707,6 +719,15 @@ public final class AgentActionCatalog {
                 }
                 params.put("id", id);
                 params.put("facing", facing);
+            }
+            case "travel.beacon.pair" -> {
+                // Issue #156 : l'instance visée est désignée par SON waypoint, jamais par des
+                // coordonnées libres — on ne peut donc pas demander une borne « quelque part ».
+                String waypointId = form.getOrDefault("waypointId", "").trim();
+                if (!WAYPOINT_ID.matcher(waypointId).matches()) {
+                    return Validation.fail("Identifiant de waypoint manquant ou invalide.");
+                }
+                params.put("waypointId", waypointId);
             }
             case "building.site.delete" -> {
                 String id = buildSiteId(form);

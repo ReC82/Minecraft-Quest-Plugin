@@ -176,8 +176,15 @@ public final class BukkitAgentActions implements AgentActions {
      * diagnostic, pas une dépendance du catalogue — sans lui, la section Wild est simplement absente.
      */
     private com.lodygames.rpgquest.waystone.WaystoneService waystoneService;
-    /** Nombre total de découvertes de Waystones, lu à la demande (issue #156). */
-    private java.util.function.IntSupplier waystoneDiscoveryCount;
+    /**
+     * Nombre total de découvertes de Waystones, lu à la demande (issue #156).
+     *
+     * <p><strong>Asynchrone volontairement.</strong> C'est une lecture SQL : l'attendre depuis le
+     * thread principal gèlerait le serveur le temps de la requête — un diagnostic n'a pas le droit
+     * de coûter des ticks à ce qu'il décrit. Le relevé lit donc ce compteur <em>avant</em> de passer
+     * sur le thread principal, et retombe sur « non relevé » en cas d'échec.</p>
+     */
+    private Supplier<CompletableFuture<Integer>> waystoneDiscoveryCount;
     /**
      * Configuration de voyage, pour que l'écran cite les seuils réels (issue #156) plutôt que de
      * les supposer. {@code null} accepté : les seuils sont alors rendus comme non relevés.
@@ -193,7 +200,7 @@ public final class BukkitAgentActions implements AgentActions {
      */
     public void setTravelDiagnosticSources(
             com.lodygames.rpgquest.waystone.WaystoneService waystones,
-            java.util.function.IntSupplier discoveries,
+            Supplier<CompletableFuture<Integer>> discoveries,
             Supplier<com.lodygames.rpgquest.config.TravelConfig> travel) {
         this.waystoneService = waystones;
         this.waystoneDiscoveryCount = discoveries;
@@ -2609,6 +2616,20 @@ public final class BukkitAgentActions implements AgentActions {
 
     @Override
     public CompletableFuture<TravelCatalogView> travelCatalog() {
+        // Issue #156 : le nombre de découvertes de Waystones est une lecture SQL. Elle est faite
+        // ICI, hors du thread principal, et son résultat est passé au relevé — jamais attendue
+        // depuis le thread principal, où elle coûterait des ticks à ce qu'elle décrit. Un échec
+        // donne -1, soit « non relevé », et n'empêche jamais le relevé d'aboutir.
+        CompletableFuture<Integer> discoveries = waystoneDiscoveryCount == null
+                ? CompletableFuture.completedFuture(-1)
+                : waystoneDiscoveryCount.get().exceptionally(error -> {
+                    plugin.getSLF4JLogger().warn("Impossible de compter les découvertes de Waystones", error);
+                    return -1;
+                });
+        return discoveries.thenCompose(this::travelCatalogOnMain);
+    }
+
+    private CompletableFuture<TravelCatalogView> travelCatalogOnMain(int waystoneDiscoveries) {
         return onMain(() -> {
             List<Waypoint> waypoints = waypointService.all();
             List<TravelBeacon> beacons = travelBeaconService.all();
@@ -2682,7 +2703,7 @@ public final class BukkitAgentActions implements AgentActions {
                 for (var ws : waystoneService.all()) {
                     byWorld.computeIfAbsent(ws.world(), k -> new ArrayList<>()).add(ws);
                 }
-                int discovered = waystoneDiscoveryCount == null ? -1 : waystoneDiscoveryCount.getAsInt();
+                int discovered = waystoneDiscoveries;
                 // cellSize est un long en configuration (une cellule peut être très grande) ;
                 // l'écran l'affiche en blocs, donc un int suffit — on borne plutôt que de tronquer
                 // silencieusement.

@@ -923,17 +923,11 @@ public final class RPGQuestBootstrap {
         // liste qui en compte déjà une trentaine.
         agentActions.setBuildingHistoryRepository(buildingHistoryRepository);
         // Issue #156 : enrichissements du diagnostic de réseau de voyage. Le compteur de
-        // découvertes est lu à la demande et borné à 0 en cas d'échec — un diagnostic ne doit
-        // jamais faire échouer le relevé qu'il décrit.
+        // découvertes reste ASYNCHRONE de bout en bout — c'est une lecture SQL, et l'attendre
+        // depuis le thread principal gèlerait le serveur le temps de la requête. Le relevé la
+        // consomme avant de passer sur le thread principal.
         agentActions.setTravelDiagnosticSources(waystoneService,
-                () -> {
-                    try {
-                        return waystoneRepositoryForDiagnostic.totalDiscoveries()
-                                .get(2, java.util.concurrent.TimeUnit.SECONDS);
-                    } catch (Exception e) {
-                        return -1;
-                    }
-                },
+                waystoneRepositoryForDiagnostic::totalDiscoveries,
                 () -> configService.current().travel());
         registry.start(new PlugAdminAgent(
                 plugin, agentConfig, new HeartbeatPayload(healthSource),

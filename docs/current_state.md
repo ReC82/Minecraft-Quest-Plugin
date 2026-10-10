@@ -586,6 +586,23 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   correspondant est administrable et en lecture seule (`/travel` et `/rpgadmin travel diagnose`,
   même source) : pour chaque instance encore sans borne, il donne la cause, la distance à la borne
   la plus proche et le délai avant réessai.
+- **Audit du réseau de voyage et diagnostic administrable** *(issue #156, lot du 2026-10-10)* — la
+  question « pourquoi seulement 13 bornes ? » a été **mesurée**, pas supposée : les 13 bornes datent
+  toutes des sessions des 3 et 4 octobre, puis aucune pendant quatre jours ; trois sont apparues le
+  8 octobre, après le correctif du déclencheur, et la dernière a été appariée **2 secondes** après
+  son waypoint, contre 17 s à 4,7 jours pour les précédentes. État relevé : **23 instances du Hub,
+  16 bornes, 7 instances sans borne, 0 orpheline** ; voisin le plus proche min 99 / moyenne 131 /
+  médiane 134 / max 165 blocs — l'espacement n'a jamais rien bloqué. Les bornes n'existent **que**
+  dans le Hub, par politique ; le réseau de voyage du Wild est celui des Waystones, **7 existantes
+  et 0 découverte**. `/travel` expose désormais cinq sections de diagnostic (réseau Hub, couverture,
+  fiche par borne, instances connues, réseau du Wild), calculées par une classe **pure et testée**
+  (`panel.travel.TravelNetworkDiagnostic`) et masquées sous filtre — une moyenne sur un
+  sous-ensemble recherché serait présentée comme la couverture du réseau. Le seul défaut restant
+  étant un **retard permanent** que rien dans le jeu ne pouvait combler (l'appariement n'est
+  déclenché que par le passage d'un joueur), une action ciblée `travel.beacon.pair` (permission
+  dédiée `TRAVEL_PAIR_WRITE`) apparie **une** instance nommée par son waypoint, en réutilisant la
+  recherche d'emplacement existante : aucun balayage, aucun backfill, aucune densité ni distance
+  modifiée, aucune migration.
 - **Remise d'objets à un PNJ** *(issue #123)* — nouveau type d'objectif `DELIVER_ITEM_TO_NPC`
   (`npc` + `material` + `amount`) : le joueur doit **réellement remettre** les objets au PNJ, dans
   son dialogue. Cet objectif n'écoute **aucun** événement de jeu — ramasser, fabriquer ou posséder

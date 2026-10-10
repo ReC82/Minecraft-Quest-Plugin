@@ -4136,6 +4136,8 @@ le résumé de récompenses de TC-014).
 | TC-272 | Diff source↔DEV, page « Changements en attente » et publication groupée #47 (PENDING) | | | |
 | TC-273 | Onboarding nouveau joueur : reset cohérent, quête nommée, progression du kit #235 (PENDING) | | | |
 | TC-274 | Cycle de vie d'un bâtiment : libérer, réorienter, remplacer, tour de garde #234 (PENDING) | | | |
+| TC-275 | Diagnostic du réseau de voyage dans PlugAdmin : les cinq sections #156 (PENDING) | | | |
+| TC-276 | Rattrapage ciblé d'une instance du Hub restée sans borne #156 (PENDING) | | | |
 
 ---
 
@@ -5043,3 +5045,70 @@ le résumé de récompenses de TC-014).
 -   La génération IA de bâtiment, l'import de schematic externe, l'éditeur de plan : hors périmètre.
 -   Les villages/villes : l'architecture les prépare (chaque emplacement reste indépendant), mais
     aucun moteur de regroupement n'existe encore.
+
+---
+
+### TC-275 — Diagnostic du réseau de voyage dans PlugAdmin (issue #156, PENDING MANUAL VALIDATION)
+
+**Pourquoi ce test existe** : la question « pourquoi seulement 13 bornes ? » est restée sans réponse
+pendant des semaines parce que l'écran ne disait ni la politique (les bornes n'existent que dans le
+Hub), ni le déclencheur (une borne n'est cherchée que lorsqu'un joueur traverse l'instance), ni les
+chiffres réels. Ce test vérifie que la réponse est maintenant **lisible sans ouvrir le jeu**.
+
+**Durée** : 5 minutes. **Aucune mutation** : tout est en lecture.
+
+**Chiffres attendus au relevé du 2026-10-10** (ils augmentent si quelqu'un explore entre-temps — ce
+qui compte est leur cohérence entre elles, pas leur valeur exacte) : 23 instances du Hub, 16 bornes,
+16 paires complètes, 7 instances sans borne, 0 borne orpheline.
+
+1.  PlugAdmin → **Réseau de voyage** → **Rafraîchir**.
+2.  Section **« Réseau Hub — diagnostic »** : vérifier les cinq chiffres, la phrase « les bornes de
+    voyage existent **uniquement** dans le monde Hub », et celle qui dit que le nombre de bornes
+    mesure **l'exploration réelle du Hub** et qu'il n'existe **aucun balayage du monde**.
+3.  Section **« Couverture du Hub »** : distance à la borne la plus proche min **99** / moyenne
+    **131** / médiane **134** / max **165** blocs ; étendue X `25 → 885`, Z `-1194 → -13`.
+4.  Section **« Bornes du Hub — fiche par borne »** : ouvrir une fiche. Elle doit nommer l'instance
+    servie, et la distance à son waypoint doit tomber **entre 6 et 16 blocs** (l'anneau configuré,
+    cité juste à côté).
+5.  Section **« Instances connues du Hub »** : **7** lignes marquées « sans borne », chacune avec la
+    cause **« jamais tenté depuis le dernier démarrage »**.
+6.  Section **« Réseau du Wild — Waystones »** : **7 Waystones, 0 découverte**, avec l'avertissement
+    disant que le réseau de voyage du Wild est en pratique inexistant pour les joueurs.
+7.  Taper n'importe quoi dans la recherche, ou choisir un monde : **le diagnostic doit disparaître**,
+    remplacé par la phrase « Filtre actif : le diagnostic du réseau complet est masqué ». Retirer le
+    filtre le rétablit.
+
+**Ce que ce TC ne couvre pas** : il décrit ce qui est **enregistré en base** au dernier relevé, jamais
+une vérification physique des blocs. Pour cela, `/rpgadmin travel diagnose` et `repair`/`restore`.
+
+---
+
+### TC-276 — Rattrapage ciblé d'une instance restée sans borne (issue #156, PENDING MANUAL VALIDATION)
+
+**Pourquoi ce test existe** : l'appariement n'est déclenché que par le déplacement d'un joueur dans
+l'instance, et les compteurs d'essai vivent en mémoire. Les 7 instances en retard datent d'avant le
+correctif du 8 octobre, n'ont jamais été revisitées, et **rien dans le jeu** ne pouvait les
+débloquer. Ce test valide le seul remède : une instance désignée, un essai.
+
+**Durée** : 5 minutes, dont un aller-retour en jeu. **Mutation réelle du monde** : une borne est
+posée (≈ 12 blocs, sur un sol libre et accessible).
+
+1.  Dans **« Instances connues du Hub »**, ouvrir la fiche de **`wp_world_hub_swamp_0_0`** (position
+    `161, 27` — la plus proche du spawn, donc la plus rapide à vérifier en jeu).
+2.  Lire le texte du bloc d'action : il doit annoncer **cette instance seulement**, aucun balayage du
+    monde, aucune autre borne, aucune densité modifiée.
+3.  Cocher la confirmation, cliquer **« Apparier cette instance »**, puis **Rafraîchir**.
+4.  Attendu : l'instance passe **« borne présente »**, le compte des instances sans borne tombe de
+    **7 à 6**, les paires complètes montent de **16 à 17**, et la nouvelle borne a sa fiche avec une
+    distance à son waypoint **entre 6 et 16 blocs**.
+5.  **En jeu** : se rendre sur place. La borne doit être posée sur un sol accessible (pas sur un
+    feuillage, pas en surplomb) et son bouton doit ouvrir le menu de voyage.
+6.  Relancer l'action sur la **même** instance : elle doit être **refusée** avec le message « Cette
+    instance a déjà une borne appariée : … ».
+7.  *(Facultatif)* Tenter l'action sur une instance d'un terrain très accidenté : un refus
+    « Aucun emplacement accessible trouvé entre 6 et 16 blocs… » est une **issue normale**, pas une
+    panne — le message doit citer les distances réellement configurées.
+
+**Ce que ce TC ne couvre pas** : il ne valide **aucun** changement d'équilibrage. La densité, les
+distances et les probabilités sont inchangées ; les quatre scénarios chiffrés du rapport
+`2026-10-10_1340_audit-reseau-voyage.md` sont proposés et **non activés**.

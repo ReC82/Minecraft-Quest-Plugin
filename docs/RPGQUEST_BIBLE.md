@@ -3288,6 +3288,71 @@ instance encore sans borne il indique la **cause** — *jamais tenté depuis le 
 à la borne la plus proche et le délai avant le prochain essai. Ces compteurs vivent en mémoire : un
 redémarrage les remet à zéro, ce que l'affichage annonce explicitement.
 
+**Effet mesuré de la correction (serveur DEV, relevé du 2026-10-10)** : les 13 bornes datent toutes
+des sessions d'exploration des 3 et 4 octobre, puis **plus aucune pendant quatre jours** ; trois
+bornes sont apparues le 2026-10-08, après le déploiement du correctif, et la dernière a été appariée
+**2 secondes** après son waypoint — là où les 13 précédentes avaient demandé de 17 s à 4,7 jours,
+c'est-à-dire un aller-retour du joueur. État actuel : **23 instances du Hub, 16 bornes, 7 instances
+sans borne, 0 borne orpheline**. L'espacement n'est pas en cause : distance à la borne la plus proche
+min 99 / moyenne 131 / médiane 134 / max 165 blocs. Les 7 instances restantes ont toutes été
+découvertes avant le correctif et affichent `attempts = 0` — jamais retentées depuis le dernier
+redémarrage, parce que l'appariement n'est déclenché que par le passage d'un joueur.
+
+### Diagnostic du réseau de voyage dans PlugAdmin — `/travel` (issue #156)
+
+Trois réseaux coexistent et se confondaient facilement ; `/travel` les distingue désormais
+explicitement :
+
+| Réseau | Mondes | Rôle | Ce qui compte |
+|---|---|---|---|
+| **Waypoints** | Hub **et** Wild | repère par instance de biome | leur nombre = instances traversées |
+| **Bornes** | **Hub uniquement, par politique** | accès au menu de voyage | une par instance visitée ; il n'y en a jamais eu dans le Wild |
+| **Waystones** | Wild | réseau de voyage du Wild, sur grille | le nombre **découvert**, pas le nombre existant |
+
+Sections de la page, toutes alimentées par le seul relevé `travel.catalog` et calculées par une
+classe pure et testée (`panel.travel.TravelNetworkDiagnostic`) :
+
+- **Réseau Hub — diagnostic** : politique « bornes dans le Hub uniquement », déclencheur réel
+  (passage d'un joueur, jamais de balayage), instances / bornes / paires complètes / instances sans
+  borne / bornes orphelines, seuils réellement configurés (taille d'instance, anneau d'appariement,
+  espacement minimal), date de la dernière borne et de la dernière instance découverte.
+- **Couverture du Hub** : distance à la borne la plus proche et distance au spawn (min / moyenne /
+  médiane / max), étendue X et Z, densité observée. Une statistique non calculable — moins de deux
+  bornes, spawn inconnu — est affichée comme telle et **jamais** comme un zéro.
+- **Bornes du Hub — fiche par borne** : une fiche ouvrable (`<details>` natif, la CSP interdit le
+  script en ligne) par borne, avec l'instance servie, la distance à son waypoint confrontée à
+  l'anneau configuré, la distance au spawn, la borne voisine, l'origine et l'âge.
+- **Instances connues du Hub** : une ligne par instance réellement traversée, son état et la cause
+  d'un manque. Une instance jamais traversée n'y figure pas : elle n'est pas un manque.
+- **Réseau du Wild — Waystones** : grille (`cell-size` × probabilité), densité théorique,
+  espacement minimal, étendue, et **existantes vs découvertes** — zéro découverte est signalé comme
+  un réseau inexistant en pratique pour les joueurs.
+
+Le diagnostic n'est affiché **que sans filtre** : une moyenne calculée sur un sous-ensemble recherché
+serait présentée comme la couverture du réseau. Un filtre est une recherche, pas un diagnostic.
+
+#### Action `travel.beacon.pair` — rattrapage ciblé d'une instance
+
+| Action agent | Permission | Portée |
+|---|---|---|
+| `travel.beacon.pair` | `TRAVEL_PAIR_WRITE` (OWNER + ADMIN) | **une** instance du Hub, désignée par son waypoint |
+
+Pourquoi elle existe : une instance traversée une seule fois — ou traversée avant un redémarrage, qui
+remet à zéro les compteurs en mémoire — n'est plus jamais retentée. Rien, dans le jeu, ne pouvait
+combler ce retard. L'action le fait pour **une** instance nommée, depuis sa fiche dans « Instances
+connues du Hub ».
+
+Ce qu'elle ne fait **pas**, par construction : aucun balayage du monde, aucune autre instance
+touchée, aucun chunk pré-généré, aucune modification de la densité, des distances ou des
+probabilités. Elle réutilise la recherche d'emplacement existante
+(`TravelBeaconService#pairHubInstance` → `attemptPairBeacon`), si bien que la borne posée est une
+borne auto-générée ordinaire **appariée à son instance** — contrairement à `/rpgadmin travel beacon
+set`, qui crée une borne sans instance et laisse donc l'appariement ouvert. Le backoff de réessai est
+volontairement ignoré : la demande est explicite et humaine. Un refus est une **issue normale** (il
+peut n'exister aucun emplacement accessible respectant l'espacement minimal) et le message cite les
+distances réellement configurées. Permission dédiée, distincte de `TRAVEL_READ` : consulter le réseau
+n'est pas écrire dans le monde.
+
 ---
 
 ## 8. Claims

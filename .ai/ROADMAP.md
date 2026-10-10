@@ -3142,3 +3142,58 @@ Blocages: aucun. Limites assumées et documentées :
 Première étape à reprendre: TC-274 (~20 min, un client). Ensuite l'audit de #156, diagnostic SEUL,
   sans toucher à la politique de densité des bornes.
 ```
+
+```text
+Date: 2026-10-10 (après-midi — #156 : audit du réseau de voyage, « pourquoi 13 bornes ? »)
+Branche de départ: feature/234-building-placement-lifecycle @ fded90d (= ligne réellement déployée,
+  inclut #47, #213, #227, #235 et #234)
+Branche de travail: feature/156-travel-network-audit
+Étape de départ: ordre strict — (1) #156 audit complet + diagnostic administrable + correction d'un
+  BUG seulement s'il est démontré, (2) #229 LOT A si #156 est terminé proprement, (3) documenter le
+  lot suivant. Interdits rappelés par l'utilisateur : aucun chunk pré-généré, aucun scan global,
+  aucun backfill, aucun ratio ni distance changé, aucune borne déplacée/supprimée, aucun monde
+  modifié, aucune progression de joueur touchée, aucun git add -A sur src/.
+Étapes terminées:
+  - RÉPONSE FACTUELLE à « pourquoi 13 ? » : les 13 bornes datent TOUTES des sessions des 3 et 4
+    octobre, puis AUCUNE pendant quatre jours ; trois sont apparues le 8 octobre, après le
+    déploiement du correctif 95c0d68, et la dernière a été appariée 2 SECONDES après son waypoint —
+    contre 17 s à 4,7 jours pour les 13 précédentes. 13 n'était ni faux ni correct : c'était un
+    compte arrêté net par un bug déjà corrigé la semaine précédente.
+  - Chiffres relevés (copie lecture seule de data.db + relevé travel.catalog en direct) :
+    143 waypoints (120 wild + 23 world_hub), 16 bornes TOUTES dans world_hub, 0 dans le Wild,
+    0 borne posée à la main, 23 instances Hub dont 16 équipées, 7 sans borne, 0 orpheline,
+    7 Waystones dans le Wild dont 0 DÉCOUVERTE, 52 découvertes de waypoints (8 Hub, 44 Wild).
+  - Hypothèses RÉFUTÉES par la mesure : (a) l'espacement — plus petite distance entre deux bornes
+    99 blocs pour un minimum-spacing de 80 ; (b) la densité — une borne tous les ~252 blocs de côté,
+    voisin le plus proche à 131 blocs en moyenne ; (c) « réduire region-size » — re-découper les
+    23 points connus à 128 puis 64 donne exactement 23 instances, donc ZÉRO borne de plus dans le
+    Hub exploré ; (d) « une borne tous les N mètres » — une par tuile de 256 donnerait ~20 bornes
+    contre 16, soit +4.
+  - Défaut RESTANT démontré : le correctif répare les futures traversées, pas le retard déjà
+    constitué. Les 7 instances datent d'avant le correctif, n'ont JAMAIS été découvertes (clic
+    droit) et affichent attempts=0 — jamais retentées. Et /rpgadmin travel beacon set ne pouvait pas
+    les fermer : il crée une borne avec biome_instance VIDE, qui ne ferme aucun appariement.
+  - Diagnostic administrable : relevé travel.catalog enrichi (createdAt, monde Hub, spawn, seuils
+    réels, réseau Waystones) + classe PURE panel.travel.TravelNetworkDiagnostic (14 tests) +
+    CINQ sections de /travel (réseau Hub, couverture, fiche ouvrable par borne, instances connues,
+    réseau du Wild). Masquées sous filtre : une moyenne sur un sous-ensemble recherché serait
+    présentée comme la couverture du réseau.
+  - Correction AUTORISÉE et ciblée : action travel.beacon.pair, permission dédiée
+    TRAVEL_PAIR_WRITE (OWNER + ADMIN), mutation sensible, instance désignée par SON waypoint.
+    Réutilise attemptPairBeacon tel quel, donc la borne posée est appariée à son instance. Aucun
+    balayage, aucune autre instance, aucun chunk, aucune densité/distance/probabilité modifiée,
+    AUCUNE migration. Un test le prouve sur deux instances en manque : on en nomme une, l'autre
+    reste intacte. Aucune borne posée depuis la machine.
+  - Quatre scénarios d'équilibrage CHIFFRÉS et NON ACTIVÉS (statu quo + ciblé ; rattrapage
+    périodique borné ; rendre les Waystones trouvables ; densifier la grille du Wild ×2,7), plus le
+    chiffre du changement de politique « bornes dans le Wild » (+120 structures potentielles).
+Branche finale: feature/156-travel-network-audit
+Build: voir le rapport docs/claude-reports/2026-10-10_1340_audit-reseau-voyage.md
+Tests: voir le même rapport (section « Résultat des suites »)
+Déploiement: voir docs/deployment/SERVER_CHANGELOG.md, entrée du 2026-10-10
+Tests manuels en attente: TC-275 (diagnostic) et TC-276 (rattrapage ciblé) — ajoutés à
+  docs/MANUAL_TEST_PLAN.md. Plus TC-273 (#235), TC-274 (#234), TC-257 (#123), TC-271/TC-272 (#47),
+  tous intacts : aucune donnée nécessaire à ces tests n'a été touchée.
+Blocages: aucun. #156 reste OUVERTE (validation manuelle en jeu).
+Première étape à reprendre: TC-275 puis TC-276 (5 min chacun). Puis #229 LOT A.
+```

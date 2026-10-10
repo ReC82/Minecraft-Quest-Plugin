@@ -245,6 +245,79 @@ public final class TravelBeaconService implements PluginService {
         return gaps;
     }
 
+    /**
+     * Issue #156 — rattrapage <strong>ciblé</strong> : tente d'apparier une borne à l'instance d'un
+     * waypoint Hub nommé, et à elle seule.
+     *
+     * <p>Pourquoi ce point d'entrée existe : l'appariement n'est tenté que lorsqu'un joueur se
+     * déplace dans l'instance. Une instance traversée une seule fois reste donc sans borne jusqu'à
+     * ce qu'un joueur y revienne — et comme les compteurs d'essai vivent en mémoire, un redémarrage
+     * efface jusqu'à la trace du manque. Rien, dans le jeu, ne pouvait combler ce retard.</p>
+     *
+     * <p>Ce que cette méthode ne fait <strong>pas</strong> : aucun balayage du monde, aucune autre
+     * instance touchée, aucune pré-génération de chunk, aucun seuil de densité ou d'espacement
+     * modifié. Elle réutilise {@link #attemptPairBeacon} tel quel, si bien que la borne posée est
+     * une borne auto-générée ordinaire, appariée à son instance — contrairement à une pose manuelle,
+     * qui crée une borne sans instance et laisse donc l'appariement ouvert.</p>
+     *
+     * <p>Le backoff de réessai est volontairement <strong>ignoré</strong> : la demande est explicite
+     * et humaine, elle n'a pas à attendre un délai calculé pour un déclencheur automatique.</p>
+     *
+     * <p>À appeler sur le thread principal — la recherche d'emplacement lit le monde.</p>
+     *
+     * @return {@link Optional#empty()} si une borne a été posée, sinon la raison du refus
+     */
+    public Optional<String> pairHubInstance(String waypointId) {
+        String hub = hubWorld.get();
+        if (hub == null || hub.isBlank()) {
+            return Optional.of("Aucun monde Hub configuré.");
+        }
+        TravelConfig cfg = travelConfig.get();
+        if (!cfg.beacon().hubGenerationEnabled()) {
+            return Optional.of("La génération de bornes du Hub est désactivée dans la configuration.");
+        }
+        Waypoint waypoint = waypointService.byId(waypointId).orElse(null);
+        if (waypoint == null) {
+            return Optional.of("Waypoint introuvable : " + waypointId);
+        }
+        if (!waypoint.world().equals(hub)) {
+            // Par politique, les bornes n'existent que dans le Hub : un waypoint du Wild n'en
+            // attend aucune, et en poser une ici créerait un réseau que rien d'autre ne gère.
+            return Optional.of("Ce waypoint est dans « " + waypoint.world() + " », pas dans le Hub « "
+                    + hub + " » : les bornes n'existent que dans le Hub.");
+        }
+        String instanceKey = instanceKey(waypoint.world(), waypoint.biomeInstance());
+        if (byBiomeInstance.containsKey(instanceKey)) {
+            return Optional.of("Cette instance a déjà une borne appariée : "
+                    + byBiomeInstance.get(instanceKey).id());
+        }
+        World world = plugin.getServer().getWorld(waypoint.world());
+        if (world == null) {
+            return Optional.of("Monde non chargé : " + waypoint.world());
+        }
+        if (!pairing.add(instanceKey)) {
+            return Optional.of("Un appariement est déjà en cours pour cette instance.");
+        }
+        BiomeInstanceKey instance = new BiomeInstanceKey(waypoint.world(), waypoint.biomeKey(),
+                waypoint.regionX(), waypoint.regionZ());
+        try {
+            // La demande est explicite : on repart d'un état de réessai propre plutôt que d'être
+            // refusé par un backoff destiné au déclencheur automatique.
+            pairRetryNotBefore.remove(instanceKey);
+            if (attemptPairBeacon(world, instance, instanceKey, waypoint, cfg.beacon())) {
+                return Optional.empty();
+            }
+            return Optional.of("Aucun emplacement accessible trouvé entre "
+                    + cfg.beacon().pairMinSpacing() + " et " + cfg.beacon().pairMaxSpacing()
+                    + " blocs du waypoint, en respectant l'espacement minimal de "
+                    + cfg.waypoint().minimumSpacing() + " blocs entre bornes.");
+        } catch (RuntimeException error) {
+            pairing.remove(instanceKey);
+            logger.error("Échec inattendu de l'appariement ciblé de {}", instanceKey, error);
+            return Optional.of("Échec inattendu : " + error.getClass().getSimpleName());
+        }
+    }
+
     /** Distance horizontale à la borne la plus proche du même monde, en blocs, ou -1 s'il n'y en a aucune. */
     private int nearestBeaconDistance(String world, int x, int z) {
         long bestSq = Long.MAX_VALUE;
@@ -500,8 +573,15 @@ public final class TravelBeaconService implements PluginService {
         }
     }
 
-    /** Recherche un emplacement <strong>distinct</strong> du waypoint (anneau min/max-spacing autour de lui, jamais au même endroit). */
-    private void attemptPairBeacon(World world, BiomeInstanceKey instance, String instanceKey,
+    /**
+     * Recherche un emplacement <strong>distinct</strong> du waypoint (anneau min/max-spacing autour
+     * de lui, jamais au même endroit).
+     *
+     * @return {@code true} si une borne a été posée — l'appariement ciblé de {@link #pairHubInstance}
+     *         a besoin de distinguer « posée » de « aucun emplacement valable », les deux étant des
+     *         issues normales qu'un administrateur doit pouvoir lire
+     */
+    private boolean attemptPairBeacon(World world, BiomeInstanceKey instance, String instanceKey,
                                     Waypoint waypoint, TravelConfig.BeaconConfig bc) {
         long seed = (instanceKey + "#beacon").hashCode();
         int attempts = travelConfig.get().waypoint().candidateAttempts();
@@ -531,7 +611,7 @@ public final class TravelBeaconService implements PluginService {
             TravelBeacon beacon = new TravelBeacon(id, world.getName(), anchorX, anchorY, anchorZ,
                     facing.name(), VERSION, true, instance.serialize(), Instant.now());
             persistPairedBeacon(beacon, instanceKey);
-            return;
+            return true;
         }
 
         // Aucun candidat valable : retry borné, jamais de boucle lourde (même esprit que WaypointService).
@@ -541,6 +621,7 @@ public final class TravelBeaconService implements PluginService {
         pairRetryNotBefore.put(instanceKey, System.currentTimeMillis() + backoff);
         logger.info("Aucun emplacement de borne trouvé pour {} (essai {}), nouvel essai dans {} s.",
                 instanceKey, attempt, backoff / 1000);
+        return false;
     }
 
     private void persistPairedBeacon(TravelBeacon beacon, String instanceKey) {

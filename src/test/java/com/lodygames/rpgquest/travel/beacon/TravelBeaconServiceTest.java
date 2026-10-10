@@ -195,6 +195,15 @@ class TravelBeaconServiceTest {
         return waypoint;
     }
 
+    /** Même amorce, mais dans le monde Hub — les bornes n'existent que là (issue #156). */
+    private Waypoint seedHubWaypoint(String id, String biomeKey, int x, int y, int z) throws Exception {
+        Waypoint waypoint = new Waypoint(id, "Nom " + id, "world_hub", biomeKey + "@" + x + "," + z, biomeKey,
+                x, z, x, y, z, "NORTH", 1, true, Instant.now());
+        boolean inserted = waypointRepository.insertIfAbsent(waypoint).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        assertTrue(inserted, () -> "pré-requis du test : l'insertion de " + id + " a échoué (doublon ?)");
+        return waypoint;
+    }
+
     /** {@code waypointService.start()} recharge de façon ASYNCHRONE : attendre l'indexation avant d'interagir. */
     private void reloadAndAwaitIndexed(Waypoint... waypoints) {
         waypointService.start();
@@ -1031,5 +1040,126 @@ class TravelBeaconServiceTest {
     @Test
     void repairBeaconFailsCleanlyWhenBeaconDoesNotExist() {
         assertTrue(service.repairBeacon("does_not_exist").isPresent());
+    }
+
+    // ---- Rattrapage ciblé d'une instance (issue #156) -----------------------------------------
+
+    /**
+     * Le défaut que ce rattrapage corrige : l'appariement n'est tenté que lorsqu'un joueur se
+     * déplace dans l'instance. Ici personne n'y passe — le waypoint est généré, puis l'instance est
+     * nommée explicitement — et la borne doit tout de même apparaître.
+     */
+    @Test
+    void pairHubInstancePlacesTheBeaconOfANamedInstanceWithoutAnyPlayerPassingBy() throws Exception {
+        waypointService.start();
+        service.start();
+        prepareHubArea(9100, 9100, Biome.PLAINS);
+        waypointService.ensureGenerated(hub, new Location(hub, 9100.5, 65, 9100.5));
+        await(() -> waypointNear(9100, 9100).isPresent());
+        Waypoint waypoint = waypointNear(9100, 9100).orElseThrow();
+        assertEquals(1, service.hubWaypointsWithoutBeacon().size());
+
+        var error = service.pairHubInstance(waypoint.id());
+
+        assertTrue(error.isEmpty(), () -> "appariement ciblé attendu en succès : " + error);
+        await(() -> beaconNear(9100, 9100).isPresent());
+        TravelBeacon placed = beaconNear(9100, 9100).orElseThrow();
+        assertEquals(waypoint.biomeInstance(), placed.biomeInstance(),
+                "la borne doit être l'équipement de l'instance, exactement comme une borne auto-générée "
+                        + "— une borne sans instance ne fermerait aucun appariement");
+        assertTrue(service.hubWaypointsWithoutBeacon().isEmpty());
+    }
+
+    /**
+     * La garantie la plus importante du ticket : <strong>aucun</strong> rattrapage global. Deux
+     * instances sont en manque, une seule est nommée, et la seconde doit rester intacte.
+     */
+    @Test
+    void pairHubInstanceTouchesOnlyTheNamedInstanceAndLeavesTheOtherGapAlone() throws Exception {
+        waypointService.start();
+        service.start();
+        prepareHubArea(9300, 9300, Biome.PLAINS);
+        prepareHubArea(9300, 12000, Biome.TAIGA);
+        waypointService.ensureGenerated(hub, new Location(hub, 9300.5, 65, 9300.5));
+        waypointService.ensureGenerated(hub, new Location(hub, 9300.5, 65, 12000.5));
+        await(() -> waypointNear(9300, 9300).isPresent() && waypointNear(9300, 12000).isPresent());
+        assertEquals(2, service.hubWaypointsWithoutBeacon().size());
+
+        service.pairHubInstance(waypointNear(9300, 9300).orElseThrow().id());
+        await(() -> beaconNear(9300, 9300).isPresent());
+
+        assertTrue(beaconNear(9300, 12000).isEmpty(),
+                "l'instance non nommée ne doit recevoir aucune borne : un rattrapage ciblé n'est pas un backfill");
+        assertEquals(1, service.hubWaypointsWithoutBeacon().size());
+    }
+
+    @Test
+    void pairHubInstanceRefusesAnUnknownWaypoint() {
+        var error = service.pairHubInstance("wp_does_not_exist_0_0");
+        assertTrue(error.isPresent());
+        assertTrue(error.get().contains("introuvable"), () -> "message inattendu : " + error.get());
+    }
+
+    /** Les bornes n'existent que dans le Hub : un waypoint du Wild n'en attend aucune. */
+    @Test
+    void pairHubInstanceRefusesAWaypointOutsideTheHub() throws Exception {
+        Waypoint wildWaypoint = seedWaypoint("wp_wild_forest_3_3", "minecraft:forest", 3000, 65, 3000);
+        reloadAndAwaitIndexed(wildWaypoint);
+        service.start();
+
+        var error = service.pairHubInstance(wildWaypoint.id());
+
+        assertTrue(error.isPresent());
+        assertTrue(error.get().contains("Hub"), () -> "message inattendu : " + error.get());
+    }
+
+    @Test
+    void pairHubInstanceRefusesAnInstanceThatAlreadyHasItsBeacon() throws Exception {
+        waypointService.start();
+        service.start();
+        prepareHubArea(9500, 9500, Biome.PLAINS);
+        Location entry = new Location(hub, 9500.5, 65, 9500.5);
+        waypointService.ensureGenerated(hub, entry);
+        await(() -> waypointNear(9500, 9500).isPresent());
+        service.handleHubMovement(addPlayer(), entry);
+        await(() -> beaconNear(9500, 9500).isPresent());
+
+        var error = service.pairHubInstance(waypointNear(9500, 9500).orElseThrow().id());
+
+        assertTrue(error.isPresent());
+        assertTrue(error.get().contains("déjà"), () -> "message inattendu : " + error.get());
+    }
+
+    /**
+     * Un refus n'est pas une panne : il n'existe peut-être aucun emplacement valable. Ici c'est
+     * l'espacement minimal entre bornes qui l'interdit, et le message doit citer les distances
+     * <strong>réellement configurées</strong> au lieu de rester générique — sinon l'administrateur
+     * ne peut pas savoir que le réglage, et non le terrain, est en cause.
+     */
+    @Test
+    void pairHubInstanceExplainsItselfWhenMinimumSpacingForbidsEveryCandidate() throws Exception {
+        waypointService.start();
+        service.start();
+        prepareHubArea(9700, 9700, Biome.PLAINS);
+        prepareHubArea(9700, 12400, Biome.TAIGA);
+        Location first = new Location(hub, 9700.5, 65, 9700.5);
+        waypointService.ensureGenerated(hub, first);
+        await(() -> waypointNear(9700, 9700).isPresent());
+        service.handleHubMovement(addPlayer(), first);
+        await(() -> beaconNear(9700, 9700).isPresent());
+        waypointService.ensureGenerated(hub, new Location(hub, 9700.5, 65, 12400.5));
+        await(() -> waypointNear(9700, 12400).isPresent());
+
+        // Espacement minimal absurde : toute position est trop proche de la borne déjà posée.
+        currentConfig = new TravelConfig(currentConfig.wildWorld(), currentConfig.rune(), currentConfig.waystone(),
+                new WaypointConfig(true, 256L, 16, 40, 24, 0L, 1_000_000, 1, true), currentConfig.beacon());
+
+        var error = service.pairHubInstance(waypointNear(9700, 12400).orElseThrow().id());
+
+        assertTrue(error.isPresent());
+        assertTrue(error.get().contains("6") && error.get().contains("16")
+                        && error.get().contains("1000000"),
+                () -> "le refus doit citer l'anneau et l'espacement configurés : " + error.get());
+        assertTrue(beaconNear(9700, 12400).isEmpty(), "aucune borne ne doit être posée après un refus");
     }
 }

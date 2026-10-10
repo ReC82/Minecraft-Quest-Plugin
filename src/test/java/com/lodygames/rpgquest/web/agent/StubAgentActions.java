@@ -380,7 +380,13 @@ class StubAgentActions implements AgentActions {
     @Override
     public CompletableFuture<TravelCatalogView> travelCatalog() {
         return CompletableFuture.completedFuture(
-                new TravelCatalogView(List.of(), List.of(), 0, 0, 0, List.of(), 0L));
+                new TravelCatalogView(List.of(), List.of(), 0, 0, 0, List.of(), 0L,
+                        "", 0, 0, false, 0, 0, 0, 0, false, List.of()));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> pairHubBeacon(String waypointId) {
+        return unsupported();
     }
 
     @Override

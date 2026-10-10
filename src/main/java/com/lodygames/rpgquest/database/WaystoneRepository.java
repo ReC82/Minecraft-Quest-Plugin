@@ -99,6 +99,24 @@ public final class WaystoneRepository {
         });
     }
 
+    /**
+     * Nombre total de découvertes de Waystones, tous joueurs confondus (issue #156).
+     *
+     * <p>Un simple {@code COUNT(*)}, et c'est le chiffre qui compte pour le diagnostic : une
+     * Waystone qui existe mais que personne n'a jamais découverte n'offre <strong>aucun</strong>
+     * voyage. Compter les structures sans compter les découvertes ferait croire à un réseau
+     * utilisable là où il ne l'est pas.</p>
+     */
+    public CompletableFuture<Integer> totalDiscoveries() {
+        return database.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT COUNT(*) FROM waystone_discoveries");
+                 ResultSet rows = statement.executeQuery()) {
+                return rows.next() ? rows.getInt(1) : 0;
+            }
+        });
+    }
+
     public CompletableFuture<Integer> deleteDiscoveries(UUID playerId) {
         return database.execute(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(DELETE_DISCOVERIES)) {

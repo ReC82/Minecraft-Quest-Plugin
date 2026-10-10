@@ -55,6 +55,12 @@ public enum AgentActionType {
     PLAYER_RESETFULL_PREVIEW("player.resetfull.preview"),
     /** Catalogue waypoints/bornes (issue #152) — lecture seule, aucun effet de bord. */
     TRAVEL_CATALOG("travel.catalog"),
+    /**
+     * Issue #156 : apparier une borne à <strong>une</strong> instance du Hub nommée par son
+     * waypoint. Écrit dans le monde, mais sur cette seule instance : aucun balayage, aucun
+     * rattrapage global, aucun seuil de densité ou d'espacement modifié.
+     */
+    TRAVEL_BEACON_PAIR("travel.beacon.pair"),
     /** Catalogue des profils de mobs spéciaux/boss + throttle Wild (issue #169) — lecture seule. */
     MOB_LIST("mob.list"),
     /** Issue #172 : catalogues réels du serveur (entités, particules, sons, biomes, mondes). */

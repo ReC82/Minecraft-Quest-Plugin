@@ -248,6 +248,57 @@ class AgentActionExecutorTest {
         assertNull(waypoints.get(1).get("pairedBeaconId"));
     }
 
+    /**
+     * Issue #156 — le relevé doit porter le référentiel du réseau (monde Hub, spawn, seuils réels) et
+     * le réseau du Wild. Sans eux, l'écran devrait supposer ce qu'il affiche : il ne pourrait ni
+     * calculer une distance au spawn, ni expliquer qu'il n'existe aucune borne hors du Hub.
+     */
+    @Test
+    void travelCatalogCarriesTheNetworkReferenceAndTheWildNetwork() {
+        AgentActionOutcome outcome = run(new AgentAction("tc1", "travel.catalog", Map.of()));
+
+        assertEquals("world_hub", outcome.details().get("hubWorld"));
+        assertEquals(true, outcome.details().get("hubSpawnKnown"));
+        assertEquals(512, outcome.details().get("instanceRegionSize"));
+        assertEquals(6, outcome.details().get("beaconPairMinSpacing"));
+        assertEquals(16, outcome.details().get("beaconPairMaxSpacing"));
+        assertEquals(64, outcome.details().get("waypointMinimumSpacing"));
+        assertEquals(true, outcome.details().get("hubBeaconGenerationEnabled"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> networks = (List<Map<String, Object>>) outcome.details().get("waystoneNetworks");
+        assertEquals(1, networks.size());
+        assertEquals("wild", networks.get(0).get("world"));
+        assertEquals(7, networks.get(0).get("total"));
+        assertEquals(0, networks.get(0).get("discovered"),
+                "exister et être découverte sont deux chiffres distincts");
+        // L'âge d'une borne répond à « pourquoi aucune nouvelle récemment ? ».
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> beacons = (List<Map<String, Object>>) outcome.details().get("beacons");
+        assertEquals("2026-01-01T10:00:17Z", beacons.get(0).get("createdAt"));
+    }
+
+    /** Issue #156 — l'appariement ciblé : une instance nommée, et un refus qui reste une issue normale. */
+    @Test
+    void travelBeaconPairTargetsOneNamedInstanceAndReportsARefusalWithoutFailing() {
+        assertEquals(AgentActionOutcome.FAILED,
+                run(new AgentAction("tp0", "travel.beacon.pair", Map.of())).status(),
+                "sans waypoint, rien à apparier");
+
+        AgentActionOutcome ok = run(new AgentAction("tp1", "travel.beacon.pair",
+                Map.of("waypointId", "wp_hub_forest_1_0")));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status(), ok.message());
+        assertEquals("wp_hub_forest_1_0", actions.lastPairedWaypointId);
+        assertEquals("wp_hub_forest_1_0", ok.details().get("waypointId"));
+
+        actions.pairSucceeds = false;
+        AgentActionOutcome refused = run(new AgentAction("tp2", "travel.beacon.pair",
+                Map.of("waypointId", "wp_hub_forest_1_0")));
+        assertEquals(AgentActionOutcome.FAILED, refused.status());
+        assertEquals("NOT_PAIRED", refused.details().get("code"));
+        assertTrue(refused.message().contains("Aucun emplacement"),
+                "le refus doit dire pourquoi : il n'y a peut-être aucun emplacement valable");
+    }
+
     @Test
     void npcDefinitionCreateValidatesIdAndDelegates() {
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("nd0", "npc.definition.create",
@@ -1905,19 +1956,39 @@ class AgentActionExecutorTest {
         @Override
         public CompletableFuture<TravelCatalogView> travelCatalog() {
             WaypointSummary paired = new WaypointSummary("wp_hub_plains_0_0", "Rochebrune", "world_hub",
-                    "minecraft:plains", "minecraft:plains@0,0", 10, 65, 10, true, 1, "beacon_auto_world_hub_plains_0_0");
+                    "minecraft:plains", "minecraft:plains@0,0", 10, 65, 10, true, 1,
+                    "beacon_auto_world_hub_plains_0_0", "2026-01-01T10:00:00Z");
             WaypointSummary unpaired = new WaypointSummary("wp_hub_forest_1_0", "Clairval", "world_hub",
-                    "minecraft:forest", "minecraft:forest@1,0", 300, 65, 10, true, 1, null);
+                    "minecraft:forest", "minecraft:forest@1,0", 300, 65, 10, true, 1, null,
+                    "2026-01-02T10:00:00Z");
             BeaconSummary autoBeacon = new BeaconSummary("beacon_auto_world_hub_plains_0_0", "world_hub",
-                    15, 65, 10, true, 1, true, "minecraft:plains@0,0", "wp_hub_plains_0_0");
+                    15, 65, 10, true, 1, true, "minecraft:plains@0,0", "wp_hub_plains_0_0",
+                    "2026-01-01T10:00:17Z");
             BeaconSummary adminBeacon = new BeaconSummary("beacon_wild_1_65_1", "wild", 1, 65, 1, true, 1,
-                    false, "", null);
+                    false, "", null, "2026-01-03T10:00:00Z");
             return CompletableFuture.completedFuture(new TravelCatalogView(
                     List.of(paired, unpaired), List.of(autoBeacon, adminBeacon),
                     2, 2, 1,
                     List.of(new UnpairedHubInstance("wp_hub_forest_1_0", "minecraft:forest@1,0",
                             "minecraft:forest", 300, 10, 0, null, false, 290)),
-                    1_700_000_000_000L));
+                    1_700_000_000_000L,
+                    "world_hub", 0, 0, true, 512, 6, 16, 64, true,
+                    List.of(new WaystoneNetworkSummary("wild", 7, 0, 1000, 0.6, 96,
+                            -1500, 2000, -900, 1800))));
+        }
+
+        String lastPairedWaypointId;
+        boolean pairSucceeds = true;
+
+        @Override
+        public CompletableFuture<MutationResult> pairHubBeacon(String waypointId) {
+            lastPairedWaypointId = waypointId;
+            if (!pairSucceeds) {
+                return CompletableFuture.completedFuture(MutationResult.of(false, "NOT_PAIRED",
+                        "Aucun emplacement accessible trouvé."));
+            }
+            return CompletableFuture.completedFuture(MutationResult.of(true, "PAIRED",
+                    "Borne posée et appariée."));
         }
 
         @Override

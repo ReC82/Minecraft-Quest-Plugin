@@ -211,6 +211,8 @@ public final class RPGQuestBootstrap {
     private com.lodygames.rpgquest.building.BuildingPlacementService buildingPlacementService;
     /** Journal des opérations de bâtiment (issue #234) — lu par la fiche d'un emplacement. */
     private com.lodygames.rpgquest.database.BuildingHistoryRepository buildingHistoryRepository;
+    /** Dépôt des Waystones, retenu pour le diagnostic de réseau de voyage (issue #156). */
+    private WaystoneRepository waystoneRepositoryForDiagnostic;
     private com.lodygames.rpgquest.building.SchematicWorkshop buildingSchematics;
     private final YamlMerchantRegistry merchantRegistry;
     private final YamlPortalRegistry portalRegistry;
@@ -688,8 +690,11 @@ public final class RPGQuestBootstrap {
 
         // Waystones (mission « Waystones Wild ») : génération paresseuse déterministe dans le monde
         // d'exploration, découverte individuelle par joueur, retour au Hub par canalisation courte.
-        waystoneService = new WaystoneService(plugin,
-                new WaystoneRepository(databaseService.databaseManager()),
+        // Issue #156 : le dépôt est retenu pour que le diagnostic de réseau puisse compter les
+        // DÉCOUVERTES, et pas seulement les structures — une Waystone que personne n'a découverte
+        // n'offre aucun voyage.
+        waystoneRepositoryForDiagnostic = new WaystoneRepository(databaseService.databaseManager());
+        waystoneService = new WaystoneService(plugin, waystoneRepositoryForDiagnostic,
                 new WaystoneCellPlanner(), new SimpleWaystoneStructurePlacer(), spawnService,
                 () -> configService.current().travel());
         registry.start(waystoneService);
@@ -917,6 +922,19 @@ public final class RPGQuestBootstrap {
         // aucune opération n'échoue pour autant. Un setter plutôt qu'un paramètre de plus dans une
         // liste qui en compte déjà une trentaine.
         agentActions.setBuildingHistoryRepository(buildingHistoryRepository);
+        // Issue #156 : enrichissements du diagnostic de réseau de voyage. Le compteur de
+        // découvertes est lu à la demande et borné à 0 en cas d'échec — un diagnostic ne doit
+        // jamais faire échouer le relevé qu'il décrit.
+        agentActions.setTravelDiagnosticSources(waystoneService,
+                () -> {
+                    try {
+                        return waystoneRepositoryForDiagnostic.totalDiscoveries()
+                                .get(2, java.util.concurrent.TimeUnit.SECONDS);
+                    } catch (Exception e) {
+                        return -1;
+                    }
+                },
+                () -> configService.current().travel());
         registry.start(new PlugAdminAgent(
                 plugin, agentConfig, new HeartbeatPayload(healthSource),
                 new AgentActionExecutor(new BukkitPlayerDirectory(plugin), variableRepository::get,

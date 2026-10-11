@@ -113,17 +113,16 @@ nodes:
   # Issue #238 — le bouton ne porte plus que l'action : « Commencer la quête : Premiers pas dans le
   # Wild » (237 px) dépassait de loin la largeur réelle d'un bouton (150 px).
   #
-  # Le placeholder %kit_unlock_quest% existe pour nommer cette quête dans le CORPS (un libellé de
-  # bouton ne peut pas porter de placeholder), mais la ligne qui l'utilise est VOLONTAIREMENT
-  # retirée pour l'instant : ce placeholder est enregistré par du code Java qui n'est pas encore
-  # déployé, et un placeholder inconnu est laissé TEL QUEL à l'écran — le joueur lirait
-  # « %kit_unlock_quest% ». À remettre en même temps que le JAR.
+  # %kit_unlock_quest% nomme cette quête dans le CORPS, parce qu'un libellé de bouton ne peut pas
+  # porter de placeholder (la substitution ne s'applique qu'au texte du nœud). Remis le 2026-10-11
+  # avec le JAR qui enregistre ce placeholder : avant lui, un placeholder inconnu étant laissé TEL
+  # QUEL à l'écran, le joueur aurait lu « %kit_unlock_quest% ».
   #
   # Au palier maximum, %kit_tier_next% rend une phrase complète (« aucune — tu as déjà… ») et
   # %kit_upgrade_requirements% rend « rien de particulier » : ce nœud unique reste donc juste.
   kit_progress:
     speaker: "Guide"
-    text: "<white>Ton équipement de secours — celui que je te redonne après chaque mort :</white><newline><white>Kit actuel :</white> %kit_tier_current%<newline><white>Prochaine amélioration :</white> %kit_tier_next%<newline><gray>À me rapporter :</gray><newline>%kit_upgrade_requirements%<newline><gray>Apporte-les-moi au fur et à mesure : ce que tu me remets est gardé en sécurité, et tu ne le perds pas si tu meurs ensuite. Quand tout est là, ton kit s'améliore définitivement.</gray>"
+    text: "<white>Ton équipement de secours — celui que je te redonne après chaque mort :</white><newline><white>Kit actuel :</white> %kit_tier_current%<newline><white>Prochaine amélioration :</white> %kit_tier_next%<newline><gray>La quête qui l'améliore :</gray> %kit_unlock_quest%<newline><gray>À me rapporter :</gray><newline>%kit_upgrade_requirements%<newline><gray>Apporte-les-moi au fur et à mesure : ce que tu me remets est gardé en sécurité, et tu ne le perds pas si tu meurs ensuite. Quand tout est là, ton kit s'améliore définitivement.</gray>"
     choices:
       - text: "Commencer l'amélioration"
         conditions:

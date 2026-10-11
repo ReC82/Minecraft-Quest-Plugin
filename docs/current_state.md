@@ -625,6 +625,33 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   en **#237** : l'espace devant le bouton, la pente, et le diagnostic panel (écarté ici parce que
   `inaccessible()` lit les blocs de chaque waypoint et forcerait le chargement d'une centaine de
   chunks).
+- **UX des dialogues : le Garde, et les boutons tronqués** *(issue #238, 2026-10-11)* — retour réel
+  en jeu. Le Garde portait **sept** `START_QUEST` directement sur l'accueil (le rapport #235 n'en
+  avait identifié que trois) : « J'accepte la quête » démarrait une quête sans dire laquelle, ni
+  pourquoi, ni ce qu'il faudrait faire. Le dialogue suit désormais le motif de #235 — accueil →
+  option courte → nœud d'explication qui **nomme** la quête et dit son but → bouton
+  « Commencer : <nom> » qui, seul, la démarre. Aucun objectif, récompense, prérequis ni logique
+  métier n'a changé.
+  **Boutons calibrés sur la largeur réelle** : les choix sont rendus par la Dialog API de Paper, dont
+  les boutons font **150 px** (`PaperDialogRenderer.BUTTON_WIDTH`). Neuf libellés du Garde et neuf du
+  Guide dépassaient — jusqu'à **358 px** pour « Je veux prouver ma valeur pour obtenir un bout de
+  terrain (palier 1) », coupé en jeu. Le texte long vit maintenant dans le corps du nœud ; le bouton
+  ne porte que l'action. Un test interdit toute régression sur les **cinq** dialogues livrés, et
+  mesure en pixels (dans cette police `i` fait 2 px et `m` 6 : compter les caractères ne dirait rien).
+  **Le Garde ne recopie plus les objectifs de `crystal_hunt`** : cette quête est éditable depuis le
+  panel, et le dialogue parlait encore de « crocs d'araignée » et de « forger une lame » pour une
+  quête devenue une chasse. Il ne promet plus non plus « une épée en fer » pour toutes les quêtes.
+- **Noms d'objets localisés à l'annonce d'une quête** *(issue #238)* — le message « Quête commencée »
+  affichait `WHEAT_SEEDS` au milieu d'une interface française, parce qu'il passait l'objectif en
+  simple chaîne. Il réutilise désormais `ui.ObjectiveLabels`, **seule** règle de nommage des cibles
+  du projet, qui produit un composant `translatable` : le client affiche « Graines de blé » dans sa
+  propre langue. **Aucune table française maison** — ce sont les clés de traduction officielles de
+  Minecraft. La définition métier continue d'utiliser `WHEAT_SEEDS`.
+- **Avertissement de longueur dans l'éditeur de dialogues** *(issue #238)* — le panel annonce
+  « Longueur : N caractères — N px sur 150 disponibles » sous chaque libellé de choix, et avertit
+  quand il risque d'être tronqué. **Non bloquant** : un libellé long reste parfois le bon choix.
+  Le seuil n'est pas arbitraire, c'est la largeur réellement configurée des boutons
+  (`panel.dialogue.MinecraftTextWidth`), confrontée au libellé effectivement vu coupé en jeu.
 - **Remise d'objets à un PNJ** *(issue #123)* — nouveau type d'objectif `DELIVER_ITEM_TO_NPC`
   (`npc` + `material` + `amount`) : le joueur doit **réellement remettre** les objets au PNJ, dans
   son dialogue. Cet objectif n'écoute **aucun** événement de jeu — ramasser, fabriquer ou posséder

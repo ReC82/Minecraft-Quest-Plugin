@@ -181,6 +181,53 @@ class DialoguesCatalogTest {
         assertTrue(page.contains("canonique</strong>"), "bandeau format canonique");
     }
 
+    /**
+     * Issue #238 — l'éditeur annonce la largeur réelle du libellé, et avertit s'il sera tronqué.
+     *
+     * <p>Le besoin vient du terrain : des boutons étaient coupés en jeu sans que rien, dans
+     * l'éditeur, ne puisse le laisser prévoir. L'avertissement est <strong>non bloquant</strong> —
+     * un libellé long reste parfois le bon choix.</p>
+     */
+    @Test
+    void theChoiceEditorMeasuresTheLabelAndWarnsWhenItWillBeTruncated() throws Exception {
+        start();
+        // « J'accepte » tient largement ; un second choix volontairement trop long doit déclencher
+        // l'avertissement, et lui seul.
+        String longLabel = "Je veux prouver ma valeur pour obtenir un bout de terrain (palier 1)";
+        runListWithSuccess(DIALOGUE_DETAILS.replace(
+                "{\"text\":\"Non merci\",\"nextNodeId\":\"\",\"actions\":[],\"conditions\":[]}",
+                "{\"text\":\"" + longLabel + "\",\"nextNodeId\":\"\",\"actions\":[],\"conditions\":[]}"));
+        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
+
+        // La mesure est annoncée pour chaque libellé, même quand tout va bien : l'auteur apprend la
+        // contrainte dans l'éditeur plutôt qu'en jeu.
+        assertTrue(page.contains("Longueur :"), "la longueur du libellé est affichée");
+        assertTrue(page.contains("px sur 150 disponibles"),
+                "le budget réel du bouton est cité, pas un nombre de caractères arbitraire");
+        // « J'accepte » = 49 px ; le libellé trop long = 358 px.
+        assertTrue(page.contains("49 px sur 150"), "mesure du libellé court");
+        assertTrue(page.contains("358 px sur 150"), "mesure du libellé réellement vu tronqué en jeu");
+        assertTrue(page.contains("risque d'être tronqué") || page.contains("risque d&#39;être tronqué"),
+                "l'avertissement doit apparaître pour le libellé trop long");
+        // Non bloquant : le formulaire d'enregistrement reste proposé.
+        assertTrue(page.contains("name=\"type\" value=\"dialogue.choice.update\""),
+                "l'avertissement ne retire pas la possibilité d'enregistrer");
+    }
+
+    /** Le formulaire d'AJOUT, lui, n'a rien à mesurer : il explique la contrainte en amont. */
+    @Test
+    void theAddChoiceFormExplainsTheButtonBudgetBeforeAnythingIsTyped() throws Exception {
+        start();
+        runListWithSuccess(DIALOGUE_DETAILS);
+        String page = get("/dialogues?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Le bouton fait 150 px de large en jeu"),
+                "la contrainte est annoncée avant la saisie");
+        assertTrue(page.contains("environ 25 caractères"), "ordre de grandeur utilisable");
+        assertTrue(page.contains("corps</strong> du nœud"),
+                "et la règle : le texte long va dans le corps, pas sur le bouton");
+    }
+
     @Test
     void richChoiceKeepsItsUneditablePropertiesAndSaysSo() throws Exception {
         start();

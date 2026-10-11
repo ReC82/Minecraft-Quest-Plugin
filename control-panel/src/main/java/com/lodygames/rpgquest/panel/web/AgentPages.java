@@ -8,6 +8,7 @@ import com.lodygames.rpgquest.panel.agent.AgentRegistry;
 import com.lodygames.rpgquest.panel.agent.AgentStore;
 import com.lodygames.rpgquest.panel.authz.Permission;
 import com.lodygames.rpgquest.panel.authz.PermissionService;
+import com.lodygames.rpgquest.panel.dialogue.MinecraftTextWidth;
 import com.lodygames.rpgquest.panel.content.QuestDraft;
 import com.lodygames.rpgquest.panel.content.QuestYaml;
 import com.lodygames.rpgquest.panel.content.SourceCatalog;
@@ -5896,6 +5897,7 @@ public final class AgentPages {
         sb.append("<input type=\"hidden\" name=\"node_id\" value=\"").append(Http.esc(nodeId)).append("\">");
         sb.append("<label>Texte du choix</label><input type=\"text\" name=\"choice_text\" maxlength=\"512\" "
                 + "placeholder=\"D'accord\">");
+        sb.append(choiceLabelWidthHint(""));
         sb.append("<label>Nœud cible</label>").append(nodeTargetSelect(nodeIds, ""));
         sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"close\" value=\"true\"> "
                 + "ou : ce choix termine le dialogue (laisser « nœud cible » vide)</label>");
@@ -5946,6 +5948,7 @@ public final class AgentPages {
                 "Libellé du bouton proposé au joueur. Choisir couleur et styles ci-dessus — aucun "
                 + "code à écrire."));
 
+        sb.append(choiceLabelWidthHint(sourceText));
         sb.append("<label>Nœud cible</label>").append(nodeTargetSelect(nodeIds, next));
         sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"close\" value=\"true\"")
                 .append(next.isEmpty() ? " checked" : "").append("> ce choix termine le dialogue</label>");
@@ -6228,6 +6231,40 @@ public final class AgentPages {
                                 String label, String extraHidden) {
         return formStart(session, agentId, type, page, player) + extraHidden
                 + "<button class=\"btn\" type=\"submit\">" + Http.esc(label) + "</button></form>";
+    }
+
+    /**
+     * Issue #238 — avertit qu'un libellé de choix risque d'être tronqué en jeu.
+     *
+     * <p>Mesuré en <strong>pixels</strong> et non en caractères, parce que c'est ce que fait
+     * Minecraft : {@code i} avance de 2 px, {@code m} de 6. Le seuil est la largeur réellement
+     * configurée pour les boutons de dialogue, pas un nombre choisi au hasard — voir
+     * {@link MinecraftTextWidth}.</p>
+     *
+     * <p><strong>Non bloquant, et c'est voulu.</strong> Un libellé long reste parfois le bon choix ;
+     * l'écran informe, il ne décide pas. Le compteur s'affiche aussi quand tout va bien, pour que
+     * l'auteur apprenne la contrainte au lieu de la découvrir en jeu.</p>
+     */
+    private String choiceLabelWidthHint(String label) {
+        String plain = MinecraftTextWidth.plain(label == null ? "" : label);
+        if (plain.isEmpty()) {
+            return "<p class=\"muted\">Le bouton fait " + MinecraftTextWidth.BUTTON_WIDTH
+                    + " px de large en jeu, soit environ 25 caractères. Au-delà, Minecraft coupe la "
+                    + "fin du libellé : mettre le texte long dans le <strong>corps</strong> du nœud, "
+                    + "et garder une action courte sur le bouton.</p>";
+        }
+        int px = MinecraftTextWidth.pixels(plain);
+        StringBuilder sb = new StringBuilder("<p class=\"muted\">Longueur : <strong>")
+                .append(plain.length()).append(" caractères</strong> — ")
+                .append(px).append(" px sur ").append(MinecraftTextWidth.BUTTON_WIDTH)
+                .append(" disponibles.</p>");
+        if (px > MinecraftTextWidth.BUTTON_WIDTH) {
+            sb.append(Ui.banner("warn", "⚠ Ce libellé risque d'être tronqué dans Minecraft. "
+                    + "Déplacer l'explication dans le corps du nœud et ne garder que l'action sur le "
+                    + "bouton — par exemple « Prouver ma valeur » plutôt que « Je veux prouver ma "
+                    + "valeur pour obtenir un bout de terrain »."));
+        }
+        return sb.toString();
     }
 
     private String formStart(Session session, String agentId, String type, String page, String player) {

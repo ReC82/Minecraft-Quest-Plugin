@@ -15,6 +15,7 @@ import com.lodygames.rpgquest.panel.content.SourceCatalog;
 import com.lodygames.rpgquest.panel.content.StoryDraft;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.json.Json;
+import com.lodygames.rpgquest.panel.npc.NpcAppearance;
 import com.lodygames.rpgquest.panel.security.Session;
 import com.lodygames.rpgquest.panel.travel.TravelNetworkDiagnostic;
 import java.time.Instant;
@@ -3642,6 +3643,10 @@ public final class AgentPages {
                 .append(filterBtn("unlinked", "Non liés", false))
                 .append(filterBtn("warn", "Warnings", false))
                 .append(filterBtn("err", "Erreurs", false))
+                // Issue #197 : le filtre qui répond à « lesquels me restent-il à habiller ? ».
+                // Il porte sur l'apparence seule, pas sur les warnings : un PNJ dont la source de
+                // skin est inconnue n'est pas en anomalie, il est en attente d'une décision.
+                .append(filterBtn("skin-todo", "Apparence à configurer", false))
                 .append("</div>");
         sb.append("</div>");
         sb.append("<p class=\"count-note\" data-count-note data-noun=\"PNJ\">")
@@ -3835,7 +3840,13 @@ public final class AgentPages {
         List<Object> warnings = asList(n.get("warnings"));
         boolean anyErr = warnings.stream().anyMatch(w -> "error".equals(str(asMap(w).get("severity"))));
         boolean anyWarn = !warnings.isEmpty();
-        String cat = (boundCitizens ? "linked" : "unlinked") + (anyWarn ? " warn" : "") + (anyErr ? " err" : "");
+        // Issue #197 — l'apparence est un état de première classe : elle décide d'une pastille de
+        // tuile, d'une catégorie de filtre, d'une section de fiche, et de l'avertissement affiché
+        // AVANT un renommage. Elle est donc calculée une seule fois, ici, et passée partout.
+        Map<String, Object> citizensRowForLook = citizensRowOf(citizensRoster, id, numeric);
+        NpcAppearance appearance = appearanceOf(agentId, id, citizensRowForLook, boundCitizens);
+        String cat = (boundCitizens ? "linked" : "unlinked") + (anyWarn ? " warn" : "") + (anyErr ? " err" : "")
+                + (appearance.filterCategory().isEmpty() ? "" : " " + appearance.filterCategory());
         String ftext = Http.esc((hasName ? MiniText.plain(displayName) : "")
                 + " " + MiniText.plain(citizensNameOf(citizensRoster, id, numeric)) + " " + id + " " + role + " "
                 + state + " " + numeric);
@@ -3896,50 +3907,93 @@ public final class AgentPages {
         if (hasDefinition && !enabled) {
             sb.append("<span class=\"badge text-bg-secondary\">désactivé</span>");
         }
+        // Apparence (issue #197) : visible sur la tuile, sans ouvrir la fiche. On ne l'affiche pas
+        // pour un PNJ sans entité en jeu — la tuile dit déjà « à lier », et répéter la même absence
+        // sous deux formes encombre la liste sans rien apprendre.
+        if (boundCitizens) {
+            sb.append("<span class=\"badge ").append(appearance.badgeClass())
+                    .append("\" title=\"Apparence : ").append(Http.esc(appearance.explanation()))
+                    .append("\">").append(Icons.icon("npc")).append("apparence ")
+                    .append(Http.esc(appearance.label())).append("</span>");
+        }
         sb.append("</span></button></h3>");
 
         sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" ")
                 .append("data-bs-parent=\"#npc-accordion\"><div class=\"accordion-body npc-detail\">");
 
-        // ---- IDENTITÉ ----
+        // ================================================================================
+        //  Issue #197 — la fiche suit l'ordre des questions qu'un administrateur se pose :
+        //  qui est-ce (Identité), à quoi ressemble-t-il (Apparence), où est-il (Emplacement),
+        //  que fait-il (Comportement), que raconte-t-il (Contenu), et enfin la plomberie
+        //  (Administration). Les anciennes sections mélangeaient l'identité logique et
+        //  l'identité Citizens, ce qui obligeait à comprendre la différence pour s'en servir.
+        // ================================================================================
+
+        // ---- 1. IDENTITÉ ----
         sb.append(detailSection("npc", "Identité"));
         sb.append("<dl class=\"npc-dl\">");
-        dlRow(sb, "Nom affiché", nameHtml);
-        dlRow(sb, "ID RPGQuest", Ui.id(id));
+        // UN SEUL nom. La distinction « nom de définition » / « nom Citizens » est une donnée
+        // d'implémentation : elle n'apparaît ici que si les deux divergent réellement, parce
+        // qu'alors c'est une anomalie à corriger — jamais comme deux champs à administrer.
+        dlRow(sb, "Nom du PNJ", nameHtml);
+        if (!inGame.isEmpty() && !MiniText.plain(inGame).equals(MiniText.plain(hasName ? displayName : ""))) {
+            dlRow(sb, "Nom affiché en jeu",
+                    "<span class=\"badge text-bg-warning\">divergent</span> " + MiniText.html(inGame)
+                            + "<div class=\"faint\">Le catalogue et le jeu ne portent pas le même nom. "
+                            + "« Renommer le PNJ » les remet d'accord en une seule opération.</div>");
+        }
+        dlRow(sb, "Identifiant technique", Ui.id(id)
+                + "<div class=\"faint\">Jamais modifié par un renommage : c'est lui que les quêtes, "
+                + "dialogues et liaisons désignent.</div>");
         dlRow(sb, "État", npcStateBadge(state));
         if (hasDefinition) {
             String desc = cleanNull(str(n.get("description")));
             if (!desc.isEmpty()) {
                 dlRow(sb, "Description", Http.esc(desc));
             }
-            dlRow(sb, "Rôle", role.isEmpty() ? "<span class=\"muted\">aucun</span>" : Http.esc(roleLabel(role)));
         }
         sb.append("</dl>");
+        // Le renommage vit ici, au plus près du nom qu'il change — et non dans une section
+        // « Actions » en bas de fiche, où il fallait savoir qu'il s'appelait « nom en jeu ».
+        if (canWrite && canLink) {
+            sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">")
+                    .append(actionToggle(slug + "-f-name", "Renommer le PNJ", "edit",
+                            "btn-outline-primary"))
+                    .append("</div>");
+            sb.append(actionCollapse(slug + "-f-name", "<div class=\"card card-body npc-formcard\">"
+                    + npcIdentityRenameForm(session, agentId, id, hasName ? displayName : "", inGame,
+                            hasDefinition, boundCitizens, appearance, slug) + "</div>"));
+        }
 
-        // ---- CITIZENS ----
-        sb.append(detailSection("server", "Citizens"));
+        // ---- 2. APPARENCE ----
+        sb.append(detailSection("npc", "Apparence"));
+        sb.append(npcAppearanceBlock(appearance, slug, canLink && boundCitizens));
+        if (canLink && boundCitizens) {
+            sb.append(actionCollapse(slug + "-f-skin", "<div class=\"card card-body npc-formcard\">"
+                    + npcAppearanceForm(session, agentId, id, appearance) + "</div>"));
+        }
+
+        // ---- 3. EMPLACEMENT ----
+        sb.append(detailSection("world", "Emplacement"));
         sb.append("<dl class=\"npc-dl\">");
-        if (boundCitizens && hasNumeric) {
-            String cname = citizensNameFor(citizensRoster, numeric);
-            dlRow(sb, "NPC", "#" + Http.esc(numeric) + (cname.isEmpty() ? "" : " — " + MiniText.html(cname)));
-        } else if (boundCitizens) {
-            dlRow(sb, "NPC", "lié");
-        } else {
-            dlRow(sb, "NPC", "<span class=\"muted\">aucun</span>");
-        }
-        dlRow(sb, "Binding", boundCitizens ? "<code class=\"tid\">" + Http.esc(id) + "</code>"
-                : "<span class=\"muted\">aucun</span>");
-        dlRow(sb, "État", npcStateBadge(state));
-        // Localisation réelle (relevé Citizens), jamais déduite de la définition RPGQuest.
         if (boundCitizens) {
-            dlRow(sb, "Localisation",
-                    citizensLocation(citizensRowOf(citizensRoster, id, numeric), citizensSurveyAge, true));
-            // Issue #165 — comportements relus sur Citizens, jamais supposés.
-            dlRow(sb, "Comportement", citizensBehaviour(citizensRowOf(citizensRoster, id, numeric)));
+            dlRow(sb, "Position", citizensLocation(citizensRowForLook, citizensSurveyAge, true));
+        } else {
+            dlRow(sb, "Position", "<span class=\"muted\">Aucun PNJ Citizens lié : ce personnage "
+                    + "n'existe pas encore dans le monde.</span>");
         }
         sb.append("</dl>");
 
-        // ---- CONTENU ----
+        // ---- 4. COMPORTEMENT ----
+        if (boundCitizens) {
+            sb.append(detailSection("eye", "Comportement"));
+            sb.append("<dl class=\"npc-dl\">");
+            // Issue #165 — comportements relus sur Citizens, jamais supposés.
+            dlRow(sb, "Citizens", citizensBehaviour(citizensRowForLook));
+            sb.append("</dl>");
+        }
+
+        // ---- 5. CONTENU ----
         sb.append(detailSection("book", "Contenu"));
         sb.append("<div class=\"npc-content\">");
         String dialogueId = cleanNull(str(n.get("dialogueId")));
@@ -3998,11 +4052,35 @@ public final class AgentPages {
         }
         sb.append("</div>");
 
-        // ---- DIAGNOSTICS (aide humaine + lien doc + action immédiate) ----
+        // ---- 6. ADMINISTRATION ----
+        // Tout ce qui relève de la plomberie : liaison Citizens, diagnostics, actions, suppression.
+        // Un administrateur qui veut seulement renommer un personnage n'a plus à traverser cela.
+        sb.append(detailSection("server", "Administration"));
+        sb.append("<dl class=\"npc-dl\">");
+        if (boundCitizens && hasNumeric) {
+            String cname = citizensNameFor(citizensRoster, numeric);
+            dlRow(sb, "PNJ Citizens", "#" + Http.esc(numeric)
+                    + (cname.isEmpty() ? "" : " — " + MiniText.html(cname)));
+        } else if (boundCitizens) {
+            dlRow(sb, "PNJ Citizens", "lié");
+        } else {
+            dlRow(sb, "PNJ Citizens", "<span class=\"muted\">aucun</span>");
+        }
+        dlRow(sb, "Liaison", boundCitizens ? "<code class=\"tid\">" + Http.esc(id) + "</code>"
+                : "<span class=\"muted\">aucune</span>");
+        if (boundCitizens && citizensRowForLook != null) {
+            String type = cleanNull(str(citizensRowForLook.get("entityType")));
+            dlRow(sb, "Type d'entité", type.isEmpty()
+                    ? "<span class=\"muted\">inconnu — rafraîchir le relevé Citizens</span>"
+                    : Http.esc(MinecraftNames.humanize(type)) + " <code class=\"tid\">"
+                            + Http.esc(type) + "</code>");
+        }
+        sb.append("</dl>");
+
+        // ---- Diagnostics (aide humaine + lien doc + action immédiate) ----
         // On mémorise les cibles de formulaire déjà proposées par un « Corriger maintenant » de
         // diagnostic : la section Actions ne réaffichera pas ces mêmes boutons (règle CTA #89 polish).
         java.util.Set<String> diagFixTargets = new java.util.HashSet<>();
-        sb.append(detailSection("warning", "Diagnostics"));
         if (warnings.isEmpty()) {
             sb.append("<p class=\"muted npc-diag-ok\">").append(Icons.icon("check")).append("Aucune anomalie.</p>");
         } else {
@@ -4071,12 +4149,10 @@ public final class AgentPages {
                     + citizensLookCloseForm(session, agentId, id,
                             citizensRowOf(citizensRoster, id, numeric)) + "</div>"));
         }
-        if (canLink && boundCitizens) {
-            toggles.add(new String[] {slug + "-f-look", "Nom en jeu & apparence", "edit", "btn-outline-secondary"});
-            forms.append(actionCollapse(slug + "-f-look", "<div class=\"card card-body npc-formcard\">"
-                    + citizensLookForm(session, agentId, id, citizensNameOf(citizensRoster, id, numeric),
-                            hasName ? displayName : "") + "</div>"));
-        }
+        // Issue #197 — l'ancien « Nom en jeu & apparence » a disparu d'ici : ses deux moitiés sont
+        // remontées dans les sections Identité et Apparence, au contact de ce qu'elles modifient.
+        // Garder en plus une entrée dans « Actions » recréerait le formulaire en double que le
+        // ticket demande d'éliminer.
         if (canLink && hasDefinition && !boundCitizens && enabled) {
             toggles.add(new String[] {slug + "-f-link", "Lier un PNJ Citizens", "link", "btn-outline-secondary"});
             forms.append(actionCollapse(slug + "-f-link", "<div class=\"card card-body npc-formcard\">"
@@ -4149,10 +4225,18 @@ public final class AgentPages {
         String ftext = Http.esc(label + " citizens #" + numeric + " " + numeric + " " + uuid
                 + " sans fiche rpgquest non lie libre");
 
+        // Issue #197 — un PNJ sans fiche RPGQuest a quand même une apparence, et son état compte :
+        // c'est le cas de « Help ». Pas de tentative à consulter ici (le journal d'actions est
+        // indexé par identifiant logique, que ce PNJ n'a pas) : on se contente du relevé.
+        NpcAppearance appearance = NpcAppearance.of(true, str(c.get("entityType")),
+                str(c.get("skinSourceKind")), str(c.get("skinSourceValue")),
+                NpcAppearance.LastAttempt.NONE);
+
         StringBuilder sb = new StringBuilder();
-        sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"npcs\" data-filter-cat=\"unlinked\" ")
-                .append("data-filter-text=\"").append(ftext).append("\" data-res-id=\"").append(Http.esc(resId))
-                .append("\">");
+        sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"npcs\" data-filter-cat=\"unlinked")
+                .append(appearance.filterCategory().isEmpty() ? "" : " " + appearance.filterCategory())
+                .append("\" data-filter-text=\"").append(ftext).append("\" data-res-id=\"")
+                .append(Http.esc(resId)).append("\">");
         sb.append("<h3 class=\"accordion-header\">");
         sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
                 + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")
@@ -4164,6 +4248,10 @@ public final class AgentPages {
         sb.append("<span class=\"npc-head-badges\">");
         sb.append("<span class=\"badge text-bg-danger\">sans fiche RPGQuest</span>");
         sb.append("<span class=\"badge text-bg-warning\">non lié</span>");
+        sb.append("<span class=\"badge ").append(appearance.badgeClass())
+                .append("\" title=\"Apparence : ").append(Http.esc(appearance.explanation()))
+                .append("\">").append(Icons.icon("npc")).append("apparence ")
+                .append(Http.esc(appearance.label())).append("</span>");
         sb.append("</span></button></h3>");
 
         sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" ")
@@ -4178,7 +4266,28 @@ public final class AgentPages {
             dlRow(sb, "UUID Citizens", "<code class=\"tid\">" + Http.esc(uuid) + "</code>");
         }
         dlRow(sb, "Présent en jeu", spawned ? "oui" : "non (non spawné actuellement)");
+        String freeType = cleanNull(str(c.get("entityType")));
+        dlRow(sb, "Type d'entité", freeType.isEmpty()
+                ? "<span class=\"muted\">inconnu — rafraîchir le relevé Citizens</span>"
+                : Http.esc(MinecraftNames.humanize(freeType)) + " <code class=\"tid\">"
+                        + Http.esc(freeType) + "</code>");
         sb.append("</dl>");
+
+        // ---- APPARENCE ----
+        // Aucune action ici : habiller un PNJ passe par son identité logique côté serveur, et ce
+        // PNJ n'en a pas encore. Le dire est utile — le laisser croire configurable ne l'est pas.
+        sb.append(detailSection("npc", "Apparence"));
+        sb.append("<dl class=\"npc-dl\">");
+        dlRow(sb, "État", "<span class=\"badge " + appearance.badgeClass() + "\">"
+                + Http.esc(appearance.label()) + "</span>");
+        if (!appearance.sourceLabel().isEmpty()) {
+            dlRow(sb, "Source enregistrée", Http.esc(appearance.sourceLabel()));
+        }
+        sb.append("</dl>");
+        sb.append("<details class=\"npc-registry\"><summary class=\"muted\">Ce que cela veut dire</summary>")
+                .append("<p class=\"form-text\">").append(Http.esc(appearance.explanation()))
+                .append(" Définir une apparence depuis le panel demande d'abord de créer une fiche "
+                        + "RPGQuest ou de lier ce PNJ à une fiche existante, ci-dessous.</p></details>");
 
         // ---- FICHE RPGQUEST (absente) ----
         sb.append(detailSection("npc", "Fiche RPGQuest"));
@@ -4337,16 +4446,31 @@ public final class AgentPages {
 
         // -- Identité --
         sb.append("<div class=\"npc-fs\"><p class=\"npc-fs-h\">Identité</p>");
-        // Issue #195 : composant partagé — couleur au clic, styles, aperçu. Le champ soumis garde
-        // son nom et sa valeur MiniMessage, donc l'action agent et le plugin ne voient aucune
-        // différence ; un nom déjà écrit en plusieurs styles est conservé tel quel.
-        sb.append(StyleField.render("display_name", uid + "-name", "Nom du PNJ",
-                displayName, true,
-                "Nom de la <strong>définition RPGQuest</strong> : c'est lui qui apparaît dans les "
-                + "catalogues du panel et qui sert de locuteur par défaut aux dialogues. Choisir une "
-                + "couleur et des styles ci-dessus — aucune balise à écrire. "
-                + "<strong>Distinct du nom affiché en jeu</strong> par le PNJ Citizens, qui se change "
-                + "dans « Nom en jeu &amp; apparence »."));
+        if (update) {
+            // Issue #197 — le nom N'EST PLUS éditable ici. Il l'était, en même temps qu'il l'était
+            // dans le renommage Citizens : deux champs, deux portées, et un personnage qui finissait
+            // par s'appeler autrement dans le catalogue et au-dessus de sa tête. Un seul chemin le
+            // change désormais, et il coordonne les deux couches. La valeur courante reste soumise
+            // telle quelle pour que cette modification-ci n'efface pas le nom au passage.
+            sb.append("<input type=\"hidden\" name=\"display_name\" value=\"")
+                    .append(Http.esc(displayName)).append("\">");
+            sb.append("<div class=\"mb-2\"><label class=\"form-label\">Nom du PNJ</label>"
+                    + "<input class=\"form-control\" type=\"text\" value=\"")
+                    .append(Http.esc(MiniText.plain(displayName)))
+                    .append("\" readonly><div class=\"form-text\">Se change avec "
+                            + "<strong>« Renommer le PNJ »</strong>, dans la section Identité de la "
+                            + "fiche : le nom du catalogue et le nom affiché en jeu y sont modifiés "
+                            + "ensemble, pour qu'ils ne puissent pas divergier.</div></div>");
+        } else {
+            // Issue #195 : composant partagé — couleur au clic, styles, aperçu. Le champ soumis garde
+            // son nom et sa valeur MiniMessage, donc l'action agent et le plugin ne voient aucune
+            // différence ; un nom déjà écrit en plusieurs styles est conservé tel quel.
+            sb.append(StyleField.render("display_name", uid + "-name", "Nom du PNJ",
+                    displayName, true,
+                    "Nom du personnage : il apparaît dans les catalogues du panel, sert de locuteur "
+                    + "par défaut aux dialogues, et sera aussi le nom affiché en jeu une fois le PNJ "
+                    + "créé. Choisir une couleur et des styles ci-dessus — aucune balise à écrire."));
+        }
         if (contextual) {
             sb.append("<div class=\"mb-2\"><label class=\"form-label\">ID technique</label>"
                     + "<input class=\"form-control\" type=\"text\" value=\"").append(Http.esc(npcId))
@@ -4388,8 +4512,8 @@ public final class AgentPages {
         // -- Consentement + boutons -- (issue #111 : plus de case à cocher cachée pour une édition réversible)
         sb.append(mutationConsent("npc.definition." + (update ? "update" : "create"), "",
                 update
-                        ? "Les champs nom, dialogue, rôle et état de « " + npcId + " » seront remplacés. "
-                                + "L'identifiant technique ne change pas. Modification réversible."
+                        ? "Les champs dialogue, rôle et état de « " + npcId + " » seront remplacés. "
+                                + "Le nom et l'identifiant technique ne changent pas. Modification réversible."
                         : "La fiche RPGQuest sera créée (fichier npcs/<id>.yml). "
                                 + "Aucun PNJ physique Citizens n'est créé à cette étape."));
         sb.append("<div class=\"d-flex flex-wrap gap-2 mt-2\">");
@@ -5140,65 +5264,131 @@ public final class AgentPages {
     }
 
     /**
-     * Issue #165 — « Nom en jeu & apparence » d'un PNJ Citizens déjà lié. Deux opérations
-     * <strong>distinctes et indépendantes</strong> (deux formulaires, deux boutons) : renommer et
-     * appliquer un skin n'ont pas les mêmes effets ni les mêmes risques, les mélanger en un seul
-     * bouton rendrait l'échec de l'une ambigu.
+     * Issue #197 — bloc « Apparence » d'une fiche PNJ : l'état, ce qu'il implique, et l'action qui
+     * le règle.
      *
-     * <p>Trois garde-fous repris du ticket : on ne demande <em>que</em> le lien MineSkin (jamais
-     * une commande libre), le PNJ est ciblé par son identité logique côté serveur (jamais par une
-     * sélection Citizens globale), et l'identifiant logique RPGQuest n'est pas touché — renommer
-     * « Help » ne renomme pas l'id {@code help}.</p>
+     * <p><strong>Ce qui est volontairement absent : une image.</strong> Le ticket demande un aperçu
+     * réel du skin. Le panel ne peut pas le produire honnêtement aujourd'hui : l'API publique de
+     * Citizens ne donne pas accès à la texture appliquée, et rendre une tête à partir du pseudo
+     * enregistré supposerait d'appeler un service d'images tiers depuis le navigateur de
+     * l'administrateur — ce qui exige d'élargir la CSP du panel et de divulguer les pseudos des
+     * PNJ à ce service. Plutôt qu'un visage peut-être faux ou une silhouette générique
+     * présentée comme un aperçu, on affiche la source exacte, nommée. Voir le rapport de session
+     * pour la décision à prendre.</p>
      */
-    private String citizensLookForm(Session session, String agentId, String npcId, String inGameName,
-                                    String definitionName) {
-        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("edit"))
-                .append("Nom en jeu &amp; apparence</p>");
-        sb.append("<p class=\"faint\" style=\"font-size:12px\">Ces deux opérations ne changent que "
-                + "l'<strong>apparence en jeu</strong> du PNJ Citizens lié. L'identifiant logique "
-                + "<code>").append(Http.esc(npcId)).append("</code>, l'identité Citizens et les liaisons "
-                + "quêtes / dialogues / stories restent inchangés.</p>");
+    private String npcAppearanceBlock(NpcAppearance appearance, String slug, boolean canConfigure) {
+        StringBuilder sb = new StringBuilder("<dl class=\"npc-dl\">");
+        dlRow(sb, "État", "<span class=\"badge " + appearance.badgeClass() + "\">"
+                + Http.esc(appearance.label()) + "</span>");
+        if (!appearance.sourceLabel().isEmpty()) {
+            dlRow(sb, "Source enregistrée", Http.esc(appearance.sourceLabel())
+                    + "<div class=\"faint\">C'est cette source que RPGQuest réapplique avant un "
+                    + "renommage, à l'identique.</div>");
+        }
+        sb.append("</dl>");
+        // L'explication longue vit dans un repli : la fiche reste lisible sur un téléphone, et le
+        // détail reste accessible à qui en a besoin. Pas de JS — <details> est natif (CSP).
+        sb.append("<details class=\"npc-registry\"><summary class=\"muted\">Ce que cela veut dire</summary>")
+                .append("<p class=\"form-text\">").append(Http.esc(appearance.explanation()))
+                .append("</p></details>");
+        if (canConfigure) {
+            sb.append("<div class=\"npc-actions d-flex flex-wrap gap-2\">")
+                    .append(actionToggle(slug + "-f-skin",
+                            appearance.status() == NpcAppearance.Status.CONFIGURED
+                                    ? "Changer l'apparence" : "Définir une apparence",
+                            "edit",
+                            appearance.needsConfiguration() ? "btn-primary" : "btn-outline-secondary"))
+                    .append("</div>");
+        }
+        return sb.toString();
+    }
 
-        // --- Nom en jeu ---
-        sb.append(formStart(session, agentId, "npc.citizens.rename", "/npcs", ""));
+    /**
+     * Issue #197 — <strong>le</strong> formulaire de renommage : un champ, un bouton, deux couches
+     * mises d'accord.
+     *
+     * <p><strong>L'avertissement arrive avant la soumission.</strong> Quand l'apparence du PNJ est
+     * de type joueur sans source connue, le serveur refusera le renommage — c'est ce qui est arrivé
+     * au Guide, après le clic, avec un code technique pour toute explication. Le même refus est
+     * donc annoncé ici, en français, avant d'avoir rempli quoi que ce soit, avec le chemin pour le
+     * lever et la certitude qu'aucune couche n'aura bougé entre-temps.</p>
+     */
+    private String npcIdentityRenameForm(Session session, String agentId, String npcId,
+                                         String currentName, String inGameName, boolean hasDefinition,
+                                         boolean boundCitizens, NpcAppearance appearance, String slug) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("edit"))
+                .append("Renommer le PNJ</p>");
+
+        if (appearance.blocksRename()) {
+            // Le refus annoncé avant le clic, avec l'action qui le lève juste à côté.
+            sb.append("<div class=\"alert alert-warning npc-alert\">").append(Icons.icon("warning"))
+                    .append("<div><strong>Le renommage sera refusé en l'état.</strong> ")
+                    .append(Http.esc(appearance.explanation()))
+                    .append("<div class=\"mt-2\">")
+                    .append(actionToggle(slug + "-f-skin", "Définir une apparence", "edit", "btn-primary"))
+                    .append("</div>")
+                    .append("<p class=\"form-text mb-0\">Une fois l'apparence définie, revenir ici : "
+                            + "le nom saisi n'est pas perdu, rien n'a été modifié entre-temps.</p>")
+                    .append("</div></div>");
+        }
+
+        sb.append(formStart(session, agentId, "npc.identity.rename", "/npcs", ""));
         sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
         sb.append("<input type=\"hidden\" name=\"npc_ctx\" value=\"").append(Http.esc(npcId)).append("\">");
-        sb.append("<label for=\"rename-").append(Http.esc(npcId)).append("\">Nom en jeu</label>");
-        sb.append("<input type=\"text\" id=\"rename-").append(Http.esc(npcId)).append("\" name=\"name\" ")
-                .append("maxlength=\"48\" required value=\"").append(Http.esc(inGameName)).append("\">");
-        if (inGameName.isEmpty()) {
-            sb.append("<p class=\"faint\" style=\"font-size:12px\">").append(Icons.icon("warning"))
-                    .append("Nom en jeu inconnu : aucun relevé Citizens récent ne couvre ce PNJ. "
-                            + "Cliquer sur <strong>« Citizens »</strong> en haut de page pour le relever — "
-                            + "le champ est volontairement laissé vide plutôt que prérempli avec un autre nom.</p>");
-        }
-        sb.append("<p class=\"faint\" style=\"font-size:12px\">Nom affiché au-dessus du PNJ, tel que "
-                + "Citizens le connaît <strong>réellement</strong>. Transmis tel quel à Citizens : "
-                + "RPGQuest n'y interprète aucune balise de couleur.</p>");
-        if (!definitionName.isEmpty()) {
-            sb.append("<p class=\"faint\" style=\"font-size:12px\">À ne pas confondre avec le "
-                    + "<strong>nom de la définition RPGQuest</strong> (")
-                    .append(MiniText.html(definitionName))
-                    .append("), qui sert aux catalogues et au locuteur des dialogues. Les deux sont "
-                            + "indépendants : renommer ici ne le change pas, pour ne jamais réécrire un "
-                            + "texte partagé. Il se modifie dans « Modifier ».</p>");
-        }
-        sb.append(fieldHelp("Un PNJ de type joueur tire son apparence de son nom quand aucun skin "
-                        + "explicite n'est posé : renommer la changerait. L'API publique de Citizens "
-                        + "ne permet pas de <em>lire</em> le skin en place, donc RPGQuest ne peut le "
-                        + "conserver que s'il connaît sa source — c'est-à-dire si le skin a été "
-                        + "appliqué ici. Dans ce cas la source est réappliquée avant le renommage. "
-                        + "<strong>Sinon le renommage est refusé</strong>, plutôt que de remplacer "
-                        + "l'apparence en silence : appliquer d'abord le skin voulu ci-dessous. "
-                        + "Un PNJ qui n'est pas de type joueur n'a pas de skin : son renommage est "
-                        + "toujours libre.",
+        sb.append("<label for=\"idname-").append(Http.esc(npcId)).append("\">Nom du PNJ</label>");
+        sb.append("<input type=\"text\" id=\"idname-").append(Http.esc(npcId)).append("\" name=\"name\" ")
+                .append("maxlength=\"48\" required autocomplete=\"off\" value=\"")
+                .append(Http.esc(MiniText.plain(currentName.isEmpty() ? inGameName : currentName)))
+                .append("\">");
+        sb.append(fieldHelp("Le nom du personnage. Une seule saisie met à jour "
+                        + (hasDefinition && boundCitizens
+                                ? "<strong>le catalogue RPGQuest et le nom affiché au-dessus du PNJ</strong>"
+                                : hasDefinition
+                                        ? "<strong>le catalogue RPGQuest</strong> (aucun PNJ Citizens "
+                                                + "n'est lié à cette fiche)"
+                                        : "<strong>le nom affiché au-dessus du PNJ</strong> (ce PNJ n'a "
+                                                + "pas de définition RPGQuest)")
+                        + ". L'identifiant technique <code>" + Http.esc(npcId) + "</code> n'est jamais "
+                        + "touché, et les quêtes, dialogues et liaisons qui le désignent continuent "
+                        + "de fonctionner.",
                 null, "48 caractères au plus", null));
-        sb.append(mutationConsent("npc.citizens.rename", "",
-                "Le nom affiché en jeu du PNJ Citizens lié à « " + npcId + " » sera changé."));
+        if (boundCitizens && inGameName.isEmpty()) {
+            sb.append("<p class=\"faint\" style=\"font-size:12px\">").append(Icons.icon("warning"))
+                    .append("Le nom actuellement affiché en jeu n'est pas connu : aucun relevé "
+                            + "Citizens récent ne couvre ce PNJ. Cliquer sur <strong>« Citizens »</strong> "
+                            + "en haut de page avant de renommer, pour savoir ce qui sera remplacé.</p>");
+        }
+        sb.append("<p class=\"form-text\">Les textes de dialogue ne sont pas réécrits : un locuteur "
+                + "peut être partagé entre plusieurs personnages. Les dialogues qui nommaient encore "
+                + "l'ancien nom sont listés dans le résultat de l'opération.</p>");
+        sb.append(mutationConsent("npc.identity.rename", "",
+                "Le nom du PNJ « " + npcId + " » sera changé partout où il est affiché. "
+                        + "L'identifiant technique, les liaisons et les textes de dialogue ne "
+                        + "changent pas. Opération réversible : il suffit de renommer à nouveau."));
         sb.append("<button class=\"btn\" type=\"submit\">Renommer</button></form>");
+        return sb.toString();
+    }
 
-        // --- Skin MineSkin ---
-        sb.append("<hr>");
+    /**
+     * Issue #197 (reprise de #165) — définir l'apparence d'un PNJ Citizens lié.
+     *
+     * <p>Trois garde-fous conservés du ticket d'origine : on ne demande <em>que</em> le lien
+     * MineSkin (jamais une commande libre), le PNJ est ciblé par son identité logique côté serveur
+     * (jamais par une sélection Citizens globale), et l'identifiant logique RPGQuest n'est pas
+     * touché — habiller « Help » ne renomme pas l'id {@code help}.</p>
+     */
+    private String npcAppearanceForm(Session session, String agentId, String npcId,
+                                     NpcAppearance appearance) {
+        StringBuilder sb = new StringBuilder("<p class=\"fs-h\">").append(Icons.icon("npc"))
+                .append("Définir l'apparence</p>");
+        if (appearance.status() == NpcAppearance.Status.NOT_APPLICABLE) {
+            sb.append("<p class=\"form-text\">").append(Http.esc(appearance.explanation()))
+                    .append("</p>");
+        } else if (appearance.needsConfiguration()) {
+            sb.append("<p class=\"form-text\">Choisir une source rend l'apparence de ce PNJ "
+                    + "reproductible : RPGQuest la réappliquera avant chaque renommage et après "
+                    + "chaque redémarrage. C'est aussi ce qui débloque son renommage.</p>");
+        }
         sb.append(formStart(session, agentId, "npc.citizens.skin", "/npcs", ""));
         sb.append("<input type=\"hidden\" name=\"npc_id\" value=\"").append(Http.esc(npcId)).append("\">");
         sb.append("<input type=\"hidden\" name=\"npc_ctx\" value=\"").append(Http.esc(npcId)).append("\">");
@@ -6412,6 +6602,66 @@ public final class AgentPages {
         return store.latestSuccessfulActionOfType(agentId, type)
                 .map(row -> com.lodygames.rpgquest.panel.agent.AgentLiveness.ageHuman(
                         row.completedAt() != null ? row.completedAt() : row.createdAt(), Instant.now()));
+    }
+
+    /** Instant du dernier relevé réussi d'un type, pour comparer une donnée à sa fraîcheur. */
+    private Optional<Instant> surveyInstant(String agentId, String type) {
+        return store.latestSuccessfulActionOfType(agentId, type)
+                .map(row -> row.completedAt() != null ? row.completedAt() : row.createdAt());
+    }
+
+    /**
+     * Ce que le journal d'actions permet d'affirmer de la dernière application d'apparence sur
+     * <strong>ce</strong> PNJ (issue #197).
+     *
+     * <p>Citizens résout un skin de façon asynchrone : une action réussie veut dire « demande
+     * transmise », pas « skin visible ». Tant que le relevé Citizens est plus ancien que la
+     * demande, la seule chose honnête à dire est « en cours ».</p>
+     *
+     * <p><strong>Limite assumée, et c'est pourquoi elle est écrite ici.</strong> On ne consulte que
+     * la <em>dernière</em> action du type — comme {@code latestForPlayer} le fait pour les joueurs.
+     * Si l'apparence d'un autre PNJ a été modifiée depuis, celle-ci est rapportée comme inconnue
+     * ({@code NONE}), et l'état retombe sur ce que dit le relevé. C'est un défaut de fraîcheur
+     * d'affichage, jamais une affirmation fausse : un statut {@code NONE} n'invente rien.</p>
+     */
+    private NpcAppearance.LastAttempt lastAppearanceAttempt(String agentId, String npcId) {
+        Optional<com.lodygames.rpgquest.panel.agent.AgentActionRow> last =
+                store.latestActionOfType(agentId, "npc.citizens.skin");
+        if (last.isEmpty()) {
+            return NpcAppearance.LastAttempt.NONE;
+        }
+        com.lodygames.rpgquest.panel.agent.AgentActionRow row = last.get();
+        if (!npcId.equalsIgnoreCase(row.params().getOrDefault("npc_id", ""))) {
+            return NpcAppearance.LastAttempt.NONE;
+        }
+        if (row.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.FAILED
+                || row.status() == com.lodygames.rpgquest.panel.agent.AgentActionStatus.REJECTED) {
+            return NpcAppearance.LastAttempt.FAILED;
+        }
+        if (!row.status().terminal()) {
+            // Encore en vol : l'agent ne l'a pas (encore) exécutée.
+            return NpcAppearance.LastAttempt.PENDING;
+        }
+        if (row.status() != com.lodygames.rpgquest.panel.agent.AgentActionStatus.SUCCESS) {
+            return NpcAppearance.LastAttempt.NONE;
+        }
+        Instant done = row.completedAt() != null ? row.completedAt() : row.createdAt();
+        Optional<Instant> survey = surveyInstant(agentId, "npc.citizens.list");
+        // Relevé postérieur à la demande : il porte déjà la source enregistrée, plus rien n'est
+        // « en cours ». Relevé antérieur (ou absent) : on ne peut pas encore le confirmer.
+        return survey.isPresent() && done != null && survey.get().isAfter(done)
+                ? NpcAppearance.LastAttempt.NONE : NpcAppearance.LastAttempt.PENDING;
+    }
+
+    /** État d'apparence d'un PNJ, déduit du relevé Citizens et du journal d'actions (issue #197). */
+    private NpcAppearance appearanceOf(String agentId, String npcId, Map<String, Object> citizensRow,
+                                       boolean boundCitizens) {
+        if (!boundCitizens || citizensRow == null) {
+            return NpcAppearance.of(false, "", "", "", NpcAppearance.LastAttempt.NONE);
+        }
+        return NpcAppearance.of(true, str(citizensRow.get("entityType")),
+                str(citizensRow.get("skinSourceKind")), str(citizensRow.get("skinSourceValue")),
+                lastAppearanceAttempt(agentId, npcId));
     }
 
     // ================================================================================

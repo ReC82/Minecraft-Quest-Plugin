@@ -162,6 +162,39 @@ class AgentActionCatalogTest {
     }
 
     @Test
+    void theCoordinatedRenameValidatesLikeTheNameItChanges() {
+        // Issue #197 — mêmes bornes que le renommage Citizens, puisque c'est le même nom.
+        assertTrue(AgentActionCatalog.validate("npc.identity.rename", Map.of(
+                "npc_id", "guide", "name", "Elias")).valid());
+        assertFalse(AgentActionCatalog.validate("npc.identity.rename", Map.of(
+                "npc_id", "guide", "name", "   ")).valid(), "nom vide refusé");
+        assertFalse(AgentActionCatalog.validate("npc.identity.rename", Map.of(
+                "npc_id", "guide", "name", "x".repeat(49))).valid(), "nom trop long refusé");
+        assertFalse(AgentActionCatalog.validate("npc.identity.rename", Map.of(
+                "name", "Elias")).valid(), "aucune action sans PNJ ciblé");
+        assertFalse(AgentActionCatalog.validate("npc.identity.rename", Map.of(
+                "npc_id", "Guide!", "name", "Elias")).valid(), "identifiant mal formé refusé");
+
+        // Seuls ces deux paramètres sont retenus : rien d'autre ne peut voyager avec l'action.
+        assertEquals(Map.of("npc_id", "guide", "name", "Elias"),
+                AgentActionCatalog.validate("npc.identity.rename", Map.of(
+                        "npc_id", "guide", "name", "Elias", "skin_url", "https://minesk.in/abcd1234"))
+                        .params());
+    }
+
+    @Test
+    void theCoordinatedRenameRequiresBothPermissionsItsEffectsProduce() {
+        // Issue #197 : elle écrit la définition ET modifie le PNJ Citizens. Obtenir l'un des deux
+        // droits par regroupement serait une élévation de privilège silencieuse.
+        AgentActionCatalog.Spec spec = AgentActionCatalog.spec("npc.identity.rename").orElseThrow();
+        assertEquals(java.util.List.of(Permission.NPC_WRITE, Permission.NPC_BIND_WRITE),
+                spec.requiredPermissions());
+        assertFalse(spec.sensitive(), "un renommage est réversible : pas de case à cocher");
+        assertEquals(java.util.List.of("npc.list", "npc.citizens.list"), spec.refreshTypes(),
+                "les DEUX catalogues qu'elle rend périmés");
+    }
+
+    @Test
     void contentMutationsDeclareTheCatalogsTheyInvalidate() {
         assertEquals(java.util.List.of("npc.list"),
                 AgentActionCatalog.spec("npc.definition.update").orElseThrow().refreshTypes());

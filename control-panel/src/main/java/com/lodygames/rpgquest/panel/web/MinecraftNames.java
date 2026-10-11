@@ -28,6 +28,11 @@ public final class MinecraftNames {
     /** Table FR minimale — jetons réellement présents dans le contenu + basiques fréquents. */
     private static final Map<String, String> FR = Map.ofEntries(
             // --- entités / mobs ---
+            // Issue #197 : types d'entité des PNJ Citizens, affichés sur la fiche PNJ. PLAYER est
+            // le seul qui porte un skin de joueur — d'où son libellé explicite.
+            Map.entry("PLAYER", "Joueur"),
+            Map.entry("WANDERING_TRADER", "Marchand ambulant"),
+            Map.entry("ARMOR_STAND", "Porte-armure"),
             Map.entry("SPIDER", "Araignée"),
             Map.entry("CAVE_SPIDER", "Araignée venimeuse"),
             Map.entry("ZOMBIE", "Zombie"),

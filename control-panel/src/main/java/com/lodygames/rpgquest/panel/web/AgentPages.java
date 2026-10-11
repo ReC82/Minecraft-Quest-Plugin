@@ -2822,7 +2822,12 @@ public final class AgentPages {
             sb.append(travelHubDiagnostic(diag));
             sb.append(travelCoverage(diag));
             sb.append(travelBeaconSheets(diag));
-            sb.append(travelInstances(session, agentId, diag));
+            // Issue #236 : le filtre de la LISTE des instances. Volontairement distinct de « q » et
+            // « world » ci-dessus, qui masquent tout le diagnostic parce qu'ils filtrent les
+            // tableaux dont viennent les statistiques. Celui-ci ne filtre qu'une liste.
+            sb.append(travelInstances(session, agentId, diag,
+                    TravelNetworkDiagnostic.InstanceFilter.ofWire(q.get("hi")),
+                    q.getOrDefault("hq", "").trim()));
             sb.append(travelWildNetwork(diag));
         } else {
             sb.append("<p class=\"muted\">Filtre actif : le diagnostic du réseau complet est masqué, "
@@ -3064,17 +3069,31 @@ public final class AgentPages {
      * <p>C'est aussi d'ici que part le rattrapage ciblé : une instance nommée, un essai. Le bouton
      * n'apparaît qu'avec {@link Permission#TRAVEL_PAIR_WRITE}, parce qu'il pose des blocs réels.</p>
      */
-    private String travelInstances(Session session, String agentId, TravelNetworkDiagnostic diag) {
+    private String travelInstances(Session session, String agentId, TravelNetworkDiagnostic diag,
+                                    TravelNetworkDiagnostic.InstanceFilter filter, String search) {
         if (!diag.available() || !diag.referenceKnown() || diag.instances().isEmpty()) {
             return "";
         }
         boolean canPair = perms.can(session.effective(), Permission.TRAVEL_PAIR_WRITE);
+        List<TravelNetworkDiagnostic.InstanceRow> shown = diag.instancesMatching(filter, search);
         StringBuilder sb = new StringBuilder();
-        sb.append(Ui.sectionTitle("travel", "Instances connues du Hub (" + diag.instances().size() + ")"));
+        // Issue #236 : le compteur montre TOUJOURS le total du réseau à côté du nombre affiché —
+        // un « (6) » seul se lirait « le Hub n'a que 6 instances ».
+        // Ancre : les liens du filtre y reviennent, pour ne pas renvoyer l'écran en haut de page à
+        // chaque clic — sur téléphone, la liste est loin sous les statistiques.
+        sb.append("<div id=\"instances-hub\"></div>");
+        sb.append(Ui.sectionTitle("travel", "Instances connues du Hub (" + shown.size() + "/"
+                + diag.instances().size() + ")"));
         sb.append("<p class=\"muted\">Une ligne = une instance de biome où un joueur est réellement "
                 + "passé. Une instance jamais traversée n'existe nulle part : elle n'est pas un "
                 + "manque, elle n'est pas encore découverte.</p>");
-        for (TravelNetworkDiagnostic.InstanceRow row : diag.instances()) {
+        sb.append(travelInstanceFilterBar(agentId, diag, filter, search));
+        if (shown.isEmpty()) {
+            return sb.append(Ui.empty("travel", "Aucune instance ne correspond à ce filtre. Les "
+                    + "statistiques de couverture ci-dessus portent sur le réseau complet, pas sur "
+                    + "cette sélection.")).toString();
+        }
+        for (TravelNetworkDiagnostic.InstanceRow row : shown) {
             sb.append("<details class=\"npc-registry\"><summary>")
                     .append(row.complete() ? Icons.icon("travel") : Icons.icon("warning"))
                     .append(Http.esc(row.biomeKey())).append(" <span class=\"muted\">")
@@ -3105,6 +3124,53 @@ public final class AgentPages {
             }
             sb.append("</div></details>");
         }
+        return sb.toString();
+    }
+
+    /**
+     * Issue #236 — filtrer la liste des instances du Hub, sans toucher aux statistiques.
+     *
+     * <p>Trois liens GET et un champ de recherche natif : la CSP interdit le script en ligne, et un
+     * lien reste de toute façon la bonne primitive ici — il est partageable, il survit à un
+     * rafraîchissement, et il fonctionne au clavier comme au doigt.</p>
+     *
+     * <p>Les paramètres sont volontairement nommés {@code hi}/{@code hq}, distincts du {@code q} et
+     * du {@code world} de la page : ces derniers masquent tout le diagnostic, parce qu'ils filtrent
+     * les tableaux dont les statistiques sont tirées. Celui-ci ne filtre qu'une liste, donc il ne
+     * masque rien et les métriques restent celles du réseau complet.</p>
+     */
+    private String travelInstanceFilterBar(String agentId, TravelNetworkDiagnostic diag,
+                                            TravelNetworkDiagnostic.InstanceFilter active, String search) {
+        String base = "/travel?agent=" + Http.esc(agentId);
+        String keepSearch = search.isEmpty() ? "" : "&hq=" + Http.esc(search);
+        StringBuilder sb = new StringBuilder("<div class=\"npc-catbar\">");
+        sb.append("<span class=\"npc-catbar-t\">Afficher</span>");
+        for (TravelNetworkDiagnostic.InstanceFilter f : TravelNetworkDiagnostic.InstanceFilter.values()) {
+            int count = diag.instancesMatching(f, search).size();
+            boolean on = f == active;
+            sb.append("<a class=\"btn btn-sm ")
+                    .append(on ? "btn-primary" : "btn-outline-secondary")
+                    .append("\" href=\"").append(base).append("&hi=").append(f.wire())
+                    .append(keepSearch).append("#instances-hub\"")
+                    .append(on ? " aria-current=\"true\"" : "")
+                    .append(">").append(Http.esc(f.label())).append(" <span class=\"badge text-bg-light\">")
+                    .append(count).append("</span></a>");
+        }
+        sb.append("</div>");
+        // Recherche : un formulaire GET, donc l'URL obtenue est partageable et rejouable.
+        sb.append("<form method=\"get\" action=\"/travel\" class=\"npc-searchbar\">");
+        sb.append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"hi\" value=\"").append(active.wire()).append("\">");
+        sb.append("<input type=\"search\" name=\"hq\" value=\"").append(Http.esc(search))
+                .append("\" class=\"form-control form-control-sm\" "
+                        + "placeholder=\"Biome, instance, waypoint, borne ou coordonnées (161,27)\">");
+        sb.append("<button class=\"btn btn-sm btn-outline-secondary\" type=\"submit\">")
+                .append(Icons.icon("search")).append("Filtrer</button>");
+        if (!search.isEmpty()) {
+            sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"").append(base)
+                    .append("&hi=").append(active.wire()).append("#instances-hub\">Effacer</a>");
+        }
+        sb.append("</form>");
         return sb.toString();
     }
 

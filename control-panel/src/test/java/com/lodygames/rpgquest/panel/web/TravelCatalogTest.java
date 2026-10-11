@@ -210,7 +210,7 @@ class TravelCatalogTest {
         runCatalogWithSuccess(TRAVEL_DETAILS);
         String page = get("/travel?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("Instances connues du Hub (2)"), "les deux instances du Hub sont listées");
+        assertTrue(page.contains("Instances connues du Hub (2/2)"), "les deux instances du Hub sont listées");
         assertTrue(page.contains("badge text-bg-success\">borne présente</span>"), "instance équipée");
         assertTrue(page.contains("badge text-bg-warning\">sans borne</span>"), "instance en manque");
         assertTrue(page.contains("jamais tenté"), "la cause du manque est affichée dans la fiche");
@@ -275,6 +275,120 @@ class TravelCatalogTest {
         assertFalse(page.contains("Couverture du Hub"), "aucune statistique sur un relevé incomplet");
     }
 
+    // ---- Filtre des instances du Hub (issue #236) ----------------------------------------------
+
+    /** Les trois choix demandés, avec leur compteur, en liens GET — aucun script en ligne. */
+    @Test
+    void theHubInstanceFilterOffersAllWithAndWithoutAsPlainLinks() throws Exception {
+        start();
+        runCatalogWithSuccess(TRAVEL_DETAILS);
+        String page = get("/travel?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Afficher"), "intitulé de la barre de filtre");
+        assertTrue(page.contains("&hi=all") && page.contains("&hi=with") && page.contains("&hi=without"),
+                "les trois états sont proposés");
+        assertTrue(page.contains(">Toutes <span") && page.contains(">Avec borne <span")
+                        && page.contains(">Sans borne <span"),
+                "chaque choix porte son libellé et son compteur");
+        assertTrue(page.contains("#instances-hub"), "les liens reviennent à la section, pas en haut de page");
+        assertTrue(page.contains("id=\"instances-hub\""), "l'ancre existe");
+        // Sans filtre : les deux instances du Hub du jeu de données, et le total affiché à côté.
+        assertTrue(page.contains("Instances connues du Hub (2/2)"), "compteur « affichées/total »");
+        assertFalse(page.contains("onclick") || page.contains("<script>"),
+                "aucun script en ligne : la CSP l'interdit");
+    }
+
+    @Test
+    void filteringOnWithoutBeaconKeepsOnlyTheGapAndStillShowsTheTotal() throws Exception {
+        start();
+        runCatalogWithSuccess(TRAVEL_DETAILS);
+        String page = get("/travel?agent=" + TestConfig.AGENT_ID + "&hi=without").body();
+
+        assertTrue(page.contains("Instances connues du Hub (1/2)"),
+                "une seule affichée, mais le total du réseau reste visible");
+        String section = hubInstancesSection(page);
+        assertTrue(section.contains("<code>clairiere_perdue</code>"), "l'instance en manque reste listée");
+        assertFalse(section.contains("<code>foret_du_hub</code>"),
+                "l'instance équipée est exclue de la liste");
+    }
+
+    @Test
+    void filteringOnWithBeaconKeepsOnlyTheEquippedInstance() throws Exception {
+        start();
+        runCatalogWithSuccess(TRAVEL_DETAILS);
+        String page = get("/travel?agent=" + TestConfig.AGENT_ID + "&hi=with").body();
+
+        assertTrue(page.contains("Instances connues du Hub (1/2)"));
+        String section = hubInstancesSection(page);
+        assertTrue(section.contains("badge text-bg-success\">borne présente</span>"));
+        assertFalse(section.contains("badge text-bg-warning\">sans borne</span>"),
+                "aucune instance en manque dans cette sélection");
+    }
+
+    /**
+     * Le point le plus important de #236 : filtrer la liste ne doit pas toucher aux métriques. Une
+     * moyenne calculée sur une sélection serait lue comme la couverture du réseau.
+     */
+    @Test
+    void theCoverageStatisticsAreIdenticalWhateverTheInstanceFilter() throws Exception {
+        start();
+        runCatalogWithSuccess(TRAVEL_DETAILS);
+        String unfiltered = get("/travel?agent=" + TestConfig.AGENT_ID).body();
+        String filtered = get("/travel?agent=" + TestConfig.AGENT_ID + "&hi=without").body();
+
+        for (String page : new String[] {unfiltered, filtered}) {
+            assertTrue(page.contains("Réseau Hub — diagnostic"), "le diagnostic global reste affiché");
+            assertTrue(page.contains("Couverture du Hub"), "les statistiques restent affichées");
+            assertTrue(page.contains("Bornes du Hub — fiche par borne (1)"),
+                    "le nombre de bornes du réseau est inchangé");
+            assertTrue(page.contains("Réseau du Wild — Waystones"));
+        }
+        assertFalse(filtered.contains("Filtre actif"),
+                "ce filtre ne masque PAS le diagnostic, contrairement à « q »/« world »");
+    }
+
+    @Test
+    void searchingTheInstancesAcceptsBiomeIdentifiersAndPastedCoordinates() throws Exception {
+        start();
+        runCatalogWithSuccess(TRAVEL_DETAILS);
+
+        String byWaypoint = get("/travel?agent=" + TestConfig.AGENT_ID + "&hq=clairiere").body();
+        assertTrue(byWaypoint.contains("Instances connues du Hub (1/2)"));
+        assertTrue(byWaypoint.contains("<code>clairiere_perdue</code>"));
+
+        // L'écran affiche « 150, 30 » : on doit pouvoir recopier ce qu'on lit.
+        String byCoords = get("/travel?agent=" + TestConfig.AGENT_ID + "&hq=150%2C30").body();
+        assertTrue(byCoords.contains("Instances connues du Hub (1/2)"), "recherche par coordonnées collées");
+
+        String none = get("/travel?agent=" + TestConfig.AGENT_ID + "&hq=zzz").body();
+        assertTrue(none.contains("Aucune instance ne correspond"), "état vide explicite");
+        assertTrue(none.contains("portent sur le réseau complet"),
+                "et il rappelle que les statistiques ne sont pas filtrées");
+        assertTrue(none.contains("Couverture du Hub"), "les statistiques restent là");
+    }
+
+    @Test
+    void theSearchIsPreservedAcrossTheStateLinksAndCanBeCleared() throws Exception {
+        start();
+        runCatalogWithSuccess(TRAVEL_DETAILS);
+        String page = get("/travel?agent=" + TestConfig.AGENT_ID + "&hi=without&hq=clairiere").body();
+
+        assertTrue(page.contains("&hi=all&hq=clairiere"), "changer d'état conserve la recherche");
+        assertTrue(page.contains(">Effacer</a>"), "et la recherche peut être retirée");
+        assertTrue(page.contains("name=\"hi\" value=\"without\""),
+                "le formulaire de recherche conserve l'état courant");
+    }
+
+    /** Un filtre inconnu ne doit pas casser la page : il retombe sur « Toutes ». */
+    @Test
+    void anUnknownFilterValueFallsBackToShowingEverything() throws Exception {
+        start();
+        runCatalogWithSuccess(TRAVEL_DETAILS);
+        String page = get("/travel?agent=" + TestConfig.AGENT_ID + "&hi=n%27importe%20quoi").body();
+
+        assertTrue(page.contains("Instances connues du Hub (2/2)"));
+    }
+
     /** Une moyenne calculée sur un sous-ensemble filtré serait présentée comme la couverture du réseau. */
     @Test
     void aFilterHidesTheDiagnosticRatherThanAveragingASubset() throws Exception {
@@ -315,6 +429,20 @@ class TravelCatalogTest {
         String page = get("/travel?agent=" + TestConfig.AGENT_ID).body();
         assertTrue(page.contains("Réseau de voyage"), "page accessible à l'OWNER (et par extension aux rôles avec TRAVEL_READ)");
         assertFalse(page.contains(">Modifier</button>"), "aucun éditeur : consultation lecture seule uniquement (#152)");
+    }
+
+    /**
+     * La seule section « Instances connues du Hub » de la page.
+     *
+     * <p>Nécessaire parce qu'un identifiant de waypoint apparaît aussi dans la table des waypoints
+     * et dans les fiches de bornes : chercher cet identifiant dans la page entière ne dit rien de ce
+     * que le filtre a retenu.</p>
+     */
+    private static String hubInstancesSection(String page) {
+        int from = page.indexOf("id=\"instances-hub\"");
+        assertTrue(from >= 0, "ancre de la section introuvable");
+        int to = page.indexOf("Réseau du Wild", from);
+        return to > from ? page.substring(from, to) : page.substring(from);
     }
 
     // ---- helpers ----------------------------------------------------------------------

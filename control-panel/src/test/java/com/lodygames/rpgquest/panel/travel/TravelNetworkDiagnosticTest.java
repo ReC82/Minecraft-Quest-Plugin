@@ -216,6 +216,101 @@ class TravelNetworkDiagnosticTest {
         assertTrue(complete.reason().isEmpty(), "une instance équipée n'a aucune cause à expliquer");
     }
 
+    // ---- Filtre de la liste des instances (issue #236) -----------------------------------------
+
+    /**
+     * La demande venue de TC-275 : ne voir que les instances sans borne. Le point à garantir est que
+     * le filtre porte sur la <strong>liste</strong> et non sur le réseau — les statistiques de
+     * couverture doivent rester identiques quel que soit le filtre, sinon une moyenne filtrée serait
+     * lue comme la couverture réelle.
+     */
+    @Test
+    @DisplayName("filtrer la liste ne change aucune statistique du réseau")
+    void filteringTheListNeverChangesTheNetworkStatistics() {
+        TravelNetworkDiagnostic diag = aMixedHub();
+
+        assertEquals(3, diag.instancesMatching(TravelNetworkDiagnostic.InstanceFilter.ALL, "").size());
+        assertEquals(2, diag.instancesMatching(TravelNetworkDiagnostic.InstanceFilter.WITH_BEACON, "").size());
+        assertEquals(1, diag.instancesMatching(TravelNetworkDiagnostic.InstanceFilter.WITHOUT_BEACON, "").size());
+
+        // Les mesures du réseau sont portées par le diagnostic, pas par la liste filtrée.
+        assertEquals(3, diag.hubWaypoints());
+        assertEquals(2, diag.hubBeacons());
+        assertEquals(2, diag.completePairs());
+        assertEquals(1, diag.missingPairs());
+        assertTrue(diag.neighbourDistance().known());
+        assertEquals(2, diag.neighbourDistance().count(),
+                "les statistiques portent sur les deux bornes réelles, jamais sur la sélection");
+    }
+
+    @Test
+    @DisplayName("« sans borne » ne retient que les instances en manque")
+    void withoutBeaconReturnsOnlyTheGaps() {
+        List<TravelNetworkDiagnostic.InstanceRow> gaps = aMixedHub()
+                .instancesMatching(TravelNetworkDiagnostic.InstanceFilter.WITHOUT_BEACON, "");
+
+        assertEquals(1, gaps.size());
+        assertEquals("wp_c", gaps.get(0).waypointId());
+        assertFalse(gaps.get(0).complete());
+    }
+
+    @Test
+    @DisplayName("la recherche porte sur le biome, les identifiants et les coordonnées affichées")
+    void theSearchCoversBiomeIdentifiersAndTheDisplayedCoordinates() {
+        TravelNetworkDiagnostic diag = aMixedHub();
+        var all = TravelNetworkDiagnostic.InstanceFilter.ALL;
+
+        assertEquals(1, diag.instancesMatching(all, "forest").size(), "par biome");
+        assertEquals(1, diag.instancesMatching(all, "wp_c").size(), "par waypoint");
+        assertEquals(1, diag.instancesMatching(all, "b_a").size(), "par borne");
+        assertEquals(1, diag.instancesMatching(all, "plains@0,0").size(), "par clé d'instance");
+        // L'écran affiche « 600, 100 » : on doit pouvoir recopier ce qu'on lit.
+        assertEquals(1, diag.instancesMatching(all, "600,100").size(), "par coordonnées collées");
+        assertEquals(1, diag.instancesMatching(all, "600").size(), "par une seule coordonnée");
+        assertEquals(0, diag.instancesMatching(all, "zzz").size(), "aucune correspondance");
+        assertEquals(3, diag.instancesMatching(all, "   ").size(), "une recherche vide ne filtre rien");
+    }
+
+    @Test
+    @DisplayName("état et recherche se combinent")
+    void theStateAndTheSearchCombine() {
+        TravelNetworkDiagnostic diag = aMixedHub();
+
+        assertEquals(1, diag.instancesMatching(
+                TravelNetworkDiagnostic.InstanceFilter.WITHOUT_BEACON, "forest").size());
+        assertEquals(0, diag.instancesMatching(
+                TravelNetworkDiagnostic.InstanceFilter.WITH_BEACON, "forest").size(),
+                "l'instance « forest » est justement celle qui n'a pas de borne");
+    }
+
+    @Test
+    @DisplayName("un filtre inconnu ou absent retombe sur « Toutes », jamais sur une erreur")
+    void anUnknownFilterFallsBackToAll() {
+        assertEquals(TravelNetworkDiagnostic.InstanceFilter.ALL,
+                TravelNetworkDiagnostic.InstanceFilter.ofWire(null));
+        assertEquals(TravelNetworkDiagnostic.InstanceFilter.ALL,
+                TravelNetworkDiagnostic.InstanceFilter.ofWire("n'importe quoi"));
+        assertEquals(TravelNetworkDiagnostic.InstanceFilter.WITHOUT_BEACON,
+                TravelNetworkDiagnostic.InstanceFilter.ofWire("without"));
+        assertEquals(TravelNetworkDiagnostic.InstanceFilter.WITH_BEACON,
+                TravelNetworkDiagnostic.InstanceFilter.ofWire("  WITH  "), "insensible à la casse et aux espaces");
+        assertEquals("Sans borne", TravelNetworkDiagnostic.InstanceFilter.WITHOUT_BEACON.label());
+    }
+
+    /** Deux instances équipées, une en manque — et deux bornes réelles pour les statistiques. */
+    private static TravelNetworkDiagnostic aMixedHub() {
+        List<Map<String, Object>> waypoints = List.of(
+                waypoint("wp_a", HUB, "minecraft:plains@0,0", 100, 100),
+                waypoint("wp_b", HUB, "minecraft:taiga@1,0", 400, 100),
+                waypoint("wp_c", HUB, "minecraft:forest@2,0", 600, 100));
+        List<Map<String, Object>> beacons = List.of(
+                beacon("b_a", HUB, "minecraft:plains@0,0", 110, 100, true, "wp_a"),
+                beacon("b_b", HUB, "minecraft:taiga@1,0", 410, 100, true, "wp_b"));
+        List<Map<String, Object>> gaps = List.of(
+                gap("wp_c", "minecraft:forest@2,0", 600, 100, 0, null, false, 190));
+        return TravelNetworkDiagnostic.from(details(waypoints, beacons, gaps));
+    }
+
     @Test
     @DisplayName("le type de biome est extrait de la clé d'instance")
     void theBiomeTypeIsExtractedFromTheInstanceKey() {

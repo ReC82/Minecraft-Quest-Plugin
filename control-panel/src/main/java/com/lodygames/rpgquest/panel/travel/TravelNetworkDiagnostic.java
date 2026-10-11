@@ -351,6 +351,79 @@ public record TravelNetworkDiagnostic(boolean available,
         return instances.stream().filter(row -> !row.complete()).toList();
     }
 
+    /**
+     * Issue #236 — ce qu'on veut voir dans la liste des instances du Hub.
+     *
+     * <p>Avec 23 instances dont 6 en manque, repérer les manques à l'œil est déjà pénible ; la
+     * demande est venue du terrain pendant TC-275. Le filtre ne porte que sur la <strong>liste</strong>
+     * : les statistiques de couverture restent calculées sur le réseau complet, sinon une moyenne
+     * filtrée serait lue comme la couverture réelle.</p>
+     */
+    public enum InstanceFilter {
+        ALL("all", "Toutes"),
+        WITH_BEACON("with", "Avec borne"),
+        WITHOUT_BEACON("without", "Sans borne");
+
+        private final String wire;
+        private final String label;
+
+        InstanceFilter(String wire, String label) {
+            this.wire = wire;
+            this.label = label;
+        }
+
+        public String wire() {
+            return wire;
+        }
+
+        public String label() {
+            return label;
+        }
+
+        /** Tolérant : une valeur inconnue ou absente retombe sur {@link #ALL}, jamais sur une erreur. */
+        public static InstanceFilter ofWire(String value) {
+            if (value != null) {
+                for (InstanceFilter f : values()) {
+                    if (f.wire.equalsIgnoreCase(value.trim())) {
+                        return f;
+                    }
+                }
+            }
+            return ALL;
+        }
+    }
+
+    /**
+     * Les instances correspondant à un état et à une recherche libre (issue #236).
+     *
+     * <p>La recherche porte sur le biome, la clé d'instance, l'identifiant du waypoint, celui de la
+     * borne et les coordonnées — y compris écrites « 161,27 » ou « 161 27 », parce que c'est ainsi
+     * que l'écran les affiche et donc ainsi qu'on les recopie.</p>
+     */
+    public List<InstanceRow> instancesMatching(InstanceFilter filter, String query) {
+        InstanceFilter f = filter == null ? InstanceFilter.ALL : filter;
+        String needle = query == null ? "" : query.trim().toLowerCase(java.util.Locale.ROOT);
+        List<InstanceRow> out = new ArrayList<>();
+        for (InstanceRow row : instances) {
+            boolean stateOk = switch (f) {
+                case ALL -> true;
+                case WITH_BEACON -> row.complete();
+                case WITHOUT_BEACON -> !row.complete();
+            };
+            if (stateOk && (needle.isEmpty() || haystack(row).contains(needle))) {
+                out.add(row);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static String haystack(InstanceRow row) {
+        return (row.biomeKey() + " " + row.biomeInstance() + " " + row.waypointId() + " "
+                + (row.beaconId() == null ? "" : row.beaconId()) + " "
+                + row.x() + "," + row.z() + " " + row.x() + " " + row.z())
+                .toLowerCase(java.util.Locale.ROOT);
+    }
+
     /** Blocs² couverts par borne, {@code 0} si incalculable — jamais une densité inventée. */
     public long areaPerBeacon() {
         return hubBeacons <= 0 || !extent.known() ? 0L : extent.area() / hubBeacons;

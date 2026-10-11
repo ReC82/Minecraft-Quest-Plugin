@@ -673,6 +673,12 @@ a.home-tile:hover .home-tile-cta{opacity:1}
 .npc-catbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 14px}
 .npc-catbar-t{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--txt-faint);margin-right:4px}
 .npc-catbar .btn .bi{font-size:13px;vertical-align:-.1em}
+/* Barre de recherche (issue #236) : la classe était utilisée sans règle, donc chaque champ
+   s'étalait sur toute la largeur, y compris sur grand écran. En flex qui passe à la ligne, elle
+   tient sur une ligne au bureau et s'empile proprement sur téléphone. */
+.npc-searchbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 14px}
+.npc-searchbar input[type=search]{flex:1 1 220px;min-width:0}
+.npc-searchbar select{flex:0 1 200px}
 .npc-formcard{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);margin:0 0 14px}
 
 .npc-alert{display:flex;gap:9px;align-items:flex-start;margin:0 0 12px}

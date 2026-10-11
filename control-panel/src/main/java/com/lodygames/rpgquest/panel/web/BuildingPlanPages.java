@@ -114,6 +114,15 @@ public final class BuildingPlanPages {
             sb.append("<input id=\"bp-height\" type=\"number\" name=\"max_height\" min=\"4\" "
                     + "max=\"64\" value=\"14\">");
             sb.append("<p class=\"field-help\">Toit compris.</p></div>");
+            // Le budget de sortie du fournisseur borne la taille du plan, et un document coupé en
+            // deux n'est pas un « plan partiel » : il est inutilisable. Mieux vaut le dire ici que
+            // laisser découvrir un échec d'extraction après l'appel.
+            sb.append("<p class=\"field-help\">").append(Icons.icon("info"))
+                    .append("Le plan est borné par la limite de <strong>jetons de sortie</strong> du "
+                            + "fournisseur : une instruction coûte environ 30 jetons, donc 4 000 "
+                            + "jetons autorisent à peu près 80 instructions. Si les plans reviennent "
+                            + "coupés ou trop sobres, augmenter cette limite dans "
+                            + "<a href=\"/ai/providers\">Fournisseurs d'IA</a>.</p>");
             if (refusal != null && !refusal.isBlank() && proposal != null && proposal.hasPlan()) {
                 sb.append(hidden("previous_plan", proposal.plan()));
                 sb.append(hidden("refusal", refusal));

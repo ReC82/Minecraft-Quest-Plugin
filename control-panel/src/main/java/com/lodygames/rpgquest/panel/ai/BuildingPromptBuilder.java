@@ -147,8 +147,16 @@ public final class BuildingPromptBuilder {
                 - des fenêtres, pour que l'intérieur ne soit pas une boîte noire ;
                 - un toit qui dépasse d'un bloc de chaque côté, et qui tient dans la hauteur
                   déclarée ;
-                - entre 40 et 200 instructions pour un bâtiment détaillé. Au-delà, tu décris des
-                  blocs un par un : regroupe.
+                - entre 30 et 80 instructions. C'est la fourchette utile : en dessous le bâtiment
+                  est une boîte, au-dessus tu décris des blocs un par un au lieu de regrouper.
+
+                CONTRAINTE DE LONGUEUR — LIS CECI
+
+                Ta réponse a un budget de sortie limité. Un document COUPÉ EN PLEIN MILIEU est
+                totalement inutilisable : il n'y a pas de « plan partiel » exploitable. Si tu dois
+                choisir, fais un bâtiment plus SOBRE mais COMPLET — sol, murs, ouvertures, escalier
+                si besoin, toit, et le document fermé proprement. N'ajoute des détails décoratifs
+                que si le plan tient déjà entièrement.
                 """;
     }
 

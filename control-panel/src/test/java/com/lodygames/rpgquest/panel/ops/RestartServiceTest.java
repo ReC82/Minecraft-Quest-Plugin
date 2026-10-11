@@ -10,9 +10,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -97,14 +97,32 @@ class RestartServiceTest {
      */
     private RestartService build(FakeGateway gateway, List<String> announces,
                                  RestartService.RestartWitness witness, List<Duration> offsets) {
+        return build(gateway, announces, witness, offsets, FAST_TIMEOUT);
+    }
+
+    /**
+     * Variante à délai de retour explicite : un test dont le scénario demande au thread de test
+     * d'agir <em>pendant</em> l'attente du retour ne doit pas courir contre ce délai.
+     */
+    private RestartService build(FakeGateway gateway, List<String> announces,
+                                 RestartService.RestartWitness witness, List<Duration> offsets,
+                                 Duration returnTimeout) {
         scheduler = Executors.newScheduledThreadPool(2);
         service = new RestartService(gateway, announces::add, witness, scheduler,
-                FAST_TIMEOUT, FAST_POLL, FAST_GRACE, offsets);
+                returnTimeout, FAST_POLL, FAST_GRACE, offsets);
         return service;
     }
 
+    /**
+     * Attend qu'une condition devienne vraie, avec un budget VOLONTAIREMENT généreux.
+     *
+     * <p>Un test qui passe n'en est pas ralenti d'une milliseconde : la boucle sort dès que la
+     * condition tient. Seul un test réellement cassé attend plus longtemps avant d'échouer — et
+     * c'est le bon compromis sur une machine de construction qui pagine, où un budget serré
+     * transforme une lenteur passagère en échec rouge.</p>
+     */
     private void await(BooleanSupplier condition, String what) throws Exception {
-        for (int i = 0; i < 600 && !condition.getAsBoolean(); i++) {
+        for (int i = 0; i < 3_000 && !condition.getAsBoolean(); i++) {
             Thread.sleep(10);
         }
         assertTrue(condition.getAsBoolean(), () -> "condition jamais atteinte : " + what);
@@ -228,7 +246,20 @@ class RestartServiceTest {
         FakeGateway gateway = new FakeGateway();
         gateway.stayAlwaysUp = true; // aucune sonde ne tombe : relance plus rapide que l'intervalle
         AtomicReference<Long> uptime = new AtomicReference<>(5_000L);
-        build(gateway, new ArrayList<>(), () -> Optional.ofNullable(uptime.get()));
+        // Délai de retour GÉNÉREUX pour ce test précis, et c'est le cœur du correctif.
+        //
+        // Le scénario exige que le test observe l'arrêt PUIS fasse chuter l'uptime : la référence
+        // est lue par waitForReturn() APRÈS l'arrêt, donc elle doit être encore haute à ce
+        // moment-là. Avec les 3 s de FAST_TIMEOUT, le service pouvait conclure à l'échec avant que
+        // le thread de test ait posé la nouvelle valeur — une fenêtre que cette machine de
+        // construction, qui pagine, élargissait assez pour faire échouer le test une fois sur
+        // quelques exécutions. Et un test instable qui garde l'étape 3/8 d'un déploiement n'est
+        // pas un détail : il empêche de livrer.
+        //
+        // 60 s ne ralentissent RIEN quand le test passe — il se termine dès que la chute est vue.
+        // Ce délai ne borne que le chemin d'échec.
+        build(gateway, new ArrayList<>(), () -> Optional.ofNullable(uptime.get()),
+                RestartService.DEFAULT_ANNOUNCE_OFFSETS, Duration.ofSeconds(60));
 
         service.request("alice", Duration.ZERO);
         await(() -> gateway.calls.contains(RconCommand.STOP), "arrêt demandé");

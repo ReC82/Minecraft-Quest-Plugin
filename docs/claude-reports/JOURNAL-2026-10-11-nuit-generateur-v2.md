@@ -73,3 +73,44 @@ réinventé :
 
 D'où `BlockStates`, point de passage **unique** pour tout état à propriétés : un état produit par le
 moteur est correct par construction, et la liste blanche du lot D n'aura qu'un endroit à décrire.
+
+### 00:20–00:24 — LOTS B, C et D écrits (non encore compilés)
+Un seul processus Gradle à la fois : le build du lot A occupe la machine, j'ai donc écrit sans
+compiler et je compilerai d'un bloc.
+
+**Lot B — primitives sémantiques.** `BlockStates` (point de passage **unique** pour tout état à
+propriétés, extrait des blueprints qui fonctionnent) + six primitives dans `PlanStep.Kind` :
+`DOOR`, `WINDOW`, `LIGHT`, `STAIR_RUN`, `LADDER`, `PILLARS`, et `GABLE` **corrigé**.
+
+Décisions prises seul, documentées :
+- `trim` **non ajouté** : `walls` sur une tranche d'un bloc de haut produit déjà un bandeau de
+  pourtour en une instruction. Ajouter une primitive redondante aurait grossi le vocabulaire sans
+  rien permettre de nouveau.
+- Les primitives acceptent un `block` **optionnel** avec un défaut (lanterne, porte en chêne,
+  escalier en chêne) : exiger l'identifiant exact obligerait le modèle à s'en souvenir.
+- Si le modèle écrit malgré tout des propriétés (`oak_door[facing=west]`), le moteur **ne garde que
+  le type** et recalcule : accepter ses propriétés annulerait tout le bénéfice des primitives.
+- `gable` prend un `fill` distinct pour les pignons — un escalier employé en remplissage laisse des
+  creux visibles.
+
+**Lot C — façades.** `Facade` (`FRONT`/`BACK`/`LEFT`/`RIGHT`) résolue depuis `front`. Le décalage
+court selon `+X` pour une façade nord/sud et selon `+Z` pour une façade est/ouest : le décalage 0
+est donc toujours le coin de coordonnée minimale, repère prévisible quelle que soit l'orientation.
+Un nom de façade inconnu est **refusé**, jamais replié sur `FRONT` — sinon une faute de frappe
+sortirait un bâtiment avec sa porte du mauvais côté sans que rien ne le signale.
+
+**Lot D — block states.** `BlockStateRules` : table déclarée par famille (escaliers, portes,
+trappes, dalles, panneaux, lanternes, échelles, troncs, torches murales, portillons) avec les
+propriétés **et** leurs valeurs. Refuse `oak_stairs[face=bottom]` en nommant `half`. Un bloc d'une
+famille non décrite est **accepté** : refuser l'inconnu interdirait les milliers de blocs du jeu
+dont nous ne savons rien, alors que la faute observée porte sur ce que nous écrivons nous-mêmes.
+
+**Correction d'une faiblesse de mon lot A.** Mon contrôle d'enveloppe comptait toute cellule vide
+des faces latérales au-dessus de la bande d'entrée. Un vrai toit en pente aurait donc été signalé à
+tort : au-dessus de ses avant-toits, les faces latérales sont du ciel ouvert, pas une fuite. Le
+critère devient : une cellule vide de face latérale n'est un trou que s'il y a de la **matière
+au-dessus d'elle dans sa colonne**. Et j'ai ajouté un contrôle distinct `ROOF_MISSING` (colonnes
+sans aucune couverture), car un bâtiment sans toit du tout n'a aucune face « sous couverture » et
+échappait au premier contrôle.
+
+Tests écrits : `SemanticPrimitivesTest`, `FacadeTest`, `BlockStateRulesTest`.

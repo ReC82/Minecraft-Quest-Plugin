@@ -79,7 +79,7 @@ public final class BuildingPlanExpander {
 
         Map<Long, String> cells = new LinkedHashMap<>();
         for (PlanStep step : plan.steps()) {
-            apply(step, cells);
+            apply(step, cells, plan);
         }
 
         List<BlueprintBlock> blocks = new ArrayList<>(cells.size());
@@ -108,7 +108,7 @@ public final class BuildingPlanExpander {
         return new Result(blueprint, "", blocks.size(), touched);
     }
 
-    private static void apply(PlanStep step, Map<Long, String> cells) {
+    private static void apply(PlanStep step, Map<Long, String> cells, BuildingPlan plan) {
         PlanBox box = step.box();
         switch (step.kind()) {
             case BOX -> forEach(box, (x, y, z) -> cells.put(key(x, y, z), step.state()));
@@ -124,6 +124,194 @@ public final class BuildingPlanExpander {
             });
             case CLEAR -> forEach(box, (x, y, z) -> cells.remove(key(x, y, z)));
             case GABLE -> gable(step, cells);
+            case DOOR -> door(step, cells, plan);
+            case WINDOW -> window(step, cells, plan);
+            case LIGHT -> light(step, cells);
+            case STAIR_RUN -> stairRun(step, cells);
+            case LADDER -> ladder(step, cells, plan);
+            case PILLARS -> pillars(step, cells);
+        }
+    }
+
+    // ---- Primitives sémantiques (issue #94, lot B) -------------------------------------------
+
+    /**
+     * Une vraie porte : deux moitiés cohérentes, et l'espace dégagé derrière.
+     *
+     * <p>Le modèle dit « une porte sur la façade avant, troisième cellule ». Le moteur calcule la
+     * coordonnée, l'orientation, les deux moitiés, la charnière, et <strong>vide la cellule
+     * intérieure</strong> pour que la porte soit réellement traversable. C'est exactement la série
+     * de calculs que la V1 avait ratée.</p>
+     */
+    private static void door(PlanStep step, Map<Long, String> cells, BuildingPlan plan) {
+        Facade facade = step.facade() == null ? Facade.FRONT : step.facade();
+        int offset = step.number("offset", facade.span(plan.front(), plan.sizeX(), plan.sizeZ()) / 2);
+        int y = step.number("y", 1);
+        var at = facade.cell(plan.front(), plan.sizeX(), plan.sizeY(), plan.sizeZ(), offset, y);
+        if (at.isEmpty()) {
+            return;
+        }
+        int[] c = at.get();
+        String wood = BlockStates.bareTypeOr(step.state(), "minecraft:oak_door");
+        BlockStates.Dir outward = facade.direction(plan.front());
+        boolean right = step.number("hinge", 0) != 0;
+
+        cells.put(key(c[0], c[1], c[2]), BlockStates.door(wood, outward, false, right));
+        cells.put(key(c[0], c[1] + 1, c[2]), BlockStates.door(wood, outward, true, right));
+
+        // Dégager derrière, sur les deux hauteurs : une porte derrière un mur n'est pas une entrée.
+        int[] in = facade.inwardStep(plan.front());
+        for (int h = 0; h <= 1; h++) {
+            cells.remove(key(c[0] + in[0], c[1] + h, c[2] + in[2]));
+        }
+    }
+
+    /**
+     * Une fenêtre : percement <strong>et</strong> vitrage, répétable.
+     *
+     * <p>Les connexions du panneau sont calculées depuis l'axe du mur — un panneau dont les quatre
+     * connexions valent {@code false} apparaît comme un poteau isolé, le défaut visuel classique.
+     * {@code count} et {@code spacing} permettent d'aligner une série de fenêtres en une seule
+     * instruction.</p>
+     */
+    private static void window(PlanStep step, Map<Long, String> cells, BuildingPlan plan) {
+        Facade facade = step.facade() == null ? Facade.FRONT : step.facade();
+        int span = facade.span(plan.front(), plan.sizeX(), plan.sizeZ());
+        int offset = step.number("offset", 1);
+        int y = step.number("y", 2);
+        int width = Math.max(1, step.number("width", 1));
+        int height = Math.max(1, step.number("height", 1));
+        int count = Math.max(1, step.number("count", 1));
+        int spacing = Math.max(width, step.number("spacing", width + 1));
+        String glass = BlockStates.bareTypeOr(step.state(), "minecraft:glass_pane");
+        BlockStates.Dir outward = facade.direction(plan.front());
+        // Une façade qui regarde le nord ou le sud court selon X : son mur est « selon X ».
+        boolean wallAlongX = !outward.alongX();
+        String state = BlockStates.pane(glass, wallAlongX);
+
+        for (int n = 0; n < count; n++) {
+            int base = offset + n * spacing;
+            for (int w = 0; w < width; w++) {
+                for (int h = 0; h < height; h++) {
+                    int along = base + w;
+                    if (along < 0 || along >= span) {
+                        continue;
+                    }
+                    var at = facade.cell(plan.front(), plan.sizeX(), plan.sizeY(), plan.sizeZ(),
+                            along, y + h);
+                    at.ifPresent(c -> cells.put(key(c[0], c[1], c[2]), state));
+                }
+            }
+        }
+    }
+
+    /**
+     * Des sources de lumière réparties sur une grille.
+     *
+     * <p>{@code hanging} est décidé par le moteur selon qu'il y a un support au-dessus : une
+     * lanterne suspendue sans plafond flotte, une lanterne posée sans sol tombe. Le modèle n'a pas
+     * à y penser.</p>
+     */
+    private static void light(PlanStep step, Map<Long, String> cells) {
+        PlanBox box = step.box();
+        int spacing = Math.max(1, step.number("spacing", 5));
+        String material = BlockStates.bareTypeOr(step.state(), "minecraft:lantern");
+        boolean lantern = material.endsWith("lantern");
+        for (int y = box.minY(); y <= box.maxY(); y++) {
+            for (int z = box.minZ(); z <= box.maxZ(); z++) {
+                for (int x = box.minX(); x <= box.maxX(); x++) {
+                    if ((x - box.minX()) % spacing != 0 || (z - box.minZ()) % spacing != 0) {
+                        continue;
+                    }
+                    String above = cells.get(key(x, y + 1, z));
+                    boolean hanging = above != null && !BlockSemantics.passable(above);
+                    cells.put(key(x, y, z),
+                            lantern ? BlockStates.lantern(material, hanging) : material);
+                }
+            }
+        }
+    }
+
+    /**
+     * Une volée d'escalier praticable, <strong>trémie comprise</strong>.
+     *
+     * <p>Reprise de la technique de {@code TestWatchtowerBlueprint} : une marche par pas, montant
+     * d'un bloc à chaque fois, {@code facing} dans le sens de la montée. Et surtout, le moteur
+     * <strong>perce le plancher</strong> au-dessus de chaque marche et du palier.</p>
+     *
+     * <p>C'est précisément ce que la V1 avait raté : son percement était en {@code y=4} alors que
+     * le plancher était en {@code y=3}, qui restait donc plein — étage inaccessible.</p>
+     */
+    private static void stairRun(PlanStep step, Map<Long, String> cells) {
+        PlanBox box = step.box();
+        BlockStates.Dir dir = BlockStates.Dir.NORTH;
+        for (BlockStates.Dir candidate : BlockStates.Dir.values()) {
+            if (candidate.value().equals(step.axis())) {
+                dir = candidate;
+            }
+        }
+        int steps = Math.max(1, step.number("steps", 4));
+        String material = BlockStates.bareTypeOr(step.state(), "minecraft:oak_stairs");
+        int x = box.minX();
+        int y = box.minY();
+        int z = box.minZ();
+        for (int i = 0; i < steps; i++) {
+            int sx = x + dir.dx() * i;
+            int sz = z + dir.dz() * i;
+            int sy = y + i;
+            cells.put(key(sx, sy, sz), BlockStates.stairs(material, dir, false));
+            // Deux blocs de hauteur libre au-dessus de chaque marche, sinon on se cogne.
+            cells.remove(key(sx, sy + 1, sz));
+            cells.remove(key(sx, sy + 2, sz));
+        }
+        // Le palier : la cellule après la dernière marche, et sa hauteur libre.
+        int lx = x + dir.dx() * steps;
+        int lz = z + dir.dz() * steps;
+        int ly = y + steps;
+        cells.remove(key(lx, ly, lz));
+        cells.remove(key(lx, ly + 1, lz));
+    }
+
+    /** Une échelle adossée : elle regarde à l'opposé du mur qui la porte. */
+    private static void ladder(PlanStep step, Map<Long, String> cells, BuildingPlan plan) {
+        PlanBox box = step.box();
+        Facade facade = step.facade() == null ? Facade.BACK : step.facade();
+        BlockStates.Dir looks = facade.direction(plan.front()).opposite();
+        String material = BlockStates.bareTypeOr(step.state(), "minecraft:ladder");
+        String state = BlockStates.ladder(material, looks);
+        for (int y = box.minY(); y <= box.maxY(); y++) {
+            cells.put(key(box.minX(), y, box.minZ()), state);
+        }
+        // Le débouché en haut doit être libre, sinon l'échelle ne mène à rien.
+        cells.remove(key(box.minX(), box.maxY() + 1, box.minZ()));
+    }
+
+    /**
+     * Des pilastres réguliers sur le pourtour — du relief pour <strong>une</strong> instruction.
+     *
+     * <p>C'est la réponse au vrai goulot mesuré sur la V1 : le modèle n'avait utilisé que 21
+     * instructions sur 80 autorisées, non par paresse, mais parce que rien ne lui permettait de
+     * dire « un pilastre tous les quatre blocs ».</p>
+     */
+    private static void pillars(PlanStep step, Map<Long, String> cells) {
+        PlanBox box = step.box();
+        int spacing = Math.max(2, step.number("spacing", 4));
+        String material = BlockStates.bareTypeOr(step.state(), "minecraft:stone_bricks");
+        for (int y = box.minY(); y <= box.maxY(); y++) {
+            for (int z = box.minZ(); z <= box.maxZ(); z++) {
+                for (int x = box.minX(); x <= box.maxX(); x++) {
+                    if (!box.onWall(x, y, z)) {
+                        continue;
+                    }
+                    boolean onX = z == box.minZ() || z == box.maxZ();
+                    int along = onX ? x - box.minX() : z - box.minZ();
+                    boolean corner = (x == box.minX() || x == box.maxX())
+                            && (z == box.minZ() || z == box.maxZ());
+                    if (corner || along % spacing == 0) {
+                        cells.put(key(x, y, z), material);
+                    }
+                }
+            }
         }
     }
 
@@ -141,22 +329,40 @@ public final class BuildingPlanExpander {
         boolean alongX = step.axis().equals("x");
         int span = alongX ? box.sizeZ() : box.sizeX();
         int half = (span + 1) / 2;
+        // Le matériau des pignons. S'il n'est pas précisé, on retombe sur l'escalier lui-même :
+        // l'enveloppe est alors géométriquement fermée, mais un plan soigné précise « fill » pour
+        // un pignon vraiment plein — un escalier employé en remplissage laisse des creux visibles.
+        String fillState = BlockStates.bareTypeOr(step.fill(),
+                BlockStates.bareTypeOr(step.state(), "minecraft:stone_bricks"));
         for (int i = 0; i < span; i++) {
-            // Rang depuis le bord le plus proche : 0 au bord, puis 1, 2… vers le faîte.
             int fromEdge = Math.min(i, span - 1 - i);
             int y = box.minY() + Math.min(fromEdge, box.sizeY() - 1);
             boolean lowSide = i < half;
-            String facing = alongX ? (lowSide ? "south" : "north") : (lowSide ? "east" : "west");
-            String state = BlockState.with(step.state(), "facing", facing);
+            BlockStates.Dir facing = alongX
+                    ? (lowSide ? BlockStates.Dir.SOUTH : BlockStates.Dir.NORTH)
+                    : (lowSide ? BlockStates.Dir.EAST : BlockStates.Dir.WEST);
+            String state = BlockStates.stairs(
+                    BlockStates.bareTypeOr(step.state(), "minecraft:oak_stairs"), facing, false);
             if (alongX) {
                 int z = box.minZ() + i;
                 for (int x = box.minX(); x <= box.maxX(); x++) {
                     cells.put(key(x, y, z), state);
                 }
+                // LE CORRECTIF DU LOT B : remplir les deux triangles de pignon, aux extrémités de
+                // l'arête. Sans cela on voit droit dans les combles — 59 cellules vides sur 95 par
+                // face sur la V1, soit 62 % d'ouverture.
+                for (int yy = box.minY(); yy < y; yy++) {
+                    cells.put(key(box.minX(), yy, z), fillState);
+                    cells.put(key(box.maxX(), yy, z), fillState);
+                }
             } else {
                 int x = box.minX() + i;
                 for (int z = box.minZ(); z <= box.maxZ(); z++) {
                     cells.put(key(x, y, z), state);
+                }
+                for (int yy = box.minY(); yy < y; yy++) {
+                    cells.put(key(x, yy, box.minZ()), fillState);
+                    cells.put(key(x, yy, box.maxZ()), fillState);
                 }
             }
         }

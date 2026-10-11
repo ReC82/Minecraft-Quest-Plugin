@@ -142,20 +142,81 @@ public final class BuildingPlanYaml {
         Optional<PlanStep.Kind> kind = PlanStep.Kind.of(str(map.get("op")));
         if (kind.isEmpty()) {
             problems.add(where + "instruction inconnue : « " + str(map.get("op"))
-                    + " ». Valeurs acceptées : box, shell, walls, clear, gable.");
+                    + " ». Valeurs acceptées : box, shell, walls, clear, gable, door, window, "
+                    + "light, stair_run, ladder, pillars.");
             return Optional.empty();
         }
-        Optional<PlanBox> box = box(map, where, problems);
-        if (box.isEmpty()) {
-            return Optional.empty();
+        PlanStep.Kind k = kind.get();
+
+        // La façade, pour les primitives qui s'y rapportent (issue #94, lot C). Un mot inconnu est
+        // REFUSÉ : retomber sur FRONT masquerait une faute de frappe, et le bâtiment sortirait avec
+        // sa porte du mauvais côté sans que rien ne le signale.
+        Facade facade = null;
+        String onRaw = str(map.get("on"));
+        if (!onRaw.isEmpty()) {
+            Optional<Facade> parsed = Facade.of(onRaw);
+            if (parsed.isEmpty()) {
+                problems.add(where + "façade inconnue : « " + onRaw
+                        + " ». Valeurs acceptées : FRONT, BACK, LEFT, RIGHT.");
+                return Optional.empty();
+            }
+            facade = parsed.get();
         }
+
+        // Paramètres nommés. Une valeur non entière est refusée plutôt qu'arrondie en silence.
+        java.util.Map<String, Integer> numbers = new java.util.LinkedHashMap<>();
+        for (String key : new String[] {"offset", "y", "width", "height", "spacing", "count",
+            "steps", "hinge"}) {
+            Object raw = map.get(key);
+            if (raw == null) {
+                continue;
+            }
+            if (!(raw instanceof Number number)) {
+                problems.add(where + "le paramètre « " + key + " » doit être un entier, reçu « "
+                        + raw + " ».");
+                return Optional.empty();
+            }
+            numbers.put(key, number.intValue());
+        }
+
         String state = str(map.get("block"));
-        if (kind.get() != PlanStep.Kind.CLEAR && (state == null || state.isBlank())) {
-            problems.add(where + "clé « block » absente — seule l'instruction « clear » s'en passe.");
+        // Les primitives sémantiques ont un matériau par défaut : exiger « block » pour une
+        // lanterne obligerait le modèle à se souvenir de son identifiant exact.
+        boolean needsBlock = k != PlanStep.Kind.CLEAR && !semantic(k);
+        if (needsBlock && state.isEmpty()) {
+            problems.add(where + "clé « block » absente — seules « clear » et les primitives "
+                    + "sémantiques s'en passent.");
             return Optional.empty();
         }
-        return Optional.of(new PlanStep(kind.get(), box.get(),
-                state == null ? "" : state, str(map.get("axis"))));
+
+        // Une zone n'est pas exigée des primitives repérées par façade : elles n'en ont pas besoin,
+        // et en réclamer une rendrait la syntaxe inutilement lourde.
+        PlanBox box;
+        if (map.get("from") == null && byFacade(k)) {
+            box = PlanBox.at(0, 0, 0);
+        } else {
+            Optional<PlanBox> parsed = box(map, where, problems);
+            if (parsed.isEmpty()) {
+                return Optional.empty();
+            }
+            box = parsed.get();
+        }
+
+        // « axis » porte l'axe d'un toit (x/z) ou la direction de montée d'un escalier.
+        return Optional.of(new PlanStep(k, box, state, str(map.get("axis")), facade,
+                numbers, str(map.get("fill"))));
+    }
+
+    private static boolean semantic(PlanStep.Kind kind) {
+        return switch (kind) {
+            case DOOR, WINDOW, LIGHT, STAIR_RUN, LADDER, PILLARS -> true;
+            default -> false;
+        };
+    }
+
+    /** Ces primitives se repèrent par façade et décalage, pas par une zone. */
+    private static boolean byFacade(PlanStep.Kind kind) {
+        return kind == PlanStep.Kind.DOOR || kind == PlanStep.Kind.WINDOW;
     }
 
     /**

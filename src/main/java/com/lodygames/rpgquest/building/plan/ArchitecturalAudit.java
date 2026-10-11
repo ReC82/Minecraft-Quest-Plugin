@@ -187,6 +187,13 @@ public final class ArchitecturalAudit {
         }
 
         // ---- Enveloppe : couverture et pignons -----------------------------------------------
+        int uncovered = r.requireClosedEnvelope() ? uncoveredColumns(grid, levels) : 0;
+        if (r.requireClosedEnvelope() && uncovered > r.envelopeOpeningTolerance()) {
+            findings.add(ArchitecturalFinding.blocking("ROOF_MISSING",
+                    "Couverture incomplète : " + uncovered + " colonne(s) de l'emprise n'ont aucun "
+                            + "bloc au-dessus du dernier niveau praticable — il y pleut. Pose une "
+                            + "couverture sur toute l'emprise."));
+        }
         if (r.requireClosedEnvelope() && openHigh > r.envelopeOpeningTolerance()) {
             findings.add(ArchitecturalFinding.blocking("ENVELOPE_OPEN",
                     "Enveloppe ouverte en hauteur : " + openHigh + " cellule(s) franchissable(s) "
@@ -399,24 +406,72 @@ public final class ArchitecturalAudit {
         for (int y = Math.max(grid.minY(), from); y <= grid.maxY(); y++) {
             for (int x = grid.minX(); x <= grid.maxX(); x++) {
                 for (int z = grid.minZ(); z <= grid.maxZ(); z++) {
-                    boolean surface = x == grid.minX() || x == grid.maxX()
-                            || z == grid.minZ() || z == grid.maxZ() || y == grid.maxY();
-                    if (!surface) {
+                    boolean sideFace = x == grid.minX() || x == grid.maxX()
+                            || z == grid.minZ() || z == grid.maxZ();
+                    if (!sideFace) {
                         continue;
                     }
-                    // Une cellule de surface franchissable est un trou, SAUF si elle est vitrée —
-                    // une fenêtre ferme l'enveloppe.
                     String state = grid.at(x, y, z);
-                    if (BlockSemantics.glazing(state)) {
+                    // Un vitrage ferme l'enveloppe : une fenêtre n'est pas un trou.
+                    if (BlockSemantics.glazing(state) || !BlockSemantics.passable(state)) {
                         continue;
                     }
-                    if (BlockSemantics.passable(state) && coveredColumnExists(grid, x, z)) {
+                    // LE critère. Une cellule de face latérale vide n'est un trou que s'il y a de
+                    // la matière AU-DESSUS d'elle dans sa colonne : elle est alors sous la
+                    // couverture, donc elle aurait dû être murée.
+                    //
+                    // Sans cette condition, un toit à deux pans correct serait signalé à tort :
+                    // au-dessus de ses avant-toits, les faces latérales sont du ciel ouvert, pas
+                    // une fuite. C'est une faiblesse du lot A, corrigée ici.
+                    if (solidAbove(grid, x, y, z)) {
                         open++;
                     }
                 }
             }
         }
         return open;
+    }
+
+    /** Y a-t-il de la matière plus haut dans cette colonne ? */
+    private static boolean solidAbove(Grid grid, int x, int y, int z) {
+        for (int above = y + 1; above <= grid.maxY(); above++) {
+            if (!BlockSemantics.passable(grid.at(x, above, z))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Colonnes de l'emprise qui n'ont aucune couverture au-dessus du dernier niveau praticable.
+     *
+     * <p>Contrôle distinct des faces latérales, et c'est nécessaire : un bâtiment sans toit du tout
+     * n'a aucune face latérale « sous couverture », donc le contrôle précédent ne le verrait pas.
+     * Ici on vérifie qu'il pleut nulle part.</p>
+     */
+    private static int uncoveredColumns(Grid grid, Levels levels) {
+        if (levels.standingLevels().isEmpty()) {
+            return 0;
+        }
+        int top = levels.standingLevels().get(levels.standingLevels().size() - 1);
+        int bare = 0;
+        for (int x = grid.minX(); x <= grid.maxX(); x++) {
+            for (int z = grid.minZ(); z <= grid.maxZ(); z++) {
+                if (!coveredColumnExists(grid, x, z)) {
+                    continue;
+                }
+                boolean covered = false;
+                for (int y = top; y <= grid.maxY() && !covered; y++) {
+                    if (!BlockSemantics.passable(grid.at(x, y, z))) {
+                        covered = true;
+                    }
+                }
+                if (!covered) {
+                    bare++;
+                }
+            }
+        }
+        return bare;
     }
 
     /**

@@ -57,6 +57,17 @@ public record BuildingSiteView(String id, String name, String description, Strin
         };
     }
 
+    /**
+     * Vrai si le serveur dit cet emplacement <strong>occupé</strong> (issue #239).
+     *
+     * <p>C'est une donnée du serveur, <em>indépendante</em> de la présence du placement dans le
+     * relevé. La fiche s'en sert pour ne jamais proposer une pose sur un emplacement déjà occupé,
+     * même quand le détail du bâtiment manque — c'était exactement le défaut constaté en jeu.</p>
+     */
+    public boolean occupied() {
+        return "OCCUPIED".equals(status);
+    }
+
     /** État en français. {@code EMPTY} est le seul état que le serveur sait produire à ce jour. */
     public String statusLabel() {
         return switch (status) {

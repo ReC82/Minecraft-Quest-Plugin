@@ -176,6 +176,18 @@ public enum AgentActionType {
      * plan est revalidé par le plugin avant toute écriture.</p>
      */
     BUILDING_GENERATE("building.generate"),
+    /**
+     * {@code building.plan.audit} (#94, lot F) : juge un plan <strong>sans rien écrire</strong>.
+     *
+     * <p>Même lecture, même expanseur, même audit que {@link #BUILDING_GENERATE} — mais aucun
+     * {@code .schem}, aucune définition, aucun rechargement de bibliothèque. C'est l'action que la
+     * boucle de correction appelle entre deux relances du modèle : sans elle, il faudrait écrire un
+     * bâtiment pour apprendre qu'il est mauvais.</p>
+     *
+     * <p>En lecture seule, donc, et exposée comme telle : elle n'a pas besoin du droit d'écriture
+     * sur les bâtiments.</p>
+     */
+    BUILDING_PLAN_AUDIT("building.plan.audit"),
     /** Corrige l'orientation cardinale d'un emplacement — jamais sa position. */
     BUILDING_SITE_FACING("building.site.facing"),
     /**

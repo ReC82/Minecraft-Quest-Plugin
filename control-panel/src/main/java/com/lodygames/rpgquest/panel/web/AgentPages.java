@@ -1874,6 +1874,25 @@ public final class AgentPages {
      * l'écran dit « cliquez sur Rafraîchir » — une liste vide se lirait comme « aucun
      * emplacement », ce qui est une affirmation qu'on n'a pas le droit de faire.</p>
      */
+    /**
+     * Le dernier verdict d'audit de plan (issue #94, lot F).
+     *
+     * <p>Contrairement aux annuaires, on lit ici la dernière action <strong>quel que soit son
+     * statut</strong>, et c'est délibéré : un plan refusé remonte en {@code FAILED}, et c'est
+     * précisément ce verdict-là qui intéresse l'administrateur et la boucle de correction. Ne garder
+     * que les succès reviendrait à ne jamais montrer un refus.</p>
+     */
+    public com.lodygames.rpgquest.panel.building.BuildingPlanVerdict buildingPlanVerdict(
+            String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return com.lodygames.rpgquest.panel.building.BuildingPlanVerdict.none();
+        }
+        return store.latestActionOfType(agentId, "building.plan.audit")
+                .flatMap(this::detailsOf)
+                .map(com.lodygames.rpgquest.panel.building.BuildingPlanVerdict::from)
+                .orElseGet(com.lodygames.rpgquest.panel.building.BuildingPlanVerdict::none);
+    }
+
     public com.lodygames.rpgquest.panel.building.BuildingSiteDirectory buildingSiteDirectory(
             String agentId) {
         if (agentId == null || agentId.isBlank()) {

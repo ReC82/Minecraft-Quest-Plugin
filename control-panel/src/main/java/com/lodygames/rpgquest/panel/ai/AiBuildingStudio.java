@@ -64,8 +64,19 @@ public final class AiBuildingStudio {
     /** Redemande un plan corrigé, en montrant au modèle le refus réel du serveur. */
     public Proposal correct(String providerId, BuildingPromptBuilder.Demand demand,
                             String previousPlan, String refusal) {
+        return correct(providerId, demand, previousPlan, refusal, "");
+    }
+
+    /**
+     * Même chose, en joignant les <strong>mesures</strong> prises par le serveur sur la grille.
+     *
+     * <p>C'est la pièce la plus efficace de la correction : un modèle est volontiers convaincu
+     * d'avoir posé des fenêtres, et « cellules vitrées : 0 » le détrompe sans discussion.</p>
+     */
+    public Proposal correct(String providerId, BuildingPromptBuilder.Demand demand,
+                            String previousPlan, String refusal, String metrics) {
         return run(providerId,
-                BuildingPromptBuilder.correctionPrompt(demand, previousPlan, refusal));
+                BuildingPromptBuilder.correctionPrompt(demand, previousPlan, refusal, metrics));
     }
 
     private Proposal run(String providerId, String userPrompt) {

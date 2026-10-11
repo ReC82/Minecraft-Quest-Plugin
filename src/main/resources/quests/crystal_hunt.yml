@@ -1,38 +1,30 @@
+# Quête RPGQuest — éditée via l'éditeur guidé du Control Panel (#46).
 id: rpgquest:crystal_hunt
-title: "<gold>La chasse aux cristaux</gold>"
-description: "<gray>Le garde a besoin de crocs d'araignée et de cristaux raffinés pour forger un équipement digne de ce nom.</gray>"
-category: crafting
-giver: guard
-icon: AMETHYST_SHARD
+title: "<gold>La chasse aux monstres</gold>"
+description: "<gray>Le garde a besoin que tu prouves ta valeur au combat.</gray>"
+category: "hunting"
+icon: IRON_SWORD
 repeatable: false
-
+giver: guard
 prerequisites:
   - rpgquest:first_steps
 
-# Parcours complet demandé : dialogue (garde) -> quête -> combat (araignées,
-# donne des crocs via SpiderFangDropListener) -> récolte (nœud crystal_ore ou
-# recette refined_crystal_recipe) -> fabrication (forest_blade_recipe) ->
-# remise (parler au garde) -> récompense (miner_pickaxe).
 steps:
-  - id: hunt_spiders
+  - id: hunt_zombie
+    objectives:
+      - type: KILL_ENTITY
+        entity: zombie
+        amount: 5
+  - id: hunt_skeleton
+    objectives:
+      - type: KILL_ENTITY
+        entity: SKELETON
+        amount: 5
+  - id: hunt_spider
     objectives:
       - type: KILL_ENTITY
         entity: SPIDER
         amount: 5
-  - id: gather_crystals
-    objectives:
-      - type: COLLECT_ITEM
-        material: AMETHYST_SHARD
-        amount: 2
-  - id: forge_blade
-    objectives:
-      # Limite connue (voir docs/ARCHITECTURE.md) : CRAFT_ITEM ne distingue
-      # pas encore un objet personnalisé d'un objet vanilla de même matériau
-      # de base — fabriquer une épée en diamant ordinaire valide aussi cette
-      # étape. Assumé, comme TALK_TO_NPC pour l'identification par nom.
-      - type: CRAFT_ITEM
-        material: DIAMOND_SWORD
-        amount: 1
   - id: report_to_guard
     objectives:
       - type: TALK_TO_NPC
@@ -41,14 +33,11 @@ steps:
 rewards:
   - type: EXPERIENCE
     amount: 100
-  - type: COMMAND
-    command: "customitem give %player% rpgquest:miner_pickaxe 1"
-  # Débloque le droit de créer un premier claim (5x5, voir claim.ClaimService#CLAIM_TIER_1_KEY) —
-  # crystal_hunt est la dernière quête de main_story.yml, donc terminer l'histoire principale
-  # débloque ce droit (mission « premier claim 5×5 débloqué par une Story »). État interne, jamais
-  # affiché comme récompense (voir QuestProgressEngine#grantRewards).
+  - type: ITEM
+    material: IRON_PICKAXE
+    amount: 1
   - type: VARIABLE
-    key: CLAIM_TIER_1
+    key: "CLAIM_TIER_1"
     value: "true"
 
 variables:

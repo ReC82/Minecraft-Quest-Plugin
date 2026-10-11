@@ -526,6 +526,37 @@ public interface AgentActions {
     }
 
     /**
+     * Juge un plan sans produire d'artefact (issue #94, lot F).
+     *
+     * <p>Le pendant en lecture seule de {@link #buildingGenerate(String, boolean)} : le plan est
+     * lu, expansé et audité, et rien n'est écrit. C'est ce qui permet de corriger un plan plusieurs
+     * fois de suite sans laisser derrière soi une succession de bâtiments ratés.</p>
+     */
+    CompletableFuture<BuildingPlanVerdictView> buildingPlanAudit(String planYaml);
+
+    /**
+     * Le verdict d'un plan (issue #94, lot F), tel qu'il remonte au panel.
+     *
+     * <p>Les {@code codes} sont stables et destinés à l'écran et aux tests ; le {@code message} est
+     * destiné à l'administrateur <em>et</em> au modèle ; les {@code metrics} portent les chiffres
+     * mesurés sur la grille, qui sont l'argument le plus efficace de la boucle de correction — un
+     * modèle convaincu d'avoir posé des fenêtres se ravise devant « vitrages : 0 ».</p>
+     *
+     * @param codes   codes bloquants, vide si le plan passe
+     * @param metrics mesures brutes, {@code null} si le plan n'a pas pu être expansé
+     */
+    record BuildingPlanVerdictView(boolean ok, String code, String message, String buildingId,
+                                   String kind, int sizeX, int sizeY, int sizeZ, int blocks,
+                                   List<String> codes, List<String> warnings, boolean exists,
+                                   Map<String, Object> metrics) {
+        public BuildingPlanVerdictView {
+            codes = List.copyOf(codes == null ? List.of() : codes);
+            warnings = List.copyOf(warnings == null ? List.of() : warnings);
+            metrics = Map.copyOf(metrics == null ? Map.of() : metrics);
+        }
+    }
+
+    /**
      * Corrige l'orientation cardinale d'un emplacement. <strong>Jamais la position</strong> : se
      * tromper de façade est courant, déplacer un point d'ancrage ne se fait pas depuis un écran.
      */

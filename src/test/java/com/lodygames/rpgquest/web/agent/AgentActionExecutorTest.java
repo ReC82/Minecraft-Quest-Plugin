@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -39,6 +40,52 @@ class AgentActionExecutorTest {
 
     private AgentActionOutcome run(AgentAction action) {
         return executor.execute(action).join();
+    }
+
+    // ---- building.plan.audit (issue #94, lot F) ---------------------------------------------
+
+    /**
+     * Le maillon qu'il faut tester parce que son oubli est <strong>silencieux</strong> : une action
+     * déclarée dans l'énumération mais absente du {@code switch} de dispatch ne produit aucune
+     * erreur visible — elle disparaît simplement. C'est la leçon de #239.
+     */
+    @Test
+    @DisplayName("building.plan.audit est réellement dispatché jusqu'au domaine")
+    void buildingPlanAuditIsActuallyDispatchedToTheDomain() {
+        AgentActionOutcome outcome = run(new AgentAction("bpa1", "building.plan.audit",
+                Map.of("plan", "id: hub_library\nname: \"Bibliothèque\"")));
+
+        assertEquals("id: hub_library\nname: \"Bibliothèque\"", actions.lastAuditedPlan,
+                "le plan doit atteindre le domaine, pas s'arrêter au dispatch");
+        assertEquals(AgentActionOutcome.FAILED, outcome.status());
+        assertEquals("ARCHITECTURE_REFUSED", outcome.value(),
+                "le code du refus doit remonter, pour que l'écran puisse le distinguer");
+        assertEquals("ARCHITECTURE_REFUSED", outcome.details().get("code"));
+    }
+
+    @Test
+    @DisplayName("Le détail de l'audit porte les codes, les mesures, et dit qu'il n'a rien écrit")
+    void theauditDetailCarriesCodesMetricsAndSaysItWroteNothing() {
+        AgentActionOutcome outcome = run(new AgentAction("bpa2", "building.plan.audit",
+                Map.of("plan", "id: hub_library")));
+
+        assertEquals(List.of("NO_ENTRANCE", "GLAZING_MISSING"), outcome.details().get("codes"));
+        assertEquals(Boolean.FALSE, outcome.details().get("written"),
+                "un audit n'est pas une génération, et le détail doit l'affirmer");
+        Object metrics = outcome.details().get("metrics");
+        assertTrue(metrics instanceof Map, "les mesures doivent remonter : " + metrics);
+        assertEquals(2368, ((Map<?, ?>) metrics).get("solidCells"));
+    }
+
+    @Test
+    @DisplayName("Un audit sans plan est rejeté sans atteindre le domaine")
+    void anauditWithNoPlanIsRejectedWithoutReachingTheDomain() {
+        actions.lastAuditedPlan = null;
+
+        AgentActionOutcome outcome = run(new AgentAction("bpa3", "building.plan.audit", Map.of()));
+
+        assertEquals(AgentActionOutcome.REJECTED, outcome.status());
+        assertNull(actions.lastAuditedPlan, "rien ne doit partir vers le domaine");
     }
 
     // ---- Whitelist + player.variable.get (issue #51) ---------------------------------------
@@ -1731,6 +1778,7 @@ class AgentActionExecutorTest {
         }
 
         String lastGeneratedPlan;
+        String lastAuditedPlan;
         boolean lastGenerateReplace;
 
         @Override
@@ -1741,6 +1789,21 @@ class AgentActionExecutorTest {
             return CompletableFuture.completedFuture(new BuildingGenerationView(true, "GENERATED",
                     "Bâtiment généré.", "hub_library", "hub_library.schem", 19, 12, 15, 1234, 1,
                     false, List.of("schematics/hub_library.schem", "buildings/hub_library.yml")));
+        }
+
+        /** Le verdict rendu par le domaine, tel que l'écran et la boucle de correction le verront. */
+        @Override
+        public CompletableFuture<BuildingPlanVerdictView> buildingPlanAudit(String planYaml) {
+            lastAuditedPlan = planYaml;
+            java.util.Map<String, Object> metrics = new java.util.LinkedHashMap<>();
+            metrics.put("solidCells", 2368);
+            metrics.put("glazedCells", 0);
+            metrics.put("lightSources", 0);
+            return CompletableFuture.completedFuture(new BuildingPlanVerdictView(false,
+                    "ARCHITECTURE_REFUSED", "Plan refusé — contrat architectural non respecté.",
+                    "hub_library", "bâtiment habitable", 19, 12, 15, 2368,
+                    List.of("NO_ENTRANCE", "GLAZING_MISSING"), List.of("Matériau dominant."),
+                    true, metrics));
         }
 
         @Override

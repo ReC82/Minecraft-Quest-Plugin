@@ -278,6 +278,88 @@ class BuildingGeneratorTest {
                 "l'audit ne doit pas reprocher une entrée qui existe : " + message);
     }
 
+    // ---- Inspection à blanc (issue #94, lot F) ----------------------------------------------
+
+    /**
+     * L'inspection est la pièce qui rend la boucle de correction tenable : avant elle, le seul
+     * moyen de connaître le verdict du serveur était de <em>générer</em> — donc d'écrire un
+     * bâtiment pour apprendre qu'il était mauvais.
+     */
+    @Test
+    @DisplayName("Inspecter un plan refusé rend le même verdict que générer, sans écrire un octet")
+    void inspectingARefusedPlanGivesTheSameVerdictAsGeneratingWithoutWritingAByte() {
+        String habitable = LIBRARY_PLAN.replace("kind: decoration\n", "");
+
+        BuildingGenerator.Verdict verdict = generator.inspect(habitable);
+
+        assertFalse(verdict.ok());
+        assertEquals("ARCHITECTURE_REFUSED", verdict.code());
+        assertEquals(generator.generate(habitable, false).message(), verdict.message(),
+                "le même refus, rédigé une seule fois : deux textes apprendraient deux choses");
+        assertTrue(verdict.codes().contains("GLAZING_MISSING"), verdict.codes().toString());
+
+        assertTrue(gateway.files.isEmpty(), "aucun schematic");
+        assertFalse(Files.exists(buildings.resolve("hub_library.yml")), "aucune définition");
+        assertTrue(library.find("hub_library").isEmpty(), "rien dans la bibliothèque");
+    }
+
+    /**
+     * Le cas le plus important à ne pas confondre : un plan <strong>conforme</strong> ressort de
+     * l'inspection en succès, et pourtant aucun bâtiment n'existe. Un écran qui prendrait cet
+     * {@code ok} pour une génération annoncerait un artefact absent.
+     */
+    @Test
+    @DisplayName("Un plan conforme passe l'inspection sans qu'aucun bâtiment existe pour autant")
+    void aconformingPlanPassesInspectionWithoutAnyBuildingComingIntoExistence() {
+        BuildingGenerator.Verdict verdict = generator.inspect(LIBRARY_PLAN);
+
+        assertTrue(verdict.ok(), verdict.message());
+        assertEquals("OK", verdict.code());
+        assertEquals("hub_library", verdict.buildingId());
+        assertTrue(verdict.blocks() > 0, "les blocs sont comptés : " + verdict.blocks());
+        assertFalse(verdict.exists(), "la bibliothèque est vide : le plan n'a jamais été généré");
+
+        assertTrue(gateway.files.isEmpty(), "l'inspection n'écrit pas de schematic");
+        assertFalse(Files.exists(buildings.resolve("hub_library.yml")));
+        assertTrue(library.find("hub_library").isEmpty());
+    }
+
+    @Test
+    @DisplayName("L'inspection porte les mesures prises sur la grille, pour la boucle de correction")
+    void inspectionCarriesTheMeasurementsTakenOnTheGrid() {
+        BuildingGenerator.Verdict verdict = generator.inspect(LIBRARY_PLAN);
+
+        assertEquals(verdict.blocks(), verdict.metrics().solidCells(),
+                "les blocs annoncés sont ceux de la grille, pas une estimation");
+        assertEquals(0, verdict.metrics().glazedCells(), "ce plan n'a aucun vitrage, et le dit");
+        assertEquals("décoration", verdict.kind(),
+                "le type gouverne les contrôles : il doit remonter");
+    }
+
+    @Test
+    @DisplayName("L'inspection signale qu'un identifiant est déjà pris, sans rien remplacer")
+    void inspectionReportsAnAlreadyTakenIdentifierWithoutReplacingAnything() {
+        generator.generate(LIBRARY_PLAN, false);
+        int filesBefore = gateway.files.size();
+
+        BuildingGenerator.Verdict verdict = generator.inspect(LIBRARY_PLAN);
+
+        assertTrue(verdict.exists(), "l'écran doit pouvoir prévenir avant de proposer d'écraser");
+        assertTrue(verdict.ok(), "un identifiant pris n'est pas un défaut architectural");
+        assertEquals(filesBefore, gateway.files.size(), "aucune réécriture");
+    }
+
+    @Test
+    @DisplayName("Un plan illisible est refusé par l'inspection, sans mesures inventées")
+    void anunreadablePlanIsRefusedByInspectionWithoutInventedMeasurements() {
+        BuildingGenerator.Verdict verdict = generator.inspect("ceci n'est pas un plan");
+
+        assertFalse(verdict.ok());
+        assertEquals("PLAN_INVALID", verdict.code());
+        assertEquals(null, verdict.metrics(),
+                "aucune mesure n'est possible sans grille : ne pas en inventer");
+    }
+
     @Test
     @DisplayName("Les avertissements non bloquants remontent avec le succès, sans le compromettre")
     void nonBlockingWarningsAreReportedAlongsideSuccess() {

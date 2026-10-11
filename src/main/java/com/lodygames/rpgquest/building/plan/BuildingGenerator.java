@@ -81,6 +81,82 @@ public final class BuildingGenerator {
     }
 
     /**
+     * Le verdict d'un plan, obtenu <strong>sans rien écrire</strong> (issue #94, lot F).
+     *
+     * <p>C'est ce que la boucle de correction consomme. Les {@code codes} sont faits pour être
+     * testés et affichés ; le {@code message} est fait pour être renvoyé tel quel au modèle ; les
+     * {@code metrics} donnent au modèle les chiffres qui contredisent son intention — « tu crois
+     * avoir mis des fenêtres, la grille en compte zéro ».</p>
+     *
+     * @param code       {@code OK}, {@code PLAN_INVALID} ou {@code ARCHITECTURE_REFUSED}
+     * @param exists     un bâtiment de cet identifiant est déjà dans la bibliothèque
+     */
+    public record Verdict(boolean ok, String code, String message, String buildingId,
+                          String kind, int sizeX, int sizeY, int sizeZ, int blocks,
+                          List<String> codes, List<String> warnings, boolean exists,
+                          ArchitecturalAudit.Metrics metrics) {
+
+        public Verdict {
+            buildingId = buildingId == null ? "" : buildingId;
+            kind = kind == null ? "" : kind;
+            message = message == null ? "" : message;
+            codes = List.copyOf(codes == null ? List.of() : codes);
+            warnings = List.copyOf(warnings == null ? List.of() : warnings);
+        }
+
+        static Verdict unreadable(String message) {
+            return new Verdict(false, "PLAN_INVALID", message, "", "", 0, 0, 0, 0,
+                    List.of("PLAN_INVALID"), List.of(), false, null);
+        }
+    }
+
+    /**
+     * Juge un plan sans produire d'artefact : ni {@code .schem}, ni définition, ni entrée de
+     * bibliothèque.
+     *
+     * <p>C'est la pièce qui rend la boucle de correction tenable. Avant ce lot, le seul moyen de
+     * connaître le verdict du serveur était de <em>générer</em> — donc d'écrire un bâtiment pour
+     * apprendre qu'il était mauvais, puis de le remplacer. Inspecter d'abord, écrire ensuite :
+     * l'ordre naturel, et le seul qui permette de corriger un plan plusieurs fois sans laisser de
+     * traces derrière soi.</p>
+     *
+     * <p>Et c'est <strong>le même</strong> pipeline que {@link #generate(String, boolean)} : même
+     * lecture, même expanseur, même audit. Un second chemin de validation finirait par diverger du
+     * premier et ferait passer pour bon un plan que la génération refuse.</p>
+     */
+    public Verdict inspect(String planYaml) {
+        List<String> problems = new ArrayList<>();
+        Optional<BuildingPlan> parsed = BuildingPlanYaml.read(planYaml, problems);
+        if (parsed.isEmpty()) {
+            return Verdict.unreadable("Plan refusé : "
+                    + (problems.isEmpty() ? "illisible." : String.join(" ", problems)));
+        }
+        BuildingPlan plan = parsed.get();
+        boolean exists = library.find(plan.id()).isPresent();
+
+        BuildingPlanExpander.Result expansion = BuildingPlanExpander.expand(plan);
+        if (!expansion.ok()) {
+            return new Verdict(false, "PLAN_INVALID", "Plan refusé : " + expansion.error(),
+                    plan.id(), plan.kind().label(), plan.sizeX(), plan.sizeY(), plan.sizeZ(), 0,
+                    List.of("PLAN_INVALID"), List.of(), exists, null);
+        }
+
+        ArchitecturalAudit.Report audit = ArchitecturalAudit.audit(
+                expansion.blueprint(), plan.front(), plan.rules());
+        List<String> warnings = new ArrayList<>();
+        for (ArchitecturalFinding warning : audit.warnings()) {
+            warnings.add(warning.message());
+        }
+        return new Verdict(!audit.refused(),
+                audit.refused() ? "ARCHITECTURE_REFUSED" : "OK",
+                audit.refused() ? refusalText(plan, audit) : "Plan conforme au contrat "
+                        + plan.kind().label() + " : " + expansion.solidCount() + " blocs.",
+                plan.id(), plan.kind().label(), plan.sizeX(), plan.sizeY(), plan.sizeZ(),
+                expansion.solidCount(), audit.blockingCodes(), List.copyOf(warnings), exists,
+                audit.metrics());
+    }
+
+    /**
      * Génère le bâtiment décrit par ce plan YAML.
      *
      * @param planYaml le plan, tel que l'IA l'a écrit et que le panel l'a transmis
@@ -121,10 +197,7 @@ public final class BuildingGenerator {
         ArchitecturalAudit.Report audit = ArchitecturalAudit.audit(
                 expansion.blueprint(), plan.front(), plan.rules());
         if (audit.refused()) {
-            return new Result(false, "ARCHITECTURE_REFUSED",
-                    "Plan refusé — contrat architectural non respecté ("
-                            + plan.kind().label() + "). " + audit.refusalMessage()
-                            + "\nRien n'a été écrit : ni schematic, ni définition.",
+            return new Result(false, "ARCHITECTURE_REFUSED", refusalText(plan, audit),
                     plan.id(), "", plan.sizeX(), plan.sizeY(), plan.sizeZ(),
                     expansion.solidCount(), 0, false, List.of());
         }
@@ -187,6 +260,16 @@ public final class BuildingGenerator {
                                 : "Ajouté à la bibliothèque, prêt à être posé."),
                 plan.id(), schematic, plan.sizeX(), plan.sizeY(), plan.sizeZ(),
                 expansion.solidCount(), version, existing.isPresent(), List.copyOf(effects));
+    }
+
+    /**
+     * Le texte d'un refus architectural — rédigé une seule fois, lu par l'écran <em>et</em> renvoyé
+     * au modèle. Deux rédactions divergentes apprendraient deux choses différentes du même refus.
+     */
+    private static String refusalText(BuildingPlan plan, ArchitecturalAudit.Report audit) {
+        return "Plan refusé — contrat architectural non respecté (" + plan.kind().label() + "). "
+                + audit.refusalMessage()
+                + "\nRien n'a été écrit : ni schematic, ni définition.";
     }
 
     /**

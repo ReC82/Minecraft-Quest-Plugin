@@ -14,8 +14,18 @@ import java.util.Locale;
  * façon.</p>
  *
  * <p>C'est aussi la réponse à la contrainte de sécurité du ticket : le modèle ne produit ni code,
- * ni chemin, ni commande. Il produit cinq mots-clés et des entiers. Tout le reste est refusé par
- * le plugin, qui est le validateur autoritaire.</p>
+ * ni chemin, ni commande. Il produit un vocabulaire fermé de mots-clés et des entiers. Tout le reste
+ * est refusé par le plugin, qui est le validateur autoritaire.</p>
+ *
+ * <h2>Pourquoi le vocabulaire a grandi (lot F de #94)</h2>
+ *
+ * <p>La première bibliothèque générée était un bloc hermétique : ni porte, ni fenêtre, ni lumière,
+ * un étage inaccessible. Le diagnostic a montré que le prompt n'était pas le fautif principal — le
+ * <strong>vocabulaire</strong> l'était. Avec cinq instructions de volume, « une porte » ne pouvait
+ * s'écrire qu'en calculant soi-même une coordonnée de façade, et le modèle s'est trompé de cinq
+ * blocs. Les primitives du lot B retirent ce calcul au modèle ; ce prompt le lui interdit
+ * explicitement, et le contrat architectural qu'il énonce est exactement celui que le serveur
+ * mesure sur la grille.</p>
  *
  * <h2>Ce que le prompt fait dire au modèle, et ce qu'il lui interdit</h2>
  *
@@ -77,17 +87,29 @@ public final class BuildingPromptBuilder {
     public static String systemPrompt() {
         return """
                 Tu produis un PLAN DE BÂTIMENT pour LodyQuests, un plugin Minecraft. Un moteur
-                déterministe transforme ensuite ton plan en blocs : tu décris des volumes, jamais
-                des blocs un par un.
+                déterministe transforme ensuite ton plan en blocs : tu décris des volumes et des
+                INTENTIONS, jamais des blocs un par un.
+
+                LA RÈGLE QUI GOUVERNE TOUT LE RESTE
+
+                Tu conçois la structure. Le moteur calcule les éléments architecturaux fiables.
+
+                Concrètement : tu ne calcules JAMAIS une coordonnée de façade, l'orientation d'une
+                marche, les deux moitiés d'une porte, le sens d'une charnière, ni les propriétés
+                d'un bloc. Tu dis « une porte sur la façade avant, troisième cellule », et le moteur
+                en déduit tout le reste. Chaque fois que tu calcules à sa place, tu introduis une
+                erreur que personne ne relira.
 
                 RÈGLES ABSOLUES
 
                 1. Ta réponse est UNIQUEMENT un document YAML. Aucune phrase avant, aucune phrase
                    après, aucun bloc de code, aucune explication.
-                2. N'utilise QUE les cinq instructions listées ci-dessous. Une instruction plausible
-                   mais absente de la liste fait échouer la génération.
+                2. N'utilise QUE les instructions listées ci-dessous. Une instruction plausible mais
+                   absente de la liste fait échouer la génération.
                 3. N'utilise que des blocs Minecraft VANILLA, en minuscules, forme
-                   « minecraft:nom » ou « minecraft:nom[propriete=valeur] ». Aucun bloc de mod.
+                   « minecraft:nom ». N'écris PAS de propriétés entre crochets : le moteur les
+                   calcule, et une propriété inventée fait échouer la génération. « face=bottom »
+                   sur un escalier, par exemple, n'existe pas — la propriété s'appelle « half ».
                 4. Toutes les coordonnées sont LOCALES, entières, et comprises dans la taille que tu
                    déclares : de 0 à size-1 inclus. Une zone qui sort du volume fait échouer la
                    génération.
@@ -97,7 +119,8 @@ public final class BuildingPromptBuilder {
 
                 id: identifiant_minuscule        # 3 à 48 caractères, [a-z0-9_] seulement
                 name: "Nom affiché du bâtiment"
-                front: NORTH | EAST | SOUTH | WEST   # la façade, telle que ton plan la dessine
+                kind: habitable                  # habitable | decoration | portal
+                front: NORTH | EAST | SOUTH | WEST   # la façade d'entrée
                 size:
                   x: 9    # largeur  (axe est-ouest)
                   y: 8    # hauteur
@@ -112,51 +135,164 @@ public final class BuildingPromptBuilder {
                     to: [8, 0, 6]
                     block: minecraft:stone_bricks
 
-                LES CINQ INSTRUCTIONS
+                « kind » décide des contrôles appliqués : « habitable » exige une entrée, de la
+                lumière, des fenêtres et des étages accessibles ; « decoration » et « portal » sont
+                jugés plus librement. Un bâtiment où l'on entre est « habitable ».
+
+                LES INSTRUCTIONS DE VOLUME
 
                 - op: box     → remplit toute la zone.
                 - op: shell   → ne pose que l'enveloppe (les six faces), intérieur vide.
                 - op: walls   → ne pose que les quatre murs verticaux : ni sol, ni plafond.
-                - op: clear   → VIDE la zone. Pas de clé « block ». Sert à percer portes, fenêtres
-                                et pièces dans un volume déjà posé.
+                - op: clear   → VIDE la zone. Pas de clé « block ».
+                - op: pillars → une colonne verticale tous les « spacing » blocs le long de la
+                                zone. Clés : « spacing » (défaut 3).
                 - op: gable   → toit à deux pentes. Exige « axis: x » ou « axis: z » (l'axe du
-                                faîte). Utilise un bloc d'escalier : l'orientation des marches est
-                                calculée automatiquement, ne la précise pas.
+                                faîte) et un bloc d'ESCALIER. Ajoute « fill: » avec un bloc plein :
+                                c'est le matériau des deux triangles de pignon, et sans lui le
+                                pignon est fait d'escaliers, ce qui laisse des creux visibles.
 
-                Chaque instruction prend « from » et, facultativement, « to ». Sans « to »,
-                l'instruction vise UN SEUL bloc — pratique pour un détail (lanterne, pupitre).
-                Les bornes sont INCLUSES des deux côtés : from [0,0,0] to [0,0,0] vaut un bloc.
+                Ces instructions prennent « from » et, facultativement, « to ». Sans « to »,
+                l'instruction vise UN SEUL bloc. Les bornes sont INCLUSES des deux côtés :
+                from [0,0,0] to [0,0,0] vaut un bloc.
+
+                LES INSTRUCTIONS D'ARCHITECTURE — PRÉFÈRE-LES TOUJOURS
+
+                Celles-ci ne prennent PAS de coordonnées. Elles se placent sur une façade, et le
+                moteur fait le calcul. C'est le moyen le plus sûr d'obtenir une vraie porte, une
+                vraie fenêtre et un vrai escalier.
+
+                - op: door      → une porte complète : les deux moitiés, la bonne orientation, la
+                                  charnière, ET le dégagement intérieur. Clés : « facade »,
+                                  « offset » (position le long de la façade), « y » (défaut 1),
+                                  « block » (un bloc de porte, ex. minecraft:oak_door).
+                - op: window    → une baie vitrée percée dans le mur et vitrée. Clés : « facade »,
+                                  « offset », « y », « width », « height », « block » (un vitrage).
+                - op: light     → une source de lumière. Clés : « from », « to », « spacing »,
+                                  « block » (minecraft:lantern, minecraft:torch…).
+                - op: stair_run → une volée d'escalier praticable entre deux niveaux. Clés :
+                                  « from », « steps », « axis », « block » (un bloc d'escalier).
+                - op: ladder    → une échelle adossée à un mur. Clés : « facade », « offset »,
+                                  « from », « to », « block ».
+
+                « facade » prend FRONT, BACK, LEFT ou RIGHT. JAMAIS une coordonnée, JAMAIS un point
+                cardinal : FRONT est la façade d'entrée, quelle que soit l'orientation du bâtiment,
+                et LEFT/RIGHT sont vues depuis l'extérieur, face au bâtiment. « offset » part
+                toujours du coin de coordonnée minimale, de 0 à la largeur de la façade moins 1.
 
                 L'ORDRE COMPTE
 
                 Les instructions s'appliquent dans l'ordre, et une instruction postérieure recouvre
-                une antérieure sur la même cellule. C'est la bonne manière de travailler :
+                une antérieure sur la même cellule :
 
                   1. pose le sol et les murs ;
                   2. « clear » l'intérieur pour creuser les pièces ;
-                  3. « clear » les ouvertures (portes, fenêtres) ;
-                  4. repose les détails (escaliers, étagères, comptoir, lanternes) ;
+                  3. pose les portes et les fenêtres (elles percent et dégagent elles-mêmes) ;
+                  4. pose les escaliers, les échelles, les lumières, puis le mobilier ;
                   5. termine par le toit.
 
-                CE QUI FAIT UN BON BÂTIMENT
+                LE CONTRAT ARCHITECTURAL — VÉRIFIE CHAQUE LIGNE AVANT DE RÉPONDRE
 
-                - un intérieur réellement praticable : au moins 3 blocs de hauteur libre par étage,
-                  et une porte de 2 blocs de haut ;
-                - un escalier ou une échelle si le bâtiment a plusieurs étages — un étage
-                  inaccessible est un défaut ;
-                - des fenêtres, pour que l'intérieur ne soit pas une boîte noire ;
-                - un toit qui dépasse d'un bloc de chaque côté, et qui tient dans la hauteur
-                  déclarée ;
-                - entre 30 et 80 instructions. C'est la fourchette utile : en dessous le bâtiment
-                  est une boîte, au-dessus tu décris des blocs un par un au lieu de regrouper.
+                Le serveur mesure ces points sur la grille réellement construite, pas sur tes
+                intentions. Un plan qui en manque un est REFUSÉ et rien n'est écrit.
+
+                  [ ] UNE ENTRÉE. Une ouverture de 2 blocs de haut traversant une façade, avec de
+                      l'air derrière. Utilise « op: door » : c'est la seule façon de ne pas se
+                      tromper.
+                  [ ] DES VITRAGES, sur au moins DEUX façades différentes. Utilise « op: window ».
+                  [ ] DE LA LUMIÈRE, à moins de 8 blocs de tout point intérieur.
+                  [ ] UNE ENVELOPPE CLOSE : pas de trou dans les murs ni dans le toit, pignons
+                      compris. « op: gable » avec « fill » les ferme pour toi.
+                  [ ] TOUS LES ÉTAGES ACCESSIBLES. Si tu poses un plancher intermédiaire, il faut un
+                      « op: stair_run » ou un « op: ladder » qui y mène, ET une trémie dans le
+                      plancher (« op: clear ») pour y passer.
+                  [ ] AU MOINS TROIS MATÉRIAUX dans l'enveloppe, et aucun au-delà de 70 %.
+                  [ ] DU MOBILIER : au moins quelques cellules de contenu intérieur.
+
+                UN EXEMPLE COMPLET ET VALIDE
+
+                id: exemple_atelier
+                name: "Atelier du forgeron"
+                kind: habitable
+                front: NORTH
+                size:
+                  x: 9
+                  y: 7
+                  z: 7
+                steps:
+                  - op: box
+                    from: [0, 0, 0]
+                    to: [8, 0, 6]
+                    block: minecraft:stone_bricks
+                  - op: walls
+                    from: [0, 1, 0]
+                    to: [8, 4, 6]
+                    block: minecraft:stone_bricks
+                  - op: pillars
+                    from: [0, 1, 0]
+                    to: [8, 4, 6]
+                    spacing: 4
+                    block: minecraft:oak_log
+                  - op: box
+                    from: [0, 5, 0]
+                    to: [8, 5, 6]
+                    block: minecraft:oak_planks
+                  - op: door
+                    facade: FRONT
+                    offset: 4
+                    block: minecraft:oak_door
+                  - op: window
+                    facade: LEFT
+                    offset: 2
+                    y: 2
+                    width: 2
+                    height: 2
+                    block: minecraft:glass_pane
+                  - op: window
+                    facade: RIGHT
+                    offset: 2
+                    y: 2
+                    width: 2
+                    height: 2
+                    block: minecraft:glass_pane
+                  - op: window
+                    facade: BACK
+                    offset: 4
+                    y: 2
+                    width: 1
+                    height: 2
+                    block: minecraft:glass_pane
+                  - op: light
+                    from: [2, 4, 3]
+                    to: [6, 4, 3]
+                    spacing: 4
+                    block: minecraft:lantern
+                  - op: box
+                    from: [1, 1, 5]
+                    to: [7, 1, 5]
+                    block: minecraft:smithing_table
+                  - op: box
+                    from: [1, 1, 1]
+                    to: [1, 2, 1]
+                    block: minecraft:barrel
+                  - op: gable
+                    from: [0, 5, 0]
+                    to: [8, 8, 6]
+                    axis: x
+                    fill: minecraft:stone_bricks
+                    block: minecraft:oak_stairs
+
+                Remarque ce que cet exemple NE fait pas : il ne calcule aucune coordonnée de porte,
+                aucune orientation de marche, aucune propriété de bloc. Il décrit, et le moteur
+                calcule.
 
                 CONTRAINTE DE LONGUEUR — LIS CECI
 
                 Ta réponse a un budget de sortie limité. Un document COUPÉ EN PLEIN MILIEU est
                 totalement inutilisable : il n'y a pas de « plan partiel » exploitable. Si tu dois
-                choisir, fais un bâtiment plus SOBRE mais COMPLET — sol, murs, ouvertures, escalier
-                si besoin, toit, et le document fermé proprement. N'ajoute des détails décoratifs
-                que si le plan tient déjà entièrement.
+                choisir, fais un bâtiment plus SOBRE mais COMPLET, et qui satisfait les sept points
+                du contrat — c'est ce qui est contrôlé. N'ajoute des détails décoratifs que si le
+                plan tient déjà entièrement. Entre 30 et 80 instructions est la fourchette utile.
                 """;
     }
 
@@ -195,21 +331,72 @@ public final class BuildingPromptBuilder {
      * reprise utile : sans le motif, il se contenterait de réécrire le même plan autrement.</p>
      */
     public static String correctionPrompt(Demand demand, String previousPlan, String refusal) {
+        return correctionPrompt(demand, previousPlan, refusal, "", 0, 0);
+    }
+
+    /**
+     * Relance manuelle : le motif, les mesures, et <strong>pas</strong> de décompte de tentatives.
+     *
+     * <p>Une correction demandée au clic n'a pas de budget à annoncer — l'administrateur décide à
+     * chaque fois. Lui faire lire « tentative 1 sur 1, c'est la dernière » serait faux : il peut
+     * recommencer autant qu'il le veut, et c'est lui qui paie en connaissance de cause.</p>
+     */
+    public static String correctionPrompt(Demand demand, String previousPlan, String refusal,
+                                          String metrics) {
+        return correctionPrompt(demand, previousPlan, refusal, metrics, 0, 0);
+    }
+
+    /**
+     * Relance, avec le motif réel, les <strong>mesures</strong> prises sur la grille, et le rang de
+     * la tentative.
+     *
+     * <p>Les mesures sont la pièce la plus utile de ce message. Un modèle est volontiers convaincu
+     * d'avoir posé des fenêtres ; « vitrages comptés sur la grille : 0 » le détrompe sans
+     * discussion. Et dire combien de tentatives restent évite deux comportements opposés et aussi
+     * mauvais : la réécriture complète du plan à chaque passe, et l'entêtement sur un détail.</p>
+     *
+     * @param metrics mesures du serveur, déjà mises en forme ; peut être vide
+     * @param attempt rang de cette tentative, à partir de 1
+     * @param maxAttempts budget total de tentatives accordé par l'administrateur
+     */
+    public static String correctionPrompt(Demand demand, String previousPlan, String refusal,
+                                          String metrics, int attempt, int maxAttempts) {
+        String measured = metrics == null || metrics.isBlank() ? ""
+                : """
+
+                        CE QUE LE SERVEUR A MESURÉ SUR LA GRILLE CONSTRUITE
+
+                        %s
+
+                        Ces chiffres sont des faits, pas des avis : ils décrivent le bâtiment que
+                        ton plan produit réellement. S'ils contredisent ton intention, c'est ton
+                        plan qui a tort.
+                        """.formatted(metrics.trim());
+        int remaining = Math.max(0, maxAttempts - attempt);
+        String budget = attempt <= 0 || maxAttempts <= 0 ? "" : ("\n\nTentative " + attempt
+                + " sur " + maxAttempts + "." + (remaining == 0
+                        ? " C'est la DERNIÈRE : au-delà, la génération est abandonnée."
+                        : " Il en restera " + remaining + " après celle-ci."));
         return """
                 %s
 
                 TA PROPOSITION PRÉCÉDENTE A ÉTÉ REFUSÉE PAR LE SERVEUR
+                %s
 
                 Motif exact :
                 %s
-
+                %s
                 Plan refusé :
                 %s
 
                 Corrige UNIQUEMENT ce que le motif désigne. Garde l'identifiant, le nom, la façade
-                et l'intention du brief. Produis le plan YAML corrigé, et rien d'autre.
-                """.formatted(userPrompt(demand),
+                et l'intention du brief. Ne réécris pas le plan de zéro : repars de celui-ci. Si le
+                motif parle d'une porte, d'une fenêtre, d'une lumière, d'un escalier ou d'une
+                échelle, utilise l'instruction d'architecture correspondante plutôt que de calculer
+                une coordonnée. Produis le plan YAML corrigé, et rien d'autre.
+                """.formatted(userPrompt(demand), budget,
                 refusal == null || refusal.isBlank() ? "motif non transmis" : refusal.trim(),
+                measured,
                 previousPlan == null ? "" : previousPlan.trim());
     }
 }

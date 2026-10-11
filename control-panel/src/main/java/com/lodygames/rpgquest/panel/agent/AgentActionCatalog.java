@@ -376,6 +376,12 @@ public final class AgentActionCatalog {
         // écriture de contenu, pas une pose. Elle invalide la bibliothèque, qu'elle enrichit.
         addContentWrite("building.generate", Permission.BUILDING_WRITE,
                 "Générer un bâtiment depuis un plan", "building.definition.list");
+        // Issue #94, lot F — l'audit d'un plan n'écrit RIEN : ni schematic, ni définition, ni ligne
+        // en base. Il est donc déclaré en lecture, et c'est précisément ce qui rend la boucle de
+        // correction utilisable : on juge un plan autant de fois qu'il le faut sans laisser derrière
+        // soi une succession de bâtiments ratés dans la bibliothèque.
+        add("building.plan.audit", Permission.BUILDING_READ, false, false,
+                "Auditer un plan de bâtiment sans rien écrire");
         addContentWrite("building.site.facing", Permission.BUILDING_WRITE,
                 "Corriger l'orientation d'un emplacement", "building.site.list");
         // Suppression du marqueur logique : aucun bloc du monde n'est touché, mais l'identifiant ne
@@ -751,17 +757,20 @@ public final class AgentActionCatalog {
             // revalide. Le panel ne borne ici que sa taille et la forme du drapeau de
             // remplacement : décider ce qu'est un plan valide est le travail du domaine, et le
             // dupliquer ici garantirait seulement que les deux divergent.
-            case "building.generate" -> {
+            // L'audit du lot F partage la validation du plan avec la génération : même borne, même
+            // refus. Seul le drapeau de remplacement n'a pas de sens pour un audit, qui n'écrit rien.
+            case "building.generate", "building.plan.audit" -> {
                 String plan = trim(form.get("plan"));
                 if (plan.isEmpty()) {
-                    return Validation.fail("Aucun plan à générer.");
+                    return Validation.fail("Aucun plan à " + ("building.plan.audit".equals(type)
+                            ? "auditer." : "générer."));
                 }
                 if (plan.length() > MAX_BUILD_PLAN) {
                     return Validation.fail("Plan trop volumineux : " + plan.length()
                             + " caractères pour un maximum de " + MAX_BUILD_PLAN + ".");
                 }
                 params.put("plan", plan);
-                if ("true".equals(trim(form.get("replace")))) {
+                if ("building.generate".equals(type) && "true".equals(trim(form.get("replace")))) {
                     params.put("replace", "true");
                 }
             }

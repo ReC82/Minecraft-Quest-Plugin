@@ -100,6 +100,12 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<BuildingPlanVerdictView> buildingPlanAudit(String planYaml) {
+        return CompletableFuture.completedFuture(new BuildingPlanVerdictView(false, "STUB", "stub",
+                "", "", 0, 0, 0, 0, List.of(), List.of(), false, java.util.Map.of()));
+    }
+
+    @Override
     public CompletableFuture<MutationResult> buildingSiteFacing(String id, String facing) {
         return unsupported();
     }

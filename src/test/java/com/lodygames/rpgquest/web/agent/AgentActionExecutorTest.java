@@ -1675,6 +1675,19 @@ class AgentActionExecutorTest {
             return mutation("brief " + id);
         }
 
+        String lastGeneratedPlan;
+        boolean lastGenerateReplace;
+
+        @Override
+        public CompletableFuture<BuildingGenerationView> buildingGenerate(String planYaml,
+                                                                          boolean replace) {
+            lastGeneratedPlan = planYaml;
+            lastGenerateReplace = replace;
+            return CompletableFuture.completedFuture(new BuildingGenerationView(true, "GENERATED",
+                    "Bâtiment généré.", "hub_library", "hub_library.schem", 19, 12, 15, 1234, 1,
+                    false, List.of("schematics/hub_library.schem", "buildings/hub_library.yml")));
+        }
+
         @Override
         public CompletableFuture<MutationResult> buildingSiteDescribe(String id, String description) {
             lastBuildSiteId = id;

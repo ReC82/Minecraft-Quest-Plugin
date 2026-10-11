@@ -501,6 +501,31 @@ public interface AgentActions {
     CompletableFuture<MutationResult> buildingSiteBrief(String id, String brief);
 
     /**
+     * Issue #94 — génère un bâtiment à partir d'un <strong>plan déclaratif</strong>.
+     *
+     * <p>Le plan arrive en YAML, tel que l'IA l'a écrit et que le panel l'a validé en forme. Il est
+     * <strong>revalidé côté serveur</strong> — le panel n'est pas une source de confiance — puis
+     * expansé par un moteur déterministe, écrit en {@code .schem} et déclaré dans la bibliothèque.
+     * Un succès signifie que les trois artefacts existent réellement sur le disque.</p>
+     *
+     * @param replace autorise l'écrasement d'une définition portant le même identifiant
+     */
+    CompletableFuture<BuildingGenerationView> buildingGenerate(String planYaml, boolean replace);
+
+    /**
+     * Ce qu'une génération a réellement produit (issue #94) — jamais ce qui avait été demandé.
+     *
+     * @param blocks nombre de blocs de matière effectivement posés dans le plan
+     */
+    record BuildingGenerationView(boolean ok, String code, String message, String buildingId,
+                                  String schematic, int sizeX, int sizeY, int sizeZ, int blocks,
+                                  int version, boolean replaced, List<String> effects) {
+        public BuildingGenerationView {
+            effects = List.copyOf(effects == null ? List.of() : effects);
+        }
+    }
+
+    /**
      * Corrige l'orientation cardinale d'un emplacement. <strong>Jamais la position</strong> : se
      * tromper de façade est courant, déplacer un point d'ancrage ne se fait pas depuis un écran.
      */

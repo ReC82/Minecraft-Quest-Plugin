@@ -90,6 +90,7 @@ public final class AgentActionExecutor {
                 case BUILDING_SITE_RENAME -> buildingSiteRename(action);
                 case BUILDING_SITE_DESCRIBE -> buildingSiteDescribe(action);
                 case BUILDING_SITE_BRIEF -> buildingSiteBrief(action);
+                case BUILDING_GENERATE -> buildingGenerate(action);
                 case BUILDING_SITE_FACING -> buildingSiteFacing(action);
                 case BUILDING_SITE_DELETE -> buildingSiteDelete(action);
                 case BUILDING_DEFINITION_LIST -> buildingDefinitionList(action);
@@ -1410,6 +1411,51 @@ public final class AgentActionExecutor {
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
 
+    /**
+     * {@code building.generate} (#94) : un plan déclaratif en entrée, un bâtiment réel en sortie.
+     *
+     * <p>Le plan est borné en taille ici — un paramètre d'action n'est pas un canal de transfert de
+     * fichier — puis entièrement revalidé par le domaine. Le détail renvoyé décrit ce qui a
+     * <strong>réellement</strong> été écrit : identifiant, fichier, dimensions, nombre de blocs et
+     * version. C'est ce qui permet à l'écran de ne jamais annoncer une génération qui n'a pas eu
+     * lieu.</p>
+     */
+    private CompletableFuture<AgentActionOutcome> buildingGenerate(AgentAction action) {
+        String plan = action.param("plan") == null ? "" : action.param("plan").trim();
+        if (plan.isEmpty()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « plan » manquant : il n'y a rien à générer."));
+        }
+        if (plan.length() > BUILD_PLAN_MAX) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Plan trop volumineux : " + plan.length() + " caractères pour un maximum de "
+                            + BUILD_PLAN_MAX + "."));
+        }
+        boolean replace = "true".equalsIgnoreCase(trimOrNull(action.param("replace")));
+        return actions.buildingGenerate(plan, replace)
+                .thenApply(r -> {
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    details.put("code", r.code());
+                    details.put("buildingId", r.buildingId());
+                    details.put("schematic", r.schematic());
+                    details.put("sizeX", r.sizeX());
+                    details.put("sizeY", r.sizeY());
+                    details.put("sizeZ", r.sizeZ());
+                    details.put("blocks", r.blocks());
+                    details.put("version", r.version());
+                    details.put("replaced", r.replaced());
+                    details.put("effects", r.effects());
+                    if (r.ok()) {
+                        return AgentActionOutcome.success(action.id(), r.buildingId(), r.message(),
+                                details);
+                    }
+                    return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, r.code(),
+                            r.message(), details, java.time.Instant.now());
+                })
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
+                        "Échec : " + rootName(err)));
+    }
+
     private CompletableFuture<AgentActionOutcome> buildingSiteFacing(AgentAction action) {
         String id = buildSiteId(action);
         if (id == null) {
@@ -1887,6 +1933,12 @@ public final class AgentActionExecutor {
      * au même seuil, sinon l'un des trois rejetterait ce que les autres acceptent.
      */
     private static final int BUILD_SITE_BRIEF_MAX = 6000;
+    /**
+     * Issue #94 — borne du plan transmis. Un plan de 400 instructions tient très largement
+     * dedans ; la borne est là pour qu'un paramètre d'action ne devienne pas un canal de transfert
+     * de fichier.
+     */
+    private static final int BUILD_PLAN_MAX = 64_000;
 
     private static String buildSiteId(AgentAction action) {
         String raw = firstNonBlank(action.param("id"), action.param("site_id"));

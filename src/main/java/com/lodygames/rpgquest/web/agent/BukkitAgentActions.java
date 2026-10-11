@@ -246,6 +246,8 @@ public final class BukkitAgentActions implements AgentActions {
      */
     private com.lodygames.rpgquest.database.BuildingHistoryRepository buildingHistoryRepository;
     private final com.lodygames.rpgquest.building.SchematicGateway schematicGateway;
+    /** Issue #94 — facultative : absente, la génération est refusée, rien d'autre ne change. */
+    private com.lodygames.rpgquest.building.plan.BuildingGenerator buildingGenerator;
 
     public BukkitAgentActions(RPGQuestPlugin plugin, YamlQuestEngine questEngine,
                               QuestProgressEngine questProgressEngine, StoryService storyService,
@@ -859,6 +861,35 @@ public final class BukkitAgentActions implements AgentActions {
     public void setBuildingHistoryRepository(
             com.lodygames.rpgquest.database.BuildingHistoryRepository repository) {
         this.buildingHistoryRepository = repository;
+    }
+
+    /**
+     * Issue #94 — dépendance <strong>facultative</strong>, comme l'historique : sans elle, la
+     * génération est refusée avec son motif, et rien d'autre ne cesse de fonctionner.
+     */
+    public void setBuildingGenerator(
+            com.lodygames.rpgquest.building.plan.BuildingGenerator generator) {
+        this.buildingGenerator = generator;
+    }
+
+    @Override
+    public CompletableFuture<BuildingGenerationView> buildingGenerate(String planYaml,
+                                                                      boolean replace) {
+        if (buildingGenerator == null) {
+            return done(new BuildingGenerationView(false, "UNAVAILABLE",
+                    "La génération de bâtiments n'est pas disponible sur ce serveur.",
+                    "", "", 0, 0, 0, 0, 0, false, List.of()));
+        }
+        // Écritures de fichiers : hors du thread principal. Le rechargement de la bibliothèque
+        // remplace une référence volatile, il n'a pas besoin du thread principal non plus.
+        return CompletableFuture.supplyAsync(() -> {
+            var r = buildingGenerator.generate(planYaml, replace);
+            return new BuildingGenerationView(r.ok(), r.code(), r.message(), r.buildingId(),
+                    r.schematic(), r.sizeX(), r.sizeY(), r.sizeZ(), r.blocks(), r.version(),
+                    r.replaced(), r.effects());
+        }).exceptionally(error -> new BuildingGenerationView(false, "ERROR",
+                "Échec de la génération : " + rootName(error), "", "", 0, 0, 0, 0, 0, false,
+                List.of()));
     }
 
     private List<BuildingPlacementSummary> placementRows() {

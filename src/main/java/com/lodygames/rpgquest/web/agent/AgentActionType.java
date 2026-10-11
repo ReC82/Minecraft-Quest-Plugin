@@ -153,6 +153,17 @@ public enum AgentActionType {
      * la note (500 caractères), que le navigateur appliquait en tronquant la saisie sans le dire.
      */
     BUILDING_SITE_BRIEF("building.site.brief"),
+    /**
+     * Issue #94 : génère un bâtiment depuis un <strong>plan déclaratif</strong> produit par une IA.
+     *
+     * <p>Ce que l'action transporte est une <em>donnée</em>, pas du code : une taille, une ancre,
+     * une orientation et une liste finie d'instructions au vocabulaire fermé
+     * ({@code box}, {@code shell}, {@code walls}, {@code clear}, {@code gable}). Aucun chemin de
+     * fichier, aucune commande, aucun identifiant de fichier ne vient du modèle — le nom du
+     * {@code .schem} est dérivé de l'identifiant du plan, lui-même borné à {@code [a-z0-9_]}. Le
+     * plan est revalidé par le plugin avant toute écriture.</p>
+     */
+    BUILDING_GENERATE("building.generate"),
     /** Corrige l'orientation cardinale d'un emplacement — jamais sa position. */
     BUILDING_SITE_FACING("building.site.facing"),
     /**

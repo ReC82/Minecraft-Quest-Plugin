@@ -73,6 +73,8 @@ public final class AgentActionCatalog {
      * acceptent.
      */
     private static final int MAX_BUILD_SITE_BRIEF = 6000;
+    /** Issue #94 — borne du plan transmis, identique à celle de l'exécuteur côté plugin. */
+    private static final int MAX_BUILD_PLAN = 64_000;
     /** Familles de contenu exportables (issue #108) — miroir de {@code ContentFamily} côté plugin. */
     private static final java.util.Set<String> CONTENT_FAMILIES =
             java.util.Set.of("all", "quests", "stories", "dialogues", "npcs");
@@ -354,6 +356,11 @@ public final class AgentActionCatalog {
         // et l'écrire ne déclenche aucune génération. Lancer la génération est une action à part.
         addContentWrite("building.site.brief", Permission.BUILDING_WRITE,
                 "Enregistrer le brief d'un emplacement", "building.site.list");
+        // Issue #94 — génération d'un bâtiment depuis un plan. Elle écrit DEUX fichiers sur le
+        // serveur (le .schem et la définition) mais ne touche AUCUN bloc du monde : c'est une
+        // écriture de contenu, pas une pose. Elle invalide la bibliothèque, qu'elle enrichit.
+        addContentWrite("building.generate", Permission.BUILDING_WRITE,
+                "Générer un bâtiment depuis un plan", "building.definition.list");
         addContentWrite("building.site.facing", Permission.BUILDING_WRITE,
                 "Corriger l'orientation d'un emplacement", "building.site.list");
         // Suppression du marqueur logique : aucun bloc du monde n'est touché, mais l'identifiant ne
@@ -717,6 +724,24 @@ public final class AgentActionCatalog {
                 }
                 params.put("id", id);
                 params.put("description", description);
+            }
+            // Issue #94 — le plan est une DONNÉE, transmise telle quelle au plugin qui la
+            // revalide. Le panel ne borne ici que sa taille et la forme du drapeau de
+            // remplacement : décider ce qu'est un plan valide est le travail du domaine, et le
+            // dupliquer ici garantirait seulement que les deux divergent.
+            case "building.generate" -> {
+                String plan = trim(form.get("plan"));
+                if (plan.isEmpty()) {
+                    return Validation.fail("Aucun plan à générer.");
+                }
+                if (plan.length() > MAX_BUILD_PLAN) {
+                    return Validation.fail("Plan trop volumineux : " + plan.length()
+                            + " caractères pour un maximum de " + MAX_BUILD_PLAN + ".");
+                }
+                params.put("plan", plan);
+                if ("true".equals(trim(form.get("replace")))) {
+                    params.put("replace", "true");
+                }
             }
             // Issue #94 — brief architectural. Un brief vide est valide : c'est « repartir de
             // zéro ». Au-delà de la borne, on REFUSE en disant de combien on dépasse, plutôt que

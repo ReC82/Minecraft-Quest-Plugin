@@ -2,7 +2,7 @@
 # docs/NPC_DIALOGUES_QUESTS_GUIDE.md. Ce fichier ne crée jamais le PNJ, seulement son dialogue.
 #
 # Règle (mission « Journal des quêtes ») :
-# - « Obtenir un journal des quêtes » (re)donne l'objet rpgquest:journal_quetes, gratuitement, à
+# - « Obtenir mon journal » (re)donne l'objet rpgquest:journal_quetes, gratuitement, à
 #   chaque fois qu'il manque (garde LACKS_CUSTOM_ITEM) ; objet permanent, lié au joueur, jamais
 #   perdu (voir item.SoulboundItemService) — l'option redevient invisible dès qu'il est en poche.
 id: rpgquest:libraire

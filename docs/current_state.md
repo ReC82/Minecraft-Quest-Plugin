@@ -625,6 +625,32 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   en **#237** : l'espace devant le bouton, la pente, et le diagnostic panel (écarté ici parce que
   `inaccessible()` lit les blocs de chaque waypoint et forcerait le chargement d'une centaine de
   chunks).
+- **Un seul nom de personnage, et une apparence décrite** *(issue #197, 2026-10-11)* — retour réel en
+  jeu : le Guide a été renommé « Elias » dans sa fiche RPGQuest et a continué d'afficher « Guide »
+  au-dessus de la tête, parce que renommer la couche Citizens était un **second geste**, dans un
+  autre formulaire. La tentative de renommage Citizens a ensuite échoué sur `SKIN_SOURCE_UNKNOWN`,
+  un code sans explication. Nouvelle action agent **`npc.identity.rename`** (`NPC_WRITE` **et**
+  `NPC_BIND_WRITE`) : un champ unique met à jour les deux couches, **Citizens d'abord** — la seule
+  qui puisse refuser, donc un refus ne laisse **aucune** couche modifiée. Les deux sont ensuite
+  **relues**, et le verdict est rendu par une classe pure `NpcRenameVerdict` : seules « les deux à
+  jour » et « une seule couche existe » sont des succès ; une divergence est un **échec** qui nomme
+  la couche en retard et annonce que relancer est sans risque. Le champ nom du formulaire
+  « Modifier » est devenu **lecture seule** (sa valeur reste soumise, pour qu'une édition de
+  dialogue n'efface pas le nom). Les `speaker` de dialogue ne sont **jamais** réécrits — ils peuvent
+  être partagés : ils sont **listés** dans le message de résultat.
+  **RPGQuest devient la référence de l'apparence** : le relevé `npc.citizens.list` transporte
+  désormais `entityType` (trait public `MobType`, lu sans l'ajouter — un inventaire ne doit rien
+  écrire), `skinSourceKind` et `skinSourceValue`. Le panel en déduit cinq états (`NpcAppearance`,
+  classe pure) affichés **sur la tuile et sur la fiche**, avec le filtre « Apparence à configurer »
+  et l'avertissement **avant** la soumission du renommage. Règle de vocabulaire non négociable :
+  « source inconnue » ≠ « sans skin » — Citizens ne permet pas de *lire* le skin appliqué, donc un
+  PNJ en « à configurer » a très probablement une apparence dont on ignore seulement l'origine ; et
+  un `entityType` absent veut dire « inconnu », jamais « pas un joueur ». Fiche réorganisée en six
+  sections (Identité, Apparence, Emplacement, Comportement, Contenu, Administration), explications
+  longues repliées dans un `<details>`. **Pas d'aperçu image du skin** : Citizens ne donne pas accès
+  à la texture, et rendre une tête depuis un pseudo exigerait un service d'images tiers (CSP du
+  panel à élargir, ou proxy à écrire) — décision laissée au propriétaire, la source exacte est
+  nommée en attendant.
 - **UX des dialogues : le Garde, et les boutons tronqués** *(issue #238, 2026-10-11)* — retour réel
   en jeu. Le Garde portait **sept** `START_QUEST` directement sur l'accueil (le rapport #235 n'en
   avait identifié que trois) : « J'accepte la quête » démarrait une quête sans dire laquelle, ni

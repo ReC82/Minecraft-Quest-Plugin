@@ -3798,8 +3798,14 @@ Correctif : avant tout renommage, l'apparence est **rattachée explicitement**, 
 changé. Deux cas, et aucun n'applique un skin neuf :
 
 - une **source enregistrée** existe (un lien MineSkin posé depuis le panel) → elle est réappliquée ;
-- aucune source connue → l'apparence est rattachée à l'**ancien nom**, dont elle était déjà
-  dérivée : les joueurs voient exactement la même chose qu'avant.
+- aucune source connue → le renommage est **refusé** (`SKIN_SOURCE_UNKNOWN`), sans rien modifier.
+
+> [!NOTE]
+> Cette seconde branche a changé. Elle rattachait d'abord l'apparence à l'**ancien nom**, ce qui
+> reconduisait bien ce que les joueurs voyaient *quand* l'apparence dérivait effectivement du nom —
+> mais écrasait un skin explicite posé directement dans Citizens, en silence. `SkinPreservationPlanner`
+> refuse donc désormais ce cas plutôt que de remplacer une apparence qu'il ne sait pas lire. Voir
+> « Un seul nom de personnage » ci-dessous pour le parcours qui lève ce refus.
 
 Pour savoir quoi réappliquer, RPGQuest mémorise **sa propre** source d'apparence
 (`npc_citizens_skins`, migration **V27**) plutôt que de lire les métadonnées internes de Citizens,
@@ -3843,6 +3849,108 @@ qui affiche alors « inconnu ». C'est exactement ce qui est arrivé à la local
 Citizens la lisait, la vue métier la portait, et la sérialisation s'arrêtait à `spawned`. Deux
 tests structurels verrouillent désormais les deux relevés — ils parcourent les composants du
 record par réflexion et exigent une clé pour chacun.
+
+### Un seul nom de personnage, et une apparence décrite (issue #197)
+
+Le découpage ci-dessus était exact techniquement et **inutilisable en pratique**. Constat en
+production : le Guide a été renommé « Elias » dans sa définition RPGQuest, et a continué d'afficher
+« Guide » au-dessus de la tête, parce que renommer la couche Citizens était un second geste, dans
+un autre formulaire, sous un autre libellé. La différence entre ces deux noms est un détail
+d'implémentation : elle n'a pas à être administrée.
+
+#### Le champ unique
+
+Fiche PNJ → section **Identité** → **« Renommer le PNJ »**. Un champ, un bouton.
+
+| Action agent | Permissions | Effet |
+|---|---|---|
+| `npc.identity.rename` | `NPC_WRITE` **et** `NPC_BIND_WRITE` | Change le nom du personnage sur **toutes** les couches qui le portent : définition RPGQuest et nom Citizens affiché en jeu. |
+
+Les deux actions d'origine (`npc.definition.update`, `npc.citizens.rename`) restent dans la
+whitelist et le resteront : elles servent aux cas où l'on veut agir sur une seule couche. Mais le
+panel ne propose plus qu'un seul chemin, et le champ « Nom du PNJ » du formulaire de **modification
+de définition** est devenu **lecture seule** (sa valeur courante reste soumise, pour qu'une
+modification de dialogue ou de rôle n'efface pas le nom au passage).
+
+**Ordre délibéré : Citizens d'abord, définition ensuite.** Le renommage Citizens est le seul des
+deux qui peut légitimement refuser (apparence dont la source est inconnue). Le faire en premier
+garantit qu'un refus laisse **zéro couche modifiée**, au lieu d'un nom logique déjà changé pour un
+personnage qui s'appelle encore autrement en jeu.
+
+**Jamais de succès partiel déguisé.** Les deux couches sont **relues** après l'opération — le nom
+Citizens dans le registre, le nom de la définition dans le moteur rechargé — et le verdict est rendu
+par une classe pure, `NpcRenameVerdict` :
+
+| Définition | Citizens | Code | Succès ? |
+|---|---|---|---|
+| à jour | à jour | `RENAMED` | oui |
+| à jour | absente | `RENAMED_DEFINITION_ONLY` | oui |
+| absente | à jour | `RENAMED_CITIZENS_ONLY` | oui |
+| en retard | à jour | `DEFINITION_NOT_RENAMED` | **non** |
+| à jour | en retard | `CITIZENS_NOT_RENAMED` | **non** |
+| absente | absente | `NOT_FOUND` | **non** |
+
+Un échec nomme la couche à jour **et** la couche en retard, et dit que relancer l'opération est
+sans risque : elle reprend la couche en retard et laisse l'autre telle quelle.
+
+**Aucun texte de dialogue n'est réécrit.** Le `speaker` d'un nœud est une donnée d'auteur, parfois
+partagée entre plusieurs personnages. Le renommage **liste** les dialogues qui nomment encore
+l'ancien nom, dans le message de résultat ; il ne les remplace pas. Le corriger reste un geste
+explicite, depuis l'éditeur de dialogues.
+
+#### L'état d'apparence
+
+RPGQuest devient la **référence de l'apparence**. Le relevé `npc.citizens.list` transporte
+désormais trois clés de plus : `entityType` (trait public `MobType`, lu sans l'ajouter — dresser un
+inventaire ne doit rien écrire), `skinSourceKind` et `skinSourceValue` (la source que RPGQuest a
+lui-même posée, table `npc_citizens_skins`).
+
+Le panel en déduit cinq états, dans une classe pure `NpcAppearance` — pendant d'affichage de
+`SkinPreservationPlanner` :
+
+| État | Quand | Renommage |
+|---|---|---|
+| **configurée** | PNJ joueur, source enregistrée | libre, apparence réappliquée à l'identique |
+| **à configurer** | PNJ joueur, source inconnue | **refusé** — c'est le cas d'Elias |
+| **en cours** | apparence demandée, relevé plus ancien que la demande | — |
+| **erreur** | dernière tentative en échec | — |
+| **non applicable** | PNJ non joueur, ou aucun PNJ Citizens lié | libre |
+
+> [!IMPORTANT]
+> « Source inconnue » n'est **pas** « sans skin ». L'API publique de Citizens ne permet pas de lire
+> le skin appliqué : un PNJ dont la source est inconnue a très probablement une apparence, bien
+> visible par les joueurs, dont nous ignorons seulement l'origine — donc que nous ne savons pas
+> reproduire. Aucun écran ne doit écrire « sans skin » dans ce cas. De même, un `entityType` absent
+> veut dire « inconnu » et jamais « pas un joueur ».
+
+L'état est affiché **sur la tuile du catalogue et sur la fiche**, et le filtre **« Apparence à
+configurer »** liste les PNJ qui attendent une décision. Ce filtre est volontairement plus étroit
+que l'état « à configurer » : un `entityType` inconnu est un relevé Citizens périmé, pas une
+apparence à décider — et comme un relevé antérieur à cette issue ne porte aucun type, l'inclure
+ferait apparaître *tous* les PNJ dans la liste de travail.
+
+**Avertissement avant la soumission.** Quand l'apparence bloque le renommage, la fiche l'annonce
+**au-dessus** du formulaire, en français, avec le bouton « Définir une apparence » juste à côté et
+la garantie qu'aucune couche n'a bougé entre-temps. Le refus n'est plus découvert après le clic.
+
+#### Les six sections de la fiche
+
+La fiche suit l'ordre des questions qu'un administrateur se pose : **Identité** (le nom, son
+identifiant technique en secondaire, la divergence si elle existe), **Apparence**, **Emplacement**,
+**Comportement**, **Contenu** (dialogue, quêtes, rôle), **Administration** (liaison Citizens, type
+d'entité, diagnostics, actions, suppression). Les explications longues vivent dans un repli
+`<details>` « Ce que cela veut dire » : la fiche reste lisible sur un téléphone, le détail reste
+accessible à qui en a besoin.
+
+#### Aperçu du skin : volontairement absent
+
+L'issue demande un aperçu réel du skin. Le panel ne peut pas le produire honnêtement aujourd'hui :
+Citizens ne donne pas accès à la texture appliquée, et rendre une tête depuis le pseudo enregistré
+supposerait un appel à un service d'images tiers depuis le navigateur de l'administrateur — donc
+d'élargir la CSP du panel (`img-src 'self' data:`) et de divulguer les pseudos des PNJ à ce service,
+ou bien d'ajouter un proxy d'images côté panel. Plutôt qu'un visage peut-être faux ou une silhouette
+générique présentée comme un aperçu, la fiche affiche la **source exacte, nommée**. La décision
+d'ajouter cette dépendance réseau reste à prendre.
 
 #### État de présence : trois états, pas deux (#165)
 

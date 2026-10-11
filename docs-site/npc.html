@@ -169,6 +169,22 @@ id: rpgquest:libraire</code></pre>
         RPGQuest n'a aucun rôle dans cette étape, entièrement gérée par Citizens.
       </li>
       <li>
+        <strong>Ou bien : tout faire depuis PlugAdmin</strong> — chemin recommandé une fois le PNJ
+        tagué. Fiche du PNJ → section <strong>Identité</strong> → « Renommer le PNJ » met à jour
+        le nom de la fiche RPGQuest <em>et</em> le nom affiché en jeu en une seule opération, puis
+        relit les deux et signale toute divergence. Section <strong>Apparence</strong> →
+        « Définir une apparence » enregistre la source du skin (lien MineSkin ou pseudo), ce qui
+        rend l'apparence reproductible et <strong>débloque les renommages ultérieurs</strong>.
+        <p class="mb-0 mt-2">
+          Pourquoi cela compte : un PNJ de type <code>PLAYER</code> sans skin explicite
+          <strong>dérive son visage de son nom</strong>. Le renommer le changerait donc aussi — et
+          comme l'API publique de Citizens ne permet pas de <em>lire</em> le skin appliqué, RPGQuest
+          refuse le renommage tant qu'il n'en connaît pas la source, plutôt que de remplacer une
+          apparence en silence. Un PNJ marqué « apparence à configurer » n'est donc
+          <strong>pas</strong> un PNJ sans skin : c'est un PNJ dont on ignore l'origine du skin.
+        </p>
+      </li>
+      <li>
         <strong>Attribuer un id RPGQuest stable.</strong> Regardez le PNJ directement (à 6 blocs
         maximum, voir la commande <code>/rpgadmin npc</code> ci-dessus), puis :
         <pre class="rpgq-code"><code>/rpgadmin npc tag jean_guide</code></pre>
@@ -181,8 +197,10 @@ id: rpgquest:libraire</code></pre>
       <li>
         <strong>Trois identifiants différents, à ne pas confondre :</strong>
         <ul>
-          <li><strong>Nom visible</strong> (<code>Jean - le guide</code>) — purement cosmétique,
-            modifiable à tout moment (<code>/npc rename</code>) sans jamais casser le lien
+          <li><strong>Nom visible</strong> (<code>Jean - le guide</code>) — cosmétique,
+            modifiable à tout moment (de préférence par « Renommer le PNJ » dans PlugAdmin, qui
+            met aussi à jour la fiche RPGQuest ; <code>/npc rename</code> ne change que la couche
+            Citizens et fait apparaître une divergence dans le catalogue) sans jamais casser le lien
             RPGQuest.</li>
           <li><strong>Id Citizens</strong> (ex. <code>#7</code>, affiché entre parenthèses par
             <code>/rpgadmin npc info</code>) — numérique, attribué par Citizens, non garanti stable

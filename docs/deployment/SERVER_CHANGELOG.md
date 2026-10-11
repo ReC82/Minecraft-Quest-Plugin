@@ -7604,3 +7604,76 @@ quêtes/stories/dialogues du serveur hors publication explicite.
   `rpgquest-20261011T164115Z-predeploy.jar`, puis redémarrer. Rien à défaire en base.
 * **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
 * **Contenu** : `content.publish.rollback` par ressource depuis le panel.
+
+---
+
+## 2026-10-11 (nuit) — Un seul nom de PNJ, et l'état d'apparence dans PlugAdmin (#197)
+
+### Changement
+
+Refonte de l'identité et de l'apparence des PNJ depuis PlugAdmin, après un retour terrain : le
+Guide renommé « Elias » dans sa fiche RPGQuest affichait toujours « Guide » en jeu, et la tentative
+de corriger la couche Citizens échouait sur un code technique (`SKIN_SOURCE_UNKNOWN`).
+
+**Plugin** (exige un nouveau JAR) :
+
+- nouvelle action agent **`npc.identity.rename`** — renomme la définition RPGQuest **et** le PNJ
+  Citizens en une opération, relit les deux couches et refuse de rendre un succès partiel ;
+- le relevé **`npc.citizens.list`** transporte trois clés de plus : `entityType`,
+  `skinSourceKind`, `skinSourceValue` ;
+- `NpcSkinSourceRepository.loadAll()` : une seule lecture de `npc_citizens_skins` pour tout le
+  catalogue, consommée **avant** d'entrer sur le thread principal.
+
+**Panel** (déploiement PlugAdmin séparé) : champ de nom unique, cinq états d'apparence sur les
+tuiles et les fiches, filtre « Apparence à configurer », avertissement **avant** soumission,
+fiche réorganisée en six sections, champ nom de « Modifier » passé en lecture seule.
+
+### Action serveur
+
+- **Plugin** : remplacer uniquement le JAR RPGQuest. **Aucune migration de schéma** — la table
+  `npc_citizens_skins` existe déjà (migration **V27**, déployée avec #165). `loadAll()` ne fait
+  que lire cette table.
+- **Panel** : déploiement PlugAdmin distinct (`scripts/plugadmin/deploy.sh`). Les deux moitiés sont
+  indépendantes, mais le panel ne peut afficher aucun état d'apparence tant que le JAR n'est pas
+  déployé : sans les trois nouvelles clés, chaque PNJ apparaît en **« type inconnu »**, ce qui est
+  le comportement voulu (le panel dit « inconnu » plutôt que de supposer) et non une anomalie.
+- **Aucune** commande à exécuter, aucun monde, aucune configuration, aucun plugin externe.
+- **Aucun PNJ n'est modifié par le déploiement** : aucun renommage, aucun skin appliqué, aucune
+  migration d'apparence. L'état « à configurer » est un *affichage*, pas une action.
+
+### Sauvegarde préalable
+
+JAR actuellement déployé + `data.db` (sauvegarde standard du script de déploiement). La table
+`npc_citizens_skins` n'est ni modifiée ni purgée par ce lot, mais elle porte désormais une
+information lue par le catalogue : la conserver.
+
+### Déploiement
+
+1. `RPGQUEST_TEST_MAX_HEAP=768m scripts/deploy-verygames.sh -y` depuis un worktree **propre**
+   (les fichiers de contenu non suivis du propriétaire font échouer `CrystalHuntIntegrationTest`).
+2. Redémarrage du serveur Minecraft requis (remplacement de JAR).
+3. `scripts/plugadmin/deploy.sh` pour le panel, puis vérifier ce qui est **servi** :
+   `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$RPGQUEST_PANEL_PORT/npcs`
+   (303 → `/login` = route enregistrée ; 404 = panel périmé).
+
+### Validation
+
+1. Page **PNJ** → **« Citizens »** pour refaire le relevé.
+2. Chaque tuile de PNJ lié porte une pastille **« apparence … »**. Un PNJ joueur sans source
+   enregistrée affiche **« à configurer »** et apparaît dans le filtre du même nom.
+3. Ouvrir le Guide (`guide`) : six sections, un seul champ **« Nom du PNJ »**, et — tant que son
+   apparence n'est pas définie — l'avertissement **« Le renommage sera refusé en l'état »**
+   au-dessus du formulaire, avec le bouton « Définir une apparence ».
+4. Le formulaire **« Modifier »** affiche le nom en lecture seule et renvoie vers « Renommer le PNJ ».
+5. `PENDING MANUAL VALIDATION` — à faire par le propriétaire, aucun test automatisé ne peut le
+   couvrir : définir l'apparence d'Elias, puis le renommer, et **constater en jeu** que le visage
+   est inchangé et que le nom affiché au-dessus de la tête suit le catalogue.
+
+### Rollback
+
+* **Plugin** : `scripts/rollback-verygames.sh --latest`, puis redémarrer. **Rien à défaire en
+  base** : ce lot n'écrit aucune donnée nouvelle. Un `npc.identity.rename` déjà exécuté laisse un
+  nom modifié dans `npcs/<id>.yml` et dans Citizens — le défaire se fait en renommant à nouveau,
+  jamais en restaurant la base.
+* **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
+* **Contenu** : sans objet, ce lot ne publie aucune ressource de contenu.

@@ -214,7 +214,17 @@ public final class BuildingPlanYaml {
         }
 
         // « axis » porte l'axe d'un toit (x/z) ou la direction de montée d'un escalier.
-        return Optional.of(new PlanStep(k, box, state, str(map.get("axis")), facade,
+        // « direction » et « axis » remplissent le même champ, mais ne désignent pas la même chose
+        // selon la primitive : l'axe du faîte pour « gable » (x ou z), la direction de montée pour
+        // « stair_run » (un point cardinal). Un seul mot-clé pour deux vocabulaires est un piège —
+        // un modèle écrivant « axis: x » sur un escalier voyait son plan refusé. « direction » est
+        // donc le mot juste pour une montée, et « axis » reste accepté pour ne casser aucun plan
+        // déjà écrit.
+        String axis = str(map.get("direction"));
+        if (axis.isEmpty()) {
+            axis = str(map.get("axis"));
+        }
+        return Optional.of(new PlanStep(k, box, state, axis, facade,
                 numbers, str(map.get("fill"))));
     }
 

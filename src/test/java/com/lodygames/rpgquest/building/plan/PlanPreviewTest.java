@@ -276,7 +276,7 @@ class PlanPreviewTest {
                   - op: stair_run
                     from: [1, 1, 1]
                     steps: 3
-                    axis: x
+                    direction: east
                     block: minecraft:oak_stairs
                 """;
 

@@ -147,8 +147,8 @@ public final class BuildingPromptBuilder {
                 - op: clear   → VIDE la zone. Pas de clé « block ».
                 - op: pillars → une colonne verticale tous les « spacing » blocs le long de la
                                 zone. Clés : « spacing » (défaut 4, minimum 2).
-                - op: gable   → toit à deux pentes. Exige « axis: x » ou « axis: z » (l'axe du
-                                faîte) et un bloc d'ESCALIER. Ajoute « fill: » avec un bloc plein :
+                - op: gable   → toit à deux pentes. Exige « axis: x » ou « axis: z » — l'axe du
+                                FAÎTE, pas une direction — et un bloc d'ESCALIER. Ajoute « fill: » avec un bloc plein :
                                 c'est le matériau des deux triangles de pignon, et sans lui le
                                 pignon est fait d'escaliers, ce qui laisse des creux visibles.
 
@@ -170,8 +170,12 @@ public final class BuildingPromptBuilder {
                                   « offset », « y », « width », « height », « block » (un vitrage).
                 - op: light     → une source de lumière. Clés : « from », « to », « spacing »,
                                   « block » (minecraft:lantern, minecraft:torch…).
-                - op: stair_run → une volée d'escalier praticable entre deux niveaux. Clés :
-                                  « from », « steps », « axis », « block » (un bloc d'escalier).
+                - op: stair_run → une volée d'escalier praticable entre deux niveaux, avec deux
+                                  blocs de hauteur libre au-dessus de chaque marche et un palier en
+                                  haut. Clés : « from » (le pied de la volée), « steps » (nombre de
+                                  marches, défaut 4), « direction » (le POINT CARDINAL vers lequel
+                                  on monte : north, south, east ou west — jamais un axe),
+                                  « block » (un bloc d'escalier).
                 - op: ladder    → une échelle adossée à un mur, qui regarde vers l'intérieur, et
                                   dont le débouché du haut est dégagé. Clés : « facade » (la façade
                                   contre laquelle elle est adossée), « from », « to » (le bas et le

@@ -307,3 +307,26 @@ Vérifié après coup : `crystal_hunt.yml` porte à nouveau l'empreinte
 Le build en cours était invalidé par ce fichier : arrêté, et relancé après
 correction. Désormais je mets en scène des **chemins explicites**, jamais
 `git add -A`.
+
+## 01:33 — Un troisième désalignement, et le pire : `axis`
+
+La compilation du lot E a échoué (`Slice.text()` n'existait que côté panel, ajouté
+des deux côtés), puis un test a révélé un problème de **conception du langage**,
+pas une coquille :
+
+> `axis:` désignait l'**axe du faîte** pour `gable` (`x` ou `z`) et la **direction
+> de montée** pour `stair_run` (un point cardinal).
+
+Un seul mot-clé pour deux vocabulaires. Un modèle écrivant `axis: x` sur un
+escalier — ce que la symétrie avec `gable` invite à faire — voyait son plan
+**refusé**. Mon propre test l'a écrit ainsi spontanément, ce qui est la meilleure
+démonstration du piège.
+
+Corrigé dans le **langage** et pas dans le prompt : `stair_run` lit désormais
+`direction:` (un point cardinal), `axis` reste accepté pour ne casser aucun plan
+déjà écrit, et le message de refus dit maintenant quoi écrire plutôt que de lister
+des valeurs sans expliquer la différence.
+
+C'est le troisième écart prompt ↔ moteur de la nuit, et les trois ont la même
+forme : chaque côté était cohérent avec lui-même. Aucun test ne pouvait les
+attraper — seulement la relecture croisée des clés annoncées contre les clés lues.

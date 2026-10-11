@@ -69,6 +69,11 @@ public final class PlanPreview {
             rows = List.copyOf(rows == null ? List.of() : rows);
         }
 
+        /** La grille en un seul bloc de texte : lisible dans un message d'échec de test. */
+        public String text() {
+            return String.join("\n", rows);
+        }
+
         public int width() {
             return rows.isEmpty() ? 0 : rows.get(0).length();
         }

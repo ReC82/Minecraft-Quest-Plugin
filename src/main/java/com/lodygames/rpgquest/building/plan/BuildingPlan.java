@@ -150,7 +150,8 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
                 if (!dir.equals("north") && !dir.equals("south")
                         && !dir.equals("east") && !dir.equals("west")) {
                     return Optional.of(where + "direction de montée manquante ou inconnue : « "
-                            + dir + " ». Valeurs acceptées : north, south, east, west.");
+                            + dir + " ». Écris « direction: » avec un point cardinal — north, "
+                            + "south, east ou west — et non un axe.");
                 }
             }
             if (step.kind() == PlanStep.Kind.GABLE

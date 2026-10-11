@@ -2569,6 +2569,35 @@ public final class AgentPages {
             return sb.toString();
         }
 
+        // Issue #239 — un emplacement OCCUPÉ ne retombe JAMAIS sur la branche « vide ».
+        //
+        // C'est le défaut constaté en jeu : le relevé ne portait pas les placements, donc
+        // placementFor() restait vide et la fiche proposait un aperçu de pose — pire, un aperçu
+        // PÉRIMÉ, calculé avant la pose — avec son bouton « Placer dans le monde ». Un geste de
+        // plus et l'on posait un second bâtiment sur un emplacement déjà occupé.
+        //
+        // L'état du site est une donnée du serveur, indépendante de la présence du placement dans
+        // le relevé : s'il dit « occupé », on le croit, et on dit honnêtement qu'il manque le
+        // détail plutôt que d'offrir une action que cet état interdit.
+        if (site.occupied()) {
+            sb.append(detailSection("world", "Bâtiment posé"));
+            sb.append(Ui.banner("warn", "Cet emplacement est <strong>occupé</strong>, mais le "
+                    + "dernier relevé ne porte pas le détail du bâtiment posé. Cliquer sur "
+                    + "« Rafraîchir » ci-dessus ; si l'information reste absente, le plugin du "
+                    + "serveur est antérieur au correctif qui transmet les bâtiments posés "
+                    + "(issue #239) et il faut déployer un JAR à jour."));
+            sb.append("<dl class=\"npc-dl\">");
+            dlRow(sb, "Orientation souhaitée du site", Http.esc(site.facingLabel())
+                    + " <code class=\"tid\">" + Http.esc(site.facing()) + "</code>");
+            dlRow(sb, "Orientation réellement posée",
+                    "<span class=\"muted\">inconnue — absente du relevé</span>");
+            sb.append("</dl>");
+            sb.append("<p class=\"field-help\">Aucune pose n'est proposée sur un emplacement "
+                    + "occupé : il faudrait d'abord le libérer. Les blocs déjà posés ne sont "
+                    + "jamais modifiés par un changement d'orientation de l'emplacement.</p>");
+            return sb.toString();
+        }
+
         // ---- Emplacement vide -----------------------------------------------------------------
         sb.append(detailSection("world", "Bâtiment"));
         if (!library.available()) {
@@ -2594,8 +2623,24 @@ public final class AgentPages {
                     + " » n'est pas chargé : rien ne peut être posé tant qu'il dort."));
         }
 
+        // Issue #239 — un aperçu n'est valable que pour l'emplacement ET l'orientation pour
+        // lesquels il a été calculé. L'aperçu capture l'orientation du site au moment du calcul
+        // (« siteFacing ») et en déduit la rotation ; si le site a tourné depuis, cette rotation est
+        // fausse. L'écran affichait alors le libellé courant du site collé à l'orientation capturée
+        // — d'où le « sud NORTH » rapporté en jeu — et proposait tout de même de poser.
+        boolean previewStale = preview.available()
+                && !preview.siteFacing().isEmpty()
+                && !preview.siteFacing().equalsIgnoreCase(site.facing());
         boolean previewMatches = preview.available()
-                && preview.siteId().equalsIgnoreCase(site.id());
+                && preview.siteId().equalsIgnoreCase(site.id())
+                && !previewStale;
+        if (previewStale && preview.siteId().equalsIgnoreCase(site.id())) {
+            sb.append(Ui.banner("info", "L'orientation de cet emplacement a changé depuis le "
+                    + "dernier aperçu (calculé pour <code>" + Http.esc(preview.siteFacing())
+                    + "</code>, l'emplacement est maintenant <code>" + Http.esc(site.facing())
+                    + "</code>). L'aperçu est donc écarté : sa rotation ne vaut plus. Choisir à "
+                    + "nouveau un bâtiment pour en recalculer un."));
+        }
 
         if (canPlace) {
             sb.append("<p class=\"field-help\">Choisir un bâtiment calcule la rotation et "
@@ -2647,8 +2692,17 @@ public final class AgentPages {
         dlRow(sb, "Dimensions du bâtiment", "<code class=\"tid\">"
                 + Http.esc(preview.sizeLabel()) + "</code> — façade de référence "
                 + Http.esc(preview.front()));
-        dlRow(sb, "Orientation de l'emplacement", Http.esc(site.facingLabel())
-                + " <code class=\"tid\">" + Http.esc(preview.siteFacing()) + "</code>");
+        // Issue #239 : les deux valeurs étaient simplement juxtaposées, ce qui donnait « sud NORTH »
+        // dès qu'elles divergeaient. On nomme désormais ce qu'on lit : l'orientation pour laquelle
+        // l'aperçu a été CALCULÉ, et celle de l'emplacement AUJOURD'HUI.
+        dlRow(sb, "Orientation de l'aperçu", "<code class=\"tid\">"
+                + Http.esc(preview.siteFacing()) + "</code> <span class=\"muted\">— orientation de "
+                + "l'emplacement au moment du calcul</span>");
+        if (!preview.siteFacing().equalsIgnoreCase(site.facing())) {
+            dlRow(sb, "Orientation actuelle du site", Http.esc(site.facingLabel())
+                    + " <code class=\"tid\">" + Http.esc(site.facing()) + "</code>"
+                    + " <span class=\"badge text-bg-warning\">a changé depuis l'aperçu</span>");
+        }
         dlRow(sb, "Rotation appliquée", "<code class=\"tid\">" + preview.rotation()
                 + "°</code> <span class=\"muted\">pour amener la façade sur "
                 + Http.esc(site.facingLabel()) + "</span>");

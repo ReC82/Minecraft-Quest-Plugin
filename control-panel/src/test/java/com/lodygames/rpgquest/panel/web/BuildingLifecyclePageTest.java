@@ -85,6 +85,54 @@ class BuildingLifecyclePageTest {
                 + "]}";
     }
 
+    /**
+     * Issue #239 — un emplacement OCCUPÉ dont le relevé ne porte AUCUN placement.
+     *
+     * <p>C'est l'état réel du serveur avant le correctif : l'exécuteur ne sérialisait pas les
+     * bâtiments posés. La fiche retombait alors sur la branche « emplacement vide » et réaffichait
+     * un aperçu de pose périmé, bouton « Placer dans le monde » compris.</p>
+     */
+    private static final String SITES_OCCUPIED_NO_PLACEMENT = "{"
+            + "\"total\":1,\"worlds\":[\"world_hub\"],"
+            + "\"sites\":["
+            + "{\"id\":\"buildsite_0002\",\"name\":\"Déjà bâtie\",\"description\":\"\","
+            + "\"world\":\"world_hub\",\"x\":800,\"y\":70,\"z\":-800,\"facing\":\"SOUTH\","
+            + "\"status\":\"OCCUPIED\",\"createdBy\":\"Lody\","
+            + "\"createdAt\":\"2026-10-08T18:05:00Z\",\"worldLoaded\":true}"
+            + "],\"placements\":[]}";
+
+    /** Le même emplacement, mais VIDE : l'aperçu doit continuer d'être proposé. */
+    private static final String SITES_EMPTY_SOUTH = "{"
+            + "\"total\":1,\"worlds\":[\"world_hub\"],"
+            + "\"sites\":["
+            + "{\"id\":\"buildsite_0002\",\"name\":\"Terrain libre\",\"description\":\"\","
+            + "\"world\":\"world_hub\",\"x\":800,\"y\":70,\"z\":-800,\"facing\":\"SOUTH\","
+            + "\"status\":\"EMPTY\",\"createdBy\":\"Lody\","
+            + "\"createdAt\":\"2026-10-08T18:05:00Z\",\"worldLoaded\":true}"
+            + "],\"placements\":[]}";
+
+    /** Le même emplacement vide, orienté NORTH : l'aperçu calculé pour NORTH y est donc valable. */
+    private static final String SITES_EMPTY_NORTH =
+            SITES_EMPTY_SOUTH.replace("\"facing\":\"SOUTH\"", "\"facing\":\"NORTH\"");
+
+    /**
+     * Un aperçu de POSE calculé alors que l'emplacement était orienté NORTH (issue #239).
+     *
+     * <p>Distinct de {@link #PREVIEW_OK}, qui est un aperçu de <em>remplacement</em> : celui-ci est
+     * le relevé de {@code building.placement.preview}, dont les champs portent l'orientation du site
+     * au moment du calcul.</p>
+     */
+    private static final String PREVIEW_STALE_NORTH = "{"
+            + "\"placeable\":true,\"siteId\":\"buildsite_0002\",\"siteName\":\"Terrain libre\","
+            + "\"siteFacing\":\"NORTH\","
+            + "\"buildingId\":\"test_hut_01\",\"buildingName\":\"Hutte de test\","
+            + "\"front\":\"NORTH\",\"sizeX\":7,\"sizeY\":6,\"sizeZ\":5,"
+            + "\"rotation\":0,"
+            + "\"anchorX\":800,\"anchorY\":70,\"anchorZ\":-800,"
+            + "\"minX\":797,\"minY\":69,\"minZ\":-800,\"maxX\":803,\"maxY\":74,"
+            + "\"maxZ\":-796,\"blockCount\":210,\"nonAirCount\":120,"
+            + "\"refusals\":[],\"warnings\":[]}";
+
     private static final String LIBRARY = "{"
             + "\"engineAvailable\":true,\"engineReason\":\"\",\"problems\":[],"
             + "\"buildings\":["
@@ -190,6 +238,132 @@ class BuildingLifecyclePageTest {
 
         assertFalse(page.contains("a changé après le placement"),
                 "aucun avertissement quand les deux orientations concordent");
+    }
+
+    // ---- Issue #239 : un emplacement occupé ne retombe jamais sur la branche « vide » ----------
+
+    /**
+     * Le défaut exact du ticket, rejoué par la vraie page.
+     *
+     * <p>Site OCCUPIED, relevé sans placement : l'écran proposait un aperçu de pose <em>périmé</em>
+     * et son bouton « Placer dans le monde ». Un geste de plus et l'on posait un second bâtiment sur
+     * un emplacement déjà occupé.</p>
+     */
+    @Test
+    void anOccupiedSiteWithoutPlacementDataNeverOffersToPlaceAgain() throws Exception {
+        start();
+        seed("building.site.list", SITES_OCCUPIED_NO_PLACEMENT);
+        seed("building.definition.list", LIBRARY);
+
+        String page = fiche();
+
+        assertFalse(page.contains("Placer dans le monde"),
+                "aucune pose ne doit être proposée sur un emplacement occupé");
+        assertFalse(page.contains("Aperçu de la pose"),
+                "l'ancien aperçu de pose initiale doit être masqué");
+        assertFalse(page.contains("name=\"type\" value=\"building.placement.place\""),
+                "le formulaire de pose ne doit même pas exister dans la page");
+        // Et il le DIT, au lieu de laisser une section vide.
+        assertTrue(page.contains("Bâtiment posé"), "la section attendue reste présente");
+        assertTrue(page.contains("ne porte pas le détail du bâtiment posé"),
+                "l'écran doit expliquer pourquoi il ne peut rien montrer");
+        assertTrue(page.contains("issue #239"),
+                "et nommer la cause, pour qu'on sache qu'un JAR à jour est nécessaire");
+    }
+
+    /** Même dans ce cas dégradé, les deux orientations restent deux lignes distinctes. */
+    @Test
+    void anOccupiedSiteWithoutPlacementStillSeparatesIntentionFromFact() throws Exception {
+        start();
+        seed("building.site.list", SITES_OCCUPIED_NO_PLACEMENT);
+        seed("building.definition.list", LIBRARY);
+
+        String page = fiche();
+
+        assertTrue(page.contains("Orientation souhaitée du site"), "l'intention");
+        assertTrue(page.contains("Orientation réellement posée"), "le fait");
+        assertTrue(page.contains("inconnue — absente du relevé")
+                        || page.contains("inconnue &mdash; absente du relevé"),
+                "le fait inconnu est dit comme tel, jamais remplacé par l'intention");
+        assertTrue(page.contains("ne sont jamais modifiés par un changement d&#39;orientation")
+                        || page.contains("ne sont jamais modifiés par un changement d'orientation"),
+                "la garantie « changer l'orientation ne touche aucun bloc » reste énoncée");
+    }
+
+    /** Le symptôme survivait au rafraîchissement : deux lectures de la page donnent le même état. */
+    @Test
+    void theDegradedStatePersistsIdenticallyAcrossARefresh() throws Exception {
+        start();
+        seed("building.site.list", SITES_OCCUPIED_NO_PLACEMENT);
+        seed("building.definition.list", LIBRARY);
+
+        String first = fiche();
+        String second = fiche();
+
+        for (String page : new String[] {first, second}) {
+            assertFalse(page.contains("Placer dans le monde"));
+            assertTrue(page.contains("ne porte pas le détail du bâtiment posé"));
+        }
+    }
+
+    /** Un emplacement VIDE n'est pas affecté : l'aperçu doit continuer d'être proposé. */
+    @Test
+    void anEmptySiteStillOffersThePreviewAndThePlacement() throws Exception {
+        start();
+        seed("building.site.list", SITES_EMPTY_SOUTH);
+        seed("building.definition.list", LIBRARY);
+
+        String page = fiche();
+
+        assertTrue(page.contains("Choisir un bâtiment"),
+                "le parcours de pose reste intact sur un emplacement vide");
+        assertFalse(page.contains("ne porte pas le détail du bâtiment posé"),
+                "aucun diagnostic de placement manquant sur un emplacement vide");
+    }
+
+    /**
+     * Issue #239 — un aperçu calculé pour une AUTRE orientation est périmé.
+     *
+     * <p>L'aperçu capture l'orientation du site au moment du calcul et en déduit sa rotation. Si le
+     * site a tourné depuis, cette rotation est fausse : l'écran affichait pourtant le libellé
+     * courant du site collé à l'orientation capturée — d'où le « sud NORTH » rapporté en jeu — et
+     * proposait tout de même de poser.</p>
+     */
+    @Test
+    void aPreviewComputedForAnotherOrientationIsRejectedAndSaysWhy() throws Exception {
+        start();
+        // Site VIDE orienté SOUTH, mais l'aperçu a été calculé pour NORTH (voir PREVIEW_OK).
+        seed("building.site.list", SITES_EMPTY_SOUTH);
+        seed("building.definition.list", LIBRARY);
+        seed("building.placement.preview", PREVIEW_STALE_NORTH);
+
+        String page = fiche();
+
+        assertTrue(page.contains("a changé depuis le dernier aperçu"),
+                "l'écran doit dire que l'aperçu ne vaut plus");
+        assertFalse(page.contains("Placer dans le monde"),
+                "un aperçu périmé ne doit jamais rester posable");
+        assertFalse(page.contains("Aperçu de la pose"),
+                "la carte d'aperçu périmée est écartée, pas réaffichée");
+    }
+
+    /** Et le mélange « sud NORTH » ne peut plus se produire : chaque valeur est nommée. */
+    @Test
+    void thePreviewCardNamesEachOrientationInsteadOfJuxtaposingThem() throws Exception {
+        start();
+        seed("building.site.list", SITES_EMPTY_NORTH);
+        seed("building.definition.list", LIBRARY);
+        seed("building.placement.preview", PREVIEW_STALE_NORTH);
+
+        String page = fiche();
+
+        assertTrue(page.contains("Aperçu de la pose"), "ici l'aperçu est valable");
+        assertTrue(page.contains("Orientation de l&#39;aperçu")
+                        || page.contains("Orientation de l'aperçu"),
+                "l'orientation POUR LAQUELLE l'aperçu a été calculé est nommée");
+        assertTrue(page.contains("au moment du calcul"), "et datée dans son intitulé");
+        assertFalse(page.contains("nord</strong> <code class=\"tid\">SOUTH"),
+                "jamais deux orientations juxtaposées sans étiquette");
     }
 
     // ---- Version posée contre version de bibliothèque -------------------------------------------

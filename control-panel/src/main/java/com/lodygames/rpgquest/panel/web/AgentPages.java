@@ -2250,6 +2250,22 @@ public final class AgentPages {
             sb.append(buildingSiteRenameForm(session, agentId, site));
             sb.append(buildingSiteDescribeForm(session, agentId, site));
             sb.append(buildingSiteBriefForm(session, agentId, site));
+            // Issue #94 — l'accès à la génération vit AU CONTACT du brief, parce que c'est lui
+            // qu'elle consomme. Un lien, pas un bouton de soumission : la page de génération
+            // montre le plan avant qu'un fichier soit écrit.
+            sb.append("<p class=\"meta-line\">");
+            if (site.hasAiBrief()) {
+                sb.append("<a class=\"btn btn-sm btn-primary\" href=\"/buildings/plan?site=")
+                        .append(Http.esc(site.id())).append("\">").append(Icons.icon("wrench"))
+                        .append("Générer un bâtiment avec l'IA</a>")
+                        .append("<span class=\"faint\"> Le brief ci-dessus est envoyé à l'IA ; "
+                                + "vous relisez le plan avant toute écriture.</span>");
+            } else {
+                sb.append("<span class=\"muted\">").append(Icons.icon("info"))
+                        .append("Rédiger le brief ci-dessus pour pouvoir générer un bâtiment "
+                                + "avec l'IA.</span>");
+            }
+            sb.append("</p>");
             sb.append(buildingSiteFacingForm(session, agentId, site));
         }
         if (canDelete) {

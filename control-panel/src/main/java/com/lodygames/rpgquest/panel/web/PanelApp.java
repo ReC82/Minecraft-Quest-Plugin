@@ -96,6 +96,8 @@ public final class PanelApp {
             new com.lodygames.rpgquest.panel.ai.AiProviderRegistry();
     private final com.lodygames.rpgquest.panel.ai.AiSettingsStore aiSettings;
     private final com.lodygames.rpgquest.panel.ai.AiContentStudio aiStudio;
+    /** Issue #94 — atelier de plans de bâtiment, distinct de l'atelier de contenu. */
+    private final com.lodygames.rpgquest.panel.ai.AiBuildingStudio aiBuildingStudio;
     private final ContentEditorPages contentEditor;
     private final ContentDeletionPages contentDeletion;
     private final ContentExportPages contentExportPages;
@@ -145,6 +147,10 @@ public final class PanelApp {
         // lisible par le seul compte du service. C'est le stockage serveur exigé pour une clé API.
         this.aiSettings = new com.lodygames.rpgquest.panel.ai.AiSettingsStore(config.panelDbPath());
         this.aiStudio = new com.lodygames.rpgquest.panel.ai.AiContentStudio(aiProviders, aiSettings);
+        // Issue #94 — même registre de fournisseurs et mêmes réglages que l'atelier de contenu :
+        // une seule clé API à gérer, un seul endroit où elle vit.
+        this.aiBuildingStudio =
+                new com.lodygames.rpgquest.panel.ai.AiBuildingStudio(aiProviders, aiSettings);
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
         this.notifications = new NotificationCenter(agentStore, agentRegistry);
@@ -275,6 +281,10 @@ public final class PanelApp {
         // des fournisseurs (clés API), avec deux permissions différentes.
         route("/ai/studio", this::handleAiStudio);
         route("/ai/providers", this::handleAiProviders);
+        // Issue #94 — génération d'un bâtiment par IA. Route DISTINCTE de l'atelier de contenu :
+        // la famille « bâtiment » ne produit pas du YAML de contenu importable, mais un plan
+        // géométrique que seul le plugin sait valider et exécuter.
+        route("/buildings/plan", this::handleBuildingPlan);
         route("/content/schema.json", this::handleContentSchema);
         route("/content/template", this::handleContentTemplate);
         route("/content/contract.md", this::handleContentContractDoc);
@@ -876,6 +886,103 @@ public final class PanelApp {
      * Configuration des fournisseurs. Permission distincte de l'usage : manipuler une clé d'API
      * tierce n'est pas un geste d'édition de contenu.
      */
+    /**
+     * Issue #94 — brief d'un emplacement → plan proposé par l'IA → génération explicite.
+     *
+     * <p><strong>Deux permissions, deux gestes.</strong> Demander un plan consomme des jetons chez
+     * un fournisseur : c'est {@code AI_USE}. Générer écrit deux fichiers sur le serveur : c'est
+     * {@code BUILDING_WRITE}, vérifié par la liste blanche d'actions. Un utilisateur qui n'a que
+     * le premier droit peut explorer sans jamais rien écrire.</p>
+     *
+     * <p>Aucune écriture ne part d'ici : la génération passe par {@code /agents/action}, le seul
+     * chemin d'écriture du panel, déjà couvert par ses propres contrôles.</p>
+     */
+    private void handleBuildingPlan(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.AI_USE)) {
+            forbidden(exchange, session, "/buildings/plan");
+            return;
+        }
+        String agentId = config.agents().defaultAgentId();
+        boolean canWrite = permissions.can(session.effective(), Permission.BUILDING_WRITE);
+
+        String siteId = Http.query(exchange).getOrDefault("site", "").trim();
+        String provider = "";
+        String error = null;
+        String refusal = Http.query(exchange).getOrDefault("refusal", "").trim();
+        com.lodygames.rpgquest.panel.ai.AiBuildingStudio.Proposal proposal = null;
+
+        if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Optional<Map<String, String>> body = Http.formBody(exchange, 1024 * 1024);
+            if (body.isEmpty()) {
+                error = "Requête trop volumineuse.";
+            } else {
+                Map<String, String> f = body.get();
+                if (!constantTimeEquals(session.csrfToken(), f.get("_csrf"))) {
+                    Http.html(exchange, 403, Layout.bare("CSRF",
+                            "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+                    return;
+                }
+                siteId = f.getOrDefault("site", "").trim();
+                provider = f.getOrDefault("provider", "").trim();
+                refusal = f.getOrDefault("refusal", "").trim();
+                String previousPlan = f.getOrDefault("previous_plan", "");
+
+                var site = agentPages.buildingSiteDirectory(agentId).find(siteId);
+                if (site.isEmpty()) {
+                    error = "Emplacement « " + siteId + " » introuvable dans le dernier relevé. "
+                            + "Rafraîchir le catalogue des emplacements.";
+                } else if (!site.get().hasAiBrief()) {
+                    // Refus à coût nul : pas un jeton dépensé pour un brief vide.
+                    error = "Cet emplacement n'a pas de brief architectural : il n'y a rien à "
+                            + "générer.";
+                } else {
+                    var demand = new com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand(
+                            site.get().id(), site.get().name(), site.get().facing(),
+                            site.get().aiBrief(),
+                            parseIntOr(f.get("max_width"), 19), parseIntOr(f.get("max_height"), 14));
+                    if (!demand.usable()) {
+                        error = "Demande incomplète : un brief et un emplacement sont nécessaires.";
+                    } else {
+                        proposal = refusal.isEmpty()
+                                ? aiBuildingStudio.propose(provider, demand)
+                                : aiBuildingStudio.correct(provider, demand, previousPlan, refusal);
+                        // L'audit retient le fournisseur, le modèle et le verdict — jamais la clé,
+                        // jamais le brief complet (contenu éditorial, et volumineux).
+                        audit.record(session.username(), "building.plan.generate",
+                                "site=" + site.get().id() + " provider=" + proposal.providerId()
+                                        + " model=" + proposal.model()
+                                        + " usage=" + proposal.usage()
+                                        + " correction=" + !refusal.isEmpty(),
+                                proposal.callOk() ? "OK" : "FAILED",
+                                proposal.callOk()
+                                        ? (proposal.hasPlan() ? "plan proposé"
+                                                : "aucun plan exploitable")
+                                        : proposal.error(),
+                                UUID.randomUUID().toString().substring(0, 8));
+                    }
+                }
+            }
+        }
+
+        var site = agentPages.buildingSiteDirectory(agentId).find(siteId);
+        if (site.isEmpty()) {
+            Http.html(exchange, 404, renderPage("Générer un bâtiment", session, "/buildings/sites",
+                    "<h1>Emplacement introuvable</h1><p class=\"muted\">Aucun emplacement « "
+                            + Http.esc(siteId) + " » dans le dernier relevé. "
+                            + "<a href=\"/buildings/sites\">Rafraîchir le catalogue</a>.</p>"));
+            return;
+        }
+        String body = BuildingPlanPages.render(session, agentId, site.get(),
+                aiBuildingStudio.usableProviders(), provider, proposal, canWrite, error, refusal);
+        Http.html(exchange, 200, renderPage("Générer un bâtiment", session, "/buildings/sites",
+                body, Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
     private void handleAiProviders(HttpExchange exchange) throws IOException {
         Optional<Session> maybe = requireSession(exchange);
         if (maybe.isEmpty()) {

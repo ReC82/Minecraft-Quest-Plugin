@@ -619,6 +619,92 @@ class BuildingSitesPageTest {
     }
 
     /** Fait aboutir un {@code building.site.list} avec le relevé ci-dessus, comme le ferait l'agent. */
+    // ---- Issue #94 : la page de génération ---------------------------------------------------
+
+    @Test
+    void theFicheLinksToTheGenerationOnlyWhenABriefExists() throws Exception {
+        start();
+        seedWith(SITES_WITH_BRIEF);
+        String withBrief = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(withBrief.contains("href=\"/buildings/plan?site=buildsite_0009\""),
+                "l'accès à la génération doit être proposé");
+        assertTrue(withBrief.contains("Générer un bâtiment avec l'IA</a>"),
+                "le libellé du lien de génération");
+
+        app.stop();
+        start();
+        seed(); // emplacements SANS brief
+        String withoutBrief = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+        assertFalse(withoutBrief.contains("href=\"/buildings/plan?site=buildsite_0001\""),
+                "sans brief, la génération n'est pas proposée : il n'y aurait rien à envoyer");
+        assertTrue(withoutBrief.contains("Rédiger le brief ci-dessus pour pouvoir générer"),
+                "et la raison est dite");
+    }
+
+    @Test
+    void theGenerationPageShowsTheSiteFactsAndTheBriefItWillSend() throws Exception {
+        start();
+        seedWith(SITES_WITH_BRIEF);
+        String page = get("/buildings/plan?site=buildsite_0009").body();
+
+        assertTrue(page.contains("Générer un bâtiment avec l"), page.substring(0, 200));
+        // Les faits de l'emplacement, pour que l'administrateur sache ce que l'IA recevra.
+        assertTrue(page.contains("Bibliothèque du Hub"), "le nom de l'emplacement");
+        assertTrue(page.contains("world_hub"), "le monde");
+        assertTrue(page.contains("784 / 67 / -693"), "la position");
+        assertTrue(page.contains("ouest"), "la façade, en français");
+        assertTrue(page.contains("le plan déclarera cette façade"),
+                "et le fait qu'elle est transmise à l'IA");
+        // Le brief est montré tel qu'il sera envoyé.
+        assertTrue(page.contains("Brief envoyé à l"), "section du brief");
+        assertTrue(page.contains("Grande salle de lecture"), "le brief réel");
+    }
+
+    @Test
+    void theGenerationPageSaysSoWhenNoBriefExists() throws Exception {
+        start();
+        seed();
+        String page = get("/buildings/plan?site=buildsite_0001").body();
+
+        assertTrue(page.contains("Aucun brief architectural sur cet emplacement"),
+                "l'absence de brief est dite");
+        assertFalse(page.contains("Demander un plan</button>"),
+                "et aucun appel payant n'est proposé");
+    }
+
+    @Test
+    void anUnknownSiteGivesAReadableNotFoundRatherThanAnError() throws Exception {
+        start();
+        seed();
+        HttpResponse<String> res = get("/buildings/plan?site=buildsite_9999");
+
+        assertEquals(404, res.statusCode());
+        assertTrue(res.body().contains("Emplacement introuvable"), res.body());
+        assertTrue(res.body().contains("Rafraîchir le catalogue"), "avec le geste qui corrige");
+    }
+
+    /**
+     * La garantie structurelle du lot : la page ne peut rien écrire. Son seul formulaire d'écriture
+     * pointe vers {@code /agents/action}, le chemin unique d'écriture du panel.
+     */
+    @Test
+    void theGenerationPageNeverWritesByItself() throws Exception {
+        start();
+        seedWith(SITES_WITH_BRIEF);
+        String page = get("/buildings/plan?site=buildsite_0009").body();
+
+        // Sans proposition, aucun formulaire de génération : on ne peut pas générer dans le vide.
+        assertFalse(page.contains("value=\"building.generate\""),
+                "aucune génération proposée avant qu'un plan existe");
+        // Dans ce test, aucun fournisseur d'IA n'est configuré : la page le DIT et ne propose
+        // aucun appel. C'est le bon comportement — pas un formulaire qui échouerait au clic.
+        assertTrue(page.contains("Aucun fournisseur d'IA utilisable"),
+                "l'absence de fournisseur est dite");
+        assertTrue(page.contains("href=\"/ai/providers\""), "avec le lien qui la corrige");
+        assertFalse(page.contains("action=\"/buildings/plan\""),
+                "et aucun formulaire de demande qui ne pourrait pas aboutir");
+    }
+
     // ---- Issue #94 : la note, le brief, et la fin de la troncature silencieuse ----------------
 
     /**

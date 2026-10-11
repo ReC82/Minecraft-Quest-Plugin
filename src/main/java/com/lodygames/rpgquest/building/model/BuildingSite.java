@@ -24,9 +24,22 @@ import java.time.Instant;
  * destinations de téléportation, où un demi-bloc compte ; ici un {@code REAL} n'exprimerait qu'une
  * précision inutilisable.</p>
  *
+ * <h2>Deux textes, deux usages (issue #94)</h2>
+ *
+ * <p>{@code description} est une <strong>note d'administrateur</strong> : une ligne ou deux, lue
+ * dans une liste, pour se rappeler à quoi sert cet emplacement. {@code aiBrief} est le
+ * <strong>brief architectural</strong> donné au générateur : plusieurs paragraphes décrivant
+ * matériaux, étages, pièces et contraintes.</p>
+ *
+ * <p>Les confondre était un vrai défaut d'usage : une note de liste ne peut pas s'étendre à
+ * plusieurs milliers de caractères sans rendre la liste illisible, et un brief ne peut pas tenir en
+ * 500 caractères sans perdre ce qui le rend utile. Les deux vivent donc séparément, avec leur
+ * propre borne et leur propre place à l'écran.</p>
+ *
  * @param id          identité stable, jamais recalculée ({@code buildsite_0001})
  * @param name        libellé humain, modifiable
- * @param description note libre de l'administrateur ; vide par défaut
+ * @param description note courte de l'administrateur ; vide par défaut
+ * @param aiBrief     brief architectural destiné à la génération ; vide par défaut
  * @param world       nom du monde Minecraft
  * @param x           ancre en X (bloc)
  * @param y           ancre en Y (bloc)
@@ -37,7 +50,7 @@ import java.time.Instant;
  *                    disponible — jamais inventé
  * @param createdAt   instant de création
  */
-public record BuildingSite(String id, String name, String description, String world,
+public record BuildingSite(String id, String name, String description, String aiBrief, String world,
                            int x, int y, int z, Facing facing, SiteStatus status,
                            String createdBy, Instant createdAt) {
 
@@ -47,13 +60,25 @@ public record BuildingSite(String id, String name, String description, String wo
     /** Longueur maximale acceptée pour un nom, côté serveur comme côté panel. */
     public static final int MAX_NAME_LENGTH = 64;
 
-    /** Longueur maximale acceptée pour une description. */
+    /** Longueur maximale acceptée pour une description — une note, pas un brief. */
     public static final int MAX_DESCRIPTION_LENGTH = 500;
+
+    /**
+     * Longueur maximale acceptée pour un brief architectural (issue #94).
+     *
+     * <p>Borne de <strong>sécurité</strong>, pas de confort : elle existe pour qu'un collage
+     * accidentel de plusieurs pages ne gonfle ni la base, ni le relevé de l'agent, ni le prompt
+     * envoyé au fournisseur d'IA. 6 000 caractères représentent une à deux pages de brief détaillé
+     * — très au-delà des quatre briefs réellement écrits à ce jour (385 à 490 caractères), et bien
+     * au-delà du brief de référence de la Bibliothèque du Hub (479).</p>
+     */
+    public static final int MAX_AI_BRIEF_LENGTH = 6000;
 
     public BuildingSite {
         id = id == null ? "" : id.trim();
         name = name == null || name.isBlank() ? DEFAULT_NAME : name.trim();
         description = description == null ? "" : description.trim();
+        aiBrief = aiBrief == null ? "" : aiBrief.trim();
         world = world == null ? "" : world.trim();
         facing = facing == null ? Facing.NORTH : facing;
         status = status == null ? SiteStatus.EMPTY : status;
@@ -70,25 +95,31 @@ public record BuildingSite(String id, String name, String description, String wo
     public static BuildingSite created(String id, String world, BuildingSiteAnchor anchor,
                                        Facing facing, String name, String createdBy,
                                        Instant createdAt) {
-        return new BuildingSite(id, name, "", world, anchor.x(), anchor.y(), anchor.z(),
+        return new BuildingSite(id, name, "", "", world, anchor.x(), anchor.y(), anchor.z(),
                 facing, SiteStatus.EMPTY, createdBy, createdAt);
     }
 
     /** Même emplacement, nom remplacé. */
     public BuildingSite withName(String newName) {
-        return new BuildingSite(id, newName, description, world, x, y, z, facing, status,
+        return new BuildingSite(id, newName, description, aiBrief, world, x, y, z, facing, status,
                 createdBy, createdAt);
     }
 
     /** Même emplacement, description remplacée. */
     public BuildingSite withDescription(String newDescription) {
-        return new BuildingSite(id, name, newDescription, world, x, y, z, facing, status,
+        return new BuildingSite(id, name, newDescription, aiBrief, world, x, y, z, facing, status,
+                createdBy, createdAt);
+    }
+
+    /** Même emplacement, brief architectural remplacé (issue #94). */
+    public BuildingSite withAiBrief(String newBrief) {
+        return new BuildingSite(id, name, description, newBrief, world, x, y, z, facing, status,
                 createdBy, createdAt);
     }
 
     /** Même emplacement, orientation corrigée — la position ne bouge pas. */
     public BuildingSite withFacing(Facing newFacing) {
-        return new BuildingSite(id, name, description, world, x, y, z, newFacing, status,
+        return new BuildingSite(id, name, description, aiBrief, world, x, y, z, newFacing, status,
                 createdBy, createdAt);
     }
 
@@ -99,8 +130,13 @@ public record BuildingSite(String id, String name, String description, String wo
      * a été collé, et revient à {@code EMPTY} parce que la zone a été restaurée.</p>
      */
     public BuildingSite withStatus(SiteStatus newStatus) {
-        return new BuildingSite(id, name, description, world, x, y, z, facing, newStatus,
+        return new BuildingSite(id, name, description, aiBrief, world, x, y, z, facing, newStatus,
                 createdBy, createdAt);
+    }
+
+    /** Un brief architectural est-il renseigné ? C'est la précondition d'une génération. */
+    public boolean hasAiBrief() {
+        return !aiBrief.isEmpty();
     }
 
     /** Position lisible, dans l'ordre où un administrateur la lit en jeu. */

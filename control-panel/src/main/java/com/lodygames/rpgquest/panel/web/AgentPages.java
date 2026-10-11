@@ -2227,8 +2227,19 @@ public final class AgentPages {
         dlRow(sb, "Créé le", Http.esc(site.createdAtLabel()));
         dlRow(sb, "Créé par", site.hasAuthor() ? Http.esc(site.createdBy())
                 : "<span class=\"muted\">inconnu</span>");
-        dlRow(sb, "Description", site.description().isEmpty()
+        dlRow(sb, "Note", site.description().isEmpty()
                 ? "<span class=\"muted\">aucune</span>" : Http.esc(site.description()));
+        // Issue #94 : le brief est long — la fiche en dit la taille et le replie, plutôt que de
+        // noyer la liste des métadonnées sous deux pages de texte.
+        if (site.hasAiBrief()) {
+            dlRow(sb, "Brief architectural",
+                    "<details><summary class=\"muted\">" + site.aiBrief().length()
+                            + " caractères — afficher</summary><p class=\"brief-text\">"
+                            + Http.esc(site.aiBrief()) + "</p></details>");
+        } else {
+            dlRow(sb, "Brief architectural",
+                    "<span class=\"muted\">aucun — à rédiger avant de générer un bâtiment</span>");
+        }
         sb.append("</dl>");
 
         sb.append(buildingPlacementSection(session, agentId, site, directory, library, preview,
@@ -2238,6 +2249,7 @@ public final class AgentPages {
             sb.append(detailSection("edit", "Modifier la fiche"));
             sb.append(buildingSiteRenameForm(session, agentId, site));
             sb.append(buildingSiteDescribeForm(session, agentId, site));
+            sb.append(buildingSiteBriefForm(session, agentId, site));
             sb.append(buildingSiteFacingForm(session, agentId, site));
         }
         if (canDelete) {
@@ -2764,20 +2776,99 @@ public final class AgentPages {
                 + Icons.icon("save") + "Renommer</button></div></form>";
     }
 
+    /**
+     * Note courte d'administrateur (issue #213), <strong>sans</strong> {@code maxlength}.
+     *
+     * <p>C'est la correction centrale de ce lot. L'attribut {@code maxlength="500"} faisait
+     * exactement ce que le ticket interdit : il coupait un collage au caractère 500,
+     * <strong>silencieusement</strong>, sans message ni compteur — le navigateur n'en produit
+     * aucun. L'administrateur voyait son brief s'arrêter au milieu d'un mot et n'avait aucun moyen
+     * de savoir pourquoi. Le champ accepte donc maintenant la frappe complète, affiche un compteur
+     * vivant, et c'est le <em>serveur</em> qui refuse au-delà de la borne, en disant de combien on
+     * dépasse. Mieux vaut un refus lisible qu'une coupure muette.</p>
+     */
     private String buildingSiteDescribeForm(Session session, String agentId,
                                             com.lodygames.rpgquest.panel.building.BuildingSiteView site) {
         return formStart(session, agentId, "building.site.describe", "/buildings/sites", "")
                 + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(site.id()) + "\">"
-                + "<div class=\"field\"><label>Description</label>"
-                + "<textarea name=\"description\" rows=\"2\" maxlength=\"500\" "
+                + "<div class=\"field\"><label for=\"desc-" + Http.esc(site.id())
+                + "\">Note d'administrateur</label>"
+                + "<textarea id=\"desc-" + Http.esc(site.id()) + "\" name=\"description\" rows=\"2\" "
+                + "data-charcount=\"500\" "
                 + "placeholder=\"Ex. : taverne deux étages, entrée au sud.\">"
                 + Http.esc(site.description()) + "</textarea>"
-                + "<p class=\"field-help\">Note libre, pour vous. Vider le champ efface la "
-                + "note.</p></div>"
+                + charCounter("desc-" + site.id(), site.description().length(), 500)
+                + "<p class=\"field-help\">Une ou deux phrases pour vous repérer dans la liste. "
+                + "Vider le champ efface la note. Pour décrire le bâtiment à construire, utiliser "
+                + "le <strong>brief architectural</strong> ci-dessous — il accepte un texte "
+                + "beaucoup plus long.</p></div>"
                 + mutationConsent("building.site.describe", "", null)
                 + "<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
-                + "type=\"submit\">" + Icons.icon("save") + "Enregistrer la description"
+                + "type=\"submit\">" + Icons.icon("save") + "Enregistrer la note"
                 + "</button></div></form>";
+    }
+
+    /**
+     * Brief architectural (issue #94) : le texte qui sert d'entrée à la génération.
+     *
+     * <p>Champ <strong>distinct</strong> de la note, et c'est volontaire. Les deux avaient le même
+     * champ et la même borne de 500 caractères : une note de liste ne peut pas s'étendre sur deux
+     * pages sans rendre la liste illisible, et un brief ne peut pas tenir en 500 caractères sans
+     * perdre les matériaux, les étages et les pièces — c'est-à-dire tout ce qui le rend utile.</p>
+     */
+    private String buildingSiteBriefForm(Session session, String agentId,
+                                         com.lodygames.rpgquest.panel.building.BuildingSiteView site) {
+        int max = com.lodygames.rpgquest.panel.building.BuildingSiteView.MAX_BRIEF;
+        StringBuilder sb = new StringBuilder(
+                formStart(session, agentId, "building.site.brief", "/buildings/sites", ""));
+        sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(site.id()))
+                .append("\">");
+        sb.append("<div class=\"field\"><label for=\"brief-").append(Http.esc(site.id()))
+                .append("\">Brief architectural</label>");
+        sb.append("<textarea id=\"brief-").append(Http.esc(site.id()))
+                .append("\" name=\"brief\" rows=\"10\" data-charcount=\"").append(max)
+                .append("\" placeholder=\"Matériaux, nombre d'étages, pièces, façade, style, "
+                        + "contraintes… Décrivez le bâtiment comme à un architecte.\">")
+                .append(Http.esc(site.aiBrief())).append("</textarea>");
+        sb.append(charCounter("brief-" + site.id(), site.aiBrief().length(), max));
+        sb.append("<p class=\"field-help\">Sert d'entrée à la génération du bâtiment. Mentionner "
+                + "les matériaux, le nombre d'étages, les pièces attendues, la façade et le style. "
+                + "L'orientation enregistrée (<code>").append(Http.esc(site.facingLabel()))
+                .append("</code>) et le nom de l'emplacement sont ajoutés automatiquement : "
+                        + "inutile de les répéter. Vider le champ efface le brief.</p></div>");
+        // La reprise d'une note déjà rédigée comme un brief : montrée, jamais appliquée d'office.
+        // Les quatre emplacements réels portent aujourd'hui leur brief dans la note, faute d'un
+        // autre champ — mais une migration qui déplace du texte déciderait à la place de
+        // l'administrateur, et se tromperait pour les notes réellement courtes.
+        if (site.aiBrief().isEmpty() && !site.description().isEmpty()) {
+            sb.append("<div class=\"alert alert-info npc-alert\">").append(Icons.icon("info"))
+                    .append("<div>Cet emplacement porte une note de ")
+                    .append(site.description().length())
+                    .append(" caractères et aucun brief. Si cette note est en réalité un brief "
+                            + "d'architecte, la recopier ici : elle n'a pas été déplacée "
+                            + "automatiquement, pour ne rien décider à votre place.</div></div>");
+        }
+        sb.append(mutationConsent("building.site.brief", "", null));
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
+                + "type=\"submit\">").append(Icons.icon("save"))
+                .append("Enregistrer le brief</button></div></form>");
+        return sb.toString();
+    }
+
+    /**
+     * Compteur de caractères d'un champ long (issue #94).
+     *
+     * <p>La valeur initiale est rendue <strong>par le serveur</strong> : le compteur est juste même
+     * si {@code panel.js} n'a pas encore tourné, ou pas du tout. {@code panel.js} ne fait ensuite
+     * que le tenir à jour pendant la frappe. Aucun JS en ligne — la CSP du panel l'interdit.</p>
+     */
+    private static String charCounter(String fieldId, int current, int max) {
+        boolean over = current > max;
+        return "<p class=\"field-help charcount" + (over ? " charcount-over" : "")
+                + "\" data-charcount-for=\"" + Http.esc(fieldId) + "\" data-charcount-max=\"" + max
+                + "\"><span class=\"cc-n\">" + current + "</span> / " + max + " caractères"
+                + (over ? " — <strong>dépassement de " + (current - max)
+                        + "</strong> : l'enregistrement sera refusé." : "") + "</p>";
     }
 
     /**

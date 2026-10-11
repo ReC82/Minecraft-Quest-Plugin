@@ -1406,6 +1406,55 @@
     if (was) { was.value = chosen; }
   }
 
+  /**
+   * Compteur de caractères des champs longs (issue #94).
+   *
+   * Le compteur est déjà juste au chargement : le serveur l'a rendu avec la longueur réelle de la
+   * valeur enregistrée. Ce module ne fait que le tenir à jour pendant la frappe — si panel.js ne
+   * charge pas, l'administrateur voit toujours un compteur correct, simplement figé.
+   *
+   * Aucun maxlength n'est posé ici, et c'est délibéré : maxlength coupe un collage sans rien dire,
+   * ce qui est exactement le défaut que ce lot corrige. On avertit, le serveur refuse.
+   */
+  function initCharCount() {
+    var fields = document.querySelectorAll("textarea[data-charcount], input[data-charcount]");
+    for (var i = 0; i < fields.length; i++) {
+      bindCharCount(fields[i]);
+    }
+  }
+
+  function bindCharCount(field) {
+    var id = field.getAttribute("id");
+    if (!id) { return; }
+    var note = document.querySelector('[data-charcount-for="' + cssEsc(id) + '"]');
+    if (!note) { return; }
+    var max = parseInt(note.getAttribute("data-charcount-max"), 10);
+    if (!(max > 0)) { return; }
+
+    function render() {
+      var n = field.value.length;
+      var over = n - max;
+      var cell = note.querySelector(".cc-n");
+      if (cell) { cell.textContent = String(n); }
+      note.classList.toggle("charcount-over", over > 0);
+      var tail = note.querySelector(".cc-tail");
+      if (over > 0) {
+        if (!tail) {
+          tail = document.createElement("span");
+          tail.className = "cc-tail";
+          note.appendChild(tail);
+        }
+        tail.innerHTML = " — <strong>dépassement de " + over
+          + "</strong> : l'enregistrement sera refusé.";
+      } else if (tail) {
+        tail.parentNode.removeChild(tail);
+      }
+    }
+
+    field.addEventListener("input", render);
+    render();
+  }
+
   /** Exécute un module en isolant sa panne : un module qui échoue n'empêche pas les autres. */
   function run(name, fn) {
     try { fn(); } catch (e) {
@@ -1427,6 +1476,7 @@
     run("initEditorForms", initEditorForms);
     run("initStyleFields", initStyleFields);
     run("initSubmitOnce", initSubmitOnce);
+    run("initCharCount", initCharCount);
     run("initColorPalette", initColorPalette);
     run("initOpsAnnounce", initOpsAnnounce);
     run("initOpsConsole", initOpsConsole);

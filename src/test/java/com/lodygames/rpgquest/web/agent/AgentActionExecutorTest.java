@@ -433,6 +433,47 @@ class AgentActionExecutorTest {
         assertEquals("Test hutte", actions.lastBuildSiteName);
     }
 
+    // ---- Issue #94 : le brief architectural --------------------------------------------------
+
+    @Test
+    void theBriefActionAcceptsALongTextAndRefusesBeyondTheBoundWithoutTruncating() {
+        // 2 000 caractères : très au-delà des 500 de la note, et accepté sans discussion.
+        String long2000 = "b".repeat(2000);
+        AgentActionOutcome ok = run(new AgentAction("b0", "building.site.brief",
+                Map.of("id", "buildsite_0009", "brief", long2000)));
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("buildsite_0009", actions.lastBuildSiteId);
+        assertEquals(2000, actions.lastBuildSiteBrief.length(),
+                "le brief doit arriver ENTIER jusqu'à la façade métier");
+
+        // Au-delà de la borne : REFUS, avec le dépassement chiffré. Jamais une coupure.
+        actions.lastBuildSiteBrief = null;
+        AgentActionOutcome refused = run(new AgentAction("b1", "building.site.brief",
+                Map.of("id", "buildsite_0009", "brief", "b".repeat(6001))));
+        assertEquals(AgentActionOutcome.REJECTED, refused.status());
+        assertTrue(refused.message().contains("6001"), refused.message());
+        assertTrue(refused.message().contains("Rien n'a été enregistré"), refused.message());
+        assertNull(actions.lastBuildSiteBrief,
+                "un brief refusé ne doit JAMAIS atteindre la façade métier");
+    }
+
+    @Test
+    void anEmptyBriefIsAValidValueAndAnInvalidSiteIdIsRefused() {
+        AgentActionOutcome cleared = run(new AgentAction("b2", "building.site.brief",
+                Map.of("id", "buildsite_0009", "brief", "")));
+        assertEquals(AgentActionOutcome.SUCCESS, cleared.status(), "vider le brief est valide");
+        assertEquals("", actions.lastBuildSiteBrief);
+
+        // Les identifiants réellement invalides. « buildsite_9 » n'en fait PAS partie : le motif
+        // du projet accepte 1 à 12 chiffres, et le vérifier ici reviendrait à inventer une règle.
+        for (String bad : new String[] {"", "buildsite_", "../etc/passwd", "village_tavern_01",
+            "buildsite_0001; DROP TABLE building_sites"}) {
+            assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("b3",
+                            "building.site.brief", Map.of("id", bad, "brief", "x"))).status(),
+                    "identifiant refusé : " + bad);
+        }
+    }
+
     /** Une description VIDE est une valeur valide : c'est le geste « effacer la note ». */
     @Test
     void buildingSiteDescribeAcceptsAnEmptyDescription() {
@@ -1434,6 +1475,7 @@ class AgentActionExecutorTest {
         String lastBuildSiteId;
         String lastBuildSiteName;
         String lastBuildSiteDescription;
+        String lastBuildSiteBrief;
         String lastBuildSiteFacing;
         String lastBuildSiteDeletedId;
 
@@ -1446,9 +1488,10 @@ class AgentActionExecutorTest {
             // qui a laissé passer un exécuteur qui ne les sérialisait pas du tout.
             return CompletableFuture.completedFuture(new BuildingSiteCatalogView(
                     List.of(new BuildingSiteSummary("buildsite_0001", "Taverne du village", "",
+                                    "Taverne deux étages, pierre et chêne, façade ouest.",
                                     "world_hub", 712, 67, -702, "WEST", "EMPTY", "Lody",
                                     "2026-10-08T18:00:00Z", true),
-                            new BuildingSiteSummary("buildsite_0007", "EmptySpot", "",
+                            new BuildingSiteSummary("buildsite_0007", "EmptySpot", "", "",
                                     "world_hub", 752, 67, -678, "SOUTH", "OCCUPIED", "LoDyMcFly",
                                     "2026-10-11T13:33:59Z", true)),
                     List.of("world_hub"), 2,
@@ -1623,6 +1666,13 @@ class AgentActionExecutorTest {
             lastBuildSiteId = id;
             lastBuildSiteName = name;
             return mutation("rename " + id);
+        }
+
+        @Override
+        public CompletableFuture<MutationResult> buildingSiteBrief(String id, String brief) {
+            lastBuildSiteId = id;
+            lastBuildSiteBrief = brief;
+            return mutation("brief " + id);
         }
 
         @Override

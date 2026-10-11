@@ -838,6 +838,7 @@ public final class BukkitAgentActions implements AgentActions {
             List<BuildingSiteSummary> rows = new ArrayList<>();
             for (com.lodygames.rpgquest.building.model.BuildingSite site : sites) {
                 rows.add(new BuildingSiteSummary(site.id(), site.name(), site.description(),
+                        site.aiBrief(),
                         site.world(), site.x(), site.y(), site.z(), site.facing().name(),
                         site.status().name(), site.createdBy(), site.createdAt().toString(),
                         loaded.contains(site.world())));
@@ -1159,6 +1160,26 @@ public final class BukkitAgentActions implements AgentActions {
                                 site.description().isEmpty()
                                         ? "Description de « " + site.id() + " » effacée."
                                         : "Description de « " + site.id() + " » enregistrée.",
+                                List.of()))
+                        .orElseGet(() -> MutationResult.of(false, "NOT_FOUND",
+                                "Aucun emplacement « " + safe(id) + " » : rien n'a été modifié.")))
+                .exceptionally(error -> MutationResult.of(false, "ERROR",
+                        "Échec de l'enregistrement : " + rootName(error)));
+    }
+
+    /**
+     * Issue #94 — brief architectural. Même forme que {@link #buildingSiteDescribe}, champ distinct :
+     * enregistrer un brief ne touche pas à la note, et inversement.
+     */
+    @Override
+    public CompletableFuture<MutationResult> buildingSiteBrief(String id, String brief) {
+        return buildingSiteService.brief(id, brief)
+                .thenApply(updated -> updated
+                        .map(site -> new MutationResult(true, "BRIEFED",
+                                site.aiBrief().isEmpty()
+                                        ? "Brief de « " + site.id() + " » effacé."
+                                        : "Brief de « " + site.id() + " » enregistré ("
+                                                + site.aiBrief().length() + " caractères).",
                                 List.of()))
                         .orElseGet(() -> MutationResult.of(false, "NOT_FOUND",
                                 "Aucun emplacement « " + safe(id) + " » : rien n'a été modifié.")))

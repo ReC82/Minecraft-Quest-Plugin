@@ -227,15 +227,35 @@ public final class BuildingSiteService {
      * nom à l'écran.
      */
     public CompletableFuture<Optional<BuildingSite>> rename(String id, String name) {
+        // Le NOM, lui, reste tronqué — et c'est une décision du projet, pas un oubli : un test
+        // dédié l'exige (« aTooLongNameIsTruncatedRatherThanRefused »), et le chemin de saisie en
+        // jeu passe par une enclume, où couper un libellé trop long vaut mieux que refuser la
+        // création d'un emplacement déjà cliqué. Les deux politiques coexistent donc volontairement,
+        // et la différence est que personne ne rédige un nom de 64 caractères sans s'en apercevoir,
+        // alors qu'un brief coupé au caractère 500 passe inaperçu.
         return mutate(id, site -> site.withName(trimTo(name, BuildingSite.MAX_NAME_LENGTH)),
                 updated -> repository.updateName(updated.id(), updated.name()));
     }
 
     public CompletableFuture<Optional<BuildingSite>> describe(String id, String description) {
         return mutate(id,
-                site -> site.withDescription(
-                        trimTo(description, BuildingSite.MAX_DESCRIPTION_LENGTH)),
+                site -> site.withDescription(requireAtMost(description,
+                        BuildingSite.MAX_DESCRIPTION_LENGTH, "Note")),
                 updated -> repository.updateDescription(updated.id(), updated.description()));
+    }
+
+    /**
+     * Remplace le <strong>brief architectural</strong> d'un emplacement (issue #94).
+     *
+     * <p>Distinct de {@link #describe} : la note sert à se repérer dans une liste, le brief sert à
+     * générer un bâtiment. Un brief vide est une valeur valide — c'est le geste « repartir de
+     * zéro », et le refuser rendrait l'effacement impossible.</p>
+     */
+    public CompletableFuture<Optional<BuildingSite>> brief(String id, String brief) {
+        return mutate(id,
+                site -> site.withAiBrief(requireAtMost(brief,
+                        BuildingSite.MAX_AI_BRIEF_LENGTH, "Brief")),
+                updated -> repository.updateAiBrief(updated.id(), updated.aiBrief()));
     }
 
     /** Corrige l'orientation. La position ne bouge pas : seule la façade change. */
@@ -323,8 +343,31 @@ public final class BuildingSiteService {
         });
     }
 
+    /**
+     * Exige un texte dans sa borne, et <strong>refuse</strong> au-delà (issues #94 / #213).
+     *
+     * <p><strong>Pourquoi un refus, et pas une coupure.</strong> Cette méthode tronquait
+     * silencieusement. Elle n'a jamais perdu de données en production — les deux frontières qui y
+     * mènent, la validation du panel et celle de l'exécuteur d'actions, refusent déjà un texte trop
+     * long avec un message lisible — mais c'était une perte de données <em>en attente d'un
+     * appelant distrait</em>. Le jour où un nouveau chemin oublierait de valider, le brief
+     * architectural d'un administrateur serait coupé au milieu d'une phrase, sans que rien ne le
+     * signale. Une exception est le bon comportement ici : elle ne peut pas être déclenchée par un
+     * utilisateur, et elle réveille immédiatement le développeur qui a oublié sa validation.</p>
+     */
+    /** Coupe à la borne. Réservé au <strong>nom</strong> — voir le commentaire de {@link #rename}. */
     private static String trimTo(String raw, int max) {
         String value = raw == null ? "" : raw.trim();
         return value.length() <= max ? value : value.substring(0, max).trim();
+    }
+
+    private static String requireAtMost(String raw, int max, String what) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.length() > max) {
+            throw new IllegalArgumentException(what + " trop long : " + value.length()
+                    + " caractères pour un maximum de " + max
+                    + ". L'appelant doit valider AVANT d'écrire — rien n'est tronqué ici.");
+        }
+        return value;
     }
 }

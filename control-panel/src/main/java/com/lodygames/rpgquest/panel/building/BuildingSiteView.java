@@ -19,12 +19,19 @@ import java.util.Locale;
  * @param worldLoaded le monde est-il chargé sur le serveur au moment du relevé ? Un emplacement
  *                    dans un monde déchargé reste valide : il faut le dire, pas le cacher
  */
-public record BuildingSiteView(String id, String name, String description, String world,
-                               int x, int y, int z, String facing, String status,
+public record BuildingSiteView(String id, String name, String description, String aiBrief,
+                               String world, int x, int y, int z, String facing, String status,
                                String createdBy, String createdAt, boolean worldLoaded) {
 
     /** Les quatre orientations proposées à l'écran, dans l'ordre de la boussole. */
     public static final List<String> FACINGS = List.of("NORTH", "EAST", "SOUTH", "WEST");
+
+    /**
+     * Borne du brief architectural (issue #94), identique côté plugin
+     * ({@code BuildingSite.MAX_AI_BRIEF_LENGTH}) et côté validation d'action. Trois seuils
+     * différents reviendraient à tronquer ou rejeter à des endroits imprévisibles.
+     */
+    public static final int MAX_BRIEF = 6000;
 
     private static final DateTimeFormatter STAMP =
             DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withLocale(Locale.FRANCE)
@@ -34,6 +41,7 @@ public record BuildingSiteView(String id, String name, String description, Strin
         id = id == null ? "" : id.trim();
         name = name == null ? "" : name;
         description = description == null ? "" : description;
+        aiBrief = aiBrief == null ? "" : aiBrief;
         world = world == null ? "" : world.trim();
         facing = facing == null ? "" : facing.trim().toUpperCase(Locale.ROOT);
         status = status == null ? "" : status.trim().toUpperCase(Locale.ROOT);
@@ -98,7 +106,18 @@ public record BuildingSiteView(String id, String name, String description, Strin
         return !createdBy.isEmpty();
     }
 
-    /** Texte sur lequel la recherche de la page porte : identifiant, nom, monde, position. */
+    /** Un brief architectural est-il renseigné ? C'est la précondition d'une génération. */
+    public boolean hasAiBrief() {
+        return !aiBrief.isEmpty();
+    }
+
+    /**
+     * Texte sur lequel la recherche de la page porte : identifiant, nom, monde, position, note.
+     *
+     * <p>Le <strong>brief</strong> en est volontairement absent. Il fait plusieurs milliers de
+     * caractères : l'inclure ferait correspondre presque n'importe quelle recherche à presque
+     * n'importe quel emplacement, et le filtre ne servirait plus à rien.</p>
+     */
     public String searchText() {
         return (id + " " + name + " " + world + " " + x + " " + y + " " + z + " "
                 + facingLabel() + " " + description).toLowerCase(Locale.ROOT);

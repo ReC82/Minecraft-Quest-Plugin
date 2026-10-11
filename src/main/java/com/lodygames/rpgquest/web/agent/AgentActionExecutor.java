@@ -89,6 +89,7 @@ public final class AgentActionExecutor {
                 case BUILDING_SITE_LIST -> buildingSiteList(action);
                 case BUILDING_SITE_RENAME -> buildingSiteRename(action);
                 case BUILDING_SITE_DESCRIBE -> buildingSiteDescribe(action);
+                case BUILDING_SITE_BRIEF -> buildingSiteBrief(action);
                 case BUILDING_SITE_FACING -> buildingSiteFacing(action);
                 case BUILDING_SITE_DELETE -> buildingSiteDelete(action);
                 case BUILDING_DEFINITION_LIST -> buildingDefinitionList(action);
@@ -1278,6 +1279,9 @@ public final class AgentActionExecutor {
                 row.put("id", s.id());
                 row.put("name", s.name());
                 row.put("description", s.description());
+                // Issue #94 : le brief traverse le relevé comme la description. Une clé oubliée ici
+                // ne casse rien — elle rend l'écran muet, et c'est précisément le défaut de #239.
+                row.put("aiBrief", s.aiBrief());
                 row.put("world", s.world());
                 row.put("x", s.x());
                 row.put("y", s.y());
@@ -1377,6 +1381,31 @@ public final class AgentActionExecutor {
                             + " caractères au plus)."));
         }
         return actions.buildingSiteDescribe(id, description)
+                .thenApply(r -> mutationOutcome(action, r, "id", id))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code building.site.brief} (#94) : le brief architectural, borne propre et refus explicite.
+     *
+     * <p>Un brief vide est une valeur valide — c'est « repartir de zéro ». Au-delà de la borne,
+     * l'action est <strong>refusée</strong> en disant de combien elle dépasse : rien n'est tronqué
+     * ni côté serveur, ni côté stockage. C'est précisément le défaut que ce lot corrige.</p>
+     */
+    private CompletableFuture<AgentActionOutcome> buildingSiteBrief(AgentAction action) {
+        String id = buildSiteId(action);
+        if (id == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « id » manquant ou invalide (forme « buildsite_0001 »)."));
+        }
+        String brief = action.param("brief") == null ? "" : action.param("brief").trim();
+        if (brief.length() > BUILD_SITE_BRIEF_MAX) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Brief trop long : " + brief.length() + " caractères pour un maximum de "
+                            + BUILD_SITE_BRIEF_MAX + ". Rien n'a été enregistré — raccourcir de "
+                            + (brief.length() - BUILD_SITE_BRIEF_MAX) + " caractères."));
+        }
+        return actions.buildingSiteBrief(id, brief)
                 .thenApply(r -> mutationOutcome(action, r, "id", id))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }
@@ -1852,6 +1881,12 @@ public final class AgentActionExecutor {
     /** Bornes de saisie, miroir de {@code BuildingSite} — revérifiées ici, jamais supposées. */
     private static final int BUILD_SITE_NAME_MAX = 64;
     private static final int BUILD_SITE_DESCRIPTION_MAX = 500;
+    /**
+     * Issue #94 — borne du brief architectural. Doit valoir exactement
+     * {@code BuildingSite.MAX_AI_BRIEF_LENGTH} : le panel, cette validation et le stockage refusent
+     * au même seuil, sinon l'un des trois rejetterait ce que les autres acceptent.
+     */
+    private static final int BUILD_SITE_BRIEF_MAX = 6000;
 
     private static String buildSiteId(AgentAction action) {
         String raw = firstNonBlank(action.param("id"), action.param("site_id"));

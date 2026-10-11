@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 30;
+    public static final int CURRENT_VERSION = 31;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -63,7 +63,9 @@ public final class SchemaMigrator {
             new SchemaMigration(28, "building_sites, building_site_ids", SchemaMigrator::applyV28),
             new SchemaMigration(29, "building_placements", SchemaMigrator::applyV29),
             new SchemaMigration(30, "cycle de vie des bâtiments : baseline, historique, version",
-                    SchemaMigrator::applyV30));
+                    SchemaMigrator::applyV30),
+            new SchemaMigration(31, "building_sites.ai_brief (brief architectural)",
+                    SchemaMigrator::applyV31));
 
     private SchemaMigrator() {
     }
@@ -1264,6 +1266,25 @@ public final class SchemaMigrator {
             statement.execute(dialect.ddl(
                     "CREATE INDEX IF NOT EXISTS idx_building_history_site "
                             + "ON building_placement_history (site_id, id)"));
+        }
+    }
+
+    private static void applyV31(Connection connection, SqlDialect dialect) throws SQLException {
+        // Brief architectural d'un emplacement (issues #94 / #213). STRICTEMENT ADDITIVE : la
+        // colonne « description » existante n'est ni modifiée, ni lue, ni recopiée.
+        //
+        // POURQUOI NE PAS RECOPIER description → ai_brief. La tentation est grande : les quatre
+        // emplacements réels portent aujourd'hui un vrai brief dans leur description, faute d'un
+        // autre champ. Mais une migration qui déplace du texte décide à la place de
+        // l'administrateur — et elle se tromperait pour les emplacements dont la description est
+        // réellement une note courte (« Emplacement test pour la première hutte générée. »).
+        // Les descriptions existantes sont donc PRÉSERVÉES telles quelles, et l'écran propose de
+        // recopier le texte vers le brief d'un seul geste, en le montrant d'abord.
+        if (!dialect.columnExists(connection, "building_sites", "ai_brief")) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(dialect.ddl(
+                        "ALTER TABLE building_sites ADD COLUMN ai_brief TEXT NOT NULL DEFAULT ''"));
+            }
         }
     }
 }

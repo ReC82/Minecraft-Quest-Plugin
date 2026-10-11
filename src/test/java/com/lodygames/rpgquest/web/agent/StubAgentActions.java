@@ -88,6 +88,11 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<MutationResult> buildingSiteBrief(String id, String brief) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<MutationResult> buildingSiteFacing(String id, String facing) {
         return unsupported();
     }

@@ -146,6 +146,13 @@ public enum AgentActionType {
     BUILDING_SITE_LIST("building.site.list"),
     BUILDING_SITE_RENAME("building.site.rename"),
     BUILDING_SITE_DESCRIBE("building.site.describe"),
+    /**
+     * Issue #94 : le <strong>brief architectural</strong> d'un emplacement, distinct de la note
+     * d'administrateur. Une note se lit dans une liste ; un brief décrit matériaux, étages, pièces
+     * et contraintes, et sert d'entrée à la génération. Les confondre imposait au brief la borne de
+     * la note (500 caractères), que le navigateur appliquait en tronquant la saisie sans le dire.
+     */
+    BUILDING_SITE_BRIEF("building.site.brief"),
     /** Corrige l'orientation cardinale d'un emplacement — jamais sa position. */
     BUILDING_SITE_FACING("building.site.facing"),
     /**

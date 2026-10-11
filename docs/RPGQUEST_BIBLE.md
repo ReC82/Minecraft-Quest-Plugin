@@ -1208,6 +1208,57 @@ une régénération **incrémente la version**.
 Le **plan source est conservé** dans la définition, sous la clé `plan`. Sans lui, un bâtiment généré
 serait un cul-de-sac : on ne pourrait plus que le refaire de zéro.
 
+#### Contrat architectural — l'audit refuse plutôt que de livrer (issue #94, lot A)
+
+La V1 de la Bibliothèque du Hub est passée en `SUCCESS` avec « prêt à être posé » alors qu'elle
+était **hermétiquement scellée** : 532 cellules de mur sur les quatre façades, **zéro ouverture**.
+Son étage était inaccessible (plancher 289/289 plein) et ses pignons ouverts à 62 %. Le générateur
+validait la géométrie et **rien de sémantique**.
+
+**L'audit porte sur la grille, jamais sur les intentions.** Un plan peut écrire une instruction
+nommée « porte » : seule la grille dit s'il y a un trou dans le mur. La V1 l'a prouvé — son
+percement visait `x=5` alors que le mur était en `x=0`, et il a vidé de l'air intérieur déjà vide.
+
+| Contrôle | Règle | Sévérité |
+|---|---|---|
+| `NO_ENTRANCE` | passage de 2 blocs de haut traversant la façade `front`, près du sol | bloquant |
+| `GLAZING_MISSING` / `GLAZING_ONE_SIDED` | ≥ 2 cellules vitrées, sur ≥ 2 façades | bloquant |
+| `NO_LIGHT` / `DARK_AREA` | ≥ 1 source utile, et aucune cellule praticable à plus de 8 blocs | bloquant |
+| `ENVELOPE_OPEN` | couverture **et pignons** fermés (tolérance : 4 cellules) | bloquant |
+| `LEVEL_UNREACHABLE` | chaque niveau atteignable depuis le rez-de-chaussée | bloquant |
+| `ENVELOPE_MONOTONOUS` / `MATERIAL_DOMINANT` | ≥ 3 matériaux d'enveloppe, aucun au-delà de 70 % | avertissement |
+| `FURNISHING_THIN` | intérieur meublé | **avertissement, jamais refus** |
+
+> [!IMPORTANT]
+> **Par franchissabilité, pas par nom de bloc.** Le contrôle d'entrée ne cherche pas un bloc
+> « porte » : il cherche deux cellules franchissables superposées qui traversent la façade. Un
+> percement brut et une vraie porte du lot B satisfont donc le même contrôle, **sans qu'une ligne de
+> l'audit change** — parce que c'est `BlockSemantics` qui porte le sens.
+
+**`BlockSemantics` est une donnée relue, pas une recherche de sous-chaîne.** Écrire
+`state.contains("glass")` se tromperait dans les deux sens : cela manquerait `glowstone`,
+`shroomlight`, `redstone_lamp` et `campfire` pour l'éclairage, et prendrait une bougie (niveau 3)
+pour une source utile. Le registre déclare donc des **rôles** — vitrage, lumière avec son niveau,
+franchissable, grimpable, mobilier — par identifiants exacts et par familles déclarées sur la
+grammaire des identifiants Minecraft. Un bloc **sans rôle déclaré est de la matière opaque** : c'est
+le cas normal (briques, planches) et l'audit ne lui prête aucune qualité.
+
+**Les seuils sont centralisés et dépendent du type de structure.** `ArchitecturalRules` porte un
+profil par `StructureKind` — `habitable`, `decoration`, `portal` — déclaré par le plan via `kind:`
+(`habitable` par défaut, le profil le plus exigeant). Exiger une porte et des fenêtres d'une
+fontaine n'aurait aucun sens, et serait le meilleur moyen de rendre l'audit inutilisable pour le
+décor (#244) et l'architecture de portail (#228), qui n'exige qu'un passage franchissable.
+
+**Le refus arrive avant toute écriture** — ni `.schem`, ni définition, ni entrée de bibliothèque —
+et son message est rédigé pour être **renvoyé tel quel au modèle** par la boucle de correction : il
+nomme la façade et sa coordonnée, chiffre les cellules, et dit l'erreur réelle (« vider l'air
+au-dessus du plancher ne le troue pas »). Les avertissements, eux, remontent avec le succès.
+
+> [!NOTE]
+> La primitive `gable` actuelle **ne peut pas** satisfaire le contrôle d'enveloppe : elle pose une
+> seule rangée par rang et ne remplit jamais ses pignons. C'est le défaut mesuré sur la V1, et c'est
+> au lot B (#250) de le corriger. Un test fige cette limite pour que sa correction se constate.
+
 #### Le parcours dans PlugAdmin
 
 Fiche de l'emplacement → **« Générer un bâtiment avec l'IA »** (visible seulement si un brief

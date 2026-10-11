@@ -111,8 +111,24 @@ public final class BuildingPlanYaml {
             steps.add(step.get());
         }
 
+        // Type de structure (issue #94, lot A). Optionnel, et HABITABLE par défaut : un plan qui
+        // ne dit rien est jugé comme un bâtiment, donc soumis aux règles les plus exigeantes. Un
+        // mot inconnu est REFUSÉ plutôt qu'interprété — « decor » n'est pas « decoration », et
+        // retomber silencieusement sur le défaut cacherait une faute de frappe.
+        String kindRaw = text(section, "kind");
+        StructureKind kind = StructureKind.HABITABLE;
+        if (kindRaw != null) {
+            Optional<StructureKind> parsed = StructureKind.of(kindRaw);
+            if (parsed.isEmpty()) {
+                problems.add("Type de structure inconnu pour « " + id + " » : « " + kindRaw
+                        + " ». Valeurs acceptées : habitable, decoration, portal.");
+                return Optional.empty();
+            }
+            kind = parsed.get();
+        }
+
         BuildingPlan plan = new BuildingPlan(id, name, sizeX, sizeY, sizeZ, front.get(),
-                anchorX, anchorY, anchorZ, steps);
+                anchorX, anchorY, anchorZ, steps, kind);
         Optional<String> invalid = plan.validate();
         if (invalid.isPresent()) {
             problems.add(invalid.get());

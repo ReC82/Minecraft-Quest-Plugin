@@ -23,6 +23,13 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Issue #94 — la génération produit-elle un <strong>artefact réel</strong> ?
  *
+ * <p><strong>Pourquoi le plan de référence est déclaré « décoration ».</strong> Ces tests portent
+ * sur le <em>pipeline</em> : les trois artefacts, le versionnage, le refus d'écraser. Le contrat
+ * architectural du lot A a ses propres tests ({@code ArchitecturalAuditTest},
+ * {@code ArchitecturalAuditV1RegressionTest}), et imposer ici une porte, des fenêtres et un
+ * éclairage à un plan dont ce n'est pas le sujet mélangerait deux préoccupations. Le refus
+ * architectural est vérifié explicitement plus bas.</p>
+ *
  * <p>C'est l'exigence explicite du ticket : « aucun faux succès : un résultat affiché comme généré
  * doit correspondre à un artefact réel ». Ces tests vérifient donc les trois choses qu'un succès
  * promet — le schematic écrit, la définition sur le disque, l'entrée dans la bibliothèque — et
@@ -42,6 +49,7 @@ class BuildingGeneratorTest {
     private static final String LIBRARY_PLAN = """
             id: hub_library
             name: "Bibliothèque du Hub"
+            kind: decoration
             front: WEST
             size:
               x: 9
@@ -224,6 +232,81 @@ class BuildingGeneratorTest {
         assertFalse(result.ok());
         assertTrue(result.message().contains("état de bloc refusé"), result.message());
         assertTrue(gateway.files.isEmpty());
+    }
+
+
+    // ---- Issue #94, lot A : le contrat architectural refuse AVANT toute écriture --------------
+
+    /**
+     * Un bâtiment habitable scellé est refusé, et <strong>rien n'est écrit</strong>.
+     *
+     * <p>C'est le défaut exact de la V1 : elle était passée en succès avec « prêt à être posé ».</p>
+     */
+    @Test
+    @DisplayName("Un bâtiment habitable sans porte ni fenêtre ni lumière est refusé, sans rien écrire")
+    void asealedHabitableBuildingIsRefusedWithoutWritingAnything() {
+        // Le même volume, mais déclaré habitable : le contrat s'applique.
+        String habitable = LIBRARY_PLAN.replace("kind: decoration\n", "");
+
+        BuildingGenerator.Result result = generator.generate(habitable, false);
+
+        assertFalse(result.ok());
+        assertEquals("ARCHITECTURE_REFUSED", result.code());
+        assertTrue(result.message().contains("Corrige PRÉCISÉMENT"),
+                "le refus doit être réutilisable par la boucle de correction : " + result.message());
+        assertTrue(result.message().contains("Rien n'a été écrit"), result.message());
+
+        // Et vérifié, pas supposé : aucun des trois artefacts n'existe.
+        assertTrue(gateway.files.isEmpty(), "aucun schematic");
+        assertFalse(Files.exists(buildings.resolve("hub_library.yml")), "aucune définition");
+        assertTrue(library.find("hub_library").isEmpty(), "rien dans la bibliothèque");
+    }
+
+    @Test
+    @DisplayName("Le refus nomme chacun des défauts, numérotés, pour que l'IA puisse corriger")
+    void therefusalNamesEachDefectForTheCorrectionLoop() {
+        String habitable = LIBRARY_PLAN.replace("kind: decoration\n", "");
+
+        String message = generator.generate(habitable, false).message();
+
+        // Ce plan a bien une porte (clear en x=0, dans le plan de la façade ouest) : l'entrée
+        // n'est donc PAS en cause, et l'audit ne doit pas l'inventer. Ce qui manque réellement :
+        for (String expected : new String[] {"Vitrages insuffisants", "Aucune source de lumière",
+            "PIGNONS"}) {
+            assertTrue(message.contains(expected), expected + " absent de : " + message);
+        }
+        assertFalse(message.contains("Aucune entrée"),
+                "l'audit ne doit pas reprocher une entrée qui existe : " + message);
+    }
+
+    @Test
+    @DisplayName("Les avertissements non bloquants remontent avec le succès, sans le compromettre")
+    void nonBlockingWarningsAreReportedAlongsideSuccess() {
+        // Une décoration strictement monomatière : elle passe (aucun contrôle d'habitabilité) mais
+        // doit être SIGNALÉE. Taire ce qu'on sait reviendrait à livrer sans le dire.
+        String monotonous = """
+                id: mur_simple
+                name: "Mur simple"
+                kind: decoration
+                front: NORTH
+                size:
+                  x: 5
+                  y: 3
+                  z: 2
+                steps:
+                  - op: box
+                    from: [0, 0, 0]
+                    to: [4, 2, 1]
+                    block: minecraft:stone_bricks
+                """;
+
+        BuildingGenerator.Result result = generator.generate(monotonous, false);
+
+        assertTrue(result.ok(), result.message());
+        assertTrue(result.effects().stream().anyMatch(e -> e.startsWith("⚠")),
+                "un avertissement d'audit doit remonter dans les effets : " + result.effects());
+        assertTrue(result.effects().stream().anyMatch(e -> e.contains("matériau")),
+                "et dire lequel : " + result.effects());
     }
 
     // ---- Moteur simulé -----------------------------------------------------------------------

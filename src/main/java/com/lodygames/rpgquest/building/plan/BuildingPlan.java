@@ -34,9 +34,14 @@ import java.util.regex.Pattern;
  * @param anchorX ancre locale, c'est-à-dire le point du plan qui se posera sur l'ancre du site
  * @param steps  les instructions, <strong>dans l'ordre</strong> : une instruction postérieure
  *               recouvre une antérieure sur la même cellule
+ * @param kind   ce que la structure prétend être (issue #94, lot A). Décide des règles qu'on a le
+ *               droit de lui appliquer : exiger une porte et des fenêtres d'une fontaine n'aurait
+ *               aucun sens. {@link StructureKind#HABITABLE} par défaut, parce que c'est le profil
+ *               le plus exigeant et donc le défaut le plus sûr
  */
 public record BuildingPlan(String id, String name, int sizeX, int sizeY, int sizeZ, Facing front,
-                           int anchorX, int anchorY, int anchorZ, List<PlanStep> steps) {
+                           int anchorX, int anchorY, int anchorZ, List<PlanStep> steps,
+                           StructureKind kind) {
 
     /** Forme d'un identifiant de bâtiment — la même que la bibliothèque attend. */
     public static final Pattern ID = Pattern.compile("[a-z0-9_]{3,48}");
@@ -63,6 +68,19 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
         name = name == null ? "" : name.trim();
         front = front == null ? Facing.NORTH : front;
         steps = List.copyOf(steps == null ? List.of() : steps);
+        kind = kind == null ? StructureKind.HABITABLE : kind;
+    }
+
+    /** Constructeur de compatibilité : un plan sans type déclaré est un bâtiment habitable. */
+    public BuildingPlan(String id, String name, int sizeX, int sizeY, int sizeZ, Facing front,
+                        int anchorX, int anchorY, int anchorZ, List<PlanStep> steps) {
+        this(id, name, sizeX, sizeY, sizeZ, front, anchorX, anchorY, anchorZ, steps,
+                StructureKind.HABITABLE);
+    }
+
+    /** Les seuils d'audit applicables à ce plan, déduits de son type. */
+    public ArchitecturalRules rules() {
+        return ArchitecturalRules.forKind(kind);
     }
 
     /**

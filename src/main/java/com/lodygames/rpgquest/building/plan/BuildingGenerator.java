@@ -110,6 +110,25 @@ public final class BuildingGenerator {
             return Result.failure("PLAN_INVALID", "Plan refusé : " + expansion.error());
         }
 
+        // ---- Contrat architectural (issue #94, lot A) -------------------------------------
+        // Audité sur la GRILLE, jamais sur les instructions : un plan peut écrire une instruction
+        // nommée « porte », seule la grille dit s'il y a un trou dans le mur. La V1 l'a prouvé —
+        // son percement visait x=5 alors que le mur était en x=0.
+        //
+        // Le refus arrive AVANT toute écriture : ni .schem, ni définition, ni entrée de
+        // bibliothèque. Et son message est rédigé pour être renvoyé tel quel au modèle par la
+        // boucle de correction qui existe déjà.
+        ArchitecturalAudit.Report audit = ArchitecturalAudit.audit(
+                expansion.blueprint(), plan.front(), plan.rules());
+        if (audit.refused()) {
+            return new Result(false, "ARCHITECTURE_REFUSED",
+                    "Plan refusé — contrat architectural non respecté ("
+                            + plan.kind().label() + "). " + audit.refusalMessage()
+                            + "\nRien n'a été écrit : ni schematic, ni définition.",
+                    plan.id(), "", plan.sizeX(), plan.sizeY(), plan.sizeZ(),
+                    expansion.solidCount(), 0, false, List.of());
+        }
+
         String schematic = plan.id() + ".schem";
         SchematicGateway.Outcome written = workshop.regenerate(schematic, expansion.blueprint());
         if (!written.ok()) {
@@ -152,8 +171,13 @@ public final class BuildingGenerator {
         logger.info("[building] bâtiment généré : " + plan.id() + " (" + plan.sizeX() + " × "
                 + plan.sizeY() + " × " + plan.sizeZ() + ", " + expansion.solidCount()
                 + " blocs, version " + version + ").");
-        List<String> effects = List.of("schematics/" + schematic,
-                "buildings/" + plan.id() + ".yml");
+        List<String> effects = new ArrayList<>(List.of("schematics/" + schematic,
+                "buildings/" + plan.id() + ".yml"));
+        // Les avertissements ne bloquent pas, mais les taire reviendrait à livrer un bâtiment dont
+        // on sait quelque chose sans le dire.
+        for (ArchitecturalFinding warning : audit.warnings()) {
+            effects.add("⚠ " + warning.message());
+        }
         return new Result(true, existing.isPresent() ? "REGENERATED" : "GENERATED",
                 "Bâtiment « " + plan.name() + " » généré : " + plan.sizeX() + " × " + plan.sizeZ()
                         + " × " + plan.sizeY() + " blocs d'emprise, " + expansion.solidCount()
@@ -162,7 +186,7 @@ public final class BuildingGenerator {
                                 ? "Une définition existante a été remplacée."
                                 : "Ajouté à la bibliothèque, prêt à être posé."),
                 plan.id(), schematic, plan.sizeX(), plan.sizeY(), plan.sizeZ(),
-                expansion.solidCount(), version, existing.isPresent(), effects);
+                expansion.solidCount(), version, existing.isPresent(), List.copyOf(effects));
     }
 
     /**

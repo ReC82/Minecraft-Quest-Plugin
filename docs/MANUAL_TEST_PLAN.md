@@ -4139,6 +4139,7 @@ le résumé de récompenses de TC-014).
 | TC-275 | Diagnostic du réseau de voyage dans PlugAdmin : les cinq sections #156 | ✅ | | **VALIDÉ 2026-10-11** par le propriétaire — 23 instances, 16 puis 17 bornes, couverture, fiche par borne, 7 manques visibles, Wild 7/0, masquage sous filtre |
 | TC-276 | Rattrapage ciblé d'une instance du Hub restée sans borne #156 | ✅ | | **VALIDÉ 2026-10-11** par le propriétaire — `minecraft:swamp@0,0`, SUCCESS/PAIRED, 16→17 bornes, 7→6 manques, borne physique et bouton fonctionnels en jeu |
 | TC-277 | Reprise après mort dans le Wild : Hub → borne → waypoint découvert #156 (PENDING — **dernier critère de #156**) | | | |
+| TC-278 | Filtre des instances du Hub : états, recherche, mobile #236 (PENDING) | | | |
 
 ---
 
@@ -5183,3 +5184,31 @@ pour cette décision — le plus rentable étant de rendre les Waystones du Wild
 sur 7 aujourd'hui), ce qui ne crée **aucune** structure.
 
 **Ce que ce TC ne couvre pas** : il ne valide aucun changement d'équilibrage, et n'en active aucun.
+
+---
+
+### TC-278 — Filtre des instances du Hub (issue #236, PENDING MANUAL VALIDATION)
+
+**Pourquoi ce test existe** : la demande vient du terrain, pendant TC-275 — « dommage qu'on ne puisse
+pas filtrer pour n'afficher que les instances sans borne ». Le point à vérifier n'est pas seulement
+que le filtre marche, mais qu'il **ne touche pas aux chiffres du réseau** : une moyenne calculée sur
+une sélection, présentée comme la couverture réelle, serait pire que pas de filtre du tout.
+
+**Durée** : 3 minutes. **Lecture seule**, aucune mutation.
+
+1.  `/travel` → **Rafraîchir** → descendre à « Instances connues du Hub ».
+2.  Cliquer **Sans borne**. Attendu : seules les instances en manque restent, le compteur passe à
+    **« 6/23 »**, et — le point du test — les sections « Réseau Hub — diagnostic », « Couverture du
+    Hub », « fiche par borne » et « Réseau du Wild » au-dessus sont **inchangées**.
+3.  Cliquer **Avec borne** : **« 17/23 »**, et plus aucune ligne « sans borne ».
+4.  Cliquer **Toutes** : retour à **« 23/23 »**.
+5.  Taper `swamp` puis **Filtrer**. Changer d'état : la recherche doit être **conservée**. Cliquer
+    **Effacer** : elle doit disparaître.
+6.  Recopier des coordonnées lues à l'écran, par exemple **`161,27`** : l'instance correspondante doit
+    sortir. Puis une valeur absurde (`zzz`) : un état vide explicite doit s'afficher, **en rappelant
+    que les statistiques portent sur le réseau complet**.
+7.  **Sur téléphone** : la barre de filtre et la recherche doivent passer à la ligne proprement, et un
+    clic sur un état doit revenir **à la section**, pas en haut de page.
+
+**Ce que ce TC ne couvre pas** : aucun changement de gameplay, aucune mutation, aucun réglage de
+densité — c'est un filtre d'affichage.

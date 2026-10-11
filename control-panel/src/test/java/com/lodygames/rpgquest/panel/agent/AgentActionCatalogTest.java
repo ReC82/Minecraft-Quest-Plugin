@@ -647,4 +647,18 @@ class AgentActionCatalogTest {
         assertTrue(empty.error().contains("auditer"),
                 "le refus doit parler d'audit, pas de génération : " + empty.error());
     }
+
+    @Test
+    @DisplayName("building.plan.preview est déclaré en lecture, comme l'audit")
+    void buildingPlanPreviewIsDeclaredAsARead() {
+        var spec = AgentActionCatalog.spec("building.plan.preview").orElseThrow();
+
+        assertFalse(spec.mutation(), "un aperçu n'écrit rien");
+        assertEquals(Permission.BUILDING_READ, spec.permission());
+
+        var empty = AgentActionCatalog.validate("building.plan.preview", Map.of());
+        assertFalse(empty.valid());
+        assertTrue(empty.error().contains("prévisualiser"),
+                "le refus doit parler d'aperçu : " + empty.error());
+    }
 }

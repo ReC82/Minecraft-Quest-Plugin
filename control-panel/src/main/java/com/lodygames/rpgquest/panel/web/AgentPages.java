@@ -1893,6 +1893,24 @@ public final class AgentPages {
                 .orElseGet(com.lodygames.rpgquest.panel.building.BuildingPlanVerdict::none);
     }
 
+    /**
+     * Le dernier aperçu 2D calculé par le serveur (issue #94, lot E).
+     *
+     * <p>Même règle que pour le verdict : on lit la dernière action <strong>quel que soit son
+     * statut</strong>. Un plan refusé remonte en {@code FAILED}, et c'est justement le cas où
+     * l'aperçu est le plus utile — une façade sans porte se constate sur une coupe en une seconde.</p>
+     */
+    public com.lodygames.rpgquest.panel.building.BuildingPlanPreview buildingPlanPreview(
+            String agentId) {
+        if (agentId == null || agentId.isBlank()) {
+            return com.lodygames.rpgquest.panel.building.BuildingPlanPreview.none();
+        }
+        return store.latestActionOfType(agentId, "building.plan.preview")
+                .flatMap(this::detailsOf)
+                .map(com.lodygames.rpgquest.panel.building.BuildingPlanPreview::from)
+                .orElseGet(com.lodygames.rpgquest.panel.building.BuildingPlanPreview::none);
+    }
+
     public com.lodygames.rpgquest.panel.building.BuildingSiteDirectory buildingSiteDirectory(
             String agentId) {
         if (agentId == null || agentId.isBlank()) {

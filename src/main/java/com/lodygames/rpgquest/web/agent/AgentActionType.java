@@ -188,6 +188,19 @@ public enum AgentActionType {
      * sur les bâtiments.</p>
      */
     BUILDING_PLAN_AUDIT("building.plan.audit"),
+    /**
+     * {@code building.plan.preview} (#94, lot E) : des <strong>coupes 2D</strong> du bâtiment que ce
+     * plan produirait, plus son verdict, et aucune écriture.
+     *
+     * <p>Les coupes sont prises sur la même grille que l'audit, après la même expansion. C'est la
+     * raison d'être de cette action : le ticket interdit un second moteur d'expansion dans le panel,
+     * parce qu'un aperçu dessiné là-bas montrerait ce que le panel <em>croit</em> que le plan décrit.
+     * La V1 a prouvé que les deux peuvent diverger de cinq blocs.</p>
+     *
+     * <p>L'aperçu est rendu même pour un plan refusé — c'est précisément quand on veut voir
+     * pourquoi.</p>
+     */
+    BUILDING_PLAN_PREVIEW("building.plan.preview"),
     /** Corrige l'orientation cardinale d'un emplacement — jamais sa position. */
     BUILDING_SITE_FACING("building.site.facing"),
     /**

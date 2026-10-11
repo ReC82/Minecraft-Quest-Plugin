@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.panel.web;
 import com.lodygames.rpgquest.panel.ai.AiBuildingStudio;
 import com.lodygames.rpgquest.panel.ai.AiProvider;
 import com.lodygames.rpgquest.panel.ai.BuildingCorrectionLoop;
+import com.lodygames.rpgquest.panel.building.BuildingPlanPreview;
 import com.lodygames.rpgquest.panel.building.BuildingPlanVerdict;
 import com.lodygames.rpgquest.panel.building.BuildingSiteView;
 import com.lodygames.rpgquest.panel.http.Http;
@@ -48,8 +49,10 @@ public final class BuildingPlanPages {
     public static String render(Session session, String agentId, BuildingSiteView site,
                                 List<AiProvider> providers, String chosen,
                                 AiBuildingStudio.Proposal proposal, boolean canWrite,
-                                String error, String refusal, BuildingPlanVerdict verdict) {
+                                String error, String refusal, BuildingPlanVerdict verdict,
+                                BuildingPlanPreview preview) {
         BuildingPlanVerdict seen = verdict == null ? BuildingPlanVerdict.none() : verdict;
+        BuildingPlanPreview drawn = preview == null ? BuildingPlanPreview.none() : preview;
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("box", "Générer un bâtiment avec l'IA",
                 "Le brief de l'emplacement est envoyé à l'IA, qui répond par un plan. "
@@ -85,6 +88,7 @@ public final class BuildingPlanPages {
         sb.append("<p class=\"brief-text\">").append(Http.esc(site.aiBrief())).append("</p>");
 
         sb.append(verdictCard(seen));
+        sb.append(previewCard(drawn));
 
         if (error != null && !error.isBlank()) {
             sb.append("<div class=\"alert alert-danger npc-alert\">").append(Icons.icon("warning"))
@@ -221,6 +225,7 @@ public final class BuildingPlanPages {
         sb.append("</form>");
 
         sb.append(auditForm(session, agentId, proposal.plan()));
+        sb.append(previewForm(session, agentId, proposal.plan()));
         sb.append(rawResponse(proposal));
         return sb.toString();
     }
@@ -250,6 +255,100 @@ public final class BuildingPlanPages {
         sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-secondary\" "
                 + "type=\"submit\">").append(Icons.icon("search"))
                 .append("Auditer ce plan</button></div></form>");
+        return sb.toString();
+    }
+
+    /**
+     * L'aperçu 2D : le geste gratuit qui montre ce qui sera réellement construit.
+     *
+     * <p>Les coupes sont calculées par le <strong>plugin</strong>. Le ticket l'exige, et la raison
+     * est la V1 : un aperçu dessiné par le panel depuis le texte du plan aurait reproduit l'erreur du
+     * modèle — un percement visant {@code x = 5} là où le mur est en {@code x = 0} — et aurait donc
+     * montré une porte qui n'existe pas.</p>
+     */
+    private static String previewForm(Session session, String agentId, String plan) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(detail("box", "4. Prévisualiser en coupes 2D — n'écrit rien"));
+        sb.append("<form method=\"post\" action=\"/agents/action\" class=\"actform\">");
+        sb.append(hidden("_csrf", session.csrfToken()));
+        sb.append(hidden("agent", agentId));
+        sb.append(hidden("type", "building.plan.preview"));
+        sb.append(hidden("plan", plan));
+        sb.append(hidden("return", "/buildings/plan"));
+        sb.append("<p class=\"field-help\">Le serveur construit le bâtiment <strong>en mémoire</strong> "
+                + "et en renvoie les coupes : un plan par niveau, les quatre façades, l'orientation "
+                + "de l'entrée, l'ancre et les dimensions mesurées. Les portes, fenêtres, escaliers "
+                + "et lumières y sont visibles. <strong>Aucun fichier n'est écrit.</strong></p>");
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-secondary\" "
+                + "type=\"submit\">").append(Icons.icon("box"))
+                .append("Prévisualiser ce plan</button></div></form>");
+        return sb.toString();
+    }
+
+    /** Les coupes du dernier aperçu, avec leur légende. */
+    private static String previewCard(BuildingPlanPreview preview) {
+        if (!preview.available() || !preview.hasSlices()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(detail("box", "Dernier aperçu 2D"));
+        sb.append("<dl class=\"npc-dl\">");
+        row(sb, "Dimensions mesurées", preview.sizeX() + " × " + preview.sizeZ() + " × "
+                + preview.sizeY() + " <span class=\"faint\">(x × z × y)</span> — "
+                + preview.blocks() + " blocs de matière");
+        row(sb, "Orientation de l'entrée", "<code class=\"tid\">" + Http.esc(preview.front())
+                + "</code> <span class=\"faint\">la façade « avant » de toutes les coupes</span>");
+        row(sb, "Ancre", Http.esc(preview.anchorLabel()));
+        if (!preview.codes().isEmpty()) {
+            row(sb, "Défauts bloquants", "<code class=\"tid\">"
+                    + Http.esc(String.join(", ", preview.codes())) + "</code>");
+        }
+        if (!preview.warnings().isEmpty()) {
+            StringBuilder warnings = new StringBuilder("<ul class=\"tight\">");
+            for (String warning : preview.warnings()) {
+                warnings.append("<li>").append(Http.esc(warning)).append("</li>");
+            }
+            row(sb, "Avertissements de l'audit", warnings.append("</ul>").toString());
+        }
+        sb.append("</dl>");
+
+        sb.append("<details class=\"npc-registry\" open><summary class=\"muted\">Légende"
+                + "</summary><dl class=\"npc-dl\">");
+        for (var entry : BuildingPlanPreview.LEGEND) {
+            row(sb, entry.getKey(), Http.esc(entry.getValue()));
+        }
+        sb.append("</dl></details>");
+
+        // Les élévations d'abord : c'est là qu'une porte manquante saute aux yeux, et c'est la
+        // question qu'on se pose en premier devant un bâtiment généré.
+        sb.append(slices("Façades (vues de l'extérieur)", preview.elevations()));
+        sb.append(slices("Plans par niveau (nord en haut)", preview.plans()));
+        return sb.toString();
+    }
+
+    /**
+     * Les coupes, en texte à espacement fixe.
+     *
+     * <p>Pas d'image, pas de JavaScript : la politique de sécurité du panel interdit le script en
+     * ligne, et un tableau de plusieurs milliers de cellules HTML serait lourd sans rien apprendre
+     * de plus. Du texte dans un {@code <pre>} se lit, se copie, et défile horizontalement sur un
+     * téléphone.</p>
+     */
+    private static String slices(String title, List<BuildingPlanPreview.Slice> all) {
+        if (all.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(detail("box", title));
+        for (BuildingPlanPreview.Slice slice : all) {
+            sb.append("<details class=\"npc-registry\"><summary class=\"muted\">")
+                    .append(Http.esc(slice.label()))
+                    .append(" <span class=\"faint\">").append(slice.width()).append(" × ")
+                    .append(slice.rows().size()).append("</span></summary>")
+                    .append("<p class=\"faint\">").append(Http.esc(slice.axes())).append("</p>")
+                    .append("<pre class=\"rpgq-code\">").append(Http.esc(slice.text()))
+                    .append("</pre></details>");
+        }
         return sb.toString();
     }
 

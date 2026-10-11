@@ -985,7 +985,8 @@ public final class PanelApp {
         }
         String body = BuildingPlanPages.render(session, agentId, site.get(),
                 aiBuildingStudio.usableProviders(), provider, proposal, canWrite, error, refusal,
-                agentPages.buildingPlanVerdict(agentId));
+                agentPages.buildingPlanVerdict(agentId),
+                agentPages.buildingPlanPreview(agentId));
         Http.html(exchange, 200, renderPage("Générer un bâtiment", session, "/buildings/sites",
                 body, Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }

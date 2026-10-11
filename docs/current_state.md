@@ -676,6 +676,66 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   l'instruction fautive, qu'un bouton de reprise renvoie au modèle avec le plan refusé.
   `PENDING MANUAL VALIDATION` : aucune génération n'a encore été lancée contre un vrai fournisseur
   d'IA, et aucun bâtiment généré n'a été regardé en jeu.
+- **Générateur V2 : audit architectural, primitives sémantiques et boucle budgétée** *(issue #94,
+  lots A/B/C/D/F, 2026-10-12)* — la V1 de la Bibliothèque du Hub a été **mesurée**, pas devinée : le
+  plan réel réextrait du `params_json` de l'action, ré-expansé par un modèle fidèle (2 210 blocs
+  attendus, 2 210 obtenus), puis compté. 532 cellules de mur sur les quatre façades, **zéro
+  ouverture** ; plancher de l'étage 289/289 plein ; 0 vitrage, 0 lumière, 0 porte, 0 échelle ;
+  `stone_bricks` à 55 %. Le percement de porte visait `x = 5` alors que la façade ouest est le plan
+  `x = 0`.
+  **Lot A — l'audit porte sur la grille expansée, jamais sur les intentions.** Un plan peut écrire
+  une instruction nommée « porte » : seule la grille dit s'il y a un trou dans le mur. Cinq refus
+  bloquants, deux avertissements, et des **seuils centralisés par type de structure**
+  (`ArchitecturalRules` × `StructureKind` : `habitable`, `decoration`, `portal`) — exiger une porte
+  d'une fontaine rendrait l'audit inutilisable pour le décor (#244) et les portails (#228). Le sens
+  des blocs est porté par un **registre déclaré** (`BlockSemantics`), pas par une recherche de
+  sous-chaîne : `contains("glass")` manquerait `glowstone` et `shroomlight`, et prendrait une bougie
+  de niveau 3 pour une source utile. Le contrôle d'entrée cherche **deux cellules franchissables
+  superposées**, donc un percement brut et une vraie porte le satisfont sans qu'une ligne de l'audit
+  change.
+  **Lots B/C/D — le vocabulaire était le vrai fautif.** Avec cinq instructions de volume, « une
+  porte » ne pouvait s'écrire qu'en calculant soi-même une coordonnée de façade. Les primitives
+  `door`, `window`, `light`, `stair_run`, `ladder` et `pillars` retirent ce calcul au modèle : il dit
+  « une porte sur `facade: FRONT`, décalage 4 », le moteur calcule coordonnée, orientation, les deux
+  moitiés, la charnière **et le dégagement intérieur**. `BlockStates` a été **extrait des blueprints
+  Java qui fonctionnent** (`TestHutBlueprint`, `TestWatchtowerBlueprint`) plutôt que réinventé.
+  `BlockStateRules` refuse enfin `oak_stairs[face=bottom]` — qui passait, parce que seule la *forme*
+  était vérifiée — en nommant la bonne propriété (`half`).
+  **Découverte qui corrige le diagnostic** : le plan V1 **inchangé**, ré-expansé par le moteur
+  corrigé, produit **2 368 blocs au lieu de 2 210**. Les 158 blocs d'écart sont les triangles de
+  pignon que `gable` ne remplissait jamais. L'un des cinq défauts constatés en jeu était donc
+  imputable au **moteur**, pas au modèle ; il en reste quatre. Les tests de régression de la V1 le
+  constatent explicitement.
+  **Lot F — juger avant d'écrire.** `building.plan.audit` (permission **lecture**) rend le verdict
+  d'un plan sans écrire un octet : même lecture, même expanseur, même audit que la génération, mais
+  ni `.schem`, ni définition, ni entrée de bibliothèque. Avant lui, connaître le verdict du serveur
+  imposait de générer. Le prompt enseigne les primitives, la convention de façade et le contrat en
+  **sept cases à cocher** — les sept réellement contrôlés, deux tests figent l'alignement. La reprise
+  transmet au modèle le motif réel **et les chiffres mesurés** (« cellules vitrées : 0 » détrompe un
+  modèle convaincu d'avoir posé des fenêtres). `BuildingCorrectionLoop` borne le budget à `[1, 5]`
+  **par construction**, compte un appel échoué comme dépensé, n'enchaîne qu'en mode explicitement
+  automatique, et s'arrête sur un plan qui ne bouge plus ou un agent injoignable.
+  **Lot E — un aperçu qui ne peut pas mentir.** `building.plan.preview` (permission **lecture**) rend
+  les coupes 2D du bâtiment : un plan par niveau (nord en haut, niveaux vides omis sauf le
+  rez-de-chaussée), les **quatre façades** vues de l'extérieur avec l'avant désigné comme l'entrée,
+  les dimensions mesurées, l'ancre avec la convention qui s'applique, et les avertissements de
+  l'audit. Les coupes sont calculées **par le plugin** — exigence du ticket : un aperçu dessiné par
+  le panel depuis le texte du plan aurait reproduit l'erreur du modèle et montré une porte qui
+  n'existe pas. Rendu en **caractères** (`#` mur, `o` vitrage, `+` franchissable, `/` marche,
+  `H` échelle, `*` lumière, `f` mobilier, `.` vide), issus du même registre `BlockSemantics` que
+  l'audit : pas d'image, pas de JavaScript (la CSP du panel interdit le script en ligne), et un
+  texte à espacement fixe qui défile sur un téléphone. **L'aperçu est rendu même pour un plan
+  refusé**, puisque c'est le cas où il sert. L'isométrie légère, mentionnée comme option, n'est pas
+  faite — les coupes orthogonales répondent aux questions qu'on se pose réellement.
+  **Un seul chemin d'examen** : inspection, aperçu et génération partagent la même lecture, la même
+  expansion et le même audit (`BuildingGenerator.examine`). Trois implémentations finiraient par
+  diverger, et montreraient un aperçu qui ne correspond pas à ce qui sera construit.
+  **Limites assumées** : l'enchaînement automatique des corrections n'est **pas branché** — le panel
+  parle au plugin par scrutation, sans appel synchrone, et un worker de fond est une décision
+  structurante laissée à l'arbitrage. Le moteur de boucle est écrit et testé, prêt à être branché.
+  `PENDING MANUAL VALIDATION` : **aucun appel payant n'a été émis** — toute la chaîne est éprouvée
+  sur des modèles scriptés. L'enchaînement réel prompt → plan → audit → correction, et le rendu en
+  jeu d'une V2, restent à valider. Le bâtiment V1 de `buildsite_0012` n'a **pas** été touché.
 - **UX des dialogues : le Garde, et les boutons tronqués** *(issue #238, 2026-10-11)* — retour réel
   en jeu. Le Garde portait **sept** `START_QUEST` directement sur l'accueil (le rapport #235 n'en
   avait identifié que trois) : « J'accepte la quête » démarrait une quête sans dire laquelle, ni

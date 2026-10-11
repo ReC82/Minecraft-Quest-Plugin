@@ -912,6 +912,38 @@ public final class BukkitAgentActions implements AgentActions {
                 List.of(), List.of(), false, Map.of()));
     }
 
+    @Override
+    public CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml) {
+        if (buildingGenerator == null) {
+            return done(new BuildingPlanPreviewView(false, "UNAVAILABLE",
+                    "La génération de bâtiments n'est pas disponible sur ce serveur.",
+                    "", "", 0, 0, 0, 0, 0, 0, 0, "", List.of(), List.of(), List.of(), List.of()));
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            var exam = buildingGenerator.preview(planYaml);
+            var v = exam.verdict();
+            var p = exam.preview();
+            return new BuildingPlanPreviewView(v.ok(), v.code(), v.message(), v.buildingId(),
+                    v.kind(), v.sizeX(), v.sizeY(), v.sizeZ(), v.blocks(),
+                    p == null ? 0 : p.anchorX(), p == null ? 0 : p.anchorY(),
+                    p == null ? 0 : p.anchorZ(), p == null ? "" : p.front(),
+                    v.codes(), v.warnings(),
+                    slices(p == null ? List.of() : p.plans()),
+                    slices(p == null ? List.of() : p.elevations()));
+        }).exceptionally(error -> new BuildingPlanPreviewView(false, "ERROR",
+                "Échec de l'aperçu du plan : " + rootName(error), "", "", 0, 0, 0, 0, 0, 0, 0, "",
+                List.of(), List.of(), List.of(), List.of()));
+    }
+
+    private static List<BuildingSliceView> slices(
+            List<com.lodygames.rpgquest.building.plan.PlanPreview.Slice> source) {
+        List<BuildingSliceView> out = new ArrayList<>(source.size());
+        for (var slice : source) {
+            out.add(new BuildingSliceView(slice.id(), slice.label(), slice.axes(), slice.rows()));
+        }
+        return out;
+    }
+
     /**
      * Les mesures, à plat.
      *

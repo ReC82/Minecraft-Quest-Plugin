@@ -557,6 +557,53 @@ public interface AgentActions {
     }
 
     /**
+     * Les coupes 2D du bâtiment que ce plan produirait (issue #94, lot E), avec son verdict.
+     *
+     * <p>N'écrit rien. Les coupes viennent de la même expansion que l'audit : le panel ne doit
+     * jamais redessiner un plan lui-même, sous peine de montrer un aperçu qui ne correspond pas à
+     * ce que le serveur construira.</p>
+     */
+    CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml);
+
+    /**
+     * Une coupe, telle qu'elle remonte au panel.
+     *
+     * @param axes  ce que parcourent colonnes et lignes, pour légender les bords de la grille
+     * @param rows  la grille, une chaîne par ligne, toutes de même longueur
+     */
+    record BuildingSliceView(String id, String label, String axes, List<String> rows) {
+        public BuildingSliceView {
+            rows = List.copyOf(rows == null ? List.of() : rows);
+        }
+    }
+
+    /**
+     * L'aperçu complet, avec le verdict qui l'accompagne.
+     *
+     * <p>Le verdict voyage avec les coupes, et non dans un second appel : un aperçu séparé de ses
+     * avertissements laisserait l'administrateur juger à l'œil un bâtiment dont le serveur sait
+     * déjà quelque chose.</p>
+     */
+    record BuildingPlanPreviewView(boolean ok, String code, String message, String buildingId,
+                                   String kind, int sizeX, int sizeY, int sizeZ, int blocks,
+                                   int anchorX, int anchorY, int anchorZ, String front,
+                                   List<String> codes, List<String> warnings,
+                                   List<BuildingSliceView> plans,
+                                   List<BuildingSliceView> elevations) {
+        public BuildingPlanPreviewView {
+            code = code == null ? "" : code;
+            message = message == null ? "" : message;
+            buildingId = buildingId == null ? "" : buildingId;
+            kind = kind == null ? "" : kind;
+            front = front == null ? "" : front;
+            codes = List.copyOf(codes == null ? List.of() : codes);
+            warnings = List.copyOf(warnings == null ? List.of() : warnings);
+            plans = List.copyOf(plans == null ? List.of() : plans);
+            elevations = List.copyOf(elevations == null ? List.of() : elevations);
+        }
+    }
+
+    /**
      * Corrige l'orientation cardinale d'un emplacement. <strong>Jamais la position</strong> : se
      * tromper de façade est courant, déplacer un point d'ancrage ne se fait pas depuis un écran.
      */

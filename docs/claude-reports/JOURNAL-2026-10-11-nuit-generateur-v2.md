@@ -115,7 +115,7 @@ sans aucune couverture), car un bâtiment sans toit du tout n'a aucune face « s
 
 Tests écrits : `SemanticPrimitivesTest`, `FacadeTest`, `BlockStateRulesTest`.
 
-## 02:4x — Lots B/C/D validés, et une correction du diagnostic de la V1
+## 00:56 — Lots B/C/D validés, et une correction du diagnostic de la V1
 
 `./gradlew :test --tests '*building.*'` → **BUILD SUCCESSFUL**, 81 tests dans
 `building.plan`, 0 échec.
@@ -158,3 +158,152 @@ conformément à l'interdiction explicite. Mais si quelqu'un relance une génér
 depuis ce plan, l'empreinte du schematic changera, et le mécanisme de version de
 #234 signalera à juste titre le bâtiment placé comme « obsolète ». C'est le
 comportement souhaitable : la correction est visible, pas silencieuse.
+
+## 01:11 — Lot F (#254) : le prompt, l'inspection à blanc et la boucle de correction
+
+Trois pièces, dont une qui n'était pas prévue au découpage et sans laquelle les
+deux autres ne tenaient pas.
+
+### 1. L'inspection à blanc — la pièce manquante
+
+En écrivant la boucle de correction, je me suis heurté à un fait simple : **le seul
+moyen de connaître le verdict du serveur était de générer**. Donc d'écrire un
+`.schem`, une définition et une entrée de bibliothèque… pour apprendre que le plan
+était mauvais, puis recommencer en cochant « remplacer ». Une boucle de correction
+bâtie là-dessus laisserait derrière elle une succession de bâtiments ratés.
+
+D'où `BuildingGenerator.inspect(planYaml)` et l'action `building.plan.audit` :
+même lecture, même expanseur, même audit, **aucune écriture**. Déclarée en
+`BUILDING_READ` dans le catalogue, parce qu'elle n'écrit rien — et c'est ce qui
+permet de juger un plan autant de fois qu'il le faut.
+
+Le refus est rédigé **une seule fois** (`refusalText`) et partagé par la génération
+et l'inspection : deux textes divergents apprendraient deux choses différentes du
+même refus. Un test le vérifie en comparant les deux messages caractère par
+caractère.
+
+Les cinq maillons ont été câblés et **testés** — `AgentActionType`,
+`AgentActions`, `BukkitAgentActions`, le `switch` de `AgentActionExecutor`,
+`AgentActionCatalog`. C'est la leçon de #239 : une action absente du dispatch ne
+produit aucune erreur, elle disparaît simplement.
+
+### 2. Le prompt
+
+Le diagnostic du lot A disait que le prompt n'était pas le fautif principal — le
+**vocabulaire** l'était. Le prompt enseigne donc maintenant les primitives du
+lot B, et surtout il **interdit explicitement au modèle de calculer** :
+
+> Tu conçois la structure. Le moteur calcule les éléments architecturaux fiables.
+
+Avec la convention de façade (`FRONT`/`BACK`/`LEFT`/`RIGHT`, « JAMAIS une
+coordonnée »), le contrat architectural en sept cases à cocher, et un exemple
+complet qui respecte son propre contrat — un test vérifie ce dernier point, parce
+qu'un exemple qui enfreindrait la consigne qu'il illustre serait la pire des
+consignes.
+
+Deux tests figent l'alignement prompt ↔ serveur : les sept points énoncés sont
+exactement les sept contrôlés. Un contrat divergent produirait des refus que le
+prompt n'annonçait pas, et c'est ce qui rend une boucle de correction frustrante
+*et* coûteuse.
+
+### 3. La boucle, et son budget
+
+`BuildingCorrectionLoop` reçoit deux fonctions — interroger le modèle, faire
+auditer le plan — et ne connaît ni HTTP, ni Minecraft. Elle est donc éprouvée
+**entièrement hors ligne, sans dépenser un jeton**, alors que c'est la pièce dont
+une erreur coûte de l'argent réel. Quatorze tests.
+
+Les garde-fous, et pourquoi :
+
+- le budget est **borné à la construction** (`[1, 5]`) : aucun formulaire ne peut
+  demander vingt tentatives ;
+- un appel qui **échoue est quand même compté** : chez certains fournisseurs il est
+  déjà facturé, et compter autrement ferait du budget une illusion ;
+- le **mode automatique est explicite** ; par défaut la boucle s'arrête au premier
+  refus et rend la main, motif sous les yeux. Personne ne doit découvrir une
+  dépense ;
+- un modèle qui **ressert le même plan** interrompt la boucle plutôt que d'être
+  repayé ;
+- un **agent injoignable n'est pas un refus** : relancer le modèle parce que le
+  serveur n'a pas répondu serait payer pour une information qu'on n'a pas obtenue.
+
+### Une limite que je ne franchis pas seul
+
+Le panel communique avec le plugin **par scrutation** : il met une action en file,
+le serveur la consomme et poste le résultat. Il n'existe aucun appel synchrone.
+L'enchaînement automatique de plusieurs tentatives exigerait donc un **worker de
+fond côté panel**, qui attendrait les verdicts entre deux appels au modèle. C'est
+une décision structurante — un nouveau fil d'exécution, un nouvel état persistant,
+et des appels payants déclenchés sans personne devant l'écran.
+
+J'ai donc livré l'**itération au clic** : « Auditer ce plan » (gratuit, n'écrit
+rien), le verdict affiché avec ses mesures, puis « Demander un plan corrigé » qui
+transmet au modèle le motif réel **et les chiffres mesurés sur la grille**. Le
+moteur de boucle complet est écrit et testé, prêt à être branché sur un worker le
+jour où ce choix sera arbitré.
+
+### Aucune génération payante cette nuit
+
+Conformément à la consigne, **aucun appel à un fournisseur d'IA n'a été émis**.
+Toute la chaîne est éprouvée sur des modèles scriptés. L'enchaînement réel
+prompt → plan → audit → correction reste donc `PENDING MANUAL VALIDATION`.
+
+## 01:27 — Lot E (#253) implémenté, et une erreur de ma part rattrapée
+
+### Lot E — l'aperçu 2D
+
+`PlanPreview` prend des coupes sur la **grille expansée** : un plan par niveau
+(nord en haut, niveaux vides omis sauf le rez-de-chaussée), les quatre façades
+vues de l'extérieur, l'ancre, les dimensions mesurées et les avertissements de
+l'audit. Nouvelle action `building.plan.preview`, déclarée en **lecture**.
+
+Les coupes sont calculées par le **plugin**, comme le ticket l'exige. Un test le
+justifie sur un plan scellé en miniature : un aperçu dessiné par le panel depuis
+le texte du plan aurait reproduit l'erreur du modèle — percement en `x = 5`, mur
+en `x = 0` — et aurait montré une porte qui n'existe pas.
+
+`BuildingGenerator.examine` devient le **chemin unique** : inspection, aperçu et
+génération partagent la même lecture, la même expansion et le même audit.
+
+### Deux désalignements prompt ↔ moteur, trouvés par relecture
+
+Avant de lancer la validation, j'ai relu ligne à ligne les clés que le prompt
+annonce contre celles que le lecteur et les primitives acceptent réellement.
+Deux écarts :
+
+- `pillars` : le prompt annonçait « spacing (défaut 3) », le moteur applique 4
+  avec un minimum de 2 ;
+- `ladder` : le prompt annonçait une clé `offset` que la primitive **ignore** —
+  elle se place par `from`/`to`, la façade ne servant qu'à l'orientation. Un
+  modèle écrivant `offset: 3` aurait obtenu une échelle ailleurs, sans erreur.
+
+Corrigés. C'est exactement le genre de divergence que je reproche à un contrat
+mal aligné, et aucun test ne l'aurait attrapée : les deux côtés étaient
+cohérents avec eux-mêmes.
+
+### L'erreur : j'ai commité le contenu local du propriétaire
+
+`CrystalHuntIntegrationTest` a échoué dans le worktree **propre**, ce qui n'avait
+aucune raison d'arriver. Cause trouvée immédiatement : le commit `165f9d0` a été
+préparé avec `git add -A src`, qui a balayé six fichiers de contenu appartenant
+au propriétaire — cinq nouveaux (`mira_cartographer`, `jeff_skeleton`,
+`lily_pumpkin`, `st0_meet_people`, `lily_memories`) et la modification locale de
+`crystal_hunt.yml`, dont la version du propriétaire ne satisfait pas les attentes
+du test d'intégration.
+
+C'est une consigne explicite de la mission que j'ai enfreinte. Rattrapage :
+
+1. les six fichiers sauvegardés hors du dépôt, avec empreintes ;
+2. `git rm --cached` sur les cinq nouveaux — ils redeviennent non suivis, et
+   `git rm --cached` ne touche pas le disque, donc ils n'ont jamais bougé ;
+3. `crystal_hunt.yml` ramené à sa version de `40e8176` dans l'historique, puis la
+   version du propriétaire restaurée dans l'arbre de travail ;
+4. commit `8b447be`, **additif**. Historique non réécrit : la correction se voit,
+   ce qui vaut mieux qu'un historique maquillé.
+
+Vérifié après coup : `crystal_hunt.yml` porte à nouveau l'empreinte
+`9de7de59…` du propriétaire, et les cinq autres sont bien en `??`. Rien de perdu.
+
+Le build en cours était invalidé par ce fichier : arrêté, et relancé après
+correction. Désormais je mets en scène des **chemins explicites**, jamais
+`git add -A`.

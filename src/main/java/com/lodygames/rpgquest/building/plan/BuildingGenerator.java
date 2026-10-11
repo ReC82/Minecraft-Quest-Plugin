@@ -125,20 +125,56 @@ public final class BuildingGenerator {
      * premier et ferait passer pour bon un plan que la génération refuse.</p>
      */
     public Verdict inspect(String planYaml) {
+        return examine(planYaml).verdict();
+    }
+
+    /**
+     * L'aperçu du bâtiment que ce plan produirait (issue #94, lot E), avec son verdict.
+     *
+     * <p>Les coupes sont prises sur la <strong>même grille</strong> que l'audit, après la même
+     * expansion. C'est la raison d'être de cette méthode : un aperçu dessiné ailleurs montrerait ce
+     * qu'on <em>croit</em> que le plan décrit, et la V1 a prouvé que les deux peuvent divergier de
+     * cinq blocs. Les avertissements accompagnent donc l'aperçu, et non un second appel.</p>
+     *
+     * <p>N'écrit rien, comme {@link #inspect(String)}.</p>
+     */
+    public Examination preview(String planYaml) {
+        return examine(planYaml);
+    }
+
+    /** Un plan examiné : son verdict, et l'aperçu s'il a pu être construit. */
+    public record Examination(Verdict verdict, PlanPreview.Preview preview) {
+
+        /** Y a-t-il des coupes à montrer ? Un plan illisible n'en a aucune. */
+        public boolean hasPreview() {
+            return preview != null;
+        }
+    }
+
+    /**
+     * Le chemin unique : lire, expanser, auditer, prendre les coupes.
+     *
+     * <p>Un seul chemin, délibérément. L'inspection, l'aperçu et la génération doivent donner le
+     * même verdict sur le même plan, et trois implémentations finiraient par diverger — ce qui
+     * ferait passer pour bon un plan que la génération refuse, ou montrerait un aperçu qui ne
+     * correspond pas à ce qui sera construit.</p>
+     */
+    private Examination examine(String planYaml) {
         List<String> problems = new ArrayList<>();
         Optional<BuildingPlan> parsed = BuildingPlanYaml.read(planYaml, problems);
         if (parsed.isEmpty()) {
-            return Verdict.unreadable("Plan refusé : "
-                    + (problems.isEmpty() ? "illisible." : String.join(" ", problems)));
+            return new Examination(Verdict.unreadable("Plan refusé : "
+                    + (problems.isEmpty() ? "illisible." : String.join(" ", problems))), null);
         }
         BuildingPlan plan = parsed.get();
         boolean exists = library.find(plan.id()).isPresent();
 
         BuildingPlanExpander.Result expansion = BuildingPlanExpander.expand(plan);
         if (!expansion.ok()) {
-            return new Verdict(false, "PLAN_INVALID", "Plan refusé : " + expansion.error(),
+            return new Examination(new Verdict(false, "PLAN_INVALID",
+                    "Plan refusé : " + expansion.error(),
                     plan.id(), plan.kind().label(), plan.sizeX(), plan.sizeY(), plan.sizeZ(), 0,
-                    List.of("PLAN_INVALID"), List.of(), exists, null);
+                    List.of("PLAN_INVALID"), List.of(), exists, null), null);
         }
 
         ArchitecturalAudit.Report audit = ArchitecturalAudit.audit(
@@ -147,13 +183,17 @@ public final class BuildingGenerator {
         for (ArchitecturalFinding warning : audit.warnings()) {
             warnings.add(warning.message());
         }
-        return new Verdict(!audit.refused(),
+        Verdict verdict = new Verdict(!audit.refused(),
                 audit.refused() ? "ARCHITECTURE_REFUSED" : "OK",
                 audit.refused() ? refusalText(plan, audit) : "Plan conforme au contrat "
                         + plan.kind().label() + " : " + expansion.solidCount() + " blocs.",
                 plan.id(), plan.kind().label(), plan.sizeX(), plan.sizeY(), plan.sizeZ(),
                 expansion.solidCount(), audit.blockingCodes(), List.copyOf(warnings), exists,
                 audit.metrics());
+        // L'aperçu est produit même pour un plan REFUSÉ, et c'est tout l'intérêt : on veut voir
+        // POURQUOI il est refusé. Une façade sans porte se constate sur une coupe en une seconde.
+        return new Examination(verdict, PlanPreview.of(expansion.blueprint(), plan.front(),
+                plan.anchorX(), plan.anchorY(), plan.anchorZ()));
     }
 
     /**

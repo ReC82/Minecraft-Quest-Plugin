@@ -88,6 +88,64 @@ class AgentActionExecutorTest {
         assertNull(actions.lastAuditedPlan, "rien ne doit partir vers le domaine");
     }
 
+    // ---- building.plan.preview (issue #94, lot E) -------------------------------------------
+
+    @Test
+    @DisplayName("building.plan.preview est dispatché, et renvoie ses coupes")
+    void buildingPlanPreviewIsDispatchedAndReturnsItsSlices() {
+        AgentActionOutcome outcome = run(new AgentAction("bpp1", "building.plan.preview",
+                Map.of("plan", "id: hub_library")));
+
+        assertEquals("id: hub_library", actions.lastPreviewedPlan);
+        Object plans = outcome.details().get("plans");
+        assertTrue(plans instanceof List, "les coupes doivent remonter : " + plans);
+        assertEquals(1, ((List<?>) plans).size());
+        assertEquals(1, ((List<?>) outcome.details().get("elevations")).size());
+        assertEquals(Boolean.FALSE, outcome.details().get("written"));
+    }
+
+    /**
+     * Le cas où l'aperçu sert le plus : un plan refusé. Les coupes doivent remonter malgré le
+     * statut d'échec, sinon on ne verrait jamais <em>pourquoi</em> un plan est refusé.
+     */
+    @Test
+    @DisplayName("Un plan refusé remonte quand même ses coupes")
+    void arefusedPlanStillReturnsItsSlices() {
+        AgentActionOutcome outcome = run(new AgentAction("bpp2", "building.plan.preview",
+                Map.of("plan", "id: hub_library")));
+
+        assertEquals(AgentActionOutcome.FAILED, outcome.status());
+        assertFalse(((List<?>) outcome.details().get("plans")).isEmpty(),
+                "les coupes expliquent le refus");
+        assertEquals("WEST", outcome.details().get("front"));
+        assertEquals(1, outcome.details().get("anchorX"));
+    }
+
+    @Test
+    @DisplayName("Une coupe remontée porte son identifiant, son libellé et ses lignes")
+    void areturnedSliceCarriesItsIdLabelAndRows() {
+        AgentActionOutcome outcome = run(new AgentAction("bpp3", "building.plan.preview",
+                Map.of("plan", "id: hub_library")));
+
+        Object first = ((List<?>) outcome.details().get("elevations")).get(0);
+        assertTrue(first instanceof Map, "une coupe est un objet : " + first);
+        Map<?, ?> slice = (Map<?, ?>) first;
+        assertEquals("elevation-front", slice.get("id"));
+        assertEquals(List.of("###", "#+#", "#+#"), slice.get("rows"));
+    }
+
+    @Test
+    @DisplayName("Un aperçu sans plan est rejeté sans atteindre le domaine")
+    void apreviewWithNoPlanIsRejectedWithoutReachingTheDomain() {
+        actions.lastPreviewedPlan = null;
+
+        AgentActionOutcome outcome = run(new AgentAction("bpp4", "building.plan.preview",
+                Map.of()));
+
+        assertEquals(AgentActionOutcome.REJECTED, outcome.status());
+        assertNull(actions.lastPreviewedPlan);
+    }
+
     // ---- Whitelist + player.variable.get (issue #51) ---------------------------------------
 
     @Test
@@ -1779,6 +1837,7 @@ class AgentActionExecutorTest {
 
         String lastGeneratedPlan;
         String lastAuditedPlan;
+        String lastPreviewedPlan;
         boolean lastGenerateReplace;
 
         @Override
@@ -1804,6 +1863,20 @@ class AgentActionExecutorTest {
                     "hub_library", "bâtiment habitable", 19, 12, 15, 2368,
                     List.of("NO_ENTRANCE", "GLAZING_MISSING"), List.of("Matériau dominant."),
                     true, metrics));
+        }
+
+        /** Un aperçu minuscule mais réaliste : une coupe au sol, une élévation avec une porte. */
+        @Override
+        public CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml) {
+            lastPreviewedPlan = planYaml;
+            return CompletableFuture.completedFuture(new BuildingPlanPreviewView(false,
+                    "ARCHITECTURE_REFUSED", "Plan refusé.", "hub_library", "bâtiment habitable",
+                    3, 3, 3, 18, 1, 0, 1, "WEST",
+                    List.of("NO_ENTRANCE"), List.of(),
+                    List.of(new BuildingSliceView("plan-y0", "Niveau y = 0", "x → droite",
+                            List.of("###", "###", "###"))),
+                    List.of(new BuildingSliceView("elevation-front", "Façade avant — entrée",
+                            "largeur → droite", List.of("###", "#+#", "#+#")))));
         }
 
         @Override

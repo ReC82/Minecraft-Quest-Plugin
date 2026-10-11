@@ -360,6 +360,49 @@ class BuildingGeneratorTest {
                 "aucune mesure n'est possible sans grille : ne pas en inventer");
     }
 
+    // ---- Aperçu 2D (issue #94, lot E) -------------------------------------------------------
+
+    @Test
+    @DisplayName("L'aperçu partage le verdict de l'inspection, et n'écrit rien non plus")
+    void thepreviewSharesTheInspectionVerdictAndWritesNothingEither() {
+        String habitable = LIBRARY_PLAN.replace("kind: decoration\n", "");
+
+        BuildingGenerator.Examination exam = generator.preview(habitable);
+
+        assertEquals(generator.inspect(habitable), exam.verdict(),
+                "un seul chemin d'examen : les deux doivent rendre le MÊME verdict");
+        assertTrue(exam.hasPreview(), "les coupes expliquent le refus");
+        assertTrue(gateway.files.isEmpty(), "aucun schematic");
+        assertFalse(Files.exists(buildings.resolve("hub_library.yml")), "aucune définition");
+    }
+
+    /** Un plan refusé est exactement le cas où l'aperçu sert : il montre pourquoi. */
+    @Test
+    @DisplayName("Un plan refusé a quand même ses coupes, et elles montrent le défaut")
+    void arefusedPlanStillHasSlicesAndTheyShowTheDefect() {
+        String habitable = LIBRARY_PLAN.replace("kind: decoration\n", "");
+
+        BuildingGenerator.Examination exam = generator.preview(habitable);
+
+        assertFalse(exam.verdict().ok());
+        assertEquals(4, exam.preview().elevations().size());
+        assertFalse(exam.preview().plans().isEmpty());
+        // Ce plan n'a aucun vitrage : aucune coupe ne doit en montrer.
+        for (var slice : exam.preview().elevations()) {
+            assertFalse(slice.text().indexOf(PlanPreview.GLAZING) >= 0,
+                    "aucun vitrage dans ce plan : " + slice.id());
+        }
+    }
+
+    @Test
+    @DisplayName("Un plan illisible n'a pas de coupes, et n'en invente pas")
+    void anunreadablePlanHasNoSlices() {
+        BuildingGenerator.Examination exam = generator.preview("ceci n'est pas un plan");
+
+        assertFalse(exam.verdict().ok());
+        assertFalse(exam.hasPreview(), "aucune grille, donc aucune coupe");
+    }
+
     @Test
     @DisplayName("Les avertissements non bloquants remontent avec le succès, sans le compromettre")
     void nonBlockingWarningsAreReportedAlongsideSuccess() {

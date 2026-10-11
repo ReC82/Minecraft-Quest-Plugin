@@ -146,7 +146,7 @@ public final class BuildingPromptBuilder {
                 - op: walls   → ne pose que les quatre murs verticaux : ni sol, ni plafond.
                 - op: clear   → VIDE la zone. Pas de clé « block ».
                 - op: pillars → une colonne verticale tous les « spacing » blocs le long de la
-                                zone. Clés : « spacing » (défaut 3).
+                                zone. Clés : « spacing » (défaut 4, minimum 2).
                 - op: gable   → toit à deux pentes. Exige « axis: x » ou « axis: z » (l'axe du
                                 faîte) et un bloc d'ESCALIER. Ajoute « fill: » avec un bloc plein :
                                 c'est le matériau des deux triangles de pignon, et sans lui le
@@ -172,8 +172,10 @@ public final class BuildingPromptBuilder {
                                   « block » (minecraft:lantern, minecraft:torch…).
                 - op: stair_run → une volée d'escalier praticable entre deux niveaux. Clés :
                                   « from », « steps », « axis », « block » (un bloc d'escalier).
-                - op: ladder    → une échelle adossée à un mur. Clés : « facade », « offset »,
-                                  « from », « to », « block ».
+                - op: ladder    → une échelle adossée à un mur, qui regarde vers l'intérieur, et
+                                  dont le débouché du haut est dégagé. Clés : « facade » (la façade
+                                  contre laquelle elle est adossée), « from », « to » (le bas et le
+                                  haut de l'échelle), « block ».
 
                 « facade » prend FRONT, BACK, LEFT ou RIGHT. JAMAIS une coordonnée, JAMAIS un point
                 cardinal : FRONT est la façade d'entrée, quelle que soit l'orientation du bâtiment,

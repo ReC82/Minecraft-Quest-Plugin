@@ -1103,6 +1103,8 @@ est bien arrivé. Aucune des trois ne permet de créer.
 | `building.site.facing` | `BUILDING_WRITE` | orientation — **jamais** la position |
 | `building.site.delete` | `BUILDING_DELETE` | retire le marqueur logique |
 | `building.generate` | `BUILDING_WRITE` | génère un bâtiment depuis un **plan déclaratif** (issue #94) |
+| `building.plan.audit` | `BUILDING_READ` | audite un plan **sans rien écrire** (issue #94, lot F) |
+| `building.plan.preview` | `BUILDING_READ` | coupes 2D d'un plan, **sans rien écrire** (issue #94, lot E) |
 
 **Il n'existe volontairement aucune action de création.** Un emplacement est défini par une position
 choisie dans le monde ; le clic en jeu la connaît, un écran devrait l'inventer.
@@ -1157,13 +1159,52 @@ Java** (`TestHutBlueprint`, `TestWatchtowerBlueprint`). Ce lot l'ouvre aux donn�
 serait lent, coûteux et fragile — une coordonnée de travers dans un mur de deux cents blocs produit
 un trou que personne ne relit. Elle écrit des **primitives**, au vocabulaire fermé :
 
+**Instructions de volume** — elles prennent `from` et, facultativement, `to` :
+
 | Instruction | Effet |
 |---|---|
 | `box` | remplit toute la zone |
 | `shell` | ne pose que l'enveloppe (six faces), intérieur vide |
 | `walls` | ne pose que les quatre murs verticaux : ni sol, ni plafond |
-| `clear` | **vide** la zone — perce portes, fenêtres et pièces dans un volume déjà posé |
-| `gable` | toit à deux pentes ; l'orientation des marches est **calculée**, jamais demandée au modèle |
+| `clear` | **vide** la zone — creuse les pièces dans un volume déjà posé |
+| `pillars` | une colonne verticale tous les `spacing` blocs |
+| `gable` | toit à deux pentes ; l'orientation des marches est **calculée**. `fill:` donne le matériau des deux triangles de pignon |
+
+**Instructions d'architecture (issue #94, lot B)** — elles ne prennent **aucune coordonnée** : elles
+se placent sur une façade nommée, et le moteur calcule tout le reste.
+
+| Instruction | Ce que le moteur calcule à la place du modèle |
+|---|---|
+| `door` | coordonnée de façade, orientation, les deux moitiés, la charnière, **et le dégagement intérieur** |
+| `window` | percement du mur **et** pose du vitrage, sur la largeur et la hauteur demandées |
+| `light` | répartition des sources selon `spacing` |
+| `stair_run` | une volée praticable : marches orientées, `half`, `shape` |
+| `ladder` | échelle adossée au mur, orientée vers l'intérieur |
+
+> [!IMPORTANT]
+> **C'est ce lot qui supprime la classe d'erreurs ayant scellé la V1.** Le modèle devait traduire
+> lui-même `front: WEST` en « façade = plan `x = 0` ». Il a écrit `x = 5`, et son percement de porte
+> a vidé de l'air intérieur déjà vide : 532 cellules de mur, zéro ouverture. Avec
+> `facade: FRONT`, il ne calcule plus rien.
+>
+> La convention est arrêtée une fois pour toutes et vérifiée sur les quatre orientations :
+> `FRONT` est la façade d'entrée quelle que soit l'orientation du bâtiment, `BACK` son opposée,
+> `LEFT`/`RIGHT` sont vues **depuis l'extérieur, face au bâtiment** — comme le dirait un visiteur,
+> non comme le lirait un plan. `offset` part toujours du coin de coordonnée minimale.
+
+**Propriétés de bloc : le modèle n'en écrit pas (lot D).** `BlockState` ne vérifiait que la *forme*,
+si bien que le plan V1 contenait `minecraft:oak_stairs[face=bottom,shape=straight]` — et c'est
+passé. Or `face` n'existe pas pour un escalier : la propriété s'appelle `half`. `BlockStateRules`
+décrit maintenant, par famille de blocs, les propriétés réellement admises et leurs valeurs, et
+refuse l'état **avant toute écriture** en nommant la bonne propriété. Une famille non décrite voit
+ses propriétés acceptées sans contrôle : refuser l'inconnu interdirait les milliers de blocs du jeu
+dont nous ne savons rien, alors que la faute observée porte sur ce que nous écrivons nous-mêmes.
+
+> [!NOTE]
+> Le mécanisme autoritaire serait `Bukkit.createBlockData(state)`, qui lève sur un état invalide.
+> Il exige un serveur en cours d'exécution, donc aucune validation possible dans un test pur ni dans
+> le panel. `BlockStateRules` est la validation de **première ligne**, pure et testable, et elle
+> couvre exactement les familles que les primitives émettent.
 
 Les bornes sont **incluses** (`from [0,0,0] to [0,0,0]` vaut un bloc), `to` est optionnel (un seul
 bloc), et **l'ordre compte** : une instruction postérieure recouvre une antérieure sur la même
@@ -1254,10 +1295,19 @@ et son message est rédigé pour être **renvoyé tel quel au modèle** par la b
 nomme la façade et sa coordonnée, chiffre les cellules, et dit l'erreur réelle (« vider l'air
 au-dessus du plancher ne le troue pas »). Les avertissements, eux, remontent avec le succès.
 
-> [!NOTE]
-> La primitive `gable` actuelle **ne peut pas** satisfaire le contrôle d'enveloppe : elle pose une
-> seule rangée par rang et ne remplit jamais ses pignons. C'est le défaut mesuré sur la V1, et c'est
-> au lot B (#250) de le corriger. Un test fige cette limite pour que sa correction se constate.
+> [!IMPORTANT]
+> **L'un des cinq défauts de la V1 était celui du moteur, pas celui du modèle.** La primitive
+> `gable` posait une seule rangée d'escaliers par rang et ne remplissait **jamais** ses pignons :
+> n'importe quel plan, même parfait, aurait eu les combles béants. Le lot B les remplit, et le plan
+> V1 **inchangé** ré-expansé produit désormais 2 368 blocs au lieu de 2 210 — les 158 blocs d'écart
+> sont exactement ces triangles. Il reste donc **quatre** défauts imputables au modèle : pas de
+> porte, pas de vitrage, pas de lumière, étage inaccessible.
+>
+> Conséquence de versionnement à connaître : le même plan produit maintenant un bâtiment différent,
+> et meilleur. Les `.schem` déjà écrits ne sont pas touchés, mais régénérer depuis un plan conservé
+> changera l'empreinte du schematic — et le mécanisme de version de #234 signalera à juste titre le
+> bâtiment posé comme obsolète. C'est le comportement souhaitable : la correction est visible, pas
+> silencieuse.
 
 #### Le parcours dans PlugAdmin
 
@@ -1278,6 +1328,118 @@ reprise le renvoie au modèle avec le plan refusé, pour qu'il corrige ce point 
 
 Trois refus arrivent à **coût nul**, avant le moindre appel payant : brief absent, emplacement
 absent du relevé, aucun fournisseur utilisable.
+
+#### Auditer un plan sans rien écrire (issue #94, lot F)
+
+| Action | Permission | Effet |
+|---|---|---|
+| `building.plan.audit` | `BUILDING_READ` | lit le plan, le construit **en mémoire**, l'audite, et n'écrit rien |
+
+Avant ce lot, connaître le verdict du serveur imposait de **générer** : donc d'écrire un `.schem`,
+une définition et une entrée de bibliothèque pour apprendre que le plan était mauvais, puis de
+recommencer en cochant « remplacer ». L'audit à blanc inverse l'ordre — juger d'abord, écrire
+ensuite — et c'est ce qui rend une correction itérative tenable.
+
+C'est **le même pipeline** que la génération : même lecture, même expanseur, même audit. Un second
+chemin de validation finirait par diverger du premier et ferait passer pour bon un plan que la
+génération refuse. Le texte du refus est d'ailleurs rédigé **une seule fois** et partagé par les
+deux chemins.
+
+Déclarée en **lecture**, parce qu'elle n'écrit rien : on juge un plan autant de fois qu'il le faut.
+L'écran affiche le verdict, les codes bloquants, les avertissements et les **mesures prises sur la
+grille** — et son vocabulaire est surveillé : un plan conforme est dit « conforme », **jamais**
+« généré ». C'est exactement la confusion que la V1 avait installée en annonçant « prêt à être
+posé » pour un bâtiment dans lequel on ne pouvait pas entrer.
+
+#### Aperçu 2D d'un plan (issue #94, lot E)
+
+| Action | Permission | Effet |
+|---|---|---|
+| `building.plan.preview` | `BUILDING_READ` | coupes 2D + verdict, **sans rien écrire** |
+
+**Les coupes sont calculées par le plugin, jamais par le panel.** C'est une exigence du ticket, et
+la raison en est la V1 : un aperçu dessiné depuis le texte du plan aurait reproduit l'erreur du
+modèle — un percement visant `x = 5` là où le mur est en `x = 0` — et aurait donc montré une porte
+qui n'existe pas. Les coupes sont prises sur la **même grille que l'audit**, après la même
+expansion. Si l'aperçu montre un mur sans porte, c'est qu'il n'y a pas de porte.
+
+L'aperçu rend :
+
+- **un plan par niveau**, nord en haut, `x` vers la droite, `z` vers le bas — la convention de
+  n'importe quel plan d'architecte. Les niveaux entièrement vides (les combles d'un toit en pente)
+  sont omis, sauf le rez-de-chaussée, dont l'absence se lirait comme une erreur de lecture ;
+- **les quatre façades vues de l'extérieur**, ciel en haut, avec l'avant désigné comme l'entrée et
+  son point cardinal. Pour chaque cellule, le **premier** rôle rencontré en avançant vers
+  l'intérieur : sans cela une fenêtre serait masquée par le mur du fond et les quatre façades se
+  ressembleraient ;
+- les **dimensions mesurées**, l'**ancre** avec la convention qui s'applique (centre de la base par
+  défaut, ou ancre explicite du plan), et les **avertissements de l'audit** — qui voyagent avec les
+  coupes et non dans un second appel, pour que personne ne juge à l'œil un bâtiment dont le serveur
+  sait déjà quelque chose.
+
+**Rendu en caractères, pas en image.** Une coupe est une grille de rôles, et le rôle est ce qui
+intéresse le lecteur :
+
+| Caractère | Rôle |
+|---|---|
+| `#` | matière opaque (mur, sol, toit) |
+| `o` | vitrage |
+| `+` | franchissable : porte, trappe, portillon |
+| `/` | escalier ou dalle — ce qui fait gagner de la hauteur |
+| `H` | grimpable : échelle |
+| `*` | source de lumière utile |
+| `f` | mobilier et contenu intérieur |
+| `.` | vide |
+
+Le vocabulaire vient de `BlockSemantics`, le **même** registre déclaré que l'audit : deux légendes
+séparées finiraient par désigner deux choses différentes. Aucune image ne traverse l'agent, aucun
+JavaScript n'est requis — la politique de sécurité du panel interdit le script en ligne — et un
+tableau de plusieurs milliers de cellules HTML serait lourd sans rien apprendre de plus. Du texte à
+espacement fixe se lit, se copie, et défile horizontalement sur un téléphone.
+
+**L'aperçu est rendu même pour un plan refusé**, et c'est précisément le cas où il sert : une façade
+sans porte se constate sur une coupe en une seconde.
+
+> [!NOTE]
+> L'**isométrie légère** mentionnée comme option du ticket n'est pas faite. Les coupes orthogonales
+> répondent aux questions qu'on se pose réellement devant un plan — « y a-t-il une porte », « cet
+> étage est-il atteignable » — et une vue isométrique en caractères serait difficile à lire sans
+> rien ajouter à ces réponses.
+
+#### La boucle de correction, et son budget
+
+Le prompt enseigne les primitives d'architecture, la convention de façade et le contrat
+architectural **en sept cases à cocher** — les sept réellement contrôlés, deux tests figent cet
+alignement. Un contrat divergent produirait des refus que le prompt n'annonçait pas, ce qui rend une
+boucle de correction frustrante *et* coûteuse. Le prompt interdit explicitement au modèle de
+calculer une coordonnée de façade ou une propriété de bloc, et en donne un exemple complet qui
+respecte son propre contrat.
+
+La reprise transmet au modèle le **motif réel** du serveur *et* les **chiffres mesurés**. C'est la
+pièce la plus efficace : un modèle est volontiers convaincu d'avoir posé des fenêtres, et
+« cellules vitrées : 0 » le détrompe sans discussion.
+
+`BuildingCorrectionLoop` porte les garde-fous de coût, et ils sont des **contraintes de
+construction**, pas des intentions :
+
+- le budget est borné à `[1, 5]` par le constructeur : aucun formulaire ne peut demander vingt
+  tentatives payantes ;
+- un appel qui **échoue est compté comme dépensé** — chez certains fournisseurs il est déjà facturé,
+  et compter autrement ferait du budget une illusion ;
+- le **mode automatique est explicite**. Par défaut la boucle s'arrête au premier refus et rend la
+  main, motif sous les yeux : personne ne doit découvrir une dépense ;
+- un modèle qui **ressert le même plan** interrompt la boucle plutôt que d'être repayé ;
+- un **agent injoignable n'est pas un refus** : relancer le modèle parce que le serveur n'a pas
+  répondu serait payer pour une information qu'on n'a pas obtenue.
+
+> [!NOTE]
+> **L'enchaînement automatique n'est pas branché.** Le panel communique avec le plugin par
+> *scrutation* : il met une action en file, le serveur la consomme et poste le résultat. Il n'existe
+> aucun appel synchrone, donc enchaîner plusieurs tentatives exigerait un **worker de fond côté
+> panel** — un nouveau fil, un nouvel état persistant, et des appels payants déclenchés sans
+> personne devant l'écran. C'est une décision structurante, laissée à l'arbitrage. Ce qui est livré
+> est l'**itération au clic** : auditer (gratuit), lire le verdict, demander un plan corrigé. Le
+> moteur de boucle est écrit et testé, prêt à être branché.
 
 #### Supprimer un emplacement
 

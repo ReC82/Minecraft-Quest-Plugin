@@ -152,7 +152,18 @@ public final class BuildingPlanYaml {
         // REFUSÉ : retomber sur FRONT masquerait une faute de frappe, et le bâtiment sortirait avec
         // sa porte du mauvais côté sans que rien ne le signale.
         Facade facade = null;
-        String onRaw = str(map.get("on"));
+        // La clé est « facade ». On tolère aussi « on », mais par un détour qu'il faut expliquer :
+        // en YAML 1.1, « on » est un BOOLÉEN. Écrit comme clé, l'analyseur le transforme en
+        // Boolean.TRUE, et « map.get("on") » renvoie null. Un plan disant « on: BACK » voyait donc
+        // sa façade silencieusement ignorée, et sa porte sortait du mauvais côté. Attrapé par un
+        // test. On lit donc les deux formes, et le prompt (lot F) emploiera « facade ».
+        String onRaw = str(map.get("facade"));
+        if (onRaw.isEmpty()) {
+            onRaw = str(map.get("on"));
+        }
+        if (onRaw.isEmpty()) {
+            onRaw = str(map.get(Boolean.TRUE));
+        }
         if (!onRaw.isEmpty()) {
             Optional<Facade> parsed = Facade.of(onRaw);
             if (parsed.isEmpty()) {

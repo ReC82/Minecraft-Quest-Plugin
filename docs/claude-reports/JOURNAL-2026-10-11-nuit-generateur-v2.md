@@ -114,3 +114,47 @@ sans aucune couverture), car un bâtiment sans toit du tout n'a aucune face « s
 échappait au premier contrôle.
 
 Tests écrits : `SemanticPrimitivesTest`, `FacadeTest`, `BlockStateRulesTest`.
+
+## 02:4x — Lots B/C/D validés, et une correction du diagnostic de la V1
+
+`./gradlew :test --tests '*building.*'` → **BUILD SUCCESSFUL**, 81 tests dans
+`building.plan`, 0 échec.
+
+Mais le passage au vert a demandé de réécrire trois classes de test, et la raison
+mérite d'être écrite noir sur blanc, parce qu'elle **corrige mon propre diagnostic
+du lot A** :
+
+> Le plan V1, inchangé, ré-expansé par le moteur du lot B, produit **2 368 blocs
+> au lieu de 2 210**. Les 158 blocs de différence sont les **triangles de pignon**
+> que la primitive `gable` ne remplissait pas.
+
+Autrement dit : sur les cinq défauts constatés en jeu, **le quatrième — « 62 % des
+pignons ouverts » — n'était pas une faute du modèle, mais une faute du moteur.**
+La primitive `gable` posait une rangée d'escaliers par rang et ne fermait jamais
+les extrémités. N'importe quel plan, même parfait, aurait eu les combles béants.
+
+Conséquences concrètes :
+
+- `ArchitecturalAuditV1RegressionTest` n'assure plus cinq refus mais **quatre** —
+  `NO_ENTRANCE`, `GLAZING_MISSING`, `NO_LIGHT`, `LEVEL_UNREACHABLE` — et vérifie
+  explicitement qu'`ENVELOPE_OPEN` **n'est plus levé**, ce qui est la preuve que
+  le correctif porte sur les plans déjà enregistrés sans les modifier.
+- `openEnvelopeCellsHigh` passe de 118 à **0** sur la V1.
+- Le test du lot A qui figeait la limite (« la primitive gable actuelle ne peut pas
+  satisfaire le contrôle d'enveloppe ») était écrit pour être retourné le jour où
+  le lot B atterrirait. Il l'est, et il vérifie maintenant en plus que mon contrôle
+  d'enveloppe **ne refuse pas** un vrai toit en pente — le faux positif que je
+  craignais le plus.
+- La part de `stone_bricks` passe de 55 % à 63 % de l'enveloppe, parce que faute de
+  `fill:` déclaré ce plan remplit ses pignons avec le matériau du toit. Les deux
+  valeurs restent sous le seuil de 70 % : la monotonie des matériaux était un défaut
+  esthétique réel, mais elle **n'a jamais été l'un des cinq refus**.
+
+### Ce que cela implique pour les plans déjà enregistrés
+
+Le même plan produit désormais un bâtiment différent — meilleur, mais différent.
+Je ne régénère rien : le `.schem` de la V1 sur `buildsite_0012` reste tel quel,
+conformément à l'interdiction explicite. Mais si quelqu'un relance une génération
+depuis ce plan, l'empreinte du schematic changera, et le mécanisme de version de
+#234 signalera à juste titre le bâtiment placé comme « obsolète ». C'est le
+comportement souhaitable : la correction est visible, pas silencieuse.

@@ -271,8 +271,7 @@ class BuildingGeneratorTest {
 
         // Ce plan a bien une porte (clear en x=0, dans le plan de la façade ouest) : l'entrée
         // n'est donc PAS en cause, et l'audit ne doit pas l'inventer. Ce qui manque réellement :
-        for (String expected : new String[] {"Vitrages insuffisants", "Aucune source de lumière",
-            "PIGNONS"}) {
+        for (String expected : new String[] {"Vitrages insuffisants", "Aucune source de lumière"}) {
             assertTrue(message.contains(expected), expected + " absent de : " + message);
         }
         assertFalse(message.contains("Aucune entrée"),

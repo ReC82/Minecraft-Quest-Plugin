@@ -71,7 +71,7 @@ class SemanticPrimitivesTest {
         // front: WEST → la façade avant est le plan x=0. Le modèle ne calcule plus rien.
         Blueprint b = expand(shell("""
                   - op: door
-                    on: FRONT
+                    facade: FRONT
                     offset: 3
                     block: minecraft:oak_door
                 """));
@@ -98,12 +98,16 @@ class SemanticPrimitivesTest {
         // Façade ouest (x=0) : le décalage court selon Z.
         Blueprint b = expand(shell("""
                   - op: door
-                    on: FRONT
+                    facade: FRONT
                     offset: 5
                 """));
 
-        assertTrue(at(b, 0, 1, 5) != null, "la porte doit être en z=5 sur la façade x=0");
-        assertEquals(null, at(b, 5, 1, 0), "et surtout pas en x=5 — l'erreur de la V1");
+        String door = at(b, 0, 1, 5);
+        assertTrue(door != null && door.contains("_door"), "porte attendue en z=5 : " + door);
+        // En x=5 il y a un mur, pas une porte : c'est là que le modèle de la V1 avait percé.
+        String wrong = at(b, 5, 1, 0);
+        assertTrue(wrong == null || !wrong.contains("_door"),
+                "aucune porte ne doit se trouver en x=5 — l'erreur de la V1 : " + wrong);
     }
 
     @Test
@@ -111,7 +115,7 @@ class SemanticPrimitivesTest {
     void adoorOnTheBackFacadeLooksTheOtherWay() {
         Blueprint b = expand(shell("""
                   - op: door
-                    on: BACK
+                    facade: BACK
                     offset: 3
                 """));
 
@@ -127,7 +131,7 @@ class SemanticPrimitivesTest {
     void thewindowCutsTheWallAndConnectsThePane() {
         Blueprint b = expand(shell("""
                   - op: window
-                    on: FRONT
+                    facade: FRONT
                     offset: 2
                     y: 3
                 """));
@@ -144,7 +148,7 @@ class SemanticPrimitivesTest {
     void aseriesOfWindowsTakesASingleInstruction() {
         Blueprint b = expand(shell("""
                   - op: window
-                    on: FRONT
+                    facade: FRONT
                     offset: 1
                     y: 3
                     count: 3
@@ -154,7 +158,9 @@ class SemanticPrimitivesTest {
         for (int z : new int[] {1, 3, 5}) {
             assertTrue(at(b, 0, 3, z) != null, "fenêtre attendue en z=" + z);
         }
-        assertEquals(null, at(b, 0, 3, 2), "et pas entre deux");
+        String between = at(b, 0, 3, 2);
+        assertTrue(between == null || !between.contains("glass"),
+                "pas de vitrage entre deux fenêtres : " + between);
     }
 
     @Test
@@ -162,7 +168,7 @@ class SemanticPrimitivesTest {
     void awindowBeyondTheFacadeIsSkipped() {
         Blueprint b = expand(shell("""
                   - op: window
-                    on: FRONT
+                    facade: FRONT
                     offset: 5
                     y: 3
                     count: 5
@@ -254,7 +260,7 @@ class SemanticPrimitivesTest {
                   - op: ladder
                     from: [7, 1, 3]
                     to: [7, 4, 3]
-                    on: BACK
+                    facade: BACK
                 """));
 
         String ladder = at(b, 7, 2, 3);
@@ -284,7 +290,8 @@ class SemanticPrimitivesTest {
         assertEquals("minecraft:chiseled_stone_bricks", at(b, 0, 3, 0));
         assertEquals("minecraft:chiseled_stone_bricks", at(b, 8, 3, 6));
         // Et l'enveloppe gagne un matériau, ce que l'audit mesure.
-        assertTrue(b.materials().size() >= 3, "" + b.materials());
+        assertTrue(b.materials().contains("chiseled_stone_bricks"),
+                "l'enveloppe gagne un matériau, ce que l'audit mesure : " + b.materials());
     }
 
     // ---- Toiture ------------------------------------------------------------------------------
@@ -355,27 +362,23 @@ class SemanticPrimitivesTest {
                     spacing: 4
                     block: minecraft:chiseled_stone_bricks
                   - op: door
-                    on: FRONT
+                    facade: FRONT
                     offset: 4
                     block: minecraft:oak_door
                   - op: window
-                    on: FRONT
+                    facade: FRONT
                     offset: 2
                     y: 3
                   - op: window
-                    on: BACK
+                    facade: BACK
                     offset: 6
                     y: 3
-                  - op: box
-                    from: [0, 6, 0]
-                    to: [10, 6, 8]
-                    block: minecraft:dark_oak_planks
                   - op: light
                     from: [3, 5, 3]
                     to: [7, 5, 5]
                     spacing: 4
                   - op: gable
-                    from: [0, 7, 0]
+                    from: [0, 6, 0]
                     to: [10, 10, 8]
                     axis: x
                     block: minecraft:dark_oak_stairs

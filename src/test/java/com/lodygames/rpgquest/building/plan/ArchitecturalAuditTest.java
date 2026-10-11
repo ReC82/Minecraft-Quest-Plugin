@@ -318,17 +318,14 @@ class ArchitecturalAuditTest {
     // ---- Ce que la primitive actuelle ne peut PAS faire ---------------------------------------
 
     /**
-     * Fige la dépendance au lot B (#250) : la primitive {@code gable} actuelle pose une seule
-     * rangée par rang et ne remplit <strong>jamais</strong> ses pignons. Elle ne peut donc pas
-     * satisfaire le contrôle d'enveloppe — et c'est exactement le défaut mesuré sur la V1,
-     * 59 cellules vides sur 95 par face.
-     *
-     * <p>Quand le lot B corrigera {@code gable}, ce test devra être mis à jour : ce sera le signe
-     * que la correction fonctionne.</p>
+     * Le lot A avait figé l'inverse : {@code gable} ne remplissait pas ses pignons, 59 cellules
+     * vides sur 95 par face sur la V1, et ne pouvait donc pas passer le contrôle d'enveloppe. Le
+     * lot B (#250) les remplit — ce test est la constatation que la correction fonctionne, et il
+     * vérifie aussi, en passant, que mon contrôle d'enveloppe ne refuse PAS un vrai toit en pente.
      */
     @Test
-    @DisplayName("La primitive gable actuelle ne peut pas satisfaire le contrôle d'enveloppe")
-    void thecurrentGablePrimitiveCannotSatisfyTheEnvelopeCheck() {
+    @DisplayName("La primitive gable corrigée satisfait désormais le contrôle d'enveloppe")
+    void thefixedGablePrimitiveNowSatisfiesTheEnvelopeCheck() {
         // Maison identique, mais assez haute pour porter un toit : la maison de référence est
         // volontairement plafonnée à y=6, et un gable n'y entrerait pas.
         String withGable = """
@@ -375,12 +372,13 @@ class ArchitecturalAuditTest {
                     to: [10, 10, 8]
                     axis: x
                     block: minecraft:dark_oak_stairs
+                    fill: minecraft:stone_bricks
                 """;
         ArchitecturalAudit.Report report = audit(withGable);
 
-        assertTrue(report.blockingCodes().contains("ENVELOPE_OPEN"),
-                "les pignons non remplis doivent être détectés : " + report.blockingCodes());
-        assertTrue(report.metrics().openEnvelopeCellsHigh() > 0);
+        assertFalse(report.blockingCodes().contains("ENVELOPE_OPEN"),
+                "les pignons sont remplis par le lot B : " + report.blockingCodes());
+        assertEquals(0, report.metrics().openEnvelopeCellsHigh());
     }
 
     // ---- Profils par type de structure --------------------------------------------------------

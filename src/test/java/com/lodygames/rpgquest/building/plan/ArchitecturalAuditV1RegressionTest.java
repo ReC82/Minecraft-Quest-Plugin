@@ -113,28 +113,43 @@ class ArchitecturalAuditV1RegressionTest {
                 .orElseThrow(() -> new AssertionError("le plan V1 doit rester lisible : " + problems));
         BuildingPlanExpander.Result expansion = BuildingPlanExpander.expand(plan);
         assertTrue(expansion.ok(), expansion.error());
-        // Contrôle de fidélité : le serveur a rapporté 2 210 blocs pour ce plan. Si ce nombre
-        // change, c'est l'expanseur qui a bougé, et tout le reste du test ne veut plus rien dire.
-        assertEquals(2210, expansion.solidCount(),
-                "l'expansion du plan V1 doit toujours produire les 2 210 blocs constatés en production");
+        // Le serveur avait rapporté 2 210 blocs pour ce plan. Le lot B en produit 2 368 : les 158
+        // blocs de différence sont le REMPLISSAGE DES PIGNONS que la primitive « gable » ne posait
+        // pas. Autrement dit, un des cinq défauts constatés en jeu était imputable au MOTEUR, et il
+        // est désormais corrigé pour tous les plans existants, sans toucher aux fichiers déjà
+        // écrits. Ce nombre reste un garde-fou : s'il change encore, c'est que l'expanseur a bougé.
+        assertEquals(2368, expansion.solidCount(),
+                "2 210 blocs à l'origine + 158 de pignons remplis par le lot B");
         return ArchitecturalAudit.audit(expansion.blueprint(), plan.front(), plan.rules());
     }
 
+    /**
+     * Le plan V1 reste refusé — mais sur <strong>quatre</strong> défauts, et c'est une information
+     * en soi.
+     *
+     * <p>Les cinq défauts constatés en jeu n'avaient pas la même origine. Les pignons ouverts
+     * étaient imputables à la primitive {@code gable} du moteur, qui ne remplissait pas ses
+     * triangles ; le lot B les remplit, donc ce défaut disparaît <em>sans que le plan change</em>.
+     * Les quatre autres — pas de porte, pas de vitre, pas de lumière, étage inaccessible — sont le
+     * fait du modèle, et ils doivent continuer d'être refusés.</p>
+     */
     @Test
-    @DisplayName("Le plan V1 est REFUSÉ, sur les cinq défauts démontrés en jeu")
-    void thev1PlanIsRefusedOnTheFiveDemonstratedDefects() {
+    @DisplayName("Le plan V1 reste REFUSÉ sur les quatre défauts du modèle ; le cinquième était celui du moteur")
+    void thev1PlanIsStillRefusedOnTheModelsFourDefects() {
         ArchitecturalAudit.Report report = auditV1();
 
         assertTrue(report.refused(), "la V1 ne doit JAMAIS repasser en succès");
 
         List<String> codes = report.blockingCodes();
         for (String expected : List.of("NO_ENTRANCE", "GLAZING_MISSING", "NO_LIGHT",
-                "ENVELOPE_OPEN", "LEVEL_UNREACHABLE")) {
+                "LEVEL_UNREACHABLE")) {
             assertTrue(codes.contains(expected),
-                    "défaut constaté en jeu non détecté : " + expected + " — codes obtenus " + codes);
+                    "défaut du modèle non détecté : " + expected + " — codes obtenus " + codes);
         }
-        assertEquals(5, codes.size(),
-                "exactement les cinq défauts démontrés, ni plus ni moins : " + codes);
+        // Le défaut du MOTEUR est corrigé : les pignons de ce même plan sont désormais fermés.
+        assertFalse(codes.contains("ENVELOPE_OPEN"),
+                "le lot B remplit les pignons : ce défaut ne vient plus du plan — " + codes);
+        assertEquals(4, codes.size(), "exactement les quatre défauts du modèle : " + codes);
     }
 
     @Test
@@ -155,14 +170,17 @@ class ArchitecturalAuditV1RegressionTest {
                 "le message doit désigner l'erreur réelle du modèle : " + message);
     }
 
+    /**
+     * Le défaut de pignon est corrigé <strong>dans le moteur</strong>, et ce test le prouve sur le
+     * plan V1 lui-même : les triangles d'extrémité sont désormais pleins.
+     */
     @Test
-    @DisplayName("Les pignons ouverts sont désignés comme tels, pas comme un toit troué")
-    void theopenGablesAreNamedPreciselyRatherThanCalledALeakyRoof() {
-        String message = messageOf(auditV1(), "ENVELOPE_OPEN");
+    @DisplayName("Les pignons du plan V1 sont maintenant fermés par le moteur, sans modifier le plan")
+    void thev1GablesAreNowClosedByTheEngineWithoutTouchingThePlan() {
+        ArchitecturalAudit.Metrics m = auditV1().metrics();
 
-        assertTrue(message.contains("PIGNONS"), message);
-        assertTrue(message.contains("couvre par le dessus"),
-                "la nuance mesurée compte : la couverture était bonne, les pignons non — " + message);
+        assertEquals(0, m.openEnvelopeCellsHigh(),
+                "les 59 cellules ouvertes par face mesurées sur la V1 doivent avoir disparu");
     }
 
     @Test
@@ -180,16 +198,22 @@ class ArchitecturalAuditV1RegressionTest {
     void thev1MetricsMatchWhatWasMeasured() {
         ArchitecturalAudit.Metrics m = auditV1().metrics();
 
-        assertEquals(2210, m.solidCells());
+        assertEquals(2368, m.solidCells(), "2 210 à l'origine + 158 de pignons remplis");
         assertEquals(0, m.glazedCells(), "aucun vitrage");
         assertEquals(0, m.lightSources(), "aucune source de lumière");
         assertEquals(49, m.furnishingCells(), "les 49 étagères comptent comme du mobilier");
-        assertTrue(m.openEnvelopeCellsHigh() > 100,
-                "les pignons ouverts représentent plus de 100 cellules : " + m.openEnvelopeCellsHigh());
+        assertEquals(0, m.openEnvelopeCellsHigh(),
+                "pignons désormais remplis par le moteur : " + m.openEnvelopeCellsHigh());
         assertTrue(m.floors() >= 2, "deux niveaux praticables étaient prévus : " + m.floors());
         assertEquals(1, m.reachableFloors(), "un seul était atteignable");
-        assertTrue(m.topMaterialShare() > 0.70,
-                "un matériau dominait l'enveloppe : " + m.topMaterial() + " à " + m.topMaterialShare());
+        // La part du matériau dominant a BAISSÉ avec le lot B : les 158 blocs de pignon sont posés
+        // dans le matériau du toit, faute de « fill » déclaré dans ce plan. stone_bricks passe donc
+        // de 55 % de l'enveloppe à 63 %… de l'enveloppe close, qui compte désormais les pignons.
+        // Dans les deux cas le seuil de 70 % n'est pas franchi : la monotonie des matériaux était
+        // un défaut esthétique réel, mais elle n'a jamais été l'un des cinq refus.
+        assertEquals("stone_bricks", m.topMaterial());
+        assertTrue(m.topMaterialShare() > 0.60 && m.topMaterialShare() < 0.70,
+                "part mesurée : " + m.topMaterialShare());
     }
 
     @Test
@@ -198,7 +222,7 @@ class ArchitecturalAuditV1RegressionTest {
         String refusal = auditV1().refusalMessage();
 
         assertTrue(refusal.contains("Corrige PRÉCISÉMENT"), refusal);
-        for (String n : List.of("1.", "2.", "3.", "4.", "5.")) {
+        for (String n : List.of("1.", "2.", "3.", "4.")) {
             assertTrue(refusal.contains(n), "point " + n + " manquant dans : " + refusal);
         }
         assertFalse(refusal.isBlank());

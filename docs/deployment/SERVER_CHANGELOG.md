@@ -7440,3 +7440,83 @@ Aucune.
 
 - **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
 - **Plugin** : rien à annuler — rien n'a été déployé.
+
+## 2026-10-11 (suite) — Contenu #238 publié sur DEV par le moteur #47, **sans FTP**
+
+**Branche** : `feature/238-guard-dialogue-ux` (commits `3bc2ebd`, `e3d9ea3`, `35d32af`, `7a75e1c`,
+`24780de`)
+**Portée** : **contenu uniquement**. Aucun JAR, aucun redémarrage, aucune migration.
+
+### Le point qui change la règle
+
+`PLUGADMIN_CONTENT_DIR=/srv/rpgquest/repo/src/main/resources` : la source du panel **est le dépôt**.
+Les quêtes, stories et dialogues se publient donc sur DEV par le **moteur #47**, qui voyage sur
+l'**agent sortant en HTTPS**. Le FTP n'intervient pas.
+
+**Conséquence à retenir : un certificat FTPS expiré ne bloque que ce qui exige réellement un nouveau
+JAR.** L'entrée précédente de ce changelog annonçait les corrections de dialogue comme bloquées :
+c'était faux, et seules les modifications **Java** le sont.
+
+### Publié
+
+**Fait le 2026-10-11, ~16:15–16:30 UTC+2**, par le vrai panel en HTTPS (`/content/pending`), compte
+de vérification jetable supprimé et secret détruit ensuite.
+
+| Ressource | Résultat de l'agent |
+|---|---|
+| `dialogues/guard` | **SUCCESS** — « Mis à jour sur DEV, rechargé et confirmé par le moteur. » |
+| `dialogues/guide` | **SUCCESS** (publié deux fois, voir ci-dessous) |
+| `dialogues/jo` | **SUCCESS** |
+| `dialogues/libraire` | **SUCCESS** |
+
+Publication, rechargement et vérification sont **une seule action** : aucun reload séparé n'est
+nécessaire. Vérifié ensuite que la page ne voit plus ces quatre ressources comme « Différent », et
+que le serveur sert bien les nœuds `offer_*`, les boutons « Commencer : … », et plus aucune trace des
+anciens libellés dans les textes affichés.
+
+### NON publié — volontairement
+
+Le formulaire de publication groupée arrive **pré-sélectionné avec tout ce qui diffère**, soit
+**neuf** ressources ce jour-là. Seules les quatre clés `sel_` voulues ont été envoyées. Les cinq
+autres sont **intactes** et restent « Différent » :
+
+| Ressource | Pourquoi laissée |
+|---|---|
+| `dialogues/mira_cartographer` | fichier **non suivi du propriétaire** — absent de DEV, le publier l'aurait créé |
+| `quests/crystal_hunt` | **modification non commitée du propriétaire** |
+| `quests/first_steps`, `quests/premiers_pas`, `quests/woodcutters_request` | divergences préexistantes, hors périmètre de #238 |
+
+⚠️ **À retenir pour toute publication future** : ne jamais soumettre ce formulaire tel quel.
+
+### Une ligne retenue, et pourquoi
+
+`guide.yml` utilisait `%kit_unlock_quest%`, placeholder enregistré par du code **Java non déployé**.
+`DialogueTextPlaceholders` laisse un placeholder inconnu **tel quel** : le joueur aurait lu
+« %kit_unlock_quest% » en ouvrant la progression de son kit. La ligne a été retirée et `guide.yml`
+republié. Le recul complet du fichier a été écarté : il aurait aussi annulé ses huit libellés
+raccourcis, c'est-à-dire la correction demandée.
+
+**À remettre en même temps que le JAR** — la raison est écrite dans `guide.yml`.
+
+### Ne PAS transférer/altérer
+
+Rien n'a été transféré par FTP. `data.db`, `config.yml`, les mondes et les plugins sont intacts.
+
+### Redémarrage requis
+
+**Aucun.** Le moteur #47 recharge les dialogues lui-même.
+
+### Rollback
+
+`content.publish.rollback` par ressource, depuis le panel — chaque publication a déposé une
+sauvegarde datée côté serveur. Aucun rollback de JAR n'est concerné : aucun JAR n'a bougé.
+
+### Reste en attente d'un JAR (et rien d'autre)
+
+1. Localisation des objectifs dans le chat (#238).
+2. Règle de placement « sommet de tronc » (#153).
+3. Le placeholder `%kit_unlock_quest%`, et la ligne de `guide.yml` à remettre.
+
+Le contournement TLS a été **explicitement refusé** par le propriétaire le 2026-10-11. On attend le
+renouvellement du certificat ; l'autorisation ne sera pas redemandée tant qu'aucun déploiement JAR
+ne sera réellement nécessaire.

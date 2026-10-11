@@ -652,6 +652,20 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   quand il risque d'être tronqué. **Non bloquant** : un libellé long reste parfois le bon choix.
   Le seuil n'est pas arbitraire, c'est la largeur réellement configurée des boutons
   (`panel.dialogue.MinecraftTextWidth`), confrontée au libellé effectivement vu coupé en jeu.
+- **État de déploiement SCINDÉ de #238/#153** *(2026-10-11)* — à savoir avant toute reprise. Le
+  **contenu** de #238 est **en ligne sur DEV** : les quatre dialogues (`guard`, `guide`, `jo`,
+  `libraire`) ont été publiés par le **moteur #47**, qui passe par l'agent sortant en HTTPS et
+  **n'utilise pas le FTP**. La source PlugAdmin étant le dépôt lui-même
+  (`PLUGADMIN_CONTENT_DIR=/srv/rpgquest/repo/src/main/resources`), le certificat FTPS expiré de
+  VeryGames **ne bloque que ce qui exige un nouveau JAR**.
+  **Restent donc en attente d'un JAR**, et seulement eux : la localisation des objectifs dans le chat
+  (#238), la règle de placement « sommet de tronc » (#153), et le placeholder `%kit_unlock_quest%`
+  — enregistré côté Java mais **sans consommateur** pour l'instant : la ligne de `guide.yml` qui
+  l'utilisait a été volontairement retirée, parce qu'un placeholder inconnu du plugin déployé est
+  laissé *tel quel* à l'écran. À remettre avec le JAR ; la raison est écrite dans `guide.yml`.
+  Le contournement TLS a été **explicitement refusé par le propriétaire** le 2026-10-11 : on attend
+  le renouvellement du certificat, et on ne redemande pas l'autorisation tant qu'aucun déploiement
+  JAR n'est réellement nécessaire.
 - **Remise d'objets à un PNJ** *(issue #123)* — nouveau type d'objectif `DELIVER_ITEM_TO_NPC`
   (`npc` + `material` + `amount`) : le joueur doit **réellement remettre** les objets au PNJ, dans
   son dialogue. Cet objectif n'écoute **aucun** événement de jeu — ramasser, fabriquer ou posséder

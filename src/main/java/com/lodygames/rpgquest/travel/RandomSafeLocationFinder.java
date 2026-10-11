@@ -153,7 +153,8 @@ public final class RandomSafeLocationFinder {
      * structures flottant au sommet de la canopée, inaccessibles à pied sans casser/poser — interdit
      * dans le Hub. Rejette donc en plus :
      * <ul>
-     *   <li>un sol de feuillage (tout bloc {@code *_LEAVES}) ;</li>
+     *   <li>un sol appartenant à un arbre — feuillage <strong>ou</strong> tronc/bois/racines (issue
+     *       #153 : « rejeter feuillage/canopée, sommet de tronc inaccessible ») ;</li>
      *   <li>une colonne isolée (surplomb/îlot) : au moins une des 4 colonnes voisines doit être,
      *       elle aussi, un sol solide non-feuillage à au plus un bloc de hauteur d'écart — une
      *       vérification locale bornée (4 voisins), jamais un vrai pathfinding, qui élimine les
@@ -178,7 +179,7 @@ public final class RandomSafeLocationFinder {
      * retournerait la structure elle-même une fois posée.
      */
     public static boolean isAccessibleGround(World world, int x, int groundY, int z) {
-        if (isLeafCanopy(world.getBlockAt(x, groundY, z).getType())) {
+        if (isTreeSurface(world.getBlockAt(x, groundY, z).getType())) {
             return false;
         }
         return hasWalkableApproach(world, x, groundY, z);
@@ -194,7 +195,7 @@ public final class RandomSafeLocationFinder {
                 continue;
             }
             Material neighborGround = world.getBlockAt(nx, neighborGroundY, nz).getType();
-            if (isLeafCanopy(neighborGround) || !neighborGround.isSolid()) {
+            if (isTreeSurface(neighborGround) || !neighborGround.isSolid()) {
                 continue;
             }
             if (Math.abs(neighborGroundY - groundY) <= 1) {
@@ -204,8 +205,31 @@ public final class RandomSafeLocationFinder {
         return false;
     }
 
-    private static boolean isLeafCanopy(Material type) {
-        return type.name().endsWith("_LEAVES");
+    /**
+     * Surface appartenant à un arbre : feuillage <strong>ou</strong> tronc.
+     *
+     * <p>Issue #153 — le ticket décide de rejeter « feuillage/canopée, <strong>sommet de tronc
+     * inaccessible</strong> ». Seul le feuillage l'était : une colonne dont le bloc le plus haut est
+     * un rondin — tronc étêté, tronc dépassant de la canopée, racines de mangrove, rondin couché —
+     * passait le contrôle et pouvait recevoir une structure, exactement aussi inatteignable à pied
+     * que celle au sommet des feuilles qui a motivé le ticket. Le Hub interdisant la casse et la
+     * pose, le joueur n'a alors aucun moyen de l'atteindre.</p>
+     *
+     * <p>Les suffixes couvrent les troncs et bois de toutes les essences, écorcés ou non
+     * ({@code _LOG}, {@code _WOOD}), les champignons du Nether ({@code _STEM}, {@code _HYPHAE}) et
+     * les racines de mangrove ({@code _ROOTS}) — plutôt qu'une liste de matériaux à maintenir à
+     * chaque version de Minecraft. Un tronc <em>latéral</em> reste permis comme voisin d'approche
+     * seulement s'il n'est pas la surface : c'est la surface qu'on refuse, pas la présence d'un
+     * arbre à côté.</p>
+     */
+    private static boolean isTreeSurface(Material type) {
+        String name = type.name();
+        return name.endsWith("_LEAVES")
+                || name.endsWith("_LOG")
+                || name.endsWith("_WOOD")
+                || name.endsWith("_STEM")
+                || name.endsWith("_HYPHAE")
+                || name.endsWith("_ROOTS");
     }
 
     private static boolean isDangerous(Material type) {

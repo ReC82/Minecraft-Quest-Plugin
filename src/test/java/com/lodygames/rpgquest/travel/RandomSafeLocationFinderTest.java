@@ -232,6 +232,106 @@ class RandomSafeLocationFinderTest {
                 "une colonne isolée sans voisin praticable (surplomb/îlot) doit être refusée");
     }
 
+    /**
+     * Issue #153 — le ticket décide de rejeter « feuillage/canopée, <strong>sommet de tronc
+     * inaccessible</strong> ». Seul le feuillage l'était : une structure posée sur un rondin est
+     * exactement aussi inatteignable à pied, et le Hub interdit la casse comme la pose.
+     */
+    @Test
+    void findAccessibleColumnRejectsATrunkTop() {
+        for (Material trunk : new Material[] {
+                Material.OAK_LOG, Material.STRIPPED_BIRCH_LOG, Material.ACACIA_WOOD,
+                Material.WARPED_STEM, Material.CRIMSON_HYPHAE, Material.MANGROVE_ROOTS}) {
+            int x = 300 + trunk.ordinal() % 97;
+            setGround(x, 70, 300, trunk);
+            for (int[] offset : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                setGround(x + offset[0], 70, 300 + offset[1], Material.STONE);
+            }
+
+            assertTrue(RandomSafeLocationFinder.findAccessibleColumn(world, x, 300).isEmpty(),
+                    () -> "un sommet de " + trunk + " ne doit jamais recevoir de structure");
+        }
+    }
+
+    /** Un arbre à côté n'est pas un problème : c'est la SURFACE qu'on refuse, pas le voisinage. */
+    @Test
+    void findAccessibleColumnStillAcceptsNormalGroundNextToATree() {
+        setGround(320, 64, 320, Material.GRASS_BLOCK);
+        setGround(321, 64, 320, Material.OAK_LOG);   // un tronc juste à côté
+        setGround(319, 64, 320, Material.STONE);     // et un vrai sol praticable de l'autre côté
+        for (int[] offset : new int[][] {{0, 1}, {0, -1}}) {
+            setGround(320 + offset[0], 64, 320 + offset[1], Material.STONE);
+        }
+
+        assertTrue(RandomSafeLocationFinder.findAccessibleColumn(world, 320, 320).isPresent(),
+                "un sol normal au pied d'un arbre reste un emplacement valable");
+    }
+
+    /** Un tronc voisin ne peut pas servir d'approche à pied : il faut un vrai sol. */
+    @Test
+    void findAccessibleColumnRejectsAColumnWhoseOnlyNeighbourIsATrunk() {
+        setGround(340, 64, 340, Material.STONE);
+        for (int[] offset : new int[][] {{1, 0}, {0, 1}, {0, -1}}) {
+            for (int y = world.getMinHeight(); y <= 70; y++) {
+                world.getBlockAt(340 + offset[0], y, 340 + offset[1]).setType(Material.AIR);
+            }
+        }
+        setGround(339, 64, 340, Material.JUNGLE_LOG); // seul voisin : un tronc
+
+        assertTrue(RandomSafeLocationFinder.findAccessibleColumn(world, 340, 340).isEmpty(),
+                "un sommet de tronc n'est pas une approche praticable");
+    }
+
+    @Test
+    void findAccessibleColumnRejectsWaterAndLavaSurfaces() {
+        for (Material fluid : new Material[] {Material.WATER, Material.LAVA}) {
+            int x = 360 + fluid.ordinal() % 89;
+            setGround(x, 64, 360, fluid);
+            for (int[] offset : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+                setGround(x + offset[0], 64, 360 + offset[1], Material.STONE);
+            }
+
+            assertTrue(RandomSafeLocationFinder.findAccessibleColumn(world, x, 360).isEmpty(),
+                    () -> fluid + " ne doit jamais servir de sol à une structure");
+        }
+    }
+
+    /**
+     * Dégagement du corps : il manque deux blocs libres au-dessus du sol.
+     *
+     * <p>Constat de l'audit #153 du 2026-10-11 : ce contrôle ne peut mordre <strong>que</strong> à la
+     * limite de hauteur du monde. Ailleurs il est structurellement inatteignable, parce que la
+     * surface vient de {@code getHighestBlockYAt} — au-dessus du bloc le plus haut, les blocs des
+     * pieds et de la tête sont libres par définition. Un plafond réel au-dessus du sol déplace
+     * simplement la surface vers ce plafond, et c'est alors ce plafond qui est jugé.</p>
+     */
+    @Test
+    void findAccessibleColumnRejectsAColumnPressedAgainstTheWorldCeiling() {
+        int top = world.getMaxHeight() - 1;
+        world.getBlockAt(390, top, 390).setType(Material.STONE);
+        for (int[] offset : new int[][] {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}) {
+            world.getBlockAt(390 + offset[0], top, 390 + offset[1]).setType(Material.STONE);
+        }
+
+        assertTrue(RandomSafeLocationFinder.findAccessibleColumn(world, 390, 390).isEmpty(),
+                "collé au plafond du monde, il ne reste pas la place de tenir debout");
+    }
+
+    /** Pente raide : un écart de plus d'un bloc n'est pas une marche, c'est une falaise. */
+    @Test
+    void findAccessibleColumnRejectsNeighboursMoreThanOneBlockApart() {
+        setGround(400, 64, 400, Material.STONE);
+        for (int[] offset : new int[][] {{1, 0}, {0, 1}, {0, -1}}) {
+            for (int y = world.getMinHeight(); y <= 80; y++) {
+                world.getBlockAt(400 + offset[0], y, 400 + offset[1]).setType(Material.AIR);
+            }
+        }
+        setGround(399, 68, 400, Material.STONE); // seul voisin, 4 blocs plus haut : falaise
+
+        assertTrue(RandomSafeLocationFinder.findAccessibleColumn(world, 400, 400).isEmpty(),
+                "un voisin à 4 blocs d'écart ne constitue pas une approche à pied");
+    }
+
     @Test
     void findAccessibleColumnAcceptsAStepUpOrDownOfOneBlock() {
         // Un seul voisin praticable, à ±1 bloc de hauteur (marche normale) : doit suffire.

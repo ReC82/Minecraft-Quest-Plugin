@@ -61,7 +61,8 @@ class NpcCitizensPayloadTest {
                                 new CitizensNpcSummary(12, "12121212-1212-1212-1212-121212121212", "Andy",
                                         "andy", false, true, "world_hub", 12.5, 70.0, -33.5, 90.0f, 0.0f,
                                         true, true, true,
-                                        true, 10.0, true, "wander", 0, "world_hub", 12.0, 70.0, -33.0, 12, 2)),
+                                        true, 10.0, true, "wander", 0, "world_hub", 12.0, 70.0, -33.0, 12, 2,
+                                        "PLAYER", "NAME", "Andy")),
                                 1, 0, 1));
                     }
                 });
@@ -77,6 +78,11 @@ class NpcCitizensPayloadTest {
         assertTrue(json.contains("\"yaw\":90"), "yaw traverse le payload");
         assertTrue(json.contains("\"pitch\":0"), "pitch traverse le payload");
         assertTrue(json.contains("\"liveLocation\":true"), "la position vient de l'entité présente");
+        // Issue #197 — l'apparence traverse le payload pour la même raison que la position : une
+        // clé oubliée ici ne casse rien, elle rend seulement l'écran muet.
+        assertTrue(json.contains("\"entityType\":\"PLAYER\""), "le type d'entité traverse : " + json);
+        assertTrue(json.contains("\"skinSourceKind\":\"NAME\""), "la forme de la source traverse");
+        assertTrue(json.contains("\"skinSourceValue\":\"Andy\""), "la valeur de la source traverse");
     }
 
     /** Un PNJ non apparu : sa dernière position enregistrée traverse aussi, mais marquée comme telle. */
@@ -92,7 +98,8 @@ class NpcCitizensPayloadTest {
                                 new CitizensNpcSummary(2, "22222222-2222-2222-2222-222222222222", "Tania",
                                         "tania", false, false, "world_hub", -8.5, 64.0, 21.5, 0.0f, 0.0f,
                                         false, true, false,
-                                        false, 10.0, false, "linear", 0, null, null, null, null, 25, 3)),
+                                        false, 10.0, false, "linear", 0, null, null, null, null, 25, 3,
+                                        "VILLAGER", null, null)),
                                 1, 0, 1));
                     }
                 });

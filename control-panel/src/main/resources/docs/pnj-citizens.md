@@ -73,7 +73,65 @@ taguer le PNJ **exactement** avec cet id.
 > `TALK_TO_NPC` ne valide jamais. Vérifier avec `/rpgadmin npc info` et la page **PNJ** du
 > Control Panel avant de conclure « ça marche ».
 
+## 3 bis. Renommer un PNJ (depuis PlugAdmin, chemin recommandé)
+
+Fiche du PNJ → section **Identité** → **« Renommer le PNJ »**. Un seul champ, un seul bouton.
+
+Il n'y a **qu'un nom à gérer**. PlugAdmin met à jour en une opération la fiche RPGQuest *et* le nom
+affiché au-dessus du PNJ en jeu, puis **relit les deux** et dit lequel a changé. Si une seule couche
+a suivi, c'est annoncé comme un **échec** — pas comme un succès partiel — et relancer l'opération
+est sans risque : elle reprend la couche en retard et laisse l'autre telle quelle.
+
+Ce qui ne change **jamais** : l'**identifiant technique** (`guard`), l'identité Citizens (UUID,
+numéro), et les liaisons quêtes / dialogues / stories.
+
+Les **textes de dialogue ne sont pas réécrits**. Un locuteur (`speaker`) peut être partagé entre
+plusieurs personnages : le renommage **liste** les dialogues qui nomment encore l'ancien nom, et
+c'est à vous de décider lesquels corriger, depuis l'éditeur de dialogues.
+
+> [!NOTE]
+> Le champ « Nom du PNJ » du formulaire **« Modifier »** est en lecture seule, et renvoie ici. Deux
+> champs de nom concurrents, c'est exactement ce qui faisait divergier le catalogue et le jeu.
+
 ## 4. Mettre un skin
+
+### Depuis PlugAdmin (recommandé) : « Définir une apparence »
+
+Fiche du PNJ → section **Apparence**. L'état y est affiché, et repris sur la tuile du catalogue :
+
+| État | Ce que cela veut dire | Renommage possible ? |
+|---|---|---|
+| **configurée** | PNJ joueur, et RPGQuest connaît la source de son apparence | oui — elle est réappliquée à l'identique |
+| **à configurer** | PNJ joueur, source **inconnue** de RPGQuest | **non**, voir ci-dessous |
+| **en cours** | apparence demandée, pas encore confirmée par un relevé Citizens | — |
+| **erreur** | la dernière tentative a échoué ; le PNJ garde son apparence | — |
+| **non applicable** | PNJ non joueur (villageois, zombie…), ou aucun PNJ Citizens lié | oui |
+
+> [!IMPORTANT]
+> **« Source inconnue » ne veut pas dire « sans skin ».** L'API publique de Citizens ne permet pas
+> de *lire* le skin appliqué à un PNJ. Un PNJ en « à configurer » a très probablement une apparence,
+> bien visible par les joueurs — RPGQuest ignore seulement d'où elle vient, et ne sait donc pas la
+> reproduire. C'est ce qui rend son renommage dangereux : un PNJ de type joueur sans skin explicite
+> **dérive son apparence de son nom**, donc le renommer la changerait sans retour possible.
+>
+> Définir une apparence depuis le panel enregistre sa source et lève le blocage. L'avertissement est
+> affiché **avant** la soumission du renommage, avec le bouton pour le faire sur place : le nom saisi
+> n'est pas perdu, et rien n'a été modifié entre-temps.
+
+Le filtre **« Apparence à configurer »**, en haut de la page PNJ, liste les PNJ qui attendent cette
+décision.
+
+Deux sources, et seulement deux : un **lien MineSkin** (`https://minesk.in/…` — jamais la commande
+`/npc skin --url …`, refusée) ou un **pseudo Minecraft**, que Citizens résout lui-même. Le
+téléchargement est asynchrone : un succès signifie « demande transmise », pas « skin visuellement
+confirmé » — vérifier en jeu, une reconnexion du client peut être nécessaire.
+
+> [!NOTE]
+> La fiche n'affiche **pas d'image** du skin, volontairement : Citizens ne donne pas accès à la
+> texture appliquée, et rendre une tête depuis un pseudo demanderait d'appeler un service d'images
+> tiers depuis votre navigateur. Mieux vaut la source exacte, nommée, qu'un visage peut-être faux.
+
+### En jeu, par commande Citizens
 
 Le PNJ doit être `--type player`. Sélectionné, puis :
 
@@ -97,7 +155,12 @@ mémorisé par Citizens et persiste.
 - Pour un placement fin, se mettre exactement où on veut le PNJ puis `/npc tphere` puis ajuster
   l'orientation avec `/npc rotate`.
 
-## 6. Renommer / supprimer
+## 6. Renommer / supprimer (en jeu)
+
+> [!WARNING]
+> `/npc rename` ne change que le nom **Citizens**. La fiche RPGQuest garde l'ancien nom, et le
+> catalogue du panel affichera une **divergence**. Pour renommer un personnage, préférer
+> « Renommer le PNJ » depuis PlugAdmin (section 3 bis), qui met les deux couches d'accord.
 
 - `/npc rename <nouveau nom>` : change le **nom affiché** uniquement (l'id RPGQuest ne bouge pas).
 - `/npc remove` : **supprime définitivement** le PNJ Citizens sélectionné. À n'utiliser que si on

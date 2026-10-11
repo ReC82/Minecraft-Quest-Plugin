@@ -647,6 +647,36 @@ public interface AgentActions {
     CompletableFuture<MutationResult> citizensRename(String npcId, String newName);
 
     /**
+     * Issue #197 — change le <strong>nom du personnage</strong>, sur toutes les couches qui le
+     * portent, en une seule opération.
+     *
+     * <p><strong>Pourquoi cette action existe.</strong> Jusqu'ici, renommer un PNJ demandait deux
+     * gestes distincts : modifier la définition RPGQuest ({@code npcs/<id>.yml}), puis renommer le
+     * PNJ Citizens. Rien ne les reliait, et un administrateur qui n'en faisait qu'un obtenait un
+     * personnage dont le nom du catalogue et le nom affiché au-dessus de la tête divergeaient — ce
+     * qui est arrivé au Guide renommé « Elias ». La différence entre ces deux noms est un détail
+     * d'implémentation : elle n'a pas à être administrée.</p>
+     *
+     * <p><strong>Ordre délibéré.</strong> Citizens d'abord, la définition ensuite. Le renommage
+     * Citizens est le seul des deux qui peut légitimement <em>refuser</em> (apparence dont la source
+     * est inconnue, voir {@code SkinPreservationPlanner}). Le faire en premier garantit qu'un refus
+     * laisse <strong>zéro couche modifiée</strong>, au lieu d'un nom logique déjà changé pour un
+     * personnage qui s'appelle encore autrement en jeu.</p>
+     *
+     * <p><strong>Jamais de succès partiel déguisé.</strong> Les deux couches sont <em>relues</em>
+     * après l'opération. Si l'une n'a pas suivi, le résultat est un échec qui nomme précisément
+     * celle qui a changé et celle qui n'a pas changé.</p>
+     *
+     * <p><strong>Aucun texte de dialogue n'est réécrit.</strong> Le {@code speaker} d'un nœud est
+     * une donnée d'auteur, parfois partagée entre plusieurs personnages : le renommage le
+     * <em>signale</em> quand il diverge, il ne le remplace pas.</p>
+     *
+     * @param npcId identifiant logique, jamais modifié — c'est l'identité stable du personnage
+     * @param name  nouveau nom affiché, pour le catalogue comme pour le jeu
+     */
+    CompletableFuture<MutationResult> npcIdentityRename(String npcId, String name);
+
+    /**
      * Issue #165 — applique un skin à partir d'une URL MineSkin au PNJ Citizens lié à
      * {@code npcId}. L'URL est validée côté serveur ; le téléchargement est fait par Citizens de
      * façon asynchrone, donc le succès renvoyé signifie « demande acceptée et transmise », pas
@@ -718,6 +748,16 @@ public interface AgentActions {
      * @param wanderWorld  <strong>ancre</strong> de la zone de promenade — distincte de la position
      *                     actuelle du PNJ, qu'un déplacement manuel ne change pas.
      * @param wanderXRange demi-côté horizontal de la zone, {@code wanderYRange} demi-hauteur, en blocs.
+     * @param entityType   type d'entité enregistré par Citizens ({@code PLAYER}, {@code VILLAGER}…),
+     *                     ou {@code null} si la build installée ne l'expose pas (issue #197). C'est
+     *                     lui qui dit si la question du skin a un sens pour ce PNJ.
+     * @param skinSourceKind forme de l'apparence <strong>que RPGQuest a lui-même appliquée et
+     *                     enregistrée</strong> : {@code URL} (lien MineSkin) ou {@code NAME} (pseudo
+     *                     Minecraft), ou {@code null} si RPGQuest n'en connaît aucune. Issue #197 :
+     *                     {@code null} ne veut <strong>pas</strong> dire « ce PNJ n'a pas de skin » —
+     *                     l'API publique de Citizens ne permet pas de lire le skin en place. Cela
+     *                     veut dire « sa source est inconnue », donc non reproductible.
+     * @param skinSourceValue valeur correspondante (lien ou pseudo), ou {@code null}.
      */
     record CitizensNpcSummary(int numericId, String uuid, String name, String linkedNpcId,
                               boolean availableForBinding, boolean spawned,
@@ -726,14 +766,16 @@ public interface AgentActions {
                               Boolean lookCloseEnabled, Double lookCloseRange,
                               Boolean wanderEnabled, String wanderProvider, Integer wanderWaypoints,
                               String wanderWorld, Double wanderX, Double wanderY, Double wanderZ,
-                              Integer wanderXRange, Integer wanderYRange) {
+                              Integer wanderXRange, Integer wanderYRange,
+                              String entityType, String skinSourceKind, String skinSourceValue) {
 
         /** Entrée sans position connue — les chemins qui n'en ont pas besoin, et les tests. */
         CitizensNpcSummary(int numericId, String uuid, String name, String linkedNpcId,
                            boolean availableForBinding, boolean spawned) {
             this(numericId, uuid, name, linkedNpcId, availableForBinding, spawned,
                     null, null, null, null, null, null, false, spawned, false,
-                    null, null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null, null,
+                    null, null, null);
         }
     }
 

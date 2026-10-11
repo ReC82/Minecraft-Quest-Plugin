@@ -326,3 +326,88 @@ et affiche l'état **Lié** (ou **à lier** si seule la fiche a été créée).
 ### Référence technique
 
 `CITIZENS_ONLY`
+
+---
+
+## Apparence à configurer
+
+### Ce que cela signifie
+
+Ce PNJ est de type **joueur** et son apparence n'est **pas décrite dans RPGQuest**. Elle est
+probablement bien visible en jeu — mais elle a été posée en dehors du panel (commande Citizens
+`/npc skin`, ou avant l'arrivée de ce suivi), et RPGQuest ignore d'où elle vient.
+
+> [!IMPORTANT]
+> Ce n'est **pas** « ce PNJ n'a pas de skin ». C'est « on ne sait pas quel skin il porte ». L'API
+> publique de Citizens ne permet pas de *lire* la texture appliquée à un PNJ : RPGQuest ne connaît
+> que les apparences qu'il a lui-même posées et enregistrées.
+
+### Pourquoi il faut corriger
+
+Un PNJ de type joueur **sans skin explicite dérive son visage de son nom**. Le renommer changerait
+donc aussi son apparence — et comme son origine est inconnue, il serait impossible de la restituer.
+PlugAdmin **refuse** donc son renommage (`SKIN_SOURCE_UNKNOWN`) plutôt que de remplacer son visage
+en silence. Tant que l'apparence n'est pas définie, ce personnage ne peut pas être renommé.
+
+### Comment corriger
+
+Depuis PlugAdmin :
+
+1. Ouvrir **PNJ**, puis le PNJ concerné. Le filtre **« Apparence à configurer »** les liste tous.
+2. Section **Apparence** → **« Définir une apparence »**.
+3. Choisir la source :
+   - **Pseudo Minecraft** : le plus simple. Pour conserver *exactement* le visage actuel, indiquer
+     le pseudo dont il dérivait — en pratique, l'ancien nom du PNJ.
+   - **Lien MineSkin** (`https://minesk.in/…`) : pour une texture sur mesure.
+4. Appliquer, puis rafraîchir le relevé **Citizens** en haut de page.
+5. Le renommage est alors possible : section **Identité** → **« Renommer le PNJ »**.
+
+L'avertissement apparaît **avant** la soumission du renommage, avec ce bouton juste à côté : le nom
+saisi n'est pas perdu, et aucune couche n'a été modifiée entre-temps.
+
+### Vérification
+
+L'état d'apparence passe à **« configurée »** sur la tuile et sur la fiche, la source enregistrée y
+est nommée, et le PNJ disparaît du filtre « Apparence à configurer ». Vérifier le visage **en jeu** :
+le téléchargement est asynchrone côté Citizens, et un client déjà connecté doit parfois se
+reconnecter pour le voir.
+
+### Référence technique
+
+`SKIN_SOURCE_UNKNOWN`, table `npc_citizens_skins` (migration V27)
+
+---
+
+## Type de PNJ inconnu
+
+### Ce que cela signifie
+
+Le relevé Citizens ne dit pas de quel **type d'entité** est ce PNJ. Sans cette information, il est
+impossible de savoir si la question du skin le concerne : un villageois n'a pas de skin de joueur,
+un PNJ de type joueur en a un qui dépend de son nom.
+
+Le panel affiche donc **« type inconnu »** plutôt que de supposer. Un type absent ne veut jamais
+dire « ce n'est pas un joueur ».
+
+### Pourquoi il faut corriger
+
+Par prudence, le renommage est refusé tant que le type est inconnu : il pourrait s'agir d'un PNJ
+joueur dont le visage dériverait du nom.
+
+### Comment corriger
+
+Cliquer sur **« Citizens »** en haut de la page PNJ pour refaire le relevé. La cause la plus
+fréquente est un relevé antérieur à la version du plugin qui transporte le type d'entité — un
+simple rafraîchissement suffit alors.
+
+Si le type reste inconnu après un relevé frais, c'est que Citizens n'expose pas le trait `MobType`
+pour ce PNJ. Vérifier en jeu avec `/npc select` puis `/npc` (le type est affiché dans l'en-tête).
+
+### Vérification
+
+La fiche affiche le type en français (« Joueur », « Villageois »…) avec sa valeur technique en
+secondaire, et l'état d'apparence devient exploitable.
+
+### Référence technique
+
+`entityType` absent du relevé `npc.citizens.list`

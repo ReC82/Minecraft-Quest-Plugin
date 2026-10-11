@@ -70,6 +70,7 @@ import com.lodygames.rpgquest.npc.NpcDefinitionStore;
 import com.lodygames.rpgquest.npc.BukkitNpcPlacementProbe;
 import com.lodygames.rpgquest.npc.NpcIdentityService;
 import com.lodygames.rpgquest.npc.NpcPlacementPlanner;
+import com.lodygames.rpgquest.npc.NpcRenameVerdict;
 import com.lodygames.rpgquest.npc.SkinPreservationPlanner;
 import com.lodygames.rpgquest.npc.NpcLoadIssue;
 import com.lodygames.rpgquest.npc.QuestGiverStore;
@@ -1490,6 +1491,174 @@ public final class BukkitAgentActions implements AgentActions {
                 effects), null);
     }
 
+    // ---- Issue #197 : un seul nom de personnage, coordonné sur toutes ses couches -------------
+
+    /**
+     * Issue #197 — renommage coordonné : définition RPGQuest <em>et</em> nom Citizens.
+     *
+     * <p>Citizens est traité <strong>en premier</strong> parce que c'est la seule des deux couches
+     * qui peut refuser : si l'apparence du PNJ est de type joueur et que RPGQuest n'en connaît pas
+     * la source, {@code citizensRename} s'arrête sans rien toucher. En commençant par elle, un refus
+     * laisse les <em>deux</em> couches intactes — alors que l'ordre inverse produirait exactement le
+     * défaut signalé en jeu : un catalogue qui affiche « Elias » et un personnage qui s'appelle
+     * encore « Guide » au-dessus de la tête.</p>
+     */
+    @Override
+    public CompletableFuture<MutationResult> npcIdentityRename(String npcId, String name) {
+        String id = npcId == null ? "" : npcId.trim();
+        String wanted = name == null ? "" : name.trim();
+        if (wanted.isEmpty() || wanted.length() > 48) {
+            return done(MutationResult.of(false, "INVALID_NAME", "Nom invalide : 1 à 48 caractères attendus."));
+        }
+        Optional<NpcDefinition> definition = npcEngine.find(id);
+        return citizensUuidOf(id).thenCompose(uuid -> {
+            if (definition.isEmpty() && uuid.isEmpty()) {
+                return done(MutationResult.of(false, "NOT_FOUND",
+                        "« " + safe(id) + " » n'a ni définition RPGQuest ni PNJ Citizens lié : "
+                                + "il n'y a aucun nom à changer."));
+            }
+            String previous = definition.map(NpcDefinition::displayName).orElse("");
+            if (uuid.isEmpty()) {
+                // Aucune couche en jeu : la définition est la seule identité de ce personnage. Ce
+                // n'est pas un échec, et surtout pas un demi-succès — il n'y a rien à coordonner.
+                MutationResult written = writeDisplayName(definition.get(), wanted);
+                String readBack = readDefinitionName(id);
+                return done(verdict(id, wanted, previous,
+                        wanted.equals(readBack)
+                                ? NpcRenameVerdict.Layer.UPDATED : NpcRenameVerdict.Layer.STALE,
+                        NpcRenameVerdict.Layer.ABSENT,
+                        "", readBack, written.message(), written.effects()));
+            }
+            return citizensRename(id, wanted).thenCompose(inGame -> {
+                if (!inGame.ok()) {
+                    // Refus ou panne côté Citizens : la définition n'a pas été touchée, et on le dit
+                    // explicitement plutôt que de laisser croire à un renommage à moitié fait.
+                    return done(new MutationResult(false, inGame.code(),
+                            inGame.message() + " Le nom du catalogue RPGQuest n'a pas été modifié "
+                                    + "non plus : aucune couche n'a changé.",
+                            inGame.effects()));
+                }
+                MutationResult written = definition.isEmpty()
+                        ? MutationResult.of(true, "NO_DEFINITION", "")
+                        : writeDisplayName(definition.get(), wanted);
+                return verifyBothLayers(id, wanted, previous, uuid.get(),
+                        definition.isPresent(), inGame, written);
+            });
+        });
+    }
+
+    /**
+     * Réécrit le <strong>seul</strong> nom affiché d'une définition, en conservant tout le reste.
+     *
+     * <p>On n'emprunte pas {@code npcDefinitionUpdate} ici : ce chemin reconstruit la définition
+     * depuis les champs d'un formulaire et perd la description. Un renommage ne doit rien effacer
+     * d'autre que l'ancien nom.</p>
+     */
+    private MutationResult writeDisplayName(NpcDefinition definition, String wanted) {
+        NpcDefinition renamed;
+        try {
+            renamed = new NpcDefinition(definition.id(), wanted, definition.description(),
+                    definition.dialogueId(), definition.role(), definition.enabled());
+        } catch (IllegalArgumentException e) {
+            return MutationResult.of(false, "INVALID", e.getMessage());
+        }
+        NpcDefinitionStore.Result r = npcStore.update(renamed);
+        npcEngine.reload();
+        List<String> effects = new ArrayList<>();
+        if (r.file() != null) {
+            effects.add("npcs/" + r.file());
+        }
+        return new MutationResult(r.ok(), r.code(), r.message(), List.copyOf(effects));
+    }
+
+    /**
+     * Relit les deux couches après l'opération et refuse de rendre un succès que seule l'une
+     * justifierait.
+     *
+     * <p>C'est la garantie demandée par l'issue : « ne jamais prétendre au succès complet si une
+     * seule couche a changé ». On ne se fie donc pas aux codes de retour — on relit le nom Citizens
+     * dans le registre et le nom de la définition dans le moteur rechargé.</p>
+     */
+    private CompletableFuture<MutationResult> verifyBothLayers(String id, String wanted, String previous,
+                                                               UUID citizensUuid, boolean hasDefinition,
+                                                               MutationResult inGame, MutationResult written) {
+        return onMain(() -> done(npcIdentityService.citizensNameOf(citizensUuid)))
+                .thenApply(readBack -> {
+                    String citizensName = readBack.orElse("");
+                    String definitionName = readDefinitionName(id);
+                    return verdict(id, wanted, previous,
+                            !hasDefinition ? NpcRenameVerdict.Layer.ABSENT
+                                    : wanted.equals(definitionName)
+                                            ? NpcRenameVerdict.Layer.UPDATED : NpcRenameVerdict.Layer.STALE,
+                            wanted.equals(citizensName)
+                                    ? NpcRenameVerdict.Layer.UPDATED : NpcRenameVerdict.Layer.STALE,
+                            citizensName, definitionName, written.message(),
+                            combine(inGame.effects(), written.effects()));
+                });
+    }
+
+    /** Nom actuellement porté par la définition, relu sur le moteur rechargé. Vide si absente. */
+    private String readDefinitionName(String npcId) {
+        return npcEngine.find(npcId).map(NpcDefinition::displayName).orElse("");
+    }
+
+    /**
+     * Projette le verdict pur en {@link MutationResult}, et n'y ajoute que la note sur les
+     * dialogues — qui est une observation, pas une partie de la décision.
+     */
+    private MutationResult verdict(String id, String wanted, String previous,
+                                   NpcRenameVerdict.Layer definition, NpcRenameVerdict.Layer citizens,
+                                   String citizensName, String definitionName,
+                                   String definitionFailure, List<String> effects) {
+        NpcRenameVerdict.Verdict v = NpcRenameVerdict.of(id, wanted, previous, definition, citizens,
+                citizensName, definitionName, definitionFailure);
+        String message = v.ok() ? v.message() + dialogueSpeakerNote(previous) : v.message();
+        return new MutationResult(v.ok(), v.code(), message,
+                v.ok() ? combine(effects, List.of("npc:name=" + wanted)) : effects);
+    }
+
+    /**
+     * Les dialogues qui désignaient l'ancien nom comme locuteur, <strong>sans rien y changer</strong>.
+     *
+     * <p>Le {@code speaker} d'un nœud est un texte d'auteur : il peut être partagé par plusieurs
+     * personnages, porter une mise en forme, ou désigner volontairement autre chose que le nom du
+     * PNJ. Le réécrire automatiquement reviendrait à modifier du contenu que personne n'a relu.
+     * On se contente donc de signaler où regarder.</p>
+     */
+    private String dialogueSpeakerNote(String previousName) {
+        String previous = previousName == null ? "" : previousName.trim();
+        if (previous.isEmpty()) {
+            return "";
+        }
+        List<String> affected = new ArrayList<>();
+        for (DialogueDefinition dialogue : dialogueEngine.dialogues()) {
+            for (DialogueNode node : dialogue.nodes().values()) {
+                if (previous.equalsIgnoreCase(node.speaker() == null ? "" : node.speaker().trim())) {
+                    affected.add(dialogue.id().toString());
+                    break;
+                }
+            }
+        }
+        if (affected.isEmpty()) {
+            return "";
+        }
+        Collections.sort(affected);
+        return " À vérifier à la main : " + affected.size() + " dialogue(s) nomment encore « "
+                + previous + " » comme locuteur (" + String.join(", ", affected) + "). "
+                + "Aucun texte n'a été réécrit automatiquement — un locuteur peut être partagé.";
+    }
+
+    /** Concatène deux listes d'effets sans doublon, en gardant l'ordre de lecture. */
+    private static List<String> combine(List<String> first, List<String> second) {
+        List<String> all = new ArrayList<>(first == null ? List.of() : first);
+        for (String s : second == null ? List.<String>of() : second) {
+            if (!all.contains(s)) {
+                all.add(s);
+            }
+        }
+        return List.copyOf(all);
+    }
+
     /**
      * Issue #165 — skin MineSkin. L'URL est validée <strong>côté serveur</strong> (jamais une
      * commande libre venue du navigateur) et le PNJ est ciblé par la liaison persistée.
@@ -1985,8 +2154,11 @@ public final class BukkitAgentActions implements AgentActions {
         if (!available) {
             return done(new CitizensRosterView(false, List.of(), 0, 0, 0));
         }
-        // Registre Citizens = API main-thread ; liaisons = base async. Croisement sans lecture du monde.
-        return npcBindingRepository.loadAll().thenCompose(bindings -> {
+        // Registre Citizens = API main-thread ; liaisons et sources d'apparence = base async.
+        // Les DEUX lectures de base sont consommées AVANT d'entrer sur le thread principal : y
+        // attendre un Future gèlerait le serveur le temps de la requête (leçon de l'issue #156).
+        return npcBindingRepository.loadAll().thenCompose(bindings -> npcSkinSourceRepository.loadAll()
+                .thenCompose(skinSources -> {
             Map<UUID, String> linkedByUuid = new HashMap<>();
             for (NpcBindingRepository.Binding b : bindings) {
                 linkedByUuid.put(b.citizensUuid(), b.npcId());
@@ -2022,12 +2194,20 @@ public final class BukkitAgentActions implements AgentActions {
                             n.wander() == null || !n.wander().hasAnchor() ? null : n.wander().anchorY(),
                             n.wander() == null || !n.wander().hasAnchor() ? null : n.wander().anchorZ(),
                             n.wander() == null ? null : n.wander().xRange(),
-                            n.wander() == null ? null : n.wander().yRange()));
+                            n.wander() == null ? null : n.wander().yRange(),
+                            // Issue #197 — apparence. Le type dit si la question du skin a un sens ;
+                            // la source dit si RPGQuest sait la reproduire. Absence de source ≠
+                            // absence de skin : l'API publique de Citizens ne permet pas de le lire.
+                            n.entityType(),
+                            skinSources.containsKey(n.uuid())
+                                    ? skinSources.get(n.uuid()).kind().name() : null,
+                            skinSources.containsKey(n.uuid())
+                                    ? skinSources.get(n.uuid()).value() : null));
                 }
                 rows.sort((a, b) -> Integer.compare(a.numericId(), b.numericId()));
                 return done(new CitizensRosterView(true, List.copyOf(rows), rows.size(), available2, linked));
             });
-        });
+        }));
     }
 
     @Override

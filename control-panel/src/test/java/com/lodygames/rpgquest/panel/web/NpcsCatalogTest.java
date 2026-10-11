@@ -116,8 +116,9 @@ class NpcsCatalogTest {
         assertTrue(page.contains("text-bg-secondary\">Citizens #6</span>"), "badge Citizens #6 (guard)");
         assertTrue(page.contains("text-bg-warning\">à lier</span>"), "badge « à lier » (woodcutter_bob)");
 
-        // Sections du détail
-        for (String s : new String[] {">Identité<", ">Citizens<", ">Contenu<", ">Diagnostics<"}) {
+        // Sections du détail (issue #197 : six sections, dans l'ordre des questions qu'on se pose)
+        for (String s : new String[] {">Identité<", ">Apparence<", ">Emplacement<", ">Contenu<",
+                ">Administration<"}) {
             assertTrue(page.contains(s), "section " + s);
         }
         // Labels humains : rôle affiché « Donneur de quête », valeur technique en secondaire
@@ -672,21 +673,23 @@ class NpcsCatalogTest {
             + "\"spawned\":true}]}";
 
     @Test
-    void theInGameNameFieldShowsWhatCitizensReallyAppliedNotTheDefinitionName() throws Exception {
+    void twoDivergentNamesAreShownAsAnAnomalyRatherThanAsTwoFieldsToManage() throws Exception {
         start();
         runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
         runListWithSuccess("npc.citizens.list", CITIZENS_RENAMED);
         String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
 
-        // Le champ « Nom en jeu » est prérempli avec le nom Citizens, jamais celui de la définition.
-        assertTrue(page.contains("name=\"name\" maxlength=\"48\" required value=\"Nouveau Nom\"")
-                        || page.contains("value=\"Nouveau Nom\""),
-                "le champ « Nom en jeu » doit porter le nom réellement appliqué");
-        assertFalse(page.contains("name=\"name\" maxlength=\"48\" required value=\"Ancien Nom\""),
-                "le nom de définition ne doit plus servir de nom en jeu");
-        // Les deux noms sont présentés, et distingués par leur fonction.
-        assertTrue(page.contains("nom de la définition RPGQuest"), "la distinction est explicitée");
-        assertTrue(page.contains("npc-ingame"), "le nom en jeu apparaît dans la liste");
+        // Issue #197 : les deux noms restent VISIBLES — c'est le symptôme à montrer — mais ils ne
+        // sont plus deux valeurs à administrer. La divergence est nommée comme telle.
+        assertTrue(page.contains("npc-ingame"), "le nom réellement affiché en jeu reste visible");
+        assertTrue(page.contains("text-bg-warning\">divergent</span>"), "la divergence est signalée");
+        assertTrue(page.contains("Le catalogue et le jeu ne portent pas le même nom"),
+                "et expliquée en français");
+        assertTrue(page.contains("les remet d'accord en une seule opération"),
+                "avec le geste qui la corrige");
+        // Le champ unique porte le nom canonique (celui du catalogue), qui sera propagé au jeu.
+        assertTrue(page.contains("required autocomplete=\"off\" value=\"Ancien Nom\""),
+                "un seul champ, prérempli avec le nom canonique à propager");
     }
 
     @Test
@@ -705,14 +708,17 @@ class NpcsCatalogTest {
     }
 
     @Test
-    void withoutAFreshCitizensSurveyTheFieldIsLeftEmptyRatherThanWrong() throws Exception {
+    void withoutAFreshCitizensSurveyTheRenameSaysWhatItCannotSee() throws Exception {
         start();
         runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME); // aucun relevé Citizens
         String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
 
-        assertFalse(page.contains("required value=\"Ancien Nom\""),
-                "mieux vaut un champ vide qu'un nom faux");
-        assertTrue(page.contains("Nom en jeu inconnu"), "l'absence de relevé est dite");
+        // Issue #197 : le champ unique porte le nom canonique — il n'y a plus de « nom en jeu » à
+        // préremplir. Ce qui manque, c'est de savoir ce qui sera remplacé : on le dit.
+        assertTrue(page.contains("Le nom actuellement affiché en jeu n'est pas connu"),
+                "l'absence de relevé est dite");
+        assertTrue(page.contains("avant de renommer, pour savoir ce qui sera remplacé"),
+                "et la conséquence est énoncée");
     }
 
     @Test
@@ -732,15 +738,21 @@ class NpcsCatalogTest {
     }
 
     @Test
-    void renamingAnnouncesThatTheSkinIsKept() throws Exception {
+    void renamingAnnouncesWhatWillHappenToTheAppearance() throws Exception {
         start();
         runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        // Relevé antérieur à #197 : pas de type d'entité, donc apparence indéterminable.
         runListWithSuccess("npc.citizens.list", CITIZENS_RENAMED);
         String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("ne peut le conserver que s'il connaît sa source"),
-                "la règle réelle de conservation du skin est énoncée");
-        assertTrue(page.contains("renommage est refusé"), "le refus est annoncé avant la tentative");
+        // Issue #197 : le long paragraphe technique a disparu — c'est précisément ce que le ticket
+        // demandait de supprimer. Reste l'information utile : le refus, annoncé avant la tentative.
+        assertTrue(page.contains("Le renommage sera refusé en l'état"),
+                "le refus est annoncé avant la tentative");
+        assertFalse(page.contains("L'API publique de Citizens"),
+                "plus de paragraphe technique sur la fiche");
+        // La règle de conservation reste documentée, mais dans le repli « Ce que cela veut dire ».
+        assertTrue(page.contains("Ce que cela veut dire"), "le détail est accessible, pas imposé");
     }
 
     /** Localisation Citizens réelle, avec l'état de présence et la fraîcheur du relevé. */
@@ -830,7 +842,9 @@ class NpcsCatalogTest {
         String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
 
         // L'action postée ne porte que l'id logique et le nouveau nom : rien d'autre ne peut bouger.
-        assertTrue(page.contains("name=\"type\" value=\"npc.citizens.rename\""), "action de renommage");
+        // Issue #197 : c'est désormais l'action COORDONNÉE qui est proposée — une seule, au lieu
+        // d'un renommage limité à la couche Citizens.
+        assertTrue(page.contains("name=\"type\" value=\"npc.identity.rename\""), "action de renommage");
         assertTrue(page.contains("name=\"npc_id\" value=\"tan\""), "ciblage par id logique");
         // Et les liens restent affichés sur la fiche.
         assertTrue(page.contains("rpgquest:tan"), "lien dialogue conservé");
@@ -1297,5 +1311,233 @@ class NpcsCatalogTest {
             assertEquals("false", latestOfType("npc.citizens.wander").params().get("enabled"),
                     "chaque rejeu enfile le MÊME état, jamais son inverse");
         }
+    }
+
+    // ================================================================================
+    //  Issue #197 — un seul nom, une apparence décrite, et un refus annoncé avant le clic
+    // ================================================================================
+
+    /** Le cas d'Elias : PNJ joueur, apparence bien visible en jeu, source inconnue de RPGQuest. */
+    private static final String CITIZENS_PLAYER_NO_SOURCE = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"available\":0,\"linked\":1,"
+            + "\"citizens\":[{\"numericId\":9,\"uuid\":\"33333333-3333-3333-3333-333333333333\","
+            + "\"name\":\"Nouveau Nom\",\"linkedNpcId\":\"tan\",\"availableForBinding\":false,"
+            + "\"spawned\":true,\"world\":\"world_hub\",\"x\":12.25,\"y\":70.0,\"z\":-33.5,"
+            + "\"yaw\":90.0,\"pitch\":0.0,\"liveLocation\":true,\"shouldSpawn\":true,"
+            + "\"chunkLoaded\":true,\"entityType\":\"PLAYER\",\"skinSourceKind\":null,"
+            + "\"skinSourceValue\":null}]}";
+
+    /** Même PNJ, une fois son apparence définie depuis le panel. */
+    private static final String CITIZENS_PLAYER_WITH_SOURCE = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"available\":0,\"linked\":1,"
+            + "\"citizens\":[{\"numericId\":9,\"uuid\":\"33333333-3333-3333-3333-333333333333\","
+            + "\"name\":\"Nouveau Nom\",\"linkedNpcId\":\"tan\",\"availableForBinding\":false,"
+            + "\"spawned\":true,\"world\":\"world_hub\",\"x\":12.25,\"y\":70.0,\"z\":-33.5,"
+            + "\"yaw\":90.0,\"pitch\":0.0,\"liveLocation\":true,\"shouldSpawn\":true,"
+            + "\"chunkLoaded\":true,\"entityType\":\"PLAYER\",\"skinSourceKind\":\"URL\","
+            + "\"skinSourceValue\":\"https://minesk.in/abcd1234\"}]}";
+
+    /** PNJ non joueur : la question du skin ne se pose pas. */
+    private static final String CITIZENS_VILLAGER = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"available\":0,\"linked\":1,"
+            + "\"citizens\":[{\"numericId\":9,\"uuid\":\"33333333-3333-3333-3333-333333333333\","
+            + "\"name\":\"Nouveau Nom\",\"linkedNpcId\":\"tan\",\"availableForBinding\":false,"
+            + "\"spawned\":true,\"world\":\"world_hub\",\"x\":12.25,\"y\":70.0,\"z\":-33.5,"
+            + "\"yaw\":90.0,\"pitch\":0.0,\"liveLocation\":true,\"shouldSpawn\":true,"
+            + "\"chunkLoaded\":true,\"entityType\":\"VILLAGER\",\"skinSourceKind\":null,"
+            + "\"skinSourceValue\":null}]}";
+
+    /** PNJ Citizens sans aucune fiche RPGQuest : le cas de « Help ». */
+    private static final String CITIZENS_ORPHAN_PLAYER = "{"
+            + "\"citizensAvailable\":true,\"total\":1,\"available\":1,\"linked\":0,"
+            + "\"citizens\":[{\"numericId\":7,\"uuid\":\"5e081a06-6596-47a3-b769-aef5fcd9e676\","
+            + "\"name\":\"Help\",\"linkedNpcId\":null,\"availableForBinding\":true,"
+            + "\"spawned\":false,\"entityType\":\"PLAYER\",\"skinSourceKind\":null,"
+            + "\"skinSourceValue\":null}]}";
+
+    @Test
+    void theFicheOffersASingleNameFieldThatUpdatesBothLayers() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_PLAYER_WITH_SOURCE);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // Un seul chemin de renommage, et c'est l'action coordonnée.
+        assertTrue(page.contains("name=\"type\" value=\"npc.identity.rename\""), "action coordonnée");
+        assertTrue(page.contains(">Renommer le PNJ</button>"), "bouton unique dans la section Identité");
+        assertFalse(page.contains("name=\"type\" value=\"npc.citizens.rename\""),
+                "l'ancien renommage limité à Citizens ne doit plus être proposé : c'était le doublon");
+        assertFalse(page.contains("Nom en jeu &amp; apparence"),
+                "le formulaire fourre-tout a disparu");
+        // La promesse est écrite noir sur blanc.
+        assertTrue(page.contains("le catalogue RPGQuest et le nom affiché au-dessus du PNJ"),
+                "l'écran dit ce que la saisie unique met à jour");
+    }
+
+    @Test
+    void theDefinitionEditFormNoLongerOffersASecondEditableName() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_PLAYER_WITH_SOURCE);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // Le nom est toujours soumis (pour ne pas l'effacer), mais il n'est plus modifiable ici :
+        // deux champs de nom concurrents sont exactement ce qui faisait divergier les deux couches.
+        assertTrue(page.contains("<input type=\"hidden\" name=\"display_name\" value=\"Ancien Nom\">"),
+                "la valeur courante est conservée par l'édition de définition");
+        assertTrue(page.contains("Se change avec <strong>« Renommer le PNJ »</strong>"),
+                "l'édition de définition renvoie vers le chemin unique");
+        // Assertion bornée AU formulaire d'édition : le formulaire de création, en haut de page,
+        // garde légitimement sa saisie stylée — un PNJ qu'on crée n'a pas encore de nom à propager.
+        String editForm = formAround(page, "value=\"npc.definition.update\"");
+        assertFalse(editForm.contains("data-sf-palette"),
+                "aucune seconde saisie du nom dans le formulaire d'édition");
+        assertFalse(editForm.contains("name=\"display_name\" id="),
+                "aucun champ nom modifiable dans le formulaire d'édition");
+    }
+
+    /** Le formulaire HTML qui contient {@code needle}, bornes comprises. */
+    private static String formAround(String page, String needle) {
+        int at = page.indexOf(needle);
+        assertTrue(at > 0, "marqueur introuvable : " + needle);
+        int open = page.lastIndexOf("<form", at);
+        int close = page.indexOf("</form>", at);
+        assertTrue(open >= 0 && close > open, "formulaire mal borné autour de " + needle);
+        return page.substring(open, close);
+    }
+
+    @Test
+    void aPlayerNpcWithUnknownSkinSourceIsWarnedBeforeSubmission() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_PLAYER_NO_SOURCE);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // L'avertissement est AVANT le formulaire, pas après le clic.
+        int warn = page.indexOf("Le renommage sera refusé en l'état");
+        int form = page.indexOf("name=\"type\" value=\"npc.identity.rename\"");
+        assertTrue(warn > 0, "l'avertissement doit être rendu");
+        assertTrue(form > 0 && warn < form, "il doit précéder le formulaire de renommage");
+        // Et il propose directement le chemin qui le lève.
+        assertTrue(page.contains(">Définir une apparence</button>"), "action proposée sur place");
+        assertTrue(page.contains("le nom saisi n'est pas perdu"), "la reprise est annoncée");
+        // La formulation interdite : ne jamais dire que ce PNJ n'a pas de skin.
+        assertFalse(page.contains("sans skin"), "l'absence de SOURCE n'est pas une absence de skin");
+    }
+
+    @Test
+    void aPlayerNpcWithARecordedSourceIsNotWarnedAtAll() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_PLAYER_WITH_SOURCE);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertFalse(page.contains("Le renommage sera refusé en l'état"), "aucun avertissement");
+        assertTrue(page.contains("apparence configurée"), "pastille d'apparence configurée");
+        assertTrue(page.contains("https://minesk.in/abcd1234"), "la source exacte est nommée");
+        assertTrue(page.contains("Changer l&#39;apparence</button>"),
+                "l'action existe toujours, mais ne se présente plus comme un manque");
+        assertFalse(page.contains("Définir une apparence</button>"),
+                "rien n'est présenté comme manquant sur un PNJ déjà configuré");
+    }
+
+    @Test
+    void theCatalogueTileCarriesTheAppearanceStatusAndItsFilter() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_PLAYER_NO_SOURCE);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // Pastille sur la tuile, sans avoir à ouvrir la fiche.
+        assertTrue(page.contains("apparence à configurer"), "pastille d'apparence sur la tuile");
+        // Catégorie de filtre portée par la TUILE (et non seulement par la puce en haut de page).
+        assertTrue(page.contains("data-filter-cat=\"linked skin-todo\""),
+                "catégorie de filtre portée par la tuile");
+        assertTrue(page.contains("data-filter-chip=\"skin-todo\""), "puce de filtre");
+        assertTrue(page.contains(">Apparence à configurer<"), "libellé du filtre");
+        // Le prénom reste l'information principale, l'id technique est secondaire.
+        assertTrue(page.indexOf("class=\"npc-name\"") < page.indexOf("class=\"tid npc-id\""),
+                "le nom précède l'identifiant technique");
+    }
+
+    @Test
+    void aNonPlayerNpcIsNeverAskedToConfigureAPlayerSkin() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_VILLAGER);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("apparence non applicable"), "pastille « non applicable »");
+        // Assertion bornée à la tuile : la puce de filtre, elle, est toujours présente en haut.
+        assertFalse(page.contains("data-filter-cat=\"linked skin-todo\""),
+                "ne doit pas tomber dans le filtre « à configurer »");
+        assertFalse(page.contains("Le renommage sera refusé en l'état"),
+                "son renommage est libre : aucun skin n'en dépend");
+        // Son apparence EST son type, et le type est affiché en français.
+        assertTrue(page.contains("Villageois"), "type d'entité en français");
+        assertTrue(page.contains("<code class=\"tid\">VILLAGER</code>"), "valeur technique conservée");
+    }
+
+    @Test
+    void anUnknownEntityTypeIsSaidToBeUnknownRatherThanGuessed() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_WITH_LOCATION); // relevé sans entityType
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("apparence type inconnu"), "pastille « type inconnu »");
+        assertTrue(page.contains("inconnu — rafraîchir le relevé Citizens"),
+                "la fiche dit comment lever l'inconnue");
+        assertFalse(page.contains("apparence non applicable"),
+                "un type inconnu ne doit JAMAIS être présenté comme « pas un joueur »");
+    }
+
+    @Test
+    void aCitizensNpcWithoutDefinitionStillShowsItsAppearanceState() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_ONLY_GUARD);
+        runListWithSuccess("npc.citizens.list", CITIZENS_ORPHAN_PLAYER);
+        String page = get("/npcs?agent=" + TestConfig.AGENT_ID).body();
+
+        // #101 : la ligne existe. #197 : elle porte aussi son état d'apparence.
+        assertTrue(page.contains("sans fiche RPGQuest"), "la ligne orpheline est là");
+        assertTrue(page.contains("apparence à configurer"), "son apparence est décrite");
+        assertTrue(page.contains("d'abord de créer une fiche"),
+                "et le panel dit pourquoi l'action n'est pas proposée ici");
+    }
+
+    @Test
+    void theCoordinatedRenameIsEnqueuedWithTheLogicalIdAndNothingElse() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_PLAYER_WITH_SOURCE);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+
+        post("/agents/action", "_csrf=" + token
+                + "&type=npc.identity.rename&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                + "&npc_id=tan&npc_ctx=tan&name=" + URLEncoder.encode("Elias", StandardCharsets.UTF_8)
+                + "&confirm=true");
+
+        AgentActionRow row = latestOfType("npc.identity.rename");
+        assertEquals("tan", row.params().get("npc_id"), "ciblage par identifiant logique");
+        assertEquals("Elias", row.params().get("name"));
+        assertEquals(2, row.params().size(), "aucun autre paramètre : rien d'autre ne peut bouger");
+    }
+
+    @Test
+    void anEmptyOrOverlongNameIsRefusedWithoutEnqueuingAnything() throws Exception {
+        start();
+        runListWithSuccess("npc.list", NPC_RENAMED_IN_GAME);
+        runListWithSuccess("npc.citizens.list", CITIZENS_PLAYER_WITH_SOURCE);
+        String token = csrf(get("/npcs?agent=" + TestConfig.AGENT_ID).body());
+        int before = pendingFor(TestConfig.AGENT_ID);
+
+        for (String name : new String[] {"", "   ", "x".repeat(49)}) {
+            post("/agents/action", "_csrf=" + token
+                    + "&type=npc.identity.rename&agent=" + TestConfig.AGENT_ID + "&return=/npcs"
+                    + "&npc_id=tan&npc_ctx=tan&name=" + URLEncoder.encode(name, StandardCharsets.UTF_8)
+                    + "&confirm=true");
+        }
+        assertEquals(before, pendingFor(TestConfig.AGENT_ID), "aucun renommage invalide n'est enfilé");
     }
 }

@@ -39,4 +39,17 @@ class MinecraftNamesTest {
         assertEquals("+100 XP", MinecraftNames.humanizeTokens("+100 XP"));
         assertEquals("", MinecraftNames.humanizeTokens(null));
     }
+
+    @Test
+    void theTableInitialisesAndCoversTheCitizensEntityTypes() {
+        // Garde-fou appris à mes dépens pendant #197 : la table est un Map.ofEntries, qui lève sur
+        // une clé en double. L'exception part de l'initialisation statique de la classe, donc la
+        // page PNJ répondait sans AUCUN corps — pas une erreur 500 lisible, une réponse vide. Un
+        // test qui touche simplement la table attrape désormais la faute au premier build.
+        assertEquals("Joueur", MinecraftNames.humanize("PLAYER"));
+        assertEquals("Villageois", MinecraftNames.humanize("VILLAGER"));
+        assertTrue(MinecraftNames.isKnown("PLAYER"), "le type qui porte un skin doit être nommé");
+        // Issue #197 : un type non traduit doit rester lisible, jamais faire échouer l'affichage.
+        assertEquals("Allay", MinecraftNames.humanize("ALLAY"));
+    }
 }

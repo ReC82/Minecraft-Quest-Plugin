@@ -338,6 +338,37 @@ class AgentActionExecutorTest {
         assertEquals(Boolean.TRUE, outcome.details().get("citizensAvailable"));
     }
 
+    /**
+     * Issue #197 — le relevé transporte le type d'entité et la source d'apparence.
+     *
+     * <p>Ce test existe parce qu'une clé oubliée dans cette sérialisation ne produit aucune erreur :
+     * elle rend seulement l'écran muet. C'est exactement ce qui est arrivé à la localisation des
+     * PNJ, puis au bâtiment posé de l'issue #239. Le panel ne peut rien afficher d'une apparence
+     * dont le relevé ne parle pas.</p>
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void theCitizensRosterCarriesTheEntityTypeAndTheRecordedSkinSource() {
+        AgentActionOutcome outcome = run(new AgentAction("cl1", "npc.citizens.list", Map.of()));
+
+        List<Map<String, Object>> rows =
+                (List<Map<String, Object>>) outcome.details().get("citizens");
+        Map<String, Object> guard = rows.stream()
+                .filter(r -> Integer.valueOf(6).equals(r.get("numericId"))).findFirst().orElseThrow();
+        assertEquals("PLAYER", guard.get("entityType"));
+        assertEquals("URL", guard.get("skinSourceKind"));
+        assertEquals("https://minesk.in/abcd1234", guard.get("skinSourceValue"));
+
+        // L'entrée sans apparence connue porte les clés, à null : « inconnu » doit être lisible,
+        // et une clé absente serait indistinguable d'un relevé produit par un plugin plus ancien.
+        Map<String, Object> bob = rows.stream()
+                .filter(r -> Integer.valueOf(14).equals(r.get("numericId"))).findFirst().orElseThrow();
+        assertTrue(bob.containsKey("entityType") && bob.containsKey("skinSourceKind")
+                && bob.containsKey("skinSourceValue"), "les trois clés sont toujours présentes");
+        assertNull(bob.get("entityType"));
+        assertNull(bob.get("skinSourceKind"));
+    }
+
     @Test
     void npcCitizensLinkValidatesAndDelegates() {
         assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("lk0", "npc.citizens.link",
@@ -415,6 +446,30 @@ class AgentActionExecutorTest {
                             "facing", "NORTH", "description", "d"))).status(),
                     type + " id d'une autre forme");
         }
+    }
+
+    // ---- Issue #197 : renommage coordonné du PNJ -------------------------------------------
+
+    @Test
+    void theCoordinatedRenameValidatesItsTwoParametersAndNothingElse() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("i0", "npc.identity.rename",
+                Map.of("name", "Elias"))).status(), "npc_id obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("i1", "npc.identity.rename",
+                Map.of("npc_id", "Guide!", "name", "Elias"))).status(), "npc_id mal formé");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("i2", "npc.identity.rename",
+                Map.of("npc_id", "guide"))).status(), "name obligatoire");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("i3", "npc.identity.rename",
+                Map.of("npc_id", "guide", "name", "   "))).status(), "nom blanc refusé");
+
+        AgentActionOutcome ok = run(new AgentAction("i4", "npc.identity.rename",
+                Map.of("npc_id", "guide", "name", "Elias")));
+
+        assertEquals(AgentActionOutcome.SUCCESS, ok.status());
+        assertEquals("guide", actions.lastIdentityRenameNpcId, "ciblage par identifiant logique");
+        assertEquals("Elias", actions.lastIdentityRenameName);
+        // Et surtout : l'action coordonnée n'emprunte PAS le chemin limité à Citizens, qui ne
+        // toucherait qu'une seule couche.
+        assertNull(actions.lastRenameNpcId, "aucun renommage Citizens isolé n'est déclenché");
     }
 
     @Test
@@ -1668,6 +1723,8 @@ class AgentActionExecutorTest {
 
         String lastRenameNpcId;
         String lastRenameName;
+        String lastIdentityRenameNpcId;
+        String lastIdentityRenameName;
         String lastSkinNpcId;
         String lastSkinUrl;
         boolean lastSkinByPlayerName;
@@ -1726,6 +1783,13 @@ class AgentActionExecutorTest {
         }
 
         @Override
+        public CompletableFuture<MutationResult> npcIdentityRename(String npcId, String name) {
+            lastIdentityRenameNpcId = npcId;
+            lastIdentityRenameName = name;
+            return mutation("identity rename " + npcId + " -> " + name);
+        }
+
+        @Override
         public CompletableFuture<CitizensProvisionResult> citizensProvision(
                 String displayName, String skinValue, boolean skinByPlayerName,
                 String world, Double x, Double y, Double z, Float yaw, Float pitch) {
@@ -1773,8 +1837,13 @@ class AgentActionExecutorTest {
 
         @Override
         public CompletableFuture<CitizensRosterView> citizensRoster() {
+            // Issue #197 : #6 est un PNJ joueur dont RPGQuest connaît la source d'apparence ;
+            // #14 n'a ni type ni source connus (entrée brève), ce qui doit rester visible tel quel.
             return CompletableFuture.completedFuture(new CitizensRosterView(true, List.of(
-                    new CitizensNpcSummary(6, "11111111-1111-1111-1111-111111111111", "Garde", "guard", false, true),
+                    new CitizensNpcSummary(6, "11111111-1111-1111-1111-111111111111", "Garde", "guard",
+                            false, true, null, null, null, null, null, null, false, true, false,
+                            null, null, null, null, null, null, null, null, null, null, null,
+                            "PLAYER", "URL", "https://minesk.in/abcd1234"),
                     new CitizensNpcSummary(14, "22222222-2222-2222-2222-222222222222", "Bûcheron Bob", null, true, true)),
                     2, 1, 1));
         }

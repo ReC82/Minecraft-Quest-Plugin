@@ -245,6 +245,21 @@ public final class AgentActionCatalog {
     }
 
     /**
+     * Écriture de contenu qui touche <strong>plusieurs couches</strong> et exige donc toutes les
+     * permissions correspondantes (issue #197).
+     *
+     * <p>Distincte de {@code addOrchestratedWrite}, qui marque en plus l'action comme sensible :
+     * renommer un personnage n'a rien d'irréversible et ne fait apparaître aucune entité. Ce qui
+     * est en jeu ici, c'est seulement de ne pas accorder par regroupement un droit que
+     * l'administrateur ne possède pas — qui peut renommer en jeu ne peut pas pour autant réécrire
+     * une définition.</p>
+     */
+    private static void addContentWrite(String type, List<Permission> all, String label, String... refresh) {
+        SPECS.put(type, new Spec(type, all.get(0), true, false, false, label, List.of(refresh),
+                all.subList(1, all.size())));
+    }
+
+    /**
      * Mutation sensible qui <strong>orchestre plusieurs effets</strong> en une seule opération
      * atomique, et exige donc l'ensemble des permissions correspondantes — jamais un droit
      * implicite accordé par le regroupement.
@@ -421,6 +436,13 @@ public final class AgentActionCatalog {
                 "Déplacer le PNJ Citizens", "npc.list", "npc.citizens.list");
         addContentWrite("npc.citizens.rename", Permission.NPC_BIND_WRITE, "Renommer le PNJ en jeu",
                 "npc.list", "npc.citizens.list");
+        // Issue #197 — le nom du personnage, sur toutes ses couches à la fois. Exige les DEUX
+        // droits que ses effets produisent : écrire la définition (NPC_WRITE) et modifier le PNJ
+        // Citizens (NPC_BIND_WRITE). Aucun droit nouveau, et surtout aucun regroupement qui
+        // permettrait d'obtenir l'un en ne possédant que l'autre.
+        addContentWrite("npc.identity.rename",
+                List.of(Permission.NPC_WRITE, Permission.NPC_BIND_WRITE),
+                "Renommer le PNJ (catalogue et jeu)", "npc.list", "npc.citizens.list");
         addContentWrite("npc.citizens.skin", Permission.NPC_BIND_WRITE, "Appliquer un skin",
                 "npc.list", "npc.citizens.list");
         // Issue #165 — comportements Citizens. « Regarder les joueurs » est purement cosmétique :
@@ -1057,6 +1079,21 @@ public final class AgentActionCatalog {
                 String name = trim(form.get("name"));
                 if (name.isEmpty() || name.length() > 48) {
                     return Validation.fail("Nom en jeu manquant, ou trop long (48 caractères maximum).");
+                }
+                params.put("npc_id", npcId);
+                params.put("name", name);
+            }
+            // Issue #197 — même forme que le renommage Citizens, parce que c'est le même nom : la
+            // borne de 48 caractères est celle que Citizens impose, et la définition RPGQuest s'y
+            // conforme. Un seul champ côté écran, donc un seul contrôle ici.
+            case "npc.identity.rename" -> {
+                String npcId = trim(form.get("npc_id")).toLowerCase(java.util.Locale.ROOT);
+                if (!NPC_ID.matcher(npcId).matches()) {
+                    return Validation.fail("Identifiant de PNJ manquant ou invalide.");
+                }
+                String name = trim(form.get("name"));
+                if (name.isEmpty() || name.length() > 48) {
+                    return Validation.fail("Nom du PNJ manquant, ou trop long (48 caractères maximum).");
                 }
                 params.put("npc_id", npcId);
                 params.put("name", name);

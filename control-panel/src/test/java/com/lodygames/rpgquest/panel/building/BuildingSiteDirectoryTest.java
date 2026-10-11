@@ -81,7 +81,7 @@ class BuildingSiteDirectoryTest {
     /** Un état écrit par une version plus récente s'affiche, il ne casse rien. */
     @Test
     void anUnknownFacingOrStatusIsShownRatherThanHidden() {
-        BuildingSiteView odd = new BuildingSiteView("buildsite_0001", "x", "", "w", 0, 0, 0,
+        BuildingSiteView odd = new BuildingSiteView("buildsite_0001", "x", "", "", "w", 0, 0, 0,
                 "UPSIDE_DOWN", "BUILT_IN_A_FUTURE_VERSION", "", "", true);
 
         assertEquals("upside_down", odd.facingLabel());
@@ -92,10 +92,10 @@ class BuildingSiteDirectoryTest {
     void theFrenchDateIsFormattedAndABadDateIsShownRaw() {
         assertEquals("08/10/2026 18:00 UTC",
                 view("WEST").createdAtLabel());
-        BuildingSiteView broken = new BuildingSiteView("buildsite_0001", "x", "", "w", 0, 0, 0,
+        BuildingSiteView broken = new BuildingSiteView("buildsite_0001", "x", "", "", "w", 0, 0, 0,
                 "NORTH", "EMPTY", "", "pas une date", true);
         assertEquals("pas une date", broken.createdAtLabel());
-        BuildingSiteView missing = new BuildingSiteView("buildsite_0001", "x", "", "w", 0, 0, 0,
+        BuildingSiteView missing = new BuildingSiteView("buildsite_0001", "x", "", "", "w", 0, 0, 0,
                 "NORTH", "EMPTY", "", "", true);
         assertEquals("inconnue", missing.createdAtLabel());
     }

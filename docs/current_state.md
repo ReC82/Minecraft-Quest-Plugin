@@ -651,6 +651,31 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   à la texture, et rendre une tête depuis un pseudo exigerait un service d'images tiers (CSP du
   panel à élargir, ou proxy à écrire) — décision laissée au propriétaire, la source exacte est
   nommée en attendant.
+- **Brief architectural des emplacements, et génération de bâtiments par IA** *(issues #94 / #213,
+  2026-10-11)* — mesuré avant de coder : les quatre briefs du Hub (`buildsite_0009/0010/0011/0006`)
+  **étaient bien enregistrés** en base, 385 à 490 caractères, tous terminés sur une phrase complète.
+  Rien n'avait été perdu ; ce qui avait été coupé, c'était la **saisie**, par l'attribut
+  `maxlength="500"` de la zone de texte — le navigateur coupe un collage sans message ni compteur.
+  Quatre seuils se superposaient, dont **deux coupaient en silence** (`maxlength` et
+  `BuildingSiteService.trimTo`) ; les deux sont supprimés, le second devenu un refus bruyant. Le
+  **nom** reste tronqué volontairement (décision du projet, test dédié, chemin de saisie par enclume).
+  Nouveau champ **`ai_brief`** (6 000 caractères, migration **V31** strictement additive qui ne
+  recopie *pas* la description), action `building.site.brief`, et un compteur de caractères **rendu
+  par le serveur** — donc juste même sans JavaScript.
+  **Génération IA** : le pipeline de #94 existait déjà presque entièrement (`Blueprint` →
+  `SchematicGateway` → `.schem` → `BuildingDefinition` → pose #213/#234/#239) ; seuls les plans
+  étaient écrits **en Java**. Ce lot l'ouvre aux données : l'IA produit un **plan déclaratif** au
+  vocabulaire fermé (`box`, `shell`, `walls`, `clear`, `gable`), qu'un moteur **déterministe**
+  expanse en blocs — l'ordre d'émission est fixe (y, z, x), parce que l'empreinte du `.schem` sert de
+  version au bâtiment posé (#234). Rien de ce que l'IA écrit n'est exécuté : ni code, ni chemin, ni
+  commande ; le nom du `.schem` est dérivé de l'identifiant du plan, et les états de bloc passent un
+  contrôle de **forme**. « Généré » signifie **trois artefacts réels** — `.schem`, définition sur le
+  disque, entrée relue dans la bibliothèque — et un échec à n'importe quelle étape n'en laisse aucun
+  à moitié. Dans PlugAdmin : `/buildings/plan`, **deux gestes distincts** (demander un plan, puis
+  générer), deux permissions (`AI_USE` / `BUILDING_WRITE`), et le refus du serveur nomme
+  l'instruction fautive, qu'un bouton de reprise renvoie au modèle avec le plan refusé.
+  `PENDING MANUAL VALIDATION` : aucune génération n'a encore été lancée contre un vrai fournisseur
+  d'IA, et aucun bâtiment généré n'a été regardé en jeu.
 - **UX des dialogues : le Garde, et les boutons tronqués** *(issue #238, 2026-10-11)* — retour réel
   en jeu. Le Garde portait **sept** `START_QUEST` directement sur l'accueil (le rapport #235 n'en
   avait identifié que trois) : « J'accepte la quête » démarrait une quête sans dire laquelle, ni

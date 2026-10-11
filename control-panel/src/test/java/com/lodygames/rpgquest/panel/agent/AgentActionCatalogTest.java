@@ -566,4 +566,50 @@ class AgentActionCatalogTest {
         assertTrue(ok.valid(), "une coordonnée de région négative est légitime");
         assertEquals("wp_world_hub_plains_0_-3", ok.params().get("waypointId"));
     }
+    @Test
+    void theBriefActionAcceptsLongTextAndRefusesBeyondTheBoundWithoutTruncating() {
+        // Issue #94 — 2 000 caractères : c'est tout l'objet du champ, et la note de 500 ne pouvait
+        // pas les porter. Le panel ne doit NI tronquer, NI refuser.
+        var ok = AgentActionCatalog.validate("building.site.brief",
+                Map.of("id", "buildsite_0009", "brief", "b".repeat(2000)));
+        assertTrue(ok.valid());
+        assertEquals(2000, ok.params().get("brief").length(),
+                "le brief doit traverser la validation ENTIER");
+
+        // Au-delà : refus, avec le dépassement chiffré, et aucun paramètre retenu.
+        var refused = AgentActionCatalog.validate("building.site.brief",
+                Map.of("id", "buildsite_0009", "brief", "b".repeat(6007)));
+        assertFalse(refused.valid());
+        assertTrue(refused.error().contains("6007"), refused.error());
+        assertTrue(refused.error().contains("raccourcir de 7"), refused.error());
+        assertTrue(refused.error().contains("Rien n'a été enregistré"), refused.error());
+
+        // Pile à la borne : accepté. Refuser à la limite exacte serait un piège de plus.
+        assertTrue(AgentActionCatalog.validate("building.site.brief",
+                Map.of("id", "buildsite_0009", "brief", "b".repeat(6000))).valid());
+
+        // Un brief vide est valide : c'est « repartir de zéro ».
+        assertTrue(AgentActionCatalog.validate("building.site.brief",
+                Map.of("id", "buildsite_0009", "brief", "")).valid());
+        assertFalse(AgentActionCatalog.validate("building.site.brief",
+                Map.of("brief", "x")).valid(), "aucun emplacement ciblé");
+    }
+
+    @Test
+    void theBriefAndTheNoteAreTwoDistinctActionsWithDistinctBounds() {
+        // La note garde sa borne courte : c'est une note, pas un brief.
+        assertFalse(AgentActionCatalog.validate("building.site.describe",
+                Map.of("id", "buildsite_0009", "description", "d".repeat(501))).valid());
+        // Et le même texte passe sans problème comme brief.
+        assertTrue(AgentActionCatalog.validate("building.site.brief",
+                Map.of("id", "buildsite_0009", "brief", "d".repeat(501))).valid());
+
+        // Les deux actions existent, exigent le même droit, et invalident le même relevé.
+        var brief = AgentActionCatalog.spec("building.site.brief").orElseThrow();
+        var note = AgentActionCatalog.spec("building.site.describe").orElseThrow();
+        assertEquals(note.permission(), brief.permission(),
+                "écrire un brief n'est pas plus sensible qu'écrire une note");
+        assertEquals(note.refreshTypes(), brief.refreshTypes());
+        assertFalse(brief.sensitive(), "enregistrer un texte ne déclenche aucune génération");
+    }
 }

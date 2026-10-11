@@ -57,6 +57,20 @@ class BuildingSitesPageTest {
             + "\"worldLoaded\":false}"
             + "]}";
 
+    /** Même relevé, mais l'emplacement 1 porte un vrai brief architectural (issue #94). */
+    private static final String SITES_WITH_BRIEF = "{"
+            + "\"total\":1,\"worlds\":[\"world_hub\"],"
+            + "\"sites\":["
+            + "{\"id\":\"buildsite_0009\",\"name\":\"Bibliothèque du Hub\","
+            + "\"description\":\"Note courte.\","
+            + "\"aiBrief\":\"Bibliothèque médiévale fantastique, deux étages, pierre claire et "
+            + "bois sombre, façade à l'ouest. Grande salle de lecture, comptoir, escalier.\","
+            + "\"world\":\"world_hub\","
+            + "\"x\":784,\"y\":67,\"z\":-693,\"facing\":\"WEST\",\"status\":\"EMPTY\","
+            + "\"createdBy\":\"Lody\",\"createdAt\":\"2026-10-11T18:16:00Z\","
+            + "\"worldLoaded\":true}"
+            + "]}";
+
     @AfterEach
     void tearDown() {
         if (app != null) {
@@ -605,7 +619,248 @@ class BuildingSitesPageTest {
     }
 
     /** Fait aboutir un {@code building.site.list} avec le relevé ci-dessus, comme le ferait l'agent. */
+    // ---- Issue #94 : la page de génération ---------------------------------------------------
+
+    @Test
+    void theFicheLinksToTheGenerationOnlyWhenABriefExists() throws Exception {
+        start();
+        seedWith(SITES_WITH_BRIEF);
+        String withBrief = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(withBrief.contains("href=\"/buildings/plan?site=buildsite_0009\""),
+                "l'accès à la génération doit être proposé");
+        assertTrue(withBrief.contains("Générer un bâtiment avec l'IA</a>"),
+                "le libellé du lien de génération");
+
+        app.stop();
+        start();
+        seed(); // emplacements SANS brief
+        String withoutBrief = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+        assertFalse(withoutBrief.contains("href=\"/buildings/plan?site=buildsite_0001\""),
+                "sans brief, la génération n'est pas proposée : il n'y aurait rien à envoyer");
+        assertTrue(withoutBrief.contains("Rédiger le brief ci-dessus pour pouvoir générer"),
+                "et la raison est dite");
+    }
+
+    @Test
+    void theGenerationPageShowsTheSiteFactsAndTheBriefItWillSend() throws Exception {
+        start();
+        seedWith(SITES_WITH_BRIEF);
+        String page = get("/buildings/plan?site=buildsite_0009").body();
+
+        assertTrue(page.contains("Générer un bâtiment avec l"), page.substring(0, 200));
+        // Les faits de l'emplacement, pour que l'administrateur sache ce que l'IA recevra.
+        assertTrue(page.contains("Bibliothèque du Hub"), "le nom de l'emplacement");
+        assertTrue(page.contains("world_hub"), "le monde");
+        assertTrue(page.contains("784 / 67 / -693"), "la position");
+        assertTrue(page.contains("ouest"), "la façade, en français");
+        assertTrue(page.contains("le plan déclarera cette façade"),
+                "et le fait qu'elle est transmise à l'IA");
+        // Le brief est montré tel qu'il sera envoyé.
+        assertTrue(page.contains("Brief envoyé à l"), "section du brief");
+        assertTrue(page.contains("Grande salle de lecture"), "le brief réel");
+    }
+
+    @Test
+    void theGenerationPageSaysSoWhenNoBriefExists() throws Exception {
+        start();
+        seed();
+        String page = get("/buildings/plan?site=buildsite_0001").body();
+
+        assertTrue(page.contains("Aucun brief architectural sur cet emplacement"),
+                "l'absence de brief est dite");
+        assertFalse(page.contains("Demander un plan</button>"),
+                "et aucun appel payant n'est proposé");
+    }
+
+    @Test
+    void anUnknownSiteGivesAReadableNotFoundRatherThanAnError() throws Exception {
+        start();
+        seed();
+        HttpResponse<String> res = get("/buildings/plan?site=buildsite_9999");
+
+        assertEquals(404, res.statusCode());
+        assertTrue(res.body().contains("Emplacement introuvable"), res.body());
+        assertTrue(res.body().contains("Rafraîchir le catalogue"), "avec le geste qui corrige");
+    }
+
+    /**
+     * La garantie structurelle du lot : la page ne peut rien écrire. Son seul formulaire d'écriture
+     * pointe vers {@code /agents/action}, le chemin unique d'écriture du panel.
+     */
+    @Test
+    void theGenerationPageNeverWritesByItself() throws Exception {
+        start();
+        seedWith(SITES_WITH_BRIEF);
+        String page = get("/buildings/plan?site=buildsite_0009").body();
+
+        // Sans proposition, aucun formulaire de génération : on ne peut pas générer dans le vide.
+        assertFalse(page.contains("value=\"building.generate\""),
+                "aucune génération proposée avant qu'un plan existe");
+        // Dans ce test, aucun fournisseur d'IA n'est configuré : la page le DIT et ne propose
+        // aucun appel. C'est le bon comportement — pas un formulaire qui échouerait au clic.
+        assertTrue(page.contains("Aucun fournisseur d'IA utilisable"),
+                "l'absence de fournisseur est dite");
+        assertTrue(page.contains("href=\"/ai/providers\""), "avec le lien qui la corrige");
+        assertFalse(page.contains("action=\"/buildings/plan\""),
+                "et aucun formulaire de demande qui ne pourrait pas aboutir");
+    }
+
+    // ---- Issue #94 : la note, le brief, et la fin de la troncature silencieuse ----------------
+
+    /**
+     * Le défaut exact signalé : {@code maxlength} coupait un collage sans rien dire.
+     *
+     * <p>Le navigateur n'émet aucun message quand il applique {@code maxlength} — l'administrateur
+     * voyait son brief s'arrêter au milieu d'un mot. L'attribut ne doit donc plus être là, sur
+     * aucun des deux champs de texte long.</p>
+     */
+    @Test
+    void noTextFieldCarriesMaxlengthBecauseItTruncatesSilently() throws Exception {
+        start();
+        seed();
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+
+        String describeForm = formAround(page, "value=\"building.site.describe\"");
+        assertFalse(describeForm.contains("maxlength"),
+                "la note ne doit plus être tronquée par le navigateur");
+        String briefForm = formAround(page, "value=\"building.site.brief\"");
+        assertFalse(briefForm.contains("maxlength"),
+                "le brief ne doit surtout pas être tronqué par le navigateur");
+    }
+
+    @Test
+    void bothLongFieldsCarryAServerRenderedCharacterCounter() throws Exception {
+        start();
+        seed();
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+
+        // Le compteur est rendu par le SERVEUR, donc juste même sans JavaScript.
+        assertTrue(page.contains("data-charcount-for=\"desc-buildsite_0001\""), "compteur de la note");
+        assertTrue(page.contains("data-charcount-for=\"brief-buildsite_0001\""), "compteur du brief");
+        assertTrue(page.contains("data-charcount-max=\"500\""), "borne de la note affichée");
+        assertTrue(page.contains("data-charcount-max=\"6000\""), "borne du brief affichée");
+        // La valeur initiale est la vraie longueur, pas zéro : « Deux étages. » fait 12 caractères.
+        assertTrue(page.contains("<span class=\"cc-n\">12</span> / 500 caractères"),
+                "le compteur part de la longueur réelle de la valeur enregistrée");
+        // Et panel.js doit pouvoir les retrouver.
+        assertTrue(page.contains("data-charcount=\"6000\""), "le champ est relié à son compteur");
+    }
+
+    @Test
+    void theNoteAndTheBriefAreTwoClearlyLabelledFields() throws Exception {
+        start();
+        seed();
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+
+        // Deux rôles distincts, dits à l'écran — c'est la condition posée par la demande.
+        assertTrue(page.contains(">Note d'administrateur</label>"), "la note est nommée comme telle");
+        assertTrue(page.contains(">Brief architectural</label>"), "le brief est nommé comme tel");
+        assertTrue(page.contains("name=\"description\""), "le champ note garde son nom de paramètre");
+        assertTrue(page.contains("name=\"brief\""), "le champ brief a le sien");
+        assertTrue(page.contains("pour vous repérer dans la liste"), "le rôle de la note est dit");
+        assertTrue(page.contains("Sert d'entrée à la génération"), "le rôle du brief est dit");
+        // L'orientation n'est pas à répéter dans le brief : l'écran le dit.
+        assertTrue(page.contains("sont ajoutés automatiquement"), "ce qui est déjà connu est annoncé");
+    }
+
+    @Test
+    void anExistingBriefIsShownFoldedWithItsLength() throws Exception {
+        start();
+        seedWith(SITES_WITH_BRIEF);
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Brief architectural"), "la fiche nomme le brief");
+        assertTrue(page.contains("caractères — afficher"),
+                "un brief long est replié avec sa taille, pas étalé dans les métadonnées");
+        assertTrue(page.contains("class=\"brief-text\""), "le texte du brief est rendu");
+        assertTrue(page.contains("Grande salle de lecture"), "et son contenu réel apparaît");
+        // La note reste distincte et visible.
+        assertTrue(page.contains("Note courte."), "la note n'est pas remplacée par le brief");
+    }
+
+    @Test
+    void aSiteWithoutABriefSaysSoAndSuggestsWritingOne() throws Exception {
+        start();
+        seed();
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("aucun — à rédiger avant de générer un bâtiment"),
+                "l'absence de brief est dite, avec sa conséquence");
+    }
+
+    /**
+     * Les quatre emplacements réels portent leur brief dans la note : l'écran le signale, mais la
+     * migration n'a rien déplacé. Déplacer du texte reviendrait à décider pour l'administrateur.
+     */
+    @Test
+    void aNoteWithoutABriefIsFlaggedAsPossiblyMisplacedWithoutMovingAnything() throws Exception {
+        start();
+        seed();
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Si cette note est en réalité un brief"), "l'invitation est là");
+        assertTrue(page.contains("elle n'a pas été déplacée"), "et la non-action est explicite");
+        // Le champ brief reste VIDE : rien n'a été prérempli à l'insu de l'administrateur.
+        String briefForm = formAround(page, "value=\"building.site.brief\"");
+        assertTrue(briefForm.contains("placeholder=\"Matériaux"), "le champ est vide, avec son exemple");
+        assertFalse(briefForm.contains("Deux étages.</textarea>"),
+                "la note ne doit pas avoir été recopiée d'office dans le brief");
+    }
+
+    @Test
+    void aLongBriefIsQueuedWholeAndAnOversizedOneIsRefusedBeforeQueueing() throws Exception {
+        start();
+        seed();
+        String token = csrf(get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body());
+
+        // 2 000 caractères : exactement ce que l'ancienne borne de 500 rendait impossible.
+        String brief = "b".repeat(2000);
+        post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=building.site.brief&return=/buildings/sites"
+                + "&id=buildsite_0001&brief=" + enc(brief) + "&confirm=true");
+
+        AgentActionRow queued = queued("building.site.brief");
+        assertEquals("buildsite_0001", queued.params().get("id"));
+        assertEquals(2000, queued.params().get("brief").length(),
+                "le brief doit être enfilé ENTIER, jamais raccourci en route");
+
+        // Au-delà de la borne : rien n'est enfilé du tout.
+        long before = count("building.site.brief");
+        post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=building.site.brief&return=/buildings/sites"
+                + "&id=buildsite_0001&brief=" + enc("b".repeat(6001)) + "&confirm=true");
+        assertEquals(before, count("building.site.brief"),
+                "un brief trop long est refusé AVANT la file, pas tronqué pour y entrer");
+    }
+
+    @Test
+    void anEmptyBriefIsAcceptedBecauseItClearsIt() throws Exception {
+        start();
+        seed();
+        String token = csrf(get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body());
+
+        post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=building.site.brief&return=/buildings/sites"
+                + "&id=buildsite_0001&brief=&confirm=true");
+
+        assertEquals("", queued("building.site.brief").params().get("brief"));
+    }
+
+    /** Le formulaire HTML qui contient {@code needle}, bornes comprises. */
+    private static String formAround(String page, String needle) {
+        int at = page.indexOf(needle);
+        assertTrue(at > 0, "marqueur introuvable : " + needle);
+        int open = page.lastIndexOf("<form", at);
+        int close = page.indexOf("</form>", at);
+        assertTrue(open >= 0 && close > open, "formulaire mal borné autour de " + needle);
+        return page.substring(open, close);
+    }
+
     private void seed() throws Exception {
+        seedWith(SITES);
+    }
+
+    private void seedWith(String details) throws Exception {
         String token = csrf(get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body());
         post("/agents/action", "_csrf=" + token + "&type=building.site.list&agent="
                 + TestConfig.AGENT_ID + "&return=/buildings/sites");
@@ -619,7 +874,7 @@ class BuildingSitesPageTest {
         }
         String id = m.group(1);
         String result = "{\"action_id\":\"" + id + "\",\"status\":\"SUCCESS\",\"value\":\"2\","
-                + "\"message\":\"2 emplacement(s)\",\"details\":" + SITES + "}";
+                + "\"message\":\"2 emplacement(s)\",\"details\":" + details + "}";
         client.send(HttpRequest.newBuilder(uri("/agent/v1/actions/" + id + "/result"))
                 .header("Authorization", "Bearer " + TestConfig.AGENT_TOKEN)
                 .header("X-Agent-Id", TestConfig.AGENT_ID)

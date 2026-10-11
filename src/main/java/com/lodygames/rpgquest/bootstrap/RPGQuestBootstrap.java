@@ -926,6 +926,12 @@ public final class RPGQuestBootstrap {
         // aucune opération n'échoue pour autant. Un setter plutôt qu'un paramètre de plus dans une
         // liste qui en compte déjà une trentaine.
         agentActions.setBuildingHistoryRepository(buildingHistoryRepository);
+        // Issue #94 : génération de bâtiments depuis un plan déclaratif. Même logique de setter
+        // facultatif — sans WorldEdit, l'atelier refuse d'écrire et la génération échoue avec son
+        // motif, sans empêcher quoi que ce soit d'autre de fonctionner.
+        agentActions.setBuildingGenerator(new com.lodygames.rpgquest.building.plan.BuildingGenerator(
+                buildingLibrary, buildingSchematics,
+                plugin.getDataFolder().toPath().resolve("buildings"), plugin.getLogger()));
         // Issue #156 : enrichissements du diagnostic de réseau de voyage. Le compteur de
         // découvertes reste ASYNCHRONE de bout en bout — c'est une lecture SQL, et l'attendre
         // depuis le thread principal gèlerait le serveur le temps de la requête. Le relevé la

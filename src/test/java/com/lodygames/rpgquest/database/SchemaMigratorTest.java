@@ -768,6 +768,69 @@ class SchemaMigratorTest {
         }
     }
 
+    /**
+     * Issue #94 — la colonne {@code ai_brief} existe, vaut vide par défaut, et la migration
+     * <strong>ne déplace pas</strong> la description existante.
+     *
+     * <p>Ce dernier point est le vrai sujet du test. Les quatre emplacements réels portent
+     * aujourd'hui leur brief dans leur description, faute d'un autre champ : une migration qui
+     * recopierait l'un dans l'autre aurait l'air serviable, mais elle déciderait à la place de
+     * l'administrateur et se tromperait pour les emplacements dont la description est réellement
+     * une note courte. Les descriptions sont donc préservées, et seulement préservées.</p>
+     */
+    @Test
+    void theBriefColumnIsAddedEmptyWithoutMovingAnyExistingDescription() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:sqlite:" + tempDir.resolve("schema-buildsite-brief.db"))) {
+            SchemaMigrator.migrate(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO building_sites "
+                        + "(id, name, description, world, x, y, z, facing, created_at) "
+                        + "VALUES ('buildsite_0009', 'Bibliothèque du Hub', "
+                        + "'Bibliothèque médiévale, deux étages, façade ouest.', "
+                        + "'world_hub', 784, 67, -693, 'WEST', '2026-10-11T18:16:00Z')");
+                try (ResultSet rs = statement.executeQuery(
+                        "SELECT description, ai_brief FROM building_sites "
+                                + "WHERE id = 'buildsite_0009'")) {
+                    assertTrue(rs.next());
+                    assertEquals("Bibliothèque médiévale, deux étages, façade ouest.",
+                            rs.getString("description"), "la description existante est PRÉSERVÉE");
+                    assertEquals("", rs.getString("ai_brief"),
+                            "aucun texte n'est déplacé automatiquement vers le brief");
+                }
+            }
+        }
+    }
+
+    /** Un brief long traverse la colonne sans borne SQL : c'est l'application qui borne, pas le type. */
+    @Test
+    void theBriefColumnStoresSeveralThousandCharacters() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:sqlite:" + tempDir.resolve("schema-buildsite-brief-long.db"))) {
+            SchemaMigrator.migrate(connection);
+            String brief = "Bibliothèque médiévale fantastique, deux étages, façade ouest. "
+                    .repeat(90);
+            assertTrue(brief.length() > 5000);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("INSERT INTO building_sites "
+                        + "(id, name, world, x, y, z, facing, created_at) VALUES "
+                        + "('buildsite_0009', 'x', 'world_hub', 0, 64, 0, 'WEST', "
+                        + "'2026-10-11T18:16:00Z')");
+            }
+            try (java.sql.PreparedStatement update = connection.prepareStatement(
+                    "UPDATE building_sites SET ai_brief = ? WHERE id = 'buildsite_0009'")) {
+                update.setString(1, brief);
+                update.executeUpdate();
+            }
+            try (Statement statement = connection.createStatement();
+                 ResultSet rs = statement.executeQuery(
+                         "SELECT ai_brief FROM building_sites WHERE id = 'buildsite_0009'")) {
+                assertTrue(rs.next());
+                assertEquals(brief.length(), rs.getString("ai_brief").length());
+            }
+        }
+    }
+
     private int userVersion(Connection connection) throws Exception {
         try (Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery("PRAGMA user_version")) {

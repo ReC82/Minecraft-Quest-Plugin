@@ -33,13 +33,16 @@ public final class BuildingSiteRepository {
 
     private static final String INSERT = """
             INSERT INTO building_sites
-                (id, name, description, world, x, y, z, facing, status, created_by, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, name, description, ai_brief, world, x, y, z, facing, status, created_by,
+                 created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
     private static final String SELECT_ALL = "SELECT * FROM building_sites";
     private static final String UPDATE_NAME = "UPDATE building_sites SET name = ? WHERE id = ?";
     private static final String UPDATE_DESCRIPTION =
             "UPDATE building_sites SET description = ? WHERE id = ?";
+    private static final String UPDATE_AI_BRIEF =
+            "UPDATE building_sites SET ai_brief = ? WHERE id = ?";
     private static final String UPDATE_FACING = "UPDATE building_sites SET facing = ? WHERE id = ?";
     private static final String UPDATE_STATUS = "UPDATE building_sites SET status = ? WHERE id = ?";
     private static final String DELETE = "DELETE FROM building_sites WHERE id = ?";
@@ -93,14 +96,15 @@ public final class BuildingSiteRepository {
                 statement.setString(1, site.id());
                 statement.setString(2, site.name());
                 statement.setString(3, site.description());
-                statement.setString(4, site.world());
-                statement.setInt(5, site.x());
-                statement.setInt(6, site.y());
-                statement.setInt(7, site.z());
-                statement.setString(8, site.facing().name());
-                statement.setString(9, site.status().name());
-                statement.setString(10, site.createdBy());
-                statement.setString(11, site.createdAt().toString());
+                statement.setString(4, site.aiBrief());
+                statement.setString(5, site.world());
+                statement.setInt(6, site.x());
+                statement.setInt(7, site.y());
+                statement.setInt(8, site.z());
+                statement.setString(9, site.facing().name());
+                statement.setString(10, site.status().name());
+                statement.setString(11, site.createdBy());
+                statement.setString(12, site.createdAt().toString());
                 statement.executeUpdate();
                 return null;
             }
@@ -113,6 +117,11 @@ public final class BuildingSiteRepository {
 
     public CompletableFuture<Integer> updateDescription(String id, String description) {
         return update(UPDATE_DESCRIPTION, description, id);
+    }
+
+    /** Remplace le brief architectural d'un emplacement (issue #94). */
+    public CompletableFuture<Integer> updateAiBrief(String id, String brief) {
+        return update(UPDATE_AI_BRIEF, brief, id);
     }
 
     /**
@@ -157,6 +166,10 @@ public final class BuildingSiteRepository {
                 resultSet.getString("id"),
                 resultSet.getString("name"),
                 resultSet.getString("description"),
+                // Issue #94 : colonne ajoutée par la migration V31. Lue défensivement — une base
+                // d'une version antérieure renverrait null, et perdre tout le chargement des
+                // emplacements pour un brief absent serait hors de proportion.
+                brief(resultSet),
                 resultSet.getString("world"),
                 resultSet.getInt("x"),
                 resultSet.getInt("y"),
@@ -167,5 +180,15 @@ public final class BuildingSiteRepository {
                 SiteStatus.of(resultSet.getString("status")),
                 resultSet.getString("created_by"),
                 Instant.parse(resultSet.getString("created_at")));
+    }
+
+    /** Le brief, ou vide si la colonne n'est pas (encore) là. Jamais une erreur de chargement. */
+    private static String brief(ResultSet resultSet) {
+        try {
+            String value = resultSet.getString("ai_brief");
+            return value == null ? "" : value;
+        } catch (SQLException absent) {
+            return "";
+        }
     }
 }

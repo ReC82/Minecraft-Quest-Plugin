@@ -661,4 +661,139 @@ class BuildingSiteServiceTest {
         assertEquals(SiteStatus.EMPTY, SiteStatus.of("EMPTY"));
         assertEquals(SiteStatus.OCCUPIED, SiteStatus.of("occupied"));
     }
+    // ---- Issue #94 : le brief architectural, et la fin des troncatures silencieuses ------------
+
+    @Test
+    void aLongArchitecturalBriefIsStoredWholeAndSurvivesARestart() throws Exception {
+        create("world_hub", 784, 67, -693, Facing.WEST);
+        // Un brief réaliste, bien au-delà des 500 caractères de l'ancienne note : c'est tout
+        // l'objet du champ. On vérifie qu'il revient à l'octet près après un redémarrage, parce
+        // qu'une troncature à l'écriture ne se verrait pas autrement.
+        String brief = ("Bibliothèque médiévale fantastique destinée au Hub de LodyQuests. "
+                + "Deux étages, pierre claire et bois sombre, façade à l'ouest. Grande salle de "
+                + "lecture, rayonnages, comptoir pour le bibliothécaire, escalier intérieur, "
+                + "fenêtres et toit en pente. ").repeat(6);
+        assertTrue(brief.length() > 1000, "le brief de test doit dépasser l'ancienne borne");
+
+        BuildingSite saved = service.brief("buildsite_0001", brief)
+                .get(TIMEOUT, TimeUnit.SECONDS).orElseThrow();
+        assertEquals(brief.trim(), saved.aiBrief());
+        assertTrue(saved.hasAiBrief());
+
+        BuildingSiteService restarted = new BuildingSiteService(repository, clock);
+        assertEquals(1, restarted.load().get(TIMEOUT, TimeUnit.SECONDS));
+        assertEquals(brief.trim(), restarted.find("buildsite_0001").orElseThrow().aiBrief(),
+                "le brief doit revenir ENTIER après un redémarrage, jamais raccourci");
+    }
+
+    @Test
+    void theBriefAndTheNoteAreTwoIndependentFields() throws Exception {
+        create("world_hub", 784, 67, -693, Facing.WEST);
+        service.describe("buildsite_0001", "Note courte.").get(TIMEOUT, TimeUnit.SECONDS);
+        service.brief("buildsite_0001", "Un brief long et détaillé.").get(TIMEOUT, TimeUnit.SECONDS);
+
+        BuildingSite site = service.find("buildsite_0001").orElseThrow();
+        assertEquals("Note courte.", site.description());
+        assertEquals("Un brief long et détaillé.", site.aiBrief());
+
+        // Écrire l'un ne touche pas l'autre : c'est la raison d'être de deux champs.
+        service.describe("buildsite_0001", "Note remplacée.").get(TIMEOUT, TimeUnit.SECONDS);
+        assertEquals("Un brief long et détaillé.",
+                service.find("buildsite_0001").orElseThrow().aiBrief());
+        service.brief("buildsite_0001", "").get(TIMEOUT, TimeUnit.SECONDS);
+        assertEquals("Note remplacée.", service.find("buildsite_0001").orElseThrow().description());
+    }
+
+    @Test
+    void anEmptyBriefIsAValidValueThatClearsIt() throws Exception {
+        create("world_hub", 784, 67, -693, Facing.WEST);
+        service.brief("buildsite_0001", "Un brief.").get(TIMEOUT, TimeUnit.SECONDS);
+
+        BuildingSite cleared = service.brief("buildsite_0001", "")
+                .get(TIMEOUT, TimeUnit.SECONDS).orElseThrow();
+        assertEquals("", cleared.aiBrief(), "vider le champ est le geste « repartir de zéro »");
+        assertFalse(cleared.hasAiBrief());
+    }
+
+    /**
+     * Le cœur du lot : le stockage <strong>refuse</strong> au lieu de tronquer.
+     *
+     * <p>Cette méthode tronquait silencieusement. Aucun utilisateur ne pouvait l'atteindre — les
+     * deux frontières valident avant — mais c'était une perte de données en attente d'un appelant
+     * distrait. Un refus bruyant réveille le développeur ; une coupure muette perd le brief.</p>
+     */
+    @Test
+    void aTextOverTheBoundIsRefusedRatherThanSilentlyTruncated() throws Exception {
+        create("world_hub", 784, 67, -693, Facing.WEST);
+
+        // Le refus est SYNCHRONE : la borne est vérifiée avant même de construire le future, donc
+        // l'exception ne traverse pas de CompletableFuture. C'est voulu — rien ne part vers la base.
+        String tooLong = "x".repeat(BuildingSite.MAX_AI_BRIEF_LENGTH + 1);
+        IllegalArgumentException refused = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class, () -> service.brief("buildsite_0001", tooLong));
+        assertTrue(refused.getMessage().contains("trop long"), refused.getMessage());
+        assertTrue(refused.getMessage().contains("rien n'est tronqué"),
+                "le message doit dire que rien n'a été coupé : " + refused.getMessage());
+
+        // Et surtout : RIEN n'a été écrit. Un brief à moitié enregistré serait le pire des deux.
+        assertEquals("", service.find("buildsite_0001").orElseThrow().aiBrief());
+
+        // Même règle pour la note courte, qui tronquait aussi. (Le NOM, lui, reste tronqué : c'est
+        // une décision du projet, vérifiée par « aTooLongNameIsTruncatedRatherThanRefused ».)
+        String longNote = "y".repeat(BuildingSite.MAX_DESCRIPTION_LENGTH + 1);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.describe("buildsite_0001", longNote));
+        assertEquals("", service.find("buildsite_0001").orElseThrow().description());
+    }
+
+    @Test
+    void aBriefExactlyAtTheBoundIsAccepted() throws Exception {
+        create("world_hub", 784, 67, -693, Facing.WEST);
+        // La borne est inclusive : refuser pile à la limite serait un piège de plus.
+        String exact = "z".repeat(BuildingSite.MAX_AI_BRIEF_LENGTH);
+
+        BuildingSite saved = service.brief("buildsite_0001", exact)
+                .get(TIMEOUT, TimeUnit.SECONDS).orElseThrow();
+        assertEquals(BuildingSite.MAX_AI_BRIEF_LENGTH, saved.aiBrief().length());
+    }
+
+    @Test
+    void unicodeAndNewlinesSurviveTheRoundTrip() throws Exception {
+        create("world_hub", 784, 67, -693, Facing.WEST);
+        // Accents, apostrophes typographiques, emoji et sauts de ligne : un brief d'architecte en
+        // contient, et une mauvaise gestion d'encodage ne se verrait qu'en production.
+        String brief = "Façade à l\u2019ouest.\nMatériaux : pierre claire, chêne foncé.\n"
+                + "Étage supérieur « mezzanine ». Détail : \uD83C\uDFDB fronton.";
+
+        service.brief("buildsite_0001", brief).get(TIMEOUT, TimeUnit.SECONDS);
+        BuildingSiteService restarted = new BuildingSiteService(repository, clock);
+        restarted.load().get(TIMEOUT, TimeUnit.SECONDS);
+
+        assertEquals(brief, restarted.find("buildsite_0001").orElseThrow().aiBrief());
+    }
+
+    /** Un emplacement inconnu ne crée rien : même garde que pour la note. */
+    @Test
+    void briefingAnUnknownSiteChangesNothing() throws Exception {
+        assertTrue(service.brief("buildsite_9999", "x").get(TIMEOUT, TimeUnit.SECONDS).isEmpty());
+    }
+
+    /**
+     * Non-régression des emplacements existants : une base écrite AVANT la colonne {@code ai_brief}
+     * reste lisible, et son brief vaut « aucun » plutôt que de faire échouer le chargement.
+     */
+    @Test
+    void sitesCreatedBeforeTheBriefColumnStillLoadWithAnEmptyBrief() throws Exception {
+        create("world_hub", 712, 67, -702, Facing.WEST);
+        service.rename("buildsite_0001", "Taverne du village").get(TIMEOUT, TimeUnit.SECONDS);
+        service.describe("buildsite_0001", "Note d'avant.").get(TIMEOUT, TimeUnit.SECONDS);
+
+        BuildingSiteService restarted = new BuildingSiteService(repository, clock);
+        restarted.load().get(TIMEOUT, TimeUnit.SECONDS);
+        BuildingSite site = restarted.find("buildsite_0001").orElseThrow();
+
+        assertEquals("Note d'avant.", site.description(), "la note existante est PRÉSERVÉE");
+        assertEquals("", site.aiBrief());
+        assertFalse(site.hasAiBrief(), "aucun brief inventé à partir de la note");
+    }
 }

@@ -288,8 +288,8 @@ public interface AgentActions {
      *                    emplacement dans un monde déchargé reste parfaitement valide — il faut
      *                    simplement le dire plutôt que de laisser croire qu'il est inaccessible
      */
-    record BuildingSiteSummary(String id, String name, String description, String world,
-                               int x, int y, int z, String facing, String status,
+    record BuildingSiteSummary(String id, String name, String description, String aiBrief,
+                               String world, int x, int y, int z, String facing, String status,
                                String createdBy, String createdAt, boolean worldLoaded) {
     }
 
@@ -490,6 +490,40 @@ public interface AgentActions {
 
     /** Remplace la note libre d'un emplacement. Une description vide est une valeur valide. */
     CompletableFuture<MutationResult> buildingSiteDescribe(String id, String description);
+
+    /**
+     * Issue #94 — remplace le <strong>brief architectural</strong> d'un emplacement.
+     *
+     * <p>Distinct de {@link #buildingSiteDescribe} : la note d'administrateur sert à se repérer
+     * dans une liste, le brief sert à générer un bâtiment. Un brief vide est une valeur valide.
+     * Rien n'est jamais tronqué : au-delà de la borne, l'action est refusée en le disant.</p>
+     */
+    CompletableFuture<MutationResult> buildingSiteBrief(String id, String brief);
+
+    /**
+     * Issue #94 — génère un bâtiment à partir d'un <strong>plan déclaratif</strong>.
+     *
+     * <p>Le plan arrive en YAML, tel que l'IA l'a écrit et que le panel l'a validé en forme. Il est
+     * <strong>revalidé côté serveur</strong> — le panel n'est pas une source de confiance — puis
+     * expansé par un moteur déterministe, écrit en {@code .schem} et déclaré dans la bibliothèque.
+     * Un succès signifie que les trois artefacts existent réellement sur le disque.</p>
+     *
+     * @param replace autorise l'écrasement d'une définition portant le même identifiant
+     */
+    CompletableFuture<BuildingGenerationView> buildingGenerate(String planYaml, boolean replace);
+
+    /**
+     * Ce qu'une génération a réellement produit (issue #94) — jamais ce qui avait été demandé.
+     *
+     * @param blocks nombre de blocs de matière effectivement posés dans le plan
+     */
+    record BuildingGenerationView(boolean ok, String code, String message, String buildingId,
+                                  String schematic, int sizeX, int sizeY, int sizeZ, int blocks,
+                                  int version, boolean replaced, List<String> effects) {
+        public BuildingGenerationView {
+            effects = List.copyOf(effects == null ? List.of() : effects);
+        }
+    }
 
     /**
      * Corrige l'orientation cardinale d'un emplacement. <strong>Jamais la position</strong> : se

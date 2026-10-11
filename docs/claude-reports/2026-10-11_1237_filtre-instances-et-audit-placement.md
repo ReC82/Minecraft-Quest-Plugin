@@ -6,13 +6,15 @@
 * Heure : 12:37 → (voir « Fin de la tâche »)
 * Sujet : finalisation de #156 (TC-275/TC-276 validés), **#236** filtre des instances du Hub, et
   **audit #153** — pourquoi un waypoint peut se retrouver dans les arbres
-* Statut : DONE — avec une conclusion explicitement négative sur la clôture de #156
+* Statut : **PARTIAL** — tout est livré, testé et documenté ; le **panel est déployé**, mais le JAR
+  est bloqué par un certificat TLS expiré **côté VeryGames** (blocage externe, aucun contournement
+  effectué). Conclusion explicitement négative, par ailleurs, sur la clôture de #156.
 * Branche Git : `feature/236-hub-instances-filter` (créée depuis la ligne réellement déployée,
   `feature/156-travel-network-audit` @ `92a9686`)
 * Commit actuel si disponible : `1f1eb5e`
 * Début de la tâche : 2026-10-11 12:37:52
-* Fin de la tâche : 2026-10-11 14:02:30
-* Durée totale : 01:24:38
+* Fin de la tâche : 2026-10-11 13:52:10
+* Durée totale : 01:14:18
 
 ---
 
@@ -36,10 +38,11 @@ Trois lots liés au test réel de #156 :
 | Question | Réponse |
 |---|---|
 | **#156 peut-il être fermé ?** | **Non.** 8 critères sur 9 sont satisfaits ; le parcours « mort dans le Wild → Hub → borne → waypoint découvert » n'a jamais été éprouvé, et c'est l'objectif gameplay que le ticket désigne comme principal. TC-277 créé pour cela. |
-| **#236 est-il livré ?** | **Oui**, panel seul, 14 tests. |
+| **#236 est-il livré ?** | **Oui**, panel seul, **12 tests** ajoutés (5 sur la classe pure, 7 sur le rendu HTTP réel). |
 | **Pourquoi le waypoint pouvait-il être dans les arbres ?** | Deux causes : **(1)** la règle n'est pas rétroactive et **36 waypoints sur 143** lui sont antérieurs — explication dominante ; **(2)** un vrai défaut, le « sommet de tronc » que #153 décide de rejeter ne l'était pas. |
 | **#153 nécessite-t-il un correctif ?** | **Oui, et il est fait** pour le sommet de tronc. Le reste (espace devant le bouton, pente) n'est **pas** une correction évidente → **#237**. |
 | **Quels tests manuels restent ?** | **TC-277** (dernier critère de #156), plus TC-273 (#235), TC-274 (#234), TC-257 (#123), TC-271/TC-272 (#47). |
+| **Tout est-il déployé ?** | **Le panel oui** — #236 est utilisable tout de suite. **Le JAR non** : le certificat TLS du FTP VeryGames a expiré ce matin à 05:12 UTC. Blocage externe, rien n'a été contourné, et sans conséquence fonctionnelle immédiate. |
 
 ---
 
@@ -77,7 +80,7 @@ Ce n'est pas un détail de procédure : c'est l'objectif que le ticket désigne 
 — « après une mort dans le Wild, le joueur doit pouvoir retrouver rapidement une zone déjà explorée
 sans devoir recommencer une longue traversée dangereuse depuis zéro ».
 
-J'ai vérifié que le parcours est **mécaniquement** en place : `TravelBeaconService#openWorlds` liste
+J'ai vérifié que le parcours est **mécaniquement** en place : `TravelBeaconService#openWorldSelection` liste
 les waypoints `discoveredBy(joueur)` groupés par monde, et le Wild compte **44 découvertes**. Donc une
 borne du Hub propose bien de voyager vers un waypoint du Wild déjà découvert. Mais « praticable en
 conditions réelles » ne se déduit pas d'une lecture de code — il faut mourir dans le Wild une fois.
@@ -257,8 +260,14 @@ administrateur explicite**.
 
 ### Résultat des suites
 
-* `./gradlew test` : **à compléter**
-* `./gradlew build` : **à compléter**
+Exécutées depuis un **worktree Git propre** (`/srv/rpgquest/worktree-nuit`, détaché sur `1f1eb5e`) —
+le `crystal_hunt.yml` réécrit par le propriétaire dans l'arbre de travail fait échouer
+`CrystalHuntIntegrationTest`, et ce fichier n'est ni commité ni modifié par ce lot.
+
+* `./gradlew test` : **BUILD SUCCESSFUL en 42 min 21 s**, `TEST_EXIT=0`
+* `./gradlew build` : **BUILD SUCCESSFUL**, `BUILD_EXIT=0`
+* **2239 plugin + 1246 panel + 30 web-api = 3515 tests, 0 échec, 0 erreur**, 38 ignorés (tous
+  préexistants).
 
 ## Tests manuels à effectuer
 
@@ -290,12 +299,42 @@ Rien à réinitialiser : aucune donnée de jeu modifiée, aucune structure dépl
 
 ## Déploiement VeryGames
 
-### À transférer
+### Déploiement PARTIEL — le panel est en ligne, le JAR ne l'est pas
 
-1. **Panel** (`scripts/plugadmin/deploy.sh`) — le filtre #236 et la règle CSS.
-2. **JAR du plugin** — la règle de placement #153.
+**Le panel est déployé** (2026-10-11 13:43, `PANEL_EXIT=0`, `/health` 200 `ONLINE`,
+1 477 678 o). Vérifié sur ce qui est **réellement servi** :
+`TravelNetworkDiagnostic$InstanceFilter.class` présent, `instances-hub` et `&hi=` dans
+`AgentPages.class`, règle `.npc-searchbar` dans le CSS servi. **#236 est donc utilisable
+immédiatement.**
 
-Les deux, car les deux modules changent. À compléter après exécution.
+**Le JAR n'est pas déployé** : `DEPLOY_EXIT=1` à l'étape 6/8, **avant toute écriture**.
+
+```
+curl: (60) SSL certificate problem: certificate has expired
+```
+
+Le **certificat du serveur FTP de VeryGames** (`CN = *.dg.vg`, Let's Encrypt) a expiré
+**le 2026-10-11 à 05:12:03 UTC**, soit ~6 h avant la tentative. Notre CA épinglée, elle, est valide
+jusqu'en **2028** — le problème est donc entièrement côté VeryGames, et
+`scripts/verygames-fetch-ca.sh` n'y change rien : il traite les chaînes incomplètes, pas les
+certificats expirés.
+
+**`--insecure` n'a pas été utilisé.** Les identifiants FTP voyagent sur cette connexion : sans
+vérification, ils seraient exposés à un intercepteur. Un déploiement reporté de quelques heures coûte
+infiniment moins qu'un accès FTP compromis.
+
+**Conséquence réelle : aucune.** Le JAR ne contient que la règle de placement #153, qui ne concerne
+que les **futurs** placements. Le serveur tourne avec la règle précédente, qui refuse déjà le
+feuillage. Rien n'est cassé, rien n'est en attente d'activation.
+
+**Non affectés** : le serveur Minecraft tourne normalement, **RCON répond** (vérifié par `list`), et
+le panel est indépendant puisqu'il vit sur AWS.
+
+**Aucun redémarrage** — rien à activer, et **un joueur était connecté** (`LoDyMcFly`).
+
+JAR construit et prêt : **2 216 753 o**, SHA-256
+`9d12daa2eb69a603fce7f21b80f6e1ee9023bcac81f116dbea3516243b19abd9`. Procédure de reprise dans
+`docs/deployment/SERVER_CHANGELOG.md`.
 
 ### Ne PAS transférer/altérer
 
@@ -304,7 +343,8 @@ Les deux, car les deux modules changent. À compléter après exécution.
 
 ### Redémarrage requis
 
-Oui pour le JAR. Le panel redémarre seul par systemd.
+Aucun n'a eu lieu, et aucun n'était justifié : rien n'a été transféré. Le panel redémarre seul par
+systemd. Quand le JAR sera déployé, un redémarrage **avec 0 joueur connecté** sera nécessaire.
 
 ### Migration automatique
 
@@ -338,6 +378,9 @@ Aucune.
 * **#237 ouvert** — espace devant le bouton, pente, et diagnostic panel borné aux chunks chargés.
 * Les 36 waypoints antérieurs à la règle **restent en place** : aucun n'a été déplacé.
 * **6 instances du Hub** restent sans borne (7 avant TC-276).
+* **Le JAR du plugin reste à déployer**, bloqué par le certificat expiré de VeryGames. Sans
+  conséquence fonctionnelle immédiate, mais la règle « sommet de tronc » n'entrera en vigueur qu'à ce
+  déploiement.
 
 ## Prochaine étape suggérée
 

@@ -72,6 +72,49 @@ Un client FTP classique (FileZilla, WinSCP...) ou `sftp`/`ftp` en ligne de
 commande convient. Toutes les étapes de transfert ci-dessous supposent une
 connexion FTP déjà établie vers la racine du serveur VeryGames.
 
+### Blocage possible : certificat TLS expiré côté VeryGames
+
+`scripts/deploy-verygames.sh` **refuse de transférer** si la connexion FTPS ne peut
+pas être vérifiée, et s'arrête à l'étape 6/8 **avant toute écriture**. Deux causes
+distinctes, qui ne se soignent pas de la même façon :
+
+| Message de `curl` | Cause | Action |
+|---|---|---|
+| `unable to get local issuer certificate` (60) | chaîne incomplète côté serveur : l'intermédiaire n'est pas envoyé | `scripts/verygames-fetch-ca.sh`, puis `VERYGAMES_FTP_CA_EXTRA` |
+| **`certificate has expired`** (60) | le certificat **du serveur** a expiré — rien à corriger de notre côté | **attendre le renouvellement par VeryGames** |
+
+Pour trancher entre les deux en une commande, sans rien exposer :
+
+```bash
+set -a; . ~/.config/rpgquest/verygames.env; set +a
+echo | openssl s_client -connect "$VERYGAMES_FTP_HOST:21" -starttls ftp \
+  -servername "$VERYGAMES_FTP_HOST" 2>/dev/null \
+  | openssl x509 -noout -subject -issuer -dates
+```
+
+Si `notAfter` est dans le passé, le certificat du serveur est expiré. Comparer avec
+notre CA épinglée, qui est un fichier distinct et peut très bien être encore valide :
+
+```bash
+openssl x509 -in "$VERYGAMES_FTP_CA_EXTRA" -noout -subject -enddate
+```
+
+**Ne jamais utiliser `--insecure` / `-k` pour contourner.** Les identifiants FTP
+voyagent sur cette connexion : sans vérification, ils sont exposés à un
+intercepteur. Un déploiement reporté de quelques heures coûte infiniment moins
+qu'un accès FTP compromis.
+
+**Ce qui n'est pas affecté** : seul le canal de dépôt FTP l'est. Le serveur
+Minecraft tourne normalement, **RCON continue de fonctionner** (protocole et port
+différents, sans TLS), et le **déploiement du panel PlugAdmin est totalement
+indépendant** — il vit sur AWS, pas chez VeryGames. Un lot « panel + plugin » peut
+donc être livré à moitié : le panel en ligne, le JAR en attente. Le dire
+explicitement dans le changelog plutôt que de laisser croire au déploiement complet.
+
+Cas réellement rencontré : le **2026-10-11**, le certificat `*.dg.vg` a expiré à
+05:12 UTC et a bloqué le JAR du lot #236/#153 pendant que le panel, lui, était
+déployé normalement.
+
 ## Accès RCON VeryGames (redémarrage automatisable)
 
 **RCON est disponible et validé** sur le serveur DEV (contrairement à ce que

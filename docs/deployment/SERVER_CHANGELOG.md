@@ -7352,3 +7352,91 @@ quatre scénarios d'équilibrage sont chiffrés dans
 - **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
 - Une borne posée par `travel.beacon.pair` **survit** au rollback : c'est une borne auto-générée
   ordinaire, appariée à son instance. Elle se retire par les outils `/rpgadmin travel` déjà en place.
+
+## 2026-10-11 — Filtre des instances du Hub (#236) et règle de placement (#153) — **déploiement PARTIEL**
+
+**Branche** : `feature/236-hub-instances-filter` (commits `d9de6b9`, `4ea8f52`, `1f1eb5e`, `826a8fa`)
+**Portée** : panel **ET** plugin, **sans migration**.
+
+> ⚠️ **Le panel est déployé, le JAR ne l'est PAS.** Le certificat TLS du serveur FTP de VeryGames a
+> expiré le 2026-10-11 à 05:12 UTC, et `deploy-verygames.sh` a refusé de transférer — correctement,
+> et **avant toute écriture**. Voir « Blocage FTP » ci-dessous.
+
+### Déployé : le panel
+
+**Fait le 2026-10-11, 13:43 UTC+2**, `PANEL_EXIT=0`, `/health` **200** `ONLINE`.
+
+| | Valeur |
+|---|---|
+| Panel installé | `control-panel-0.1.0-SNAPSHOT.jar`, **1 477 678 o** (précédent : 1 474 423 o) |
+| Release précédente | `/opt/plugadmin/releases/` horodatée du jour |
+| Ce qu'il **sert**, vérifié | `TravelNetworkDiagnostic$InstanceFilter.class` présent ; `instances-hub` et `&hi=` dans `AgentPages.class` ; règle `.npc-searchbar` dans `assets/plugadmin.css` |
+
+Effet immédiat : la section « Instances connues du Hub » de `/travel` se filtre par état
+(Toutes / Avec borne / Sans borne) et par recherche. **Aucune statistique de couverture n'est
+recalculée par le filtre** — c'est garanti par construction et vérifié par un test comparant les
+rendus filtré et non filtré.
+
+### NON déployé : le JAR du plugin
+
+| | Valeur |
+|---|---|
+| JAR construit | **2 216 753 o**, SHA-256 `9d12daa2eb69a603fce7f21b80f6e1ee9023bcac81f116dbea3516243b19abd9` |
+| État | **non transféré** — `DEPLOY_EXIT=1` à l'étape 6/8 |
+| Contenu en attente | règle de placement #153 : sommet de tronc refusé comme surface et comme approche |
+| Conséquence de l'attente | **aucune régression** : la règle ne concerne que les **futurs** placements. Le serveur continue de fonctionner avec la règle précédente, qui refuse déjà le feuillage. |
+
+### Blocage FTP — certificat serveur expiré
+
+```
+curl: (60) SSL certificate problem: certificate has expired
+```
+
+Diagnostic effectué, sans contournement :
+
+| Certificat | Sujet | Expiration |
+|---|---|---|
+| **Serveur VeryGames** | `CN = *.dg.vg` (émis par Let's Encrypt YE1) | **Oct 11 05:12:03 2026 GMT — expiré** |
+| Notre CA épinglée (`VERYGAMES_FTP_CA_EXTRA`) | `Let's Encrypt YE1` | Sep 2 2028 — valide |
+
+Le problème est donc **entièrement côté VeryGames** : leur certificat wildcard n'a pas été renouvelé.
+`scripts/verygames-fetch-ca.sh` ne peut rien y faire — il traite les chaînes incomplètes, pas les
+certificats expirés.
+
+**`--insecure` n'a pas été utilisé et ne doit pas l'être** : les identifiants FTP voyagent sur cette
+connexion. Procédure complète dans `docs/deployment/VERYGAMES.md`, section « Blocage possible :
+certificat TLS expiré côté VeryGames ».
+
+**Ce qui n'est pas affecté** : le serveur Minecraft tourne normalement, **RCON fonctionne** (vérifié :
+`list` répond), et le panel est indépendant puisqu'il vit sur AWS.
+
+### Redémarrage
+
+**Aucun, et volontairement.** Rien n'a été transféré, donc il n'y a rien à activer — et **un joueur
+était connecté** (`LoDyMcFly`) au moment de la tentative.
+
+### Pour reprendre le déploiement du JAR
+
+1. Vérifier que le certificat a été renouvelé :
+   ```bash
+   set -a; . ~/.config/rpgquest/verygames.env; set +a
+   echo | openssl s_client -connect "$VERYGAMES_FTP_HOST:21" -starttls ftp \
+     -servername "$VERYGAMES_FTP_HOST" 2>/dev/null | openssl x509 -noout -dates
+   ```
+2. Depuis un worktree propre sur `826a8fa` :
+   `RPGQUEST_TEST_MAX_HEAP=768m scripts/deploy-verygames.sh -y`
+3. Redémarrer **avec 0 joueur connecté** : `scripts/verygames-restart.sh`.
+
+### Ne PAS transférer/altérer
+
+`data.db`, `config.yml` (**aucun réglage ne change**), `messages.yml`, `spawn.yml`, les mondes,
+`plugins/Citizens/`, et les quêtes/dialogues/stories du serveur.
+
+### Migration automatique
+
+Aucune.
+
+### Rollback
+
+- **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
+- **Plugin** : rien à annuler — rien n'a été déployé.

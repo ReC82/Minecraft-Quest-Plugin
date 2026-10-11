@@ -3331,6 +3331,16 @@ classe pure et testée (`panel.travel.TravelNetworkDiagnostic`) :
 Le diagnostic n'est affiché **que sans filtre** : une moyenne calculée sur un sous-ensemble recherché
 serait présentée comme la couverture du réseau. Un filtre est une recherche, pas un diagnostic.
 
+**Filtre des instances du Hub (issue #236)** : la liste « Instances connues du Hub » se filtre par
+état — **Toutes / Avec borne / Sans borne** — et par recherche libre (biome, clé d'instance,
+waypoint, borne, ou coordonnées telles qu'affichées, « 161,27 » compris). Trois liens GET et un
+champ de recherche natif, sans aucun script en ligne. Le compteur affiche toujours
+**« affichées/total »** : un « (6) » seul se lirait « le Hub n'a que 6 instances ».
+
+Ce filtre ne masque **pas** le diagnostic, contrairement au `q`/`world` de la page : il ne filtre
+qu'une liste, pas les tableaux dont viennent les statistiques. Les métriques de couverture restent
+donc celles du **réseau complet**, quel que soit le filtre — un test le vérifie explicitement.
+
 #### Action `travel.beacon.pair` — rattrapage ciblé d'une instance
 
 | Action agent | Permission | Portée |

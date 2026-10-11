@@ -603,6 +603,28 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   dédiée `TRAVEL_PAIR_WRITE`) apparie **une** instance nommée par son waypoint, en réutilisant la
   recherche d'emplacement existante : aucun balayage, aucun backfill, aucune densité ni distance
   modifiée, aucune migration.
+- **Filtre des instances du Hub** *(issue #236, 2026-10-11)* — retour utilisateur pendant TC-275
+  (« dommage qu'on ne puisse pas filtrer pour n'afficher que les instances sans borne »). La liste
+  « Instances connues du Hub » se filtre par état (**Toutes / Avec borne / Sans borne**) et par
+  recherche libre (biome, instance, waypoint, borne, coordonnées collées « 161,27 »), en liens GET
+  et champ natif — aucun script en ligne. Le compteur affiche « affichées/total ». Le filtre ne
+  masque **pas** le diagnostic et ne recalcule **aucune** statistique : les métriques de couverture
+  restent celles du réseau complet, ce qu'un test vérifie explicitement. Panel seul, aucun impact
+  gameplay.
+- **Accessibilité du placement : sommet de tronc rejeté** *(issue #153, 2026-10-11)* — un waypoint
+  physiquement « dans les arbres » a été observé en jeu. Audit : deux causes. **(1)** la règle
+  d'accessibilité n'est pas rétroactive et **36 waypoints sur 143** (15 des 23 du Hub) ont été posés
+  avant son entrée dans le dépôt le 2026-10-04 — explication dominante ; **(2)** un vrai défaut, le
+  « sommet de tronc inaccessible » que #153 décide de rejeter ne l'était pas (`isLeafCanopy` ne
+  testait que `*_LEAVES`), si bien qu'une colonne dont le bloc le plus haut est un rondin pouvait
+  recevoir une structure aussi inatteignable que celle au sommet des feuilles. La surface refusée
+  couvre désormais `*_LEAVES`, `*_LOG`, `*_WOOD`, `*_STEM`, `*_HYPHAE`, `*_ROOTS`, pour la colonne
+  cible **et** pour les voisins servant d'approche ; un arbre *adjacent* reste permis. Même règle
+  pour waypoints et bornes. Effet de bord utile : `/rpgadmin travel diagnose` **détecte** désormais
+  les structures déjà posées sur un tronc — aucune n'est déplacée automatiquement. Restent ouverts
+  en **#237** : l'espace devant le bouton, la pente, et le diagnostic panel (écarté ici parce que
+  `inaccessible()` lit les blocs de chaque waypoint et forcerait le chargement d'une centaine de
+  chunks).
 - **Remise d'objets à un PNJ** *(issue #123)* — nouveau type d'objectif `DELIVER_ITEM_TO_NPC`
   (`npc` + `material` + `amount`) : le joueur doit **réellement remettre** les objets au PNJ, dans
   son dialogue. Cet objectif n'écoute **aucun** événement de jeu — ramasser, fabriquer ou posséder

@@ -4136,8 +4136,9 @@ le résumé de récompenses de TC-014).
 | TC-272 | Diff source↔DEV, page « Changements en attente » et publication groupée #47 (PENDING) | | | |
 | TC-273 | Onboarding nouveau joueur : reset cohérent, quête nommée, progression du kit #235 (PENDING) | | | |
 | TC-274 | Cycle de vie d'un bâtiment : libérer, réorienter, remplacer, tour de garde #234 (PENDING) | | | |
-| TC-275 | Diagnostic du réseau de voyage dans PlugAdmin : les cinq sections #156 (PENDING) | | | |
-| TC-276 | Rattrapage ciblé d'une instance du Hub restée sans borne #156 (PENDING) | | | |
+| TC-275 | Diagnostic du réseau de voyage dans PlugAdmin : les cinq sections #156 | ✅ | | **VALIDÉ 2026-10-11** par le propriétaire — 23 instances, 16 puis 17 bornes, couverture, fiche par borne, 7 manques visibles, Wild 7/0, masquage sous filtre |
+| TC-276 | Rattrapage ciblé d'une instance du Hub restée sans borne #156 | ✅ | | **VALIDÉ 2026-10-11** par le propriétaire — `minecraft:swamp@0,0`, SUCCESS/PAIRED, 16→17 bornes, 7→6 manques, borne physique et bouton fonctionnels en jeu |
+| TC-277 | Reprise après mort dans le Wild : Hub → borne → waypoint découvert #156 (PENDING — **dernier critère de #156**) | | | |
 
 ---
 
@@ -5048,7 +5049,7 @@ le résumé de récompenses de TC-014).
 
 ---
 
-### TC-275 — Diagnostic du réseau de voyage dans PlugAdmin (issue #156, PENDING MANUAL VALIDATION)
+### TC-275 — Diagnostic du réseau de voyage dans PlugAdmin (issue #156, ✅ VALIDÉ 2026-10-11)
 
 **Pourquoi ce test existe** : la question « pourquoi seulement 13 bornes ? » est restée sans réponse
 pendant des semaines parce que l'écran ne disait ni la politique (les bornes n'existent que dans le
@@ -5078,12 +5079,25 @@ qui compte est leur cohérence entre elles, pas leur valeur exacte) : 23 instanc
     remplacé par la phrase « Filtre actif : le diagnostic du réseau complet est masqué ». Retirer le
     filtre le rétablit.
 
+#### Résultat réel — 2026-10-11, par le propriétaire
+
+| Point | Constaté |
+|---|---|
+| Diagnostic global | visible et **cohérent** |
+| Instances du Hub | **23** |
+| Bornes | **16**, puis **17** après le rattrapage de TC-276 |
+| Métriques de couverture | OK |
+| Fiche par borne | OK |
+| Instances sans borne | **7** visibles |
+| Réseau du Wild | **7 Waystones / 0 découverte** |
+| Masquage sous filtre | **propre** |
+
 **Ce que ce TC ne couvre pas** : il décrit ce qui est **enregistré en base** au dernier relevé, jamais
 une vérification physique des blocs. Pour cela, `/rpgadmin travel diagnose` et `repair`/`restore`.
 
 ---
 
-### TC-276 — Rattrapage ciblé d'une instance restée sans borne (issue #156, PENDING MANUAL VALIDATION)
+### TC-276 — Rattrapage ciblé d'une instance restée sans borne (issue #156, ✅ VALIDÉ 2026-10-11)
 
 **Pourquoi ce test existe** : l'appariement n'est déclenché que par le déplacement d'un joueur dans
 l'instance, et les compteurs d'essai vivent en mémoire. Les 7 instances en retard datent d'avant le
@@ -5109,6 +5123,63 @@ posée (≈ 12 blocs, sur un sol libre et accessible).
     « Aucun emplacement accessible trouvé entre 6 et 16 blocs… » est une **issue normale**, pas une
     panne — le message doit citer les distances réellement configurées.
 
+#### Résultat réel — 2026-10-11, par le propriétaire
+
+| Point | Constaté |
+|---|---|
+| Instance visée | `minecraft:swamp@0,0`, waypoint `wp_world_hub_swamp_0_0` |
+| Action depuis PlugAdmin | **`SUCCESS` / `PAIRED`** |
+| Bornes après rafraîchissement | **16 → 17** |
+| Instances sans borne | **7 → 6** |
+| Fiche de l'instance (`swamp 161,27`) | passée à **« borne présente »** |
+| En jeu | borne **physiquement présente** |
+| Bouton de la borne | **fonctionnel**, ouvre le menu de voyage |
+| Après appariement | l'action « Apparier cette instance » **n'est plus proposée** |
+
+Ce dernier point est le comportement voulu, et le propriétaire l'a explicitement confirmé comme
+correct : **l'interface ne propose pas une mutation devenue inutile.** C'est une conséquence directe
+de la conception — le formulaire de rattrapage n'est rendu que dans la branche « instance sans
+borne » de la fiche, jamais pour une instance équipée. Le refus côté serveur (« Cette instance a
+déjà une borne appariée ») reste la seconde barrière, pour le cas d'un formulaire resoumis depuis
+une page périmée.
+
 **Ce que ce TC ne couvre pas** : il ne valide **aucun** changement d'équilibrage. La densité, les
 distances et les probabilités sont inchangées ; les quatre scénarios chiffrés du rapport
 `2026-10-10_1340_audit-reseau-voyage.md` sont proposés et **non activés**.
+
+---
+
+### TC-277 — Reprise après mort dans le Wild (issue #156, PENDING MANUAL VALIDATION)
+
+**Pourquoi ce test existe** : c'est le **dernier critère d'acceptation de #156**, et c'est l'objectif
+gameplay que le ticket désigne comme principal — « après une mort dans le Wild, le joueur doit
+pouvoir retrouver rapidement une zone déjà explorée sans devoir recommencer une longue traversée
+dangereuse depuis zéro ». Le parcours est mécaniquement en place et vérifié dans le code (une borne
+liste les waypoints `discoveredBy` du joueur, groupés par monde, et le Wild compte 44 découvertes),
+mais « praticable en conditions réelles » ne se déduit pas d'une lecture de code.
+
+**Durée** : ~10 minutes, un client réel. **Aucune donnée à préparer.**
+
+**À mesurer, et c'est le point du test** : le **temps réel** entre le respawn et le retour sur la
+zone explorée. C'est ce chiffre qui dira si l'équilibrage est suffisant.
+
+1.  Dans le Wild, se rendre sur une zone déjà explorée et **noter un waypoint déjà découvert**
+    (bouton déjà cliqué une fois).
+2.  Mourir dans le Wild — par un mob, une chute, peu importe. Noter l'heure.
+3.  Au respawn : vérifier où le joueur réapparaît, et s'il comprend **sans aide** ce qu'il doit faire.
+4.  Rejoindre une borne du Hub. **Noter la distance parcourue à pied** pour l'atteindre.
+5.  Cliquer le bouton de la borne : le menu de voyage doit s'ouvrir, proposer le monde `wild`, et y
+    lister le waypoint noté à l'étape 1.
+6.  Voyager vers ce waypoint. Vérifier l'arrivée au bon endroit, dans la zone déjà explorée.
+7.  **Noter le temps total** respawn → arrivée.
+
+**Critère de réussite** : le parcours aboutit, sans commande admin, sans aide extérieure, et le temps
+total reste raisonnable au regard du danger du Wild. Si le parcours échoue à une étape, c'est un
+défaut fonctionnel de #156 et le ticket reste ouvert.
+
+**Si le parcours aboutit mais est trop lent** : ce n'est pas un bug, c'est de l'équilibrage. Les
+quatre scénarios chiffrés de `docs/claude-reports/2026-10-10_1340_audit-reseau-voyage.md` sont là
+pour cette décision — le plus rentable étant de rendre les Waystones du Wild trouvables (0 découverte
+sur 7 aujourd'hui), ce qui ne crée **aucune** structure.
+
+**Ce que ce TC ne couvre pas** : il ne valide aucun changement d'équilibrage, et n'en active aucun.

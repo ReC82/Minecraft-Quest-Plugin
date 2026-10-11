@@ -90,8 +90,9 @@ Déclencheur : `WaypointListener#onMove` → `WaypointService#handleMovement`.
    **le waypoint n'apparaît jamais au pied du joueur**.
 6. Pour chaque candidat, dans l'ordre :
    - le candidat doit rester **dans la même instance** (même `biomeKey` + même tuile) ;
-   - surface sûre via `RandomSafeLocationFinder#findAtColumn` (sol solide non dangereux, 2 blocs
-     d'air) — réutilisé tel quel du système de voyage ;
+   - surface **réellement accessible à pied** via `RandomSafeLocationFinder#findAccessibleColumn`
+     (issue #153) — voir « Règle d'accessibilité du placement » ci-dessous. Ce n'est **pas**
+     `findAtColumn`, qui sert aux arrivées de téléportation et accepterait un sommet d'arbre ;
    - **zone libre** : chaque bloc du modèle est « naturel » (air, herbe, neige, feuillage,
      fleurs…) et hors claim (`WaypointPlacementGuard`, branché sur `ClaimService` en prod) — on ne
      détruit **jamais** une construction joueur pour poser un waypoint ;
@@ -106,6 +107,40 @@ Déclencheur : `WaypointListener#onMove` → `WaypointService#handleMovement`.
 Toute la partie « lecture terrain » est **synchrone** (thread principal, chunks du joueur déjà
 chargés) ; seule la persistance est asynchrone (`DatabaseManager`), avec re-marshalling sur le
 thread principal pour poser les blocs.
+
+### Règle d'accessibilité du placement (issue #153)
+
+Le Hub interdit la casse et la pose de blocs. Une structure inatteignable à pied y est donc
+**définitivement** inatteignable : le joueur ne peut ni tailler un escalier, ni couper l'arbre. D'où
+une règle plus stricte que « bloc solide + deux blocs d'air », appliquée à l'identique aux
+**waypoints et aux bornes** (`RandomSafeLocationFinder#findAccessibleColumn`).
+
+Refusé comme surface :
+
+| Cas | Pourquoi |
+|---|---|
+| Feuillage — `*_LEAVES` | le cas d'origine du ticket : waypoint au sommet d'un acacia |
+| Tronc, bois, racines — `*_LOG`, `*_WOOD`, `*_STEM`, `*_HYPHAE`, `*_ROOTS` | « sommet de tronc inaccessible », critère décidé par #153 et appliqué depuis le 2026-10-11 |
+| Colonne sous une canopée | le bloc le plus haut de la colonne est une feuille, donc déjà refusé |
+| Colonne isolée, surplomb, îlot | aucune approche à pied : il faut au moins un des 4 voisins avec un sol solide **non-arbre** à ±1 bloc de hauteur — vérification locale bornée à 4 voisins, jamais un pathfinding |
+| Eau, lave | sol non solide, et lave également classée dangereuse |
+| Collé au plafond du monde | il ne reste pas la place de tenir debout |
+
+Accepté : un sol naturel solide avec au moins un voisin praticable — **y compris au pied d'un
+arbre**. C'est la surface qui est refusée, pas le voisinage d'un arbre.
+
+**La règle n'est pas rétroactive.** Rien ne re-contrôle un waypoint déjà posé : les structures
+antérieures au 2026-10-04 (date d'entrée de la règle) peuvent occuper un emplacement qu'elle
+refuserait aujourd'hui. Sur le serveur DEV au 2026-10-11, cela concerne **36 waypoints sur 143**
+(15 des 23 du Hub). Elles sont signalées par `/rpgadmin travel diagnose` et déplaçables par
+`/rpgadmin travel repair waypoint <id> confirm`, qui conserve id, nom, découvertes et borne
+appariée — **sur action administrateur explicite uniquement**, jamais automatiquement.
+
+**Limites connues, et assumées** (suivies dans #237) : l'espace devant le bouton — la colonne où un
+joueur se tient pour cliquer — n'est pas vérifié ; il n'existe aucune limite de pente au-delà du
+voisin à ±1 bloc ; et le contrôle « deux blocs libres au-dessus du sol » ne peut mordre qu'à la
+limite de hauteur du monde, puisque la surface vient de `getHighestBlockYAt` et que les blocs
+au-dessus du plus haut sont libres par définition.
 
 ---
 

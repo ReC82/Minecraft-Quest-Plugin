@@ -23,6 +23,7 @@ import com.lodygames.rpgquest.quest.model.MoneyReward;
 import com.lodygames.rpgquest.quest.model.ObjectiveType;
 import com.lodygames.rpgquest.quest.model.QuestDefinition;
 import com.lodygames.rpgquest.quest.model.QuestObjective;
+import com.lodygames.rpgquest.ui.ObjectiveLabels;
 import com.lodygames.rpgquest.quest.model.QuestReward;
 import com.lodygames.rpgquest.quest.model.QuestState;
 import com.lodygames.rpgquest.quest.model.QuestStep;
@@ -1186,8 +1187,12 @@ public final class QuestProgressEngine implements PluginService {
         player.sendMessage(messagesService.current().format("quest.started-objectives-header",
                 Placeholder.parsed("quest", quest.title().base())));
         for (QuestObjective objective : objectives) {
+            // Issue #238 : le libellé vient d'ObjectiveLabels, qui rend un composant
+            // « translatable » — le client affiche donc « Graines de blé » et non « WHEAT_SEEDS ».
+            // Il faut un Placeholder.component et non unparsed : un composant aplati en chaîne
+            // perdrait justement la clé de traduction.
             player.sendMessage(messagesService.current().format("quest.started-objective",
-                    Placeholder.unparsed("objective", describeObjective(objective)),
+                    Placeholder.component("objective", ObjectiveLabels.targetName(objective)),
                     Placeholder.unparsed("total", String.valueOf(requiredAmount(objective)))));
         }
     }

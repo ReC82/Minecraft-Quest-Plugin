@@ -474,7 +474,13 @@ class QuestProgressEngineTest {
 
         String objective = player.nextMessage();
         assertNotNull(objective, "le premier objectif doit être lisible immédiatement");
-        assertTrue(objective.contains("ZOMBIE"), () -> "l'objectif réel est attendu : " + objective);
+        // Issue #238 : une CLÉ de traduction, pas l'identifiant brut. C'est ce qui permet au client
+        // d'afficher « Zombie » en français — l'ancien message affichait « ZOMBIE », et
+        // « WHEAT_SEEDS » pour les graines de blé, au milieu d'une interface française.
+        assertTrue(objective.contains("entity.minecraft.zombie"),
+                () -> "l'objectif doit porter la clé de traduction Minecraft : " + objective);
+        assertFalse(objective.contains("ZOMBIE"),
+                () -> "l'identifiant brut ne doit plus apparaître : " + objective);
         assertTrue(objective.contains("2"), () -> "la quantité demandée est attendue : " + objective);
 
         assertNull(player.nextMessage(), "cette quête n'a qu'un objectif : pas de ligne de plus");
@@ -510,9 +516,49 @@ class QuestProgressEngineTest {
         String first = player.nextMessage();
         String second = player.nextMessage();
         assertNotNull(second, "les deux objectifs doivent être annoncés");
-        assertTrue(first.contains("ZOMBIE"), first);
-        assertTrue(second.contains("DIRT"), second);
+        assertTrue(first.contains("entity.minecraft.zombie"), first);
+        assertTrue(second.contains("block.minecraft.dirt"), second);
         assertNull(player.nextMessage());
+    }
+
+    /**
+     * Issue #238 — le cas exact rapporté en jeu : « WHEAT_SEEDS » affiché dans une interface
+     * française.
+     *
+     * <p>Les graines de blé sont le pire exemple : l'identifiant porte un {@code _}, donc même un
+     * joueur anglophone lisait « WHEAT_SEEDS » au lieu de « Wheat Seeds ». La clé de traduction
+     * officielle de Minecraft règle les deux cas d'un coup, sans aucune table française maison.</p>
+     */
+    @Test
+    void announcedObjectivesCarryMinecraftTranslationKeysNotRawIdentifiers() throws Exception {
+        NamespacedKey seeds = new NamespacedKey("rpgquest", "seeds_quest");
+        Files.writeString(questsDir.resolve("seeds_quest.yml"), """
+                id: rpgquest:seeds_quest
+                title: "Graines"
+                description: "Ramasser des graines."
+                category: test
+                icon: WHEAT_SEEDS
+                steps:
+                  - id: s1
+                    objectives:
+                      - type: COLLECT_ITEM
+                        material: WHEAT_SEEDS
+                        amount: 4
+                """);
+        engine.reloadQuestDefinitions();
+        PlayerMock player = quietPlayer();
+
+        engine.accept(player, seeds).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        server.getScheduler().performTicks(2);
+
+        player.nextMessage(); // en-tête
+        String objective = player.nextMessage();
+        assertNotNull(objective, "l'objectif doit être annoncé");
+        assertTrue(objective.contains("wheat_seeds"),
+                () -> "la clé de traduction des graines est attendue : " + objective);
+        assertFalse(objective.contains("WHEAT_SEEDS"),
+                () -> "l'identifiant brut ne doit plus apparaître : " + objective);
+        assertTrue(objective.contains("4"), () -> "la quantité est attendue : " + objective);
     }
 
     @Test

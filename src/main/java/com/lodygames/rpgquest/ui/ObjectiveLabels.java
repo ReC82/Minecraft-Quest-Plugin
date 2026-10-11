@@ -27,13 +27,20 @@ import net.kyori.adventure.text.Component;
  * <p>Volontairement sans verbe ni ponctuation : la ligne d'infobulle ajoute elle-même le compteur
  * (« Araignée 3/5 »), ce qui tient sur une ligne courte même avec des noms longs.</p>
  */
-final class ObjectiveLabels {
+public final class ObjectiveLabels {
 
     private ObjectiveLabels() {
     }
 
-    /** Nom affichable de la cible d'un objectif, traduit côté client quand Minecraft le permet. */
-    static Component targetName(QuestObjective objective) {
+    /**
+     * Nom affichable de la cible d'un objectif, traduit côté client quand Minecraft le permet.
+     *
+     * <p>Public depuis #238 : le message « Quête commencée » envoyé dans le chat affichait
+     * l'identifiant brut ({@code WHEAT_SEEDS}) parce qu'il passait par une simple chaîne. Il réutilise
+     * désormais ce libellé-ci, qui est la <strong>seule</strong> règle de nommage des cibles du
+     * projet — en recréer une seconde aurait signifié deux vocabulaires pour le même objet.</p>
+     */
+    public static Component targetName(QuestObjective objective) {
         return switch (objective) {
             case KillEntityObjective o -> Component.translatable(o.entity());
             case BreakBlockObjective o -> Component.translatable(o.material());

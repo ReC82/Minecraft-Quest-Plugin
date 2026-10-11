@@ -3,6 +3,8 @@ package com.lodygames.rpgquest.database;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -47,6 +49,8 @@ public final class NpcSkinSourceRepository {
             """;
     private static final String FIND =
             "SELECT source_kind, source_value FROM npc_citizens_skins WHERE citizens_uuid = ?";
+    private static final String FIND_ALL =
+            "SELECT citizens_uuid, source_kind, source_value FROM npc_citizens_skins";
     private static final String DELETE = "DELETE FROM npc_citizens_skins WHERE citizens_uuid = ?";
 
     private final DatabaseManager database;
@@ -94,6 +98,37 @@ public final class NpcSkinSourceRepository {
                     return Optional.of(new SkinSource(kind, rs.getString("source_value")));
                 }
             }
+        });
+    }
+
+    /**
+     * Toutes les sources connues, indexées par UUID Citizens (issue #197).
+     *
+     * <p>Le catalogue PNJ doit afficher l'état d'apparence de <strong>chaque</strong> ligne. Les
+     * chercher une par une multiplierait les requêtes par le nombre de PNJ et obligerait à attendre
+     * autant de futures avant de pouvoir entrer sur le thread principal. Une seule lecture, un seul
+     * index : le relevé se construit ensuite sans toucher à la base.</p>
+     */
+    public CompletableFuture<Map<UUID, SkinSource>> loadAll() {
+        return database.execute(connection -> {
+            Map<UUID, SkinSource> all = new LinkedHashMap<>();
+            try (PreparedStatement statement = connection.prepareStatement(dialect.rewrite(FIND_ALL));
+                 ResultSet rs = statement.executeQuery()) {
+                while (rs.next()) {
+                    UUID uuid;
+                    Kind kind;
+                    try {
+                        uuid = UUID.fromString(rs.getString("citizens_uuid"));
+                        kind = Kind.valueOf(rs.getString("source_kind"));
+                    } catch (IllegalArgumentException unreadable) {
+                        // Ligne écrite par une version ultérieure, ou UUID corrompu : on l'ignore
+                        // plutôt que d'en déduire une apparence qu'on ne saurait pas reproduire.
+                        continue;
+                    }
+                    all.put(uuid, new SkinSource(kind, rs.getString("source_value")));
+                }
+            }
+            return Map.copyOf(all);
         });
     }
 

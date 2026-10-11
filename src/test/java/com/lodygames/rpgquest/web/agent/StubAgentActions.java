@@ -224,6 +224,11 @@ class StubAgentActions implements AgentActions {
     }
 
     @Override
+    public CompletableFuture<MutationResult> npcIdentityRename(String npcId, String name) {
+        return unsupported();
+    }
+
+    @Override
     public CompletableFuture<CitizensProvisionResult> citizensProvision(
             String displayName, String skinValue, boolean skinByPlayerName,
             String world, Double x, Double y, Double z, Float yaw, Float pitch) {

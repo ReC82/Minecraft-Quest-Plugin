@@ -81,9 +81,10 @@ final class CitizensNpcBridge {
         if (location == null) {
             location = npc.getStoredLocation();
         }
+        String type = storedType(npc);
         if (location == null || location.getWorld() == null) {
             return new CitizensNpc(npc.getId(), npc.getUniqueId(), npc.getName(), spawned,
-                    null, 0, 0, 0, 0f, 0f, false, shouldSpawn, false, null, null);
+                    null, 0, 0, 0, 0f, 0f, false, shouldSpawn, false, null, null, type);
         }
         // Chargement du chunk : lu SANS le charger (isChunkLoaded), car sonder un PNJ ne doit
         // jamais forcer de génération de terrain.
@@ -91,7 +92,28 @@ final class CitizensNpcBridge {
                 location.getBlockX() >> 4, location.getBlockZ() >> 4);
         return new CitizensNpc(npc.getId(), npc.getUniqueId(), npc.getName(), spawned,
                 location.getWorld().getName(), location.getX(), location.getY(), location.getZ(),
-                location.getYaw(), location.getPitch(), live, shouldSpawn, chunkLoaded, null, null);
+                location.getYaw(), location.getPitch(), live, shouldSpawn, chunkLoaded, null, null, type);
+    }
+
+    /**
+     * Type d'entité enregistré par Citizens (trait public {@code MobType}), ou {@code null}.
+     *
+     * <p>Issue #197 — <strong>lecture stricte</strong> : {@code getTraitNullable} et non
+     * {@code getOrAddTrait}. Dresser l'inventaire des PNJ ne doit rien écrire : attacher un trait
+     * à chaque PNJ au seul motif qu'on le consulte modifierait le registre à chaque relevé du
+     * panel. Un trait absent se dit « inconnu ».</p>
+     */
+    private static String storedType(NPC npc) {
+        try {
+            net.citizensnpcs.api.trait.trait.MobType trait =
+                    npc.getTraitNullable(net.citizensnpcs.api.trait.trait.MobType.class);
+            if (trait == null || trait.getType() == null) {
+                return null;
+            }
+            return trait.getType().name();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** Trait public {@code Spawned} : l'intention enregistrée. Repli sur l'état courant si absent. */

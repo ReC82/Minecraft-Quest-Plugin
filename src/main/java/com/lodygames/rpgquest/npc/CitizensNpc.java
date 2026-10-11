@@ -29,24 +29,44 @@ import java.util.UUID;
  *                  Citizens installée ne l'expose pas. {@code null} veut dire « inconnu », jamais
  *                  « désactivé » : le panel doit pouvoir faire la différence.
  * @param wander    état réel de la promenade (issue #165), ou {@code null} pour la même raison.
+ * @param entityType type d'entité réellement enregistré par Citizens (trait {@code MobType}),
+ *                  par exemple {@code PLAYER} ou {@code VILLAGER}, ou {@code null} si la build
+ *                  installée ne l'expose pas (issue #197). {@code null} veut dire
+ *                  <strong>inconnu</strong>, jamais « pas un joueur » : c'est ce type qui décide
+ *                  si la question du skin a un sens, et une supposition y serait un mensonge.
  */
 public record CitizensNpc(int numericId, UUID uuid, String name, boolean spawned,
                           String world, double x, double y, double z, float yaw, float pitch,
                           boolean liveLocation, boolean shouldSpawn, boolean chunkLoaded,
-                          LookCloseState lookClose, WanderState wander) {
+                          LookCloseState lookClose, WanderState wander, String entityType) {
 
     /**
      * Entrée de registre dont Citizens n'expose <strong>aucune</strong> position exploitable.
      * Utilisé par les chemins qui n'ont pas besoin de la position (liaison, spawn) et par les tests.
      */
     public CitizensNpc(int numericId, UUID uuid, String name, boolean spawned) {
-        this(numericId, uuid, name, spawned, null, 0, 0, 0, 0f, 0f, false, spawned, false, null, null);
+        this(numericId, uuid, name, spawned, null, 0, 0, 0, 0f, 0f, false, spawned, false, null, null, null);
     }
 
     /** Même entrée, enrichie des comportements relus sur Citizens. */
     public CitizensNpc withBehaviour(LookCloseState look, WanderState walk) {
         return new CitizensNpc(numericId, uuid, name, spawned, world, x, y, z, yaw, pitch,
-                liveLocation, shouldSpawn, chunkLoaded, look, walk);
+                liveLocation, shouldSpawn, chunkLoaded, look, walk, entityType);
+    }
+
+    /**
+     * Le type d'entité est-il connu et vaut-il {@code PLAYER} ? Issue #197 : seule cette forme de
+     * PNJ porte un skin de joueur, donc seule elle rend la notion de « source d'apparence »
+     * pertinente. Un type inconnu renvoie {@code false} ici, mais {@link #entityTypeKnown()}
+     * permet de distinguer « ce n'est pas un joueur » de « on ne sait pas ».
+     */
+    public boolean playerType() {
+        return "PLAYER".equalsIgnoreCase(entityType);
+    }
+
+    /** Citizens a-t-il donné un type ? Sinon le panel doit dire « inconnu », pas inventer. */
+    public boolean entityTypeKnown() {
+        return entityType != null && !entityType.isBlank();
     }
 
     /** Vrai si Citizens expose une position exploitable pour ce PNJ. */

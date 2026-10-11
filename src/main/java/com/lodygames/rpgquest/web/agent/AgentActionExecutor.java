@@ -108,6 +108,7 @@ public final class AgentActionExecutor {
                 case NPC_CITIZENS_PROVISION -> npcCitizensProvision(action);
                 case NPC_CITIZENS_MOVE -> npcCitizensMove(action);
                 case NPC_CITIZENS_RENAME -> npcCitizensRename(action);
+                case NPC_IDENTITY_RENAME -> npcIdentityRename(action);
                 case NPC_CITIZENS_SKIN -> npcCitizensSkin(action);
                 case NPC_CITIZENS_LOOKCLOSE -> npcCitizensLookClose(action);
                 case NPC_CITIZENS_WANDER -> npcCitizensWander(action);
@@ -1951,6 +1952,15 @@ public final class AgentActionExecutor {
                 row.put("wanderZ", c.wanderZ());
                 row.put("wanderXRange", c.wanderXRange());
                 row.put("wanderYRange", c.wanderYRange());
+                // Apparence (issue #197). Même discipline : copiée explicitement, parce qu'une clé
+                // oubliée ici ne produit aucune erreur — elle rend seulement l'écran muet, et c'est
+                // précisément ce qui empêchait le catalogue d'afficher un état d'apparence.
+                // « entityType » dit si la question du skin a un sens pour ce PNJ ; les deux clés
+                // « skinSource* » disent si RPGQuest sait reproduire son apparence. Leur absence ne
+                // signifie JAMAIS « ce PNJ n'a pas de skin ».
+                row.put("entityType", c.entityType());
+                row.put("skinSourceKind", c.skinSourceKind());
+                row.put("skinSourceValue", c.skinSourceValue());
                 rows.add(row);
             }
             Map<String, Object> details = new LinkedHashMap<>();
@@ -2063,6 +2073,26 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « name » manquant."));
         }
         return actions.citizensRename(npcId, name)
+                .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code npc.identity.rename} (#197) : le nom du personnage, sur toutes ses couches.
+     *
+     * <p>Mêmes contrôles de forme que les deux actions qu'elle remplace à l'usage — l'identifiant
+     * logique est validé mais jamais modifié, et un nom vide est refusé ici plutôt que plus bas.</p>
+     */
+    private CompletableFuture<AgentActionOutcome> npcIdentityRename(AgentAction action) {
+        String npcId = firstNonBlank(action.param("npc_id"), action.param("id"));
+        if (npcId == null || !NPC_ID.matcher(npcId).matches()) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « npc_id » manquant ou invalide."));
+        }
+        String name = firstNonBlank(action.param("name"));
+        if (name == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètre « name » manquant."));
+        }
+        return actions.npcIdentityRename(npcId, name)
                 .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
     }

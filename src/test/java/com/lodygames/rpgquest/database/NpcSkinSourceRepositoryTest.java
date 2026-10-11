@@ -115,4 +115,41 @@ class NpcSkinSourceRepositoryTest {
         assertTrue(repository.find(removed).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty());
         assertEquals("Lily", repository.find(kept).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow().value());
     }
+
+    // ---- Issue #197 : l'index complet, pour le catalogue PNJ --------------------------------
+
+    @Test
+    void loadAllIndexesEverySourceInASingleRead() throws Exception {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        repository.save(first, NpcSkinSourceRepository.Kind.NAME, "Lily")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        repository.save(second, NpcSkinSourceRepository.Kind.URL, "https://minesk.in/abcdefgh")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        var all = repository.loadAll().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        assertEquals(2, all.size());
+        assertEquals(NpcSkinSourceRepository.Kind.NAME, all.get(first).kind());
+        assertEquals("Lily", all.get(first).value());
+        assertEquals("https://minesk.in/abcdefgh", all.get(second).value());
+    }
+
+    @Test
+    void loadAllOnAnEmptyTableIsEmptyRatherThanAbsent() throws Exception {
+        assertTrue(repository.loadAll().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).isEmpty(),
+                "un catalogue sans apparence enregistrée doit pouvoir se construire");
+    }
+
+    @Test
+    void loadAllIsConsistentWithFindForTheSameNpc() throws Exception {
+        UUID npc = UUID.randomUUID();
+        repository.save(npc, NpcSkinSourceRepository.Kind.URL, "https://minesk.in/zzzzzzzz")
+                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        // Le catalogue (loadAll) et le renommage (find) doivent voir la MÊME chose : deux lectures
+        // divergentes afficheraient « configurée » sur un PNJ dont le renommage serait refusé.
+        assertEquals(repository.find(npc).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).orElseThrow(),
+                repository.loadAll().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).get(npc));
+    }
 }

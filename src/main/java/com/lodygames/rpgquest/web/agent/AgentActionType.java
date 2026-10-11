@@ -124,6 +124,18 @@ public enum AgentActionType {
     NPC_CITIZENS_PROVISION("npc.citizens.provision"),
     NPC_CITIZENS_MOVE("npc.citizens.move"),
     NPC_CITIZENS_RENAME("npc.citizens.rename"),
+    /**
+     * Issue #197 : <strong>le</strong> nom du personnage, changé sur toutes ses couches à la fois —
+     * définition RPGQuest et nom Citizens affiché au-dessus de l'entité.
+     *
+     * <p>Les deux actions séparées ({@link #NPC_DEFINITION_UPDATE} et {@link #NPC_CITIZENS_RENAME})
+     * restent utilisables, et le resteront : elles servent aux cas où l'on veut agir sur une seule
+     * couche. Mais elles exposaient à l'administrateur une distinction purement technique, et un
+     * geste oublié suffisait à faire divergier le catalogue du jeu. Cette action-ci est le chemin
+     * normal : elle coordonne, relit les deux couches et refuse de présenter un succès partiel
+     * comme un succès. L'identifiant logique n'est jamais touché.</p>
+     */
+    NPC_IDENTITY_RENAME("npc.identity.rename"),
     /** Issue #165 : skin d'un PNJ Citizens depuis une URL MineSkin validée côté serveur. */
     NPC_CITIZENS_SKIN("npc.citizens.skin"),
     /**

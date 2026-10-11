@@ -372,7 +372,31 @@ class AgentActionExecutorTest {
         assertTrue(json.contains("\"createdBy\":\"Lody\""), json);
         assertTrue(json.contains("\"worldLoaded\":true"), json);
         assertTrue(json.contains("\"worlds\":[\"world_hub\"]"), json);
-        assertTrue(json.contains("\"total\":1"), json);
+        assertTrue(json.contains("\"total\":2"), json);
+
+        // Issue #239 — LE défaut du ticket : les bâtiments posés étaient produits par la façade et
+        // attendus par le panel, mais ce maillon ne les sérialisait pas. Le panel ne voyait donc
+        // jamais de placement, et la fiche d'un emplacement occupé retombait sur la branche
+        // « vide » en réaffichant un aperçu de pose périmé — un défaut qui survivait au
+        // rafraîchissement, puisque le relevé lui-même était incomplet.
+        assertTrue(json.contains("\"placements\""), "le relevé doit porter les bâtiments posés : " + json);
+        assertTrue(json.contains("\"siteId\":\"buildsite_0007\""), json);
+        assertTrue(json.contains("\"buildingId\":\"test_hut_01\""), json);
+        assertTrue(json.contains("\"buildingName\":\"Hutte de test\""), json);
+        // L'orientation RÉELLEMENT posée et celle SOUHAITÉE, et le fait qu'elles divergent : c'est
+        // la seule information qui permette à l'écran de le signaler sans le deviner.
+        assertTrue(json.contains("\"rotation\":0"), "rotation réellement posée : " + json);
+        assertTrue(json.contains("\"desiredRotation\":180"), "rotation souhaitée : " + json);
+        assertTrue(json.contains("\"diverges\":true"), "la divergence doit être transmise : " + json);
+        // Version, empreinte et source du terrain : les actions de cycle de vie #234 en dépendent.
+        assertTrue(json.contains("\"buildingVersion\":1"), json);
+        assertTrue(json.contains("\"schematicSha\":\"abc123def456\""), json);
+        assertTrue(json.contains("\"outdated\":false"), json);
+        assertTrue(json.contains("\"restorable\":true"), json);
+        assertTrue(json.contains("\"restoreSource\":\"origine_buildsite_0007_1.schem\""), json);
+        assertTrue(json.contains("\"placedBy\":\"LoDyMcFly\""), json);
+        assertTrue(json.contains("\"anchorX\":752") && json.contains("\"minZ\":-680")
+                && json.contains("\"maxY\":73"), "ancre et emprise : " + json);
     }
 
     /** L'identifiant doit avoir exactement la forme que le serveur attribue. */
@@ -1415,11 +1439,25 @@ class AgentActionExecutorTest {
 
         @Override
         public CompletableFuture<BuildingSiteCatalogView> buildingSites() {
+            // Issue #239 : le second emplacement reproduit EXACTEMENT le scénario de TC-274 —
+            // bâtiment posé façade NORTH (rotation 0), puis orientation du site passée à SOUTH
+            // (rotation souhaitée 180). La divergence est donc vraie, et le relevé doit la porter.
+            // Le faux rendait auparavant « List.of() » pour les placements : c'est précisément ce
+            // qui a laissé passer un exécuteur qui ne les sérialisait pas du tout.
             return CompletableFuture.completedFuture(new BuildingSiteCatalogView(
                     List.of(new BuildingSiteSummary("buildsite_0001", "Taverne du village", "",
-                            "world_hub", 712, 67, -702, "WEST", "EMPTY", "Lody",
-                            "2026-10-08T18:00:00Z", true)),
-                    List.of("world_hub"), 1, List.of()));
+                                    "world_hub", 712, 67, -702, "WEST", "EMPTY", "Lody",
+                                    "2026-10-08T18:00:00Z", true),
+                            new BuildingSiteSummary("buildsite_0007", "EmptySpot", "",
+                                    "world_hub", 752, 67, -678, "SOUTH", "OCCUPIED", "LoDyMcFly",
+                                    "2026-10-11T13:33:59Z", true)),
+                    List.of("world_hub"), 2,
+                    List.of(new BuildingPlacementSummary("buildsite_0007", "test_hut_01",
+                            "Hutte de test", "world_hub", 752, 67, -678, 0,
+                            750, 67, -680, 756, 73, -674,
+                            "LoDyMcFly", "2026-10-11T13:40:00Z", true,
+                            1, "abc123def456", 1, "abc123def456", false,
+                            180, true, "origine_buildsite_0007_1.schem"))));
         }
 
         String lastPreviewSiteId;

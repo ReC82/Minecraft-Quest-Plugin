@@ -1289,8 +1289,49 @@ public final class AgentActionExecutor {
                 row.put("worldLoaded", s.worldLoaded());
                 rows.add(row);
             }
+            // Issue #239 : les bâtiments POSÉS voyagent avec le même relevé. Ils étaient produits par
+            // la façade (BuildingSiteCatalogView#placements, issue #234) et attendus par le panel
+            // (BuildingSiteDirectory#placementFor), mais ce maillon-ci ne les sérialisait pas : le
+            // panel ne voyait donc JAMAIS de placement, sa section « Bâtiment posé » était
+            // inatteignable, et la fiche d'un emplacement occupé retombait sur la branche « vide »
+            // en réaffichant un aperçu de pose périmé. Le symptôme survivait à un rafraîchissement,
+            // puisque c'est le relevé lui-même qui était incomplet.
+            List<Map<String, Object>> placementRows = new ArrayList<>();
+            for (AgentActions.BuildingPlacementSummary p : view.placements()) {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("siteId", p.siteId());
+                row.put("buildingId", p.buildingId());
+                row.put("buildingName", p.buildingName());
+                row.put("world", p.world());
+                row.put("anchorX", p.anchorX());
+                row.put("anchorY", p.anchorY());
+                row.put("anchorZ", p.anchorZ());
+                row.put("rotation", p.rotation());
+                row.put("minX", p.minX());
+                row.put("minY", p.minY());
+                row.put("minZ", p.minZ());
+                row.put("maxX", p.maxX());
+                row.put("maxY", p.maxY());
+                row.put("maxZ", p.maxZ());
+                row.put("placedBy", p.placedBy());
+                row.put("placedAt", p.placedAt());
+                row.put("restorable", p.restorable());
+                // Issue #234 : version, empreinte et DIVERGENCE d'orientation. Sans elles, la fiche
+                // dirait « occupé » sans pouvoir dire si l'orientation souhaitée est encore tenue.
+                row.put("buildingVersion", p.buildingVersion());
+                row.put("schematicSha", p.schematicSha());
+                row.put("libraryVersion", p.libraryVersion());
+                row.put("librarySha", p.librarySha());
+                row.put("outdated", p.outdated());
+                row.put("desiredRotation", p.desiredRotation());
+                row.put("diverges", p.diverges());
+                row.put("restoreSource", p.restoreSource());
+                placementRows.add(row);
+            }
+
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("sites", rows);
+            details.put("placements", placementRows);
             details.put("worlds", view.worlds());
             details.put("total", view.total());
             return AgentActionOutcome.success(action.id(), String.valueOf(view.total()),

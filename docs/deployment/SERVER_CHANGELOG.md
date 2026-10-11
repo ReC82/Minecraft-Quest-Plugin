@@ -7520,3 +7520,87 @@ sauvegarde datée côté serveur. Aucun rollback de JAR n'est concerné : aucun 
 Le contournement TLS a été **explicitement refusé** par le propriétaire le 2026-10-11. On attend le
 renouvellement du certificat ; l'autorisation ne sera pas redemandée tant qu'aucun déploiement JAR
 ne sera réellement nécessaire.
+
+## 2026-10-11 (soir) — JAR #239 + #238 + #153 déployé, avec contournement TLS **autorisé ponctuellement**
+
+**Branche** : `feature/238-guard-dialogue-ux` (JAR construit sur `2c772a1`)
+**Portée** : **JAR du plugin**, sans migration. Le panel était déjà en service.
+
+### Le contournement TLS, et sa portée exacte
+
+Le certificat `*.dg.vg` de VeryGames a expiré le **2026-10-11 à 05:12:03 UTC** et ne l'était
+toujours pas au moment du déploiement. Le propriétaire a **autorisé explicitement**, le
+2026-10-11, un contournement de la vérification TLS **pour ce seul déploiement**.
+
+Mise en œuvre, et ce qu'elle n'a pas fait :
+
+* **aucune option `--insecure` n'a été ajoutée au dépôt.** Les scripts n'en ont pas, par décision, et
+  une autorisation « pour cette fois » ne justifie pas d'y laisser une arme permanente ;
+* une ligne `insecure` a été ajoutée **temporairement** dans le worktree de construction
+  uniquement, retirée **immédiatement** après le transfert ;
+* vérifié ensuite à trois endroits : worktree propre, dépôt propre, **aucun commit de l'historique
+  ne contient cette ligne** ;
+* **tous les autres garde-fous sont restés actifs** : `./gradlew test` (3/8) et `./gradlew build`
+  (4/8), backup daté de la version en service, comparaison de taille et empreinte SHA-256.
+
+L'autorisation **n'est pas permanente** et devra être redemandée à chaque fois.
+
+### Deux refus avant le succès — les garde-fous ont joué
+
+| Tentative | Résultat |
+|---|---|
+| 1ʳᵉ | **refusée à 1/8** — arbre de travail non propre, **avant toute écriture** |
+| 2ᵉ | **refusée à 3/8** — `1261 tests, 1 échec` : `RestartServiceTest` instable. **Aucun transfert** |
+| 3ᵉ | **DEPLOY_EXIT=0** après correction du test |
+
+Le test instable a été corrigé (commit `2c772a1`) : une course entre le thread de test et le délai
+de retour de 3 s du service, que cette machine de construction élargissait assez pour faire échouer
+le test une fois sur quelques exécutions. Vérifié par **six exécutions consécutives vertes**.
+
+### Déployé
+
+| | Valeur |
+|---|---|
+| JAR | **2 219 397 o**, SHA-256 `ebc4c599a0f10b394b7c7e40cf11642f56ff7eafd7ce36648bb5fe6e2a1eaea5` |
+| Backup | `rpgquest-20261011T164115Z-predeploy.jar` — **2 216 617 o**, SHA `a58ca130…` (= le JAR #156 du 2026-10-10) |
+| Direction des tailles | neuf **plus gros** que le backup — attendu |
+| Redémarrage | `RESTART_EXIT=0`, **0 joueur** vérifié juste avant *et* après |
+| Plugins | **5 verts** : Citizens, LuckPerms, Multiverse-Core, RPGQuest, WorldEdit |
+| Migration | **aucune** |
+
+### Ce que ce JAR apporte, et la vérification réelle
+
+Quatre éléments accumulés : la sérialisation des placements (**#239**), la localisation des
+objectifs dans le chat (**#238**), la règle de placement « sommet de tronc » (**#153**), et
+l'enregistrement du placeholder `%kit_unlock_quest%`.
+
+**Preuve mesurée après redémarrage** — `building.site.list` porte enfin les placements, là où il
+n'en portait **aucun** :
+
+| Emplacement | Site | Posé | Souhaité | Divergence |
+|---|---|---|---|---|
+| `buildsite_0007` (EmptySpot) | SOUTH | 0° | 180° | **oui** |
+| `buildsite_0006` (Hutte) | NORTH | 180° | 0° | **oui** |
+| `buildsite_0008` (Tower_1) | WEST | 270° | 270° | non |
+
+`buildsite_0007` est exactement le cas du ticket. `buildsite_0006` portait **aussi** une divergence,
+jusqu'ici invisible. `buildsite_0008` valide le cas aligné, sans faux avertissement.
+
+### Contenu republié dans la foulée
+
+`dialogues/guide` par le moteur #47 : la ligne `%kit_unlock_quest%` est remise, son code étant
+désormais en service. Vérifié que le serveur sert le placeholder et que `guide.yml` est aligné
+source = DEV. **Aucune autre ressource publiée** — les cinq ressources divergentes du propriétaire
+restent intactes.
+
+### Ne PAS transférer/altérer
+
+`data.db`, `config.yml`, `messages.yml`, `spawn.yml`, les mondes, `plugins/Citizens/`, et les
+quêtes/stories/dialogues du serveur hors publication explicite.
+
+### Rollback
+
+* **Plugin** : `scripts/rollback-verygames.sh --latest` restaure
+  `rpgquest-20261011T164115Z-predeploy.jar`, puis redémarrer. Rien à défaire en base.
+* **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
+* **Contenu** : `content.publish.rollback` par ressource depuis le panel.

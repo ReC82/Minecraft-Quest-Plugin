@@ -38,6 +38,15 @@ application {
 tasks {
     test {
         useJUnitPlatform()
+        // Un seul worker de test, comme le module plugin. Les tests de ce module démarrent de
+        // VRAIS serveurs HTTP sur des ports éphémères : les paralléliser multiplie les JVM, les
+        // serveurs et les bases SQLite temporaires simultanés, ce qui sature une machine de build
+        // contrainte bien avant d'aller plus vite.
+        maxParallelForks = 1
+        // Même borne ajustable que le module plugin (RPGQUEST_TEST_MAX_HEAP). Sans elle, la JVM de
+        // test prend son défaut — le quart de la mémoire physique — et sur un hôte de 3,8 Gio cela
+        // suffit à faire basculer la machine dans le swap pendant la suite.
+        System.getenv("RPGQUEST_TEST_MAX_HEAP")?.let { maxHeapSize = it }
         // Laisse passer une poignée de propriétés d'intégration optionnelles vers le worker de
         // test (Gradle ne les propage pas par défaut). Ex. : -DpanelProdDbCopy=/chemin/copie.db
         // pour un smoke authentifié contre une copie de la vraie base (régression #103).

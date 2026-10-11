@@ -1,21 +1,36 @@
 id: rpgquest:guard
 start: greeting
 
+# Issue #238 — UX du dialogue remise à plat, sur le MÊME motif que le Guide corrigé par #235 :
+#
+#   accueil → option courte → nœud d'explication (nom de la quête + but + ce qu'il faudra faire)
+#   → bouton explicite « Commencer : <nom> » qui, seul, démarre la quête.
+#
+# Avant, sept choix de l'accueil portaient directement un START_QUEST : le joueur acceptait une
+# quête sans en connaître ni le nom, ni le but, ni le contenu. « J'accepte la quête » ne disait
+# même pas laquelle.
+#
+# Les libellés sont aussi calibrés sur la largeur RÉELLE des boutons de la Dialog API de Paper
+# (PaperDialogRenderer.BUTTON_WIDTH = 150 px) : six d'entre eux étaient tronqués en jeu, dont
+# « Je veux prouver ma valeur pour obtenir un bout de terrain (palier 1) » (358 px). Le texte long
+# vit désormais dans le corps du dialogue, qui n'est pas contraint ; le bouton ne porte que
+# l'action.
+#
+# RIEN d'autre n'a changé : mêmes quêtes, mêmes conditions, mêmes actions, mêmes prérequis,
+# mêmes récompenses. Aucune logique métier n'est touchée.
+
 nodes:
   greeting:
     speaker: "Garde"
     text: "<white>Bienvenue voyageur. Le village a besoin d'aide.</white>"
     choices:
-      - text: "J'accepte la quête"
+      - text: "Premiers pas"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:first_steps
             state: NOT_STARTED
-        actions:
-          - type: START_QUEST
-            quest: rpgquest:first_steps
-        next: accepted
-      - text: "J'ai entendu dire que tu avais besoin d'aide pour forger un équipement"
+        next: offer_first_steps
+      - text: "La chasse aux monstres"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:first_steps
@@ -23,20 +38,14 @@ nodes:
           - type: QUEST_STATE
             quest: rpgquest:crystal_hunt
             state: NOT_STARTED
-        actions:
-          - type: START_QUEST
-            quest: rpgquest:crystal_hunt
-        next: crystal_hunt_accepted
-      - text: "Je veux prouver ma valeur pour obtenir un bout de terrain (palier 1)"
+        next: offer_crystal_hunt
+      - text: "Obtenir un terrain"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:guard_tier1
             state: NOT_STARTED
-        actions:
-          - type: START_QUEST
-            quest: rpgquest:guard_tier1
-        next: guard_tier1_accepted
-      - text: "Je veux agrandir mon terrain (palier 2)"
+        next: offer_tier1
+      - text: "Terrain : palier 2"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:guard_tier1
@@ -44,11 +53,8 @@ nodes:
           - type: QUEST_STATE
             quest: rpgquest:guard_tier2
             state: NOT_STARTED
-        actions:
-          - type: START_QUEST
-            quest: rpgquest:guard_tier2
-        next: guard_tier2_accepted
-      - text: "Je veux encore agrandir mon terrain (palier 3)"
+        next: offer_tier2
+      - text: "Terrain : palier 3"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:guard_tier2
@@ -56,11 +62,8 @@ nodes:
           - type: QUEST_STATE
             quest: rpgquest:guard_tier3
             state: NOT_STARTED
-        actions:
-          - type: START_QUEST
-            quest: rpgquest:guard_tier3
-        next: guard_tier3_accepted
-      - text: "Je veux encore agrandir mon terrain (palier 4)"
+        next: offer_tier3
+      - text: "Terrain : palier 4"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:guard_tier3
@@ -68,11 +71,8 @@ nodes:
           - type: QUEST_STATE
             quest: rpgquest:guard_tier4
             state: NOT_STARTED
-        actions:
-          - type: START_QUEST
-            quest: rpgquest:guard_tier4
-        next: guard_tier4_accepted
-      - text: "Je veux encore agrandir mon terrain (palier 5)"
+        next: offer_tier4
+      - text: "Terrain : palier 5"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:guard_tier4
@@ -80,11 +80,8 @@ nodes:
           - type: QUEST_STATE
             quest: rpgquest:guard_tier5
             state: NOT_STARTED
-        actions:
-          - type: START_QUEST
-            quest: rpgquest:guard_tier5
-        next: guard_tier5_accepted
-      - text: "J'ai fini tout ce que tu m'as demandé pour mon terrain"
+        next: offer_tier5
+      - text: "J'ai fini mes paliers"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:guard_tier5
@@ -92,21 +89,142 @@ nodes:
         next: guard_tiers_done
       # Issue #24 : choix PERMANENT (aucune condition) — le joueur demande lui-même l'état du
       # Wild, l'information n'est jamais poussée dans l'avertissement du portail (issue #161).
-      - text: "Comment est le Wild actuellement ?"
+      - text: "Comment est le Wild ?"
         next: wild_conditions
       # Issue #123 : branche de remise d'objets, entièrement GÉNÉRIQUE — aucune quête, aucun
       # matériau et aucun PNJ n'est nommé ici. HAS_PENDING_DELIVERY n'est vraie que si une quête
       # active du joueur demande de remettre des objets à CE PNJ (déduit de la clé du dialogue,
       # « rpgquest:guard » → PNJ « guard ») : le choix reste donc invisible le reste du temps, et
       # ces trois nœuds peuvent être recopiés tels quels dans le dialogue d'un autre PNJ.
-      - text: "J'ai des matériaux à te remettre"
+      - text: "J'ai des matériaux"
         conditions:
           - type: HAS_PENDING_DELIVERY
         next: delivery
-      - text: "Parle-moi de la récompense"
+      - text: "Les récompenses"
         next: reward_info
       - text: "Non merci"
         next: refused
+
+  # ---- Propositions de quête (issue #238) ---------------------------------------------------
+  #
+  # Un nœud par quête. Il NOMME la quête, dit son but, et dit ce qu'il faudra faire — avant tout
+  # engagement. Le START_QUEST ne vit que sur le bouton « Commencer : … ».
+
+  offer_first_steps:
+    speaker: "Garde"
+    text: >
+      <white>La quête s'appelle <gold>Premiers pas</gold>.</white><newline>
+      <gray>But : apprendre les bases du combat sans t'éloigner du village.</gray><newline>
+      <gray>Ce qu'il faudra faire : éliminer 10 araignées, puis revenir me voir.</gray>
+    choices:
+      - text: "Commencer : Premiers pas"
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:first_steps
+        next: accepted
+      - text: "Pas maintenant"
+        next: greeting
+
+  # Les cibles ne sont volontairement PAS recopiées ici : cette quête est éditable depuis le
+  # Control Panel (#47), et un dialogue qui répète ses objectifs finit par mentir dès la première
+  # modification — c'est exactement ce qui était arrivé, le Garde parlant encore de « crocs
+  # d'araignée » et de « forger une lame » pour une quête devenue une chasse. La liste exacte
+  # s'affiche dans le chat au démarrage (issue #235) et reste dans le journal, toujours à jour.
+  offer_crystal_hunt:
+    speaker: "Garde"
+    text: >
+      <white>La quête s'appelle <gold>La chasse aux monstres</gold>.</white><newline>
+      <gray>But : prouver ta valeur au combat pour le village.</gray><newline>
+      <gray>Ce qu'il faudra faire : les cibles exactes s'afficheront dans le chat dès que tu
+      accepteras, et resteront dans ton journal de quêtes.</gray>
+    choices:
+      - text: "Commencer : La chasse"
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:crystal_hunt
+        next: crystal_hunt_accepted
+      - text: "Pas maintenant"
+        next: greeting
+
+  offer_tier1:
+    speaker: "Garde"
+    text: >
+      <white>La quête s'appelle <gold>Le Garde — Palier 1</gold>.</white><newline>
+      <gray>But : obtenir le droit de poser ton premier terrain.</gray><newline>
+      <gray>Ce qu'il faudra faire : repousser les quatre menaces qui rôdent autour des murs —
+      5 araignées, 5 zombies, 5 squelettes et 5 creepers — puis revenir me voir.</gray>
+    choices:
+      - text: "Commencer : Palier 1"
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:guard_tier1
+        next: guard_tier1_accepted
+      - text: "Pas maintenant"
+        next: greeting
+
+  offer_tier2:
+    speaker: "Garde"
+    text: >
+      <white>La quête s'appelle <gold>Le Garde — Palier 2</gold>.</white><newline>
+      <gray>But : agrandir ton terrain d'un palier.</gray><newline>
+      <gray>Ce qu'il faudra faire : 10 araignées, 10 zombies, 10 squelettes et 10 creepers, puis
+      revenir me voir.</gray>
+    choices:
+      - text: "Commencer : Palier 2"
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:guard_tier2
+        next: guard_tier2_accepted
+      - text: "Pas maintenant"
+        next: greeting
+
+  offer_tier3:
+    speaker: "Garde"
+    text: >
+      <white>La quête s'appelle <gold>Le Garde — Palier 3</gold>.</white><newline>
+      <gray>But : agrandir ton terrain d'un palier.</gray><newline>
+      <gray>Ce qu'il faudra faire : 20 araignées, 20 zombies, 20 squelettes et 20 creepers, puis
+      revenir me voir.</gray>
+    choices:
+      - text: "Commencer : Palier 3"
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:guard_tier3
+        next: guard_tier3_accepted
+      - text: "Pas maintenant"
+        next: greeting
+
+  offer_tier4:
+    speaker: "Garde"
+    text: >
+      <white>La quête s'appelle <gold>Le Garde — Palier 4</gold>.</white><newline>
+      <gray>But : agrandir ton terrain d'un palier.</gray><newline>
+      <gray>Ce qu'il faudra faire : 40 araignées, 40 zombies, 40 squelettes et 40 creepers, puis
+      revenir me voir. Peu de villageois tiennent ce rythme.</gray>
+    choices:
+      - text: "Commencer : Palier 4"
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:guard_tier4
+        next: guard_tier4_accepted
+      - text: "Pas maintenant"
+        next: greeting
+
+  offer_tier5:
+    speaker: "Garde"
+    text: >
+      <white>La quête s'appelle <gold>Le Garde — Palier 5</gold>.</white><newline>
+      <gray>But : agrandir ton terrain une dernière fois.</gray><newline>
+      <gray>Ce qu'il faudra faire : 80 araignées, 80 zombies, 80 squelettes et 80 creepers, puis
+      revenir me voir. C'est le dernier effort que je te demanderai.</gray>
+    choices:
+      - text: "Commencer : Palier 5"
+        actions:
+          - type: START_QUEST
+            quest: rpgquest:guard_tier5
+        next: guard_tier5_accepted
+      - text: "Pas maintenant"
+        next: greeting
 
   # Le texte est rendu dynamiquement : %wild_conditions% est remplacé juste avant l'affichage par
   # l'état RÉEL du monde d'exploration (jour/nuit + météo globale), voir
@@ -116,7 +234,7 @@ nodes:
     speaker: "Garde"
     text: "<white>%wild_conditions%</white>"
     choices:
-      - text: "Merci pour l'information"
+      - text: "Merci"
         next: greeting
 
   # Issue #123 — %delivery_status% liste ce qui a déjà été remis et ce qui manque, matériau par
@@ -128,11 +246,11 @@ nodes:
     speaker: "Garde"
     text: "<white>Voilà où nous en sommes :</white><newline>%delivery_status%"
     choices:
-      - text: "Donner les matériaux que j'ai"
+      - text: "Donner mes matériaux"
         actions:
           - type: DELIVER_QUEST_ITEMS
         next: delivery_after
-      - text: "Je reviendrai plus tard"
+      - text: "Plus tard"
         actions:
           - type: CLOSE
 
@@ -141,7 +259,7 @@ nodes:
     text: "<white>%delivery_status%</white>"
     choices:
       # Dépôt partiel : le joueur peut enchaîner s'il a encore quelque chose d'utile.
-      - text: "Donner encore des matériaux"
+      - text: "Donner encore"
         conditions:
           - type: HAS_PENDING_DELIVERY
         actions:
@@ -149,12 +267,12 @@ nodes:
         next: delivery_after
       # Tout est remis : la même condition niée fait basculer vers le nœud de fin, sans qu'aucun
       # second type de condition soit nécessaire.
-      - text: "Et voilà, tout est remis"
+      - text: "Tout est remis"
         conditions:
           - type: HAS_PENDING_DELIVERY
             negate: true
         next: delivery_done
-      - text: "Je reviendrai plus tard"
+      - text: "Plus tard"
         actions:
           - type: CLOSE
 
@@ -174,12 +292,12 @@ nodes:
         actions:
           - type: CLOSE
 
+  # Même raison que offer_crystal_hunt : aucune cible recopiée. Le chat vient d'afficher la liste
+  # réelle, et le journal la garde.
   crystal_hunt_accepted:
     speaker: "Garde"
     text: >
-      <green>Ramène-moi des crocs d'araignée et des cristaux raffinés, et
-      forge une lame digne de ce nom. Reviens me voir une fois la lame
-      forgée.</green>
+      <green>Bonne chasse. Reviens me voir quand tu auras fait ce qui est demandé.</green>
     choices:
       - text: "D'accord"
         actions:
@@ -249,9 +367,14 @@ nodes:
         actions:
           - type: CLOSE
 
+  # Avant #238, ce nœud annonçait « de l'expérience et une épée en fer » quelle que soit la quête
+  # en cours : vrai pour Premiers pas seulement, faux pour toutes les autres. Il ne promet plus une
+  # récompense qu'il ne connaît pas.
   reward_info:
     speaker: "Garde"
-    text: "<gray>Tu recevras de l'expérience et une épée en fer en récompense.</gray>"
+    text: >
+      <gray>Chaque quête a sa propre récompense. Elle est écrite dans ton journal de quêtes, et
+      je te la remets en main propre quand tu reviens me voir.</gray>
     choices:
       - text: "Retour"
         next: greeting

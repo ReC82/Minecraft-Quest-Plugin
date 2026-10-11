@@ -92,6 +92,28 @@ public final class KitProgressService {
     }
 
     /**
+     * Le <strong>nom</strong> de la quête qui débloque le palier suivant (issue #238).
+     *
+     * <p>Existe pour que le dialogue puisse nommer la quête sans l'écrire en dur : un libellé de
+     * bouton ne peut pas porter de placeholder (la substitution ne s'applique qu'au corps du nœud),
+     * et le bouton a dû être raccourci parce que « Commencer la quête : Premiers pas dans le Wild »
+     * dépassait largement la largeur réelle d'un bouton Minecraft. Le corps du nœud nomme donc la
+     * quête, et le fait de façon dérivée : changer la quête de déblocage dans {@code config.yml}
+     * change ce texte tout seul.</p>
+     *
+     * <p>Rend le titre tel qu'il est défini — balises MiniMessage incluses, puisque le texte du
+     * dialogue est désérialisé par MiniMessage. Aucune quête, ou un {@code unlock-quest:} qui ne
+     * correspond à rien : rend une phrase neutre plutôt qu'un vide, qui laisserait une ligne
+     * bancale dans le dialogue.</p>
+     */
+    public String nextUnlockQuestTitle(UUID playerId) {
+        return nextUnlockQuest(playerId)
+                .map(quest -> quest.title() == null ? null : quest.title().base())
+                .filter(title -> title != null && !title.isBlank())
+                .orElse("aucune pour l'instant");
+    }
+
+    /**
      * Ce qu'il reste à rapporter pour le palier suivant, avec les quantités déjà remises.
      *
      * <p>La progression n'est superposée que si l'étape active est <strong>celle-là même</strong>

@@ -13,7 +13,7 @@ nodes:
     speaker: "Libraire"
     text: "<white>Ah, le Guide t'envoie ?</white> <gray>Bienvenue ! Tu trouveras ici tout ce qu'il faut pour commencer ton aventure.</gray>"
     choices:
-      - text: "Obtenir un journal des quêtes"
+      - text: "Obtenir mon journal"
         conditions:
           - type: LACKS_CUSTOM_ITEM
             item: rpgquest:journal_quetes

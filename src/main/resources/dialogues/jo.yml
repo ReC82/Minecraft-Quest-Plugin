@@ -43,7 +43,7 @@ nodes:
     speaker: "Jo"
     text: "<white>Bonjour voyageur ! Que puis-je faire pour toi ?</white>"
     choices:
-      - text: "Comment obtenir mon premier terrain ?"
+      - text: "Mon premier terrain"
         conditions:
           - type: VARIABLE_EQUALS
             key: CLAIM_TIER_1
@@ -51,7 +51,7 @@ nodes:
             negate: true
           - type: NO_MAIN_CLAIM
         next: how_to_unlock
-      - text: "Je viens réclamer mon acte de propriété"
+      - text: "Réclamer mon acte"
         conditions:
           - type: VARIABLE_EQUALS
             key: CLAIM_TIER_1
@@ -68,7 +68,7 @@ nodes:
           - type: RUN_SAFE_COMMAND
             command: "claim admin sendhome %player%"
           - type: CLOSE
-      - text: "Revoir les limites de ma propriété"
+      - text: "Revoir mes limites"
         conditions:
           - type: HAS_MAIN_CLAIM
           - type: LACKS_CUSTOM_ITEM

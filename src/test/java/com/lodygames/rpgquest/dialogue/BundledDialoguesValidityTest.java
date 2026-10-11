@@ -192,30 +192,141 @@ class BundledDialoguesValidityTest {
      * sans le dire. Le test porte sur la règle et non sur ce choix précis, pour qu'un futur nœud du
      * Guide ne puisse pas réintroduire le même piège.</p>
      *
-     * <p><strong>Pourquoi le Guide seulement.</strong> Écrit d'abord pour tous les dialogues livrés,
-     * ce test a immédiatement révélé <em>trois</em> choix du Garde qui démarrent une quête sans le
-     * dire (« J'ai entendu dire que tu avais besoin d'aide… » → {@code crystal_hunt}, « Je veux
-     * prouver ma valeur… » → {@code guard_tier1}, « Je veux agrandir mon terrain… » →
-     * {@code guard_tier2}). C'est le même défaut, mais dans du contenu qui appartient à d'autres
-     * tickets ; #235 porte sur le parcours du Guide. Le constat est consigné dans le rapport de
-     * session plutôt que corrigé en effet de bord — et ce test est prêt à être élargi à
-     * {@link #BUNDLED} le jour où ces libellés seront revus.</p>
+     * <p><strong>Élargi à tous les dialogues livrés par #238.</strong> Écrit d'abord pour le Guide
+     * seul, ce test avait immédiatement révélé des choix du Garde qui démarrent une quête sans le
+     * dire — un défaut appartenant à un autre ticket, consigné à l'époque plutôt que corrigé en
+     * effet de bord. #238 a revu ces libellés, donc la règle porte désormais sur {@link #BUNDLED}
+     * tout entier, comme prévu.</p>
+     *
+     * <p>Le préfixe attendu est « Commencer » et non « Commencer la quête : » : la largeur réelle
+     * d'un bouton Minecraft (150 px, voir {@code PaperDialogRenderer}) ne permet pas de préfixe
+     * aussi long devant le nom d'une quête. Ce qui compte est qu'un bouton qui démarre une quête
+     * s'annonce comme tel, et que le nœud l'ait nommée juste avant — ce que vérifient les deux
+     * tests suivants.</p>
      */
     @Test
-    void noGuideChoiceStartsAQuestWithoutAnnouncingIt() {
-        DialogueDefinition guide = guide();
-
-        for (DialogueNode node : guide.nodes().values()) {
-            for (DialogueChoice choice : node.choices()) {
-                if (choice.actions().stream().noneMatch(a -> a instanceof StartQuestAction)) {
-                    continue;
+    void noBundledChoiceStartsAQuestWithoutAnnouncingIt() {
+        for (String name : BUNDLED) {
+            for (DialogueDefinition dialogue : loader.load(Map.of(name, read("/dialogues/" + name)))
+                    .loaded()) {
+                for (DialogueNode node : dialogue.nodes().values()) {
+                    for (DialogueChoice choice : node.choices()) {
+                        if (choice.actions().stream().noneMatch(a -> a instanceof StartQuestAction)) {
+                            continue;
+                        }
+                        String label = choice.text().base();
+                        assertTrue(label.startsWith("Commencer"),
+                                "le choix « " + label + " » (" + name + " / " + node.id() + ") "
+                                        + "démarre une quête : son libellé doit l'annoncer");
+                    }
                 }
-                String label = choice.text().base();
-                assertTrue(label.startsWith("Commencer la quête : "),
-                        "le choix « " + label + " » (" + node.id() + ") démarre une quête : son "
-                                + "libellé doit l'annoncer ET la nommer");
             }
         }
+    }
+
+    /**
+     * Issue #238 — aucun libellé de choix ne doit dépasser la largeur réelle d'un bouton.
+     *
+     * <p>Les choix sont rendus par la Dialog API de Paper, dont les boutons font
+     * {@code PaperDialogRenderer.BUTTON_WIDTH} = <strong>150 px</strong>. Au-delà, Minecraft
+     * tronque : « Je veux prouver ma valeur pour obtenir un bout de terrain (palier 1) » mesurait
+     * <strong>358 px</strong> et s'affichait coupé en jeu, rendant le choix illisible.</p>
+     *
+     * <p>La mesure se fait en pixels d'avance de la police Minecraft, pas en caractères : « Mes
+     * matériaux » et « IIIIIIIIIIII » n'occupent pas la même place. La table est volontairement
+     * recopiée ici depuis {@code panel.dialogue.MinecraftTextWidth} — le Control Panel est un
+     * module autonome par décision d'architecture (ADR), et il n'existe pas de module partagé où
+     * la mettre. Dix-huit lignes de données dupliquées valent mieux qu'une dépendance inversée.</p>
+     */
+    @Test
+    void noBundledChoiceLabelOverflowsAMinecraftButton() {
+        for (String name : BUNDLED) {
+            for (DialogueDefinition dialogue : loader.load(Map.of(name, read("/dialogues/" + name)))
+                    .loaded()) {
+                for (DialogueNode node : dialogue.nodes().values()) {
+                    for (DialogueChoice choice : node.choices()) {
+                        String label = plainText(choice.text().base());
+                        int width = buttonPixels(label);
+                        assertTrue(width <= 150,
+                                "le libellé « " + label + " » (" + name + " / " + node.id() + ") "
+                                        + "mesure " + width + " px pour un bouton de 150 px : il "
+                                        + "sera tronqué en jeu");
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Issue #238 — le Garde explique chaque quête, la nomme, et ne la démarre qu'ensuite.
+     *
+     * <p>C'est le défaut rapporté en jeu : « J'accepte la quête » démarrait {@code first_steps}
+     * sans dire laquelle, ni pourquoi, ni ce qu'il faudrait faire. Le test porte sur la règle, donc
+     * sur <em>toutes</em> les quêtes du Garde — il y en avait sept, pas trois.</p>
+     */
+    @Test
+    void everyGuardQuestIsExplainedAndNamedBeforeStarting() {
+        DialogueDefinition guard = guard();
+        DialogueNode greeting = guard.nodes().get("greeting");
+        assertNotNull(greeting, "nœud « greeting » attendu");
+
+        // Aucun choix de l'accueil ne démarre quoi que ce soit.
+        for (DialogueChoice choice : greeting.choices()) {
+            assertTrue(choice.actions().stream().noneMatch(a -> a instanceof StartQuestAction),
+                    "l'accueil du Garde ne doit RIEN démarrer : « " + choice.text().base() + " »");
+        }
+
+        // Chaque quête démarrée vit dans un nœud « offer_… » qui la nomme.
+        int offers = 0;
+        for (DialogueNode node : guard.nodes().values()) {
+            for (DialogueChoice choice : node.choices()) {
+                StartQuestAction start = choice.actions().stream()
+                        .filter(StartQuestAction.class::isInstance)
+                        .map(StartQuestAction.class::cast)
+                        .findFirst().orElse(null);
+                if (start == null) {
+                    continue;
+                }
+                offers++;
+                assertTrue(node.id().startsWith("offer_"),
+                        "un démarrage de quête doit vivre dans un nœud d'explication, pas dans « "
+                                + node.id() + " »");
+                assertTrue(node.text().base().contains("s'appelle"),
+                        "le nœud « " + node.id() + " » doit nommer la quête avant de la proposer");
+                assertTrue(node.text().base().contains("But :"),
+                        "le nœud « " + node.id() + " » doit dire le but de la quête");
+                assertTrue(greeting.choices().stream().anyMatch(c -> node.id().equals(c.next())),
+                        "le nœud « " + node.id() + " » doit être atteignable depuis l'accueil");
+            }
+        }
+        assertEquals(7, offers, "les sept quêtes du Garde doivent toutes passer par une explication");
+    }
+
+    /** Issue #238 — les anciens libellés génériques ou trompeurs ne doivent pas revenir. */
+    @Test
+    void theGuardOldMisleadingLabelsAreGone() {
+        DialogueDefinition guard = guard();
+        List<String> labels = guard.nodes().values().stream()
+                .flatMap(n -> n.choices().stream())
+                .map(c -> c.text().base())
+                .toList();
+
+        assertFalse(labels.contains("J'accepte la quête"),
+                "« J'accepte la quête » ne disait pas laquelle (#238)");
+        assertFalse(labels.stream().anyMatch(l -> l.contains("J'ai entendu dire")),
+                "ce libellé démarrait crystal_hunt sans la nommer, et était tronqué en jeu");
+        assertFalse(labels.stream().anyMatch(l -> l.contains("prouver ma valeur pour")),
+                "ce libellé mesurait 358 px : illisible en jeu");
+
+        // Le Garde ne doit plus décrire crystal_hunt, devenue éditable depuis le panel : il parlait
+        // encore de « crocs d'araignée » et de « forger une lame » pour une quête devenue une chasse.
+        String all = guard.nodes().values().stream()
+                .map(n -> n.text().base())
+                .reduce("", (a2, b2) -> a2 + " " + b2);
+        assertFalse(all.contains("crocs d'araignée"),
+                "le Garde ne doit plus recopier les objectifs de crystal_hunt : ils ont changé");
+        assertFalse(all.contains("épée en fer"),
+                "le Garde annonçait cette récompense pour TOUTES les quêtes (#238)");
     }
 
     /** L'ancien libellé générique ne doit pas revenir, où que ce soit. */
@@ -255,7 +366,7 @@ class BundledDialoguesValidityTest {
                 .filter(c -> c.actions().stream().anyMatch(a -> a instanceof StartQuestAction))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("le nœud d'explication doit proposer de démarrer"));
-        assertEquals("Commencer la quête : Premiers pas", start.text().base());
+        assertEquals("Commencer : Premiers pas", start.text().base());
         assertEquals(new NamespacedKey("rpgquest", "premiers_pas"),
                 ((StartQuestAction) start.actions().get(0)).questId());
     }
@@ -310,6 +421,40 @@ class BundledDialoguesValidityTest {
 
         assertTrue(choice.conditions().isEmpty(),
                 "connaître son palier ne doit dépendre d'aucune condition — le nœud s'adapte lui-même");
+    }
+
+    private DialogueDefinition guard() {
+        return loader.load(Map.of("guard.yml", read("/dialogues/guard.yml"))).loaded().stream()
+                .filter(d -> d.id().equals(new NamespacedKey("rpgquest", "guard")))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    /** Retire les balises MiniMessage : elles ne s'affichent pas, donc n'occupent aucun pixel. */
+    private static String plainText(String raw) {
+        return raw.replaceAll("</?[a-z_#:/]+>", "");
+    }
+
+    /**
+     * Largeur d'avance du texte dans la police Minecraft par défaut, en pixels.
+     *
+     * <p>Chaque glyphe avance de sa largeur + 1 px d'espacement. La plupart des caractères font
+     * donc 6 px ; les étroits sont listés. Volontairement identique à
+     * {@code panel.dialogue.MinecraftTextWidth} — voir le javadoc du test qui l'utilise.</p>
+     */
+    private static int buttonPixels(String text) {
+        int total = 0;
+        for (char c : text.toCharArray()) {
+            total += switch (c) {
+                case '!', ',', '.', ':', ';', 'i', '|' -> 2;
+                case '\'', 'l', '`' -> 3;
+                case 'I', '[', ']', 't' -> 4;
+                case ' ' -> 4;
+                case '"', '(', ')', '*', '<', '>', 'f', 'k', '{', '}' -> 5;
+                default -> 6;
+            };
+        }
+        return total;
     }
 
     private DialogueDefinition guide() {

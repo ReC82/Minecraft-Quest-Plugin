@@ -42,7 +42,7 @@ nodes:
       # dire. Il mène à un nœud qui explique ce qu'il y a à faire et NOMME la quête ; le démarrage
       # est un second geste, explicite. Une mutation de gameplay ne se cache pas derrière une
       # phrase polie.
-      - text: "Que dois-je faire pour commencer ?"
+      - text: "Par où commencer ?"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:premiers_pas
@@ -58,7 +58,7 @@ nodes:
       - text: "Comment fonctionne le jeu ?"
         next: help_menu
 
-      - text: "Récupérer une rune de rappel"
+      - text: "La rune de rappel"
         conditions:
           - type: LACKS_CUSTOM_ITEM
             item: rpgquest:rune_rappel
@@ -77,7 +77,7 @@ nodes:
       # de remettre des objets à CE PNJ (déduit de la clé du dialogue, « rpgquest:guide » → PNJ
       # « guide ») : le choix reste donc invisible le reste du temps. C'est par ici que passent les
       # matériaux du palier suivant du kit.
-      - text: "J'ai des matériaux à te remettre"
+      - text: "J'ai des matériaux"
         conditions:
           - type: HAS_PENDING_DELIVERY
         next: delivery
@@ -92,7 +92,7 @@ nodes:
     speaker: "Guide"
     text: "<gray>Rien de compliqué pour commencer : va te présenter au <white>Libraire</white>, juste à côté — c'est lui qui te remettra ton <white>journal des quêtes</white>. Si tu veux, je l'inscris comme ta première quête : elle s'appelle <white>Premiers pas</white>.</gray>"
     choices:
-      - text: "Commencer la quête : Premiers pas"
+      - text: "Commencer : Premiers pas"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:premiers_pas
@@ -110,13 +110,18 @@ nodes:
   # déblocage (unlock-quest:) avec ce qui est DÉJÀ remis. Aucun matériau, aucune quantité et aucun
   # nom de palier n'est écrit ici : modifier le palier 2 ou sa quête change ce texte tout seul.
   #
+  # Issue #238 — %kit_unlock_quest% NOMME cette quête, toujours de façon dérivée. C'est le corps
+  # qui la nomme parce que le bouton ne peut pas : la substitution de placeholders ne s'applique
+  # qu'au texte du nœud, et « Commencer la quête : Premiers pas dans le Wild » (237 px) dépassait
+  # de loin la largeur réelle d'un bouton (150 px). Le bouton ne porte donc plus que l'action.
+  #
   # Au palier maximum, %kit_tier_next% rend une phrase complète (« aucune — tu as déjà… ») et
   # %kit_upgrade_requirements% rend « rien de particulier » : ce nœud unique reste donc juste.
   kit_progress:
     speaker: "Guide"
-    text: "<white>Ton équipement de secours — celui que je te redonne après chaque mort :</white><newline><white>Kit actuel :</white> %kit_tier_current%<newline><white>Prochaine amélioration :</white> %kit_tier_next%<newline><gray>À me rapporter :</gray><newline>%kit_upgrade_requirements%<newline><gray>Apporte-les-moi au fur et à mesure : ce que tu me remets est gardé en sécurité, et tu ne le perds pas si tu meurs ensuite. Quand tout est là, ton kit s'améliore définitivement.</gray>"
+    text: "<white>Ton équipement de secours — celui que je te redonne après chaque mort :</white><newline><white>Kit actuel :</white> %kit_tier_current%<newline><white>Prochaine amélioration :</white> %kit_tier_next%<newline><gray>La quête qui l'améliore :</gray> %kit_unlock_quest%<newline><gray>À me rapporter :</gray><newline>%kit_upgrade_requirements%<newline><gray>Apporte-les-moi au fur et à mesure : ce que tu me remets est gardé en sécurité, et tu ne le perds pas si tu meurs ensuite. Quand tout est là, ton kit s'améliore définitivement.</gray>"
     choices:
-      - text: "Commencer la quête : Premiers pas dans le Wild"
+      - text: "Commencer l'amélioration"
         conditions:
           - type: QUEST_STATE
             quest: rpgquest:kit_tier2
@@ -125,7 +130,7 @@ nodes:
           - type: START_QUEST
             quest: rpgquest:kit_tier2
           - type: CLOSE
-      - text: "J'ai des matériaux à te remettre"
+      - text: "J'ai des matériaux"
         conditions:
           - type: HAS_PENDING_DELIVERY
         next: delivery
@@ -139,15 +144,15 @@ nodes:
     speaker: "Guide"
     text: "<white>Sur quoi veux-tu de l'aide ?</white>"
     choices:
-      - text: "Comment fonctionnent les quêtes ?"
+      - text: "Les quêtes"
         next: help_quetes
       - text: "Où consulter mes quêtes ?"
         next: help_journal
       - text: "Comment fonctionne le Wild ?"
         next: help_wild
-      - text: "Comment fonctionnent les claims ?"
+      - text: "Les claims"
         next: help_claims
-      - text: "Comment fonctionnent les marchands ?"
+      - text: "Les marchands"
         next: help_marchands
       - text: "À qui parler pour quoi ?"
         next: help_qui
@@ -223,11 +228,11 @@ nodes:
     speaker: "Guide"
     text: "<white>Voyons ce que tu m'apportes :</white><newline>%delivery_status%"
     choices:
-      - text: "Donner les matériaux que j'ai"
+      - text: "Donner mes matériaux"
         actions:
           - type: DELIVER_QUEST_ITEMS
         next: delivery_after
-      - text: "Je reviendrai plus tard"
+      - text: "Plus tard"
         actions:
           - type: CLOSE
 
@@ -235,18 +240,18 @@ nodes:
     speaker: "Guide"
     text: "<white>%delivery_status%</white>"
     choices:
-      - text: "Donner encore des matériaux"
+      - text: "Donner encore"
         conditions:
           - type: HAS_PENDING_DELIVERY
         actions:
           - type: DELIVER_QUEST_ITEMS
         next: delivery_after
-      - text: "Et voilà, tout est remis"
+      - text: "Tout est remis"
         conditions:
           - type: HAS_PENDING_DELIVERY
             negate: true
         next: delivery_done
-      - text: "Je reviendrai plus tard"
+      - text: "Plus tard"
         actions:
           - type: CLOSE
 

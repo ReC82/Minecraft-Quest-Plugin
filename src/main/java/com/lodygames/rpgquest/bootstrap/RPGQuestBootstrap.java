@@ -791,7 +791,11 @@ public final class RPGQuestBootstrap {
                 "kit_tier_current", context -> kitProgressService.currentTierText(context.player().getUniqueId()),
                 "kit_tier_next", context -> kitProgressService.nextTierText(context.player().getUniqueId()),
                 "kit_upgrade_requirements",
-                        context -> kitProgressService.requirementsText(context.player().getUniqueId()))));
+                        context -> kitProgressService.requirementsText(context.player().getUniqueId()),
+                // Issue #238 : le nom de la quête d'amélioration, pour que le dialogue le dise sans
+                // l'écrire en dur — un libellé de bouton ne peut pas porter de placeholder.
+                "kit_unlock_quest",
+                        context -> kitProgressService.nextUnlockQuestTitle(context.player().getUniqueId()))));
         registry.start(new PlayerListenerService(plugin, dialogueSessionEngine.npcInteractListener()));
         var citizensDialogueListener = dialogueSessionEngine.citizensNpcInteractListener();
         if (citizensDialogueListener != null) {

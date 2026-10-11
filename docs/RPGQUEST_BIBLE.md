@@ -1098,12 +1098,135 @@ est bien arrivé. Aucune des trois ne permet de créer.
 |---|---|---|
 | `building.site.list` | `BUILDING_READ` | catalogue — lecture seule |
 | `building.site.rename` | `BUILDING_WRITE` | libellé humain |
-| `building.site.describe` | `BUILDING_WRITE` | note libre ; une description **vide est valide** (c'est « effacer la note ») |
+| `building.site.describe` | `BUILDING_WRITE` | **note courte** d'administrateur (500 car.) ; une valeur **vide est valide** (c'est « effacer la note ») |
+| `building.site.brief` | `BUILDING_WRITE` | **brief architectural** (6 000 car.) — entrée de la génération ; vide = valide |
 | `building.site.facing` | `BUILDING_WRITE` | orientation — **jamais** la position |
 | `building.site.delete` | `BUILDING_DELETE` | retire le marqueur logique |
+| `building.generate` | `BUILDING_WRITE` | génère un bâtiment depuis un **plan déclaratif** (issue #94) |
 
 **Il n'existe volontairement aucune action de création.** Un emplacement est défini par une position
 choisie dans le monde ; le clic en jeu la connaît, un écran devrait l'inventer.
+
+#### Deux textes, deux métiers (issue #94)
+
+Un emplacement porte **deux** champs de texte, et c'est délibéré :
+
+| Champ | Borne | Rôle |
+|---|---|---|
+| `description` | 500 car. | **note d'administrateur** : une ou deux phrases pour se repérer dans la liste |
+| `ai_brief` | 6 000 car. | **brief architectural** : matériaux, étages, pièces, contraintes — entrée de la génération |
+
+Ils partageaient le même champ et la même borne de 500 caractères. Une note de liste ne peut pas
+s'étendre sur deux pages sans rendre la liste illisible ; un brief ne tient pas en 500 caractères
+sans perdre les matériaux, les étages et les pièces — c'est-à-dire tout ce qui le rend utile.
+
+> [!IMPORTANT]
+> **Plus aucune troncature silencieuse.** Quatre seuils se superposaient, dont **deux coupaient en
+> silence** : l'attribut `maxlength="500"` de la zone de texte (le navigateur coupe un collage sans
+> message ni compteur — il n'en produit aucun), et `BuildingSiteService.trimTo` côté serveur. Le
+> premier est supprimé, le second est devenu un **refus bruyant** (`IllegalArgumentException`).
+> Les deux validations de frontière — panel et exécuteur d'actions — refusent désormais avec un
+> message qui **chiffre le dépassement**, et un compteur de caractères **rendu par le serveur** (donc
+> juste même sans JavaScript) accompagne chaque champ long.
+>
+> Le **nom**, lui, reste tronqué : c'est une décision du projet, vérifiée par un test dédié
+> (`aTooLongNameIsTruncatedRatherThanRefused`), et le chemin de saisie en jeu passe par une enclume
+> où couper un libellé vaut mieux que refuser la création d'un emplacement déjà cliqué. Personne ne
+> rédige un nom de 64 caractères sans s'en apercevoir ; un brief coupé au caractère 500 passe
+> inaperçu.
+
+La migration **V31** ajoute `ai_brief` et **ne recopie pas** `description` dedans. La tentation était
+réelle — les quatre emplacements du Hub portaient leur brief dans leur note, faute d'un autre champ
+— mais déplacer du texte déciderait à la place de l'administrateur, et se tromperait pour les notes
+réellement courtes. L'écran propose la recopie, en le disant, sans rien préremplir.
+
+### Génération de bâtiments par IA (issue #94)
+
+#### Le pipeline, et ce que l'IA y fait exactement
+
+```
+brief → IA → PLAN déclaratif → expansion déterministe → Blueprint → .schem → BuildingDefinition
+```
+
+Ce pipeline existait déjà **presque entièrement** : `Blueprint` (taille + liste de blocs),
+`SchematicGateway` qui l'écrit via WorldEdit, `BuildingDefinition` qui le désigne, et le flux de
+pose de #213/#234/#239 au bout. Il manquait le maillon d'entrée : les plans étaient écrits **en
+Java** (`TestHutBlueprint`, `TestWatchtowerBlueprint`). Ce lot l'ouvre aux données.
+
+**L'IA n'écrit pas les blocs.** Un bâtiment de 19 × 12 × 15 compte 3 420 cellules : les énumérer
+serait lent, coûteux et fragile — une coordonnée de travers dans un mur de deux cents blocs produit
+un trou que personne ne relit. Elle écrit des **primitives**, au vocabulaire fermé :
+
+| Instruction | Effet |
+|---|---|
+| `box` | remplit toute la zone |
+| `shell` | ne pose que l'enveloppe (six faces), intérieur vide |
+| `walls` | ne pose que les quatre murs verticaux : ni sol, ni plafond |
+| `clear` | **vide** la zone — perce portes, fenêtres et pièces dans un volume déjà posé |
+| `gable` | toit à deux pentes ; l'orientation des marches est **calculée**, jamais demandée au modèle |
+
+Les bornes sont **incluses** (`from [0,0,0] to [0,0,0]` vaut un bloc), `to` est optionnel (un seul
+bloc), et **l'ordre compte** : une instruction postérieure recouvre une antérieure sur la même
+cellule. C'est ce qui rend le vocabulaire utilisable — on pose un volume, on y creuse les pièces,
+on perce les fenêtres. Sans recouvrement il faudrait décrire chaque mur en quatre morceaux pour
+laisser place à une porte, et c'est exactement le découpage qu'un modèle rate.
+
+#### Déterminisme, et pourquoi il n'est pas négociable
+
+L'empreinte du `.schem` sert de **version** au bâtiment posé (issue #234). Une expansion qui
+varierait d'une exécution à l'autre ferait croire à un bâtiment périmé à chaque régénération. Les
+cellules sont donc accumulées dans une carte puis **réémises dans un ordre fixe** (y, puis z, puis
+x) : l'ordre des instructions décide du *contenu* d'une cellule, jamais du *rang* d'un bloc dans la
+liste. Effet secondaire utile — une position étant une clé, le `Blueprint` produit ne peut pas
+contenir deux blocs au même endroit.
+
+#### Rien de ce que l'IA écrit n'est exécuté
+
+Le plan ne contient ni code, ni chemin de fichier, ni commande : une taille, une ancre, une
+orientation, et des entiers. Le nom du `.schem` est **dérivé** de l'identifiant du plan, lui-même
+borné à `[a-z0-9_]{3,48}`. Les états de bloc passent un contrôle de **forme** (`BlockState`) qui
+refuse espace, guillemet, point-virgule, majuscule et namespace étranger.
+
+> [!NOTE]
+> Ce contrôle ne dit **pas** que le bloc existe : la liste des blocs d'une version de Minecraft vit
+> dans le serveur, pas dans une classe pure. Un nom inventé (`minecraft:elven_marble`) passe la
+> forme et sera refusé par le moteur — ce qui est le bon endroit, parce que lui seul sait. L'essentiel
+> est que ce refus soit **visible**, et non un bloc silencieusement remplacé par de l'air.
+
+Bornes : 64 blocs par côté, 150 000 cellules de volume, 400 instructions, et un plafond de coût
+cumulé refusé **avant** toute allocation.
+
+#### « Généré » veut dire trois artefacts réels
+
+Un succès signifie que **trois** choses existent sur le disque du serveur : le `.schem`, la
+définition `buildings/<id>.yml`, et l'entrée dans la bibliothèque rechargée — donc posable par le
+flux #213. Si l'une manque, l'opération échoue et le dit. En particulier, un échec d'écriture du
+`.schem` n'écrit **aucune** définition, qui afficherait sinon un bâtiment « schematic absent » né de
+nulle part. Un identifiant déjà pris n'est **jamais** écrasé sans l'avoir demandé explicitement, et
+une régénération **incrémente la version**.
+
+Le **plan source est conservé** dans la définition, sous la clé `plan`. Sans lui, un bâtiment généré
+serait un cul-de-sac : on ne pourrait plus que le refaire de zéro.
+
+#### Le parcours dans PlugAdmin
+
+Fiche de l'emplacement → **« Générer un bâtiment avec l'IA »** (visible seulement si un brief
+existe) → `/buildings/plan`.
+
+**Deux gestes, jamais un seul.** Demander un plan et générer le bâtiment sont deux soumissions
+distinctes : le plan vient d'un modèle de langue, l'administrateur le voit, le modifie s'il veut, et
+décide. Deux permissions pour deux coûts — `AI_USE` pour l'appel (qui consomme des jetons),
+`BUILDING_WRITE` pour la génération (qui écrit des fichiers). Un utilisateur qui n'a que la première
+peut explorer sans jamais rien écrire.
+
+**Le panel ne valide pas le plan**, volontairement : il n'embarque aucune bibliothèque YAML
+(isolation assumée du module) et le plugin est le validateur autoritaire. Dupliquer ses règles
+garantirait seulement qu'elles divergent, et afficherait « plan valide » sur un plan refusé ensuite.
+Le refus du serveur est **précis** — il nomme le rang de l'instruction fautive — et un bouton de
+reprise le renvoie au modèle avec le plan refusé, pour qu'il corrige ce point sans repartir de zéro.
+
+Trois refus arrivent à **coût nul**, avant le moindre appel payant : brief absent, emplacement
+absent du relevé, aucun fournisseur utilisable.
 
 #### Supprimer un emplacement
 

@@ -7604,3 +7604,80 @@ quêtes/stories/dialogues du serveur hors publication explicite.
   `rpgquest-20261011T164115Z-predeploy.jar`, puis redémarrer. Rien à défaire en base.
 * **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
 * **Contenu** : `content.publish.rollback` par ressource depuis le panel.
+
+---
+
+## 2026-10-11 (nuit, suite) — Brief architectural et génération de bâtiments par IA (#94, #213)
+
+### Changement
+
+**Champ brief.** Les emplacements de construction portent désormais **deux** textes : la note
+d'administrateur existante (500 caractères) et un **brief architectural** nouveau (6 000). Le champ
+unique précédent coupait la saisie au caractère 500 **sans rien dire** — `maxlength` côté
+navigateur, qui n'émet aucun message. Supprimé ; le serveur refuse désormais avec le dépassement
+chiffré, et un compteur rendu côté serveur accompagne chaque champ long. La troncature silencieuse
+de `BuildingSiteService` est devenue un refus bruyant.
+
+**Génération IA.** Nouvelle action `building.generate` : un **plan déclaratif** (YAML, vocabulaire
+fermé de cinq instructions) est expansé par un moteur déterministe, écrit en `.schem` et déclaré
+dans la bibliothèque. Nouvelle page panel `/buildings/plan` : brief → plan proposé par l'IA →
+relecture → génération explicite.
+
+### Action serveur
+
+- **Plugin** : remplacer uniquement le JAR RPGQuest. **Migration de schéma V31** —
+  `ALTER TABLE building_sites ADD COLUMN ai_brief TEXT NOT NULL DEFAULT ''`. Strictement additive,
+  idempotente (`columnExists`), et elle **ne recopie aucune donnée** : les descriptions existantes
+  sont préservées telles quelles.
+- **Panel** : déploiement PlugAdmin distinct (`scripts/plugadmin/deploy.sh`). Il embarque
+  `panel.js` et `plugadmin.css`, tous deux modifiés (compteur de caractères) — un panel périmé
+  afficherait un compteur figé, pas faux.
+- **Aucune commande** à exécuter, aucun monde, aucune configuration, aucun plugin externe.
+- **Aucun bloc du monde n'est touché** par ce lot. La génération écrit des fichiers
+  (`schematics/<id>.schem`, `buildings/<id>.yml`) ; la **pose** reste une opération distincte.
+- **Clé API d'IA** : aucune n'est ajoutée ni requise par le déploiement. Sans fournisseur activé, la
+  page de génération le dit et ne propose aucun appel.
+
+### Sauvegarde préalable
+
+JAR déployé + `data.db` (sauvegarde standard du script). **À noter** : les quatre briefs du Hub
+vivent aujourd'hui dans la colonne `description` de `building_sites` — la migration ne les touche
+pas, mais c'est la donnée à ne pas perdre.
+
+Également : le dossier `plugins/RPGQuest/buildings/` et `plugins/RPGQuest/schematics/`, puisque la
+génération y écrit. Une génération ne peut pas écraser un bâtiment existant sans la case
+« Remplacer », mais une sauvegarde reste la bonne habitude avant d'ouvrir une nouvelle voie
+d'écriture.
+
+### Déploiement
+
+1. `RPGQUEST_TEST_MAX_HEAP=768m scripts/deploy-verygames.sh -y` depuis un worktree **propre**.
+2. Redémarrage du serveur Minecraft requis (JAR + migration V31).
+3. Vérifier la migration dans les logs au démarrage : `building_sites.ai_brief`.
+4. `scripts/plugadmin/deploy.sh`, puis vérifier ce qui est **servi** :
+   `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$RPGQUEST_PANEL_PORT/buildings/plan`
+   (303 → `/login` = route enregistrée ; 404 = panel périmé).
+
+### Validation
+
+1. Page **Bâtiments → Emplacements** → **« Emplacements »** pour rafraîchir le relevé.
+2. Fiche de `buildsite_0009` : deux champs distincts, « Note d'administrateur » et « Brief
+   architectural », chacun avec son compteur et sa limite.
+3. Coller un brief de plus de 500 caractères dans le brief : **rien n'est coupé**, le compteur suit.
+4. Coller plus de 6 000 caractères : l'enregistrement est **refusé** avec le nombre de caractères à
+   retirer, et rien n'est enregistré.
+5. Le brief existant (aujourd'hui dans la note) est signalé comme possiblement mal placé, **sans
+   avoir été déplacé**.
+6. `PENDING MANUAL VALIDATION` — voir le protocole complet dans le rapport de session : demander un
+   plan à l'IA pour la Bibliothèque du Hub, le relire, générer, et **regarder le bâtiment en jeu**.
+   Aucun test automatisé ne peut juger qu'un bâtiment est beau ou praticable.
+
+### Rollback
+
+* **Plugin** : `scripts/rollback-verygames.sh --latest`, puis redémarrer. **La colonne `ai_brief`
+  reste** — une colonne en trop est inerte pour un plugin qui l'ignore, et la retirer risquerait
+  bien plus que de la laisser. Les briefs déjà saisis y dormiraient jusqu'au redéploiement.
+* **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`.
+* **Bâtiment généré indésirable** : supprimer `buildings/<id>.yml` et `schematics/<id>.schem`, puis
+  rafraîchir la bibliothèque. Rien d'autre n'y fait référence tant qu'il n'a pas été **posé**.
+* **Contenu** : sans objet, ce lot ne publie aucune ressource de contenu.

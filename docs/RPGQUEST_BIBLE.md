@@ -3919,6 +3919,14 @@ Règles appliquées (idempotentes) :
     `hub.HubRescueFallbackService` complète un éventuel inventaire plein par un accès graphique
     minimal (1 bouton), et `player.StarterKitListener` ne marque plus la Rune distribuée si elle
     n'a pas pu être réellement ajoutée (retenté à la connexion suivante).
+-   **cooldown de retour suspendu hors ligne** (issue #221, 13/10/2026) : le cooldown de voyage par
+    objet est enregistré en **durée restante** (`item_travel_cooldowns.remaining_ms`, migration
+    V32) — à l'usage réussi (durée configurée de l'objet), à la déconnexion, à l'arrêt du serveur
+    et toutes les minutes. À la reconnexion, il reprend là où il en était : le temps hors ligne et
+    l'arrêt du serveur ne le consomment pas ; un arrêt brutal coûte au plus une minute d'attente en
+    plus, jamais une remise à zéro ; un cooldown fini est supprimé (aucun état négatif). Une ligne
+    antérieure (sans durée) garde son échéance absolue. Le message « se recharge encore » affiche
+    le temps restant réel. Le combat logging (#88) reste un chantier distinct.
 -   claims interdits (`ClaimService` refuse toute création dans le monde exact de `hub.world`, voir section 8).
 
 Log attendu au démarrage/chargement :
@@ -5195,6 +5203,8 @@ database:
 | V21 | `travel_beacons.biome_instance` (ALTER) | Appariement borne↔waypoint du Hub (#149), idempotence uniquement |
 | V22 | `waypoints.display_name` (ALTER + backfill + index unique) | Nom d'affichage humain unique par waypoint (#133/#135) |
 | V23 | `waypoints.display_name` (UPDATE via correspondance figée) | Renommage des noms concaténés sans séparateur en noms lisibles (retour joueur 2026-10-04) |
+| V24–V31 | voir `SchemaMigrator` | dialogues lus, récompenses, skins, bâtiments |
+| V32 | `item_travel_cooldowns.remaining_ms` (ALTER, nullable) | Cooldown de retour suspendu hors ligne (#221) |
 
 Suivi de version : `PRAGMA user_version` en SQLite (natif, inchangé) ; table portable
 `rpgquest_schema_migrations` en MySQL (#41). `SchemaMigrationRunner` applique les étapes en

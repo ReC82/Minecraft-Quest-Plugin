@@ -29,7 +29,7 @@ import java.util.Set;
 public final class SchemaMigrator {
 
     /** Version de schéma attendue par ce build. */
-    public static final int CURRENT_VERSION = 31;
+    public static final int CURRENT_VERSION = 32;
 
     /** Toutes les migrations connues, dans l'ordre croissant de version. */
     public static final List<SchemaMigration> ALL = List.of(
@@ -65,7 +65,9 @@ public final class SchemaMigrator {
             new SchemaMigration(30, "cycle de vie des bâtiments : baseline, historique, version",
                     SchemaMigrator::applyV30),
             new SchemaMigration(31, "building_sites.ai_brief (brief architectural)",
-                    SchemaMigrator::applyV31));
+                    SchemaMigrator::applyV31),
+            new SchemaMigration(32, "item_travel_cooldowns.remaining_ms (cooldown suspendu hors ligne)",
+                    SchemaMigrator::applyV32));
 
     private SchemaMigrator() {
     }
@@ -1284,6 +1286,18 @@ public final class SchemaMigrator {
             try (Statement statement = connection.createStatement()) {
                 statement.execute(dialect.ddl(
                         "ALTER TABLE building_sites ADD COLUMN ai_brief TEXT NOT NULL DEFAULT ''"));
+            }
+        }
+    }
+
+    private static void applyV32(Connection connection, SqlDialect dialect) throws SQLException {
+        // Issue #221 : le cooldown de retour se mesure en DURÉE RESTANTE, suspendue hors ligne et
+        // pendant l'arrêt du serveur. Colonne additive et nullable : une ligne antérieure (sans
+        // durée) garde son ancienne lecture, l'échéance absolue « expires_at ».
+        if (!dialect.columnExists(connection, "item_travel_cooldowns", "remaining_ms")) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(dialect.ddl(
+                        "ALTER TABLE item_travel_cooldowns ADD COLUMN remaining_ms INTEGER"));
             }
         }
     }

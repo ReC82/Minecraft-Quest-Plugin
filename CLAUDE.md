@@ -87,7 +87,10 @@ Continue jusqu'à ce que l'une de ces conditions soit remplie :
   historique déjà poussé).
 - Ne jamais utiliser `git reset --hard` sur du travail non sauvegardé.
 - **Push automatique autorisé** vers la **branche de travail dédiée** de la
-  tâche courante, une fois `./gradlew test` **et** `./gradlew build` verts.
+  tâche courante, une fois les **tests ciblés** du ou des modules touchés verts
+  (`scripts/dev/check.sh`). La suite complète et la construction des artefacts
+  tournent ensuite dans **GitHub Actions** (`.github/workflows/ci.yml`, statut
+  « CI OK »), voir « TESTS / BUILD ».
   - **Aucun push direct vers `main`.**
   - Toute **fusion vers `main`**, **suppression de branche distante**,
     **réécriture d'historique partagé** ou **release** nécessite une
@@ -161,13 +164,22 @@ Répéter jusqu'à ce que la tâche soit réellement terminée.
 - **Java 21.**
 - Utiliser **le Gradle Wrapper du projet** (`./gradlew`, `gradlew.bat`) —
   jamais un Gradle système, jamais en CI.
-- Avant de considérer une tâche terminée, exécuter au minimum :
-
-  ```bash
-  ./gradlew test
-  ./gradlew build
-  ```
-
+- **Pendant le développement : tests ciblés.** `scripts/dev/check.sh` lance
+  les tests des seuls modules touchés (plugin, panel, web-api) et saute un
+  module dont le code a déjà été validé (marqueur indexé par l'empreinte Git du
+  code, qu'un commit de documentation n'invalide pas). Pour une seule classe :
+  `scripts/dev/check.sh --module panel --tests '*Foo*'`.
+- **Validation complète : GitHub Actions.** Chaque push exécute les trois
+  suites en parallèle et construit les artefacts ; le statut agrégé est
+  « CI OK ». Ne pas relancer localement une suite complète déjà verte pour le
+  même code (CI verte ou marqueur local) sans raison technique précise et dite.
+- Une tâche est terminée quand ses tests ciblés sont verts **et** que la CI du
+  commit poussé est verte. Si la CI est indisponible, `scripts/dev/check.sh
+  --full` la remplace, et le rapport le dit.
+- **Déploiement DEV** : les scripts appliquent la validation adaptée
+  (`docs/deployment/CI.md`) — CI verte → aucun test local ; CI rouge → refus,
+  sauf dérogation explicite (`--allow-ci-red`, tracée) ; CI absente ou en cours
+  → tests du seul module déployé.
 - Ne jamais déclarer une tâche terminée si les tests ou le build échouent.
 - Corriger les warnings quand c'est raisonnable.
 - **Ne jamais prétendre qu'un test manuel Minecraft a été effectué s'il ne

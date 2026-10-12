@@ -200,8 +200,9 @@ La machine de build AWS est **petite** : sans plafond explicite, les workers
 de test Gradle épuisent le tas et la suite échoue sur
 `Java heap space` — un échec d'**environnement**, pas de code. Il faut donc
 **exporter la variable avant toute commande Gradle**, y compris avant
-`scripts/deploy-verygames.sh` (qui relance `test` puis `build` comme
-garde-fou avant tout transfert, et qui hérite de l'environnement du shell) :
+`scripts/deploy-verygames.sh` (qui rejoue les tests **du plugin** quand la CI
+du commit n'est pas verte — voir [CI.md](CI.md) — et qui hérite de
+l'environnement du shell) :
 
 ```
 export RPGQUEST_TEST_MAX_HEAP=768m

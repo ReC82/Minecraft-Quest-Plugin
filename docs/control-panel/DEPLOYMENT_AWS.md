@@ -112,8 +112,11 @@ renseigne.
 
 ```bash
 git pull
-sudo scripts/plugadmin/deploy.sh             # rebuild + swap /opt/plugadmin/app + restart + health
+sudo scripts/plugadmin/deploy.sh             # valide, rebuild + swap /opt/plugadmin/app + restart + health
 #   l'app précédente est déplacée sous /opt/plugadmin/releases/<horodatage>
+#   validation adaptée (#257) : CI « CI OK » verte → aucun test ; rouge → refus (--allow-ci-red) ;
+#   absente → tests du panel seulement. Voir docs/deployment/CI.md.
+#   /opt/plugadmin/app/DEPLOYED indique le commit servi et sa preuve de validation.
 ```
 
 `deploy.sh` ne touche ni aux secrets, ni à nginx, ni au TLS, ni aux autres services.

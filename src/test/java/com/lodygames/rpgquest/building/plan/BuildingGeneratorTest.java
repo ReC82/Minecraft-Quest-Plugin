@@ -465,6 +465,35 @@ class BuildingGeneratorTest {
         assertTrue(result.message().contains("passé la validation de ses blocs"), result.message());
     }
 
+    // ---- #290 : republier une nouvelle version du même bâtiment ------------------------------
+
+    @Test
+    @DisplayName("Republier : la version vue est contrôlée, la précédente est archivée, la nouvelle prend sa place")
+    void republishingChecksTheVersionAndArchivesThePreviousOne() throws Exception {
+        Path schematics = tempDir.resolve("schematics");
+        Files.createDirectories(schematics);
+        generator.archivingTo(schematics, java.time.Clock.fixed(java.time.Instant.parse("2026-10-12T20:00:00Z"),
+                java.time.ZoneOffset.UTC));
+        assertTrue(generator.generate(LIBRARY_PLAN, false).ok());
+        Files.writeString(schematics.resolve("hub_library.schem"), "v1");
+
+        // Quelqu'un a vu la version 2 : il n'y en a qu'une. Rien n'est écrit.
+        BuildingGenerator.Result conflict = generator.generate(LIBRARY_PLAN, true, 2);
+        assertEquals("VERSION_CONFLICT", conflict.code(), conflict.message());
+        assertEquals(1, library.find("hub_library").orElseThrow().version());
+
+        BuildingGenerator.Result republished = generator.generate(LIBRARY_PLAN, true, 1);
+        assertTrue(republished.ok(), republished.message());
+        assertEquals(2, republished.version());
+        assertTrue(republished.replaced());
+        Path archive = buildings.resolve(".history").resolve("hub_library").resolve("v1_20261012-200000");
+        assertTrue(Files.exists(archive.resolve("hub_library.yml")), "la définition v1 est archivée");
+        assertEquals("v1", Files.readString(archive.resolve("hub_library.schem")), "le schematic v1 aussi");
+        assertTrue(republished.effects().stream().anyMatch(e -> e.contains("version 1 archivée")),
+                republished.effects().toString());
+        assertEquals(2, library.find("hub_library").orElseThrow().version());
+    }
+
     private static final class FakeGateway implements SchematicGateway {
         final Set<String> files = new LinkedHashSet<>();
         final java.util.Map<String, String> refuse = new java.util.HashMap<>();

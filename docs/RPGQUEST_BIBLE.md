@@ -1768,8 +1768,136 @@ La conception automatique propose la même chose : case « Repartir de zéro ».
 | Envoi | formulaire `multipart/form-data` lu en octets côté panel (aucun script, CSP inchangée) |
 | Modèle incompatible | l'appel échoue et l'écran affiche l'erreur du fournisseur ; rien n'est écrit |
 
-Chaque image ajoute des jetons d'entrée à chaque appel : l'enveloppe de la conception automatique
-reste une estimation prudente (9 000 jetons d'entrée par appel).
+Chaque image ajoute des jetons d'entrée à chaque appel : depuis #292, l'enveloppe de la conception
+automatique les compte (1 600 jetons par image et par appel), avec la description réelle.
+
+#### Parcours de création fiabilisé : façades, blocs, stabilité, accès, reprise, conception (issues #288–#292)
+
+Le 12/10/2026, la **Maison de Lily** (projet `bef26b6d`, version `aa8ff980`) passait l'audit —
+« conforme, 780 blocs » — puis son enregistrement échouait (`SCHEMATIC_FAILED`,
+`NoMatchException — Block name 'minecraft:bed' was not recognized`) ; sa porte et ses vitres
+étaient posées dans le jardin, à trois blocs des murs. La Maison du bibliothécaire (version
+`adc9189d`) perdait son lit à la pose et ses lanternes se détachaient. Les corrections portent sur
+le moteur et le panel, pas sur un YAML.
+
+**Blocs validés avant tout verdict.** `BlockCatalog` est le registre des **1 166 blocs de Minecraft
+1.21.11** — identifiants, propriétés, valeurs — généré depuis le rapport officiel du serveur
+(`java -DbundlerMainClass=net.minecraft.data.Main -jar server.jar --reports`, puis
+`scripts/building/gen-block-catalog.py`), jamais écrit à la main. Il est consulté par la validation
+du plan, qui rend **toutes** les fautes d'un coup, groupées par bloc avec instructions et zones, puis
+par l'expanseur sur chaque état réellement produit (cellule + instruction). En plus, quand le plugin
+tourne, le **vrai parseur WorldEdit** (`SchematicGateway#rejected`, même contexte que l'écriture)
+juge chaque état avant de prononcer « conforme » (code `BLOCK_REJECTED`). Les blocs qui n'existent
+qu'en couleur reçoivent les identifiants réels — `minecraft:bed` → `minecraft:<couleur>_bed`,
+`stained_glass_pane` → `<couleur>_stained_glass_pane` — et **aucune couleur n'est devinée** à la
+place du brief. `SCHEMATIC_FAILED` signifie désormais un échec d'**écriture** (le plan avait passé
+ses blocs) ; `PLAN_INVALID` un échec de **contenu**. (1.21.11 a renommé `chain` en `iron_chain` : le
+registre l'a révélé.)
+
+**Ouvertures dans les murs construits.** `door` et `window` visent le **corps de bâtiment** qui
+contient la position — l'emprise d'un `walls`, `shell` ou `box` d'au moins 3 × 3, le plus extérieur
+de ce côté — et non plus la limite du volume. `offset` reste la coordonnée **le long** de la façade
+en coordonnées du plan (x pour nord/sud, z pour est/ouest), entre les angles du mur ; seule la
+profondeur est résolue. `wall: <coordonnée>` désigne explicitement un autre mur (une tour devant la
+maison) ; un `wall` sans mur est refusé. Hors mur ou sur un angle : refus qui nomme l'intervalle
+valable. Un plan sans aucun corps garde l'ancienne lecture. Les bâtiments occupant toute l'emprise
+expansent exactement comme avant.
+
+**Accès vérifié en marchant** (`Access`). Le terrain est supposé plat sous la couche `anchor.y` (l'ancre
+d'un emplacement est la case libre au-dessus du sol) : on part de lui, autour de la grille, et l'on
+marche — à plat, un bloc de montée ou de descente, échelles — avec la tête libre, jusqu'à un **sol
+intérieur** (cellule couverte, close sur au moins trois côtés par un mur, une porte ou un vitrage).
+
+| Code | Bloquant | Signification |
+|---|---|---|
+| `NO_ENTRANCE` | oui | aucun chemin terrain → porte → sol intérieur ; chaque porte dit pourquoi (devant occupé, seuil trop haut…) |
+| `ENTRANCE_STEP` | oui (habitable) | on n'entre qu'en sautant un bloc entier ; une marche d'escalier tournée dans le sens de la marche ou une dalle basse ne comptent pas comme saut |
+| `OPENING_DETACHED` | oui | porte ou vitrage hors des murs : ni intérieur ni maçonnerie autour — ils ne comptent plus comme entrée ni comme fenêtre |
+| `WINDOW_OBSTRUCTED` | non | vitrage dans un mur mais bouché côté intérieur par un bloc plein |
+
+Les façades vitrées se lisent depuis l'intérieur (côté pièce → côté dehors), plus sur les bornes de
+la grille ; une vitre derrière une rangée de bibliothèques reste une fenêtre de la salle.
+
+**Stabilité après pose** (#288, `Stability`). La physique n'est pas désactivée à la pose : la grille
+doit tenir. `BROKEN_ASSEMBLY` nomme les moitiés de porte, de lit ou de grande plante sans leur paire ;
+`UNSUPPORTED_BLOCK` les blocs qui tomberaient — lanterne ni posée ni suspendue (ou posée sur une
+autre lanterne), torche ou échelle sans mur derrière, tapis, fleur, torche sans bloc dessous, porte
+sans seuil, bouton ou panneau sans appui. Les deux sont bloquants pour tout type de bâtiment.
+
+- **`op: bed`** : `from` (le pied), `direction` (vers la tête), `block` (lit coloré). Le moteur pose
+  pied et tête, `facing` du pied vers la tête, même couleur. Un lit écrit dans une `box` est refusé
+  avec la syntaxe à employer.
+- Les lanternes de `light`, et toute lanterne écrite sans propriété, choisissent leur appui sur la
+  **grille finale** (un toit posé après elles compte) : suspendues s'il y a de quoi au-dessus,
+  posées sinon.
+- `light` applique son espacement **aussi en hauteur** : une zone de y=2 à y=8 posait une colonne de
+  sept lanternes empilées.
+
+**Réparations déterministes ajoutées** (`PlanRepair`, chacune rejouée par le vrai pipeline) :
+
+| Faute | Correction |
+|---|---|
+| porte ou fenêtre sur l'angle ou juste hors du mur | `offset` décalé de 3 au plus |
+| seuil au-dessus du terrain | marches d'escalier tournées vers la porte, **dans le volume**, assises sur le matériau du seuil |
+| … sans place dans le volume (façade sur sa limite) | fondation enterrée : `anchor.y` monte au seuil, le bâtiment se pose plus bas, rien ne déborde |
+| lanterne flottante sous un plafond (4 cellules au plus) | suspendue à une chaîne `minecraft:iron_chain`, sans être déplacée ni retirée |
+
+Sur les plans réels : la Bibliothèque v3 (escalier, marches, chaînes) et la Maison du bibliothécaire
+`adc9189d` (lit écrit en `op: bed` ; 9 lanternes suspendues, fondation enterrée) deviennent
+conformes sans appel IA ; la Maison de Lily est refusée d'emblée pour ses deux blocs inexistants, puis
+— matériaux corrigés — voit sa fenêtre d'angle décalée, sa porte posée dans le mur `z=15` et une
+marche ajoutée en `z=16`.
+
+**Conception détaillée avant le plan technique** (#289). Carte « Conception détaillée » du projet :
+un texte sous huit titres imposés — programme et espaces, volumes et façades, palette justifiée,
+accès et circulation, mobilier pièce par pièce (avec la primitive qui le pose), décoration
+intérieure et extérieure, limites du moteur, correspondance avec le brief. Rédigée par l'IA (un
+appel facturé, jeton à usage unique) ou à la main ; chaque enregistrement est une **version**
+(`building_design_doc`, base du panel), sous contrôle de version — un texte refusé est réaffiché, pas
+perdu. Toute demande de plan ensuite (proposition, correction, critique, conception automatique)
+reçoit **le brief et la conception**. La conception automatique, partie du brief sans conception,
+commence par elle (l'appel compte dans l'enveloppe consentie). La critique compare le plan au brief
+**et** à la conception, écrit d'abord « OMISSIONS ET ÉCARTS » (gardé dans le journal de la session),
+puis le plan ; elle ne pousse plus à multiplier les matériaux. Les corrections doivent conserver ce
+qui est déjà juste. Le prompt dit ce que le moteur sait poser (lit, tapis, plantes en pot, vitraux,
+four, rangements, volets…) et ce qu'il **ne** sait pas : tableaux, cadres, supports d'armure, toute
+entité, le texte des panneaux. Le verdict technique ne prétend plus juger la beauté : « Contrôles
+techniques réussis… L'esthétique et le respect de votre description se jugent sur l'aperçu. » La
+légende de l'aperçu 3D liste **tous** les matériaux avec leur nombre de blocs (elle était bornée à
+dix) et nomme ceux que le plan cite mais que la grille finale ne contient plus (recouverts par une
+instruction postérieure).
+
+**Reprendre, retirer, republier** (#290). L'état d'un bâtiment dans l'Atelier vient de la
+bibliothèque réelle (`CatalogState`) : le dernier fait connu parmi l'enregistrement réussi, le
+retrait réussi et le relevé « Rafraîchir » de la bibliothèque — il survit au redémarrage du panel.
+
+- **Enregistré** : « Enregistré dans la bibliothèque — version N », « Choisir un emplacement », et
+  **« Reprendre la conception »** — une nouvelle version, copie de celle-ci, sans appel IA, revérifiée
+  d'elle-même ; Améliorer et Conception automatique redeviennent disponibles.
+- **Retiré** (ou absent du dernier relevé) : plus de pose proposée ; « Réenregistrer dans la
+  bibliothèque » et « Reprendre la conception ». La liste des projets le dit aussi.
+- **Publier une nouvelle version** du bâtiment que **ce projet** a produit : case cochée obligatoire ;
+  la version vue part avec la demande (`expected_version`) et le plugin refuse `VERSION_CONFLICT` si
+  une autre publication est passée entre-temps. Avant d'écrire, il **archive** la version remplacée
+  (définition et schematic) dans `buildings/.history/<id>/v<N>_<horodatage>/`. Les exemplaires déjà
+  posés ne changent pas : leur mise à jour reste l'action explicite du cycle de vie (#234). Un
+  identifiant pris par un autre bâtiment reste protégé.
+- Dans la **Bibliothèque**, chaque bâtiment nomme le projet qui le produit, avec son identifiant, et
+  propose « Reprendre la conception ». Diagnostic du « mauvais rattachement » signalé au retrait :
+  aucun lien erroné en base — le lien projet ↔ bâtiment est l'identifiant de bibliothèque, et la
+  Maison du bibliothécaire ne correspondait qu'à son projet ; la mention « Bibliothèque du Hub » vient
+  de l'**emplacement** `buildsite_0009` (lui-même nommé « Bibliothèque du Hub »), dont la description
+  avait été reprise dans ce projet. Les deux textes nomment désormais explicitement ce qu'ils
+  désignent.
+
+**Descriptions et retours d'erreur** (#292). Une seule borne de **12 000 caractères** : projet de
+l'Atelier, brief d'emplacement, validation d'action du panel et du plugin, formulaire et compteur. Les
+fins de ligne `\r\n` d'un formulaire sont normalisées avant de compter. Aucune troncature : refus
+chiffré, rien d'enregistré. L'enveloppe de la conception automatique est calculée sur le contenu réel
+(prompt système, description, images, plan précédent et diagnostic). Un **échec d'enregistrement**
+s'affiche en tête de la carte, avec le motif complet (`details.message`) et l'action utile :
+corriger avec l'IA (échec de contenu — le motif part dans le diagnostic, sans commentaire à écrire),
+changer l'identifiant ou recharger (conflit), réessayer (échec d'écriture, sans appel IA).
 
 ### Bibliothèque de bâtiments et premier placement — `/buildings/library` (issue #213)
 

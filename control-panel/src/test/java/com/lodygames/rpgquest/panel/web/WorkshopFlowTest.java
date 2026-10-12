@@ -635,6 +635,141 @@ class WorkshopFlowTest {
 
     // ---- Harnais -------------------------------------------------------------------------------
 
+    // ---- #289 : la conception détaillée, consultable et modifiable --------------------------------
+
+    /** Rédigée par l'IA (un appel), modifiable à la main sous contrôle de version, suivie par le plan. */
+    @Test
+    void theDetailedDesignIsWrittenEditedAndFollowedByThePlan() throws Exception {
+        start();
+        String project = createProject("Maison de Lily", BRIEF);
+        String page = get(project).body();
+        assertTrue(page.contains("Conception détaillée — pas encore rédigée"), "la carte est proposée");
+        String form = formAround(page, "value=\"design_write\"");
+        String back = location(post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=design_write&id="
+                + id(project) + "&provider=openai&request_token=" + token(form)));
+        assertEquals(1, aiCalls.get(), "un seul appel");
+        assertTrue(lastAiRequest.contains("CORRESPONDANCE AVEC LE BRIEF"), "le prompt de conception");
+        assertTrue(decoded(back).contains("Conception rédigée (version 1)"), decoded(back));
+
+        // Modifier à la main : une version de retard est refusée, le texte saisi reste affiché.
+        page = get(project).body();
+        assertTrue(page.contains("Conception détaillée — version 1"), "la conception est consultable");
+        HttpResponse<String> stale = post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=design_save&id=" + id(project) + "&design_version=0&design="
+                + enc("Chambre de Lily à l'étage, lit rose, tapis rose."));
+        assertTrue(stale.body().contains("La conception a changé"), excerpt(stale.body()));
+        assertTrue(stale.body().contains("Chambre de Lily à l&#39;étage"), "le texte saisi n'est pas perdu");
+        post("/buildings/workshop/project", "_csrf=" + csrf(page) + "&_action=design_save&id=" + id(project)
+                + "&design_version=1&design=" + enc("Chambre de Lily à l'étage, lit rose, tapis rose."));
+        assertTrue(get(project).body().contains("Conception détaillée — version 2"));
+
+        // Le plan demandé ensuite traduit la conception, avec le brief.
+        propose(project);
+        assertTrue(lastAiRequest.contains("LA CONCEPTION DÉTAILLÉE À TRADUIRE"), "le plan suit la conception");
+        assertTrue(lastAiRequest.contains("lit rose, tapis rose"), "la version modifiée à la main");
+    }
+
+    // ---- #290 : reprendre, republier, retirer puis réenregistrer ---------------------------------
+
+    /** Publier, reprendre, modifier puis republier le MÊME bâtiment, sous contrôle de version. */
+    @Test
+    void aPublishedBuildingIsResumedAndRepublishedUnderVersionControl() throws Exception {
+        start();
+        String withDraft = propose(createProject("Maison de Lily", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_OK);
+        gesture(get(withDraft).body(), "generate");
+        answer(latest("building.generate"), "{\"code\":\"OK\",\"buildingId\":\"bibliotheque_v2\",\"version\":1}");
+
+        String done = mainCard(get(withDraft).body());
+        assertTrue(done.contains("Enregistré dans la bibliothèque — version 1"), done);
+        assertTrue(done.contains("Reprendre la conception"), "la conception reste modifiable : " + done);
+
+        // Reprendre : une nouvelle version, sans appel à l'IA, revérifiée d'elle-même.
+        String page = get(withDraft).body();
+        String form = formAround(page, "value=\"resume\"");
+        String resumed = location(post("/buildings/workshop/project", "_csrf=" + csrf(page)
+                + "&_action=resume&id=" + id(withDraft) + "&draft=" + field(form, "name=\"draft\" value=\"([^\"]+)\"")));
+        assertNotEquals(draftId(withDraft), draftId(resumed));
+        assertEquals(BuildingPlanDraft.Origin.RESUMED, drafts().find(draftId(resumed)).orElseThrow().origin());
+        assertEquals(1, aiCalls.get(), "reprendre ne coûte aucun appel");
+        AgentActionRow reaudit = latest("building.plan.audit");
+        assertEquals(draftId(resumed), drafts().linkOf(reaudit.id()).orElseThrow().draftId());
+        answer(reaudit, AUDIT_OK);
+
+        // Les actions d'amélioration sont revenues, et la publication est un geste explicite.
+        String save = get(resumed).body();
+        assertTrue(save.contains("Conception automatique"), "conception automatique disponible");
+        assertTrue(mainCard(save).contains("Publier une nouvelle version"), mainCard(save));
+        String publish = formAround(save, "name=\"republish\" value=\"yes\"");
+        String common = "_csrf=" + csrf(save) + "&_action=generate&id=" + id(resumed)
+                + "&draft=" + field(publish, "name=\"draft\" value=\"([^\"]+)\"")
+                + "&version=" + field(publish, "name=\"version\" value=\"([^\"]+)\"")
+                + "&plan=" + enc(unescape(field(publish, "name=\"plan\" value=\"([^\"]*)\"")))
+                + "&republish=yes&expected_version=" + field(publish, "name=\"expected_version\" value=\"([^\"]+)\"");
+        long saves = store.recentActions(TestConfig.AGENT_ID, 200).stream()
+                .filter(a -> a.type().equals("building.generate")).count();
+        String refused = decoded(location(post("/buildings/workshop/project", common)));
+        assertTrue(refused.contains("Cochez la confirmation"), refused);
+        assertEquals(saves, store.recentActions(TestConfig.AGENT_ID, 200).stream()
+                .filter(a -> a.type().equals("building.generate")).count(), "rien n'est parti sans la case");
+
+        post("/buildings/workshop/project", common + "&republish_confirm=yes");
+        AgentActionRow republish = latest("building.generate");
+        assertEquals("true", republish.params().get("replace"));
+        assertEquals("1", republish.params().get("expected_version"), "la version vue part avec la demande");
+    }
+
+    /** Après un retrait, l'Atelier le dit, ne propose plus de poser, et permet de réenregistrer. */
+    @Test
+    void aRetiredBuildingIsShownAsSuchAndCanBeRegisteredAgain() throws Exception {
+        start();
+        String withDraft = propose(createProject("Maison du bibliothécaire", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_OK);
+        gesture(get(withDraft).body(), "generate");
+        answer(latest("building.generate"), "{\"code\":\"OK\",\"buildingId\":\"bibliotheque_v2\",\"version\":1}");
+        Thread.sleep(5);
+        String retire = store.createAction(TestConfig.AGENT_ID, "building.definition.retire",
+                Map.of("id", "bibliotheque_v2", "confirm", "true", "by", "owner"), "owner");
+        answer(store.action(retire).orElseThrow(), "{\"code\":\"OK\",\"id\":\"bibliotheque_v2\"}");
+
+        restart();
+        String main = mainCard(get(withDraft).body());
+        assertTrue(main.contains("Retiré de la bibliothèque"), main);
+        assertFalse(main.contains("Choisir un emplacement"), "plus de pose proposée : " + main);
+        assertTrue(main.contains("Réenregistrer dans la bibliothèque"), main);
+        assertTrue(main.contains("Reprendre la conception"), main);
+        assertTrue(get("/buildings/workshop").body().contains("Retiré de la bibliothèque"), "la liste aussi");
+
+        gesture(get(withDraft).body(), "generate");
+        AgentActionRow again = latest("building.generate");
+        assertFalse(again.params().containsKey("replace"), "l'identifiant est libre : pas de remplacement");
+    }
+
+    /** Depuis la Bibliothèque : le projet producteur est nommé avec son identifiant, et repris en un clic. */
+    @Test
+    void theLibraryNamesTheProducingProjectAndOffersToResumeIt() throws Exception {
+        start();
+        String withDraft = propose(createProject("Maison de Lily", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_OK);
+        gesture(get(withDraft).body(), "generate");
+        answer(latest("building.generate"), "{\"code\":\"OK\",\"buildingId\":\"bibliotheque_v2\",\"version\":1}");
+        String list = store.createAction(TestConfig.AGENT_ID, "building.definition.list", Map.of(), "owner");
+        answer(store.action(list).orElseThrow(), "{\"code\":\"OK\",\"engineAvailable\":true,\"buildings\":["
+                + "{\"id\":\"bibliotheque_v2\",\"name\":\"Maison de Lily\",\"version\":1,\"schematic\":"
+                + "\"bibliotheque_v2.schem\",\"schematicPresent\":true,\"sizeX\":19,\"sizeY\":10,\"sizeZ\":19}]}");
+
+        String library = get("/buildings/library").body();
+        assertTrue(library.contains("Produit par le projet « <a href=\"/buildings/workshop/project?id=" + id(withDraft)),
+                excerpt(library));
+        assertTrue(library.contains("bibliotheque_v2</code>"), "l'identifiant, pour lever toute homonymie");
+        String form = formAround(library, "value=\"resume\"");
+        String resumed = location(post("/buildings/workshop/project", "_csrf=" + csrf(library)
+                + "&_action=resume&id=" + field(form, "name=\"id\" value=\"([^\"]+)\"")));
+        assertEquals(BuildingPlanDraft.Origin.RESUMED, drafts().find(draftId(resumed)).orElseThrow().origin());
+        assertEquals(draftId(withDraft), drafts().find(draftId(resumed)).orElseThrow().parentId(),
+                "reprise de la version qui a été enregistrée");
+    }
+
     // ---- #292 : descriptions longues, échec d'enregistrement visible ---------------------------
 
     /**

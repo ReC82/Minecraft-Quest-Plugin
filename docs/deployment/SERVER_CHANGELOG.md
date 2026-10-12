@@ -7747,6 +7747,53 @@ d'écriture.
   rafraîchir la bibliothèque. Rien d'autre n'y fait référence tant qu'il n'a pas été **posé**.
 * **Contenu** : sans objet, ce lot ne publie aucune ressource de contenu.
 
+## 2026-10-12 (nuit) — Parcours de création fiabilisé (#288, #289, #290, #291, #292) — NON DÉPLOYÉ
+
+### Changement
+
+Plugin : registre des blocs 1.21.11 embarqué (`building/blocks-1.21.11.txt`) et contrôle par le
+parseur WorldEdit avant tout verdict ; portes et fenêtres dans les murs construits ; accès et
+stabilité audités (`NO_ENTRANCE` sur la grille réelle, `ENTRANCE_STEP`, `OPENING_DETACHED`,
+`UNSUPPORTED_BLOCK`, `BROKEN_ASSEMBLY`, avertissement `WINDOW_OBSTRUCTED`) ; `op: bed` ; lanternes
+résolues sur la grille finale ; réparations (ouverture décalée, marches d'entrée ou fondation
+enterrée, chaînes) ; republication versionnée (`expected_version`, `VERSION_CONFLICT`, archive dans
+`buildings/.history/`) ; brief d'emplacement porté à 12 000 caractères ; `details.message` dans le
+résultat de `building.generate`.
+
+Panel : conception détaillée versionnée (table `building_design_doc`, créée au démarrage) ; état réel
+du bâtiment dans l'Atelier (enregistré / retiré / absent), « Reprendre la conception », « Publier une
+nouvelle version », « Réenregistrer » ; échec d'enregistrement affiché avec son motif ; descriptions
+de 12 000 caractères ; enveloppe calculée sur le contenu ; légende 3D complète.
+
+### Comportement plus strict — à connaître avant de régénérer
+
+Un plan ACCEPTÉ avant ce lot peut être refusé après : bloc inexistant, porte ou vitre hors des murs,
+lanterne en l'air, seuil à sauter. Les bâtiments **déjà enregistrés et posés ne sont pas touchés** ;
+seule une nouvelle vérification ou un nouvel enregistrement applique les nouveaux contrôles (la
+réparation du moteur corrige la plupart de ces cas sans appel IA). Les plans occupant toute l'emprise
+s'expansent comme avant ; une lanterne de `light` dont l'appui change, une `light` sur plusieurs
+hauteurs, ou une fenêtre qui débordait de sa façade, produisent une grille différente.
+
+### Action serveur
+
+Remplacer le JAR RPGQuest **et** redéployer PlugAdmin (deux déploiements). Aucune migration
+`data.db`. Table panel `building_design_doc` créée automatiquement. Le dossier
+`plugins/RPGQuest/buildings/.history/` sera créé à la première republication.
+
+### Sauvegarde préalable
+
+JAR actuel, `data.db`, `config.yml`, `buildings/`, `schematics/` ; `control-panel.db`.
+
+### Validation
+
+CI verte sur la PR ; TC-294 à TC-297 (`docs/MANUAL_TEST_PLAN.md`) par le propriétaire.
+
+### Rollback
+
+Panel : `scripts/plugadmin/rollback.sh app` (la table `building_design_doc` reste, inutilisée).
+Plugin : `scripts/rollback-verygames.sh --latest` puis redémarrage contrôlé ; les archives
+`buildings/.history/` éventuelles restent lisibles à la main.
+
 ## 2026-10-12 20:11 — Déploiement EFFECTUÉ sur DEV de #282, #283, #284 (code `7025bd8`)
 
 ### Changement

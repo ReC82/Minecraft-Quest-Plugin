@@ -46,6 +46,8 @@ public final class BuildingGenerator {
     private final SchematicWorkshop workshop;
     private final Path buildingsDirectory;
     private final Logger logger;
+    private Path schematicsDirectory;
+    private java.time.Clock clock = java.time.Clock.systemUTC();
 
     public BuildingGenerator(BuildingLibrary library, SchematicWorkshop workshop,
                              Path buildingsDirectory, Logger logger) {
@@ -53,6 +55,16 @@ public final class BuildingGenerator {
         this.workshop = workshop;
         this.buildingsDirectory = buildingsDirectory;
         this.logger = logger;
+    }
+
+    /**
+     * Où archiver la version remplacée d'un bâtiment republié (#290). Sans cet appel, rien n'est
+     * archivé côté schematic — la définition l'est toujours.
+     */
+    public BuildingGenerator archivingTo(Path schematics, java.time.Clock clock) {
+        this.schematicsDirectory = schematics;
+        this.clock = clock == null ? java.time.Clock.systemUTC() : clock;
+        return this;
     }
 
     /**
@@ -271,6 +283,17 @@ public final class BuildingGenerator {
      *                 a réutilisé son identifiant
      */
     public Result generate(String planYaml, boolean replace) {
+        return generate(planYaml, replace, 0);
+    }
+
+    /**
+     * Génère, en publiant au besoin une NOUVELLE VERSION d'un bâtiment existant (#290).
+     *
+     * @param expectedVersion la version que l'administrateur a vue en décidant de remplacer ; si la
+     *                        bibliothèque en porte une autre (quelqu'un a republié entre-temps), rien
+     *                        n'est écrit ({@code VERSION_CONFLICT}). 0 : pas de contrôle
+     */
+    public Result generate(String planYaml, boolean replace, int expectedVersion) {
         List<String> problems = new ArrayList<>();
         Optional<BuildingPlan> parsed = BuildingPlanYaml.read(planYaml, problems);
         if (parsed.isEmpty()) {
@@ -280,6 +303,14 @@ public final class BuildingGenerator {
         BuildingPlan plan = parsed.get();
 
         Optional<BuildingDefinition> existing = library.find(plan.id());
+        if (existing.isPresent() && replace && expectedVersion > 0
+                && existing.get().version() != expectedVersion) {
+            return Result.failure("VERSION_CONFLICT", "« " + existing.get().name() + " » est en version "
+                    + existing.get().version() + " dans la bibliothèque, et non en version "
+                    + expectedVersion + " comme lorsque la publication a été décidée : quelqu'un l'a "
+                    + "republié entre-temps. Rien n'a été écrit — rechargez la bibliothèque et "
+                    + "recommencez en connaissance de cause.");
+        }
         if (existing.isPresent() && !replace) {
             return Result.failure("ALREADY_EXISTS", "Un bâtiment « " + plan.id()
                     + " » existe déjà dans la bibliothèque (« " + existing.get().name()
@@ -315,6 +346,19 @@ public final class BuildingGenerator {
         }
 
         String schematic = plan.id() + ".schem";
+        List<String> archived = new ArrayList<>();
+        if (existing.isPresent()) {
+            // #290 : la version remplacée est ARCHIVÉE avant toute écriture — définition et
+            // schematic — pour qu'un retour en arrière reste possible. Les exemplaires déjà posés ne
+            // bougent pas : seule une action explicite de remplacement les met à jour.
+            try {
+                archived.addAll(archive(existing.get()));
+            } catch (IOException error) {
+                return Result.failure("WRITE_FAILED", "La version " + existing.get().version()
+                        + " n'a pas pu être archivée avant d'être remplacée ("
+                        + error.getClass().getSimpleName() + ") : rien n'a été écrit.");
+            }
+        }
         SchematicGateway.Outcome written = workshop.regenerate(schematic, expansion.blueprint());
         if (!written.ok()) {
             // Le .schem n'existe pas : surtout ne pas écrire la définition, qui désignerait un
@@ -363,6 +407,7 @@ public final class BuildingGenerator {
                 + " blocs, version " + version + ").");
         List<String> effects = new ArrayList<>(List.of("schematics/" + schematic,
                 "buildings/" + plan.id() + ".yml"));
+        effects.addAll(archived);
         // Les avertissements ne bloquent pas, mais les taire reviendrait à livrer un bâtiment dont
         // on sait quelque chose sans le dire.
         for (ArchitecturalFinding warning : audit.warnings()) {
@@ -406,6 +451,35 @@ public final class BuildingGenerator {
                     .append(e.getValue());
         }
         return Optional.of(sb.toString());
+    }
+
+    /**
+     * Copie la version courante dans {@code buildings/.history/<id>/v<version>_<horodatage>/}.
+     * Une copie et non un déplacement : si l'écriture qui suit échoue, la bibliothèque garde son
+     * bâtiment intact.
+     */
+    private List<String> archive(BuildingDefinition current) throws IOException {
+        String stamp = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+                .withZone(java.time.ZoneOffset.UTC).format(clock.instant());
+        Path target = buildingsDirectory.resolve(".history").resolve(current.id())
+                .resolve("v" + current.version() + "_" + stamp);
+        Files.createDirectories(target);
+        List<String> effects = new ArrayList<>();
+        Path yml = buildingsDirectory.resolve(current.id() + ".yml");
+        if (Files.isRegularFile(yml)) {
+            Files.copy(yml, target.resolve(yml.getFileName()),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            effects.add("version " + current.version() + " archivée : buildings/.history/" + current.id()
+                    + "/" + target.getFileName() + "/");
+        }
+        if (schematicsDirectory != null) {
+            Path schem = schematicsDirectory.resolve(current.schematic());
+            if (Files.isRegularFile(schem)) {
+                Files.copy(schem, target.resolve(schem.getFileName()),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+        return effects;
     }
 
     /**

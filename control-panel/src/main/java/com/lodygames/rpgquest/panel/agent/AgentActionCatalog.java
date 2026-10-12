@@ -786,6 +786,15 @@ public final class AgentActionCatalog {
                 params.put("plan", plan);
                 if ("building.generate".equals(type) && "true".equals(trim(form.get("replace")))) {
                     params.put("replace", "true");
+                    // #290 : la version vue au moment de republier — le plugin refuse si une
+                    // autre publication est passée entre-temps.
+                    String expected = trim(form.get("expected_version"));
+                    if (!expected.isEmpty()) {
+                        if (!expected.matches("[0-9]{1,6}") || Integer.parseInt(expected) < 1) {
+                            return Validation.fail("Version attendue invalide : entier positif attendu.");
+                        }
+                        params.put("expected_version", expected);
+                    }
                 }
                 // #282 : les bornes du projet, pour que la réparation déterministe du plugin
                 // puisse agrandir le volume au lieu d'araser un toit. Optionnelles, entières.

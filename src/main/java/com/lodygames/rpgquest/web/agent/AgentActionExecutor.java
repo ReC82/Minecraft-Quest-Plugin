@@ -1436,7 +1436,17 @@ public final class AgentActionExecutor {
                             + BUILD_PLAN_MAX + "."));
         }
         boolean replace = "true".equalsIgnoreCase(trimOrNull(action.param("replace")));
-        return actions.buildingGenerate(plan, replace)
+        // #290 : la version vue par l'administrateur au moment de republier — contrôle de concurrence.
+        String expectedRaw = trimOrNull(action.param("expected_version"));
+        int expected = 0;
+        if (expectedRaw != null) {
+            if (!expectedRaw.matches("[0-9]{1,6}")) {
+                return done(AgentActionOutcome.rejected(action.id(),
+                        "Paramètre « expected_version » invalide : entier positif attendu."));
+            }
+            expected = Integer.parseInt(expectedRaw);
+        }
+        return actions.buildingGenerate(plan, replace, expected)
                 .thenApply(r -> {
                     Map<String, Object> details = new LinkedHashMap<>();
                     details.put("code", r.code());

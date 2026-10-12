@@ -285,6 +285,29 @@ public final class AgentStore {
     }
 
     /**
+     * Les actions RÉUSSIES d'un type, de la plus récente à la plus ancienne (#290) : l'état réel
+     * d'un bâtiment dans la bibliothèque se lit sur son histoire — enregistré, retiré, relevé.
+     */
+    public List<AgentActionRow> successfulActionsOfType(String agentId, String type, int limit) {
+        String sql = "SELECT * FROM agent_action WHERE agent_id = ? AND type = ? AND status = 'SUCCESS' "
+                + "ORDER BY created_at DESC, rowid DESC LIMIT ?";
+        List<AgentActionRow> out = new ArrayList<>();
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, agentId);
+            ps.setString(2, type);
+            ps.setInt(3, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(readAction(rs));
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Lecture des actions « " + type + " » impossible (" + agentId + ")", e);
+        }
+        return out;
+    }
+
+    /**
      * {@code true} si une action de ce type est déjà en vol pour l'agent (PENDING ou DELIVERED, sans
      * résultat). Sert à ne pas empiler plusieurs relevés de catalogue identiques quand plusieurs
      * mutations se suivent (auto-refresh, issues #112 / #115 / #116 / #119 / #120).

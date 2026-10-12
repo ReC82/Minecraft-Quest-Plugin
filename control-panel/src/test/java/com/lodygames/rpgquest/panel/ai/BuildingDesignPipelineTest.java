@@ -216,7 +216,8 @@ class BuildingDesignPipelineTest {
         assertEquals(BuildingDesignRunStore.Status.SUCCEEDED, r.status(), r.outcome());
         assertEquals(2, r.spentCalls());
         assertTrue(kinds(r).contains("CRITIQUE"));
-        assertTrue(requests.get(1).contains("IL FAUT MAINTENANT LE RENDRE BEAU"));
+        // #289 : la critique compare au brief et à la conception, et commence par les omissions.
+        assertTrue(requests.get(1).contains("OMISSIONS ET ÉCARTS"));
         assertTrue(drafts.find(r.finalDraftId()).orElseThrow().plan().contains("buttresses"));
     }
 
@@ -333,5 +334,22 @@ class BuildingDesignPipelineTest {
         org.junit.jupiter.api.Assertions.assertTrue(perCall >= 12_000 / 3 + 4 * 1_600,
                 "la description et les images sont comptées à chaque appel : " + perCall);
         org.junit.jupiter.api.Assertions.assertTrue(lily.dollars() > small.dollars());
+    }
+
+    /** #289 : partir du brief, c'est d'abord une conception détaillée, puis un plan qui la traduit. */
+    @Test
+    void aDetailedDesignIsWrittenFirstAndThePlanTranslatesIt() {
+        var docs = new com.lodygames.rpgquest.panel.building.BuildingDesignDocStore(tmp.resolve("cp.db").toString());
+        pipeline.withDesignDocs(docs);
+        var r = run(BuildingDesignPipeline.Quality.STANDARD, 4,
+                "1. PROGRAMME ET ESPACES\nSalle de lecture au nord, lit rose à l'étage.", plan("good staircase"));
+        assertEquals(BuildingDesignRunStore.Status.SUCCEEDED, r.status(), r.outcome());
+        assertEquals(2, r.spentCalls(), "la conception compte dans l'enveloppe consentie");
+        assertEquals("CONCEPTION DÉTAILLÉE", kinds(r).get(0), kinds(r).toString());
+        assertTrue(requests.get(0).contains("CORRESPONDANCE AVEC LE BRIEF"), "étape 1 : la conception");
+        assertTrue(requests.get(1).contains("LA CONCEPTION DÉTAILLÉE À TRADUIRE"), "étape 2 : la traduction");
+        assertTrue(requests.get(1).contains("lit rose"), "le texte de la conception part avec le plan");
+        assertTrue(requests.get(1).contains("Bibliothèque médiévale de deux étages"), "le brief aussi");
+        assertEquals(1, docs.latest(project.id()).orElseThrow().version(), "la conception est conservée");
     }
 }

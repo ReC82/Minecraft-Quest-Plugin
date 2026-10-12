@@ -110,11 +110,26 @@ public final class AiBuildingStudio {
                 images);
     }
 
+    /**
+     * L'étape 1 (#289) : la conception détaillée, en texte. Aucun plan n'est extrait — la réponse
+     * entière EST la conception, rangée dans {@link Proposal#rawResponse()}.
+     */
+    public Proposal design(String providerId, BuildingPromptBuilder.Demand demand,
+                           List<AiProvider.Image> images) {
+        return run(providerId, BuildingPromptBuilder.designSystemPrompt(), BuildingPromptBuilder.withReferences(
+                BuildingPromptBuilder.designUserPrompt(demand), images.size()), images, false);
+    }
+
     private Proposal run(String providerId, String userPrompt) {
         return run(providerId, userPrompt, List.of());
     }
 
     private Proposal run(String providerId, String userPrompt, List<AiProvider.Image> images) {
+        return run(providerId, BuildingPromptBuilder.systemPrompt(), userPrompt, images, true);
+    }
+
+    private Proposal run(String providerId, String systemPrompt, String userPrompt,
+                         List<AiProvider.Image> images, boolean expectPlan) {
         AiProvider provider = registry.byId(providerId).orElse(null);
         if (provider == null) {
             return failed(providerId, providerId, "Fournisseur inconnu : « " + providerId + " ».");
@@ -129,7 +144,7 @@ public final class AiBuildingStudio {
                     "Aucune clé API enregistrée pour « " + provider.label() + " ».");
         }
 
-        AiProvider.Request call = new AiProvider.Request(BuildingPromptBuilder.systemPrompt(),
+        AiProvider.Request call = new AiProvider.Request(systemPrompt,
                 userPrompt, config.maxOutputTokens(),
                 Duration.ofSeconds(config.timeoutSeconds()), images);
         AiProvider.Result result = provider.generate(call, config);
@@ -140,6 +155,10 @@ public final class AiBuildingStudio {
         // Le même extracteur que l'atelier de contenu : un modèle qui encadre son YAML d'un bloc de
         // code ou d'une phrase d'introduction est une banalité, et la traiter deux fois
         // différemment produirait deux comportements à expliquer.
+        if (!expectPlan) {
+            return new Proposal(provider.id(), provider.label(), result.model(), result.usage(),
+                    result.text(), null, null, null);
+        }
         AiYamlExtractor.Extraction extraction = AiYamlExtractor.extract(result.text());
         return new Proposal(provider.id(), provider.label(), result.model(), result.usage(),
                 result.text(), extraction.ok() ? extraction.yaml() : null,

@@ -5484,3 +5484,78 @@ créer d'abord un bâtiment d'essai (Atelier → « Enregistrer dans la biblioth
 5.  Sur le serveur : `buildings/.retired/<id>_<horodatage>/` contient le `.yml`, le `.schem` et
     `retired.yml` (auteur). Redémarrer : le bâtiment ne revient pas. L'historique de l'emplacement le
     mentionne toujours.
+
+### TC-294 — Lit, lanternes et stabilité après la pose (issue #288, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et panel issus de #288–#292. **Durée** : 15 minutes. Projet d'essai uniquement,
+emplacement libre, aucun bâtiment existant remplacé. **Gratuit** si le plan est saisi à la main.
+
+1.  Atelier → nouveau projet « Essai stabilité » ; dans « Détails techniques », coller un plan qui
+    contient `op: bed` (`from` le pied, `direction: east`, `block: minecraft:pink_bed`), une
+    `op: light` sous le plafond **écrite avant le toit**, et une lanterne `light` en plein air à
+    2 blocs sous le plafond. Vérifier : le serveur répare (chaîne `minecraft:iron_chain`), la version
+    « Réparé par le moteur » liste « Lanternes flottantes suspendues à une chaîne ».
+2.  Écrire volontairement `op: box` avec `block: minecraft:white_bed` : refus « un lit occupe DEUX
+    cellules … op: bed », rien n'est écrit.
+3.  Enregistrer la version conforme, la poser **avec une rotation de 90°** puis, sur un autre
+    emplacement, **180°**.
+4.  En jeu, sur chaque pose : le lit est rose, entier, la tête du côté annoncé ; s'y coucher la nuit
+    fonctionne. Les lanternes sont suspendues (ou posées), aucune ne tombe.
+5.  Provoquer des mises à jour physiques : casser puis replacer un bloc voisin de chaque lanterne et
+    du lit, poser de l'eau à côté, attendre 2 minutes : rien ne se détache ni ne se ramasse.
+6.  Retirer les bâtiments d'essai (terrain restauré).
+
+### TC-295 — Maison de Lily : façades, entrée praticable et enregistrement (issues #288–#292, PENDING MANUAL VALIDATION — appels facturés)
+
+**Prérequis** : JAR et panel issus de #288–#292. **Durée** : 20 minutes. Projet **Maison de Lily**
+existant (lecture), ou une copie. **Coût** : celui de la conception automatique choisie (enveloppe
+affichée avant consentement).
+
+1.  Ouvrir le projet : la description (5 793 caractères) est entière ; le compteur dit le même nombre.
+2.  Sur la version `aa8ff980` : « Vérifier » rend `PLAN_INVALID` avec les **deux** blocs inexistants
+    (`minecraft:bed`, `minecraft:stained_glass_pane`), leurs instructions et les identifiants réels ;
+    aucun « conforme ».
+3.  « Améliorer avec l'IA » sans commentaire : la nouvelle version emploie des blocs colorés réels ;
+    la porte et les fenêtres sont **dans les murs** de la maison (aperçu 3D), plus dans le jardin.
+4.  Si le seuil dépasse le terrain : la version réparée ajoute une marche devant la porte (ou enterre
+    la fondation) ; l'aperçu le montre.
+5.  Enregistrer : succès. Si un échec survient, il s'affiche **dans la carte** avec son motif complet
+    et l'action proposée (corriger / réessayer), pas seulement dans l'historique.
+6.  Poser sur un emplacement d'essai, entrer **sans sauter** depuis le terrain, ouvrir la porte, se
+    tenir dans la pièce ; les fenêtres donnent sur l'intérieur.
+
+### TC-296 — Reprendre, retirer, réenregistrer, republier (issue #290, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et panel issus de #288–#292. **Durée** : 15 minutes. Bâtiment d'essai uniquement.
+
+1.  Projet d'essai enregistré : la carte dit « Enregistré dans la bibliothèque — version 1 » et
+    propose « Reprendre la conception ». Reprendre : nouvelle version « Reprise de la version
+    enregistrée », vérification lancée d'elle-même, aucun appel IA, Améliorer et Conception
+    automatique disponibles.
+2.  Modifier la version (texte du plan), vérifier, puis « Publier une nouvelle version » : sans cocher,
+    refus ; en cochant, succès, version 2. Sur le serveur, `buildings/.history/<id>/v1_<horodatage>/`
+    contient l'ancienne définition et l'ancien schematic. Un exemplaire déjà posé n'a pas changé.
+3.  Deux onglets sur la même version : publier dans l'un, puis dans l'autre → `VERSION_CONFLICT`,
+    motif affiché, rien d'écrit.
+4.  Bibliothèque → le bâtiment nomme son projet **et** son identifiant ; « Reprendre la conception »
+    ouvre l'Atelier sur une nouvelle version.
+5.  Retirer le bâtiment (non posé) de la bibliothèque. L'Atelier affiche « Retiré de la
+    bibliothèque », **sans** « Choisir un emplacement » ; la liste des projets aussi. Redémarrer le
+    panel : même état.
+6.  « Réenregistrer dans la bibliothèque » : succès, le bâtiment revient (Rafraîchir).
+
+### TC-297 — Conception détaillée (issue #289, PENDING MANUAL VALIDATION — appels facturés, validation esthétique par le propriétaire)
+
+**Prérequis** : panel issu de #288–#292. **Durée** : 20 minutes. **Coût** : 1 appel pour la conception,
+plus la conception automatique choisie.
+
+1.  Projet avec une description riche (Maison de Lily) → « Conception détaillée » → « Rédiger la
+    conception avec l'IA » : un appel ; le texte suit les huit titres, cite chaque exigence du brief
+    dans « Correspondance avec le brief », et dit ce qui ne peut pas être posé (tableaux…).
+2.  Modifier la conception à la main, enregistrer : version 2 ; dans un second onglet resté sur la
+    version 1, enregistrer : refus, le texte saisi est réaffiché.
+3.  « Créer un plan avec l'IA » : le plan reflète la conception (pièces, lit, four, tapis, fleurs,
+    vitraux, porche) ; la légende de l'aperçu liste tous les matériaux avec leur nombre.
+4.  Conception automatique « Soigné » sur un projet sans conception : le journal commence par
+    « CONCEPTION DÉTAILLÉE », la critique note « OMISSIONS ET ÉCARTS ».
+5.  Jugement esthétique et fidélité au brief : par le propriétaire, en jeu — l'audit ne les mesure pas.

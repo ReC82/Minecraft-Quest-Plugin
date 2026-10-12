@@ -2116,7 +2116,8 @@ public final class AgentPages {
         var sites = buildingSiteDirectory(agentId);
         for (var building : library.buildings()) {
             sb.append(buildingDefinitionItem(building, index++, canPlace,
-                    canRetire ? retireZone(session, agentId, building, sites) : ""));
+                    workshopZone(session, agentId, building)
+                            + (canRetire ? retireZone(session, agentId, building, sites) : "")));
         }
         sb.append("</div>");
         sb.append("<div class=\"card\"><div class=\"card-body\">");
@@ -2140,6 +2141,40 @@ public final class AgentPages {
      * c'est refusé quand ça l'est. Le retrait ne concerne QUE le catalogue — ni un emplacement, ni une
      * version d'Atelier — et le texte le distingue explicitement.
      */
+    /**
+     * Le projet de l'Atelier qui produit ce bâtiment, et « Reprendre la conception » (#290). Le lien
+     * est l'identifiant de bibliothèque — affiché, pour qu'aucune homonymie entre un nom de projet,
+     * un nom d'emplacement et un nom de bâtiment ne prête à confusion.
+     */
+    private String workshopZone(Session session, String agentId,
+                                com.lodygames.rpgquest.panel.building.BuildingDefinitionView building) {
+        if (workshopProjects == null || building.bundled()) {
+            return "";
+        }
+        var projects = workshopProjects.list(agentId).stream()
+                .filter(p -> !p.archived() && p.buildingId().equals(building.id())).toList();
+        StringBuilder sb = new StringBuilder("<div class=\"field-help\">");
+        if (projects.isEmpty()) {
+            return sb.append("Aucun projet de l'Atelier ne produit <code class=\"tid\">")
+                    .append(Http.esc(building.id())).append("</code>.</div>").toString();
+        }
+        for (var p : projects) {
+            sb.append("<p>Produit par le projet « <a href=\"").append(WorkshopPages.BASE).append("/project?id=")
+                    .append(Http.esc(p.id())).append("\">").append(Http.esc(p.name())).append("</a> » de l'Atelier "
+                            + "(identifiant <code class=\"tid\">").append(Http.esc(p.buildingId())).append("</code>).</p>");
+            if (perms.can(session.effective(), Permission.BUILDING_WRITE)) {
+                sb.append("<form method=\"post\" action=\"").append(WorkshopPages.BASE)
+                        .append("/project\" class=\"inline\"><input type=\"hidden\" name=\"_csrf\" value=\"")
+                        .append(Http.esc(session.csrfToken())).append("\"><input type=\"hidden\" name=\"_action\" "
+                                + "value=\"resume\"><input type=\"hidden\" name=\"id\" value=\"")
+                        .append(Http.esc(p.id())).append("\"><button class=\"btn btn-sm btn-outline-primary\" "
+                                + "type=\"submit\">").append(Icons.icon("edit"))
+                        .append("Reprendre la conception</button></form>");
+            }
+        }
+        return sb.append("</div>").toString();
+    }
+
     private String retireZone(Session session, String agentId,
                               com.lodygames.rpgquest.panel.building.BuildingDefinitionView building,
                               com.lodygames.rpgquest.panel.building.BuildingSiteDirectory sites) {
@@ -2150,7 +2185,8 @@ public final class AgentPages {
                 .map(p -> p.siteId()).toList();
         List<String> projects = workshopProjects == null ? List.of()
                 : workshopProjects.list(agentId).stream()
-                        .filter(p -> p.buildingId().equals(building.id())).map(p -> p.name()).toList();
+                        .filter(p -> !p.archived() && p.buildingId().equals(building.id()))
+                        .map(p -> "« " + p.name() + " » (" + p.buildingId() + ")").toList();
         if (building.bundled()) {
             sb.append("<p class=\"field-help\">Exemple fourni avec le plugin : il est recréé à chaque "
                     + "démarrage du serveur, il ne peut donc pas être retiré.</p></div>");
@@ -2174,7 +2210,8 @@ public final class AgentPages {
         if (!projects.isEmpty()) {
             sb.append("<li>Projet(s) de l'Atelier qui produisent ce bâtiment : ")
                     .append(Http.esc(String.join(", ", projects)))
-                    .append(" — ils sont conservés ; « Enregistrer dans la bibliothèque » le recréerait.</li>");
+                    .append(" — ils sont conservés ; « Réenregistrer dans la bibliothèque » depuis le projet le "
+                            + "recréera, et « Reprendre la conception » reste possible.</li>");
         }
         sb.append("</ul>");
         sb.append(formStart(session, agentId, "building.definition.retire", "/buildings/library", ""));
@@ -3052,10 +3089,11 @@ public final class AgentPages {
         StringBuilder sb = new StringBuilder("<div class=\"alert alert-info npc-alert\">")
                 .append(Icons.icon("info")).append("<div>");
         if (project.isPresent()) {
-            sb.append("La description du bâtiment rédigée ici a été reprise dans le projet « <a href=\"")
+            sb.append("La description rédigée autrefois sur cet EMPLACEMENT a été reprise dans le projet « <a href=\"")
                     .append(WorkshopPages.BASE).append("/project?id=").append(Http.esc(project.get().id()))
                     .append("\">").append(Http.esc(project.get().name())).append("</a> » de l'Atelier "
-                            + "de création. C'est là qu'elle se modifie désormais.");
+                            + "de création. C'est là qu'elle se modifie désormais. Cette mention concerne la "
+                            + "description de l'emplacement, pas le bâtiment qui y est posé.");
         } else {
             sb.append("Avant l'Atelier de création, le bâtiment à construire se décrivait ici. Cette "
                     + "description est conservée telle quelle ; pour en faire un bâtiment, reprenez-la "

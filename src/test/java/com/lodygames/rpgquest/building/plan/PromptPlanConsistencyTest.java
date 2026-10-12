@@ -46,7 +46,9 @@ class PromptPlanConsistencyTest {
                 "source du Control Panel absent : test de cohérence non applicable ici");
         String source = Files.readString(PROMPT_SOURCE);
         int start = source.indexOf("return \"\"\"", source.indexOf("static String systemPrompt()"));
-        int end = source.indexOf("\"\"\";", start);
+        // Le texte s'arrête au """ fermant, suivi de « ; » ou d'une concaténation (#289 : le tableau
+        // des capacités du moteur est ajouté au prompt système).
+        int end = source.indexOf("\"\"\"", source.indexOf('\n', start) + 1);
         assertTrue(start > 0 && end > start, "texte du prompt système introuvable");
         prompt = dedent(source.substring(source.indexOf('\n', start) + 1, end));
     }

@@ -899,6 +899,12 @@ public final class BukkitAgentActions implements AgentActions {
     @Override
     public CompletableFuture<BuildingGenerationView> buildingGenerate(String planYaml,
                                                                       boolean replace) {
+        return buildingGenerate(planYaml, replace, 0);
+    }
+
+    @Override
+    public CompletableFuture<BuildingGenerationView> buildingGenerate(String planYaml, boolean replace,
+                                                                      int expectedVersion) {
         if (buildingGenerator == null) {
             return done(new BuildingGenerationView(false, "UNAVAILABLE",
                     "La génération de bâtiments n'est pas disponible sur ce serveur.",
@@ -907,7 +913,7 @@ public final class BukkitAgentActions implements AgentActions {
         // Écritures de fichiers : hors du thread principal. Le rechargement de la bibliothèque
         // remplace une référence volatile, il n'a pas besoin du thread principal non plus.
         return CompletableFuture.supplyAsync(() -> {
-            var r = buildingGenerator.generate(planYaml, replace);
+            var r = buildingGenerator.generate(planYaml, replace, expectedVersion);
             return new BuildingGenerationView(r.ok(), r.code(), r.message(), r.buildingId(),
                     r.schematic(), r.sizeX(), r.sizeY(), r.sizeZ(), r.blocks(), r.version(),
                     r.replaced(), r.effects());

@@ -15,6 +15,7 @@ import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
+import com.lodygames.rpgquest.dialogue.model.HasInventorySpaceCondition;
 import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
@@ -249,6 +250,15 @@ final class DialogueDefinitionParser {
                 yield new VariableEqualsCondition(key, value == null ? "" : value);
             }
             case HAS_PENDING_DELIVERY -> new PendingDeliveryCondition(section.getString("npc"));
+            case HAS_INVENTORY_SPACE -> {
+                int slots = section.getInt("slots", 1);
+                if (slots < 1 || slots > HasInventorySpaceCondition.MAX_SLOTS) {
+                    errors.add(context + ": « slots » doit être entre 1 et "
+                            + HasInventorySpaceCondition.MAX_SLOTS + ".");
+                    yield null;
+                }
+                yield new HasInventorySpaceCondition(slots);
+            }
             case NO_MAIN_CLAIM -> new NoMainClaimCondition();
             case HAS_MAIN_CLAIM -> new HasMainClaimCondition();
             case LACKS_CUSTOM_ITEM -> {

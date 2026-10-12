@@ -2783,6 +2783,9 @@ public final class BukkitAgentActions implements AgentActions {
                     "VARIABLE_EQUALS " + x.key() + " = " + x.value(), false);
             case LacksCustomItemCondition x -> new DialogueCatalog.Condition("LACKS_CUSTOM_ITEM",
                     x.itemId().toString(), null, "LACKS_CUSTOM_ITEM " + x.itemId(), false);
+            case com.lodygames.rpgquest.dialogue.model.HasInventorySpaceCondition x -> new DialogueCatalog.Condition(
+                    "HAS_INVENTORY_SPACE", null, Integer.toString(x.slots()),
+                    "HAS_INVENTORY_SPACE " + x.slots(), false);
             case PendingDeliveryCondition x -> new DialogueCatalog.Condition("HAS_PENDING_DELIVERY", x.npcId(), null,
                     x.npcId() == null ? "HAS_PENDING_DELIVERY (PNJ du dialogue)" : "HAS_PENDING_DELIVERY " + x.npcId(),
                     false);

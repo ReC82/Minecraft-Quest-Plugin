@@ -9,5 +9,6 @@ public enum ConditionType {
     HAS_MAIN_CLAIM,
     LACKS_CUSTOM_ITEM,
     /** Il reste des objets à remettre à ce PNJ (issue #123). */
-    HAS_PENDING_DELIVERY
+    HAS_PENDING_DELIVERY,
+    HAS_INVENTORY_SPACE
 }

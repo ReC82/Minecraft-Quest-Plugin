@@ -2789,7 +2789,11 @@ identifié par PDC via `item.YamlCustomItemRegistry#identify`, jamais par
 matériau seul contrairement à `HAS_ITEM` — vrai si le joueur ne possède
 aucun exemplaire ; utilisé par Jo pour ne jamais permettre de farmer
 l'Acte réutilisé comme visualiseur ou la Pierre de retour, voir
-[docs/CLAIMS.md](CLAIMS.md)).
+[docs/CLAIMS.md](CLAIMS.md)), `HAS_INVENTORY_SPACE` (`slots` facultatif, 1 à 36,
+1 par défaut — vrai si l'inventaire principal a au moins ce nombre
+d'emplacements vides ; issue #85 : Jo ne propose la remise de l'Acte que s'il
+peut réellement le recevoir, et la même condition niée mène au nœud « ton
+inventaire est plein », jamais à un objet jeté au sol).
 `negate: true` sur **n'importe quelle** condition inverse son verdict
 (`dialogue.model.NegatedCondition`, double négation refusée au chargement) —
 sert notamment à exprimer « le déblocage n'a *pas* eu lieu » :
@@ -2797,7 +2801,13 @@ sert notamment à exprimer « le déblocage n'a *pas* eu lieu » :
 tant que la variable n'est pas `"true"` (valeur absente incluse), utilisé
 par `dialogues/jo.yml` pour l'état « claim non débloqué ».
 Toutes les conditions d'un choix doivent être vraies (ET). Revérifiées au
-clic, pas seulement à l'affichage.
+clic, pas seulement à l'affichage. **Un seul choix à la fois par joueur**
+(issue #72) : la revérification est asynchrone, et un second clic arrivé
+avant la fin du premier est ignoré ; un clic dont le nœud a changé entre-temps
+l'est aussi. C'est ce qui empêche un double clic sur « Réclamer mon acte » de
+remettre deux actes. Jo ne remet l'Acte que s'il n'est pas déjà dans
+l'inventaire (sinon nœud `deed_already_held`) et s'il y a une place libre
+(sinon `deed_inventory_full`).
 
 **Actions** (`choices[].actions[].type`) : `START_QUEST`, `ADVANCE_QUEST`,
 `TURN_IN_QUEST` (champ `quest`) ; `GIVE_ITEM`/`TAKE_ITEM` (`material`,
@@ -3097,6 +3107,7 @@ côté moteur fait échouer la suite jusqu'à ce que quelqu'un décide quoi en f
 | `OPEN_DIALOGUE` (`dialogue`), `OPEN_MERCHANT` (`merchant`) | `NO_MAIN_CLAIM`, `HAS_MAIN_CLAIM` |
 | `GIVE_STARTER_KIT`, `CLOSE` (aucun champ) | `LACKS_CUSTOM_ITEM` (`item`) |
 | `DELIVER_QUEST_ITEMS` (`npc` facultatif) | `HAS_PENDING_DELIVERY` (`npc` facultatif) |
+| | `HAS_INVENTORY_SPACE` (`slots` facultatif, 1–36) |
 
 `negate: true` inverse n'importe quelle condition : c'est le **seul** champ commun à toutes, et il
 n'a aucun sens sur une action. `state` accepte les **six** états de `QuestState` : `NOT_STARTED`,

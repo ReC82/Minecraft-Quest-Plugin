@@ -277,6 +277,7 @@ class DialogueVocabularyValidationTest {
                 case "quest" -> "rpgquest:test";
                 case "material" -> "BREAD";
                 case "amount" -> "2";
+                case "slots" -> "1";
                 case "state" -> "ACTIVE";
                 case "command" -> "spawn";
                 case "permission" -> "rpgquest.test";

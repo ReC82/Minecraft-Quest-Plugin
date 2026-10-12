@@ -13,6 +13,7 @@ import com.lodygames.rpgquest.dialogue.model.GiveStarterKitAction;
 import com.lodygames.rpgquest.dialogue.model.HasItemCondition;
 import com.lodygames.rpgquest.dialogue.model.HasMainClaimCondition;
 import com.lodygames.rpgquest.dialogue.model.HasPermissionCondition;
+import com.lodygames.rpgquest.dialogue.model.HasInventorySpaceCondition;
 import com.lodygames.rpgquest.dialogue.model.LacksCustomItemCondition;
 import com.lodygames.rpgquest.dialogue.model.NegatedCondition;
 import com.lodygames.rpgquest.dialogue.model.NoMainClaimCondition;
@@ -216,6 +217,12 @@ public final class DialogueDefinitionWriter {
                 line(sb, "type: HAS_PENDING_DELIVERY");
                 if (c.npcId() != null) {
                     line(sb, "npc: " + quote(c.npcId()));
+                }
+            }
+            case HasInventorySpaceCondition c -> {
+                line(sb, "type: HAS_INVENTORY_SPACE");
+                if (c.slots() != 1) {
+                    line(sb, "slots: " + c.slots());
                 }
             }
             case NegatedCondition ignored -> throw new IllegalStateException("négation déjà dépliée");

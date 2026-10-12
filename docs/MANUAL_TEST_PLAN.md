@@ -5613,3 +5613,20 @@ plus la conception automatique choisie.
 7.  Cas réel du propriétaire : Maison de Lily retouchée → capturer sous un nouvel identifiant, la
     maison posée restant intacte.
 
+### TC-300 — Jo ne remet qu'un Acte de propriété, jamais au sol (issues #72 / #85, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR de la nuit du 12→13/10/2026 **et** `dialogues/jo.yml` du serveur mis à jour (un
+JAR ne remplace jamais un dialogue existant). Compte de test avec `CLAIM_TIER_1 = true` et **aucun**
+claim. **Durée** : 10 minutes.
+
+1.  Inventaire avec de la place, sans acte → parler à Jo → **Réclamer mon acte**. **Attendu** : un
+    seul acte reçu, nœud « Tiens, voici ton acte de propriété ».
+2.  Reparler aussitôt à Jo → **Réclamer mon acte**. **Attendu** : « Tu as déjà ton acte de propriété
+    dans ton inventaire » ; aucun second acte.
+3.  Jeter l'acte, remplir les 36 cases de l'inventaire → **Réclamer mon acte**. **Attendu** : « Ton
+    inventaire est plein… » ; rien au sol, aucun acte.
+4.  Libérer une case → **Réclamer mon acte**. **Attendu** : acte reçu normalement.
+5.  Sans acte, double-cliquer très vite sur **Réclamer mon acte**. **Attendu** : un seul acte.
+6.  Après la pose du premier claim : « Revoir mes limites » n'apparaît que sans acte en poche et avec
+    une place libre.
+

@@ -494,6 +494,71 @@ class BuildingGeneratorTest {
         assertEquals(2, library.find("hub_library").orElseThrow().version());
     }
 
+    /**
+     * #288–#292 : le parcours complet sur le plan RÉEL de la Maison de Lily, jusqu'au schematic —
+     * matériaux corrigés comme l'IA les corrigerait, réparation du moteur, audit, enregistrement.
+     * L'écriture du .schem par WorldEdit lui-même se vérifie en jeu (TC-295) : sans serveur, son
+     * registre n'existe pas ; ici le moteur simulé reçoit la grille finale.
+     */
+    @Test
+    @DisplayName("Maison de Lily réelle : refusée pour ses blocs, puis réparée, auditée et enregistrée jusqu'au schematic")
+    void lilysRealPlanGoesAllTheWayToASchematic() {
+        String real = VerticalCirculation282Test.fixture("maison_de_lily_aa8ff980.yml");
+        BuildingGenerator.Verdict first = generator.inspect(real, new PlanRepair.Limits(19, 10));
+        assertEquals("PLAN_INVALID", first.code());
+        assertTrue(first.message().contains("minecraft:bed") && first.message().contains("stained_glass_pane"),
+                first.message());
+        assertTrue(gateway.files.isEmpty(), "rien n'est écrit pour un plan refusé");
+
+        String corrected = real.replace("""
+                  - op: box
+                    from: [9, 1, 13]
+                    to: [10, 1, 14]
+                    block: minecraft:bed
+                """, """
+                  - op: bed
+                    from: [9, 1, 13]
+                    direction: south
+                    block: minecraft:pink_bed
+                """).replace("minecraft:stained_glass_pane", "minecraft:pink_stained_glass_pane");
+        BuildingGenerator.Verdict second = generator.inspect(corrected, new PlanRepair.Limits(19, 10));
+        assertTrue(second.repair() != null, "le moteur propose une réparation : " + second.message());
+        // Ses lanternes de y=2, en plein milieu de la pièce, sont trop loin du toit pour une chaîne :
+        // le moteur ne les invente pas ailleurs, le refus reste — c'est la correction de l'IA.
+        assertTrue(second.repair().codes().contains("UNSUPPORTED_BLOCK"), second.repair().codes().toString());
+
+        String lanternsOnTheFloor = corrected
+                .replace("from: [8, 2, 8]\n    to: [10, 3, 10]", "from: [8, 1, 8]\n    to: [10, 1, 10]")
+                .replace("from: [12, 2, 9]\n    to: [13, 2, 10]", "from: [12, 1, 9]\n    to: [13, 1, 10]");
+        assertTrue(!lanternsOnTheFloor.equals(corrected), "les deux lumières ont été descendues");
+        // Son second toit (clear puis gable de y=8) recouvre toute la largeur au-dessus de la pente du
+        // premier : 56 cellules ouvertes sous débord (ENVELOPE_OPEN), que les vitres posées sur la
+        // limite du volume masquaient. Aucune réparation sûre : l'IA le retire.
+        String secondRoof = """
+                  - op: clear
+                    from: [3, 8, 3]
+                    to: [15, 9, 15]
+                  - op: gable
+                    from: [3, 8, 3]
+                    to: [15, 9, 15]
+                    axis: x
+                    fill: minecraft:smooth_sandstone
+                    block: minecraft:dark_oak_stairs
+                """;
+        assertTrue(lanternsOnTheFloor.contains(secondRoof), "le plan réel a bien ce second toit");
+        lanternsOnTheFloor = lanternsOnTheFloor.replace(secondRoof, "");
+        BuildingGenerator.Verdict fourth = generator.inspect(lanternsOnTheFloor, new PlanRepair.Limits(19, 10));
+        assertTrue(fourth.repair() != null && fourth.repair().accepted(), String.valueOf(fourth.repair()));
+        String repaired = fourth.repair().plan();
+        BuildingGenerator.Verdict third = generator.inspect(repaired, new PlanRepair.Limits(19, 10));
+        assertTrue(third.ok(), "la version réparée est conforme : " + third.message());
+
+        BuildingGenerator.Result saved = generator.generate(repaired, false);
+        assertTrue(saved.ok(), saved.message());
+        assertTrue(gateway.files.contains("maison_de_lily.schem"), "le schematic est écrit");
+        assertTrue(library.find("maison_de_lily").isPresent(), "et le bâtiment est dans la bibliothèque");
+    }
+
     private static final class FakeGateway implements SchematicGateway {
         final Set<String> files = new LinkedHashSet<>();
         final java.util.Map<String, String> refuse = new java.util.HashMap<>();

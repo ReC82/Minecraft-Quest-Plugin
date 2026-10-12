@@ -5585,3 +5585,31 @@ plus la conception automatique choisie.
     double gain n'apparaît après reconnexion.
 10. Refus : « Pas maintenant » ne démarre rien. Collision : modifier un fichier `tom_*` dans la
     source puis réimporter → collision à trancher, rien d'écrasé sans décision.
+
+### TC-299 — Capturer une construction posée comme nouveau bâtiment (issue #246, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel et JAR de la nuit du 12→13/10/2026, WorldEdit présent. Un emplacement de test
+**isolé** (pas la Maison de Lily pour ce test). **Durée** : 20 minutes. **Gratuit** (aucun appel IA).
+
+1.  Poser `test_hut_01` sur un emplacement de test. En jeu, ajouter dans la hutte un tapis, un pot de
+    fleurs, une enseigne écrite, un coffre contenant un objet, un cadre et un tableau.
+2.  Joueur à proximité (chunks chargés). `/buildings/sites` → fiche de l'emplacement → section
+    **« Capturer la construction actuelle »**. Saisir l'identifiant `hutte_deco_test`, un nom, une
+    catégorie → **Calculer l'aperçu de la capture**. **Attendu** : bornes = emprise posée,
+    dimensions, volume, ancre locale, façade ; « 1 conteneur(s) capturé(s) VIDE(S), dont 1… » ;
+    « 2 entité(s) NON capturée(s) — 1 × item_frame, 1 × painting ». Aucun bouton de capture tant que
+    l'aperçu n'est pas calculé.
+3.  Cocher la confirmation → **Capturer la construction actuelle**. **Attendu** : message « Construction
+    capturée… » ; aucun bloc modifié en jeu ; le coffre en jeu garde son objet.
+4.  `/buildings` (Bibliothèque) : `hutte_deco_test` apparaît, version 1 ; `test_hut_01` inchangé ;
+    la fiche de l'emplacement source montre toujours `test_hut_01` et le journal porte « Capture vers
+    la bibliothèque ».
+5.  Créer un **autre** emplacement de test, **Poser un bâtiment** → `hutte_deco_test` → aperçu →
+    poser. **Attendu** : tapis, pot, enseigne (texte compris) et coffre (vide) présents, même
+    disposition par rapport à la porte ; cadre et tableau absents (annoncés à l'étape 2).
+6.  Refus : relancer la capture avec le même identifiant → « déjà pris » ; marges +16 vers un
+    bâtiment voisin → refus nommant l'autre emplacement ; double clic sur « Capturer » → une seule
+    capture.
+7.  Cas réel du propriétaire : Maison de Lily retouchée → capturer sous un nouvel identifiant, la
+    maison posée restant intacte.
+

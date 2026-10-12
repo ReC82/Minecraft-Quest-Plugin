@@ -140,6 +140,58 @@ class ActionsCenterTest {
         assertTrue(html.contains("data-notif-badge"), "badge présent");
     }
 
+    // ---- Issue #293 : le badge suit ce que ce compte a lu --------------------------------
+
+    private int badge() throws Exception {
+        Matcher m = Pattern.compile("\"badge\":(\\d+)").matcher(
+                get("/agents/actions.json?agent=" + TestConfig.AGENT_ID).body());
+        assertTrue(m.find());
+        return Integer.parseInt(m.group(1));
+    }
+
+    @Test
+    void openingAFailedNotificationMarksOnlyThatOneRead() throws Exception {
+        start();
+        loginOwner();
+        String first = createAction("&type=npc.list");
+        String second = createAction("&type=quest.list");
+        settleAgent(first, "FAILED", "panne 1");
+        settleAgent(second, "FAILED", "panne 2");
+        assertEquals(2, badge(), "deux échecs non lus");
+
+        get("/actions/" + first);
+
+        assertEquals(1, badge(), "lire une notification ne marque pas l'autre");
+    }
+
+    @Test
+    void markAllReadClearsTheBadgeAndSurvivesALogin() throws Exception {
+        start();
+        loginOwner();
+        settleAgent(createAction("&type=npc.list"), "FAILED", "panne");
+        String token = csrf(get("/home").body());
+        assertTrue(get("/home").body().contains("Tout marquer comme lu"));
+
+        HttpResponse<String> res = post("/notifications/read-all", "_csrf=" + token);
+
+        assertEquals(303, res.statusCode());
+        assertEquals(0, badge());
+        jar.clear();
+        loginOwner();
+        assertEquals(0, badge(), "conservé après reconnexion");
+        String failedAgain = createAction("&type=quest.list");
+        settleAgent(failedAgain, "FAILED", "nouvelle panne");
+        assertEquals(1, badge(), "une nouvelle notification compte");
+    }
+
+    @Test
+    void markAllReadRequiresTheCsrfToken() throws Exception {
+        start();
+        loginOwner();
+
+        assertEquals(403, post("/notifications/read-all", "_csrf=faux").statusCode());
+    }
+
     // ---- page /actions --------------------------------------------------------------
 
     @Test

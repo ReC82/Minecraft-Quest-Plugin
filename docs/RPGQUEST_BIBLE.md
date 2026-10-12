@@ -4639,6 +4639,7 @@ Un marchand n'a **aucun lien direct à une entité PNJ** — il ne s'ouvre que v
 | Commande | Type | Permission | Effet |
 |---|---|---|---|
 | `/profile` | Joueur | `rpgquest.progression` | Une ligne par piste (`Global, Combat, Minage, Agriculture, Pêche, Exploration`) — niveau uniquement. |
+| `/profile web [public\|prive]` | Joueur | `rpgquest.progression` | Visibilité sur le portail web (#55) : sans argument, affiche le réglage ; `prive` retire le joueur de tous les classements et profils publics dès l'export suivant (variable `WEB_PROFILE_HIDDEN`, persistante par UUID) ; `public` annule. Voir [WEB_PORTAL.md](WEB_PORTAL.md). |
 | `/skills` | Joueur | `rpgquest.progression` | Détail par compétence : niveau + XP dans le niveau courant/XP requise pour le suivant (ou « niveau maximal »). |
 | `/skills admin grant\|set <joueur> <compétence> <montant>` | Admin | `rpgquest.admin` | `grant` passe par le pipeline normal (dédup + mirroir `GLOBAL`) ; `set` fixe l'XP totale directement, sans dédup ni mirroir. |
 

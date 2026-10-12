@@ -45,6 +45,8 @@ public final class ServerState {
         root.put("leaderboards", Map.of());
         root.put("catalog", List.of());
         root.put("announcements", List.of());
+        root.put("profiles", List.of());
+        root.put("statistics", Map.of());
         return root;
     }
 }

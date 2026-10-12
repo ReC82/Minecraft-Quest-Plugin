@@ -645,9 +645,24 @@ public final class BuildingPlanExpander {
                             || (y - box.minY()) % spacing != 0) {
                         continue;
                     }
-                    String above = cells.get(key(x, y + 1, z));
+                    // #301 : une source de lumière ne PERCE jamais un bloc plein. Visée dans un
+                    // plafond (Maison de Lily : « light » à y=5, la couche du plancher de l'étage),
+                    // elle remplaçait un bloc du plafond — lanterne encastrée dans un trou, puis
+                    // suspendue par une longue chaîne à travers les combles jusqu'au toit. Elle se
+                    // pose désormais juste DESSOUS, suspendue au plafond resté fermé ; sans case
+                    // libre dessous, rien n'est posé.
+                    int ly = y;
+                    String target = cells.get(key(x, y, z));
+                    if (target != null && !BlockSemantics.passable(target)) {
+                        String below = y > 0 ? cells.get(key(x, y - 1, z)) : "";
+                        if (y == 0 || (below != null && !BlockSemantics.passable(below))) {
+                            continue;
+                        }
+                        ly = y - 1;
+                    }
+                    String above = cells.get(key(x, ly + 1, z));
                     boolean hanging = above != null && !BlockSemantics.passable(above);
-                    cells.put(key(x, y, z),
+                    cells.put(key(x, ly, z),
                             lantern ? BlockStates.lantern(material, hanging) : material);
                 }
             }

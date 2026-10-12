@@ -235,4 +235,80 @@ class HttpServerBootstrapTest {
         assertEquals(200, response.statusCode());
         assertTrue(response.body().contains("hors-ligne"));
     }
+
+    // ---- Portail V1 (#54 / #55 / #56) -----------------------------------------------------------
+
+    private void writeV2Snapshot() throws IOException {
+        writeSnapshot(Json.write(Map.of(
+                "schemaVersion", 2,
+                "generatedAt", Instant.now().toString(),
+                "server", Map.of("online", true, "playerCount", 1, "maxPlayers", 20),
+                "players", List.of(),
+                "leaderboards", Map.of("GLOBAL", List.of(Map.of("name", "Alice", "totalXp", 500))),
+                "catalog", List.of(),
+                "announcements", List.of(),
+                "statistics", Map.of("scopes", List.of("lifetime"),
+                        "lifetime", Map.of("QUESTS_COMPLETED", List.of(Map.of("name", "Alice", "value", 2)))),
+                "profiles", List.of(Map.of("name", "Alice", "skills", Map.of("GLOBAL", 500), "questsCompleted", 2)))));
+    }
+
+    @Test
+    void aPublicProfileShowsOnlyWhatTheSnapshotPublishes() throws Exception {
+        writeV2Snapshot();
+        startServer(120, 60);
+
+        HttpResponse<String> profile = get("/joueurs/alice", null);
+        HttpResponse<String> unknown = get("/joueurs/Inconnu", null);
+        HttpResponse<String> list = get("/joueurs", null);
+
+        assertEquals(200, profile.statusCode());
+        assertTrue(profile.body().contains("Quêtes terminées"));
+        assertTrue(profile.body().contains("500"));
+        assertEquals(404, unknown.statusCode(), "inconnu ou masqué : même réponse");
+        assertTrue(unknown.body().contains("Aucun profil public"));
+        assertTrue(list.body().contains("href=\"/joueurs/Alice\""));
+    }
+
+    @Test
+    void leaderboardsPreferLifetimeStatisticsAndLinkToProfiles() throws Exception {
+        writeV2Snapshot();
+        startServer(120, 60);
+
+        HttpResponse<String> page = get("/leaderboards", null);
+
+        assertTrue(page.body().contains("Quêtes terminées"));
+        assertTrue(page.body().contains("href=\"/joueurs/Alice\""));
+    }
+
+    @Test
+    void thePrivacyPageExplainsHowToHideAndThatThereAreNoAccounts() throws Exception {
+        startServer(120, 60);
+
+        HttpResponse<String> page = get("/confidentialite", null);
+
+        assertEquals(200, page.statusCode());
+        assertTrue(page.body().contains("/profile web prive"));
+        assertTrue(page.body().contains("UUID"));
+    }
+
+    @Test
+    void theProfilesApiRequiresTheTokenAndDegradesWithoutData() throws Exception {
+        startServer(120, 60);
+
+        assertEquals(401, get("/api/profiles", null).statusCode());
+        HttpResponse<String> response = get("/api/profiles", TOKEN);
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"profiles\":[]"), response.body());
+    }
+
+    @Test
+    void anInjectedNameIsEscapedNeverReflected() throws Exception {
+        writeV2Snapshot();
+        startServer(120, 60);
+
+        HttpResponse<String> page = get("/joueurs/%3Cscript%3E", null);
+
+        assertEquals(404, page.statusCode());
+        assertTrue(!page.body().contains("<script>"));
+    }
 }

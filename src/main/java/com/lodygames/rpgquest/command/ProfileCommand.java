@@ -26,8 +26,15 @@ public final class ProfileCommand implements CommandExecutor {
 
     private final ProgressionService progression;
 
+    private com.lodygames.rpgquest.database.PlayerVariableRepository variables;
+
     public ProfileCommand(ProgressionService progression) {
         this.progression = progression;
+    }
+
+    /** Issue #55 — sans elle, « /profile web » répond que le réglage est indisponible. */
+    public void setVariables(com.lodygames.rpgquest.database.PlayerVariableRepository variables) {
+        this.variables = variables;
     }
 
     @Override
@@ -41,6 +48,10 @@ public final class ProfileCommand implements CommandExecutor {
             return true;
         }
 
+        if (args.length >= 1 && args[0].equalsIgnoreCase("web")) {
+            return web(player, args.length >= 2 ? args[1] : "");
+        }
+
         player.sendMessage(MM.deserialize("<gold>=== Profil RPG de <name> ===</gold>",
                 Placeholder.unparsed("name", player.getName())));
         for (SkillType skill : SkillType.values()) {
@@ -48,6 +59,38 @@ public final class ProfileCommand implements CommandExecutor {
             player.sendMessage(MM.deserialize(
                     "<white><skill></white> <gray>: niveau</gray> <yellow><level></yellow>",
                     Placeholder.unparsed("skill", label(skill)), Placeholder.unparsed("level", String.valueOf(level))));
+        }
+        return true;
+    }
+
+    /**
+     * {@code /profile web [public|prive]} (issue #55) : afficher ou choisir la visibilité du profil
+     * sur le portail web. Masqué, le joueur n'apparaît dans aucun classement ni profil public dès
+     * le prochain export.
+     */
+    private boolean web(Player player, String choice) {
+        if (variables == null) {
+            player.sendMessage(MM.deserialize("<red>Ce réglage n'est pas disponible sur ce serveur.</red>"));
+            return true;
+        }
+        String key = com.lodygames.rpgquest.player.PublicProfilePolicy.HIDDEN_KEY;
+        switch (choice.toLowerCase(java.util.Locale.ROOT)) {
+            case "prive", "privé", "private" -> variables.set(player.getUniqueId(), key,
+                            com.lodygames.rpgquest.player.PublicProfilePolicy.HIDDEN_VALUE)
+                    .thenRun(() -> player.sendMessage(MM.deserialize("<green>Profil web masqué.</green> <gray>Tu "
+                            + "n'apparaîtras plus dans les classements ni les profils publics du portail, dès sa "
+                            + "prochaine mise à jour.</gray>")));
+            case "public" -> variables.set(player.getUniqueId(), key, "false")
+                    .thenRun(() -> player.sendMessage(MM.deserialize("<green>Profil web public.</green> <gray>Ton "
+                            + "pseudo et tes classements peuvent apparaître sur le portail.</gray>")));
+            default -> variables.get(player.getUniqueId(), key).thenAccept(value -> {
+                boolean hidden = value.map(com.lodygames.rpgquest.player.PublicProfilePolicy.HIDDEN_VALUE::equals)
+                        .orElse(false);
+                player.sendMessage(MM.deserialize(hidden
+                        ? "<gray>Ton profil web est</gray> <yellow>masqué</yellow><gray>. « /profile web public » pour le montrer.</gray>"
+                        : "<gray>Ton profil web est</gray> <yellow>public</yellow> <gray>(pseudo, XP des pistes, quêtes terminées). "
+                                + "« /profile web prive » pour le masquer.</gray>"));
+            });
         }
         return true;
     }

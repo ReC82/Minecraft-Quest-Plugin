@@ -119,13 +119,18 @@ numérique, piste de classement inconnue...) renvoie `400`.
 | `GET /api/leaderboards[?skill=COMBAT&limit=N]` | classements, un ou toutes les pistes |
 | `GET /api/catalog` | catalogue public d'objets (id, nom en texte brut, rareté) |
 | `GET /api/announcements` | actualités/annonces configurées |
+| `GET /api/profiles` | profils publics limités et `statistics` par portée (instantané v2, #54/#56 — voir [WEB_PORTAL.md](WEB_PORTAL.md)) |
 
 Toute route inconnue sous `/api/` renvoie `404` (toujours après vérification
 du jeton).
 
 ## Site public minimal (`/`, pas d'authentification)
 
-`/` (accueil + annonces), `/status`, `/leaderboards`, `/wiki` (catalogue).
+`/` (accueil + annonces), `/status`, `/leaderboards`, `/joueurs` et
+`/joueurs/<pseudo>` (profils publics limités, #56), `/wiki` (catalogue),
+`/confidentialite` (#55). Avec un instantané v2, `/leaderboards` affiche
+les statistiques « depuis toujours » (XP par piste **et** quêtes terminées)
+et renvoie vers les profils.
 Pages HTML strictement en lecture (aucune donnée envoyée par le
 visiteur n'est jamais persistée), échappement HTML systématique des
 données du snapshot (`com.lodygames.rpgquest.webapi.site.Html`). Ni paiement, ni

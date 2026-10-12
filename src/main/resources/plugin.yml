@@ -65,8 +65,8 @@ commands:
     description: Claims de terrain protégés entre joueurs — voir docs/CLAIMS.md.
     usage: /<command> wand|create <id>|delete|info|trust <joueur>|untrust <joueur>|list|flag redstone <true|false>
   profile:
-    description: Résumé de tes niveaux RPG (progression) — voir docs/PROGRESSION.md.
-    usage: /<command>
+    description: Résumé de tes niveaux RPG (progression) ; « web » règle la visibilité sur le portail — voir docs/WEB_PORTAL.md.
+    usage: /<command> [web [public|prive]]
   skills:
     description: Détail de tes compétences RPG et outils d'administration de test — voir docs/PROGRESSION.md.
     usage: /<command> [admin <grant|set> <joueur> <compétence> <montant>]

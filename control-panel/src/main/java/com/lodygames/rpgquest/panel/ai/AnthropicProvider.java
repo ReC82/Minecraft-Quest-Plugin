@@ -66,7 +66,18 @@ public final class AnthropicProvider extends HttpAiProvider {
     protected String body(Request request, AiProviderSettings settings) {
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("role", "user");
-        message.put("content", request.userPrompt());
+        // #283 : blocs « image » en base64 avant le texte, comme l'API Messages le recommande.
+        if (request.images().isEmpty()) {
+            message.put("content", request.userPrompt());
+        } else {
+            List<Object> blocks = new java.util.ArrayList<>();
+            for (Image image : request.images()) {
+                blocks.add(Map.of("type", "image", "source", Map.of("type", "base64",
+                        "media_type", image.mime(), "data", image.base64())));
+            }
+            blocks.add(Map.of("type", "text", "text", request.userPrompt()));
+            message.put("content", blocks);
+        }
 
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("model", model(settings));

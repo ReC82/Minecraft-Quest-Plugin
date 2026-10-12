@@ -39,7 +39,42 @@ public interface AiProvider {
      * {@code userPrompt} la demande de l'administrateur : les fournisseurs qui distinguent les deux
      * rôles le font, les autres les concatènent.
      */
-    record Request(String systemPrompt, String userPrompt, int maxOutputTokens, Duration timeout) {
+    record Request(String systemPrompt, String userPrompt, int maxOutputTokens, Duration timeout,
+                   java.util.List<Image> images) {
+
+        public Request {
+            images = java.util.List.copyOf(images == null ? java.util.List.of() : images);
+        }
+
+        /** Requête texte seule — la forme de toutes les demandes antérieures à #283. */
+        public Request(String systemPrompt, String userPrompt, int maxOutputTokens, Duration timeout) {
+            this(systemPrompt, userPrompt, maxOutputTokens, timeout, java.util.List.of());
+        }
+    }
+
+    /**
+     * Une image jointe à la demande (issue #283) : ses <strong>pixels</strong>, pas une adresse.
+     *
+     * <p>Envoyer une URL du panel ne donnerait rien au modèle — elle n'est pas joignable depuis
+     * le fournisseur — et envoyer une description textuelle n'est pas « montrer l'image ». Chaque
+     * fournisseur reçoit donc les octets, encodés en base64 dans le format que son API documente.</p>
+     *
+     * @param mime type détecté sur les octets eux-mêmes (jamais sur le nom ni sur l'en-tête HTTP)
+     */
+    record Image(String mime, byte[] data) {
+
+        public Image {
+            data = data == null ? new byte[0] : data.clone();
+        }
+
+        @Override
+        public byte[] data() {
+            return data.clone();
+        }
+
+        public String base64() {
+            return java.util.Base64.getEncoder().encodeToString(data);
+        }
     }
 
     /**

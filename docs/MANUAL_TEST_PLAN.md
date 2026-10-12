@@ -5455,3 +5455,16 @@ confirmer pendant ce test.
 4.  Noter : nombre d'appels, jetons, coût réel indiqué par le tableau de bord OpenAI, durée, et une
     appréciation esthétique (capture). Ne pas enregistrer dans la bibliothèque sans décision du
     propriétaire.
+
+### TC-292 — Images de référence et nouvelle conception (issue #283, PENDING MANUAL VALIDATION — 1 appel facturé)
+
+**Prérequis** : panel issu de #283. **Durée** : 5 minutes.
+
+1.  Projet de test → « Images de référence » → ajouter une photo de bibliothèque médiévale (JPEG,
+    < 4 Mio) : la vignette apparaît, le nom et la taille sont affichés.
+2.  Renommer un fichier texte en `.png` et l'envoyer : refus « n'est pas une image », rien n'est ajouté.
+3.  Ouvrir l'adresse de la vignette dans un autre navigateur non connecté : renvoi vers la connexion.
+4.  « Recommencer depuis ma description » sans cocher : refus gratuit. Cocher, envoyer : une nouvelle
+    version arrive (sans parent dans les détails techniques), les anciennes restent dans la liste.
+5.  Comparer l'aperçu 3D avec la photo : le style (toit, matériaux, proportions) doit s'en inspirer,
+    sans être une copie. « Retirer » l'image : elle disparaît de la liste.

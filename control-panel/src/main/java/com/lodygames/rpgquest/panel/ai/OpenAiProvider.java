@@ -67,7 +67,19 @@ public final class OpenAiProvider extends HttpAiProvider {
         }
         Map<String, Object> user = new LinkedHashMap<>();
         user.put("role", "user");
-        user.put("content", request.userPrompt());
+        // #283 : les images partent en PIXELS (URL « data: » base64), dans le format « content »
+        // en parties de l'API Chat Completions — jamais une adresse du panel, injoignable d'ici.
+        if (request.images().isEmpty()) {
+            user.put("content", request.userPrompt());
+        } else {
+            List<Object> parts = new java.util.ArrayList<>();
+            parts.add(Map.of("type", "text", "text", request.userPrompt()));
+            for (Image image : request.images()) {
+                parts.add(Map.of("type", "image_url", "image_url",
+                        Map.of("url", "data:" + image.mime() + ";base64," + image.base64())));
+            }
+            user.put("content", parts);
+        }
         messages.add(user);
 
         Map<String, Object> payload = new LinkedHashMap<>();

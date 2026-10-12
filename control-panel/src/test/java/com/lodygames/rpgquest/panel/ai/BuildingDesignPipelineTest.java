@@ -60,6 +60,7 @@ class BuildingDesignPipelineTest {
     private BuildingPlanDraftStore drafts;
     private BuildingProjectStore projects;
     private BuildingDesignRunStore runs;
+    private com.lodygames.rpgquest.panel.building.ReferenceImageStore images;
     private WorkshopAutopilot autopilot;
     private BuildingDesignPipeline pipeline;
     private BuildingProject project;
@@ -97,10 +98,12 @@ class BuildingDesignPipelineTest {
         drafts = new BuildingPlanDraftStore(db);
         projects = new BuildingProjectStore(db);
         runs = new BuildingDesignRunStore(db);
+        images = new com.lodygames.rpgquest.panel.building.ReferenceImageStore(db);
         InMemoryAuditLog audit = new InMemoryAuditLog();
         autopilot = new WorkshopAutopilot(agents, drafts, audit);
         pipeline = new BuildingDesignPipeline(studio, runs, projects, drafts,
-                new BuildingPlanWorkbench(agents, drafts), agents, autopilot, audit, Duration.ofSeconds(3));
+                new BuildingPlanWorkbench(agents, drafts), agents, autopilot, audit, images,
+                Duration.ofSeconds(3));
         project = projects.create(AGENT, new BuildingProjectStore.Fields("Bibliothèque du Hub",
                 "Bibliothèque médiévale de deux étages, escalier intérieur.", "bibliotheque_test", "WEST",
                 19, 14), "", "owner");
@@ -272,6 +275,40 @@ class BuildingDesignPipelineTest {
         assertTrue(runs.start(AGENT, project.id(), "orphan", "openai", "SOIGNE", 8, "owner").isEmpty(),
                 "le même jeton ne relance jamais une session");
         assertTrue(requests.isEmpty());
+    }
+
+    /** #283 : les pixels des images de référence partent avec CHAQUE passe payante. */
+    @Test
+    void referenceImagesAreSentAsPixelsWithEveryPaidPass() {
+        byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 'I', 'H', 'D', 'R'};
+        assertTrue(images.add(project.id(), "facade.png", png, "owner").image().isPresent());
+        var r = run(BuildingDesignPipeline.Quality.STANDARD, 4, plan("first"), plan("second staircase"));
+        assertEquals(BuildingDesignRunStore.Status.SUCCEEDED, r.status(), r.outcome());
+        String b64 = java.util.Base64.getEncoder().encodeToString(png);
+        for (String request : requests) {
+            assertTrue(request.contains("data:image/png;base64," + b64), "les octets, pas une URL");
+            assertTrue(request.contains("RÉFÉRENCES DE STYLE"), "et la consigne d'usage");
+        }
+    }
+
+    /** #283 : « repartir de zéro » n'hérite ni du plan ni des erreurs de la version existante. */
+    @Test
+    void aFreshRunIgnoresTheExistingVersions() {
+        BuildingPlanDraft old = drafts.create(new BuildingPlanDraftStore.NewDraft(AGENT, "", plan("old"),
+                BuildingPlanDraft.Origin.AI_PROPOSAL, "", "", "openai", "OpenAI", "gpt-4o", "", "", "", 19, 14,
+                "owner", project.id()));
+        synchronized (scripted) {
+            scripted.add(plan("brand new staircase"));
+        }
+        BuildingDesignRunStore.Run r = runs.start(AGENT, project.id(), "fresh-token", "openai", "STANDARD", 4,
+                true, "owner").orElseThrow();
+        pipeline.execute(r.id());
+        r = runs.find(r.id()).orElseThrow();
+        assertEquals(BuildingDesignRunStore.Status.SUCCEEDED, r.status(), r.outcome());
+        assertEquals("CONCEPTION", r.passes().get(0).kind(), "une conception, pas une correction de l'ancien");
+        assertFalse(requests.get(0).contains("# old"), "l'ancien plan n'est pas transmis");
+        assertEquals("", drafts.find(r.finalDraftId()).orElseThrow().parentId());
+        assertTrue(drafts.find(old.id()).isPresent(), "l'ancienne version est conservée");
     }
 
     @Test

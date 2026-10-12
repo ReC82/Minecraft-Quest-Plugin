@@ -130,6 +130,7 @@ public final class BuildingDesignPipeline {
     private final AgentStore agents;
     private final WorkshopAutopilot autopilot;
     private final AuditLog audit;
+    private final com.lodygames.rpgquest.panel.building.ReferenceImageStore images;
     private final Duration verdictTimeout;
     private final ExecutorService executor;
 
@@ -137,6 +138,7 @@ public final class BuildingDesignPipeline {
                                   BuildingProjectStore projects, BuildingPlanDraftStore drafts,
                                   BuildingPlanWorkbench workbench, AgentStore agents,
                                   WorkshopAutopilot autopilot, AuditLog audit,
+                                  com.lodygames.rpgquest.panel.building.ReferenceImageStore images,
                                   Duration verdictTimeout) {
         this.studio = studio;
         this.runs = runs;
@@ -146,6 +148,7 @@ public final class BuildingDesignPipeline {
         this.agents = agents;
         this.autopilot = autopilot;
         this.audit = audit;
+        this.images = images;
         this.verdictTimeout = verdictTimeout;
         this.executor = Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "atelier-conception");
@@ -159,9 +162,22 @@ public final class BuildingDesignPipeline {
         executor.submit(() -> execute(run.id()));
     }
 
+    /**
+     * Arrêt du panel : la session en cours est interrompue, notée comme telle, et l'on attend
+     * qu'elle ait fini d'écrire — sans cela, une écriture en base pouvait suivre l'arrêt (trouvé par
+     * la CI : le répertoire temporaire d'un test était encore utilisé à sa suppression).
+     */
     public void shutdown() {
+        stopping = true;
         executor.shutdownNow();
+        try {
+            executor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
+
+    private volatile boolean stopping;
 
     /** Déroule une session, du début à la fin. Ne lève jamais. Public pour les tests. */
     public void execute(String runId) {
@@ -174,6 +190,11 @@ public final class BuildingDesignPipeline {
             }
             new Session(run, project.get()).go();
         } catch (RuntimeException failure) {
+            if (stopping) {
+                runs.finish(runId, BuildingDesignRunStore.Status.INTERRUPTED, "Le panel s'est arrêté pendant "
+                        + "la conception : rien n'a été relancé. Les versions déjà produites sont conservées.", "");
+                return;
+            }
             LOG.log(System.Logger.Level.WARNING, "event=design_run_failed run=" + runId + " error="
                     + failure.getClass().getSimpleName() + ": " + failure.getMessage());
             runs.finish(runId, BuildingDesignRunStore.Status.STOPPED, "Arrêt sur une erreur interne : "
@@ -198,6 +219,8 @@ public final class BuildingDesignPipeline {
         private int spent;
         private int critiques;
         private BuildingPlanDraft best;
+        /** #283 : les pixels des références du projet, joints à chaque passe payante. */
+        private final List<com.lodygames.rpgquest.panel.ai.AiProvider.Image> references;
 
         Session(Run run, BuildingProject project) {
             this.run = run;
@@ -206,11 +229,14 @@ public final class BuildingDesignPipeline {
             this.demand = new BuildingPromptBuilder.Demand(project.id(), project.name(), project.front(),
                     project.brief(), project.maxWidth(), project.maxHeight(), project.buildingId());
             this.spent = run.spentCalls();
+            this.references = referencesOf(project.id());
         }
 
         void go() {
-            BuildingPlanDraft current = drafts.forProject(run.agentId(), project.id()).stream()
-                    .filter(BuildingPlanDraft::hasPlan).findFirst().orElse(null);
+            // #283 : « repartir de zéro » n'hérite d'aucune version — ni plan, ni erreur.
+            BuildingPlanDraft current = run.fresh() ? null
+                    : drafts.forProject(run.agentId(), project.id()).stream()
+                            .filter(BuildingPlanDraft::hasPlan).findFirst().orElse(null);
             String lastCodes = null;
             int sameRefusals = 0;
             while (true) {
@@ -219,7 +245,7 @@ public final class BuildingDesignPipeline {
                         stop("Enveloppe épuisée avant le premier plan.");
                         return;
                     }
-                    current = paid("CONCEPTION", (provider, d) -> studio.propose(provider, d),
+                    current = paid("CONCEPTION", (provider, d) -> studio.propose(provider, d, references),
                             BuildingPlanDraft.Origin.AI_PROPOSAL, "");
                     if (current == null) {
                         return;
@@ -247,7 +273,7 @@ public final class BuildingDesignPipeline {
                         String measured = metrics(j.verdict());
                         String remarks = String.join("\n", j.verdict().warnings());
                         BuildingPlanDraft improved = paid("CRITIQUE", (provider, d) -> studio.critique(
-                                provider, d, accepted.plan(), measured, remarks),
+                                provider, d, accepted.plan(), measured, remarks, references),
                                 BuildingPlanDraft.Origin.AI_CORRECTION, accepted.id());
                         if (improved == null) {
                             succeed();
@@ -284,13 +310,14 @@ public final class BuildingDesignPipeline {
                     sameRefusals = 0;
                     lastCodes = null;
                     BuildingPromptBuilder.Demand fresh = withPitfalls();
-                    current = paid("CONCEPTION NEUVE", (provider, d) -> studio.propose(provider, fresh),
+                    current = paid("CONCEPTION NEUVE", (provider, d) -> studio.propose(provider, fresh,
+                            references),
                             BuildingPlanDraft.Origin.AI_PROPOSAL, "");
                 } else {
                     String motive = j.diagnosis();
                     String measured = metrics(j.verdict());
                     current = paid("CORRECTION", (provider, d) -> studio.correct(provider, d,
-                            refused.plan(), motive, measured),
+                            refused.plan(), motive, measured, references),
                             BuildingPlanDraft.Origin.AI_CORRECTION, refused.id());
                 }
                 if (current == null) {
@@ -412,6 +439,18 @@ public final class BuildingDesignPipeline {
             }
             runs.finish(run.id(), BuildingDesignRunStore.Status.STOPPED, why, "");
         }
+    }
+
+    /** Les images de référence du projet, en pixels, prêtes à joindre à un appel (#283). */
+    private List<AiProvider.Image> referencesOf(String projectId) {
+        List<AiProvider.Image> out = new ArrayList<>();
+        if (images == null) {
+            return out;
+        }
+        for (var info : images.list(projectId)) {
+            images.data(projectId, info.id()).ifPresent(bytes -> out.add(new AiProvider.Image(info.mime(), bytes)));
+        }
+        return out;
     }
 
     /** Les mesures du serveur, en lignes pour le modèle. */

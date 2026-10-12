@@ -5303,3 +5303,19 @@ TC-260 (#185).
 5.  Saisir un monde inconnu dans « Autre(s) » : **Vérifier** l'avertit (« hors des valeurs
     connues »), sans bloquer.
 6.  Reprendre TC-260 à partir de cette quête.
+
+### TC-283 — Agir sur la quête ouverte depuis sa fiche (issue #241, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel issu de #241 déployé (panel seul). **Durée** : 3 minutes.
+
+1.  `/quests` → déplier la fiche de `test_smelt_item` → section **Agir sur un joueur** : « Choisir
+    d'abord un joueur » avec un lien. Le suivre, saisir `LoDyMcFly`, **Sélectionner** : la fiche de
+    `test_smelt_item` est **toujours dépliée**.
+2.  La fiche affiche le joueur et la quête, et trois boutons : **Démarrer cette quête**, **Compléter
+    cette quête**, **Réinitialiser cette quête**. Aucune mention de `crystal_hunt`.
+3.  **Démarrer cette quête** (confirmer) : retour sur la même fiche dépliée, résultat de l'action
+    affiché dans la fiche, quête démarrée en jeu.
+4.  En bas, « Actions admin sur une autre quête » : le sélecteur part de `test_smelt_item`. Sans fiche
+    ouverte (`/quests?player=LoDyMcFly`), il affiche « — choisir une quête — » et refuse d'envoyer
+    sans choix.
+5.  Sur téléphone : boutons lisibles, retour à la ligne correct.

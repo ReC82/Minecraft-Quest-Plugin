@@ -8050,3 +8050,15 @@ Aucune migration.
 
 Après feu vert du propriétaire. Validation : TC-282, puis TC-260.
 
+## 2026-10-12 — Actions admin contextuelles sur la fiche d'une quête (#241) — **NON déployé**
+
+### Changement
+
+Panel seul, UX : boutons « Démarrer / Compléter / Réinitialiser cette quête » sur la fiche, contexte
+conservé (`focus`) après sélection du joueur et après l'action, sélecteur générique sans quête
+présélectionnée par défaut. Aucune logique de quête, aucun prérequis, aucune permission modifiés.
+
+### Action serveur
+
+Aucune côté Minecraft. Redéployer le panel. Validation : TC-283.
+

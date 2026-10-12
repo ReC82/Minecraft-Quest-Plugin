@@ -1312,6 +1312,11 @@ public final class AgentPages {
         }
         List<Object> runtimeQuests = latestDetails(agentId, "quest.list").map(d -> asList(d.get("quests"))).orElse(List.of());
         List<MergedRow> merged = mergeQuestRows(runtimeQuests);
+        // Issue #241 : la quête « ouverte » (fiche dépliée, actions qui la ciblent) survit à la
+        // sélection d'un joueur et aux actions, par le paramètre « focus ».
+        java.util.Set<String> runtimeKeys = new java.util.LinkedHashSet<>();
+        runtimeQuests.forEach(o -> runtimeKeys.add(plainKey(str(asMap(o).get("id")))));
+        QuestPlayerContext questCtx = new QuestPlayerContext(player, cleanFocus(q.get("focus")), runtimeKeys);
         List<Object> rowData = merged.stream().map(m -> (Object) m.data()).toList();
         Map<String, String> questTitles = titleIndex(rowData, "id", "title");
         List<String> questIdList = rowData.stream().map(o -> str(asMap(o).get("id"))).toList();
@@ -1336,7 +1341,7 @@ public final class AgentPages {
             for (MergedRow mr : merged) {
                 sb.append(renderQuestAccordionItem(mr.data(), qi++, questTitles, knownQuestKeys, knownNpcKeys,
                         canEditQuests, canDeleteContent, mr.state(), session, agentId,
-                        devContentIndex(agentId)));
+                        devContentIndex(agentId), questCtx));
             }
             sb.append("</div>");
         }
@@ -1345,13 +1350,19 @@ public final class AgentPages {
         // charg\u00e9es par le serveur (une qu\u00eate \u00ab source uniquement \u00bb \u00e9chouerait c\u00f4t\u00e9 agent).
         List<String> questIds = runtimeQuests.stream().map(o -> str(asMap(o).get("id"))).toList();
         sb.append(playerStatusSection(session, agentId, player, "/quests", "quest.player.status", "quests",
-                this::renderQuestPlayerRow));
+                this::renderQuestPlayerRow, questCtx.focus()));
 
         if (!player.isEmpty()) {
-            sb.append("<h3>Actions admin sur une quête</h3>");
-            sb.append(questActionForm(session, agentId, player, "quest.start", "Démarrer", questIds, true));
-            sb.append(questActionForm(session, agentId, player, "quest.complete", "Compléter (récompenses incluses)", questIds, false));
-            sb.append(questActionForm(session, agentId, player, "quest.reset", "Réinitialiser (n'annule pas les récompenses déjà données)", questIds, false));
+            // Issue #241 : sélecteur GÉNÉRIQUE, pour agir sur une autre quête que celle ouverte. Il
+            // part de la quête ouverte s'il y en a une, et sinon d'aucune — jamais de la première
+            // de la liste, qui faisait apparaître « crystal_hunt » sans rapport avec la fiche.
+            sb.append("<h3>Actions admin sur une autre quête</h3>");
+            sb.append("<p class=\"muted\">Pour la quête d'une fiche, utiliser ses boutons « … cette quête » "
+                    + "(section Actions de la fiche). Ce sélecteur sert à choisir volontairement une autre "
+                    + "quête.</p>");
+            sb.append(questActionForm(session, agentId, player, "quest.start", "Démarrer", questIds, true, questCtx.focus()));
+            sb.append(questActionForm(session, agentId, player, "quest.complete", "Compléter (récompenses incluses)", questIds, false, questCtx.focus()));
+            sb.append(questActionForm(session, agentId, player, "quest.reset", "Réinitialiser (n'annule pas les récompenses déjà données)", questIds, false, questCtx.focus()));
         }
 
         return sb.toString();
@@ -1367,8 +1378,10 @@ public final class AgentPages {
                                             java.util.Set<String> knownQuestKeys, java.util.Set<String> knownNpcKeys,
                                             boolean canEdit, boolean canDelete, CatalogState state,
                                             Session session, String agentId,
-                                            com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex) {
+                                            com.lodygames.rpgquest.panel.publish.DevContentIndex devIndex,
+                                            QuestPlayerContext ctx) {
         String id = str(qd.get("id"));
+        boolean focused = !ctx.focus().isEmpty() && plainKey(id).equals(plainKey(ctx.focus()));
         String title = str(qd.get("title"));
         String category = str(qd.get("category"));
         String giverId = str(qd.get("giverId"));
@@ -1401,8 +1414,9 @@ public final class AgentPages {
                 .append(anyWarn ? "warn" : "ok").append("\" data-filter-text=\"").append(ftext)
                 .append("\" data-res-id=\"").append(Http.esc(id)).append("\">");
         sb.append("<h3 class=\"accordion-header\">");
-        sb.append("<button class=\"accordion-button collapsed npc-head\" type=\"button\" data-bs-toggle=\"collapse\" "
-                + "data-bs-target=\"#").append(slug).append("\" aria-expanded=\"false\" aria-controls=\"")
+        sb.append("<button class=\"accordion-button").append(focused ? "" : " collapsed")
+                .append(" npc-head\" type=\"button\" data-bs-toggle=\"collapse\" data-bs-target=\"#")
+                .append(slug).append("\" aria-expanded=\"").append(focused).append("\" aria-controls=\"")
                 .append(slug).append("\">");
         sb.append("<span class=\"npc-head-main\"><span class=\"npc-name\">").append(MiniText.html(title))
                 .append("</span><code class=\"tid npc-id\">").append(Http.esc(id)).append("</code></span>");
@@ -1442,7 +1456,8 @@ public final class AgentPages {
                 : "<span class=\"badge text-bg-success\">OK</span>");
         sb.append("</span></button></h3>");
 
-        sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse\" ")
+        sb.append("<div id=\"").append(slug).append("\" class=\"accordion-collapse collapse")
+                .append(focused ? " show" : "").append("\" ")
                 .append("data-bs-parent=\"#quests-accordion\"><div class=\"accordion-body npc-detail\">");
         sb.append(catalogStateNote(state, "quête"));
 
@@ -1543,6 +1558,7 @@ public final class AgentPages {
         }
 
         // ---- ACTIONS ----
+        sb.append(questPlayerActions(session, agentId, id, title, ctx));
         if (canEdit || canDelete) {
             String eslug = editSlug(id);
             if (!eslug.isEmpty()) {
@@ -1597,11 +1613,95 @@ public final class AgentPages {
         return sb.toString();
     }
 
+    /**
+     * Issue #241 — le contexte « joueur sélectionné / quête ouverte » de la page des quêtes.
+     *
+     * @param focus       identifiant de la quête ouverte, ou vide
+     * @param runtimeKeys quêtes chargées par le serveur (clé sans namespace) : seules celles-là
+     *                    acceptent une action sur un joueur
+     */
+    record QuestPlayerContext(String player, String focus, java.util.Set<String> runtimeKeys) {
+    }
+
+    /** Un identifiant de quête acceptable comme contexte de page, sinon vide. */
+    static String cleanFocus(String raw) {
+        String v = raw == null ? "" : raw.trim().toLowerCase(java.util.Locale.ROOT);
+        return v.matches("[a-z0-9_.:-]{1,80}") ? v : "";
+    }
+
+    /**
+     * Issue #241 — les actions admin de la fiche d'une quête, sur CETTE quête : Démarrer,
+     * Compléter, Réinitialiser, avec son titre et son identifiant sous les yeux. Aucune logique
+     * nouvelle : ce sont les mêmes actions agent, avec la quête fixée par la fiche.
+     */
+    private String questPlayerActions(Session session, String agentId, String questId, String title,
+                                      QuestPlayerContext ctx) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(detailSection("target", "Agir sur un joueur"));
+        if (!ctx.runtimeKeys().contains(plainKey(questId))) {
+            sb.append("<p class=\"muted\">Cette quête n'est pas chargée par le serveur DEV : la publier et "
+                    + "la recharger avant de la démarrer pour un joueur.</p>");
+            return sb.toString();
+        }
+        if (ctx.player().isEmpty()) {
+            sb.append("<p class=\"muted\">Choisir d'abord un joueur pour démarrer, compléter ou "
+                    + "réinitialiser cette quête. <a href=\"/quests?agent=").append(Http.esc(agentId))
+                    .append("&amp;focus=").append(Http.esc(questId)).append("#etat-joueur\">Sélectionner un joueur"
+                            + "</a> — la fiche restera ouverte.</p>");
+            return sb.toString();
+        }
+        sb.append("<p>Joueur : <strong>").append(Http.esc(ctx.player())).append("</strong> · quête : ")
+                .append(MiniText.html(title)).append(" <code class=\"tid\">").append(Http.esc(questId))
+                .append("</code></p><div class=\"npc-actions d-flex flex-wrap gap-2\">");
+        sb.append(thisQuestForm(session, agentId, ctx.player(), "quest.start", "Démarrer cette quête",
+                questId, true));
+        sb.append(thisQuestForm(session, agentId, ctx.player(), "quest.complete",
+                "Compléter cette quête (récompenses incluses)", questId, false));
+        sb.append(thisQuestForm(session, agentId, ctx.player(), "quest.reset",
+                "Réinitialiser cette quête", questId, false));
+        sb.append("</div>");
+        for (String type : List.of("quest.start", "quest.complete", "quest.reset")) {
+            latestForPlayer(agentId, type, ctx.player())
+                    .filter(row -> plainKey(row.params().getOrDefault("quest_id", "")).equals(plainKey(questId)))
+                    .ifPresent(row -> sb.append(resultLine("Dernier résultat", row)));
+        }
+        return sb.toString();
+    }
+
+    private String thisQuestForm(Session session, String agentId, String player, String type, String label,
+                                 String questId, boolean withForce) {
+        if (!canRun(session, type)) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(formStart(session, agentId, type, "/quests", player));
+        sb.append("<input type=\"hidden\" name=\"quest_id\" value=\"").append(Http.esc(questId)).append("\">");
+        sb.append("<input type=\"hidden\" name=\"focus\" value=\"").append(Http.esc(questId)).append("\">");
+        if (withForce) {
+            sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"force\" value=\"true\"> ignorer les prérequis</label>");
+        }
+        if (AgentActionCatalog.spec(type).map(AgentActionCatalog.Spec::mutation).orElse(false)) {
+            sb.append(confirmBox("Confirmer « " + label + " » pour " + player + "."));
+        }
+        sb.append("<button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">").append(Http.esc(label))
+                .append("</button></form>");
+        return sb.toString();
+    }
+
+    /** Le rôle porte-t-il toutes les permissions qu'exige ce type d'action ? */
+    private boolean canRun(Session session, String type) {
+        return AgentActionCatalog.spec(type)
+                .map(spec -> spec.requiredPermissions().stream().allMatch(p -> perms.can(session.effective(), p)))
+                .orElse(false);
+    }
+
     private String questActionForm(Session session, String agentId, String player, String type, String label,
-                                   List<String> questIds, boolean withForce) {
+                                   List<String> questIds, boolean withForce, String focus) {
         StringBuilder sb = new StringBuilder();
         sb.append(formStart(session, agentId, type, "/quests", player));
-        sb.append("<label>Quête</label>").append(idSelect("quest_id", questIds, "rpgquest:crystal_hunt"));
+        if (!focus.isEmpty()) {
+            sb.append("<input type=\"hidden\" name=\"focus\" value=\"").append(Http.esc(focus)).append("\">");
+        }
+        sb.append("<label>Quête</label>").append(questSelect(questIds, focus));
         if (withForce) {
             sb.append("<label class=\"inline\"><input type=\"checkbox\" name=\"force\" value=\"true\"> ignorer les prérequis</label>");
         }
@@ -6540,10 +6640,18 @@ public final class AgentPages {
 
     private String playerStatusSection(Session session, String agentId, String player, String page,
                                        String type, String listKey, RowRenderer renderer) {
+        return playerStatusSection(session, agentId, player, page, type, listKey, renderer, "");
+    }
+
+    /** @param focus contenu ouvert à conserver en sélectionnant le joueur (issue #241), ou vide */
+    private String playerStatusSection(Session session, String agentId, String player, String page,
+                                       String type, String listKey, RowRenderer renderer, String focus) {
         StringBuilder sb = new StringBuilder();
-        sb.append("<h2>État d'un joueur</h2>");
+        sb.append("<h2 id=\"etat-joueur\">État d'un joueur</h2>");
         sb.append("<form method=\"get\" action=\"").append(page).append("\">")
                 .append("<input type=\"hidden\" name=\"agent\" value=\"").append(Http.esc(agentId)).append("\">")
+                .append(focus == null || focus.isEmpty() ? ""
+                        : "<input type=\"hidden\" name=\"focus\" value=\"" + Http.esc(focus) + "\">")
                 .append("<label>Joueur (nom ou UUID)</label>")
                 .append("<input type=\"text\" name=\"player\" value=\"").append(Http.esc(player))
                 .append("\" placeholder=\"LoDyMcFly\">")
@@ -6664,6 +6772,26 @@ public final class AgentPages {
         return "<input type=\"hidden\" name=\"confirm\" value=\"true\">"
                 + (reversibleNote == null || reversibleNote.isBlank() ? ""
                         : "<p class=\"form-text confirm-note\">" + Http.esc(reversibleNote) + "</p>");
+    }
+
+    /**
+     * Issue #241 — sélecteur de quête sans choix implicite : la quête ouverte si elle est chargée,
+     * sinon une option vide obligatoire. Le navigateur ne peut donc plus soumettre « la première de
+     * la liste » sans qu'on l'ait choisie.
+     */
+    private static String questSelect(List<String> ids, String focus) {
+        if (ids.isEmpty()) {
+            return "<input type=\"text\" name=\"quest_id\" placeholder=\"rpgquest:…\" required>";
+        }
+        String selected = ids.stream().filter(id -> plainKey(id).equals(plainKey(focus))).findFirst().orElse("");
+        StringBuilder sb = new StringBuilder("<select name=\"quest_id\" required>");
+        sb.append("<option value=\"\"").append(selected.isEmpty() ? " selected" : "")
+                .append(">— choisir une quête —</option>");
+        for (String id : ids) {
+            sb.append("<option value=\"").append(Http.esc(id)).append("\"")
+                    .append(id.equals(selected) ? " selected" : "").append(">").append(Http.esc(id)).append("</option>");
+        }
+        return sb.append("</select>").toString();
     }
 
     private String idSelect(String name, List<String> ids, String placeholder) {

@@ -376,6 +376,18 @@ public final class AgentActionCatalog {
         // écriture de contenu, pas une pose. Elle invalide la bibliothèque, qu'elle enrichit.
         addContentWrite("building.generate", Permission.BUILDING_WRITE,
                 "Générer un bâtiment depuis un plan", "building.definition.list");
+        // Issue #94, lot F — l'audit d'un plan n'écrit RIEN : ni schematic, ni définition, ni ligne
+        // en base. Il est donc déclaré en lecture, et c'est précisément ce qui rend la boucle de
+        // correction utilisable : on juge un plan autant de fois qu'il le faut sans laisser derrière
+        // soi une succession de bâtiments ratés dans la bibliothèque.
+        add("building.plan.audit", Permission.BUILDING_READ, false, false,
+                "Auditer un plan de bâtiment sans rien écrire");
+        // Lot E — l'aperçu 2D. Lecture également : il n'écrit rien et se relance librement. Les
+        // coupes sont calculées par le PLUGIN, jamais ici : un aperçu dessiné par le panel
+        // montrerait ce que le panel croit que le plan décrit, et la V1 a prouvé que les deux
+        // peuvent diverger de cinq blocs.
+        add("building.plan.preview", Permission.BUILDING_READ, false, false,
+                "Prévisualiser un plan de bâtiment en coupes 2D");
         addContentWrite("building.site.facing", Permission.BUILDING_WRITE,
                 "Corriger l'orientation d'un emplacement", "building.site.list");
         // Suppression du marqueur logique : aucun bloc du monde n'est touché, mais l'identifiant ne
@@ -751,17 +763,23 @@ public final class AgentActionCatalog {
             // revalide. Le panel ne borne ici que sa taille et la forme du drapeau de
             // remplacement : décider ce qu'est un plan valide est le travail du domaine, et le
             // dupliquer ici garantirait seulement que les deux divergent.
-            case "building.generate" -> {
+            // L'audit du lot F partage la validation du plan avec la génération : même borne, même
+            // refus. Seul le drapeau de remplacement n'a pas de sens pour un audit, qui n'écrit rien.
+            case "building.generate", "building.plan.audit", "building.plan.preview" -> {
                 String plan = trim(form.get("plan"));
                 if (plan.isEmpty()) {
-                    return Validation.fail("Aucun plan à générer.");
+                    return Validation.fail("Aucun plan à " + switch (type) {
+                        case "building.plan.audit" -> "auditer.";
+                        case "building.plan.preview" -> "prévisualiser.";
+                        default -> "générer.";
+                    });
                 }
                 if (plan.length() > MAX_BUILD_PLAN) {
                     return Validation.fail("Plan trop volumineux : " + plan.length()
                             + " caractères pour un maximum de " + MAX_BUILD_PLAN + ".");
                 }
                 params.put("plan", plan);
-                if ("true".equals(trim(form.get("replace")))) {
+                if ("building.generate".equals(type) && "true".equals(trim(form.get("replace")))) {
                     params.put("replace", "true");
                 }
             }

@@ -34,9 +34,14 @@ import java.util.regex.Pattern;
  * @param anchorX ancre locale, c'est-à-dire le point du plan qui se posera sur l'ancre du site
  * @param steps  les instructions, <strong>dans l'ordre</strong> : une instruction postérieure
  *               recouvre une antérieure sur la même cellule
+ * @param kind   ce que la structure prétend être (issue #94, lot A). Décide des règles qu'on a le
+ *               droit de lui appliquer : exiger une porte et des fenêtres d'une fontaine n'aurait
+ *               aucun sens. {@link StructureKind#HABITABLE} par défaut, parce que c'est le profil
+ *               le plus exigeant et donc le défaut le plus sûr
  */
 public record BuildingPlan(String id, String name, int sizeX, int sizeY, int sizeZ, Facing front,
-                           int anchorX, int anchorY, int anchorZ, List<PlanStep> steps) {
+                           int anchorX, int anchorY, int anchorZ, List<PlanStep> steps,
+                           StructureKind kind) {
 
     /** Forme d'un identifiant de bâtiment — la même que la bibliothèque attend. */
     public static final Pattern ID = Pattern.compile("[a-z0-9_]{3,48}");
@@ -63,6 +68,19 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
         name = name == null ? "" : name.trim();
         front = front == null ? Facing.NORTH : front;
         steps = List.copyOf(steps == null ? List.of() : steps);
+        kind = kind == null ? StructureKind.HABITABLE : kind;
+    }
+
+    /** Constructeur de compatibilité : un plan sans type déclaré est un bâtiment habitable. */
+    public BuildingPlan(String id, String name, int sizeX, int sizeY, int sizeZ, Facing front,
+                        int anchorX, int anchorY, int anchorZ, List<PlanStep> steps) {
+        this(id, name, sizeX, sizeY, sizeZ, front, anchorX, anchorY, anchorZ, steps,
+                StructureKind.HABITABLE);
+    }
+
+    /** Les seuils d'audit applicables à ce plan, déduits de son type. */
+    public ArchitecturalRules rules() {
+        return ArchitecturalRules.forKind(kind);
     }
 
     /**
@@ -114,14 +132,52 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
                 return Optional.of(where + "la zone " + step.box().label()
                         + " sort du volume " + sizeX + " × " + sizeY + " × " + sizeZ + ".");
             }
+            // Une primitive repérée par façade doit viser une cellule qui existe. Le décalage est
+            // borné à la largeur de la façade : c'est là que le lot C supprime définitivement la
+            // classe d'erreur qui avait scellé la V1 — le modèle ne calcule plus de coordonnée.
+            if ((step.kind() == PlanStep.Kind.DOOR || step.kind() == PlanStep.Kind.WINDOW)
+                    && step.facade() != null) {
+                int span = step.facade().span(front, sizeX, sizeZ);
+                int offset = step.number("offset", span / 2);
+                if (offset < 0 || offset >= span) {
+                    return Optional.of(where + "décalage " + offset + " hors de la façade "
+                            + step.facade() + ", qui compte " + span + " cellules (0 à "
+                            + (span - 1) + ").");
+                }
+            }
+            if (step.kind() == PlanStep.Kind.STAIR_RUN) {
+                String dir = step.axis();
+                if (!dir.equals("north") && !dir.equals("south")
+                        && !dir.equals("east") && !dir.equals("west")) {
+                    return Optional.of(where + "direction de montée manquante ou inconnue : « "
+                            + dir + " ». Écris « direction: » avec un point cardinal — north, "
+                            + "south, east ou west — et non un axe.");
+                }
+            }
             if (step.kind() == PlanStep.Kind.GABLE
                     && !step.axis().equals("x") && !step.axis().equals("z")) {
                 return Optional.of(where + "axe de pente manquant ou inconnu : « " + step.axis()
                         + " ». Valeurs acceptées : « x » ou « z ».");
             }
-            if (step.kind() != PlanStep.Kind.CLEAR && !BlockState.valid(step.state())) {
+            if (!step.fill().isEmpty() && !BlockState.valid(step.fill())) {
+                return Optional.of(where + "matériau de remplissage refusé : « " + step.fill()
+                        + " ». " + BlockState.RULE);
+            }
+            if (step.kind() != PlanStep.Kind.CLEAR && !step.state().isEmpty()
+                    && !BlockState.valid(step.state())) {
                 return Optional.of(where + "état de bloc refusé : « " + step.state() + " ». "
                         + BlockState.RULE);
+            }
+            // Lot D (#252) : la forme ne suffit pas. « oak_stairs[face=bottom] » a la bonne
+            // grammaire et une propriété qui n'existe pas — c'est « half ». On le refuse ici,
+            // AVANT toute écriture de schematic.
+            Optional<String> badProperty = BlockStateRules.refusal(step.state());
+            if (badProperty.isPresent()) {
+                return Optional.of(where + badProperty.get());
+            }
+            Optional<String> badFill = BlockStateRules.refusal(step.fill());
+            if (badFill.isPresent()) {
+                return Optional.of(where + badFill.get());
             }
         }
         return Optional.empty();

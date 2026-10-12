@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.lodygames.rpgquest.panel.authz.Permission;
 import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /** Liste blanche côté panel : types autorisés, permission, bornes des paramètres, confirmation. */
@@ -611,5 +612,53 @@ class AgentActionCatalogTest {
                 "écrire un brief n'est pas plus sensible qu'écrire une note");
         assertEquals(note.refreshTypes(), brief.refreshTypes());
         assertFalse(brief.sensitive(), "enregistrer un texte ne déclenche aucune génération");
+    }
+
+    // ---- building.plan.audit (issue #94, lot F) ---------------------------------------------
+
+    /**
+     * L'audit d'un plan n'écrit rien : il doit donc être déclaré en LECTURE. C'est ce qui permet de
+     * juger un plan autant de fois qu'il le faut — et un classement en écriture le réserverait à
+     * tort aux seuls administrateurs habilités à créer des bâtiments.
+     */
+    @Test
+    @DisplayName("building.plan.audit est déclaré en lecture : il n'écrit rien")
+    void buildingPlanAuditIsDeclaredAsAReadBecauseItWritesNothing() {
+        var spec = AgentActionCatalog.spec("building.plan.audit").orElseThrow();
+
+        assertFalse(spec.mutation(), "aucune écriture, donc aucune mutation");
+        assertFalse(spec.needsPlayer());
+        assertEquals(Permission.BUILDING_READ, spec.permission());
+    }
+
+    @Test
+    @DisplayName("L'audit partage la validation du plan avec la génération, sans le drapeau de remplacement")
+    void theauditSharesThePlanValidationWithGenerationMinusTheReplaceFlag() {
+        var ok = AgentActionCatalog.validate("building.plan.audit",
+                Map.of("plan", "id: essai", "replace", "true"));
+
+        assertTrue(ok.valid(), ok.error());
+        assertEquals("id: essai", ok.params().get("plan"));
+        assertFalse(ok.params().containsKey("replace"),
+                "un audit n'écrit rien : « remplacer » n'a aucun sens et ne doit pas être transmis");
+
+        var empty = AgentActionCatalog.validate("building.plan.audit", Map.of());
+        assertFalse(empty.valid());
+        assertTrue(empty.error().contains("auditer"),
+                "le refus doit parler d'audit, pas de génération : " + empty.error());
+    }
+
+    @Test
+    @DisplayName("building.plan.preview est déclaré en lecture, comme l'audit")
+    void buildingPlanPreviewIsDeclaredAsARead() {
+        var spec = AgentActionCatalog.spec("building.plan.preview").orElseThrow();
+
+        assertFalse(spec.mutation(), "un aperçu n'écrit rien");
+        assertEquals(Permission.BUILDING_READ, spec.permission());
+
+        var empty = AgentActionCatalog.validate("building.plan.preview", Map.of());
+        assertFalse(empty.valid());
+        assertTrue(empty.error().contains("prévisualiser"),
+                "le refus doit parler d'aperçu : " + empty.error());
     }
 }

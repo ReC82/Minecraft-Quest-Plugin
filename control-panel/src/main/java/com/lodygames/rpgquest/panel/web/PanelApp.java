@@ -948,9 +948,15 @@ public final class PanelApp {
                     if (!demand.usable()) {
                         error = "Demande incomplète : un brief et un emplacement sont nécessaires.";
                     } else {
+                        // En correction, les mesures du dernier audit partent avec le motif : le
+                        // refus dit ce qui manque, les chiffres disent à quel point.
+                        String measured = refusal.isEmpty() ? "" : com.lodygames.rpgquest.panel.ai
+                                .BuildingCorrectionLoop.formatMetrics(
+                                        agentPages.buildingPlanVerdict(agentId).metrics());
                         proposal = refusal.isEmpty()
                                 ? aiBuildingStudio.propose(provider, demand)
-                                : aiBuildingStudio.correct(provider, demand, previousPlan, refusal);
+                                : aiBuildingStudio.correct(provider, demand, previousPlan, refusal,
+                                        measured);
                         // L'audit retient le fournisseur, le modèle et le verdict — jamais la clé,
                         // jamais le brief complet (contenu éditorial, et volumineux).
                         audit.record(session.username(), "building.plan.generate",
@@ -978,7 +984,9 @@ public final class PanelApp {
             return;
         }
         String body = BuildingPlanPages.render(session, agentId, site.get(),
-                aiBuildingStudio.usableProviders(), provider, proposal, canWrite, error, refusal);
+                aiBuildingStudio.usableProviders(), provider, proposal, canWrite, error, refusal,
+                agentPages.buildingPlanVerdict(agentId),
+                agentPages.buildingPlanPreview(agentId));
         Http.html(exchange, 200, renderPage("Générer un bâtiment", session, "/buildings/sites",
                 body, Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }

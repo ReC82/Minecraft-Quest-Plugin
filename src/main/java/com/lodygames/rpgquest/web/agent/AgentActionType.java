@@ -176,6 +176,31 @@ public enum AgentActionType {
      * plan est revalidé par le plugin avant toute écriture.</p>
      */
     BUILDING_GENERATE("building.generate"),
+    /**
+     * {@code building.plan.audit} (#94, lot F) : juge un plan <strong>sans rien écrire</strong>.
+     *
+     * <p>Même lecture, même expanseur, même audit que {@link #BUILDING_GENERATE} — mais aucun
+     * {@code .schem}, aucune définition, aucun rechargement de bibliothèque. C'est l'action que la
+     * boucle de correction appelle entre deux relances du modèle : sans elle, il faudrait écrire un
+     * bâtiment pour apprendre qu'il est mauvais.</p>
+     *
+     * <p>En lecture seule, donc, et exposée comme telle : elle n'a pas besoin du droit d'écriture
+     * sur les bâtiments.</p>
+     */
+    BUILDING_PLAN_AUDIT("building.plan.audit"),
+    /**
+     * {@code building.plan.preview} (#94, lot E) : des <strong>coupes 2D</strong> du bâtiment que ce
+     * plan produirait, plus son verdict, et aucune écriture.
+     *
+     * <p>Les coupes sont prises sur la même grille que l'audit, après la même expansion. C'est la
+     * raison d'être de cette action : le ticket interdit un second moteur d'expansion dans le panel,
+     * parce qu'un aperçu dessiné là-bas montrerait ce que le panel <em>croit</em> que le plan décrit.
+     * La V1 a prouvé que les deux peuvent diverger de cinq blocs.</p>
+     *
+     * <p>L'aperçu est rendu même pour un plan refusé — c'est précisément quand on veut voir
+     * pourquoi.</p>
+     */
+    BUILDING_PLAN_PREVIEW("building.plan.preview"),
     /** Corrige l'orientation cardinale d'un emplacement — jamais sa position. */
     BUILDING_SITE_FACING("building.site.facing"),
     /**

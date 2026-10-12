@@ -101,7 +101,7 @@ class BuildingPlanExpanderTest {
     @DisplayName("GABLE monte en pente et oriente les marches vers l'extérieur")
     void gableSlopesAndOrientsTheStairsOutwards() {
         var result = BuildingPlanExpander.expand(plan(List.of(
-                new PlanStep(PlanStep.Kind.GABLE, PlanBox.of(0, 0, 0, 6, 2, 4),
+                PlanStep.of(PlanStep.Kind.GABLE, PlanBox.of(0, 0, 0, 6, 2, 4),
                         "minecraft:oak_stairs", "x"))));
 
         assertTrue(result.ok(), result.error());

@@ -893,6 +893,84 @@ public final class BukkitAgentActions implements AgentActions {
                 List.of()));
     }
 
+    @Override
+    public CompletableFuture<BuildingPlanVerdictView> buildingPlanAudit(String planYaml) {
+        if (buildingGenerator == null) {
+            return done(new BuildingPlanVerdictView(false, "UNAVAILABLE",
+                    "La génération de bâtiments n'est pas disponible sur ce serveur.",
+                    "", "", 0, 0, 0, 0, List.of(), List.of(), false, Map.of()));
+        }
+        // Aucune écriture ici, mais l'expansion d'un plan de plusieurs milliers de cellules n'a
+        // rien à faire sur le thread principal : elle n'y gagnerait rien et y coûterait un tick.
+        return CompletableFuture.supplyAsync(() -> {
+            var v = buildingGenerator.inspect(planYaml);
+            return new BuildingPlanVerdictView(v.ok(), v.code(), v.message(), v.buildingId(),
+                    v.kind(), v.sizeX(), v.sizeY(), v.sizeZ(), v.blocks(), v.codes(),
+                    v.warnings(), v.exists(), metricsOf(v.metrics()));
+        }).exceptionally(error -> new BuildingPlanVerdictView(false, "ERROR",
+                "Échec de l'audit du plan : " + rootName(error), "", "", 0, 0, 0, 0,
+                List.of(), List.of(), false, Map.of()));
+    }
+
+    @Override
+    public CompletableFuture<BuildingPlanPreviewView> buildingPlanPreview(String planYaml) {
+        if (buildingGenerator == null) {
+            return done(new BuildingPlanPreviewView(false, "UNAVAILABLE",
+                    "La génération de bâtiments n'est pas disponible sur ce serveur.",
+                    "", "", 0, 0, 0, 0, 0, 0, 0, "", List.of(), List.of(), List.of(), List.of()));
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            var exam = buildingGenerator.preview(planYaml);
+            var v = exam.verdict();
+            var p = exam.preview();
+            return new BuildingPlanPreviewView(v.ok(), v.code(), v.message(), v.buildingId(),
+                    v.kind(), v.sizeX(), v.sizeY(), v.sizeZ(), v.blocks(),
+                    p == null ? 0 : p.anchorX(), p == null ? 0 : p.anchorY(),
+                    p == null ? 0 : p.anchorZ(), p == null ? "" : p.front(),
+                    v.codes(), v.warnings(),
+                    slices(p == null ? List.of() : p.plans()),
+                    slices(p == null ? List.of() : p.elevations()));
+        }).exceptionally(error -> new BuildingPlanPreviewView(false, "ERROR",
+                "Échec de l'aperçu du plan : " + rootName(error), "", "", 0, 0, 0, 0, 0, 0, 0, "",
+                List.of(), List.of(), List.of(), List.of()));
+    }
+
+    private static List<BuildingSliceView> slices(
+            List<com.lodygames.rpgquest.building.plan.PlanPreview.Slice> source) {
+        List<BuildingSliceView> out = new ArrayList<>(source.size());
+        for (var slice : source) {
+            out.add(new BuildingSliceView(slice.id(), slice.label(), slice.axes(), slice.rows()));
+        }
+        return out;
+    }
+
+    /**
+     * Les mesures, à plat.
+     *
+     * <p>Les clés sont recopiées une par une, délibérément. La leçon de #239 : une sérialisation
+     * écrite à la main ne transporte que ce qu'on y met, et une clé oubliée ne provoque aucune
+     * erreur — elle disparaît simplement de l'écran.</p>
+     */
+    private static Map<String, Object> metricsOf(
+            com.lodygames.rpgquest.building.plan.ArchitecturalAudit.Metrics m) {
+        if (m == null) {
+            return Map.of();
+        }
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("solidCells", m.solidCells());
+        out.put("glazedCells", m.glazedCells());
+        out.put("glazedFacades", m.glazedFacades());
+        out.put("lightSources", m.lightSources());
+        out.put("openEnvelopeCellsHigh", m.openEnvelopeCellsHigh());
+        out.put("floors", m.floors());
+        out.put("reachableFloors", m.reachableFloors());
+        out.put("furnishingCells", m.furnishingCells());
+        out.put("envelopeMaterials", m.envelopeMaterials());
+        out.put("topMaterialShare", m.topMaterialShare());
+        out.put("topMaterial", m.topMaterial() == null ? "" : m.topMaterial());
+        return out;
+    }
+
     private List<BuildingPlacementSummary> placementRows() {
         List<BuildingPlacementSummary> rows = new ArrayList<>();
         for (com.lodygames.rpgquest.building.model.BuildingPlacement placement

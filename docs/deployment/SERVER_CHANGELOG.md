@@ -7746,3 +7746,99 @@ d'écriture.
 * **Bâtiment généré indésirable** : supprimer `buildings/<id>.yml` et `schematics/<id>.schem`, puis
   rafraîchir la bibliothèque. Rien d'autre n'y fait référence tant qu'il n'a pas été **posé**.
 * **Contenu** : sans objet, ce lot ne publie aucune ressource de contenu.
+
+## 2026-10-12 (nuit) — Générateur IA V2 : audit architectural et primitives sémantiques (#94, lots A/B/C/D/F)
+
+### Changement
+
+**Un plan mauvais est désormais refusé, pas livré.** La V1 de la Bibliothèque du Hub est passée en
+`SUCCESS` avec « prêt à être posé » alors qu'elle était hermétiquement scellée — 532 cellules de mur
+sur les quatre façades, zéro ouverture, étage inaccessible. Le générateur validait la géométrie et
+rien de sémantique. Un audit (`ArchitecturalAudit`) s'exécute maintenant **sur la grille expansée**,
+avant toute écriture, avec des seuils centralisés qui dépendent du type de structure déclaré
+(`habitable`, `decoration`, `portal`).
+
+**Nouvelles primitives de plan** — `door`, `window`, `light`, `stair_run`, `ladder`, `pillars`,
+et des façades désignées par leur rôle (`facade: FRONT`) plutôt que par une coordonnée que le modèle
+devait déduire. Les propriétés de bloc sont vérifiées par famille (`BlockStateRules`) et non
+seulement dans leur forme.
+
+**Deux nouvelles actions en lecture**, qui n'écrivent rien :
+
+| Action | Effet |
+|---|---|
+| `building.plan.audit` | le verdict d'un plan, **sans écrire un octet** |
+| `building.plan.preview` | les **coupes 2D** du bâtiment que le plan produirait, plus son verdict |
+
+Deux nouvelles étapes dans `/buildings/plan` : « Auditer ce plan » et « Prévisualiser ce plan ». Les
+coupes sont calculées **par le plugin** — un aperçu dessiné par le panel montrerait ce que le panel
+croit que le plan décrit.
+
+> **Changement de comportement sur les plans existants.** La primitive `gable` ne remplissait pas
+> ses triangles de pignon. Elle les remplit désormais, donc **un plan déjà enregistré produit un
+> bâtiment différent** : le plan V1 ré-expansé donne 2 368 blocs au lieu de 2 210. Aucun `.schem`
+> déjà écrit n'est modifié, mais **régénérer** depuis un plan conservé changera l'empreinte du
+> schematic, et la fiche du bâtiment posé annoncera « une version plus récente existe » (mécanisme
+> de #234). C'est voulu : la correction doit être visible.
+
+### Action serveur
+
+- **Plugin** : remplacer uniquement le JAR RPGQuest. **Aucune migration de schéma** — ce lot n'ajoute
+  ni table, ni colonne, ni index. Le dernier schéma reste **V31**.
+- **Panel** : déploiement PlugAdmin distinct (`scripts/plugadmin/deploy.sh`) — **obligatoire**. Le
+  lot ajoute la page d'audit, la carte de verdict et le nouveau prompt. Un panel périmé n'afficherait
+  ni le bouton « Auditer ce plan », ni le verdict, et continuerait d'envoyer **l'ancien prompt** au
+  modèle, donc des plans sans portes ni fenêtres. Aucun indicateur côté Minecraft ne révélerait
+  l'oubli.
+- **Aucune commande** à exécuter, aucun monde, aucune configuration, aucun plugin externe.
+- **Aucun bloc du monde n'est touché.** Ni l'audit, ni la génération ne posent quoi que ce soit.
+- **Ne PAS toucher** au bâtiment V1 posé sur `buildsite_0012`, ni aux emplacements
+  `buildsite_0006/0009/0010/0011/0012`. Ce lot ne les régénère pas et ne doit pas servir de prétexte
+  à le faire.
+- **Aucune clé API** n'est ajoutée ni requise. Aucune génération payante n'est déclenchée par le
+  déploiement.
+
+### Sauvegarde préalable
+
+JAR déployé + `data.db` (sauvegarde standard du script), **et** les dossiers
+`plugins/RPGQuest/buildings/` et `plugins/RPGQuest/schematics/` — puisqu'une régénération depuis un
+plan conservé produirait maintenant un fichier différent. Ne jamais écraser le dernier backup.
+
+### Déploiement
+
+1. `RPGQUEST_TEST_MAX_HEAP=768m scripts/deploy-verygames.sh -y` depuis un worktree **propre**.
+2. Redémarrage du serveur Minecraft requis (JAR). Aucune migration à surveiller.
+3. `scripts/plugadmin/deploy.sh --no-build`, puis vérifier ce qui est **servi** :
+   `unzip -l` du JAR déployé pour y trouver `BuildingCorrectionLoop.class`,
+   `BuildingPlanVerdict.class` et `BuildingPlanPreview.class`.
+
+### Validation
+
+1. Page **Bâtiments → Emplacements**, fiche d'un emplacement pourvu d'un brief → **« Générer un
+   bâtiment avec l'IA »**.
+2. La page affiche l'avertissement de coût **avant** le bouton de demande.
+3. Après une demande, une section **« 3. Auditer le plan — n'écrit rien »** est présente, et son
+   texte dit explicitement qu'aucun fichier n'est écrit.
+4. Après un audit, le verdict apparaît en haut de page avec les codes bloquants et les **mesures sur
+   la grille**. Un plan conforme est annoncé **« conforme »**, jamais « généré ».
+5. Section **« 4. Prévisualiser en coupes 2D »** : après l'avoir lancée, la page affiche les quatre
+   façades et un plan par niveau, en caractères, avec leur légende, l'orientation de l'entrée et
+   l'ancre.
+6. Vérifier qu'auditer **et prévisualiser** un plan **ne créent aucun fichier** dans
+   `plugins/RPGQuest/schematics/` ni `plugins/RPGQuest/buildings/`.
+7. `PENDING MANUAL VALIDATION` — ne peut pas être couvert par un test automatisé, et **aucun appel
+   payant n'a été émis cette nuit** : lancer une génération réelle contre un fournisseur d'IA,
+   vérifier que le plan produit emploie bien `facade:` et les primitives `door`/`window`/`light`,
+   l'auditer, le prévisualiser, **comparer les coupes au bâtiment réellement posé**, corriger s'il
+   est refusé, générer, **puis regarder le bâtiment en jeu** — sur un emplacement libre, pas sur
+   `buildsite_0012`.
+
+### Rollback
+
+* **Plugin** : `scripts/rollback-verygames.sh --latest`, puis redémarrer. **Rien à défaire en
+  base** : aucune migration, aucune donnée écrite. Un `.schem` généré pendant l'essai reste sur le
+  disque — le retirer à la main si besoin, avec sa définition `buildings/<id>.yml`.
+* **Panel** : `scripts/plugadmin/rollback.sh app` puis `systemctl restart plugadmin`. Attention :
+  revenir en arrière côté panel **sans** revenir en arrière côté plugin laisse l'ancien prompt
+  envoyer des plans que le nouvel audit refusera — ce qui est bruyant et sans danger, mais
+  déroutant. Faire les deux rollbacks, ou aucun.

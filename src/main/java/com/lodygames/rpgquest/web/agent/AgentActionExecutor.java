@@ -91,6 +91,8 @@ public final class AgentActionExecutor {
                 case BUILDING_SITE_DESCRIBE -> buildingSiteDescribe(action);
                 case BUILDING_SITE_BRIEF -> buildingSiteBrief(action);
                 case BUILDING_GENERATE -> buildingGenerate(action);
+                case BUILDING_PLAN_AUDIT -> buildingPlanAudit(action);
+                case BUILDING_PLAN_PREVIEW -> buildingPlanPreview(action);
                 case BUILDING_SITE_FACING -> buildingSiteFacing(action);
                 case BUILDING_SITE_DELETE -> buildingSiteDelete(action);
                 case BUILDING_DEFINITION_LIST -> buildingDefinitionList(action);
@@ -1455,6 +1457,119 @@ public final class AgentActionExecutor {
                 })
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(),
                         "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code building.plan.audit} (#94, lot F) : le verdict d'un plan, sans écrire quoi que ce soit.
+     *
+     * <p>Le détail renvoyé est fait pour être relu par la boucle de correction : les codes
+     * bloquants, le message exact, et les mesures prises sur la grille. Un plan conforme ressort en
+     * succès <strong>sans</strong> qu'un bâtiment existe pour autant — ce que le message dit
+     * explicitement, pour qu'aucun écran ne puisse présenter un audit comme une génération.</p>
+     */
+    private CompletableFuture<AgentActionOutcome> buildingPlanAudit(AgentAction action) {
+        String plan = action.param("plan") == null ? "" : action.param("plan").trim();
+        if (plan.isEmpty()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « plan » manquant : il n'y a rien à auditer."));
+        }
+        if (plan.length() > BUILD_PLAN_MAX) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Plan trop volumineux : " + plan.length() + " caractères pour un maximum de "
+                            + BUILD_PLAN_MAX + "."));
+        }
+        return actions.buildingPlanAudit(plan)
+                .thenApply(v -> {
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    details.put("code", v.code());
+                    details.put("buildingId", v.buildingId());
+                    details.put("kind", v.kind());
+                    details.put("sizeX", v.sizeX());
+                    details.put("sizeY", v.sizeY());
+                    details.put("sizeZ", v.sizeZ());
+                    details.put("blocks", v.blocks());
+                    details.put("codes", v.codes());
+                    details.put("warnings", v.warnings());
+                    details.put("exists", v.exists());
+                    details.put("metrics", v.metrics());
+                    // Un audit n'est pas une génération, et le dire ici évite qu'un écran le
+                    // présente comme telle : l'audit réussit, le bâtiment n'existe toujours pas.
+                    details.put("written", false);
+                    if (v.ok()) {
+                        return AgentActionOutcome.success(action.id(), v.buildingId(),
+                                v.message() + " Aucun artefact n'a été écrit : l'audit ne génère "
+                                        + "rien.", details);
+                    }
+                    return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, v.code(),
+                            v.message(), details, java.time.Instant.now());
+                })
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
+                        "Échec : " + rootName(err)));
+    }
+
+    /**
+     * {@code building.plan.preview} (#94, lot E) : les coupes 2D, plus le verdict, sans rien écrire.
+     *
+     * <p>Les coupes sont transmises en listes de chaînes — une par ligne de grille. C'est ce qui
+     * permet au panel d'en faire un tableau lisible au doigt sans qu'aucune image traverse l'agent,
+     * et de ne jamais avoir à recalculer la géométrie.</p>
+     */
+    private CompletableFuture<AgentActionOutcome> buildingPlanPreview(AgentAction action) {
+        String plan = action.param("plan") == null ? "" : action.param("plan").trim();
+        if (plan.isEmpty()) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Paramètre « plan » manquant : il n'y a rien à prévisualiser."));
+        }
+        if (plan.length() > BUILD_PLAN_MAX) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Plan trop volumineux : " + plan.length() + " caractères pour un maximum de "
+                            + BUILD_PLAN_MAX + "."));
+        }
+        return actions.buildingPlanPreview(plan)
+                .thenApply(v -> {
+                    Map<String, Object> details = new LinkedHashMap<>();
+                    details.put("code", v.code());
+                    details.put("buildingId", v.buildingId());
+                    details.put("kind", v.kind());
+                    details.put("sizeX", v.sizeX());
+                    details.put("sizeY", v.sizeY());
+                    details.put("sizeZ", v.sizeZ());
+                    details.put("blocks", v.blocks());
+                    details.put("anchorX", v.anchorX());
+                    details.put("anchorY", v.anchorY());
+                    details.put("anchorZ", v.anchorZ());
+                    details.put("front", v.front());
+                    details.put("codes", v.codes());
+                    details.put("warnings", v.warnings());
+                    details.put("plans", sliceDetails(v.plans()));
+                    details.put("elevations", sliceDetails(v.elevations()));
+                    details.put("written", false);
+                    // Un aperçu REMONTE même pour un plan refusé : c'est le cas où il est le plus
+                    // utile. Le statut porte le verdict, le détail porte les coupes.
+                    if (v.ok()) {
+                        return AgentActionOutcome.success(action.id(), v.buildingId(),
+                                v.message() + " Aperçu calculé ; aucun artefact n'a été écrit.",
+                                details);
+                    }
+                    return new AgentActionOutcome(action.id(), AgentActionOutcome.FAILED, v.code(),
+                            v.message(), details, java.time.Instant.now());
+                })
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(),
+                        "Échec : " + rootName(err)));
+    }
+
+    private static List<Map<String, Object>> sliceDetails(
+            List<AgentActions.BuildingSliceView> slices) {
+        List<Map<String, Object>> out = new ArrayList<>(slices.size());
+        for (AgentActions.BuildingSliceView slice : slices) {
+            Map<String, Object> one = new LinkedHashMap<>();
+            one.put("id", slice.id());
+            one.put("label", slice.label());
+            one.put("axes", slice.axes());
+            one.put("rows", slice.rows());
+            out.add(one);
+        }
+        return out;
     }
 
     private CompletableFuture<AgentActionOutcome> buildingSiteFacing(AgentAction action) {

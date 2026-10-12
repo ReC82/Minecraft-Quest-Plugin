@@ -111,8 +111,24 @@ public final class BuildingPlanYaml {
             steps.add(step.get());
         }
 
+        // Type de structure (issue #94, lot A). Optionnel, et HABITABLE par défaut : un plan qui
+        // ne dit rien est jugé comme un bâtiment, donc soumis aux règles les plus exigeantes. Un
+        // mot inconnu est REFUSÉ plutôt qu'interprété — « decor » n'est pas « decoration », et
+        // retomber silencieusement sur le défaut cacherait une faute de frappe.
+        String kindRaw = text(section, "kind");
+        StructureKind kind = StructureKind.HABITABLE;
+        if (kindRaw != null) {
+            Optional<StructureKind> parsed = StructureKind.of(kindRaw);
+            if (parsed.isEmpty()) {
+                problems.add("Type de structure inconnu pour « " + id + " » : « " + kindRaw
+                        + " ». Valeurs acceptées : habitable, decoration, portal.");
+                return Optional.empty();
+            }
+            kind = parsed.get();
+        }
+
         BuildingPlan plan = new BuildingPlan(id, name, sizeX, sizeY, sizeZ, front.get(),
-                anchorX, anchorY, anchorZ, steps);
+                anchorX, anchorY, anchorZ, steps, kind);
         Optional<String> invalid = plan.validate();
         if (invalid.isPresent()) {
             problems.add(invalid.get());
@@ -126,20 +142,102 @@ public final class BuildingPlanYaml {
         Optional<PlanStep.Kind> kind = PlanStep.Kind.of(str(map.get("op")));
         if (kind.isEmpty()) {
             problems.add(where + "instruction inconnue : « " + str(map.get("op"))
-                    + " ». Valeurs acceptées : box, shell, walls, clear, gable.");
+                    + " ». Valeurs acceptées : box, shell, walls, clear, gable, door, window, "
+                    + "light, stair_run, ladder, pillars.");
             return Optional.empty();
         }
-        Optional<PlanBox> box = box(map, where, problems);
-        if (box.isEmpty()) {
-            return Optional.empty();
+        PlanStep.Kind k = kind.get();
+
+        // La façade, pour les primitives qui s'y rapportent (issue #94, lot C). Un mot inconnu est
+        // REFUSÉ : retomber sur FRONT masquerait une faute de frappe, et le bâtiment sortirait avec
+        // sa porte du mauvais côté sans que rien ne le signale.
+        Facade facade = null;
+        // La clé est « facade ». On tolère aussi « on », mais par un détour qu'il faut expliquer :
+        // en YAML 1.1, « on » est un BOOLÉEN. Écrit comme clé, l'analyseur le transforme en
+        // Boolean.TRUE, et « map.get("on") » renvoie null. Un plan disant « on: BACK » voyait donc
+        // sa façade silencieusement ignorée, et sa porte sortait du mauvais côté. Attrapé par un
+        // test. On lit donc les deux formes, et le prompt (lot F) emploiera « facade ».
+        String onRaw = str(map.get("facade"));
+        if (onRaw.isEmpty()) {
+            onRaw = str(map.get("on"));
         }
+        if (onRaw.isEmpty()) {
+            onRaw = str(map.get(Boolean.TRUE));
+        }
+        if (!onRaw.isEmpty()) {
+            Optional<Facade> parsed = Facade.of(onRaw);
+            if (parsed.isEmpty()) {
+                problems.add(where + "façade inconnue : « " + onRaw
+                        + " ». Valeurs acceptées : FRONT, BACK, LEFT, RIGHT.");
+                return Optional.empty();
+            }
+            facade = parsed.get();
+        }
+
+        // Paramètres nommés. Une valeur non entière est refusée plutôt qu'arrondie en silence.
+        java.util.Map<String, Integer> numbers = new java.util.LinkedHashMap<>();
+        for (String key : new String[] {"offset", "y", "width", "height", "spacing", "count",
+            "steps", "hinge"}) {
+            Object raw = map.get(key);
+            if (raw == null) {
+                continue;
+            }
+            if (!(raw instanceof Number number)) {
+                problems.add(where + "le paramètre « " + key + " » doit être un entier, reçu « "
+                        + raw + " ».");
+                return Optional.empty();
+            }
+            numbers.put(key, number.intValue());
+        }
+
         String state = str(map.get("block"));
-        if (kind.get() != PlanStep.Kind.CLEAR && (state == null || state.isBlank())) {
-            problems.add(where + "clé « block » absente — seule l'instruction « clear » s'en passe.");
+        // Les primitives sémantiques ont un matériau par défaut : exiger « block » pour une
+        // lanterne obligerait le modèle à se souvenir de son identifiant exact.
+        boolean needsBlock = k != PlanStep.Kind.CLEAR && !semantic(k);
+        if (needsBlock && state.isEmpty()) {
+            problems.add(where + "clé « block » absente — seules « clear » et les primitives "
+                    + "sémantiques s'en passent.");
             return Optional.empty();
         }
-        return Optional.of(new PlanStep(kind.get(), box.get(),
-                state == null ? "" : state, str(map.get("axis"))));
+
+        // Une zone n'est pas exigée des primitives repérées par façade : elles n'en ont pas besoin,
+        // et en réclamer une rendrait la syntaxe inutilement lourde.
+        PlanBox box;
+        if (map.get("from") == null && byFacade(k)) {
+            box = PlanBox.at(0, 0, 0);
+        } else {
+            Optional<PlanBox> parsed = box(map, where, problems);
+            if (parsed.isEmpty()) {
+                return Optional.empty();
+            }
+            box = parsed.get();
+        }
+
+        // « axis » porte l'axe d'un toit (x/z) ou la direction de montée d'un escalier.
+        // « direction » et « axis » remplissent le même champ, mais ne désignent pas la même chose
+        // selon la primitive : l'axe du faîte pour « gable » (x ou z), la direction de montée pour
+        // « stair_run » (un point cardinal). Un seul mot-clé pour deux vocabulaires est un piège —
+        // un modèle écrivant « axis: x » sur un escalier voyait son plan refusé. « direction » est
+        // donc le mot juste pour une montée, et « axis » reste accepté pour ne casser aucun plan
+        // déjà écrit.
+        String axis = str(map.get("direction"));
+        if (axis.isEmpty()) {
+            axis = str(map.get("axis"));
+        }
+        return Optional.of(new PlanStep(k, box, state, axis, facade,
+                numbers, str(map.get("fill"))));
+    }
+
+    private static boolean semantic(PlanStep.Kind kind) {
+        return switch (kind) {
+            case DOOR, WINDOW, LIGHT, STAIR_RUN, LADDER, PILLARS -> true;
+            default -> false;
+        };
+    }
+
+    /** Ces primitives se repèrent par façade et décalage, pas par une zone. */
+    private static boolean byFacade(PlanStep.Kind kind) {
+        return kind == PlanStep.Kind.DOOR || kind == PlanStep.Kind.WINDOW;
     }
 
     /**

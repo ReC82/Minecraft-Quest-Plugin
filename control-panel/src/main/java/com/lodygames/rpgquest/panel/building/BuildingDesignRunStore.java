@@ -107,10 +107,19 @@ public final class BuildingDesignRunStore {
     public record Run(String id, String agentId, String projectId, String providerId, String quality,
                       int maxCalls, int spentCalls, int inputTokens, int outputTokens, Status status,
                       String outcome, String finalDraftId, List<Pass> passes, String createdBy,
-                      Instant createdAt, Instant updatedAt, boolean fresh) {
+                      Instant createdAt, Instant updatedAt, boolean fresh, boolean rewriteDesign) {
 
         public Run {
             passes = List.copyOf(passes);
+        }
+
+        /** Compatibilité : sans demande explicite, la conception en vigueur est conservée (#299). */
+        public Run(String id, String agentId, String projectId, String providerId, String quality,
+                   int maxCalls, int spentCalls, int inputTokens, int outputTokens, Status status,
+                   String outcome, String finalDraftId, List<Pass> passes, String createdBy,
+                   Instant createdAt, Instant updatedAt, boolean fresh) {
+            this(id, agentId, projectId, providerId, quality, maxCalls, spentCalls, inputTokens, outputTokens,
+                    status, outcome, finalDraftId, passes, createdBy, createdAt, updatedAt, fresh, false);
         }
 
         public boolean running() {
@@ -135,6 +144,16 @@ public final class BuildingDesignRunStore {
             if (!hasFresh) {
                 s.execute("ALTER TABLE building_design_run ADD COLUMN fresh INTEGER NOT NULL DEFAULT 0");
             }
+            // #299 : « réécrire la conception » devient une demande DISTINCTE de « repartir de zéro ».
+            boolean hasRewrite = false;
+            try (ResultSet rs = s.executeQuery("PRAGMA table_info(building_design_run)")) {
+                while (rs.next()) {
+                    hasRewrite |= "rewrite_design".equals(rs.getString("name"));
+                }
+            }
+            if (!hasRewrite) {
+                s.execute("ALTER TABLE building_design_run ADD COLUMN rewrite_design INTEGER NOT NULL DEFAULT 0");
+            }
         } catch (SQLException e) {
             throw new IllegalStateException("Impossible d'initialiser les conceptions automatiques dans "
                     + dbPath, e);
@@ -151,12 +170,21 @@ public final class BuildingDesignRunStore {
 
     public Optional<Run> start(String agentId, String projectId, String token, String providerId,
                                String quality, int maxCalls, boolean fresh, String by) {
+        return start(agentId, projectId, token, providerId, quality, maxCalls, fresh, false, by);
+    }
+
+    /**
+     * @param rewriteDesign vrai seulement si l'administrateur a demandé EXPLICITEMENT une nouvelle
+     *                      conception détaillée (#299) ; « repartir de zéro » ne la réécrit plus.
+     */
+    public Optional<Run> start(String agentId, String projectId, String token, String providerId,
+                               String quality, int maxCalls, boolean fresh, boolean rewriteDesign, String by) {
         String id = UUID.randomUUID().toString();
         String now = STAMP.format(Instant.now());
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
                 "INSERT OR IGNORE INTO building_design_run (id, agent_id, project_id, request_token, "
                         + "provider_id, quality, max_calls, status, created_by, created_at, updated_at, "
-                        + "fresh) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                        + "fresh, rewrite_design) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             ps.setString(1, id);
             ps.setString(2, agentId);
             ps.setString(3, projectId);
@@ -169,6 +197,7 @@ public final class BuildingDesignRunStore {
             ps.setString(10, now);
             ps.setString(11, now);
             ps.setInt(12, fresh ? 1 : 0);
+            ps.setInt(13, rewriteDesign ? 1 : 0);
             if (ps.executeUpdate() == 0) {
                 return Optional.empty();
             }
@@ -264,7 +293,7 @@ public final class BuildingDesignRunStore {
                 Status.parse(rs.getString("status")), rs.getString("outcome"),
                 rs.getString("final_draft_id"), readPasses(rs.getString("passes")),
                 rs.getString("created_by"), parse(rs.getString("created_at")),
-                parse(rs.getString("updated_at")), rs.getInt("fresh") != 0);
+                parse(rs.getString("updated_at")), rs.getInt("fresh") != 0, rs.getInt("rewrite_design") != 0);
     }
 
     private static String writePasses(List<Pass> passes) {

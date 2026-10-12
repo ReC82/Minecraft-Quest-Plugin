@@ -455,13 +455,14 @@ réservation automatiquement initialisée à leur propre cuboïde actif
 ## Règles du monde des claims (`ClaimsWorldRulesListener`)
 
 Distinctes de la protection par claim ci-dessus (`ClaimProtectionListener`,
-qui protège un cuboïde précis dans **n'importe quel** monde) — trois règles
+qui protège un cuboïde précis dans **n'importe quel** monde) — ces règles
 s'appliquent au **monde entier** désigné par `claims.world` :
 
 | Règle | Comportement |
 |---|---|
 | Dégâts joueur | **Tous** annulés, toute `DamageCause` (chute, feu, lave, noyade, suffocation, explosion, projectile, attaque d'entité — PvP inclus, faim, vide, etc. — mission « monde claims = réellement pacifique »/zone résidentielle safe) ; jamais un effet persistant posé sur le joueur (aucune résistance/invulnérabilité) — seul l'événement est annulé, le comportement normal revient **instantanément** dès la sortie de ce monde ; les mobs/animaux ne sont jamais concernés (peuvent toujours se blesser normalement) |
-| Mobs hostiles | Spawn **toujours** empêché, quelle que soit la cause (naturel, spawner, renforts de zombie, invasion de patrouille, invocation par commande...) — pas seulement le spawn naturel (mission « monstres hostiles dans claims ») ; animaux/passifs jamais concernés |
+| Mobs hostiles | Spawn **toujours** empêché, quelle que soit la cause (naturel, spawner, renforts de zombie, invasion de patrouille, invocation par commande, insomnie des phantoms...) — pas seulement le spawn naturel (mission « monstres hostiles dans claims ») ; animaux/passifs jamais concernés. **« Hostile » = `Enemy`** (issue #295) : le phantom, le slime, le ghast, le shulker ou le hoglin ne sont **pas** des `Monster` dans l'API Bukkit et échappaient à la règle |
+| Hostile résiduel (#295) | Ne peut **pas cibler** un joueur dans ce monde (`EntityTargetLivingEntityEvent` annulé) et ne peut **pas y entrer** par portail ou téléportation (`EntityPortalEvent` / `EntityTeleportEvent` annulés) |
 | Construction hors de tout claim | Casse/pose de bloc refusée **en dehors** de tout claim (bypass `rpgquest.admin.world`) — à l'intérieur d'un claim, la protection revient entièrement à `ClaimProtectionListener` |
 | Voyage vers le Nether | Portail Nether activé **depuis** ce monde refusé (`claim.ClaimNetherTravelListener`, bascule `claims.block-nether-travel`) — construire un cadre en obsidienne reste autorisé, seul le voyage est bloqué ; un portail utilisé pour **revenir** vers `claims`, un portail dans un autre monde, ou un worldportal RPGQuest ne sont jamais concernés |
 

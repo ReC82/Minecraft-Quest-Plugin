@@ -10,7 +10,7 @@ import java.util.Optional;
 import java.util.function.Supplier;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.Monster;
+import org.bukkit.entity.Enemy;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -18,6 +18,9 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityPortalEvent;
+import org.bukkit.event.entity.EntityTargetLivingEntityEvent;
+import org.bukkit.event.entity.EntityTeleportEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.WorldLoadEvent;
 
@@ -43,7 +46,11 @@ import org.bukkit.event.world.WorldLoadEvent;
  *       #onWorldLoad}/{@link #onChunkLoad}), plus une purge explicite unique au démarrage du plugin
  *       ({@link #purgeAlreadyLoadedWorld()}, appelée par le bootstrap : les mondes se chargent avant
  *       les plugins, {@code WorldLoadEvent} ne se déclenche donc jamais pour un monde déjà chargé à
- *       ce moment-là) — jamais les animaux/passifs, seulement {@link Monster} ;</li>
+ *       ce moment-là) — jamais les animaux/passifs, seulement les {@link Enemy} ;</li>
+ *   <li>issue #295 — « hostile » veut dire {@link Enemy}, pas {@code Monster} : le phantom (comme
+ *       le slime, le ghast, le shulker ou le hoglin) n'est PAS un {@code Monster} dans l'API Bukkit,
+ *       et passait donc à travers les trois règles précédentes. S'y ajoutent : aucun hostile ne
+ *       cible un joueur dans ce monde, et aucun n'y entre par portail ou téléportation ;</li>
  *   <li>casse/pose de bloc refusée <strong>hors de tout claim</strong> (le monde des claims n'est
  *       pas une zone de construction libre — seul l'intérieur d'un claim, protégé/géré par {@link
  *       ClaimProtectionListener}, est constructible). Bypass {@code rpgquest.admin.world}.</li>
@@ -89,7 +96,31 @@ public final class ClaimsWorldRulesListener implements Listener {
 
     @EventHandler(ignoreCancelled = true)
     public void onCreatureSpawn(CreatureSpawnEvent event) {
-        if (event.getEntity() instanceof Monster && isClaimsWorld(event.getEntity().getWorld())) {
+        if (isHostile(event.getEntity()) && isClaimsWorld(event.getEntity().getWorld())) {
+            event.setCancelled(true);
+        }
+    }
+
+    // ---- Issue #295 : une créature résiduelle ne peut ni cibler un joueur, ni entrer -----------
+
+    @EventHandler(ignoreCancelled = true)
+    public void onTarget(EntityTargetLivingEntityEvent event) {
+        if (event.getTarget() instanceof Player && isHostile(event.getEntity())
+                && isClaimsWorld(event.getEntity().getWorld())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onEntityTeleport(EntityTeleportEvent event) {
+        if (isHostile(event.getEntity()) && event.getTo() != null && isClaimsWorld(event.getTo().getWorld())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onEntityPortal(EntityPortalEvent event) {
+        if (isHostile(event.getEntity()) && event.getTo() != null && isClaimsWorld(event.getTo().getWorld())) {
             event.setCancelled(true);
         }
     }
@@ -126,7 +157,7 @@ public final class ClaimsWorldRulesListener implements Listener {
 
     private void purgeHostileMobs(Collection<? extends Entity> entities) {
         for (Entity entity : entities) {
-            if (entity instanceof Monster) {
+            if (isHostile(entity)) {
                 entity.remove();
             }
         }
@@ -155,6 +186,14 @@ public final class ClaimsWorldRulesListener implements Listener {
 
     private Optional<Claim> claimAt(World world, int x, int y, int z) {
         return claimService.claimAt(world.getName(), x, y, z);
+    }
+
+    /**
+     * Hostile au sens du jeu : {@link Enemy} couvre les monstres ET le phantom, le slime, le ghast…
+     * Les PNJ, joueurs, animaux et golems n'en sont pas.
+     */
+    static boolean isHostile(Entity entity) {
+        return entity instanceof Enemy;
     }
 
     private boolean isClaimsWorld(World world) {

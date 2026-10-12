@@ -173,6 +173,21 @@ public final class QuestProgressEngine implements PluginService {
         return report;
     }
 
+    /**
+     * Issue #242 : les définitions de quêtes ont été rechargées AILLEURS (publication de contenu
+     * depuis le Control Panel, {@code ContentReloadService}). Sans cette reconstruction, l'index et
+     * les écouteurs restaient ceux d'avant : une quête publiée à chaud dont le type d'objectif
+     * n'était utilisé par aucune autre (le premier SMELT_ITEM, par exemple) n'avait AUCUN écouteur
+     * jusqu'au prochain redémarrage — « 0/1 » au retrait du four.
+     */
+    public void afterExternalReload() {
+        if (plugin.getServer().isPrimaryThread()) {
+            rebuildIndexAndListeners();
+        } else {
+            plugin.getServer().getScheduler().runTask(plugin, this::rebuildIndexAndListeners);
+        }
+    }
+
     private void rebuildIndexAndListeners() {
         QuestObjectiveIndex newIndex = new QuestObjectiveIndex(questEngine.quests());
         this.index = newIndex;

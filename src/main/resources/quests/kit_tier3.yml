@@ -1,0 +1,42 @@
+# Issue #218 — montée au palier 3 du kit de départ (« Explorateur »). Les matériaux suivent les
+# recettes vanilla des NOUVEAUTÉS du palier, jamais la reconstruction complète du kit ; aucun fer.
+# Le palier n'est débloqué que par la récompense « rpgadmin kit grant-tier », qui refuse de sauter un
+# palier ; la variable STARTER_KIT_TIER en garde la trace et sert aux conditions du Guide.
+id: rpgquest:kit_tier3
+title: "<gold>Explorateur</gold>"
+description: >
+  <gray>Rapporte au Guide de quoi améliorer ton équipement de secours : un bâton et trois pierres pour chaque outil en pierre (pioche et hache), cinq cuirs pour un casque, et trois blés pour un pain de plus. Tu peux lui
+  donner tes matériaux au fur et à mesure : ce qui est remis est gardé en sécurité, même si tu
+  meurs.</gray>
+category: kit
+icon: STONE_PICKAXE
+giver: guide
+repeatable: false
+prerequisites:
+  - rpgquest:kit_tier2
+
+steps:
+  - id: rapporter_les_materiaux
+    objectives:
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guide
+        material: STICK
+        amount: 4
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guide
+        material: COBBLESTONE
+        amount: 6
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guide
+        material: LEATHER
+        amount: 5
+      - type: DELIVER_ITEM_TO_NPC
+        npc: guide
+        material: WHEAT
+        amount: 3
+
+rewards:
+  - type: COMMAND
+    command: "rpgadmin kit grant-tier %player% 3"
+  - type: EXPERIENCE
+    amount: 30

@@ -59,6 +59,8 @@ class QuestDiscoverWaypointObjectiveTest {
     private QuestProgressEngine engine;
     /** Découvertes « déjà acquises », tenues comme le ferait l'index en mémoire du vrai service. */
     private final Map<UUID, List<String>> discoveredWorldsByPlayer = new ConcurrentHashMap<>();
+    private YamlQuestEngine questEngine;
+    private Path questsDirectory;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -106,7 +108,8 @@ class QuestDiscoverWaypointObjectiveTest {
                         count-mode: INCLUDE_EXISTING
                 """);
 
-        YamlQuestEngine questEngine = new YamlQuestEngine(questsDir, plugin.getSLF4JLogger());
+        questEngine = new YamlQuestEngine(questsDir, plugin.getSLF4JLogger());
+        questsDirectory = questsDir;
         questEngine.reload();
         progressRepository = new QuestProgressRepository(database);
         profileRepository = new PlayerProfileRepository(database);
@@ -292,5 +295,35 @@ class QuestDiscoverWaypointObjectiveTest {
 
         assertEquals(1, liveCounter(first, NEW_ONLY_QUEST));
         assertEquals(0, liveCounter(second, NEW_ONLY_QUEST));
+    }
+
+    /**
+     * Issue #185/#242 : une quête DISCOVER_WAYPOINT publiée à chaud progresse dès la publication
+     * (avant le correctif, l'index n'était reconstruit qu'au redémarrage).
+     */
+    @Test
+    void aDiscoveryQuestPublishedWhileRunningProgressesAtOnce() throws Exception {
+        Files.writeString(questsDirectory.resolve("discover_wild.yml"), """
+                id: rpgquest:discover_wild
+                title: "Titre"
+                description: "Description"
+                category: test
+                steps:
+                  - id: decouvrir_wild
+                    objectives:
+                      - type: DISCOVER_WAYPOINT
+                        amount: 2
+                        worlds: [wild]
+                        count-mode: NEW_ONLY
+                """);
+        questEngine.reload();
+        engine.afterExternalReload();
+        NamespacedKey quest = new NamespacedKey("rpgquest", "discover_wild");
+        PlayerMock player = player(quest);
+
+        discover(player, "world_hub");
+        assertEquals(0, liveCounter(player, quest), "hors des mondes choisis : rien");
+        discover(player, "wild");
+        assertEquals(1, liveCounter(player, quest), "première découverte réelle dans le Wild");
     }
 }

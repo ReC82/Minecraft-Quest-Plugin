@@ -391,6 +391,23 @@ class BundledDialoguesValidityTest {
         assertTrue(offered, "rpgquest:kit_tier2 doit être proposée par son PNJ donneur (giver: guide)");
     }
 
+    /** Issue #218 : chaque palier suivant (3 à 5) est proposé par le Guide, d'après STARTER_KIT_TIER. */
+    @Test
+    void theGuideOffersEveryNextKitTierFromTheTierVariable() {
+        DialogueDefinition guide = guide();
+        for (int tier = 3; tier <= 5; tier++) {
+            NamespacedKey quest = new NamespacedKey("rpgquest", "kit_tier" + tier);
+            String previous = String.valueOf(tier - 1);
+            boolean offered = guide.nodes().values().stream()
+                    .flatMap(n -> n.choices().stream())
+                    .filter(c -> c.actions().stream().anyMatch(a -> a instanceof StartQuestAction start
+                            && start.questId().equals(quest)))
+                    .anyMatch(c -> c.conditions().toString().contains("STARTER_KIT_TIER")
+                            && c.conditions().toString().contains(previous));
+            assertTrue(offered, quest + " doit être proposée quand STARTER_KIT_TIER = " + previous);
+        }
+    }
+
     /**
      * Le palier est affiché par des marqueurs, pas recopié.
      *

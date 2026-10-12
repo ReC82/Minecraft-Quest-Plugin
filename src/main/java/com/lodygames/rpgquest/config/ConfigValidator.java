@@ -1066,7 +1066,18 @@ public final class ConfigValidator {
     private static StarterToolKitConfig defaultStarterToolKit() {
         return new StarterToolKitConfig(true, List.of(
                 new StarterKitTier(1, "Nouveau venu", DEFAULT_TIER_1_ITEMS, null),
-                new StarterKitTier(2, "Premiers pas dans le Wild", DEFAULT_TIER_2_ITEMS, "rpgquest:kit_tier2")));
+                new StarterKitTier(2, "Premiers pas dans le Wild", DEFAULT_TIER_2_ITEMS, "rpgquest:kit_tier2"),
+                // Issue #218 : paliers 3 à 5, identiques au config.yml fourni.
+                new StarterKitTier(3, "Explorateur", List.of(Material.STONE_SWORD, Material.STONE_PICKAXE,
+                        Material.WOODEN_SHOVEL, Material.STONE_AXE, Material.LEATHER_BOOTS, Material.LEATHER_HELMET,
+                        Material.BREAD, Material.BREAD), "rpgquest:kit_tier3"),
+                new StarterKitTier(4, "Aventurier", List.of(Material.STONE_SWORD, Material.STONE_PICKAXE,
+                        Material.STONE_SHOVEL, Material.STONE_AXE, Material.LEATHER_BOOTS, Material.LEATHER_HELMET,
+                        Material.LEATHER_LEGGINGS, Material.BREAD, Material.BREAD), "rpgquest:kit_tier4"),
+                new StarterKitTier(5, "Vétéran du Wild", List.of(Material.STONE_SWORD, Material.STONE_PICKAXE,
+                        Material.STONE_SHOVEL, Material.STONE_AXE, Material.LEATHER_BOOTS, Material.LEATHER_HELMET,
+                        Material.LEATHER_LEGGINGS, Material.LEATHER_CHESTPLATE, Material.BREAD, Material.BREAD,
+                        Material.BREAD), "rpgquest:kit_tier5")));
     }
 
     private static int positiveInt(ConfigurationSection section, String path, int defaultValue)

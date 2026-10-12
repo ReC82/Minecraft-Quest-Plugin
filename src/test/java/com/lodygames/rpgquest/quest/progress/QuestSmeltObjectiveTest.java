@@ -137,6 +137,50 @@ class QuestSmeltObjectiveTest {
                 .orElse(-1);
     }
 
+    /**
+     * Issue #242, cause réelle : la quête de test avait été PUBLIÉE à chaud depuis le Control Panel.
+     * La publication rechargeait les définitions sans reconstruire l'index ni les écouteurs de
+     * progression — premier SMELT_ITEM du serveur, donc aucun écouteur : « 0/1 » au retrait du four.
+     */
+    @Test
+    void aSmeltQuestPublishedWhileRunningProgressesAfterTheReload() throws Exception {
+        engine.stop();
+        Path questsDir = tempDir.resolve("quests-live");
+        Files.createDirectories(questsDir);
+        Files.writeString(questsDir.resolve("other.yml"), """
+                id: rpgquest:other
+                title: "Autre"
+                description: "Autre"
+                category: test
+                steps:
+                  - id: s
+                    objectives:
+                      - type: BREAK_BLOCK
+                        material: STONE
+                        amount: 1
+                """);
+        YamlQuestEngine questEngine = new YamlQuestEngine(questsDir, plugin.getSLF4JLogger());
+        questEngine.reload();
+        QuestMessagesService messagesService = new QuestMessagesService(plugin);
+        messagesService.start();
+        engine = new QuestProgressEngine(plugin, questEngine, progressRepository,
+                new PlayerVariableRepository(database), messagesService,
+                new NpcIdentityService(plugin, new NpcIdRepository(database), new NpcBindingRepository(database)),
+                QuestRewardPayer.unavailable());
+        engine.start();
+
+        // Publication à chaud : le fichier arrive, le registre est rechargé comme le fait
+        // ContentReloadService, puis le crochet de reconstruction s'applique.
+        Files.writeString(questsDir.resolve("smelt_quest.yml"), Files.readString(
+                tempDir.resolve("quests").resolve("smelt_quest.yml")));
+        questEngine.reload();
+        engine.afterExternalReload();
+
+        PlayerMock player = player();
+        extract(player, Material.FURNACE, Material.GREEN_DYE, 1);
+        assertEquals(1, liveCounter(player), "le retrait manuel progresse dès la publication");
+    }
+
     @Test
     void extractingTheSmeltedResultProgressesTheObjective() throws Exception {
         PlayerMock player = player();

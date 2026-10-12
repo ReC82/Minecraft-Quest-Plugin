@@ -436,10 +436,144 @@ class BuildingGeneratorTest {
     // ---- Moteur simulé -----------------------------------------------------------------------
 
     /** Moteur minimal : il retient les fichiers écrits, et sait échouer sur commande. */
+    // ---- #288–#292 : contenu refusé avant le verdict, écriture distinguée ---------------------
+
+    @Test
+    @DisplayName("Un état refusé par le vrai parseur du moteur rend le plan invalide AVANT tout verdict conforme")
+    void anEngineRefusalMakesThePlanInvalidBeforeAnyVerdict() {
+        gateway.refuse.put("minecraft:stone_bricks", "NoMatchException — simulé");
+
+        BuildingGenerator.Verdict verdict = generator.inspect(LIBRARY_PLAN);
+        assertFalse(verdict.ok());
+        assertEquals("PLAN_INVALID", verdict.code());
+        assertTrue(verdict.codes().contains("BLOCK_REJECTED"), verdict.codes().toString());
+        assertTrue(verdict.message().contains("« minecraft:stone_bricks » en 0/0/0"), verdict.message());
+        assertTrue(verdict.message().contains("instruction 1"), verdict.message());
+
+        BuildingGenerator.Result result = generator.generate(LIBRARY_PLAN, false);
+        assertEquals("PLAN_INVALID", result.code());
+        assertTrue(gateway.files.isEmpty(), "rien n'est écrit");
+    }
+
+    @Test
+    @DisplayName("Un échec d'écriture est annoncé comme tel, pas comme une faute du plan")
+    void aWriteFailureIsReportedAsInfrastructure() {
+        gateway.writeFails = true;
+        BuildingGenerator.Result result = generator.generate(LIBRARY_PLAN, false);
+        assertEquals("SCHEMATIC_FAILED", result.code());
+        assertTrue(result.message().contains("Échec d'écriture"), result.message());
+        assertTrue(result.message().contains("passé la validation de ses blocs"), result.message());
+    }
+
+    // ---- #290 : republier une nouvelle version du même bâtiment ------------------------------
+
+    @Test
+    @DisplayName("Republier : la version vue est contrôlée, la précédente est archivée, la nouvelle prend sa place")
+    void republishingChecksTheVersionAndArchivesThePreviousOne() throws Exception {
+        Path schematics = tempDir.resolve("schematics");
+        Files.createDirectories(schematics);
+        generator.archivingTo(schematics, java.time.Clock.fixed(java.time.Instant.parse("2026-10-12T20:00:00Z"),
+                java.time.ZoneOffset.UTC));
+        assertTrue(generator.generate(LIBRARY_PLAN, false).ok());
+        Files.writeString(schematics.resolve("hub_library.schem"), "v1");
+
+        // Quelqu'un a vu la version 2 : il n'y en a qu'une. Rien n'est écrit.
+        BuildingGenerator.Result conflict = generator.generate(LIBRARY_PLAN, true, 2);
+        assertEquals("VERSION_CONFLICT", conflict.code(), conflict.message());
+        assertEquals(1, library.find("hub_library").orElseThrow().version());
+
+        BuildingGenerator.Result republished = generator.generate(LIBRARY_PLAN, true, 1);
+        assertTrue(republished.ok(), republished.message());
+        assertEquals(2, republished.version());
+        assertTrue(republished.replaced());
+        Path archive = buildings.resolve(".history").resolve("hub_library").resolve("v1_20261012-200000");
+        assertTrue(Files.exists(archive.resolve("hub_library.yml")), "la définition v1 est archivée");
+        assertEquals("v1", Files.readString(archive.resolve("hub_library.schem")), "le schematic v1 aussi");
+        assertTrue(republished.effects().stream().anyMatch(e -> e.contains("version 1 archivée")),
+                republished.effects().toString());
+        assertEquals(2, library.find("hub_library").orElseThrow().version());
+    }
+
+    /**
+     * #288–#292 : le parcours complet sur le plan RÉEL de la Maison de Lily, jusqu'au schematic —
+     * matériaux corrigés comme l'IA les corrigerait, réparation du moteur, audit, enregistrement.
+     * L'écriture du .schem par WorldEdit lui-même se vérifie en jeu (TC-295) : sans serveur, son
+     * registre n'existe pas ; ici le moteur simulé reçoit la grille finale.
+     */
+    @Test
+    @DisplayName("Maison de Lily réelle : refusée pour ses blocs, puis réparée, auditée et enregistrée jusqu'au schematic")
+    void lilysRealPlanGoesAllTheWayToASchematic() {
+        String real = VerticalCirculation282Test.fixture("maison_de_lily_aa8ff980.yml");
+        BuildingGenerator.Verdict first = generator.inspect(real, new PlanRepair.Limits(19, 10));
+        assertEquals("PLAN_INVALID", first.code());
+        assertTrue(first.message().contains("minecraft:bed") && first.message().contains("stained_glass_pane"),
+                first.message());
+        assertTrue(gateway.files.isEmpty(), "rien n'est écrit pour un plan refusé");
+
+        String corrected = real.replace("""
+                  - op: box
+                    from: [9, 1, 13]
+                    to: [10, 1, 14]
+                    block: minecraft:bed
+                """, """
+                  - op: bed
+                    from: [9, 1, 13]
+                    direction: south
+                    block: minecraft:pink_bed
+                """).replace("minecraft:stained_glass_pane", "minecraft:pink_stained_glass_pane");
+        BuildingGenerator.Verdict second = generator.inspect(corrected, new PlanRepair.Limits(19, 10));
+        assertTrue(second.repair() != null, "le moteur propose une réparation : " + second.message());
+        // Ses lanternes de y=2, en plein milieu de la pièce, sont trop loin du toit pour une chaîne :
+        // le moteur ne les invente pas ailleurs, le refus reste — c'est la correction de l'IA.
+        assertTrue(second.repair().codes().contains("UNSUPPORTED_BLOCK"), second.repair().codes().toString());
+
+        String lanternsOnTheFloor = corrected
+                .replace("from: [8, 2, 8]\n    to: [10, 3, 10]", "from: [8, 1, 8]\n    to: [10, 1, 10]")
+                .replace("from: [12, 2, 9]\n    to: [13, 2, 10]", "from: [12, 1, 9]\n    to: [13, 1, 10]");
+        assertTrue(!lanternsOnTheFloor.equals(corrected), "les deux lumières ont été descendues");
+        // Son second toit (clear puis gable de y=8) recouvre toute la largeur au-dessus de la pente du
+        // premier : 56 cellules ouvertes sous débord (ENVELOPE_OPEN), que les vitres posées sur la
+        // limite du volume masquaient. Aucune réparation sûre : l'IA le retire.
+        String secondRoof = """
+                  - op: clear
+                    from: [3, 8, 3]
+                    to: [15, 9, 15]
+                  - op: gable
+                    from: [3, 8, 3]
+                    to: [15, 9, 15]
+                    axis: x
+                    fill: minecraft:smooth_sandstone
+                    block: minecraft:dark_oak_stairs
+                """;
+        assertTrue(lanternsOnTheFloor.contains(secondRoof), "le plan réel a bien ce second toit");
+        lanternsOnTheFloor = lanternsOnTheFloor.replace(secondRoof, "");
+        BuildingGenerator.Verdict fourth = generator.inspect(lanternsOnTheFloor, new PlanRepair.Limits(19, 10));
+        assertTrue(fourth.repair() != null && fourth.repair().accepted(), String.valueOf(fourth.repair()));
+        String repaired = fourth.repair().plan();
+        BuildingGenerator.Verdict third = generator.inspect(repaired, new PlanRepair.Limits(19, 10));
+        assertTrue(third.ok(), "la version réparée est conforme : " + third.message());
+
+        BuildingGenerator.Result saved = generator.generate(repaired, false);
+        assertTrue(saved.ok(), saved.message());
+        assertTrue(gateway.files.contains("maison_de_lily.schem"), "le schematic est écrit");
+        assertTrue(library.find("maison_de_lily").isPresent(), "et le bâtiment est dans la bibliothèque");
+    }
+
     private static final class FakeGateway implements SchematicGateway {
         final Set<String> files = new LinkedHashSet<>();
+        final java.util.Map<String, String> refuse = new java.util.HashMap<>();
         boolean available = true;
         boolean writeFails;
+
+        @Override public java.util.Map<String, String> rejected(java.util.Collection<String> states) {
+            java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
+            for (String state : states) {
+                if (refuse.containsKey(state)) {
+                    out.put(state, refuse.get(state));
+                }
+            }
+            return out;
+        }
 
         @Override public boolean available() {
             return available;

@@ -96,7 +96,10 @@ public final class PlanRepair {
             // Rien de sûr à faire : la faute n'est pas dans le catalogue.
             return new Outcome(null, List.of(), before, before);
         }
+        plan = openings(plan, changes);
         plan = circulation(plan, changes);
+        plan = entrance(plan, changes);
+        plan = lanterns(plan, changes);
         List<String> after = codes(plan);
         if (changes.isEmpty() || worse(before, after)) {
             return new Outcome(null, List.of(), before, before);
@@ -113,7 +116,8 @@ public final class PlanRepair {
         if (!r.ok()) {
             return List.of("PLAN_INVALID");
         }
-        return ArchitecturalAudit.audit(r.blueprint(), plan.front(), plan.rules()).blockingCodes();
+        return ArchitecturalAudit.audit(r.blueprint(), plan.front(), plan.rules(),
+                ArchitecturalAudit.Provenance.NONE, plan.anchorY()).blockingCodes();
     }
 
     /**
@@ -208,7 +212,233 @@ public final class PlanRepair {
         return volume && over <= MAX_CLAMP && overlaps;
     }
 
-    // ---- 2. La circulation ----------------------------------------------------------------------
+    // ---- 2. Les ouvertures (#288–#292) ---------------------------------------------------------
+
+    /** Décalage maximal d'une porte ou d'une fenêtre pour la ramener dans son mur. */
+    static final int MAX_SHIFT = 3;
+
+    /**
+     * Ramène dans le mur construit une porte ou une fenêtre qui en déborde de peu — typiquement
+     * une fenêtre posée sur l'angle du corps de bâtiment (Maison de Lily : vitrage avant en x=3,
+     * angle du mur de x=3 à x=15). Le plus petit décalage qui fait accepter l'instruction par le
+     * vrai expanseur est retenu ; au-delà de {@value #MAX_SHIFT} cellules, c'est une intention à
+     * revoir, pas une faute de calcul.
+     */
+    static BuildingPlan openings(BuildingPlan plan, List<String> changes) {
+        BuildingPlan current = plan;
+        for (int guard = 0; guard < plan.steps().size(); guard++) {
+            BuildingPlanExpander.Result r = BuildingPlanExpander.expand(current);
+            int rank = failingOpening(r);
+            if (rank < 1) {
+                return current;
+            }
+            PlanStep step = current.steps().get(rank - 1);
+            int offset = step.number("offset", step.kind() == PlanStep.Kind.WINDOW ? 1
+                    : step.facade() == null ? 0 : step.facade().span(current.front(), current.sizeX(),
+                            current.sizeZ()) / 2);
+            BuildingPlan fixed = null;
+            int chosen = 0;
+            for (int d = 1; d <= MAX_SHIFT && fixed == null; d++) {
+                for (int sign : new int[] {1, -1}) {
+                    Map<String, Integer> numbers = new HashMap<>(step.numbers());
+                    numbers.put("offset", offset + sign * d);
+                    List<PlanStep> steps = new ArrayList<>(current.steps());
+                    steps.set(rank - 1, new PlanStep(step.kind(), step.box(), step.state(), step.axis(),
+                            step.facade(), numbers, step.fill()));
+                    BuildingPlan candidate = copy(current, steps);
+                    if (candidate.validate().isEmpty()
+                            && failingOpening(BuildingPlanExpander.expand(candidate)) != rank) {
+                        fixed = candidate;
+                        chosen = offset + sign * d;
+                        break;
+                    }
+                }
+            }
+            if (fixed == null) {
+                return current;
+            }
+            changes.add(BuildingPlanExpander.describeStep(current, rank).substring(0, 1)
+                    .toUpperCase(java.util.Locale.ROOT)
+                    + BuildingPlanExpander.describeStep(current, rank).substring(1)
+                    + " : offset " + offset + " → " + chosen + ", pour tomber dans le mur construit "
+                    + "(angles exclus) au lieu d'en sortir.");
+            current = fixed;
+        }
+        return current;
+    }
+
+    /** Le rang de la porte ou fenêtre que l'expanseur refuse faute de mur, ou 0. */
+    private static int failingOpening(BuildingPlanExpander.Result r) {
+        if (r.ok()) {
+            return 0;
+        }
+        var m = java.util.regex.Pattern.compile("^Instruction (\\d+) \\((DOOR|WINDOW)\\) : .*"
+                + "ne tombe dans aucun mur construit", java.util.regex.Pattern.DOTALL).matcher(r.error());
+        return m.find() ? Integer.parseInt(m.group(1)) : 0;
+    }
+
+    // ---- 3. L'entrée (#291) ---------------------------------------------------------------------
+
+    /**
+     * Pose les marches d'entrée qui manquent, quand le seuil est au-dessus du terrain.
+     *
+     * <p>L'ancre d'un emplacement est la case libre au-dessus du sol : un plancher posé en y=0
+     * dépasse donc le terrain d'un bloc, et l'on entrait en sautant (Maison du bibliothécaire,
+     * #291). Devant chaque porte, et DANS le volume, le moteur pose une volée d'escaliers tournée
+     * vers la porte — une marche par bloc de dénivelé, assise sur le matériau du seuil — puis
+     * rejoue l'audit. S'il n'y a pas la place dans le volume, il ne déborde pas : le refus reste,
+     * avec sa raison.</p>
+     */
+    static BuildingPlan entrance(BuildingPlan plan, List<String> changes) {
+        Snapshot s = snapshot(plan);
+        if (s == null || !s.report().blockingCodes().contains("ENTRANCE_STEP")) {
+            return plan;
+        }
+        AuditGrid grid = AuditGrid.of(s.expansion().blueprint());
+        int groundY = plan.anchorY();
+        for (var e : grid.cells().entrySet()) {
+            if (!Access.lowerDoor(e.getValue())) {
+                continue;
+            }
+            int x = AuditGrid.keyX(e.getKey());
+            int y = AuditGrid.keyY(e.getKey());
+            int z = AuditGrid.keyZ(e.getKey());
+            String facing = e.getValue().replaceAll(".*facing=([a-z]+).*", "$1");
+            BlockStates.Dir out = switch (facing) {
+                case "east" -> BlockStates.Dir.EAST;
+                case "west" -> BlockStates.Dir.WEST;
+                case "south" -> BlockStates.Dir.SOUTH;
+                default -> BlockStates.Dir.NORTH;
+            };
+            // La porte regarde le dehors : on vérifie qu'il est bien de ce côté.
+            if (!Access.interior(grid, x - out.dx(), y, z - out.dz())) {
+                out = out.opposite();
+                if (!Access.interior(grid, x - out.dx(), y, z - out.dz())) {
+                    continue;
+                }
+            }
+            int rise = y - groundY;
+            if (rise < 1 || rise > 4) {
+                continue;
+            }
+            String stairs = stairMaterial(plan);
+            String base = BlockStates.bareTypeOr(grid.at(x, y - 1, z), "minecraft:stone_bricks");
+            List<PlanStep> steps = new ArrayList<>(plan.steps());
+            boolean fits = true;
+            for (int k = 0; k < rise; k++) {
+                int sx = x + out.dx() * (k + 1);
+                int sz = z + out.dz() * (k + 1);
+                int top = y - 1 - k;
+                if (sx < 0 || sz < 0 || sx >= plan.sizeX() || sz >= plan.sizeZ() || top < 0) {
+                    fits = false;
+                    break;
+                }
+                if (top > groundY) {
+                    steps.add(PlanStep.of(PlanStep.Kind.BOX,
+                            PlanBox.of(sx, groundY, sz, sx, top - 1, sz), base));
+                }
+                steps.add(PlanStep.of(PlanStep.Kind.BOX, PlanBox.at(sx, top, sz),
+                        BlockStates.stairs(stairs, out.opposite(), false)));
+            }
+            if (!fits) {
+                // Pas la place de marches dans le volume (façade sur sa limite) : on n'en sort pas.
+                // On enterre la fondation — l'ancre monte au niveau du seuil, le bâtiment se pose
+                // d'autant plus bas, comme la hutte de test (« une fondation s'enfonce dans le
+                // sol »). Rien ne bouge dans la grille ; seule la pose change.
+                BuildingPlan sunk = new BuildingPlan(plan.id(), plan.name(), plan.sizeX(), plan.sizeY(),
+                        plan.sizeZ(), plan.front(), plan.anchorX(), y, plan.anchorZ(), plan.steps(),
+                        plan.kind());
+                List<String> after = codes(sunk);
+                if (sunk.validate().isEmpty() && !after.contains("ENTRANCE_STEP")
+                        && !worse(s.report().blockingCodes(), after)) {
+                    changes.add("Seuil de la porte " + x + "/" + y + "/" + z + " à " + rise
+                            + " bloc(s) au-dessus du terrain, sans place pour des marches dans le "
+                            + "volume : fondation enterrée — l'ancre passe de y=" + plan.anchorY()
+                            + " à y=" + y + ", le bâtiment se pose " + rise + " bloc(s) plus bas et "
+                            + "l'on entre de plain-pied.");
+                    return sunk;
+                }
+                continue;
+            }
+            BuildingPlan withSteps = copy(plan, steps);
+            List<String> before = s.report().blockingCodes();
+            List<String> after = codes(withSteps);
+            if (!after.contains("ENTRANCE_STEP") && !worse(before, after)) {
+                changes.add("Seuil de la porte " + x + "/" + y + "/" + z + " à " + rise
+                        + " bloc(s) au-dessus du terrain (y=" + groundY + ") : " + rise
+                        + " marche(s) de " + BlockState.type(stairs) + " ajoutée(s) devant elle, dans le "
+                        + "volume, tournées vers la porte.");
+                return withSteps;
+            }
+        }
+        return plan;
+    }
+
+    // ---- 4. Les lanternes flottantes (#288) ----------------------------------------------------
+
+    /** Hauteur maximale d'une chaîne de suspension ajoutée par le moteur. */
+    static final int MAX_CHAIN = 4;
+
+    /**
+     * Suspend à une chaîne les lanternes de « light » qui flottent, quand un plafond se trouve au
+     * plus {@value #MAX_CHAIN} cellules au-dessus, à travers de l'air seulement. La lanterne reste
+     * à sa place et devient suspendue : c'est le geste d'un bâtisseur, et la seule correction qui
+     * ne déplace pas la lumière décidée par le plan. Sans plafond atteignable, rien n'est inventé :
+     * le refus reste, avec la cellule.
+     */
+    static BuildingPlan lanterns(BuildingPlan plan, List<String> changes) {
+        Snapshot s = snapshot(plan);
+        if (s == null || !s.report().blockingCodes().contains("UNSUPPORTED_BLOCK")) {
+            return plan;
+        }
+        AuditGrid grid = AuditGrid.of(s.expansion().blueprint());
+        List<PlanStep> steps = new ArrayList<>(plan.steps());
+        List<String> hung = new ArrayList<>();
+        for (Stability.Problem p : Stability.unsupported(grid)) {
+            int rank = s.expansion().provenance().stepAt(p.x(), p.y(), p.z());
+            if (rank < 1 || plan.steps().get(rank - 1).kind() != PlanStep.Kind.LIGHT
+                    || !BlockState.type(p.state()).endsWith("lantern")) {
+                continue;
+            }
+            int top = -1;
+            for (int y = p.y() + 1; y <= p.y() + MAX_CHAIN + 1 && y < plan.sizeY(); y++) {
+                String at = grid.at(p.x(), y, p.z());
+                if (at != null) {
+                    top = Stability.holdsFromAbove(at) ? y : -1;
+                    break;
+                }
+            }
+            if (top <= p.y() + 1) {
+                continue;
+            }
+            steps.add(PlanStep.of(PlanStep.Kind.BOX, PlanBox.of(p.x(), p.y() + 1, p.z(), p.x(), top - 1,
+                    p.z()), "minecraft:iron_chain[axis=y,waterlogged=false]"));
+            hung.add(p.x() + "/" + p.y() + "/" + p.z() + " (" + (top - 1 - p.y()) + " maillon(s))");
+        }
+        if (hung.isEmpty()) {
+            return plan;
+        }
+        BuildingPlan chained = copy(plan, steps);
+        if (worse(s.report().blockingCodes(), codes(chained))) {
+            return plan;
+        }
+        changes.add("Lanternes flottantes suspendues à une chaîne jusqu'au plafond : "
+                + String.join(", ", hung) + ".");
+        return chained;
+    }
+
+    /** L'escalier du plan, pour que les marches d'entrée gardent son style. */
+    private static String stairMaterial(BuildingPlan plan) {
+        for (PlanStep step : plan.steps()) {
+            String type = BlockStates.bareType(step.state());
+            if (type.endsWith("_stairs")) {
+                return type;
+            }
+        }
+        return "minecraft:stone_brick_stairs";
+    }
+
+    // ---- 4. La circulation ----------------------------------------------------------------------
 
     private static BuildingPlan circulation(BuildingPlan plan, List<String> changes) {
         BuildingPlan current = plan;
@@ -253,7 +483,7 @@ public final class PlanRepair {
             return null;
         }
         return new Snapshot(r, ArchitecturalAudit.audit(r.blueprint(), plan.front(), plan.rules(),
-                r.provenance()));
+                r.provenance(), plan.anchorY()));
     }
 
     private static PlanStep step(Staircase stair) {

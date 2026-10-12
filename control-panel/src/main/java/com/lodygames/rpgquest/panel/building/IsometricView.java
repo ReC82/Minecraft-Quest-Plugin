@@ -79,8 +79,12 @@ public final class IsometricView {
                 : "L'entrée (côté " + name + ") est la face " + side + ".";
     }
 
-    /** Une couleur de la légende. */
-    public record Swatch(String color, String label) {
+    /** Une couleur de la légende, et le nombre de blocs de ce matériau dans la grille. */
+    public record Swatch(String color, String label, int count) {
+
+        public Swatch(String color, String label) {
+            this(color, label, 0);
+        }
     }
 
     /**
@@ -142,14 +146,19 @@ public final class IsometricView {
                 }
             }
         }
-        Map<String, Swatch> out = new LinkedHashMap<>();
-        counts.entrySet().stream().sorted(Map.Entry.<Character, Integer>comparingByValue().reversed())
-                .forEach(e -> {
-                    BuildingVoxels.Entry entry = voxels.palette().get(e.getKey());
-                    String label = entry.block().replace('_', ' ');
-                    out.putIfAbsent(label, new Swatch(color(entry), label));
-                });
-        return out.values().stream().limit(max).toList();
+        // Plusieurs symboles peuvent porter le même matériau (états différents : marches tournées,
+        // lanternes suspendues ou posées) : on les additionne.
+        Map<String, Integer> byLabel = new LinkedHashMap<>();
+        Map<String, String> colors = new LinkedHashMap<>();
+        for (var e : counts.entrySet()) {
+            BuildingVoxels.Entry entry = voxels.palette().get(e.getKey());
+            String label = entry.block().replace('_', ' ');
+            byLabel.merge(label, e.getValue(), Integer::sum);
+            colors.putIfAbsent(label, color(entry));
+        }
+        return byLabel.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed().thenComparing(Map.Entry::getKey))
+                .limit(max).map(e -> new Swatch(colors.get(e.getKey()), e.getKey(), e.getValue())).toList();
     }
 
     // ---- Dessin ------------------------------------------------------------------------------

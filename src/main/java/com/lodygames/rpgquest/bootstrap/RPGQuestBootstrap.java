@@ -935,7 +935,10 @@ public final class RPGQuestBootstrap {
                 buildingPlacementService::all, plugin.getLogger(), java.time.Clock.systemUTC()));
         agentActions.setBuildingGenerator(new com.lodygames.rpgquest.building.plan.BuildingGenerator(
                 buildingLibrary, buildingSchematics,
-                plugin.getDataFolder().toPath().resolve("buildings"), plugin.getLogger()));
+                plugin.getDataFolder().toPath().resolve("buildings"), plugin.getLogger())
+                // #290 : une republication archive la version remplacée (définition + schematic).
+                .archivingTo(plugin.getDataFolder().toPath().resolve("schematics"),
+                        java.time.Clock.systemUTC()));
         // Issue #156 : enrichissements du diagnostic de réseau de voyage. Le compteur de
         // découvertes reste ASYNCHRONE de bout en bout — c'est une lecture SQL, et l'attendre
         // depuis le thread principal gèlerait le serveur le temps de la requête. Le relevé la

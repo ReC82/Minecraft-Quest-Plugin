@@ -46,7 +46,9 @@ class PromptPlanConsistencyTest {
                 "source du Control Panel absent : test de cohérence non applicable ici");
         String source = Files.readString(PROMPT_SOURCE);
         int start = source.indexOf("return \"\"\"", source.indexOf("static String systemPrompt()"));
-        int end = source.indexOf("\"\"\";", start);
+        // Le texte s'arrête au """ fermant, suivi de « ; » ou d'une concaténation (#289 : le tableau
+        // des capacités du moteur est ajouté au prompt système).
+        int end = source.indexOf("\"\"\"", source.indexOf('\n', start) + 1);
         assertTrue(start > 0 && end > start, "texte du prompt système introuvable");
         prompt = dedent(source.substring(source.indexOf('\n', start) + 1, end));
     }
@@ -63,7 +65,8 @@ class PromptPlanConsistencyTest {
         BuildingPlanExpander.Result expansion = BuildingPlanExpander.expand(plan);
         assertTrue(expansion.ok(), expansion.error());
         ArchitecturalAudit.Report report =
-                ArchitecturalAudit.audit(expansion.blueprint(), plan.front(), plan.rules());
+                ArchitecturalAudit.audit(expansion.blueprint(), plan.front(), plan.rules(),
+                        expansion.provenance(), plan.anchorY());
         assertTrue(report.blocking().isEmpty(),
                 "l'exemple que le prompt montre comme valide doit l'être pour l'audit : "
                         + report.blocking());

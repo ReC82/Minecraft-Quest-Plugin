@@ -110,6 +110,8 @@ public final class PanelApp {
     private final com.lodygames.rpgquest.panel.building.BuildingDesignRunStore designRuns;
     /** #283 : images de référence des projets (pixels transmis au modèle, jamais une URL). */
     private final com.lodygames.rpgquest.panel.building.ReferenceImageStore referenceImages;
+    /** #289 : la conception détaillée de chaque projet, versionnée. */
+    private final com.lodygames.rpgquest.panel.building.BuildingDesignDocStore designDocs;
     private final com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline designPipeline;
     /** Issue #267 — les projets de l'Atelier, indépendants des emplacements. */
     private final com.lodygames.rpgquest.panel.building.BuildingProjectStore planProjects;
@@ -174,11 +176,13 @@ public final class PanelApp {
         this.planProjects = new com.lodygames.rpgquest.panel.building.BuildingProjectStore(config.panelDbPath());
         this.designRuns = new com.lodygames.rpgquest.panel.building.BuildingDesignRunStore(config.panelDbPath());
         this.referenceImages = new com.lodygames.rpgquest.panel.building.ReferenceImageStore(config.panelDbPath());
+        this.designDocs = new com.lodygames.rpgquest.panel.building.BuildingDesignDocStore(config.panelDbPath());
         // Une session « en cours » au démarrage a perdu son fil : interrompue, jamais relancée seule.
         this.designRuns.interruptOrphans();
         this.designPipeline = new com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline(aiBuildingStudio,
                 designRuns, planProjects, planDrafts, planWorkbench, agentStore, workshopAutopilot, audit,
-                referenceImages, Duration.ofSeconds(Long.getLong("rpgquest.design.verdictTimeoutSeconds", 180)));
+                referenceImages, Duration.ofSeconds(Long.getLong("rpgquest.design.verdictTimeoutSeconds", 180)))
+                .withDesignDocs(designDocs);
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
         this.agentPages.useWorkshopProjects(planProjects);
@@ -993,7 +997,13 @@ public final class PanelApp {
         BuildingPlanDraft latest = drafts.get(0);
         var generate = planWorkbench.state(latest, BuildingPlanDraftStore.Check.GENERATE);
         if (generate.current() && generate.row().map(r -> "SUCCESS".equals(r.resultStatus())).orElse(false)) {
-            return "Dans la bibliothèque";
+            // #290 : le dernier fait connu de la bibliothèque, pas le seul succès de l'enregistrement.
+            var catalog = com.lodygames.rpgquest.panel.building.CatalogState.of(agentStore,
+                    p.agentId(), p.buildingId());
+            return catalog.gone() ? catalog.label() : "Dans la bibliothèque";
+        }
+        if (com.lodygames.rpgquest.panel.building.SaveFailure.of(generate).isPresent()) {
+            return "Enregistrement échoué";
         }
         var audit = planWorkbench.state(latest, BuildingPlanDraftStore.Check.AUDIT);
         if (!audit.current()) {
@@ -1194,17 +1204,20 @@ public final class PanelApp {
                 case "image_remove" -> imageRemove(session, project.get(), f);
                 case "save", "audit", "preview", "generate" -> planCheck(session, agentId, project.get(), f);
                 case "recover" -> planRecover(session, agentId, project.get(), f);
+                case "resume" -> planResume(session, agentId, project.get(), f);
+                case "design_write" -> designWrite(session, agentId, project.get(), f);
+                case "design_save" -> designSave(session, project.get(), f);
                 case "archive" -> planArchive(session, project.get(), f);
                 default -> PlanOutcome.redirect(projectLocation(project.get().id(), f.get("draft"), null,
                         "Geste inconnu : rien n'a été fait."));
             };
-            if (outcome.conflictText() == null) {
+            if (outcome.conflictText() == null && outcome.designText() == null) {
                 Http.redirect(exchange, outcome.location());
                 return;
             }
             // Conflit de version : rien n'est écrit, et le texte saisi est réaffiché plutôt que perdu.
             renderWorkshopProject(exchange, session, agentId, project.get().id(), f.getOrDefault("draft", ""),
-                    null, outcome.error(), outcome.conflictText(), -1, -1);
+                    null, outcome.error(), outcome.conflictText(), -1, -1, outcome.designText());
             return;
         }
         Map<String, String> q = Http.query(exchange);
@@ -1215,7 +1228,11 @@ public final class PanelApp {
     }
 
     /** Issue d'une soumission : une redirection, ou un conflit à montrer sur place. */
-    private record PlanOutcome(String location, String error, String conflictText) {
+    private record PlanOutcome(String location, String error, String conflictText, String designText) {
+        PlanOutcome(String location, String error, String conflictText) {
+            this(location, error, conflictText, null);
+        }
+
         static PlanOutcome redirect(String location) {
             return new PlanOutcome(location, null, null);
         }
@@ -1224,6 +1241,14 @@ public final class PanelApp {
     private void renderWorkshopProject(HttpExchange exchange, Session session, String agentId, String projectId,
                                        String draftId, String notice, String error, String conflictText,
                                        int isoView, int isoCut)
+            throws IOException {
+        renderWorkshopProject(exchange, session, agentId, projectId, draftId, notice, error, conflictText,
+                isoView, isoCut, null);
+    }
+
+    private void renderWorkshopProject(HttpExchange exchange, Session session, String agentId, String projectId,
+                                       String draftId, String notice, String error, String conflictText,
+                                       int isoView, int isoCut, String designText)
             throws IOException {
         var project = planProjects.find(projectId).filter(p -> !p.archived() && p.agentId().equals(agentId));
         if (project.isEmpty()) {
@@ -1239,7 +1264,14 @@ public final class PanelApp {
                 .filter(d -> !d.archived() && project.get().id().equals(d.projectId()))
                 .orElse(drafts.isEmpty() ? null : drafts.get(0));
         var none = new BuildingPlanWorkbench.CheckState(BuildingPlanWorkbench.Status.NONE, Optional.empty(), 0, false);
-        boolean idTaken = agentPages.buildingLibraryDirectory(agentId).find(project.get().buildingId()).isPresent();
+        // #290 : l'état RÉEL du bâtiment dans la bibliothèque — retrait, relevé, enregistrement — et
+        // non le seul succès de la version affichée.
+        var catalog = com.lodygames.rpgquest.panel.building.CatalogState.of(agentStore, agentId,
+                project.get().buildingId());
+        boolean idTaken = catalog.inLibrary() || catalog.state()
+                == com.lodygames.rpgquest.panel.building.CatalogState.State.UNKNOWN
+                && agentPages.buildingLibraryDirectory(agentId).find(project.get().buildingId()).isPresent();
+        boolean ownBuilding = producedByProject(drafts, project.get().buildingId());
         var view = new WorkshopPages.ProjectView(session, agentId, project.get(), aiBuildingStudio.usableProviders(),
                 permissions.can(session.effective(), Permission.BUILDING_WRITE), drafts, draft,
                 draft == null ? none : planWorkbench.state(draft, BuildingPlanDraftStore.Check.AUDIT),
@@ -1248,9 +1280,65 @@ public final class PanelApp {
                 draft == null ? List.of() : planDrafts.revisions(draft.id()),
                 planWorkbench.recoverable(agentId, 10), UUID.randomUUID().toString(), notice, error,
                 conflictText, idTaken, isoView, isoCut, designRuns.latest(project.get().id()),
-                referenceImages.list(project.get().id()));
+                referenceImages.list(project.get().id()), catalog, ownBuilding,
+                designDocs.history(project.get().id()), designText);
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,
                 WorkshopPages.project(view), Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+    }
+
+    /**
+     * Ce projet a-t-il déjà enregistré ce bâtiment (#290) ? Un enregistrement réussi rattaché à l'une
+     * de ses versions, pour cet identifiant. C'est ce qui l'autorise à en publier une NOUVELLE
+     * version ; un bâtiment d'un autre projet, ou fait à la main, reste protégé.
+     */
+    private boolean producedByProject(List<BuildingPlanDraft> drafts, String buildingId) {
+        for (BuildingPlanDraft d : drafts) {
+            for (var link : planDrafts.links(d.id(), BuildingPlanDraftStore.Check.GENERATE)) {
+                var row = agentStore.action(link.actionId());
+                if (row.isPresent() && "SUCCESS".equals(row.get().resultStatus())
+                        && buildingId.equals(com.lodygames.rpgquest.panel.building.CatalogState
+                                .generatedIdOf(row.get()))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Reprendre la conception (#290) : une nouvelle version, copie de la version désignée — en
+     * général celle qui est dans la bibliothèque. Aucun appel à l'IA, rien de remplacé ; la
+     * vérification part d'elle-même, et toutes les actions de l'Atelier redeviennent disponibles.
+     */
+    private PlanOutcome planResume(Session session, String agentId,
+                                   com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                   Map<String, String> f) {
+        List<BuildingPlanDraft> drafts = planDrafts.forProject(agentId, project.id());
+        Optional<BuildingPlanDraft> source = planDrafts.find(f.get("draft"))
+                .filter(d -> !d.archived() && project.id().equals(d.projectId()) && d.hasPlan());
+        if (source.isEmpty()) {
+            // Depuis la bibliothèque : la version qui a été enregistrée en dernier, sinon la plus récente.
+            source = drafts.stream().filter(d -> d.hasPlan() && planDrafts.links(d.id(),
+                    BuildingPlanDraftStore.Check.GENERATE).stream().anyMatch(l -> agentStore.action(l.actionId())
+                    .map(r -> "SUCCESS".equals(r.resultStatus())).orElse(false))).findFirst()
+                    .or(() -> drafts.stream().filter(BuildingPlanDraft::hasPlan).findFirst());
+        }
+        if (source.isEmpty()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), "", null,
+                    "Aucune version à reprendre : ce projet n'a pas encore de plan."));
+        }
+        BuildingPlanDraft from = source.get();
+        BuildingPlanDraft created = planDrafts.create(new BuildingPlanDraftStore.NewDraft(agentId, from.siteId(),
+                from.plan(), BuildingPlanDraft.Origin.RESUMED, from.id(), "", "", "", "", "", "",
+                "Reprise de la version " + from.id().substring(0, 8) + ", sans appel à l'IA.",
+                project.maxWidth(), project.maxHeight(), session.username(), project.id()));
+        audit.record(session.username(), "building.plan.resume", "project=" + project.id() + " from="
+                + from.id() + " draft=" + created.id(), "OK", "", UUID.randomUUID().toString().substring(0, 8));
+        workshopAutopilot.verify(created, session.username());
+        planProjects.touch(project.id(), session.username());
+        return PlanOutcome.redirect(projectLocation(project.id(), created.id(), "Conception reprise : cette "
+                + "nouvelle version part de la version enregistrée. Modifiez-la, améliorez-la avec l'IA, puis "
+                + "publiez-la. Le bâtiment de la bibliothèque et ses exemplaires posés ne changent pas.", null));
     }
 
     /** Modifier la fiche du projet, sous contrôle de version. */
@@ -1275,11 +1363,71 @@ public final class PanelApp {
         });
     }
 
-    /** La demande faite à l'IA, à partir du projet — jamais d'un emplacement. */
-    private static com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand demandOf(
+    /**
+     * La demande faite à l'IA, à partir du projet — jamais d'un emplacement. #289 : avec la
+     * conception détaillée en vigueur, que chaque plan, correction et critique doit respecter.
+     */
+    private com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand demandOf(
             com.lodygames.rpgquest.panel.building.BuildingProject p) {
         return new com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand(p.id(), p.name(), p.front(),
-                p.brief(), p.maxWidth(), p.maxHeight(), p.buildingId());
+                p.brief(), p.maxWidth(), p.maxHeight(), p.buildingId(),
+                designDocs.latest(p.id()).map(com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Doc::text)
+                        .orElse(""));
+    }
+
+    /**
+     * #289 — rédiger (ou réécrire) la conception détaillée avec l'IA : UN appel facturé, jeton à usage
+     * unique comme toute demande payante. La réponse devient une nouvelle version de la conception.
+     */
+    private PlanOutcome designWrite(Session session, String agentId,
+                                    com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                    Map<String, String> f) {
+        if (!project.hasBrief()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), null,
+                    "Décrivez d'abord le bâtiment souhaité : la conception part de votre description."));
+        }
+        Optional<PlanOutcome> replay = replayedRequest(session, project.id(), f);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+        var proposal = aiBuildingStudio.design(f.getOrDefault("provider", "").trim(), demandOf(project),
+                referencesOf(project.id()));
+        audit.record(session.username(), "building.design.write", "project=" + project.id() + " provider="
+                        + proposal.providerId() + " model=" + proposal.model() + " usage=" + proposal.usage(),
+                proposal.callOk() ? "OK" : "FAILED", proposal.callOk() ? "" : proposal.error(),
+                UUID.randomUUID().toString().substring(0, 8));
+        if (!proposal.callOk()) {
+            planDrafts.fulfil(f.get("request_token"), "");
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), null,
+                    "L'appel au fournisseur d'IA a échoué : " + proposal.error()));
+        }
+        var saved = designDocs.save(project.id(), proposal.rawResponse(),
+                com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Origin.AI, proposal.providerId(),
+                proposal.model(), proposal.usage(), session.username(), -1);
+        planDrafts.fulfil(f.get("request_token"), "");
+        planProjects.touch(project.id(), session.username());
+        return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), saved.doc().isPresent()
+                ? "Conception rédigée (version " + saved.doc().get().version() + ") : relisez-la, modifiez-la si "
+                        + "besoin ; « Créer un plan avec l'IA » la traduira." : null,
+                saved.doc().isPresent() ? null : saved.refusal()));
+    }
+
+    /** #289 — modifier la conception à la main : une nouvelle version, sous contrôle de version. */
+    private PlanOutcome designSave(Session session,
+                                   com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                   Map<String, String> f) {
+        var saved = designDocs.save(project.id(), f.getOrDefault("design", ""),
+                com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Origin.MANUAL, "", "", "",
+                session.username(), parseIntOr(f.get("design_version"), 0));
+        audit.record(session.username(), "building.design.save", "project=" + project.id(),
+                saved.doc().isPresent() ? "OK" : "DENIED", saved.refusal(), UUID.randomUUID().toString().substring(0, 8));
+        if (saved.doc().isEmpty()) {
+            // Rien n'est écrit, et le texte saisi est réaffiché plutôt que perdu.
+            return new PlanOutcome("", saved.refusal(), null, f.getOrDefault("design", ""));
+        }
+        planProjects.touch(project.id(), session.username());
+        return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), "Conception enregistrée (version "
+                + saved.doc().get().version() + "). Le prochain plan demandé à l'IA la suivra.", null));
     }
 
     /**
@@ -1330,7 +1478,8 @@ public final class PanelApp {
         // Les consignes de l'administrateur sont facultatives et s'y ajoutent. « reason » reste lu
         // pour les formulaires ouverts avant la mise à jour.
         var audit = planWorkbench.state(draft, BuildingPlanDraftStore.Check.AUDIT);
-        String reason = correctionMotive(project, audit,
+        var generate = planWorkbench.state(draft, BuildingPlanDraftStore.Check.GENERATE);
+        String reason = correctionMotive(project, audit, generate,
                 f.getOrDefault("notes", f.getOrDefault("reason", "")));
         if (reason.isEmpty()) {
             boolean judged = audit.current()
@@ -1530,7 +1679,15 @@ public final class PanelApp {
      */
     static String correctionMotive(com.lodygames.rpgquest.panel.building.BuildingProject project,
                                    BuildingPlanWorkbench.CheckState audit, String notes) {
-        String diagnosis = audit.current() ? WorkshopPages.diagnosis(project, audit) : "";
+        return correctionMotive(project, audit, null, notes);
+    }
+
+    /** Même chose, avec l'échec d'enregistrement de la version s'il porte sur le contenu (#292). */
+    static String correctionMotive(com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                   BuildingPlanWorkbench.CheckState audit,
+                                   BuildingPlanWorkbench.CheckState generate, String notes) {
+        String diagnosis = audit.current() || com.lodygames.rpgquest.panel.building.SaveFailure.of(generate)
+                .isPresent() ? WorkshopPages.diagnosis(project, audit, generate) : "";
         String extra = notes == null ? "" : notes.trim();
         // Un ancien formulaire renvoyait le diagnostic prérempli dans « reason » : ne pas le doubler.
         if (!extra.isEmpty() && !diagnosis.isEmpty() && extra.contains(diagnosis)) {
@@ -1675,9 +1832,26 @@ public final class PanelApp {
             fields.put("max_height", String.valueOf(project.maxHeight()));
         }
         if (check == BuildingPlanDraftStore.Check.GENERATE) {
-            // #265 : jamais de remplacement depuis le parcours. Un nom technique déjà pris est signalé à
-            // l'écran, et c'est à l'utilisateur d'en choisir un autre.
-            fields.put("replace", "false");
+            // #265 : jamais de remplacement IMPLICITE. Un nom technique pris par un autre bâtiment est
+            // signalé à l'écran. #290 : republier le bâtiment de CE projet est un geste distinct,
+            // coché, qui envoie la version vue — le serveur refuse si elle a changé entre-temps.
+            boolean republish = "yes".equals(f.getOrDefault("republish", ""));
+            if (republish && !"yes".equals(f.getOrDefault("republish_confirm", ""))) {
+                return PlanOutcome.redirect(projectLocation(project.id(), current.id(), null,
+                        "Cochez la confirmation : publier remplace la version de la bibliothèque. Rien n'a "
+                                + "été envoyé."));
+            }
+            if (republish && !producedByProject(planDrafts.forProject(agentId, project.id()),
+                    project.buildingId())) {
+                return PlanOutcome.redirect(projectLocation(project.id(), current.id(), null,
+                        "Ce bâtiment n'a pas été publié par ce projet : il ne sera pas remplacé. Rien n'a été "
+                                + "envoyé."));
+            }
+            fields.put("replace", republish ? "true" : "false");
+            String expectedVersion = f.getOrDefault("expected_version", "").trim();
+            if (republish && !expectedVersion.isEmpty() && !"0".equals(expectedVersion)) {
+                fields.put("expected_version", expectedVersion);
+            }
             fields.put("confirm", "true");
         }
         Queued queued = enqueueValidated(session, agentId, check.actionType(), fields);

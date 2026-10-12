@@ -61,7 +61,12 @@ public record BuildingPlanDraft(String id, String agentId, String siteId, String
          * — toit qui dépasse, escalier manquant, mobilier qui bouche un étage — calculée et
          * vérifiée par le plugin à partir de l'audit de la version parente.
          */
-        ENGINE_REPAIR("Réparé par le moteur");
+        ENGINE_REPAIR("Réparé par le moteur"),
+        /**
+         * Reprise d'une version enregistrée dans la bibliothèque (#290), sans appel au modèle : le
+         * point de départ d'une nouvelle version du même bâtiment.
+         */
+        RESUMED("Reprise de la version enregistrée");
 
         private final String label;
 

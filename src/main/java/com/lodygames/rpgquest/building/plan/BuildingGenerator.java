@@ -46,6 +46,8 @@ public final class BuildingGenerator {
     private final SchematicWorkshop workshop;
     private final Path buildingsDirectory;
     private final Logger logger;
+    private Path schematicsDirectory;
+    private java.time.Clock clock = java.time.Clock.systemUTC();
 
     public BuildingGenerator(BuildingLibrary library, SchematicWorkshop workshop,
                              Path buildingsDirectory, Logger logger) {
@@ -53,6 +55,16 @@ public final class BuildingGenerator {
         this.workshop = workshop;
         this.buildingsDirectory = buildingsDirectory;
         this.logger = logger;
+    }
+
+    /**
+     * Où archiver la version remplacée d'un bâtiment republié (#290). Sans cet appel, rien n'est
+     * archivé côté schematic — la définition l'est toujours.
+     */
+    public BuildingGenerator archivingTo(Path schematics, java.time.Clock clock) {
+        this.schematicsDirectory = schematics;
+        this.clock = clock == null ? java.time.Clock.systemUTC() : clock;
+        return this;
     }
 
     /**
@@ -235,8 +247,16 @@ public final class BuildingGenerator {
                     List.of("PLAN_INVALID"), List.of(), exists, null), null);
         }
 
+        Optional<String> engineRefusal = engineRefusal(expansion);
+        if (engineRefusal.isPresent()) {
+            return new Examination(new Verdict(false, "PLAN_INVALID", engineRefusal.get(),
+                    plan.id(), plan.kind().label(), plan.sizeX(), plan.sizeY(), plan.sizeZ(), 0,
+                    List.of("PLAN_INVALID", "BLOCK_REJECTED"), List.of(), exists, null), null);
+        }
+
         ArchitecturalAudit.Report audit = ArchitecturalAudit.audit(
-                expansion.blueprint(), plan.front(), plan.rules(), expansion.provenance());
+                expansion.blueprint(), plan.front(), plan.rules(), expansion.provenance(),
+                plan.anchorY());
         List<String> warnings = new ArrayList<>();
         for (ArchitecturalFinding warning : audit.warnings()) {
             warnings.add(warning.message());
@@ -263,6 +283,17 @@ public final class BuildingGenerator {
      *                 a réutilisé son identifiant
      */
     public Result generate(String planYaml, boolean replace) {
+        return generate(planYaml, replace, 0);
+    }
+
+    /**
+     * Génère, en publiant au besoin une NOUVELLE VERSION d'un bâtiment existant (#290).
+     *
+     * @param expectedVersion la version que l'administrateur a vue en décidant de remplacer ; si la
+     *                        bibliothèque en porte une autre (quelqu'un a republié entre-temps), rien
+     *                        n'est écrit ({@code VERSION_CONFLICT}). 0 : pas de contrôle
+     */
+    public Result generate(String planYaml, boolean replace, int expectedVersion) {
         List<String> problems = new ArrayList<>();
         Optional<BuildingPlan> parsed = BuildingPlanYaml.read(planYaml, problems);
         if (parsed.isEmpty()) {
@@ -272,6 +303,14 @@ public final class BuildingGenerator {
         BuildingPlan plan = parsed.get();
 
         Optional<BuildingDefinition> existing = library.find(plan.id());
+        if (existing.isPresent() && replace && expectedVersion > 0
+                && existing.get().version() != expectedVersion) {
+            return Result.failure("VERSION_CONFLICT", "« " + existing.get().name() + " » est en version "
+                    + existing.get().version() + " dans la bibliothèque, et non en version "
+                    + expectedVersion + " comme lorsque la publication a été décidée : quelqu'un l'a "
+                    + "republié entre-temps. Rien n'a été écrit — rechargez la bibliothèque et "
+                    + "recommencez en connaissance de cause.");
+        }
         if (existing.isPresent() && !replace) {
             return Result.failure("ALREADY_EXISTS", "Un bâtiment « " + plan.id()
                     + " » existe déjà dans la bibliothèque (« " + existing.get().name()
@@ -284,6 +323,11 @@ public final class BuildingGenerator {
             return Result.failure("PLAN_INVALID", "Plan refusé : " + expansion.error());
         }
 
+        Optional<String> engineRefusal = engineRefusal(expansion);
+        if (engineRefusal.isPresent()) {
+            return Result.failure("PLAN_INVALID", engineRefusal.get());
+        }
+
         // ---- Contrat architectural (issue #94, lot A) -------------------------------------
         // Audité sur la GRILLE, jamais sur les instructions : un plan peut écrire une instruction
         // nommée « porte », seule la grille dit s'il y a un trou dans le mur. La V1 l'a prouvé —
@@ -293,7 +337,8 @@ public final class BuildingGenerator {
         // bibliothèque. Et son message est rédigé pour être renvoyé tel quel au modèle par la
         // boucle de correction qui existe déjà.
         ArchitecturalAudit.Report audit = ArchitecturalAudit.audit(
-                expansion.blueprint(), plan.front(), plan.rules(), expansion.provenance());
+                expansion.blueprint(), plan.front(), plan.rules(), expansion.provenance(),
+                plan.anchorY());
         if (audit.refused()) {
             return new Result(false, "ARCHITECTURE_REFUSED", refusalText(plan, audit),
                     plan.id(), "", plan.sizeX(), plan.sizeY(), plan.sizeZ(),
@@ -301,13 +346,31 @@ public final class BuildingGenerator {
         }
 
         String schematic = plan.id() + ".schem";
+        List<String> archived = new ArrayList<>();
+        if (existing.isPresent()) {
+            // #290 : la version remplacée est ARCHIVÉE avant toute écriture — définition et
+            // schematic — pour qu'un retour en arrière reste possible. Les exemplaires déjà posés ne
+            // bougent pas : seule une action explicite de remplacement les met à jour.
+            try {
+                archived.addAll(archive(existing.get()));
+            } catch (IOException error) {
+                return Result.failure("WRITE_FAILED", "La version " + existing.get().version()
+                        + " n'a pas pu être archivée avant d'être remplacée ("
+                        + error.getClass().getSimpleName() + ") : rien n'a été écrit.");
+            }
+        }
         SchematicGateway.Outcome written = workshop.regenerate(schematic, expansion.blueprint());
         if (!written.ok()) {
             // Le .schem n'existe pas : surtout ne pas écrire la définition, qui désignerait un
             // fichier absent et afficherait « schematic absent » dans la bibliothèque.
+            // Échec d'ÉCRITURE, pas de contenu : les états ont tous passé le registre et le
+            // parseur du moteur juste au-dessus. Le dire évite de renvoyer le plan à l'IA pour une
+            // panne de disque ou de moteur.
             return Result.failure("SCHEMATIC_FAILED",
                     "Le schematic n'a pas pu être écrit : " + written.error()
-                            + " Aucune définition n'a été créée.");
+                            + " Aucune définition n'a été créée. (Échec d'écriture : le plan avait "
+                            + "passé la validation de ses blocs ; réessayer, ou vérifier WorldEdit "
+                            + "et le disque du serveur.)");
         }
 
         int version = existing.map(definition -> definition.version() + 1).orElse(1);
@@ -344,6 +407,7 @@ public final class BuildingGenerator {
                 + " blocs, version " + version + ").");
         List<String> effects = new ArrayList<>(List.of("schematics/" + schematic,
                 "buildings/" + plan.id() + ".yml"));
+        effects.addAll(archived);
         // Les avertissements ne bloquent pas, mais les taire reviendrait à livrer un bâtiment dont
         // on sait quelque chose sans le dire.
         for (ArchitecturalFinding warning : audit.warnings()) {
@@ -358,6 +422,64 @@ public final class BuildingGenerator {
                                 : "Ajouté à la bibliothèque, prêt à être posé."),
                 plan.id(), schematic, plan.sizeX(), plan.sizeY(), plan.sizeZ(),
                 expansion.solidCount(), version, existing.isPresent(), List.copyOf(effects));
+    }
+
+    /**
+     * Les états de la grille que le VRAI parseur du moteur refuserait (#288–#292). Le registre
+     * embarqué les a déjà tous contrôlés à l'expansion ; ce second contrôle couvre l'écart possible
+     * entre la table et le serveur réellement en service, avant de prononcer « conforme ».
+     */
+    private Optional<String> engineRefusal(BuildingPlanExpander.Result expansion) {
+        java.util.Map<String, java.util.List<int[]>> where = new java.util.LinkedHashMap<>();
+        for (var block : expansion.blueprint().blocks()) {
+            where.computeIfAbsent(block.state(), k -> new ArrayList<>())
+                    .add(new int[] {block.x(), block.y(), block.z()});
+        }
+        java.util.Map<String, String> refused = workshop.rejected(where.keySet());
+        if (refused.isEmpty()) {
+            return Optional.empty();
+        }
+        StringBuilder sb = new StringBuilder("Plan refusé : le moteur de schematics du serveur "
+                + "refuse " + refused.size() + " état(s) de bloc — rien n'a été écrit :");
+        for (var e : refused.entrySet()) {
+            int[] at = where.get(e.getKey()).get(0);
+            int rank = expansion.provenance().stepAt(at[0], at[1], at[2]);
+            sb.append("\n- « ").append(e.getKey()).append(" » en ").append(at[0]).append('/')
+                    .append(at[1]).append('/').append(at[2]).append(" (")
+                    .append(where.get(e.getKey()).size()).append(" cellule(s), ")
+                    .append(BuildingPlanExpander.describeStep(expansion.plan(), rank)).append(") : ")
+                    .append(e.getValue());
+        }
+        return Optional.of(sb.toString());
+    }
+
+    /**
+     * Copie la version courante dans {@code buildings/.history/<id>/v<version>_<horodatage>/}.
+     * Une copie et non un déplacement : si l'écriture qui suit échoue, la bibliothèque garde son
+     * bâtiment intact.
+     */
+    private List<String> archive(BuildingDefinition current) throws IOException {
+        String stamp = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+                .withZone(java.time.ZoneOffset.UTC).format(clock.instant());
+        Path target = buildingsDirectory.resolve(".history").resolve(current.id())
+                .resolve("v" + current.version() + "_" + stamp);
+        Files.createDirectories(target);
+        List<String> effects = new ArrayList<>();
+        Path yml = buildingsDirectory.resolve(current.id() + ".yml");
+        if (Files.isRegularFile(yml)) {
+            Files.copy(yml, target.resolve(yml.getFileName()),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            effects.add("version " + current.version() + " archivée : buildings/.history/" + current.id()
+                    + "/" + target.getFileName() + "/");
+        }
+        if (schematicsDirectory != null) {
+            Path schem = schematicsDirectory.resolve(current.schematic());
+            if (Files.isRegularFile(schem)) {
+                Files.copy(schem, target.resolve(schem.getFileName()),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+        return effects;
     }
 
     /**

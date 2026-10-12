@@ -163,7 +163,7 @@ public final class BuildingPlanYaml {
         if (kind.isEmpty()) {
             problems.add(where + "instruction inconnue : « " + str(map.get("op"))
                     + " ». Valeurs acceptées : box, shell, walls, clear, gable, door, window, "
-                    + "light, stair_run, staircase, ladder, pillars.");
+                    + "light, stair_run, staircase, ladder, pillars, bed.");
             return Optional.empty();
         }
         PlanStep.Kind k = kind.get();
@@ -197,7 +197,7 @@ public final class BuildingPlanYaml {
         // Paramètres nommés. Une valeur non entière est refusée plutôt qu'arrondie en silence.
         java.util.Map<String, Integer> numbers = new java.util.LinkedHashMap<>();
         for (String key : new String[] {"offset", "y", "width", "height", "spacing", "count",
-            "steps", "hinge", "floor"}) {
+            "steps", "hinge", "floor", "wall"}) {
             Object raw = map.get(key);
             if (raw == null) {
                 continue;
@@ -321,7 +321,7 @@ public final class BuildingPlanYaml {
 
     /** L'ordre d'écriture des paramètres nommés : fixe, pour qu'un même plan s'écrive toujours pareil. */
     private static final String[] NUMBER_KEYS = {"offset", "y", "width", "height", "spacing",
-        "count", "steps", "hinge", "floor"};
+        "count", "steps", "hinge", "floor", "wall"};
 
     /**
      * Écrit un plan dans la forme canonique que {@link #read} relit à l'identique.

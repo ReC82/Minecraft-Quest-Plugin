@@ -5,6 +5,7 @@ import com.lodygames.rpgquest.panel.ai.AiProvider;
 import com.lodygames.rpgquest.panel.ai.BuildingCorrectionLoop;
 import com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline;
 import com.lodygames.rpgquest.panel.building.BriefLevels;
+import com.lodygames.rpgquest.panel.building.BuildingDesignDocStore;
 import com.lodygames.rpgquest.panel.building.BuildingDesignRunStore;
 import com.lodygames.rpgquest.panel.building.ReferenceImageStore;
 import com.lodygames.rpgquest.panel.building.BuildingPlanDraft;
@@ -16,9 +17,11 @@ import com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench.CheckState;
 import com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench.Status;
 import com.lodygames.rpgquest.panel.building.BuildingProject;
 import com.lodygames.rpgquest.panel.building.BuildingSiteView;
+import com.lodygames.rpgquest.panel.building.CatalogState;
 import com.lodygames.rpgquest.panel.building.BuildingVoxels;
 import com.lodygames.rpgquest.panel.building.IsometricView;
 import com.lodygames.rpgquest.panel.building.PlanDiagnosis;
+import com.lodygames.rpgquest.panel.building.SaveFailure;
 import com.lodygames.rpgquest.panel.building.PlanVerdictText;
 import com.lodygames.rpgquest.panel.http.Http;
 import com.lodygames.rpgquest.panel.security.Session;
@@ -206,7 +209,9 @@ public final class WorkshopPages {
                               List<AgentActionRow> recoverable, String requestToken, String notice,
                               String error, String conflictText, boolean idTaken, int isoView, int isoCut,
                               Optional<BuildingDesignRunStore.Run> designRun,
-                              List<ReferenceImageStore.Info> images) {
+                              List<ReferenceImageStore.Info> images, CatalogState catalog,
+                              boolean ownBuilding, List<BuildingDesignDocStore.Doc> designs,
+                              String designConflict) {
     }
 
     /** Les étapes du parcours, dans l'ordre. */
@@ -235,6 +240,7 @@ public final class WorkshopPages {
         sb.append("<div class=\"card ws-main\"><div class=\"card-body\">");
         sb.append(mainCard(v, step));
         sb.append("</div></div>");
+        sb.append(conceptionCard(v, step));
         sb.append(restartCard(v, step));
         sb.append(designCard(v, step));
         sb.append(previewCard(v, step));
@@ -314,18 +320,145 @@ public final class WorkshopPages {
             }
             case CHECK -> sb.append(checkCard(v));
             case SAVE -> sb.append(saveCard(v));
-            case DONE -> {
-                sb.append("<h2 class=\"h5\">").append(Icons.icon("check"))
-                        .append("Enregistré dans la bibliothèque</h2><p>« ").append(Http.esc(p.name()))
-                        .append(" » peut maintenant être posé sur un ou plusieurs emplacements, sans nouvel "
-                                + "appel à l'IA.</p><div class=\"btnrow\">")
-                        .append("<a class=\"btn btn-primary\" href=\"/buildings/library\">")
-                        .append(Icons.icon("box")).append("Voir dans la bibliothèque</a>")
-                        .append("<a class=\"btn btn-outline-primary\" href=\"/buildings/sites?place=")
-                        .append(Http.esc(p.buildingId())).append("\">")
-                        .append(Icons.icon("world")).append("Choisir un emplacement</a></div>");
-            }
+            case DONE -> sb.append(doneCard(v));
         }
+        return sb.toString();
+    }
+
+    /**
+     * La conception détaillée (#289) : l'étape entre la description et le plan technique. Consultable,
+     * modifiable à la main (chaque enregistrement est une version), ou rédigée par l'IA en un appel.
+     * Tout plan demandé ensuite — proposition, correction, critique, conception automatique — la suit.
+     */
+    static String conceptionCard(ProjectView v, Step step) {
+        if (step == Step.DESCRIBE) {
+            return "";
+        }
+        Optional<BuildingDesignDocStore.Doc> current = v.designs().isEmpty() ? Optional.empty()
+                : Optional.of(v.designs().get(0));
+        StringBuilder sb = new StringBuilder("<details class=\"npc-registry\" id=\"conception\"")
+                .append(v.designConflict() != null || current.isEmpty() && step == Step.PROPOSE ? " open" : "")
+                .append("><summary>").append(Icons.icon("edit")).append("Conception détaillée")
+                .append(current.map(d -> " — version " + d.version()).orElse(" — pas encore rédigée"))
+                .append("</summary>");
+        sb.append("<p class=\"field-help\">Avant le plan technique : les pièces, la palette, les accès, le "
+                + "mobilier pièce par pièce, la décoration, ce que le moteur ne sait pas poser, et la "
+                + "correspondance avec votre description. Chaque plan demandé ensuite à l'IA la suit ; votre "
+                + "description reste jointe à chaque demande.</p>");
+        current.ifPresent(d -> sb.append("<p class=\"muted\">Version ").append(d.version()).append(" — ")
+                .append(Http.esc(d.origin().label()))
+                .append(d.createdBy() == null || d.createdBy().isBlank() ? "" : " par " + Http.esc(d.createdBy()))
+                .append(d.model() == null || d.model().isBlank() ? "" : " (" + Http.esc(d.model()) + ")")
+                .append(", ").append(v.designs().size()).append(" version(s) conservée(s).</p>"));
+        if (v.designConflict() != null) {
+            sb.append(Ui.banner("warning", "Votre texte n'a pas été enregistré : il est réaffiché ci-dessous."));
+        }
+        String text = v.designConflict() != null ? v.designConflict() : current.map(BuildingDesignDocStore.Doc::text).orElse("");
+        if (v.canWrite()) {
+            sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">")
+                    .append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "design_save"))
+                    .append(hidden("id", v.project().id()))
+                    .append(hidden("design_version", String.valueOf(current.map(BuildingDesignDocStore.Doc::version).orElse(0))));
+            if (v.draft() != null) {
+                sb.append(hidden("draft", v.draft().id()));
+            }
+            sb.append("<textarea name=\"design\" rows=\"16\" maxlength=\"").append(BuildingDesignDocStore.MAX_TEXT)
+                    .append("\" aria-label=\"Conception détaillée\">").append(Http.esc(text)).append("</textarea>")
+                    .append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
+                    .append(Icons.icon("save")).append("Enregistrer la conception</button></div></form>");
+        } else if (!text.isEmpty()) {
+            sb.append("<pre class=\"brief-text\">").append(Http.esc(text)).append("</pre>");
+        }
+        if (v.canWrite() && !v.providers().isEmpty()) {
+            sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">")
+                    .append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "design_write"))
+                    .append(hidden("id", v.project().id())).append(hidden("request_token", v.requestToken()));
+            if (v.draft() != null) {
+                sb.append(hidden("draft", v.draft().id()));
+            }
+            sb.append(providerSelect(v, "")).append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
+                    + "type=\"submit\">").append(Icons.icon("wrench"))
+                    .append(current.isEmpty() ? "Rédiger la conception avec l'IA" : "Réécrire la conception avec l'IA")
+                    .append("</button></div><p class=\"field-help\">Un appel facturé, d'après votre description et "
+                            + "vos images. La version actuelle reste conservée.</p></form>");
+        }
+        return sb.append("</details>").toString();
+    }
+
+    /**
+     * Le bâtiment enregistré — ou qui ne l'est plus (#290). L'état vient de la bibliothèque réelle
+     * ({@link CatalogState}) : après un retrait, plus de « posez-le » mensonger ; la reprise de la
+     * conception reste toujours possible, sans effacer quoi que ce soit.
+     */
+    static String doneCard(ProjectView v) {
+        BuildingProject p = v.project();
+        StringBuilder sb = new StringBuilder();
+        if (v.catalog().gone()) {
+            sb.append("<h2 class=\"h5\">").append(Icons.icon("warning")).append(Http.esc(v.catalog().label()))
+                    .append("</h2><p>« ").append(Http.esc(p.name())).append(" » (<code class=\"tid\">")
+                    .append(Http.esc(p.buildingId())).append("</code>) n'est plus dans la bibliothèque du "
+                            + "serveur")
+                    .append(v.catalog().state() == CatalogState.State.RETIRED
+                            ? " : il a été retiré, ses fichiers sont archivés" : "")
+                    .append(". Il ne peut pas être posé. La description, les versions et les images du projet "
+                            + "sont conservées.</p>");
+            if (v.canWrite()) {
+                sb.append("<div class=\"btnrow\">").append(gestureForm(v, "generate",
+                        "Réenregistrer dans la bibliothèque", true)).append("</div>");
+            }
+        } else {
+            sb.append("<h2 class=\"h5\">").append(Icons.icon("check"))
+                    .append("Enregistré dans la bibliothèque")
+                    .append(v.catalog().version() > 0 ? " — version " + v.catalog().version() : "")
+                    .append("</h2><p>« ").append(Http.esc(p.name()))
+                    .append(" » peut maintenant être posé sur un ou plusieurs emplacements, sans nouvel "
+                            + "appel à l'IA.</p><div class=\"btnrow\">")
+                    .append("<a class=\"btn btn-primary\" href=\"/buildings/library\">")
+                    .append(Icons.icon("box")).append("Voir dans la bibliothèque</a>")
+                    .append("<a class=\"btn btn-outline-primary\" href=\"/buildings/sites?place=")
+                    .append(Http.esc(p.buildingId())).append("\">")
+                    .append(Icons.icon("world")).append("Choisir un emplacement</a></div>");
+        }
+        sb.append(resumeForm(v, "Reprendre la conception"));
+        sb.append("<p class=\"field-help\">Reprendre crée une nouvelle version à partir de celle-ci, sans "
+                + "appel à l'IA : vous pourrez la modifier, l'améliorer avec l'IA, puis la publier. Le bâtiment "
+                + "de la bibliothèque et ses exemplaires déjà posés ne changent pas tant que vous ne les "
+                + "remplacez pas explicitement.</p>");
+        return sb.toString();
+    }
+
+    /** Une nouvelle version à partir de celle affichée (#290) : gratuite, rien n'est remplacé. */
+    static String resumeForm(ProjectView v, String label) {
+        if (v.draft() == null || !v.draft().hasPlan()) {
+            return "";
+        }
+        return "<form method=\"post\" action=\"" + BASE + "/project\" class=\"inline\">"
+                + hidden("_csrf", v.session().csrfToken()) + hidden("_action", "resume")
+                + hidden("id", v.project().id()) + hidden("draft", v.draft().id())
+                + "<button class=\"btn btn-outline-primary\" type=\"submit\">" + Icons.icon("edit")
+                + Http.esc(label) + "</button></form>";
+    }
+
+    /**
+     * Publier une nouvelle version du bâtiment que CE projet a produit (#290) : remplacement
+     * explicite, coché, et contrôlé — la version vue est envoyée, le serveur refuse si elle a
+     * changé. Les exemplaires posés ne bougent pas.
+     */
+    static String republishForm(ProjectView v) {
+        BuildingPlanDraft d = v.draft();
+        int version = v.catalog().version();
+        StringBuilder sb = new StringBuilder("<form method=\"post\" action=\"" + BASE + "/project\" class=\"actform\">");
+        sb.append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "generate"))
+                .append(hidden("id", v.project().id())).append(hidden("draft", d.id()))
+                .append(hidden("version", String.valueOf(d.version()))).append(hidden("plan", d.plan()))
+                .append(hidden("republish", "yes"))
+                .append(hidden("expected_version", String.valueOf(version)));
+        sb.append("<div class=\"field\"><label><input type=\"checkbox\" name=\"republish_confirm\" value=\"yes\"> "
+                + "Je publie cette version à la place de la version ").append(version > 0 ? version : "actuelle")
+                .append(" dans la bibliothèque. La version remplacée est archivée sur le serveur ; les "
+                        + "exemplaires déjà posés ne changent pas tant que je ne les remplace pas.</label></div>");
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-primary\" type=\"submit\">")
+                .append(Icons.icon("save")).append("Publier une nouvelle version</button></div></form>");
         return sb.toString();
     }
 
@@ -392,16 +525,46 @@ public final class WorkshopPages {
         sb.append("</select></label><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">Afficher"
                 + "</button></form>");
 
+        // #289 : TOUS les matériaux de la grille, avec leur nombre de blocs. La légende était bornée
+        // à dix : un lutrin ou trois barrières disparaissaient de la liste, comme s'ils manquaient.
+        List<IsometricView.Swatch> legend = IsometricView.legend(voxels, Integer.MAX_VALUE);
         sb.append("<ul class=\"ws-legend\">");
-        for (IsometricView.Swatch swatch : IsometricView.legend(voxels, 10)) {
+        for (IsometricView.Swatch swatch : legend) {
             sb.append("<li><svg class=\"ws-swatch\" viewBox=\"0 0 10 10\" aria-hidden=\"true\"><rect width=\"10\" "
                     + "height=\"10\" fill=\"").append(swatch.color()).append("\"/></svg>")
-                    .append(Http.esc(swatch.label())).append("</li>");
+                    .append(Http.esc(swatch.label())).append(" <span class=\"muted\">×").append(swatch.count())
+                    .append("</span></li>");
         }
-        sb.append("</ul><p class=\"field-help\">Vue simplifiée : une couleur par matériau, pas les textures du jeu ; "
+        sb.append("</ul>");
+        List<String> absent = materialsAbsentFromGrid(v.draft().plan(), legend);
+        if (!absent.isEmpty()) {
+            sb.append("<p class=\"field-help\">Cités par le plan mais absents de la grille finale : ")
+                    .append(Http.esc(String.join(", ", absent))).append(". Une instruction postérieure les "
+                            + "recouvre ou les vide (« clear », mobilier, escalier) : vérifiez l'ordre des "
+                            + "instructions si vous les attendiez.</p>");
+        }
+        sb.append("<p class=\"field-help\">Vue simplifiée : une couleur par matériau, pas les textures du jeu ; "
                 + "portes, vitres, escaliers et mobilier sont dessinés comme des cubes, les lumières comme de "
                 + "petits cubes jaunes. Chaque cube est un vrai bloc du bâtiment que le serveur construirait.</p>");
         return sb.append("</div></section>").toString();
+    }
+
+    /** Les matériaux que le plan écrit (« block: », « fill: ») et que la grille ne contient pas. */
+    static List<String> materialsAbsentFromGrid(String plan, List<IsometricView.Swatch> legend) {
+        java.util.Set<String> inGrid = new java.util.HashSet<>();
+        for (IsometricView.Swatch s : legend) {
+            inGrid.add(s.label());
+        }
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        var m = java.util.regex.Pattern.compile("(?m)^\\s*(?:block|fill):\\s*(?:minecraft:)?([a-z0-9_]+)")
+                .matcher(plan == null ? "" : plan);
+        while (m.find()) {
+            String label = m.group(1).replace('_', ' ');
+            if (!inGrid.contains(label)) {
+                out.add(label);
+            }
+        }
+        return List.copyOf(out);
     }
 
     /**
@@ -517,7 +680,8 @@ public final class WorkshopPages {
         sb.append(providerSelect(v, v.draft() == null ? "" : v.draft().providerId()));
         sb.append("<fieldset class=\"field\"><legend>Niveau d'exigence</legend>");
         for (BuildingDesignPipeline.Quality q : BuildingDesignPipeline.Quality.values()) {
-            BuildingDesignPipeline.Envelope e = BuildingDesignPipeline.envelope(q.calls(), model, seen[0], seen[1]);
+            BuildingDesignPipeline.Envelope e = BuildingDesignPipeline.envelope(q.calls(), model, seen[0], seen[1],
+                    v.project().brief().length(), v.images().size());
             sb.append("<label class=\"ws-choice\"><input type=\"radio\" name=\"quality\" value=\"")
                     .append(q.name()).append('"').append(q == BuildingDesignPipeline.Quality.SOIGNE ? " checked" : "")
                     .append("> <strong>").append(Http.esc(q.label())).append("</strong> — ")
@@ -642,6 +806,13 @@ public final class WorkshopPages {
     /** Étape « Enregistrer » : le plan est vérifié. */
     private static String saveCard(ProjectView v) {
         StringBuilder sb = new StringBuilder();
+        Optional<SaveFailure> failed = SaveFailure.of(v.generate());
+        if (failed.isPresent()) {
+            sb.append(saveFailure(v, failed.get()));
+        } else if (v.generate().current() && v.generate().status() == Status.PENDING) {
+            sb.append(Ui.banner("info", "<strong>Enregistrement en cours</strong> : le serveur écrit le "
+                    + "schematic et la définition. Rechargez la page dans quelques secondes."));
+        }
         BuildingPlanVerdict verdict = currentVerdict(v);
         Optional<String> divergence = BriefLevels.divergence(v.project().brief(), verdict.metrics());
         sb.append("<h2 class=\"h5\">").append(Icons.icon(divergence.isPresent() ? "warning" : "check"))
@@ -651,7 +822,11 @@ public final class WorkshopPages {
                     .append(" blocs au sol, ").append(verdict.sizeY()).append(" de haut.</p>");
         }
         divergence.ifPresent(d -> sb.append(Ui.banner("warning", Http.esc(d))));
-        if (v.idTaken()) {
+        if (v.idTaken() && v.ownBuilding()) {
+            sb.append(Ui.banner("info", "<strong>Ce projet a déjà publié « " + Http.esc(v.project().buildingId())
+                    + " » dans la bibliothèque" + (v.catalog().version() > 0 ? " (version "
+                    + v.catalog().version() + ")" : "") + ".</strong> Cette version peut le remplacer."));
+        } else if (v.idTaken()) {
             sb.append(Ui.banner("warning", "<strong>Un bâtiment de la bibliothèque porte déjà le nom "
                     + "technique « " + Http.esc(v.project().buildingId()) + " ».</strong> Changez-le dans « Le "
                     + "bâtiment souhaité » (par exemple « " + Http.esc(v.project().buildingId())
@@ -660,8 +835,13 @@ public final class WorkshopPages {
         }
         if (!v.canWrite()) {
             sb.append(Ui.banner("info", "Votre rôle ne permet pas d'enregistrer dans la bibliothèque."));
+        } else if (v.idTaken() && v.ownBuilding()) {
+            sb.append(republishForm(v));
         } else if (!v.idTaken()) {
-            sb.append(gestureForm(v, "generate", "Enregistrer dans la bibliothèque", true));
+            sb.append(gestureForm(v, "generate", SaveFailure.of(v.generate())
+                    .map(f -> f.kind() == SaveFailure.Kind.WRITE ? "Réessayer l'enregistrement"
+                            : "Enregistrer dans la bibliothèque")
+                    .orElse("Enregistrer dans la bibliothèque"), true));
             sb.append("<p class=\"field-help\">Le bâtiment rejoint la bibliothèque. Aucun bloc n'est posé "
                     + "dans le monde : vous choisirez ensuite un emplacement.</p>");
         }
@@ -672,14 +852,48 @@ public final class WorkshopPages {
         return sb.toString();
     }
 
+    /**
+     * L'échec du dernier enregistrement, en tête de carte (#292) : le motif exact, et l'action
+     * utile. Plus de bandeau vert seul pendant que l'enregistrement a échoué.
+     */
+    static String saveFailure(ProjectView v, SaveFailure f) {
+        StringBuilder sb = new StringBuilder();
+        String what = switch (f.kind()) {
+            case CONTENT -> "Le plan doit être corrigé : le serveur l'a refusé au moment de l'écrire. "
+                    + "« Améliorer avec l'IA » ci-dessous envoie ce motif exact, sans commentaire à "
+                    + "écrire.";
+            case CONFLICT -> "VERSION_CONFLICT".equals(f.code())
+                    ? "Le bâtiment a été republié entre-temps : rechargez la bibliothèque (« Rafraîchir »), "
+                            + "relisez cette page, puis publiez de nouveau si c'est toujours votre intention."
+                    : "Un bâtiment de la bibliothèque porte déjà cet identifiant. Changez le nom "
+                            + "technique dans « Le bâtiment souhaité », puis enregistrez de nouveau.";
+            case WRITE -> "Échec d'écriture côté serveur (disque, WorldEdit ou bibliothèque) : le plan "
+                    + "avait passé ses contrôles. Réessayez ; si l'échec persiste, vérifiez WorldEdit "
+                    + "et les journaux du serveur. Rien n'est demandé à l'IA.";
+        };
+        sb.append(Ui.banner("err", "<strong>L'enregistrement a échoué (" + Http.esc(f.code())
+                + ").</strong> Aucune définition n'a été créée.<br><span class=\"ws-failure\">"
+                + Http.esc(f.message()).replace("\n", "<br>") + "</span><br>" + what));
+        if (f.kind() == SaveFailure.Kind.CONTENT && v.canWrite()) {
+            sb.append("<details class=\"npc-registry\" open><summary>Corriger avec l'IA</summary>")
+                    .append(correctionForm(v, correctionReason(v))).append("</details>");
+        }
+        return sb.toString();
+    }
+
     /** Le motif de correction proposé : ce que le serveur a dit de la version courante, en clair. */
     static String correctionReason(ProjectView v) {
-        return diagnosis(v.project(), v.audit());
+        return diagnosis(v.project(), v.audit(), v.generate());
     }
 
     /** Voir {@link PlanDiagnosis#of} (issue #282). */
     public static String diagnosis(BuildingProject project, CheckState audit) {
         return PlanDiagnosis.of(project, audit);
+    }
+
+    /** Voir {@link PlanDiagnosis#of(BuildingProject, CheckState, CheckState)} (#292). */
+    public static String diagnosis(BuildingProject project, CheckState audit, CheckState generate) {
+        return PlanDiagnosis.of(project, audit, generate);
     }
 
     private static BuildingPlanVerdict currentVerdict(ProjectView v) {

@@ -216,7 +216,8 @@ class BuildingDesignPipelineTest {
         assertEquals(BuildingDesignRunStore.Status.SUCCEEDED, r.status(), r.outcome());
         assertEquals(2, r.spentCalls());
         assertTrue(kinds(r).contains("CRITIQUE"));
-        assertTrue(requests.get(1).contains("IL FAUT MAINTENANT LE RENDRE BEAU"));
+        // #289 : la critique compare au brief et à la conception, et commence par les omissions.
+        assertTrue(requests.get(1).contains("OMISSIONS ET ÉCARTS"));
         assertTrue(drafts.find(r.finalDraftId()).orElseThrow().plan().contains("buttresses"));
     }
 
@@ -315,10 +316,40 @@ class BuildingDesignPipelineTest {
     void theEnvelopeIsAnnouncedInTokensAndDollarsOnlyForKnownPrices() {
         var known = BuildingDesignPipeline.envelope(8, "gpt-4o-2024-08-06", 4400, 900);
         assertTrue(known.priced());
-        assertEquals(8 * 9000, known.tokensIn());
+        // #292 : au moins le prompt réel (système, description, plan précédent, diagnostic) par appel.
+        assertTrue(known.tokensIn() >= 8 * 9000, String.valueOf(known.tokensIn()));
         assertTrue(known.dollars() > 0.4 && known.dollars() < 0.6, String.valueOf(known.dollars()));
         var unknown = BuildingDesignPipeline.envelope(8, "some-new-model", 0, 0);
         assertFalse(unknown.priced());
         assertTrue(unknown.label().contains("tarif"), unknown.label());
+    }
+
+    /** #292 : l'enveloppe suit la description réelle et les images, au lieu d'un forfait fixe. */
+    @org.junit.jupiter.api.Test
+    void theEnvelopeGrowsWithTheRealDescriptionAndImages() {
+        BuildingDesignPipeline.Envelope small = BuildingDesignPipeline.envelope(8, "gpt-4o", 0, 0, 500, 0);
+        BuildingDesignPipeline.Envelope lily = BuildingDesignPipeline.envelope(8, "gpt-4o", 0, 0, 12_000, 4);
+        org.junit.jupiter.api.Assertions.assertTrue(lily.tokensIn() > small.tokensIn(), lily + " / " + small);
+        int perCall = lily.tokensIn() / 8;
+        org.junit.jupiter.api.Assertions.assertTrue(perCall >= 12_000 / 3 + 4 * 1_600,
+                "la description et les images sont comptées à chaque appel : " + perCall);
+        org.junit.jupiter.api.Assertions.assertTrue(lily.dollars() > small.dollars());
+    }
+
+    /** #289 : partir du brief, c'est d'abord une conception détaillée, puis un plan qui la traduit. */
+    @Test
+    void aDetailedDesignIsWrittenFirstAndThePlanTranslatesIt() {
+        var docs = new com.lodygames.rpgquest.panel.building.BuildingDesignDocStore(tmp.resolve("cp.db").toString());
+        pipeline.withDesignDocs(docs);
+        var r = run(BuildingDesignPipeline.Quality.STANDARD, 4,
+                "1. PROGRAMME ET ESPACES\nSalle de lecture au nord, lit rose à l'étage.", plan("good staircase"));
+        assertEquals(BuildingDesignRunStore.Status.SUCCEEDED, r.status(), r.outcome());
+        assertEquals(2, r.spentCalls(), "la conception compte dans l'enveloppe consentie");
+        assertEquals("CONCEPTION DÉTAILLÉE", kinds(r).get(0), kinds(r).toString());
+        assertTrue(requests.get(0).contains("CORRESPONDANCE AVEC LE BRIEF"), "étape 1 : la conception");
+        assertTrue(requests.get(1).contains("LA CONCEPTION DÉTAILLÉE À TRADUIRE"), "étape 2 : la traduction");
+        assertTrue(requests.get(1).contains("lit rose"), "le texte de la conception part avec le plan");
+        assertTrue(requests.get(1).contains("Bibliothèque médiévale de deux étages"), "le brief aussi");
+        assertEquals(1, docs.latest(project.id()).orElseThrow().version(), "la conception est conservée");
     }
 }

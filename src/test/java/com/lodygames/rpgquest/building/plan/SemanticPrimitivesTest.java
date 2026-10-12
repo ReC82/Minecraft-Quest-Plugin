@@ -164,22 +164,25 @@ class SemanticPrimitivesTest {
     }
 
     @Test
-    @DisplayName("Une fenêtre qui sortirait de la façade est ignorée, pas placée de travers")
-    void awindowBeyondTheFacadeIsSkipped() {
-        Blueprint b = expand(shell("""
+    @DisplayName("Une fenêtre qui sortirait du mur construit est refusée, en nommant le mur")
+    void awindowBeyondTheBuiltWallIsRefusedNotSilentlyCut() {
+        // Avant #288–#292, les vitrages hors façade étaient ignorés sans un mot : le modèle
+        // croyait avoir cinq fenêtres, la grille en avait deux. Désormais l'expanseur refuse, et
+        // nomme l'intervalle où « offset » est valable (angles exclus).
+        List<String> problems = new ArrayList<>();
+        BuildingPlan plan = BuildingPlanYaml.read(shell("""
                   - op: window
                     facade: FRONT
                     offset: 5
                     y: 3
                     count: 5
                     spacing: 1
-                """));
+                """), problems).orElseThrow(() -> new AssertionError(problems.toString()));
+        BuildingPlanExpander.Result r = BuildingPlanExpander.expand(plan);
 
-        // La façade ouest compte 7 cellules (z = 0..6) : au-delà, rien n'est posé.
-        assertTrue(at(b, 0, 3, 6) != null);
-        assertEquals(1, b.blocks().stream()
-                .filter(c -> c.state().startsWith("minecraft:glass_pane") && c.z() > 6).count() + 1,
-                "aucun vitrage hors de la façade");
+        assertFalse(r.ok());
+        assertTrue(r.error().contains("ne tombe dans aucun mur construit"), r.error());
+        assertTrue(r.error().contains("x=0, z de 1 à 5"), r.error());
     }
 
     // ---- Éclairage ----------------------------------------------------------------------------
@@ -374,8 +377,8 @@ class SemanticPrimitivesTest {
                     offset: 6
                     y: 3
                   - op: light
-                    from: [3, 5, 3]
-                    to: [7, 5, 5]
+                    from: [3, 1, 3]
+                    to: [7, 1, 5]
                     spacing: 4
                   - op: gable
                     from: [0, 6, 0]

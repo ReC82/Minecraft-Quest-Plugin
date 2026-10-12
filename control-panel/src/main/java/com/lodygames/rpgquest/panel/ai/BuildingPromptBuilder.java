@@ -51,7 +51,23 @@ public final class BuildingPromptBuilder {
      * @param maxHeight hauteur maximale autorisée
      */
     public record Demand(String siteId, String siteName, String facing, String brief,
-                         int maxWidth, int maxHeight, String buildingId) {
+                         int maxWidth, int maxHeight, String buildingId, String design) {
+
+        /** Sans conception détaillée (#289) : le plan part du seul brief. */
+        public Demand(String siteId, String siteName, String facing, String brief, int maxWidth,
+                      int maxHeight, String buildingId) {
+            this(siteId, siteName, facing, brief, maxWidth, maxHeight, buildingId, "");
+        }
+
+        /** La même demande, avec la conception détaillée à traduire (#289). */
+        public Demand withDesign(String text) {
+            return new Demand(siteId, siteName, facing, brief, maxWidth, maxHeight, buildingId, text);
+        }
+
+        /** La même demande, avec un brief complété (écueils d'une conception neuve). */
+        public Demand withBrief(String text) {
+            return new Demand(siteId, siteName, facing, text, maxWidth, maxHeight, buildingId, design);
+        }
 
         /**
          * Forme antérieure à #267 : l'identifiant de bibliothèque était dérivé du nom.
@@ -65,6 +81,7 @@ public final class BuildingPromptBuilder {
         }
 
         public Demand {
+            design = design == null ? "" : design.trim();
             buildingId = buildingId == null ? "" : buildingId.trim();
             siteId = siteId == null ? "" : siteId.trim();
             siteName = siteName == null ? "" : siteName.trim();
@@ -124,10 +141,15 @@ public final class BuildingPromptBuilder {
                    après, aucun bloc de code, aucune explication.
                 2. N'utilise QUE les instructions listées ci-dessous. Une instruction plausible mais
                    absente de la liste fait échouer la génération.
-                3. N'utilise que des blocs Minecraft VANILLA, en minuscules, forme
+                3. N'utilise que des blocs Minecraft VANILLA 1.21.11, en minuscules, forme
                    « minecraft:nom ». N'écris PAS de propriétés entre crochets : le moteur les
                    calcule, et une propriété inventée fait échouer la génération. « face=bottom »
                    sur un escalier, par exemple, n'existe pas — la propriété s'appelle « half ».
+                   Le serveur vérifie CHAQUE identifiant dans le registre du jeu avant tout
+                   verdict. Les lits, vitres teintées, laines, tapis, bougies, bannières et bétons
+                   n'existent QU'EN COULEUR : minecraft:pink_bed, minecraft:pink_stained_glass_pane,
+                   minecraft:white_carpet. « minecraft:bed », « minecraft:stained_glass_pane » et
+                   « minecraft:carpet » N'EXISTENT PAS et font refuser le plan entier.
                 4. Toutes les coordonnées sont LOCALES, entières, et comprises dans la taille que tu
                    déclares : de 0 à size-1 inclus. Une zone qui sort du volume fait échouer la
                    génération.
@@ -143,9 +165,9 @@ public final class BuildingPromptBuilder {
                   x: 9    # largeur  (axe est-ouest)
                   y: 8    # hauteur
                   z: 7    # profondeur (axe nord-sud)
-                anchor:                # OPTIONNEL — par défaut le centre de la base
+                anchor:                # OPTIONNEL — par défaut le centre de la base, y: 0
                   x: 4
-                  y: 0
+                  y: 1                 # la couche posée AU NIVEAU DU TERRAIN (voir l'entrée)
                   z: 3
                 steps:
                   - op: box
@@ -204,6 +226,13 @@ public final class BuildingPromptBuilder {
                                   départ avant et une de palier après : toutes doivent être À
                                   L'INTÉRIEUR, à au moins une cellule des murs extérieurs. Ne perce
                                   JAMAIS la trémie toi-même.
+                - op: bed       → UN LIT, assemblage de deux cellules : le pied et la tête. Clés :
+                                  « from » (le PIED, [x, y, z] posé sur le sol), « direction »
+                                  (north, south, east ou west : la direction de la TÊTE vue depuis
+                                  le pied ; la tête occupe la cellule voisine dans cette direction),
+                                  « block » (un lit COLORÉ : minecraft:pink_bed, minecraft:blue_bed…).
+                                  JAMAIS un lit posé par « op: box » : il le serait en moitiés sans
+                                  leur paire, détruites à la pose — le plan est refusé.
                 - op: ladder    → une échelle VERTICALE adossée à un mur, qui regarde vers
                                   l'intérieur, et dont le débouché du haut est dégagé. Clés :
                                   « facade » (le mur contre lequel elle s'adosse — il ne fixe QUE
@@ -220,8 +249,17 @@ public final class BuildingPromptBuilder {
 
                 « facade » prend FRONT, BACK, LEFT ou RIGHT. JAMAIS une coordonnée, JAMAIS un point
                 cardinal : FRONT est la façade d'entrée, quelle que soit l'orientation du bâtiment,
-                et LEFT/RIGHT sont vues depuis l'extérieur, face au bâtiment. « offset » part
-                toujours du coin de coordonnée minimale, de 0 à la largeur de la façade moins 1.
+                et LEFT/RIGHT sont vues depuis l'extérieur, face au bâtiment.
+
+                « offset » est la coordonnée LE LONG de la façade, en coordonnées du plan : x pour
+                une façade nord ou sud, z pour une façade est ou ouest. Le moteur perce l'ouverture
+                dans le MUR CONSTRUIT (le « walls », « shell » ou « box » de ce côté) qui contient
+                cette position — PAS sur la limite du volume. Si ton bâtiment est en retrait dans
+                son volume (murs de [3,1,3] à [15,4,15] dans un volume de 19), « offset » doit
+                tomber entre les angles de ce mur, ici de 4 à 14 ; hors de cet intervalle, le plan
+                est refusé. Si plusieurs corps se trouvent à cette position (une tour devant la
+                maison), l'ouverture va dans le plus extérieur ; « wall: <coordonnée> » désigne
+                explicitement un autre mur (le z ou le x de ce mur).
 
                 UN EXEMPLE MINIMAL PAR INSTRUCTION D'ARCHITECTURE
 
@@ -250,6 +288,10 @@ public final class BuildingPromptBuilder {
                     floor: 5
                     width: 1
                     block: minecraft:oak_stairs
+                  - op: bed
+                    from: [6, 1, 5]
+                    direction: east
+                    block: minecraft:red_bed
                   - op: ladder
                     facade: BACK
                     from: [1, 1, 5]
@@ -278,13 +320,23 @@ public final class BuildingPromptBuilder {
                 Le serveur mesure ces points sur la grille réellement construite, pas sur tes
                 intentions. Un plan qui en manque un est REFUSÉ et rien n'est écrit.
 
-                  [ ] UNE ENTRÉE. Une ouverture de 2 blocs de haut traversant une façade, avec de
-                      l'air derrière. Utilise « op: door » : c'est la seule façon de ne pas se
-                      tromper.
-                  [ ] DES VITRAGES, sur au moins DEUX façades différentes. Utilise « op: window ».
+                  [ ] UNE ENTRÉE PRATICABLE. Une porte (« op: door ») DANS un mur extérieur, qu'un
+                      joueur venu du terrain franchit jusqu'au sol intérieur SANS SAUTER. Le
+                      terrain est juste sous la couche « anchor.y » : avec un sol en y=0, mets
+                      « anchor: y: 1 » (la fondation s'enfonce, l'entrée est de plain-pied), ou
+                      pose devant la porte, DANS le volume, des marches d'escalier tournées vers
+                      elle. Une porte posée hors des murs ne compte pas.
+                  [ ] DES VITRAGES DANS LES MURS, sur au moins DEUX façades différentes. Utilise
+                      « op: window » ; une vitre posée hors d'un mur ne compte pas.
                   [ ] DE LA LUMIÈRE, à moins de 8 blocs de tout point intérieur.
                   [ ] UNE ENVELOPPE CLOSE : pas de trou dans les murs ni dans le toit, pignons
                       compris. « op: gable » avec « fill » les ferme pour toi.
+                  [ ] TOUT TIENT APRÈS LA POSE. Une lanterne se pose SUR un bloc plein (table,
+                      sol) ou se suspend SOUS un plafond, éventuellement au bout d'une chaîne
+                      (minecraft:iron_chain) ; jamais en l'air, jamais sur une autre lanterne.
+                      Torches murales, échelles et panneaux muraux s'adossent à un mur plein ;
+                      tapis, fleurs et torches reposent sur un bloc. Lits et portes se posent
+                      avec « op: bed » et « op: door ». Un bloc qui tomberait est REFUSÉ.
                   [ ] TOUS LES ÉTAGES ACCESSIBLES. Chaque plancher intermédiaire reçoit UN
                       « op: staircase » dont « floor » est le y de ce plancher. N'écris ni trémie
                       (« clear ») ni escalier marche par marche pour monter : le moteur s'en
@@ -305,6 +357,10 @@ public final class BuildingPromptBuilder {
                   x: 11
                   y: 13
                   z: 9
+                anchor:
+                  x: 5
+                  y: 1
+                  z: 4
                 steps:
                   - op: box
                     from: [0, 0, 0]
@@ -405,16 +461,18 @@ public final class BuildingPromptBuilder {
                 Remarque ce que cet exemple NE fait pas : il ne calcule aucune coordonnée de porte,
                 aucune orientation de marche, aucune propriété de bloc, aucune trémie. Le plancher
                 de l'étage est en y=5, donc « floor: 5 » ; la première marche est sur le sol (y=1),
-                dans un coin, et le mobilier longe les murs. Il décrit, et le moteur calcule.
+                dans un coin, et le mobilier longe les murs. « anchor: y: 1 » enterre la fondation
+                (y=0) : on entre de plain-pied. Il décrit, et le moteur calcule.
 
                 CONTRAINTE DE LONGUEUR — LIS CECI
 
                 Ta réponse a un budget de sortie limité. Un document COUPÉ EN PLEIN MILIEU est
                 totalement inutilisable : il n'y a pas de « plan partiel » exploitable. Si tu dois
-                choisir, fais un bâtiment plus SOBRE mais COMPLET, et qui satisfait les huit points
+                choisir, fais un bâtiment plus SOBRE mais COMPLET, et qui satisfait les neuf points
                 du contrat — c'est ce qui est contrôlé. N'ajoute des détails décoratifs que si le
                 plan tient déjà entièrement. Entre 30 et 80 instructions est la fourchette utile.
-                """;
+
+                """ + ENGINE_CAPABILITIES;
     }
 
     /** La demande concrète : les faits de l'emplacement, puis le brief de l'administrateur. */
@@ -438,11 +496,106 @@ public final class BuildingPromptBuilder {
                 LE BÂTIMENT SOUHAITÉ, DÉCRIT PAR L'ADMINISTRATEUR
 
                 %s
-
+                %s
                 Produis maintenant le plan YAML, et rien d'autre.
                 """.formatted(demand.siteId(), demand.siteName(), demand.facing(), demand.facing(),
                 demand.maxWidth(), demand.maxWidth(), demand.maxHeight(),
-                demand.suggestedId(), demand.brief());
+                demand.suggestedId(), demand.brief(), designSection(demand));
+    }
+
+    /** La conception détaillée à traduire, quand elle existe (#289). */
+    private static String designSection(Demand demand) {
+        if (demand.design().isEmpty()) {
+            return "";
+        }
+        return """
+
+                LA CONCEPTION DÉTAILLÉE À TRADUIRE (étape 1, validée et conservée par le panel)
+
+                %s
+
+                Traduis-la FIDÈLEMENT dans le vocabulaire du plan : chaque pièce, chaque meuble,
+                chaque élément de décoration et chaque accès qu'elle prévoit doit apparaître, à sa
+                place et dans sa matière. Si un élément est impossible avec les instructions du
+                moteur, fais l'équivalent le plus proche et garde tout le reste. Le brief ci-dessus
+                reste la référence en cas de doute.
+                """.formatted(demand.design());
+    }
+
+    /**
+     * Ce que le moteur sait réellement poser (#289) : dit à la conception ET au plan, pour qu'aucun
+     * des deux ne promette un tableau ou une armure qui n'existera jamais.
+     */
+    static final String ENGINE_CAPABILITIES = """
+            CE QUE LE MOTEUR SAIT POSER — des BLOCS vanilla 1.21.11, rien d'autre
+
+              Lit                 op: bed, lit coloré (minecraft:pink_bed…) — deux cellules, pied et tête
+              Porte               op: door — deux moitiés, orientation et dégagement calculés
+              Fenêtres, vitraux   instruction window, minecraft:glass_pane ou <couleur>_stained_glass_pane
+              Lumière             op: light (lanternes posées ou suspendues, minecraft:iron_chain), torches
+              Escalier d'étage    op: staircase ; marches de perron : blocs d'escalier tournés vers la porte
+              Tapis               minecraft:<couleur>_carpet, posé SUR le sol (il lui faut un bloc dessous)
+              Plantes en pot      minecraft:potted_<plante> (potted_poppy, potted_fern, potted_azalea_bush…)
+              Cuisine             minecraft:furnace, smoker, crafting_table, barrel, cauldron
+              Rangements          minecraft:chest, barrel, bookshelf, chiseled_bookshelf, lectern
+              Tables, sièges      dalles, escaliers, barrières (oak_fence) et trappes (volets, assises)
+              Façades             dalles et escaliers (corniches, appuis), trappes (volets), murets, jardinières
+              Plantes du jardin   fleurs (poppy, dandelion, *_tulip…), haies de feuilles, fougères — sur un bloc
+
+            CE QU'IL NE SAIT PAS POSER : tableaux, cadres, supports d'armure, animaux et toute ENTITÉ ;
+            le texte d'un panneau. Ne les promets pas : propose un équivalent en blocs ou omets-les en
+            le disant.
+            """;
+
+    /** Le rôle de l'étape 1 (#289) : un architecte qui conçoit, sans écrire de YAML. */
+    public static String designSystemPrompt() {
+        return """
+                Tu es un architecte et décorateur Minecraft. Tu prépares la CONCEPTION DÉTAILLÉE d'un
+                bâtiment, avant que quelqu'un d'autre ne l'écrive en plan technique. Tu n'écris AUCUN
+                YAML : un texte structuré, précis, en français, sous les titres imposés.
+
+                Le plan technique sera écrit à partir de ton texte. Tout ce que tu ne nommes pas
+                n'existera pas : sois concret — positions en coordonnées du plan (x de … à …, z de …
+                à …, étage), matériaux par leur identifiant réel minecraft:…, meubles un par un.
+
+                %s
+                RÈGLES DU TERRAIN : le volume va de 0 à size-1 sur chaque axe, sans dépasser
+                l'emprise et la hauteur maximales. Le terrain est sous la couche « anchor.y » : une
+                entrée doit s'atteindre depuis lui sans sauter (perron et marches DANS l'emprise,
+                ou fondation enterrée). Les meubles se rangent le long des murs, avec des allées de 2
+                blocs. Ne propose pas un matériau de plus pour le principe : la variété sert le style
+                demandé, elle n'est pas un but.
+                """.formatted(ENGINE_CAPABILITIES);
+    }
+
+    /** La demande de l'étape 1 : le brief entier, les limites, et les titres attendus. */
+    public static String designUserPrompt(Demand demand) {
+        return """
+                PROJET : %s (identifiant %s)
+                Façade d'entrée : %s. Emprise maximale : %d × %d blocs, hauteur maximale : %d blocs.
+
+                LE BÂTIMENT SOUHAITÉ, DÉCRIT PAR L'ADMINISTRATEUR (à respecter intégralement)
+
+                %s
+
+                Rédige la conception sous EXACTEMENT ces titres :
+
+                1. PROGRAMME ET ESPACES — chaque pièce demandée : étage, emprise en coordonnées du
+                   plan, fonction.
+                2. VOLUMES, FAÇADES ET TOITURE — corps de bâtiment (dimensions, retrait dans le
+                   volume), hauteurs d'étage, porche, débords, toiture et pignons.
+                3. PALETTE JUSTIFIÉE — chaque matériau (identifiant réel) et son rôle.
+                4. ACCÈS ET CIRCULATION — porte (façade, position), seuil, perron et marches dans
+                   l'emprise, escaliers entre étages (pied, direction, plancher), allées.
+                5. MOBILIER, PIÈCE PAR PIÈCE — chaque meuble, sa matière, sa place, la primitive du
+                   moteur qui le pose (lit → op: bed, etc.).
+                6. DÉCORATION INTÉRIEURE ET EXTÉRIEURE — tapis, plantes, vitraux, luminaires, jardin.
+                7. LIMITES DU MOTEUR — ce que le brief demande et qui ne peut pas être posé
+                   (entités…), et ce que tu proposes à la place.
+                8. CORRESPONDANCE AVEC LE BRIEF — chaque exigence du brief, et l'endroit exact de la
+                   conception qui la satisfait, ou la raison pour laquelle elle ne l'est pas.
+                """.formatted(demand.siteName(), demand.suggestedId(), demand.facing(),
+                demand.maxWidth(), demand.maxWidth(), demand.maxHeight(), demand.brief());
     }
 
     /**
@@ -511,7 +664,9 @@ public final class BuildingPromptBuilder {
                 %s
 
                 Corrige UNIQUEMENT ce que le motif désigne. Garde l'identifiant, le nom, la façade
-                et l'intention du brief. Ne réécris pas le plan de zéro : repars de celui-ci. Si le
+                et l'intention du brief. Ne réécris pas le plan de zéro : repars de celui-ci, et
+                CONSERVE tout ce qui est déjà juste — pièces, mobilier, décoration, palette : une
+                correction technique ne retire aucun élément voulu par le brief ou la conception. Si le
                 motif parle d'une porte, d'une fenêtre, d'une lumière, d'un escalier ou d'une
                 échelle, utilise l'instruction d'architecture correspondante plutôt que de calculer
                 une coordonnée.
@@ -543,26 +698,27 @@ public final class BuildingPromptBuilder {
         return """
                 %s
 
-                TON PLAN A ÉTÉ ACCEPTÉ PAR LE SERVEUR. IL FAUT MAINTENANT LE RENDRE BEAU.
+                TON PLAN A PASSÉ LES CONTRÔLES TECHNIQUES DU SERVEUR. IL RESTE À LE RENDRE FIDÈLE.
 
-                Tu es maintenant l'architecte en chef qui relit ce plan avant sa construction. Il est
-                conforme, mais un bâtiment conforme et banal est un échec : relis le brief de
-                l'administrateur, puis améliore le plan sur ces axes, dans cet ordre :
+                Les contrôles du serveur sont GÉOMÉTRIQUES : entrée, fenêtres, lumière, toit, étages,
+                stabilité. Ils ne disent rien de la fidélité au brief ni de la beauté. Tu es
+                l'architecte en chef qui compare le plan accepté au BRIEF et à la CONCEPTION ci-dessus.
 
-                  1. FIDÉLITÉ AU BRIEF : chaque pièce, chaque élément demandé existe, à sa place
-                     (un comptoir, une salle de lecture, un escalier, des étages…).
-                  2. SILHOUETTE ET FAÇADES : un soubassement d'un autre matériau, des bandeaux entre
-                     les étages, des encadrements de fenêtres, des piliers en relief, un toit avec
-                     débord ; évite le bloc rectangulaire uniforme.
-                  3. AMÉNAGEMENT : mobilier regroupé par fonction et par pièce (rayonnages en rangées
-                     avec des allées, tables de lecture, pupitres, tapis, plantes), jamais une « box »
-                     qui remplit une salle. Garde au moins 2 blocs d'allée libres.
-                  4. LUMIÈRE CHALEUREUSE : lanternes suspendues, appliques, réparties à chaque étage.
+                1. Écris d'abord, en texte simple et SANS bloc de code, sous le titre
+                   « OMISSIONS ET ÉCARTS » : chaque exigence du brief ou de la conception absente du plan, mal placée
+                   ou incompatible avec le moteur, une par ligne, avec ce que tu fais pour y remédier.
+                   Si rien ne manque, écris « Aucune omission ».
+                2. Puis donne le plan YAML amélioré, COMPLET, dans UN SEUL bloc ```yaml.
+
+                Améliore dans cet ordre : (a) ce qui manque au brief et à la conception — pièces,
+                meubles, décoration, accès ; (b) l'aménagement — meubles par fonction, le long des
+                murs, allées de 2 blocs ; (c) les façades et la silhouette demandées. Ne multiplie
+                pas les matériaux pour le principe : la variété sert le style demandé.
 
                 CE QUI NE DOIT PAS CHANGER : l'identifiant, le nom, « front », la taille déclarée
-                (les zones restent de 0 à size-1), la porte, et chaque « op: staircase » avec son
-                « floor ». Ne retire aucune fenêtre ni aucune lumière. Si tu ajoutes un étage, ajoute
-                son « staircase ».
+                (les zones restent de 0 à size-1), la porte et ses marches, chaque « op: staircase »
+                avec son « floor », et tout élément déjà conforme au brief. Ne retire aucune fenêtre
+                ni aucune lumière. Si tu ajoutes un étage, ajoute son « staircase ».
 
                 CE QUE LE SERVEUR A MESURÉ SUR LA VERSION ACCEPTÉE
 
@@ -571,13 +727,22 @@ public final class BuildingPromptBuilder {
                 Plan accepté :
                 %s
 
-                Produis le plan YAML amélioré, COMPLET, et rien d'autre. Il sera vérifié : s'il est
-                refusé, la version actuelle est conservée.
+                Le plan amélioré sera vérifié : s'il est refusé, la version actuelle est conservée.
                 """.formatted(userPrompt(demand),
                 metrics == null || metrics.isBlank() ? "(aucune mesure transmise)" : metrics.trim(),
                 warnings == null || warnings.isBlank() ? ""
                         : "\nRemarques du serveur à traiter :\n" + warnings.trim() + "\n",
                 plan == null ? "" : plan.trim());
+    }
+
+    /** Le texte de la critique qui précède son plan : la liste des omissions relevées (#289). */
+    public static String critiqueFindings(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        int fence = raw.indexOf("```");
+        String head = (fence < 0 ? "" : raw.substring(0, fence)).trim();
+        return head.length() > 4_000 ? head.substring(0, 4_000) + " […]" : head;
     }
 
     /**

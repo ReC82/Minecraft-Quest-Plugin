@@ -72,7 +72,7 @@ public final class AgentActionCatalog {
      * refusent au même seuil, sinon l'un des trois tronquerait ou rejetterait ce que les autres
      * acceptent.
      */
-    private static final int MAX_BUILD_SITE_BRIEF = 6000;
+    private static final int MAX_BUILD_SITE_BRIEF = com.lodygames.rpgquest.panel.building.BuildingProject.MAX_BRIEF;
     /** Issue #94 — borne du plan transmis, identique à celle de l'exécuteur côté plugin. */
     private static final int MAX_BUILD_PLAN = 64_000;
     /** Familles de contenu exportables (issue #108) — miroir de {@code ContentFamily} côté plugin. */
@@ -786,6 +786,15 @@ public final class AgentActionCatalog {
                 params.put("plan", plan);
                 if ("building.generate".equals(type) && "true".equals(trim(form.get("replace")))) {
                     params.put("replace", "true");
+                    // #290 : la version vue au moment de republier — le plugin refuse si une
+                    // autre publication est passée entre-temps.
+                    String expected = trim(form.get("expected_version"));
+                    if (!expected.isEmpty()) {
+                        if (!expected.matches("[0-9]{1,6}") || Integer.parseInt(expected) < 1) {
+                            return Validation.fail("Version attendue invalide : entier positif attendu.");
+                        }
+                        params.put("expected_version", expected);
+                    }
                 }
                 // #282 : les bornes du projet, pour que la réparation déterministe du plugin
                 // puisse agrandir le volume au lieu d'araser un toit. Optionnelles, entières.
@@ -812,7 +821,8 @@ public final class AgentActionCatalog {
                 if (id == null) {
                     return Validation.fail("Identifiant d'emplacement manquant ou invalide.");
                 }
-                String brief = trim(form.get("brief"));
+                // #292 : fins de ligne normalisées avant de compter, comme pour un projet d'Atelier.
+                String brief = trim(form.get("brief")).replace("\r\n", "\n").replace('\r', '\n');
                 if (brief.length() > MAX_BUILD_SITE_BRIEF) {
                     return Validation.fail("Brief trop long : " + brief.length()
                             + " caractères pour un maximum de " + MAX_BUILD_SITE_BRIEF

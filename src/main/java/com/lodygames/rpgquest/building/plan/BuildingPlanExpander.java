@@ -180,7 +180,11 @@ public final class BuildingPlanExpander {
             PlanStep step = plan.steps().get(i);
             if (step.kind() != PlanStep.Kind.STAIRCASE) {
                 cells.current = i + 1;
-                apply(step, cells, plan);
+                Optional<String> refused = apply(step, cells, plan);
+                if (refused.isPresent()) {
+                    return Result.failure("Instruction " + (i + 1) + " (" + step.kind() + ") : "
+                            + refused.get());
+                }
             }
         }
         for (int i = 0; i < plan.steps().size(); i++) {
@@ -194,6 +198,8 @@ public final class BuildingPlanExpander {
                 }
             }
         }
+
+        settleLanterns(cells, plan);
 
         List<BlueprintBlock> blocks = new ArrayList<>(cells.states.size());
         for (int y = 0; y < plan.sizeY(); y++) {
@@ -211,6 +217,11 @@ public final class BuildingPlanExpander {
                     + "s'annulent ou sont des « clear ».");
         }
 
+        Optional<String> unknown = unknownStates(blocks, cells, plan);
+        if (unknown.isPresent()) {
+            return Result.failure(unknown.get());
+        }
+
         Blueprint blueprint = new Blueprint(plan.sizeX(), plan.sizeY(), plan.sizeZ(), blocks);
         var broken = blueprint.validate();
         if (broken.isPresent()) {
@@ -221,9 +232,52 @@ public final class BuildingPlanExpander {
         return new Result(blueprint, "", blocks.size(), touched, cells.origins, plan);
     }
 
-    private static void apply(PlanStep step, Cells cells, BuildingPlan plan) {
+    /**
+     * Dernière barrière avant le schematic (#288–#292) : chaque état <strong>réellement produit</strong>
+     * — y compris ceux que les primitives calculent — doit exister dans le registre de la version
+     * servie. Le plan a déjà été contrôlé type par type ; ce contrôle-ci attrape un état calculé
+     * invalide (une porte posée avec un bloc qui n'est pas une porte), avec la cellule et
+     * l'instruction qui l'ont produit, au lieu du {@code NoMatchException} de l'écriture.
+     */
+    private static Optional<String> unknownStates(List<BlueprintBlock> blocks, Cells cells,
+                                                  BuildingPlan plan) {
+        Map<String, BlueprintBlock> first = new LinkedHashMap<>();
+        Map<String, Integer> counts = new HashMap<>();
+        for (BlueprintBlock b : blocks) {
+            first.putIfAbsent(b.state(), b);
+            counts.merge(b.state(), 1, Integer::sum);
+        }
+        List<String> problems = new ArrayList<>();
+        for (var e : first.entrySet()) {
+            Optional<String> refusal = BlockCatalog.vanilla().refusal(e.getKey());
+            if (refusal.isPresent()) {
+                BlueprintBlock b = e.getValue();
+                int rank = cells.origins.getOrDefault(key(b.x(), b.y(), b.z()), 0);
+                problems.add("état « " + e.getKey() + " » produit par " + describeStep(plan, rank)
+                        + " en " + b.x() + "/" + b.y() + "/" + b.z() + " (" + counts.get(e.getKey())
+                        + " cellule(s)) : " + refusal.get() + ".");
+            }
+        }
+        if (problems.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of("États de bloc refusés par le registre Minecraft " + BlockCatalog.VERSION
+                + " — rien n'a été écrit :\n- " + String.join("\n- ", problems));
+    }
+
+    private static Optional<String> apply(PlanStep step, Cells cells, BuildingPlan plan) {
         PlanBox box = step.box();
         switch (step.kind()) {
+            case DOOR -> {
+                return door(step, cells, plan);
+            }
+            case BED -> Bed.of(step).ifPresent(bed -> {
+                cells.put(key(bed.x(), bed.y(), bed.z()), bed.foot());
+                cells.put(key(bed.headX(), bed.y(), bed.headZ()), bed.head());
+            });
+            case WINDOW -> {
+                return window(step, cells, plan);
+            }
             case BOX -> forEach(box, (x, y, z) -> cells.put(key(x, y, z), step.state()));
             case SHELL -> forEach(box, (x, y, z) -> {
                 if (box.onShell(x, y, z)) {
@@ -237,15 +291,15 @@ public final class BuildingPlanExpander {
             });
             case CLEAR -> forEach(box, (x, y, z) -> cells.remove(key(x, y, z)));
             case GABLE -> gable(step, cells);
-            case DOOR -> door(step, cells, plan);
-            case WINDOW -> window(step, cells, plan);
             case LIGHT -> light(step, cells);
             case STAIR_RUN -> stairRun(step, cells);
             case LADDER -> ladder(step, cells, plan);
             case PILLARS -> pillars(step, cells);
             // Appliqué à part, après toutes les autres instructions : voir expand().
             case STAIRCASE -> { }
+            default -> { }
         }
+        return Optional.empty();
     }
 
     /**
@@ -307,6 +361,39 @@ public final class BuildingPlanExpander {
         return Optional.empty();
     }
 
+    /**
+     * Les lanternes de « light » choisissent leur appui sur la grille FINALE (#288).
+     *
+     * <p>« hanging » était décidé au moment de l'instruction. Or le toit, le plafond ou la table
+     * viennent souvent après : sur la Maison de Lily, les lanternes de y=4 étaient posées avant le
+     * toit, donc « posées » sur le vide, et se détachaient à la première mise à jour — ramassables.
+     * Le moteur tranche maintenant une fois tout posé : suspendue s'il y a de quoi la tenir
+     * au-dessus, posée s'il y a un appui dessous. Sans l'un ni l'autre, l'état reste tel quel et
+     * l'audit de stabilité la refuse en la nommant — jamais retirée en silence.</p>
+     */
+    private static void settleLanterns(Cells cells, BuildingPlan plan) {
+        for (var e : new ArrayList<>(cells.states.entrySet())) {
+            int rank = cells.origins.getOrDefault(e.getKey(), 0);
+            // Les lanternes de « light », et toute lanterne dont le plan n'a écrit que le type : le
+            // modèle dit « une lanterne », le moteur décide comment elle tient. Un « hanging »
+            // écrit explicitement est respecté — et jugé par l'audit.
+            boolean computed = rank >= 1 && plan.steps().get(rank - 1).kind() == PlanStep.Kind.LIGHT
+                    || !e.getValue().contains("[");
+            if (!computed || !BlockCatalog.vanilla().hasProperty(e.getValue(), "hanging")) {
+                continue;
+            }
+            long k = e.getKey();
+            int x = (int) (k >>> 40);
+            int y = (int) ((k >>> 20) & 0xFFFFF);
+            int z = (int) (k & 0xFFFFF);
+            boolean hang = Stability.holdsFromAbove(cells.get(key(x, y + 1, z)));
+            boolean stand = Stability.holdsFromBelow(y > 0 ? cells.get(key(x, y - 1, z)) : null);
+            if (hang || stand) {
+                cells.states.put(k, BlockStates.lantern(BlockStates.bareType(e.getValue()), hang));
+            }
+        }
+    }
+
     /** Les bornes de la matière déjà posée : {minX, minY, minZ, maxX, maxY, maxZ}, ou null. */
     private static int[] materialBounds(Cells cells) {
         if (cells.states.isEmpty()) {
@@ -338,15 +425,19 @@ public final class BuildingPlanExpander {
      * intérieure</strong> pour que la porte soit réellement traversable. C'est exactement la série
      * de calculs que la V1 avait ratée.</p>
      */
-    private static void door(PlanStep step, Cells cells, BuildingPlan plan) {
+    private static Optional<String> door(PlanStep step, Cells cells, BuildingPlan plan) {
         Facade facade = step.facade() == null ? Facade.FRONT : step.facade();
         int offset = step.number("offset", facade.span(plan.front(), plan.sizeX(), plan.sizeZ()) / 2);
         int y = step.number("y", 1);
-        var at = facade.cell(plan.front(), plan.sizeX(), plan.sizeY(), plan.sizeZ(), offset, y);
-        if (at.isEmpty()) {
-            return;
+        if (y < 0 || y + 1 >= plan.sizeY()) {
+            return Optional.of("la porte en y=" + y + " sort du volume (hauteur " + plan.sizeY()
+                    + ") : ses deux moitiés occupent y et y+1.");
         }
-        int[] c = at.get();
+        Target target = target(step, plan, facade, offset, offset, y, y + 1, "la porte");
+        if (target.refusal() != null) {
+            return Optional.of(target.refusal());
+        }
+        int[] c = target.cell(offset, y);
         String wood = BlockStates.bareTypeOr(step.state(), "minecraft:oak_door");
         BlockStates.Dir outward = facade.direction(plan.front());
         boolean right = step.number("hinge", 0) != 0;
@@ -359,6 +450,125 @@ public final class BuildingPlanExpander {
         for (int h = 0; h <= 1; h++) {
             cells.remove(key(c[0] + in[0], c[1] + h, c[2] + in[2]));
         }
+        return Optional.empty();
+    }
+
+    /**
+     * Le mur où percer une ouverture (#288–#292, Maison de Lily).
+     *
+     * <h2>Le défaut</h2>
+     *
+     * <p>Le plan déclarait un volume de 19 × 19 et construisait ses murs de [3,1,3] à [15,4,15]. La
+     * façade était résolue sur la <em>limite du volume</em> : la porte s'est posée en z=18 et les
+     * vitrages en x=0/18, z=0/18 — détachés, dans le jardin — et la maison est restée fermée.</p>
+     *
+     * <h2>La règle</h2>
+     *
+     * <p>Une ouverture se perce dans un <strong>corps de bâtiment</strong> : l'emprise d'une
+     * instruction {@code walls}, {@code shell} ou {@code box} d'au moins 3 × 3, qui couvre les
+     * hauteurs de l'ouverture (à défaut, tout corps). {@code offset} reste la coordonnée le long de
+     * la façade, en coordonnées du plan (x pour une façade nord/sud, z pour est/ouest) ; seule la
+     * <em>profondeur</em> est résolue — le mur extérieur du corps dont l'emprise contient
+     * l'ouverture, angles exclus. Si plusieurs corps la contiennent, c'est le plus extérieur de ce
+     * côté : la façade, par définition. Pour viser un autre mur, {@code wall: <coordonnée>} le
+     * désigne explicitement ; un {@code wall} qui ne correspond à aucun corps est refusé.</p>
+     *
+     * <p>Un plan sans aucun corps (un portail, un mur seul) garde l'ancienne lecture : la limite du
+     * volume. L'audit juge ensuite la grille, et refuse toute ouverture qui ne s'ouvre sur rien.</p>
+     */
+    private static Target target(PlanStep step, BuildingPlan plan, Facade facade, int alongFrom,
+                                 int alongTo, int yFrom, int yTo, String what) {
+        BlockStates.Dir dir = facade.direction(plan.front());
+        boolean alongX = !dir.alongX();
+        List<PlanBox> all = new ArrayList<>();
+        for (PlanStep other : plan.steps()) {
+            PlanBox b = other.box();
+            boolean volume = other.kind() == PlanStep.Kind.WALLS || other.kind() == PlanStep.Kind.SHELL
+                    || other.kind() == PlanStep.Kind.BOX;
+            if (volume && b.maxX() - b.minX() >= 2 && b.maxZ() - b.minZ() >= 2) {
+                all.add(b);
+            }
+        }
+        if (all.isEmpty()) {
+            int plane = switch (dir) {
+                case NORTH, WEST -> 0;
+                case SOUTH -> plan.sizeZ() - 1;
+                case EAST -> plan.sizeX() - 1;
+            };
+            return new Target(plane, alongX, true, null);
+        }
+        List<PlanBox> covering = all.stream()
+                .filter(b -> b.minY() <= yFrom && b.maxY() >= yTo).toList();
+        List<PlanBox> pool = covering.isEmpty() ? all : covering;
+        List<PlanBox> holding = new ArrayList<>();
+        for (PlanBox b : pool) {
+            int min = alongX ? b.minX() : b.minZ();
+            int max = alongX ? b.maxX() : b.maxZ();
+            if (alongFrom > min && alongTo < max) {
+                holding.add(b);
+            }
+        }
+        String axis = alongX ? "x" : "z";
+        String cellsLabel = axis + "=" + alongFrom + (alongTo != alongFrom ? "…" + alongTo : "");
+        if (holding.isEmpty()) {
+            StringBuilder sb = new StringBuilder(what + " (" + cellsLabel + ", façade "
+                    + facade + ") ne tombe dans aucun mur construit. Murs de cette façade : ");
+            boolean first = true;
+            for (PlanBox b : pool) {
+                int min = alongX ? b.minX() : b.minZ();
+                int max = alongX ? b.maxX() : b.maxZ();
+                sb.append(first ? "" : " ; ").append(faceLabel(dir, b)).append(", ").append(axis)
+                        .append(" de ").append(min + 1).append(" à ").append(max - 1)
+                        .append(" (angles exclus)");
+                first = false;
+            }
+            return Target.refused(sb.append(". « offset » est la coordonnée ").append(axis)
+                    .append(" du plan : choisis-la dans cet intervalle.").toString());
+        }
+        if (step.hasNumber("wall")) {
+            int wall = step.number("wall", 0);
+            for (PlanBox b : holding) {
+                if (face(dir, b) == wall) {
+                    return new Target(wall, alongX, false, null);
+                }
+            }
+            return Target.refused(what + " vise « wall: " + wall + " », mais aucun mur construit "
+                    + "de la façade " + facade + " ne s'y trouve à " + cellsLabel + " (murs : "
+                    + String.join(" ; ", holding.stream().map(b -> faceLabel(dir, b)).toList()) + ").");
+        }
+        int plane = face(dir, holding.get(0));
+        for (PlanBox b : holding) {
+            int f = face(dir, b);
+            plane = (dir == BlockStates.Dir.SOUTH || dir == BlockStates.Dir.EAST)
+                    ? Math.max(plane, f) : Math.min(plane, f);
+        }
+        return new Target(plane, alongX, false, null);
+    }
+
+    /** Le plan du mur d'un corps, côté {@code dir}. */
+    private static int face(BlockStates.Dir dir, PlanBox b) {
+        return switch (dir) {
+            case NORTH -> b.minZ();
+            case SOUTH -> b.maxZ();
+            case WEST -> b.minX();
+            case EAST -> b.maxX();
+        };
+    }
+
+    private static String faceLabel(BlockStates.Dir dir, PlanBox b) {
+        return (dir.alongX() ? "x=" : "z=") + face(dir, b);
+    }
+
+    /** Le mur résolu : sa coordonnée, et comment y placer une cellule ; ou le motif du refus. */
+    private record Target(int plane, boolean alongX, boolean legacy, String refusal) {
+
+        static Target refused(String why) {
+            return new Target(0, false, false, why);
+        }
+
+        int[] cell(int along, int y) {
+            return alongX ? new int[] {along, y, plane} : new int[] {plane, y, along};
+        }
     }
 
     /**
@@ -369,7 +579,7 @@ public final class BuildingPlanExpander {
      * {@code count} et {@code spacing} permettent d'aligner une série de fenêtres en une seule
      * instruction.</p>
      */
-    private static void window(PlanStep step, Cells cells, BuildingPlan plan) {
+    private static Optional<String> window(PlanStep step, Cells cells, BuildingPlan plan) {
         Facade facade = step.facade() == null ? Facade.FRONT : step.facade();
         int span = facade.span(plan.front(), plan.sizeX(), plan.sizeZ());
         int offset = step.number("offset", 1);
@@ -382,22 +592,34 @@ public final class BuildingPlanExpander {
         BlockStates.Dir outward = facade.direction(plan.front());
         // Une façade qui regarde le nord ou le sud court selon X : son mur est « selon X ».
         boolean wallAlongX = !outward.alongX();
-        String state = BlockStates.pane(glass, wallAlongX);
+        // Un bloc de verre plein n'a pas de connexions : ne lui en inventer aucune.
+        String state = BlockCatalog.vanilla().hasProperty(glass, "east")
+                ? BlockStates.pane(glass, wallAlongX) : glass;
+        if (y < 0 || y + height - 1 >= plan.sizeY()) {
+            return Optional.of("la fenêtre de y=" + y + " à y=" + (y + height - 1)
+                    + " sort du volume (hauteur " + plan.sizeY() + ").");
+        }
+        int last = offset + (count - 1) * spacing + width - 1;
+        Target target = target(step, plan, facade, offset, last, y, y + height - 1,
+                count > 1 ? "la série de " + count + " fenêtres" : "la fenêtre");
+        if (target.refusal() != null) {
+            return Optional.of(target.refusal());
+        }
 
         for (int n = 0; n < count; n++) {
             int base = offset + n * spacing;
             for (int w = 0; w < width; w++) {
                 for (int h = 0; h < height; h++) {
                     int along = base + w;
-                    if (along < 0 || along >= span) {
+                    if (target.legacy() && (along < 0 || along >= span)) {
                         continue;
                     }
-                    var at = facade.cell(plan.front(), plan.sizeX(), plan.sizeY(), plan.sizeZ(),
-                            along, y + h);
-                    at.ifPresent(c -> cells.put(key(c[0], c[1], c[2]), state));
+                    int[] c = target.cell(along, y + h);
+                    cells.put(key(c[0], c[1], c[2]), state);
                 }
             }
         }
+        return Optional.empty();
     }
 
     /**
@@ -411,11 +633,16 @@ public final class BuildingPlanExpander {
         PlanBox box = step.box();
         int spacing = Math.max(1, step.number("spacing", 5));
         String material = BlockStates.bareTypeOr(step.state(), "minecraft:lantern");
-        boolean lantern = material.endsWith("lantern");
+        // Par le registre et non par le nom : « sea_lantern » finit par « lantern » mais ne se
+        // suspend pas — lui écrire « hanging » produisait un état refusé à l'écriture.
+        boolean lantern = BlockCatalog.vanilla().hasProperty(material, "hanging");
         for (int y = box.minY(); y <= box.maxY(); y++) {
             for (int z = box.minZ(); z <= box.maxZ(); z++) {
                 for (int x = box.minX(); x <= box.maxX(); x++) {
-                    if ((x - box.minX()) % spacing != 0 || (z - box.minZ()) % spacing != 0) {
+                    // #288 : l'espacement vaut aussi en hauteur. Une zone de y=2 à y=8 posait une
+                    // colonne de sept lanternes empilées — chacune sur une lanterne, donc sur rien.
+                    if ((x - box.minX()) % spacing != 0 || (z - box.minZ()) % spacing != 0
+                            || (y - box.minY()) % spacing != 0) {
                         continue;
                     }
                     String above = cells.get(key(x, y + 1, z));

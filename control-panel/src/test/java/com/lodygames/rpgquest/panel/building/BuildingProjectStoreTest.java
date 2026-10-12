@@ -36,7 +36,7 @@ class BuildingProjectStoreTest {
     @Test
     void invalidFieldsAreRefusedNotTruncated() {
         assertTrue(new BuildingProjectStore.Fields("", "x", "abc", "WEST", 19, 14).refusal().isPresent());
-        assertTrue(new BuildingProjectStore.Fields("A", "x".repeat(6001), "abc", "WEST", 19, 14).refusal()
+        assertTrue(new BuildingProjectStore.Fields("A", "x".repeat(12_001), "abc", "WEST", 19, 14).refusal()
                 .orElseThrow().contains("Rien n'a été coupé"));
         assertTrue(new BuildingProjectStore.Fields("A", "x", "Mauvais Id!", "WEST", 19, 14).refusal().isPresent());
         assertEquals("bibliotheque_du_hub", BuildingProject.suggestBuildingId("Bibliothèque du Hub"));

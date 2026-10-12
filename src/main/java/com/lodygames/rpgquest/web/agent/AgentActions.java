@@ -523,6 +523,15 @@ public interface AgentActions {
     CompletableFuture<BuildingGenerationView> buildingGenerate(String planYaml, boolean replace);
 
     /**
+     * #290 — publie une nouvelle version d'un bâtiment existant, à condition que la bibliothèque
+     * porte encore la version vue par l'administrateur ({@code expectedVersion}, 0 = sans contrôle).
+     */
+    default CompletableFuture<BuildingGenerationView> buildingGenerate(String planYaml, boolean replace,
+                                                                       int expectedVersion) {
+        return buildingGenerate(planYaml, replace);
+    }
+
+    /**
      * Ce qu'une génération a réellement produit (issue #94) — jamais ce qui avait été demandé.
      *
      * @param blocks nombre de blocs de matière effectivement posés dans le plan

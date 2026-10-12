@@ -750,17 +750,29 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   d'une **quête** voit désormais les dialogues serveur qui la démarrent. **Plugin et panel modifiés :
   JAR + panel à déployer** (non déployé, tests manuels du propriétaire en cours).
   `PENDING MANUAL VALIDATION` : TC-280.
-- **Retirer un bâtiment de la bibliothèque** *(issue #284, NON DÉPLOYÉ, JAR + panel)* — action
+- **Parcours de création fiabilisé** *(issues #288–#292, branche `fix/288-292-building-pipeline`,
+  PR #294, NON DÉPLOYÉ, JAR + panel)* — registre des 1 166 blocs 1.21.11 et parseur WorldEdit
+  consultés avant tout verdict (toutes les fautes d'un coup, aucune couleur devinée) ; portes et
+  fenêtres dans les murs construits (`wall:` pour viser un autre mur) ; accès terrain → porte →
+  sol intérieur audité en marchant (`ENTRANCE_STEP`, `OPENING_DETACHED`) ; stabilité après pose
+  (`UNSUPPORTED_BLOCK`, `BROKEN_ASSEMBLY`), `op: bed`, lanternes résolues sur la grille finale ;
+  réparations sans IA (ouverture décalée, marches dans le volume ou fondation enterrée, chaînes) ;
+  conception détaillée versionnée avant le plan, critique fondée sur brief + conception ;
+  reprise de conception, état réel retiré / enregistré, republication versionnée et archivée ;
+  descriptions de 12 000 caractères ; échec d'enregistrement affiché dans l'Atelier.
+  `PENDING MANUAL VALIDATION` : TC-294 à TC-297. Adaptation au terrain réel au moment de la pose :
+  non traitée (suite de #291).
+- **Retirer un bâtiment de la bibliothèque** *(issue #284, déployé sur DEV le 12/10/2026, `7025bd8`)* — action
   `building.definition.retire` : refus si le bâtiment est posé ou si c'est un exemple embarqué ;
   sinon fichiers archivés dans `buildings/.retired/`, pas de réapparition au redémarrage, historique
   et sauvegardes de terrain conservés. Voir la Bible.
-- **Images de référence et « Recommencer depuis ma description »** *(issue #283, NON DÉPLOYÉ, panel
-  seul)* — jusqu'à 4 images par projet (type vérifié sur les octets, 4 Mio, stockées dans
+- **Images de référence et « Recommencer depuis ma description »** *(issue #283, déployé sur DEV le
+  12/10/2026, `7025bd8`)* — jusqu'à 4 images par projet (type vérifié sur les octets, 4 Mio, stockées dans
   `control-panel.db`, effacées au retrait), transmises en pixels à OpenAI / Anthropic / Gemini comme
   références de style ; nouvelle conception indépendante, sans parent, sans rien écraser ; option
   « Repartir de zéro » de la conception automatique. Voir la Bible.
-- **Étages reliés, réparation déterministe et conception automatique** *(issue #282, branche
-  `feature/282-ai-build-vertical-circulation`, NON DÉPLOYÉ)* — primitive `op: staircase` (marches,
+- **Étages reliés, réparation déterministe et conception automatique** *(issue #282, déployé sur DEV
+  le 12/10/2026, `7025bd8`)* — primitive `op: staircase` (marches,
   trémie, départ, palier calculés par le moteur, appliquée après le mobilier) ; niveaux détectés sur
   les planchers structurels (plus le dessus des meubles), nouveau refus `LEVEL_CLUTTERED` ;
   diagnostic `LEVEL_UNREACHABLE` en coordonnées avec l'instruction fautive et un escalier vérifié

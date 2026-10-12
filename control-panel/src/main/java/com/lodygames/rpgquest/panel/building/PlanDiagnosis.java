@@ -20,8 +20,18 @@ public final class PlanDiagnosis {
 
     /** Vide si la version n'a pas encore été vérifiée, ou si le serveur n'a rien à redire. */
     public static String of(BuildingProject project, CheckState audit) {
+        return of(project, audit, null);
+    }
+
+    /**
+     * Même chose, en y ajoutant l'échec d'enregistrement de cette version quand il porte sur le
+     * contenu (#292) : un plan « conforme » qui n'a pas pu s'écrire doit être corrigé, et l'IA doit
+     * recevoir le motif exact sans que l'administrateur aille le chercher dans l'historique.
+     */
+    public static String of(BuildingProject project, CheckState audit, CheckState generate) {
         BuildingPlanVerdict verdict = verdict(audit);
         List<String> lines = new ArrayList<>();
+        SaveFailure.of(generate).flatMap(SaveFailure::forCorrection).ifPresent(lines::add);
         if (verdict.available() && !verdict.accepted()) {
             lines.add(verdict.message());
         }

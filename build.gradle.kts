@@ -175,7 +175,12 @@ tasks {
         val props = mapOf("version" to project.version)
         inputs.properties(props)
         filteringCharset = "UTF-8"
-        expand(props)
+        // Seul plugin.yml porte des variables. Étendre tout le reste passait chaque ressource dans
+        // le moteur de gabarits Groovy, qui refuse les fichiers de plus de 64 Ki caractères — le
+        // registre des blocs (#288–#292) en fait 94 Ki.
+        filesMatching("plugin.yml") {
+            expand(props)
+        }
     }
 
     runServer {

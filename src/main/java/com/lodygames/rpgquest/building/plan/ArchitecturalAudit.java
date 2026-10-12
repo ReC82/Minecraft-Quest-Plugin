@@ -135,32 +135,53 @@ public final class ArchitecturalAudit {
      */
     public static Report audit(Blueprint blueprint, Facing front, ArchitecturalRules rules,
                                Provenance provenance) {
+        return audit(blueprint, front, rules, provenance, Integer.MIN_VALUE);
+    }
+
+    /**
+     * Auditer, en connaissant le niveau du terrain (#291) : {@code groundY} est la couche où l'on
+     * se tient dehors — l'{@code anchorY} du plan, puisque l'ancre d'un emplacement est la case
+     * libre au-dessus du sol. {@link Integer#MIN_VALUE} : inconnu, le terrain est alors supposé
+     * affleurer la base de la grille ({@code minY + 1}), la lecture historique.
+     */
+    public static Report audit(Blueprint blueprint, Facing front, ArchitecturalRules rules,
+                               Provenance provenance, int groundY) {
         if (blueprint == null || blueprint.blocks().isEmpty()) {
             return new Report(List.of(ArchitecturalFinding.blocking("EMPTY_STRUCTURE",
                     "La structure ne contient aucun bloc : il n'y a rien à auditer.")),
                     new Metrics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ""));
         }
         ArchitecturalRules r = rules == null ? ArchitecturalRules.habitable() : rules;
-        return run(AuditGrid.of(blueprint), front, r,
-                provenance == null ? Provenance.NONE : provenance, true);
+        AuditGrid grid = AuditGrid.of(blueprint);
+        return run(grid, front, r, provenance == null ? Provenance.NONE : provenance, true,
+                groundY == Integer.MIN_VALUE ? grid.minY() + 1 : groundY);
     }
 
     /** Codes qu'un escalier ajouté a le droit de faire apparaître : ils concernent l'étage qu'il ouvre. */
     private static final Set<String> NEWLY_VISIBLE = Set.of("DARK_AREA", "LEVEL_CLUTTERED");
 
     private static Report run(AuditGrid grid, Facing front, ArchitecturalRules r,
-                              Provenance provenance, boolean plan) {
+                              Provenance provenance, boolean plan, int groundY) {
         List<ArchitecturalFinding> findings = new ArrayList<>();
+        Access.Report access = Access.analyse(grid, groundY);
+        Set<Long> detachedGlass = new HashSet<>();
+        if (access.hasInterior()) {
+            for (int[] c : access.detachedGlazing()) {
+                detachedGlass.add(AuditGrid.key(c[0], c[1], c[2]));
+            }
+        }
         int glazed = 0;
         Set<String> glazedFaces = new HashSet<>();
         int lights = 0;
         int furnishing = 0;
         for (var cell : grid.cells().entrySet()) {
             String state = cell.getValue();
-            if (BlockSemantics.glazing(state)) {
+            // Une vitre isolée hors des murs n'est pas une fenêtre (Maison de Lily) : elle ne
+            // compte ni dans les vitrages, ni dans les façades vitrées.
+            if (BlockSemantics.glazing(state) && !detachedGlass.contains(cell.getKey())) {
                 glazed++;
-                String face = grid.faceOf(AuditGrid.keyX(cell.getKey()),
-                        AuditGrid.keyZ(cell.getKey()));
+                String face = glazedFace(grid, AuditGrid.keyX(cell.getKey()),
+                        AuditGrid.keyY(cell.getKey()), AuditGrid.keyZ(cell.getKey()));
                 if (face != null) {
                     glazedFaces.add(face);
                 }
@@ -173,27 +194,57 @@ public final class ArchitecturalAudit {
             }
         }
 
-        Entrance entrance = findEntrance(grid, front, r);
+        Entrance entrance = findEntrance(grid, front, r, access);
         int openHigh = openEnvelopeCellsAbove(grid, r.openingMaxHeight());
         Circulation.Analysis levels = Circulation.analyse(grid);
         Envelope envelope = envelopeMaterials(grid);
 
         // ---- Entrée --------------------------------------------------------------------------
         if (r.requireEntrance() && !entrance.found()) {
-            findings.add(ArchitecturalFinding.blocking("NO_ENTRANCE",
-                    "Aucune entrée : il n'existe aucun passage de 2 blocs de haut traversant la "
-                            + "façade " + faceName(front) + " (" + grid.facadeDescription(front)
-                            + "). Dans la bande de hauteur où une entrée peut se trouver, "
-                            + entrance.facadeOpenCells() + " cellule(s) sur "
-                            + entrance.facadeCells() + " sont franchissables. "
-                            + "Perce une ouverture de 2 blocs de haut au niveau du sol (y="
-                            + (grid.minY() + 1) + " et y=" + (grid.minY() + 2)
-                            + ") DANS LE PLAN DE LA FAÇADE, et vérifie que la cellule située juste "
-                            + "derrière est également libre."));
+            findings.add(ArchitecturalFinding.blocking("NO_ENTRANCE", noEntranceMessage(grid,
+                    front, entrance, access, provenance)));
+        } else if (r.requireEntrance() && !access.stepFree()) {
+            findings.add(ArchitecturalFinding.blocking("ENTRANCE_STEP",
+                    "Entrée à sauter : on n'entre qu'en sautant une marche d'un bloc entier. Le "
+                            + "terrain est en y=" + (groundY - 1) + " (on s'y tient en y=" + groundY
+                            + ") ; " + String.join(" ; ", access.thresholds()) + ". Pose devant la "
+                            + "porte, DANS le volume, une marche d'escalier tournée vers la porte "
+                            + "(ou un perron avec ses marches), ou abaisse le plancher."));
+        }
+        if (r.requireEntrance() && access.hasInterior()
+                && (!access.detachedDoors().isEmpty() || !access.detachedGlazing().isEmpty())) {
+            findings.add(ArchitecturalFinding.blocking("OPENING_DETACHED",
+                    detachedMessage(access, provenance)));
         }
         if (r.requirePassage() && !entrance.anyPassage()) {
             findings.add(ArchitecturalFinding.blocking("NO_PASSAGE",
                     "Aucun passage traversant : cette structure doit pouvoir être franchie."));
+        }
+
+        // ---- Stabilité (#288) : ce que la physique détruirait à la pose ---------------------------
+        List<Stability.Problem> broken = Stability.brokenAssemblies(grid);
+        if (!broken.isEmpty()) {
+            findings.add(ArchitecturalFinding.blocking("BROKEN_ASSEMBLY",
+                    problems("Assemblages incomplets — détruits par la première mise à jour "
+                            + "physique : ", broken, provenance)
+                            + " Un lit se pose avec « op: bed », une porte avec « op: door » : le "
+                            + "moteur pose alors les deux moitiés ensemble."));
+        }
+        List<Stability.Problem> loose = Stability.unsupported(grid);
+        if (!loose.isEmpty()) {
+            findings.add(ArchitecturalFinding.blocking("UNSUPPORTED_BLOCK",
+                    problems("Blocs sans appui — ils tomberaient ou se détacheraient à la pose : ",
+                            loose, provenance)
+                            + " Une lanterne se pose SUR un bloc plein ou se suspend SOUS un "
+                            + "plafond (ou une chaîne, minecraft:iron_chain) ; une torche murale, une "
+                            + "échelle, un panneau mural s'adossent à un mur plein."));
+        }
+
+        if (r.requireEntrance() && access.hasInterior() && !access.blindGlazing().isEmpty()) {
+            findings.add(ArchitecturalFinding.warning("WINDOW_OBSTRUCTED",
+                    "Fenêtres bouchées : " + access.blindGlazing().size() + " vitrage(s) sont dans un "
+                            + "mur mais un bloc plein les masque côté intérieur — "
+                            + cellsLabel(access.blindGlazing(), provenance, 3) + "."));
         }
 
         // ---- Vitrages ------------------------------------------------------------------------
@@ -260,7 +311,7 @@ public final class ArchitecturalAudit {
             if (!unreached.isEmpty()) {
                 findings.add(ArchitecturalFinding.blocking("LEVEL_UNREACHABLE",
                         unreachableMessage(grid, levels, unreached, front, r, provenance, plan,
-                                staircases)));
+                                staircases, groundY)));
             }
         }
         if (r.requireLevelAccess() && r.minLevelFreeShare() > 0) {
@@ -323,7 +374,7 @@ public final class ArchitecturalAudit {
                                              List<Circulation.LevelState> unreached,
                                              Facing front, ArchitecturalRules r,
                                              Provenance provenance, boolean plan,
-                                             List<Staircase> staircases) {
+                                             List<Staircase> staircases, int groundY) {
         StringBuilder sb = new StringBuilder("Niveau inaccessible : la structure compte "
                 + levels.levels().size() + " niveau(x) praticable(s) (sols en y="
                 + levels.floorLabel() + ") mais seulement " + levels.reachedCount()
@@ -355,9 +406,9 @@ public final class ArchitecturalAudit {
                 break;
             }
             Set<String> before = Set.copyOf(
-                    run(current, front, r, Provenance.NONE, false).blockingCodes());
+                    run(current, front, r, Provenance.NONE, false, groundY).blockingCodes());
             var proposal = CirculationPlanner.propose(current, lower, target, material,
-                    candidate -> acceptable(candidate, front, r, before, target));
+                    candidate -> acceptable(candidate, front, r, before, target, groundY));
             if (proposal.isEmpty()) {
                 break;
             }
@@ -386,14 +437,14 @@ public final class ArchitecturalAudit {
 
     /** La réparation simulée ouvre-t-elle l'étage, sans rien casser d'autre ? */
     private static boolean acceptable(AuditGrid candidate, Facing front, ArchitecturalRules r,
-                                      Set<String> before, Circulation.Level target) {
+                                      Set<String> before, Circulation.Level target, int groundY) {
         Circulation.Analysis after = Circulation.analyse(candidate);
         boolean opened = after.states().stream().anyMatch(st -> st.reached()
                 && st.level().slabY() == target.slabY());
         if (!opened) {
             return false;
         }
-        for (String code : run(candidate, front, r, Provenance.NONE, false).blockingCodes()) {
+        for (String code : run(candidate, front, r, Provenance.NONE, false, groundY).blockingCodes()) {
             if (!before.contains(code) && !NEWLY_VISIBLE.contains(code)) {
                 return false;
             }
@@ -429,7 +480,8 @@ public final class ArchitecturalAudit {
      * manquait à la V1 — son percement était cinq blocs en retrait du mur, donc dans de l'air déjà
      * vide, et ne traversait rien.</p>
      */
-    private static Entrance findEntrance(AuditGrid grid, Facing front, ArchitecturalRules rules) {
+    private static Entrance findEntrance(AuditGrid grid, Facing front, ArchitecturalRules rules,
+                                         Access.Report access) {
         Facing f = front == null ? Facing.NORTH : front;
         boolean onX = f == Facing.WEST || f == Facing.EAST;
         int plane = switch (f) {
@@ -484,7 +536,99 @@ public final class ArchitecturalAudit {
                 }
             }
         }
+        // #288–#292 : une entrée d'un bâtiment CLOS se prouve en marchant — du terrain, par une
+        // porte, jusqu'à un sol intérieur. Le passage sur la limite de la grille ne suffit plus :
+        // c'était, sur la Maison de Lily, la porte isolée posée dans le jardin.
+        if (access.hasInterior()) {
+            found = access.entered();
+        }
         return new Entrance(found, anyPassage, open, total);
+    }
+
+    /** La façade vers laquelle regarde un vitrage : du côté intérieur vers le côté extérieur. */
+    private static String glazedFace(AuditGrid grid, int x, int y, int z) {
+        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        String[] names = {"EST", "OUEST", "SUD", "NORD"};
+        for (int i = 0; i < dirs.length; i++) {
+            if (!Access.interior(grid, x + dirs[i][0], y, z + dirs[i][1])
+                    && Access.interior(grid, x - dirs[i][0], y, z - dirs[i][1])) {
+                return names[i];
+            }
+        }
+        return grid.faceOf(x, z);
+    }
+
+    private static String cellsLabel(List<int[]> cells, Provenance provenance, int max) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < Math.min(max, cells.size()); i++) {
+            int[] c = cells.get(i);
+            sb.append(i == 0 ? "" : ", ").append(c[0]).append('/').append(c[1]).append('/').append(c[2]);
+            int rank = provenance.stepAt(c[0], c[1], c[2]);
+            if (rank > 0) {
+                sb.append(" (").append(provenance.describe(rank)).append(')');
+            }
+        }
+        if (cells.size() > max) {
+            sb.append(" et ").append(cells.size() - max).append(" autre(s)");
+        }
+        return sb.toString();
+    }
+
+    private static String problems(String head, List<Stability.Problem> list, Provenance provenance) {
+        StringBuilder sb = new StringBuilder(head).append(list.size()).append(" bloc(s). ");
+        for (int i = 0; i < Math.min(6, list.size()); i++) {
+            Stability.Problem p = list.get(i);
+            sb.append(i == 0 ? "" : " ; ").append(BlockState.type(p.state())).append(" en ")
+                    .append(p.x()).append('/').append(p.y()).append('/').append(p.z())
+                    .append(" : ").append(p.why());
+            int rank = provenance.stepAt(p.x(), p.y(), p.z());
+            if (rank > 0) {
+                sb.append(" — posé par l'").append(provenance.describe(rank));
+            }
+        }
+        if (list.size() > 6) {
+            sb.append(" ; et ").append(list.size() - 6).append(" autre(s)");
+        }
+        return sb.append('.').toString();
+    }
+
+    private static String detachedMessage(Access.Report access, Provenance provenance) {
+        StringBuilder sb = new StringBuilder("Ouvertures hors des murs : ");
+        if (!access.detachedDoors().isEmpty()) {
+            sb.append(access.detachedDoors().size()).append(" porte(s) ne donnent sur aucun intérieur — ")
+                    .append(cellsLabel(access.detachedDoors(), provenance, 3)).append(". ");
+        }
+        if (!access.detachedGlazing().isEmpty()) {
+            sb.append(access.detachedGlazing().size()).append(" vitrage(s) ne bordent aucun intérieur — ")
+                    .append(cellsLabel(access.detachedGlazing(), provenance, 3)).append(". ");
+        }
+        return sb.append("Une porte ou une fenêtre se pose DANS un mur extérieur, entre le dehors et "
+                + "une pièce couverte : vérifie que le mur visé par « facade » existe à cet endroit "
+                + "(« offset » est la coordonnée le long de la façade, en coordonnées du plan).")
+                .toString();
+    }
+
+    private static String noEntranceMessage(AuditGrid grid, Facing front, Entrance entrance,
+                                            Access.Report access, Provenance provenance) {
+        if (!access.hasInterior() || access.doors().isEmpty()) {
+            return "Aucune entrée : il n'existe aucun passage de 2 blocs de haut traversant la "
+                    + "façade " + faceName(front) + " (" + grid.facadeDescription(front)
+                    + "). Dans la bande de hauteur où une entrée peut se trouver, "
+                    + entrance.facadeOpenCells() + " cellule(s) sur "
+                    + entrance.facadeCells() + " sont franchissables. "
+                    + "Perce une ouverture de 2 blocs de haut au niveau du sol (y="
+                    + (grid.minY() + 1) + " et y=" + (grid.minY() + 2)
+                    + ") DANS LE PLAN DE LA FAÇADE, et vérifie que la cellule située juste "
+                    + "derrière est également libre.";
+        }
+        StringBuilder sb = new StringBuilder("Aucune entrée praticable : un joueur venu du terrain "
+                + "(on s'y tient en y=" + access.groundY() + ") n'atteint aucun sol intérieur.");
+        for (String t : access.thresholds()) {
+            sb.append("\n     - ").append(t);
+        }
+        return sb.append("\n     Une porte se pose dans le mur extérieur, au niveau du sol "
+                + "intérieur, avec deux blocs libres devant et derrière elle, et un terrain ou des "
+                + "marches qui y mènent.").toString();
     }
 
     // ---- Enveloppe ------------------------------------------------------------------------------

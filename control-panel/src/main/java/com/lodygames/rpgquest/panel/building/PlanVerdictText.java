@@ -48,7 +48,23 @@ public final class PlanVerdictText {
             Map.entry("MATERIAL_DOMINANT", new Problem("Un seul matériau domine nettement.",
                     "Demander plus de variété dans les matériaux.")),
             Map.entry("FURNISHING_THIN", new Problem("L'intérieur est presque vide.",
-                    "Demander du mobilier (étagères, tables, coffres…)."))
+                    "Demander du mobilier (étagères, tables, coffres…).")),
+            // #288–#292
+            Map.entry("ENTRANCE_STEP", new Problem("On n'entre qu'en sautant : le seuil dépasse le terrain "
+                    + "sans marche.", "Le moteur pose les marches s'il a la place ; sinon demander un perron.")),
+            Map.entry("OPENING_DETACHED", new Problem("Une porte ou une fenêtre est posée hors des murs.",
+                    "Demander à l'IA de la placer dans le mur construit : le motif exact lui est transmis.")),
+            Map.entry("UNSUPPORTED_BLOCK", new Problem("Des blocs tomberaient à la pose (lanterne en l'air, "
+                    + "torche sans mur…).", "Le moteur suspend les lanternes s'il le peut ; sinon demander "
+                    + "une correction.")),
+            Map.entry("BROKEN_ASSEMBLY", new Problem("Un lit ou une porte est incomplet : il disparaîtrait à "
+                    + "la pose.", "Demander « op: bed » / « op: door » à la place.")),
+            Map.entry("BLOCK_REJECTED", new Problem("Le serveur ne connaît pas certains blocs du plan.",
+                    "Demander à l'IA d'employer les identifiants réels : le motif exact lui est transmis.")),
+            Map.entry("LEVEL_CLUTTERED", new Problem("Un étage est encombré : on ne peut presque pas y "
+                    + "circuler.", "Demander du mobilier le long des murs, avec des allées.")),
+            Map.entry("WINDOW_OBSTRUCTED", new Problem("Des fenêtres sont masquées par un bloc plein à "
+                    + "l'intérieur.", "Demander de déplacer ces fenêtres ou ce qui les bouche."))
     );
 
     /** Les problèmes bloquants, en clair. Un code inconnu n'est jamais tu. */
@@ -82,8 +98,10 @@ public final class PlanVerdictText {
             return n <= 1 ? "Un point est à corriger avant de pouvoir enregistrer ce bâtiment."
                     : n + " points sont à corriger avant de pouvoir enregistrer ce bâtiment.";
         }
+        // #289 : un audit géométrique ne juge ni la beauté ni la fidélité au brief — le dire.
         return briefDivergence
                 ? "Le bâtiment est solide, mais il ne correspond pas tout à fait à votre description."
-                : "Le bâtiment est solide : entrée, fenêtres, lumière, toit et étages sont en ordre.";
+                : "Contrôles techniques réussis : entrée, fenêtres, lumière, toit, étages et stabilité sont "
+                        + "en ordre. L'esthétique et le respect de votre description se jugent sur l'aperçu.";
     }
 }

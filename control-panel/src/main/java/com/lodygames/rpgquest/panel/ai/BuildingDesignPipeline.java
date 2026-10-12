@@ -133,6 +133,14 @@ public final class BuildingDesignPipeline {
     private final com.lodygames.rpgquest.panel.building.ReferenceImageStore images;
     private final Duration verdictTimeout;
     private final ExecutorService executor;
+    /** #289 : la conception détaillée ; sans elle, la session part du seul brief (forme #282). */
+    private com.lodygames.rpgquest.panel.building.BuildingDesignDocStore designDocs;
+
+    /** Branche la conception détaillée (#289). */
+    public BuildingDesignPipeline withDesignDocs(com.lodygames.rpgquest.panel.building.BuildingDesignDocStore store) {
+        this.designDocs = store;
+        return this;
+    }
 
     public BuildingDesignPipeline(AiBuildingStudio studio, BuildingDesignRunStore runs,
                                   BuildingProjectStore projects, BuildingPlanDraftStore drafts,
@@ -212,7 +220,7 @@ public final class BuildingDesignPipeline {
     private final class Session {
         private final Run run;
         private final BuildingProject project;
-        private final BuildingPromptBuilder.Demand demand;
+        private BuildingPromptBuilder.Demand demand;
         private final Quality quality;
         private final Set<String> seenPlans = new HashSet<>();
         private final List<String> pitfalls = new ArrayList<>();
@@ -237,6 +245,11 @@ public final class BuildingDesignPipeline {
             BuildingPlanDraft current = run.fresh() ? null
                     : drafts.forProject(run.agentId(), project.id()).stream()
                             .filter(BuildingPlanDraft::hasPlan).findFirst().orElse(null);
+            // #289 : la conception détaillée d'abord, quand on part du brief — c'est elle qui fixe
+            // pièces, palette, accès, mobilier et décoration ; le plan la traduit ensuite.
+            if (!prepareDesign(current == null)) {
+                return;
+            }
             String lastCodes = null;
             int sameRefusals = 0;
             while (true) {
@@ -326,6 +339,42 @@ public final class BuildingDesignPipeline {
             }
         }
 
+        /**
+         * La conception en vigueur, ou une conception neuve si l'on part du brief sans en avoir
+         * (ou si l'on repart de zéro). {@code false} si la session doit s'arrêter.
+         */
+        private boolean prepareDesign(boolean fromBrief) {
+            if (designDocs == null) {
+                return true;
+            }
+            String text = run.fresh() ? "" : designDocs.latest(project.id())
+                    .map(com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Doc::text).orElse("");
+            if (text.isEmpty() && fromBrief && canSpend()) {
+                AiBuildingStudio.Proposal p = studio.design(run.providerId(), demand, references);
+                spent++;
+                int[] tokens = tokens(p.usage());
+                audit.record(run.createdBy(), "building.design.write", "project=" + project.id() + " run="
+                                + run.id() + " provider=" + p.providerId() + " model=" + p.model() + " usage="
+                                + p.usage(), p.callOk() ? "OK" : "FAILED", p.callOk() ? "" : p.error(), rid());
+                if (!p.callOk()) {
+                    runs.addPass(run.id(), new Pass("CONCEPTION DÉTAILLÉE", "", 0, "", 0, 0,
+                            "Appel échoué : " + p.error()), true);
+                    stop("L'appel au fournisseur d'IA a échoué : " + p.error());
+                    return false;
+                }
+                var saved = designDocs.save(project.id(), p.rawResponse(),
+                        com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Origin.AI, p.providerId(),
+                        p.model(), p.usage(), run.createdBy(), -1);
+                runs.addPass(run.id(), new Pass("CONCEPTION DÉTAILLÉE", "", 0, nz(p.model()), tokens[0], tokens[1],
+                        saved.doc().map(d -> "Conception rédigée (version " + d.version() + "), consultable dans "
+                                + "« Conception détaillée ».").orElse(saved.refusal())), true);
+                text = saved.doc().map(com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Doc::text)
+                        .orElse("");
+            }
+            demand = demand.withDesign(text);
+            return true;
+        }
+
         private boolean canSpend() {
             return spent < Math.min(MAX_CALLS_CEILING, run.maxCalls());
         }
@@ -356,8 +405,12 @@ public final class BuildingDesignPipeline {
                     p.model(), p.usage(), p.rawResponse(), p.extractionNote(), demand.maxWidth(),
                     demand.maxHeight(), run.createdBy(), project.id()));
             projects.touch(project.id(), run.createdBy());
+            // #289 : la critique dit d'abord ce qui manquait au brief et à la conception — c'est
+            // gardé dans le journal, consultable, au lieu de se perdre avec la réponse brute.
+            String findings = "CRITIQUE".equals(kind) ? BuildingPromptBuilder.critiqueFindings(p.rawResponse()) : "";
             runs.addPass(run.id(), new Pass(kind, created.id(), created.version(), nz(p.model()), tokens[0],
-                    tokens[1], p.hasPlan() ? "Nouvelle version proposée." : "Réponse sans plan exploitable."),
+                    tokens[1], (p.hasPlan() ? "Nouvelle version proposée." : "Réponse sans plan exploitable.")
+                            + (findings.isEmpty() ? "" : " " + findings)),
                     true);
             if (!p.hasPlan()) {
                 stop("Le modèle a répondu sans plan exploitable ; sa réponse est conservée.");
@@ -414,8 +467,7 @@ public final class BuildingDesignPipeline {
         private BuildingPromptBuilder.Demand withPitfalls() {
             String brief = demand.brief() + "\n\nÉCUEILS DES ESSAIS PRÉCÉDENTS — conçois autrement pour "
                     + "les éviter :\n- " + String.join("\n- ", pitfalls);
-            return new BuildingPromptBuilder.Demand(demand.siteId(), demand.siteName(), demand.facing(),
-                    brief, demand.maxWidth(), demand.maxHeight(), demand.buildingId());
+            return demand.withBrief(brief);
         }
 
         private void record(Pass pass) {
@@ -512,9 +564,28 @@ public final class BuildingDesignPipeline {
             "gpt-4.1", new double[] {2.00, 8.00});
 
     public static Envelope envelope(int calls, String model, int observedIn, int observedOut) {
-        // Une passe de correction relit le plan précédent et le diagnostic : on prévoit large.
-        int perIn = Math.max(observedIn > 0 ? observedIn * 2 : 0, 9_000);
+        return envelope(calls, model, observedIn, observedOut, 0, 0);
+    }
+
+    /** Caractères par jeton, estimation PRUDENTE pour du français et du YAML (#292). */
+    static final int CHARS_PER_TOKEN = 3;
+
+    /** Jetons comptés par image de référence : le haut de la fourchette des fournisseurs. */
+    static final int IMAGE_TOKENS = 1_600;
+
+    /**
+     * L'enveloppe, calculée sur le contenu RÉEL de la demande (#292) : le prompt système, la
+     * description du projet — jusqu'à 12 000 caractères — et ses images. Une passe de correction
+     * relit en plus le plan précédent et le diagnostic. L'ancienne estimation fixe (9 000 jetons
+     * d'entrée par appel) sous-estimait une description longue : le consentement portait sur
+     * moins que ce qui serait facturé.
+     */
+    public static Envelope envelope(int calls, String model, int observedIn, int observedOut,
+                                    int briefChars, int images) {
         int perOut = Math.max(observedOut > 0 ? observedOut * 2 : 0, 4_000);
+        int prompt = (BuildingPromptBuilder.systemPrompt().length() + 1_500 + Math.max(0, briefChars))
+                / CHARS_PER_TOKEN + Math.max(0, images) * IMAGE_TOKENS;
+        int perIn = Math.max(observedIn > 0 ? observedIn * 2 : 0, Math.max(9_000, prompt + perOut + 2_000));
         String m = model == null || model.isBlank() ? "gpt-4o" : model.trim().toLowerCase(Locale.ROOT);
         double[] price = null;
         String bestKey = "";

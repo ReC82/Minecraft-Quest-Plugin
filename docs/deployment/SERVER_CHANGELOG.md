@@ -8091,6 +8091,21 @@ cellule intérieure contre lui est `x = 17`. La lecture la plus probable de `[1,
 (décalage 1, hauteur 1 → 5) donne `from: [17, 1, 1]` / `to: [17, 5, 1]`. Ce correctif se fait à la
 main dans le brouillon (#256, « Enregistrer » puis « Auditer ») : **aucun appel IA nécessaire**.
 
+## 2026-10-12 — « Retirer le bâtiment et restaurer le terrain » retrouvable et protégé (#239, #265) — **NON déployé**
+
+### Changement
+
+Panel seul. L'action de libération était bien rendue, mais au 5ᵉ rang de 15 sections de la fiche,
+sous « Réorienter », et confondue avec « Supprimer l'emplacement ». Elle est désormais le premier
+bloc sous « Bâtiment posé », nommée pour ce qu'elle fait, avec confirmation forte (identifiant
+retapé, vérifié par le panel), et explique pourquoi elle est indisponible (pas de sauvegarde du
+terrain, rôle insuffisant). Supprimer le repère d'un emplacement **occupé** est refusé par le panel :
+le plugin l'acceptait, laissant le bâtiment sans moyen de restauration.
+
+### Action serveur
+
+Aucune côté Minecraft. Redéployer le panel. Validation : TC-285 (sans restauration réelle).
+
 ## 2026-10-12 — Atelier de création indépendant des emplacements (#267, lot B de #265) — **NON déployé**
 
 ### Changement

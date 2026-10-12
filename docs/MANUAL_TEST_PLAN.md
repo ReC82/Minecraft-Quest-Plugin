@@ -5331,6 +5331,25 @@ TC-260 (#185).
 4.  Sur la fiche, **Retour à l'historique** : la liste revient **avec le filtre et la recherche**.
 5.  Ouvrir un audit de plan lié à un brouillon : le bandeau propose **Retour à ce brouillon**.
 
+### TC-285 — « Retirer le bâtiment et restaurer le terrain » sur un emplacement occupé (issues #239, #265, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel issu de #239 (panel seul). **Durée** : 3 minutes. **N'exécutez pas** la
+restauration pendant ce test, sauf décision explicite du propriétaire : on vérifie l'affichage et les
+refus.
+
+1.  `/buildings/sites` → **Rafraîchir** → fiche de `buildsite_0012` (occupé par la Bibliothèque du
+    Hub V1). Juste sous « Bâtiment posé », un bloc **« Retirer le bâtiment et restaurer le terrain »**
+    explique que le bâtiment est retiré, que le terrain revient tel qu'il était avant sa première pose
+    et que **l'emplacement est conservé**.
+2.  Le bouton n'est actif qu'après avoir tapé `buildsite_0012` et coché la case. Taper un autre
+    identifiant puis valider : refus « retapez exactement l'identifiant », rien dans `/actions`.
+3.  En bas de fiche, « **Supprimer l'emplacement (le repère seulement)** » : sur cet emplacement
+    occupé, aucun bouton — un message explique qu'il faut d'abord retirer le bâtiment.
+4.  Connecté avec un compte **Builder** : le bloc est visible avec « Votre rôle ne permet pas… », sans
+    formulaire.
+5.  (Seulement sur décision du propriétaire) Restaurer réellement : retour `SUCCESS`, puis
+    **Rafraîchir** → l'emplacement est **libre**, le terrain d'origine est revenu en jeu.
+
 ### TC-286 — Créer un bâtiment dans l'Atelier, sans emplacement, et reprendre la Bibliothèque du Hub (issue #267, PENDING MANUAL VALIDATION)
 
 **Prérequis** : panel issu de #267. **Durée** : 10 minutes. Étape 4 = un appel IA facturé : à faire

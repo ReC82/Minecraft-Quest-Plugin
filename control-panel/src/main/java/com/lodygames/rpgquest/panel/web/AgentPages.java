@@ -2370,7 +2370,8 @@ public final class AgentPages {
             sb.append(buildingSiteFacingForm(session, agentId, site));
         }
         if (canDelete) {
-            sb.append(buildingSiteDeleteZone(session, agentId, site));
+            sb.append(buildingSiteDeleteZone(session, agentId, site,
+                    directory.placementFor(site.id()).isPresent() || "OCCUPIED".equals(site.status())));
         }
         sb.append("</div></div></div>");
         return sb.toString();
@@ -2459,6 +2460,11 @@ public final class AgentPages {
                     + "« Remplacer » par le même bâtiment pour appliquer la nouvelle version."));
         }
 
+        // Issue #239 / #265 — la libération en PREMIER, sous un nom qui dit ce qu'elle fait. Elle était
+        // rendue, mais au cinquième rang de quinze sections, sous « Réorienter », et confondue avec
+        // « Supprimer l'emplacement » en bas de fiche.
+        sb.append(buildingReleaseBlock(session, agentId, site, placed, canRollback));
+
         // ---- Transformations : aperçu d'abord, confirmation ensuite ---------------------------
         var preview = buildingRetargetPreview(agentId);
         boolean mine = preview.concerns(site.id());
@@ -2486,33 +2492,61 @@ public final class AgentPages {
             }
         }
 
-        // ---- Zone dangereuse : la seule action qui laisse l'emplacement vide -----------------
-        if (!placed.restorable()) {
-            sb.append(Ui.banner("warning", "Aucune sauvegarde du terrain n'est associée à cet "
-                    + "emplacement : la libération est refusée. Remettre de l'air dans l'emprise "
-                    + "détruirait le terrain d'origine."));
-        } else if (canRollback) {
-            sb.append("<div class=\"danger-zone\"><div class=\"dz-title\">⚠ Libérer "
-                    + "l'emplacement</div>");
-            sb.append("<p class=\"field-help\">Rend le <strong>terrain d'origine</strong> — celui "
-                    + "d'avant le premier bâtiment, et non l'état d'avant la dernière opération — "
-                    + "puis libère l'emplacement, qui redevient immédiatement réutilisable. "
-                    + "Source : " + Http.esc(placed.restoreSource()) + ". "
-                    + "<strong>Attention :</strong> tout ce qui a été construit dans cette emprise "
-                    + "<em>après</em> la pose sera également écrasé.</p>");
-            sb.append(formStart(session, agentId, "building.placement.rollback",
-                    "/buildings/sites", ""));
-            sb.append("<input type=\"hidden\" name=\"id\" value=\"")
-                    .append(Http.esc(site.id())).append("\">");
-            sb.append(mutationConsent("building.placement.rollback", "", null));
-            sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-danger\" "
-                    + "type=\"submit\">").append(Icons.icon("warning"))
-                    .append("Restaurer le terrain et libérer</button></div></form>");
-            sb.append("</div>");
-        }
-
         sb.append(buildingHistoryBlock(session, agentId, site.id()));
         return sb.toString();
+    }
+
+    /**
+     * Issue #239 / #265 — « Retirer le bâtiment et restaurer le terrain ».
+     *
+     * <p>Ce n'est pas « Supprimer l'emplacement » : le repère reste, et le terrain revient tel qu'il
+     * était avant la PREMIÈRE pose. Quand l'action est impossible, la raison est dite — un bouton
+     * qui disparaît sans un mot ressemble à une panne.</p>
+     */
+    private String buildingReleaseBlock(Session session, String agentId,
+                                        com.lodygames.rpgquest.panel.building.BuildingSiteView site,
+                                        com.lodygames.rpgquest.panel.building.BuildingPlacementView placed,
+                                        boolean canRollback) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<div class=\"danger-zone\" id=\"retirer-").append(Http.esc(site.id())).append("\">");
+        sb.append("<div class=\"dz-title\">").append(Icons.icon("warning"))
+                .append("Retirer le bâtiment et restaurer le terrain</div>");
+        sb.append("<p>Le bâtiment « ").append(Http.esc(placed.buildingName()))
+                .append(" » est retiré et le terrain est remis <strong>tel qu'il était avant sa première "
+                        + "pose</strong>. L'emplacement « ").append(Http.esc(site.name()))
+                .append(" » est <strong>conservé</strong> : il redevient libre pour une autre "
+                        + "construction.</p>");
+        sb.append("<p class=\"field-help\"><strong>Attention :</strong> tout ce qui a été construit "
+                + "à la main dans cette zone depuis la pose est aussi effacé. À ne pas confondre avec "
+                + "« Supprimer l'emplacement », qui retire seulement le repère sans toucher aux blocs.</p>");
+        if (!placed.restoreSource().isEmpty()) {
+            sb.append("<p class=\"field-help\">Terrain rendu : ").append(Http.esc(placed.restoreSource()))
+                    .append(".</p>");
+        }
+        if (!placed.restorable()) {
+            sb.append(Ui.banner("warning", "<strong>Indisponible pour cet emplacement.</strong> Aucune "
+                    + "sauvegarde du terrain d'avant la pose n'existe : retirer le bâtiment détruirait le "
+                    + "terrain d'origine au lieu de le rendre. Rien n'est proposé, pour ne rien perdre."));
+        } else if (!canRollback) {
+            sb.append(Ui.banner("info", "Votre rôle ne permet pas de retirer un bâtiment posé : cette "
+                    + "action écrit dans le monde. Un administrateur peut la faire depuis cette fiche."));
+        } else {
+            sb.append(formStart(session, agentId, "building.placement.rollback", "/buildings/sites", ""));
+            sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(site.id())).append("\">");
+            String fid = "confirm-site-" + site.id();
+            sb.append("<div class=\"field\"><label for=\"").append(Http.esc(fid))
+                    .append("\">Pour confirmer, tapez l'identifiant de l'emplacement : <code>")
+                    .append(Http.esc(site.id())).append("</code></label><input id=\"").append(Http.esc(fid))
+                    .append("\" type=\"text\" name=\"confirm_site\" autocomplete=\"off\" required "
+                            + "spellcheck=\"false\"></div>");
+            sb.append(mutationConsent("building.placement.rollback",
+                    "Retirer « " + placed.buildingName() + " » et restaurer le terrain de « "
+                            + site.name() + " » (le repère est conservé)", null));
+            sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-danger\" type=\"submit\">")
+                    .append(Icons.icon("warning")).append("Retirer le bâtiment et restaurer le terrain")
+                    .append("</button></div></form>");
+        }
+        return sb.append("</div>").toString();
     }
 
     /** L'aperçu d'une transformation : les deux emprises côte à côte, et rien d'écrit. */
@@ -3021,13 +3055,22 @@ public final class AgentPages {
      * phrase répond à la seule question qui compte : non, aucun bloc du monde n'est touché.
      */
     private String buildingSiteDeleteZone(Session session, String agentId,
-                                          com.lodygames.rpgquest.panel.building.BuildingSiteView site) {
-        return "<div class=\"danger-zone\"><div class=\"dz-title\">"
-                + Icons.icon("warning") + "Zone de danger</div>"
-                + "<p class=\"muted\">Supprime le <strong>marqueur</strong> de l'emplacement. "
-                + "<strong>Aucun bloc du monde n'est modifié</strong> — un emplacement n'est qu'un "
-                + "repère. L'identifiant <code>" + Http.esc(site.id()) + "</code> ne sera jamais "
-                + "réattribué à un autre emplacement.</p>"
+                                          com.lodygames.rpgquest.panel.building.BuildingSiteView site,
+                                          boolean occupied) {
+        String head = "<div class=\"danger-zone\"><div class=\"dz-title\">"
+                + Icons.icon("warning") + "Supprimer l'emplacement (le repère seulement)</div>"
+                + "<p class=\"muted\">Retire ce repère de la liste des emplacements. "
+                + "<strong>Aucun bloc du monde n'est modifié.</strong> L'identifiant <code>"
+                + Http.esc(site.id()) + "</code> ne sera jamais réattribué.</p>";
+        // Issue #239 : le plugin accepte de supprimer le repère d'un emplacement OCCUPÉ — le bâtiment
+        // resterait alors dans le monde sans plus aucun moyen de restaurer le terrain depuis PlugAdmin.
+        if (occupied) {
+            return head + Ui.banner("info", "Un bâtiment est encore posé ici. Retirez-le d'abord avec "
+                    + "« Retirer le bâtiment et restaurer le terrain » : supprimer le repère maintenant "
+                    + "laisserait le bâtiment dans le monde, sans plus aucun moyen de rendre le terrain.")
+                    + "</div>";
+        }
+        return head + ""
                 + formStart(session, agentId, "building.site.delete", "/buildings/sites", "")
                 + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(site.id()) + "\">"
                 + confirmBox("Supprimer l'emplacement « " + site.name() + " » (" + site.id() + ")")

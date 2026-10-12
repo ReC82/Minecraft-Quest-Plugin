@@ -3721,6 +3721,22 @@ public final class PanelApp {
             Http.redirect(exchange, withError(returnPath, agentId, form.get("player"), v.error()));
             return;
         }
+        // Issue #239 : le plugin accepte de supprimer le repère d'un emplacement OCCUPÉ ; le bâtiment
+        // resterait dans le monde sans plus aucun moyen de restaurer le terrain. Refus avant la file.
+        if ("building.site.delete".equals(type)) {
+            String siteId = v.params().getOrDefault("id", "");
+            var sites = agentPages.buildingSiteDirectory(agentId);
+            boolean occupied = sites.placementFor(siteId).isPresent()
+                    || sites.find(siteId).map(st -> "OCCUPIED".equals(st.status())).orElse(false);
+            if (occupied) {
+                audit.record(session.username(), "agent.action.create", "agent=" + agentId + " type=" + type,
+                        "DENIED", "emplacement occupé : " + siteId, rid);
+                Http.redirect(exchange, withError(returnPath, agentId, null, "Un bâtiment est encore posé "
+                        + "sur « " + siteId + " » : retirez-le d'abord (« Retirer le bâtiment et restaurer "
+                        + "le terrain »). Rien n'a été supprimé."));
+                return;
+            }
+        }
         // Garde-fou de contexte (#89) : un formulaire ouvert dans la fiche d'un PNJ précis porte
         // un champ caché « npc_ctx » ; il doit coïncider avec le « npc_id » validé. Empêche une
         // mutation du mauvais PNJ à cause d'un état de formulaire périmé côté navigateur.

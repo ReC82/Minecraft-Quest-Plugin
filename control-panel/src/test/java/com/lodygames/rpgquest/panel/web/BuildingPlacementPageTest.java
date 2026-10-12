@@ -431,8 +431,9 @@ class BuildingPlacementPageTest {
         // Issue #234 : le libellé a changé par conception. « Annuler la pose » décrivait un retour
         // en arrière sur la DERNIÈRE opération ; l'action rend désormais le terrain d'ORIGINE et
         // libère l'emplacement, ce qui n'est pas la même promesse.
-        assertTrue(page.contains("Libérer l'emplacement")
-                        || page.contains("Libérer l&#39;emplacement"),
+        // Issue #239 : « Libérer l'emplacement » se lisait mal et se confondait avec la suppression
+        // du repère ; l'action dit désormais exactement ce qu'elle fait.
+        assertTrue(page.contains("Retirer le bâtiment et restaurer le terrain"),
                 "la libération doit être nommée pour ce qu'elle fait");
         assertTrue(page.contains("building.placement.rollback"));
         // Et les deux orientations, l'une sous l'autre : intention du site contre fait posé.
@@ -461,7 +462,8 @@ class BuildingPlacementPageTest {
         seed("building.site.list", SITES);
         seed("building.definition.list", LIBRARY);
 
-        HttpResponse<String> res = submitRealForm("building.placement.rollback", Map.of());
+        HttpResponse<String> res = submitRealForm("building.placement.rollback",
+                Map.of("confirm_site", "buildsite_0002"));
 
         assertEquals(303, res.statusCode());
         assertTrue(res.headers().firstValue("Location").orElse("")
@@ -469,6 +471,64 @@ class BuildingPlacementPageTest {
         AgentActionRow queued = queued("building.placement.rollback");
         assertEquals("buildsite_0002", queued.params().get("id"));
         assertEquals("true", queued.params().get("confirm"));
+    }
+
+    /** Issue #239 : confirmation forte — sans l'identifiant retapé, rien ne part. */
+    @Test
+    void theRollbackNeedsTheSiteIdentifierRetyped() throws Exception {
+        start();
+        seed("building.site.list", SITES);
+        seed("building.definition.list", LIBRARY);
+
+        submitRealForm("building.placement.rollback", Map.of());
+        submitRealForm("building.placement.rollback", Map.of("confirm_site", "buildsite_0001"));
+
+        assertEquals(0, count("building.placement.rollback"), "un autre identifiant ne vaut pas");
+    }
+
+    /**
+     * Issue #239 : le repère d'un emplacement OCCUPÉ ne se supprime pas — le bâtiment resterait dans
+     * le monde sans aucun moyen de rendre le terrain. L'écran le dit, et un POST forgé est refusé.
+     */
+    @Test
+    void anOccupiedSiteCannotLoseItsMarkerBeforeItsBuilding() throws Exception {
+        start();
+        seed("building.site.list", SITES);
+        seed("building.definition.list", LIBRARY);
+
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+        String occupied = page.substring(page.indexOf("Déjà bâtie"));
+        assertTrue(occupied.contains("Un bâtiment est encore posé ici"), "la raison est dite");
+
+        String token = csrf(page);
+        HttpResponse<String> res = post("/agents/action", "_csrf=" + token + "&agent=" + TestConfig.AGENT_ID
+                + "&type=building.site.delete&return=/buildings/sites&id=buildsite_0002&confirm=true");
+        assertTrue(java.net.URLDecoder.decode(res.headers().firstValue("Location").orElse(""),
+                java.nio.charset.StandardCharsets.UTF_8).contains("Un bâtiment est encore posé"));
+        assertEquals(0, count("building.site.delete"), "rien n'est parti vers le serveur");
+    }
+
+    /**
+     * Issue #239 : un rôle sans le droit de restaurer ne voit pas un vide — il lit pourquoi, et qui
+     * peut le faire. Un bouton qui disparaît sans un mot ressemblait à une régression.
+     */
+    @Test
+    void aRoleWithoutRollbackReadsWhyInsteadOfSeeingNothing() throws Exception {
+        start();
+        seed("building.site.list", SITES);
+        seed("building.definition.list", LIBRARY);
+        String users = get("/users").body();
+        post("/users/create", "_csrf=" + csrf(users) + "&username=batisseur"
+                + "&password=" + enc("mot-de-passe-batisseur-1") + "&role=BUILDER");
+        jar.clear();
+        String token = csrf(get("/login").body());
+        post("/login", "username=batisseur&password=" + enc("mot-de-passe-batisseur-1") + "&_csrf=" + token);
+
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+
+        assertTrue(page.contains("Retirer le bâtiment et restaurer le terrain"), "l'action est nommée");
+        assertTrue(page.contains("Votre rôle ne permet pas de retirer un bâtiment posé"), page.length() + "");
+        assertFalse(page.contains("value=\"building.placement.rollback\""), "mais aucun formulaire");
     }
 
     /**
@@ -486,8 +546,8 @@ class BuildingPlacementPageTest {
 
         String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("Aucune sauvegarde du terrain n&#39;est associée")
-                        || page.contains("Aucune sauvegarde du terrain n'est associée"),
+        assertTrue(page.contains("Aucune sauvegarde du terrain d&#39;avant la pose")
+                        || page.contains("Aucune sauvegarde du terrain d'avant la pose"),
                 "le refus doit être écrit, et dire qu'il porte sur le TERRAIN");
         assertTrue(page.contains("détruirait le terrain d&#39;origine")
                         || page.contains("détruirait le terrain d'origine"));
@@ -511,14 +571,15 @@ class BuildingPlacementPageTest {
 
         String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("après</em> la pose sera également écrasé"),
+        // Issue #239 : mêmes promesses, en français courant.
+        assertTrue(page.contains("depuis la pose est aussi effacé"),
                 "le risque doit être écrit noir sur blanc");
-        assertTrue(page.contains("terrain d&#39;origine") || page.contains("terrain d'origine"),
-                "la promesse porte sur le terrain d'ORIGINE");
-        assertTrue(page.contains("avant le premier bâtiment"),
-                "et elle dit explicitement de quel état il s'agit");
-        assertTrue(page.contains("immédiatement réutilisable"),
+        assertTrue(page.contains("avant sa première pose"),
+                "la promesse porte sur le terrain d'ORIGINE, et dit de quel état il s'agit");
+        assertTrue(page.contains("redevient libre pour une autre construction"),
                 "un emplacement libéré ne doit pas être une impasse");
+        assertTrue(page.contains("est <strong>conservé</strong>"),
+                "et il dit que le repère reste — ce n'est pas une suppression");
     }
 
     // ---- Harnais -------------------------------------------------------------------------------

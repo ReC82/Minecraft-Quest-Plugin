@@ -6,6 +6,29 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
 
 ## Systèmes implémentés
 
+> **Nuit du 12 au 13/10/2026** — changements livrés sur la ligne d'intégration (validation en jeu
+> du propriétaire en attente pour chacun, voir `docs/MANUAL_TEST_PLAN.md`) :
+>
+> - **Claims** : portail Hub → Claims en `CLAIM_HOME` (arrivée dans son claim, sinon point sûr
+>   réparti loin des claims existants, #73/#208) ; aucun lit ni ancre ne fixe la réapparition (#220) ;
+>   Jo ne remet qu'un acte, jamais au sol (`HAS_INVENTORY_SPACE`, #72/#85) ; phantoms et tous les
+>   `Enemy` exclus du monde Claims (#295).
+> - **Voyage** : cooldown d'objet de retour suspendu hors ligne (V32, #221) ; « Dernier waypoint »
+>   dans la borne (#215).
+> - **Quêtes** : publication à chaud = index et écouteurs reconstruits (SMELT_ITEM, DISCOVER_WAYPOINT,
+>   #141/#242/#185/#240) ; progression des kills visible, plus effacée par l'XP (#69/#209) ; paliers
+>   3 à 5 du kit (#218), complétés dans `config.yml` par `ConfigFileCompleter`.
+> - **PNJ** : signal « ! » / « … » juste au-dessus du nom (#12).
+> - **Dialogues** : un seul choix traité à la fois par joueur (anti-double-clic).
+> - **Bâtiments** : capture d'une construction posée comme nouveau bâtiment (#246) ; une lumière ne
+>   perce plus un plafond (#301) ; « Repartir de zéro » conserve la conception (#299, partiel).
+> - **PlugAdmin** : OP/DEOP par une seule case (#210) ; import JSON de packs avec PNJ et retour
+>   arrière (#211) ; badge de notifications par compte, lu/non lu (#293).
+> - **Portail web** : instantané v2 (statistiques par portée, profils publics), `/profile web
+>   prive|public`, pages `/joueurs` et `/confidentialite` (#52–#57) — code prêt, **non hébergé**,
+>   `web-export` désactivé sur DEV. Comptes (#53) et événements (#57) : conçus, non réalisés.
+> - **Discord** : analyse seulement (`docs/DISCORD_PANEL.md`, #296).
+
 - **Quêtes** — définitions YAML, 10 types d'objectifs, prérequis, récompenses, progression
   persistée par joueur (`quest.progress.QuestProgressEngine`).
 - **Storyline** *(progression automatique ajoutée cette étape)* — conteneur logique ordonné de

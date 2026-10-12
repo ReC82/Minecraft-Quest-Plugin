@@ -80,6 +80,16 @@ public final class RandomSafeLocationFinder {
 
     /** Comme {@link #find(World, Location)}, en renseignant {@code metrics} au passage. */
     public Optional<Location> find(World world, Location center, SearchMetrics metrics) {
+        return find(world, center, metrics, (x, z) -> true);
+    }
+
+    /**
+     * Comme {@link #find(World, Location, SearchMetrics)}, en écartant d'emblée — avant tout
+     * chargement de chunk — les colonnes que {@code acceptColumn} refuse (issue #73 : une arrivée
+     * dans le monde des claims se tient à distance de tout claim existant).
+     */
+    public Optional<Location> find(World world, Location center, SearchMetrics metrics,
+                                   java.util.function.BiPredicate<Integer, Integer> acceptColumn) {
         for (int attempt = 0; attempt < maxAttempts; attempt++) {
             metrics.attempts++;
             double angle = random.nextDouble() * 2 * Math.PI;
@@ -88,7 +98,7 @@ public final class RandomSafeLocationFinder {
             int z = center.getBlockZ() + (int) Math.round(Math.sin(angle) * distance);
 
             Location candidate = new Location(world, x + 0.5, 64, z + 0.5);
-            if (!world.getWorldBorder().isInside(candidate)) {
+            if (!world.getWorldBorder().isInside(candidate) || !acceptColumn.test(x, z)) {
                 continue;
             }
 

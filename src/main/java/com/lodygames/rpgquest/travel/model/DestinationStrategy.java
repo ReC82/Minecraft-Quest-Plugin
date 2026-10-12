@@ -13,5 +13,12 @@ public enum DestinationStrategy {
      * travel.RandomSafeLocationFinder}) — repli automatique sur {@link #WORLD_SPAWN} si aucune
      * position sûre n'est trouvée.
      */
-    RANDOM_SAFE
+    RANDOM_SAFE,
+    /**
+     * Monde des claims (issue #73) : le joueur qui possède un claim principal dans ce monde arrive
+     * SUR son claim ; sinon, une position sûre aléatoire tenue à distance de tout claim existant —
+     * les premières entrées sont réparties, et un joueur réinitialisé ne retombe ni sur l'ancien
+     * emplacement ni sur le terrain d'un autre. Repli sur {@link #RANDOM_SAFE} puis sur le spawn.
+     */
+    CLAIM_HOME
 }

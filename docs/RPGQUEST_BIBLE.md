@@ -4269,6 +4269,29 @@ Vérifié dans `claim.ClaimWorldAccessGuard`, `claim.ClaimWorldSafetyListener`, 
 - **`dialogues/guard.yml` à jour** — doit contenir la branche `crystal_hunt` (choix « J'ai entendu dire… » + nœud `crystal_hunt_accepted`). Un `guard.yml` antérieur ne permet de démarrer que `first_steps`.
 - **Un World-Portal RPGQuest** `world_hub → claims` (`world-portals/hub_to_claims.yml`, `destination-world` = `claims.world`). `ClaimWorldAccessGuard` ne contrôle que les World-Portals : une téléportation par un autre moyen (`/mv tp`, `/tp`) est rattrapée par `ClaimWorldSafetyListener`, pas par le garde d'entrée.
 
+**Arrivée dans le monde des claims : `CLAIM_HOME` (issues #73, #208, 13/10/2026)** — le portail réel
+`hub_to_claims` était en `WORLD_SPAWN` : toute entrée tombait au même point, et un joueur réinitialisé
+y revenait, devant ses anciennes constructions (le reset retire propriété et protection, jamais les
+blocs), et y reposait son Acte. La stratégie `destination-strategy: CLAIM_HOME` d'un World-Portal :
+
+| Situation | Arrivée |
+|---|---|
+| le joueur a un claim principal dans ce monde | **sur son claim**, colonne sûre (centre, sinon balayage du claim) — dérivé du claim persistant, valable après reconnexion et redémarrage |
+| aucun claim (première entrée, ou après reset) | position sûre aléatoire entre `claims.arrival.min-radius` (64) et `max-radius` (2 000) du spawn du monde, à au moins `claims.arrival.spacing` (100) blocs de la **réserve** de tout claim : entrées réparties, jamais sur le terrain d'un autre ni sur l'ancien claim supprimé |
+| rien de sûr trouvé | repli `RANDOM_SAFE`, puis spawn du monde (journalisé) |
+
+Le contrôle d'éligibilité (`ClaimWorldAccessGuard`) et la Pierre de retour sont inchangés. Le reset
+joueur (`resetnew` / `resetfull`) efface aussi le **point de réapparition** (lit) du joueur en ligne ;
+hors ligne, sa connexion l'efface (voir ci-dessous, #220). L'aperçu du reset nomme chaque claim
+supprimé (monde, emprise) et la portée exacte : propriété et protection retirées, blocs conservés.
+
+**Aucun lit ne fixe la réapparition (issue #220, consigne du 12/10/2026)** — dans les claims comme
+ailleurs. Le lit (ou l'ancre) n'enregistre jamais de point (`PlayerSetSpawnEvent` annulé) ; le
+sommeil reste possible et le lit reste un meuble ; le message vanilla « Point de réapparition défini »
+est remplacé par la règle réelle (au plus une fois par minute). Un point enregistré avant la règle
+est effacé à la connexion et à la réapparition : lit détruit, obstrué, chunk déchargé ou redémarrage
+ne changent rien. La mort suit la politique LodyQuests (spawn du village, puis bornes et waypoints).
+
 **Compte OP = bypass, pas un bug** : `rpgquest.admin.world` (défaut `op`, aucun plugin de permissions requis) contourne le **contrôle d'éligibilité** de `ClaimWorldAccessGuard` (entre sans contrôle) et n'est **jamais renvoyé** par `ClaimWorldSafetyListener` (il est venu volontairement). Toute validation « le portail refuse » doit donc se faire avec un **compte non opéré** — un test OP produit exactement le symptôme « j'entre sans avoir débloqué ». Depuis l'issue #22, en revanche, le bypass **ne dispense plus de la Pierre de retour** : elle est garantie à l'entrée comme à l'arrivée. Le dispenser des deux laissait un administrateur éligible sans aucune sortie — c'est la cause racine du blocage signalé le 05/10/2026. Les décisions des deux composants sont journalisées (`[claims-access]` / `[claims-safety]` / `[claims-retour]`).
 
 ### Prévu / TODO

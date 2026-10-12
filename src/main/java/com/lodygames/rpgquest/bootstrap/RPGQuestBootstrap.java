@@ -637,6 +637,9 @@ public final class RPGQuestBootstrap {
         worldPortalTeleportListener.setEntryGuard(new CompositeWorldPortalEntryGuard(List.of(
                 claimWorldAccessGuard,
                 wildEntryWarningService)));
+        // Issue #73 : arrivée « CLAIM_HOME » — sur son claim s'il en a un, sinon à l'écart de tous.
+        worldPortalTeleportListener.setClaimArrival(new com.lodygames.rpgquest.claim.ClaimArrivalResolver(
+                claimService, () -> configService.current().claims()));
         // Filet de sécurité : personne ne reste coincé dans le monde des claims, et un retour Hub
         // sans commande y est toujours possible (Pierre de retour donnée si absente ; joueur non
         // éligible arrivé autrement que par le portail renvoyé au village).

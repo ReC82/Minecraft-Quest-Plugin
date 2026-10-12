@@ -61,7 +61,7 @@ public final class ClaimTeleportService {
      * toutes les colonnes du cuboïde <strong>actif</strong> du claim — jamais au-delà, la
      * destination reste toujours strictement sur la propriété du joueur.
      */
-    private Optional<Location> findSafeArrivalInClaim(World world, Claim claim) {
+    static Optional<Location> findSafeArrivalInClaim(World world, Claim claim) {
         int centerX = (claim.minX() + claim.maxX()) / 2;
         int centerZ = (claim.minZ() + claim.maxZ()) / 2;
         Optional<Location> atCenter = RandomSafeLocationFinder.findAtColumn(world, centerX, centerZ);

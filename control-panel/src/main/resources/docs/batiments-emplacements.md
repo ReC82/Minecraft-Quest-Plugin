@@ -99,92 +99,34 @@ ce qui garantit qu'un futur placement ne pointera jamais sur le mauvais emplacem
 
 ## Gérer un emplacement depuis PlugAdmin
 
-**Bâtiments → Emplacements**. La page montre, pour chaque emplacement : identifiant, nom, monde,
-position, orientation, état, date de création et auteur.
+**Bâtiments → Emplacements**. Un emplacement est un **lieu** : la page montre, pour chacun,
+identifiant, nom, monde, position, orientation, état, date de création et auteur.
 
 Depuis la fiche, vous pouvez :
 
 - **renommer** — libellé humain uniquement ;
-- écrire la **note d'administrateur** — une ou deux phrases, pour vous repérer dans la liste ;
-- écrire le **brief architectural** — le texte long qui décrit le bâtiment à construire ;
+- écrire la **description du lieu** — une ou deux phrases : où il se trouve, à quoi il sert
+  (500 caractères, compteur affiché ; au-delà, l'enregistrement est refusé, jamais coupé) ;
 - **corriger l'orientation** — la position ne bouge pas ;
-- **générer un bâtiment avec l'IA**, si un brief existe (voir ci-dessous) ;
-- **supprimer** le marqueur (voir plus bas).
-
-### Note d'administrateur, ou brief architectural ?
-
-Deux champs, deux métiers — et il vaut la peine de ne pas les confondre.
-
-| | Longueur | À quoi ça sert |
-|---|---|---|
-| **Note d'administrateur** | 500 caractères | se repérer dans la liste : « Taverne, deux étages, entrée au sud. » |
-| **Brief architectural** | 6 000 caractères | décrire le bâtiment à l'IA : matériaux, étages, pièces, façade, style, contraintes |
-
-Les deux champs affichent un **compteur de caractères** et la limite. Au-delà, l'enregistrement est
-**refusé** avec le nombre de caractères à retirer — rien n'est coupé, et rien n'est enregistré à
-moitié.
+- **poser un bâtiment de la bibliothèque**, puis le **retirer en restaurant le terrain** (voir la
+  page Bibliothèque) ;
+- **supprimer** le repère (voir plus bas).
 
 > [!NOTE]
-> **Si vous aviez déjà collé un brief dans la note**, il y est toujours : rien n'a été déplacé
-> automatiquement, pour ne rien décider à votre place. La fiche vous le signale et vous propose de
-> le recopier dans le brief.
->
-> Auparavant, coller un texte long dans ce champ le **coupait au caractère 500 sans rien dire** —
-> c'est le navigateur qui le faisait, et il n'émet aucun message. C'est corrigé : le champ accepte
-> la frappe complète, le compteur la suit, et c'est le serveur qui refuse si la limite est franchie.
+> **On ne conçoit plus un bâtiment depuis un emplacement** (issues #265, #268). Un bâtiment se
+> conçoit une fois, dans **Bâtiments → Atelier de création**, puis se pose sur autant
+> d'emplacements que vous voulez. Depuis la Bibliothèque, **« Placer sur un emplacement »** vous
+> ramène ici avec le bâtiment déjà choisi.
 
-Inutile de répéter l'**orientation** ni le **nom de l'emplacement** dans le brief : ils sont
-transmis automatiquement à l'IA.
+### Et la description de bâtiment écrite autrefois sur l'emplacement ?
 
-## Générer un bâtiment avec l'IA
+Elle n'a été **ni effacée ni déplacée**. La fiche l'affiche, repliée et en lecture seule, avec ce
+qu'elle est devenue :
 
-Depuis la fiche, une fois le brief écrit : **« Générer un bâtiment avec l'IA »**.
-
-Le parcours tient en deux gestes, et c'est voulu.
-
-**1. Demander un plan.** Choisissez le fournisseur d'IA, l'emprise et la hauteur maximales, puis
-« Demander un plan ». L'IA reçoit votre brief, le nom de l'emplacement, sa façade et vos bornes.
-Elle répond par un **plan** : une taille, une orientation, et une liste d'instructions de volumes
-(murs, sols, percements, toit). Elle ne décrit pas les blocs un par un.
-
-**2. Relire, puis générer.** Le plan s'affiche, modifiable. Quand il vous convient,
-« Générer le bâtiment » écrit sur le serveur un fichier `.schem` et une définition, et ajoute le
-bâtiment à la **bibliothèque**.
-
-> [!IMPORTANT]
-> **Aucun bloc n'est posé dans le monde à cette étape.** La génération produit un bâtiment
-> *disponible* ; la pose reste une opération distincte, depuis la fiche de l'emplacement, avec son
-> aperçu d'emprise et sa restauration — exactement comme pour un schematic fourni à la main.
-
-### Si le serveur refuse le plan
-
-C'est normal et prévu : le serveur est le juge, et il refuse en **nommant l'instruction fautive**
-(« Instruction 7 : la zone … sort du volume 9 × 8 × 7 »). Deux choix alors :
-
-- corriger le plan à la main dans le champ, puis relancer la génération ;
-- **« Demander un plan corrigé »** : le motif exact et le plan refusé sont renvoyés à l'IA, qui
-  corrige ce point sans repartir de zéro.
-
-### Si un bâtiment porte déjà cet identifiant
-
-La génération est **refusée** par défaut. Cochez « Remplacer un bâtiment existant » pour l'écraser
-volontairement — ainsi, un bâtiment que vous auriez retouché à la main ne disparaît pas par
-accident. Un remplacement **incrémente la version** de la définition.
-
-### Conditions
-
-- un **brief** sur l'emplacement — sans lui, aucun appel n'est proposé ;
-- un **fournisseur d'IA** activé avec sa clé (page **Fournisseurs d'IA**) ;
-- le droit `AI_USE` pour demander un plan, `BUILDING_WRITE` pour générer. Avec seulement le
-  premier, vous pouvez explorer sans jamais rien écrire.
-
-### Ce que l'IA fait bien, et moins bien
-
-Un plan géométriquement valide n'est pas automatiquement **beau** ni **praticable**. Le prompt
-demande explicitement un intérieur de 3 blocs de hauteur libre, une porte de 2 blocs, un escalier
-si le bâtiment a plusieurs étages et des fenêtres — mais il faut **regarder le résultat en jeu**
-avant de le considérer comme acquis. Commencez par un bâtiment simple, et augmentez la complexité
-progressivement.
+- **« Reprendre dans l'Atelier »** : la copie dans un nouveau projet de l'Atelier, avec les plans
+  déjà demandés pour cet emplacement. L'emplacement lui-même n'est pas modifié, et rien n'est
+  envoyé au serveur Minecraft. Une seconde reprise ouvre le même projet.
+- une fois reprise, la fiche affiche **le lien vers le projet** : c'est là qu'elle se modifie.
 
 Recherche et **filtre par monde** sont disponibles au-dessus de la liste.
 
@@ -217,17 +159,17 @@ C'est prévu, et c'est normal : les premiers essais tombent rarement au bon endr
 
 ## Supprimer un emplacement
 
-Fiche → **Zone de danger** → cocher la case → **Supprimer l'emplacement**.
+Fiche → en bas, **« Supprimer l'emplacement (le repère seulement) »** → cocher la case → confirmer.
 
 > [!IMPORTANT]
-> **Aucun bloc du monde n'est modifié.** Un emplacement n'est qu'un repère : il n'y a rien à défaire
-> en jeu. Ce que vous avez construit à la main reste là.
+> **Aucun bloc du monde n'est modifié.** Seul le repère disparaît.
 
+- Sur un emplacement **occupé**, la suppression est **refusée** : elle laisserait un bâtiment sans
+  moyen de restaurer le terrain. Retirez d'abord le bâtiment (**« Retirer le bâtiment et restaurer
+  le terrain »**, en tête de la section « Bâtiment posé »).
 - L'opération est **idempotente** : supprimer deux fois le même emplacement dit simplement « rien à
   supprimer », jamais une erreur.
 - L'identifiant supprimé **n'est jamais réattribué**.
-- Cette suppression devra être repensée le jour où un bâtiment pourra être réellement posé sur un
-  emplacement.
 
 ---
 
@@ -253,10 +195,7 @@ il n'est reconnu que par son marquage interne, jamais par son nom.
 
 ---
 
-## Ce qui viendra ensuite
+## Voir aussi
 
-Dans l'ordre : affecter un **schematic** déjà préparé à un emplacement, afficher son emprise, puis
-le **poser** avec contrôle des collisions et des protections — et une restauration possible.
-La génération de bâtiment à partir d'une description ou d'une image vient après.
-
-L'identifiant de l'emplacement est **déjà** l'ancrage stable de tout cela.
+- **Atelier de création** : concevoir un bâtiment, avec l'aide de l'IA.
+- **Bibliothèque** : les bâtiments prêts à poser, la pose et la restauration du terrain.

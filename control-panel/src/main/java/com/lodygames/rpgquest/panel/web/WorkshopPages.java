@@ -304,7 +304,8 @@ public final class WorkshopPages {
                                 + "appel à l'IA.</p><div class=\"btnrow\">")
                         .append("<a class=\"btn btn-primary\" href=\"/buildings/library\">")
                         .append(Icons.icon("box")).append("Voir dans la bibliothèque</a>")
-                        .append("<a class=\"btn btn-outline-primary\" href=\"/buildings/sites\">")
+                        .append("<a class=\"btn btn-outline-primary\" href=\"/buildings/sites?place=")
+                        .append(Http.esc(p.buildingId())).append("\">")
                         .append(Icons.icon("world")).append("Choisir un emplacement</a></div>");
             }
         }

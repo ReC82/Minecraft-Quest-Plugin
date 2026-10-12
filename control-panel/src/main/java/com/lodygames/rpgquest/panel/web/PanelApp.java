@@ -165,6 +165,7 @@ public final class PanelApp {
         this.planProjects = new com.lodygames.rpgquest.panel.building.BuildingProjectStore(config.panelDbPath());
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
+        this.agentPages.useWorkshopProjects(planProjects);
         this.notifications = new NotificationCenter(agentStore, agentRegistry);
         this.contentEditor = new ContentEditorPages(contentWorkspace);
         // Issue #194 : suppression de contenu, aperçu + confirmation. Partage l'espace de travail

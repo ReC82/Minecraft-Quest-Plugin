@@ -621,24 +621,21 @@ class BuildingSitesPageTest {
     /** Fait aboutir un {@code building.site.list} avec le relevé ci-dessus, comme le ferait l'agent. */
     // ---- Issue #94 : la page de génération ---------------------------------------------------
 
+    /**
+     * Issue #268 : un emplacement est un lieu. Sa fiche ne propose plus de décrire un bâtiment ni de
+     * le générer — même quand une ancienne description de bâtiment y est encore enregistrée.
+     */
     @Test
-    void theFicheLinksToTheGenerationOnlyWhenABriefExists() throws Exception {
+    void theSiteSheetNoLongerDesignsOrGeneratesABuilding() throws Exception {
         start();
         seedWith(SITES_WITH_BRIEF);
-        String withBrief = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
-        assertTrue(withBrief.contains("href=\"/buildings/plan?site=buildsite_0009\""),
-                "l'accès à la génération doit être proposé");
-        assertTrue(withBrief.contains("Générer un bâtiment avec l'IA</a>"),
-                "le libellé du lien de génération");
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
 
-        app.stop();
-        start();
-        seed(); // emplacements SANS brief
-        String withoutBrief = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
-        assertFalse(withoutBrief.contains("href=\"/buildings/plan?site=buildsite_0001\""),
-                "sans brief, la génération n'est pas proposée : il n'y aurait rien à envoyer");
-        assertTrue(withoutBrief.contains("Rédiger le brief ci-dessus pour pouvoir générer"),
-                "et la raison est dite");
+        assertFalse(page.contains("/buildings/plan"), "aucun accès à l'ancienne génération");
+        assertFalse(page.contains("Générer un bâtiment avec l'IA"), "aucun bouton de génération");
+        assertFalse(page.contains("value=\"building.site.brief\""), "aucun formulaire de brief");
+        assertFalse(page.contains("Brief architectural"), "le mot « brief » a quitté la fiche");
+        assertFalse(page.contains("Note d'administrateur"), "l'ancien libellé ambigu a disparu");
     }
 
     /**
@@ -687,103 +684,98 @@ class BuildingSitesPageTest {
     // ---- Issue #94 : la note, le brief, et la fin de la troncature silencieuse ----------------
 
     /**
-     * Le défaut exact signalé : {@code maxlength} coupait un collage sans rien dire.
-     *
-     * <p>Le navigateur n'émet aucun message quand il applique {@code maxlength} — l'administrateur
-     * voyait son brief s'arrêter au milieu d'un mot. L'attribut ne doit donc plus être là, sur
-     * aucun des deux champs de texte long.</p>
+     * Le défaut exact signalé sous #213 : {@code maxlength} coupait un collage sans rien dire. Le
+     * seul champ long restant, la description du lieu, ne doit toujours pas le porter.
      */
     @Test
-    void noTextFieldCarriesMaxlengthBecauseItTruncatesSilently() throws Exception {
+    void theDescriptionFieldCarriesNoMaxlengthBecauseItTruncatesSilently() throws Exception {
         start();
         seed();
         String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
 
         String describeForm = formAround(page, "value=\"building.site.describe\"");
         assertFalse(describeForm.contains("maxlength"),
-                "la note ne doit plus être tronquée par le navigateur");
-        String briefForm = formAround(page, "value=\"building.site.brief\"");
-        assertFalse(briefForm.contains("maxlength"),
-                "le brief ne doit surtout pas être tronqué par le navigateur");
+                "la description ne doit pas être tronquée par le navigateur");
     }
 
     @Test
-    void bothLongFieldsCarryAServerRenderedCharacterCounter() throws Exception {
+    void theDescriptionFieldCarriesAServerRenderedCharacterCounter() throws Exception {
         start();
         seed();
         String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
 
         // Le compteur est rendu par le SERVEUR, donc juste même sans JavaScript.
-        assertTrue(page.contains("data-charcount-for=\"desc-buildsite_0001\""), "compteur de la note");
-        assertTrue(page.contains("data-charcount-for=\"brief-buildsite_0001\""), "compteur du brief");
-        assertTrue(page.contains("data-charcount-max=\"500\""), "borne de la note affichée");
-        assertTrue(page.contains("data-charcount-max=\"6000\""), "borne du brief affichée");
+        assertTrue(page.contains("data-charcount-for=\"desc-buildsite_0001\""), "compteur présent");
+        assertTrue(page.contains("data-charcount-max=\"500\""), "borne affichée");
         // La valeur initiale est la vraie longueur, pas zéro : « Deux étages. » fait 12 caractères.
         assertTrue(page.contains("<span class=\"cc-n\">12</span> / 500 caractères"),
                 "le compteur part de la longueur réelle de la valeur enregistrée");
-        // Et panel.js doit pouvoir les retrouver.
-        assertTrue(page.contains("data-charcount=\"6000\""), "le champ est relié à son compteur");
     }
 
     @Test
-    void theNoteAndTheBriefAreTwoClearlyLabelledFields() throws Exception {
+    void theSiteDescriptionIsNamedForWhatItIsAndPointsToTheWorkshop() throws Exception {
         start();
         seed();
         String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
 
-        // Deux rôles distincts, dits à l'écran — c'est la condition posée par la demande.
-        assertTrue(page.contains(">Note d'administrateur</label>"), "la note est nommée comme telle");
-        assertTrue(page.contains(">Brief architectural</label>"), "le brief est nommé comme tel");
-        assertTrue(page.contains("name=\"description\""), "le champ note garde son nom de paramètre");
-        assertTrue(page.contains("name=\"brief\""), "le champ brief a le sien");
-        assertTrue(page.contains("pour vous repérer dans la liste"), "le rôle de la note est dit");
-        assertTrue(page.contains("Sert d'entrée à la génération"), "le rôle du brief est dit");
-        // L'orientation n'est pas à répéter dans le brief : l'écran le dit.
-        assertTrue(page.contains("sont ajoutés automatiquement"), "ce qui est déjà connu est annoncé");
+        assertTrue(page.contains(">Description du lieu</label>"), "le champ dit ce qu'il décrit");
+        assertTrue(page.contains("name=\"description\""), "même paramètre qu'avant : rien à migrer");
+        assertTrue(page.contains("se décrit dans l'<a href=\"/buildings/workshop\">Atelier de création</a>"),
+                "le bâtiment, lui, se décrit ailleurs — et l'écran dit où");
+        assertTrue(page.contains("Enregistrer la description"), "bouton au même nom que le champ");
     }
 
+    /**
+     * Migration non destructive (#268) : l'ancienne description de bâtiment n'est ni vidée ni
+     * cachée. Elle reste lisible, repliée, en lecture seule, avec une reprise proposée.
+     */
     @Test
-    void anExistingBriefIsShownFoldedWithItsLength() throws Exception {
+    void anOldBuildingDescriptionStaysReadableAndCanBeTakenToTheWorkshop() throws Exception {
         start();
         seedWith(SITES_WITH_BRIEF);
         String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("Brief architectural"), "la fiche nomme le brief");
-        assertTrue(page.contains("caractères — afficher"),
-                "un brief long est replié avec sa taille, pas étalé dans les métadonnées");
-        assertTrue(page.contains("class=\"brief-text\""), "le texte du brief est rendu");
-        assertTrue(page.contains("Grande salle de lecture"), "et son contenu réel apparaît");
-        // La note reste distincte et visible.
-        assertTrue(page.contains("Note courte."), "la note n'est pas remplacée par le brief");
+        assertTrue(page.contains("Lire la description ("), "repliée, avec sa taille");
+        assertTrue(page.contains("Grande salle de lecture"), "son contenu réel est toujours là");
+        assertTrue(page.contains("Note courte."), "la description du lieu reste distincte");
+        String importForm = formAround(page, "action=\"/buildings/workshop/import\"");
+        assertTrue(importForm.contains("name=\"site\" value=\"buildsite_0009\""),
+                "la reprise vise cet emplacement");
+        assertTrue(importForm.contains("Reprendre dans l'Atelier"), "et se nomme simplement");
+        assertFalse(page.contains("<textarea id=\"brief-"), "lecture seule : aucun champ d'édition");
     }
 
     @Test
-    void aSiteWithoutABriefSaysSoAndSuggestsWritingOne() throws Exception {
+    void onceTakenToTheWorkshopTheSiteLinksToItsProjectAndSendsNothingToTheServer() throws Exception {
+        start();
+        seedWith(SITES_WITH_BRIEF);
+        long actionsBefore = store.recentActions(TestConfig.AGENT_ID, 200).size();
+        String token = csrf(get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body());
+        HttpResponse<String> imported = post("/buildings/workshop/import",
+                "_csrf=" + token + "&site=buildsite_0009");
+        assertEquals(303, imported.statusCode());
+        String location = imported.headers().firstValue("Location").orElse("");
+        assertTrue(location.startsWith("/buildings/workshop/project?id="), location);
+
+        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
+        String projectId = location.replaceAll(".*[?&]id=([^&]+).*", "$1");
+        assertTrue(page.contains("href=\"/buildings/workshop/project?id=" + projectId + "\""),
+                "la fiche mène au projet");
+        assertTrue(page.contains("a été reprise dans le projet"), "et dit ce qu'est devenu le texte");
+        assertFalse(page.contains("action=\"/buildings/workshop/import\""), "plus de reprise à proposer");
+        assertTrue(page.contains("Grande salle de lecture"), "le texte reste lisible sur la fiche");
+        assertEquals(actionsBefore, store.recentActions(TestConfig.AGENT_ID, 200).size(),
+                "aucune action envoyée au serveur : l'emplacement n'est pas modifié");
+    }
+
+    @Test
+    void aSiteWithoutAnOldBuildingDescriptionShowsNothingAboutIt() throws Exception {
         start();
         seed();
         String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
 
-        assertTrue(page.contains("aucun — à rédiger avant de générer un bâtiment"),
-                "l'absence de brief est dite, avec sa conséquence");
-    }
-
-    /**
-     * Les quatre emplacements réels portent leur brief dans la note : l'écran le signale, mais la
-     * migration n'a rien déplacé. Déplacer du texte reviendrait à décider pour l'administrateur.
-     */
-    @Test
-    void aNoteWithoutABriefIsFlaggedAsPossiblyMisplacedWithoutMovingAnything() throws Exception {
-        start();
-        seed();
-        String page = get("/buildings/sites?agent=" + TestConfig.AGENT_ID).body();
-
-        assertTrue(page.contains("Si cette note est en réalité un brief"), "l'invitation est là");
-        assertTrue(page.contains("elle n'a pas été déplacée"), "et la non-action est explicite");
-        // Le champ brief reste VIDE : rien n'a été prérempli à l'insu de l'administrateur.
-        String briefForm = formAround(page, "value=\"building.site.brief\"");
-        assertTrue(briefForm.contains("placeholder=\"Matériaux"), "le champ est vide, avec son exemple");
-        assertFalse(briefForm.contains("Deux étages.</textarea>"),
-                "la note ne doit pas avoir été recopiée d'office dans le brief");
+        assertFalse(page.contains("Reprendre dans l'Atelier"), "rien à reprendre");
+        assertFalse(page.contains("Lire la description ("), "rien à lire");
     }
 
     @Test

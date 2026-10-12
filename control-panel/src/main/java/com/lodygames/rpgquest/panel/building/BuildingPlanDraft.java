@@ -55,7 +55,13 @@ public record BuildingPlanDraft(String id, String agentId, String siteId, String
         /** Correction demandée au modèle à partir d'un autre brouillon — un appel facturé. */
         AI_CORRECTION("Corrigé par l'IA"),
         /** Repris depuis une action existante, sans aucun appel au modèle. */
-        RECOVERED("Récupéré depuis une action");
+        RECOVERED("Récupéré depuis une action"),
+        /**
+         * Réparé par le moteur du serveur (issue #282), sans appel au modèle : une correction sûre
+         * — toit qui dépasse, escalier manquant, mobilier qui bouche un étage — calculée et
+         * vérifiée par le plugin à partir de l'audit de la version parente.
+         */
+        ENGINE_REPAIR("Réparé par le moteur");
 
         private final String label;
 

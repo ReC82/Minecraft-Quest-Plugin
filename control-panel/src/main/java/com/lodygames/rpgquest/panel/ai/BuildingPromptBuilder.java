@@ -189,12 +189,21 @@ public final class BuildingPromptBuilder {
                 - op: light     → une source de lumière. Clés : « from », « to » (des points
                                   [x, y, z]), « spacing », « block » (minecraft:lantern,
                                   minecraft:torch…).
-                - op: stair_run → une volée d'escalier praticable entre deux niveaux, avec deux
-                                  blocs de hauteur libre au-dessus de chaque marche et un palier en
-                                  haut. Clés : « from » (le pied de la volée, un point [x, y, z]),
-                                  « steps » (nombre de marches, défaut 4), « direction » (le POINT
-                                  CARDINAL vers lequel on monte : north, south, east ou west —
-                                  jamais un axe), « block » (un bloc d'escalier).
+                - op: staircase → L'ESCALIER ENTRE DEUX NIVEAUX. Tu donnes le pied, la
+                                  direction et le plancher à atteindre ; le moteur calcule le
+                                  nombre de marches, PERCE LA TRÉMIE dans le plancher, dégage la
+                                  hauteur libre, le départ et le palier, et protège ce volume contre
+                                  le mobilier. Clés : « from » (la PREMIÈRE MARCHE, posée sur le sol
+                                  du niveau de départ : y = y du sol + 1), « direction » (le POINT
+                                  CARDINAL vers lequel on monte : north, south, east ou west),
+                                  « floor » (le y du PLANCHER de l'étage, le bloc sur lequel on
+                                  marche en haut), « width » (1 à 3 voies, élargit vers +z pour une
+                                  montée est/ouest, vers +x pour une montée nord/sud), « block »
+                                  (un bloc d'escalier). La volée compte floor - y + 1 marches et
+                                  occupe autant de cellules dans sa direction, plus une cellule de
+                                  départ avant et une de palier après : toutes doivent être À
+                                  L'INTÉRIEUR, à au moins une cellule des murs extérieurs. Ne perce
+                                  JAMAIS la trémie toi-même.
                 - op: ladder    → une échelle VERTICALE adossée à un mur, qui regarde vers
                                   l'intérieur, et dont le débouché du haut est dégagé. Clés :
                                   « facade » (le mur contre lequel elle s'adosse — il ne fixe QUE
@@ -235,10 +244,11 @@ public final class BuildingPromptBuilder {
                     to: [6, 4, 3]
                     spacing: 4
                     block: minecraft:lantern
-                  - op: stair_run
-                    from: [2, 1, 3]
-                    steps: 4
+                  - op: staircase
+                    from: [2, 1, 5]
                     direction: east
+                    floor: 5
+                    width: 1
                     block: minecraft:oak_stairs
                   - op: ladder
                     facade: BACK
@@ -259,7 +269,8 @@ public final class BuildingPromptBuilder {
                   1. pose le sol et les murs ;
                   2. « clear » l'intérieur pour creuser les pièces ;
                   3. pose les portes et les fenêtres (elles percent et dégagent elles-mêmes) ;
-                  4. pose les escaliers, les échelles, les lumières, puis le mobilier ;
+                  4. pose les lumières, puis le mobilier ; l'escalier « staircase » peut être
+                     écrit n'importe où : le moteur l'applique toujours en dernier ;
                   5. termine par le toit.
 
                 LE CONTRAT ARCHITECTURAL — VÉRIFIE CHAQUE LIGNE AVANT DE RÉPONDRE
@@ -274,46 +285,54 @@ public final class BuildingPromptBuilder {
                   [ ] DE LA LUMIÈRE, à moins de 8 blocs de tout point intérieur.
                   [ ] UNE ENVELOPPE CLOSE : pas de trou dans les murs ni dans le toit, pignons
                       compris. « op: gable » avec « fill » les ferme pour toi.
-                  [ ] TOUS LES ÉTAGES ACCESSIBLES. Si tu poses un plancher intermédiaire, il faut un
-                      « op: stair_run » ou un « op: ladder » qui y mène, ET une trémie dans le
-                      plancher (« op: clear ») pour y passer.
+                  [ ] TOUS LES ÉTAGES ACCESSIBLES. Chaque plancher intermédiaire reçoit UN
+                      « op: staircase » dont « floor » est le y de ce plancher. N'écris ni trémie
+                      (« clear ») ni escalier marche par marche pour monter : le moteur s'en
+                      charge. Un étage offre au moins 3 blocs libres sous son plafond.
+                  [ ] DES ÉTAGES PRATICABLES. Le mobilier se range le long des murs, en rangées
+                      séparées par des allées d'au moins 2 blocs. Une « box » de meubles qui couvre
+                      tout un plancher est REFUSÉE : au moins 30 % du plancher doit rester libre.
                   [ ] AU MOINS TROIS MATÉRIAUX dans l'enveloppe, et aucun au-delà de 70 %.
                   [ ] DU MOBILIER : au moins quelques cellules de contenu intérieur.
 
-                UN EXEMPLE COMPLET ET VALIDE
+                UN EXEMPLE COMPLET ET VALIDE — DEUX ÉTAGES
 
-                id: exemple_atelier
-                name: "Atelier du forgeron"
+                id: exemple_maison_scribe
+                name: "Maison du scribe"
                 kind: habitable
                 front: NORTH
                 size:
-                  x: 9
-                  y: 9
-                  z: 7
+                  x: 11
+                  y: 13
+                  z: 9
                 steps:
                   - op: box
                     from: [0, 0, 0]
-                    to: [8, 0, 6]
+                    to: [10, 0, 8]
                     block: minecraft:stone_bricks
                   - op: walls
                     from: [0, 1, 0]
-                    to: [8, 4, 6]
+                    to: [10, 4, 8]
                     block: minecraft:stone_bricks
-                  - op: pillars
-                    from: [0, 1, 0]
-                    to: [8, 4, 6]
-                    spacing: 4
-                    block: minecraft:oak_log
+                  - op: walls
+                    from: [0, 6, 0]
+                    to: [10, 9, 8]
+                    block: minecraft:oak_planks
                   - op: box
                     from: [0, 5, 0]
-                    to: [8, 5, 6]
-                    block: minecraft:oak_planks
+                    to: [10, 5, 8]
+                    block: minecraft:spruce_planks
+                  - op: pillars
+                    from: [0, 1, 0]
+                    to: [10, 9, 8]
+                    spacing: 5
+                    block: minecraft:oak_log
                   - op: door
                     facade: FRONT
-                    offset: 4
-                    block: minecraft:oak_door
+                    offset: 5
+                    block: minecraft:spruce_door
                   - op: window
-                    facade: LEFT
+                    facade: FRONT
                     offset: 2
                     y: 2
                     width: 2
@@ -321,47 +340,78 @@ public final class BuildingPromptBuilder {
                     block: minecraft:glass_pane
                   - op: window
                     facade: RIGHT
-                    offset: 2
+                    offset: 3
                     y: 2
                     width: 2
                     height: 2
                     block: minecraft:glass_pane
                   - op: window
+                    facade: FRONT
+                    offset: 3
+                    y: 7
+                    width: 5
+                    height: 2
+                    block: minecraft:glass_pane
+                  - op: window
                     facade: BACK
-                    offset: 4
-                    y: 2
-                    width: 1
+                    offset: 3
+                    y: 7
+                    width: 3
                     height: 2
                     block: minecraft:glass_pane
                   - op: light
-                    from: [2, 4, 3]
-                    to: [6, 4, 3]
-                    spacing: 4
+                    from: [2, 4, 2]
+                    to: [8, 4, 2]
+                    spacing: 6
                     block: minecraft:lantern
+                  - op: light
+                    from: [2, 6, 2]
+                    to: [8, 6, 2]
+                    spacing: 6
+                    block: minecraft:lantern
+                  - op: staircase
+                    from: [2, 1, 6]
+                    direction: east
+                    floor: 5
+                    width: 2
+                    block: minecraft:spruce_stairs
                   - op: box
-                    from: [1, 1, 5]
-                    to: [7, 1, 5]
-                    block: minecraft:smithing_table
+                    from: [9, 1, 2]
+                    to: [9, 2, 4]
+                    block: minecraft:bookshelf
                   - op: box
-                    from: [1, 1, 1]
-                    to: [1, 2, 1]
+                    from: [1, 1, 2]
+                    to: [1, 1, 2]
                     block: minecraft:barrel
+                  - op: box
+                    from: [1, 6, 1]
+                    to: [1, 7, 4]
+                    block: minecraft:bookshelf
+                  - op: box
+                    from: [9, 6, 1]
+                    to: [9, 7, 4]
+                    block: minecraft:bookshelf
+                  - op: box
+                    from: [5, 6, 3]
+                    to: [5, 6, 3]
+                    block: minecraft:lectern
                   - op: gable
-                    from: [0, 5, 0]
-                    to: [8, 8, 6]
+                    from: [0, 10, 0]
+                    to: [10, 12, 8]
                     axis: x
-                    fill: minecraft:stone_bricks
-                    block: minecraft:oak_stairs
+                    fill: minecraft:oak_planks
+                    block: minecraft:spruce_stairs
 
                 Remarque ce que cet exemple NE fait pas : il ne calcule aucune coordonnée de porte,
-                aucune orientation de marche, aucune propriété de bloc. Il décrit, et le moteur
-                calcule.
+                aucune orientation de marche, aucune propriété de bloc, aucune trémie. Le plancher
+                de l'étage est en y=5, donc « floor: 5 » ; la première marche est sur le sol (y=1),
+                dans un coin, et le mobilier longe les murs. Il décrit, et le moteur calcule.
 
                 CONTRAINTE DE LONGUEUR — LIS CECI
 
                 Ta réponse a un budget de sortie limité. Un document COUPÉ EN PLEIN MILIEU est
                 totalement inutilisable : il n'y a pas de « plan partiel » exploitable. Si tu dois
-                choisir, fais un bâtiment plus SOBRE mais COMPLET, et qui satisfait les sept points
+                choisir, fais un bâtiment plus SOBRE mais COMPLET, et qui satisfait les huit points
                 du contrat — c'est ce qui est contrôlé. N'ajoute des détails décoratifs que si le
                 plan tient déjà entièrement. Entre 30 et 80 instructions est la fourchette utile.
                 """;
@@ -464,7 +514,15 @@ public final class BuildingPromptBuilder {
                 et l'intention du brief. Ne réécris pas le plan de zéro : repars de celui-ci. Si le
                 motif parle d'une porte, d'une fenêtre, d'une lumière, d'un escalier ou d'une
                 échelle, utilise l'instruction d'architecture correspondante plutôt que de calculer
-                une coordonnée. Produis le plan YAML corrigé, et rien d'autre.
+                une coordonnée.
+
+                Les coordonnées citées par le motif sont MESURÉES sur la grille construite : elles
+                disent exactement quelle cellule bloque et quelle instruction l'a posée. Si le motif
+                contient « RÉPARATION VÉRIFIÉE PAR LE MOTEUR », recopie EXACTEMENT l'instruction
+                proposée et supprime les escaliers, échelles et « clear » de plancher qui ne mènent
+                nulle part. Si une zone sort du volume, ramène-la dans les dimensions déclarées
+                (de 0 à size-1). Un plan identique au précédent est refusé sans être lu.
+                Produis le plan YAML corrigé, et rien d'autre.
                 """.formatted(userPrompt(demand), budget,
                 refusal == null || refusal.isBlank() ? "motif non transmis" : refusal.trim(),
                 measured,

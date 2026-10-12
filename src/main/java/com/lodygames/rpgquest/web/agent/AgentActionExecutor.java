@@ -1493,6 +1493,9 @@ public final class AgentActionExecutor {
                     details.put("warnings", v.warnings());
                     details.put("exists", v.exists());
                     details.put("metrics", v.metrics());
+                    // #282 : le message COMPLET — le résultat de l'action est tronqué à 500
+                    // caractères par le panel, et le diagnostic géométrique dépasse souvent.
+                    details.put("message", v.message());
                     // #282 : la réparation déterministe, si le moteur en a trouvé une sûre.
                     if (!v.repair().isEmpty()) {
                         details.put("repair", v.repair());
@@ -1556,6 +1559,7 @@ public final class AgentActionExecutor {
                     voxels.put("layers", v.voxels().layers());
                     voxels.put("omittedReason", v.voxels().omittedReason());
                     details.put("voxels", voxels);
+                    details.put("message", v.message());
                     if (!v.repair().isEmpty()) {
                         details.put("repair", v.repair());
                     }

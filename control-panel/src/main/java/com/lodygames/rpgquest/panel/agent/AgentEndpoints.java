@@ -51,6 +51,11 @@ public final class AgentEndpoints {
     private final AuditLog audit;
     private final Duration actionExpiry;
     private final BooleanSupplier disabled;
+    /**
+     * Prévenu de chaque résultat reçu pour une action encore ouverte (issue #282) : c'est ce qui
+     * permet à l'Atelier de réparer un plan dès que son audit revient, sans attendre un clic.
+     */
+    private volatile java.util.function.Consumer<String> resultListener = id -> { };
 
     public AgentEndpoints(AgentRegistry registry, AgentStore store, AuditLog audit,
                           Duration actionExpiry, BooleanSupplier disabled) {
@@ -172,6 +177,11 @@ public final class AgentEndpoints {
         return send(exchange, 200, root);
     }
 
+    /** Branche l'écouteur des résultats ; il ne doit jamais lever. */
+    public void onResult(java.util.function.Consumer<String> listener) {
+        this.resultListener = listener == null ? id -> { } : listener;
+    }
+
     // ---- POST /agent/v1/actions/{id}/result ---------------------------
 
     private int handleActionResult(HttpExchange exchange, String rid, AgentIdentity agent, String path, String rawBody)
@@ -208,6 +218,9 @@ public final class AgentEndpoints {
         }
         if (status == AgentActionStatus.SUCCESS && before.isPresent() && !before.get().status().terminal()) {
             enqueueCatalogRefreshes(agent.id(), before.get().type(), rid);
+        }
+        if (before.isPresent() && !before.get().status().terminal()) {
+            resultListener.accept(actionId);
         }
         audit.record("agent:" + agent.id(), "agent.action.result", "action=" + actionId,
                 status.name(), message, rid);

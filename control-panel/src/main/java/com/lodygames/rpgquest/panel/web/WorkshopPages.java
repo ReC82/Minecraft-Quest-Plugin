@@ -218,6 +218,11 @@ public final class WorkshopPages {
                 + "cette page.", "<a class=\"btn btn-outline-secondary\" href=\"" + BASE + "\">"
                 + Icons.icon("back") + "Atelier</a>"));
         banners(sb, v.notice(), v.error());
+        if (v.draft() != null && v.draft().origin() == BuildingPlanDraft.Origin.ENGINE_REPAIR) {
+            sb.append(Ui.banner("info", "<strong>Version réparée automatiquement par le moteur du serveur, "
+                    + "sans appel à l'IA.</strong> La version d'origine reste disponible.<br>"
+                    + Http.esc(v.draft().extractionNote()).replace("\n", "<br>")));
+        }
 
         Step step = step(v);
         sb.append(stepper(step));
@@ -462,26 +467,44 @@ public final class WorkshopPages {
 
     /** Le motif de correction proposé : ce que le serveur a dit de la version courante, en clair. */
     static String correctionReason(ProjectView v) {
-        BuildingPlanVerdict verdict = currentVerdict(v);
+        return diagnosis(v.project(), v.audit());
+    }
+
+    /**
+     * Ce que le serveur a dit de la version courante — refus, écart avec le brief, avertissements
+     * — rédigé pour être transmis tel quel à l'IA (issue #282).
+     *
+     * <p>C'est le texte que « Améliorer avec l'IA » envoie de lui-même : l'administrateur n'a plus
+     * à recopier l'erreur du validateur pour le modèle. Vide si la version n'a pas encore été
+     * vérifiée, ou si le serveur n'a rien à redire.</p>
+     */
+    public static String diagnosis(BuildingProject project, CheckState audit) {
+        BuildingPlanVerdict verdict = verdictOf(audit);
         List<String> lines = new ArrayList<>();
         if (verdict.available() && !verdict.accepted()) {
             lines.add(verdict.message());
         }
         if (verdict.available()) {
-            BriefLevels.divergence(v.project().brief(), verdict.metrics()).ifPresent(lines::add);
+            BriefLevels.divergence(project.brief(), verdict.metrics()).ifPresent(lines::add);
             lines.addAll(verdict.warnings());
         }
-        if (!verdict.available() && v.audit().current() && v.audit().status() == Status.DONE) {
-            v.audit().row().map(AgentActionRow::resultMessage).filter(m -> m != null && !m.isBlank())
+        if (!verdict.available() && audit.current() && audit.status() == Status.DONE) {
+            audit.row().map(AgentActionRow::resultMessage).filter(m -> m != null && !m.isBlank())
                     .ifPresent(lines::add);
         }
         return String.join("\n", lines).trim();
     }
 
     private static BuildingPlanVerdict currentVerdict(ProjectView v) {
-        CheckState audit = v.audit();
+        return verdictOf(v.audit());
+    }
+
+    /** Le verdict de la version courante, avec le message de l'action en secours. */
+    static BuildingPlanVerdict verdictOf(CheckState audit) {
         return audit.current() && audit.status() == Status.DONE
-                ? BuildingPlanVerdict.from(audit.details()) : BuildingPlanVerdict.none();
+                ? BuildingPlanVerdict.from(audit.details(),
+                        audit.row().map(AgentActionRow::resultMessage).orElse(""))
+                : BuildingPlanVerdict.none();
     }
 
     // ---- Formulaires ----------------------------------------------------------------------
@@ -515,10 +538,21 @@ public final class WorkshopPages {
                 .append(hidden("version", String.valueOf(d.version())))
                 .append(hidden("request_token", v.requestToken()));
         sb.append(providerSelect(v, d.providerId()));
-        sb.append("<div class=\"field\"><label for=\"ws-reason\">Ce qu'il faut changer</label>")
-                .append("<textarea id=\"ws-reason\" name=\"reason\" rows=\"4\">").append(Http.esc(reason))
-                .append("</textarea><p class=\"field-help\">Prérempli avec ce que la vérification a "
-                        + "trouvé ; ajoutez ce que vous voulez en plus.</p></div>");
+        // #282 : le diagnostic du serveur part DE LUI-MÊME avec la demande. Il est montré en
+        // lecture seule ; le champ libre ne sert qu'aux consignes en plus, et il est facultatif.
+        if (!reason.isBlank()) {
+            sb.append("<details class=\"npc-registry\"><summary class=\"muted\">Ce que l'IA recevra "
+                    + "automatiquement (diagnostic du serveur)</summary><pre class=\"ws-diagnosis\">")
+                    .append(Http.esc(reason)).append("</pre></details>");
+        }
+        sb.append("<div class=\"field\"><label for=\"ws-reason\">Vos consignes en plus "
+                + "<span class=\"muted\">(facultatif)</span></label>")
+                .append("<textarea id=\"ws-reason\" name=\"notes\" rows=\"3\"></textarea>")
+                .append("<p class=\"field-help\">").append(reason.isBlank()
+                        ? "Dites ce que vous voulez changer : le serveur n'a rien relevé sur cette version."
+                        : "Le diagnostic du serveur est déjà joint. Ajoutez seulement ce que vous voulez "
+                                + "en plus (style, pièces, matériaux…).")
+                .append("</p></div>");
         sb.append("<p class=\"field-help\">").append(Icons.icon("warning")).append("Appel <strong>facturé"
                 + "</strong>. La réponse devient une nouvelle version du plan ; la version actuelle reste "
                 + "disponible.</p>");

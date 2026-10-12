@@ -139,7 +139,8 @@ class BuildingPlacementPageTest {
         assertFalse(page.contains("building.definition.create"));
         assertFalse(page.contains("building.definition.update"));
         assertFalse(page.contains("building.definition.delete"));
-        assertTrue(page.contains("lecture seule"), "et la page explique pourquoi");
+        assertTrue(page.contains("ne se modifie pas"), "et la page explique pourquoi");
+        assertTrue(page.contains("nouvelle version dans l'Atelier de création"), "et quoi faire");
     }
 
     /**
@@ -204,6 +205,55 @@ class BuildingPlacementPageTest {
         assertTrue(page.contains("Hutte de test"), "le bâtiment est proposé dans la liste");
         assertTrue(page.contains("Rien n'est écrit dans le monde à cette étape"),
                 "et la page le dit");
+    }
+
+    /** Deux bâtiments : la présélection n'est prouvée que si ce n'est pas le premier de la liste. */
+    private static final String LIBRARY_TWO = LIBRARY.replace("]}", ","
+            + "{\"id\":\"tour_de_guet\",\"name\":\"Tour de guet\",\"description\":\"\","
+            + "\"sizeX\":5,\"sizeY\":12,\"sizeZ\":5,\"anchorX\":2,\"anchorY\":1,\"anchorZ\":0,"
+            + "\"front\":\"SOUTH\",\"materials\":[\"stone_bricks\"],"
+            + "\"schematic\":\"tour_de_guet.schem\",\"schematicPresent\":true,\"version\":1}"
+            + "]}");
+
+    /**
+     * Issue #268 : on part d'un bâtiment de la bibliothèque pour le poser. Le lien mène aux
+     * emplacements avec ce bâtiment déjà choisi — sans rien envoyer au serveur.
+     */
+    @Test
+    void placingFromTheLibraryPreselectsTheBuildingOnFreeSites() throws Exception {
+        start();
+        seed("building.site.list", SITES);
+        seed("building.definition.list", LIBRARY_TWO);
+
+        String library = get("/buildings/library?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(library.contains("href=\"/buildings/sites?place=tour_de_guet\""),
+                "chaque bâtiment propose « Placer sur un emplacement »");
+        assertTrue(library.contains("Placer sur un emplacement"));
+
+        long before = count("building.placement.preview");
+        String sites = get("/buildings/sites?agent=" + TestConfig.AGENT_ID + "&place=tour_de_guet").body();
+        assertTrue(sites.contains("Poser « Tour de guet »"), "la page dit ce qu'on est venu faire");
+        assertTrue(sites.contains("(1 sur cette page)"), "un seul emplacement libre sur deux");
+        // Le formulaire de pose de l'emplacement libre — l'emplacement occupé, lui, garde son
+        // bâtiment actuel présélectionné dans « Réorienter », et c'est voulu.
+        int at = sites.indexOf("value=\"building.placement.preview\"");
+        String choose = sites.substring(sites.lastIndexOf("<form", at), sites.indexOf("</form>", at));
+        assertTrue(choose.contains("<option value=\"tour_de_guet\" selected>"),
+                "le bâtiment choisi est présélectionné");
+        assertFalse(choose.contains("<option value=\"test_hut_01\" selected>"), "et lui seul");
+        assertEquals(before, count("building.placement.preview"), "rien n'est envoyé en arrivant");
+    }
+
+    @Test
+    void anUnknownBuildingToPlaceIsIgnored() throws Exception {
+        start();
+        seed("building.site.list", SITES);
+        seed("building.definition.list", LIBRARY_TWO);
+
+        String sites = get("/buildings/sites?agent=" + TestConfig.AGENT_ID
+                + "&place=%3Cscript%3E").body();
+        assertFalse(sites.contains("Poser « "), "aucun bandeau pour un bâtiment inconnu");
+        assertFalse(sites.contains("\" selected>Tour"), "aucune présélection");
     }
 
     /** Le vrai formulaire de choix part bien avec l'emplacement et le bâtiment. */

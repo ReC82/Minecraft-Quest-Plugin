@@ -24,15 +24,19 @@ est l'endroit où on le pose. Ce sont deux choses séparées, et c'est voulu : l
 
 ---
 
-## La bibliothèque est en lecture seule, volontairement
+## Un bâtiment de la bibliothèque ne se modifie pas
 
 **Bâtiments → Bibliothèque**. Vous y voyez, pour chaque bâtiment : nom, identifiant, dimensions,
 ancre, façade de référence, matériaux, et si le fichier `.schem` est **présent ou absent**.
 
-Il n'y a **aucun bouton pour créer, téléverser ou modifier**. Un bâtiment est du contenu
-versionné : il se modifie dans son fichier `plugins/RPGQuest/buildings/<id>.yml` sur le serveur,
-puis `/rpgadmin building reload`. Un formulaire web qui l'écrirait contournerait la relecture — ce
-qu'on ne veut pas pour quelque chose qui **écrase des blocs réels**.
+Un bâtiment de la bibliothèque **ne se modifie pas** : pour le changer, on en crée une nouvelle
+version dans **Bâtiments → Atelier de création**, qui l'enregistre ici sans jamais remplacer
+l'existant. Les bâtiments déjà posés ne sont pas touchés. (Un bâtiment fourni à la main reste un
+fichier `plugins/RPGQuest/buildings/<id>.yml` sur le serveur, rechargé par
+`/rpgadmin building reload`.)
+
+Chaque bâtiment propose **« Placer sur un emplacement »** : la page Emplacements s'ouvre avec ce
+bâtiment déjà choisi sur chaque emplacement libre.
 
 ### « Schematic absent »
 
@@ -77,7 +81,8 @@ du schematic, celle qui regarde les Z négatifs.
 
 ## Poser un bâtiment : deux étapes
 
-Depuis **Bâtiments → Emplacements**, ouvrez la fiche d'un emplacement **vide**.
+Depuis la Bibliothèque (**« Placer sur un emplacement »**) ou depuis **Bâtiments → Emplacements**,
+ouvrez la fiche d'un emplacement **vide**.
 
 ### 1. Choisir un bâtiment — rien n'est écrit
 

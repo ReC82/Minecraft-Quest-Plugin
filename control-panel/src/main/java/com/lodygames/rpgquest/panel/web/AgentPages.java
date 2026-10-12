@@ -44,6 +44,12 @@ public final class AgentPages {
     private final String defaultAgentId;
     private final PermissionService perms;
     private final SourceCatalog sourceCatalog;
+    /**
+     * Projets de l'Atelier de création (issue #268) : la fiche d'un emplacement dit si sa description
+     * de bâtiment a été reprise, et dans quel projet. {@code null} hors panel complet (tests unitaires
+     * de rendu) : la fiche propose alors simplement la reprise.
+     */
+    private com.lodygames.rpgquest.panel.building.BuildingProjectStore workshopProjects;
 
     public AgentPages(AgentStore store, AgentRegistry registry, String defaultAgentId, PermissionService perms) {
         this(store, registry, defaultAgentId, perms, new SourceCatalog(null));
@@ -56,6 +62,11 @@ public final class AgentPages {
         this.defaultAgentId = defaultAgentId;
         this.perms = perms;
         this.sourceCatalog = sourceCatalog;
+    }
+
+    /** Branche les projets de l'Atelier (issue #268) ; appelé une fois par {@code PanelApp}. */
+    public void useWorkshopProjects(com.lodygames.rpgquest.panel.building.BuildingProjectStore projects) {
+        this.workshopProjects = projects;
     }
 
     /**
@@ -2057,8 +2068,8 @@ public final class AgentPages {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("world", "Bibliothèque de bâtiments",
-                "Les bâtiments disponibles à la pose. Chaque entrée est un fichier de contenu, "
-                        + "accompagné d'un schematic produit par le plugin.", ""));
+                "Les bâtiments prêts à être posés, autant de fois que vous voulez. Pour en créer un "
+                        + "nouveau, passez par l'Atelier de création.", ""));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
@@ -2068,6 +2079,10 @@ public final class AgentPages {
         sb.append("<div class=\"npc-catbar\"><span class=\"npc-catbar-t\">Bibliothèque</span>");
         sb.append(compactRefresh(session, agentId, "building.definition.list", "Rafraîchir",
                 "btn-outline-primary", "/buildings/library"));
+        if (perms.can(session.effective(), Permission.AI_USE)) {
+            sb.append("<a class=\"btn btn-sm btn-outline-secondary\" href=\"").append(WorkshopPages.BASE)
+                    .append("\">").append(Icons.icon("wrench")).append("Créer un bâtiment</a>");
+        }
         sb.append("</div>");
 
         var library = buildingLibraryDirectory(agentId);
@@ -2091,22 +2106,25 @@ public final class AgentPages {
 
         sb.append("<div class=\"accordion npc-accordion\" id=\"building-accordion\">");
         int index = 0;
+        boolean canPlace = library.engineAvailable()
+                && perms.can(session.effective(), Permission.BUILDING_PLACE);
         for (var building : library.buildings()) {
-            sb.append(buildingDefinitionItem(building, index++));
+            sb.append(buildingDefinitionItem(building, index++, canPlace));
         }
         sb.append("</div>");
         sb.append("<div class=\"card\"><div class=\"card-body\">");
         sb.append("<h3 class=\"h6\">Comment poser un bâtiment</h3>");
-        sb.append("<p class=\"field-help\">Depuis <strong>Bâtiments → Emplacements</strong> : "
-                + "ouvrez la fiche d'un emplacement vide, choisissez un bâtiment, vérifiez "
-                + "l'emprise et la rotation annoncées, puis confirmez. Rien n'est écrit dans le "
-                + "monde avant cette confirmation.</p>");
+        sb.append("<p class=\"field-help\">Ouvrez un bâtiment ci-dessus, puis <strong>Placer sur un "
+                + "emplacement</strong> : choisissez un emplacement libre, vérifiez l'emprise et "
+                + "l'orientation annoncées, puis confirmez. Rien n'est construit dans le monde avant "
+                + "cette confirmation.</p>");
         sb.append("</div></div>");
         return sb.toString();
     }
 
     private String buildingDefinitionItem(
-            com.lodygames.rpgquest.panel.building.BuildingDefinitionView building, int index) {
+            com.lodygames.rpgquest.panel.building.BuildingDefinitionView building, int index,
+            boolean canPlace) {
         String slug = "building-" + index + "-" + building.id().replaceAll("[^a-z0-9_-]", "-");
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\">");
@@ -2155,8 +2173,14 @@ public final class AgentPages {
                     + "démarrage ; relancez le serveur ou utilisez "
                     + "<code>/rpgadmin building generate</code>.</p>");
         }
-        sb.append("<p class=\"field-help\">Cette fiche est en lecture seule : un bâtiment est du "
-                + "contenu versionné, qui se modifie dans son fichier YAML sur le serveur.</p>");
+        if (canPlace && building.schematicPresent()) {
+            sb.append("<div class=\"btnrow\"><a class=\"btn btn-sm btn-primary\" href=\"/buildings/sites?place=")
+                    .append(java.net.URLEncoder.encode(building.id(), java.nio.charset.StandardCharsets.UTF_8))
+                    .append("\">").append(Icons.icon("world")).append("Placer sur un emplacement</a></div>");
+        }
+        sb.append("<p class=\"field-help\">Un bâtiment de la bibliothèque ne se modifie pas : pour "
+                + "le changer, créez-en une nouvelle version dans l'Atelier de création. Les "
+                + "bâtiments déjà posés ne sont pas touchés.</p>");
         sb.append("</div></div></div>");
         return sb.toString();
     }
@@ -2165,8 +2189,8 @@ public final class AgentPages {
         Optional<AgentIdentity> agent = resolveAgent(q);
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader("world", "Emplacements de construction",
-                "Les points d'ancrage marqués en jeu. Un emplacement ne contient encore aucun "
-                        + "bâtiment : ce socle sert à les situer, les nommer et les retrouver.", ""));
+                "Les lieux marqués en jeu où poser un bâtiment de la bibliothèque. Pour concevoir un "
+                        + "nouveau bâtiment, passez par l'Atelier de création.", ""));
         if (agent.isEmpty()) {
             return sb.append(noAgent()).toString();
         }
@@ -2200,6 +2224,18 @@ public final class AgentPages {
 
         String worldFilter = str(q.get("world")).trim();
         var shown = directory.inWorld(worldFilter);
+        // Issue #268 — arrivée depuis la Bibliothèque (« Placer sur un emplacement ») : le bâtiment
+        // choisi est présélectionné sur chaque emplacement libre. Seul un bâtiment connu compte.
+        var wanted = library.find(str(q.get("place")).trim());
+        if (wanted.isPresent()) {
+            long free = shown.stream().filter(site -> directory.placementFor(site.id()).isEmpty()
+                    && !"OCCUPIED".equals(site.status())).count();
+            sb.append(Ui.banner("info", "Poser « " + Http.esc(wanted.get().name()) + " » : ouvrez "
+                    + "la fiche d'un emplacement <strong>libre</strong> (" + free + " sur cette page), "
+                    + "le bâtiment y est déjà choisi. Rien n'est construit avant votre confirmation."));
+        }
+        String wantedId = wanted.map(
+                com.lodygames.rpgquest.panel.building.BuildingDefinitionView::id).orElse("");
 
         sb.append("<p class=\"npc-summary\">").append(directory.total())
                 .append(" emplacement(s)");
@@ -2223,7 +2259,7 @@ public final class AgentPages {
         int index = 0;
         for (var site : shown) {
             sb.append(buildingSiteItem(session, agentId, site, index++, canWrite, canDelete,
-                    canPlace, canRollback, directory, library, preview));
+                    canPlace, canRollback, directory, library, preview, wantedId));
         }
         sb.append("</div>");
         if (shown.isEmpty()) {
@@ -2286,7 +2322,8 @@ public final class AgentPages {
                                     boolean canPlace, boolean canRollback,
                                     com.lodygames.rpgquest.panel.building.BuildingSiteDirectory directory,
                                     com.lodygames.rpgquest.panel.building.BuildingLibraryDirectory library,
-                                    com.lodygames.rpgquest.panel.building.BuildingPlacementPreview preview) {
+                                    com.lodygames.rpgquest.panel.building.BuildingPlacementPreview preview,
+                                    String wantedId) {
         String slug = "buildsite-" + index + "-" + site.id().replaceAll("[^a-z0-9_-]", "-");
         StringBuilder sb = new StringBuilder();
         sb.append("<div class=\"accordion-item npc-item\" data-filter-item=\"buildsites\" ")
@@ -2328,45 +2365,18 @@ public final class AgentPages {
         dlRow(sb, "Créé le", Http.esc(site.createdAtLabel()));
         dlRow(sb, "Créé par", site.hasAuthor() ? Http.esc(site.createdBy())
                 : "<span class=\"muted\">inconnu</span>");
-        dlRow(sb, "Note", site.description().isEmpty()
+        dlRow(sb, "Description du lieu", site.description().isEmpty()
                 ? "<span class=\"muted\">aucune</span>" : Http.esc(site.description()));
-        // Issue #94 : le brief est long — la fiche en dit la taille et le replie, plutôt que de
-        // noyer la liste des métadonnées sous deux pages de texte.
-        if (site.hasAiBrief()) {
-            dlRow(sb, "Brief architectural",
-                    "<details><summary class=\"muted\">" + site.aiBrief().length()
-                            + " caractères — afficher</summary><p class=\"brief-text\">"
-                            + Http.esc(site.aiBrief()) + "</p></details>");
-        } else {
-            dlRow(sb, "Brief architectural",
-                    "<span class=\"muted\">aucun — à rédiger avant de générer un bâtiment</span>");
-        }
         sb.append("</dl>");
+        sb.append(legacyBuildingBrief(session, agentId, site));
 
         sb.append(buildingPlacementSection(session, agentId, site, directory, library, preview,
-                canPlace, canRollback));
+                canPlace, canRollback, wantedId));
 
         if (canWrite) {
             sb.append(detailSection("edit", "Modifier la fiche"));
             sb.append(buildingSiteRenameForm(session, agentId, site));
             sb.append(buildingSiteDescribeForm(session, agentId, site));
-            sb.append(buildingSiteBriefForm(session, agentId, site));
-            // Issue #94 — l'accès à la génération vit AU CONTACT du brief, parce que c'est lui
-            // qu'elle consomme. Un lien, pas un bouton de soumission : la page de génération
-            // montre le plan avant qu'un fichier soit écrit.
-            sb.append("<p class=\"meta-line\">");
-            if (site.hasAiBrief()) {
-                sb.append("<a class=\"btn btn-sm btn-primary\" href=\"/buildings/plan?site=")
-                        .append(Http.esc(site.id())).append("\">").append(Icons.icon("wrench"))
-                        .append("Générer un bâtiment avec l'IA</a>")
-                        .append("<span class=\"faint\"> Le brief ci-dessus est envoyé à l'IA ; "
-                                + "vous relisez le plan avant toute écriture.</span>");
-            } else {
-                sb.append("<span class=\"muted\">").append(Icons.icon("info"))
-                        .append("Rédiger le brief ci-dessus pour pouvoir générer un bâtiment "
-                                + "avec l'IA.</span>");
-            }
-            sb.append("</p>");
             sb.append(buildingSiteFacingForm(session, agentId, site));
         }
         if (canDelete) {
@@ -2722,7 +2732,7 @@ public final class AgentPages {
             com.lodygames.rpgquest.panel.building.BuildingSiteDirectory directory,
             com.lodygames.rpgquest.panel.building.BuildingLibraryDirectory library,
             com.lodygames.rpgquest.panel.building.BuildingPlacementPreview preview,
-            boolean canPlace, boolean canRollback) {
+            boolean canPlace, boolean canRollback, String wantedId) {
         StringBuilder sb = new StringBuilder();
         var placement = directory.placementFor(site.id());
 
@@ -2815,7 +2825,8 @@ public final class AgentPages {
             sb.append("<div class=\"field\"><label>Bâtiment</label><select name=\"building\">");
             for (var building : placeable) {
                 boolean selected = previewMatches
-                        && preview.buildingId().equalsIgnoreCase(building.id());
+                        ? preview.buildingId().equalsIgnoreCase(building.id())
+                        : building.id().equals(wantedId);
                 sb.append("<option value=\"").append(Http.esc(building.id())).append('"')
                         .append(selected ? " selected" : "").append('>')
                         .append(Http.esc(building.name())).append(" — ")
@@ -2943,66 +2954,60 @@ public final class AgentPages {
         return formStart(session, agentId, "building.site.describe", "/buildings/sites", "")
                 + "<input type=\"hidden\" name=\"id\" value=\"" + Http.esc(site.id()) + "\">"
                 + "<div class=\"field\"><label for=\"desc-" + Http.esc(site.id())
-                + "\">Note d'administrateur</label>"
+                + "\">Description du lieu</label>"
                 + "<textarea id=\"desc-" + Http.esc(site.id()) + "\" name=\"description\" rows=\"2\" "
                 + "data-charcount=\"500\" "
-                + "placeholder=\"Ex. : taverne deux étages, entrée au sud.\">"
+                + "placeholder=\"Ex. : clairière au nord du Hub, au bord de la rivière.\">"
                 + Http.esc(site.description()) + "</textarea>"
                 + charCounter("desc-" + site.id(), site.description().length(), 500)
-                + "<p class=\"field-help\">Une ou deux phrases pour vous repérer dans la liste. "
-                + "Vider le champ efface la note. Pour décrire le bâtiment à construire, utiliser "
-                + "le <strong>brief architectural</strong> ci-dessous — il accepte un texte "
-                + "beaucoup plus long.</p></div>"
+                + "<p class=\"field-help\">Où se trouve ce lieu, à quoi il sert : une ou deux "
+                + "phrases pour le retrouver. Le bâtiment à construire, lui, se décrit dans "
+                + "l'<a href=\"/buildings/workshop\">Atelier de création</a>. Vider le champ "
+                + "efface la description.</p></div>"
                 + mutationConsent("building.site.describe", "", null)
                 + "<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
-                + "type=\"submit\">" + Icons.icon("save") + "Enregistrer la note"
+                + "type=\"submit\">" + Icons.icon("save") + "Enregistrer la description"
                 + "</button></div></form>";
     }
 
     /**
-     * Brief architectural (issue #94) : le texte qui sert d'entrée à la génération.
+     * La description de bâtiment rédigée sur l'emplacement avant l'Atelier (issues #94, #268).
      *
-     * <p>Champ <strong>distinct</strong> de la note, et c'est volontaire. Les deux avaient le même
-     * champ et la même borne de 500 caractères : une note de liste ne peut pas s'étendre sur deux
-     * pages sans rendre la liste illisible, et un brief ne peut pas tenir en 500 caractères sans
-     * perdre les matériaux, les étages et les pièces — c'est-à-dire tout ce qui le rend utile.</p>
+     * <p>Elle n'est ni vidée ni supprimée côté serveur : une migration qui efface du texte décide à
+     * la place de l'administrateur. Elle reste lisible, repliée et <strong>en lecture seule</strong>,
+     * avec ce qu'elle est devenue : reprise dans un projet (lien direct), ou à reprendre. Plus aucune
+     * génération ne part d'un emplacement.</p>
      */
-    private String buildingSiteBriefForm(Session session, String agentId,
-                                         com.lodygames.rpgquest.panel.building.BuildingSiteView site) {
-        int max = com.lodygames.rpgquest.panel.building.BuildingSiteView.MAX_BRIEF;
-        StringBuilder sb = new StringBuilder(
-                formStart(session, agentId, "building.site.brief", "/buildings/sites", ""));
-        sb.append("<input type=\"hidden\" name=\"id\" value=\"").append(Http.esc(site.id()))
-                .append("\">");
-        sb.append("<div class=\"field\"><label for=\"brief-").append(Http.esc(site.id()))
-                .append("\">Brief architectural</label>");
-        sb.append("<textarea id=\"brief-").append(Http.esc(site.id()))
-                .append("\" name=\"brief\" rows=\"10\" data-charcount=\"").append(max)
-                .append("\" placeholder=\"Matériaux, nombre d'étages, pièces, façade, style, "
-                        + "contraintes… Décrivez le bâtiment comme à un architecte.\">")
-                .append(Http.esc(site.aiBrief())).append("</textarea>");
-        sb.append(charCounter("brief-" + site.id(), site.aiBrief().length(), max));
-        sb.append("<p class=\"field-help\">Sert d'entrée à la génération du bâtiment. Mentionner "
-                + "les matériaux, le nombre d'étages, les pièces attendues, la façade et le style. "
-                + "L'orientation enregistrée (<code>").append(Http.esc(site.facingLabel()))
-                .append("</code>) et le nom de l'emplacement sont ajoutés automatiquement : "
-                        + "inutile de les répéter. Vider le champ efface le brief.</p></div>");
-        // La reprise d'une note déjà rédigée comme un brief : montrée, jamais appliquée d'office.
-        // Les quatre emplacements réels portent aujourd'hui leur brief dans la note, faute d'un
-        // autre champ — mais une migration qui déplace du texte déciderait à la place de
-        // l'administrateur, et se tromperait pour les notes réellement courtes.
-        if (site.aiBrief().isEmpty() && !site.description().isEmpty()) {
-            sb.append("<div class=\"alert alert-info npc-alert\">").append(Icons.icon("info"))
-                    .append("<div>Cet emplacement porte une note de ")
-                    .append(site.description().length())
-                    .append(" caractères et aucun brief. Si cette note est en réalité un brief "
-                            + "d'architecte, la recopier ici : elle n'a pas été déplacée "
-                            + "automatiquement, pour ne rien décider à votre place.</div></div>");
+    private String legacyBuildingBrief(Session session, String agentId,
+                                       com.lodygames.rpgquest.panel.building.BuildingSiteView site) {
+        if (!site.hasAiBrief()) {
+            return "";
         }
-        sb.append(mutationConsent("building.site.brief", "", null));
-        sb.append("<div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" "
-                + "type=\"submit\">").append(Icons.icon("save"))
-                .append("Enregistrer le brief</button></div></form>");
+        var project = workshopProjects == null ? Optional.<com.lodygames.rpgquest.panel.building.BuildingProject>empty()
+                : workshopProjects.importedFrom(agentId, site.id());
+        StringBuilder sb = new StringBuilder("<div class=\"alert alert-info npc-alert\">")
+                .append(Icons.icon("info")).append("<div>");
+        if (project.isPresent()) {
+            sb.append("La description du bâtiment rédigée ici a été reprise dans le projet « <a href=\"")
+                    .append(WorkshopPages.BASE).append("/project?id=").append(Http.esc(project.get().id()))
+                    .append("\">").append(Http.esc(project.get().name())).append("</a> » de l'Atelier "
+                            + "de création. C'est là qu'elle se modifie désormais.");
+        } else {
+            sb.append("Avant l'Atelier de création, le bâtiment à construire se décrivait ici. Cette "
+                    + "description est conservée telle quelle ; pour en faire un bâtiment, reprenez-la "
+                    + "dans l'Atelier (l'emplacement n'est pas modifié).");
+            if (perms.can(session.effective(), Permission.AI_USE)) {
+                sb.append("<form method=\"post\" action=\"").append(WorkshopPages.BASE)
+                        .append("/import\" class=\"inline\"><input type=\"hidden\" name=\"_csrf\" value=\"")
+                        .append(Http.esc(session.csrfToken())).append("\"><input type=\"hidden\" "
+                                + "name=\"site\" value=\"").append(Http.esc(site.id()))
+                        .append("\"> <button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">")
+                        .append(Icons.icon("wrench")).append("Reprendre dans l'Atelier</button></form>");
+            }
+        }
+        sb.append("<details><summary class=\"muted\">Lire la description (")
+                .append(site.aiBrief().length()).append(" caractères)</summary><p class=\"brief-text\">")
+                .append(Http.esc(site.aiBrief())).append("</p></details></div></div>");
         return sb.toString();
     }
 

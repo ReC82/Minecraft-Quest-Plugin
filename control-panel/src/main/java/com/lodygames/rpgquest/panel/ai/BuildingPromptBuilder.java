@@ -51,9 +51,21 @@ public final class BuildingPromptBuilder {
      * @param maxHeight hauteur maximale autorisée
      */
     public record Demand(String siteId, String siteName, String facing, String brief,
-                         int maxWidth, int maxHeight) {
+                         int maxWidth, int maxHeight, String buildingId) {
+
+        /**
+         * Forme antérieure à #267 : l'identifiant de bibliothèque était dérivé du nom.
+         *
+         * @param siteId   depuis #267, l'identifiant du PROJET d'atelier (nom conservé pour ne pas
+         *                 casser les appelants)
+         */
+        public Demand(String siteId, String siteName, String facing, String brief, int maxWidth,
+                      int maxHeight) {
+            this(siteId, siteName, facing, brief, maxWidth, maxHeight, "");
+        }
 
         public Demand {
+            buildingId = buildingId == null ? "" : buildingId.trim();
             siteId = siteId == null ? "" : siteId.trim();
             siteName = siteName == null ? "" : siteName.trim();
             facing = facing == null || facing.isBlank() ? "NORTH"
@@ -68,8 +80,14 @@ public final class BuildingPromptBuilder {
             return !brief.isEmpty() && !siteId.isEmpty();
         }
 
-        /** Identifiant de bâtiment suggéré, dérivé de l'emplacement — jamais inventé par le modèle. */
+        /**
+         * Identifiant de bâtiment à imposer au modèle — jamais inventé par lui. Depuis #267, celui
+         * que l'administrateur a choisi dans le projet ; à défaut, dérivé du nom.
+         */
         public String suggestedId() {
+            if (!buildingId.isEmpty()) {
+                return buildingId;
+            }
             String base = siteName.toLowerCase(Locale.ROOT)
                     .replaceAll("[àáâä]", "a").replaceAll("[èéêë]", "e")
                     .replaceAll("[ìíîï]", "i").replaceAll("[òóôö]", "o")
@@ -352,11 +370,11 @@ public final class BuildingPromptBuilder {
     /** La demande concrète : les faits de l'emplacement, puis le brief de l'administrateur. */
     public static String userPrompt(Demand demand) {
         return """
-                EMPLACEMENT VISÉ
+                PROJET
 
-                Identifiant : %s
+                Référence : %s
                 Nom : %s
-                Façade attendue : %s  ← déclare « front: %s » dans ton plan
+                Façade d'entrée : %s  ← déclare « front: %s » dans ton plan
                 Emprise maximale : %d blocs en x, %d blocs en z
                 Hauteur maximale : %d blocs
 
@@ -364,10 +382,10 @@ public final class BuildingPromptBuilder {
 
                 id: %s
 
-                N'invente pas d'autre identifiant : celui-ci est dérivé de l'emplacement et c'est
-                lui que la bibliothèque attend.
+                N'invente pas d'autre identifiant : c'est celui sous lequel la bibliothèque rangera
+                ce bâtiment.
 
-                BRIEF DE L'ADMINISTRATEUR
+                LE BÂTIMENT SOUHAITÉ, DÉCRIT PAR L'ADMINISTRATEUR
 
                 %s
 

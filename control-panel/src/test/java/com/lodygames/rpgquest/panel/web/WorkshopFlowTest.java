@@ -484,6 +484,75 @@ class WorkshopFlowTest {
         assertEquals(8, runs.latest(id(project)).orElseThrow().maxCalls());
     }
 
+    // ---- #283 : images de référence et nouvelle conception ---------------------------------------
+
+    private static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13,
+        'I', 'H', 'D', 'R', 1, 2, 3};
+
+    private HttpResponse<String> upload(String page, String projectId, String name, byte[] data) throws Exception {
+        String boundary = "----rpgquest283";
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        out.write(("--" + boundary + "\r\nContent-Disposition: form-data; name=\"_csrf\"\r\n\r\n" + csrf(page)
+                + "\r\n--" + boundary + "\r\nContent-Disposition: form-data; name=\"id\"\r\n\r\n" + projectId
+                + "\r\n--" + boundary + "\r\nContent-Disposition: form-data; name=\"image\"; filename=\"" + name
+                + "\"\r\nContent-Type: image/png\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        out.write(data);
+        out.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return send(HttpRequest.newBuilder(uri("/buildings/workshop/image"))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(out.toByteArray())));
+    }
+
+    @Test
+    void aReferenceImageIsUploadedShownAndSentAsPixelsToTheAi() throws Exception {
+        start();
+        String project = createProject("Bibliothèque", BRIEF);
+        String page = get(project).body();
+        assertTrue(page.contains("Images de référence"));
+        String back = decoded(location(upload(page, id(project), "facade.png", PNG)));
+        assertTrue(back.contains("Image de référence ajoutée"), back);
+
+        page = get(project).body();
+        String src = unescape(field(page, "<img src=\"([^\"]+)\""));
+        HttpResponse<String> img = get(src);
+        assertEquals(200, img.statusCode());
+        assertEquals("image/png", img.headers().firstValue("Content-Type").orElse(""));
+        assertEquals("nosniff", img.headers().firstValue("X-Content-Type-Options").orElse(""));
+        assertEquals(404, get(src.replace("project=" + id(project), "project=autre")).statusCode(),
+                "jamais servie hors de son projet");
+
+        String refused = decoded(location(upload(page, id(project), "piege.png",
+                "<script>alert(1)</script>".getBytes(StandardCharsets.UTF_8))));
+        assertTrue(refused.contains("n'est pas une image"), refused);
+
+        propose(project);
+        assertTrue(lastAiRequest.contains("data:image/png;base64,"
+                + java.util.Base64.getEncoder().encodeToString(PNG)), "les pixels partent avec la demande");
+        assertTrue(lastAiRequest.contains("RÉFÉRENCES DE STYLE"));
+    }
+
+    @Test
+    void restartingFromTheDescriptionCreatesAnIndependentVersionAndKeepsTheOthers() throws Exception {
+        start();
+        String withDraft = propose(createProject("Bibliothèque", BRIEF));
+        answer(latest("building.plan.audit"), AUDIT_REFUSED);
+        String page = get(withDraft).body();
+        String form = formAround(page, "value=\"restart\"");
+        String body = "_csrf=" + csrf(page) + "&_action=restart&id=" + id(withDraft) + "&draft="
+                + draftId(withDraft) + "&provider=openai&request_token=" + token(form);
+        String refused = decoded(location(post("/buildings/workshop/project", body)));
+        assertTrue(refused.contains("Cochez la confirmation"), refused);
+        assertEquals(1, aiCalls.get());
+
+        String next = location(post("/buildings/workshop/project", body + "&confirm=yes"));
+        assertEquals(2, aiCalls.get());
+        BuildingPlanDraft fresh = drafts().find(draftId(next)).orElseThrow();
+        assertEquals("", fresh.parentId(), "aucun héritage du plan précédent");
+        assertEquals(BuildingPlanDraft.Origin.AI_PROPOSAL, fresh.origin());
+        assertFalse(lastAiRequest.contains("PROPOSITION PRÉCÉDENTE"), "ni plan ni erreur transmis");
+        assertTrue(drafts().find(draftId(withDraft)).isPresent(), "l'ancienne version reste");
+    }
+
     // ---- Reprendre l'existant -------------------------------------------------------------------
 
     /** Le cas réel : la description de buildsite_0009 et ses deux brouillons de la Bibliothèque. */

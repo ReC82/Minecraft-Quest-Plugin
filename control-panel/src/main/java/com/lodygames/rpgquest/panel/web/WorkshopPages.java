@@ -6,6 +6,7 @@ import com.lodygames.rpgquest.panel.ai.BuildingCorrectionLoop;
 import com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline;
 import com.lodygames.rpgquest.panel.building.BriefLevels;
 import com.lodygames.rpgquest.panel.building.BuildingDesignRunStore;
+import com.lodygames.rpgquest.panel.building.ReferenceImageStore;
 import com.lodygames.rpgquest.panel.building.BuildingPlanDraft;
 import com.lodygames.rpgquest.panel.building.BuildingPlanDraftStore.Revision;
 import com.lodygames.rpgquest.panel.building.BuildingPlanPreview;
@@ -204,7 +205,8 @@ public final class WorkshopPages {
                               CheckState generate, List<Revision> revisions,
                               List<AgentActionRow> recoverable, String requestToken, String notice,
                               String error, String conflictText, boolean idTaken, int isoView, int isoCut,
-                              Optional<BuildingDesignRunStore.Run> designRun) {
+                              Optional<BuildingDesignRunStore.Run> designRun,
+                              List<ReferenceImageStore.Info> images) {
     }
 
     /** Les étapes du parcours, dans l'ordre. */
@@ -233,6 +235,7 @@ public final class WorkshopPages {
         sb.append("<div class=\"card ws-main\"><div class=\"card-body\">");
         sb.append(mainCard(v, step));
         sb.append("</div></div>");
+        sb.append(restartCard(v, step));
         sb.append(designCard(v, step));
         sb.append(previewCard(v, step));
 
@@ -255,6 +258,7 @@ public final class WorkshopPages {
                     .append(" : sa fiche n'a pas été modifiée.</p>");
         }
         sb.append("</form></details>");
+        sb.append(imagesCard(v));
 
         if (v.drafts().size() > 1) {
             sb.append(draftList(v));
@@ -401,6 +405,85 @@ public final class WorkshopPages {
     }
 
     /**
+     * « Recommencer depuis ma description » (issue #283) : une nouvelle conception indépendante, qui
+     * n'hérite ni du plan ni des erreurs de la version affichée. Replié : c'est un geste payant, à
+     * côté du parcours principal, jamais à sa place.
+     */
+    static String restartCard(ProjectView v, Step step) {
+        if ((step != Step.CHECK && step != Step.SAVE) || v.providers().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("<details class=\"npc-registry ws-restart\"><summary>")
+                .append(Icons.icon("refresh")).append("Recommencer depuis ma description</summary>");
+        sb.append("<p>L'IA repart de votre description").append(v.images().isEmpty() ? ""
+                : " et de vos " + v.images().size() + " image(s) de référence")
+                .append(", sans reprendre ce plan ni ses erreurs. Le résultat devient une nouvelle version ; "
+                        + "les versions actuelles restent disponibles.</p>");
+        sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">");
+        sb.append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "restart"))
+                .append(hidden("id", v.project().id())).append(hidden("request_token", v.requestToken()));
+        if (v.draft() != null) {
+            sb.append(hidden("draft", v.draft().id()));
+        }
+        sb.append(providerSelect(v, v.draft() == null ? "" : v.draft().providerId()));
+        sb.append("<div class=\"field\"><label><input type=\"checkbox\" name=\"confirm\" value=\"yes\"> "
+                + "Je confirme : <strong>un appel facturé</strong> par le fournisseur d'IA.</label></div>");
+        sb.append("<div class=\"btnrow\"><button class=\"btn btn-outline-primary\" type=\"submit\">")
+                .append(Icons.icon("refresh")).append("Recommencer depuis ma description</button></div></form>");
+        return sb.append("</details>").toString();
+    }
+
+    /**
+     * Les images de référence du projet (issue #283) : vignettes, retrait, ajout.
+     *
+     * <p>Envoi en {@code multipart/form-data} vers {@code /buildings/workshop/image}, sans script.
+     * Le texte dit ce que l'image fait — une référence de style, transmise en pixels — et ce
+     * qu'elle ne fait pas.</p>
+     */
+    static String imagesCard(ProjectView v) {
+        StringBuilder sb = new StringBuilder("<details class=\"npc-registry ws-images\"")
+                .append(v.images().isEmpty() ? "" : " open").append("><summary>").append(Icons.icon("box"))
+                .append("Images de référence <span class=\"muted\">(facultatif, ").append(v.images().size())
+                .append(" / ").append(ReferenceImageStore.MAX_IMAGES).append(")</span></summary>");
+        sb.append("<p>Montrez à l'IA le style recherché : silhouette, toiture, matériaux, ambiance. Les images "
+                + "lui sont <strong>réellement transmises</strong> (leurs pixels) à chaque demande de ce projet ; "
+                + "elles l'inspirent, elles ne sont pas recopiées bloc pour bloc. Le bâtiment reste aux "
+                + "dimensions du projet, en blocs Minecraft vanilla. Chaque image ajoute des jetons à chaque "
+                + "appel. Si le modèle choisi n'accepte pas les images, l'appel échoue et le dit.</p>");
+        if (!v.images().isEmpty()) {
+            sb.append("<ul class=\"ws-thumbs\">");
+            for (ReferenceImageStore.Info img : v.images()) {
+                String src = BASE + "/image?project=" + Http.esc(v.project().id()) + "&amp;id=" + Http.esc(img.id());
+                sb.append("<li><img src=\"").append(src).append("\" alt=\"").append(Http.esc(img.name()))
+                        .append("\" style=\"max-width:220px;max-height:160px;border-radius:6px\"><br><span class=\"muted\">")
+                        .append(Http.esc(img.name())).append(" — ").append(img.size() / 1024).append(" Kio</span>");
+                sb.append("<form method=\"post\" action=\"").append(BASE).append("/project\" class=\"actform\">")
+                        .append(hidden("_csrf", v.session().csrfToken())).append(hidden("_action", "image_remove"))
+                        .append(hidden("id", v.project().id())).append(hidden("image", img.id()));
+                if (v.draft() != null) {
+                    sb.append(hidden("draft", v.draft().id()));
+                }
+                sb.append("<button class=\"btn btn-sm btn-outline-danger\" type=\"submit\">Retirer</button></form></li>");
+            }
+            sb.append("</ul>");
+        }
+        if (v.images().size() < ReferenceImageStore.MAX_IMAGES) {
+            sb.append("<form method=\"post\" action=\"").append(BASE).append("/image\" enctype=\"multipart/form-data\" "
+                    + "class=\"actform\">").append(hidden("_csrf", v.session().csrfToken()))
+                    .append(hidden("id", v.project().id()));
+            if (v.draft() != null) {
+                sb.append(hidden("draft", v.draft().id()));
+            }
+            sb.append("<div class=\"field\"><label for=\"ws-image\">Ajouter une image (PNG, JPEG, WebP ou GIF, "
+                    + ReferenceImageStore.MAX_BYTES / (1024 * 1024) + " Mio au plus)</label>"
+                    + "<input id=\"ws-image\" type=\"file\" name=\"image\" accept=\"image/png,image/jpeg,image/webp,image/gif\">"
+                    + "</div><div class=\"btnrow\"><button class=\"btn btn-sm btn-outline-primary\" type=\"submit\">"
+                    + "Ajouter l'image</button></div></form>");
+        }
+        return sb.append("</details>").toString();
+    }
+
+    /**
      * « Conception automatique » (issue #282) : l'enveloppe annoncée avant le consentement, puis le
      * journal des passes — chacune avec ses jetons — pendant et après la session.
      */
@@ -442,6 +525,11 @@ public final class WorkshopPages {
                     .append(Http.esc(e.label())).append(".</span></label>");
         }
         sb.append("</fieldset>");
+        if (v.drafts().stream().anyMatch(BuildingPlanDraft::hasPlan)) {
+            sb.append("<div class=\"field\"><label><input type=\"checkbox\" name=\"fresh\" value=\"yes\"> "
+                    + "Repartir de zéro depuis ma description, sans reprendre les versions existantes (elles "
+                    + "restent consultables).</label></div>");
+        }
         sb.append("<div class=\"field\"><label><input type=\"checkbox\" name=\"consent\" value=\"yes\"> "
                 + "J'accepte cette enveloppe : au plus le nombre d'appels annoncé, <strong>facturés</strong> "
                 + "par le fournisseur. La session s'arrête d'elle-même dès qu'un plan est conforme (et "

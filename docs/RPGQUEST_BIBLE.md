@@ -1745,6 +1745,32 @@ le délai (180 s). Deux refus identiques de suite déclenchent une **conception 
 version et une ligne du journal (`building_design_run`, base du panel), avec ses jetons. Un
 redémarrage du panel marque la session **interrompue** et ne la relance jamais seul.
 
+#### Images de référence et nouvelle conception indépendante (issue #283)
+
+Les trois variantes de la Bibliothèque du Hub se ressemblaient (bloc rectangulaire, toit uniforme,
+mobilier réparti mécaniquement) et l'Atelier ne permettait que de **corriger** un plan.
+
+**« Recommencer depuis ma description »** (étapes Vérifier / Enregistrer, replié) : un appel IA neuf,
+qui n'hérite **ni du plan ni des erreurs** de la version affichée — seulement du nom, de la
+description, des bornes et des images du projet. Le résultat est une version **sans parent** ; aucune
+version existante n'est supprimée ni écrasée. Confirmation cochée obligatoire, jeton à usage unique.
+La conception automatique propose la même chose : case « Repartir de zéro ».
+
+**Images de référence** (carte repliable du projet, 4 au plus, 4 Mio chacune) :
+
+| Point | Règle |
+|---|---|
+| Rôle | **référence de style** (silhouette, toiture, matériaux, ambiance) ; jamais une conversion bloc pour pixel — le plan reste aux dimensions du projet, en blocs vanilla, dans le vocabulaire fermé ; le prompt le dit au modèle |
+| Transmission | les **pixels**, en base64, dans le format natif de chaque API : OpenAI `image_url` (URL `data:`), Anthropic bloc `image` `base64`, Gemini `inlineData` — à chaque appel du projet (proposition, correction, recommencement, conception automatique, critique). Une URL du panel ne serait pas joignable par le fournisseur |
+| Type | détecté sur les **octets** (signatures PNG, JPEG, WebP, GIF), jamais sur le nom ni l'en-tête : un « .png » qui contient du HTML ou un SVG est refusé |
+| Stockage | `building_project_image` dans `control-panel.db` (mode 600, hors Git) ; doublons refusés (SHA-256) ; « Retirer » **efface** l'image |
+| Accès | `/buildings/workshop/image` : session et permission de l'Atelier, image servie seulement pour son projet, type détecté + `nosniff` |
+| Envoi | formulaire `multipart/form-data` lu en octets côté panel (aucun script, CSP inchangée) |
+| Modèle incompatible | l'appel échoue et l'écran affiche l'erreur du fournisseur ; rien n'est écrit |
+
+Chaque image ajoute des jetons d'entrée à chaque appel : l'enveloppe de la conception automatique
+reste une estimation prudente (9 000 jetons d'entrée par appel).
+
 ### Bibliothèque de bâtiments et premier placement — `/buildings/library` (issue #213)
 
 Le lot suivant du même chantier : un bâtiment peut enfin être **affecté à un emplacement et posé

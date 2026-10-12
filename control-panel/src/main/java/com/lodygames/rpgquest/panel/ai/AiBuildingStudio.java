@@ -58,7 +58,18 @@ public final class AiBuildingStudio {
 
     /** Demande un plan. Ne lève jamais : un échec devient un {@link Proposal} en erreur. */
     public Proposal propose(String providerId, BuildingPromptBuilder.Demand demand) {
-        return run(providerId, BuildingPromptBuilder.userPrompt(demand));
+        return propose(providerId, demand, List.of());
+    }
+
+    /**
+     * Demande un plan en montrant au modèle les images de référence du projet (issue #283) : leurs
+     * pixels partent avec la demande, et le prompt précise qu'elles inspirent le style sans jamais
+     * imposer une conversion bloc pour pixel.
+     */
+    public Proposal propose(String providerId, BuildingPromptBuilder.Demand demand,
+                            List<AiProvider.Image> images) {
+        return run(providerId, BuildingPromptBuilder.withReferences(
+                BuildingPromptBuilder.userPrompt(demand), images.size()), images);
     }
 
     /** Redemande un plan corrigé, en montrant au modèle le refus réel du serveur. */
@@ -75,17 +86,35 @@ public final class AiBuildingStudio {
      */
     public Proposal correct(String providerId, BuildingPromptBuilder.Demand demand,
                             String previousPlan, String refusal, String metrics) {
-        return run(providerId,
-                BuildingPromptBuilder.correctionPrompt(demand, previousPlan, refusal, metrics));
+        return correct(providerId, demand, previousPlan, refusal, metrics, List.of());
+    }
+
+    public Proposal correct(String providerId, BuildingPromptBuilder.Demand demand,
+                            String previousPlan, String refusal, String metrics,
+                            List<AiProvider.Image> images) {
+        return run(providerId, BuildingPromptBuilder.withReferences(
+                BuildingPromptBuilder.correctionPrompt(demand, previousPlan, refusal, metrics),
+                images.size()), images);
     }
 
     /** La passe de critique architecturale d'un plan déjà conforme (issue #282). */
     public Proposal critique(String providerId, BuildingPromptBuilder.Demand demand, String plan,
                              String metrics, String warnings) {
-        return run(providerId, BuildingPromptBuilder.critiquePrompt(demand, plan, metrics, warnings));
+        return critique(providerId, demand, plan, metrics, warnings, List.of());
+    }
+
+    public Proposal critique(String providerId, BuildingPromptBuilder.Demand demand, String plan,
+                             String metrics, String warnings, List<AiProvider.Image> images) {
+        return run(providerId, BuildingPromptBuilder.withReferences(
+                BuildingPromptBuilder.critiquePrompt(demand, plan, metrics, warnings), images.size()),
+                images);
     }
 
     private Proposal run(String providerId, String userPrompt) {
+        return run(providerId, userPrompt, List.of());
+    }
+
+    private Proposal run(String providerId, String userPrompt, List<AiProvider.Image> images) {
         AiProvider provider = registry.byId(providerId).orElse(null);
         if (provider == null) {
             return failed(providerId, providerId, "Fournisseur inconnu : « " + providerId + " ».");
@@ -102,7 +131,7 @@ public final class AiBuildingStudio {
 
         AiProvider.Request call = new AiProvider.Request(BuildingPromptBuilder.systemPrompt(),
                 userPrompt, config.maxOutputTokens(),
-                Duration.ofSeconds(config.timeoutSeconds()));
+                Duration.ofSeconds(config.timeoutSeconds()), images);
         AiProvider.Result result = provider.generate(call, config);
         if (!result.ok()) {
             return failed(provider.id(), provider.label(), result.error());

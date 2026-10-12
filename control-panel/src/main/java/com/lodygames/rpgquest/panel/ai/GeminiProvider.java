@@ -63,7 +63,13 @@ public final class GeminiProvider extends HttpAiProvider {
         userPart.put("text", request.userPrompt());
         Map<String, Object> userContent = new LinkedHashMap<>();
         userContent.put("role", "user");
-        userContent.put("parts", List.of(userPart));
+        // #283 : données en ligne (« inlineData ») pour chaque image jointe.
+        List<Object> parts = new java.util.ArrayList<>();
+        parts.add(userPart);
+        for (Image image : request.images()) {
+            parts.add(Map.of("inlineData", Map.of("mimeType", image.mime(), "data", image.base64())));
+        }
+        userContent.put("parts", parts);
 
         Map<String, Object> generationConfig = new LinkedHashMap<>();
         generationConfig.put("maxOutputTokens",

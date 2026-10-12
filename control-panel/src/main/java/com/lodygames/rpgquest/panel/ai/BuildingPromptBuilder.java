@@ -579,4 +579,29 @@ public final class BuildingPromptBuilder {
                         : "\nRemarques du serveur à traiter :\n" + warnings.trim() + "\n",
                 plan == null ? "" : plan.trim());
     }
+
+    /**
+     * Ajoute à une demande la consigne sur les images de référence jointes (issue #283).
+     *
+     * <p>L'image est une <strong>référence de style</strong>. Le propriétaire voulait des
+     * bibliothèques moins « bloc rectangulaire » ; il ne veut pas un plan qui essaie de reproduire
+     * une photo au pixel près, ce que le vocabulaire fermé ne permet d'ailleurs pas.</p>
+     */
+    public static String withReferences(String prompt, int images) {
+        if (images <= 0) {
+            return prompt;
+        }
+        return prompt + """
+
+                IMAGES DE RÉFÉRENCE
+
+                L'administrateur a joint %d image(s). Ce sont des RÉFÉRENCES DE STYLE : silhouette,
+                proportions, forme et débord du toit, rythme des fenêtres, matériaux et couleurs,
+                ambiance. Inspire-t'en pour les choix d'architecture. Ne cherche PAS à les recopier
+                bloc pour bloc : le plan reste dans les dimensions de la demande, en blocs Minecraft
+                vanilla, avec les seules instructions autorisées. Si une image montre plus que ce
+                qu'elles permettent (courbes, ornements fins, végétation), choisis l'équivalent le
+                plus proche et garde la lisibilité du bâtiment.
+                """.formatted(images);
+    }
 }

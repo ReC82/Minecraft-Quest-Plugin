@@ -750,6 +750,11 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   d'une **quête** voit désormais les dialogues serveur qui la démarrent. **Plugin et panel modifiés :
   JAR + panel à déployer** (non déployé, tests manuels du propriétaire en cours).
   `PENDING MANUAL VALIDATION` : TC-280.
+- **Images de référence et « Recommencer depuis ma description »** *(issue #283, NON DÉPLOYÉ, panel
+  seul)* — jusqu'à 4 images par projet (type vérifié sur les octets, 4 Mio, stockées dans
+  `control-panel.db`, effacées au retrait), transmises en pixels à OpenAI / Anthropic / Gemini comme
+  références de style ; nouvelle conception indépendante, sans parent, sans rien écraser ; option
+  « Repartir de zéro » de la conception automatique. Voir la Bible.
 - **Étages reliés, réparation déterministe et conception automatique** *(issue #282, branche
   `feature/282-ai-build-vertical-circulation`, NON DÉPLOYÉ)* — primitive `op: staircase` (marches,
   trémie, départ, palier calculés par le moteur, appliquée après le mobilier) ; niveaux détectés sur

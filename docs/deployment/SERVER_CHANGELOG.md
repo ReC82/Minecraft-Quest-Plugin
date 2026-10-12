@@ -7747,6 +7747,37 @@ d'écriture.
   rafraîchir la bibliothèque. Rien d'autre n'y fait référence tant qu'il n'a pas été **posé**.
 * **Contenu** : sans objet, ce lot ne publie aucune ressource de contenu.
 
+## 2026-10-12 (soir) — Images de référence et nouvelle conception (#283) — NON DÉPLOYÉ
+
+### Changement
+
+Panel uniquement : images de référence par projet (transmises en pixels à l'IA), « Recommencer depuis
+ma description », option « Repartir de zéro » de la conception automatique.
+
+### Action serveur
+
+Aucune sur le serveur Minecraft (pas de JAR). Redéployer PlugAdmin (`scripts/plugadmin/deploy.sh`) :
+table `building_project_image` créée au démarrage ; colonne `fresh` ajoutée à `building_design_run`
+si la table existe déjà (#282).
+
+### Sauvegarde préalable
+
+`control-panel.db` (copie datée, sans écraser la précédente).
+
+### Déploiement
+
+**Pas encore autorisé.** À déployer avec ou après #282.
+
+### Validation
+
+TC-292.
+
+### Rollback
+
+Remettre le panel sauvegardé ; la table `building_project_image` et la colonne `fresh` sont ignorées
+par l'ancien panel. Pour effacer les images : `DELETE FROM building_project_image` (aucune autre
+donnée n'en dépend).
+
 ## 2026-10-12 (soir) — Étages reliés, réparation déterministe, conception automatique (#282) — NON DÉPLOYÉ
 
 ### Changement

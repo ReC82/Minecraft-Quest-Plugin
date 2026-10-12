@@ -108,6 +108,8 @@ public final class PanelApp {
     private final com.lodygames.rpgquest.panel.building.WorkshopAutopilot workshopAutopilot;
     /** #282 : sessions de conception automatique (IA + moteur), sous enveloppe consentie. */
     private final com.lodygames.rpgquest.panel.building.BuildingDesignRunStore designRuns;
+    /** #283 : images de référence des projets (pixels transmis au modèle, jamais une URL). */
+    private final com.lodygames.rpgquest.panel.building.ReferenceImageStore referenceImages;
     private final com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline designPipeline;
     /** Issue #267 — les projets de l'Atelier, indépendants des emplacements. */
     private final com.lodygames.rpgquest.panel.building.BuildingProjectStore planProjects;
@@ -171,11 +173,12 @@ public final class PanelApp {
                 planDrafts, audit);
         this.planProjects = new com.lodygames.rpgquest.panel.building.BuildingProjectStore(config.panelDbPath());
         this.designRuns = new com.lodygames.rpgquest.panel.building.BuildingDesignRunStore(config.panelDbPath());
+        this.referenceImages = new com.lodygames.rpgquest.panel.building.ReferenceImageStore(config.panelDbPath());
         // Une session « en cours » au démarrage a perdu son fil : interrompue, jamais relancée seule.
         this.designRuns.interruptOrphans();
         this.designPipeline = new com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline(aiBuildingStudio,
                 designRuns, planProjects, planDrafts, planWorkbench, agentStore, workshopAutopilot, audit,
-                Duration.ofSeconds(Long.getLong("rpgquest.design.verdictTimeoutSeconds", 180)));
+                referenceImages, Duration.ofSeconds(Long.getLong("rpgquest.design.verdictTimeoutSeconds", 180)));
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
         this.agentPages.useWorkshopProjects(planProjects);
@@ -319,6 +322,7 @@ public final class PanelApp {
         route(WorkshopPages.BASE + "/new", this::handleWorkshopNew);
         route(WorkshopPages.BASE + "/import", this::handleWorkshopImport);
         route(WorkshopPages.BASE + "/project", this::handleWorkshopProject);
+        route(WorkshopPages.BASE + "/image", this::handleWorkshopImage);
         route("/content/schema.json", this::handleContentSchema);
         route("/content/template", this::handleContentTemplate);
         route("/content/contract.md", this::handleContentContractDoc);
@@ -1186,6 +1190,8 @@ public final class PanelApp {
                 case "propose" -> planPropose(session, agentId, project.get(), f);
                 case "correct" -> planCorrect(session, agentId, project.get(), f);
                 case "design" -> planDesign(session, agentId, project.get(), f);
+                case "restart" -> planRestart(session, agentId, project.get(), f);
+                case "image_remove" -> imageRemove(session, project.get(), f);
                 case "save", "audit", "preview", "generate" -> planCheck(session, agentId, project.get(), f);
                 case "recover" -> planRecover(session, agentId, project.get(), f);
                 case "archive" -> planArchive(session, project.get(), f);
@@ -1241,7 +1247,8 @@ public final class PanelApp {
                 draft == null ? none : planWorkbench.state(draft, BuildingPlanDraftStore.Check.GENERATE),
                 draft == null ? List.of() : planDrafts.revisions(draft.id()),
                 planWorkbench.recoverable(agentId, 10), UUID.randomUUID().toString(), notice, error,
-                conflictText, idTaken, isoView, isoCut, designRuns.latest(project.get().id()));
+                conflictText, idTaken, isoView, isoCut, designRuns.latest(project.get().id()),
+                referenceImages.list(project.get().id()));
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,
                 WorkshopPages.project(view), Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
@@ -1294,7 +1301,8 @@ public final class PanelApp {
             return replay.get();
         }
         var demand = demandOf(project);
-        var proposal = aiBuildingStudio.propose(f.getOrDefault("provider", "").trim(), demand);
+        var proposal = aiBuildingStudio.propose(f.getOrDefault("provider", "").trim(), demand,
+                referencesOf(project.id()));
         return keepProposal(session, agentId, project, f.get("request_token"), proposal,
                 BuildingPlanDraft.Origin.AI_PROPOSAL, "", demand, false);
     }
@@ -1345,7 +1353,7 @@ public final class PanelApp {
                 : "";
         var demand = demandOf(project);
         var proposal = aiBuildingStudio.correct(f.getOrDefault("provider", "").trim(), demand,
-                draft.plan(), reason, measured);
+                draft.plan(), reason, measured, referencesOf(project.id()));
         return keepProposal(session, agentId, project, f.get("request_token"), proposal,
                 BuildingPlanDraft.Origin.AI_CORRECTION, draft.id(), demand, true);
     }
@@ -1391,7 +1399,8 @@ public final class PanelApp {
         }
         var quality = com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline.Quality.of(f.get("quality"));
         int calls = Math.min(quality.calls(), Math.max(1, parseIntOr(f.get("max_calls"), quality.calls())));
-        var started = designRuns.start(agentId, project.id(), token, provider, quality.name(), calls,
+        boolean fresh = "yes".equals(f.getOrDefault("fresh", ""));
+        var started = designRuns.start(agentId, project.id(), token, provider, quality.name(), calls, fresh,
                 session.username());
         if (started.isEmpty()) {
             return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"),
@@ -1403,6 +1412,115 @@ public final class PanelApp {
         designPipeline.launch(started.get());
         return PlanOutcome.redirect(projectLocation(project.id(), "", "Conception automatique lancée ("
                 + quality.label() + ", " + calls + " appel(s) au plus). Suivez les passes ci-dessous.", null));
+    }
+
+    /**
+     * « Recommencer depuis ma description » (issue #283) : une génération NEUVE, qui n'hérite ni du
+     * plan ni des erreurs de la version affichée. Elle devient une version sans parent ; toutes les
+     * versions existantes restent consultables — rien n'est supprimé ni écrasé. Geste payant : même
+     * jeton à usage unique que « Créer un plan ».
+     */
+    private PlanOutcome planRestart(Session session, String agentId,
+                                    com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                    Map<String, String> f) {
+        if (!"yes".equals(f.getOrDefault("confirm", ""))) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), null,
+                    "Cochez la confirmation : recommencer est un appel facturé. Rien n'a été demandé."));
+        }
+        return planPropose(session, agentId, project, f);
+    }
+
+    /** Les images de référence d'un projet, en pixels (#283). */
+    private List<com.lodygames.rpgquest.panel.ai.AiProvider.Image> referencesOf(String projectId) {
+        List<com.lodygames.rpgquest.panel.ai.AiProvider.Image> out = new java.util.ArrayList<>();
+        for (var info : referenceImages.list(projectId)) {
+            referenceImages.data(projectId, info.id()).ifPresent(
+                    bytes -> out.add(new com.lodygames.rpgquest.panel.ai.AiProvider.Image(info.mime(), bytes)));
+        }
+        return out;
+    }
+
+    private PlanOutcome imageRemove(Session session,
+                                    com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                    Map<String, String> f) {
+        String imageId = f.getOrDefault("image", "").trim();
+        boolean removed = referenceImages.remove(project.id(), imageId);
+        audit.record(session.username(), "building.project.image.remove", "project=" + project.id()
+                + " image=" + imageId, removed ? "OK" : "NOT_FOUND", "", UUID.randomUUID().toString().substring(0, 8));
+        return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"),
+                removed ? "Image retirée du projet (effacée de la base du panel)." : null,
+                removed ? null : "Image introuvable : rien n'a été retiré."));
+    }
+
+    /**
+     * {@code /buildings/workshop/image} (issue #283) : POST = ajout d'une image de référence
+     * (multipart), GET = l'image elle-même, pour la vignette.
+     *
+     * <p>Le GET exige la même session et la même permission que l'Atelier, vérifie que l'image
+     * appartient au projet demandé, et sert le type <em>détecté</em> à l'enregistrement avec
+     * {@code nosniff} : un fichier ne peut pas devenir une page.</p>
+     */
+    private void handleWorkshopImage(HttpExchange exchange) throws IOException {
+        Optional<Session> maybe = requireSession(exchange);
+        if (maybe.isEmpty()) {
+            return;
+        }
+        Session session = maybe.get();
+        if (!permissions.can(session.effective(), Permission.AI_USE)) {
+            forbidden(exchange, session, WorkshopPages.BASE);
+            return;
+        }
+        String agentId = config.agents().defaultAgentId();
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Map<String, String> q = Http.query(exchange);
+            var project = planProjects.find(q.getOrDefault("project", "")).filter(p -> p.agentId().equals(agentId));
+            var info = project.flatMap(p -> referenceImages.find(p.id(), q.getOrDefault("id", "")));
+            var bytes = info.flatMap(i -> referenceImages.data(i.projectId(), i.id()));
+            if (bytes.isEmpty()) {
+                Http.html(exchange, 404, Layout.bare("Image introuvable", "<h1>Image introuvable</h1>"));
+                return;
+            }
+            Http.securityHeaders(exchange);
+            exchange.getResponseHeaders().set("Content-Type", info.get().mime());
+            exchange.getResponseHeaders().set("Content-Disposition", "inline");
+            exchange.getResponseHeaders().set("Cache-Control", "private, max-age=300");
+            exchange.sendResponseHeaders(200, bytes.get().length);
+            try (var out = exchange.getResponseBody()) {
+                out.write(bytes.get());
+            }
+            return;
+        }
+        int max = com.lodygames.rpgquest.panel.building.ReferenceImageStore.MAX_BYTES + 64 * 1024;
+        byte[] body = exchange.getRequestBody().readNBytes(max + 1);
+        var form = com.lodygames.rpgquest.panel.http.Multipart.parse(
+                exchange.getRequestHeaders().getFirst("Content-Type"), body);
+        if (body.length > max || form.isEmpty()) {
+            Http.redirect(exchange, WorkshopPages.BASE + "?err=" + enc(body.length > max
+                    ? "Image trop lourde : " + (com.lodygames.rpgquest.panel.building.ReferenceImageStore.MAX_BYTES / 1024)
+                            + " Kio au plus. Rien n'a été enregistré."
+                    : "Envoi illisible : rien n'a été enregistré."));
+            return;
+        }
+        Map<String, String> f = form.get().fields();
+        if (!constantTimeEquals(session.csrfToken(), f.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF",
+                    "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        var project = planProjects.find(f.get("id")).filter(p -> !p.archived() && p.agentId().equals(agentId));
+        if (project.isEmpty()) {
+            Http.redirect(exchange, WorkshopPages.BASE + "?err=" + enc("Projet introuvable : rien n'a été fait."));
+            return;
+        }
+        var file = form.get().file("image");
+        var added = referenceImages.add(project.get().id(), file.map(p -> p.fileName()).orElse(""),
+                file.map(p -> p.data()).orElse(new byte[0]), session.username());
+        audit.record(session.username(), "building.project.image.add", "project=" + project.get().id()
+                        + added.image().map(i -> " image=" + i.id() + " mime=" + i.mime() + " size=" + i.size()).orElse(""),
+                added.image().isPresent() ? "OK" : "DENIED", added.refusal(), UUID.randomUUID().toString().substring(0, 8));
+        Http.redirect(exchange, projectLocation(project.get().id(), f.get("draft"),
+                added.image().isPresent() ? "Image de référence ajoutée. Elle sera montrée à l'IA à chaque "
+                        + "demande de ce projet." : null, added.image().isPresent() ? null : added.refusal()));
     }
 
     /**

@@ -100,10 +100,14 @@ public final class BuildingDesignRunStore {
                        int tokensOut, String verdict) {
     }
 
+    /**
+     * @param fresh vrai si la session repart de la description, sans hériter des versions
+     *              existantes (issue #283)
+     */
     public record Run(String id, String agentId, String projectId, String providerId, String quality,
                       int maxCalls, int spentCalls, int inputTokens, int outputTokens, Status status,
                       String outcome, String finalDraftId, List<Pass> passes, String createdBy,
-                      Instant createdAt, Instant updatedAt) {
+                      Instant createdAt, Instant updatedAt, boolean fresh) {
 
         public Run {
             passes = List.copyOf(passes);
@@ -121,6 +125,16 @@ public final class BuildingDesignRunStore {
         try (Connection c = connect(); Statement s = c.createStatement()) {
             s.execute(CREATE);
             s.execute(CREATE_INDEX);
+            // #283 : « repartir de zéro ». Colonne ajoutée sans perte si la table existe déjà (#282).
+            boolean hasFresh = false;
+            try (ResultSet rs = s.executeQuery("PRAGMA table_info(building_design_run)")) {
+                while (rs.next()) {
+                    hasFresh |= "fresh".equals(rs.getString("name"));
+                }
+            }
+            if (!hasFresh) {
+                s.execute("ALTER TABLE building_design_run ADD COLUMN fresh INTEGER NOT NULL DEFAULT 0");
+            }
         } catch (SQLException e) {
             throw new IllegalStateException("Impossible d'initialiser les conceptions automatiques dans "
                     + dbPath, e);
@@ -132,12 +146,17 @@ public final class BuildingDesignRunStore {
      */
     public Optional<Run> start(String agentId, String projectId, String token, String providerId,
                                String quality, int maxCalls, String by) {
+        return start(agentId, projectId, token, providerId, quality, maxCalls, false, by);
+    }
+
+    public Optional<Run> start(String agentId, String projectId, String token, String providerId,
+                               String quality, int maxCalls, boolean fresh, String by) {
         String id = UUID.randomUUID().toString();
         String now = STAMP.format(Instant.now());
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
                 "INSERT OR IGNORE INTO building_design_run (id, agent_id, project_id, request_token, "
-                        + "provider_id, quality, max_calls, status, created_by, created_at, updated_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                        + "provider_id, quality, max_calls, status, created_by, created_at, updated_at, "
+                        + "fresh) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             ps.setString(1, id);
             ps.setString(2, agentId);
             ps.setString(3, projectId);
@@ -149,6 +168,7 @@ public final class BuildingDesignRunStore {
             ps.setString(9, by);
             ps.setString(10, now);
             ps.setString(11, now);
+            ps.setInt(12, fresh ? 1 : 0);
             if (ps.executeUpdate() == 0) {
                 return Optional.empty();
             }
@@ -244,7 +264,7 @@ public final class BuildingDesignRunStore {
                 Status.parse(rs.getString("status")), rs.getString("outcome"),
                 rs.getString("final_draft_id"), readPasses(rs.getString("passes")),
                 rs.getString("created_by"), parse(rs.getString("created_at")),
-                parse(rs.getString("updated_at")));
+                parse(rs.getString("updated_at")), rs.getInt("fresh") != 0);
     }
 
     private static String writePasses(List<Pass> passes) {

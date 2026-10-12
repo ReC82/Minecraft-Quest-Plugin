@@ -7747,6 +7747,35 @@ d'écriture.
   rafraîchir la bibliothèque. Rien d'autre n'y fait référence tant qu'il n'a pas été **posé**.
 * **Contenu** : sans objet, ce lot ne publie aucune ressource de contenu.
 
+## 2026-10-12 20:11 — Déploiement EFFECTUÉ sur DEV de #282, #283, #284 (code `7025bd8`)
+
+### Changement
+
+JAR RPGQuest + panel PlugAdmin depuis `7025bd8` (CI verte, run 38286231558) : escaliers et réparation
+déterministe (#282), images de référence et nouvelle conception (#283), retrait sûr depuis la
+bibliothèque (#284). Les trois entrées « NON DÉPLOYÉ » ci-dessous sont désormais déployées.
+
+### Action serveur réalisée
+
+- **Sauvegardes** : `data.db` (intégrité OK), `config.yml`, `buildings/` (3 définitions),
+  `schematics/` (7 fichiers) → `/srv/rpgquest/backups/20261012-predeploy-282-284/` ; JAR précédent
+  `af0a9118…` (2 349 597 o) → `~/.local/share/rpgquest/verygames-backups/rpgquest-20261012T181001Z-predeploy.jar` ;
+  `control-panel.db` → `/opt/plugadmin/backups/control-panel-20261012-predeploy-282-284.db` (mode 600).
+- **Panel** : `scripts/plugadmin/deploy.sh` ; JAR servi `018aacdb…` = JAR construit ; tables
+  `building_design_run` (+ `fresh`) et `building_project_image` créées ; brouillons (7) et projets (2) intacts.
+- **Plugin** : `scripts/deploy-verygames.sh -y`, JAR `3d5420e5…` (2 406 583 o), retéléchargé et
+  vérifié. Contournement TLS **autorisé par le propriétaire pour ce déploiement** : certificat
+  `*.dg.vg` expiré le 2026-10-11 05:12 UTC, seule l'expiration échoue, clé identique à l'épingle déjà
+  vérifiée (`sha256//Y9msc/…EE=`), épingle passée en ligne de commande uniquement ; aucune trace laissée.
+- **Redémarrage** à 0 joueur (`verygames-restart.sh`), retour ONLINE ; 5 plugins actifs ; agent
+  reconnecté (battement 18:11:35 UTC).
+- Mondes, `data.db`, configuration, bâtiments et schematics **non modifiés** (vérifiés après).
+
+### Rollback
+
+Panel : `scripts/plugadmin/rollback.sh app`. Plugin : `scripts/rollback-verygames.sh --latest`
+(même autorisation TLS nécessaire tant que le certificat est expiré) puis redémarrage contrôlé.
+
 ## 2026-10-12 (soir) — Retirer un bâtiment de la bibliothèque (#284) — NON DÉPLOYÉ
 
 ### Changement

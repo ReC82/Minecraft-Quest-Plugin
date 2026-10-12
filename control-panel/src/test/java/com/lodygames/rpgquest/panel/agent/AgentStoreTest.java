@@ -27,6 +27,34 @@ class AgentStoreTest {
                 "ONLINE", 3, 20, 3600, "{\"hub\":{\"name\":\"world_hub\",\"loaded\":true}}", "{}");
     }
 
+    /**
+     * Issue #257 — l'horodatage est à la seconde : deux relevés créés dans la même seconde (cas
+     * courant sur une machine rapide, découvert par la CI) étaient départagés au hasard, et l'ancien
+     * pouvait passer pour le dernier. L'ordre d'insertion départage désormais.
+     */
+    @Test
+    void theLatestOfTwoActionsCreatedInTheSameSecondIsTheLastInserted() {
+        String older = null;
+        String newer = null;
+        for (int i = 0; i < 20; i++) {
+            older = store.createAction("dev", "building.site.list", Map.of(), "owner");
+            newer = store.createAction("dev", "building.site.list", Map.of(), "owner");
+            if (store.action(older).orElseThrow().createdAt()
+                    .equals(store.action(newer).orElseThrow().createdAt())) {
+                break;
+            }
+        }
+        assertEquals(store.action(older).orElseThrow().createdAt(),
+                store.action(newer).orElseThrow().createdAt(), "même seconde, le cas visé");
+        assertEquals(newer, store.latestActionOfType("dev", "building.site.list").orElseThrow().id());
+        assertEquals(newer, store.recentActions("dev", 1).get(0).id());
+        Instant now = Instant.now();
+        store.recordResult(older, "dev", AgentActionStatus.SUCCESS, "", "", "{}", now);
+        store.recordResult(newer, "dev", AgentActionStatus.SUCCESS, "", "", "{}", now);
+        assertEquals(newer,
+                store.latestSuccessfulActionOfType("dev", "building.site.list").orElseThrow().id());
+    }
+
     @Test
     void heartbeatIsUpsertedAndReadBack() {
         store.saveHeartbeat(heartbeat("rpgquest-dev", Instant.parse("2026-09-07T10:00:00Z"), "0.1"));

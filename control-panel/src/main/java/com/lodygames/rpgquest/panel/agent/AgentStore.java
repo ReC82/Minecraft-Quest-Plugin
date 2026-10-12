@@ -181,7 +181,7 @@ public final class AgentStore {
             throw new IllegalStateException("Marquage DELIVERED impossible (" + agentId + ")", e);
         }
         String select = "SELECT * FROM agent_action WHERE agent_id = ? AND status = 'DELIVERED' "
-                + "AND completed_at IS NULL ORDER BY created_at";
+                + "AND completed_at IS NULL ORDER BY created_at, rowid";
         List<AgentActionRow> rows = new ArrayList<>();
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(select)) {
             ps.setString(1, agentId);
@@ -245,9 +245,14 @@ public final class AgentStore {
         }
     }
 
-    /** Dernière action d'un type donné pour un agent (tous statuts) — pour réafficher un résultat de liste/état. */
+    /**
+     * Dernière action d'un type donné pour un agent (tous statuts) — pour réafficher un résultat de
+     * liste/état. {@code created_at} est à la seconde : à égalité, l'ordre d'insertion
+     * ({@code rowid}) départage, sinon deux relevés de la même seconde se départageraient au hasard
+     * (issue #257, révélé par la CI).
+     */
     public Optional<AgentActionRow> latestActionOfType(String agentId, String type) {
-        String sql = "SELECT * FROM agent_action WHERE agent_id = ? AND type = ? ORDER BY created_at DESC LIMIT 1";
+        String sql = "SELECT * FROM agent_action WHERE agent_id = ? AND type = ? ORDER BY created_at DESC, rowid DESC LIMIT 1";
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, agentId);
             ps.setString(2, type);
@@ -266,7 +271,7 @@ public final class AgentStore {
      */
     public Optional<AgentActionRow> latestSuccessfulActionOfType(String agentId, String type) {
         String sql = "SELECT * FROM agent_action WHERE agent_id = ? AND type = ? AND status = 'SUCCESS' "
-                + "ORDER BY created_at DESC LIMIT 1";
+                + "ORDER BY created_at DESC, rowid DESC LIMIT 1";
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, agentId);
             ps.setString(2, type);
@@ -319,7 +324,7 @@ public final class AgentStore {
         String sql = "DELETE FROM agent_action WHERE agent_id = ? AND type = ? "
                 + "AND status NOT IN ('PENDING','DELIVERED') AND id NOT IN ("
                 + "  SELECT id FROM agent_action WHERE agent_id = ? AND type = ? "
-                + "  AND status NOT IN ('PENDING','DELIVERED') ORDER BY created_at DESC LIMIT ?)";
+                + "  AND status NOT IN ('PENDING','DELIVERED') ORDER BY created_at DESC, rowid DESC LIMIT ?)";
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, agentId);
             ps.setString(2, type);
@@ -333,7 +338,7 @@ public final class AgentStore {
     }
 
     public List<AgentActionRow> recentActions(String agentId, int limit) {
-        String sql = "SELECT * FROM agent_action WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?";
+        String sql = "SELECT * FROM agent_action WHERE agent_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?";
         List<AgentActionRow> rows = new ArrayList<>();
         try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, agentId);

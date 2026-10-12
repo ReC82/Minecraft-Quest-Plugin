@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
@@ -258,11 +259,22 @@ class RestartServiceTest {
         //
         // 60 s ne ralentissent RIEN quand le test passe — il se termine dès que la chute est vue.
         // Ce délai ne borne que le chemin d'échec.
-        build(gateway, new ArrayList<>(), () -> Optional.ofNullable(uptime.get()),
+        //
+        // Le service relève l'uptime de référence APRÈS l'envoi de « stop » (#275) : faire chuter
+        // l'uptime dès que l'arrêt est vu laissait une course, perdue de temps en temps en CI — la
+        // référence valait alors déjà 3 et aucune chute n'était jamais constatée. Le test attend
+        // donc que cette référence ait été lue.
+        AtomicInteger readsAfterStop = new AtomicInteger();
+        build(gateway, new ArrayList<>(), () -> {
+                    if (gateway.calls.contains(RconCommand.STOP)) {
+                        readsAfterStop.incrementAndGet();
+                    }
+                    return Optional.ofNullable(uptime.get());
+                },
                 RestartService.DEFAULT_ANNOUNCE_OFFSETS, Duration.ofSeconds(60));
 
         service.request("alice", Duration.ZERO);
-        await(() -> gateway.calls.contains(RconCommand.STOP), "arrêt demandé");
+        await(() -> readsAfterStop.get() > 0, "uptime de référence relevé après l'arrêt");
         uptime.set(3L); // le plugin vient de redémarrer
 
         awaitPhase(RestartService.Phase.DONE);

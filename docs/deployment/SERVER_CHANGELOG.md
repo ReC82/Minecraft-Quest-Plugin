@@ -8221,3 +8221,35 @@ Quand le certificat est renouvelé (`openssl s_client … | openssl x509 -noout 
 `./gradlew --stop`, `export RPGQUEST_TEST_MAX_HEAP=768m`, depuis un arbre propre du même commit :
 `scripts/deploy-verygames.sh -y`, vérifier « JAR en ligne : N octets (== local) », **joueurs = 0**, puis
 `scripts/verygames-restart.sh --timeout 300`. Rollback panel : `scripts/plugadmin/rollback.sh app`.
+
+## 2026-10-12 16:55 — Déploiement DEV de #265 **achevé** : JAR RPGQuest transféré et vérifié
+
+Suite du déploiement partiel de 16:43 (panel déjà en place).
+
+- **JAR installé** : 2 349 597 octets, SHA-256 `af0a911890d0f4a2571eaf15f1840b209758caeadf9df34a9ed3d33aedb08016`
+  — JAR **retéléchargé** depuis le serveur et comparé : identique à l'attendu. Commit `c5b69f3`
+  (code = `63f7b19`, CI verte, run 38264168002 ; aucun test local rejoué, `assemble` à jour).
+- **Backup du JAR précédent** : `rpgquest-20261012T145442Z-predeploy.jar` (2 334 717 o, SHA-256
+  `d0ee3583…`) — plus petit que le nouveau, sens attendu.
+- **Redémarrage** : deux contrôles RCON à **0 joueur**, puis `scripts/verygames-restart.sh`
+  (`save-all`, `stop`, arrêt constaté, retour **ONLINE**). Aucune boucle.
+- **Après** : `/rpgquest version` répond ; l'agent RPGQuest envoie de nouveau ses heartbeats et
+  interroge PlugAdmin (`/health` = ONLINE).
+
+### Contournement TLS : autorisation ponctuelle du propriétaire, utilisée puis expirée
+
+Vérifié avant : le certificat (`CN = *.dg.vg`, Let's Encrypt YE1) est **valide au 2026-10-10** (chaîne
++ nom d'hôte : `OK`) et ne présente **que** l'erreur `certificate has expired` aujourd'hui ; sa clé
+publique est **identique** à celle épinglée lors du déploiement précédent
+(`sha256//Y9msc/eIyLxp89XaAAC1oQE0Yqd9XB4z57iSIlH85EE=`). Même méthode que la fois précédente :
+`VERYGAMES_FTP_EXTRA_CURL_ARGS="--insecure --pinnedpubkey sha256//…"` **sur la seule ligne de
+commande** ; curl ne sait pas ignorer la seule expiration, mais il impose l'épingle même avec
+`--insecure` : l'identité reste vérifiée cryptographiquement, `--ssl-reqd` actif. Vérifié après :
+aucune trace dans Git, `verygames.env` (ligne toujours commentée), profils shell ni environnement ;
+fichiers d'épingle supprimés.
+
+> VeryGames doit toujours renouveler son certificat : tout prochain JAR exigera une nouvelle
+> autorisation.
+
+Rollback JAR : `scripts/rollback-verygames.sh --latest` (avec une autorisation TLS équivalente tant que
+le certificat est expiré), puis redémarrage contrôlé.

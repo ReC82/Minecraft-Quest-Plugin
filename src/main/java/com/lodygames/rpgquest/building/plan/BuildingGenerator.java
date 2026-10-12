@@ -178,7 +178,7 @@ public final class BuildingGenerator {
         }
 
         ArchitecturalAudit.Report audit = ArchitecturalAudit.audit(
-                expansion.blueprint(), plan.front(), plan.rules());
+                expansion.blueprint(), plan.front(), plan.rules(), expansion.provenance());
         List<String> warnings = new ArrayList<>();
         for (ArchitecturalFinding warning : audit.warnings()) {
             warnings.add(warning.message());
@@ -235,7 +235,7 @@ public final class BuildingGenerator {
         // bibliothèque. Et son message est rédigé pour être renvoyé tel quel au modèle par la
         // boucle de correction qui existe déjà.
         ArchitecturalAudit.Report audit = ArchitecturalAudit.audit(
-                expansion.blueprint(), plan.front(), plan.rules());
+                expansion.blueprint(), plan.front(), plan.rules(), expansion.provenance());
         if (audit.refused()) {
             return new Result(false, "ARCHITECTURE_REFUSED", refusalText(plan, audit),
                     plan.id(), "", plan.sizeX(), plan.sizeY(), plan.sizeZ(),

@@ -143,7 +143,7 @@ public final class BuildingPlanYaml {
         if (kind.isEmpty()) {
             problems.add(where + "instruction inconnue : « " + str(map.get("op"))
                     + " ». Valeurs acceptées : box, shell, walls, clear, gable, door, window, "
-                    + "light, stair_run, ladder, pillars.");
+                    + "light, stair_run, staircase, ladder, pillars.");
             return Optional.empty();
         }
         PlanStep.Kind k = kind.get();
@@ -177,7 +177,7 @@ public final class BuildingPlanYaml {
         // Paramètres nommés. Une valeur non entière est refusée plutôt qu'arrondie en silence.
         java.util.Map<String, Integer> numbers = new java.util.LinkedHashMap<>();
         for (String key : new String[] {"offset", "y", "width", "height", "spacing", "count",
-            "steps", "hinge"}) {
+            "steps", "hinge", "floor"}) {
             Object raw = map.get(key);
             if (raw == null) {
                 continue;
@@ -229,10 +229,7 @@ public final class BuildingPlanYaml {
     }
 
     private static boolean semantic(PlanStep.Kind kind) {
-        return switch (kind) {
-            case DOOR, WINDOW, LIGHT, STAIR_RUN, LADDER, PILLARS -> true;
-            default -> false;
-        };
+        return PlanStep.semanticKind(kind);
     }
 
     /** Ces primitives se repèrent par façade et décalage, pas par une zone. */

@@ -29,6 +29,8 @@ package com.lodygames.rpgquest.building.plan;
  * @param minEnvelopeMaterials   nombre minimal de matériaux dans l'enveloppe (avertissement)
  * @param maxMaterialShare       part maximale d'un seul matériau dans l'enveloppe (avertissement)
  * @param minFurnishingCells     mobilier minimal attendu à l'intérieur (avertissement)
+ * @param minLevelFreeShare      part minimale d'un plancher atteint où l'on peut réellement se
+ *                               tenir debout (issue #282) ; 0 = pas d'exigence
  */
 public record ArchitecturalRules(StructureKind kind,
                                  boolean requireEntrance,
@@ -43,7 +45,8 @@ public record ArchitecturalRules(StructureKind kind,
                                  boolean requireLevelAccess,
                                  int minEnvelopeMaterials,
                                  double maxMaterialShare,
-                                 int minFurnishingCells) {
+                                 int minFurnishingCells,
+                                 double minLevelFreeShare) {
 
     /** Le profil correspondant à un type de structure. */
     public static ArchitecturalRules forKind(StructureKind kind) {
@@ -79,7 +82,8 @@ public record ArchitecturalRules(StructureKind kind,
                 true,    // chaque niveau atteignable
                 3,       // au moins 3 matériaux d'enveloppe
                 0.70,    // avertissement au-delà de 70 % pour un seul matériau
-                4);      // un intérieur totalement nu est signalé
+                4,       // un intérieur totalement nu est signalé
+                0.30);   // #282 : un étage dont moins de 30 % du plancher est praticable est refusé
     }
 
     /**
@@ -91,6 +95,7 @@ public record ArchitecturalRules(StructureKind kind,
                 false, false, 0, 0, false, 0, false, 0, 0, false,
                 2,       // deux matériaux : une fontaine monomatière reste plate
                 0.90,    // large, mais pas illimité
+                0,
                 0);
     }
 
@@ -103,6 +108,6 @@ public record ArchitecturalRules(StructureKind kind,
                 false,
                 true,    // un portail qu'on ne peut pas franchir n'est pas un portail
                 0, 0, false, 0, false, 0, 0, false,
-                2, 0.90, 0);
+                2, 0.90, 0, 0);
     }
 }

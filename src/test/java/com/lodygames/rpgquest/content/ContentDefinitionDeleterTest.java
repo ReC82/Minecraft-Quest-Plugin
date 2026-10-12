@@ -111,8 +111,10 @@ class ContentDefinitionDeleterTest {
     }
 
     @Test
-    @DisplayName("Seuls « quests » et « stories » sont supprimables : aucun chemin ne vient du panel")
+    @DisplayName("Seuls les types déclarés sont supprimables : aucun chemin ne vient du panel")
     void onlyKnownKindsAreAccepted() {
+        // « dialogues » est refusé ici parce que ce deleter est construit SANS dossier de
+        // dialogues : le type n'est accepté que s'il a été configuré (#248).
         for (String kind : new String[] {"dialogues", "npcs", "..", "/etc", "", null}) {
             ContentDefinitionDeleter.Result result = deleter.delete(kind, "x");
             assertFalse(result.ok(), "type accepté à tort : " + kind);

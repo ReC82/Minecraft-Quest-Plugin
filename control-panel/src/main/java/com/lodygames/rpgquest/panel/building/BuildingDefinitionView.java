@@ -34,6 +34,11 @@ public record BuildingDefinitionView(String id, String name, String description,
         return anchorX + " / " + anchorY + " / " + anchorZ;
     }
 
+    /** Ce que l'ancre de CE bâtiment signifie, en clair (#269). */
+    public String anchorMeaning() {
+        return AnchorMeaning.describe(sizeX, sizeY, sizeZ, anchorX, anchorY, anchorZ, front);
+    }
+
     public long blockCount() {
         return (long) sizeX * sizeY * sizeZ;
     }

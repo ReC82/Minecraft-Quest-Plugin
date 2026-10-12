@@ -129,6 +129,18 @@ class BuildingPlacementPageTest {
     }
 
     /** La bibliothèque est en lecture seule : aucun formulaire d'écriture ne doit y figurer. */
+    /** #269 : l'ancre affichée est celle de CE bâtiment, pas une convention unique. */
+    @Test
+    void theLibraryDescribesEachBuildingsRealAnchor() throws Exception {
+        start();
+        seed("building.definition.list", LIBRARY);
+
+        String page = get("/buildings/library?agent=" + TestConfig.AGENT_ID).body();
+        assertTrue(page.contains("tombe au milieu de la façade d&#39;entrée, 1 bloc au-dessus du bas")
+                || page.contains("tombe au milieu de la façade d'entrée, 1 bloc au-dessus du bas"), "la hutte");
+        assertFalse(page.contains("centre de la porte, au niveau du sol"), "l'ancienne phrase, fausse pour l'Atelier");
+    }
+
     @Test
     void theLibraryOffersNoWriteFormAtAll() throws Exception {
         start();

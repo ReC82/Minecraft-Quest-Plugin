@@ -152,6 +152,20 @@ class BuildingPlanPreviewTest {
         assertTrue(label.contains("x = 0"), label);
     }
 
+    /** #269 : pour une largeur paire, l'ancre par défaut du plugin est sizeX / 2, pas (sizeX - 1) / 2. */
+    @Test
+    @DisplayName("Largeur paire : l'ancre par défaut du plugin est reconnue comme telle")
+    void anEvenWidthDefaultAnchorIsNotMistakenForAnExplicitOne() {
+        Map<String, Object> even = new LinkedHashMap<>(details());
+        even.put("sizeX", 20);
+        even.put("sizeZ", 16);
+        even.put("anchorX", 10);
+        even.put("anchorY", 0);
+        even.put("anchorZ", 8);
+        String label = BuildingPlanPreview.from(even).anchorLabel();
+        assertTrue(label.contains("centre de la base"), label);
+    }
+
     @Test
     @DisplayName("La légende couvre tous les caractères que le plugin peut produire")
     void thelegendCoversEveryCharacterThePluginCanProduce() {

@@ -96,8 +96,10 @@ public record BuildingPlanPreview(boolean available, boolean accepted, String co
 
     /** L'ancre, en une phrase : c'est la question que pose forcément quiconque pose un bâtiment. */
     public String anchorLabel() {
+        // #269 : même règle que le plugin (sizeX / 2), pas (sizeX - 1) / 2 — qui, pour une largeur
+        // paire, faisait passer l'ancre par défaut pour une ancre « explicite ».
         return "x = " + anchorX + ", y = " + anchorY + ", z = " + anchorZ
-                + (anchorX == (sizeX - 1) / 2 && anchorZ == (sizeZ - 1) / 2 && anchorY == 0
+                + (AnchorMeaning.isDefault(sizeX, sizeZ, anchorX, anchorY, anchorZ)
                         ? " — centre de la base (convention par défaut)"
                         : " — ancre explicite déclarée par le plan");
     }

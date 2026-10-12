@@ -1689,10 +1689,17 @@ vérifié sur la machine de build. Versionner un binaire que la CI ne peut pas r
 versionner quelque chose que personne ne peut contrôler. `/rpgadmin building generate` le réécrit à
 la demande.
 
-#### L'ancre : centre de la porte, au niveau du sol
+#### L'ancre : déclarée par chaque bâtiment
 
-Convention **unique et explicite**, énoncée dans la définition et nulle part ailleurs en dur. Pour
-la hutte : `3 / 1 / 0`.
+L'ancre est **déclarée par la définition** de chaque bâtiment, nulle part ailleurs en dur. Il n'y a pas
+de convention unique (correction #269 : la Bibliothèque affichait « centre de la porte » pour tous) :
+
+- **hutte de test** (faite à la main) : milieu de la porte, un bloc au-dessus de la fondation — `3 / 1 / 0` ;
+- **bâtiment de l'Atelier** sans ancre déclarée : centre de la base, au niveau du bas — `sizeX / 2`, `0`,
+  `sizeZ / 2` (`BuildingPlanYaml`).
+
+La Bibliothèque décrit donc l'ancre **de chaque bâtiment** en une phrase (`AnchorMeaning` : « Le repère
+de l'emplacement tombe au milieu de la façade d'entrée, 1 bloc au-dessus du bas… »), suivie des nombres.
 
 Le `1` porte une conséquence qu'il faut connaître : la fondation (`y = 0`) se place **un bloc sous**
 l'ancre de l'emplacement. C'est voulu — une fondation s'enfonce dans le sol, et l'ancre d'un

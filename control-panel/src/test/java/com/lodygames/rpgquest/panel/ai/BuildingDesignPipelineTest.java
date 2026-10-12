@@ -352,4 +352,54 @@ class BuildingDesignPipelineTest {
         assertTrue(requests.get(1).contains("Bibliothèque médiévale de deux étages"), "le brief aussi");
         assertEquals(1, docs.latest(project.id()).orElseThrow().version(), "la conception est conservée");
     }
+
+    /**
+     * #299 : la Maison de Lily — conception corrigée à la main (version 2), puis « Repartir de
+     * zéro » : l'IA réécrivait la conception (version 3) et la correction était perdue pour la
+     * session. Repartir de zéro repart du PLAN ; la conception manuelle est transmise telle quelle.
+     */
+    @Test
+    void aFreshRunKeepsTheManuallyCorrectedDesign() {
+        var docs = new com.lodygames.rpgquest.panel.building.BuildingDesignDocStore(tmp.resolve("cp.db").toString());
+        pipeline.withDesignDocs(docs);
+        docs.save(project.id(), "Conception IA d'origine.", com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Origin.AI,
+                "openai", "gpt-4o", "", "owner", -1);
+        docs.save(project.id(), "Un seul rez-de-chaussee, sans etage.",
+                com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Origin.MANUAL, null, null, null, "owner", 1);
+        synchronized (scripted) {
+            scripted.add(plan("good staircase"));
+        }
+
+        BuildingDesignRunStore.Run r = runs.start(AGENT, project.id(), "fresh-keep", "openai", "STANDARD", 4,
+                true, "owner").orElseThrow();
+        pipeline.execute(r.id());
+        r = runs.find(r.id()).orElseThrow();
+
+        assertEquals(2, docs.latest(project.id()).orElseThrow().version(), "aucune conception réécrite");
+        assertEquals("CONCEPTION EN VIGUEUR", kinds(r).get(0), kinds(r).toString());
+        assertTrue(r.passes().get(0).verdict().contains("version 2"), r.passes().get(0).verdict());
+        assertTrue(requests.get(0).contains("Un seul rez-de-chaussee"), "la conception manuelle part avec le plan");
+    }
+
+    @Test
+    void theDesignIsRewrittenOnlyOnExplicitRequest() {
+        var docs = new com.lodygames.rpgquest.panel.building.BuildingDesignDocStore(tmp.resolve("cp.db").toString());
+        pipeline.withDesignDocs(docs);
+        docs.save(project.id(), "Un seul rez-de-chaussee, sans etage.",
+                com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Origin.MANUAL, null, null, null, "owner", -1);
+        synchronized (scripted) {
+            scripted.add("1. PROGRAMME ET ESPACES\nNouvelle conception.");
+            scripted.add(plan("good staircase"));
+        }
+
+        BuildingDesignRunStore.Run r = runs.start(AGENT, project.id(), "rewrite", "openai", "STANDARD", 4,
+                true, true, "owner").orElseThrow();
+        pipeline.execute(r.id());
+        r = runs.find(r.id()).orElseThrow();
+
+        assertTrue(r.rewriteDesign());
+        assertEquals("CONCEPTION DÉTAILLÉE", kinds(r).get(0), kinds(r).toString());
+        assertEquals(2, docs.latest(project.id()).orElseThrow().version(), "une NOUVELLE version, l'ancienne gardée");
+        assertEquals(2, docs.history(project.id()).size());
+    }
 }

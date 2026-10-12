@@ -692,7 +692,15 @@ public final class WorkshopPages {
         if (v.drafts().stream().anyMatch(BuildingPlanDraft::hasPlan)) {
             sb.append("<div class=\"field\"><label><input type=\"checkbox\" name=\"fresh\" value=\"yes\"> "
                     + "Repartir de zéro depuis ma description, sans reprendre les versions existantes (elles "
-                    + "restent consultables).</label></div>");
+                    + "restent consultables). La conception détaillée en vigueur est <strong>conservée</strong>."
+                    + "</label></div>");
+        }
+        if (v.designs() != null && !v.designs().isEmpty()) {
+            sb.append("<div class=\"field\"><label><input type=\"checkbox\" name=\"rewrite_design\" value=\"yes\"> "
+                    + "Réécrire aussi la conception détaillée : l'IA en rédige une nouvelle version, qui "
+                    + "remplace la version " + v.designs().get(0).version() + " pour cette session (elle reste "
+                    + "consultable). Décoché, la conception actuelle — y compris vos corrections à la main — "
+                    + "est transmise telle quelle.</label></div>");
         }
         sb.append("<div class=\"field\"><label><input type=\"checkbox\" name=\"consent\" value=\"yes\"> "
                 + "J'accepte cette enveloppe : au plus le nombre d'appels annoncé, <strong>facturés</strong> "

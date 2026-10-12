@@ -1575,15 +1575,17 @@ public final class PanelApp {
         var quality = com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline.Quality.of(f.get("quality"));
         int calls = Math.min(quality.calls(), Math.max(1, parseIntOr(f.get("max_calls"), quality.calls())));
         boolean fresh = "yes".equals(f.getOrDefault("fresh", ""));
+        boolean rewriteDesign = "yes".equals(f.getOrDefault("rewrite_design", ""));
         var started = designRuns.start(agentId, project.id(), token, provider, quality.name(), calls, fresh,
-                session.username());
+                rewriteDesign, session.username());
         if (started.isEmpty()) {
             return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"),
                     "Cette conception a déjà été lancée : aucun nouvel appel n'a été émis.", null));
         }
         audit.record(session.username(), "building.design.start", "project=" + project.id() + " run="
                 + started.get().id() + " quality=" + quality.name() + " max_calls=" + calls
-                + " provider=" + provider, "OK", "enveloppe consentie", UUID.randomUUID().toString().substring(0, 8));
+                + " provider=" + provider + " fresh=" + fresh + " rewrite_design=" + rewriteDesign, "OK",
+                "enveloppe consentie", UUID.randomUUID().toString().substring(0, 8));
         designPipeline.launch(started.get());
         return PlanOutcome.redirect(projectLocation(project.id(), "", "Conception automatique lancée ("
                 + quality.label() + ", " + calls + " appel(s) au plus). Suivez les passes ci-dessous.", null));

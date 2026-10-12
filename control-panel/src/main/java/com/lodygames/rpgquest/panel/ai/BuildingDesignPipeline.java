@@ -347,8 +347,16 @@ public final class BuildingDesignPipeline {
             if (designDocs == null) {
                 return true;
             }
-            String text = run.fresh() ? "" : designDocs.latest(project.id())
-                    .map(com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Doc::text).orElse("");
+            // #299 : « Repartir de zéro » repart du PLAN, pas de la conception. La version en vigueur
+            // — souvent corrigée à la main — est conservée ; seule une demande explicite la réécrit.
+            var current = run.rewriteDesign() ? java.util.Optional.<com.lodygames.rpgquest.panel.building
+                    .BuildingDesignDocStore.Doc>empty() : designDocs.latest(project.id());
+            String text = current.map(com.lodygames.rpgquest.panel.building.BuildingDesignDocStore.Doc::text)
+                    .orElse("");
+            current.ifPresent(doc -> runs.addPass(run.id(), new Pass("CONCEPTION EN VIGUEUR", "", doc.version(), "",
+                    0, 0, "Conception version " + doc.version() + " (" + doc.origin().label().toLowerCase(
+                            java.util.Locale.ROOT) + ") transmise à chaque passe, empreinte "
+                            + shortSha(doc.text()) + "."), true));
             if (text.isEmpty() && fromBrief && canSpend()) {
                 AiBuildingStudio.Proposal p = studio.design(run.providerId(), demand, references);
                 spent++;
@@ -599,5 +607,16 @@ public final class BuildingDesignPipeline {
         int out = calls * perOut;
         double dollars = price == null ? 0 : (in * price[0] + out * price[1]) / 1_000_000.0;
         return new Envelope(calls, in, out, dollars, price != null, m);
+    }
+
+    /** Empreinte courte d'un texte, pour tracer la conception utilisée sans la recopier (#299). */
+    static String shortSha(String text) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest((text == null ? "" : text).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest, 0, 6);
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
     }
 }

@@ -701,7 +701,9 @@ class BuildingSitesPageTest {
         assertTrue(page.contains("Aucun fournisseur d'IA utilisable"),
                 "l'absence de fournisseur est dite");
         assertTrue(page.contains("href=\"/ai/providers\""), "avec le lien qui la corrige");
-        assertFalse(page.contains("action=\"/buildings/plan\""),
+        // #256 : la page porte désormais un formulaire de RÉCUPÉRATION, qui n'appelle pas l'IA ;
+        // ce qui ne doit pas apparaître, c'est un formulaire de demande payante.
+        assertFalse(page.contains("value=\"propose\""),
                 "et aucun formulaire de demande qui ne pourrait pas aboutir");
     }
 

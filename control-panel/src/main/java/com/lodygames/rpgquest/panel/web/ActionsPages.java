@@ -252,10 +252,24 @@ public final class ActionsPages {
     // ---- détail ---------------------------------------------------------------------
 
     public static String detail(AgentActionRow a, Instant now) {
+        return detail(a, now, "");
+    }
+
+    /**
+     * Variante avec un bandeau de contexte placé sous l'en-tête (issue #256) : pour une action qui
+     * transporte un plan de bâtiment, le chemin du retour vers le brouillon concerné. Sans lui, le
+     * seul « Retour » de la fiche menait à l'historique, et le parcours de génération était perdu.
+     *
+     * @param contextHtml HTML déjà sûr, ou vide
+     */
+    public static String detail(AgentActionRow a, Instant now, String contextHtml) {
         StringBuilder sb = new StringBuilder();
         sb.append(Ui.pageHeader(ActionView.Domain.of(a.type()).icon(), ActionView.humanLabel(a.type()),
                 ActionView.Domain.of(a.type()).label() + " · " + ActionView.relativeTime(a.createdAt(), now),
                 "<a class=\"btn btn-outline-secondary\" href=\"/actions\">" + Icons.icon("back") + "Retour</a>"));
+        if (contextHtml != null && !contextHtml.isBlank()) {
+            sb.append(contextHtml);
+        }
 
         sb.append("<div class=\"form-section\"><p class=\"fs-h\">").append(Icons.icon("info")).append("Résumé</p>");
         sb.append("<dl class=\"detail-dl\">");

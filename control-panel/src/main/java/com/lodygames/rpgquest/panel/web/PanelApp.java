@@ -15,6 +15,9 @@ import com.lodygames.rpgquest.panel.authz.Permission;
 import com.lodygames.rpgquest.panel.authz.PermissionService;
 import com.lodygames.rpgquest.panel.authz.Role;
 import com.lodygames.rpgquest.panel.bridge.BridgeClient;
+import com.lodygames.rpgquest.panel.building.BuildingPlanDraft;
+import com.lodygames.rpgquest.panel.building.BuildingPlanDraftStore;
+import com.lodygames.rpgquest.panel.building.BuildingPlanWorkbench;
 import com.lodygames.rpgquest.panel.bridge.BridgeException;
 import com.lodygames.rpgquest.panel.bridge.BridgeHealth;
 import com.lodygames.rpgquest.panel.config.PanelConfig;
@@ -98,6 +101,9 @@ public final class PanelApp {
     private final com.lodygames.rpgquest.panel.ai.AiContentStudio aiStudio;
     /** Issue #94 — atelier de plans de bâtiment, distinct de l'atelier de contenu. */
     private final com.lodygames.rpgquest.panel.ai.AiBuildingStudio aiBuildingStudio;
+    /** Issue #256 — les plans proposés par l'IA, conservés comme brouillons de travail. */
+    private final BuildingPlanDraftStore planDrafts;
+    private final BuildingPlanWorkbench planWorkbench;
     private final ContentEditorPages contentEditor;
     private final ContentDeletionPages contentDeletion;
     private final ContentExportPages contentExportPages;
@@ -151,6 +157,9 @@ public final class PanelApp {
         // une seule clé API à gérer, un seul endroit où elle vit.
         this.aiBuildingStudio =
                 new com.lodygames.rpgquest.panel.ai.AiBuildingStudio(aiProviders, aiSettings);
+        // Issue #256 — même base que le reste du panel : un plan payé survit à un redémarrage.
+        this.planDrafts = new BuildingPlanDraftStore(config.panelDbPath());
+        this.planWorkbench = new BuildingPlanWorkbench(agentStore, planDrafts);
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
         this.notifications = new NotificationCenter(agentStore, agentRegistry);
@@ -883,19 +892,22 @@ public final class PanelApp {
     }
 
     /**
-     * Configuration des fournisseurs. Permission distincte de l'usage : manipuler une clé d'API
-     * tierce n'est pas un geste d'édition de contenu.
-     */
-    /**
-     * Issue #94 — brief d'un emplacement → plan proposé par l'IA → génération explicite.
+     * Issues #94 et #256 — brief d'un emplacement → plan proposé par l'IA → brouillon conservé →
+     * audit, aperçu, génération explicites.
      *
      * <p><strong>Deux permissions, deux gestes.</strong> Demander un plan consomme des jetons chez
      * un fournisseur : c'est {@code AI_USE}. Générer écrit deux fichiers sur le serveur : c'est
      * {@code BUILDING_WRITE}, vérifié par la liste blanche d'actions. Un utilisateur qui n'a que
      * le premier droit peut explorer sans jamais rien écrire.</p>
      *
-     * <p>Aucune écriture ne part d'ici : la génération passe par {@code /agents/action}, le seul
-     * chemin d'écriture du panel, déjà couvert par ses propres contrôles.</p>
+     * <p><strong>Toute soumission se termine par une redirection</strong> vers l'adresse du
+     * brouillon (POST → redirection → GET). Recharger la page ne renvoie donc jamais un formulaire,
+     * et en particulier jamais une demande payante. Les deux seuls gestes qui appellent l'IA —
+     * {@code propose} et {@code correct} — exigent en plus un jeton à usage unique.</p>
+     *
+     * <p>Aucune écriture sur le serveur Minecraft ne part d'ici sans la validation du catalogue
+     * d'actions : audit, aperçu et génération passent par {@link #enqueueValidated}, le même
+     * contrôle que {@code /agents/action}.</p>
      */
     private void handleBuildingPlan(HttpExchange exchange) throws IOException {
         Optional<Session> maybe = requireSession(exchange);
@@ -908,89 +920,465 @@ public final class PanelApp {
             return;
         }
         String agentId = config.agents().defaultAgentId();
-        boolean canWrite = permissions.can(session.effective(), Permission.BUILDING_WRITE);
-
-        String siteId = Http.query(exchange).getOrDefault("site", "").trim();
-        String provider = "";
-        String error = null;
-        String refusal = Http.query(exchange).getOrDefault("refusal", "").trim();
-        com.lodygames.rpgquest.panel.ai.AiBuildingStudio.Proposal proposal = null;
 
         if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             Optional<Map<String, String>> body = Http.formBody(exchange, 1024 * 1024);
             if (body.isEmpty()) {
-                error = "Requête trop volumineuse.";
-            } else {
-                Map<String, String> f = body.get();
-                if (!constantTimeEquals(session.csrfToken(), f.get("_csrf"))) {
-                    Http.html(exchange, 403, Layout.bare("CSRF",
-                            "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
-                    return;
-                }
-                siteId = f.getOrDefault("site", "").trim();
-                provider = f.getOrDefault("provider", "").trim();
-                refusal = f.getOrDefault("refusal", "").trim();
-                String previousPlan = f.getOrDefault("previous_plan", "");
-
-                var site = agentPages.buildingSiteDirectory(agentId).find(siteId);
-                if (site.isEmpty()) {
-                    error = "Emplacement « " + siteId + " » introuvable dans le dernier relevé. "
-                            + "Rafraîchir le catalogue des emplacements.";
-                } else if (!site.get().hasAiBrief()) {
-                    // Refus à coût nul : pas un jeton dépensé pour un brief vide.
-                    error = "Cet emplacement n'a pas de brief architectural : il n'y a rien à "
-                            + "générer.";
-                } else {
-                    var demand = new com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand(
-                            site.get().id(), site.get().name(), site.get().facing(),
-                            site.get().aiBrief(),
-                            parseIntOr(f.get("max_width"), 19), parseIntOr(f.get("max_height"), 14));
-                    if (!demand.usable()) {
-                        error = "Demande incomplète : un brief et un emplacement sont nécessaires.";
-                    } else {
-                        // En correction, les mesures du dernier audit partent avec le motif : le
-                        // refus dit ce qui manque, les chiffres disent à quel point.
-                        String measured = refusal.isEmpty() ? "" : com.lodygames.rpgquest.panel.ai
-                                .BuildingCorrectionLoop.formatMetrics(
-                                        agentPages.buildingPlanVerdict(agentId).metrics());
-                        proposal = refusal.isEmpty()
-                                ? aiBuildingStudio.propose(provider, demand)
-                                : aiBuildingStudio.correct(provider, demand, previousPlan, refusal,
-                                        measured);
-                        // L'audit retient le fournisseur, le modèle et le verdict — jamais la clé,
-                        // jamais le brief complet (contenu éditorial, et volumineux).
-                        audit.record(session.username(), "building.plan.generate",
-                                "site=" + site.get().id() + " provider=" + proposal.providerId()
-                                        + " model=" + proposal.model()
-                                        + " usage=" + proposal.usage()
-                                        + " correction=" + !refusal.isEmpty(),
-                                proposal.callOk() ? "OK" : "FAILED",
-                                proposal.callOk()
-                                        ? (proposal.hasPlan() ? "plan proposé"
-                                                : "aucun plan exploitable")
-                                        : proposal.error(),
-                                UUID.randomUUID().toString().substring(0, 8));
-                    }
-                }
+                Http.redirect(exchange, planLocation("", "", null, "Requête trop volumineuse."));
+                return;
             }
+            Map<String, String> f = body.get();
+            if (!constantTimeEquals(session.csrfToken(), f.get("_csrf"))) {
+                Http.html(exchange, 403, Layout.bare("CSRF",
+                        "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+                return;
+            }
+            PlanOutcome outcome = switch (f.getOrDefault("_action", "").trim()) {
+                case "propose" -> planPropose(session, agentId, f);
+                case "correct" -> planCorrect(session, agentId, f);
+                case "save", "audit", "preview", "generate" -> planCheck(session, agentId, f);
+                case "recover" -> planRecover(session, agentId, f);
+                case "archive" -> planArchive(session, f);
+                default -> PlanOutcome.redirect(planLocation(f.getOrDefault("site", ""),
+                        f.getOrDefault("draft", ""), null, "Geste inconnu : rien n'a été fait."));
+            };
+            if (outcome.conflictText() == null) {
+                Http.redirect(exchange, outcome.location());
+                return;
+            }
+            // Conflit de version : on n'écrit rien, et on ne redirige pas — le texte soumis serait
+            // perdu. La page est rendue avec la version courante ET le texte refusé.
+            renderBuildingPlan(exchange, session, agentId, f.getOrDefault("site", ""),
+                    f.getOrDefault("draft", ""), null, outcome.error(), outcome.conflictText());
+            return;
         }
 
-        var site = agentPages.buildingSiteDirectory(agentId).find(siteId);
+        Map<String, String> q = Http.query(exchange);
+        renderBuildingPlan(exchange, session, agentId, q.getOrDefault("site", "").trim(),
+                q.getOrDefault("draft", "").trim(), q.get("ok"), q.get("err"), null);
+    }
+
+    /** Issue d'une soumission : une redirection, ou un conflit à montrer sur place. */
+    private record PlanOutcome(String location, String error, String conflictText) {
+        static PlanOutcome redirect(String location) {
+            return new PlanOutcome(location, null, null);
+        }
+    }
+
+    private void renderBuildingPlan(HttpExchange exchange, Session session, String agentId,
+                                    String siteId, String draftId, String notice, String error,
+                                    String conflictText) throws IOException {
+        BuildingPlanDraft draft = planDrafts.find(draftId)
+                .filter(d -> !d.archived() && d.agentId().equals(agentId)).orElse(null);
+        // Le brouillon fait foi : un lien vers un brouillon ouvre toujours SON emplacement.
+        String effectiveSite = draft != null ? draft.siteId() : siteId;
+        var site = agentPages.buildingSiteDirectory(agentId).find(effectiveSite);
         if (site.isEmpty()) {
             Http.html(exchange, 404, renderPage("Générer un bâtiment", session, "/buildings/sites",
                     "<h1>Emplacement introuvable</h1><p class=\"muted\">Aucun emplacement « "
-                            + Http.esc(siteId) + " » dans le dernier relevé. "
-                            + "<a href=\"/buildings/sites\">Rafraîchir le catalogue</a>.</p>"));
+                            + Http.esc(effectiveSite) + " » dans le dernier relevé. "
+                            + "<a href=\"/buildings/sites\">Rafraîchir le catalogue</a>."
+                            + (draft == null ? "" : " Le brouillon " + Http.esc(draft.id())
+                                    + " est conservé et réapparaîtra avec l'emplacement.")
+                            + "</p>"));
             return;
         }
-        String body = BuildingPlanPages.render(session, agentId, site.get(),
-                aiBuildingStudio.usableProviders(), provider, proposal, canWrite, error, refusal,
-                agentPages.buildingPlanVerdict(agentId),
-                agentPages.buildingPlanPreview(agentId));
+        var drafts = planDrafts.forSite(agentId, site.get().id());
+        Map<String, String> summaries = new LinkedHashMap<>();
+        for (var d : drafts) {
+            summaries.put(d.id(), planSummary(d));
+        }
+        var none = new BuildingPlanWorkbench.CheckState(BuildingPlanWorkbench.Status.NONE,
+                Optional.empty(), 0, false);
+        BuildingPlanPages.View view = new BuildingPlanPages.View(session, agentId, site.get(),
+                aiBuildingStudio.usableProviders(),
+                permissions.can(session.effective(), Permission.BUILDING_WRITE),
+                drafts, summaries, draft,
+                draft == null ? none : planWorkbench.state(draft,
+                        BuildingPlanDraftStore.Check.AUDIT),
+                draft == null ? none : planWorkbench.state(draft,
+                        BuildingPlanDraftStore.Check.PREVIEW),
+                draft == null ? none : planWorkbench.state(draft,
+                        BuildingPlanDraftStore.Check.GENERATE),
+                draft == null ? List.of() : planDrafts.revisions(draft.id()),
+                planWorkbench.recoverable(agentId, 10),
+                UUID.randomUUID().toString(), notice, error, conflictText);
         Http.html(exchange, 200, renderPage("Générer un bâtiment", session, "/buildings/sites",
-                body, Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
+                BuildingPlanPages.render(view),
+                Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
 
+    /** Une phrase d'état pour la liste des brouillons. */
+    private String planSummary(BuildingPlanDraft draft) {
+        var audit = planWorkbench.state(draft, BuildingPlanDraftStore.Check.AUDIT);
+        var generate = planWorkbench.state(draft, BuildingPlanDraftStore.Check.GENERATE);
+        if (generate.current() && generate.row()
+                .map(r -> "SUCCESS".equals(r.resultStatus())).orElse(false)) {
+            return "généré";
+        }
+        if (!draft.hasPlan()) {
+            return "aucun plan exploitable";
+        }
+        if (!audit.current()) {
+            return audit.stale() ? "modifié depuis son audit" : "pas encore audité";
+        }
+        if (audit.status() == BuildingPlanWorkbench.Status.PENDING) {
+            return "audit en cours";
+        }
+        var verdict = com.lodygames.rpgquest.panel.building.BuildingPlanVerdict.from(audit.details());
+        return !verdict.available() ? "audit sans verdict"
+                : verdict.accepted() ? "audit conforme" : "refusé (" + verdict.code() + ")";
+    }
+
+    /**
+     * Geste payant n° 1 : demander un plan neuf. Le résultat devient un brouillon.
+     *
+     * <p>Le jeton est réservé <strong>avant</strong> l'appel : une seconde soumission du même
+     * formulaire mène au brouillon déjà produit, sans rappeler le modèle.</p>
+     */
+    private PlanOutcome planPropose(Session session, String agentId, Map<String, String> f) {
+        String siteId = f.getOrDefault("site", "").trim();
+        var site = agentPages.buildingSiteDirectory(agentId).find(siteId);
+        if (site.isEmpty()) {
+            return PlanOutcome.redirect(planLocation(siteId, "", null, "Emplacement « " + siteId
+                    + " » introuvable dans le dernier relevé. Rafraîchir le catalogue des "
+                    + "emplacements."));
+        }
+        if (!site.get().hasAiBrief()) {
+            // Refus à coût nul : pas un jeton dépensé pour un brief vide.
+            return PlanOutcome.redirect(planLocation(siteId, "", null,
+                    "Cet emplacement n'a pas de brief architectural : il n'y a rien à générer."));
+        }
+        var demand = new com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand(
+                site.get().id(), site.get().name(), site.get().facing(), site.get().aiBrief(),
+                parseIntOr(f.get("max_width"), 19), parseIntOr(f.get("max_height"), 14));
+        if (!demand.usable()) {
+            return PlanOutcome.redirect(planLocation(siteId, "", null,
+                    "Demande incomplète : un brief et un emplacement sont nécessaires."));
+        }
+        Optional<PlanOutcome> replay = replayedRequest(session, siteId, f);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+        var proposal = aiBuildingStudio.propose(f.getOrDefault("provider", "").trim(), demand);
+        return keepProposal(session, agentId, site.get().id(), f.get("request_token"), proposal,
+                BuildingPlanDraft.Origin.AI_PROPOSAL, "", demand, false);
+    }
+
+    /**
+     * Geste payant n° 2 : demander au modèle de corriger un brouillon. La réponse devient un
+     * <strong>nouveau</strong> brouillon ; celui qu'on corrige n'est jamais écrasé.
+     */
+    private PlanOutcome planCorrect(Session session, String agentId, Map<String, String> f) {
+        Optional<BuildingPlanDraft> found = planDrafts.find(f.get("draft"))
+                .filter(d -> !d.archived() && d.agentId().equals(agentId));
+        if (found.isEmpty()) {
+            return PlanOutcome.redirect(planLocation(f.getOrDefault("site", ""), "", null,
+                    "Brouillon introuvable : rien n'a été demandé à l'IA."));
+        }
+        BuildingPlanDraft draft = found.get();
+        if (parseIntOr(f.get("version"), -1) != draft.version()) {
+            return PlanOutcome.redirect(planLocation(draft.siteId(), draft.id(), null,
+                    "Le brouillon a changé depuis l'affichage de la page (version "
+                            + draft.version() + ") : rien n'a été demandé à l'IA. Relisez la "
+                            + "version courante, puis redemandez."));
+        }
+        var site = agentPages.buildingSiteDirectory(agentId).find(draft.siteId());
+        if (site.isEmpty() || !site.get().hasAiBrief()) {
+            return PlanOutcome.redirect(planLocation(draft.siteId(), draft.id(), null,
+                    "Emplacement absent du relevé ou sans brief : rien n'a été demandé à l'IA."));
+        }
+        String reason = f.getOrDefault("reason", "").trim();
+        if (reason.isEmpty()) {
+            return PlanOutcome.redirect(planLocation(draft.siteId(), draft.id(), null,
+                    "Dites ce qu'il faut corriger : sans motif, le modèle n'a aucune raison de "
+                            + "changer son plan. Rien n'a été demandé."));
+        }
+        var demand = new com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand(
+                site.get().id(), site.get().name(), site.get().facing(), site.get().aiBrief(),
+                parseIntOr(f.get("max_width"), draft.maxWidth()),
+                parseIntOr(f.get("max_height"), draft.maxHeight()));
+        Optional<PlanOutcome> replay = replayedRequest(session, draft.siteId(), f);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
+        // Les mesures qui partent avec le motif sont celles de l'audit de CETTE version, jamais
+        // « le dernier audit de l'agent », qui pourrait porter sur un autre plan.
+        var audit = planWorkbench.state(draft, BuildingPlanDraftStore.Check.AUDIT);
+        String measured = audit.current()
+                ? com.lodygames.rpgquest.panel.ai.BuildingCorrectionLoop.formatMetrics(
+                        com.lodygames.rpgquest.panel.building.BuildingPlanVerdict
+                                .from(audit.details()).metrics())
+                : "";
+        var proposal = aiBuildingStudio.correct(f.getOrDefault("provider", "").trim(), demand,
+                draft.plan(), reason, measured);
+        return keepProposal(session, agentId, draft.siteId(), f.get("request_token"), proposal,
+                BuildingPlanDraft.Origin.AI_CORRECTION, draft.id(), demand, true);
+    }
+
+    /**
+     * Le jeton d'une demande payante a-t-il déjà servi ? Si oui, on renvoie vers ce qu'il a produit
+     * et <strong>on n'appelle pas</strong> le modèle.
+     */
+    private Optional<PlanOutcome> replayedRequest(Session session, String siteId,
+                                                  Map<String, String> f) {
+        String token = f.getOrDefault("request_token", "").trim();
+        if (token.isEmpty()) {
+            return Optional.of(PlanOutcome.redirect(planLocation(siteId, "", null,
+                    "Formulaire périmé (jeton de demande absent) : rien n'a été demandé à l'IA. "
+                            + "Rechargez la page.")));
+        }
+        var reservation = planDrafts.reserve(token, session.username());
+        if (reservation.fresh()) {
+            return Optional.empty();
+        }
+        audit.record(session.username(), "building.plan.request.replayed", "site=" + siteId,
+                "DENIED", "jeton déjà utilisé — aucun appel émis",
+                UUID.randomUUID().toString().substring(0, 8));
+        return Optional.of(PlanOutcome.redirect(reservation.draftId().isEmpty()
+                ? planLocation(siteId, "", null, "Cette demande a déjà été envoyée (double clic "
+                        + "ou rechargement) : aucun nouvel appel n'a été émis. Si elle n'a rien "
+                        + "produit, redemandez depuis une page fraîchement chargée.")
+                : planLocation(siteId, reservation.draftId(), "Cette demande avait déjà abouti : "
+                        + "voici son plan. Aucun nouvel appel n'a été émis.", null)));
+    }
+
+    /** Conserve la réponse du modèle comme brouillon, et journalise l'appel. */
+    private PlanOutcome keepProposal(Session session, String agentId, String siteId, String token,
+                                     com.lodygames.rpgquest.panel.ai.AiBuildingStudio.Proposal proposal,
+                                     BuildingPlanDraft.Origin origin, String parentId,
+                                     com.lodygames.rpgquest.panel.ai.BuildingPromptBuilder.Demand demand,
+                                     boolean correction) {
+        // L'audit retient le fournisseur, le modèle et le verdict — jamais la clé, jamais le brief
+        // complet (contenu éditorial, et volumineux).
+        audit.record(session.username(), "building.plan.generate",
+                "site=" + siteId + " provider=" + proposal.providerId() + " model=" + proposal.model()
+                        + " usage=" + proposal.usage() + " correction=" + correction,
+                proposal.callOk() ? "OK" : "FAILED",
+                proposal.callOk() ? (proposal.hasPlan() ? "plan proposé" : "aucun plan exploitable")
+                        : proposal.error(),
+                UUID.randomUUID().toString().substring(0, 8));
+        if (!proposal.callOk()) {
+            return PlanOutcome.redirect(planLocation(siteId, parentId, null,
+                    "L'appel a échoué : " + proposal.error() + " Aucun brouillon créé, rien n'a "
+                            + "été écrit sur le serveur."));
+        }
+        // Même sans plan exploitable, la réponse a été payée : elle est conservée, et son texte
+        // brut reste lisible pour en recopier le plan à la main.
+        BuildingPlanDraft created = planDrafts.create(new BuildingPlanDraftStore.NewDraft(agentId,
+                siteId, proposal.hasPlan() ? proposal.plan() : "", origin, parentId, "",
+                proposal.providerId(), proposal.providerLabel(), proposal.model(), proposal.usage(),
+                proposal.rawResponse(), proposal.extractionNote(), demand.maxWidth(),
+                demand.maxHeight(), session.username()));
+        planDrafts.fulfil(token, created.id());
+        audit.record(session.username(), "building.plan.draft.create",
+                "site=" + siteId + " draft=" + created.id() + " origin=" + origin, "OK",
+                parentId.isEmpty() ? "" : "parent=" + parentId,
+                UUID.randomUUID().toString().substring(0, 8));
+        return PlanOutcome.redirect(planLocation(siteId, created.id(), proposal.hasPlan()
+                ? "Plan reçu et enregistré comme brouillon. Prochaine étape : l'auditer."
+                : "Réponse reçue, mais sans plan exploitable. Elle est conservée dans ce brouillon.",
+                null));
+    }
+
+    /**
+     * Les quatre gestes qui n'appellent pas l'IA : enregistrer, auditer, prévisualiser, générer.
+     *
+     * <p>Le texte du champ est d'abord enregistré s'il a changé (nouvelle version, contrôle de
+     * version), puis le geste part <strong>sur la version enregistrée</strong>, et l'action est
+     * rattachée au brouillon avec ce numéro de version.</p>
+     */
+    private PlanOutcome planCheck(Session session, String agentId, Map<String, String> f) {
+        String gesture = f.getOrDefault("_action", "").trim();
+        Optional<BuildingPlanDraft> found = planDrafts.find(f.get("draft"))
+                .filter(d -> !d.archived() && d.agentId().equals(agentId));
+        if (found.isEmpty()) {
+            return PlanOutcome.redirect(planLocation(f.getOrDefault("site", ""), "", null,
+                    "Brouillon introuvable ou archivé : rien n'a été fait."));
+        }
+        BuildingPlanDraft draft = found.get();
+        int expected = parseIntOr(f.get("version"), -1);
+        String submitted = f.getOrDefault("plan", "").replace("\r\n", "\n");
+        var saved = planDrafts.save(draft.id(), expected, submitted, session.username());
+        switch (saved.outcome()) {
+            case STALE -> {
+                audit.record(session.username(), "building.plan.draft.save",
+                        "draft=" + draft.id(), "DENIED",
+                        "version périmée : " + expected + " ≠ " + draft.version(),
+                        UUID.randomUUID().toString().substring(0, 8));
+                return new PlanOutcome("", "Le brouillon a été modifié ailleurs pendant que vous "
+                        + "l'éditiez : rien n'a été enregistré ni envoyé.", submitted);
+            }
+            case NOT_FOUND -> {
+                return PlanOutcome.redirect(planLocation(draft.siteId(), "", null,
+                        "Brouillon introuvable ou archivé : rien n'a été fait."));
+            }
+            case SAVED -> audit.record(session.username(), "building.plan.draft.save",
+                    "draft=" + draft.id(), "OK",
+                    "version=" + saved.draft().map(BuildingPlanDraft::version).orElse(0),
+                    UUID.randomUUID().toString().substring(0, 8));
+            case UNCHANGED -> {
+                // Rien à enregistrer : le geste part sur la version courante.
+            }
+        }
+        BuildingPlanDraft current = saved.draft().orElse(draft);
+        if ("save".equals(gesture)) {
+            return PlanOutcome.redirect(planLocation(current.siteId(), current.id(),
+                    saved.outcome() == BuildingPlanDraftStore.SaveOutcome.SAVED
+                            ? "Version " + current.version() + " enregistrée."
+                            : "Aucune modification : rien à enregistrer.", null));
+        }
+        BuildingPlanDraftStore.Check check = switch (gesture) {
+            case "audit" -> BuildingPlanDraftStore.Check.AUDIT;
+            case "preview" -> BuildingPlanDraftStore.Check.PREVIEW;
+            default -> BuildingPlanDraftStore.Check.GENERATE;
+        };
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("plan", current.plan());
+        if (check == BuildingPlanDraftStore.Check.GENERATE) {
+            fields.put("replace", "true".equals(f.get("replace")) ? "true" : "false");
+            fields.put("confirm", "true");
+        }
+        Queued queued = enqueueValidated(session, agentId, check.actionType(), fields);
+        if (queued.error() != null) {
+            return PlanOutcome.redirect(planLocation(current.siteId(), current.id(), null,
+                    queued.error()));
+        }
+        planDrafts.link(current.id(), queued.actionId(), check, current.version());
+        String what = switch (check) {
+            case AUDIT -> "Audit";
+            case PREVIEW -> "Aperçu";
+            case GENERATE -> "Génération";
+        };
+        return PlanOutcome.redirect(planLocation(current.siteId(), current.id(),
+                what + " de la version " + current.version() + " envoyé au serveur. Le résultat "
+                        + "s'affiche ici dès réception — rafraîchir dans quelques secondes.",
+                null));
+    }
+
+    /**
+     * Reprendre le plan d'une action existante, <strong>sans appel à l'IA</strong>.
+     *
+     * <p>Idempotent : la même action reprise deux fois mène au même brouillon. L'action d'origine
+     * est rattachée au brouillon en version 1 — c'est exactement ce plan-là qu'elle a examiné —
+     * donc son verdict s'affiche immédiatement.</p>
+     */
+    private PlanOutcome planRecover(Session session, String agentId, Map<String, String> f) {
+        String siteId = f.getOrDefault("site", "").trim();
+        String actionId = f.getOrDefault("action_id", "").trim();
+        Optional<BuildingPlanDraft> already = planDrafts.recoveredFrom(actionId);
+        if (already.isPresent()) {
+            return PlanOutcome.redirect(planLocation(already.get().siteId(), already.get().id(),
+                    "Ce plan avait déjà été récupéré : voici son brouillon.", null));
+        }
+        var owner = planDrafts.linkOf(actionId).flatMap(l -> planDrafts.find(l.draftId()));
+        if (owner.isPresent()) {
+            return PlanOutcome.redirect(planLocation(owner.get().siteId(), owner.get().id(),
+                    "Cette action appartient déjà à ce brouillon.", null));
+        }
+        Optional<AgentActionRow> row = actionId.isEmpty() ? Optional.empty()
+                : agentStore.action(actionId).filter(r -> r.agentId().equals(agentId));
+        Optional<String> plan = row.flatMap(BuildingPlanWorkbench::planOf);
+        if (plan.isEmpty()) {
+            return PlanOutcome.redirect(planLocation(siteId, "", null, "Action « " + actionId
+                    + " » introuvable, ou ce n'est pas un audit, un aperçu ou une génération de "
+                    + "plan : rien n'a été récupéré."));
+        }
+        var site = agentPages.buildingSiteDirectory(agentId).find(siteId);
+        if (site.isEmpty()) {
+            return PlanOutcome.redirect(planLocation(siteId, "", null, "Emplacement « " + siteId
+                    + " » introuvable dans le dernier relevé : rien n'a été récupéré."));
+        }
+        BuildingPlanDraft created = planDrafts.create(new BuildingPlanDraftStore.NewDraft(agentId,
+                site.get().id(), plan.get(), BuildingPlanDraft.Origin.RECOVERED, "", actionId,
+                "", "", "", "", "", "", 19, 14, session.username()));
+        BuildingPlanDraftStore.Check.ofActionType(row.get().type())
+                .ifPresent(check -> planDrafts.link(created.id(), actionId, check, 1));
+        audit.record(session.username(), "building.plan.draft.recover",
+                "site=" + site.get().id() + " draft=" + created.id() + " action=" + actionId, "OK",
+                "aucun appel IA", UUID.randomUUID().toString().substring(0, 8));
+        return PlanOutcome.redirect(planLocation(site.get().id(), created.id(),
+                "Plan récupéré depuis l'action " + actionId + " — aucun appel à l'IA.", null));
+    }
+
+    private PlanOutcome planArchive(Session session, Map<String, String> f) {
+        String siteId = f.getOrDefault("site", "").trim();
+        String draftId = f.getOrDefault("draft", "").trim();
+        boolean done = planDrafts.archive(draftId, session.username());
+        if (done) {
+            audit.record(session.username(), "building.plan.draft.archive", "draft=" + draftId,
+                    "OK", "", UUID.randomUUID().toString().substring(0, 8));
+        }
+        return PlanOutcome.redirect(planLocation(siteId, "", done
+                ? "Plan retiré de la liste. Il reste conservé dans la base du panel." : null,
+                done ? null : "Brouillon introuvable ou déjà retiré."));
+    }
+
+    /** L'adresse de la page de génération, sur un brouillon si on en a un. */
+    private static String planLocation(String siteId, String draftId, String ok, String err) {
+        StringBuilder sb = new StringBuilder("/buildings/plan?site=").append(enc(siteId));
+        if (draftId != null && !draftId.isBlank()) {
+            sb.append("&draft=").append(enc(draftId));
+        }
+        if (ok != null && !ok.isBlank()) {
+            sb.append("&ok=").append(enc(ok));
+        }
+        if (err != null && !err.isBlank()) {
+            sb.append("&err=").append(enc(err));
+        }
+        if (draftId != null && !draftId.isBlank()) {
+            sb.append("#brouillon");
+        }
+        return sb.toString();
+    }
+
+    /** Une action mise en file, ou la raison du refus. */
+    private record Queued(String actionId, String error) {
+    }
+
+    /**
+     * Met en file une action whitelistée avec exactement les contrôles de {@code /agents/action} :
+     * type connu, toutes les permissions exigées, agent connu, paramètres validés par le catalogue,
+     * puis journalisation.
+     */
+    private Queued enqueueValidated(Session session, String agentId, String type,
+                                    Map<String, String> form) {
+        String rid = UUID.randomUUID().toString().substring(0, 8);
+        var spec = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.spec(type);
+        if (spec.isEmpty()) {
+            audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED",
+                    "type non whitelisté", rid);
+            return new Queued(null, "Type d'action non autorisé.");
+        }
+        if (!hasAllPermissions(session, spec.get())) {
+            audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED",
+                    "permission manquante", rid);
+            return new Queued(null, "Permission manquante pour « " + type + " ».");
+        }
+        if (agentRegistry.byId(agentId).isEmpty()) {
+            audit.record(session.username(), "agent.action.create", "type=" + type, "DENIED",
+                    "agent inconnu : " + agentId, rid);
+            return new Queued(null, "Agent inconnu.");
+        }
+        var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate(type, form);
+        if (!v.valid()) {
+            audit.record(session.username(), "agent.action.create",
+                    "agent=" + agentId + " type=" + type, "DENIED", v.error(), rid);
+            return new Queued(null, v.error());
+        }
+        String id = agentStore.createAction(agentId, type, v.params(), session.username());
+        audit.record(session.username(), "agent.action.create",
+                "agent=" + agentId + " type=" + type + " action=" + id, "PENDING",
+                safeParams(v.params()), rid);
+        LOG.log(System.Logger.Level.INFO, "event=agent_action_created rid=" + rid + " agent="
+                + agentId + " type=" + type + " action=" + id + " by=" + session.username());
+        return new Queued(id, null);
+    }
+
+    /**
+     * Configuration des fournisseurs. Permission distincte de l'usage : manipuler une clé d'API
+     * tierce n'est pas un geste d'édition de contenu.
+     */
     private void handleAiProviders(HttpExchange exchange) throws IOException {
         Optional<Session> maybe = requireSession(exchange);
         if (maybe.isEmpty()) {
@@ -2731,7 +3119,7 @@ public final class PanelApp {
                 return;
             }
             Http.html(exchange, 200, renderPage("Action", session, "/actions",
-                    ActionsPages.detail(row.get(), now)));
+                    ActionsPages.detail(row.get(), now, planContext(session, row.get()))));
             return;
         }
         if (!path.equals("/actions") && !path.equals("/actions/")) {
@@ -2741,6 +3129,26 @@ public final class PanelApp {
         ActionsPages.Query query = ActionsPages.Query.parse(Http.query(exchange));
         String body = ActionsPages.list(allRecentActions(500), query, now);
         Http.html(exchange, 200, renderPage("Historique des actions", session, "/actions", body));
+    }
+
+    /**
+     * Issue #256 — sur la fiche d'une action qui porte un plan, le chemin du retour au brouillon,
+     * ou la reprise du plan sans appel à l'IA. Réservé à qui peut utiliser la génération.
+     */
+    private String planContext(Session session, AgentActionRow row) {
+        if (!permissions.can(session.effective(), Permission.AI_USE)
+                || BuildingPlanWorkbench.planOf(row).isEmpty()) {
+            return "";
+        }
+        Optional<BuildingPlanDraft> owner = planDrafts.recoveredFrom(row.id())
+                .or(() -> planDrafts.linkOf(row.id()).flatMap(l -> planDrafts.find(l.draftId())))
+                .filter(d -> !d.archived());
+        List<com.lodygames.rpgquest.panel.building.BuildingSiteView> sites = owner.isPresent()
+                ? List.of()
+                : agentPages.buildingSiteDirectory(row.agentId()).sites().stream()
+                        .filter(com.lodygames.rpgquest.panel.building.BuildingSiteView::hasAiBrief)
+                        .toList();
+        return BuildingPlanPages.actionContext(session, row, owner, sites);
     }
 
     /** Les {@code capPerAgent} dernières actions de chaque agent, fusionnées et triées par date desc. */

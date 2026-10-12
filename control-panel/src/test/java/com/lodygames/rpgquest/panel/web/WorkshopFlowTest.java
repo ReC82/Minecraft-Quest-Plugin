@@ -196,6 +196,55 @@ class WorkshopFlowTest {
         assertTrue(main.contains("demande 2 niveaux"), main);
     }
 
+    /** La grille d'un aperçu : deux niveaux, un mur en L, l'entrée à l'ouest. */
+    private static final String PREVIEW_WITH_GRID = "{\"code\":\"OK\",\"front\":\"WEST\",\"plans\":[],"
+            + "\"elevations\":[],\"voxels\":{\"palette\":[{\"symbol\":\"A\",\"block\":\"stone_bricks\","
+            + "\"role\":\"#\",\"shape\":\"full\"},{\"symbol\":\"B\",\"block\":\"glass_pane\",\"role\":\"o\","
+            + "\"shape\":\"full\"}],\"layers\":[[\"AA\",\"AB\"],[\"A.\",\"A.\"]],\"omittedReason\":\"\"}}";
+
+    /**
+     * Issue #273 : vérifier, c'est aussi voir. La vérification demande l'aperçu (gratuit) sur la même
+     * version, et la page dessine la grille que le serveur a renvoyée — sans aucun appel à l'IA.
+     */
+    @Test
+    void aVerificationAlsoDrawsTheBuildingFromTheServerGrid() throws Exception {
+        start();
+        String withDraft = propose(createProject("Bibliothèque", BRIEF));
+        gesture(get(withDraft).body(), "audit");
+        assertEquals(1, store.recentActions(TestConfig.AGENT_ID, 200).stream()
+                .filter(a -> a.type().equals("building.plan.preview")).count(), "l'aperçu part avec la vérification");
+        assertTrue(get(withDraft).body().contains("Aperçu en cours de calcul"));
+
+        answer(latest("building.plan.audit"), AUDIT_OK);
+        answer(latest("building.plan.preview"), PREVIEW_WITH_GRID);
+        String page = get(withDraft).body();
+        assertTrue(page.contains("<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"iso-view\""), "le bâtiment est dessiné");
+        assertTrue(page.contains("Vu depuis le sud-ouest"), "par défaut, la vue montre l'entrée");
+        assertTrue(page.contains("L&#39;entrée (côté ouest) est la face à gauche")
+                || page.contains("L'entrée (côté ouest) est la face à gauche"), "et le dit");
+        assertTrue(page.contains("fill-opacity"), "la vitre est translucide");
+        assertTrue(page.contains("stone bricks"), "la légende nomme les matériaux");
+        assertFalse(mainCard(page).contains("<svg xmlns"), "l'aperçu est à part, l'action principale reste seule");
+
+        String turned = get(withDraft + "&view=2&cut=0").body();
+        assertTrue(turned.contains("Vu depuis le nord-ouest"), "on tourne autour du bâtiment");
+        assertTrue(turned.contains("tout ce qui dépasse le niveau 0 est retiré"), "on voit l'intérieur");
+        assertTrue(get(withDraft + "&view=99&cut=-7").body().contains("Vu depuis le sud-ouest"),
+                "une valeur hors bornes revient à la vue par défaut");
+        assertEquals(1, aiCalls.get(), "tourner et couper n'appellent jamais l'IA");
+    }
+
+    @Test
+    void anOlderPluginWithoutTheGridSaysWhatIsMissing() throws Exception {
+        start();
+        String withDraft = propose(createProject("Bibliothèque", BRIEF));
+        gesture(get(withDraft).body(), "audit");
+        answer(latest("building.plan.preview"), "{\"code\":\"OK\",\"plans\":[],\"elevations\":[]}");
+        String page = get(withDraft).body();
+        assertTrue(page.contains("version plus récente du plugin"), "le manque est dit, pas maquillé");
+        assertFalse(page.contains("class=\"iso-view\""));
+    }
+
     @Test
     void aTakenLibraryNameBlocksSavingAndSaysWhatToDo() throws Exception {
         start();
@@ -491,6 +540,10 @@ class WorkshopFlowTest {
     private static String mainCard(String page) {
         int start = page.indexOf("ws-main");
         int end = page.indexOf("Le bâtiment souhaité", start);
+        int preview = page.indexOf("ws-preview", start);
+        if (preview > start && preview < end) {
+            end = preview;
+        }
         assertTrue(start > 0 && end > start, "carte principale introuvable");
         return page.substring(start, end);
     }

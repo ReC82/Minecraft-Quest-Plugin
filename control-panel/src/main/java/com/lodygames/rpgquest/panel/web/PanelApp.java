@@ -1182,12 +1182,14 @@ public final class PanelApp {
             }
             // Conflit de version : rien n'est écrit, et le texte saisi est réaffiché plutôt que perdu.
             renderWorkshopProject(exchange, session, agentId, project.get().id(), f.getOrDefault("draft", ""),
-                    null, outcome.error(), outcome.conflictText());
+                    null, outcome.error(), outcome.conflictText(), -1, -1);
             return;
         }
         Map<String, String> q = Http.query(exchange);
+        // #273 : orientation et coupe de la vue en 3D — de simples paramètres d'URL, bornés au rendu.
         renderWorkshopProject(exchange, session, agentId, q.getOrDefault("id", "").trim(),
-                q.getOrDefault("draft", "").trim(), q.get("ok"), q.get("err"), null);
+                q.getOrDefault("draft", "").trim(), q.get("ok"), q.get("err"), null,
+                parseIntOr(q.get("view"), -1), parseIntOr(q.get("cut"), -1));
     }
 
     /** Issue d'une soumission : une redirection, ou un conflit à montrer sur place. */
@@ -1198,7 +1200,8 @@ public final class PanelApp {
     }
 
     private void renderWorkshopProject(HttpExchange exchange, Session session, String agentId, String projectId,
-                                       String draftId, String notice, String error, String conflictText)
+                                       String draftId, String notice, String error, String conflictText,
+                                       int isoView, int isoCut)
             throws IOException {
         var project = planProjects.find(projectId).filter(p -> !p.archived() && p.agentId().equals(agentId));
         if (project.isEmpty()) {
@@ -1222,7 +1225,7 @@ public final class PanelApp {
                 draft == null ? none : planWorkbench.state(draft, BuildingPlanDraftStore.Check.GENERATE),
                 draft == null ? List.of() : planDrafts.revisions(draft.id()),
                 planWorkbench.recoverable(agentId, 10), UUID.randomUUID().toString(), notice, error,
-                conflictText, idTaken);
+                conflictText, idTaken, isoView, isoCut);
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,
                 WorkshopPages.project(view), Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
@@ -1452,10 +1455,21 @@ public final class PanelApp {
             return PlanOutcome.redirect(projectLocation(project.id(), current.id(), null, queued.error()));
         }
         planDrafts.link(current.id(), queued.actionId(), check, current.version());
+        if (check == BuildingPlanDraftStore.Check.AUDIT) {
+            // #273 : la vérification s'accompagne de l'aperçu en 3D — gratuit, sans écriture, calculé
+            // sur la même version. S'il ne peut pas partir, la vérification reste valable : l'écran
+            // dira simplement que l'aperçu manque.
+            Queued drawn = enqueueValidated(session, agentId, BuildingPlanDraftStore.Check.PREVIEW.actionType(),
+                    Map.of("plan", current.plan()));
+            if (drawn.error() == null) {
+                planDrafts.link(current.id(), drawn.actionId(), BuildingPlanDraftStore.Check.PREVIEW,
+                        current.version());
+            }
+        }
         planProjects.touch(project.id(), session.username());
         return PlanOutcome.redirect(projectLocation(project.id(), current.id(), switch (check) {
             case AUDIT -> "Vérification demandée au serveur : le résultat s'affiche ici dans quelques secondes.";
-            case PREVIEW -> "Calcul des coupes demandé au serveur.";
+            case PREVIEW -> "Calcul de l'aperçu demandé au serveur.";
             case GENERATE -> "Enregistrement dans la bibliothèque demandé au serveur.";
         }, null));
     }

@@ -1,0 +1,202 @@
+{
+  "format": "lodyquests-content-pack",
+  "schemaVersion": 1,
+  "metadata": {
+    "title": "Tom reprend la route",
+    "generator": "exemple de référence (issue #211)",
+    "notes": "Quantités et récompenses modestes, modifiables dans les éditeurs après import."
+  },
+  "content": {
+    "quests": [
+      {
+        "id": "rpgquest:tom_chariot",
+        "title": "Du bois pour le chariot",
+        "description": "Tom a besoin de bûches de chêne pour reconstruire le chariot que des brigands ont brisé.",
+        "category": "tom",
+        "icon": "OAK_LOG",
+        "repeatable": false,
+        "secret": false,
+        "giver": "tom",
+        "steps": [
+          {
+            "id": "bois",
+            "objectives": [
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "tom", "material": "OAK_LOG", "amount": 16 }
+            ]
+          }
+        ],
+        "rewards": [
+          { "type": "EXPERIENCE", "amount": 40 }
+        ]
+      },
+      {
+        "id": "rpgquest:tom_bache",
+        "title": "Une bâche de cuir",
+        "description": "Il faut du cuir pour tendre une bâche au-dessus du chariot.",
+        "category": "tom",
+        "icon": "LEATHER",
+        "repeatable": false,
+        "secret": false,
+        "giver": "tom",
+        "prerequisites": ["rpgquest:tom_chariot"],
+        "steps": [
+          {
+            "id": "cuir",
+            "objectives": [
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "tom", "material": "LEATHER", "amount": 6 }
+            ]
+          }
+        ],
+        "rewards": [
+          { "type": "EXPERIENCE", "amount": 50 }
+        ]
+      },
+      {
+        "id": "rpgquest:tom_marchandises",
+        "title": "Des marchandises pour repartir",
+        "description": "Un chariot vide ne fait pas un marchand : Tom a besoin de blé et de pommes à vendre.",
+        "category": "tom",
+        "icon": "WHEAT",
+        "repeatable": false,
+        "secret": false,
+        "giver": "tom",
+        "prerequisites": ["rpgquest:tom_bache"],
+        "steps": [
+          {
+            "id": "marchandises",
+            "objectives": [
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "tom", "material": "WHEAT", "amount": 16 },
+              { "type": "DELIVER_ITEM_TO_NPC", "npc": "tom", "material": "APPLE", "amount": 8 }
+            ]
+          }
+        ],
+        "rewards": [
+          { "type": "EXPERIENCE", "amount": 80 },
+          { "type": "ITEM", "material": "EMERALD", "amount": 3 },
+          { "type": "VARIABLE", "key": "TOM_ROUTE_DONE", "value": "true" }
+        ]
+      }
+    ],
+    "stories": [
+      {
+        "id": "tom_reprend_la_route",
+        "name": "Tom reprend la route",
+        "secret": false,
+        "quests": ["rpgquest:tom_chariot", "rpgquest:tom_bache", "rpgquest:tom_marchandises"]
+      }
+    ],
+    "dialogues": [
+      {
+        "id": "rpgquest:tom",
+        "start": "accueil",
+        "nodes": {
+          "accueil": {
+            "speaker": "Tom",
+            "text": "Ah, un voyageur… J'étais marchand ambulant, jusqu'à ce que des brigands m'attaquent dans la forêt. Mon chariot, mes marchandises : tout est perdu.",
+            "choices": [
+              { "text": "Je peux t'aider ?",
+                "conditions": [ { "type": "QUEST_STATE", "quest": "rpgquest:tom_chariot", "state": "NOT_STARTED" } ],
+                "next": "offre_chariot" },
+              { "text": "Et maintenant, la bâche ?",
+                "conditions": [
+                  { "type": "QUEST_STATE", "quest": "rpgquest:tom_chariot", "state": "COMPLETED" },
+                  { "type": "QUEST_STATE", "quest": "rpgquest:tom_bache", "state": "NOT_STARTED" } ],
+                "next": "offre_bache" },
+              { "text": "Il te manque des marchandises ?",
+                "conditions": [
+                  { "type": "QUEST_STATE", "quest": "rpgquest:tom_bache", "state": "COMPLETED" },
+                  { "type": "QUEST_STATE", "quest": "rpgquest:tom_marchandises", "state": "NOT_STARTED" } ],
+                "next": "offre_marchandises" },
+              { "text": "J'apporte des matériaux",
+                "conditions": [ { "type": "HAS_PENDING_DELIVERY" } ],
+                "next": "remise" },
+              { "text": "Tu repars bientôt ?",
+                "conditions": [ { "type": "QUEST_STATE", "quest": "rpgquest:tom_marchandises", "state": "COMPLETED" } ],
+                "next": "conclusion" },
+              { "text": "Au revoir",
+                "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "offre_chariot": {
+            "speaker": "Tom",
+            "text": "Pour reconstruire mon chariot, il me faudrait 16 bûches de chêne. Tu me les apporterais ?",
+            "choices": [
+              { "text": "Commencer la quête : Du bois pour le chariot",
+                "conditions": [ { "type": "QUEST_STATE", "quest": "rpgquest:tom_chariot", "state": "NOT_STARTED" } ],
+                "actions": [ { "type": "START_QUEST", "quest": "rpgquest:tom_chariot" }, { "type": "CLOSE" } ] },
+              { "text": "Pas maintenant",
+                "next": "refus" }
+            ]
+          },
+          "offre_bache": {
+            "speaker": "Tom",
+            "text": "Le chariot tient debout ! Il lui faut une bâche : 6 cuirs suffiront.",
+            "choices": [
+              { "text": "Commencer la quête : Une bâche de cuir",
+                "conditions": [ { "type": "QUEST_STATE", "quest": "rpgquest:tom_bache", "state": "NOT_STARTED" } ],
+                "actions": [ { "type": "START_QUEST", "quest": "rpgquest:tom_bache" }, { "type": "CLOSE" } ] },
+              { "text": "Pas maintenant",
+                "next": "refus" }
+            ]
+          },
+          "offre_marchandises": {
+            "speaker": "Tom",
+            "text": "Un chariot vide ne fait pas un marchand. Apporte-moi 16 blés et 8 pommes, et je reprends la route.",
+            "choices": [
+              { "text": "Commencer la quête : Des marchandises pour repartir",
+                "conditions": [ { "type": "QUEST_STATE", "quest": "rpgquest:tom_marchandises", "state": "NOT_STARTED" } ],
+                "actions": [ { "type": "START_QUEST", "quest": "rpgquest:tom_marchandises" }, { "type": "CLOSE" } ] },
+              { "text": "Pas maintenant",
+                "next": "refus" }
+            ]
+          },
+          "refus": {
+            "speaker": "Tom",
+            "text": "Je comprends. Je serai là, à attendre ma chance.",
+            "choices": [
+              { "text": "À plus tard", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "remise": {
+            "speaker": "Tom",
+            "text": "Voyons ce que tu m'apportes :<newline>%delivery_status%",
+            "choices": [
+              { "text": "Donner mes matériaux",
+                "actions": [ { "type": "DELIVER_QUEST_ITEMS" } ],
+                "next": "apres_remise" },
+              { "text": "Plus tard", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          },
+          "apres_remise": {
+            "speaker": "Tom",
+            "text": "%delivery_status%",
+            "choices": [
+              { "text": "Donner encore",
+                "conditions": [ { "type": "HAS_PENDING_DELIVERY" } ],
+                "actions": [ { "type": "DELIVER_QUEST_ITEMS" } ],
+                "next": "apres_remise" },
+              { "text": "Retour", "next": "accueil" }
+            ]
+          },
+          "conclusion": {
+            "speaker": "Tom",
+            "text": "Grâce à toi, mon chariot est chargé et je reprends la route. Si nos chemins se recroisent, je te ferai un bon prix !",
+            "choices": [
+              { "text": "Bonne route, Tom", "actions": [ { "type": "CLOSE" } ] }
+            ]
+          }
+        }
+      }
+    ],
+    "npcs": [
+      {
+        "id": "tom",
+        "displayName": "Tom le marchand",
+        "description": "Marchand ambulant dépouillé par des brigands, qui veut reprendre son commerce.",
+        "dialogue": "rpgquest:tom",
+        "role": "quest_giver",
+        "enabled": true
+      }
+    ]
+  }
+}

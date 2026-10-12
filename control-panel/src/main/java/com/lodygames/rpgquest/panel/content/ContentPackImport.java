@@ -188,10 +188,12 @@ public final class ContentPackImport {
         }
 
         Object root;
+        boolean json = packYaml.stripLeading().startsWith("{");
         try {
-            root = MiniYaml.parse(packYaml);
+            root = parseRoot(packYaml);
         } catch (RuntimeException e) {
-            return Analysis.refused(Diagnostic.error("fichier", "YAML illisible : " + e.getMessage()));
+            return Analysis.refused(Diagnostic.error("fichier", (json ? "JSON" : "YAML") + " illisible : "
+                    + e.getMessage()));
         }
         if (!(root instanceof Map<?, ?> pack)) {
             return Analysis.refused(Diagnostic.error("fichier",
@@ -277,7 +279,8 @@ public final class ContentPackImport {
         Set<String> seen = new LinkedHashSet<>();
         for (String family : ContentPackSchema.FAMILIES) {
             for (Object raw : asList(content.get(family))) {
-                elements.add(element(family, raw, workspace, augmented, choices, seen));
+                elements.add(element(family, raw, workspace, augmented, ref == null ? RefData.empty() : ref,
+                        choices, seen));
             }
         }
 
@@ -288,7 +291,8 @@ public final class ContentPackImport {
     }
 
     private static Element element(String family, Object raw, ContentWorkspace workspace,
-                                   RefData ref, Map<String, Decision> decisions, Set<String> seen) {
+                                   RefData ref, RefData serverRef, Map<String, Decision> decisions,
+                                   Set<String> seen) {
         if (!(raw instanceof Map<?, ?> m)) {
             return invalid(family, "", "", "Élément mal formé : une table était attendue.");
         }
@@ -308,6 +312,9 @@ public final class ContentPackImport {
         if (!seen.add(key)) {
             return invalid(family, slug, rawId, "Doublon dans le pack : « " + slug + " » apparaît "
                     + "plusieurs fois dans la famille « " + family + " ».");
+        }
+        if ("npcs".equals(family)) {
+            return npcElement(m, slug, rawId, serverRef);
         }
         if (!SUPPORTED_FAMILIES.contains(family)) {
             return new Element(family, slug, rawId, Status.SKIPPED, List.of(), null, null, List.of(),
@@ -382,6 +389,128 @@ public final class ContentPackImport {
                         + "remplacer ou de l'ignorer — rien n'est écrasé sans décision.");
     }
 
+    // ---- PNJ logiques (issue #211) -----------------------------------------------------------
+
+    private static final java.util.regex.Pattern NPC_ID = java.util.regex.Pattern.compile("[a-z0-9._-]{1,64}");
+    private static final java.util.regex.Pattern NPC_ROLE = java.util.regex.Pattern.compile("[a-z0-9_-]{1,32}");
+    private static final java.util.regex.Pattern DIALOGUE_REF =
+            java.util.regex.Pattern.compile("([a-z0-9_]+:)?[a-z0-9_]+");
+
+    /**
+     * Un PNJ LOGIQUE du pack (issue #211). Les PNJ vivent sur le serveur, pas dans la source : un PNJ
+     * inconnu du serveur est donc créé, à la confirmation, par l'action existante
+     * {@code npc.definition.create} — jamais par une écriture directe. Un PNJ déjà connu n'est pas
+     * modifié (pas de remplacement dans ce MVP) : c'est dit, pas tu. Aucune liaison Citizens ni
+     * position n'est importée.
+     */
+    private static Element npcElement(Map<?, ?> m, String slug, String rawId, RefData ref) {
+        String id = rawId.trim().toLowerCase(Locale.ROOT);
+        if (!NPC_ID.matcher(id).matches()) {
+            return invalid("npcs", slug, rawId, "Identifiant de PNJ « " + rawId + " » invalide (minuscules, "
+                    + "chiffres, « . _ - »).");
+        }
+        String name = str(m.get("displayName"));
+        if (name.isEmpty() || name.length() > 128 || name.indexOf('\n') >= 0) {
+            return invalid("npcs", slug, rawId, "« displayName » manquant, trop long (128 max) ou multi-ligne.");
+        }
+        String dialogue = str(m.get("dialogue")).toLowerCase(Locale.ROOT);
+        if (!dialogue.isEmpty() && !DIALOGUE_REF.matcher(dialogue).matches()) {
+            return invalid("npcs", slug, rawId, "Dialogue « " + dialogue + " » invalide (« namespace:clé »).");
+        }
+        String role = str(m.get("role")).toLowerCase(Locale.ROOT);
+        if (!role.isEmpty() && !NPC_ROLE.matcher(role).matches()) {
+            return invalid("npcs", slug, rawId, "Rôle « " + role + " » invalide (minuscules, « _ - », 32 max).");
+        }
+        String summary = "id: " + id + "\ndisplayName: \"" + name.replace("\"", "'") + "\"\n"
+                + (dialogue.isEmpty() ? "" : "dialogue: " + dialogue + "\n")
+                + (role.isEmpty() ? "" : "role: " + role + "\n")
+                + "enabled: " + !"false".equals(str(m.get("enabled"))) + "\n";
+        if (ref != null && ref.isNpcKnown(id)) {
+            return new Element("npcs", slug, id, Status.SKIPPED, List.of(), summary, null, List.of(),
+                    "Ce PNJ existe déjà sur le serveur : il n'est pas modifié par l'import. Sa fiche se "
+                            + "modifie depuis la page des PNJ.");
+        }
+        return new Element("npcs", slug, id, Status.NEW, List.of(), summary, null, List.of(),
+                "PNJ logique créé sur le serveur à la confirmation (action « Créer une définition PNJ ») ; "
+                        + "aucune liaison Citizens ni position — à lier ensuite depuis la page des PNJ.");
+    }
+
+    /**
+     * Les créations de PNJ logiques à envoyer après une écriture source réussie (issue #211), sous
+     * la forme exacte du formulaire de {@code npc.definition.create} — la validation d'action du
+     * catalogue reste donc la seule à décider.
+     */
+    public static List<Map<String, String>> npcCreations(Analysis analysis, String rawPack) {
+        List<Map<String, String>> out = new ArrayList<>();
+        if (analysis == null || !analysis.readable()) {
+            return out;
+        }
+        Object root = parseRoot(rawPack);
+        Map<String, Map<?, ?>> byId = new LinkedHashMap<>();
+        if (root instanceof Map<?, ?> pack && pack.get("content") instanceof Map<?, ?> content) {
+            for (Object raw : asList(content.get("npcs"))) {
+                if (raw instanceof Map<?, ?> m) {
+                    byId.put(str(m.get("id")).toLowerCase(Locale.ROOT), m);
+                }
+            }
+        }
+        for (Element e : analysis.elements()) {
+            if (!"npcs".equals(e.family()) || e.status() != Status.NEW || !byId.containsKey(e.id())) {
+                continue;
+            }
+            Map<?, ?> m = byId.get(e.id());
+            Map<String, String> form = new LinkedHashMap<>();
+            form.put("npc_id", e.id());
+            form.put("display_name", str(m.get("displayName")));
+            String dialogue = str(m.get("dialogue")).toLowerCase(Locale.ROOT);
+            if (!dialogue.isEmpty()) {
+                form.put("dialogue_id", dialogue);
+            }
+            String role = str(m.get("role")).toLowerCase(Locale.ROOT);
+            if (!role.isEmpty()) {
+                form.put("role", role);
+            }
+            form.put("enabled", "false".equals(str(m.get("enabled"))) ? "false" : "true");
+            out.add(form);
+        }
+        return out;
+    }
+
+    /**
+     * Lit un pack en YAML ou en JSON (issue #211 : « un seul fichier JSON » produit par une IA
+     * externe). Le JSON est ramené aux formes que rend {@link MiniYaml} — nombres en texte,
+     * booléens et nuls tels quels — pour que les MÊMES lecteurs et validateurs s'appliquent ; il
+     * n'y a pas de second chemin d'import.
+     */
+    static Object parseRoot(String text) {
+        if (text != null && text.stripLeading().startsWith("{")) {
+            return normalizeJson(com.lodygames.rpgquest.panel.json.Json.parse(text));
+        }
+        return MiniYaml.parse(text);
+    }
+
+    private static Object normalizeJson(Object value) {
+        if (value instanceof Map<?, ?> m) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                out.put(String.valueOf(e.getKey()), normalizeJson(e.getValue()));
+            }
+            return out;
+        }
+        if (value instanceof List<?> l) {
+            List<Object> out = new ArrayList<>();
+            for (Object o : l) {
+                out.add(normalizeJson(o));
+            }
+            return out;
+        }
+        if (value instanceof Number n) {
+            double d = n.doubleValue();
+            return d == Math.rint(d) && Math.abs(d) < 1e15 ? String.valueOf((long) d) : String.valueOf(d);
+        }
+        return value;
+    }
+
     private static Element invalid(String family, String slug, String id, String reason) {
         return new Element(family, slug, id, Status.INVALID,
                 List.of(Diagnostic.error("contenu", reason)), null, null, List.of(), reason);
@@ -392,7 +521,10 @@ public final class ContentPackImport {
      * {@code namespace:clé} dont seule la clé sert de nom de fichier, exactement comme l'éditeur.
      */
     private static String slugOf(String family, String rawId) {
-        String id = "quests".equals(family) ? QuestYaml.plainId(rawId) : rawId.trim();
+        // Issue #211 : un dialogue s'identifie lui aussi en « namespace:clé » (« rpgquest:guide »,
+        // forme des dialogues fournis et de la documentation du format) ; seule la clé nomme le
+        // fichier, comme pour une quête. Le refuser rendait tout dialogue de pack inimportable.
+        String id = "quests".equals(family) || "dialogues".equals(family) ? QuestYaml.plainId(rawId) : rawId.trim();
         String lower = id.toLowerCase(Locale.ROOT);
         // Même expression que ContentId.KEY_PATTERN : une clé acceptée à la saisie ne peut donc pas
         // être refusée ici, et inversement (issue #223).
@@ -479,15 +611,50 @@ public final class ContentPackImport {
                     + "appelé sans une analyse valide et sans collision en attente.");
         }
         List<WriteOutcome> out = new ArrayList<>();
+        // Issue #211 : aucun ensemble partiel. Chaque fichier remplacé est sauvegardé AVANT
+        // d'écrire ; au premier échec, tout ce qui a été écrit par cet import est défait — fichiers
+        // créés supprimés, fichiers remplacés restaurés — et le rapport le dit.
+        String stamp = "import-" + java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS")
+                .withZone(java.time.ZoneOffset.UTC).format(java.time.Instant.now());
+        List<Element> created = new ArrayList<>();
+        List<ContentWorkspace.Backup> replaced = new ArrayList<>();
+        boolean failed = false;
         for (Element e : analysis.elements()) {
-            if (!e.writes()) {
+            // Les PNJ ne vivent pas dans la source : créés ensuite par l'action d'agent (#211).
+            if (!e.writes() || failed || "npcs".equals(e.family())) {
                 out.add(new WriteOutcome(e, null));
                 continue;
             }
             // NEW : empreinte attendue vide, donc le workspace refuse si le fichier est apparu
             // entre-temps. MODIFIED : empreinte relevée à l'analyse, donc il refuse s'il a changé.
             String expected = e.status() == Status.MODIFIED ? e.currentSha() : null;
-            out.add(new WriteOutcome(e, workspace.write(e.family(), e.slug(), e.yaml(), expected)));
+            if (e.status() == Status.MODIFIED) {
+                workspace.backup(e.family(), e.slug(), stamp).ifPresent(replaced::add);
+            }
+            ContentWorkspace.WriteResult result = workspace.write(e.family(), e.slug(), e.yaml(), expected);
+            out.add(new WriteOutcome(e, result));
+            if (!result.ok()) {
+                failed = true;
+            } else if (e.status() == Status.NEW) {
+                created.add(e);
+            }
+        }
+        if (failed) {
+            for (Element e : created) {
+                workspace.read(e.family(), e.slug())
+                        .ifPresent(f -> workspace.delete(e.family(), e.slug(), f.sha256()));
+            }
+            for (ContentWorkspace.Backup backup : replaced) {
+                workspace.restore(backup);
+            }
+            List<WriteOutcome> rolledBack = new ArrayList<>();
+            for (WriteOutcome o : out) {
+                boolean undone = o.result() != null && o.result().ok();
+                rolledBack.add(undone ? new WriteOutcome(o.element(), new ContentWorkspace.WriteResult(false,
+                        "ROLLED_BACK", "Annulé : une autre écriture de cet import a échoué, rien n'a été conservé.",
+                        o.result().repoPath(), null)) : o);
+            }
+            return rolledBack;
         }
         return out;
     }

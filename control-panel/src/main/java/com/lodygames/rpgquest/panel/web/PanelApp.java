@@ -2082,6 +2082,32 @@ public final class PanelApp {
      * parallèle, et la confirmation écrirait alors d'après un état périmé. Ici la confirmation
      * re-valide tout et redétecte les collisions apparues entre-temps.</p>
      */
+    /** Issue #211 : les créations de PNJ logiques d'un pack importé, par la file d'actions habituelle. */
+    private List<String> enqueueImportedNpcs(Session session, List<Map<String, String>> creations, String rid) {
+        List<String> notes = new ArrayList<>();
+        if (creations.isEmpty()) {
+            return notes;
+        }
+        String agentId = config.agents().defaultAgentId();
+        if (!permissions.can(session.effective(), Permission.NPC_WRITE)) {
+            notes.add("PNJ du pack non créés : votre rôle ne permet pas de créer des PNJ (à faire depuis la page des PNJ).");
+            return notes;
+        }
+        for (Map<String, String> form : creations) {
+            var v = com.lodygames.rpgquest.panel.agent.AgentActionCatalog.validate("npc.definition.create", form);
+            if (!v.valid()) {
+                notes.add("PNJ « " + form.get("npc_id") + " » non créé : " + v.error());
+                continue;
+            }
+            String id = agentStore.createAction(agentId, "npc.definition.create", v.params(), session.username());
+            audit.record(session.username(), "content.import.npc", "npc=" + form.get("npc_id") + " action=" + id,
+                    "OK", "", rid);
+            notes.add("PNJ logique « " + form.get("npc_id") + " » : création envoyée au serveur (action " + id.substring(0, 8)
+                    + "). Le lier ensuite à un PNJ Citizens depuis la page des PNJ.");
+        }
+        return notes;
+    }
+
     private void handleContentImport(HttpExchange exchange) throws IOException {
         Optional<Session> maybe = requireSession(exchange);
         if (maybe.isEmpty()) {
@@ -2095,6 +2121,7 @@ public final class PanelApp {
 
         String error = null;
         String pack = null;
+        List<String> importNotes = List.of();
         ContentPackImport.Analysis analysis = null;
         List<ContentPackImport.WriteOutcome> applied = null;
         Map<String, ContentPackImport.Decision> decisions = new LinkedHashMap<>();
@@ -2102,7 +2129,22 @@ public final class PanelApp {
         if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
             // Lecture bornée qui SIGNALE le dépassement : un pack tronqué en silence serait pire
             // qu'un refus, car il s'importerait amputé de ses derniers éléments.
-            Optional<Map<String, String>> body = Http.formBody(exchange, 4 * 1024 * 1024);
+            // Issue #211 : un fichier peut aussi être DÉPOSÉ (multipart) — même pipeline ensuite.
+            Optional<Map<String, String>> body;
+            String contentType = exchange.getRequestHeaders().getFirst("Content-Type");
+            if (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/form-data")) {
+                byte[] raw = exchange.getRequestBody().readNBytes(4 * 1024 * 1024 + 1);
+                var parsed = raw.length > 4 * 1024 * 1024 ? Optional.<com.lodygames.rpgquest.panel.http.Multipart.Form>empty()
+                        : com.lodygames.rpgquest.panel.http.Multipart.parse(contentType, raw);
+                body = parsed.map(f -> {
+                    Map<String, String> fields = new LinkedHashMap<>(f.fields());
+                    f.file("pack_file").filter(file -> file.data().length > 0).ifPresent(file ->
+                            fields.put("pack", new String(file.data(), StandardCharsets.UTF_8)));
+                    return fields;
+                });
+            } else {
+                body = Http.formBody(exchange, 4 * 1024 * 1024);
+            }
             if (body.isEmpty()) {
                 error = "Requête trop volumineuse. Taille maximale d'un pack : "
                         + (ContentPackImport.MAX_BYTES / 1024) + " Kio.";
@@ -2143,6 +2185,12 @@ public final class PanelApp {
                         error = "Import refusé : l'analyse n'est pas confirmable en l'état.";
                     } else {
                         applied = ContentPackImport.apply(analysis, contentWorkspace);
+                        // Issue #211 : les PNJ logiques du pack, créés sur le serveur par l'action
+                        // existante — seulement si toute la source a été écrite (aucun ensemble partiel).
+                        boolean allWritten = applied.stream().allMatch(o -> o.result() == null || o.result().ok());
+                        if (allWritten) {
+                            importNotes = enqueueImportedNpcs(session, ContentPackImport.npcCreations(analysis, pack), rid);
+                        }
                         for (ContentPackImport.WriteOutcome o : applied) {
                             if (o.result() != null) {
                                 audit.record(session.username(), "content.import.write",
@@ -2160,7 +2208,8 @@ public final class PanelApp {
             }
         }
 
-        String body = ContentImportPages.render(contentWorkspace, pack, analysis, applied, decisions, error);
+        String body = ContentImportPages.render(contentWorkspace, pack, analysis, applied, decisions, error,
+                importNotes);
         Http.html(exchange, 200, renderPage("Importer un content pack", session, "/content/import", body,
                 Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }

@@ -5560,3 +5560,28 @@ plus la conception automatique choisie.
 4.  Conception automatique « Soigné » sur un projet sans conception : le journal commence par
     « CONCEPTION DÉTAILLÉE », la critique note « OMISSIONS ET ÉCARTS ».
 5.  Jugement esthétique et fidélité au brief : par le propriétaire, en jeu — l'audit ne les mesure pas.
+
+### TC-298 — Histoire complète en JSON : « Tom reprend la route » (issue #211, PENDING MANUAL VALIDATION)
+
+**Prérequis** : panel et JAR issus de la nuit du 12→13/10/2026 ; Tom n'existe pas encore (ni PNJ
+`tom`, ni quêtes `rpgquest:tom_*`). **Durée** : 25 minutes. **Gratuit** (aucun appel IA).
+
+1.  `/content/import` → « Fichier du pack » : déposer `docs/content-packs/tom_reprend_la_route.json`
+    → **Analyser**. **Attendu** : 3 quêtes, 1 story, 1 dialogue « à créer », PNJ `tom` « créé sur le
+    serveur à la confirmation », aucune erreur ni collision.
+2.  **Confirmer**. **Attendu** : 5 fichiers écrits dans la source, bandeau « PNJ logique « tom » :
+    création envoyée au serveur ». Rafraîchir `/npcs` : Tom existe, sans PNJ Citizens.
+3.  Réimporter le même fichier. **Attendu** : tout « inchangé », Tom « existe déjà », rien à écrire.
+4.  Ouvrir `rpgquest:tom_bache` dans l'éditeur de quêtes : changer la quantité de cuir (6 → 4),
+    enregistrer, relire ; dans l'éditeur de dialogues, modifier la première réplique de Tom.
+5.  Publier les cinq contenus (`/content`, publication habituelle).
+6.  `/npcs` → Tom → lier un PNJ Citizens existant (ou en créer un), sans réimporter l'histoire.
+7.  En jeu, compte de test : parler à Tom → « Je peux t'aider ? » → **Commencer la quête : Du bois
+    pour le chariot**. Apporter 10 bûches → « J'apporte des matériaux » → **Donner** : 10/16 restent
+    acquis ; revenir avec 6 → quête terminée une seule fois (40 XP).
+8.  Revenir : « Et maintenant, la bâche ? » → accepter ; remettre le cuir ; puis « Il te manque des
+    marchandises ? » → accepter, remettre 16 blés et 8 pommes → 80 XP + 3 émeraudes une seule fois.
+9.  « Tu repars bientôt ? » → conclusion. Vérifier que `/quests` ne propose plus rien et qu'aucun
+    double gain n'apparaît après reconnexion.
+10. Refus : « Pas maintenant » ne démarre rien. Collision : modifier un fichier `tom_*` dans la
+    source puis réimporter → collision à trancher, rien d'écrasé sans décision.

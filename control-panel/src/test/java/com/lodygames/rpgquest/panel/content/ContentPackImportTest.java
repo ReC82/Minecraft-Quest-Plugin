@@ -91,11 +91,9 @@ class ContentPackImportTest {
         assertTrue(a.envelope().stream().noneMatch(d -> d.level() == Diagnostic.Level.ERROR),
                 () -> "enveloppe : " + a.envelope());
         for (ContentPackImport.Element e : a.elements()) {
-            // « npcs » n'est pas éditable depuis le panel : l'élément est légitimement laissé de
-            // côté, ni écrit ni perdu. Toutes les autres familles doivent être importables.
-            ContentPackImport.Status expected = e.family().equals("npcs")
-                    ? ContentPackImport.Status.SKIPPED : ContentPackImport.Status.NEW;
-            assertEquals(expected, e.status(),
+            // Issue #211 : un PNJ inconnu du serveur est proposé à la CRÉATION (action d'agent),
+            // comme les autres familles le sont à l'écriture.
+            assertEquals(ContentPackImport.Status.NEW, e.status(),
                     () -> e.key() + " : " + e.reason() + " " + e.diagnostics());
         }
         assertTrue(a.importable(), () -> "éléments : " + a.elements());
@@ -435,18 +433,28 @@ class ContentPackImportTest {
 
     /** Les PNJ font partie du format mais ne sont pas éditables : laissés de côté AVEC leur motif. */
     @Test
-    void npcsAreSkippedWithAnExplicitReasonRatherThanSilentlyDropped() {
+    void anUnknownNpcIsProposedForCreationAndAnInvalidOneIsNamed() {
+        // Issue #211 : les PNJ ne sont plus laissés de côté — un PNJ inconnu du serveur est créé à
+        // la confirmation par l'action existante ; un PNJ mal formé bloque, avec son motif.
         ContentPackImport.Analysis a = analyze(pack(ONE_QUEST + """
                   npcs:
                     - id: mineur
                       displayName: "Mineur"
                 """));
-
         ContentPackImport.Element npc = a.elements().stream()
                 .filter(e -> "npcs".equals(e.family())).findFirst().orElseThrow();
-        assertEquals(ContentPackImport.Status.SKIPPED, npc.status());
-        assertTrue(npc.reason().contains("pas éditable"), npc.reason());
+        assertEquals(ContentPackImport.Status.NEW, npc.status());
+        assertTrue(npc.reason().contains("Créer une définition PNJ"), npc.reason());
         assertTrue(a.importable(), "la quête reste importable");
+
+        ContentPackImport.Analysis bad = analyze(pack(ONE_QUEST + """
+                  npcs:
+                    - id: mineur
+                """));
+        ContentPackImport.Element invalid = bad.elements().stream()
+                .filter(e -> "npcs".equals(e.family())).findFirst().orElseThrow();
+        assertEquals(ContentPackImport.Status.INVALID, invalid.status());
+        assertTrue(invalid.reason().contains("displayName"), invalid.reason());
     }
 
     // ---- Diff ----------------------------------------------------------------------------------

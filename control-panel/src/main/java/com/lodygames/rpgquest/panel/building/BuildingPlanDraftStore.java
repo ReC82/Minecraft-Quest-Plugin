@@ -106,7 +106,16 @@ public final class BuildingPlanDraftStore {
                            BuildingPlanDraft.Origin origin, String parentId, String sourceActionId,
                            String providerId, String providerLabel, String model, String usage,
                            String rawResponse, String extractionNote, int maxWidth, int maxHeight,
-                           String createdBy) {
+                           String createdBy, String projectId) {
+
+        /** Forme antérieure à #267 : brouillon rattaché à un emplacement seulement. */
+        public NewDraft(String agentId, String siteId, String plan, BuildingPlanDraft.Origin origin,
+                        String parentId, String sourceActionId, String providerId, String providerLabel,
+                        String model, String usage, String rawResponse, String extractionNote,
+                        int maxWidth, int maxHeight, String createdBy) {
+            this(agentId, siteId, plan, origin, parentId, sourceActionId, providerId, providerLabel,
+                    model, usage, rawResponse, extractionNote, maxWidth, maxHeight, createdBy, "");
+        }
     }
 
     private static final String CREATE_DRAFT = """
@@ -182,6 +191,13 @@ public final class BuildingPlanDraftStore {
             s.execute(CREATE_LINK);
             s.execute(CREATE_LINK_INDEX);
             s.execute(CREATE_REQUEST);
+            // #267 — migration ADDITIVE : la colonne n'existe pas dans les bases de #256. Elle est
+            // ajoutée une fois, vide ; aucune ligne n'est réécrite ici.
+            if (!hasColumn(c, "building_plan_draft", "project_id")) {
+                s.execute("ALTER TABLE building_plan_draft ADD COLUMN project_id TEXT");
+            }
+            s.execute("CREATE INDEX IF NOT EXISTS idx_plan_draft_project "
+                    + "ON building_plan_draft(agent_id, project_id)");
         } catch (SQLException e) {
             throw new IllegalStateException(
                     "Impossible d'initialiser les tables de brouillons de plan dans " + dbPath, e);
@@ -202,8 +218,8 @@ public final class BuildingPlanDraftStore {
                     INSERT INTO building_plan_draft (id, agent_id, site_id, plan, plan_sha, version,
                         origin, parent_id, source_action_id, provider_id, provider_label, model, usage,
                         raw_response, extraction_note, max_width, max_height, archived, created_by,
-                        created_at, updated_by, updated_at)
-                    VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?)
+                        created_at, updated_by, updated_at, project_id)
+                    VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?)
                     """)) {
                 int i = 1;
                 ps.setString(i++, id);
@@ -225,7 +241,8 @@ public final class BuildingPlanDraftStore {
                 ps.setString(i++, nz(d.createdBy()));
                 ps.setString(i++, now);
                 ps.setString(i++, nz(d.createdBy()));
-                ps.setString(i, now);
+                ps.setString(i++, now);
+                ps.setString(i, nz(d.projectId()));
                 ps.executeUpdate();
             }
             insertRevision(c, id, 1, plan, sha, d.createdBy(), now);
@@ -268,6 +285,75 @@ public final class BuildingPlanDraftStore {
             }
         } catch (SQLException e) {
             throw new IllegalStateException("Lecture des brouillons de " + siteId + " impossible", e);
+        }
+        return out;
+    }
+
+    /** Les brouillons non archivés d'un projet d'atelier (#267), le plus récemment modifié d'abord. */
+    public List<BuildingPlanDraft> forProject(String agentId, String projectId) {
+        List<BuildingPlanDraft> out = new ArrayList<>();
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
+                "SELECT * FROM building_plan_draft WHERE agent_id = ? AND project_id = ? AND archived = 0 "
+                        + "ORDER BY updated_at DESC, created_at DESC")) {
+            ps.setString(1, agentId);
+            ps.setString(2, nz(projectId));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(read(rs));
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Lecture des brouillons du projet impossible", e);
+        }
+        return out;
+    }
+
+    /**
+     * #267 — rattache à un projet les brouillons d'un emplacement qui n'en ont pas encore. Rien n'est
+     * supprimé ni réécrit d'autre : {@code site_id} reste en place, c'est la trace d'origine.
+     *
+     * @return nombre de brouillons rattachés
+     */
+    public int attachSiteDrafts(String agentId, String siteId, String projectId) {
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
+                "UPDATE building_plan_draft SET project_id = ? WHERE agent_id = ? AND site_id = ? "
+                        + "AND (project_id IS NULL OR project_id = '')")) {
+            ps.setString(1, projectId);
+            ps.setString(2, agentId);
+            ps.setString(3, nz(siteId));
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Rattachement des brouillons impossible", e);
+        }
+    }
+
+    /** Rattache un seul brouillon à un projet (brouillon antérieur sans projet). */
+    public boolean attachDraft(String draftId, String projectId) {
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
+                "UPDATE building_plan_draft SET project_id = ? WHERE id = ? "
+                        + "AND (project_id IS NULL OR project_id = '')")) {
+            ps.setString(1, projectId);
+            ps.setString(2, nz(draftId));
+            return ps.executeUpdate() == 1;
+        } catch (SQLException e) {
+            throw new IllegalStateException("Rattachement du brouillon impossible", e);
+        }
+    }
+
+    /** Emplacements dont des brouillons ne sont rattachés à aucun projet : ce qui reste à importer. */
+    public List<String> sitesWithUnattachedDrafts(String agentId) {
+        List<String> out = new ArrayList<>();
+        try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(
+                "SELECT DISTINCT site_id FROM building_plan_draft WHERE agent_id = ? AND archived = 0 "
+                        + "AND site_id <> '' AND (project_id IS NULL OR project_id = '') ORDER BY site_id")) {
+            ps.setString(1, agentId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(rs.getString(1));
+                }
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Lecture des brouillons à importer impossible", e);
         }
         return out;
     }
@@ -505,7 +591,20 @@ public final class BuildingPlanDraftStore {
                 rs.getString("usage"), rs.getString("raw_response"), rs.getString("extraction_note"),
                 rs.getInt("max_width"), rs.getInt("max_height"), rs.getInt("archived") != 0,
                 rs.getString("created_by"), instant(rs.getString("created_at")),
-                rs.getString("updated_by"), instant(rs.getString("updated_at")));
+                rs.getString("updated_by"), instant(rs.getString("updated_at")),
+                rs.getString("project_id"));
+    }
+
+    private static boolean hasColumn(Connection c, String table, String column) throws SQLException {
+        try (Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("PRAGMA table_info(" + table + ")")) {
+            while (rs.next()) {
+                if (column.equalsIgnoreCase(rs.getString("name"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static Link readLink(ResultSet rs) throws SQLException {

@@ -22,8 +22,9 @@ class NpcHintConfigTest {
         NpcHintConfig c = NpcHintConfig.defaults();
 
         assertTrue(c.enabled());
-        assertEquals(20, c.periodTicks(), "une passe par seconde, jamais par tick");
-        assertEquals(1, c.count(), "une seule particule par passe : discrétion");
+        assertEquals(10, c.periodTicks(), "deux passes par seconde, jamais par tick (#12, 12/10)");
+        assertEquals(1, c.count(), "une particule par point de la forme : discrétion");
+        assertEquals(0.6, c.heightOffset(), 1e-9, "juste au-dessus du nom, pas dans le ciel (#12, 12/10)");
         assertTrue(c.requireLineOfSight(), "pas de signal à travers un mur par défaut");
         assertEquals(Particle.HAPPY_VILLAGER, c.questParticle());
         assertEquals(Particle.ENCHANT, c.dialogueParticle());

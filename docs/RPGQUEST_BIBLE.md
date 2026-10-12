@@ -3011,7 +3011,7 @@ Un nœud est marqué lu **au moment où il est réellement affiché**, et nulle 
 
 #### Coût maîtrisé
 
-- **Jamais de travail à chaque tick** : une passe toutes les `period-ticks` (1 s par défaut), et
+- **Jamais de travail à chaque tick** : une passe toutes les `period-ticks` (0,5 s par défaut), et
   **par joueur connecté** — jamais un balayage de tous les PNJ du monde.
 - **Jamais de PNJ distant** : les candidats viennent de `getNearbyEntities` dans le `radius`
   configuré. Hors rayon, dans un autre monde, non chargé ou hors ligne de vue : rien n'est calculé
@@ -3027,14 +3027,20 @@ Un nœud est marqué lu **au moment où il est réellement affiché**, et nulle 
 | Clé | Défaut | Bornes | Effet |
 |---|---|---|---|
 | `enabled` | `true` | — | active le signal |
-| `period-ticks` | `20` | 10–100 | période de la passe d'affichage |
+| `period-ticks` | `10` | 10–100 | période de la passe d'affichage |
 | `radius` | `16.0` | 4–48 | distance maximale, en blocs |
 | `require-line-of-sight` | `true` | — | pas de signal à travers un mur |
 | `refresh-seconds` | `5` | 1–60 | intervalle minimal entre deux recalculs |
-| `height-offset` | `2.2` | 0–3 | hauteur au-dessus du PNJ |
+| `height-offset` | `0.6` | 0–1,5 | hauteur de la base du signal au-dessus de la tête du PNJ |
 | `quest-particle` | `HAPPY_VILLAGER` | nom valide | convention « quête » |
 | `dialogue-particle` | `ENCHANT` | nom valide | convention « dialogue » |
-| `count` | `1` | 1–10 | particules par passe |
+| `count` | `1` | 1–10 | particules par point de la forme |
+
+**Forme du signal (retour du 12/10/2026)** : une particule isolée à 2,2 blocs au-dessus de la tête
+était « trop haute et pas assez visible ». Le signal est désormais une **forme** posée juste
+au-dessus du nom : un **« ! » vertical** pour une quête, **trois points « … » face au joueur** pour
+un dialogue non lu. Une valeur `height-offset` supérieure à 1,5 (ex. l'ancien `2.2` d'un
+`config.yml` existant) est ramenée à 1,5 au chargement.
 
 Les valeurs numériques hors bornes sont **corrigées** au chargement : un signal visuel ne doit pas
 empêcher le serveur de démarrer. Une **particule inconnue**, en revanche, est **refusée** au

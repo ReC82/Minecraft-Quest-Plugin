@@ -20,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.bukkit.Location;
+import org.bukkit.Particle;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
@@ -288,11 +289,39 @@ public final class NpcHintService implements com.lodygames.rpgquest.bootstrap.Pl
     private record NearbyNpc(String npcId, Entity entity) {
     }
 
+    /**
+     * Dessine le signal juste au-dessus du nom du PNJ (#12, retour du 12/10 : « trop haut et pas assez
+     * visible »). Une particule isolée à deux blocs au-dessus de la tête se perdait dans le ciel ; une
+     * <strong>forme</strong> se lit d'un coup d'œil : un « ! » vertical pour une quête, trois points
+     * « … » face au joueur pour un dialogue non lu.
+     */
     private void show(Player player, Entity npc, Hint hint) {
-        Location at = npc.getLocation().clone().add(0, npc.getHeight() + config.heightOffset(), 0);
-        // spawnParticle sur le JOUEUR : personne d'autre ne voit ce signal.
-        player.spawnParticle(hint == Hint.QUEST ? config.questParticle() : config.dialogueParticle(),
-                at, config.count(), 0.08, 0.04, 0.08, 0.0);
+        Location base = npc.getLocation().clone().add(0, npc.getHeight() + config.heightOffset(), 0);
+        Particle particle = hint == Hint.QUEST ? config.questParticle() : config.dialogueParticle();
+        for (double[] offset : hintShape(hint, player.getLocation().getX() - base.getX(),
+                player.getLocation().getZ() - base.getZ())) {
+            // spawnParticle sur le JOUEUR : personne d'autre ne voit ce signal.
+            player.spawnParticle(particle, base.clone().add(offset[0], offset[1], offset[2]),
+                    config.count(), 0.02, 0.02, 0.02, 0.0);
+        }
+    }
+
+    /**
+     * Les points de la forme, relatifs à la base du signal. Le « … » est orienté perpendiculairement à
+     * la direction joueur → PNJ pour être vu de face, quel que soit le côté d'où l'on arrive.
+     */
+    static List<double[]> hintShape(Hint hint, double towardPlayerX, double towardPlayerZ) {
+        if (hint == Hint.QUEST) {
+            // « ! » : une barre de quatre points, un vide, puis le point du bas.
+            return List.of(new double[] {0, 0.0, 0}, new double[] {0, 0.32, 0}, new double[] {0, 0.44, 0},
+                    new double[] {0, 0.56, 0}, new double[] {0, 0.68, 0});
+        }
+        double length = Math.hypot(towardPlayerX, towardPlayerZ);
+        double sideX = length < 1.0E-6 ? 1.0 : -towardPlayerZ / length;
+        double sideZ = length < 1.0E-6 ? 0.0 : towardPlayerX / length;
+        double step = 0.2;
+        return List.of(new double[] {-sideX * step, 0.2, -sideZ * step}, new double[] {0, 0.2, 0},
+                new double[] {sideX * step, 0.2, sideZ * step});
     }
 
     // ---- Recalcul ---------------------------------------------------------------------------

@@ -8190,3 +8190,34 @@ Le panel le refusait déjà depuis PR #272 ; c'est désormais aussi la règle du
 TC-285 étape 3 (le bouton est absent côté panel) ; le refus serveur est couvert par
 `BuildingSiteServiceTest.anOccupiedSiteIsNeverDeleted`.
 
+
+## 2026-10-12 16:43 — Déploiement DEV de #265 : **PARTIEL** (panel déployé, JAR bloqué par le certificat VeryGames)
+
+### Effectué
+
+- **PlugAdmin** déployé depuis `chore/257-ci-github-actions` @ `c5da469` (code = `63f7b19`, CI verte :
+  run 38264168002). JAR du panel installé = construit : SHA-256 `335dc7e1ecd9fb01eab363efdce1259962cc9776ce5470f6929a621ab3cd1215`.
+  Sauvegardes : app → `/opt/plugadmin/releases/20261012-164124`, base →
+  `/opt/plugadmin/backups/control-panel-20261012-164117-pre265.db` (intégrité OK). Migration additive
+  appliquée (`building_project`, colonne `project_id`) ; 2 brouillons existants intacts.
+
+### Bloqué — JAR RPGQuest NON transféré
+
+Le certificat FTPS de VeryGames (`CN = *.dg.vg`) a **expiré le 2026-10-11 05:12:03 UTC** :
+`curl: (60) SSL certificate problem: certificate has expired`. Rien à corriger de notre côté ; aucun
+contournement TLS (non autorisé). Minecraft **non redémarré** (rien à charger ; 1 joueur en ligne).
+
+JAR prêt, même commit : 2 349 597 octets, SHA-256 `af0a911890d0f4a2571eaf15f1840b209758caeadf9df34a9ed3d33aedb08016`
+(contient #273 aperçu 3D, #239 refus serveur, et en attente depuis plus tôt : #263, #248, #216).
+
+### Conséquence côté panel en attendant
+
+Panel récent + plugin ancien : compatible. L'aperçu 3D affiche « il faut une version plus récente du
+plugin » ; la suppression d'un emplacement occupé reste refusée par le panel.
+
+### Reprise
+
+Quand le certificat est renouvelé (`openssl s_client … | openssl x509 -noout -enddate`) :
+`./gradlew --stop`, `export RPGQUEST_TEST_MAX_HEAP=768m`, depuis un arbre propre du même commit :
+`scripts/deploy-verygames.sh -y`, vérifier « JAR en ligne : N octets (== local) », **joueurs = 0**, puis
+`scripts/verygames-restart.sh --timeout 300`. Rollback panel : `scripts/plugadmin/rollback.sh app`.

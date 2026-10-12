@@ -28,7 +28,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -141,12 +145,19 @@ public final class WorldEditSchematicGateway implements SchematicGateway {
             BlockArrayClipboard clipboard = new BlockArrayClipboard(region);
             clipboard.setOrigin(BlockVector3.ZERO);
 
-            ParserContext context = new ParserContext();
-            context.setRestricted(false);
-            context.setTryLegacy(false);
+            ParserContext context = parserContext();
             for (BlueprintBlock block : blueprint.blocks()) {
-                BaseBlock state = WorldEdit.getInstance().getBlockFactory()
-                        .parseFromInput(block.state(), context);
+                BaseBlock state;
+                try {
+                    state = WorldEdit.getInstance().getBlockFactory()
+                            .parseFromInput(block.state(), context);
+                } catch (Exception refused) {
+                    // Le contrôle préalable (rejected) aurait dû l'arrêter : on nomme au moins la
+                    // cellule, au lieu d'un NoMatchException anonyme.
+                    return Outcome.failure("Écriture du schematic impossible : état « " + block.state()
+                            + " » refusé par WorldEdit en " + block.x() + "/" + block.y() + "/"
+                            + block.z() + " — " + describe(refused));
+                }
                 clipboard.setBlock(BlockVector3.at(block.x(), block.y(), block.z()), state);
             }
 
@@ -159,6 +170,31 @@ public final class WorldEditSchematicGateway implements SchematicGateway {
         } catch (Exception | LinkageError error) {
             return Outcome.failure("Écriture du schematic impossible : " + describe(error));
         }
+    }
+
+    /** Le contexte d'analyse de l'écriture : le contrôle préalable DOIT employer le même. */
+    private static ParserContext parserContext() {
+        ParserContext context = new ParserContext();
+        context.setRestricted(false);
+        context.setTryLegacy(false);
+        return context;
+    }
+
+    @Override
+    public Map<String, String> rejected(Collection<String> states) {
+        if (!available()) {
+            return Map.of();
+        }
+        Map<String, String> refused = new LinkedHashMap<>();
+        ParserContext context = parserContext();
+        for (String state : new LinkedHashSet<>(states)) {
+            try {
+                WorldEdit.getInstance().getBlockFactory().parseFromInput(state, context);
+            } catch (Exception | LinkageError error) {
+                refused.put(state, describe(error));
+            }
+        }
+        return refused;
     }
 
     @Override

@@ -15,11 +15,11 @@ import java.util.regex.Pattern;
  * point-virgule, pas de barre oblique, pas de retour à la ligne — donc rien qui ressemble à une
  * commande, un chemin, ou une tentative d'injection dans ce qui lira la chaîne ensuite.</p>
  *
- * <p>Elle ne dit <strong>pas</strong> que le bloc existe. La liste des blocs d'une version de
- * Minecraft n'est pas connue ici : cette classe est pure, et le registre vit dans le serveur. Un
- * nom inventé par l'IA ({@code minecraft:elven_marble}) passe donc ce contrôle et sera refusé plus
- * loin, par le moteur — ce qui est le bon endroit, parce que lui seul sait. L'important est que ce
- * refus soit <em>visible</em> et non un bloc silencieusement remplacé par de l'air.</p>
+ * <p>Elle ne dit <strong>pas</strong> que le bloc existe : c'est le rôle de {@link BlockCatalog},
+ * le registre de la version servie, consulté par {@link BuildingPlan#validate()} — puis du vrai
+ * parseur du moteur, avant tout verdict « conforme » (#288–#292). Un nom inventé par l'IA
+ * ({@code minecraft:elven_marble}), ou un bloc qui n'existe qu'en couleurs ({@code minecraft:bed}),
+ * passe ce contrôle-ci et est refusé là, visiblement — jamais remplacé en silence.</p>
  */
 public final class BlockState {
 

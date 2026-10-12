@@ -124,10 +124,15 @@ public final class BuildingPromptBuilder {
                    après, aucun bloc de code, aucune explication.
                 2. N'utilise QUE les instructions listées ci-dessous. Une instruction plausible mais
                    absente de la liste fait échouer la génération.
-                3. N'utilise que des blocs Minecraft VANILLA, en minuscules, forme
+                3. N'utilise que des blocs Minecraft VANILLA 1.21.11, en minuscules, forme
                    « minecraft:nom ». N'écris PAS de propriétés entre crochets : le moteur les
                    calcule, et une propriété inventée fait échouer la génération. « face=bottom »
                    sur un escalier, par exemple, n'existe pas — la propriété s'appelle « half ».
+                   Le serveur vérifie CHAQUE identifiant dans le registre du jeu avant tout
+                   verdict. Les lits, vitres teintées, laines, tapis, bougies, bannières et bétons
+                   n'existent QU'EN COULEUR : minecraft:pink_bed, minecraft:pink_stained_glass_pane,
+                   minecraft:white_carpet. « minecraft:bed », « minecraft:stained_glass_pane » et
+                   « minecraft:carpet » N'EXISTENT PAS et font refuser le plan entier.
                 4. Toutes les coordonnées sont LOCALES, entières, et comprises dans la taille que tu
                    déclares : de 0 à size-1 inclus. Une zone qui sort du volume fait échouer la
                    génération.
@@ -143,9 +148,9 @@ public final class BuildingPromptBuilder {
                   x: 9    # largeur  (axe est-ouest)
                   y: 8    # hauteur
                   z: 7    # profondeur (axe nord-sud)
-                anchor:                # OPTIONNEL — par défaut le centre de la base
+                anchor:                # OPTIONNEL — par défaut le centre de la base, y: 0
                   x: 4
-                  y: 0
+                  y: 1                 # la couche posée AU NIVEAU DU TERRAIN (voir l'entrée)
                   z: 3
                 steps:
                   - op: box
@@ -220,8 +225,17 @@ public final class BuildingPromptBuilder {
 
                 « facade » prend FRONT, BACK, LEFT ou RIGHT. JAMAIS une coordonnée, JAMAIS un point
                 cardinal : FRONT est la façade d'entrée, quelle que soit l'orientation du bâtiment,
-                et LEFT/RIGHT sont vues depuis l'extérieur, face au bâtiment. « offset » part
-                toujours du coin de coordonnée minimale, de 0 à la largeur de la façade moins 1.
+                et LEFT/RIGHT sont vues depuis l'extérieur, face au bâtiment.
+
+                « offset » est la coordonnée LE LONG de la façade, en coordonnées du plan : x pour
+                une façade nord ou sud, z pour une façade est ou ouest. Le moteur perce l'ouverture
+                dans le MUR CONSTRUIT (le « walls », « shell » ou « box » de ce côté) qui contient
+                cette position — PAS sur la limite du volume. Si ton bâtiment est en retrait dans
+                son volume (murs de [3,1,3] à [15,4,15] dans un volume de 19), « offset » doit
+                tomber entre les angles de ce mur, ici de 4 à 14 ; hors de cet intervalle, le plan
+                est refusé. Si plusieurs corps se trouvent à cette position (une tour devant la
+                maison), l'ouverture va dans le plus extérieur ; « wall: <coordonnée> » désigne
+                explicitement un autre mur (le z ou le x de ce mur).
 
                 UN EXEMPLE MINIMAL PAR INSTRUCTION D'ARCHITECTURE
 
@@ -278,10 +292,14 @@ public final class BuildingPromptBuilder {
                 Le serveur mesure ces points sur la grille réellement construite, pas sur tes
                 intentions. Un plan qui en manque un est REFUSÉ et rien n'est écrit.
 
-                  [ ] UNE ENTRÉE. Une ouverture de 2 blocs de haut traversant une façade, avec de
-                      l'air derrière. Utilise « op: door » : c'est la seule façon de ne pas se
-                      tromper.
-                  [ ] DES VITRAGES, sur au moins DEUX façades différentes. Utilise « op: window ».
+                  [ ] UNE ENTRÉE PRATICABLE. Une porte (« op: door ») DANS un mur extérieur, qu'un
+                      joueur venu du terrain franchit jusqu'au sol intérieur SANS SAUTER. Le
+                      terrain est juste sous la couche « anchor.y » : avec un sol en y=0, mets
+                      « anchor: y: 1 » (la fondation s'enfonce, l'entrée est de plain-pied), ou
+                      pose devant la porte, DANS le volume, des marches d'escalier tournées vers
+                      elle. Une porte posée hors des murs ne compte pas.
+                  [ ] DES VITRAGES DANS LES MURS, sur au moins DEUX façades différentes. Utilise
+                      « op: window » ; une vitre posée hors d'un mur ne compte pas.
                   [ ] DE LA LUMIÈRE, à moins de 8 blocs de tout point intérieur.
                   [ ] UNE ENVELOPPE CLOSE : pas de trou dans les murs ni dans le toit, pignons
                       compris. « op: gable » avec « fill » les ferme pour toi.
@@ -305,6 +323,10 @@ public final class BuildingPromptBuilder {
                   x: 11
                   y: 13
                   z: 9
+                anchor:
+                  x: 5
+                  y: 1
+                  z: 4
                 steps:
                   - op: box
                     from: [0, 0, 0]
@@ -405,7 +427,8 @@ public final class BuildingPromptBuilder {
                 Remarque ce que cet exemple NE fait pas : il ne calcule aucune coordonnée de porte,
                 aucune orientation de marche, aucune propriété de bloc, aucune trémie. Le plancher
                 de l'étage est en y=5, donc « floor: 5 » ; la première marche est sur le sol (y=1),
-                dans un coin, et le mobilier longe les murs. Il décrit, et le moteur calcule.
+                dans un coin, et le mobilier longe les murs. « anchor: y: 1 » enterre la fondation
+                (y=0) : on entre de plain-pied. Il décrit, et le moteur calcule.
 
                 CONTRAINTE DE LONGUEUR — LIS CECI
 

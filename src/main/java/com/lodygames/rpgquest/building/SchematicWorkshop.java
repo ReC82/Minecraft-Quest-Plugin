@@ -62,6 +62,11 @@ public final class SchematicWorkshop {
      * plan produit le même contenu, donc régénérer sans avoir touché au code ne change rien — et
      * c'est ce qui permet à l'empreinte du fichier de servir de version (issue #234).</p>
      */
+    /** Les états que le moteur refuserait, avec le motif ; voir {@link SchematicGateway#rejected}. */
+    public java.util.Map<String, String> rejected(java.util.Collection<String> states) {
+        return gateway.rejected(states);
+    }
+
     public SchematicGateway.Outcome regenerate(String fileName, Blueprint blueprint) {
         SchematicGateway.Outcome outcome = gateway.write(blueprint, fileName);
         if (outcome.ok()) {

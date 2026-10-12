@@ -63,7 +63,8 @@ class PromptPlanConsistencyTest {
         BuildingPlanExpander.Result expansion = BuildingPlanExpander.expand(plan);
         assertTrue(expansion.ok(), expansion.error());
         ArchitecturalAudit.Report report =
-                ArchitecturalAudit.audit(expansion.blueprint(), plan.front(), plan.rules());
+                ArchitecturalAudit.audit(expansion.blueprint(), plan.front(), plan.rules(),
+                        expansion.provenance(), plan.anchorY());
         assertTrue(report.blocking().isEmpty(),
                 "l'exemple que le prompt montre comme valide doit l'être pour l'audit : "
                         + report.blocking());

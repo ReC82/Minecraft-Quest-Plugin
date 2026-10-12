@@ -483,16 +483,16 @@ class ArchitecturalAuditTest {
               - op: box
                 from: [5, 1, 2]
                 to: [5, 1, 2]
-                block: minecraft:elven_marble
+                block: minecraft:polished_tuff
             """;
         ArchitecturalAudit.Report report = audit(house(DOOR, WINDOWS, LIGHT, odd));
 
-        assertFalse(report.refused(), "un bloc inconnu n'est pas un motif de refus");
-        assertFalse(BlockSemantics.hasDeclaredRole("minecraft:elven_marble"));
-        assertFalse(BlockSemantics.glazing("minecraft:elven_marble"),
+        assertFalse(report.refused(), "un bloc sans rôle déclaré n'est pas un motif de refus");
+        assertFalse(BlockSemantics.hasDeclaredRole("minecraft:polished_tuff"));
+        assertFalse(BlockSemantics.glazing("minecraft:polished_tuff"),
                 "et surtout : aucune qualité ne lui est prêtée");
-        assertFalse(BlockSemantics.lightSource("minecraft:elven_marble"));
-        assertFalse(BlockSemantics.passable("minecraft:elven_marble"));
+        assertFalse(BlockSemantics.lightSource("minecraft:polished_tuff"));
+        assertFalse(BlockSemantics.passable("minecraft:polished_tuff"));
         // Un mur de briques n'a pas de rôle déclaré non plus, et c'est correct.
         assertFalse(BlockSemantics.hasDeclaredRole("minecraft:stone_bricks"));
         assertTrue(BlockSemantics.support("minecraft:stone_bricks"));

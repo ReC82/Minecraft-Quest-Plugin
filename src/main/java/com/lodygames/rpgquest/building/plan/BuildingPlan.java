@@ -3,6 +3,7 @@ package com.lodygames.rpgquest.building.plan;
 import com.lodygames.rpgquest.building.model.Facing;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -125,12 +126,14 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
             return Optional.of("Trop d'instructions : " + steps.size() + " pour un maximum de "
                     + MAX_STEPS + ".");
         }
+        List<String> problems = new java.util.ArrayList<>();
         for (int i = 0; i < steps.size(); i++) {
             PlanStep step = steps.get(i);
             String where = "Instruction " + (i + 1) + " (" + step.kind() + ") : ";
             if (!step.box().within(sizeX, sizeY, sizeZ)) {
-                return Optional.of(where + "la zone " + step.box().label()
+                problems.add(where + "la zone " + step.box().label()
                         + " sort du volume " + sizeX + " × " + sizeY + " × " + sizeZ + ".");
+                continue;
             }
             // Une primitive repérée par façade doit viser une cellule qui existe. Le décalage est
             // borné à la largeur de la façade : c'est là que le lot C supprime définitivement la
@@ -140,26 +143,29 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
                 int span = step.facade().span(front, sizeX, sizeZ);
                 int offset = step.number("offset", span / 2);
                 if (offset < 0 || offset >= span) {
-                    return Optional.of(where + "décalage " + offset + " hors de la façade "
+                    problems.add(where + "décalage " + offset + " hors de la façade "
                             + step.facade() + ", qui compte " + span + " cellules (0 à "
                             + (span - 1) + ").");
+                    continue;
                 }
             }
             // #263 : une échelle est une COLONNE. Avant, un « to » aux x/z différents de « from » était
             // ignoré sans un mot — l'échelle sortait ailleurs que là où le plan la décrivait.
             if (step.kind() == PlanStep.Kind.LADDER
                     && (step.box().minX() != step.box().maxX() || step.box().minZ() != step.box().maxZ())) {
-                return Optional.of(where + "une échelle est verticale : « from » et « to » doivent "
+                problems.add(where + "une échelle est verticale : « from » et « to » doivent "
                         + "avoir les mêmes x et z, et ne diffèrent que par y (zone reçue "
                         + step.box().label() + ").");
+                continue;
             }
             if (step.kind() == PlanStep.Kind.STAIR_RUN) {
                 String dir = step.axis();
                 if (!dir.equals("north") && !dir.equals("south")
                         && !dir.equals("east") && !dir.equals("west")) {
-                    return Optional.of(where + "direction de montée manquante ou inconnue : « "
+                    problems.add(where + "direction de montée manquante ou inconnue : « "
                             + dir + " ». Écris « direction: » avec un point cardinal — north, "
                             + "south, east ou west — et non un axe.");
+                    continue;
                 }
             }
             // #282 : l'escalier entre niveaux — direction connue, plancher au-dessus du pied, et
@@ -167,48 +173,95 @@ public record BuildingPlan(String id, String name, int sizeX, int sizeY, int siz
             // (enveloppe, porte, vitrage, appuis) se vérifie à l'expansion, où la grille existe.
             if (step.kind() == PlanStep.Kind.STAIRCASE) {
                 if (!step.hasNumber("floor")) {
-                    return Optional.of(where + "clé « floor » absente : c'est le y du PLANCHER à "
+                    problems.add(where + "clé « floor » absente : c'est le y du PLANCHER à "
                             + "atteindre (le bloc sur lequel on marche à l'étage). Le moteur en "
                             + "déduit le nombre de marches et la trémie.");
+                    continue;
                 }
                 Optional<Staircase> stair = Staircase.of(step);
                 if (stair.isEmpty()) {
-                    return Optional.of(where + "direction de montée manquante ou inconnue : « "
+                    problems.add(where + "direction de montée manquante ou inconnue : « "
                             + step.axis() + " ». Écris « direction: » avec un point cardinal — "
                             + "north, south, east ou west.");
+                    continue;
                 }
                 Optional<String> refused = stair.get().refusal(sizeX, sizeY, sizeZ);
                 if (refused.isPresent()) {
-                    return Optional.of(where + refused.get());
+                    problems.add(where + refused.get());
+                    continue;
                 }
             }
             if (step.kind() == PlanStep.Kind.GABLE
                     && !step.axis().equals("x") && !step.axis().equals("z")) {
-                return Optional.of(where + "axe de pente manquant ou inconnu : « " + step.axis()
+                problems.add(where + "axe de pente manquant ou inconnu : « " + step.axis()
                         + " ». Valeurs acceptées : « x » ou « z ».");
+                continue;
             }
             if (!step.fill().isEmpty() && !BlockState.valid(step.fill())) {
-                return Optional.of(where + "matériau de remplissage refusé : « " + step.fill()
+                problems.add(where + "matériau de remplissage refusé : « " + step.fill()
                         + " ». " + BlockState.RULE);
+                continue;
             }
             if (step.kind() != PlanStep.Kind.CLEAR && !step.state().isEmpty()
                     && !BlockState.valid(step.state())) {
-                return Optional.of(where + "état de bloc refusé : « " + step.state() + " ». "
+                problems.add(where + "état de bloc refusé : « " + step.state() + " ». "
                         + BlockState.RULE);
+                continue;
             }
             // Lot D (#252) : la forme ne suffit pas. « oak_stairs[face=bottom] » a la bonne
             // grammaire et une propriété qui n'existe pas — c'est « half ». On le refuse ici,
             // AVANT toute écriture de schematic.
             Optional<String> badProperty = BlockStateRules.refusal(step.state());
             if (badProperty.isPresent()) {
-                return Optional.of(where + badProperty.get());
+                problems.add(where + badProperty.get());
+                continue;
             }
             Optional<String> badFill = BlockStateRules.refusal(step.fill());
             if (badFill.isPresent()) {
-                return Optional.of(where + badFill.get());
+                problems.add(where + badFill.get());
+                continue;
             }
         }
-        return Optional.empty();
+        problems.addAll(unknownBlocks());
+        return problems.isEmpty() ? Optional.empty() : Optional.of(String.join("\n", problems));
+    }
+
+    /**
+     * Les états de bloc absents du registre de la version servie (#288–#292), regroupés par état :
+     * une ligne par bloc fautif, avec les instructions et les zones qui l'emploient. TOUTES les
+     * fautes sont rendues d'un coup — découvrir la seconde au second enregistrement raté, c'est
+     * précisément ce qui coûtait un appel payant de plus.
+     */
+    List<String> unknownBlocks() {
+        Map<String, List<Integer>> byState = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < steps.size(); i++) {
+            PlanStep step = steps.get(i);
+            for (String state : List.of(step.state(), step.fill())) {
+                if (state.isEmpty() || step.kind() == PlanStep.Kind.CLEAR || !BlockState.valid(state)
+                        || BlockStateRules.refusal(state).isPresent()) {
+                    continue;
+                }
+                if (BlockCatalog.vanilla().refusal(state).isPresent()) {
+                    byState.computeIfAbsent(state, k -> new java.util.ArrayList<>()).add(i + 1);
+                }
+            }
+        }
+        List<String> out = new java.util.ArrayList<>();
+        for (var e : byState.entrySet()) {
+            StringBuilder sb = new StringBuilder("Bloc inconnu — ")
+                    .append(BlockCatalog.vanilla().refusal(e.getKey()).orElseThrow().replaceAll("\\.+$", ""))
+                    .append(". Employé par ");
+            List<Integer> ranks = e.getValue();
+            for (int n = 0; n < ranks.size(); n++) {
+                if (n == 4 && ranks.size() > 5) {
+                    sb.append(" et ").append(ranks.size() - 4).append(" autre(s) instruction(s)");
+                    break;
+                }
+                sb.append(n == 0 ? "" : " ; ").append(BuildingPlanExpander.describeStep(this, ranks.get(n)));
+            }
+            out.add(sb.append('.').toString());
+        }
+        return out;
     }
 
     public boolean valid() {

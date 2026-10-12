@@ -2,6 +2,8 @@ package com.lodygames.rpgquest.building;
 
 import com.lodygames.rpgquest.building.model.Blueprint;
 import com.lodygames.rpgquest.building.model.BuildingFootprint;
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -45,6 +47,16 @@ public interface SchematicGateway {
      * méthode qui produit la hutte de test.</p>
      */
     Outcome write(Blueprint blueprint, String fileName);
+
+    /**
+     * Les états que le moteur refuserait à l'écriture, avec le motif (#288–#292) — demandé AVANT de
+     * déclarer un plan conforme, au vrai parseur, pour qu'un « conforme » ne soit plus suivi d'un
+     * {@code NoMatchException}. Vide si tout passe, ou si le moteur n'est pas disponible : le
+     * registre embarqué ({@code BlockCatalog}) reste alors le seul contrôle.
+     */
+    default Map<String, String> rejected(Collection<String> states) {
+        return Map.of();
+    }
 
     /**
      * Les dimensions réelles d'un fichier, pour les confronter à la définition déclarée.

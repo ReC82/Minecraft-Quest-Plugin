@@ -436,10 +436,50 @@ class BuildingGeneratorTest {
     // ---- Moteur simulé -----------------------------------------------------------------------
 
     /** Moteur minimal : il retient les fichiers écrits, et sait échouer sur commande. */
+    // ---- #288–#292 : contenu refusé avant le verdict, écriture distinguée ---------------------
+
+    @Test
+    @DisplayName("Un état refusé par le vrai parseur du moteur rend le plan invalide AVANT tout verdict conforme")
+    void anEngineRefusalMakesThePlanInvalidBeforeAnyVerdict() {
+        gateway.refuse.put("minecraft:stone_bricks", "NoMatchException — simulé");
+
+        BuildingGenerator.Verdict verdict = generator.inspect(LIBRARY_PLAN);
+        assertFalse(verdict.ok());
+        assertEquals("PLAN_INVALID", verdict.code());
+        assertTrue(verdict.codes().contains("BLOCK_REJECTED"), verdict.codes().toString());
+        assertTrue(verdict.message().contains("« minecraft:stone_bricks » en 0/0/0"), verdict.message());
+        assertTrue(verdict.message().contains("instruction 1"), verdict.message());
+
+        BuildingGenerator.Result result = generator.generate(LIBRARY_PLAN, false);
+        assertEquals("PLAN_INVALID", result.code());
+        assertTrue(gateway.files.isEmpty(), "rien n'est écrit");
+    }
+
+    @Test
+    @DisplayName("Un échec d'écriture est annoncé comme tel, pas comme une faute du plan")
+    void aWriteFailureIsReportedAsInfrastructure() {
+        gateway.writeFails = true;
+        BuildingGenerator.Result result = generator.generate(LIBRARY_PLAN, false);
+        assertEquals("SCHEMATIC_FAILED", result.code());
+        assertTrue(result.message().contains("Échec d'écriture"), result.message());
+        assertTrue(result.message().contains("passé la validation de ses blocs"), result.message());
+    }
+
     private static final class FakeGateway implements SchematicGateway {
         final Set<String> files = new LinkedHashSet<>();
+        final java.util.Map<String, String> refuse = new java.util.HashMap<>();
         boolean available = true;
         boolean writeFails;
+
+        @Override public java.util.Map<String, String> rejected(java.util.Collection<String> states) {
+            java.util.Map<String, String> out = new java.util.LinkedHashMap<>();
+            for (String state : states) {
+                if (refuse.containsKey(state)) {
+                    out.put(state, refuse.get(state));
+                }
+            }
+            return out;
+        }
 
         @Override public boolean available() {
             return available;

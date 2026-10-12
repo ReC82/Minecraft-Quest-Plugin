@@ -109,18 +109,20 @@ public record BuildingPlanPreview(boolean available, boolean accepted, String co
         List<Slice> out = new ArrayList<>();
         for (Object item : list) {
             if (item instanceof Map<?, ?> map) {
-                Object rows = map.get("rows");
-                out.add(new Slice(String.valueOf(map.getOrDefault("id", "")),
-                        String.valueOf(map.getOrDefault("label", "")),
-                        String.valueOf(map.getOrDefault("axes", "")),
-                        strings(rows)));
+                // « getOrDefault » sur une Map<?, ?> refuse une valeur par défaut typée : la clé
+                // capturée interdit d'y passer une chaîne. On lit donc, puis on remplace le null.
+                out.add(new Slice(text(map.get("id")), text(map.get("label")),
+                        text(map.get("axes")), strings(map.get("rows"))));
             }
         }
         return out;
     }
 
     private static String str(Map<String, Object> details, String key) {
-        Object value = details.get(key);
+        return text(details.get(key));
+    }
+
+    private static String text(Object value) {
         return value == null ? "" : String.valueOf(value);
     }
 

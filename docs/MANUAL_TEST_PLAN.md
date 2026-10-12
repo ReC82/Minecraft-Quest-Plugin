@@ -5468,3 +5468,19 @@ confirmer pendant ce test.
     version arrive (sans parent dans les détails techniques), les anciennes restent dans la liste.
 5.  Comparer l'aperçu 3D avec la photo : le style (toit, matériaux, proportions) doit s'en inspirer,
     sans être une copie. « Retirer » l'image : elle disparaît de la liste.
+
+### TC-293 — Retirer un bâtiment de la bibliothèque (issue #284, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR et panel issus de #284. **Durée** : 5 minutes. **Ne retirer aucun bâtiment réel** :
+créer d'abord un bâtiment d'essai (Atelier → « Enregistrer dans la bibliothèque » d'un projet de test).
+
+1.  `/buildings/library` → Rafraîchir → ouvrir la **hutte de test** : « Exemple fourni avec le plugin »,
+    aucun bouton de retrait.
+2.  Poser le bâtiment d'essai sur un emplacement libre, puis ouvrir sa fiche dans la bibliothèque :
+    « Posé sur buildsite_… », aucun bouton. Forcer l'envoi (ancien onglet) : refus avant la file.
+3.  Retirer le bâtiment de l'emplacement (terrain restauré), Rafraîchir : le bouton apparaît, avec la
+    version et le fichier `.schem`.
+4.  Sans cocher : refus. Cocher, envoyer : succès ; Rafraîchir : le bâtiment a disparu.
+5.  Sur le serveur : `buildings/.retired/<id>_<horodatage>/` contient le `.yml`, le `.schem` et
+    `retired.yml` (auteur). Redémarrer : le bâtiment ne revient pas. L'historique de l'emplacement le
+    mentionne toujours.

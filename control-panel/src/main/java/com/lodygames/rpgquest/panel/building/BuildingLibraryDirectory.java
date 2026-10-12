@@ -55,7 +55,7 @@ public record BuildingLibraryDirectory(List<BuildingDefinitionView> buildings,
                     intOr(m.get("sizeX")), intOr(m.get("sizeY")), intOr(m.get("sizeZ")),
                     intOr(m.get("anchorX")), intOr(m.get("anchorY")), intOr(m.get("anchorZ")),
                     str(m.get("front")), materials, str(m.get("schematic")),
-                    bool(m.get("schematicPresent")), intOr(m.get("version"))));
+                    bool(m.get("schematicPresent")), intOr(m.get("version")), bool(m.get("bundled"))));
         }
         List<String> problems = asList(details.get("problems")).stream()
                 .map(BuildingLibraryDirectory::str)

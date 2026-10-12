@@ -929,6 +929,10 @@ public final class RPGQuestBootstrap {
         // Issue #94 : génération de bâtiments depuis un plan déclaratif. Même logique de setter
         // facultatif — sans WorldEdit, l'atelier refuse d'écrire et la génération échoue avec son
         // motif, sans empêcher quoi que ce soit d'autre de fonctionner.
+        // Issue #284 : retrait d'un bâtiment de la bibliothèque, archivé et refusé s'il est posé.
+        agentActions.setBuildingRetirement(new com.lodygames.rpgquest.building.BuildingRetirement(
+                buildingLibrary, plugin.getDataFolder().toPath().resolve("schematics"),
+                buildingPlacementService::all, plugin.getLogger(), java.time.Clock.systemUTC()));
         agentActions.setBuildingGenerator(new com.lodygames.rpgquest.building.plan.BuildingGenerator(
                 buildingLibrary, buildingSchematics,
                 plugin.getDataFolder().toPath().resolve("buildings"), plugin.getLogger()));

@@ -19,10 +19,20 @@ public record BuildingDefinitionView(String id, String name, String description,
                                      int sizeX, int sizeY, int sizeZ,
                                      int anchorX, int anchorY, int anchorZ,
                                      String front, List<String> materials,
-                                     String schematic, boolean schematicPresent, int version) {
+                                     String schematic, boolean schematicPresent, int version,
+                                     boolean bundled) {
 
     public BuildingDefinitionView {
         materials = List.copyOf(materials == null ? List.of() : materials);
+    }
+
+    /** Forme antérieure à #284. */
+    public BuildingDefinitionView(String id, String name, String description, int sizeX, int sizeY,
+                                  int sizeZ, int anchorX, int anchorY, int anchorZ, String front,
+                                  List<String> materials, String schematic, boolean schematicPresent,
+                                  int version) {
+        this(id, name, description, sizeX, sizeY, sizeZ, anchorX, anchorY, anchorZ, front, materials,
+                schematic, schematicPresent, version, false);
     }
 
     /** Dimensions dans l'ordre où on les lit : largeur × profondeur × hauteur. */

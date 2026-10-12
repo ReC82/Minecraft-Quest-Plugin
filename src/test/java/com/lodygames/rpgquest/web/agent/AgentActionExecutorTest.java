@@ -697,6 +697,21 @@ class AgentActionExecutorTest {
                 "l'identifiant est normalisé avant d'atteindre le service");
     }
 
+    /** #284 : retrait d'un bâtiment — identifiant strict, confirmation exigée, refus du service relayé. */
+    @Test
+    void buildingDefinitionRetireNeedsAStrictIdAndAnExplicitConfirmation() {
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("r0", "building.definition.retire",
+                Map.of("confirm", "true"))).status(), "sans id");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("r1", "building.definition.retire",
+                Map.of("id", "../buildings/x", "confirm", "true"))).status(), "id forgé");
+        assertEquals(AgentActionOutcome.REJECTED, run(new AgentAction("r2", "building.definition.retire",
+                Map.of("id", "bibliotheque_v1"))).status(), "sans confirmation");
+        // Le bouchon ne sait pas retirer : le refus du service remonte tel quel, sans rien écrire.
+        AgentActionOutcome unavailable = run(new AgentAction("r3", "building.definition.retire",
+                Map.of("id", "bibliotheque_v1", "confirm", "true")));
+        assertEquals(AgentActionOutcome.FAILED, unavailable.status());
+    }
+
     /** Il n'existe AUCUNE action de création : un emplacement naît d'un clic en jeu, pas d'un écran. */
     @Test
     void thereIsNoBuildingSiteCreateAction() {

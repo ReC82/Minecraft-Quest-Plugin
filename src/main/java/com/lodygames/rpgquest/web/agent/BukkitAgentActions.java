@@ -865,6 +865,28 @@ public final class BukkitAgentActions implements AgentActions {
         this.buildingHistoryRepository = repository;
     }
 
+    private com.lodygames.rpgquest.building.BuildingRetirement buildingRetirement;
+
+    /** Issue #284 — dépendance facultative : sans elle, le retrait est refusé avec son motif. */
+    public void setBuildingRetirement(com.lodygames.rpgquest.building.BuildingRetirement retirement) {
+        this.buildingRetirement = retirement;
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingDefinitionRetire(String id, String by) {
+        if (buildingRetirement == null) {
+            return done(MutationResult.of(false, "UNAVAILABLE",
+                    "Le retrait de bâtiments n'est pas disponible sur ce serveur."));
+        }
+        // Déplacement de fichiers : jamais sur le thread principal.
+        return CompletableFuture.supplyAsync(() -> {
+            var outcome = buildingRetirement.retire(id, by);
+            return new MutationResult(outcome.ok(), outcome.code().name(), outcome.message(),
+                    outcome.effects());
+        }).exceptionally(error -> MutationResult.of(false, "ERROR",
+                "Échec du retrait : " + rootName(error)));
+    }
+
     /**
      * Issue #94 — dépendance <strong>facultative</strong>, comme l'historique : sans elle, la
      * génération est refusée avec son motif, et rien d'autre ne cesse de fonctionner.
@@ -1061,7 +1083,7 @@ public final class BukkitAgentActions implements AgentActions {
                     definition.anchorX(), definition.anchorY(), definition.anchorZ(),
                     definition.front().name(), definition.materials(),
                     definition.schematic(), schematicGateway.has(definition.schematic()),
-                    definition.version()));
+                    definition.version(), buildingLibraryService.bundled(definition.id())));
         }
         return done(new BuildingLibraryView(List.copyOf(rows), buildingLibraryService.problems(),
                 schematicGateway.available(), schematicGateway.unavailableReason()));

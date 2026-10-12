@@ -2373,6 +2373,14 @@ public final class AgentActionExecutor {
             return done(AgentActionOutcome.rejected(action.id(),
                     "Paramètre « enabled » manquant : il doit valoir « true » ou « false »."));
         }
+        if (!enabled) {
+            // Issue #216 : ARRÊTER une promenade ne demande ni zone ni ancre. Le panel n'envoie
+            // d'ailleurs rien d'autre, et exiger « x_range » ici rendait le bouton inutilisable.
+            // Rien de ce qui suit n'est lu : aucune zone ne peut être enregistrée au passage.
+            return actions.citizensWander(npcId, false, null, null, null, null, 0, 0, false)
+                    .thenApply(r -> mutationOutcome(action, r, "npc_id", npcId))
+                    .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+        }
         String world = trimOrNull(action.param("world"));
         if (world != null && !WORLD_NAME.matcher(world).matches()) {
             return done(AgentActionOutcome.rejected(action.id(), "Paramètre « world » invalide."));

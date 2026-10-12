@@ -8018,6 +8018,21 @@ Après feu vert du propriétaire uniquement (tests manuels #256 / V2 en cours). 
 
 TC-280.
 
+## 2026-10-12 — « Arrêter la promenade » d'un PNJ (#216) — **NON déployé**
+
+### Changement
+
+`npc.citizens.wander` avec `enabled=false` n'exige plus `x_range` / `y_range` : l'arrêt ne lit ni
+zone ni ancre (le panel ne les envoie pas). Activer exige toujours la zone.
+
+### Action serveur
+
+Remplacer le JAR RPGQuest. Aucune migration, aucune configuration, panel inchangé.
+
+### Déploiement
+
+Après feu vert du propriétaire. Validation : TC-281.
+
 ## 2026-10-12 — Quêtes DISCOVER_WAYPOINT enregistrables depuis PlugAdmin (#240) — **NON déployé**
 
 ### Changement

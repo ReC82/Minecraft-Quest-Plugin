@@ -498,8 +498,7 @@ class BuildingLifecyclePageTest {
         String page = fiche();
 
         assertTrue(page.contains("danger-zone"), "les actions dangereuses sont séparées");
-        assertTrue(page.contains("Libérer l&#39;emplacement")
-                        || page.contains("Libérer l'emplacement"));
+        assertTrue(page.contains("Retirer le bâtiment et restaurer le terrain"));
         assertTrue(page.contains("terrain d&#39;origine (1 sauvegarde)")
                         || page.contains("terrain d'origine (1 sauvegarde)"),
                 "l'écran doit dire D'OÙ viendra le terrain");

@@ -1,0 +1,145 @@
+# CI RPGQuest (issue #257) — la validation COMPLÈTE vit ici, pas sur la machine de développement.
+#
+# - Trois modules testés EN PARALLÈLE (plugin, Control Panel, web-api), sur Java 21 et le Gradle
+#   Wrapper du dépôt, avec le cache Gradle.
+# - Les artefacts (JAR du plugin, distributions du Control Panel et du web-api) sont construits et
+#   publiés pour chaque commit, avec leur SHA-256 dans le résumé.
+# - Un seul statut agrégé, « CI OK », que les scripts de déploiement interrogent
+#   (scripts/lib/validation.sh) : vert = rien à revalider localement pour ce commit.
+#
+# La documentation seule ne déclenche rien, SAUF docs/manual-tests/, lu par un test du plugin.
+# La même règle est appliquée côté scripts (val::is_doc_path) : les deux listes doivent rester
+# alignées.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!docs-site/**'
+      - '!.ai/**'
+      - '!*.md'
+      - 'docs/manual-tests/**'
+  pull_request:
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!docs-site/**'
+      - '!.ai/**'
+      - '!*.md'
+      - 'docs/manual-tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Un nouveau push sur la même branche rend le run précédent sans objet.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests ${{ matrix.module.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - { name: plugin, task: ':test', results: 'build' }
+          - { name: control-panel, task: ':control-panel:test', results: 'control-panel/build' }
+          - { name: web-api, task: ':web-api:test', results: 'web-api/build' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: ${{ matrix.module.task }}
+        run: ./gradlew ${{ matrix.module.task }} --console=plain
+      - name: Bilan des tests
+        if: always()
+        run: |
+          python3 - "${{ matrix.module.results }}/test-results/test" "${{ matrix.module.name }}" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob, re, sys
+          tests = failures = errors = skipped = 0
+          for path in glob.glob(sys.argv[1] + "/*.xml"):
+              head = open(path, encoding="utf-8").read(4000)
+              m = re.search(r'tests="(\d+)" skipped="(\d+)" failures="(\d+)" errors="(\d+)"', head)
+              if m:
+                  tests += int(m[1]); skipped += int(m[2]); failures += int(m[3]); errors += int(m[4])
+          print(f"### {sys.argv[2]} : {tests} tests, {failures} échec(s), {errors} erreur(s), {skipped} ignoré(s)")
+          PY
+      - name: Rapport de tests (en cas d'échec)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.module.name }}
+          path: |
+            ${{ matrix.module.results }}/reports/tests/test/
+            ${{ matrix.module.results }}/test-results/test/*.xml
+          retention-days: 14
+
+  package:
+    name: Artefacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      # assemble = JAR du plugin + distributions (zip/tar) des deux applications. Les tests tournent
+      # dans le job « test », en parallèle : ne pas les rejouer ici.
+      - name: ./gradlew assemble
+        run: ./gradlew assemble --console=plain
+      - name: Empreintes
+        run: |
+          {
+            echo "### Artefacts de ${GITHUB_SHA::7}"
+            echo '```'
+            sha256sum build/libs/*.jar control-panel/build/distributions/*.zip web-api/build/distributions/*.zip
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpgquest-${{ github.sha }}
+          path: |
+            build/libs/*.jar
+            control-panel/build/distributions/*.zip
+            web-api/build/distributions/*.zip
+          retention-days: 30
+          if-no-files-found: error
+
+  scripts:
+    # Les scripts de validation et de déploiement décident de ce qui est revalidé : ils sont testés
+    # eux aussi (sans réseau ni Gradle), et passés à shellcheck.
+    name: Scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -x scripts/lib/validation.sh scripts/dev/*.sh scripts/plugadmin/deploy.sh scripts/deploy-verygames.sh
+      - name: tests de validation.sh
+        run: scripts/dev/test-validation.sh
+
+  ci-ok:
+    # Le statut unique que les scripts de déploiement consultent. Il échoue si UN SEUL job a échoué
+    # ou a été annulé : un vert partiel n'est pas un vert.
+    name: CI OK
+    runs-on: ubuntu-latest
+    needs: [test, package, scripts]
+    if: always()
+    steps:
+      - name: Verdict
+        run: |
+          echo "test=${{ needs.test.result }} package=${{ needs.package.result }} scripts=${{ needs.scripts.result }}"
+          [ "${{ needs.test.result }}" = success ] && [ "${{ needs.package.result }}" = success ] \
+            && [ "${{ needs.scripts.result }}" = success ]

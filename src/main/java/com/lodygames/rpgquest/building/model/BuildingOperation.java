@@ -33,7 +33,15 @@ public enum BuildingOperation {
      * <p>C'est la seule opération qui laisse l'emplacement {@code EMPTY} : les trois autres le
      * laissent {@code OCCUPIED}.</p>
      */
-    RESTORE("Libération");
+    RESTORE("Libération"),
+
+    /**
+     * Issue #246 — la construction posée a été capturée comme nouveau bâtiment de bibliothèque.
+     *
+     * <p>N'écrit <strong>rien</strong> dans le monde et ne change pas le bâtiment posé : elle figure
+     * au journal de l'emplacement source pour qu'on sache d'où vient la variante.</p>
+     */
+    CAPTURE("Capture vers la bibliothèque");
 
     private final String label;
 

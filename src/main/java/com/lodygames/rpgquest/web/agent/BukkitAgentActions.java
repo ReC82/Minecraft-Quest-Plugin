@@ -865,6 +865,97 @@ public final class BukkitAgentActions implements AgentActions {
         this.buildingHistoryRepository = repository;
     }
 
+    private com.lodygames.rpgquest.building.BuildingCaptureService buildingCapture;
+
+    /** Issue #246 — dépendance facultative : sans elle, la capture est refusée avec son motif. */
+    public void setBuildingCapture(com.lodygames.rpgquest.building.BuildingCaptureService capture) {
+        this.buildingCapture = capture;
+    }
+
+    /**
+     * {@code building.placement.capture.preview}. Sur le thread principal : le relevé lit le monde
+     * (sans charger aucun chunk).
+     */
+    @Override
+    public CompletableFuture<BuildingCaptureView> buildingCapturePreview(BuildingCaptureRequest request) {
+        if (buildingCapture == null) {
+            return AgentActions.super.buildingCapturePreview(request);
+        }
+        return onMain(() -> done(captureView(buildingCapture.preview(captureRequest(request)))));
+    }
+
+    @Override
+    public CompletableFuture<MutationResult> buildingCapture(BuildingCaptureRequest request, String actor,
+                                                             String token) {
+        if (buildingCapture == null) {
+            return AgentActions.super.buildingCapture(request, actor, token);
+        }
+        return onMain(() -> {
+            var result = buildingCapture.capture(captureRequest(request), actor, token);
+            return done(result.captured()
+                    ? new MutationResult(true, "CAPTURED", "Construction capturée comme « "
+                            + result.definition().name() + " » (" + result.definition().id()
+                            + ", version 1) : elle est dans la bibliothèque, prête à être posée sur un "
+                            + "autre emplacement. Le bâtiment posé et l'original sont inchangés.",
+                            result.effects())
+                    : MutationResult.of(false, "REFUSED", result.error()));
+        });
+    }
+
+    private static com.lodygames.rpgquest.building.BuildingCaptureService.Request captureRequest(
+            BuildingCaptureRequest r) {
+        return new com.lodygames.rpgquest.building.BuildingCaptureService.Request(r.siteId(),
+                new com.lodygames.rpgquest.building.BuildingCaptureService.Margins(r.west(), r.east(),
+                        r.down(), r.up(), r.north(), r.south()),
+                r.newId(), r.name(), r.description(), r.category());
+    }
+
+    /** Projette l'aperçu de capture en vue transportable — refusé ou non, il porte ses motifs. */
+    static BuildingCaptureView captureView(
+            com.lodygames.rpgquest.building.BuildingCaptureService.Preview preview) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        var request = preview.request();
+        details.put("site_id", request.siteId());
+        details.put("new_id", request.newId());
+        details.put("name", request.name());
+        details.put("description", request.description());
+        details.put("category", request.category());
+        var m = request.margins();
+        details.put("margins", Map.of("west", m.west(), "east", m.east(), "down", m.down(),
+                "up", m.up(), "north", m.north(), "south", m.south()));
+        if (preview.placement() != null) {
+            details.put("source_building_id", preview.placement().buildingId());
+            details.put("source_building_version", preview.placement().buildingVersion());
+            details.put("source_rotation", preview.placement().rotationDegrees());
+            details.put("placed_footprint", preview.placement().footprint().label());
+        }
+        if (preview.source() != null) {
+            details.put("source_building_name", preview.source().name());
+        }
+        if (preview.region() != null) {
+            var region = preview.region();
+            details.put("world", region.world());
+            details.put("region", region.label());
+            details.put("size", region.sizeX() + " × " + region.sizeZ() + " × " + region.sizeY());
+            details.put("volume", region.blockCount());
+            int[] anchor = preview.localAnchor();
+            details.put("local_anchor", anchor[0] + " / " + anchor[1] + " / " + anchor[2]);
+        }
+        if (preview.front() != null) {
+            details.put("front", preview.front().name());
+        }
+        preview.survey().filter(com.lodygames.rpgquest.building.CaptureSurvey::complete).ifPresent(sv -> {
+            details.put("non_air", sv.nonAirBlocks());
+            details.put("containers", sv.containers().size());
+            details.put("filled_containers", sv.filledContainers());
+            details.put("entities", sv.entityCount());
+            details.put("entity_types", new LinkedHashMap<>(new java.util.TreeMap<>(sv.entities())));
+            details.put("materials", sv.materials());
+        });
+        return new BuildingCaptureView(preview.capturable(), details, preview.refusals(),
+                preview.warnings(), preview.token());
+    }
+
     private com.lodygames.rpgquest.building.BuildingRetirement buildingRetirement;
 
     /** Issue #284 — dépendance facultative : sans elle, le retrait est refusé avec son motif. */

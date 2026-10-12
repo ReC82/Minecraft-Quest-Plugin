@@ -104,6 +104,8 @@ public final class AgentActionExecutor {
                 case BUILDING_PLACEMENT_REORIENT -> buildingReorient(action);
                 case BUILDING_PLACEMENT_REPLACE -> buildingReplace(action);
                 case BUILDING_PLACEMENT_HISTORY -> buildingHistory(action);
+                case BUILDING_PLACEMENT_CAPTURE_PREVIEW -> buildingCapturePreview(action);
+                case BUILDING_PLACEMENT_CAPTURE -> buildingCapture(action);
                 case CONTENT_EXPORT -> contentExport(action);
                 case NPC_CITIZENS_LIST -> npcCitizensList(action);
                 case NPC_CITIZENS_LINK -> npcCitizensLink(action);
@@ -1896,6 +1898,83 @@ public final class AgentActionExecutor {
                 .thenApply(r -> mutationOutcome(action, r, "id", siteId))
                 .exceptionally(err -> AgentActionOutcome.failed(action.id(),
                         "Échec : " + rootName(err)));
+    }
+
+    // ---- Capture d'une construction posée (issue #246) -----------------------------------------
+
+    private CompletableFuture<AgentActionOutcome> buildingCapturePreview(AgentAction action) {
+        AgentActions.BuildingCaptureRequest request = captureRequest(action);
+        if (request == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètres de capture invalides : "
+                    + "« id » (forme « buildsite_0001 ») et marges entières entre -"
+                    + com.lodygames.rpgquest.building.BuildingCaptureService.MAX_MARGIN + " et "
+                    + com.lodygames.rpgquest.building.BuildingCaptureService.MAX_MARGIN + "."));
+        }
+        return actions.buildingCapturePreview(request).thenApply(view -> {
+            Map<String, Object> details = new LinkedHashMap<>(view.details());
+            details.put("capturable", view.capturable());
+            details.put("refusals", view.refusals());
+            details.put("warnings", view.warnings());
+            details.put("token", view.token());
+            return AgentActionOutcome.success(action.id(), view.capturable() ? "CAPTURABLE" : "REFUSED",
+                    view.capturable()
+                            ? "Aperçu de capture calculé : " + details.getOrDefault("region", "")
+                            : "Capture refusée : " + (view.refusals().isEmpty()
+                                    ? "motif non précisé" : view.refusals().get(0)),
+                    details);
+        }).exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    private CompletableFuture<AgentActionOutcome> buildingCapture(AgentAction action) {
+        AgentActions.BuildingCaptureRequest request = captureRequest(action);
+        if (request == null) {
+            return done(AgentActionOutcome.rejected(action.id(), "Paramètres de capture invalides."));
+        }
+        if (!"true".equals(trimOrNull(action.param("confirm")))) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Confirmation manquante : « confirm=true » est exigé pour capturer."));
+        }
+        String token = trimOrNull(action.param("token"));
+        if (token == null) {
+            return done(AgentActionOutcome.rejected(action.id(),
+                    "Jeton d'aperçu manquant : calculez l'aperçu de la capture avant de confirmer."));
+        }
+        return actions.buildingCapture(request, actorOf(action), token)
+                .thenApply(r -> mutationOutcome(action, r, "new_id", request.newId()))
+                .exceptionally(err -> AgentActionOutcome.failed(action.id(), "Échec : " + rootName(err)));
+    }
+
+    /** {@code null} si l'emplacement ou une marge est invalide ; l'identité est validée par le service. */
+    private static AgentActions.BuildingCaptureRequest captureRequest(AgentAction action) {
+        String siteId = buildSiteId(action);
+        if (siteId == null) {
+            return null;
+        }
+        int[] margins = new int[6];
+        String[] keys = {"west", "east", "down", "up", "north", "south"};
+        int limit = com.lodygames.rpgquest.building.BuildingCaptureService.MAX_MARGIN;
+        for (int i = 0; i < keys.length; i++) {
+            String raw = trimOrNull(action.param("margin_" + keys[i]));
+            if (raw == null) {
+                continue;
+            }
+            try {
+                margins[i] = Integer.parseInt(raw);
+            } catch (NumberFormatException invalid) {
+                return null;
+            }
+            if (Math.abs(margins[i]) > limit) {
+                return null;
+            }
+        }
+        return new AgentActions.BuildingCaptureRequest(siteId, margins[0], margins[1], margins[2],
+                margins[3], margins[4], margins[5], nullToEmpty(action.param("new_id")),
+                nullToEmpty(action.param("name")), nullToEmpty(action.param("description")),
+                nullToEmpty(action.param("category")));
+    }
+
+    private static String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private CompletableFuture<AgentActionOutcome> buildingHistory(AgentAction action) {

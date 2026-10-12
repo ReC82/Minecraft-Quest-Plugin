@@ -89,6 +89,31 @@ public interface SchematicGateway {
     Outcome capture(BuildingFootprint footprint, String fileName);
 
     /**
+     * Capture une construction posée comme <strong>nouveau</strong> fichier de bibliothèque (issue
+     * #246).
+     *
+     * <p>Différences avec {@link #capture} : le fichier ne doit <strong>pas</strong> exister (jamais
+     * d'écrasement), il est écrit d'un bloc (fichier temporaire puis déplacement, pas de demi-fichier
+     * en cas d'échec), et les blocs listés dans {@code emptied} sont copiés <strong>sans leur
+     * contenu</strong> : un coffre est capturé comme coffre, orienté, mais vide. Aucun bloc du monde
+     * n'est modifié.</p>
+     *
+     * @param emptied positions du monde ({@code {x, y, z}}) dont le contenu ne doit pas être exporté
+     */
+    default Outcome captureForLibrary(BuildingFootprint footprint, String fileName,
+                                      Collection<int[]> emptied) {
+        return Outcome.failure("Capture vers la bibliothèque non prise en charge par ce moteur.");
+    }
+
+    /**
+     * Supprime un fichier de la bibliothèque que l'on vient d'écrire, quand l'étape suivante a
+     * échoué (issue #246) — pour ne pas laisser un {@code .schem} orphelin sans définition.
+     */
+    default Outcome discard(String fileName) {
+        return Outcome.failure("Suppression non prise en charge par ce moteur.");
+    }
+
+    /**
      * Colle un schematic, après rotation, de sorte que l'ancre locale tombe exactement sur l'ancre
      * du monde.
      *

@@ -1329,6 +1329,61 @@ reprise le renvoie au modèle avec le plan refusé, pour qu'il corrige ce point 
 Trois refus arrivent à **coût nul**, avant le moindre appel payant : brief absent, emplacement
 absent du relevé, aucun fournisseur utilisable.
 
+#### Brouillons de plan — reprendre un plan sans le repayer (issue #256)
+
+Chaque plan obtenu de l'IA est conservé comme **brouillon de travail** dans la base du panel
+(`control-panel.db`, tables `building_plan_draft*` et `building_plan_request`), rattaché à son
+emplacement. Un brouillon **n'écrit rien** sur le serveur Minecraft : ni bâtiment, ni bibliothèque,
+ni contenu. Il se reprend par son adresse, `/buildings/plan?site=<emplacement>&draft=<brouillon>`,
+après un audit, une navigation, une fermeture du navigateur, une reconnexion ou un redémarrage du
+panel.
+
+| Geste | Appel à l'IA | Effet |
+|---|---|---|
+| **Demander un plan** | oui, facturé | crée un brouillon (version 1) |
+| **Demander une correction** | oui, facturé | crée un **nouveau** brouillon, qui pointe vers celui qu'il corrige ; l'original reste intact |
+| **Reprendre ce plan** | non | rouvre un brouillon |
+| **Enregistrer** | non | nouvelle **version** du plan ; les précédentes restent consultables |
+| **Auditer** / **Prévisualiser** | non | `building.plan.audit` / `building.plan.preview` sur la version enregistrée ; le résultat s'affiche **dans le brouillon** |
+| **Générer** | non | `building.generate` sur la version enregistrée ; « Remplacer » n'est jamais coché d'office |
+| **Récupérer** | non | crée un brouillon depuis une action d'audit, d'aperçu ou de génération existante |
+| **Retirer de la liste** | non | archive le brouillon, sans rien effacer |
+
+Règles qui garantissent qu'aucun clic de navigation ne coûte un appel :
+
+- **chaque soumission se termine par une redirection** vers l'adresse du brouillon : recharger la
+  page ne renvoie jamais un formulaire ;
+- les deux gestes payants portent un **jeton à usage unique**, réservé en base **avant** l'appel :
+  un double clic ou un « renvoyer le formulaire » mène au plan déjà obtenu, sans nouvel appel ;
+- tous les autres gestes, y compris la récupération, **ne connaissent pas** le fournisseur d'IA.
+
+**Versions et concurrence.** Une modification du plan est enregistrée seulement si la version
+affichée est encore la version courante ; sinon rien n'est écrit ni envoyé, et le texte saisi est
+réaffiché pour ne pas être perdu. Un audit, un aperçu ou une génération est rattaché au brouillon
+**avec la version sur laquelle il porte** : un verdict obtenu sur la version 1 est signalé comme
+périmé sur la version 2, jamais présenté comme le sien. Et le verdict affiché est celui **de ce
+brouillon**, plus « le dernier audit de l'agent » — un autre plan audité entre-temps ne prend plus sa
+place.
+
+**Récupérer un plan existant.** Les actions `building.plan.audit`, `building.plan.preview` et
+`building.generate` transportent le plan complet. La page de génération liste les actions récentes
+qui portent un plan sans brouillon, avec « Reprendre ce plan » ; on peut aussi coller un identifiant
+d'action. La fiche d'une telle action (`/actions/<id>`) propose désormais **« Reprendre ce plan »**
+— ou **« Revenir au plan »** si un brouillon le contient déjà. La récupération est idempotente, et
+le verdict de l'action d'origine est repris tel quel.
+
+**Écart avec le brief sur le nombre de niveaux.** L'audit du plugin ne connaît pas le brief : il ne
+contrôle l'accès aux niveaux que s'il y en a plusieurs, donc un étage **absent** passe. Le panel lit
+désormais dans le brief un nombre de niveaux explicite (« sur deux étages », « 3 niveaux », « R+1 »,
+« à étage ») et, si la grille en compte moins, le verdict l'affiche en **avertissement** (carte non
+verte, « conforme au contrat, mais en écart avec le brief ») et préremplit la demande de correction
+avec l'écart chiffré. C'est un avertissement et non un refus : le français du brief est ambigu
+(« deux étages » peut désigner un R+2), et l'interprétation retenue est toujours la **plus basse**.
+
+**Identifiant déjà pris.** Si l'audit indique que l'identifiant du plan existe dans la bibliothèque,
+l'écran le dit au-dessus du bouton « Générer » et propose d'en changer (`<id>_v2`) : cocher
+« Remplacer » écraserait le bâtiment existant.
+
 #### Auditer un plan sans rien écrire (issue #94, lot F)
 
 | Action | Permission | Effet |

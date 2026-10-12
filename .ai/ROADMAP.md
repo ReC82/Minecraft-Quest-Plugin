@@ -3197,3 +3197,23 @@ Tests manuels en attente: TC-275 (diagnostic) et TC-276 (rattrapage ciblé) — 
 Blocages: aucun. #156 reste OUVERTE (validation manuelle en jeu).
 Première étape à reprendre: TC-275 puis TC-276 (5 min chacun). Puis #229 LOT A.
 ```
+
+```text
+Date: 2026-10-12 (matin — #256 : brouillons persistants des plans IA, suite de #94)
+Branche de départ: feature/238-guard-dialogue-ux @ 1745a0b (la ligne déployée du jour)
+Branche de travail: fix/256-plan-drafts
+Étape de départ: défaut bloquant signalé sur le premier plan V2 réel (buildsite_0009) : « Auditer »
+  quittait le parcours, le plan payé n'existait que dans le HTML de la réponse.
+Étapes terminées:
+  - Brouillon persistant (control-panel.db, 4 tables additives), versions + révisions, actions
+    rattachées avec leur version, jeton à usage unique sur les 2 gestes payants, POST→redirection.
+  - Récupération sans appel IA depuis une action d'audit/aperçu/génération, y compris depuis
+    /actions/<id> (« Reprendre ce plan » / « Revenir au plan »).
+  - Avertissement « écart avec le brief » sur le nombre de niveaux (BriefLevels, panel seul).
+  - Tests : store, BriefLevels, parcours HTTP complet avec IA bouchonnée qui compte ses appels,
+    redémarrage du panel. Gardes prouvés par neutralisation (6 échecs sans eux).
+Plugin: non modifié. Évolution possible notée dans #256 : clé de plan levels: contrôlée par l'audit.
+Tests manuels en attente: TC-279 (reprise du plan 7a1ab38d puis aperçu).
+Première étape à reprendre: TC-279.
+```
+

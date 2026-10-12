@@ -7926,3 +7926,54 @@ VeryGames. Ce qui est établi, c'est que le plugin est **activé** et répond.
 * Faire **les deux** rollbacks ou aucun : un panel ancien avec le nouveau plugin enverrait l'ancien
   prompt, dont les plans seront refusés par le nouvel audit — bruyant et sans danger, mais
   déroutant.
+
+## 2026-10-12 — Brouillons persistants des plans IA, reprise sans nouvel appel payant (#256, suite de #94)
+
+### Changement
+
+Premier plan V2 réel (OpenAI, `buildsite_0009`, Bibliothèque du Hub) : le clic sur « Auditer ce
+plan » quittait le parcours de génération, la fiche d'action ne ramenait qu'à `/actions`, et le plan
+déjà payé n'était plus accessible — il n'existait que dans le HTML de la réponse au POST.
+
+- Chaque plan obtenu de l'IA devient un **brouillon persistant** de PlugAdmin, rattaché à son
+  emplacement, versionné (révisions conservées), repris par `/buildings/plan?site=…&draft=…`.
+- Audit, aperçu et génération partent de la version enregistrée ; leur résultat s'affiche **dans le
+  brouillon**, avec la version sur laquelle il porte.
+- Aucune navigation ne rappelle l'IA : redirection après chaque soumission, jeton à usage unique sur
+  les deux gestes payants.
+- Récupération d'un plan depuis une action d'audit / d'aperçu / de génération existante, **sans
+  appel à l'IA** — notamment l'action `7a1ab38d-1b11-4e9d-901a-3e2749ca90ff`.
+- Avertissement quand la grille compte moins de niveaux que le brief n'en exige.
+
+### Action serveur
+
+**Aucune action côté serveur Minecraft.** Aucun changement de plugin : le lot est **entièrement**
+dans `control-panel/`. Pas de JAR à remplacer, pas de redémarrage Minecraft, pas de migration
+`data.db`.
+
+**Control Panel seul** : redéployer l'application (`scripts/plugadmin/deploy.sh`). Quatre tables
+**ajoutées** à `control-panel.db` au démarrage (`CREATE TABLE IF NOT EXISTS`, strictement additif) :
+`building_plan_draft`, `building_plan_draft_revision`, `building_plan_draft_action`,
+`building_plan_request`. Aucune table existante modifiée.
+
+### Sauvegarde préalable
+
+Release précédente du panel (conservée automatiquement par `deploy.sh` sous
+`/opt/plugadmin/releases/<horodatage>/`). Copie de `control-panel.db` avant redémarrage.
+
+### Déploiement
+
+1. `scripts/plugadmin/deploy.sh` depuis l'arbre propre du commit visé.
+2. Vérifier ce qui est **servi** : classes `BuildingPlanDraftStore` dans le JAR installé, et
+   `/buildings/plan` répond `303 → /login` sans session.
+
+### Rollback
+
+Réinstaller la release précédente de `/opt/plugadmin/releases/` et redémarrer `plugadmin.service`.
+Les quatre tables ajoutées sont ignorées par l'ancienne version ; elles peuvent rester en place.
+
+### Validation
+
+`PENDING MANUAL VALIDATION` : depuis `/buildings/plan?site=buildsite_0009`, reprendre le plan de
+l'action `7a1ab38d…` (« Récupérer un plan… » ou fiche de l'action), constater le verdict repris et
+l'avertissement « en écart avec le brief », puis **Prévisualiser**.

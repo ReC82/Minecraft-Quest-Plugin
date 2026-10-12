@@ -5212,3 +5212,35 @@ une sélection, présentée comme la couverture réelle, serait pire que pas de 
 
 **Ce que ce TC ne couvre pas** : aucun changement de gameplay, aucune mutation, aucun réglage de
 densité — c'est un filtre d'affichage.
+
+### TC-279 — Reprendre le plan IA de la Bibliothèque du Hub, puis le prévisualiser (issue #256, PENDING MANUAL VALIDATION)
+
+**Pourquoi ce test existe** : le plan de l'action `7a1ab38d-1b11-4e9d-901a-3e2749ca90ff` a été payé,
+audité (`SUCCESS`), puis perdu de vue : « Auditer » quittait le parcours et la fiche d'action ne
+ramenait qu'à `/actions`. Le test vérifie qu'on le **reprend** et qu'on le **prévisualise** sans
+aucun nouvel appel à l'IA.
+
+**Durée** : 5 minutes. **N'appelle pas l'IA, ne pose rien, n'écrit rien sur le serveur** (l'aperçu
+est en lecture). Ne **pas** cliquer « Générer » pendant ce test.
+
+1.  Ouvrir `/actions/7a1ab38d-1b11-4e9d-901a-3e2749ca90ff`. Attendu : un bandeau « Cette action
+    transporte un plan de bâtiment complet », avec un choix d'emplacement et **« Reprendre ce
+    plan »**.
+2.  Choisir **Bibliothèque du Hub (buildsite_0009)** → **Reprendre ce plan**. Attendu : la page de
+    génération, sur « Plan en cours — version 1 », origine **« Récupéré depuis une action »**.
+3.  Le verdict est **déjà là** : « Plan conforme … — **mais en écart avec le brief** », avec la phrase
+    « le brief demande 2 niveaux, mais la grille construite n'en compte que 1 ». Carte **orange**,
+    pas verte.
+4.  Au-dessus de « Générer », un bandeau dit que `bibliotheque_du_hub` **existe déjà** et propose
+    `bibliotheque_du_hub_v2`.
+5.  Cliquer **Prévisualiser**. Attendu : retour **sur le même brouillon** (pas sur `/actions`), avec
+    « L'aperçu est en attente de la réponse du serveur ». Cliquer **Rafraîchir** après quelques
+    secondes : les coupes s'affichent dans « Aperçu 2D ».
+6.  Fermer l'onglet, se déconnecter, se reconnecter, rouvrir `/buildings/plan?site=buildsite_0009` :
+    le plan est listé avec **« Reprendre ce plan »**, et le reprendre réaffiche verdict et aperçu.
+7.  Revenir sur `/actions/7a1ab38d…` : le bandeau dit désormais **« Revenir au plan »**.
+8.  Dans `/ai/providers` ou les journaux du fournisseur : **aucune** consommation nouvelle depuis le
+    début du test.
+
+**Ce que ce TC ne couvre pas** : la génération et la pose (décision du propriétaire, et
+l'identifiant `bibliotheque_du_hub` est pris par la V1 de `buildsite_0012`).

@@ -736,6 +736,23 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   `PENDING MANUAL VALIDATION` : **aucun appel payant n'a été émis** — toute la chaîne est éprouvée
   sur des modèles scriptés. L'enchaînement réel prompt → plan → audit → correction, et le rendu en
   jeu d'une V2, restent à valider. Le bâtiment V1 de `buildsite_0012` n'a **pas** été touché.
+- **Brouillons de plan IA : reprendre un plan sans le repayer** *(issue #256, suite de #94,
+  2026-10-12)* — premier plan V2 réel (OpenAI, `buildsite_0009`) : le clic sur « Auditer » quittait le
+  parcours, la fiche d'action ne ramenait qu'à `/actions`, et le plan **payé** n'était plus
+  accessible — il n'existait que dans le HTML de la réponse. Chaque plan est désormais un
+  **brouillon persistant** (`building_plan_draft*` dans `control-panel.db`, rien côté plugin),
+  rattaché à son emplacement, versionné (révisions conservées), et repris par son adresse
+  `/buildings/plan?site=…&draft=…`. Audit, aperçu et génération partent de la version enregistrée et
+  s'affichent **dans le brouillon** ; un verdict obtenu sur une version antérieure est marqué périmé.
+  Toutes les soumissions se terminent par une redirection, et les deux gestes payants (demander,
+  corriger) portent un jeton à usage unique réservé avant l'appel : ni rechargement, ni double clic,
+  ni navigation ne rappelle le modèle. Une correction crée un **nouveau** brouillon. Un plan se
+  **récupère** depuis une action d'audit, d'aperçu ou de génération, sans appel à l'IA — y compris
+  depuis sa fiche `/actions/<id>`. **Écart au brief** : le panel lit un nombre de niveaux explicite
+  dans le brief et avertit si la grille en compte moins (cas réel : brief « sur deux étages », audit
+  `floors: 1`, jugé conforme sans un mot). Panel seul, **aucun JAR**.
+  `PENDING MANUAL VALIDATION` : reprise du plan de l'action `7a1ab38d…` depuis l'interface déployée,
+  puis aperçu, par le propriétaire.
 - **UX des dialogues : le Garde, et les boutons tronqués** *(issue #238, 2026-10-11)* — retour réel
   en jeu. Le Garde portait **sept** `START_QUEST` directement sur l'accueil (le rapport #235 n'en
   avait identifié que trois) : « J'accepte la quête » démarrait une quête sans dire laquelle, ni

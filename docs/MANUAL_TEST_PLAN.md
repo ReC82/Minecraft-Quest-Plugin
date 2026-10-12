@@ -5245,6 +5245,36 @@ est en lecture). Ne **pas** cliquer « Générer » pendant ce test.
 **Ce que ce TC ne couvre pas** : la génération et la pose (décision du propriétaire, et
 l'identifiant `bibliotheque_du_hub` est pris par la V1 de `buildsite_0012`).
 
+### TC-280 — Supprimer un dialogue depuis PlugAdmin, puis la quête qu'il démarrait (issue #248, PENDING MANUAL VALIDATION)
+
+**Prérequis** : JAR **et** panel issus de #248 déployés sur DEV. Avec un JAR antérieur, l'étape 4
+s'arrête sur un refus de l'agent (« Paramètre « kind » attendu ») sans rien toucher : c'est attendu.
+
+**Durée** : 15 minutes. **Supprime réellement** `rpgquest:help` et `help_recolte` sur DEV (avec
+sauvegarde) — à ne faire que si ce nettoyage est souhaité.
+
+1.  `/dialogues` → **Rafraîchir**. Ouvrir la fiche de `help` : bouton **« Supprimer le dialogue… »**.
+2.  Aperçu attendu : « Hors source », « Aucun PNJ RPGQuest lié », référence sortante
+    « démarre la quête « help_recolte » » marquée **non supprimée**, mention des guides de Hub
+    vérifiés par le serveur, formulaire de confirmation.
+3.  **Refus sur relevé périmé** : attendre plus de 15 minutes sans rafraîchir, recharger l'aperçu →
+    « Vérification incomplète », aucun formulaire, bouton « Rafraîchir le relevé des dialogues ».
+    Rafraîchir, rouvrir l'aperçu.
+4.  Retaper `help` → **Supprimer définitivement**. Page de résultat : lien « Suivre l'action ».
+    Double-cliquer volontairement : une **seule** action `content.definition.delete` dans
+    `/actions`.
+5.  Ouvrir l'action : `SUCCESS`, message « Fichier … supprimé du serveur (sauvegarde : …) », nombre
+    de dialogues rechargés, **0 erreur de chargement**. `/dialogues` → Rafraîchir : `help` a disparu.
+6.  `/quests` → `help_recolte` → **Supprimer…** : plus aucune référence (l'aperçu aurait cité
+    `rpgquest:help` « hors source » avant l'étape 4). Supprimer.
+7.  **Refus PNJ lié** : aperçu de suppression de `jo` (ou `guide`) → bloqué, le PNJ est nommé, aucun
+    formulaire. Aucun PNJ, aucune quête, aucune progression touchés.
+8.  **Redémarrage** : redémarrer le serveur ; `help` ne revient pas. (Pour `guard`, exemple du JAR :
+    ne PAS le supprimer pendant ce test — il est lié au Garde, l'aperçu le refuse d'ailleurs.)
+9.  **Restauration** (si besoin) : recopier le fichier de `RPGQuest/content-backups/<horodatage>-dialogues/`
+    dans `RPGQuest/dialogues/`, puis déclencher un rechargement du contenu depuis PlugAdmin (ou,
+    pour un dialogue source, le republier depuis le panel).
+
 ### TC-281 — « Arrêter la promenade » d'un PNJ depuis PlugAdmin (issue #216, PENDING MANUAL VALIDATION)
 
 **Prérequis** : JAR contenant #216 déployé (correctif côté plugin). **Durée** : 3 minutes.

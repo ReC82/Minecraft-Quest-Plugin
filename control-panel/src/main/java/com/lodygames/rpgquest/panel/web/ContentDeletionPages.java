@@ -9,8 +9,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Aperçu des conséquences, confirmation et résultat d'une suppression de quête ou de story
- * (issue #194).
+ * Aperçu des conséquences, confirmation et résultat d'une suppression de quête, de story
+ * (issue #194) ou de dialogue (issue #248).
  *
  * <p><strong>Ce que l'interface garantit.</strong> On ne supprime jamais depuis un clic unique :
  * la page montre d'abord <em>toutes</em> les dépendances trouvées, ce qui sera nettoyé, ce qui
@@ -23,6 +23,24 @@ public final class ContentDeletionPages {
 
     /** Nom du champ de confirmation : l'identifiant exact, retapé par l'opérateur. */
     public static final String CONFIRM_FIELD = "confirm_id";
+
+    /**
+     * Empreinte de la source au moment de l'aperçu (issue #248). Une modification faite entre
+     * l'aperçu et la confirmation — autre onglet, autre administrateur — ne doit pas être supprimée
+     * sans avoir été vue : la confirmation est alors refusée.
+     */
+    public static final String EXPECTED_SHA_FIELD = "expected_sha";
+
+    /** Ce que l'écran dit d'un type de contenu. */
+    record Kind(String noun, String the, String list, String deleteAction) {
+        static Kind of(String kind) {
+            return switch (kind == null ? "" : kind) {
+                case "quests" -> new Kind("quête", "la quête", "/quests", "/quests/delete");
+                case "dialogues" -> new Kind("dialogue", "le dialogue", "/dialogues", "/dialogues/delete");
+                default -> new Kind("story", "la story", "/stories", "/stories/delete");
+            };
+        }
+    }
 
     private final ContentWorkspace workspace;
     private final ContentDeletionAnalyzer analyzer;
@@ -43,13 +61,27 @@ public final class ContentDeletionPages {
     /** @param listingAvailable un relevé du serveur existe-t-il (voir {@code ContentDeletionAnalyzer}) */
     public String preview(String kind, String slug, boolean runtimePresent,
                           boolean listingAvailable, String csrfToken, String errorMessage) {
-        DeletionPlan plan = analyzer.analyze(kind, slug, runtimePresent, listingAvailable);
-        StringBuilder sb = new StringBuilder();
-        String what = "quests".equals(kind) ? "quête" : "story";
-        String back = "quests".equals(kind) ? "/quests" : "/stories";
+        return preview(analyzer.analyze(kind, slug, runtimePresent, listingAvailable), csrfToken,
+                errorMessage, "");
+    }
 
-        sb.append("<h1>Supprimer la ").append(what).append(" « ")
-                .append(Http.esc(plan.label())).append(" »</h1>");
+    /**
+     * Aperçu d'un plan déjà calculé par l'appelant (issue #248 : avec le relevé du serveur).
+     *
+     * @param refreshHtml formulaire « rafraîchir le relevé » à proposer quand la vérification est
+     *                    incomplète ; vide sinon
+     */
+    public String preview(DeletionPlan plan, String csrfToken, String errorMessage,
+                          String refreshHtml) {
+        StringBuilder sb = new StringBuilder();
+        Kind k = Kind.of(plan.kind());
+        String what = k.noun();
+        String back = k.list();
+
+        // Le libellé peut porter du MiniMessage (titre de quête) : il est RENDU, jamais affiché
+        // en balises littérales (anomalie relevée sur la suppression de quêtes, #248).
+        sb.append("<h1>Supprimer ").append(k.the()).append(" « ")
+                .append(MiniText.html(plan.label())).append(" »</h1>");
         sb.append("<p class=\"muted\">Identifiant : <code>").append(Http.esc(plan.plainId()))
                 .append("</code></p>");
 
@@ -59,11 +91,14 @@ public final class ContentDeletionPages {
 
         sb.append(presence(plan, what));
         sb.append(blockers(plan));
+        if (refreshHtml != null && !refreshHtml.isBlank() && !plan.blockers().isEmpty()) {
+            sb.append(refreshHtml);
+        }
         sb.append(edits(plan));
         sb.append(notes(plan));
 
         if (plan.deletable()) {
-            sb.append(confirmForm(plan, kind, csrfToken, what));
+            sb.append(confirmForm(plan, k, csrfToken));
         } else {
             sb.append(Ui.banner("warn", "<strong>Suppression impossible en l'état.</strong> "
                     + "Rien n'a été modifié. Traiter les points bloquants ci-dessus, puis revenir "
@@ -78,11 +113,21 @@ public final class ContentDeletionPages {
     /** Page de résultat, après application. */
     public String result(String kind, String slug, ContentDeletionExecutor.Result result,
                          boolean runtimeDeletionQueued) {
-        String what = "quests".equals(kind) ? "quête" : "story";
-        String back = "quests".equals(kind) ? "/quests" : "/stories";
+        return result(kind, slug, result, runtimeDeletionQueued, null);
+    }
+
+    /**
+     * @param runtimeActionId action agent de suppression serveur, pour suivre son issue ; peut être
+     *                        {@code null}
+     */
+    public String result(String kind, String slug, ContentDeletionExecutor.Result result,
+                         boolean runtimeDeletionQueued, String runtimeActionId) {
+        Kind k = Kind.of(kind);
+        String back = k.list();
         StringBuilder sb = new StringBuilder();
 
-        sb.append("<h1>Suppression de la ").append(what).append(" « ")
+        sb.append("<h1>Suppression ").append("dialogues".equals(kind) ? "du dialogue"
+                        : "quests".equals(kind) ? "de la quête" : "de la story").append(" « ")
                 .append(Http.esc(slug)).append(" »</h1>");
         sb.append(Ui.banner(result.ok() ? "ok" : "err", Http.esc(result.message())));
 
@@ -116,7 +161,11 @@ public final class ContentDeletionPages {
             sb.append(Ui.banner("info", "La suppression de la copie <strong>serveur</strong> a été "
                     + "demandée à l'agent. Elle est exécutée de façon asynchrone : vérifier le "
                     + "journal d'actions dans un instant. Tant qu'elle n'a pas abouti, le contenu "
-                    + "reste chargé sur le serveur — c'est normal, et visible dans le journal."));
+                    + "reste chargé sur le serveur — c'est normal, et visible dans le journal."
+                    + (runtimeActionId == null ? "" : " <a href=\"/actions/" + Http.esc(runtimeActionId)
+                            + "\">Suivre l'action " + Http.esc(runtimeActionId.substring(0,
+                            Math.min(8, runtimeActionId.length()))) + "</a> : le serveur y rend son "
+                            + "constat (sauvegarde, rechargement, ou refus motivé).")));
         } else if (result.ok()) {
             // Formulation prudente : « le dernier relevé ne le connaissait pas » n'est pas la même
             // chose que « le serveur ne l'a pas ». Les notes de l'aperçu ont déjà fait la
@@ -136,6 +185,21 @@ public final class ContentDeletionPages {
                                                 String typedConfirmation) {
         DeletionPlan plan = analyzer.analyze(kind, slug, runtimePresent);
         return applyPlan(plan, typedConfirmation);
+    }
+
+    /**
+     * Exécute un plan déjà calculé (issue #248 : avec le relevé du serveur). Renvoie {@code null}
+     * si la confirmation est invalide.
+     */
+    public ContentDeletionExecutor.Result apply(DeletionPlan plan, String typedConfirmation) {
+        return applyPlan(plan, typedConfirmation);
+    }
+
+    /** Le plan complet, relevé du serveur compris. */
+    public DeletionPlan plan(String kind, String slug, boolean runtimePresent, boolean listingAvailable,
+                             com.lodygames.rpgquest.panel.content.RuntimeDialogueInventory inventory,
+                             java.time.Instant now) {
+        return analyzer.analyze(kind, slug, runtimePresent, listingAvailable, inventory, now);
     }
 
     private ContentDeletionExecutor.Result applyPlan(DeletionPlan plan, String typedConfirmation) {
@@ -175,10 +239,15 @@ public final class ContentDeletionPages {
                 .append(plan.runtimePresent()
                         ? "connu du dernier relevé — sa suppression sera demandée à l'agent, avec "
                         + "sauvegarde du fichier distant."
-                        : "inconnu du dernier relevé — rien à supprimer là non plus.")
+                        : "inconnu du dernier relevé.")
                 .append("</li>");
         sb.append("</ul>");
-        if (plan.bundledExample()) {
+        if (plan.bundledExample() && "dialogues".equals(plan.kind())) {
+            sb.append(Ui.banner("warn", "Ce dialogue fait partie des <strong>exemples embarqués "
+                    + "dans le JAR</strong> : le serveur le recrée au démarrage s'il manque. La "
+                    + "suppression serveur inscrit une <strong>pierre tombale</strong> qui l'en "
+                    + "empêche (plugin #248 requis) — aucune recompilation nécessaire."));
+        } else if (plan.bundledExample()) {
             sb.append(Ui.banner("warn", "Cette " + what + " fait partie des <strong>exemples "
                     + "embarqués dans le JAR</strong> du plugin. Le serveur les recrée au démarrage "
                     + "si le fichier manque : elle réapparaîtra après un redémarrage tant que le "
@@ -232,22 +301,27 @@ public final class ContentDeletionPages {
         return sb.append("</ul>").toString();
     }
 
-    private String confirmForm(DeletionPlan plan, String kind, String csrfToken, String what) {
-        String action = "/" + ("quests".equals(kind) ? "quests" : "stories") + "/delete";
+    private String confirmForm(DeletionPlan plan, Kind k, String csrfToken) {
+        String spared = "dialogues".equals(plan.kind())
+                ? "Elle ne supprime aucun PNJ, aucune quête (même celles que ce dialogue démarre), "
+                : "Elle ne supprime aucun PNJ, aucun dialogue, aucune autre quête, ";
         return "<h2>Confirmation</h2>"
-                + "<form method=\"post\" action=\"" + action + "\" class=\"card card-body\">"
+                + "<form method=\"post\" action=\"" + k.deleteAction() + "\" class=\"card card-body\">"
                 + "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(csrfToken) + "\">"
                 + "<input type=\"hidden\" name=\"slug\" value=\"" + Http.esc(plan.slug()) + "\">"
+                + "<input type=\"hidden\" name=\"" + EXPECTED_SHA_FIELD + "\" value=\""
+                + Http.esc(plan.sourceSha() == null ? "" : plan.sourceSha()) + "\">"
                 + "<label class=\"form-label\" for=\"" + CONFIRM_FIELD + "\">Pour confirmer, "
-                + "retaper l'identifiant exact de la " + what + " : <code>"
+                + "retaper l'identifiant exact " + ("dialogues".equals(plan.kind()) ? "du dialogue"
+                : "quests".equals(plan.kind()) ? "de la quête" : "de la story") + " : <code>"
                 + Http.esc(plan.plainId()) + "</code></label>"
                 + "<input class=\"form-control\" id=\"" + CONFIRM_FIELD + "\" name=\""
                 + CONFIRM_FIELD + "\" type=\"text\" autocomplete=\"off\" "
                 + "placeholder=\"" + Http.esc(plan.plainId()) + "\" required>"
-                + "<p class=\"form-text\">Cette action supprime le fichier source (après "
-                + "sauvegarde) et nettoie les références listées ci-dessus. Elle ne supprime aucun "
-                + "PNJ, aucun dialogue, aucune autre quête, et <strong>n'efface aucune progression "
-                + "de joueur</strong>.</p>"
+                + "<p class=\"form-text\">Cette action supprime le fichier source s'il existe "
+                + "(après sauvegarde), nettoie les références listées ci-dessus et demande au "
+                + "serveur de supprimer sa copie. " + spared + "et <strong>n'efface aucune "
+                + "progression de joueur</strong>.</p>"
                 + "<button class=\"btn btn-danger\" type=\"submit\">Supprimer définitivement</button>"
                 + "</form>";
     }

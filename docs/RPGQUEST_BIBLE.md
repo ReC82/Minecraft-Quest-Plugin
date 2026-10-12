@@ -752,6 +752,47 @@ toujours le chemin de sauvegarde, pour qu'une restauration ne se devine pas.
 - L'autorité finale sur la validité d'un fichier reste le **chargement du plugin** au démarrage
   du serveur : un fichier incompatible est rejeté à ce moment-là (voir `QUEST_FORMAT.md`).
 
+#### Supprimer un dialogue (issue #248)
+
+Fiche du dialogue dans `/dialogues` → **« Supprimer le dialogue… »** → `/dialogues/delete?slug=<id>`.
+Proposé aussi pour un dialogue **hors source** (chargé seulement par le serveur), le cas qu'on ne
+pouvait pas nettoyer avant. Permission `CONTENT_DELETE`, comme pour les quêtes.
+
+**L'aperçu combine la source éditable ET le serveur.** Le serveur, c'est le dernier relevé
+`dialogue.list` réussi — et sa **date** compte : absent, ou plus vieux que **15 minutes**, l'écran
+dit « **Vérification incomplète** », refuse la suppression et propose « Rafraîchir le relevé des
+dialogues ». Il n'affiche jamais « aucune référence » sans l'avoir vérifié.
+
+| Situation | Effet |
+|---|---|
+| PNJ lié (déclaration `dialogue:` ou convention `rpgquest:<pnj>`) | **bloqué** — le PNJ n'est jamais supprimé ici |
+| Un autre dialogue l'ouvre (`OPEN_DIALOGUE`, serveur ou source) | **bloqué** — le serveur refuserait de recharger cet autre dialogue |
+| Quêtes démarrées ou testées par ce dialogue | **listées**, jamais supprimées ; elles ne sont simplement plus proposées par lui |
+| Guide de Hub (`hub-guides/*.yml`, clé `guide-dialogue`) | non relevé par le panel : **le serveur le vérifie** et refuse |
+| Hors source | seule la copie serveur est supprimée |
+| Exemple embarqué dans le JAR (`guard`) | pierre tombale posée : il n'est **plus recréé au démarrage** |
+
+**Confirmation** : retaper l'identifiant ; l'empreinte du fichier source est revérifiée (une
+modification faite entre l'aperçu et la confirmation annule la suppression) ; un double clic ne met
+**jamais** deux suppressions serveur en file. La page de résultat donne le lien de l'action agent,
+où le serveur rend son constat.
+
+**Côté serveur** (`content.definition.delete`, `kind=dialogues`) : le serveur **revérifie** sur ce
+qu'il a chargé — PNJ liés, `OPEN_DIALOGUE` entrants — puis les guides de Hub sur le disque, refuse
+avec le motif (`REFERENCED`) si besoin, sinon sauvegarde dans `content-backups/`, supprime, recharge
+les dialogues et rend le constat (dialogues chargés, erreurs de chargement, identifiant encore
+déclaré ailleurs → `STILL_LOADED`). Exige un JAR qui contient #248 ; un JAR antérieur refuse sans
+rien toucher.
+
+**Pierres tombales** (`content-tombstones/<type>/<fichier>`, hors des dossiers de contenu) : un
+exemple du JAR supprimé n'est plus recréé au démarrage, **sans reconstruire le plugin**. Republier le
+fichier depuis le panel reste possible ; pour qu'un exemple soit à nouveau amorcé, supprimer sa
+pierre tombale.
+
+**Suppression d'une quête (#194) complétée** : l'aperçu voit aussi les dialogues **chargés par le
+serveur** qui démarrent ou testent la quête (cas réel : `help` → `help_recolte`), et refuse sur un
+relevé des dialogues absent ou périmé. Les titres MiniMessage sont rendus, plus affichés en balises.
+
 #### Supprimer un PNJ (issue #226)
 
 **Défaut corrigé** : le panel savait créer une définition PNJ, créer et lier un Citizens, et

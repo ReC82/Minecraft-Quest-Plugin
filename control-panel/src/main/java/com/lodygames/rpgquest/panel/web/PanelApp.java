@@ -106,6 +106,9 @@ public final class PanelApp {
     private final BuildingPlanWorkbench planWorkbench;
     /** #282 : vérification automatique des nouveaux plans et réparation par le moteur. */
     private final com.lodygames.rpgquest.panel.building.WorkshopAutopilot workshopAutopilot;
+    /** #282 : sessions de conception automatique (IA + moteur), sous enveloppe consentie. */
+    private final com.lodygames.rpgquest.panel.building.BuildingDesignRunStore designRuns;
+    private final com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline designPipeline;
     /** Issue #267 — les projets de l'Atelier, indépendants des emplacements. */
     private final com.lodygames.rpgquest.panel.building.BuildingProjectStore planProjects;
     private final ContentEditorPages contentEditor;
@@ -167,6 +170,12 @@ public final class PanelApp {
         this.workshopAutopilot = new com.lodygames.rpgquest.panel.building.WorkshopAutopilot(agentStore,
                 planDrafts, audit);
         this.planProjects = new com.lodygames.rpgquest.panel.building.BuildingProjectStore(config.panelDbPath());
+        this.designRuns = new com.lodygames.rpgquest.panel.building.BuildingDesignRunStore(config.panelDbPath());
+        // Une session « en cours » au démarrage a perdu son fil : interrompue, jamais relancée seule.
+        this.designRuns.interruptOrphans();
+        this.designPipeline = new com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline(aiBuildingStudio,
+                designRuns, planProjects, planDrafts, planWorkbench, agentStore, workshopAutopilot, audit,
+                Duration.ofSeconds(Long.getLong("rpgquest.design.verdictTimeoutSeconds", 180)));
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
         this.agentPages.useWorkshopProjects(planProjects);
@@ -351,6 +360,7 @@ public final class PanelApp {
             server = null;
         }
         restartService.shutdown();
+        designPipeline.shutdown();
     }
 
     // ---- Routage --------------------------------------------------------------------------
@@ -1175,6 +1185,7 @@ public final class PanelApp {
                 case "project_save" -> projectSave(session, project.get(), f);
                 case "propose" -> planPropose(session, agentId, project.get(), f);
                 case "correct" -> planCorrect(session, agentId, project.get(), f);
+                case "design" -> planDesign(session, agentId, project.get(), f);
                 case "save", "audit", "preview", "generate" -> planCheck(session, agentId, project.get(), f);
                 case "recover" -> planRecover(session, agentId, project.get(), f);
                 case "archive" -> planArchive(session, project.get(), f);
@@ -1230,7 +1241,7 @@ public final class PanelApp {
                 draft == null ? none : planWorkbench.state(draft, BuildingPlanDraftStore.Check.GENERATE),
                 draft == null ? List.of() : planDrafts.revisions(draft.id()),
                 planWorkbench.recoverable(agentId, 10), UUID.randomUUID().toString(), notice, error,
-                conflictText, idTaken, isoView, isoCut);
+                conflictText, idTaken, isoView, isoCut, designRuns.latest(project.get().id()));
         Http.html(exchange, 200, renderPage(project.get().name(), session, WorkshopPages.BASE,
                 WorkshopPages.project(view), Layout.Shell.of(config.defaultTarget().label(), null, session.username())));
     }
@@ -1337,6 +1348,61 @@ public final class PanelApp {
                 draft.plan(), reason, measured);
         return keepProposal(session, agentId, project, f.get("request_token"), proposal,
                 BuildingPlanDraft.Origin.AI_CORRECTION, draft.id(), demand, true);
+    }
+
+    /**
+     * « Conception automatique » (issue #282) : plusieurs passes d'IA et de moteur, sous une
+     * enveloppe que l'administrateur a vue et consentie AVANT le lancement.
+     *
+     * <p>Mêmes garanties que les gestes payants unitaires : jeton à usage unique (un double clic ne
+     * lance jamais deux sessions), une seule session en cours par projet, et la dépense est bornée
+     * par le niveau choisi et par {@link com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline#MAX_CALLS_CEILING}.</p>
+     */
+    private PlanOutcome planDesign(Session session, String agentId,
+                                   com.lodygames.rpgquest.panel.building.BuildingProject project,
+                                   Map<String, String> f) {
+        if (!project.hasBrief()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), "", null,
+                    "Décrivez d'abord le bâtiment souhaité : sans description, il n'y a rien à concevoir."));
+        }
+        String token = f.getOrDefault("request_token", "").trim();
+        var existing = token.isEmpty() ? Optional.<com.lodygames.rpgquest.panel.building.BuildingDesignRunStore.Run>empty()
+                : designRuns.byToken(token);
+        if (existing.isPresent()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"),
+                    "Cette conception a déjà été lancée : aucun nouvel appel n'a été émis.", null));
+        }
+        if (designRuns.latest(project.id()).filter(r -> r.running()).isPresent()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), null,
+                    "Une conception automatique est déjà en cours sur ce projet : rien n'a été lancé."));
+        }
+        if (!"yes".equals(f.getOrDefault("consent", ""))) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), null,
+                    "Cochez l'acceptation de l'enveloppe : rien n'est dépensé sans votre accord explicite."));
+        }
+        if (token.isEmpty()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), "", null,
+                    "Formulaire périmé : rien n'a été lancé. Rechargez la page."));
+        }
+        String provider = f.getOrDefault("provider", "").trim();
+        if (aiBuildingStudio.usableProviders().stream().noneMatch(p -> p.id().equals(provider))) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"), null,
+                    "Fournisseur d'IA inconnu ou inutilisable : rien n'a été lancé."));
+        }
+        var quality = com.lodygames.rpgquest.panel.ai.BuildingDesignPipeline.Quality.of(f.get("quality"));
+        int calls = Math.min(quality.calls(), Math.max(1, parseIntOr(f.get("max_calls"), quality.calls())));
+        var started = designRuns.start(agentId, project.id(), token, provider, quality.name(), calls,
+                session.username());
+        if (started.isEmpty()) {
+            return PlanOutcome.redirect(projectLocation(project.id(), f.get("draft"),
+                    "Cette conception a déjà été lancée : aucun nouvel appel n'a été émis.", null));
+        }
+        audit.record(session.username(), "building.design.start", "project=" + project.id() + " run="
+                + started.get().id() + " quality=" + quality.name() + " max_calls=" + calls
+                + " provider=" + provider, "OK", "enveloppe consentie", UUID.randomUUID().toString().substring(0, 8));
+        designPipeline.launch(started.get());
+        return PlanOutcome.redirect(projectLocation(project.id(), "", "Conception automatique lancée ("
+                + quality.label() + ", " + calls + " appel(s) au plus). Suivez les passes ci-dessous.", null));
     }
 
     /**

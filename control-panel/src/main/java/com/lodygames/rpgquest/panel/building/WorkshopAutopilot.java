@@ -113,8 +113,11 @@ public final class WorkshopAutopilot {
         }
     }
 
-    /** La réparation créée, s'il y en a eu une — exposé pour les tests. */
-    Optional<BuildingPlanDraft> repairFrom(String actionId) {
+    /**
+     * La réparation créée, s'il y en a eu une. Synchronisé : l'écouteur des résultats et la
+     * conception automatique peuvent l'appeler pour le même audit, et une seule version doit naître.
+     */
+    public synchronized Optional<BuildingPlanDraft> repairFrom(String actionId) {
         Optional<BuildingPlanDraftStore.Link> link = drafts.linkOf(actionId)
                 .filter(l -> l.check() == Check.AUDIT);
         if (link.isEmpty()) {

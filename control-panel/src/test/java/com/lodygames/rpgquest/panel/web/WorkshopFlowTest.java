@@ -459,6 +459,31 @@ class WorkshopFlowTest {
                 .filter(d -> d.origin() == BuildingPlanDraft.Origin.ENGINE_REPAIR).count());
     }
 
+    /** La conception automatique : enveloppe annoncée, consentement exigé, jamais lancée deux fois. */
+    @Test
+    void anAutomaticDesignNeedsConsentToAnAnnouncedEnvelopeAndRunsOnce() throws Exception {
+        start();
+        String project = createProject("Bibliothèque", BRIEF);
+        String page = get(project).body();
+        assertTrue(page.contains("Conception automatique"), "la carte est proposée");
+        assertTrue(page.contains("Enveloppe : 8 appel(s) à l&#39;IA au plus")
+                || page.contains("Enveloppe : 8 appel(s) à l'IA au plus"), "l'enveloppe est annoncée");
+
+        String form = formAround(page, "value=\"design\"");
+        String body = "_csrf=" + csrf(page) + "&_action=design&id=" + id(project) + "&provider=openai"
+                + "&quality=SOIGNE&request_token=" + token(form);
+        String refused = decoded(location(post("/buildings/workshop/project", body)));
+        assertTrue(refused.contains("acceptation de l'enveloppe"), refused);
+        assertEquals(0, aiCalls.get(), "rien n'est dépensé sans consentement");
+
+        String launched = decoded(location(post("/buildings/workshop/project", body + "&consent=yes")));
+        assertTrue(launched.contains("Conception automatique lancée (Soigné, 8 appel(s) au plus)"), launched);
+        String again = decoded(location(post("/buildings/workshop/project", body + "&consent=yes")));
+        assertTrue(again.contains("déjà été lancée"), again);
+        var runs = new com.lodygames.rpgquest.panel.building.BuildingDesignRunStore(dbPath);
+        assertEquals(8, runs.latest(id(project)).orElseThrow().maxCalls());
+    }
+
     // ---- Reprendre l'existant -------------------------------------------------------------------
 
     /** Le cas réel : la description de buildsite_0009 et ses deux brouillons de la Bibliothèque. */

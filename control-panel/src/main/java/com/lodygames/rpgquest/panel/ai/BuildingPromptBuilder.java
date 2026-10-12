@@ -528,4 +528,55 @@ public final class BuildingPromptBuilder {
                 measured,
                 previousPlan == null ? "" : previousPlan.trim());
     }
+
+    /**
+     * La passe de <strong>critique architecturale</strong> (issue #282) : le plan est déjà conforme,
+     * on demande au modèle de le rendre beau et fidèle au brief, sans rien casser.
+     *
+     * <p>Le propriétaire l'a dit sans détour : « un résultat techniquement conforme mais laid ou
+     * inutile n'est pas un succès ». Les trois bibliothèques du 12/10/2026 étaient des blocs
+     * rectangulaires au toit uniforme et au mobilier réparti mécaniquement. Cette passe est le
+     * second regard d'un architecte : elle n'est demandée qu'APRÈS la conformité, et son plan est
+     * vérifié comme un autre — s'il régresse, la version conforme précédente est conservée.</p>
+     */
+    public static String critiquePrompt(Demand demand, String plan, String metrics, String warnings) {
+        return """
+                %s
+
+                TON PLAN A ÉTÉ ACCEPTÉ PAR LE SERVEUR. IL FAUT MAINTENANT LE RENDRE BEAU.
+
+                Tu es maintenant l'architecte en chef qui relit ce plan avant sa construction. Il est
+                conforme, mais un bâtiment conforme et banal est un échec : relis le brief de
+                l'administrateur, puis améliore le plan sur ces axes, dans cet ordre :
+
+                  1. FIDÉLITÉ AU BRIEF : chaque pièce, chaque élément demandé existe, à sa place
+                     (un comptoir, une salle de lecture, un escalier, des étages…).
+                  2. SILHOUETTE ET FAÇADES : un soubassement d'un autre matériau, des bandeaux entre
+                     les étages, des encadrements de fenêtres, des piliers en relief, un toit avec
+                     débord ; évite le bloc rectangulaire uniforme.
+                  3. AMÉNAGEMENT : mobilier regroupé par fonction et par pièce (rayonnages en rangées
+                     avec des allées, tables de lecture, pupitres, tapis, plantes), jamais une « box »
+                     qui remplit une salle. Garde au moins 2 blocs d'allée libres.
+                  4. LUMIÈRE CHALEUREUSE : lanternes suspendues, appliques, réparties à chaque étage.
+
+                CE QUI NE DOIT PAS CHANGER : l'identifiant, le nom, « front », la taille déclarée
+                (les zones restent de 0 à size-1), la porte, et chaque « op: staircase » avec son
+                « floor ». Ne retire aucune fenêtre ni aucune lumière. Si tu ajoutes un étage, ajoute
+                son « staircase ».
+
+                CE QUE LE SERVEUR A MESURÉ SUR LA VERSION ACCEPTÉE
+
+                %s
+                %s
+                Plan accepté :
+                %s
+
+                Produis le plan YAML amélioré, COMPLET, et rien d'autre. Il sera vérifié : s'il est
+                refusé, la version actuelle est conservée.
+                """.formatted(userPrompt(demand),
+                metrics == null || metrics.isBlank() ? "(aucune mesure transmise)" : metrics.trim(),
+                warnings == null || warnings.isBlank() ? ""
+                        : "\nRemarques du serveur à traiter :\n" + warnings.trim() + "\n",
+                plan == null ? "" : plan.trim());
+    }
 }

@@ -25,6 +25,8 @@ import java.util.regex.Pattern;
  * @param sourceActionId action d'où le plan a été récupéré, pour une récupération ; vide sinon
  * @param maxWidth       emprise demandée à l'IA, reprise pour une correction
  * @param maxHeight      hauteur demandée à l'IA, reprise pour une correction
+ * @param projectId      projet d'atelier (#267) ; vide pour un brouillon antérieur, rattaché seulement
+ *                       à son emplacement ({@code siteId}) jusqu'à son import
  */
 public record BuildingPlanDraft(String id, String agentId, String siteId, String plan,
                                 String planSha, int version, Origin origin, String parentId,
@@ -32,7 +34,19 @@ public record BuildingPlanDraft(String id, String agentId, String siteId, String
                                 String model, String usage, String rawResponse,
                                 String extractionNote, int maxWidth, int maxHeight,
                                 boolean archived, String createdBy, Instant createdAt,
-                                String updatedBy, Instant updatedAt) {
+                                String updatedBy, Instant updatedAt, String projectId) {
+
+    /** Forme antérieure à #267, sans projet d'atelier. */
+    public BuildingPlanDraft(String id, String agentId, String siteId, String plan, String planSha,
+                             int version, Origin origin, String parentId, String sourceActionId,
+                             String providerId, String providerLabel, String model, String usage,
+                             String rawResponse, String extractionNote, int maxWidth, int maxHeight,
+                             boolean archived, String createdBy, Instant createdAt, String updatedBy,
+                             Instant updatedAt) {
+        this(id, agentId, siteId, plan, planSha, version, origin, parentId, sourceActionId, providerId,
+                providerLabel, model, usage, rawResponse, extractionNote, maxWidth, maxHeight, archived,
+                createdBy, createdAt, updatedBy, updatedAt, "");
+    }
 
     /** D'où vient un brouillon : c'est ce qui dit s'il a coûté un appel. */
     public enum Origin {
@@ -79,6 +93,8 @@ public record BuildingPlanDraft(String id, String agentId, String siteId, String
         extractionNote = extractionNote == null ? "" : extractionNote;
         createdBy = createdBy == null ? "" : createdBy;
         updatedBy = updatedBy == null ? "" : updatedBy;
+        projectId = projectId == null ? "" : projectId;
+        siteId = siteId == null ? "" : siteId;
     }
 
     public boolean hasPlan() {
@@ -93,6 +109,19 @@ public record BuildingPlanDraft(String id, String agentId, String siteId, String
      */
     public String buildingId() {
         return buildingIdOf(plan);
+    }
+
+    /**
+     * Le plan, avec son identifiant remplacé par celui du projet (#267). Seule la ligne {@code id:} de
+     * tête change ; si elle manque, elle est ajoutée en tête. Rien d'autre n'est touché.
+     */
+    public static String withBuildingId(String plan, String buildingId) {
+        String text = plan == null ? "" : plan;
+        Matcher m = BUILDING_ID.matcher(text);
+        if (m.find()) {
+            return text.substring(0, m.start()) + "id: " + buildingId + text.substring(m.end());
+        }
+        return "id: " + buildingId + "\n" + text;
     }
 
     /** Même lecture, sur un texte de plan quelconque (une action à récupérer, par exemple). */

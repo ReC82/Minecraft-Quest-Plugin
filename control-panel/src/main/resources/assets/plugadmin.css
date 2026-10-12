@@ -1010,3 +1010,23 @@ tr.act-row[data-href] { cursor: pointer; }
 tr.act-row a.act-label { font-weight: 600; text-decoration: none; }
 tr.act-row a.act-label:hover, tr.act-row a.act-label:focus { text-decoration: underline; }
 
+/* Issue #265 — Atelier de création : étapes, action principale, cartes de projets. */
+.ws-steps { display: flex; flex-wrap: wrap; gap: .5rem; list-style: none; padding: 0; margin: 0 0 1rem; }
+.ws-steps li { display: flex; align-items: center; gap: .4rem; padding: .35rem .75rem; border-radius: 999px;
+  background: var(--bs-secondary-bg, #f1f3f5); color: var(--bs-secondary-color, #6c757d); font-size: .95rem; }
+.ws-steps li.current { background: var(--bs-primary, #0d6efd); color: #fff; font-weight: 600; }
+.ws-steps li.done { color: var(--bs-success, #198754); }
+.ws-step-n { display: inline-flex; width: 1.5rem; height: 1.5rem; align-items: center; justify-content: center;
+  border-radius: 50%; background: rgba(0,0,0,.08); font-size: .85rem; }
+.ws-main { margin-bottom: 1rem; border-width: 2px; }
+.ws-main .btn-primary { font-size: 1.05rem; }
+.ws-problems { padding-left: 1.2rem; }
+.ws-problems li { margin-bottom: .4rem; }
+.ws-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: .75rem; margin-bottom: 1rem; }
+.ws-card { text-decoration: none; color: inherit; }
+.ws-card:hover, .ws-card:focus { border-color: var(--bs-primary, #0d6efd); }
+.ws-card-title { font-weight: 600; font-size: 1.05rem; }
+.ws-card-state { margin: .25rem 0; }
+.ws-tech summary { font-size: .9rem; }
+@media (max-width: 576px) { .ws-steps li { font-size: .85rem; padding: .3rem .55rem; } }
+

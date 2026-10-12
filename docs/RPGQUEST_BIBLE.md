@@ -1370,6 +1370,30 @@ reprise le renvoie au modèle avec le plan refusé, pour qu'il corrige ce point 
 Trois refus arrivent à **coût nul**, avant le moindre appel payant : brief absent, emplacement
 absent du relevé, aucun fournisseur utilisable.
 
+#### Atelier de création (issues #265, #267)
+
+**Bâtiments → Atelier de création** (`/buildings/workshop`, permission `AI_USE`) : on conçoit un bâtiment
+**sans emplacement**. Un **projet** porte le nom, la description du bâtiment souhaité (6 000 car.), le côté
+de l'entrée, la taille maximale et le **nom technique** sous lequel il entrera dans la bibliothèque.
+
+Parcours guidé : Décrire → Proposer un plan (IA, facturé) → Vérifier (gratuit) → Enregistrer dans la
+bibliothèque. Une seule action principale à la fois ; les problèmes de vérification sont dits en français
+avec une piste ; « Améliorer avec l'IA » crée une nouvelle version. L'enregistrement n'utilise **jamais**
+le remplacement : un nom technique déjà pris est signalé et doit être changé. Tout le technique (plan
+brut, codes, mesures, coupes, versions, reprise depuis l'historique) est replié dans « Détails techniques »,
+avec « Copier le diagnostic » (sans clé ni secret).
+
+Les garanties de #256 s'appliquent aux projets : redirection après chaque soumission, jeton à usage unique
+sur les gestes payants, versions et contrôle de concurrence, vérifications rattachées à leur version,
+persistance au redémarrage.
+
+**Migration** (non destructive, sur clic) : l'Atelier propose de **reprendre** le travail commencé sur un
+emplacement (description et/ou brouillons). La description est copiée dans un projet, les brouillons y
+sont rattachés (`project_id`, colonne additive ; `site_id` reste noté), la fiche de l'emplacement n'est
+pas touchée. Idempotent. `/buildings/plan?site=…` redirige vers l'Atelier.
+
+Parcours avant / après : `docs/control-panel/BATIMENTS_PARCOURS.md`.
+
 #### Brouillons de plan — reprendre un plan sans le repayer (issue #256)
 
 Chaque plan obtenu de l'IA est conservé comme **brouillon de travail** dans la base du panel

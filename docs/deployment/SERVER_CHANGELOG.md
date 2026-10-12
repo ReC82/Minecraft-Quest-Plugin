@@ -8106,3 +8106,22 @@ le plugin l'acceptait, laissant le bâtiment sans moyen de restauration.
 
 Aucune côté Minecraft. Redéployer le panel. Validation : TC-285 (sans restauration réelle).
 
+## 2026-10-12 — Atelier de création indépendant des emplacements (#267, lot B de #265) — **NON déployé**
+
+### Changement
+
+Panel seul. Nouveau module « Atelier de création » (`/buildings/workshop`) : projets de bâtiment sans
+emplacement, parcours guidé, vérification en français, détails techniques repliés, « Copier le
+diagnostic ». Reprise non destructive du travail commencé sur un emplacement. `/buildings/plan`
+redirige.
+
+### Action serveur
+
+Aucune côté Minecraft. Redéployer le panel. Au démarrage : table `building_project` créée, colonne
+`project_id` **ajoutée** à `building_plan_draft` (vide, aucune ligne réécrite). Sauvegarder
+`control-panel.db` avant (procédure habituelle).
+
+### Validation
+
+TC-286.
+

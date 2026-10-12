@@ -641,70 +641,47 @@ class BuildingSitesPageTest {
                 "et la raison est dite");
     }
 
+    /**
+     * Issue #265 : la génération a quitté les emplacements pour l'Atelier. L'ancienne adresse ne rend
+     * plus de page de génération — elle mène à l'Atelier, où le travail commencé est repris.
+     */
     @Test
-    void theGenerationPageShowsTheSiteFactsAndTheBriefItWillSend() throws Exception {
+    void theOldGenerationAddressLeadsToTheWorkshop() throws Exception {
         start();
         seedWith(SITES_WITH_BRIEF);
-        String page = get("/buildings/plan?site=buildsite_0009").body();
+        HttpResponse<String> res = get("/buildings/plan?site=buildsite_0009");
 
-        assertTrue(page.contains("Générer un bâtiment avec l"), page.substring(0, 200));
-        // Les faits de l'emplacement, pour que l'administrateur sache ce que l'IA recevra.
-        assertTrue(page.contains("Bibliothèque du Hub"), "le nom de l'emplacement");
-        assertTrue(page.contains("world_hub"), "le monde");
-        assertTrue(page.contains("784 / 67 / -693"), "la position");
-        assertTrue(page.contains("ouest"), "la façade, en français");
-        assertTrue(page.contains("le plan déclarera cette façade"),
-                "et le fait qu'elle est transmise à l'IA");
-        // Le brief est montré tel qu'il sera envoyé.
-        assertTrue(page.contains("Brief envoyé à l"), "section du brief");
-        assertTrue(page.contains("Grande salle de lecture"), "le brief réel");
+        assertEquals(303, res.statusCode());
+        assertTrue(res.headers().firstValue("Location").orElse("").startsWith("/buildings/workshop"),
+                res.headers().firstValue("Location").orElse(""));
+        String workshop = get("/buildings/workshop").body();
+        assertTrue(workshop.contains("buildsite_0009"), "le travail de l'emplacement est proposé à la reprise");
+        assertTrue(workshop.contains("Grande salle de lecture"), "avec sa description");
     }
 
     @Test
-    void theGenerationPageSaysSoWhenNoBriefExists() throws Exception {
-        start();
-        seed();
-        String page = get("/buildings/plan?site=buildsite_0001").body();
-
-        assertTrue(page.contains("Aucun brief architectural sur cet emplacement"),
-                "l'absence de brief est dite");
-        assertFalse(page.contains("Demander un plan</button>"),
-                "et aucun appel payant n'est proposé");
-    }
-
-    @Test
-    void anUnknownSiteGivesAReadableNotFoundRatherThanAnError() throws Exception {
+    void anUnknownSiteOnTheOldAddressStillLandsOnTheWorkshop() throws Exception {
         start();
         seed();
         HttpResponse<String> res = get("/buildings/plan?site=buildsite_9999");
 
-        assertEquals(404, res.statusCode());
-        assertTrue(res.body().contains("Emplacement introuvable"), res.body());
-        assertTrue(res.body().contains("Rafraîchir le catalogue"), "avec le geste qui corrige");
+        assertEquals(303, res.statusCode());
+        assertTrue(res.headers().firstValue("Location").orElse("").startsWith("/buildings/workshop"));
     }
 
-    /**
-     * La garantie structurelle du lot : la page ne peut rien écrire. Son seul formulaire d'écriture
-     * pointe vers {@code /agents/action}, le chemin unique d'écriture du panel.
-     */
+    /** Sans fournisseur d'IA, l'Atelier le dit et ne propose aucun formulaire payant voué à l'échec. */
     @Test
-    void theGenerationPageNeverWritesByItself() throws Exception {
+    void withoutAProviderTheWorkshopSaysSoAndOffersNoPaidForm() throws Exception {
         start();
-        seedWith(SITES_WITH_BRIEF);
-        String page = get("/buildings/plan?site=buildsite_0009").body();
+        String page = get("/buildings/workshop/new").body();
+        HttpResponse<String> created = post("/buildings/workshop/new", "_csrf=" + csrf(page)
+                + "&name=Tour&brief=" + enc("Une tour de guet en pierre.") + "&front=NORTH");
+        String project = get(created.headers().firstValue("Location").orElse("")).body();
 
-        // Sans proposition, aucun formulaire de génération : on ne peut pas générer dans le vide.
-        assertFalse(page.contains("value=\"building.generate\""),
-                "aucune génération proposée avant qu'un plan existe");
-        // Dans ce test, aucun fournisseur d'IA n'est configuré : la page le DIT et ne propose
-        // aucun appel. C'est le bon comportement — pas un formulaire qui échouerait au clic.
-        assertTrue(page.contains("Aucun fournisseur d'IA utilisable"),
-                "l'absence de fournisseur est dite");
-        assertTrue(page.contains("href=\"/ai/providers\""), "avec le lien qui la corrige");
-        // #256 : la page porte désormais un formulaire de RÉCUPÉRATION, qui n'appelle pas l'IA ;
-        // ce qui ne doit pas apparaître, c'est un formulaire de demande payante.
-        assertFalse(page.contains("value=\"propose\""),
-                "et aucun formulaire de demande qui ne pourrait pas aboutir");
+        assertTrue(project.contains("Aucun fournisseur d&#39;IA n&#39;est configuré")
+                || project.contains("Aucun fournisseur d'IA n'est configuré"), "l'absence est dite");
+        assertTrue(project.contains("href=\"/ai/providers\""), "avec le lien qui la corrige");
+        assertFalse(project.contains("value=\"propose\""), "aucun formulaire qui ne pourrait pas aboutir");
     }
 
     // ---- Issue #94 : la note, le brief, et la fin de la troncature silencieuse ----------------

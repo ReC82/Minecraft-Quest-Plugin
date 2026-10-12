@@ -1,5 +1,6 @@
 package com.lodygames.rpgquest.panel.content;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -8,7 +9,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Analyse des conséquences d'une suppression de quête ou de story (issue #194).
+ * Analyse des conséquences d'une suppression de quête, de story (issue #194) ou de dialogue
+ * (issue #248).
  *
  * <p><strong>Trois règles de conduite</strong>, qui expliquent toutes les décisions ci-dessous :</p>
  *
@@ -43,6 +45,17 @@ public final class ContentDeletionAnalyzer {
 
     /** Stories livrées comme exemples dans le JAR ({@code StoryRegistry#BUNDLED_EXAMPLES}). */
     public static final List<String> BUNDLED_STORIES = List.of("main_story");
+
+    /**
+     * Dialogues livrés comme exemples dans le JAR ({@code YamlDialogueEngine#BUNDLED_EXAMPLES}).
+     * Depuis #248, leur suppression côté serveur pose une pierre tombale qui empêche l'amorçage de
+     * les recréer — à condition que le JAR déployé contienne #248.
+     */
+    public static final List<String> BUNDLED_DIALOGUES = List.of("guard");
+
+    /** Un choix de dialogue qui ouvre un autre dialogue : {@code dialogue: rpgquest:x}. */
+    private static final Pattern DIALOGUE_OPEN_REF =
+            Pattern.compile("(?m)^\\s*dialogue:\\s*[\"']?(?:rpgquest:)?([a-z0-9][a-z0-9_/-]*)[\"']?\\s*$");
 
     /**
      * Référence à une quête dans un dialogue : {@code quest: rpgquest:first_steps} ou
@@ -80,6 +93,24 @@ public final class ContentDeletionAnalyzer {
      */
     public DeletionPlan analyze(String kind, String slug, boolean runtimePresent,
                                 boolean runtimeListingAvailable) {
+        return analyze(kind, slug, runtimePresent, runtimeListingAvailable, null, Instant.now());
+    }
+
+    /**
+     * Variante complète (issue #248) : le contenu <strong>réellement chargé</strong> par le serveur
+     * entre dans l'analyse, en plus de la source éditable.
+     *
+     * @param inventory dialogues du dernier relevé serveur ; {@code null} = non considéré (ancien
+     *                  comportement, quêtes et stories seulement)
+     * @param now       instant de référence pour juger la fraîcheur du relevé
+     */
+    public DeletionPlan analyze(String kind, String slug, boolean runtimePresent,
+                                boolean runtimeListingAvailable, RuntimeDialogueInventory inventory,
+                                Instant now) {
+        if ("dialogues".equals(kind)) {
+            return analyzeDialogue(slug, inventory == null
+                    ? RuntimeDialogueInventory.unavailable() : inventory, now);
+        }
         List<DeletionPlan.Edit> edits = new ArrayList<>();
         List<DeletionPlan.Blocker> blockers = new ArrayList<>();
         List<String> notes = new ArrayList<>();
@@ -91,8 +122,9 @@ public final class ContentDeletionAnalyzer {
 
         if (!"quests".equals(kind) && !"stories".equals(kind)) {
             blockers.add(new DeletionPlan.Blocker(
-                    "Seules les quêtes et les stories peuvent être supprimées ici.", kind,
-                    "Les dialogues et les PNJ se modifient depuis leurs propres pages."));
+                    "Les contenus de type « " + kind + " » ne peuvent pas être supprimés ici : "
+                            + "seulement les quêtes, les stories et les dialogues.", kind,
+                    "Un PNJ se supprime depuis sa propre fiche (« Supprimer le PNJ »)."));
             return plan(kind, plainId, label, false, null, runtimePresent, false,
                     edits, blockers, notes);
         }
@@ -129,6 +161,9 @@ public final class ContentDeletionAnalyzer {
 
         if ("quests".equals(kind)) {
             analyzeQuestReferences(plainId, edits, blockers);
+            if (inventory != null) {
+                analyzeRuntimeQuestReferences(plainId, inventory, now, blockers);
+            }
         } else {
             analyzeStoryReferences(plainId, notes);
         }
@@ -235,6 +270,164 @@ public final class ContentDeletionAnalyzer {
         }
     }
 
+    /**
+     * Issue #248 — les dialogues <strong>chargés par le serveur</strong> qui démarrent ou testent
+     * la quête. C'était le trou de #194 : un dialogue hors source ({@code rpgquest:help}) démarrait
+     * {@code help_recolte}, et l'aperçu ne voyait que la source.
+     */
+    private void analyzeRuntimeQuestReferences(String plainId, RuntimeDialogueInventory inventory,
+                                               Instant now, List<DeletionPlan.Blocker> blockers) {
+        if (!inventory.usable(now)) {
+            blockers.add(incompleteVerification(inventory, now,
+                    "aucun dialogue chargé par le serveur ne démarre cette quête"));
+            return;
+        }
+        for (RuntimeDialogueInventory.Entry e : inventory.referencingQuest(plainId)) {
+            if (workspace.read("dialogues", e.key()).isPresent()) {
+                continue; // déjà signalé, à la ligne près, par l'analyse de la source
+            }
+            blockers.add(new DeletionPlan.Blocker(
+                    "Le dialogue « " + e.id() + " », chargé sur le serveur mais absent de la source "
+                            + "(hors source), " + (e.startsQuestIds().contains(plainId)
+                            ? "démarre" : "teste l'état de") + " cette quête.",
+                    "serveur DEV — dialogues/" + e.key() + ".yml",
+                    "Supprimer ce dialogue (« Supprimer le dialogue » sur sa fiche) ou retirer la "
+                            + "référence, puis rafraîchir le relevé des dialogues et relancer."));
+        }
+    }
+
+    /** Le relevé ne permet pas de conclure : on le dit, et on refuse. */
+    private static DeletionPlan.Blocker incompleteVerification(RuntimeDialogueInventory inventory,
+                                                               Instant now, String claim) {
+        String age = inventory.surveyedAt()
+                .map(at -> "date de " + java.time.Duration.between(at, now).toMinutes() + " min")
+                .orElse("n'a jamais été fait");
+        return new DeletionPlan.Blocker(
+                "Vérification incomplète : le relevé des dialogues du serveur " + age + " (au-delà "
+                        + "de " + RuntimeDialogueInventory.MAX_AGE.toMinutes() + " min, il ne fait "
+                        + "plus foi). Impossible d'affirmer que " + claim + ".",
+                "relevé dialogue.list",
+                "Cliquer « Rafraîchir le relevé des dialogues » ci-dessous, attendre quelques "
+                        + "secondes, puis recharger cet aperçu.");
+    }
+
+    // ---- Suppression d'un dialogue (issue #248) ----------------------------------------------
+
+    /**
+     * Plan de suppression d'un dialogue.
+     *
+     * <p>Mêmes règles que pour une quête : <strong>jamais de cascade</strong> (ni le PNJ, ni les
+     * quêtes qu'il démarre), <strong>jamais de lien orphelin</strong> (un PNJ lié ou un dialogue qui
+     * l'ouvre bloque, au lieu d'être réécrit), et <strong>jamais de conclusion sans preuve</strong> :
+     * un relevé absent ou périmé bloque, plutôt que d'afficher « aucune référence ».</p>
+     */
+    private DeletionPlan analyzeDialogue(String slug, RuntimeDialogueInventory inventory, Instant now) {
+        List<DeletionPlan.Blocker> blockers = new ArrayList<>();
+        List<String> notes = new ArrayList<>();
+        String plainId = DialogueYaml.plainId(slug == null ? "" : slug.trim().toLowerCase(Locale.ROOT));
+        Optional<ContentWorkspace.ContentFile> file = workspace.read("dialogues", plainId);
+        boolean sourcePresent = file.isPresent();
+        Optional<RuntimeDialogueInventory.Entry> runtime = inventory.find(plainId);
+        boolean runtimePresent = runtime.isPresent();
+        boolean usable = inventory.usable(now);
+
+        if (!usable) {
+            blockers.add(incompleteVerification(inventory, now,
+                    "aucun PNJ ni aucun autre dialogue n'utilise celui-ci"));
+        }
+        if (!sourcePresent && !runtimePresent && usable) {
+            blockers.add(new DeletionPlan.Blocker(
+                    "Ce dialogue n'existe ni dans la source éditable, ni dans le relevé du serveur : "
+                            + "il n'y a rien à supprimer.", plainId,
+                    "Rafraîchir le catalogue des dialogues, puis vérifier l'identifiant."));
+        }
+        if (sourcePresent) {
+            if (!workspace.writable("dialogues")) {
+                blockers.add(new DeletionPlan.Blocker(
+                        "L'espace de travail source est en lecture seule : le service PlugAdmin n'a "
+                                + "pas les droits d'écriture sur « dialogues/ ».", "dialogues",
+                        "Exécuter scripts/plugadmin/grant-content-access.sh, puis recharger."));
+            }
+            if (!workspace.backupsConfigured()) {
+                blockers.add(new DeletionPlan.Blocker(
+                        "Aucun dossier de sauvegarde configuré : une suppression sans sauvegarde "
+                                + "préalable est refusée.", "configuration du panel",
+                        "Vérifier RPGQUEST_PANEL_DB (les sauvegardes vivent à côté de la base)."));
+            }
+        } else if (runtimePresent) {
+            notes.add("Hors source : ce dialogue n'existe que sur le serveur. Seule sa copie "
+                    + "serveur sera supprimée, avec sauvegarde.");
+        }
+
+        // 1. PNJ liés — d'après le serveur (déclaration « dialogue: » ou convention rpgquest:<pnj>).
+        runtime.filter(e -> !e.linkedNpcIds().isEmpty()).ifPresent(e -> blockers.add(
+                new DeletionPlan.Blocker(
+                        "Lié au(x) PNJ « " + String.join(", ", e.linkedNpcIds()) + " » : le PNJ "
+                                + "resterait sans dialogue. Le PNJ n'est jamais supprimé ici.",
+                        "PNJ " + String.join(", ", e.linkedNpcIds()),
+                        "Changer le dialogue de ce PNJ depuis sa fiche (ou supprimer le PNJ), "
+                                + "rafraîchir le relevé, puis relancer.")));
+
+        // 2. Dialogues qui l'ouvrent — serveur, puis source. Les réécrire changerait leur sens :
+        //    on bloque, comme pour une quête démarrée par un dialogue.
+        for (String opener : usable ? inventory.openersOf(plainId) : List.<String>of()) {
+            blockers.add(new DeletionPlan.Blocker(
+                    "Ouvert par le dialogue " + opener + " (OPEN_DIALOGUE). Le serveur refuserait "
+                            + "de recharger ce dialogue s'il pointait vers un dialogue disparu.",
+                    "serveur DEV — dialogues",
+                    "Modifier ce dialogue pour retirer ou réorienter ce choix, puis relancer."));
+        }
+        for (SourceCatalog.DialogueSource ds : source.dialogues()) {
+            if (ds.plainId().equals(plainId)) {
+                continue;
+            }
+            List<Integer> lines = referenceLines(DIALOGUE_OPEN_REF, "dialogues", ds.slug(), plainId);
+            boolean alreadyFromRuntime = usable && inventory.openerKeys(plainId).contains(ds.plainId());
+            if (!lines.isEmpty() && !alreadyFromRuntime) {
+                blockers.add(new DeletionPlan.Blocker(
+                        "Le dialogue source « " + ds.slug() + " » l'ouvre "
+                                + (lines.size() == 1 ? "à la ligne " : "aux lignes ")
+                                + joinLines(lines) + " (OPEN_DIALOGUE).",
+                        "src/main/resources/dialogues/" + ds.slug() + ".yml",
+                        "Modifier ce dialogue dans son éditeur, puis relancer."));
+            }
+        }
+
+        // 3. Références SORTANTES : informatives, jamais supprimées.
+        runtime.ifPresent(e -> {
+            List<String> out = new ArrayList<>();
+            e.startsQuestIds().forEach(q -> out.add("démarre la quête « " + q + " »"));
+            e.referencedQuestIds().stream().filter(q -> !e.startsQuestIds().contains(q))
+                    .forEach(q -> out.add("teste l'état de la quête « " + q + " »"));
+            e.opens().forEach(o -> out.add("ouvre le dialogue « " + o.targetKey() + " »"));
+            if (!out.isEmpty()) {
+                notes.add("Références sortantes, qui NE sont PAS supprimées : " + String.join(" ; ", out)
+                        + ". Après suppression, elles ne sont simplement plus atteintes par ce "
+                        + "dialogue — une quête démarrée seulement ici ne sera plus proposée.");
+            }
+        });
+        if (runtimePresent && runtime.get().linkedNpcIds().isEmpty()) {
+            notes.add("Aucun PNJ RPGQuest lié, d'après le relevé du serveur.");
+        }
+
+        notes.add("Les guides de Hub (hub-guides/*.yml) ne sont pas relevés par le panel : le "
+                + "serveur les vérifie au moment d'exécuter, et refuse si l'un utilise ce dialogue "
+                + "comme menu d'aide. Il revérifie aussi les PNJ et les dialogues.");
+        notes.add("Aucune progression de joueur n'est effacée, et aucune quête n'est supprimée.");
+        notes.add("La suppression côté serveur exige un plugin qui contient #248. Avec un JAR "
+                + "antérieur, l'agent la refuse (« Paramètre « kind » attendu ») sans rien toucher.");
+        boolean bundled = BUNDLED_DIALOGUES.contains(plainId);
+        if (bundled) {
+            notes.add("Exemple embarqué dans le JAR : le serveur le recrée au démarrage s'il manque. "
+                    + "La suppression serveur inscrit une pierre tombale "
+                    + "(content-tombstones/dialogues/) qui l'en empêche — pour le faire revenir, "
+                    + "republier le fichier ou supprimer la pierre tombale.");
+        }
+        return plan("dialogues", plainId, plainId, sourcePresent,
+                file.map(ContentWorkspace.ContentFile::sha256).orElse(null),
+                runtimePresent, bundled, List.of(), blockers, notes);
+    }
+
     private void analyzeStoryReferences(String plainId, List<String> notes) {
         // Rien dans le contenu ne référence une story : ni les quêtes, ni les dialogues (aucune
         // action ni condition de story n'existe dans le moteur), ni les définitions de PNJ. Une
@@ -330,13 +523,18 @@ public final class ContentDeletionAnalyzer {
 
     /** Lignes d'un dialogue qui référencent la quête, pour pointer l'endroit exact. */
     private List<Integer> questReferenceLines(String dialogueSlug, String plainId) {
+        return referenceLines(DIALOGUE_QUEST_REF, "dialogues", dialogueSlug, plainId);
+    }
+
+    /** Lignes d'un fichier dont le motif capture cet identifiant, numérotées pour un humain. */
+    private List<Integer> referenceLines(Pattern pattern, String kind, String slug, String plainId) {
         List<Integer> lines = new ArrayList<>();
-        String text = workspace.read("dialogues", dialogueSlug)
+        String text = workspace.read(kind, slug)
                 .map(ContentWorkspace.ContentFile::text).orElse(null);
         if (text == null) {
             return lines;
         }
-        Matcher matcher = DIALOGUE_QUEST_REF.matcher(text);
+        Matcher matcher = pattern.matcher(text);
         while (matcher.find()) {
             if (!QuestYaml.plainId(matcher.group(1)).equals(plainId)) {
                 continue;

@@ -331,8 +331,8 @@ public final class AgentActionCatalog {
         // confirmation exigée — et les catalogues impactés sont ré-enfilés, sans quoi le contenu
         // supprimé resterait affiché et donnerait l'impression de « réapparaître ».
         addSensitiveWrite("content.definition.delete", Permission.CONTENT_DELETE, false,
-                "Supprimer une définition de quête/story sur le serveur",
-                "quest.list", "story.list");
+                "Supprimer une définition de quête/story/dialogue sur le serveur",
+                "quest.list", "story.list", "dialogue.list");
         // Export versionné du contenu déclaratif (issue #108) — lecture seule, aucun effet de bord,
         // aucun catalogue à réenfiler.
         add("content.export", Permission.CONTENT_EXPORT, false, false, "Exporter le contenu (pack versionné)");

@@ -186,7 +186,8 @@ public final class PanelApp {
         this.agentPages = new AgentPages(agentStore, agentRegistry, config.agents().defaultAgentId(),
                 permissions, new com.lodygames.rpgquest.panel.content.SourceCatalog(contentWorkspace));
         this.agentPages.useWorkshopProjects(planProjects);
-        this.notifications = new NotificationCenter(agentStore, agentRegistry);
+        this.notifications = new NotificationCenter(agentStore, agentRegistry,
+                new NotificationReadStore(config.panelDbPath()));
         this.contentEditor = new ContentEditorPages(contentWorkspace);
         // Issue #194 : suppression de contenu, aperçu + confirmation. Partage l'espace de travail
         // et le catalogue source, donc voit exactement ce que l'éditeur voit.
@@ -250,6 +251,7 @@ public final class PanelApp {
         route("/agents/action", this::handleActionCreate);
         route("/agents/actions.json", this::handleAgentActionsJson);
         route("/actions", this::handleActions);
+        route("/notifications/read-all", this::handleNotificationsReadAll);
         route("/assets/", this::handleAsset);
         route("/players", exchange -> handleBusinessPage(exchange, "/players", "Joueurs",
                 Permission.PLAYERS_READ, agentPages::players));
@@ -484,6 +486,30 @@ public final class PanelApp {
         audit.record(session.username(), "login.success", "env=" + config.defaultTargetId(), "OK",
                 "role=" + auth.role().name(), rid);
         Http.redirect(exchange, "/home");
+    }
+
+    /** Issue #293 — « Tout marquer comme lu » : POST + CSRF, pour le seul compte connecté. */
+    private void handleNotificationsReadAll(HttpExchange exchange) throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            Http.text(exchange, 405, "POST requis");
+            return;
+        }
+        Optional<Session> session = currentSession(exchange);
+        if (session.isEmpty()) {
+            Http.redirect(exchange, "/login");
+            return;
+        }
+        Map<String, String> form = Http.formBody(exchange);
+        if (!constantTimeEquals(session.get().csrfToken(), form.get("_csrf"))) {
+            Http.html(exchange, 403, Layout.bare("CSRF", "<h1>Requête refusée</h1><p class=\"muted\">Jeton CSRF invalide.</p>"));
+            return;
+        }
+        if (!permissions.can(session.get().effective(), Permission.DIAGNOSTICS_READ)) {
+            forbidden(exchange, session.get(), "/");
+            return;
+        }
+        notifications.markAllRead(session.get().userId(), Instant.now());
+        Http.redirect(exchange, "/actions");
     }
 
     private void handleLogout(HttpExchange exchange) throws IOException {
@@ -3817,7 +3843,7 @@ public final class PanelApp {
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("agent", agentId);
         root.put("pending", pending);
-        root.put("badge", notifications.badgeCount(notifications.recent(), now));
+        root.put("badge", notifications.badgeCount(notifications.recent(), now, maybe.get().userId()));
         root.put("actions", items);
         Http.json(exchange, 200, com.lodygames.rpgquest.panel.json.Json.write(root));
     }
@@ -3847,6 +3873,8 @@ public final class PanelApp {
                         Ui.banner("err", "Action <code>" + Http.esc(detailId.get()) + "</code> introuvable.")));
                 return;
             }
+            // Issue #293 : ouvrir la fiche d'une notification la marque lue pour CE compte, et elle seule.
+            notifications.markRead(session.userId(), row.get().id());
             Http.html(exchange, 200, renderPage("Action", session, "/actions",
                     ActionsPages.detail(row.get(), now, planContext(session, row.get()),
                             ActionsPages.safeBack(Http.query(exchange).get("back")))));
@@ -4768,7 +4796,8 @@ public final class PanelApp {
         if (!permissions.can(session.effective(), Permission.DIAGNOSTICS_READ)) {
             return "";
         }
-        return notifications.bellHtml(config.agents().defaultAgentId(), Instant.now());
+        return notifications.bellHtml(config.agents().defaultAgentId(), Instant.now(), session.userId(),
+                session.csrfToken());
     }
 
     // ---- Sessions ----------------------------------------------------------------------

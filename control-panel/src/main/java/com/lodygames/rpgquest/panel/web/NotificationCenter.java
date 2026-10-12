@@ -28,10 +28,17 @@ public final class NotificationCenter {
 
     private final AgentStore store;
     private final AgentRegistry registry;
+    /** Issue #293 — lectures par compte ; {@code null} = aucune notion de lecture (comportement d'origine). */
+    private final NotificationReadStore reads;
 
     public NotificationCenter(AgentStore store, AgentRegistry registry) {
+        this(store, registry, null);
+    }
+
+    public NotificationCenter(AgentStore store, AgentRegistry registry, NotificationReadStore reads) {
         this.store = store;
         this.registry = registry;
+        this.reads = reads;
     }
 
     /**
@@ -55,19 +62,56 @@ public final class NotificationCenter {
 
     /** Nombre à signaler : actions en cours + échecs des dernières 24 h. {@code 0} = pas de badge. */
     public int badgeCount(List<AgentActionRow> recent, Instant now) {
-        Instant cutoff = now.minus(FAILED_WINDOW);
+        return badgeCount(recent, now, java.util.Set.of());
+    }
+
+    /**
+     * Issue #293 — même règle, pour un compte : un échec qu'il a <strong>lu</strong> ne compte plus.
+     * Une action en cours compte toujours : elle n'est pas une nouvelle, c'est un état qui se
+     * résoudra seul.
+     */
+    public int badgeCount(List<AgentActionRow> recent, Instant now, String userId) {
+        return badgeCount(recent, now, readAmong(userId, recent));
+    }
+
+    private int badgeCount(List<AgentActionRow> recent, Instant now, java.util.Set<String> read) {
         int n = 0;
         for (AgentActionRow a : recent) {
-            boolean pending = !a.status().terminal();
-            boolean failedRecent = switch (a.status()) {
-                case FAILED, REJECTED -> a.createdAt().isAfter(cutoff);
-                default -> false;
-            };
-            if (pending || failedRecent) {
+            if (!a.status().terminal() || (unreadable(a, now) && !read.contains(a.id()))) {
                 n++;
             }
         }
         return n;
+    }
+
+    /** Un échec récent : ce qui peut être « non lu ». */
+    private static boolean unreadable(AgentActionRow a, Instant now) {
+        return switch (a.status()) {
+            case FAILED, REJECTED -> a.createdAt().isAfter(now.minus(FAILED_WINDOW));
+            default -> false;
+        };
+    }
+
+    /** Marque comme lus, pour ce compte, tous les échecs actuellement signalés (« Tout marquer comme lu »). */
+    public int markAllRead(String userId, Instant now) {
+        if (reads == null) {
+            return 0;
+        }
+        List<String> ids = recent().stream().filter(a -> unreadable(a, now)).map(AgentActionRow::id).toList();
+        reads.markRead(userId, ids);
+        return ids.size();
+    }
+
+    /** Marque une notification comme lue — appelée à l'ouverture de sa fiche. */
+    public void markRead(String userId, String actionId) {
+        if (reads != null && actionId != null) {
+            reads.markRead(userId, List.of(actionId));
+        }
+    }
+
+    private java.util.Set<String> readAmong(String userId, List<AgentActionRow> recent) {
+        return reads == null ? java.util.Set.of()
+                : reads.readAmong(userId, recent.stream().map(AgentActionRow::id).toList());
     }
 
     /**
@@ -77,8 +121,14 @@ public final class NotificationCenter {
      * toujours visible. À insérer dans {@code .topbar-r} ; {@code defaultAgentId} pilote le polling.
      */
     public String bellHtml(String defaultAgentId, Instant now) {
+        return bellHtml(defaultAgentId, now, "", "");
+    }
+
+    /** Issue #293 — la cloche d'un compte : badge des seuls non-lus, et « Tout marquer comme lu ». */
+    public String bellHtml(String defaultAgentId, Instant now, String userId, String csrfToken) {
         List<AgentActionRow> recent = recent();
-        int badge = badgeCount(recent, now);
+        java.util.Set<String> read = readAmong(userId, recent);
+        int badge = badgeCount(recent, now, read);
 
         StringBuilder items = new StringBuilder();
         int shown = 0;
@@ -113,6 +163,11 @@ public final class NotificationCenter {
                 + "<div class=\"notif-list\" data-notif-list>" + items + "</div>"
                 + "</div>"
                 + "<div class=\"notif-foot-wrap\">"
+                + (reads == null || csrfToken == null || csrfToken.isEmpty() ? ""
+                        : "<form method=\"post\" action=\"/notifications/read-all\" class=\"notif-readall\">"
+                                + "<input type=\"hidden\" name=\"_csrf\" value=\"" + Http.esc(csrfToken) + "\">"
+                                + "<button class=\"btn btn-sm btn-link\" type=\"submit\">Tout marquer comme lu</button>"
+                                + "</form>")
                 + "<a class=\"notif-foot\" href=\"/actions\">" + Icons.icon("history")
                 + "<span>Voir toutes les actions</span>" + Icons.icon("chevron") + "</a>"
                 + "</div>"

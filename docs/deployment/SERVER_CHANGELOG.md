@@ -7747,6 +7747,35 @@ d'écriture.
   rafraîchir la bibliothèque. Rien d'autre n'y fait référence tant qu'il n'a pas été **posé**.
 * **Contenu** : sans objet, ce lot ne publie aucune ressource de contenu.
 
+## 2026-10-12 23:37 — Déploiement EFFECTUÉ sur DEV de #288 à #292 (code `ce87833`)
+
+### Changement
+
+JAR RPGQuest + panel PlugAdmin depuis `ce87833` (fusion de la PR #294 ; CI verte sur la PR et sur
+la poussée, run 38310036557). L'entrée « NON DÉPLOYÉ » ci-dessous est désormais déployée.
+
+### Action serveur réalisée
+
+- **Sauvegardes** : `data.db` (intégrité OK), `config.yml`, `buildings/` (3), `schematics/` (8) →
+  `/srv/rpgquest/backups/20261012-predeploy-288-292/` ; JAR précédent `3d5420e5…` (2 406 583 o) →
+  `~/.local/share/rpgquest/verygames-backups/rpgquest-20261012T213024Z-predeploy.jar` ;
+  `control-panel.db` → `/opt/plugadmin/backups/control-panel-20261012-predeploy-288-292.db` (600).
+- **Panel** : `scripts/plugadmin/deploy.sh --wait-ci` ; JAR servi `3bdb729a…` = JAR construit ;
+  `/health` ONLINE ; table `building_design_doc` créée ; projets (3) et versions (23) intacts ;
+  aucune erreur au journal.
+- **Plugin** : `scripts/deploy-verygames.sh -y`, JAR `46493dd54281fecaa8ec3b88e8d0e519f71d303ed6a50fada00f903553e0d3ef`
+  (2 457 620 o), retéléchargé et vérifié. Contournement TLS **autorisé par le propriétaire pour ce
+  déploiement** : certificat `*.dg.vg` expiré le 2026-10-11, seule l'expiration échoue, clé égale à
+  l'épingle `sha256//Y9msc/…EE=`, passée en ligne de commande uniquement ; aucune trace laissée.
+- **Redémarrage** à 0 joueur (vérifié deux fois, 23:37), `verygames-restart.sh`, retour ONLINE ;
+  RPGQuest v0.1.0-SNAPSHOT, 5 plugins actifs ; agent reconnecté (battement 21:38:27 UTC).
+- Mondes, `data.db`, configuration, bâtiments et schematics **non modifiés** (vérifiés après).
+
+### Rollback
+
+Panel : `scripts/plugadmin/rollback.sh app`. Plugin : `scripts/rollback-verygames.sh --latest`
+(même autorisation TLS nécessaire tant que le certificat est expiré) puis redémarrage contrôlé.
+
 ## 2026-10-12 (nuit) — Parcours de création fiabilisé (#288, #289, #290, #291, #292) — NON DÉPLOYÉ
 
 ### Changement

@@ -750,8 +750,8 @@ le détail par système). À mettre à jour à chaque étape livrée qui ajoute/
   d'une **quête** voit désormais les dialogues serveur qui la démarrent. **Plugin et panel modifiés :
   JAR + panel à déployer** (non déployé, tests manuels du propriétaire en cours).
   `PENDING MANUAL VALIDATION` : TC-280.
-- **Parcours de création fiabilisé** *(issues #288–#292, branche `fix/288-292-building-pipeline`,
-  PR #294, NON DÉPLOYÉ, JAR + panel)* — registre des 1 166 blocs 1.21.11 et parseur WorldEdit
+- **Parcours de création fiabilisé** *(issues #288–#292, PR #294 fusionnée, déployé sur DEV le
+  12/10/2026, `ce87833`)* — registre des 1 166 blocs 1.21.11 et parseur WorldEdit
   consultés avant tout verdict (toutes les fautes d'un coup, aucune couleur devinée) ; portes et
   fenêtres dans les murs construits (`wall:` pour viser un autre mur) ; accès terrain → porte →
   sol intérieur audité en marchant (`ENTRANCE_STEP`, `OPENING_DETACHED`) ; stabilité après pose
